@@ -8,8 +8,15 @@ module.exports = {
   rebuildConfig: {},
   makers: [
     {
-      name: '@electron-forge/maker-squirrel',
-      config: {},
+      name: '@electron-forge/maker-wix',
+      config: {
+        name: 'MiApp',
+        manufacturer: 'Edwin',
+        language: 3082, // Español
+        ui: {
+          chooseDirectory: true // Activa el wizard con selección de directorio
+        }
+      },
     },
     {
       name: '@electron-forge/maker-zip',
