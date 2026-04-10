@@ -1,4 +1,5 @@
 import { Outlet, useNavigate, useLocation } from "react-router";
+import { useState, useEffect } from "react";
 import svgPaths from "../../imports/svg-qgatbhef3k";
 import imgManagerProfile from "figma:asset/9b19a898761052a1578ea4d6c5791772d9acadb1.png";
 import { TitleBar } from "./TitleBar";
@@ -34,10 +35,10 @@ export function AppLayout() {
         <aside className="bg-[#131313] flex flex-col w-[256px] shrink-0 h-[calc(100vh-36px)] sticky top-9 z-20">
         <div className="flex flex-col gap-[4px] p-[24px]">
           <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[24px] tracking-[-0.6px] uppercase">
-            Neon-Gastro
+            CyberBistro
           </div>
           <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[1px] uppercase">
-            Estación 04 - Activa
+            Sistema de Gestión
           </div>
         </div>
 

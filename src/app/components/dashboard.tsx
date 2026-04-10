@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import svgPaths from "../../imports/svg-qgatbhef3k";
 import imgElectricDrink from "figma:asset/356c18bfe5cca7e51ba295635755e0843e79e4d1.png";
 import imgDigitalPasta from "figma:asset/436d73e49206778c5c4b265dfe54e2ed10e7b778.png";
@@ -19,9 +19,42 @@ const tickerItems = [
 
 export function Dashboard() {
   const [activeCategory, setActiveCategory] = useState(0);
+  const [isVisible, setIsVisible] = useState(false);
+  const [imagesLoaded, setImagesLoaded] = useState(false);
+
+  useEffect(() => {
+    // Animación de entrada
+    setIsVisible(true);
+
+    // Precargar imágenes
+    const images = [imgNeonBurger, imgSynthSushi, imgElectricDrink, imgDigitalPasta, imgItemThumb, imgItemThumb1];
+    let loadedCount = 0;
+
+    images.forEach(src => {
+      const img = new Image();
+      img.onload = () => {
+        loadedCount++;
+        if (loadedCount === images.length) {
+          setImagesLoaded(true);
+        }
+      };
+      img.src = src;
+    });
+
+    // Mostrar contenido después de un delay mínimo para suavizar la transición
+    const timer = setTimeout(() => {
+      setImagesLoaded(true);
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, []);
 
   return (
-    <div className="flex gap-[32px] p-[32px] flex-1">
+    <div
+      className={`flex gap-[32px] p-[32px] flex-1 transition-opacity duration-300 ${
+        isVisible ? 'opacity-100' : 'opacity-0'
+      }`}
+    >
       {/* Left: Menu */}
       <div className="flex-1 flex flex-col gap-[32px] min-w-0">
         {/* Ticker */}
