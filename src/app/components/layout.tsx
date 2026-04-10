@@ -1,7 +1,7 @@
 import { Outlet, useNavigate, useLocation } from "react-router";
 import svgPaths from "../../imports/svg-qgatbhef3k";
 import imgManagerProfile from "figma:asset/9b19a898761052a1578ea4d6c5791772d9acadb1.png";
-import { WindowControls } from "./window-controls";
+import { TitleBar } from "./TitleBar";
 
 const sideNavItems = [
   { label: "Panel", icon: svgPaths.p20793584, viewBox: "0 0 18 18", path: "/dashboard" },
@@ -25,9 +25,13 @@ export function AppLayout() {
   };
 
   return (
-    <div className="bg-[#0e0e0e] flex min-h-screen w-full">
-      {/* Sidebar */}
-      <aside className="bg-[#131313] flex flex-col w-[256px] shrink-0 h-screen sticky top-0 z-20">
+    <div className="bg-[#0e0e0e] flex flex-col min-h-screen w-full">
+      {/* TitleBar */}
+      <TitleBar />
+
+      <div className="flex flex-1">
+        {/* Sidebar */}
+        <aside className="bg-[#131313] flex flex-col w-[256px] shrink-0 h-[calc(100vh-36px)] sticky top-9 z-20">
         <div className="flex flex-col gap-[4px] p-[24px]">
           <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[24px] tracking-[-0.6px] uppercase">
             Neon-Gastro
@@ -83,7 +87,6 @@ export function AppLayout() {
             </div>
           </div>
           <div className="flex gap-[24px] items-center">
-            <WindowControls />
             <div className="relative">
               <div className="bg-[#131313] rounded-[2px] w-[256px] pl-[40px] pr-[16px] py-[6px]">
                 <span className="font-['Space_Grotesk',sans-serif] text-[#6b7280] text-[12px] tracking-[-0.6px] uppercase">BUSCAR...</span>
@@ -115,6 +118,7 @@ export function AppLayout() {
         </header>
 
         <Outlet />
+      </div>
       </div>
     </div>
   );
