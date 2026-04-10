@@ -273,8 +273,8 @@ export function Tables() {
       }}
     >
       {/* Top bar */}
-      <div className="flex items-center justify-between px-[32px] pt-[20px] pb-[16px] shrink-0">
-        <div className="flex items-center gap-[16px]">
+      <div className="flex flex-wrap items-center justify-between px-4 sm:px-[32px] pt-[16px] sm:pt-[20px] pb-[12px] sm:pb-[16px] gap-[8px] shrink-0">
+        <div className="flex flex-wrap items-center gap-[12px] sm:gap-[16px]">
           <h1 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[28px]">
             Mesas
           </h1>
@@ -286,7 +286,7 @@ export function Tables() {
             </div>
           )}
         </div>
-        <div className="flex gap-[12px]">
+        <div className="flex flex-wrap gap-[8px] sm:gap-[12px]">
           <StatusBadge color="#59ee50" label={`${libre} Libre${libre !== 1 ? "s" : ""}`} />
           <StatusBadge color="#ff716c" label={`${ocupada} Ocupada${ocupada !== 1 ? "s" : ""}`} />
           {limpieza > 0 && (
@@ -298,7 +298,7 @@ export function Tables() {
       {/* Grid + Panel area */}
       <div className="flex-1 flex gap-0 overflow-hidden">
         {/* Grid scroll area */}
-        <div className="flex-1 overflow-auto flex items-start justify-center p-[32px]">
+        <div className="flex-1 overflow-auto flex items-start justify-center p-4 sm:p-[32px]">
           <div
             style={{
               display: "grid",

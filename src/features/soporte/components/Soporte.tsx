@@ -81,6 +81,7 @@ interface Plato {
   precio: number;
   categoria: string;
   disponible: boolean;
+  va_a_cocina: boolean;
 }
 
 const RD = (n: number) =>
@@ -106,7 +107,7 @@ function CartaPanel() {
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [mode, setMode] = useState<FormMode>(null);
-  const [form, setForm] = useState({ nombre: "", precio: "", categoria: "General", disponible: true });
+  const [form, setForm] = useState({ nombre: "", precio: "", categoria: "General", disponible: true, va_a_cocina: true });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [activeFilter, setActiveFilter] = useState("Todos");
@@ -127,7 +128,7 @@ function CartaPanel() {
   const filtered = activeFilter === "Todos" ? platos : platos.filter((p) => p.categoria === activeFilter);
 
   function openAdd() {
-    setForm({ nombre: "", precio: "", categoria: "General", disponible: true });
+    setForm({ nombre: "", precio: "", categoria: "General", disponible: true, va_a_cocina: true });
     setSelectedId(null);
     setMode("add");
     setError("");
@@ -135,7 +136,7 @@ function CartaPanel() {
 
   function openEdit(p: Plato) {
     setSelectedId(p.id);
-    setForm({ nombre: p.nombre, precio: String(p.precio), categoria: p.categoria, disponible: p.disponible });
+    setForm({ nombre: p.nombre, precio: String(p.precio), categoria: p.categoria, disponible: p.disponible, va_a_cocina: p.va_a_cocina !== false });
     setMode("edit");
     setError("");
   }
@@ -150,17 +151,17 @@ function CartaPanel() {
     if (mode === "add") {
       const { data, error: err } = await insforgeClient.database
         .from("platos")
-        .insert([{ nombre: form.nombre.trim(), precio, categoria: form.categoria, disponible: form.disponible }])
+        .insert([{ nombre: form.nombre.trim(), precio, categoria: form.categoria, disponible: form.disponible, va_a_cocina: form.va_a_cocina }])
         .select();
       if (err) { setError("Error al guardar."); setSaving(false); return; }
       if (data) setPlatos((prev) => [...prev, ...(data as Plato[])]);
     } else if (mode === "edit" && selectedId) {
       const { error: err } = await insforgeClient.database
         .from("platos")
-        .update({ nombre: form.nombre.trim(), precio, categoria: form.categoria, disponible: form.disponible })
+        .update({ nombre: form.nombre.trim(), precio, categoria: form.categoria, disponible: form.disponible, va_a_cocina: form.va_a_cocina })
         .eq("id", selectedId);
       if (err) { setError("Error al guardar."); setSaving(false); return; }
-      setPlatos((prev) => prev.map((p) => p.id === selectedId ? { ...p, nombre: form.nombre.trim(), precio, categoria: form.categoria, disponible: form.disponible } : p));
+      setPlatos((prev) => prev.map((p) => p.id === selectedId ? { ...p, nombre: form.nombre.trim(), precio, categoria: form.categoria, disponible: form.disponible, va_a_cocina: form.va_a_cocina } : p));
     }
     setSaving(false);
     setMode(null);
@@ -189,7 +190,7 @@ function CartaPanel() {
       {/* Main grid area */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Toolbar */}
-        <div className="flex items-center justify-between gap-[12px] px-[24px] py-[16px] border-b border-[rgba(72,72,71,0.15)] shrink-0">
+        <div className="flex flex-wrap items-center justify-between gap-[12px] px-4 sm:px-[24px] py-[12px] sm:py-[16px] border-b border-[rgba(72,72,71,0.15)] shrink-0">
           <div className="flex gap-[8px] overflow-x-auto">
             {categories.map((cat) => (
               <button
@@ -252,13 +253,22 @@ function CartaPanel() {
                     }}
                   >
                     <div className="flex flex-col gap-[4px] w-full">
-                      <div
-                        className="rounded-[4px] px-[5px] py-[2px] w-fit"
-                        style={{ backgroundColor: `${cc}15` }}
-                      >
-                        <span className="font-['Inter',sans-serif] font-bold text-[8px] tracking-[0.8px] uppercase" style={{ color: cc }}>
-                          {plato.categoria}
-                        </span>
+                      <div className="flex items-center gap-[4px] flex-wrap">
+                        <div
+                          className="rounded-[4px] px-[5px] py-[2px]"
+                          style={{ backgroundColor: `${cc}15` }}
+                        >
+                          <span className="font-['Inter',sans-serif] font-bold text-[8px] tracking-[0.8px] uppercase" style={{ color: cc }}>
+                            {plato.categoria}
+                          </span>
+                        </div>
+                        {!plato.va_a_cocina && (
+                          <div className="rounded-[4px] px-[5px] py-[2px] bg-[rgba(89,238,80,0.1)]">
+                            <span className="font-['Inter',sans-serif] font-bold text-[8px] tracking-[0.5px] uppercase text-[#59ee50]">
+                              Directo
+                            </span>
+                          </div>
+                        )}
                       </div>
                       <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[12px] uppercase leading-tight line-clamp-2">
                         {plato.nombre}
@@ -356,6 +366,25 @@ function CartaPanel() {
             </button>
           </div>
 
+          {/* Va a cocina */}
+          <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-[2px]">
+              <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.5px] uppercase">Pasa por cocina</span>
+              <span className="font-['Inter',sans-serif] text-[#6b7280] text-[9px]">Ej: bebidas en botella → No</span>
+            </div>
+            <button
+              onClick={() => setForm((f) => ({ ...f, va_a_cocina: !f.va_a_cocina }))}
+              className="rounded-full px-[12px] py-[5px] font-['Inter',sans-serif] font-bold text-[10px] tracking-[0.5px] uppercase border-none cursor-pointer transition-all"
+              style={{
+                backgroundColor: form.va_a_cocina ? "rgba(255,144,109,0.12)" : "rgba(72,72,71,0.2)",
+                color: form.va_a_cocina ? "#ff906d" : "#6b7280",
+                border: form.va_a_cocina ? "1px solid rgba(255,144,109,0.3)" : "1px solid rgba(72,72,71,0.3)",
+              }}
+            >
+              {form.va_a_cocina ? "Sí" : "No"}
+            </button>
+          </div>
+
           <div className="h-px bg-[rgba(72,72,71,0.2)]" />
 
           {/* Save */}
@@ -408,7 +437,7 @@ function UsuariosPanel() {
   }
 
   return (
-    <div className="flex-1 p-[32px] overflow-auto">
+    <div className="flex-1 p-4 sm:p-[32px] overflow-auto">
       <div className="max-w-[520px] flex flex-col gap-[20px]">
         <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-[28px] flex flex-col gap-[18px]">
           <div className="flex flex-col gap-[4px]">
@@ -463,7 +492,7 @@ function SoportePanel({ onLock }: { onLock: () => void }) {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Tab header */}
-      <div className="flex items-center justify-between px-[32px] pt-[20px] pb-[0px] border-b border-[rgba(72,72,71,0.2)] shrink-0">
+      <div className="flex flex-wrap items-center justify-between px-4 sm:px-[32px] pt-[16px] sm:pt-[20px] pb-[0px] gap-[8px] border-b border-[rgba(72,72,71,0.2)] shrink-0">
         <div className="flex items-end gap-[4px]">
           <h1 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[24px] mr-[16px]">Soporte</h1>
           {(["carta", "usuarios"] as Tab[]).map((tab) => (

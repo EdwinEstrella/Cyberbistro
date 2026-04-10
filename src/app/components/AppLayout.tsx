@@ -110,12 +110,12 @@ export function AppLayout() {
         {/* Main area */}
         <div className="flex-1 flex flex-col min-w-0">
           {/* Shared Header */}
-          <header className="backdrop-blur-[6px] bg-[rgba(14,14,14,0.6)] flex items-center justify-between h-[64px] px-[32px] border-b border-[rgba(72,72,71,0.2)] sticky top-0 z-10 shadow-[0px_4px_24px_0px_rgba(255,144,109,0.08)]">
-            <div className="flex gap-[24px] items-center">
-              <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[18px] uppercase">
+          <header className="backdrop-blur-[6px] bg-[rgba(14,14,14,0.6)] flex items-center justify-between h-[64px] px-4 sm:px-6 lg:px-[32px] border-b border-[rgba(72,72,71,0.2)] sticky top-0 z-10 shadow-[0px_4px_24px_0px_rgba(255,144,109,0.08)]">
+            <div className="flex gap-[8px] sm:gap-[24px] items-center min-w-0">
+              <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[14px] sm:text-[18px] uppercase">
                 CyberBistro OS
               </span>
-              <div className="bg-[rgba(72,72,71,0.3)] h-[16px] w-px" />
+              <div className="hidden sm:block bg-[rgba(72,72,71,0.3)] h-[16px] w-px" />
               {/* Cocina en Vivo badge — reactive to DB */}
               <div
                 className="bg-[#201f1f] flex gap-[8px] items-center px-[13px] py-[5px] rounded-full border border-[rgba(72,72,71,0.2)] transition-all cursor-pointer"
@@ -131,8 +131,8 @@ export function AppLayout() {
                 </span>
               </div>
             </div>
-            <div className="flex gap-[24px] items-center">
-              <div className="relative">
+            <div className="flex gap-[12px] sm:gap-[24px] items-center shrink-0">
+              <div className="hidden md:relative md:block">
                 <div className="bg-[#131313] rounded-[2px] w-[256px] pl-[40px] pr-[16px] py-[6px]">
                   <span className="font-['Space_Grotesk',sans-serif] text-[#6b7280] text-[12px] tracking-[-0.6px] uppercase">
                     BUSCAR...

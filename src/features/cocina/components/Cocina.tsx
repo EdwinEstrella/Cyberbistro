@@ -177,7 +177,7 @@ export function Cocina() {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-[32px] py-[20px] border-b border-[rgba(72,72,71,0.2)]">
+      <div className="flex flex-wrap items-center justify-between px-4 sm:px-[32px] py-[14px] sm:py-[20px] gap-[12px] border-b border-[rgba(72,72,71,0.2)]">
         <div className="flex items-center gap-[16px]">
           <h1 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[28px]">
             Cocina
@@ -232,13 +232,13 @@ export function Cocina() {
       )}
 
       {/* Kanban board */}
-      <div className="flex-1 overflow-hidden flex gap-[16px] px-[32px] py-[24px]">
+      <div className="flex-1 overflow-x-auto flex gap-[16px] px-4 sm:px-[32px] py-[24px]">
         {columns.map((col) => {
           const items = comandas.filter((c) => c.estado === col.key);
           return (
             <div
               key={col.key}
-              className="flex-1 flex flex-col bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] overflow-hidden min-w-0"
+              className="min-w-[220px] flex-1 flex flex-col bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] overflow-hidden"
             >
               {/* Column header */}
               <div className="flex items-center justify-between px-[20px] py-[14px] border-b border-[rgba(72,72,71,0.15)]">

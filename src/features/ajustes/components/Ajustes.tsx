@@ -98,7 +98,7 @@ export function Ajustes() {
   }
 
   return (
-    <div className="flex-1 p-[32px] overflow-auto">
+    <div className="flex-1 p-4 sm:p-[32px] overflow-auto">
       <div className="max-w-[640px] flex flex-col gap-[28px]">
         <h1 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[28px]">
           Ajustes

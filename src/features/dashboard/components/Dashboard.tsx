@@ -8,6 +8,7 @@ interface Plato {
   precio: number;
   categoria: string;
   disponible: boolean;
+  va_a_cocina: boolean;
 }
 
 interface MesaBasic {
@@ -137,38 +138,46 @@ export function Dashboard() {
     setSending(true);
     setKitchenClosed(false);
 
-    const { data: estadoData } = await insforgeClient.database
-      .from("cocina_estado")
-      .select("activa")
-      .limit(1);
+    // Split cart: items that go to kitchen vs items served directly
+    const kitchenItems = cart.filter((i) => i.plato.va_a_cocina !== false);
 
-    if (!estadoData?.[0]?.activa) {
-      setKitchenClosed(true);
-      setSending(false);
-      return;
+    if (kitchenItems.length > 0) {
+      const { data: estadoData } = await insforgeClient.database
+        .from("cocina_estado")
+        .select("activa")
+        .limit(1);
+
+      if (estadoData?.[0]?.activa === false) {
+        setKitchenClosed(true);
+        setSending(false);
+        return;
+      }
+
+      const items = kitchenItems.map((i) => ({
+        nombre: i.plato.nombre,
+        cantidad: i.cantidad,
+        precio: i.plato.precio,
+      }));
+
+      const { error } = await insforgeClient.database.from("comandas").insert([
+        {
+          mesa_id: selectedMesa.id,
+          mesa_numero: selectedMesa.numero,
+          estado: "pendiente",
+          items,
+          notas: null,
+        },
+      ]);
+
+      if (error) {
+        setSending(false);
+        return;
+      }
     }
 
-    const items = cart.map((i) => ({
-      nombre: i.plato.nombre,
-      cantidad: i.cantidad,
-      precio: i.plato.precio,
-    }));
-
-    const { error } = await insforgeClient.database.from("comandas").insert([
-      {
-        mesa_id: selectedMesa.id,
-        mesa_numero: selectedMesa.numero,
-        estado: "pendiente",
-        items,
-        notas: null,
-      },
-    ]);
-
-    if (!error) {
-      setCart([]);
-      setSentOk(true);
-      setTimeout(() => setSentOk(false), 3000);
-    }
+    setCart([]);
+    setSentOk(true);
+    setTimeout(() => setSentOk(false), 3000);
     setSending(false);
   }
 
@@ -208,9 +217,9 @@ export function Dashboard() {
   }
 
   return (
-    <div className="flex gap-[32px] p-[32px] flex-1 overflow-hidden min-h-0">
+    <div className="flex flex-col lg:flex-row gap-[24px] lg:gap-[32px] p-4 sm:p-[32px] flex-1 overflow-y-auto lg:overflow-hidden min-h-0">
       {/* LEFT: Menu */}
-      <div className="flex-1 flex flex-col gap-[24px] min-w-0 overflow-auto">
+      <div className="lg:flex-1 flex flex-col gap-[24px] min-w-0 lg:overflow-auto">
         {/* Ticker */}
         <div className="bg-[#131313] py-[8px] border-b border-[rgba(255,144,109,0.1)] overflow-hidden shrink-0">
           <div className="flex gap-[48px]">
@@ -340,7 +349,7 @@ export function Dashboard() {
       </div>
 
       {/* RIGHT: Order Panel */}
-      <div className="w-[340px] shrink-0 backdrop-blur-[12px] bg-[rgba(32,31,31,0.6)] rounded-[16px] border border-[rgba(72,72,71,0.1)] shadow-[0px_25px_50px_-12px_rgba(0,0,0,0.25)] flex flex-col self-start sticky top-0 max-h-[calc(100vh-160px)]">
+      <div className="w-full lg:w-[340px] shrink-0 backdrop-blur-[12px] bg-[rgba(32,31,31,0.6)] rounded-[16px] border border-[rgba(72,72,71,0.1)] shadow-[0px_25px_50px_-12px_rgba(0,0,0,0.25)] flex flex-col lg:self-start lg:sticky lg:top-0 lg:max-h-[calc(100vh-160px)]">
         {/* Header */}
         <div className="border-b border-[rgba(72,72,71,0.2)] px-[24px] pt-[20px] pb-[20px] shrink-0">
           <div className="flex items-center justify-between">
@@ -455,9 +464,16 @@ export function Dashboard() {
                 />
                 <div className="flex-1 flex flex-col gap-[4px]">
                   <div className="flex items-start justify-between gap-[8px]">
-                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] uppercase leading-tight">
-                      {item.plato.nombre}
-                    </span>
+                    <div className="flex flex-col gap-[2px]">
+                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] uppercase leading-tight">
+                        {item.plato.nombre}
+                      </span>
+                      {item.plato.va_a_cocina === false && (
+                        <span className="font-['Inter',sans-serif] text-[#59ee50] text-[9px] tracking-[0.5px] uppercase">
+                          ⚡ Directo
+                        </span>
+                      )}
+                    </div>
                     <button
                       onClick={() => removeItem(item.plato.id)}
                       className="shrink-0 mt-[2px] bg-transparent border-none cursor-pointer"

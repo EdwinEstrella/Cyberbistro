@@ -71,9 +71,9 @@ export function Billing() {
   const [currentPage, setCurrentPage] = useState(1);
 
   return (
-    <div className="flex-1 p-[32px] flex flex-col gap-[32px] overflow-auto">
+    <div className="flex-1 p-4 sm:p-6 lg:p-[32px] flex flex-col gap-4 sm:gap-6 lg:gap-[32px] overflow-auto">
       {/* Stats Cards */}
-      <div className="grid grid-cols-4 gap-[24px]">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-[24px]">
         {/* Revenue */}
         <div className="bg-[#201f1f] rounded-[24px] overflow-hidden relative">
           <div className="flex flex-col gap-[16px] p-[24px] pb-[54px]">
@@ -153,8 +153,8 @@ export function Billing() {
       </div>
 
       {/* Filters Bar */}
-      <div className="backdrop-blur-[6px] bg-[rgba(38,38,38,0.6)] rounded-[16px] border border-[rgba(255,255,255,0.05)] p-[17px] flex items-center justify-between">
-        <div className="flex gap-[16px] items-center">
+      <div className="backdrop-blur-[6px] bg-[rgba(38,38,38,0.6)] rounded-[16px] border border-[rgba(255,255,255,0.05)] p-[12px] sm:p-[17px] flex flex-wrap items-center gap-[12px] justify-between">
+        <div className="flex flex-wrap gap-[8px] sm:gap-[16px] items-center">
           <div className="bg-black rounded-[12px] border border-[rgba(72,72,71,0.3)] flex items-center px-[17px] py-[9px] gap-[8px]">
             <svg className="w-[17px] h-[10px]" fill="none" viewBox="0 0 17 10"><path d={svgPaths.p2eec2540} fill="#ADAAAA" /></svg>
             <span className="font-['Inter',sans-serif] text-white text-[14px]">Últimos 30 Días</span>
@@ -178,7 +178,8 @@ export function Billing() {
       </div>
 
       {/* Table */}
-      <div className="bg-[#131313] rounded-[24px] border border-[rgba(72,72,71,0.1)] overflow-hidden">
+      <div className="overflow-x-auto rounded-[24px]">
+      <div className="bg-[#131313] rounded-[24px] border border-[rgba(72,72,71,0.1)] overflow-hidden min-w-[760px]">
         {/* Header Row */}
         <div className="bg-[rgba(32,31,31,0.5)] grid grid-cols-[100px_120px_1fr_110px_130px_120px_140px] px-[32px]">
           {["ID\nFactura", "Fecha", "Cliente /\nMesa", "Método", "Estado", "Monto", "Acciones"].map((h, i) => (
@@ -245,7 +246,7 @@ export function Billing() {
         })}
 
         {/* Pagination */}
-        <div className="border-t border-[rgba(255,255,255,0.05)] px-[32px] py-[24px] flex items-center justify-between">
+        <div className="border-t border-[rgba(255,255,255,0.05)] px-[16px] sm:px-[32px] py-[16px] sm:py-[24px] flex flex-wrap items-center gap-[12px] justify-between">
           <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[14px]">
             Mostrando <span className="text-white font-bold">1 - 4</span> de <span className="text-white font-bold">152</span> transacciones
           </span>
@@ -278,6 +279,7 @@ export function Billing() {
             </button>
           </div>
         </div>
+      </div>
       </div>
     </div>
   );
