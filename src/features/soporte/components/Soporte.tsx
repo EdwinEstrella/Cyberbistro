@@ -195,9 +195,80 @@ function CartaPanel() {
   }
 
   async function handleDelete(id: number) {
-    await insforgeClient.database.from("platos").update({ disponible: false }).eq("id", id);
-    setPlatos((prev) => prev.map((p) => p.id === id ? { ...p, disponible: false } : p));
-    if (selectedId === id) { setSelectedId(null); setMode(null); }
+    const plato = platos.find((p) => p.id === id);
+    if (!plato) return;
+
+    // Verificar si tiene consumos asociados
+    const { data: consumos, error: consumosError } = await insforgeClient.database
+      .from("consumos")
+      .select("id")
+      .eq("plato_id", id);
+
+    if (consumosError) {
+      console.error("Error al verificar consumos:", consumosError);
+      alert("Error al verificar el historial del plato.");
+      return;
+    }
+
+    const tieneHistorial = consumos && consumos.length > 0;
+
+    // Construir mensaje de confirmación
+    let mensaje = `¿Estás seguro de eliminar "${plato.nombre}"?\n\n`;
+
+    if (tieneHistorial) {
+      mensaje += `⚠️ ESTE PLATO TIENE HISTORIAL:\n`;
+      mensaje += `• ${consumos.length} consumo(s) asociado(s)\n`;
+      mensaje += `• Se eliminarán TODOS los consumos relacionados\n`;
+      mensaje += `• Esta acción NO se puede deshacer\n\n`;
+    } else {
+      mensaje += `Este plato no tiene historial de consumo.\n\n`;
+    }
+
+    mensaje += `¿Confirmas la eliminación?`;
+
+    // Confirmar con el usuario
+    const confirmado = confirm(mensaje);
+
+    if (!confirmado) {
+      return; // Usuario canceló
+    }
+
+    // Eliminar consumos asociados primero (en cascada manual)
+    if (tieneHistorial) {
+      const { error: deleteConsumosError } = await insforgeClient.database
+        .from("consumos")
+        .delete()
+        .eq("plato_id", id);
+
+      if (deleteConsumosError) {
+        console.error("Error al eliminar consumos:", deleteConsumosError);
+        alert(`Error al eliminar consumos: ${deleteConsumosError.message}`);
+        return;
+      }
+    }
+
+    // Finalmente eliminar el plato
+    const { error: deletePlatoError } = await insforgeClient.database
+      .from("platos")
+      .delete()
+      .eq("id", id);
+
+    if (deletePlatoError) {
+      console.error("Error al eliminar plato:", deletePlatoError);
+      alert(`Error al eliminar el plato: ${deletePlatoError.message}`);
+      return;
+    }
+
+    // Actualizar UI
+    setPlatos((prev) => prev.filter((p) => p.id !== id));
+
+    // Cerrar modal si estaba abierto este plato
+    if (selectedId === id) {
+      setSelectedId(null);
+      setMode(null);
+    }
+
+    alert(`✅ Plato "${plato.nombre}" eliminado correctamente.${tieneHistorial ? ` (${consumos.length} consumo(s) eliminado(s) en cascada)` : ""}`);
   }
 
   if (loading) {
@@ -426,9 +497,9 @@ function CartaPanel() {
           {mode === "edit" && selected && (
             <button
               onClick={() => handleDelete(selected.id)}
-              className="bg-transparent border border-[rgba(255,113,108,0.2)] rounded-[10px] px-[16px] py-[10px] font-['Inter',sans-serif] font-bold text-[#ff716c] text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:bg-[rgba(255,113,108,0.06)] transition-colors"
+              className="bg-[#ff4444] border border-[rgba(255,68,68,0.2)] rounded-[10px] px-[16px] py-[10px] font-['Inter',sans-serif] font-bold text-white text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:bg-[rgba(255,68,68,0.8)] transition-colors shadow-[0_0_16px_rgba(255,68,68,0.15)]"
             >
-              Deshabilitar plato
+              🗑️ Eliminar plato
             </button>
           )}
         </div>

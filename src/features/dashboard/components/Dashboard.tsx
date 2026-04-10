@@ -12,14 +12,34 @@ interface Plato {
 }
 
 interface MesaBasic {
-  id: number;
+  id: string;
   numero: number;
   estado: string;
+  fusionada?: boolean;
+  fusion_padre_id?: string | null;
+  fusion_hijos?: string[];
+  deuda_pendiente?: number;
+  items_pendientes?: number;
 }
 
 interface CartItem {
   plato: Plato;
   cantidad: number;
+}
+
+interface Consumo {
+  id: string;
+  mesa_id: string;
+  comanda_id: string | null;
+  plato_id: number;
+  nombre: string;
+  cantidad: number;
+  precio_unitario: number;
+  subtotal: number;
+  tipo: 'cocina' | 'directo';
+  estado: 'pedido' | 'enviado_cocina' | 'listo' | 'entregado' | 'pagado';
+  factura_id: string | null;
+  created_at: string;
 }
 
 const ITBIS = 0.18;
@@ -59,7 +79,6 @@ export function Dashboard() {
   const [selectedMesa, setSelectedMesa] = useState<MesaBasic | null>(null);
   const [mesaOpen, setMesaOpen] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
-  const [splitParts, setSplitParts] = useState(2);
   const [sending, setSending] = useState(false);
   const [sentOk, setSentOk] = useState(false);
   const [kitchenClosed, setKitchenClosed] = useState(false);
@@ -67,6 +86,12 @@ export function Dashboard() {
   const [chargeOk, setChargeOk] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"efectivo" | "tarjeta" | "digital">("efectivo");
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showConsumosModal, setShowConsumosModal] = useState(false);
+  const [mesaConsumos, setMesaConsumos] = useState<Consumo[]>([]);
+  const [splitMode, setSplitMode] = useState(false);
+  const [selectedConsumos, setSelectedConsumos] = useState<Set<string>>(new Set());
+  const [splitParts, setSplitParts] = useState(2);
+  const [isTakeout, setIsTakeout] = useState(false);
   const mesaRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -77,8 +102,8 @@ export function Dashboard() {
         .eq("disponible", true)
         .order("categoria"),
       insforgeClient.database
-        .from("mesas")
-        .select("id,numero,estado")
+        .from("mesas_deuda")
+        .select("*")
         .eq("fusionada", false)
         .order("numero"),
     ]).then(([platosRes, mesasRes]) => {
@@ -137,14 +162,410 @@ export function Dashboard() {
     setCart((prev) => prev.filter((i) => i.plato.id !== platoId));
   }
 
+  // Marcar mesa como ocupada cuando se selecciona
+  async function markMesaAsOccupied(mesa: MesaBasic) {
+    if (mesa.estado === 'ocupada') return; // Ya está ocupada
+
+    const { error } = await insforgeClient.database
+      .from("mesas")
+      .update({ estado: 'ocupada' })
+      .eq("id", mesa.id);
+
+    if (!error) {
+      setMesas((prev) =>
+        prev.map((m) =>
+          m.id === mesa.id ? { ...m, estado: 'ocupada' } : m
+        )
+      );
+    }
+  }
+
+  // Verificar si una mesa se puede liberar (sin deuda)
+  async function canFreeMesa(mesa: MesaBasic): Promise<boolean> {
+    // Obtener deuda actualizada de la vista
+    const { data, error } = await insforgeClient.database
+      .from("mesas_deuda")
+      .select("deuda_pendiente")
+      .eq("id", mesa.id)
+      .single();
+
+    if (error || !data) return true; // Si hay error, permitimos liberar
+    return data.deuda_pendiente === 0;
+  }
+
+  // Liberar mesa (marcar como libre)
+  async function freeMesa(mesa: MesaBasic) {
+    const canFree = await canFreeMesa(mesa);
+
+    if (!canFree) {
+      alert(`⚠️ La mesa ${mesa.numero} tiene deuda pendiente. Cobrar antes de liberar.`);
+      return;
+    }
+
+    const { error } = await insforgeClient.database
+      .from("mesas")
+      .update({ estado: 'libre' })
+      .eq("id", mesa.id);
+
+    if (!error) {
+      setMesas((prev) =>
+        prev.map((m) =>
+          m.id === mesa.id ? { ...m, estado: 'libre', deuda_pendiente: 0, items_pendientes: 0 } : m
+        )
+      );
+      if (selectedMesa?.id === mesa.id) {
+        setSelectedMesa(null);
+        setCart([]);
+      }
+    }
+  }
+
+  // Cargar consumos de una mesa
+  async function loadTableConsumption(mesaId: string): Promise<Consumo[]> {
+    const { data, error } = await insforgeClient.database
+      .from("consumos")
+      .select("*")
+      .eq("mesa_id", mesaId)
+      .neq("estado", "pagado")
+      .order("created_at", { ascending: true });
+
+    if (error || !data) return [];
+    return data as Consumo[];
+  }
+
+  // Actualizar deuda de una mesa en el estado local
+  async function refreshMesaDebt(mesaId: string) {
+    const { data, error } = await insforgeClient.database
+      .from("mesas_deuda")
+      .select("*")
+      .eq("id", mesaId)
+      .single();
+
+    if (!error && data) {
+      setMesas((prev) =>
+        prev.map((m) =>
+          m.id === mesaId
+            ? { ...m, deuda_pendiente: data.deuda_pendiente, items_pendientes: data.items_pendientes }
+            : m
+        )
+      );
+    }
+  }
+
+  // Funciones para cuentas separadas
+  function toggleConsumoSelection(consumoId: string) {
+    setSelectedConsumos((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(consumoId)) {
+        newSet.delete(consumoId);
+      } else {
+        newSet.add(consumoId);
+      }
+      return newSet;
+    });
+  }
+
+  function selectAllConsumos() {
+    setSelectedConsumos(new Set(mesaConsumos.map((c) => c.id)));
+  }
+
+  function clearConsumoSelection() {
+    setSelectedConsumos(new Set());
+  }
+
+  async function createPartialInvoice() {
+    if (!selectedMesa || selectedConsumos.size === 0) {
+      alert("Selecciona al menos un item para cobrar");
+      return;
+    }
+
+    setCharging(true);
+
+    // Obtener los consumos seleccionados
+    const consumosToInvoice = mesaConsumos.filter((c) =>
+      selectedConsumos.has(c.id)
+    );
+
+    // Agrupar items por plato_id para la factura
+    const groupedItems = consumosToInvoice.reduce((acc, consumo) => {
+      const key = consumo.plato_id;
+      if (!acc[key]) {
+        acc[key] = {
+          plato_id: consumo.plato_id,
+          nombre: consumo.nombre,
+          cantidad: 0,
+          precio_unitario: consumo.precio_unitario,
+          subtotal: 0,
+        };
+      }
+      acc[key].cantidad += consumo.cantidad;
+      acc[key].subtotal += consumo.subtotal;
+      return acc;
+    }, {} as Record<number, any>);
+
+    const facturaItems = Object.values(groupedItems);
+
+    // Calcular totales
+    const subtotal = consumosToInvoice.reduce((sum, c) => sum + Number(c.subtotal), 0);
+    const itbis = subtotal * ITBIS;
+    const total = subtotal + itbis;
+
+    // Crear factura parcial
+    const { data: factura, error: facturaError } = await insforgeClient.database
+      .from("facturas")
+      .insert([
+        {
+          mesa_id: selectedMesa.id,
+          mesa_numero: selectedMesa.numero,
+          metodo_pago: paymentMethod,
+          estado: "pagada",
+          subtotal,
+          itbis,
+          propina: 0,
+          total,
+          items: facturaItems,
+          notas: `Cuenta parcial (${selectedConsumos.size} items)`,
+          pagada_at: new Date().toISOString(),
+        },
+      ])
+      .select()
+      .single();
+
+    if (facturaError || !factura) {
+      console.error("Error al crear factura parcial:", facturaError);
+      alert(`Error al procesar el pago: ${facturaError?.message || "Error desconocido"}`);
+      setCharging(false);
+      return;
+    }
+
+    // Imprimir factura térmica
+    await printFactura(factura.id, factura.numero_factura);
+
+    // Marcar SOLO los consumos seleccionados como pagados
+    const consumoIds = Array.from(selectedConsumos);
+    const { error: updateError } = await insforgeClient.database
+      .from("consumos")
+      .update({
+        estado: "pagado",
+        factura_id: factura.id,
+        updated_at: new Date().toISOString(),
+      })
+      .in("id", consumoIds);
+
+    if (updateError) {
+      console.error("Error al marcar consumos como pagados:", updateError);
+    }
+
+    // Limpiar selección actual
+    const clearedIds = Array.from(selectedConsumos);
+    setSelectedConsumos(new Set());
+
+    // Recargar consumos restantes
+    const updatedConsumos = await loadTableConsumption(selectedMesa.id);
+    setMesaConsumos(updatedConsumos);
+    await refreshMesaDebt(selectedMesa.id);
+
+    setCharging(false);
+
+    // Mostrar éxito y decidir si cerrar o seguir abierto
+    if (updatedConsumos.length === 0) {
+      // No quedan más items, cerrar todo
+      setSplitMode(false);
+      setShowPaymentModal(false);
+      setChargeOk(true);
+      setTimeout(() => setChargeOk(false), 3000);
+    } else {
+      // Quedan items pendientes, mantener modal abierto
+      alert(`✅ Cuenta parcial cobrada (${clearedIds.length} items).\n\nQuedan ${updatedConsumos.length} items pendientes por cobrar.`);
+    }
+  }
+
+  function splitConsumosEqually() {
+    if (mesaConsumos.length === 0) return;
+
+    const itemsPerPerson = Math.ceil(mesaConsumos.length / splitParts);
+
+    // Distribuir items equitativamente
+    const newSelection = new Set<string>();
+    mesaConsumos.forEach((consumo, index) => {
+      if (index < itemsPerPerson) {
+        newSelection.add(consumo.id);
+      }
+    });
+
+    setSelectedConsumos(newSelection);
+  }
+
+  // Calcular totales basados en selección
+  function calculateTotals() {
+    const consumosToBill = splitMode && selectedConsumos.size > 0
+      ? mesaConsumos.filter((c) => selectedConsumos.has(c.id))
+      : mesaConsumos;
+
+    const subtotal = consumosToBill.reduce((sum, c) => sum + Number(c.subtotal), 0);
+    const itbis = subtotal * ITBIS;
+    const total = subtotal + itbis;
+
+    return { subtotal, itbis, total };
+  }
+
+  async function printFactura(facturaId: string, numeroFactura: number) {
+    // Obtener detalles de la factura
+    const { data: factura, error: facturaError } = await insforgeClient.database
+      .from("facturas")
+      .select("*")
+      .eq("id", facturaId)
+      .single();
+
+    if (facturaError || !factura) {
+      console.error("Error al obtener factura:", facturaError);
+      return;
+    }
+
+    // Obtener configuración del negocio
+    const { data: config } = await insforgeClient.database
+      .from("configuracion")
+      .select("valor")
+      .eq("clave", "nombre_empresa")
+      .limit(1);
+
+    const empresaNombre = config?.[0]?.valor || "CyberBistro";
+
+    // Generar HTML de la factura térmica
+    const itemsHtml = factura.items
+      .map((item: any) => `
+        <tr>
+          <td style="padding:2px 0">${item.cantidad}x ${item.nombre}</td>
+          <td style="text-align:right;padding:2px 0">RD$ ${Number(item.precio_unitario).toFixed(2)}</td>
+        </tr>
+      `)
+      .join("");
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Factura #${String(numeroFactura).padStart(6, "0")}</title>
+  <style>
+    @page { size: 80mm auto; margin: 2mm; }
+    body {
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      width: 76mm;
+      margin: 0;
+      padding: 2mm;
+    }
+    h1 { text-align: center; font-size: 14px; margin: 0 0 2px; font-weight: bold; }
+    .center { text-align: center; }
+    .divider { border: none; border-top: 1px dashed #000; margin: 4px 0; }
+    .double-divider { border: none; border-top: 3px double #000; margin: 6px 0; }
+    table { width: 100%; border-collapse: collapse; }
+    .header-row td { padding: 1px 0; font-size: 10px; }
+    .total { font-weight: bold; font-size: 13px; }
+    .footer { text-align: center; font-size: 9px; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <h1>${empresaNombre}</h1>
+  <div class="center" style="font-size: 10px;">RNC: 12345678901</div>
+  <div class="divider"></div>
+  <table>
+    <tr class="header-row">
+      <td>Factura:</td>
+      <td style="text-align:right;">#${String(numeroFactura).padStart(6, "0")}</td>
+    </tr>
+    <tr class="header-row">
+      <td>Fecha:</td>
+      <td style="text-align:right;">${new Date(factura.pagada_at || factura.created_at).toLocaleString("es-DO")}</td>
+    </tr>
+    <tr class="header-row">
+      <td>Mesa:</td>
+      <td style="text-align:right;">${factura.mesa_numero}</td>
+    </tr>
+    <tr class="header-row">
+      <td>Método:</td>
+      <td style="text-align:right;">${factura.metodo_pago.toUpperCase()}</td>
+    </tr>
+  </table>
+
+  <div class="double-divider"></div>
+
+  <table>
+    <thead>
+      <tr style="border-bottom: 1px solid #000;">
+        <th style="text-align:left; padding: 4px 0;">CANT.</th>
+        <th style="text-align:left; padding: 4px 0;">DESCRIPCIÓN</th>
+        <th style="text-align:right; padding: 4px 0;">PRECIO</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${factura.items.map((item: any) => `
+        <tr>
+          <td style="padding: 2px 0;">${item.cantidad}</td>
+          <td style="padding: 2px 0;">${item.nombre}</td>
+          <td style="text-align:right; padding: 2px 0;">RD$ ${Number(item.subtotal).toFixed(2)}</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+
+  <div class="double-divider"></div>
+
+  <table>
+    <tr>
+      <td>Subtotal:</td>
+      <td style="text-align:right;">RD$ ${Number(factura.subtotal).toFixed(2)}</td>
+    </tr>
+    <tr>
+      <td>ITBIS (18%):</td>
+      <td style="text-align:right;">RD$ ${Number(factura.itbis).toFixed(2)}</td>
+    </tr>
+    <tr class="total">
+      <td>TOTAL:</td>
+      <td style="text-align:right;">RD$ ${Number(factura.total).toFixed(2)}</td>
+    </tr>
+  </table>
+
+  ${factura.notas ? `<div class="divider"></div><div style="font-size: 10px;"><b>Nota:</b> ${factura.notas}</div>` : ""}
+
+  <div class="double-divider"></div>
+
+  <div class="footer">
+    <div>¡Gracias por su visita!</div>
+    <div style="margin-top: 2px;">Exonerase de valor según Ley 253-12</div>
+  </div>
+
+  <div class="divider"></div>
+  <div class="center" style="font-size: 8px;">
+    ${new Date().toLocaleString("es-DO")}
+  </div>
+
+  <script>window.onload = function() { window.print(); setTimeout(function(){ window.close(); }, 500); }</script>
+</body>
+</html>`;
+
+    const w = window.open("", "_blank", "width=340,height=700");
+    if (w) {
+      w.document.write(html);
+      w.document.close();
+    }
+  }
+
+
+
+
   async function sendToKitchen() {
     if (!selectedMesa || cart.length === 0) return;
     setSending(true);
     setKitchenClosed(false);
 
-    // Split cart: items that go to kitchen vs items served directly
+    // Separar items: cocina vs directo
     const kitchenItems = cart.filter((i) => i.plato.va_a_cocina !== false);
+    const directItems = cart.filter((i) => i.plato.va_a_cocina === false);
 
+    let comandaId: string | null = null;
+
+    // Crear comanda para items de cocina
     if (kitchenItems.length > 0) {
       const { data: estadoData } = await insforgeClient.database
         .from("cocina_estado")
@@ -163,7 +584,7 @@ export function Dashboard() {
         precio: i.plato.precio,
       }));
 
-      const { error } = await insforgeClient.database.from("comandas").insert([
+      const { data, error } = await insforgeClient.database.from("comandas").insert([
         {
           mesa_id: selectedMesa.id,
           mesa_numero: selectedMesa.numero,
@@ -171,95 +592,218 @@ export function Dashboard() {
           items,
           notas: null,
         },
-      ]);
+      ]).select().single();
 
       if (error) {
+        console.error("Error al crear comanda:", error);
+        alert(`Error al crear comanda: ${error.message}`);
         setSending(false);
         return;
       }
+
+      comandaId = data?.id || null;
     }
 
+    // Crear consumos para TODOS los items (cocina + directo)
+    const consumosToInsert = [
+      // Items de cocina
+      ...kitchenItems.map((i) => ({
+        mesa_id: selectedMesa.id,
+        comanda_id: comandaId,
+        plato_id: i.plato.id,
+        nombre: i.plato.nombre,
+        cantidad: i.cantidad,
+        precio_unitario: i.plato.precio,
+        subtotal: i.plato.precio * i.cantidad,
+        tipo: 'cocina' as const,
+        estado: 'enviado_cocina' as const,
+      })),
+      // Items directos (bebidas, etc)
+      ...directItems.map((i) => ({
+        mesa_id: selectedMesa.id,
+        comanda_id: null,
+        plato_id: i.plato.id,
+        nombre: i.plato.nombre,
+        cantidad: i.cantidad,
+        precio_unitario: i.plato.precio,
+        subtotal: i.plato.precio * i.cantidad,
+        tipo: 'directo' as const,
+        estado: 'entregado' as const, // Los items directos ya están entregados
+      })),
+    ];
+
+    const { error: consumosError } = await insforgeClient.database
+      .from("consumos")
+      .insert(consumosToInsert);
+
+    if (consumosError) {
+      console.error("Error al crear consumos:", consumosError);
+      alert(`Error al registrar consumos: ${consumosError.message}`);
+      setSending(false);
+      return;
+    }
+
+    // Limpiar SOLO el carrito (todo fue enviado)
     setCart([]);
     setSentOk(true);
     setTimeout(() => setSentOk(false), 3000);
     setSending(false);
+
+    // Actualizar deuda de la mesa
+    await refreshMesaDebt(selectedMesa.id);
+  }
+
+  async function openPaymentModal() {
+    if (selectedMesa) {
+      // Hay mesa seleccionada, abrir modal de pago normal
+      // Cargar consumos de la mesa
+      const consumos = await loadTableConsumption(selectedMesa.id);
+      setMesaConsumos(consumos);
+      setShowPaymentModal(true);
+      return;
+    }
+
+    // No hay mesa seleccionada
+    if (isTakeout) {
+      // Modo para llevar activado
+      if (cart.length === 0) {
+        alert("No hay items en el carrito para cobrar.");
+        return;
+      }
+      // Abrir modal para llevar
+      setShowPaymentModal(true);
+      return;
+    }
+
+    // No hay mesa seleccionada y no es takeout
+    alert("⚠️ No hay ninguna mesa seleccionada.\n\n• Seleccioná una mesa, o\n• Activá 'Para llevar' para cobrar sin mesa");
   }
 
   async function createInvoice() {
-    if (!selectedMesa || cart.length === 0) return;
+    let consumosToBill: typeof mesaConsumos | typeof cart;
+
+    if (selectedMesa) {
+      // Cobrar con mesa seleccionada - usar consumos
+      if (mesaConsumos.length === 0) {
+        alert("No hay consumos pendientes para cobrar");
+        return;
+      }
+      consumosToBill = mesaConsumos;
+    } else {
+      // Cobrar sin mesa - usar carrito actual
+      if (cart.length === 0) {
+        alert("No hay items para cobrar");
+        return;
+      }
+
+      // Convertir cart a formato similar a consumos
+      consumosToBill = cart.map((item) => ({
+        id: crypto.randomUUID(), // ID temporal
+        mesa_id: null,
+        comanda_id: null,
+        plato_id: item.plato.id,
+        nombre: item.plato.nombre,
+        cantidad: item.cantidad,
+        precio_unitario: item.plato.precio,
+        subtotal: item.plato.precio * item.cantidad,
+        tipo: item.plato.va_a_cocina !== false ? 'cocina' : 'directo',
+        estado: 'pagado' as const,
+        factura_id: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }));
+    }
+
     setCharging(true);
 
-    // Separar items: cocina vs directo
-    const kitchenItems = cart.filter((i) => i.plato.va_a_cocina !== false);
-
-    // Enviar a cocina si hay items que requieren preparación
-    if (kitchenItems.length > 0) {
-      const { data: estadoData } = await insforgeClient.database
-        .from("cocina_estado")
-        .select("activa")
-        .limit(1);
-
-      if (estadoData?.[0]?.activa === false) {
-        setKitchenClosed(true);
-        setCharging(false);
-        return;
+    // Agrupar items por plato_id para la factura
+    const groupedItems = consumosToBill.reduce((acc, consumo) => {
+      const key = consumo.plato_id;
+      if (!acc[key]) {
+        acc[key] = {
+          plato_id: consumo.plato_id,
+          nombre: consumo.nombre,
+          cantidad: 0,
+          precio_unitario: consumo.precio_unitario,
+          subtotal: 0,
+        };
       }
+      acc[key].cantidad += consumo.cantidad;
+      acc[key].subtotal += consumo.subtotal;
+      return acc;
+    }, {} as Record<number, any>);
 
-      const items = kitchenItems.map((i) => ({
-        nombre: i.plato.nombre,
-        cantidad: i.cantidad,
-        precio: i.plato.precio,
-      }));
+    const facturaItems = Object.values(groupedItems);
 
-      const { error: cocinaError } = await insforgeClient.database
-        .from("comandas")
-        .insert([
-          {
-            mesa_id: selectedMesa.id,
-            mesa_numero: selectedMesa.numero,
-            estado: "pendiente",
-            items,
-            notas: null,
-          },
-        ]);
+    // Calcular totales
+    const subtotal = consumosToBill.reduce((sum, c) => sum + Number(c.subtotal), 0);
+    const itbis = subtotal * ITBIS;
+    const total = subtotal + itbis;
 
-      if (cocinaError) {
-        setCharging(false);
-        return;
-      }
+    // Crear factura (con o sin mesa según corresponda)
+    const facturaData: any = {
+      metodo_pago: paymentMethod,
+      estado: "pagada",
+      subtotal,
+      itbis,
+      propina: 0,
+      total,
+      items: facturaItems,
+      pagada_at: new Date().toISOString(),
+    };
+
+    // Agregar info de mesa solo si existe
+    if (selectedMesa) {
+      facturaData.mesa_id = selectedMesa.id;
+      facturaData.mesa_numero = selectedMesa.numero;
+      facturaData.notas = `Mesa ${selectedMesa.numero}`;
+    } else {
+      facturaData.mesa_id = null;
+      facturaData.mesa_numero = null;
+      facturaData.notas = "Para llevar";
     }
 
-    // Crear factura con todos los items
-    const items = cart.map((i) => ({
-      plato_id: i.plato.id,
-      nombre: i.plato.nombre,
-      cantidad: i.cantidad,
-      precio_unitario: i.plato.precio,
-      subtotal: i.plato.precio * i.cantidad,
-    }));
+    const { data: factura, error: facturaError } = await insforgeClient.database
+      .from("facturas")
+      .insert([facturaData])
+      .select()
+      .single();
 
-    const { error } = await insforgeClient.database.from("facturas").insert([
-      {
-        mesa_id: selectedMesa.id,
-        mesa_numero: selectedMesa.numero,
-        metodo_pago: paymentMethod,
-        estado: "pagada",
-        subtotal,
-        itbis,
-        propina: 0,
-        total,
-        items,
-        pagada_at: new Date().toISOString(),
-      },
-    ]);
-
-    if (!error) {
-      setCart([]);
-      setChargeOk(true);
-      setTimeout(() => setChargeOk(false), 3000);
-      setShowPaymentModal(false);
+    if (facturaError || !factura) {
+      console.error("Error al crear factura:", facturaError);
+      alert(`Error al procesar el pago: ${facturaError?.message || "Error desconocido"}`);
+      setCharging(false);
+      return;
     }
 
+    // Imprimir factura térmica
+    await printFactura(factura.id, factura.numero_factura);
+
+    // Si había mesa seleccionada, marcar consumos como pagados
+    if (selectedMesa) {
+      const consumoIds = consumosToBill.map((c) => c.id);
+      const { error: updateError } = await insforgeClient.database
+        .from("consumos")
+        .update({
+          estado: "pagado",
+          factura_id: factura.id,
+          updated_at: new Date().toISOString(),
+        })
+        .in("id", consumoIds);
+
+      if (updateError) {
+        console.error("Error al marcar consumos como pagados:", updateError);
+      }
+
+      await refreshMesaDebt(selectedMesa.id);
+    }
+
+    // Limpiar y mostrar éxito
+    setCart([]);
+    setMesaConsumos([]);
+    setChargeOk(true);
+    setTimeout(() => setChargeOk(false), 3000);
+    setShowPaymentModal(false);
     setCharging(false);
   }
 
@@ -434,11 +978,15 @@ export function Dashboard() {
       <div className="w-full lg:w-[340px] shrink-0 backdrop-blur-[12px] bg-[rgba(32,31,31,0.6)] rounded-[16px] border border-[rgba(72,72,71,0.1)] shadow-[0px_25px_50px_-12px_rgba(0,0,0,0.25)] flex flex-col lg:self-start lg:sticky lg:top-0 lg:max-h-[calc(100vh-160px)]">
         {/* Header */}
         <div className="border-b border-[rgba(72,72,71,0.2)] px-[24px] pt-[20px] pb-[20px] shrink-0">
-          <div className="flex items-center justify-between">
+          {/* Título */}
+          <div className="text-center">
             <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px] uppercase">
               Pedido Actual
             </span>
+          </div>
 
+          {/* Botones */}
+          <div className="flex items-center justify-center gap-[12px] mt-[16px]">
             {/* Mesa selector */}
             <div className="relative" ref={mesaRef}>
               <button
@@ -475,39 +1023,118 @@ export function Dashboard() {
                   </span>
                   <div className="grid grid-cols-4 gap-[6px] max-h-[200px] overflow-y-auto">
                     {mesas.map((m) => (
-                      <button
-                        key={m.id}
-                        onClick={() => {
-                          setSelectedMesa(m);
-                          setMesaOpen(false);
-                        }}
-                        className="rounded-[8px] py-[8px] font-['Space_Grotesk',sans-serif] font-bold text-[13px] cursor-pointer border-none transition-all"
-                        style={{
-                          backgroundColor:
-                            selectedMesa?.id === m.id
-                              ? "#ff906d"
-                              : m.estado === "ocupada"
-                              ? "rgba(255,113,108,0.15)"
-                              : "rgba(38,38,38,0.8)",
-                          color:
-                            selectedMesa?.id === m.id
-                              ? "#460f00"
-                              : m.estado === "ocupada"
-                              ? "#ff716c"
-                              : "white",
-                          border:
-                            m.estado === "libre"
-                              ? "1px solid rgba(89,238,80,0.2)"
-                              : "1px solid transparent",
-                        }}
-                      >
-                        {String(m.numero).padStart(2, "0")}
-                      </button>
+                      <div key={m.id} className="relative group">
+                        <button
+                          onClick={async () => {
+                            await markMesaAsOccupied(m);
+                            setSelectedMesa(m);
+                            setMesaOpen(false);
+                            await refreshMesaDebt(m.id);
+                          }}
+                          className="w-full rounded-[8px] py-[8px] font-['Space_Grotesk',sans-serif] font-bold text-[13px] cursor-pointer border-none transition-all relative"
+                          style={{
+                            backgroundColor:
+                              selectedMesa?.id === m.id
+                                ? "#ff906d"
+                                : m.estado === "ocupada"
+                                ? "rgba(255,113,108,0.15)"
+                                : "rgba(38,38,38,0.8)",
+                            color:
+                              selectedMesa?.id === m.id
+                                ? "#460f00"
+                                : m.estado === "ocupada"
+                                ? "#ff716c"
+                                : "white",
+                            border:
+                              m.estado === "libre"
+                                ? "1px solid rgba(89,238,80,0.2)"
+                                : "1px solid transparent",
+                          }}
+                        >
+                          {String(m.numero).padStart(2, "0")}
+
+                          {/* Indicador de deuda */}
+                          {m.deuda_pendiente && m.deuda_pendiente > 0 && (
+                            <div
+                              className="absolute -top-1 -right-1 rounded-full flex items-center justify-center text-[8px] font-bold text-white"
+                              style={{
+                                backgroundColor: "#ff4444",
+                                minWidth: "16px",
+                                minHeight: "16px",
+                              }}
+                              title={`Deuda: RD$ ${m.deuda_pendiente.toFixed(2)}`}
+                            >
+                              !
+                            </div>
+                          )}
+
+                          {/* Indicador de items pendientes */}
+                          {m.items_pendientes && m.items_pendientes > 0 && (
+                            <div className="absolute -bottom-1 -right-1 rounded-full bg-[#59ee50] text-[#0e0e0e] text-[8px] font-bold px-1">
+                              {m.items_pendientes}
+                            </div>
+                          )}
+                        </button>
+
+                        {/* Botón de acciones (click derecho o hover) */}
+                        <div className="absolute inset-0 bg-black/80 rounded-[8px] opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-[4px]">
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              const consumos = await loadTableConsumption(m.id);
+                              setMesaConsumos(consumos);
+                              setShowConsumosModal(true);
+                            }}
+                            className="text-[10px] px-2 py-1 bg-[#262626] rounded text-white hover:bg-[#333] border border-[rgba(255,255,255,0.1)]"
+                            title="Ver consumos"
+                          >
+                            👁️
+                          </button>
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              await freeMesa(m);
+                            }}
+                            className="text-[10px] px-2 py-1 bg-[#ff4444] rounded text-white hover:bg-[#ff6666] border border-[rgba(255,255,255,0.1)]"
+                            title="Liberar mesa"
+                          >
+                            ⭕
+                          </button>
+                        </div>
+                      </div>
                     ))}
                   </div>
                 </div>
               )}
             </div>
+
+            {/* Para llevar toggle */}
+            <button
+              onClick={() => {
+                setIsTakeout(!isTakeout);
+                if (selectedMesa && !isTakeout) {
+                  // Si está activando takeoff y hay mesa seleccionada, deseleccionar
+                  setSelectedMesa(null);
+                }
+              }}
+              className={`flex items-center gap-[8px] rounded-[6px] px-[10px] py-[4px] cursor-pointer border-none transition-all ${
+                isTakeout ? "bg-[#59ee50]" : "bg-[rgba(72,72,71,0.3)]"
+              }`}
+            >
+              <svg className="w-[14px] h-[14px]" fill="none" viewBox="0 0 15 13.5">
+                <path
+                  d={svgPaths.p18098d80}
+                  fill={isTakeout ? "#0e0e0e" : "#adaaaa"}
+                />
+              </svg>
+              <span
+                className={`font-['Inter',sans-serif] font-bold text-[10px] uppercase ${
+                  isTakeout ? "text-[#0e0e0e]" : "text-[#adaaaa]"
+                }`}
+              >
+                Para llevar
+              </span>
+            </button>
           </div>
 
           {kitchenClosed && (
@@ -650,12 +1277,15 @@ export function Dashboard() {
 
             {/* Action buttons */}
             <div className="grid grid-cols-2 gap-[10px]">
-              <button className="flex gap-[6px] items-center justify-center py-[12px] rounded-[12px] border-2 border-[#59ee50] bg-transparent cursor-pointer">
+              <button
+                onClick={() => window.location.hash = "/billing"}
+                className="flex gap-[6px] items-center justify-center py-[12px] rounded-[12px] border-2 border-[#59ee50] bg-transparent cursor-pointer hover:bg-[rgba(89,238,80,0.1)] transition-colors"
+              >
                 <svg className="w-[13px] h-[12px]" fill="none" viewBox="0 0 15 13.5">
                   <path d={svgPaths.p18098d80} fill="#59EE50" />
                 </svg>
                 <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#59ee50] text-[11px] tracking-[1px] uppercase">
-                  Imprimir
+                  Venta
                 </span>
               </button>
               <button
@@ -677,9 +1307,8 @@ export function Dashboard() {
             </div>
 
             <button
-              onClick={() => selectedMesa && setShowPaymentModal(true)}
-              disabled={!selectedMesa}
-              className="w-full flex gap-[10px] items-center justify-center py-[14px] rounded-[12px] bg-[#ff906d] border-none cursor-pointer disabled:opacity-50 transition-opacity"
+              onClick={openPaymentModal}
+              className="w-full flex gap-[10px] items-center justify-center py-[14px] rounded-[12px] bg-[#ff906d] border-none cursor-pointer transition-opacity hover:bg-[#ff784d]"
             >
               <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#5b1600] text-[14px] tracking-[2px] uppercase">
                 Cobrar {RD(total)}
@@ -791,12 +1420,6 @@ export function Dashboard() {
             {/* Actions */}
             <div className="flex gap-[10px]">
               <button
-                onClick={printSplit}
-                className="flex-1 bg-[#262626] border border-[rgba(72,72,71,0.3)] rounded-[12px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#adaaaa] text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:border-[rgba(255,144,109,0.3)] hover:text-white transition-colors"
-              >
-                Imprimir comprobantes
-              </button>
-              <button
                 onClick={() => setSplitOpen(false)}
                 className="flex-1 bg-[#ff906d] rounded-[12px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[12px] tracking-[0.5px] uppercase cursor-pointer border-none"
               >
@@ -808,33 +1431,212 @@ export function Dashboard() {
       )}
 
       {/* PAGO MODAL */}
-      {showPaymentModal && (
+      {showPaymentModal && selectedMesa && (() => {
+        const { subtotal: calcSubtotal, itbis: calcItbis, total: calcTotal } = calculateTotals();
+        return (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center"
           style={{ backgroundColor: "rgba(0,0,0,0.7)" }}
           onClick={(e) => { if (e.target === e.currentTarget) setShowPaymentModal(false); }}
         >
-          <div className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[20px] p-[28px] w-[400px] flex flex-col gap-[20px] shadow-xl">
+          <div className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[20px] p-[28px] w-[700px] max-h-[90vh] overflow-y-auto flex flex-col gap-[20px] shadow-xl">
             <div className="flex items-center justify-between">
-              <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[20px]">
-                Cobrar
-              </span>
+              <div>
+                <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[20px]">
+                  Cobrar Mesa {selectedMesa.numero}
+                </span>
+                {mesaConsumos.length > 0 && (
+                  <div className="text-[#adaaaa] text-[12px] mt-1">
+                    {mesaConsumos.length} items pendientes
+                  </div>
+                )}
+              </div>
               <button
-                onClick={() => setShowPaymentModal(false)}
+                onClick={() => {
+                  setShowPaymentModal(false);
+                  setSplitMode(false);
+                  setSelectedConsumos(new Set());
+                }}
                 className="text-[#6b7280] bg-transparent border-none cursor-pointer text-[20px] hover:text-white transition-colors leading-none"
               >
                 ×
               </button>
             </div>
 
-            {/* Total */}
-            <div className="bg-[#131313] rounded-[12px] p-[16px] flex justify-between items-center">
-              <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[12px] tracking-[0.8px] uppercase">
-                Total a cobrar
-              </span>
-              <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[24px]">
-                {RD(total)}
-              </span>
+            {/* Toggle división de cuenta */}
+            {mesaConsumos.length > 1 && (
+              <div className="flex items-center justify-between bg-[#262626] rounded-[12px] p-[12px]">
+                <div className="flex items-center gap-[8px]">
+                  <span className="text-white text-[14px]">🔄</span>
+                  <span className="font-['Inter',sans-serif] text-white text-[13px]">
+                    Dividir cuenta
+                  </span>
+                  <span className="text-[#adaaaa] text-[11px]">(solo si el cliente lo solicita)</span>
+                </div>
+                <button
+                  onClick={() => {
+                    setSplitMode(!splitMode);
+                    if (!splitMode) {
+                      setSelectedConsumos(new Set());
+                    }
+                  }}
+                  className={`px-4 py-2 rounded-[8px] font-['Inter',sans-serif] font-bold text-[12px] transition-all ${
+                    splitMode
+                      ? "bg-[#ff906d] text-[#5b1600]"
+                      : "bg-[#383838] text-[#adaaaa]"
+                  }`}
+                >
+                  {splitMode ? "Activado" : "Activar"}
+                </button>
+              </div>
+            )}
+
+            {/* Controles de división */}
+            {splitMode && mesaConsumos.length > 0 && (
+              <div className="bg-[#262626] rounded-[12px] p-[12px] flex flex-col gap-[12px]">
+                <div className="flex items-center justify-between">
+                  <span className="font-['Inter',sans-serif] text-white text-[13px]">
+                    Selecciona items que va a pagar esta persona
+                  </span>
+                  <div className="flex gap-[8px]">
+                    <button
+                      onClick={selectAllConsumos}
+                      className="px-3 py-1 bg-[#383838] hover:bg-[#444] text-white text-[11px] rounded-[6px] transition-colors"
+                    >
+                      Todos
+                    </button>
+                    <button
+                      onClick={clearConsumoSelection}
+                      className="px-3 py-1 bg-[#383838] hover:bg-[#444] text-white text-[11px] rounded-[6px] transition-colors"
+                    >
+                      Limpiar
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-[12px]">
+                  <span className="text-[#adaaaa] text-[12px]">Dividir entre:</span>
+                  <div className="flex items-center gap-[8px]">
+                    <button
+                      onClick={() => setSplitParts((p) => Math.max(2, p - 1))}
+                      className="w-[32px] h-[32px] bg-[#383838] hover:bg-[#444] text-white rounded-[8px] flex items-center justify-center font-bold text-[14px] transition-colors"
+                    >
+                      −
+                    </button>
+                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[16px] min-w-[40px] text-center">
+                      {splitParts}
+                    </span>
+                    <button
+                      onClick={() => setSplitParts((p) => Math.min(12, p + 1))}
+                      className="w-[32px] h-[32px] bg-[#383838] hover:bg-[#444] text-white rounded-[8px] flex items-center justify-center font-bold text-[14px] transition-colors"
+                    >
+                      +
+                    </button>
+                    <span className="text-[#adaaaa] text-[12px]">personas</span>
+                  </div>
+                  <button
+                    onClick={splitConsumosEqually}
+                    className="ml-auto px-4 py-2 bg-[#59ee50] hover:bg-[#4cd444] text-[#0e0e0e] text-[12px] font-bold rounded-[8px] transition-colors"
+                  >
+                    Dividir equitativamente
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Lista de consumos (para seleccionar en modo split) */}
+            {splitMode && mesaConsumos.length > 0 && (
+              <div className="max-h-[200px] overflow-y-auto flex flex-col gap-[6px]">
+                {mesaConsumos.map((consumo) => {
+                  const isSelected = selectedConsumos.has(consumo.id);
+                  return (
+                    <div
+                      key={consumo.id}
+                      onClick={() => toggleConsumoSelection(consumo.id)}
+                      className={`rounded-[8px] p-[10px] flex items-center justify-between transition-all cursor-pointer ${
+                        isSelected
+                          ? "bg-[#ff906d]/20 border-2 border-[#ff906d]"
+                          : "bg-[#262626] border-2 border-transparent hover:border-[rgba(255,144,109,0.3)]"
+                      }`}
+                    >
+                      <div className="flex items-center gap-[10px]">
+                        <div
+                          className={`w-[18px] h-[18px] rounded-[5px] border-2 flex items-center justify-center transition-all ${
+                            isSelected
+                              ? "bg-[#ff906d] border-[#ff906d]"
+                              : "border-[#6b7280]"
+                          }`}
+                        >
+                          {isSelected && <span className="text-[#5b1600] text-[12px] font-bold">✓</span>}
+                        </div>
+                        <div>
+                          <div className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px]">
+                            {consumo.cantidad}× {consumo.nombre}
+                          </div>
+                          <div className="text-[#adaaaa] text-[11px]">
+                            RD$ {Number(consumo.precio_unitario).toFixed(2)} c/u
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[14px]">
+                          RD$ {Number(consumo.subtotal).toFixed(2)}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Totales */}
+            <div className="bg-[#131313] rounded-[12px] p-[14px] flex flex-col gap-[8px]">
+              {splitMode && selectedConsumos.size > 0 && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="font-['Inter',sans-serif] text-[#59ee50] text-[11px]">
+                      Seleccionado ({selectedConsumos.size} items)
+                    </span>
+                    <span className="font-['Inter',sans-serif] text-[#59ee50] text-[11px]">
+                      {RD(mesaConsumos.filter((c) => selectedConsumos.has(c.id)).reduce((sum, c) => sum + Number(c.subtotal), 0))}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">
+                      Restante ({mesaConsumos.length - selectedConsumos.size} items)
+                    </span>
+                    <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">
+                      {RD(mesaConsumos.filter((c) => !selectedConsumos.has(c.id)).reduce((sum, c) => sum + Number(c.subtotal), 0))}
+                    </span>
+                  </div>
+                  <div className="border-t border-[rgba(72,72,71,0.3)] my-[4px]"></div>
+                </>
+              )}
+
+              <div className="flex justify-between">
+                <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">
+                  Subtotal
+                </span>
+                <span className="font-['Inter',sans-serif] text-white text-[11px]">
+                  {RD(calcSubtotal)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">
+                  ITBIS (18%)
+                </span>
+                <span className="font-['Inter',sans-serif] text-white text-[11px]">
+                  {RD(calcItbis)}
+                </span>
+              </div>
+              <div className="border-t border-[rgba(72,72,71,0.15)] pt-[6px] flex justify-between">
+                <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[12px]">
+                  {splitMode && selectedConsumos.size > 0 ? "TOTAL PARCIAL" : "TOTAL"}
+                </span>
+                <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[14px]">
+                  {RD(calcTotal)}
+                </span>
+              </div>
             </div>
 
             {/* Método de pago */}
@@ -866,49 +1668,143 @@ export function Dashboard() {
               </div>
             </div>
 
-            {/* Resumen */}
-            <div className="bg-[#131313] rounded-[12px] p-[14px] flex flex-col gap-[6px]">
-              <div className="flex justify-between">
-                <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">
-                  Subtotal
-                </span>
-                <span className="font-['Inter',sans-serif] text-white text-[11px]">
-                  {RD(subtotal)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">
-                  ITBIS (18%)
-                </span>
-                <span className="font-['Inter',sans-serif] text-white text-[11px]">
-                  {RD(itbis)}
-                </span>
-              </div>
-              <div className="border-t border-[rgba(72,72,71,0.15)] pt-[6px] flex justify-between">
-                <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[12px]">
-                  TOTAL
-                </span>
-                <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[14px]">
-                  {RD(total)}
-                </span>
-              </div>
-            </div>
-
             {/* Actions */}
             <div className="flex gap-[10px]">
               <button
-                onClick={() => setShowPaymentModal(false)}
+                onClick={() => {
+                  setShowPaymentModal(false);
+                  setSplitMode(false);
+                  setSelectedConsumos(new Set());
+                }}
                 className="flex-1 bg-[#262626] border border-[rgba(72,72,71,0.3)] rounded-[12px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#adaaaa] text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:border-[rgba(255,144,109,0.3)] hover:text-white transition-colors"
               >
                 Cancelar
               </button>
+
+              {splitMode && selectedConsumos.size > 0 ? (
+                <button
+                  onClick={createPartialInvoice}
+                  disabled={charging}
+                  className="flex-1 bg-[#ff906d] rounded-[12px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#5b1600] text-[12px] tracking-[0.5px] uppercase cursor-pointer border-none disabled:opacity-50 hover:bg-[#ff784d] transition-opacity"
+                >
+                  {charging ? "Procesando..." : `Cobrar ${selectedConsumos.size} items`}
+                </button>
+              ) : (
+                <button
+                  onClick={createInvoice}
+                  disabled={charging}
+                  className="flex-1 bg-[#59ee50] rounded-[12px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#0e0e0e] text-[12px] tracking-[0.5px] uppercase cursor-pointer border-none disabled:opacity-50 transition-opacity"
+                >
+                  {charging ? "Procesando..." : "Confirmar Pago"}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+        );
+      })()}
+
+      {/* CONSUMOS MODAL */}
+      {showConsumosModal && selectedMesa && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ backgroundColor: "rgba(0,0,0,0.7)" }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowConsumosModal(false);
+          }}
+        >
+          <div className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[20px] p-[28px] w-[500px] max-h-[80vh] overflow-y-auto flex flex-col gap-[20px] shadow-xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[20px]">
+                  Consumos Mesa {selectedMesa.numero}
+                </span>
+                {mesaConsumos.length > 0 && (
+                  <div className="text-[#adaaaa] text-[12px] mt-1">
+                    Total pendiente: RD$ {mesaConsumos.reduce((sum, c) => sum + Number(c.subtotal), 0).toFixed(2)}
+                  </div>
+                )}
+              </div>
               <button
-                onClick={createInvoice}
-                disabled={charging}
-                className="flex-1 bg-[#59ee50] rounded-[12px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#0e0e0e] text-[12px] tracking-[0.5px] uppercase cursor-pointer border-none disabled:opacity-50 transition-opacity"
+                onClick={() => setShowConsumosModal(false)}
+                className="text-[#6b7280] bg-transparent border-none cursor-pointer text-[20px] hover:text-white transition-colors leading-none"
               >
-                {charging ? "Procesando..." : "Confirmar Pago"}
+                ×
               </button>
+            </div>
+
+            {mesaConsumos.length === 0 ? (
+              <div className="text-center py-[40px] text-[#adaaaa]">
+                No hay consumos pendientes
+              </div>
+            ) : (
+              <div className="flex flex-col gap-[8px]">
+                {mesaConsumos.map((consumo) => (
+                  <div
+                    key={consumo.id}
+                    className="bg-[#262626] rounded-[12px] p-[12px] flex items-center justify-between"
+                  >
+                    <div className="flex-1">
+                      <div className="flex items-center gap-[8px]">
+                        <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[14px]">
+                          {consumo.cantidad}× {consumo.nombre}
+                        </span>
+                        <span
+                          className={`text-[10px] px-2 py-0.5 rounded ${
+                            consumo.tipo === "cocina"
+                              ? "bg-[#ff906d]/20 text-[#ff906d]"
+                              : "bg-[#59ee50]/20 text-[#59ee50]"
+                          }`}
+                        >
+                          {consumo.tipo === "cocina" ? "🍳 Cocina" : "🥤 Directo"}
+                        </span>
+                        <span
+                          className={`text-[10px] px-2 py-0.5 rounded ${
+                            consumo.estado === "pagado"
+                              ? "bg-green-500/20 text-green-500"
+                              : consumo.estado === "entregado"
+                              ? "bg-blue-500/20 text-blue-500"
+                              : "bg-yellow-500/20 text-yellow-500"
+                          }`}
+                        >
+                          {consumo.estado}
+                        </span>
+                      </div>
+                      <div className="text-[#adaaaa] text-[12px] mt-1">
+                        {new Date(consumo.created_at).toLocaleTimeString("es-DO", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[16px]">
+                        RD$ {Number(consumo.subtotal).toFixed(2)}
+                      </div>
+                      <div className="text-[#adaaaa] text-[11px]">
+                        RD$ {Number(consumo.precio_unitario).toFixed(2)} c/u
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex gap-[10px] pt-[10px] border-t border-[rgba(72,72,71,0.3)]">
+              <button
+                onClick={() => setShowConsumosModal(false)}
+                className="flex-1 bg-[#262626] border border-[rgba(72,72,71,0.3)] rounded-[12px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#adaaaa] text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:border-[rgba(255,144,109,0.3)] hover:text-white transition-colors"
+              >
+                Cerrar
+              </button>
+              {mesaConsumos.length > 0 && (
+                <button
+                  onClick={openPaymentModal}
+                  className="flex-1 bg-[#ff906d] rounded-[12px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#5b1600] text-[12px] tracking-[0.5px] uppercase cursor-pointer border-none hover:bg-[#ff784d] transition-colors"
+                >
+                  Cobrar
+                </button>
+              )}
             </div>
           </div>
         </div>

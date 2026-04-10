@@ -116,11 +116,42 @@ export function Cocina() {
   async function toggleCocina() {
     setToggling(true);
     const newActiva = !cocinaActiva;
-    const { error } = await insforgeClient.database
+
+    // First, try to get the current record
+    const { data: existing, error: selectError } = await insforgeClient.database
       .from("cocina_estado")
-      .update({ activa: newActiva, changed_at: new Date().toISOString() })
-      .eq("id", 1);
-    if (!error) setCocinaActiva(newActiva);
+      .select("*")
+      .limit(1);
+
+    if (selectError) {
+      console.error("Error checking cocina_estado:", selectError);
+      alert("Error al verificar estado de cocina: " + selectError.message);
+      setToggling(false);
+      return;
+    }
+
+    let error;
+    if (existing && existing.length > 0) {
+      // Update existing record
+      const result = await insforgeClient.database
+        .from("cocina_estado")
+        .update({ activa: newActiva, changed_at: new Date().toISOString() })
+        .eq("id", existing[0].id);
+      error = result.error;
+    } else {
+      // Insert first record
+      const result = await insforgeClient.database
+        .from("cocina_estado")
+        .insert({ activa: newActiva, changed_at: new Date().toISOString() });
+      error = result.error;
+    }
+
+    if (error) {
+      console.error("Error updating cocina_estado:", error);
+      alert("Error al cambiar estado de cocina: " + error.message);
+    } else {
+      setCocinaActiva(newActiva);
+    }
     setToggling(false);
   }
 
