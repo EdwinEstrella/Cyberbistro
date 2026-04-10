@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "mcp__context7__*",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "mcp__insforge__*"
     ]
   },
   "enabledMcpjsonServers": [
