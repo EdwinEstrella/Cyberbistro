@@ -1,0 +1,1 @@
+export { Entregas } from "./components/Entregas";

@@ -151,21 +151,47 @@ function CartaPanel() {
     if (mode === "add") {
       const { data, error: err } = await insforgeClient.database
         .from("platos")
-        .insert([{ nombre: form.nombre.trim(), precio, categoria: form.categoria, disponible: form.disponible, va_a_cocina: form.va_a_cocina }])
+        .insert([{
+          nombre: form.nombre.trim(),
+          precio,
+          categoria: form.categoria,
+          disponible: form.disponible,
+          va_a_cocina: form.va_a_cocina
+        }])
         .select();
-      if (err) { setError("Error al guardar."); setSaving(false); return; }
-      if (data) setPlatos((prev) => [...prev, ...(data as Plato[])]);
+      if (err) {
+        console.error("Error al crear plato:", err);
+        setError(`Error: ${err.message || "No se pudo crear el plato"}`);
+        setSaving(false);
+        return;
+      }
+      if (data) {
+        setPlatos((prev) => [...prev, ...(data as Plato[])]);
+        setMode(null);
+        setSelectedId(null);
+      }
     } else if (mode === "edit" && selectedId) {
       const { error: err } = await insforgeClient.database
         .from("platos")
-        .update({ nombre: form.nombre.trim(), precio, categoria: form.categoria, disponible: form.disponible, va_a_cocina: form.va_a_cocina })
+        .update({
+          nombre: form.nombre.trim(),
+          precio,
+          categoria: form.categoria,
+          disponible: form.disponible,
+          va_a_cocina: form.va_a_cocina
+        })
         .eq("id", selectedId);
-      if (err) { setError("Error al guardar."); setSaving(false); return; }
+      if (err) {
+        console.error("Error al actualizar plato:", err);
+        setError(`Error: ${err.message || "No se pudo actualizar el plato"}`);
+        setSaving(false);
+        return;
+      }
       setPlatos((prev) => prev.map((p) => p.id === selectedId ? { ...p, nombre: form.nombre.trim(), precio, categoria: form.categoria, disponible: form.disponible, va_a_cocina: form.va_a_cocina } : p));
+      setMode(null);
+      setSelectedId(null);
     }
     setSaving(false);
-    setMode(null);
-    setSelectedId(null);
   }
 
   async function handleDelete(id: number) {

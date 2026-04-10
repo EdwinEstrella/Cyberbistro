@@ -5,6 +5,7 @@ import { Dashboard } from "../features/dashboard";
 import { Tables } from "../features/tables";
 import { Billing } from "../features/billing";
 import { Cocina } from "../features/cocina";
+import { Entregas } from "../features/entregas";
 import { Soporte } from "../features/soporte";
 import { Ajustes } from "../features/ajustes";
 
@@ -17,6 +18,7 @@ export const router = createHashRouter([
       { path: "/tables", Component: Tables },
       { path: "/billing", Component: Billing },
       { path: "/cocina", Component: Cocina },
+      { path: "/entregas", Component: Entregas },
       { path: "/soporte", Component: Soporte },
       { path: "/ajustes", Component: Ajustes },
     ],

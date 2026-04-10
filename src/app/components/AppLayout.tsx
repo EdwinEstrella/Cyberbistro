@@ -9,6 +9,7 @@ const sideNavItems = [
   { label: "Panel", icon: svgPaths.p20793584, viewBox: "0 0 18 18", path: "/dashboard" },
   { label: "Mesas", icon: svgPaths.p186f5ba0, viewBox: "0 0 18 18", path: "/tables" },
   { label: "Cocina", icon: svgPaths.p643d217, viewBox: "0 0 20 20", path: "/cocina" },
+  { label: "Entregas", icon: svgPaths.p18098d80, viewBox: "0 0 15 13.5", path: "/entregas" },
   { label: "Analíticas", icon: svgPaths.p30837e80, viewBox: "0 0 18 18", path: "/billing" },
   { label: "Soporte", icon: svgPaths.p18c14180, viewBox: "0 0 20 16", path: "/soporte" },
 ];

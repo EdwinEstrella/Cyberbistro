@@ -63,6 +63,10 @@ export function Dashboard() {
   const [sending, setSending] = useState(false);
   const [sentOk, setSentOk] = useState(false);
   const [kitchenClosed, setKitchenClosed] = useState(false);
+  const [charging, setCharging] = useState(false);
+  const [chargeOk, setChargeOk] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<"efectivo" | "tarjeta" | "digital">("efectivo");
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
   const mesaRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -179,6 +183,84 @@ export function Dashboard() {
     setSentOk(true);
     setTimeout(() => setSentOk(false), 3000);
     setSending(false);
+  }
+
+  async function createInvoice() {
+    if (!selectedMesa || cart.length === 0) return;
+    setCharging(true);
+
+    // Separar items: cocina vs directo
+    const kitchenItems = cart.filter((i) => i.plato.va_a_cocina !== false);
+
+    // Enviar a cocina si hay items que requieren preparación
+    if (kitchenItems.length > 0) {
+      const { data: estadoData } = await insforgeClient.database
+        .from("cocina_estado")
+        .select("activa")
+        .limit(1);
+
+      if (estadoData?.[0]?.activa === false) {
+        setKitchenClosed(true);
+        setCharging(false);
+        return;
+      }
+
+      const items = kitchenItems.map((i) => ({
+        nombre: i.plato.nombre,
+        cantidad: i.cantidad,
+        precio: i.plato.precio,
+      }));
+
+      const { error: cocinaError } = await insforgeClient.database
+        .from("comandas")
+        .insert([
+          {
+            mesa_id: selectedMesa.id,
+            mesa_numero: selectedMesa.numero,
+            estado: "pendiente",
+            items,
+            notas: null,
+          },
+        ]);
+
+      if (cocinaError) {
+        setCharging(false);
+        return;
+      }
+    }
+
+    // Crear factura con todos los items
+    const items = cart.map((i) => ({
+      plato_id: i.plato.id,
+      nombre: i.plato.nombre,
+      cantidad: i.cantidad,
+      precio_unitario: i.plato.precio,
+      subtotal: i.plato.precio * i.cantidad,
+    }));
+
+    const { error } = await insforgeClient.database.from("facturas").insert([
+      {
+        mesa_id: selectedMesa.id,
+        mesa_numero: selectedMesa.numero,
+        metodo_pago: paymentMethod,
+        estado: "pagada",
+        subtotal,
+        itbis,
+        propina: 0,
+        total,
+        items,
+        pagada_at: new Date().toISOString(),
+      },
+    ]);
+
+    if (!error) {
+      setCart([]);
+      setChargeOk(true);
+      setTimeout(() => setChargeOk(false), 3000);
+      setShowPaymentModal(false);
+    }
+
+    setCharging(false);
   }
 
   function printSplit() {
@@ -442,6 +524,13 @@ export function Dashboard() {
               </span>
             </div>
           )}
+          {chargeOk && (
+            <div className="mt-[8px] bg-[rgba(89,238,80,0.08)] border border-[rgba(89,238,80,0.2)] rounded-[8px] px-[10px] py-[6px]">
+              <span className="font-['Inter',sans-serif] text-[#59ee50] text-[11px]">
+                Factura generada correctamente.
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Cart items */}
@@ -588,6 +677,7 @@ export function Dashboard() {
             </div>
 
             <button
+              onClick={() => selectedMesa && setShowPaymentModal(true)}
               disabled={!selectedMesa}
               className="w-full flex gap-[10px] items-center justify-center py-[14px] rounded-[12px] bg-[#ff906d] border-none cursor-pointer disabled:opacity-50 transition-opacity"
             >
@@ -711,6 +801,113 @@ export function Dashboard() {
                 className="flex-1 bg-[#ff906d] rounded-[12px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[12px] tracking-[0.5px] uppercase cursor-pointer border-none"
               >
                 Listo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PAGO MODAL */}
+      {showPaymentModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ backgroundColor: "rgba(0,0,0,0.7)" }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowPaymentModal(false); }}
+        >
+          <div className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[20px] p-[28px] w-[400px] flex flex-col gap-[20px] shadow-xl">
+            <div className="flex items-center justify-between">
+              <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[20px]">
+                Cobrar
+              </span>
+              <button
+                onClick={() => setShowPaymentModal(false)}
+                className="text-[#6b7280] bg-transparent border-none cursor-pointer text-[20px] hover:text-white transition-colors leading-none"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Total */}
+            <div className="bg-[#131313] rounded-[12px] p-[16px] flex justify-between items-center">
+              <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[12px] tracking-[0.8px] uppercase">
+                Total a cobrar
+              </span>
+              <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[24px]">
+                {RD(total)}
+              </span>
+            </div>
+
+            {/* Método de pago */}
+            <div className="flex flex-col gap-[12px]">
+              <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
+                Método de pago
+              </span>
+              <div className="grid grid-cols-3 gap-[8px]">
+                {[
+                  { value: "efectivo" as const, label: "Efectivo", icon: "💵" },
+                  { value: "tarjeta" as const, label: "Tarjeta", icon: "💳" },
+                  { value: "digital" as const, label: "Digital", icon: "📱" },
+                ].map((method) => (
+                  <button
+                    key={method.value}
+                    onClick={() => setPaymentMethod(method.value)}
+                    className={`flex flex-col items-center gap-[8px] py-[12px] rounded-[12px] cursor-pointer border-none transition-all ${
+                      paymentMethod === method.value
+                        ? "bg-[#ff906d] text-[#5b1600]"
+                        : "bg-[#262626] text-white hover:bg-[#333]"
+                    }`}
+                  >
+                    <span className="text-[20px]">{method.icon}</span>
+                    <span className="font-['Inter',sans-serif] font-bold text-[10px] uppercase">
+                      {method.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Resumen */}
+            <div className="bg-[#131313] rounded-[12px] p-[14px] flex flex-col gap-[6px]">
+              <div className="flex justify-between">
+                <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">
+                  Subtotal
+                </span>
+                <span className="font-['Inter',sans-serif] text-white text-[11px]">
+                  {RD(subtotal)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">
+                  ITBIS (18%)
+                </span>
+                <span className="font-['Inter',sans-serif] text-white text-[11px]">
+                  {RD(itbis)}
+                </span>
+              </div>
+              <div className="border-t border-[rgba(72,72,71,0.15)] pt-[6px] flex justify-between">
+                <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[12px]">
+                  TOTAL
+                </span>
+                <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[14px]">
+                  {RD(total)}
+                </span>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-[10px]">
+              <button
+                onClick={() => setShowPaymentModal(false)}
+                className="flex-1 bg-[#262626] border border-[rgba(72,72,71,0.3)] rounded-[12px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#adaaaa] text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:border-[rgba(255,144,109,0.3)] hover:text-white transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={createInvoice}
+                disabled={charging}
+                className="flex-1 bg-[#59ee50] rounded-[12px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#0e0e0e] text-[12px] tracking-[0.5px] uppercase cursor-pointer border-none disabled:opacity-50 transition-opacity"
+              >
+                {charging ? "Procesando..." : "Confirmar Pago"}
               </button>
             </div>
           </div>
