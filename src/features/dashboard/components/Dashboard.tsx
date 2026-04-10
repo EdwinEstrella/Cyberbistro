@@ -20,7 +20,7 @@ const tickerItems = [
 export function Dashboard() {
   const [activeCategory, setActiveCategory] = useState(0);
   const [isVisible, setIsVisible] = useState(false);
-  const [imagesLoaded, setImagesLoaded] = useState(false);
+  const [, setImagesLoaded] = useState(false);
 
   useEffect(() => {
     // Animación de entrada

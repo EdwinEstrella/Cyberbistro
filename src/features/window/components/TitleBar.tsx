@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { ElectronAPI } from "../../types/electron";
+import type { ElectronAPI } from "../../../shared/types/electron";
 import svgPaths from "../../../imports/svg-h2gjocs89h";
 
 export function TitleBar() {
@@ -19,18 +19,21 @@ export function TitleBar() {
   }, []);
 
   const handleMinimize = () => {
+    console.log('[TitleBar] minimize clicked, electronAPI:', window.electronAPI);
     if (window.electronAPI) {
       window.electronAPI.minimize();
     }
   };
 
   const handleMaximize = () => {
+    console.log('[TitleBar] maximize clicked, electronAPI:', window.electronAPI);
     if (window.electronAPI) {
       window.electronAPI.maximize();
     }
   };
 
   const handleClose = () => {
+    console.log('[TitleBar] close clicked, electronAPI:', window.electronAPI);
     if (window.electronAPI) {
       window.electronAPI.close();
     }

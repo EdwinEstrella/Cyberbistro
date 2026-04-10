@@ -18,7 +18,7 @@ function createWindow() {
       ? path.join(process.resourcesPath, 'icon.ico')
       : path.join(__dirname, '../icon.ico'),
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'), // preload.js en el mismo dir que main.js
+      preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
       webSecurity: true

@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import path from 'path'
+import fs from 'node:fs'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import electron from 'vite-plugin-electron'
@@ -17,17 +18,32 @@ function figmaAssetResolver() {
   }
 }
 
+// Copies the preload CJS file without any bundler transformation.
+// vite-plugin-electron (Rolldown) generates invalid hybrid ESM/CJS output
+// when trying to compile preload scripts, so we bypass it entirely.
+function copyPreload() {
+  const src = path.resolve(__dirname, 'electron/preload.cjs')
+  const dest = path.resolve(__dirname, 'dist-electron/preload.cjs')
+  return {
+    name: 'copy-preload',
+    buildStart() {
+      fs.mkdirSync(path.dirname(dest), { recursive: true })
+      fs.copyFileSync(src, dest)
+    },
+  }
+}
+
 export default defineConfig({
   plugins: [
     figmaAssetResolver(),
+    copyPreload(),
     // The React and Tailwind plugins are both required for Make, even if
     // Tailwind is not being actively used – do not remove them
     react(),
     tailwindcss(),
-    // Vite Electron Plugin - Full API for better control
+    // Vite Electron Plugin - only handles the main process
     electron([
       {
-        // Main process
         entry: 'electron/main.ts',
         onstart({ startup }) {
           startup()
@@ -40,31 +56,11 @@ export default defineConfig({
             }
           }
         }
-      },
-      {
-        // Preload script - FORZAR CommonJS
-        entry: 'electron/preload.ts',
-        onstart({ reload }) {
-          reload()
-        },
-        vite: {
-          build: {
-            outDir: 'dist-electron',
-            rollupOptions: {
-              external: ['electron'],
-              output: {
-                entryFileNames: '[name].js',
-                format: 'cjs'  // CommonJS para Electron
-              }
-            }
-          }
-        }
       }
     ])
   ],
   resolve: {
     alias: {
-      // Alias @ to the src directory
       '@': path.resolve(__dirname, './src'),
     },
   },

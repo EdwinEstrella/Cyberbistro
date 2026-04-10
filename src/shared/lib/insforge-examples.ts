@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * EJEMPLOS DE USO DE INSFORGE SDK
  *

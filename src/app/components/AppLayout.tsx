@@ -1,5 +1,5 @@
 import { Outlet, useNavigate, useLocation } from "react-router";
-import { useState, useEffect } from "react";
+
 import svgPaths from "../../imports/svg-qgatbhef3k";
 import { TitleBar } from "../../features/window";
 
@@ -14,15 +14,6 @@ const sideNavItems = [
 export function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-
-  const getPageTitle = () => {
-    switch (location.pathname) {
-      case "/dashboard": return "Panel Principal";
-      case "/tables": return "Gestión de Planta";
-      case "/billing": return "Historial de Facturación";
-      default: return "Panel Principal";
-    }
-  };
 
   return (
     <div className="bg-[#0e0e0e] flex flex-col min-h-screen w-full">

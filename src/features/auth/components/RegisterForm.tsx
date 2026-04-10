@@ -46,7 +46,7 @@ export function Register() {
       return;
     }
 
-    if (data.user) {
+    if (data?.user) {
       setSuccess(true);
       // Redirigir al login después de 2 segundos
       setTimeout(() => {

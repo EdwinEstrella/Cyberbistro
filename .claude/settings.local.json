@@ -1,10 +1,11 @@
 {
-  "enabledMcpjsonServers": [
-    "insforge"
-  ],
   "permissions": {
     "allow": [
-      "mcp__context7__*"
+      "mcp__context7__*",
+      "Bash(npx tsc:*)"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "insforge"
+  ]
 }

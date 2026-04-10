@@ -77,7 +77,7 @@ export function Login() {
       return;
     }
 
-    if (data.user) {
+    if (data?.user) {
       setIsVisible(false);
       setTimeout(() => navigate("/dashboard"), 300);
     }
