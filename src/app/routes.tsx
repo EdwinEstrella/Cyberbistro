@@ -1,12 +1,12 @@
 import { createBrowserRouter } from "react-router";
-import { Login } from "./components/login";
-import { AppLayout } from "./components/layout";
-import { Dashboard } from "./components/dashboard";
-import { Tables } from "./components/tables";
-import { Billing } from "./components/billing";
+import { LoginForm } from "../features/auth";
+import { AppLayout } from "./components/AppLayout";
+import { Dashboard } from "../features/dashboard";
+import { Tables } from "../features/tables";
+import { Billing } from "../features/billing";
 
 export const router = createBrowserRouter([
-  { path: "/", Component: Login },
+  { path: "/", Component: LoginForm },
   {
     Component: AppLayout,
     children: [

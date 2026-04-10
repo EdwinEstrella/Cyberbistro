@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import path from 'path'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
+import electron from 'vite-plugin-electron'
 
 
 function figmaAssetResolver() {
@@ -23,6 +24,43 @@ export default defineConfig({
     // Tailwind is not being actively used – do not remove them
     react(),
     tailwindcss(),
+    // Vite Electron Plugin - Full API for better control
+    electron([
+      {
+        // Main process
+        entry: 'electron/main.ts',
+        onstart({ startup }) {
+          startup()
+        },
+        vite: {
+          build: {
+            outDir: 'dist-electron',
+            rollupOptions: {
+              external: ['electron']
+            }
+          }
+        }
+      },
+      {
+        // Preload script - FORZAR CommonJS
+        entry: 'electron/preload.ts',
+        onstart({ reload }) {
+          reload()
+        },
+        vite: {
+          build: {
+            outDir: 'dist-electron',
+            rollupOptions: {
+              external: ['electron'],
+              output: {
+                entryFileNames: '[name].js',
+                format: 'cjs'  // CommonJS para Electron
+              }
+            }
+          }
+        }
+      }
+    ])
   ],
   resolve: {
     alias: {
@@ -33,4 +71,10 @@ export default defineConfig({
 
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
   assetsInclude: ['**/*.svg', '**/*.csv'],
+
+  // Build configuration for renderer process
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true
+  }
 })
