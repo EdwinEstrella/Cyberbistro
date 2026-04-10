@@ -33,15 +33,6 @@ export function AppLayout() {
       <div className="flex flex-1">
         {/* Sidebar */}
         <aside className="bg-[#131313] flex flex-col w-[256px] shrink-0 h-[calc(100vh-36px)] sticky top-9 z-20">
-        <div className="flex flex-col gap-[4px] p-[24px]">
-          <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[24px] tracking-[-0.6px] uppercase">
-            CyberBistro
-          </div>
-          <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[1px] uppercase">
-            Sistema de Gestión
-          </div>
-        </div>
-
         <nav className="flex-1 flex flex-col gap-[8px] px-[16px] pt-[16px]">
           {sideNavItems.map((item) => {
             const isActive = location.pathname === item.path;
