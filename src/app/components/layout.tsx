@@ -1,7 +1,6 @@
 import { Outlet, useNavigate, useLocation } from "react-router";
 import { useState, useEffect } from "react";
 import svgPaths from "../../imports/svg-qgatbhef3k";
-import imgManagerProfile from "figma:asset/9b19a898761052a1578ea4d6c5791772d9acadb1.png";
 import { TitleBar } from "./TitleBar";
 
 const sideNavItems = [
@@ -95,15 +94,6 @@ export function AppLayout() {
                   <path d={svgPaths.p28252700} fill="#ADAAAA" />
                   <rect fill="#FF6AA0" height="8" rx="4" width="8" x="12.01" />
                 </svg>
-              </div>
-            </div>
-            <div className="flex gap-[12px] items-center pl-[25px] border-l border-[rgba(72,72,71,0.2)]">
-              <div className="text-right">
-                <div className="font-['Inter',sans-serif] font-bold text-white text-[10px] uppercase">M. Kusanagi</div>
-                <div className="font-['Inter',sans-serif] text-[#ff906d] text-[8px] tracking-[-0.4px] uppercase">Gerente de Piso</div>
-              </div>
-              <div className="rounded-full size-[32px] overflow-hidden border border-[rgba(255,144,109,0.3)]">
-                <img alt="" className="size-full object-cover" src={imgManagerProfile} />
               </div>
             </div>
           </div>
