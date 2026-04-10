@@ -4,6 +4,8 @@ import { FuseV1Options, FuseVersion } from '@electron/fuses';
 export default {
   packagerConfig: {
     asar: true,
+    icon: './icon',
+    extraResource: ['./icon.ico'],
   },
   rebuildConfig: {},
   makers: [
@@ -13,6 +15,7 @@ export default {
         name: 'Cyberbistro',
         manufacturer: 'Edwin',
         language: 3082, // Español
+        icon: './icon.ico',
         ui: {
           chooseDirectory: true // Activa el wizard con selección de directorio
         }

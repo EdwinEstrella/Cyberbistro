@@ -1,3 +1,3 @@
 // Auth Feature
-export { LoginForm } from './components/LoginForm'
-export { RegisterForm } from './components/RegisterForm'
+export { Login } from './components/LoginForm'
+export { Register } from './components/RegisterForm'

@@ -10,7 +10,7 @@ function createWindow() {
     height: 600,
     frame: false,
     titleBarStyle: "hidden",
-    icon: path.join(__dirname$1, "../icon.ico"),
+    icon: app.isPackaged ? path.join(process.resourcesPath, "icon.ico") : path.join(__dirname$1, "../icon.ico"),
     webPreferences: {
       preload: path.join(__dirname$1, "preload.js"),
       // preload.js en el mismo dir que main.js
