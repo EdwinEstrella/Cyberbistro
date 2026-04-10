@@ -6,23 +6,35 @@ import imgDecorativeScanlineEffect from "figma:asset/70a05c412757c6d4e1cffbb0780
 import { WindowControls } from "./window-controls";
 import { insforgeClient } from "../../lib/insforge";
 
-export function Login() {
+export function Register() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
   const navigate = useNavigate();
 
-  const handleLogin = async () => {
-    if (!email || !password) {
+  const handleRegister = async () => {
+    if (!email || !password || !confirmPassword) {
       setError("Por favor completa todos los campos");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setError("Las contraseñas no coinciden");
+      return;
+    }
+
+    if (password.length < 6) {
+      setError("La contraseña debe tener al menos 6 caracteres");
       return;
     }
 
     setLoading(true);
     setError("");
 
-    const { data, error: authError } = await insforgeClient.auth.signInWithPassword({
+    const { data, error: authError } = await insforgeClient.auth.signUp({
       email,
       password
     });
@@ -30,12 +42,16 @@ export function Login() {
     setLoading(false);
 
     if (authError) {
-      setError(authError.message || "Error al iniciar sesión");
+      setError(authError.message || "Error al registrar usuario");
       return;
     }
 
     if (data.user) {
-      navigate("/dashboard");
+      setSuccess(true);
+      // Redirigir al login después de 2 segundos
+      setTimeout(() => {
+        navigate("/");
+      }, 2000);
     }
   };
 
@@ -76,18 +92,27 @@ export function Login() {
                   </div>
                   <div className="pt-[16px]">
                     <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[36px] text-center tracking-[-1.8px] uppercase">
-                      CyberBistro
+                      Registro
                     </div>
                   </div>
                   <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[12px] text-center tracking-[1.2px] uppercase">
-                    Gastronomy Operating System v4.0.2
+                    Nueva Unidad CyberBistro
                   </div>
                 </div>
               </div>
 
+              {/* Success Message */}
+              {success && (
+                <div className="bg-[rgba(89,238,80,0.1)] border border-[#59ee50] rounded-[8px] p-[12px]">
+                  <div className="font-['Inter',sans-serif] text-[#59ee50] text-[12px] text-center">
+                    ¡Registro exitoso! Redirigiendo al login...
+                  </div>
+                </div>
+              )}
+
               {/* Error Message */}
               {error && (
-                <div className="bg-[rgba(255,115,70,0.1)] border border-[#ff7346] rounded-[8px] p-[12px] mb-[16px]">
+                <div className="bg-[rgba(255,115,70,0.1)] border border-[#ff7346] rounded-[8px] p-[12px]">
                   <div className="font-['Inter',sans-serif] text-[#ff7346] text-[12px] text-center">
                     {error}
                   </div>
@@ -134,7 +159,7 @@ export function Login() {
                         type="password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        placeholder="••••••••••••"
+                        placeholder="Mínimo 6 caracteres"
                         className="w-full bg-transparent font-['Inter',sans-serif] text-[16px] text-white placeholder:text-[rgba(72,72,71,0.5)] pl-[48px] pr-[16px] py-[18px] outline-none"
                       />
                     </div>
@@ -142,59 +167,54 @@ export function Login() {
                   </div>
                 </div>
 
-                <div className="bg-[#262626] relative rounded-[12px] shrink-0 w-full">
-                  <div aria-hidden="true" className="absolute border border-[rgba(72,72,71,0.2)] border-solid inset-0 pointer-events-none rounded-[12px]" />
-                  <div className="flex items-center justify-between px-[25px] py-[17px] relative w-full">
-                    <div className="flex gap-[12px] items-center">
-                      <div className="h-[16px] relative shrink-0 w-[20px]">
-                        <svg className="block size-full" fill="none" viewBox="0 0 20 16">
-                          <path d={svgPaths.p3b4abf00} fill="#FF6AA0" />
+                <div className="relative shrink-0 w-full">
+                  <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff7346] text-[10px] tracking-[1px] uppercase mb-[8px]">
+                    Confirmar Contraseña
+                  </div>
+                  <div className="bg-[#131313] relative w-full">
+                    <div className="flex items-center relative">
+                      <div className="absolute left-[17px] w-[19px]">
+                        <svg className="block w-full" fill="none" viewBox="0 0 19.1667 10">
+                          <path d={svgPaths.p22917200} fill="#484847" />
                         </svg>
                       </div>
-                      <div className="font-['Space_Grotesk',sans-serif] font-bold text-[14px] text-white tracking-[-0.35px] uppercase">
-                        Escaneo Biométrico
-                      </div>
+                      <input
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder="Repite tu contraseña"
+                        className="w-full bg-transparent font-['Inter',sans-serif] text-[16px] text-white placeholder:text-[rgba(72,72,71,0.5)] pl-[48px] pr-[16px] py-[18px] outline-none"
+                      />
                     </div>
-                    <div className="flex gap-[4px] items-start">
-                      <div className="bg-[rgba(255,106,160,0.4)] h-[12px] rounded-[9999px] w-[4px]" />
-                      <div className="bg-[#ff6aa0] h-[12px] rounded-[9999px] w-[4px]" />
-                      <div className="bg-[rgba(255,106,160,0.4)] h-[12px] rounded-[9999px] w-[4px]" />
-                    </div>
+                    <div aria-hidden="true" className="absolute border-[#484847] border-b border-solid inset-0 pointer-events-none" />
                   </div>
                 </div>
 
                 <button
-                  onClick={handleLogin}
-                  disabled={loading}
+                  onClick={handleRegister}
+                  disabled={loading || success}
                   className="flex items-center justify-center py-[16px] rounded-[12px] shadow-[0px_0px_20px_0px_rgba(255,144,109,0.4)] shrink-0 w-full cursor-pointer border-none disabled:opacity-50 disabled:cursor-not-allowed"
                   style={{ backgroundImage: "linear-gradient(172.248deg, rgb(255, 144, 109) 0%, rgb(255, 120, 77) 100%)" }}
                 >
                   <span className="font-['Space_Grotesk',sans-serif] font-bold text-[14px] text-black text-center tracking-[1.4px] uppercase">
-                    {loading ? "Verificando..." : "Iniciar Sesión"}
+                    {loading ? "Registrando..." : success ? "¡Registrado!" : "Crear Cuenta"}
                   </span>
                 </button>
               </div>
 
               {/* Footer */}
               <div className="relative shrink-0 w-full flex flex-col gap-[16px] items-center">
-                <div className="flex gap-[8px] items-center cursor-pointer">
+                <div
+                  onClick={() => navigate("/")}
+                  className="flex gap-[8px] items-center cursor-pointer"
+                >
                   <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff6aa0] text-[12px] tracking-[1.2px] uppercase">
-                    Registrar Nueva Unidad
+                    Volver al Login
                   </span>
                   <div className="relative size-[9.333px]">
                     <svg className="block size-full" fill="none" viewBox="0 0 9.33333 9.33333">
                       <path d={svgPaths.pce77c00} fill="#FF6AA0" />
                     </svg>
-                  </div>
-                </div>
-                <div className="pt-[16px] flex gap-[24px] items-center">
-                  <div className="flex gap-[8px] items-center">
-                    <div className="bg-[#59ee50] rounded-[9999px] shadow-[0px_0px_8px_0px_#59ee50] size-[8px]" />
-                    <span className="font-['Inter',sans-serif] font-medium text-[#adaaaa] text-[10px] uppercase">Núcleo Seguro</span>
-                  </div>
-                  <div className="flex gap-[8px] items-center">
-                    <div className="bg-[#ff906d] rounded-[9999px] shadow-[0px_0px_8px_0px_#ff906d] size-[8px]" />
-                    <span className="font-['Inter',sans-serif] font-medium text-[#adaaaa] text-[10px] uppercase">Estación Activa</span>
                   </div>
                 </div>
               </div>
