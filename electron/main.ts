@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { setupAutoUpdater } from './autoUpdater'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 let mainWindow: BrowserWindow | null = null
@@ -156,6 +157,10 @@ ipcMain.on('window-close', () => {
 
 app.whenReady().then(() => {
   createWindow()
+
+  if (app.isPackaged) {
+    setupAutoUpdater(() => mainWindow)
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

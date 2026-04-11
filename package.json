@@ -5,11 +5,54 @@
   "author": "Edwin",
   "main": "dist-electron/main.js",
   "type": "module",
+  "build": {
+    "appId": "com.edwin.cyberbistro",
+    "productName": "Cyberbistro",
+    "directories": {
+      "output": "release",
+      "buildResources": "."
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "icon.ico",
+        "to": "icon.ico"
+      }
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "**/*.node"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "icon.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "EdwinEstrella",
+        "repo": "Cyberbistro"
+      }
+    ]
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "package": "npm run build && electron-forge package",
     "make": "npm run build && electron-forge make",
+    "dist:win": "npm run build && electron-builder --win",
+    "release:win": "npm run build && electron-builder --win --publish always",
     "preview": "vite preview"
   },
   "devDependencies": {
@@ -24,6 +67,7 @@
     "@tailwindcss/vite": "4.1.12",
     "@vitejs/plugin-react": "4.7.0",
     "electron": "^41.1.1",
+    "electron-builder": "^26.8.1",
     "tailwindcss": "4.1.12",
     "vite": "6.3.5",
     "vite-plugin-electron": "^0.29.0"
@@ -66,6 +110,8 @@
     "clsx": "2.1.1",
     "cmdk": "1.1.1",
     "date-fns": "3.6.0",
+    "electron-log": "^5.4.3",
+    "electron-updater": "^6.8.3",
     "embla-carousel-react": "8.6.0",
     "input-otp": "1.4.2",
     "lucide-react": "0.487.0",
