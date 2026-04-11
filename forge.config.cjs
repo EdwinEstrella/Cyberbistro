@@ -1,5 +1,5 @@
-import { FusesPlugin } from '@electron-forge/plugin-fuses';
-import { FuseV1Options, FuseVersion } from '@electron/fuses';
+const { FusesPlugin } = require('@electron-forge/plugin-fuses');
+const { FuseV1Options, FuseVersion } = require('@electron/fuses');
 
 /** Carpetas de agentes/IDE con symlinks: en Windows EPERM al empaquetar si se copian. */
 function ignoreDevSymlinkPaths(relativePath) {
@@ -16,7 +16,7 @@ function ignoreDevSymlinkPaths(relativePath) {
   return false;
 }
 
-export default {
+module.exports = {
   packagerConfig: {
     asar: true,
     icon: './icon',
@@ -30,11 +30,11 @@ export default {
       config: {
         name: 'Cyberbistro',
         manufacturer: 'Edwin',
-        language: 3082, // Español
+        language: 3082,
         icon: './icon.ico',
         ui: {
-          chooseDirectory: true // Activa el wizard con selección de directorio
-        }
+          chooseDirectory: true,
+        },
       },
     },
     {
@@ -55,8 +55,6 @@ export default {
       name: '@electron-forge/plugin-auto-unpack-natives',
       config: {},
     },
-    // Fuses are used to enable/disable various Electron functionality
-    // at package time, before code signing the application
     new FusesPlugin({
       version: FuseVersion.V1,
       [FuseV1Options.RunAsNode]: false,

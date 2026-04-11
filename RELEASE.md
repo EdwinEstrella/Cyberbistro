@@ -30,11 +30,15 @@ Esto ejecuta `vite build` y `electron-builder --win --publish always`, creando o
 - A los ~3 segundos de abrir la app instalada (build de `electron-builder`), se llama a `checkForUpdates`.
 - Si hay versión nueva en GitHub, se descarga en segundo plano y se muestra el flujo de toasts / confirmación de reinicio.
 
-## Windows: firma y metadatos del .exe
+## Windows: firma, icono en el .exe y `winCodeSign`
 
-En este proyecto `build.win.signAndEditExecutable` está en `false` para evitar que `electron-builder` extraiga la herramienta `winCodeSign` en equipos sin permiso para crear symlinks (sin modo desarrollador de Windows). Si necesitas icono y metadatos incrustados en el `.exe` vía rcedit, activa el modo desarrollador en Windows o ejecuta el build en un entorno que permita symlinks y vuelve a poner `signAndEditExecutable` en `true`.
+`build.win.signAndEditExecutable` está en **`false`** en este repo para evitar fallos al extraer `winCodeSign` cuando Windows no permite **enlaces simbólicos** (sin modo desarrollador). En ese modo el `.exe` puede mostrar el icono genérico de Electron en el explorador; la ventana de la app sigue usando `icon.ico` desde `extraResources`. Para incrustar icono en el ejecutable, pon `signAndEditExecutable` en `true` y activa el modo desarrollador o construye en un entorno con symlinks.
 
 Para distribución pública, conviene un certificado de firma de código (Authenticode) y configurar `CSC_LINK` / `CSC_KEY_PASSWORD` según la [documentación de electron-builder](https://www.electron.build/code-signing).
+
+## Electron main (CJS) y Vite
+
+El `package.json` de la app **no** usa `"type": "module"`, para que `vite-plugin-electron` genere `dist-electron/main.js` en formato **CommonJS** (`require`), alineado con `electron-updater` / `electron-log`. La configuración de Vite vive en **`vite.config.mts`** (ESM) para poder cargar plugins solo-ESM como `@tailwindcss/vite`.
 
 ## MSI con Electron Forge
 
@@ -42,14 +46,10 @@ El script `npm run make` sigue generando MSI con WiX; ese artefacto no es el que
 
 ## Instalador NSIS: “Siguiente” cierra la ventana
 
-**Modo actual:** asistente **multipágina** (`oneClick: false`, `allowToChangeInstallationDirectory: true`). Tras **Siguiente** en la bienvenida deberías ver la carpeta de destino, luego la barra de progreso y la pantalla de finalización (con opción de ejecutar la app si `runAfterFinish` está activo).
+**Modo actual:** asistente **multipágina** (`oneClick: false`, `allowToChangeInstallationDirectory: true`). El script `build/installer.nsh` define **`RequestExecutionLevel admin`**: al abrir el instalador Windows pedirá elevación (como ejecutar como administrador) y suele evitar que el asistente se cierre al pulsar Siguiente.
 
-Si antes usabas **one-click** (`oneClick: true`), el primer **Siguiente** a veces **inicia la instalación y cierra el asistente al momento**; puede parecer un fallo aunque la app se haya instalado. Comprueba menú Inicio / escritorio.
+Tras **Siguiente** en la bienvenida deberías ver la carpeta de destino, luego la barra de progreso y la pantalla de finalización (con opción de ejecutar la app si `runAfterFinish` está activo).
 
-Si con el asistente multipágina la ventana se cierra en el **primer** Siguiente y no aparece la carpeta de instalación:
+Si aun así falla: prueba `release\win-unpacked\Cyberbistro.exe`, revisa antivirus/SmartScreen, y los logs en `%USERPROFILE%\AppData\Roaming\Cyberbistro\logs\`.
 
-1. Prueba `release\win-unpacked\Cyberbistro.exe` (sin instalador). Si funciona, sospecha de antivirus o SmartScreen sobre el `.exe` del setup.
-2. Ejecuta el instalador como administrador (clic derecho → Ejecutar como administrador).
-3. Logs de la app tras instalar: `%USERPROFILE%\AppData\Roaming\Cyberbistro\logs\`.
-
-Para volver al instalador mínimo de una sola acción, en `package.json` → `build.nsis` pon `oneClick: true` y `allowToChangeInstallationDirectory: false`.
+Para volver al instalador mínimo de una sola acción, en `package.json` → `build.nsis` pon `oneClick: true` y `allowToChangeInstallationDirectory: false` (y quita o ajusta `include` si no quieres UAC al instalar).

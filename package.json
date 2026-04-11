@@ -1,10 +1,9 @@
 {
   "name": "cyberbistro",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "description": "Cyberbistro Desktop App",
   "author": "Edwin",
   "main": "dist-electron/main.js",
-  "type": "module",
   "build": {
     "appId": "com.edwin.cyberbistro",
     "productName": "Cyberbistro",
@@ -39,6 +38,7 @@
       "perMachine": false,
       "allowElevation": true,
       "allowToChangeInstallationDirectory": true,
+      "include": "build/installer.nsh",
       "installerIcon": "icon.ico",
       "uninstallerIcon": "icon.ico",
       "installerHeaderIcon": "icon.ico",
