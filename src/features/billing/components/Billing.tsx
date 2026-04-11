@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { insforgeClient } from "../../../shared/lib/insforge";
+import { useAuth } from "../../../shared/hooks/useAuth";
 
 type InvoiceStatus = "pagada" | "pendiente" | "cancelada";
 
@@ -13,9 +14,9 @@ interface InvoiceItem {
 
 interface Invoice {
   id: string;
+  tenant_id?: string;
   numero_factura: number;
-  mesa_id: number;
-  mesa_numero: number;
+  mesa_numero: number | null;
   metodo_pago: string;
   estado: InvoiceStatus;
   subtotal: number;
@@ -36,7 +37,13 @@ const statusConfig: Record<InvoiceStatus, { label: string; color: string; bg: st
 const RD = (n: number) =>
   "RD$ " + n.toLocaleString("es-DO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+function itemCount(inv: Invoice): number {
+  const items = inv.items;
+  return Array.isArray(items) ? items.length : 0;
+}
+
 export function Billing() {
+  const { tenantId, loading: authLoading } = useAuth();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [filteredInvoices, setFilteredInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,25 +56,41 @@ export function Billing() {
   const [pendingCount, setPendingCount] = useState(0);
   const [pendingAmount, setPendingAmount] = useState(0);
 
+  const loadInvoices = useCallback(async () => {
+    if (!tenantId) {
+      setInvoices([]);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    const { data, error } = await insforgeClient.database
+      .from("facturas")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: false });
+
+    if (!error && data) {
+      setInvoices(data as Invoice[]);
+    } else {
+      setInvoices([]);
+    }
+    setCurrentPage(1);
+    setLoading(false);
+  }, [tenantId]);
+
   useEffect(() => {
-    loadInvoices();
-  }, []);
+    if (authLoading) return;
+    void loadInvoices();
+  }, [authLoading, loadInvoices]);
 
   useEffect(() => {
     applyFilters();
   }, [invoices, statusFilter, methodFilter]);
 
-  async function loadInvoices() {
-    const { data, error } = await insforgeClient.database
-      .from("facturas")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (!error && data) {
-      setInvoices(data as Invoice[]);
-    }
-    setLoading(false);
-  }
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [statusFilter, methodFilter]);
 
   function applyFilters() {
     let filtered = invoices;
@@ -109,6 +132,27 @@ export function Billing() {
       default:
         return { icon: "💵", label: method };
     }
+  }
+
+  if (authLoading) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <span className="font-['Space_Grotesk',sans-serif] text-[#6b7280] text-[16px]">
+          Cargando sesión...
+        </span>
+      </div>
+    );
+  }
+
+  if (!tenantId) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-6">
+        <p className="font-['Inter',sans-serif] text-[#adaaaa] text-[14px] text-center max-w-md">
+          Tu usuario no está vinculado a un negocio. Las analíticas solo muestran facturas de tu
+          negocio (multitenant).
+        </p>
+      </div>
+    );
   }
 
   if (loading) {
@@ -276,17 +320,35 @@ export function Billing() {
                   </div>
                   {/* Table */}
                   <div className="py-[32px] flex gap-[12px] items-center">
-                    <div className="rounded-[8px] flex items-center justify-center h-[32px] px-[8px]" style={{ backgroundColor: "rgba(255,144,109,0.1)" }}>
-                      <span className="font-['Inter',sans-serif] font-bold text-[12px]" style={{ color: "#ff906d" }}>
-                        {String(inv.mesa_numero).padStart(2, "0")}
+                    <div
+                      className="rounded-[8px] flex items-center justify-center h-[32px] px-[8px] min-w-[32px]"
+                      style={{
+                        backgroundColor:
+                          inv.mesa_numero != null && inv.mesa_numero !== 0
+                            ? "rgba(255,144,109,0.1)"
+                            : "rgba(89,238,80,0.1)",
+                      }}
+                    >
+                      <span
+                        className="font-['Inter',sans-serif] font-bold text-[12px]"
+                        style={{
+                          color:
+                            inv.mesa_numero != null && inv.mesa_numero !== 0 ? "#ff906d" : "#59ee50",
+                        }}
+                      >
+                        {inv.mesa_numero != null && inv.mesa_numero !== 0
+                          ? String(inv.mesa_numero).padStart(2, "0")
+                          : "PL"}
                       </span>
                     </div>
                     <div>
                       <div className="font-['Inter',sans-serif] font-medium text-white text-[14px]">
-                        Mesa {inv.mesa_numero}
+                        {inv.mesa_numero != null && inv.mesa_numero !== 0
+                          ? `Mesa ${inv.mesa_numero}`
+                          : "Para llevar"}
                       </div>
                       <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px]">
-                        {inv.items.length} productos
+                        {itemCount(inv)} productos
                       </div>
                     </div>
                   </div>

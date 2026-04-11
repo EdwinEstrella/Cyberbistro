@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { insforgeClient } from "../../../shared/lib/insforge";
 
 interface MesaConPedido {
-  id: number;
+  /** id de factura (agrupa por ticket; evita mezclar varios para llevar con mesa_numero 0) */
+  id: string;
   numero: number;
   items: ItemEntrega[];
   total: number;
@@ -71,16 +72,16 @@ export function Entregas() {
       .select("*")
       .in("estado", ["pendiente", "en_preparacion", "listo"]);
 
-    // Agrupar items por mesa
-    const mesasMap = new Map<number, MesaConPedido>();
+    // Una tarjeta por factura (facturas no tienen mesa_id en BD)
+    const mesasMap = new Map<string, MesaConPedido>();
 
     for (const factura of facturas as any[]) {
-      const mesaId = factura.mesa_id;
+      const groupKey = factura.id as string;
 
-      if (!mesasMap.has(mesaId)) {
-        mesasMap.set(mesaId, {
-          id: mesaId,
-          numero: factura.mesa_numero,
+      if (!mesasMap.has(groupKey)) {
+        mesasMap.set(groupKey, {
+          id: groupKey,
+          numero: Number(factura.mesa_numero) || 0,
           items: [],
           total: 0,
           pagada: factura.estado === "pagada",
@@ -89,12 +90,12 @@ export function Entregas() {
         });
       }
 
-      const mesa = mesasMap.get(mesaId)!;
+      const mesa = mesasMap.get(groupKey)!;
 
       for (const item of factura.items) {
         const vaACocina = platoMap.get(item.plato_id) !== false;
         const comanda = comandas?.find((c: any) =>
-          c.mesa_id === mesaId &&
+          c.mesa_numero === factura.mesa_numero &&
           c.items.some((i: any) => i.nombre === item.nombre && i.cantidad === item.cantidad)
         );
 
@@ -118,7 +119,7 @@ export function Entregas() {
     setLoading(false);
   }
 
-  async function marcarEntregado(mesaId: number, platoId: number, cantidad: number) {
+  async function marcarEntregado(mesaId: string, platoId: number, cantidad: number) {
     // TODO: Implementar tracking de entregas en BD
     // Por ahora solo actualizamos estado local
     setMesasConPedido((prev) =>
@@ -258,12 +259,12 @@ export function Entregas() {
                     <div className="flex items-center gap-[12px]">
                       <div className="rounded-[8px] flex items-center justify-center h-[36px] px-[12px] bg-[rgba(255,144,109,0.1)]">
                         <span className="font-['Space_Grotesk',sans-serif] font-bold text-[16px]" style={{ color: "#ff906d" }}>
-                          {String(mesa.numero).padStart(2, "0")}
+                          {mesa.numero !== 0 ? String(mesa.numero).padStart(2, "0") : "PL"}
                         </span>
                       </div>
                       <div>
                         <div className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[14px]">
-                          Mesa {mesa.numero}
+                          {mesa.numero !== 0 ? `Mesa ${mesa.numero}` : "Para llevar"}
                         </div>
                         <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">
                           {mesa.items.length} productos

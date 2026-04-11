@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { insforgeClient } from "../../../shared/lib/insforge";
+import { useAuth } from "../../../shared/hooks/useAuth";
 import { MESAS_CONFIG } from "../config/mesas";
 
 type Estado = "libre" | "ocupada" | "limpieza";
@@ -79,11 +80,12 @@ const RD = (n: number) =>
   "RD$ " + n.toLocaleString("es-DO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 interface ComandaRaw {
-  mesa_id: number;
+  mesa_numero: number | null;
   items: Array<{ precio: number; cantidad: number }>;
 }
 
 export function Tables() {
+  const { tenantId, loading: authLoading } = useAuth();
   const [mesas, setMesas] = useState<Mesa[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -91,7 +93,6 @@ export function Tables() {
   const [mesaTotals, setMesaTotals] = useState<Record<number, number>>({});
 
   useEffect(() => {
-    // Inicializar mesas desde configuración estática
     const mesasIniciales = MESAS_CONFIG.map((config) => ({
       ...config,
       estado: "libre" as Estado,
@@ -103,14 +104,25 @@ export function Tables() {
     }));
     setMesas(mesasIniciales);
 
-    // Cargar solo estados desde la base de datos
+    if (authLoading) return;
+
+    if (!tenantId) {
+      setMesaTotals({});
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+
     Promise.all([
       insforgeClient.database
         .from("mesas_estado")
-        .select("*"),
+        .select("*")
+        .eq("tenant_id", tenantId),
       insforgeClient.database
         .from("comandas")
-        .select("mesa_id,items")
+        .select("mesa_numero,items")
+        .eq("tenant_id", tenantId)
         .in("estado", ["pendiente", "en_preparacion", "listo"]),
     ]).then(([estadosRes, comandasRes]) => {
       if (!estadosRes.error && estadosRes.data && estadosRes.data.length > 0) {
@@ -149,19 +161,20 @@ export function Tables() {
       if (!comandasRes.error && comandasRes.data) {
         const totals: Record<number, number> = {};
         for (const c of comandasRes.data as ComandaRaw[]) {
-          if (!c.mesa_id) continue;
+          const mn = c.mesa_numero;
+          if (mn == null || mn === 0) continue;
           const sum = (c.items ?? []).reduce(
             (s, i) => s + (i.precio ?? 0) * (i.cantidad ?? 0),
             0
           );
-          totals[c.mesa_id] = (totals[c.mesa_id] ?? 0) + sum;
+          totals[mn] = (totals[mn] ?? 0) + sum;
         }
         setMesaTotals(totals);
       }
 
       setLoading(false);
     });
-  }, []);
+  }, [authLoading, tenantId]);
 
   const selectedMesa = mesas.find((m) => m.id === selectedId) ?? null;
   const adjacentMesas = selectedMesa ? getAdjacentMesas(selectedMesa, mesas) : [];
@@ -178,10 +191,10 @@ export function Tables() {
   const limpieza = mesas.filter((m) => !m.fusionada && m.estado === "limpieza").length;
 
   async function changeEstado(mesaId: number, estado: Estado) {
-    // Guardar estado en base de datos
+    if (!tenantId) return;
     const { error } = await insforgeClient.database
       .from("mesas_estado")
-      .upsert({ id: mesaId, estado }, { onConflict: "id" });
+      .upsert({ id: mesaId, estado, tenant_id: tenantId }, { onConflict: "tenant_id,id" });
 
     if (!error) {
       setMesas((prev) => prev.map((m) => (m.id === mesaId ? { ...m, estado } : m)));
@@ -189,6 +202,7 @@ export function Tables() {
   }
 
   async function mergeMesas(parentId: number, childId: number) {
+    if (!tenantId) return;
     const parent = mesas.find((m) => m.id === parentId)!;
     const child = mesas.find((m) => m.id === childId)!;
 
@@ -212,19 +226,27 @@ export function Tables() {
     await Promise.all([
       insforgeClient.database
         .from("mesas_estado")
-        .upsert({
-          id: parentId,
-          span_columnas: newSpanCols,
-          span_filas: newSpanFilas,
-          fusion_hijos: newHijos,
-        }, { onConflict: "id" }),
+        .upsert(
+          {
+            id: parentId,
+            tenant_id: tenantId,
+            span_columnas: newSpanCols,
+            span_filas: newSpanFilas,
+            fusion_hijos: newHijos,
+          },
+          { onConflict: "tenant_id,id" }
+        ),
       insforgeClient.database
         .from("mesas_estado")
-        .upsert({
-          id: childId,
-          fusionada: true,
-          fusion_padre_id: parentId,
-        }, { onConflict: "id" }),
+        .upsert(
+          {
+            id: childId,
+            tenant_id: tenantId,
+            fusionada: true,
+            fusion_padre_id: parentId,
+          },
+          { onConflict: "tenant_id,id" }
+        ),
     ]);
 
     setMesas((prev) =>
@@ -246,26 +268,35 @@ export function Tables() {
   }
 
   async function splitMesa(parentId: number) {
+    if (!tenantId) return;
     const parent = mesas.find((m) => m.id === parentId)!;
     const childIds = parent.fusion_hijos;
 
     await Promise.all([
       insforgeClient.database
         .from("mesas_estado")
-        .upsert({
-          id: parentId,
-          span_columnas: 1,
-          span_filas: 1,
-          fusion_hijos: [],
-        }, { onConflict: "id" }),
+        .upsert(
+          {
+            id: parentId,
+            tenant_id: tenantId,
+            span_columnas: 1,
+            span_filas: 1,
+            fusion_hijos: [],
+          },
+          { onConflict: "tenant_id,id" }
+        ),
       ...childIds.map((childId) =>
         insforgeClient.database
           .from("mesas_estado")
-          .upsert({
-            id: childId,
-            fusionada: false,
-            fusion_padre_id: null,
-          }, { onConflict: "id" })
+          .upsert(
+            {
+              id: childId,
+              tenant_id: tenantId,
+              fusionada: false,
+              fusion_padre_id: null,
+            },
+            { onConflict: "tenant_id,id" }
+          )
       ),
     ]);
 
@@ -305,12 +336,23 @@ export function Tables() {
   const CELL = 120; // px — square cell size
   const GAP = 10; // px — gap between cells
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <span className="font-['Space_Grotesk',sans-serif] text-[#6b7280] text-[16px]">
-          Cargando mesas...
+          {authLoading ? "Cargando sesión..." : "Cargando mesas..."}
         </span>
+      </div>
+    );
+  }
+
+  if (!tenantId) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-6">
+        <p className="font-['Inter',sans-serif] text-[#adaaaa] text-[14px] text-center max-w-md">
+          Tu usuario no está vinculado a un negocio. Las mesas y estados se guardan por restaurante
+          (multitenant).
+        </p>
       </div>
     );
   }

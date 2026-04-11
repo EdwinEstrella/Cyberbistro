@@ -74,7 +74,10 @@ export function buildFacturaReceiptHtml(
   paperWidthMm: PaperWidthMm
 ): string {
   const fecha = new Date(factura.pagada_at || factura.created_at || Date.now()).toLocaleString("es-DO");
-  const mesaLabel = factura.mesa_numero != null ? String(factura.mesa_numero) : "Para llevar";
+  const mesaLabel =
+    factura.mesa_numero != null && factura.mesa_numero !== 0
+      ? String(factura.mesa_numero)
+      : "Para llevar";
 
   const itemsRows = factura.items
     .map(
@@ -208,4 +211,81 @@ export function buildSplitTicketHtml(
   );
   const body = sections.join("");
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Split</title><style>${thermalStyles(paperWidthMm)}</style></head><body>${body}</body></html>`;
+}
+
+/** Resumen para ticket térmico de cierre de día / caja. */
+export interface CierreDiaThermalData {
+  /** Fecha del día operativo (texto local). */
+  fechaOperacion: string;
+  /** Momento en que se generó el reporte. */
+  generadoEn: string;
+  facturasPagadas: number;
+  facturasPendientes: number;
+  facturasCanceladas: number;
+  totalPagado: number;
+  subtotalPagado: number;
+  itbisPagado: number;
+  /** Filas ordenadas para el ticket. */
+  porMetodo: Array<{ etiqueta: string; cantidad: number; total: number }>;
+  ticketPromedioPagado: number;
+}
+
+function rd(n: number): string {
+  return `RD$ ${Number(n).toLocaleString("es-DO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+export function buildCierreDiaReceiptHtml(
+  tenant: TenantReceiptInfo,
+  data: CierreDiaThermalData,
+  paperWidthMm: PaperWidthMm
+): string {
+  const metodoRows = data.porMetodo
+    .map(
+      (m) => `
+    <tr class="item-row">
+      <td style="width:55%;font-size:10px">${escapeHtml(m.etiqueta)}</td>
+      <td style="width:20%;text-align:center;font-size:10px">${m.cantidad}</td>
+      <td style="width:25%;text-align:right;font-size:10px">${rd(m.total)}</td>
+    </tr>`
+    )
+    .join("");
+
+  const body = `
+  ${headerBlock(tenant)}
+  <div class="divider"></div>
+  <h2>CIERRE DE DÍA</h2>
+  <div class="center" style="font-size:10px;margin-bottom:4px">Resumen operativo (no fiscal)</div>
+  <table>
+    <tr class="header-row"><td>Día operativo</td><td style="text-align:right;font-size:10px">${escapeHtml(data.fechaOperacion)}</td></tr>
+    <tr class="header-row"><td>Generado</td><td style="text-align:right;font-size:10px">${escapeHtml(data.generadoEn)}</td></tr>
+  </table>
+  <div class="double-divider"></div>
+  <table>
+    <tr><td style="font-size:10px">Facturas pagadas</td><td style="text-align:right;font-weight:bold">${data.facturasPagadas}</td></tr>
+    <tr><td style="font-size:10px">Facturas pendientes</td><td style="text-align:right">${data.facturasPendientes}</td></tr>
+    <tr><td style="font-size:10px">Facturas canceladas</td><td style="text-align:right">${data.facturasCanceladas}</td></tr>
+  </table>
+  <div class="divider"></div>
+  <table>
+    <tr class="total"><td>TOTAL COBRADO (pagadas)</td><td style="text-align:right">${rd(data.totalPagado)}</td></tr>
+    <tr><td style="font-size:10px">Subtotal</td><td style="text-align:right;font-size:10px">${rd(data.subtotalPagado)}</td></tr>
+    <tr><td style="font-size:10px">ITBIS</td><td style="text-align:right;font-size:10px">${rd(data.itbisPagado)}</td></tr>
+    <tr><td style="font-size:10px">Ticket prom. (pagadas)</td><td style="text-align:right;font-size:10px">${data.facturasPagadas > 0 ? rd(data.ticketPromedioPagado) : "—"}</td></tr>
+  </table>
+  <div class="double-divider"></div>
+  <div style="font-size:10px;font-weight:bold;margin-bottom:4px">Por método de pago (pagadas)</div>
+  <table>
+    <thead><tr style="font-size:9px;border-bottom:1px solid #000"><th style="text-align:left;padding:2px 0">Método</th><th style="text-align:center">#</th><th style="text-align:right">Total</th></tr></thead>
+    <tbody>${metodoRows || `<tr><td colspan="3" class="center" style="font-size:10px">Sin ventas pagadas</td></tr>`}</tbody>
+  </table>
+  <div class="double-divider"></div>
+  <div class="footer">
+    <div>Conserve este documento para su control interno.</div>
+    <div style="margin-top:4px">No constituye comprobante fiscal</div>
+  </div>
+  <div class="divider"></div>
+  <div class="center" style="font-size:8px">CyberBistro OS — Cierre</div>
+  `;
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Cierre día</title><style>${thermalStyles(paperWidthMm)}</style></head><body>${body}</body></html>`;
 }

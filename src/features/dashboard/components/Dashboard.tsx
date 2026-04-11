@@ -38,7 +38,8 @@ interface CartItem {
 
 interface Consumo {
   id: string;
-  mesa_id: string;
+  /** Coincide con columna `mesa_numero` en BD (no existe mesa_id en consumos). */
+  mesa_numero: number | null;
   comanda_id: string | null;
   plato_id: number;
   nombre: string;
@@ -132,10 +133,11 @@ export function Dashboard() {
         .select("*")
         .eq("tenant_id", tenantId),
       insforgeClient.database
-        .from("mesas_deuda")
-        .select("*")
-        .eq("tenant_id", tenantId),
-    ]).then(([platosRes, estadosRes, deudaRes]) => {
+        .from("consumos")
+        .select("mesa_numero, subtotal")
+        .eq("tenant_id", tenantId)
+        .neq("estado", "pagado"),
+    ]).then(([platosRes, estadosRes, consumosPendRes]) => {
       if (!platosRes.error && platosRes.data) setPlatos(platosRes.data as Plato[]);
 
       if (!estadosRes.error && estadosRes.data && estadosRes.data.length > 0) {
@@ -160,20 +162,24 @@ export function Dashboard() {
         );
       }
 
-      if (!deudaRes.error && deudaRes.data && deudaRes.data.length > 0) {
-        // Actualizar deuda de mesas
-        const deudaMap = new Map(deudaRes.data.map((d: any) => [d.id.toString(), d]));
+      if (!consumosPendRes.error && consumosPendRes.data) {
+        const deudaPorNumero = new Map<number, { deuda: number; items: number }>();
+        for (const row of consumosPendRes.data as { mesa_numero: number | null; subtotal: number }[]) {
+          const mn = row.mesa_numero ?? 0;
+          if (mn <= 0) continue;
+          const cur = deudaPorNumero.get(mn) ?? { deuda: 0, items: 0 };
+          cur.deuda += Number(row.subtotal);
+          cur.items += 1;
+          deudaPorNumero.set(mn, cur);
+        }
         setMesas((prev) =>
           prev.map((m) => {
-            const deuda = deudaMap.get(m.id);
-            if (deuda) {
-              return {
-                ...m,
-                deuda_pendiente: deuda.deuda_pendiente ?? 0,
-                items_pendientes: deuda.items_pendientes ?? 0,
-              };
-            }
-            return m;
+            const agg = deudaPorNumero.get(m.numero);
+            return {
+              ...m,
+              deuda_pendiente: agg?.deuda ?? 0,
+              items_pendientes: agg?.items ?? 0,
+            };
           })
         );
       }
@@ -221,11 +227,15 @@ export function Dashboard() {
 
   // Marcar mesa como ocupada cuando se selecciona
   async function markMesaAsOccupied(mesa: MesaBasic) {
-    if (mesa.estado === 'ocupada') return; // Ya está ocupada
+    if (mesa.estado === "ocupada") return;
+    if (!tenantId) return;
 
     const { error } = await insforgeClient.database
       .from("mesas_estado")
-      .upsert({ id: mesa.id, estado: 'ocupada' }, { onConflict: "id" });
+      .upsert(
+        { id: parseInt(mesa.id, 10), estado: "ocupada", tenant_id: tenantId },
+        { onConflict: "tenant_id,id" }
+      );
 
     if (!error) {
       setMesas((prev) =>
@@ -238,19 +248,22 @@ export function Dashboard() {
 
   // Verificar si una mesa se puede liberar (sin deuda)
   async function canFreeMesa(mesa: MesaBasic): Promise<boolean> {
-    // Obtener deuda actualizada de la vista
+    if (!tenantId) return true;
     const { data, error } = await insforgeClient.database
-      .from("mesas_deuda")
-      .select("deuda_pendiente")
-      .eq("id", mesa.id)
-      .single();
+      .from("consumos")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("mesa_numero", mesa.numero)
+      .neq("estado", "pagado")
+      .limit(1);
 
-    if (error || !data) return true; // Si hay error, permitimos liberar
-    return data.deuda_pendiente === 0;
+    if (error) return true;
+    return !data?.length;
   }
 
   // Liberar mesa (marcar como libre)
   async function freeMesa(mesa: MesaBasic) {
+    if (!tenantId) return;
     const canFree = await canFreeMesa(mesa);
 
     if (!canFree) {
@@ -260,7 +273,10 @@ export function Dashboard() {
 
     const { error } = await insforgeClient.database
       .from("mesas_estado")
-      .upsert({ id: mesa.id, estado: 'libre' }, { onConflict: "id" });
+      .upsert(
+        { id: parseInt(mesa.id, 10), estado: "libre", tenant_id: tenantId },
+        { onConflict: "tenant_id,id" }
+      );
 
     if (!error) {
       setMesas((prev) =>
@@ -276,11 +292,13 @@ export function Dashboard() {
   }
 
   // Cargar consumos de una mesa
-  async function loadTableConsumption(mesaId: string): Promise<Consumo[]> {
+  async function loadTableConsumption(mesaNumero: number): Promise<Consumo[]> {
+    if (!tenantId) return [];
     const { data, error } = await insforgeClient.database
       .from("consumos")
       .select("*")
-      .eq("mesa_id", mesaId)
+      .eq("tenant_id", tenantId)
+      .eq("mesa_numero", mesaNumero)
       .neq("estado", "pagado")
       .order("created_at", { ascending: true });
 
@@ -288,23 +306,24 @@ export function Dashboard() {
     return data as Consumo[];
   }
 
-  // Actualizar deuda de una mesa en el estado local
-  async function refreshMesaDebt(mesaId: string) {
+  async function refreshMesaDebt(mesaId: string, mesaNumero: number) {
+    if (!tenantId) return;
     const { data, error } = await insforgeClient.database
-      .from("mesas_deuda")
-      .select("*")
-      .eq("id", mesaId)
-      .single();
+      .from("consumos")
+      .select("subtotal")
+      .eq("tenant_id", tenantId)
+      .eq("mesa_numero", mesaNumero)
+      .neq("estado", "pagado");
 
-    if (!error && data) {
-      setMesas((prev) =>
-        prev.map((m) =>
-          m.id === mesaId
-            ? { ...m, deuda_pendiente: data.deuda_pendiente, items_pendientes: data.items_pendientes }
-            : m
-        )
-      );
-    }
+    if (error) return;
+    const rows = data ?? [];
+    const deuda_pendiente = rows.reduce((s, r) => s + Number((r as { subtotal: number }).subtotal), 0);
+    const items_pendientes = rows.length;
+    setMesas((prev) =>
+      prev.map((m) =>
+        m.id === mesaId ? { ...m, deuda_pendiente, items_pendientes } : m
+      )
+    );
   }
 
   // Funciones para cuentas separadas
@@ -371,7 +390,6 @@ export function Dashboard() {
       .insert([
         {
           tenant_id: tenantId,
-          mesa_id: selectedMesa.id,
           mesa_numero: selectedMesa.numero,
           metodo_pago: paymentMethod,
           estado: "pagada",
@@ -417,9 +435,9 @@ export function Dashboard() {
     setSelectedConsumos(new Set());
 
     // Recargar consumos restantes
-    const updatedConsumos = await loadTableConsumption(selectedMesa.id);
+    const updatedConsumos = await loadTableConsumption(selectedMesa.numero);
     setMesaConsumos(updatedConsumos);
-    await refreshMesaDebt(selectedMesa.id);
+    await refreshMesaDebt(selectedMesa.id, selectedMesa.numero);
 
     setCharging(false);
 
@@ -550,7 +568,6 @@ export function Dashboard() {
 
       const { data, error } = await insforgeClient.database.from("comandas").insert([
         {
-          mesa_id: selectedMesa.id,
           mesa_numero: selectedMesa.numero,
           estado: "pendiente",
           items,
@@ -604,29 +621,29 @@ export function Dashboard() {
 
     // Crear consumos para TODOS los items (cocina + directo)
     const consumosToInsert = [
-      // Items de cocina
       ...kitchenItems.map((i) => ({
-        mesa_id: selectedMesa.id,
+        mesa_numero: selectedMesa.numero,
+        tenant_id: tenantId,
         comanda_id: comandaId,
         plato_id: i.plato.id,
         nombre: i.plato.nombre,
         cantidad: i.cantidad,
         precio_unitario: i.plato.precio,
         subtotal: i.plato.precio * i.cantidad,
-        tipo: 'cocina' as const,
-        estado: 'enviado_cocina' as const,
+        tipo: "cocina" as const,
+        estado: "enviado_cocina" as const,
       })),
-      // Items directos (bebidas, etc)
       ...directItems.map((i) => ({
-        mesa_id: selectedMesa.id,
+        mesa_numero: selectedMesa.numero,
+        tenant_id: tenantId,
         comanda_id: null,
         plato_id: i.plato.id,
         nombre: i.plato.nombre,
         cantidad: i.cantidad,
         precio_unitario: i.plato.precio,
         subtotal: i.plato.precio * i.cantidad,
-        tipo: 'directo' as const,
-        estado: 'entregado' as const, // Los items directos ya están entregados
+        tipo: "directo" as const,
+        estado: "entregado" as const,
       })),
     ];
 
@@ -648,14 +665,14 @@ export function Dashboard() {
     setSending(false);
 
     // Actualizar deuda de la mesa
-    await refreshMesaDebt(selectedMesa.id);
+    await refreshMesaDebt(selectedMesa.id, selectedMesa.numero);
   }
 
   async function openPaymentModal() {
     if (selectedMesa) {
       // Hay mesa seleccionada, abrir modal de pago normal
       // Cargar consumos de la mesa
-      const consumos = await loadTableConsumption(selectedMesa.id);
+      const consumos = await loadTableConsumption(selectedMesa.numero);
       setMesaConsumos(consumos);
       setShowPaymentModal(true);
       return;
@@ -698,8 +715,8 @@ export function Dashboard() {
 
       // Convertir cart a formato similar a consumos
       consumosToBill = cart.map((item) => ({
-        id: crypto.randomUUID(), // ID temporal
-        mesa_id: null,
+        id: crypto.randomUUID(),
+        mesa_numero: 0,
         comanda_id: null,
         plato_id: item.plato.id,
         nombre: item.plato.nombre,
@@ -753,14 +770,12 @@ export function Dashboard() {
       pagada_at: new Date().toISOString(),
     };
 
-    // Agregar info de mesa solo si existe
+    // facturas no tiene mesa_id en BD; mesa_numero es NOT NULL → 0 = para llevar
     if (selectedMesa) {
-      facturaData.mesa_id = selectedMesa.id;
       facturaData.mesa_numero = selectedMesa.numero;
       facturaData.notas = `Mesa ${selectedMesa.numero}`;
     } else {
-      facturaData.mesa_id = null;
-      facturaData.mesa_numero = null;
+      facturaData.mesa_numero = 0;
       facturaData.notas = "Para llevar";
     }
 
@@ -796,7 +811,7 @@ export function Dashboard() {
         console.error("Error al marcar consumos como pagados:", updateError);
       }
 
-      await refreshMesaDebt(selectedMesa.id);
+      await refreshMesaDebt(selectedMesa.id, selectedMesa.numero);
     }
 
     // Limpiar y mostrar éxito

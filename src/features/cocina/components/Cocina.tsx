@@ -10,10 +10,10 @@ interface ComandaItem {
 }
 
 interface Comanda {
-  id: number;
+  id: string;
   numero_comanda: number;
-  mesa_id: number | null;
-  mesa_numero: number;
+  mesa_id: string | null;
+  mesa_numero: number | null;
   estado: "pendiente" | "en_preparacion" | "listo" | "entregado";
   items: ComandaItem[];
   notas: string | null;
@@ -53,7 +53,7 @@ function printComanda(comanda: Comanda, empresaNombre: string) {
 <body>
   <h1>${empresaNombre}</h1>
   <div class="center">COMANDA #${String(comanda.numero_comanda).padStart(4, "0")}</div>
-  <div class="center">Mesa ${comanda.mesa_numero}</div>
+  <div class="center">${comanda.mesa_numero != null && comanda.mesa_numero !== 0 ? `Mesa ${comanda.mesa_numero}` : "Para llevar"}</div>
   <hr class="divider">
   <table>${itemsHtml}</table>
   <hr class="divider">
@@ -176,7 +176,7 @@ export function Cocina() {
     setToggling(false);
   }
 
-  async function advanceComanda(id: number, nextEstado: Comanda["estado"]) {
+  async function advanceComanda(id: string, nextEstado: Comanda["estado"]) {
     const { error } = await insforgeClient.database
       .from("comandas")
       .update({ estado: nextEstado })
@@ -346,7 +346,9 @@ export function Cocina() {
                         #{String(comanda.numero_comanda).padStart(4, "0")}
                       </span>
                       <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">
-                        Mesa {comanda.mesa_numero}
+                        {comanda.mesa_numero != null && comanda.mesa_numero !== 0
+                          ? `Mesa ${comanda.mesa_numero}`
+                          : "Para llevar"}
                       </span>
                     </div>
 

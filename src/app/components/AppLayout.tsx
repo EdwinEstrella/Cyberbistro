@@ -18,6 +18,7 @@ const mainNavItems = [
   { label: "Cocina", icon: svgPaths.p643d217, viewBox: "0 0 20 20", path: "/cocina" },
   { label: "Entregas", icon: svgPaths.p18098d80, viewBox: "0 0 15 13.5", path: "/entregas" },
   { label: "Analíticas", icon: svgPaths.p30837e80, viewBox: "0 0 18 18", path: "/billing" },
+  { label: "Cierre", icon: svgPaths.p2fcd0500, viewBox: "0 0 18 18", path: "/cierre" },
 ] as const;
 
 const soporteNavItem = {
@@ -31,7 +32,9 @@ function filterMainNavForRol(rol: string | null) {
   if (rol === "admin") return [...mainNavItems];
   if (rol === "cocina") return mainNavItems.filter((i) => i.path === "/cocina");
   if (rol === "mesero" || rol === "cajero") {
-    return mainNavItems.filter((i) => ["/dashboard", "/tables", "/entregas"].includes(i.path));
+    const base = ["/dashboard", "/tables", "/entregas"] as const;
+    const allow = rol === "cajero" ? [...base, "/cierre"] : [...base];
+    return mainNavItems.filter((i) => allow.includes(i.path as (typeof allow)[number]));
   }
   return mainNavItems.filter((i) => i.path === "/dashboard");
 }
@@ -66,14 +69,14 @@ export function AppLayout() {
   const isAjustesActive = location.pathname === "/ajustes";
 
   return (
-    <div className="bg-[#0e0e0e] flex flex-col min-h-screen w-full">
+    <div className="bg-[#0e0e0e] flex flex-col h-full min-h-0 w-full overflow-hidden">
       {/* TitleBar */}
       <TitleBar />
 
       <RoleGuard>
-      <div className="flex flex-1">
+      <div className="flex flex-1 min-h-0">
         {/* Sidebar */}
-        <aside className="bg-[#131313] flex flex-col w-[256px] shrink-0 h-[calc(100vh-36px)] sticky top-9 z-20">
+        <aside className="bg-[#131313] flex flex-col w-[256px] shrink-0 min-h-0 self-stretch z-20">
           <nav className="flex-1 flex flex-col gap-[8px] px-[16px] pt-[16px]">
             {sideNavItems.map((item) => {
               const isActive = location.pathname === item.path;
@@ -149,8 +152,8 @@ export function AppLayout() {
           </div>
         </aside>
 
-        {/* Main area */}
-        <div className="flex-1 flex flex-col min-w-0">
+        {/* Main area — min-h-0 + scroll en <main> para que el contenido no quede cortado (Electron) */}
+        <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
           {/* Shared Header */}
           <header className="backdrop-blur-[6px] bg-[rgba(14,14,14,0.6)] flex items-center justify-between h-[64px] px-4 sm:px-6 lg:px-[32px] border-b border-[rgba(72,72,71,0.2)] sticky top-0 z-10 shadow-[0px_4px_24px_0px_rgba(255,144,109,0.08)]">
             <div className="flex gap-[8px] sm:gap-[24px] items-center min-w-0">
@@ -219,7 +222,9 @@ export function AppLayout() {
             </div>
           </header>
 
-          <Outlet />
+          <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+            <Outlet />
+          </main>
         </div>
       </div>
       </RoleGuard>
