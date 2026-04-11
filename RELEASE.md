@@ -19,7 +19,7 @@ Salida en la carpeta `release/`: instalador NSIS (`.exe`), `latest.yml` y archiv
 2. Ejecuta en PowerShell (sustituye el token):
 
 ```powershell
-$env:GH_TOKEN="ghp_xxxxxxxx"
+$env:GH_TOKEN="ghp_TU_TOKEN_AQUI"
 npm run release:win
 ```
 
@@ -39,3 +39,17 @@ Para distribución pública, conviene un certificado de firma de código (Authen
 ## MSI con Electron Forge
 
 El script `npm run make` sigue generando MSI con WiX; ese artefacto no es el que consume `electron-updater` en Windows (el canal de auto-actualización es el NSIS `.exe` de `dist:win` / `release:win`).
+
+## Instalador NSIS: “Siguiente” cierra la ventana
+
+**Modo actual:** asistente **multipágina** (`oneClick: false`, `allowToChangeInstallationDirectory: true`). Tras **Siguiente** en la bienvenida deberías ver la carpeta de destino, luego la barra de progreso y la pantalla de finalización (con opción de ejecutar la app si `runAfterFinish` está activo).
+
+Si antes usabas **one-click** (`oneClick: true`), el primer **Siguiente** a veces **inicia la instalación y cierra el asistente al momento**; puede parecer un fallo aunque la app se haya instalado. Comprueba menú Inicio / escritorio.
+
+Si con el asistente multipágina la ventana se cierra en el **primer** Siguiente y no aparece la carpeta de instalación:
+
+1. Prueba `release\win-unpacked\Cyberbistro.exe` (sin instalador). Si funciona, sospecha de antivirus o SmartScreen sobre el `.exe` del setup.
+2. Ejecuta el instalador como administrador (clic derecho → Ejecutar como administrador).
+3. Logs de la app tras instalar: `%USERPROFILE%\AppData\Roaming\Cyberbistro\logs\`.
+
+Para volver al instalador mínimo de una sola acción, en `package.json` → `build.nsis` pon `oneClick: true` y `allowToChangeInstallationDirectory: false`.

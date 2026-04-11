@@ -106,10 +106,13 @@ function createWindow() {
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
   } else {
-    // When packaged with Electron Forge, load the built index.html
-    // The dist folder should be in the root of app.asar
     const indexPath = path.join(__dirname, '../dist/index.html')
-    mainWindow.loadFile(indexPath)
+    mainWindow.loadFile(indexPath).catch((err) => {
+      console.error('loadFile failed:', indexPath, err)
+    })
+    mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
+      console.error('did-fail-load:', { code, desc, url })
+    })
   }
 
   // Maximize window on startup

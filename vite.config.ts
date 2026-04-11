@@ -34,6 +34,7 @@ function copyPreload() {
 }
 
 export default defineConfig({
+  base: './',
   plugins: [
     figmaAssetResolver(),
     copyPreload(),
@@ -71,6 +72,6 @@ export default defineConfig({
   // Build configuration for renderer process
   build: {
     outDir: 'dist',
-    emptyOutDir: true
-  }
+    emptyOutDir: true,
+  },
 })

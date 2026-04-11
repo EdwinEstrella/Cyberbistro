@@ -1,53 +1,57 @@
 import { ipcMain as d, BrowserWindow as c, app as l } from "electron";
 import m from "node:path";
-import { fileURLToPath as b } from "node:url";
-import { autoUpdater as i } from "electron-updater";
-import g from "electron-log";
-let h = !1;
+import { fileURLToPath as x } from "node:url";
+import { autoUpdater as t } from "electron-updater";
+import w from "electron-log";
+let g = !1;
 function y(a) {
   const n = c.getFocusedWindow();
   if (n && !n.isDestroyed()) return n;
   const e = a();
-  return e && !e.isDestroyed() ? e : c.getAllWindows().find((s) => !s.isDestroyed()) ?? null;
+  return e && !e.isDestroyed() ? e : c.getAllWindows().find((r) => !r.isDestroyed()) ?? null;
 }
 function z(a) {
-  i.logger = g, i.logger.transports.file.level = "info", i.autoDownload = !0, process.platform === "win32" && !process.env.CSC_LINK && !process.env.WIN_CSC_LINK && (i.verifyUpdateCodeSignature = !1);
-  const n = (e, t) => {
-    const s = y(a);
-    s && s.webContents.send(e, t);
+  t.logger = w, t.logger.transports.file.level = "info", t.autoDownload = !0, process.platform === "win32" && !process.env.CSC_LINK && !process.env.WIN_CSC_LINK && (t.verifyUpdateCodeSignature = !1);
+  const n = (e, i) => {
+    const r = y(a);
+    r && r.webContents.send(e, i);
   };
-  h || (h = !0, i.on("update-available", (e) => {
+  g || (g = !0, t.on("update-available", (e) => {
     n("update-available", {
       version: e.version,
       releaseDate: e.releaseDate,
       releaseNotes: e.releaseNotes
     });
-  }), i.on("update-not-available", () => {
+  }), t.on("update-not-available", () => {
     n("update-not-available");
-  }), i.on("download-progress", (e) => {
+  }), t.on("download-progress", (e) => {
     n("download-progress", {
       percent: Math.round(e.percent),
       transferred: e.transferred,
       total: e.total,
       bytesPerSecond: e.bytesPerSecond
     });
-  }), i.on("update-downloaded", (e) => {
+  }), t.on("update-downloaded", (e) => {
     n("update-downloaded", {
       version: e.version,
       releaseDate: e.releaseDate,
       releaseNotes: e.releaseNotes
     });
-  }), i.on("error", (e) => {
-    g.error("autoUpdater error", e), n("update-error", e.message);
+  }), t.on("error", (e) => {
+    w.error("autoUpdater error", e), n("update-error", e.message);
   }), d.on("install-update", () => {
-    i.quitAndInstall(!1, !0);
+    t.quitAndInstall(!1, !0);
   }), d.on("check-for-updates", () => {
-    i.checkForUpdates();
+    t.checkForUpdates().catch((e) => {
+      w.warn("checkForUpdates (IPC) failed", e);
+    });
   })), setTimeout(() => {
-    i.checkForUpdates();
+    t.checkForUpdates().catch((e) => {
+      w.warn("checkForUpdates failed", e);
+    });
   }, 3e3);
 }
-const p = m.dirname(b(import.meta.url));
+const h = m.dirname(x(import.meta.url));
 let o = null;
 d.handle("printers:list", async () => {
   const a = o || c.getAllWindows()[0];
@@ -66,7 +70,7 @@ d.handle("printers:list", async () => {
 d.handle(
   "print:thermal",
   async (a, n) => new Promise((e) => {
-    const t = new c({
+    const i = new c({
       width: 420,
       height: 900,
       show: !1,
@@ -75,29 +79,29 @@ d.handle(
         contextIsolation: !0,
         sandbox: !1
       }
-    }), s = (r) => {
-      t.isDestroyed() || t.close(), e({ ok: !1, error: r });
-    }, u = setTimeout(() => s("Tiempo de impresión agotado"), 45e3);
-    t.webContents.once("did-fail-load", (r, w, f) => {
-      clearTimeout(u), s(`Carga fallida: ${w} ${f}`);
-    }), t.webContents.once("did-finish-load", () => {
+    }), r = (s) => {
+      i.isDestroyed() || i.close(), e({ ok: !1, error: s });
+    }, f = setTimeout(() => r("Tiempo de impresión agotado"), 45e3);
+    i.webContents.once("did-fail-load", (s, u, p) => {
+      clearTimeout(f), r(`Carga fallida: ${u} ${p}`);
+    }), i.webContents.once("did-finish-load", () => {
       setTimeout(() => {
-        const r = !!(n.silent && n.deviceName);
-        t.webContents.print(
+        const s = !!(n.silent && n.deviceName);
+        i.webContents.print(
           {
-            silent: r,
+            silent: s,
             printBackground: !0,
             deviceName: n.deviceName || void 0
           },
-          (w, f) => {
-            clearTimeout(u), t.isDestroyed() || t.close(), e(w ? { ok: !0 } : { ok: !1, error: String(f || "Error de impresión") });
+          (u, p) => {
+            clearTimeout(f), i.isDestroyed() || i.close(), e(u ? { ok: !0 } : { ok: !1, error: String(p || "Error de impresión") });
           }
         );
       }, 450);
     });
-    const x = "data:text/html;charset=utf-8," + encodeURIComponent(n.html);
-    t.loadURL(x).catch((r) => {
-      clearTimeout(u), s(r instanceof Error ? r.message : String(r));
+    const b = "data:text/html;charset=utf-8," + encodeURIComponent(n.html);
+    i.loadURL(b).catch((s) => {
+      clearTimeout(f), r(s instanceof Error ? s.message : String(s));
     });
   })
 );
@@ -108,9 +112,9 @@ function v() {
     height: 600,
     frame: !1,
     titleBarStyle: "hidden",
-    icon: l.isPackaged ? m.join(process.resourcesPath, "icon.ico") : m.join(p, "../icon.ico"),
+    icon: l.isPackaged ? m.join(process.resourcesPath, "icon.ico") : m.join(h, "../icon.ico"),
     webPreferences: {
-      preload: m.join(p, "preload.cjs"),
+      preload: m.join(h, "preload.cjs"),
       nodeIntegration: !1,
       contextIsolation: !0,
       webSecurity: !0
@@ -118,8 +122,12 @@ function v() {
   }), process.env.VITE_DEV_SERVER_URL)
     o.loadURL(process.env.VITE_DEV_SERVER_URL);
   else {
-    const a = m.join(p, "../dist/index.html");
-    o.loadFile(a);
+    const a = m.join(h, "../dist/index.html");
+    o.loadFile(a).catch((n) => {
+      console.error("loadFile failed:", a, n);
+    }), o.webContents.on("did-fail-load", (n, e, i, r) => {
+      console.error("did-fail-load:", { code: e, desc: i, url: r });
+    });
   }
   o.maximize(), o.on("maximize", () => {
     o == null || o.webContents.send("window-maximized", !0);

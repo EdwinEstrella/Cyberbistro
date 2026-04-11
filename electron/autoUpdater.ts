@@ -68,11 +68,15 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null) {
     })
 
     ipcMain.on('check-for-updates', () => {
-      void autoUpdater.checkForUpdates()
+      autoUpdater.checkForUpdates().catch((err) => {
+        log.warn('checkForUpdates (IPC) failed', err)
+      })
     })
   }
 
   setTimeout(() => {
-    void autoUpdater.checkForUpdates()
+    autoUpdater.checkForUpdates().catch((err) => {
+      log.warn('checkForUpdates failed', err)
+    })
   }, 3000)
 }

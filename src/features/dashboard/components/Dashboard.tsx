@@ -10,6 +10,10 @@ import {
 } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
+import {
+  MENU_CATEGORY_COLORS,
+  sortCategoriesForTabs,
+} from "../../../shared/lib/menuCategories";
 
 interface Plato {
   id: number;
@@ -60,18 +64,8 @@ const RD = (n: number) =>
     maximumFractionDigits: 2,
   });
 
-const CAT_COLORS: Record<string, string> = {
-  Hamburguesas: "#ff6aa0",
-  Bebidas: "#59ee50",
-  Sushi: "#ff906d",
-  Pastas: "#ffd06d",
-  Postres: "#ff784d",
-  Entradas: "#adaaaa",
-  General: "#6b7280",
-};
-
 function catColor(cat: string) {
-  return CAT_COLORS[cat] ?? "#adaaaa";
+  return MENU_CATEGORY_COLORS[cat] ?? "#adaaaa";
 }
 
 const tickerItems = [
@@ -188,7 +182,7 @@ export function Dashboard() {
 
   const categories = [
     "Todos",
-    ...Array.from(new Set(platos.map((p) => p.categoria))),
+    ...sortCategoriesForTabs(platos.map((p) => p.categoria)),
   ];
   const filtered =
     activeCategory === "Todos"

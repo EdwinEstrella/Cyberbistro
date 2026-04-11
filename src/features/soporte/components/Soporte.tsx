@@ -3,6 +3,11 @@ import { Navigate, useNavigate } from "react-router";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { APP_ACCESS_PIN } from "../../../shared/lib/accessPin";
+import {
+  MENU_CATEGORIES,
+  MENU_CATEGORY_COLORS,
+  sortCategoriesForTabs,
+} from "../../../shared/lib/menuCategories";
 
 const STAFF_ROLES = [
   { value: "mesero", label: "Mesero / Venta" },
@@ -103,18 +108,11 @@ interface Plato {
 const RD = (n: number) =>
   "RD$ " + n.toLocaleString("es-DO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-const CAT_COLORS: Record<string, string> = {
-  Hamburguesas: "#ff6aa0",
-  Bebidas: "#59ee50",
-  Sushi: "#ff906d",
-  Pastas: "#ffd06d",
-  Postres: "#ff784d",
-  Entradas: "#adaaaa",
-  General: "#6b7280",
-};
-function catColor(cat: string) { return CAT_COLORS[cat] ?? "#adaaaa"; }
+function catColor(cat: string) {
+  return MENU_CATEGORY_COLORS[cat] ?? "#adaaaa";
+}
 
-const CATEGORIAS = ["Entradas", "Hamburguesas", "Pastas", "Sushi", "Postres", "Bebidas", "General"];
+const CATEGORIAS = MENU_CATEGORIES;
 
 type FormMode = "add" | "edit" | null;
 
@@ -149,7 +147,7 @@ function CartaPanel() {
   }, [tenantId, authLoading]);
 
   const selected = platos.find((p) => p.id === selectedId) ?? null;
-  const categories = ["Todos", ...Array.from(new Set(platos.map((p) => p.categoria)))];
+  const categories = ["Todos", ...sortCategoriesForTabs(platos.map((p) => p.categoria))];
   const filtered = activeFilter === "Todos" ? platos : platos.filter((p) => p.categoria === activeFilter);
 
   function openAdd() {
