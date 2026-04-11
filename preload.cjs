@@ -1,3 +1,5 @@
+'use strict'
+
 const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -20,15 +22,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => {
       ipcRenderer.removeListener('window-maximized', listener)
     }
-  }
+  },
+  listPrinters: () => ipcRenderer.invoke('printers:list'),
+  printThermal: (opts) => ipcRenderer.invoke('print:thermal', opts),
 })
 
 window.addEventListener('DOMContentLoaded', () => {
   const replaceText = (selector, text) => {
     const element = document.getElementById(selector)
-    if (element) element.innerText = text
+    if (element) element.textContent = text
   }
-
   for (const type of ['chrome', 'node', 'electron']) {
     replaceText(`${type}-version`, process.versions[type])
   }

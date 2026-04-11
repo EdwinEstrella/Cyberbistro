@@ -6,6 +6,7 @@ import imgDecorativeScanlineEffect from "figma:asset/70a05c412757c6d4e1cffbb0780
 import { TitleBar } from "../../window";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { PinGateModal } from "../../../shared/components/PinGate";
+import { APP_ACCESS_PIN } from "../../../shared/lib/accessPin";
 
 export function Register() {
   const [email, setEmail] = useState("");
@@ -534,7 +535,7 @@ export function Register() {
           onCancel={() => setShowPinGate(false)}
           title="Completar Registro"
           subtitle="Ingresá la clave maestra para completar"
-          correctPin="1110"
+          correctPin={APP_ACCESS_PIN}
         />
       )}
     </div>

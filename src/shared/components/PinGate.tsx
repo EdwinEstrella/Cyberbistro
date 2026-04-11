@@ -8,7 +8,7 @@ interface PinGateProps {
   correctPin?: string;
 }
 
-export function PinGateModal({ onUnlock, onCancel, title = "Clave Requerida", subtitle = "Ingresá la clave para continuar", correctPin = "9999" }: PinGateProps) {
+export function PinGateModal({ onUnlock, onCancel, title = "Clave Requerida", subtitle = "Ingresá la clave para continuar", correctPin = "1110" }: PinGateProps) {
   const [pin, setPin] = useState("");
   const [shaking, setShaking] = useState(false);
 

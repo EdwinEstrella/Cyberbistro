@@ -1,23 +1,54 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router";
 
 import svgPaths from "../../imports/svg-qgatbhef3k";
 import { TitleBar } from "../../features/window";
 import { insforgeClient } from "../../shared/lib/insforge";
+import { useAuth } from "../../shared/hooks/useAuth";
+import {
+  canAccessCocinaRoute,
+  showAjustesInSidebar,
+  showSoporteInSidebar,
+} from "../../shared/lib/roleNav";
+import { RoleGuard } from "./RoleGuard";
 
-const sideNavItems = [
+const mainNavItems = [
   { label: "Venta", icon: svgPaths.p20793584, viewBox: "0 0 18 18", path: "/dashboard" },
   { label: "Mesas", icon: svgPaths.p186f5ba0, viewBox: "0 0 18 18", path: "/tables" },
   { label: "Cocina", icon: svgPaths.p643d217, viewBox: "0 0 20 20", path: "/cocina" },
   { label: "Entregas", icon: svgPaths.p18098d80, viewBox: "0 0 15 13.5", path: "/entregas" },
   { label: "Analíticas", icon: svgPaths.p30837e80, viewBox: "0 0 18 18", path: "/billing" },
-  { label: "Soporte", icon: svgPaths.p18c14180, viewBox: "0 0 20 16", path: "/soporte" },
-];
+] as const;
+
+const soporteNavItem = {
+  label: "Soporte",
+  icon: svgPaths.p18c14180,
+  viewBox: "0 0 20 16",
+  path: "/soporte",
+} as const;
+
+function filterMainNavForRol(rol: string | null) {
+  if (rol === "admin") return [...mainNavItems];
+  if (rol === "cocina") return mainNavItems.filter((i) => i.path === "/cocina");
+  if (rol === "mesero" || rol === "cajero") {
+    return mainNavItems.filter((i) => ["/dashboard", "/tables", "/entregas"].includes(i.path));
+  }
+  return mainNavItems.filter((i) => i.path === "/dashboard");
+}
 
 export function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { rol, signOut } = useAuth();
   const [cocinaActiva, setCocinaActiva] = useState(true);
+
+  const sideNavItems = useMemo(() => {
+    const main = filterMainNavForRol(rol);
+    if (showSoporteInSidebar(rol)) {
+      return [...main, soporteNavItem];
+    }
+    return main;
+  }, [rol]);
 
   // Re-fetch kitchen status on every route change so the badge stays in sync
   useEffect(() => {
@@ -39,6 +70,7 @@ export function AppLayout() {
       {/* TitleBar */}
       <TitleBar />
 
+      <RoleGuard>
       <div className="flex flex-1">
         {/* Sidebar */}
         <aside className="bg-[#131313] flex flex-col w-[256px] shrink-0 h-[calc(100vh-36px)] sticky top-9 z-20">
@@ -73,30 +105,39 @@ export function AppLayout() {
           </nav>
 
           <div className="border-t border-[rgba(72,72,71,0.2)] px-[16px] py-[16px] flex flex-col gap-[8px]">
-            {/* Ajustes — as navigable item */}
-            <div
-              onClick={() => navigate("/ajustes")}
-              className={`flex gap-[16px] items-center px-[16px] py-[12px] cursor-pointer relative ${isAjustesActive ? "bg-[#262626]" : ""}`}
-            >
-              {isAjustesActive && (
-                <div className="absolute left-0 top-0 bottom-0 w-[4px] bg-[#ff906d]" />
-              )}
-              <svg className="shrink-0 w-[20px] h-[20px]" fill="none" viewBox="0 0 20.1 20">
-                <path d={svgPaths.p3cdadd00} fill={isAjustesActive ? "#FF906D" : "#6B7280"} />
-              </svg>
-              <span
-                className={`font-['Space_Grotesk',sans-serif] text-[16px] tracking-[-0.4px] ${
-                  isAjustesActive ? "font-bold text-[#ff906d]" : "text-[#6b7280]"
-                }`}
+            {/* Ajustes — solo administrador del negocio */}
+            {showAjustesInSidebar(rol) && (
+              <div
+                onClick={() => navigate("/ajustes")}
+                className={`flex gap-[16px] items-center px-[16px] py-[12px] cursor-pointer relative ${isAjustesActive ? "bg-[#262626]" : ""}`}
               >
-                Ajustes
-              </span>
-            </div>
+                {isAjustesActive && (
+                  <div className="absolute left-0 top-0 bottom-0 w-[4px] bg-[#ff906d]" />
+                )}
+                <svg className="shrink-0 w-[20px] h-[20px]" fill="none" viewBox="0 0 20.1 20">
+                  <path d={svgPaths.p3cdadd00} fill={isAjustesActive ? "#FF906D" : "#6B7280"} />
+                </svg>
+                <span
+                  className={`font-['Space_Grotesk',sans-serif] text-[16px] tracking-[-0.4px] ${
+                    isAjustesActive ? "font-bold text-[#ff906d]" : "text-[#6b7280]"
+                  }`}
+                >
+                  Ajustes
+                </span>
+              </div>
+            )}
 
             {/* Cerrar Sesión */}
             <div
               className="flex gap-[16px] items-center px-[16px] py-[12px] cursor-pointer"
-              onClick={() => navigate("/")}
+              onClick={async () => {
+                try {
+                  await signOut();
+                } catch {
+                  /* sesión ya inválida */
+                }
+                navigate("/");
+              }}
             >
               <svg className="shrink-0 size-[18px]" fill="none" viewBox="0 0 18 18">
                 <path d={svgPaths.p3e9df400} fill="#6B7280" />
@@ -119,9 +160,19 @@ export function AppLayout() {
               <div className="hidden sm:block bg-[rgba(72,72,71,0.3)] h-[16px] w-px" />
               {/* Cocina en Vivo badge — reactive to DB */}
               <div
-                className="bg-[#201f1f] flex gap-[8px] items-center px-[13px] py-[5px] rounded-full border border-[rgba(72,72,71,0.2)] transition-all cursor-pointer"
-                onClick={() => navigate("/cocina")}
-                title={cocinaActiva ? "Cocina abierta" : "Cocina cerrada"}
+                className={`bg-[#201f1f] flex gap-[8px] items-center px-[13px] py-[5px] rounded-full border border-[rgba(72,72,71,0.2)] transition-all ${
+                  canAccessCocinaRoute(rol) ? "cursor-pointer" : "cursor-default opacity-90"
+                }`}
+                onClick={() => {
+                  if (canAccessCocinaRoute(rol)) navigate("/cocina");
+                }}
+                title={
+                  canAccessCocinaRoute(rol)
+                    ? cocinaActiva
+                      ? "Cocina abierta"
+                      : "Cocina cerrada"
+                    : "Estado de cocina (solo personal de cocina o administrador abre la vista)"
+                }
               >
                 <div
                   className="rounded-full size-[8px] transition-colors"
@@ -171,6 +222,7 @@ export function AppLayout() {
           <Outlet />
         </div>
       </div>
+      </RoleGuard>
     </div>
   );
 }

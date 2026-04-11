@@ -1,7 +1,23 @@
 import { useState, useEffect } from "react";
+import { Navigate, useNavigate } from "react-router";
 import { insforgeClient } from "../../../shared/lib/insforge";
+import { useAuth } from "../../../shared/hooks/useAuth";
+import { APP_ACCESS_PIN } from "../../../shared/lib/accessPin";
 
-const ACCESS_PIN = "1110";
+const STAFF_ROLES = [
+  { value: "mesero", label: "Mesero / Venta" },
+  { value: "cocina", label: "Cocina" },
+  { value: "cajero", label: "Cajero" },
+] as const;
+
+interface TenantUserRow {
+  id: string;
+  email: string;
+  rol: string;
+  nombre: string | null;
+  activo: boolean | null;
+  auth_user_id: string | null;
+}
 
 // ─────────────────────────────────────────────
 // PIN GATE
@@ -15,7 +31,7 @@ function PinGate({ onUnlock }: { onUnlock: () => void }) {
     const next = pin + digit;
     setPin(next);
     if (next.length === 4) {
-      if (next === ACCESS_PIN) {
+      if (next === APP_ACCESS_PIN) {
         onUnlock();
       } else {
         setShaking(true);
@@ -103,6 +119,7 @@ const CATEGORIAS = ["Entradas", "Hamburguesas", "Pastas", "Sushi", "Postres", "B
 type FormMode = "add" | "edit" | null;
 
 function CartaPanel() {
+  const { tenantId, loading: authLoading } = useAuth();
   const [platos, setPlatos] = useState<Plato[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -113,15 +130,23 @@ function CartaPanel() {
   const [activeFilter, setActiveFilter] = useState("Todos");
 
   useEffect(() => {
+    if (authLoading) return;
+    if (!tenantId) {
+      setPlatos([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
     insforgeClient.database
       .from("platos")
       .select("*")
+      .eq("tenant_id", tenantId)
       .order("categoria")
       .then(({ data, error }) => {
         if (!error && data) setPlatos(data as Plato[]);
         setLoading(false);
       });
-  }, []);
+  }, [tenantId, authLoading]);
 
   const selected = platos.find((p) => p.id === selectedId) ?? null;
   const categories = ["Todos", ...Array.from(new Set(platos.map((p) => p.categoria)))];
@@ -145,6 +170,10 @@ function CartaPanel() {
     if (!form.nombre.trim()) { setError("El nombre es requerido."); return; }
     const precio = parseFloat(form.precio);
     if (isNaN(precio) || precio < 0) { setError("Precio inválido."); return; }
+    if (!tenantId) {
+      setError("No hay restaurante asociado a la sesión.");
+      return;
+    }
     setSaving(true);
     setError("");
 
@@ -156,7 +185,8 @@ function CartaPanel() {
           precio,
           categoria: form.categoria,
           disponible: form.disponible,
-          va_a_cocina: form.va_a_cocina
+          va_a_cocina: form.va_a_cocina,
+          tenant_id: tenantId,
         }])
         .select();
       if (err) {
@@ -180,7 +210,8 @@ function CartaPanel() {
           disponible: form.disponible,
           va_a_cocina: form.va_a_cocina
         })
-        .eq("id", selectedId);
+        .eq("id", selectedId)
+        .eq("tenant_id", tenantId);
       if (err) {
         console.error("Error al actualizar plato:", err);
         setError(`Error: ${err.message || "No se pudo actualizar el plato"}`);
@@ -195,6 +226,10 @@ function CartaPanel() {
   }
 
   async function handleDelete(id: number) {
+    if (!tenantId) {
+      alert("No hay restaurante asociado a la sesión.");
+      return;
+    }
     const plato = platos.find((p) => p.id === id);
     if (!plato) return;
 
@@ -202,7 +237,8 @@ function CartaPanel() {
     const { data: consumos, error: consumosError } = await insforgeClient.database
       .from("consumos")
       .select("id")
-      .eq("plato_id", id);
+      .eq("plato_id", id)
+      .eq("tenant_id", tenantId);
 
     if (consumosError) {
       console.error("Error al verificar consumos:", consumosError);
@@ -238,7 +274,8 @@ function CartaPanel() {
       const { error: deleteConsumosError } = await insforgeClient.database
         .from("consumos")
         .delete()
-        .eq("plato_id", id);
+        .eq("plato_id", id)
+        .eq("tenant_id", tenantId);
 
       if (deleteConsumosError) {
         console.error("Error al eliminar consumos:", deleteConsumosError);
@@ -251,7 +288,8 @@ function CartaPanel() {
     const { error: deletePlatoError } = await insforgeClient.database
       .from("platos")
       .delete()
-      .eq("id", id);
+      .eq("id", id)
+      .eq("tenant_id", tenantId);
 
     if (deletePlatoError) {
       console.error("Error al eliminar plato:", deletePlatoError);
@@ -512,34 +550,230 @@ function CartaPanel() {
 // USUARIOS PANEL
 // ─────────────────────────────────────────────
 function UsuariosPanel() {
+  const { tenantId, tenantUser, user } = useAuth();
+  const navigate = useNavigate();
+  const [teamUsers, setTeamUsers] = useState<TenantUserRow[]>([]);
+  const [listLoading, setListLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
+  const [nombre, setNombre] = useState("");
+  const [rol, setRol] = useState<(typeof STAFF_ROLES)[number]["value"]>("mesero");
   const [creating, setCreating] = useState(false);
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
 
-  async function handleCreate() {
-    if (!email.trim() || !password.trim()) { setError("Email y contraseña son requeridos."); return; }
-    if (password.length < 6) { setError("La contraseña debe tener al menos 6 caracteres."); return; }
-    setCreating(true); setError(""); setSuccess("");
-    const { error: authError } = await insforgeClient.auth.signUp({ email: email.trim(), password });
-    if (authError) {
-      const msg = typeof authError === "string" ? authError : (authError as { message?: string })?.message ?? "Error al crear el usuario.";
-      setError(msg);
-    } else {
-      setSuccess(`Usuario ${email.trim()} creado exitosamente.`);
-      setEmail(""); setPassword("");
+  const adminEmail = tenantUser?.email?.trim() ?? "";
+
+  async function loadUsers() {
+    if (!tenantId) {
+      setTeamUsers([]);
+      setListLoading(false);
+      return;
     }
+    setListLoading(true);
+    const { data, error: qErr } = await insforgeClient.database
+      .from("tenant_users")
+      .select("id, email, rol, nombre, activo, auth_user_id")
+      .eq("tenant_id", tenantId)
+      .order("email");
+    if (!qErr && data) setTeamUsers(data as TenantUserRow[]);
+    else setTeamUsers([]);
+    setListLoading(false);
+  }
+
+  useEffect(() => {
+    void loadUsers();
+  }, [tenantId]);
+
+  async function handleDeleteUser(row: TenantUserRow) {
+    if (!tenantId) return;
+    if (row.auth_user_id && user?.id && row.auth_user_id === user.id) {
+      alert("No podés eliminar tu propia cuenta desde aquí.");
+      return;
+    }
+    const activeAdmins = teamUsers.filter((u) => u.rol === "admin" && u.activo !== false);
+    if (row.rol === "admin" && activeAdmins.length <= 1) {
+      alert("No podés eliminar el único administrador del negocio.");
+      return;
+    }
+    if (!confirm(`¿Eliminar el acceso de «${row.email}» a este negocio?\n\nNo borra el usuario en el sistema de login; solo desvincula al equipo de este restaurante.`)) {
+      return;
+    }
+    setDeletingId(row.id);
+    const { error: delErr } = await insforgeClient.database
+      .from("tenant_users")
+      .delete()
+      .eq("id", row.id)
+      .eq("tenant_id", tenantId);
+    setDeletingId(null);
+    if (delErr) {
+      alert(`Error al eliminar: ${delErr.message}`);
+      return;
+    }
+    await loadUsers();
+  }
+
+  async function handleCreate() {
+    if (!email.trim() || !password.trim()) {
+      setError("Email y contraseña del nuevo usuario son requeridos.");
+      return;
+    }
+    if (!adminPassword.trim()) {
+      setError("Ingresá tu contraseña de administrador para finalizar (la sesión cambia al nuevo usuario al registrarlo).");
+      return;
+    }
+    if (password.length < 6) {
+      setError("La contraseña del nuevo usuario debe tener al menos 6 caracteres.");
+      return;
+    }
+    if (!tenantId || !adminEmail) {
+      setError("No hay restaurante asociado a tu sesión.");
+      return;
+    }
+
+    setCreating(true);
+    setError("");
+    setSuccess("");
+
+    const staffEmail = email.trim();
+
+    const { data: signData, error: authError } = await insforgeClient.auth.signUp({
+      email: staffEmail,
+      password,
+    });
+
+    if (authError) {
+      const msg =
+        typeof authError === "string"
+          ? authError
+          : (authError as { message?: string })?.message ?? "Error al crear el usuario.";
+      setError(msg);
+      setCreating(false);
+      return;
+    }
+
+    const newUserId = (signData as { user?: { id?: string } } | null)?.user?.id;
+    if (!newUserId) {
+      setError("El usuario de acceso se creó pero no se obtuvo su ID. Contactá soporte técnico.");
+      setCreating(false);
+      return;
+    }
+
+    const { error: insertError } = await insforgeClient.database.from("tenant_users").insert([
+      {
+        auth_user_id: newUserId,
+        tenant_id: tenantId,
+        email: staffEmail,
+        password_hash: "MANAGED_BY_AUTH",
+        rol,
+        nombre: nombre.trim() || null,
+        activo: true,
+      },
+    ]);
+
+    if (insertError) {
+      await insforgeClient.auth.signOut();
+      sessionStorage.setItem(
+        "cyberbistro_login_notice",
+        `Se creó el acceso para ${staffEmail} pero no se pudo vincular al negocio (${insertError.message}). Iniciá sesión de nuevo con tu cuenta de administrador (${adminEmail}) y revisá usuarios o contactá soporte.`
+      );
+      navigate("/", { replace: true });
+      setCreating(false);
+      return;
+    }
+
+    await insforgeClient.auth.signOut();
+
+    const { error: reinError } = await insforgeClient.auth.signInWithPassword({
+      email: adminEmail,
+      password: adminPassword,
+    });
+
+    if (reinError) {
+      sessionStorage.setItem(
+        "cyberbistro_login_notice",
+        `Usuario ${staffEmail} creado y asignado a tu negocio. Iniciá sesión de nuevo con ${adminEmail}.`
+      );
+      navigate("/", { replace: true });
+      setCreating(false);
+      return;
+    }
+
+    setSuccess(`Usuario ${staffEmail} creado y asignado a tu negocio con rol «${rol}».`);
+    setEmail("");
+    setPassword("");
+    setAdminPassword("");
+    setNombre("");
+    setRol("mesero");
     setCreating(false);
+    await loadUsers();
   }
 
   return (
     <div className="flex-1 p-4 sm:p-[32px] overflow-auto">
-      <div className="max-w-[520px] flex flex-col gap-[20px]">
+      <div className="max-w-[920px] flex flex-col gap-[24px]">
+        <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-[28px] flex flex-col gap-[16px]">
+          <div className="flex flex-col gap-[4px]">
+            <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px]">Usuarios del negocio</span>
+            <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">
+              Solo usuarios vinculados a tu restaurante. El administrador no puede borrarse a sí mismo ni quitar el único admin.
+            </span>
+          </div>
+          {listLoading ? (
+            <span className="font-['Inter',sans-serif] text-[#6b7280] text-[13px]">Cargando lista…</span>
+          ) : teamUsers.length === 0 ? (
+            <span className="font-['Inter',sans-serif] text-[#6b7280] text-[13px]">No hay usuarios registrados.</span>
+          ) : (
+            <div className="overflow-x-auto rounded-[12px] border border-[rgba(72,72,71,0.2)]">
+              <table className="w-full text-left border-collapse min-w-[520px]">
+                <thead>
+                  <tr className="bg-[#1a1a1a] text-[#adaaaa] font-['Inter',sans-serif] text-[10px] uppercase tracking-wide">
+                    <th className="px-[14px] py-[10px]">Email</th>
+                    <th className="px-[14px] py-[10px]">Nombre</th>
+                    <th className="px-[14px] py-[10px]">Rol</th>
+                    <th className="px-[14px] py-[10px]">Activo</th>
+                    <th className="px-[14px] py-[10px] w-[100px]"></th>
+                  </tr>
+                </thead>
+                <tbody className="font-['Inter',sans-serif] text-[13px] text-white">
+                  {teamUsers.map((u) => {
+                    const isSelf = Boolean(u.auth_user_id && user?.id && u.auth_user_id === user.id);
+                    const adminCount = teamUsers.filter((x) => x.rol === "admin" && x.activo !== false).length;
+                    const onlyAdminLeft = u.rol === "admin" && adminCount <= 1;
+                    const canDelete = !isSelf && !onlyAdminLeft;
+                    return (
+                      <tr key={u.id} className="border-t border-[rgba(72,72,71,0.15)]">
+                        <td className="px-[14px] py-[10px]">{u.email}</td>
+                        <td className="px-[14px] py-[10px] text-[#adaaaa]">{u.nombre || "—"}</td>
+                        <td className="px-[14px] py-[10px] capitalize">{u.rol}</td>
+                        <td className="px-[14px] py-[10px]">{u.activo === false ? "No" : "Sí"}</td>
+                        <td className="px-[14px] py-[10px]">
+                          <button
+                            type="button"
+                            disabled={!canDelete || deletingId === u.id}
+                            onClick={() => void handleDeleteUser(u)}
+                            className="text-[#ff716c] text-[11px] font-bold uppercase tracking-wide cursor-pointer bg-transparent border-none disabled:opacity-30 disabled:cursor-not-allowed"
+                          >
+                            {deletingId === u.id ? "…" : "Eliminar"}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
         <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-[28px] flex flex-col gap-[18px]">
           <div className="flex flex-col gap-[4px]">
-            <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px]">Crear Nuevo Usuario</span>
-            <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">El usuario recibirá acceso al sistema CyberBistro.</span>
+            <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px]">Crear usuario de equipo</span>
+            <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">
+              Queda vinculado solo al restaurante de tu sesión (no a otros negocios). Elegí rol de venta, cocina o cajero; esos usuarios no ven el módulo Soporte.
+            </span>
           </div>
           {success && (
             <div className="bg-[rgba(89,238,80,0.05)] border border-[rgba(89,238,80,0.2)] rounded-[10px] px-[16px] py-[10px]">
@@ -553,24 +787,81 @@ function UsuariosPanel() {
           )}
           <div className="flex flex-col gap-[12px]">
             <div className="flex flex-col gap-[6px]">
-              <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">Email</label>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="usuario@restaurante.com"
-                className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-[14px] py-[11px] font-['Inter',sans-serif] text-white text-[13px] outline-none w-full"
-                onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(255,144,109,0.4)")}
-                onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(72,72,71,0.3)")} />
+              <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">Rol en el negocio</label>
+              <select
+                value={rol}
+                onChange={(e) => setRol(e.target.value as (typeof STAFF_ROLES)[number]["value"])}
+                className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-[14px] py-[11px] font-['Inter',sans-serif] text-white text-[13px] outline-none w-full cursor-pointer"
+              >
+                {STAFF_ROLES.map((r) => (
+                  <option key={r.value} value={r.value} style={{ backgroundColor: "#1a1a1a" }}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="flex flex-col gap-[6px]">
-              <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">Contraseña</label>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mínimo 6 caracteres"
+              <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">Nombre (opcional)</label>
+              <input
+                type="text"
+                value={nombre}
+                onChange={(e) => setNombre(e.target.value)}
+                placeholder="Ej. María — cocina"
                 className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-[14px] py-[11px] font-['Inter',sans-serif] text-white text-[13px] outline-none w-full"
                 onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(255,144,109,0.4)")}
                 onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(72,72,71,0.3)")}
-                onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }} />
+              />
+            </div>
+            <div className="flex flex-col gap-[6px]">
+              <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">Email del nuevo usuario</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="usuario@restaurante.com"
+                className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-[14px] py-[11px] font-['Inter',sans-serif] text-white text-[13px] outline-none w-full"
+                onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(255,144,109,0.4)")}
+                onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(72,72,71,0.3)")}
+              />
+            </div>
+            <div className="flex flex-col gap-[6px]">
+              <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">Contraseña del nuevo usuario</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Mínimo 6 caracteres"
+                className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-[14px] py-[11px] font-['Inter',sans-serif] text-white text-[13px] outline-none w-full"
+                onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(255,144,109,0.4)")}
+                onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(72,72,71,0.3)")}
+              />
+            </div>
+            <div className="h-px bg-[rgba(72,72,71,0.2)]" />
+            <div className="flex flex-col gap-[6px]">
+              <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">Tu contraseña de administrador</label>
+              <span className="font-['Inter',sans-serif] text-[#6b7280] text-[11px]">
+                Al registrar al usuario, la sesión pasa a esa cuenta un instante; con tu clave volvemos a tu sesión de dueño.
+              </span>
+              <input
+                type="password"
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                placeholder="Contraseña de tu cuenta actual"
+                className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-[14px] py-[11px] font-['Inter',sans-serif] text-white text-[13px] outline-none w-full"
+                onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(255,144,109,0.4)")}
+                onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(72,72,71,0.3)")}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleCreate();
+                }}
+              />
             </div>
           </div>
-          <button onClick={handleCreate} disabled={creating}
-            className="bg-[#ff906d] rounded-[12px] px-[20px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[13px] tracking-[0.5px] uppercase cursor-pointer border-none shadow-[0_0_20px_rgba(255,144,109,0.15)] transition-opacity disabled:opacity-50 self-start">
-            {creating ? "Creando..." : "Crear Usuario"}
+          <button
+            onClick={handleCreate}
+            disabled={creating}
+            className="bg-[#ff906d] rounded-[12px] px-[20px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[13px] tracking-[0.5px] uppercase cursor-pointer border-none shadow-[0_0_20px_rgba(255,144,109,0.15)] transition-opacity disabled:opacity-50 self-start"
+          >
+            {creating ? "Creando..." : "Crear usuario"}
           </button>
         </div>
       </div>
@@ -626,7 +917,42 @@ function SoportePanel({ onLock }: { onLock: () => void }) {
 // EXPORT
 // ─────────────────────────────────────────────
 export function Soporte() {
+  const navigate = useNavigate();
+  const { loading, isAuthenticated, rol } = useAuth();
   const [unlocked, setUnlocked] = useState(false);
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center min-h-[200px]">
+        <span className="font-['Space_Grotesk',sans-serif] text-[#6b7280] text-[14px]">Cargando...</span>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/" replace />;
+  }
+
+  if (rol !== "admin") {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 min-h-[320px]">
+        <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[20px] text-center max-w-md">
+          Soporte solo está disponible para la cuenta del negocio
+        </span>
+        <span className="font-['Inter',sans-serif] text-[#6b7280] text-[13px] text-center max-w-md leading-relaxed">
+          Los usuarios de equipo (venta, cocina, cajero) no tienen acceso a este módulo. Solo el administrador puede gestionar la carta y crear usuarios para su restaurante.
+        </span>
+        <button
+          type="button"
+          onClick={() => navigate("/dashboard")}
+          className="mt-2 bg-[#ff906d] rounded-[12px] px-[24px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[13px] tracking-[0.5px] uppercase cursor-pointer border-none"
+        >
+          Ir al panel
+        </button>
+      </div>
+    );
+  }
+
   if (!unlocked) return <PinGate onUnlock={() => setUnlocked(true)} />;
   return <SoportePanel onLock={() => setUnlocked(false)} />;
 }

@@ -1,10 +1,13 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router";
+
+const LOGIN_NOTICE_KEY = "cyberbistro_login_notice";
 import svgPaths from "../../../imports/svg-h2gjocs89h";
 import imgLoginRegistro from "figma:asset/47f7239cc7433af3270415eeec94f9bdbb11cd99.png";
 import imgDecorativeScanlineEffect from "figma:asset/70a05c412757c6d4e1cffbb0780858880dce7a5a.png";
 import { TitleBar } from "../../window";
 import { insforgeClient } from "../../../shared/lib/insforge";
+import { defaultRouteForRol } from "../../../shared/lib/roleNav";
 import { PinGateModal } from "../../../shared/components/PinGate";
 
 // Hoist static SVG paths to avoid re-creation
@@ -49,12 +52,21 @@ export function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
   const [showPinGate, setShowPinGate] = useState(false);
 
   useEffect(() => {
     setIsVisible(true);
+  }, []);
+
+  useEffect(() => {
+    const stored = sessionStorage.getItem(LOGIN_NOTICE_KEY);
+    if (stored) {
+      setNotice(stored);
+      sessionStorage.removeItem(LOGIN_NOTICE_KEY);
+    }
   }, []);
 
   // Move interaction logic to event handler (Vercel best practice)
@@ -80,8 +92,15 @@ export function Login() {
     }
 
     if (data?.user) {
+      const { data: tu } = await insforgeClient.database
+        .from("tenant_users")
+        .select("rol")
+        .eq("auth_user_id", data.user.id)
+        .maybeSingle();
+      const r = (tu as { rol?: string } | null)?.rol ?? null;
+      const dest = defaultRouteForRol(r);
       setIsVisible(false);
-      setTimeout(() => navigate("/dashboard"), 300);
+      setTimeout(() => navigate(dest), 300);
     }
   }, [email, password, navigate]);
 
@@ -158,6 +177,18 @@ export function Login() {
 
               {/* Header */}
               {header}
+
+              {/* Post–Soporte u otros avisos */}
+              {notice && (
+                <div
+                  className="bg-[rgba(89,238,80,0.08)] border border-[rgba(89,238,80,0.25)] rounded-[6px] sm:rounded-[8px] p-2 sm:p-3"
+                  role="status"
+                >
+                  <div className="font-['Inter',sans-serif] text-[#59ee50] text-[11px] sm:text-[12px] text-center leading-relaxed">
+                    {notice}
+                  </div>
+                </div>
+              )}
 
               {/* Error Message */}
               {error && (

@@ -3,6 +3,13 @@ import svgPaths from "../../../imports/svg-qgatbhef3k";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { MESAS_CONFIG } from "../../tables/config/mesas";
 import { useAuth } from "../../../shared/hooks/useAuth";
+import {
+  buildFacturaReceiptHtml,
+  buildComandaReceiptHtml,
+  buildSplitTicketHtml,
+} from "../../../shared/lib/receiptTemplates";
+import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
+import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 
 interface Plato {
   id: number;
@@ -171,7 +178,7 @@ export function Dashboard() {
         );
       }
     });
-  }, []);
+  }, [tenantId]);
 
   const categories = [
     "Todos",
@@ -445,21 +452,27 @@ export function Dashboard() {
     setSelectedConsumos(newSelection);
   }
 
-  // Calcular totales basados en selección
+  // Calcular totales basados en selección (mesa) o carrito (para llevar sin mesa)
   function calculateTotals() {
-    const consumosToBill = splitMode && selectedConsumos.size > 0
-      ? mesaConsumos.filter((c) => selectedConsumos.has(c.id))
-      : mesaConsumos;
+    if (selectedMesa) {
+      const consumosToBill =
+        splitMode && selectedConsumos.size > 0
+          ? mesaConsumos.filter((c) => selectedConsumos.has(c.id))
+          : mesaConsumos;
 
-    const subtotal = consumosToBill.reduce((sum, c) => sum + Number(c.subtotal), 0);
+      const subtotal = consumosToBill.reduce((sum, c) => sum + Number(c.subtotal), 0);
+      const itbis = subtotal * ITBIS;
+      const total = subtotal + itbis;
+      return { subtotal, itbis, total };
+    }
+
+    const subtotal = cart.reduce((sum, i) => sum + i.plato.precio * i.cantidad, 0);
     const itbis = subtotal * ITBIS;
     const total = subtotal + itbis;
-
     return { subtotal, itbis, total };
   }
 
   async function printFactura(facturaId: string, numeroFactura: number) {
-    // Obtener detalles de la factura
     const { data: factura, error: facturaError } = await insforgeClient.database
       .from("facturas")
       .select("*")
@@ -471,10 +484,9 @@ export function Dashboard() {
       return;
     }
 
-    // Obtener información del tenant (negocio) usando tenant_id de la factura
     const { data: tenant } = await insforgeClient.database
       .from("tenants")
-      .select("*")
+      .select("nombre_negocio, rnc, direccion, telefono, logo_url")
       .eq("id", factura.tenant_id)
       .single();
 
@@ -483,130 +495,23 @@ export function Dashboard() {
       return;
     }
 
-    const empresaNombre = tenant.nombre_negocio || "CyberBistro";
-    const empresaRNC = tenant.rnc || "";
-    const empresaDireccion = tenant.direccion || "";
-    const empresaTelefono = tenant.telefono || "";
+    const paperWidthMm = getThermalPrintSettings().paperWidthMm;
+    const html = buildFacturaReceiptHtml(
+      {
+        nombre_negocio: tenant.nombre_negocio,
+        rnc: tenant.rnc,
+        direccion: tenant.direccion,
+        telefono: tenant.telefono,
+        logo_url: tenant.logo_url,
+      },
+      factura as unknown as Parameters<typeof buildFacturaReceiptHtml>[1],
+      numeroFactura,
+      paperWidthMm
+    );
 
-    // Generar HTML de la factura térmica
-    const itemsHtml = factura.items
-      .map((item: any) => `
-        <tr>
-          <td style="padding:2px 0">${item.cantidad}x ${item.nombre}</td>
-          <td style="text-align:right;padding:2px 0">RD$ ${Number(item.precio_unitario).toFixed(2)}</td>
-        </tr>
-      `)
-      .join("");
-
-    const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Factura #${String(numeroFactura).padStart(6, "0")}</title>
-  <style>
-    @page { size: 80mm auto; margin: 2mm; }
-    body {
-      font-family: 'Courier New', monospace;
-      font-size: 11px;
-      width: 76mm;
-      margin: 0;
-      padding: 2mm;
-    }
-    h1 { text-align: center; font-size: 14px; margin: 0 0 2px; font-weight: bold; }
-    .center { text-align: center; }
-    .divider { border: none; border-top: 1px dashed #000; margin: 4px 0; }
-    .double-divider { border: none; border-top: 3px double #000; margin: 6px 0; }
-    table { width: 100%; border-collapse: collapse; }
-    .header-row td { padding: 1px 0; font-size: 10px; }
-    .total { font-weight: bold; font-size: 13px; }
-    .footer { text-align: center; font-size: 9px; margin-top: 4px; }
-  </style>
-</head>
-<body>
-  <h1>${empresaNombre}</h1>
-  ${empresaRNC ? `<div class="center" style="font-size: 10px;">RNC: ${empresaRNC}</div>` : ""}
-  ${empresaDireccion ? `<div class="center" style="font-size: 9px;">${empresaDireccion}</div>` : ""}
-  ${empresaTelefono ? `<div class="center" style="font-size: 9px;">Tel: ${empresaTelefono}</div>` : ""}
-  <div class="divider"></div>
-  <table>
-    <tr class="header-row">
-      <td>Factura:</td>
-      <td style="text-align:right;">#${String(numeroFactura).padStart(6, "0")}</td>
-    </tr>
-    <tr class="header-row">
-      <td>Fecha:</td>
-      <td style="text-align:right;">${new Date(factura.pagada_at || factura.created_at).toLocaleString("es-DO")}</td>
-    </tr>
-    <tr class="header-row">
-      <td>Mesa:</td>
-      <td style="text-align:right;">${factura.mesa_numero}</td>
-    </tr>
-    <tr class="header-row">
-      <td>Método:</td>
-      <td style="text-align:right;">${factura.metodo_pago.toUpperCase()}</td>
-    </tr>
-  </table>
-
-  <div class="double-divider"></div>
-
-  <table>
-    <thead>
-      <tr style="border-bottom: 1px solid #000;">
-        <th style="text-align:left; padding: 4px 0;">CANT.</th>
-        <th style="text-align:left; padding: 4px 0;">DESCRIPCIÓN</th>
-        <th style="text-align:right; padding: 4px 0;">PRECIO</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${factura.items.map((item: any) => `
-        <tr>
-          <td style="padding: 2px 0;">${item.cantidad}</td>
-          <td style="padding: 2px 0;">${item.nombre}</td>
-          <td style="text-align:right; padding: 2px 0;">RD$ ${Number(item.subtotal).toFixed(2)}</td>
-        </tr>
-      `).join('')}
-    </tbody>
-  </table>
-
-  <div class="double-divider"></div>
-
-  <table>
-    <tr>
-      <td>Subtotal:</td>
-      <td style="text-align:right;">RD$ ${Number(factura.subtotal).toFixed(2)}</td>
-    </tr>
-    <tr>
-      <td>ITBIS (18%):</td>
-      <td style="text-align:right;">RD$ ${Number(factura.itbis).toFixed(2)}</td>
-    </tr>
-    <tr class="total">
-      <td>TOTAL:</td>
-      <td style="text-align:right;">RD$ ${Number(factura.total).toFixed(2)}</td>
-    </tr>
-  </table>
-
-  ${factura.notas ? `<div class="divider"></div><div style="font-size: 10px;"><b>Nota:</b> ${factura.notas}</div>` : ""}
-
-  <div class="double-divider"></div>
-
-  <div class="footer">
-    <div>¡Gracias por su visita!</div>
-    <div style="margin-top: 2px;">Exonerase de valor según Ley 253-12</div>
-  </div>
-
-  <div class="divider"></div>
-  <div class="center" style="font-size: 8px;">
-    ${new Date().toLocaleString("es-DO")}
-  </div>
-
-  <script>window.onload = function() { window.print(); setTimeout(function(){ window.close(); }, 500); }</script>
-</body>
-</html>`;
-
-    const w = window.open("", "_blank", "width=340,height=700");
-    if (w) {
-      w.document.write(html);
-      w.document.close();
+    const res = await printThermalHtml(html);
+    if (!res.ok && res.error) {
+      console.warn("Impresión factura:", res.error);
     }
   }
 
@@ -650,6 +555,7 @@ export function Dashboard() {
           estado: "pendiente",
           items,
           notas: null,
+          tenant_id: tenantId,
         },
       ]).select().single();
 
@@ -661,6 +567,39 @@ export function Dashboard() {
       }
 
       comandaId = data?.id || null;
+
+      if (data && tenantId) {
+        const { data: tenantRow } = await insforgeClient.database
+          .from("tenants")
+          .select("nombre_negocio, rnc, direccion, telefono, logo_url")
+          .eq("id", tenantId)
+          .single();
+        if (tenantRow) {
+          const paperWidthMm = getThermalPrintSettings().paperWidthMm;
+          const comandaHtml = buildComandaReceiptHtml(
+            {
+              nombre_negocio: tenantRow.nombre_negocio,
+              rnc: tenantRow.rnc,
+              direccion: tenantRow.direccion,
+              telefono: tenantRow.telefono,
+              logo_url: tenantRow.logo_url,
+            },
+            {
+              id: data.id,
+              numero_comanda: (data as { numero_comanda?: number }).numero_comanda,
+              mesa_numero: data.mesa_numero,
+              items: (data.items as Array<{ nombre: string; cantidad: number; precio?: number }>) || [],
+              notas: data.notas,
+              created_at: data.created_at,
+            },
+            paperWidthMm
+          );
+          const printRes = await printThermalHtml(comandaHtml);
+          if (!printRes.ok && printRes.error) {
+            console.warn("Impresión comanda:", printRes.error);
+          }
+        }
+      }
     }
 
     // Crear consumos para TODOS los items (cocina + directo)
@@ -729,7 +668,9 @@ export function Dashboard() {
         alert("No hay items en el carrito para cobrar.");
         return;
       }
-      // Abrir modal para llevar
+      setMesaConsumos([]);
+      setSplitMode(false);
+      setSelectedConsumos(new Set());
       setShowPaymentModal(true);
       return;
     }
@@ -867,37 +808,48 @@ export function Dashboard() {
     setCharging(false);
   }
 
-  function printSplit() {
-    const rows = cart
-      .map(
-        (i) =>
-          `<tr><td>${i.cantidad}× ${i.plato.nombre}</td><td style="text-align:right">RD$ ${(
-            (i.plato.precio * i.cantidad) /
-            splitParts
-          ).toFixed(2)}</td></tr>`
-      )
-      .join("");
+  async function printSplit() {
+    if (!tenantId) return;
+    const { data: tenantRow } = await insforgeClient.database
+      .from("tenants")
+      .select("nombre_negocio, rnc, direccion, telefono, logo_url")
+      .eq("id", tenantId)
+      .single();
+    if (!tenantRow) {
+      alert("No se encontró el negocio para imprimir.");
+      return;
+    }
 
-    const pages = Array.from({ length: splitParts }, (_, idx) => `
-      <div style="font-family:monospace;font-size:12px;width:72mm;padding:4mm;${idx > 0 ? "page-break-before:always" : ""}">
-        <div style="text-align:center;font-weight:bold;font-size:14px">SEPARAR CUENTA</div>
-        <div style="text-align:center">Mesa ${selectedMesa?.numero ?? "?"}</div>
-        <div style="text-align:center">Persona ${idx + 1} de ${splitParts}</div>
-        <hr style="border-top:1px dashed;border-bottom:none">
-        <table style="width:100%">${rows}</table>
-        <hr style="border-top:1px dashed;border-bottom:none">
-        <table style="width:100%">
-          <tr style="font-weight:bold"><td>TOTAL</td><td style="text-align:right">RD$ ${perPerson.toFixed(2)}</td></tr>
-        </table>
-      </div>
-    `).join("");
+    const branding = {
+      nombre_negocio: tenantRow.nombre_negocio,
+      rnc: tenantRow.rnc,
+      direccion: tenantRow.direccion,
+      telefono: tenantRow.telefono,
+      logo_url: tenantRow.logo_url,
+    };
 
-    const w = window.open("", "_blank", "width=340,height=600");
-    if (w) {
-      w.document.write(
-        `<!DOCTYPE html><html><head><style>@page{size:80mm auto;margin:0}body{margin:0}</style></head><body>${pages}<script>window.onload=function(){window.print();setTimeout(function(){window.close()},500)}</script></body></html>`
-      );
-      w.document.close();
+    const rows = cart.map(
+      (i) =>
+        `<tr class="item-row"><td>${i.cantidad}× ${i.plato.nombre.replace(/</g, "&lt;")}</td><td style="text-align:right">RD$ ${((i.plato.precio * i.cantidad) / splitParts).toFixed(2)}</td></tr>`
+    );
+
+    const parts = Array.from({ length: splitParts }, (_, idx) => ({
+      personIndex: idx + 1,
+      splitParts,
+      rowsHtml: rows.join(""),
+      totalLine: `RD$ ${perPerson.toFixed(2)}`,
+    }));
+
+    const paperWidthMm = getThermalPrintSettings().paperWidthMm;
+    const html = buildSplitTicketHtml(
+      branding,
+      parts,
+      selectedMesa?.numero ?? null,
+      paperWidthMm
+    );
+    const res = await printThermalHtml(html);
+    if (!res.ok && res.error) {
+      console.warn("Impresión split:", res.error);
     }
   }
 
@@ -1382,8 +1334,8 @@ export function Dashboard() {
         )}
       </div>
 
-      {/* PAGO MODAL */}
-      {showPaymentModal && selectedMesa && (() => {
+      {/* PAGO MODAL — mesa o para llevar (carrito) */}
+      {showPaymentModal && (selectedMesa || (isTakeout && cart.length > 0)) && (() => {
         const { subtotal: calcSubtotal, itbis: calcItbis, total: calcTotal } = calculateTotals();
         return (
         <div
@@ -1394,13 +1346,26 @@ export function Dashboard() {
           <div className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[20px] p-[28px] w-[700px] max-h-[90vh] overflow-y-auto flex flex-col gap-[20px] shadow-xl">
             <div className="flex items-center justify-between">
               <div>
-                <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[20px]">
-                  Cobrar Mesa {selectedMesa.numero}
-                </span>
-                {mesaConsumos.length > 0 && (
-                  <div className="text-[#adaaaa] text-[12px] mt-1">
-                    {mesaConsumos.length} items pendientes
-                  </div>
+                {selectedMesa ? (
+                  <>
+                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[20px]">
+                      Cobrar Mesa {selectedMesa.numero}
+                    </span>
+                    {mesaConsumos.length > 0 && (
+                      <div className="text-[#adaaaa] text-[12px] mt-1">
+                        {mesaConsumos.length} items pendientes
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[20px]">
+                      Cobrar para llevar
+                    </span>
+                    <div className="text-[#adaaaa] text-[12px] mt-1">
+                      {cart.length} ítem{cart.length !== 1 ? "s" : ""} en el carrito
+                    </div>
+                  </>
                 )}
               </div>
               <button
@@ -1538,6 +1503,29 @@ export function Dashboard() {
                     </div>
                   );
                 })}
+              </div>
+            )}
+
+            {!selectedMesa && cart.length > 0 && (
+              <div className="max-h-[220px] overflow-y-auto flex flex-col gap-[8px] rounded-[12px] bg-[#131313] p-[12px]">
+                {cart.map((line) => (
+                  <div
+                    key={line.plato.id}
+                    className="flex items-center justify-between rounded-[8px] bg-[#262626] px-[12px] py-[10px]"
+                  >
+                    <div>
+                      <div className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px]">
+                        {line.cantidad}× {line.plato.nombre}
+                      </div>
+                      <div className="text-[#adaaaa] text-[11px]">
+                        RD$ {Number(line.plato.precio).toFixed(2)} c/u
+                      </div>
+                    </div>
+                    <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[14px]">
+                      RD$ {(line.plato.precio * line.cantidad).toFixed(2)}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
 

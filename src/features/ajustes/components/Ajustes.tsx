@@ -1,6 +1,12 @@
 import { useState, useEffect, useRef } from "react";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
+import type { ThermalPrinterInfo } from "../../../shared/types/electron";
+import type { PaperWidthMm } from "../../../shared/lib/thermalStorage";
+import {
+  getThermalPrintSettings,
+  saveThermalPrintSettings,
+} from "../../../shared/lib/thermalStorage";
 
 interface Config {
   nombre_empresa: string;
@@ -254,6 +260,8 @@ export function Ajustes() {
           </button>
         </div>
 
+        <ThermalPrintSettingsCard />
+
         <button
           onClick={handleSave}
           disabled={saving}
@@ -284,6 +292,133 @@ export function Ajustes() {
           color: rgba(107,114,128,0.8);
         }
       `}</style>
+    </div>
+  );
+}
+
+function ThermalPrintSettingsCard() {
+  const [paperWidthMm, setPaperWidthMm] = useState<PaperWidthMm>(80);
+  const [printerName, setPrinterName] = useState("");
+  const [printers, setPrinters] = useState<ThermalPrinterInfo[]>([]);
+  const [thermalSaved, setThermalSaved] = useState(false);
+  const [loadingPrinters, setLoadingPrinters] = useState(false);
+
+  useEffect(() => {
+    const s = getThermalPrintSettings();
+    setPaperWidthMm(s.paperWidthMm);
+    setPrinterName(s.printerName);
+  }, []);
+
+  async function refreshPrinters() {
+    if (!window.electronAPI?.listPrinters) {
+      setPrinters([]);
+      return;
+    }
+    setLoadingPrinters(true);
+    try {
+      const list = await window.electronAPI.listPrinters();
+      setPrinters(list);
+    } catch {
+      setPrinters([]);
+    } finally {
+      setLoadingPrinters(false);
+    }
+  }
+
+  useEffect(() => {
+    void refreshPrinters();
+  }, []);
+
+  function handleSaveThermal() {
+    saveThermalPrintSettings({ paperWidthMm, printerName });
+    setThermalSaved(true);
+    setTimeout(() => setThermalSaved(false), 2500);
+  }
+
+  const isElectron = Boolean(window.electronAPI?.listPrinters);
+
+  return (
+    <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-[28px] flex flex-col gap-[20px]">
+      <div className="flex flex-col gap-[4px]">
+        <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px]">
+          Impresión térmica
+        </span>
+        <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">
+          Ancho del rollo, impresora y datos del negocio (arriba) se usan en facturas de venta y comandas de cocina. La configuración se guarda en este equipo (localStorage).
+        </span>
+      </div>
+
+      <Field label="Ancho del papel">
+        <div className="flex gap-[12px] flex-wrap">
+          {([80, 88] as const).map((w) => (
+            <button
+              key={w}
+              type="button"
+              onClick={() => setPaperWidthMm(w)}
+              className={`rounded-[10px] px-[18px] py-[10px] font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase border cursor-pointer transition-colors ${
+                paperWidthMm === w
+                  ? "bg-[rgba(255,144,109,0.15)] border-[#ff906d] text-[#ff906d]"
+                  : "bg-[#1a1a1a] border-[rgba(72,72,71,0.3)] text-[#adaaaa]"
+              }`}
+            >
+              {w} mm
+            </button>
+          ))}
+        </div>
+      </Field>
+
+      {isElectron ? (
+        <>
+          <div className="flex flex-wrap items-center gap-[12px]">
+            <button
+              type="button"
+              onClick={() => void refreshPrinters()}
+              disabled={loadingPrinters}
+              className="bg-[#262626] rounded-[10px] border border-[rgba(72,72,71,0.3)] px-[16px] py-[10px] font-['Inter',sans-serif] text-[#adaaaa] text-[12px] cursor-pointer disabled:opacity-50"
+            >
+              {loadingPrinters ? "Buscando…" : "Actualizar impresoras"}
+            </button>
+            <span className="font-['Inter',sans-serif] text-[#6b7280] text-[11px]">
+              Impresoras detectadas en Windows (Electron).
+            </span>
+          </div>
+          <Field label="Impresora térmica">
+            <select
+              value={printerName}
+              onChange={(e) => setPrinterName(e.target.value)}
+              className="input-field cursor-pointer"
+            >
+              <option value="">Predeterminada del sistema (o elegir al imprimir)</option>
+              {printers.map((p) => (
+                <option key={p.name} value={p.name}>
+                  {p.displayName || p.name}
+                  {p.isDefault ? " (predeterminada)" : ""}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </>
+      ) : (
+        <p className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">
+          En el navegador se abre el cuadro de impresión del sistema. En la app de escritorio (Electron) podés elegir la impresora térmica directamente.
+        </p>
+      )}
+
+      {thermalSaved && (
+        <div className="bg-[rgba(89,238,80,0.05)] border border-[rgba(89,238,80,0.2)] rounded-[10px] px-[16px] py-[10px]">
+          <span className="font-['Inter',sans-serif] text-[#59ee50] text-[13px]">
+            Configuración de impresión guardada en este equipo.
+          </span>
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={handleSaveThermal}
+        className="bg-[#262626] rounded-[12px] border border-[rgba(255,144,109,0.35)] px-[24px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[13px] tracking-[0.5px] uppercase cursor-pointer self-start"
+      >
+        Guardar impresión
+      </button>
     </div>
   );
 }

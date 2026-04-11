@@ -22,7 +22,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => {
       ipcRenderer.removeListener('window-maximized', listener)
     }
-  }
+  },
+  listPrinters: () => ipcRenderer.invoke('printers:list'),
+  printThermal: (opts) => ipcRenderer.invoke('print:thermal', opts),
 })
 
 window.addEventListener('DOMContentLoaded', () => {
