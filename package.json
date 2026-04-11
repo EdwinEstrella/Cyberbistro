@@ -1,6 +1,6 @@
 {
   "name": "cyberbistro",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Cyberbistro Desktop App",
   "author": "Edwin",
   "main": "dist-electron/main.js",
@@ -59,10 +59,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "icon:build": "node scripts/build-icon.mjs",
     "package": "npm run build && electron-forge package",
     "make": "npm run build && electron-forge make",
-    "dist:win": "npm run build && electron-builder --win",
-    "release:win": "npm run build && electron-builder --win --publish always",
+    "dist:win": "npm run icon:build && npm run build && electron-builder --win",
+    "release:win": "npm run icon:build && npm run build && electron-builder --win --publish always",
     "preview": "vite preview"
   },
   "devDependencies": {
@@ -78,7 +79,9 @@
     "@vitejs/plugin-react": "4.7.0",
     "electron": "^41.1.1",
     "electron-builder": "^26.8.1",
+    "sharp": "^0.34.5",
     "tailwindcss": "4.1.12",
+    "to-ico": "^1.1.5",
     "vite": "6.3.5",
     "vite-plugin-electron": "^0.29.0"
   },

@@ -1,3 +1,7 @@
+/**
+ * @deprecated Para el instalador y el .exe usa `npm run icon:build` (genera icon.ico desde icon.svg).
+ * Este script solo exporta PNGs sueltos si los necesitas a mano.
+ */
 import sharp from 'sharp';
 import fs from 'fs';
 
