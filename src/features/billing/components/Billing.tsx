@@ -166,22 +166,22 @@ export function Billing() {
   }
 
   return (
-    <div className="flex-1 p-4 sm:p-6 lg:p-[32px] flex flex-col gap-4 sm:gap-6 lg:gap-[32px] overflow-auto">
+    <div className="flex-1 p-5 sm:p-8 lg:p-10 flex flex-col gap-6 sm:gap-8 lg:gap-10 overflow-auto max-w-[1600px] w-full mx-auto">
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-[24px]">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 sm:gap-6">
         {/* Revenue */}
-        <div className="bg-[#201f1f] rounded-[24px] overflow-hidden relative">
-          <div className="flex flex-col gap-[16px] p-[24px] pb-[54px]">
-            <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[12px] tracking-[-0.6px] uppercase">
+        <div className="bg-[#201f1f] rounded-[24px] overflow-hidden relative min-h-[200px]">
+          <div className="flex flex-col gap-5 p-6 sm:p-8 pb-14">
+            <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[13px] tracking-wide uppercase">
               Ingreso Total (24h)
             </div>
-            <div className="flex items-end">
-              <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[48px] tracking-[-1.2px]">
+            <div className="flex items-end min-h-[3.5rem]">
+              <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[40px] sm:text-[44px] tracking-tight leading-none">
                 {RD(totalRevenue).replace("RD$ ", "")}
               </span>
             </div>
-            <div className="flex gap-[8px] items-center">
-              <span className="font-['Inter',sans-serif] font-medium text-[#59ee50] text-[14px]">
+            <div className="flex gap-2 items-center pt-1">
+              <span className="font-['Inter',sans-serif] font-medium text-[#59ee50] text-[15px] leading-snug">
                 Facturas recientes
               </span>
             </div>
@@ -190,19 +190,19 @@ export function Billing() {
         </div>
 
         {/* Average Ticket */}
-        <div className="bg-[#201f1f] rounded-[24px] overflow-hidden">
-          <div className="flex flex-col gap-[16px] p-[24px] pb-[54px]">
-            <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[12px] tracking-[-0.6px] uppercase">
+        <div className="bg-[#201f1f] rounded-[24px] overflow-hidden min-h-[200px]">
+          <div className="flex flex-col gap-5 p-6 sm:p-8 pb-14">
+            <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[13px] tracking-wide uppercase">
               Ticket Promedio
             </div>
-            <div className="flex items-end">
-              <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[48px] tracking-[-1.2px]">
+            <div className="flex items-end min-h-[3.5rem]">
+              <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[40px] sm:text-[44px] tracking-tight leading-none">
                 {invoices.length > 0 ? RD(invoices.reduce((sum, inv) => sum + inv.total, 0) / invoices.length).replace("RD$ ", "") : "RD$ 0"}
               </span>
             </div>
-            <div className="flex gap-[8px] items-center">
-              <div className="bg-white/40 h-px w-[9px]" />
-              <span className="font-['Inter',sans-serif] font-medium text-white/40 text-[14px]">
+            <div className="flex gap-3 items-center pt-1">
+              <div className="bg-white/40 h-px w-3 shrink-0" />
+              <span className="font-['Inter',sans-serif] font-medium text-white/40 text-[15px] leading-snug">
                 {invoices.length} facturas totales
               </span>
             </div>
@@ -210,16 +210,16 @@ export function Billing() {
         </div>
 
         {/* Pending */}
-        <div className="bg-[#201f1f] rounded-[24px] overflow-hidden">
-          <div className="flex flex-col gap-[16px] p-[24px] pb-[34px]">
-            <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[12px] tracking-[-0.6px] uppercase">
+        <div className="bg-[#201f1f] rounded-[24px] overflow-hidden min-h-[200px]">
+          <div className="flex flex-col gap-5 p-6 sm:p-8 pb-10">
+            <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[13px] tracking-wide uppercase">
               Facturas Pendientes
             </div>
-            <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff6aa0] text-[48px] tracking-[-1.2px]">
+            <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff6aa0] text-[40px] sm:text-[44px] tracking-tight leading-none min-h-[3.5rem] flex items-end">
               {pendingCount}
             </div>
-            <div className="flex gap-[8px] items-center">
-              <span className="font-['Inter',sans-serif] font-medium text-[#ff6aa0] text-[14px]">
+            <div className="flex gap-2 items-center pt-1">
+              <span className="font-['Inter',sans-serif] font-medium text-[#ff6aa0] text-[15px] leading-snug">
                 {RD(pendingAmount)} en espera
               </span>
             </div>
@@ -227,15 +227,17 @@ export function Billing() {
         </div>
 
         {/* Total Invoices */}
-        <div className="bg-[#131313] rounded-[24px] border border-[rgba(255,144,109,0.05)]">
-          <div className="flex flex-col justify-between p-[25px] h-full">
-            <div className="flex items-start justify-between">
-              <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[12px] tracking-[1.2px] uppercase">Total Facturas</span>
-              <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[28px]">
+        <div className="bg-[#131313] rounded-[24px] border border-[rgba(255,144,109,0.05)] min-h-[200px]">
+          <div className="flex flex-col justify-between gap-6 p-6 sm:p-8 h-full min-h-[200px]">
+            <div className="flex items-start justify-between gap-4">
+              <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[13px] tracking-wide uppercase leading-relaxed max-w-[60%]">
+                Total Facturas
+              </span>
+              <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[32px] shrink-0 tabular-nums">
                 {invoices.length}
               </span>
             </div>
-            <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[12px]">
+            <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[13px] leading-relaxed">
               Registradas en el sistema
             </div>
           </div>
@@ -243,15 +245,15 @@ export function Billing() {
       </div>
 
       {/* Filters Bar */}
-      <div className="backdrop-blur-[6px] bg-[rgba(38,38,38,0.6)] rounded-[16px] border border-[rgba(255,255,255,0.05)] p-[12px] sm:p-[17px] flex flex-wrap items-center gap-[12px] justify-between">
-        <div className="flex flex-wrap gap-[8px] sm:gap-[16px] items-center">
-          <div className="bg-black rounded-[12px] border border-[rgba(72,72,71,0.3)] flex items-center px-[17px] py-[9px] gap-[8px]">
-            <span className="font-['Inter',sans-serif] text-white text-[14px]">Todas las fechas</span>
+      <div className="backdrop-blur-[6px] bg-[rgba(38,38,38,0.6)] rounded-2xl border border-[rgba(255,255,255,0.05)] p-4 sm:p-5 flex flex-wrap items-center gap-4 sm:gap-5 justify-between">
+        <div className="flex flex-wrap gap-3 sm:gap-4 items-stretch sm:items-center">
+          <div className="bg-black rounded-xl border border-[rgba(72,72,71,0.3)] flex items-center px-5 py-3 min-h-[44px]">
+            <span className="font-['Inter',sans-serif] text-white text-[15px]">Todas las fechas</span>
           </div>
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="bg-black rounded-[12px] border border-[rgba(72,72,71,0.3)] flex items-center px-[17px] py-[9px] gap-[8px] font-['Inter',sans-serif] text-white text-[14px] cursor-pointer"
+            className="bg-black rounded-xl border border-[rgba(72,72,71,0.3)] px-5 py-3 min-h-[44px] font-['Inter',sans-serif] text-white text-[15px] cursor-pointer"
           >
             <option value="todos">Todos los Estados</option>
             <option value="pagada">Pagadas</option>
@@ -261,7 +263,7 @@ export function Billing() {
           <select
             value={methodFilter}
             onChange={(e) => setMethodFilter(e.target.value)}
-            className="bg-black rounded-[12px] border border-[rgba(72,72,71,0.3)] flex items-center px-[17px] py-[9px] gap-[8px] font-['Inter',sans-serif] text-white text-[14px] cursor-pointer"
+            className="bg-black rounded-xl border border-[rgba(72,72,71,0.3)] px-5 py-3 min-h-[44px] font-['Inter',sans-serif] text-white text-[15px] cursor-pointer"
           >
             <option value="todos">Todos los Métodos</option>
             <option value="efectivo">Efectivo</option>
@@ -271,28 +273,30 @@ export function Billing() {
         </div>
         <button
           onClick={() => loadInvoices()}
-          className="bg-[#262626] rounded-[12px] border border-[rgba(72,72,71,0.2)] flex gap-[8px] items-center px-[25px] py-[9px] cursor-pointer hover:border-[rgba(255,144,109,0.3)] transition-colors"
+          className="bg-[#262626] rounded-xl border border-[rgba(72,72,71,0.2)] flex gap-2 items-center px-6 py-3 min-h-[44px] cursor-pointer hover:border-[rgba(255,144,109,0.3)] transition-colors shrink-0"
         >
-          <span className="font-['Inter',sans-serif] text-white text-[16px]">↻ Actualizar</span>
+          <span className="font-['Inter',sans-serif] text-white text-[15px]">↻ Actualizar</span>
         </button>
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto rounded-[24px]">
-        <div className="bg-[#131313] rounded-[24px] border border-[rgba(72,72,71,0.1)] overflow-hidden min-w-[760px]">
-          {/* Header Row */}
-          <div className="bg-[rgba(32,31,31,0.5)] grid grid-cols-[100px_120px_1fr_110px_130px_120px_140px] px-[32px]">
+      <div className="overflow-x-auto rounded-[24px] -mx-1 px-1">
+        <div className="bg-[#131313] rounded-[24px] border border-[rgba(72,72,71,0.1)] overflow-hidden min-w-[920px]">
+          {/* Header Row — columnas más anchas y texto legible */}
+          <div className="bg-[rgba(32,31,31,0.5)] grid grid-cols-[minmax(7rem,8rem)_minmax(8.5rem,10rem)_minmax(11rem,1.2fr)_minmax(7.5rem,9rem)_minmax(8.5rem,10rem)_minmax(7.5rem,9rem)_minmax(9.5rem,11rem)] px-6 sm:px-10 gap-x-4">
             {["ID\nFactura", "Fecha", "Mesa", "Método", "Estado", "Monto", "Acciones"].map((h, i) => (
-              <div key={i} className={`py-[20px] ${i >= 5 ? "text-right" : ""}`}>
-                <span className="font-['Inter',sans-serif] font-bold text-[#adaaaa] text-[10px] tracking-[2px] uppercase whitespace-pre-line">{h}</span>
+              <div key={i} className={`py-6 ${i >= 5 ? "text-right" : ""}`}>
+                <span className="font-['Inter',sans-serif] font-bold text-[#adaaaa] text-[11px] sm:text-xs tracking-[0.12em] uppercase whitespace-pre-line leading-relaxed block">
+                  {h}
+                </span>
               </div>
             ))}
           </div>
 
           {/* Rows */}
           {pageData.length === 0 ? (
-            <div className="px-[32px] py-[40px] text-center">
-              <span className="font-['Inter',sans-serif] text-[#6b7280] text-[14px]">
+            <div className="px-10 py-16 text-center">
+              <span className="font-['Inter',sans-serif] text-[#6b7280] text-[15px]">
                 No se encontraron facturas
               </span>
             </div>
@@ -302,26 +306,29 @@ export function Billing() {
               const method = getMethodIcon(inv.metodo_pago);
               const date = new Date(inv.created_at);
               return (
-                <div key={inv.id} className={`grid grid-cols-[100px_120px_1fr_110px_130px_120px_140px] px-[32px] items-center ${idx > 0 ? "border-t border-[rgba(255,255,255,0.05)]" : ""}`}>
+                <div
+                  key={inv.id}
+                  className={`grid grid-cols-[minmax(7rem,8rem)_minmax(8.5rem,10rem)_minmax(11rem,1.2fr)_minmax(7.5rem,9rem)_minmax(8.5rem,10rem)_minmax(7.5rem,9rem)_minmax(9.5rem,11rem)] px-6 sm:px-10 gap-x-4 items-center ${idx > 0 ? "border-t border-[rgba(255,255,255,0.05)]" : ""}`}
+                >
                   {/* ID */}
-                  <div className="py-[32px]">
-                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[16px]">
+                  <div className="py-9">
+                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[17px] tabular-nums">
                       #{String(inv.numero_factura).padStart(4, "0")}
                     </span>
                   </div>
                   {/* Date */}
-                  <div className="py-[32px]">
-                    <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[14px]">
+                  <div className="py-9 space-y-1.5">
+                    <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[15px] leading-snug">
                       {date.toLocaleDateString("es-DO")}
                     </div>
-                    <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[12px] opacity-50">
+                    <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[13px] opacity-60">
                       {date.toLocaleTimeString("es-DO", { hour: "2-digit", minute: "2-digit" })}
                     </div>
                   </div>
-                  {/* Table */}
-                  <div className="py-[32px] flex gap-[12px] items-center">
+                  {/* Mesa / tipo */}
+                  <div className="py-9 flex gap-4 items-center min-w-0">
                     <div
-                      className="rounded-[8px] flex items-center justify-center h-[32px] px-[8px] min-w-[32px]"
+                      className="rounded-lg flex items-center justify-center h-9 px-2.5 min-w-[2.25rem] shrink-0"
                       style={{
                         backgroundColor:
                           inv.mesa_numero != null && inv.mesa_numero !== 0
@@ -330,7 +337,7 @@ export function Billing() {
                       }}
                     >
                       <span
-                        className="font-['Inter',sans-serif] font-bold text-[12px]"
+                        className="font-['Inter',sans-serif] font-bold text-[13px] tabular-nums"
                         style={{
                           color:
                             inv.mesa_numero != null && inv.mesa_numero !== 0 ? "#ff906d" : "#59ee50",
@@ -341,45 +348,64 @@ export function Billing() {
                           : "PL"}
                       </span>
                     </div>
-                    <div>
-                      <div className="font-['Inter',sans-serif] font-medium text-white text-[14px]">
+                    <div className="min-w-0 space-y-1">
+                      <div className="font-['Inter',sans-serif] font-medium text-white text-[15px] leading-snug">
                         {inv.mesa_numero != null && inv.mesa_numero !== 0
                           ? `Mesa ${inv.mesa_numero}`
                           : "Para llevar"}
                       </div>
-                      <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px]">
+                      <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[12px]">
                         {itemCount(inv)} productos
                       </div>
                     </div>
                   </div>
                   {/* Method */}
-                  <div className="py-[32px] flex gap-[8px] items-center">
-                    <span className="text-[16px]">{method.icon}</span>
-                    <span className="font-['Inter',sans-serif] text-[rgba(255,255,255,0.7)] text-[12px]">
+                  <div className="py-9 flex gap-3 items-center">
+                    <span className="text-lg shrink-0" aria-hidden>
+                      {method.icon}
+                    </span>
+                    <span className="font-['Inter',sans-serif] text-[rgba(255,255,255,0.75)] text-[14px] leading-snug">
                       {method.label}
                     </span>
                   </div>
                   {/* Status */}
-                  <div className="py-[32px]">
-                    <div className="flex gap-[6px] items-center px-[12px] py-[4px] rounded-full w-fit" style={{ backgroundColor: status.bg, boxShadow: status.shadow }}>
-                      <div className="rounded-full size-[6px]" style={{ backgroundColor: status.color }} />
-                      <span className="font-['Inter',sans-serif] font-bold text-[10px] tracking-[0.5px] uppercase" style={{ color: status.color }}>
+                  <div className="py-9">
+                    <div
+                      className="flex gap-2 items-center px-3.5 py-2 rounded-full w-fit max-w-full"
+                      style={{ backgroundColor: status.bg, boxShadow: status.shadow }}
+                    >
+                      <div className="rounded-full size-2 shrink-0" style={{ backgroundColor: status.color }} />
+                      <span
+                        className="font-['Inter',sans-serif] font-bold text-[11px] tracking-wide uppercase leading-tight"
+                        style={{ color: status.color }}
+                      >
                         {status.label}
                       </span>
                     </div>
                   </div>
                   {/* Amount */}
-                  <div className="py-[32px] text-right">
-                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-[18px]" style={{ color: inv.estado === "cancelada" ? "#d7383b" : "white" }}>
+                  <div className="py-9 text-right">
+                    <span
+                      className="font-['Space_Grotesk',sans-serif] font-bold text-[19px] tabular-nums inline-block"
+                      style={{ color: inv.estado === "cancelada" ? "#d7383b" : "white" }}
+                    >
                       {RD(inv.total)}
                     </span>
                   </div>
                   {/* Actions */}
-                  <div className="py-[32px] flex gap-[8px] justify-end">
-                    <button className="bg-[#262626] rounded-[8px] size-[32px] flex items-center justify-center border-none cursor-pointer hover:bg-[#333] transition-colors" title="Ver detalles">
+                  <div className="py-9 flex gap-3 justify-end">
+                    <button
+                      className="bg-[#262626] rounded-lg size-10 flex items-center justify-center border-none cursor-pointer hover:bg-[#333] transition-colors shrink-0"
+                      title="Ver detalles"
+                      type="button"
+                    >
                       👁
                     </button>
-                    <button className="bg-[#262626] rounded-[8px] size-[32px] flex items-center justify-center border-none cursor-pointer hover:bg-[#333] transition-colors" title="Imprimir">
+                    <button
+                      className="bg-[#262626] rounded-lg size-10 flex items-center justify-center border-none cursor-pointer hover:bg-[#333] transition-colors shrink-0"
+                      title="Imprimir"
+                      type="button"
+                    >
                       🖨
                     </button>
                   </div>
@@ -390,15 +416,20 @@ export function Billing() {
 
           {/* Pagination */}
           {filteredInvoices.length > 0 && (
-            <div className="border-t border-[rgba(255,255,255,0.05)] px-[16px] sm:px-[32px] py-[16px] sm:py-[24px] flex flex-wrap items-center gap-[12px] justify-between">
-              <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[14px]">
-                Mostrando <span className="text-white font-bold">{startIndex + 1} - {Math.min(endIndex, filteredInvoices.length)}</span> de <span className="text-white font-bold">{filteredInvoices.length}</span> facturas
+            <div className="border-t border-[rgba(255,255,255,0.05)] px-6 sm:px-10 py-6 flex flex-wrap items-center gap-4 justify-between">
+              <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[15px] leading-relaxed">
+                Mostrando{" "}
+                <span className="text-white font-bold tabular-nums">
+                  {startIndex + 1} - {Math.min(endIndex, filteredInvoices.length)}
+                </span>{" "}
+                de <span className="text-white font-bold tabular-nums">{filteredInvoices.length}</span> facturas
               </span>
-              <div className="flex gap-[8px] items-center">
+              <div className="flex gap-2 items-center">
                 <button
                   onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
-                  className="size-[32px] rounded-[8px] bg-[#262626] flex items-center justify-center border-none cursor-pointer disabled:opacity-50"
+                  type="button"
+                  className="size-10 rounded-lg bg-[#262626] flex items-center justify-center border-none cursor-pointer disabled:opacity-50"
                 >
                   ←
                 </button>
@@ -417,8 +448,9 @@ export function Billing() {
                   return (
                     <button
                       key={pageNum}
+                      type="button"
                       onClick={() => setCurrentPage(pageNum)}
-                      className={`size-[32px] rounded-[8px] flex items-center justify-center border-none cursor-pointer font-['Inter',sans-serif] font-bold text-[12px] ${
+                      className={`size-10 rounded-lg flex items-center justify-center border-none cursor-pointer font-['Inter',sans-serif] font-bold text-[13px] ${
                         currentPage === pageNum ? "bg-[#59ee50] text-black" : "bg-[#262626] text-white/50"
                       }`}
                     >
@@ -427,12 +459,13 @@ export function Billing() {
                   );
                 })}
                 {totalPages > 3 && currentPage < totalPages - 1 && (
-                  <span className="font-['Inter',sans-serif] text-white/30 text-[12px]">...</span>
+                  <span className="font-['Inter',sans-serif] text-white/30 text-sm px-1">...</span>
                 )}
                 {totalPages > 3 && (
                   <button
+                    type="button"
                     onClick={() => setCurrentPage(totalPages)}
-                    className={`size-[32px] rounded-[8px] flex items-center justify-center border-none cursor-pointer font-['Inter',sans-serif] font-bold text-[12px] ${
+                    className={`size-10 rounded-lg flex items-center justify-center border-none cursor-pointer font-['Inter',sans-serif] font-bold text-[13px] ${
                       currentPage === totalPages ? "bg-[#59ee50] text-black" : "bg-[#262626] text-white/50"
                     }`}
                   >
@@ -440,9 +473,10 @@ export function Billing() {
                   </button>
                 )}
                 <button
+                  type="button"
                   onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages}
-                  className="size-[32px] rounded-[8px] bg-[#262626] flex items-center justify-center border-none cursor-pointer disabled:opacity-50"
+                  className="size-10 rounded-lg bg-[#262626] flex items-center justify-center border-none cursor-pointer disabled:opacity-50"
                 >
                   →
                 </button>

@@ -46,12 +46,16 @@ function thermalStyles(paperWidthMm: PaperWidthMm): string {
   `;
 }
 
-function headerBlock(t: TenantReceiptInfo): string {
+function headerBlock(t: TenantReceiptInfo, opts?: { omitRnc?: boolean }): string {
   const nombre = escapeHtml(t.nombre_negocio || "CyberBistro");
   const logo = t.logo_url
     ? `<div class="logo-wrap"><img src="${escapeHtml(t.logo_url)}" alt="" crossorigin="anonymous" /></div>`
     : "";
-  const rnc = t.rnc ? `<div class="center" style="font-size:10px;">RNC: ${escapeHtml(t.rnc)}</div>` : "";
+  const rncTrim = t.rnc?.trim() ?? "";
+  const rnc =
+    !opts?.omitRnc && rncTrim
+      ? `<div class="center" style="font-size:11px;font-weight:bold;margin:2px 0;">R.N.C. ${escapeHtml(rncTrim)}</div>`
+      : "";
   const dir = t.direccion ? `<div class="center" style="font-size:9px;">${escapeHtml(t.direccion)}</div>` : "";
   const tel = t.telefono ? `<div class="center" style="font-size:9px;">Tel: ${escapeHtml(t.telefono)}</div>` : "";
   return `${logo}<h1>${nombre}</h1>${rnc}${dir}${tel}`;
@@ -90,11 +94,15 @@ export function buildFacturaReceiptHtml(
     )
     .join("");
 
+  const rncFactura = tenant.rnc?.trim();
+  const rncFacturaCell = rncFactura ? escapeHtml(rncFactura) : "No registrado";
+
   const body = `
-  ${headerBlock(tenant)}
+  ${headerBlock(tenant, { omitRnc: true })}
   <div class="divider"></div>
   <h2>FACTURA DE VENTA</h2>
   <table>
+    <tr class="header-row"><td>R.N.C.</td><td style="text-align:right;font-weight:bold;font-size:11px">${rncFacturaCell}</td></tr>
     <tr class="header-row"><td>Factura N°</td><td style="text-align:right">#${String(numeroFactura).padStart(6, "0")}</td></tr>
     <tr class="header-row"><td>Fecha</td><td style="text-align:right">${escapeHtml(fecha)}</td></tr>
     <tr class="header-row"><td>Mesa</td><td style="text-align:right">${escapeHtml(mesaLabel)}</td></tr>

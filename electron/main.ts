@@ -6,6 +6,32 @@ import { setupAutoUpdater } from './autoUpdater'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 let mainWindow: BrowserWindow | null = null
 
+/** Debe coincidir con `build.appId` en package.json (atajos NSIS + barra de tareas Windows). */
+const WINDOWS_APP_USER_MODEL_ID = 'com.edwin.cyberbistro'
+
+function resolveWindowsTrayIconPath(): string {
+  return path.resolve(
+    app.isPackaged
+      ? path.join(process.resourcesPath, 'icon.ico')
+      : path.join(__dirname, '../icon.ico')
+  )
+}
+
+function applyWindowsTaskbarIdentity(win: BrowserWindow) {
+  if (process.platform !== 'win32') return
+  const iconPath = resolveWindowsTrayIconPath()
+  try {
+    win.setAppDetails({
+      appId: WINDOWS_APP_USER_MODEL_ID,
+      appIconPath: iconPath,
+      relaunchCommand: process.execPath,
+      relaunchDisplayName: 'Cyberbistro',
+    })
+  } catch (e) {
+    console.warn('setAppDetails failed:', e)
+  }
+}
+
 ipcMain.handle('printers:list', async () => {
   const w = mainWindow || BrowserWindow.getAllWindows()[0]
   if (!w) return []
@@ -126,6 +152,8 @@ function createWindow() {
   mainWindow.on('unmaximize', () => {
     mainWindow?.webContents.send('window-maximized', false)
   })
+
+  applyWindowsTaskbarIdentity(mainWindow)
 }
 
 // Window controls handlers
@@ -159,6 +187,10 @@ ipcMain.on('window-close', () => {
 })
 
 app.whenReady().then(() => {
+  if (process.platform === 'win32') {
+    app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID)
+  }
+
   createWindow()
 
   if (app.isPackaged) {

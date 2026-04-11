@@ -7,6 +7,9 @@ import react from '@vitejs/plugin-react'
 import electron from 'vite-plugin-electron/simple'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const pkg = JSON.parse(
+  fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8')
+) as { version: string }
 
 function figmaAssetResolver() {
   return {
@@ -66,5 +69,8 @@ export default defineConfig(async () => ({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+  },
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
   },
 }))

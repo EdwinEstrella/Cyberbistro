@@ -11,6 +11,7 @@ import {
   saveTenantLogoUrl,
   uploadTenantLogoFile,
 } from "../../../shared/lib/tenantLogoStorage";
+import { useAppUpdate } from "../../updates/AppUpdateContext";
 
 interface Config {
   nombre_empresa: string;
@@ -208,6 +209,8 @@ export function Ajustes() {
             </div>
           </div>
 
+          <AppDesktopUpdateCard />
+
           <ThermalPrintSettingsCard />
 
           <button
@@ -324,6 +327,62 @@ export function Ajustes() {
           color: rgba(107,114,128,0.8);
         }
       `}</style>
+    </div>
+  );
+}
+
+function AppDesktopUpdateCard() {
+  const { phase, remoteVersion, downloadPercent, checkForUpdates } = useAppUpdate();
+  const isElectron = Boolean(window.electronAPI?.checkForUpdates);
+
+  const statusLine = (() => {
+    if (!isElectron) {
+      return "Las actualizaciones automáticas están disponibles solo en la app instalada para Windows.";
+    }
+    switch (phase) {
+      case "checking":
+        return "Buscando una versión más reciente en el servidor…";
+      case "available":
+        return remoteVersion
+          ? `Versión ${remoteVersion} encontrada. Descarga en curso…`
+          : "Nueva versión encontrada. Descarga en curso…";
+      case "downloading":
+        return `Descargando actualización… ${downloadPercent ?? 0}%`;
+      case "ready":
+        return remoteVersion
+          ? `Listo para instalar: ${remoteVersion}. Reiniciá la app cuando quieras.`
+          : "Actualización descargada. Reiniciá la app para instalar.";
+      case "unsupported":
+        return "No se pudo iniciar el comprobador de actualizaciones en este entorno.";
+      default:
+        return "Al abrir la app se busca una versión nueva automáticamente. Podés comprobar manualmente abajo.";
+    }
+  })();
+
+  return (
+    <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-[28px] flex flex-col gap-[20px]">
+      <div className="flex flex-col gap-[4px]">
+        <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px]">
+          Actualizaciones de la app
+        </span>
+        <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">
+          Versión instalada <span className="text-[#adaaaa]">{__APP_VERSION__}</span>. Las
+          descargas usan el mismo canal que la instalación (GitHub Releases).
+        </span>
+      </div>
+      <p className="font-['Inter',sans-serif] text-[#adaaaa] text-[13px] leading-relaxed m-0">
+        {statusLine}
+      </p>
+      {isElectron ? (
+        <button
+          type="button"
+          onClick={checkForUpdates}
+          disabled={phase === "checking"}
+          className="bg-[#262626] rounded-[12px] border border-[rgba(255,144,109,0.35)] px-[24px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[13px] tracking-[0.5px] uppercase cursor-pointer self-start disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {phase === "checking" ? "Buscando…" : "Buscar actualizaciones"}
+        </button>
+      ) : null}
     </div>
   );
 }

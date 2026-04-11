@@ -11,6 +11,7 @@ import {
   showSoporteInSidebar,
 } from "../../shared/lib/roleNav";
 import { RoleGuard } from "./RoleGuard";
+import { useAppUpdate } from "../../features/updates/AppUpdateContext";
 
 const mainNavItems = [
   { label: "Venta", icon: svgPaths.p20793584, viewBox: "0 0 18 18", path: "/dashboard" },
@@ -43,6 +44,7 @@ export function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { rol, signOut } = useAuth();
+  const { hasUpdateBellAlert, showUpdateBellToast } = useAppUpdate();
   const [cocinaActiva, setCocinaActiva] = useState(true);
 
   const sideNavItems = useMemo(() => {
@@ -208,16 +210,39 @@ export function AppLayout() {
                 <svg className="w-[20px] h-[14.15px]" fill="none" viewBox="0 0 20 14.15">
                   <path d={svgPaths.p793b600} fill="#ADAAAA" />
                 </svg>
-                <div className="relative w-[16px] h-[20px]">
+                <button
+                  type="button"
+                  onClick={showUpdateBellToast}
+                  title={
+                    hasUpdateBellAlert
+                      ? "Hay una actualización de la app"
+                      : "Notificaciones"
+                  }
+                  aria-label={
+                    hasUpdateBellAlert
+                      ? "Hay una actualización disponible. Tocá para ver detalles."
+                      : "Notificaciones"
+                  }
+                  className="relative w-[16px] h-[20px] shrink-0 border-none bg-transparent p-0 cursor-pointer"
+                >
                   <svg
-                    className="absolute inset-[-20%_-25%_0_0] w-[20px] h-[24px]"
+                    className="absolute inset-[-20%_-25%_0_0] w-[20px] h-[24px] pointer-events-none"
                     fill="none"
                     viewBox="0 0 20.01 24"
+                    aria-hidden
                   >
-                    <path d={svgPaths.p28252700} fill="#ADAAAA" />
-                    <rect fill="#FF6AA0" height="8" rx="4" width="8" x="12.01" />
+                    <path
+                      d={svgPaths.p28252700}
+                      fill={hasUpdateBellAlert ? "#ff906d" : "#ADAAAA"}
+                    />
                   </svg>
-                </div>
+                  {hasUpdateBellAlert ? (
+                    <span
+                      className="absolute top-[-4px] right-[-6px] size-[9px] rounded-full bg-[#ffb020] shadow-[0_0_10px_rgba(255,176,32,0.85)] pointer-events-none motion-safe:animate-pulse"
+                      aria-hidden
+                    />
+                  ) : null}
+                </button>
               </div>
             </div>
           </header>

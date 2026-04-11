@@ -1,5 +1,7 @@
 // Script-type file (no import/export) so wildcard module declarations are global
 
+declare const __APP_VERSION__: string;
+
 // Figma asset virtual modules resolved by the figmaAssetResolver Vite plugin
 declare module 'figma:asset/*' {
   const src: string;

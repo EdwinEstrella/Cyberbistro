@@ -1,14 +1,15 @@
 import { RouterProvider } from "react-router";
 import { Toaster } from "sonner";
-import { AutoUpdateListener } from "../features/updates/AutoUpdateListener";
+import { AppUpdateProvider } from "../features/updates/AppUpdateContext";
 import { router } from "./routes";
 
 export default function App() {
   return (
     <div className="h-full min-h-0 overflow-hidden">
       <Toaster richColors position="top-center" closeButton />
-      <AutoUpdateListener />
-      <RouterProvider router={router} />
+      <AppUpdateProvider>
+        <RouterProvider router={router} />
+      </AppUpdateProvider>
     </div>
   );
 }

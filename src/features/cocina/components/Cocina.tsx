@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
+import { useCocinaRealtimeSync } from "../useCocinaRealtimeSync";
 
 interface ComandaItem {
   nombre: string;
@@ -84,6 +85,25 @@ export function Cocina() {
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(false);
   const empresaNombreRef = useRef("CyberBistro");
+
+  const reloadComandas = useCallback(async () => {
+    if (!tenantId) return;
+    const { data, error } = await insforgeClient.database
+      .from("comandas")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .in("estado", ["pendiente", "en_preparacion", "listo"])
+      .order("created_at", { ascending: true });
+    if (!error && data) {
+      setComandas(data as Comanda[]);
+    }
+  }, [tenantId]);
+
+  const applyCocinaActivaFromRealtime = useCallback((activa: boolean) => {
+    setCocinaActiva(activa);
+  }, []);
+
+  useCocinaRealtimeSync(tenantId, reloadComandas, applyCocinaActivaFromRealtime);
 
   useEffect(() => {
     if (authLoading) return;

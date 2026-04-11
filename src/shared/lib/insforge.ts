@@ -8,11 +8,15 @@ import { createClient } from '@insforge/sdk';
  *
  * NOTA DE SEGURIDAD: La serviceRoleKey solo debe usarse en el servidor.
  * En producción, las operaciones de escritura deben ir a través de Edge Functions.
+ *
+ * Si aparece "Invalid token", el anon JWT quedó desfasado con el backend;
+ * regeneralo en InsForge (metadatos / get-anon-key con tu apiKey).
  */
 export const insforgeClient = createClient({
   baseUrl: 'https://restaurante.azokia.com',
-  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3OC0xMjM0LTU2NzgtOTBhYi1jZGVmMTIzNDU2NzgiLCJlbWFpbCI6ImFub25AaW5zZm9yZ2UuY29tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3ODk4MzF9.JSPxmZgHN5zYHBscZBeKHNVQMItiiSKxJCjqB9Yqmzc',
-  apiKey: 'ik_6x5cr7yb8h9m7c6v8t7yb9numi0oaisudhouaoc6tv7yb9nu'
+  anonKey:
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3OC0xMjM0LTU2NzgtOTBhYi1jZGVmMTIzNDU2NzgiLCJlbWFpbCI6ImFub25AaW5zZm9yZ2UuY29tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU5NDAxMzF9.OQwbEoWPtw-inbXdU3D7c39RZn3c87FJ-HvMBF_jrn4',
+  apiKey: 'ik_6x5cr7yb8h9m7c6v8t7yb9numi0oaisudhouaoc6tv7yb9nu',
 });
 
 /**

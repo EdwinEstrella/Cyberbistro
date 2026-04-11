@@ -56,7 +56,7 @@ export function TitleBar() {
             CyberBistro
           </span>
           <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[8px] tracking-[0.8px] uppercase leading-tight">
-            v4.0.2
+            v{__APP_VERSION__}
           </span>
         </div>
       </div>
