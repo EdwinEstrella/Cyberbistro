@@ -1,11 +1,27 @@
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
 
+/** Carpetas de agentes/IDE con symlinks: en Windows EPERM al empaquetar si se copian. */
+function ignoreDevSymlinkPaths(relativePath) {
+  const p = relativePath.replace(/\\/g, '/');
+  const segments = [
+    '/.agents/',
+    '/.claude/',
+    '/.cursor/',
+    '/.git/',
+    '/agent-transcripts/',
+  ];
+  if (segments.some((s) => p.includes(s))) return true;
+  if (/^\.agents(\/|$)/.test(p) || /^\.claude(\/|$)/.test(p)) return true;
+  return false;
+}
+
 export default {
   packagerConfig: {
     asar: true,
     icon: './icon',
     extraResource: ['./icon.ico'],
+    ignore: ignoreDevSymlinkPaths,
   },
   rebuildConfig: {},
   makers: [
