@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import svgPaths from "../../../imports/svg-qgatbhef3k";
 import { insforgeClient } from "../../../shared/lib/insforge";
+import { MESAS_CONFIG } from "../../tables/config/mesas";
+import { useAuth } from "../../../shared/hooks/useAuth";
 
 interface Plato {
   id: number;
@@ -72,13 +74,12 @@ const tickerItems = [
 ];
 
 export function Dashboard() {
+  const { tenantId, loading: authLoading } = useAuth();
   const [platos, setPlatos] = useState<Plato[]>([]);
   const [mesas, setMesas] = useState<MesaBasic[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [activeCategory, setActiveCategory] = useState("Todos");
   const [selectedMesa, setSelectedMesa] = useState<MesaBasic | null>(null);
-  const [mesaOpen, setMesaOpen] = useState(false);
-  const [splitOpen, setSplitOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [sentOk, setSentOk] = useState(false);
   const [kitchenClosed, setKitchenClosed] = useState(false);
@@ -87,40 +88,89 @@ export function Dashboard() {
   const [paymentMethod, setPaymentMethod] = useState<"efectivo" | "tarjeta" | "digital">("efectivo");
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showConsumosModal, setShowConsumosModal] = useState(false);
+  const [showMesaDropdown, setShowMesaDropdown] = useState(false);
   const [mesaConsumos, setMesaConsumos] = useState<Consumo[]>([]);
   const [splitMode, setSplitMode] = useState(false);
   const [selectedConsumos, setSelectedConsumos] = useState<Set<string>>(new Set());
   const [splitParts, setSplitParts] = useState(2);
   const [isTakeout, setIsTakeout] = useState(false);
-  const mesaRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // Inicializar mesas desde configuración estática
+    const mesasIniciales = MESAS_CONFIG.map((config) => ({
+      id: config.id.toString(),
+      numero: config.numero,
+      estado: 'libre' as const,
+      fusionada: false,
+      fusion_padre_id: null,
+      fusion_hijos: [],
+      deuda_pendiente: 0,
+      items_pendientes: 0,
+    }));
+    setMesas(mesasIniciales);
+
+    // Esperar a tener el tenant_id antes de cargar datos
+    if (!tenantId) return;
+
+    // Cargar platos y estados de mesas desde la base de datos (filtrados por tenant)
     Promise.all([
       insforgeClient.database
         .from("platos")
         .select("*")
+        .eq("tenant_id", tenantId)
         .eq("disponible", true)
         .order("categoria"),
       insforgeClient.database
+        .from("mesas_estado")
+        .select("*")
+        .eq("tenant_id", tenantId),
+      insforgeClient.database
         .from("mesas_deuda")
         .select("*")
-        .eq("fusionada", false)
-        .order("numero"),
-    ]).then(([platosRes, mesasRes]) => {
+        .eq("tenant_id", tenantId),
+    ]).then(([platosRes, estadosRes, deudaRes]) => {
       if (!platosRes.error && platosRes.data) setPlatos(platosRes.data as Plato[]);
-      if (!mesasRes.error && mesasRes.data) setMesas(mesasRes.data as MesaBasic[]);
-    });
-  }, []);
 
-  // Close mesa popup on outside click
-  useEffect(() => {
-    function handler(e: MouseEvent) {
-      if (mesaRef.current && !mesaRef.current.contains(e.target as Node)) {
-        setMesaOpen(false);
+      if (!estadosRes.error && estadosRes.data && estadosRes.data.length > 0) {
+        // Crear mapa de estados por ID
+        const estadosMap = new Map<number, any>();
+        for (const e of estadosRes.data) {
+          estadosMap.set(e.id, e);
+        }
+
+        // Actualizar mesas con los estados de la base de datos
+        setMesas((prev) =>
+          prev.map((m) => {
+            const estadoDB = estadosMap.get(parseInt(m.id));
+            if (estadoDB) {
+              return {
+                ...m,
+                estado: estadoDB.estado ?? 'libre',
+              };
+            }
+            return m;
+          })
+        );
       }
-    }
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+
+      if (!deudaRes.error && deudaRes.data && deudaRes.data.length > 0) {
+        // Actualizar deuda de mesas
+        const deudaMap = new Map(deudaRes.data.map((d: any) => [d.id.toString(), d]));
+        setMesas((prev) =>
+          prev.map((m) => {
+            const deuda = deudaMap.get(m.id);
+            if (deuda) {
+              return {
+                ...m,
+                deuda_pendiente: deuda.deuda_pendiente ?? 0,
+                items_pendientes: deuda.items_pendientes ?? 0,
+              };
+            }
+            return m;
+          })
+        );
+      }
+    });
   }, []);
 
   const categories = [
@@ -167,9 +217,8 @@ export function Dashboard() {
     if (mesa.estado === 'ocupada') return; // Ya está ocupada
 
     const { error } = await insforgeClient.database
-      .from("mesas")
-      .update({ estado: 'ocupada' })
-      .eq("id", mesa.id);
+      .from("mesas_estado")
+      .upsert({ id: mesa.id, estado: 'ocupada' }, { onConflict: "id" });
 
     if (!error) {
       setMesas((prev) =>
@@ -203,9 +252,8 @@ export function Dashboard() {
     }
 
     const { error } = await insforgeClient.database
-      .from("mesas")
-      .update({ estado: 'libre' })
-      .eq("id", mesa.id);
+      .from("mesas_estado")
+      .upsert({ id: mesa.id, estado: 'libre' }, { onConflict: "id" });
 
     if (!error) {
       setMesas((prev) =>
@@ -315,6 +363,7 @@ export function Dashboard() {
       .from("facturas")
       .insert([
         {
+          tenant_id: tenantId,
           mesa_id: selectedMesa.id,
           mesa_numero: selectedMesa.numero,
           metodo_pago: paymentMethod,
@@ -422,14 +471,22 @@ export function Dashboard() {
       return;
     }
 
-    // Obtener configuración del negocio
-    const { data: config } = await insforgeClient.database
-      .from("configuracion")
-      .select("valor")
-      .eq("clave", "nombre_empresa")
-      .limit(1);
+    // Obtener información del tenant (negocio) usando tenant_id de la factura
+    const { data: tenant } = await insforgeClient.database
+      .from("tenants")
+      .select("*")
+      .eq("id", factura.tenant_id)
+      .single();
 
-    const empresaNombre = config?.[0]?.valor || "CyberBistro";
+    if (!tenant) {
+      console.error("Error: No se encontró información del tenant");
+      return;
+    }
+
+    const empresaNombre = tenant.nombre_negocio || "CyberBistro";
+    const empresaRNC = tenant.rnc || "";
+    const empresaDireccion = tenant.direccion || "";
+    const empresaTelefono = tenant.telefono || "";
 
     // Generar HTML de la factura térmica
     const itemsHtml = factura.items
@@ -467,7 +524,9 @@ export function Dashboard() {
 </head>
 <body>
   <h1>${empresaNombre}</h1>
-  <div class="center" style="font-size: 10px;">RNC: 12345678901</div>
+  ${empresaRNC ? `<div class="center" style="font-size: 10px;">RNC: ${empresaRNC}</div>` : ""}
+  ${empresaDireccion ? `<div class="center" style="font-size: 9px;">${empresaDireccion}</div>` : ""}
+  ${empresaTelefono ? `<div class="center" style="font-size: 9px;">Tel: ${empresaTelefono}</div>` : ""}
   <div class="divider"></div>
   <table>
     <tr class="header-row">
@@ -742,6 +801,7 @@ export function Dashboard() {
 
     // Crear factura (con o sin mesa según corresponda)
     const facturaData: any = {
+      tenant_id: tenantId,
       metodo_pago: paymentMethod,
       estado: "pagada",
       subtotal,
@@ -839,7 +899,32 @@ export function Dashboard() {
       );
       w.document.close();
     }
-    setSplitOpen(false);
+  }
+
+  // Verificar autenticación y tenant (después de todos los hooks)
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-[#0e0e0e]">
+        <div className="text-[#adaaaa] font-['Space_Grotesk',sans-serif] text-[16px]">
+          Cargando...
+        </div>
+      </div>
+    );
+  }
+
+  if (!tenantId) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-[#0e0e0e]">
+        <div className="text-center">
+          <div className="text-[#ff7346] font-['Space_Grotesk',sans-serif] text-[20px] mb-4">
+            No autenticado
+          </div>
+          <div className="text-[#adaaaa] font-['Inter',sans-serif] text-[14px]">
+            Por favor inicia sesión
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -988,121 +1073,100 @@ export function Dashboard() {
           {/* Botones */}
           <div className="flex items-center justify-center gap-[12px] mt-[16px]">
             {/* Mesa selector */}
-            <div className="relative" ref={mesaRef}>
+            <div className="relative">
               <button
-                onClick={() => setMesaOpen((o) => !o)}
-                className="flex items-center gap-[6px] rounded-[6px] px-[10px] py-[4px] cursor-pointer border-none transition-all"
-                style={{
-                  backgroundColor: selectedMesa
-                    ? "#ff784d"
-                    : "rgba(72,72,71,0.3)",
-                }}
+                onClick={() => setShowMesaDropdown((v) => !v)}
+                className="flex items-center gap-[6px] rounded-[6px] px-[10px] py-[4px] border-none cursor-pointer transition-all"
+                style={{ backgroundColor: selectedMesa ? "#ff784d" : "rgba(72,72,71,0.3)" }}
               >
                 <span
                   className="font-['Inter',sans-serif] font-bold text-[11px] uppercase"
-                  style={{
-                    color: selectedMesa ? "#460f00" : "#adaaaa",
-                  }}
-                >
-                  {selectedMesa
-                    ? `Mesa ${String(selectedMesa.numero).padStart(2, "0")}`
-                    : "Elegir mesa"}
-                </span>
-                <span
-                  className="text-[8px]"
                   style={{ color: selectedMesa ? "#460f00" : "#adaaaa" }}
                 >
-                  ▾
+                  {selectedMesa ? `Mesa ${selectedMesa.numero}` : "Seleccionar mesa"}
                 </span>
+                <span style={{ color: selectedMesa ? "#460f00" : "#adaaaa", fontSize: 9 }}>▼</span>
               </button>
 
-              {mesaOpen && (
-                <div className="absolute right-0 top-[110%] z-50 bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[12px] p-[12px] shadow-xl w-[220px]">
-                  <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase block mb-[10px]">
-                    Seleccionar mesa
-                  </span>
-                  <div className="grid grid-cols-4 gap-[6px] max-h-[200px] overflow-y-auto">
-                    {mesas.map((m) => (
-                      <div key={m.id} className="relative group">
-                        <button
-                          onClick={async () => {
-                            await markMesaAsOccupied(m);
-                            setSelectedMesa(m);
-                            setMesaOpen(false);
-                            await refreshMesaDebt(m.id);
-                          }}
-                          className="w-full rounded-[8px] py-[8px] font-['Space_Grotesk',sans-serif] font-bold text-[13px] cursor-pointer border-none transition-all relative"
-                          style={{
-                            backgroundColor:
-                              selectedMesa?.id === m.id
-                                ? "#ff906d"
-                                : m.estado === "ocupada"
-                                ? "rgba(255,113,108,0.15)"
-                                : "rgba(38,38,38,0.8)",
-                            color:
-                              selectedMesa?.id === m.id
-                                ? "#460f00"
-                                : m.estado === "ocupada"
-                                ? "#ff716c"
-                                : "white",
-                            border:
-                              m.estado === "libre"
-                                ? "1px solid rgba(89,238,80,0.2)"
-                                : "1px solid transparent",
-                          }}
-                        >
-                          {String(m.numero).padStart(2, "0")}
+              {showMesaDropdown && (
+                <div
+                  className="absolute top-[calc(100%+6px)] left-0 z-50 bg-[#1a1a1a] border border-[rgba(72,72,71,0.4)] rounded-[12px] p-[8px] shadow-xl"
+                  style={{ minWidth: 180, maxHeight: 260, overflowY: "auto" }}
+                >
+                  {/* Opción: sin mesa */}
+                  <button
+                    onClick={() => { setSelectedMesa(null); setShowMesaDropdown(false); setCart([]); }}
+                    className="w-full text-left flex items-center gap-[8px] px-[10px] py-[7px] rounded-[8px] cursor-pointer border-none transition-colors hover:bg-[rgba(72,72,71,0.3)]"
+                    style={{ backgroundColor: !selectedMesa ? "rgba(89,238,80,0.08)" : "transparent" }}
+                  >
+                    <span className="font-['Inter',sans-serif] text-[12px]" style={{ color: !selectedMesa ? "#59ee50" : "#adaaaa" }}>
+                      Sin mesa
+                    </span>
+                  </button>
 
-                          {/* Indicador de deuda */}
-                          {m.deuda_pendiente && m.deuda_pendiente > 0 && (
-                            <div
-                              className="absolute -top-1 -right-1 rounded-full flex items-center justify-center text-[8px] font-bold text-white"
-                              style={{
-                                backgroundColor: "#ff4444",
-                                minWidth: "16px",
-                                minHeight: "16px",
-                              }}
-                              title={`Deuda: RD$ ${m.deuda_pendiente.toFixed(2)}`}
+                  <div className="h-px bg-[rgba(72,72,71,0.3)] my-[6px]" />
+
+                  {/* Lista de mesas */}
+                  <div className="grid grid-cols-4 gap-[4px]">
+                    {mesas
+                      .filter((m) => !m.fusionada)
+                      .sort((a, b) => a.numero - b.numero)
+                      .map((mesa) => {
+                        const isSelected = selectedMesa?.id === mesa.id;
+                        const bgColor =
+                          isSelected
+                            ? "#ff784d"
+                            : mesa.estado === "ocupada"
+                            ? "rgba(255,113,108,0.15)"
+                            : mesa.estado === "limpieza"
+                            ? "rgba(255,144,109,0.15)"
+                            : "rgba(38,38,38,0.8)";
+                        const textColor =
+                          isSelected
+                            ? "#460f00"
+                            : mesa.estado === "ocupada"
+                            ? "#ff716c"
+                            : mesa.estado === "limpieza"
+                            ? "#ff906d"
+                            : "#adaaaa";
+                        return (
+                          <button
+                            key={mesa.id}
+                            onClick={async () => {
+                              setSelectedMesa(mesa);
+                              setShowMesaDropdown(false);
+                              setCart([]);
+                              setIsTakeout(false);
+                              await markMesaAsOccupied(mesa);
+                            }}
+                            className="flex flex-col items-center justify-center py-[8px] rounded-[8px] cursor-pointer border-none transition-all"
+                            style={{ backgroundColor: bgColor }}
+                          >
+                            <span
+                              className="font-['Space_Grotesk',sans-serif] font-bold text-[13px]"
+                              style={{ color: textColor }}
                             >
-                              !
-                            </div>
-                          )}
-
-                          {/* Indicador de items pendientes */}
-                          {m.items_pendientes && m.items_pendientes > 0 && (
-                            <div className="absolute -bottom-1 -right-1 rounded-full bg-[#59ee50] text-[#0e0e0e] text-[8px] font-bold px-1">
-                              {m.items_pendientes}
-                            </div>
-                          )}
-                        </button>
-
-                        {/* Botón de acciones (click derecho o hover) */}
-                        <div className="absolute inset-0 bg-black/80 rounded-[8px] opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-[4px]">
-                          <button
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              const consumos = await loadTableConsumption(m.id);
-                              setMesaConsumos(consumos);
-                              setShowConsumosModal(true);
-                            }}
-                            className="text-[10px] px-2 py-1 bg-[#262626] rounded text-white hover:bg-[#333] border border-[rgba(255,255,255,0.1)]"
-                            title="Ver consumos"
-                          >
-                            👁️
+                              {String(mesa.numero).padStart(2, "0")}
+                            </span>
                           </button>
-                          <button
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              await freeMesa(m);
-                            }}
-                            className="text-[10px] px-2 py-1 bg-[#ff4444] rounded text-white hover:bg-[#ff6666] border border-[rgba(255,255,255,0.1)]"
-                            title="Liberar mesa"
-                          >
-                            ⭕
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                        );
+                      })}
+                  </div>
+
+                  {/* Leyenda */}
+                  <div className="flex gap-[10px] mt-[8px] px-[4px]">
+                    <div className="flex items-center gap-[4px]">
+                      <div className="size-[6px] rounded-full bg-[#59ee50]" />
+                      <span className="font-['Inter',sans-serif] text-[9px] text-[#adaaaa]">Libre</span>
+                    </div>
+                    <div className="flex items-center gap-[4px]">
+                      <div className="size-[6px] rounded-full bg-[#ff716c]" />
+                      <span className="font-['Inter',sans-serif] text-[9px] text-[#adaaaa]">Ocupada</span>
+                    </div>
+                    <div className="flex items-center gap-[4px]">
+                      <div className="size-[6px] rounded-full bg-[#ff906d]" />
+                      <span className="font-['Inter',sans-serif] text-[9px] text-[#adaaaa]">Limpieza</span>
+                    </div>
                   </div>
                 </div>
               )}
@@ -1262,19 +1326,6 @@ export function Dashboard() {
               </div>
             </div>
 
-            {/* Separar cuenta button */}
-            <button
-              onClick={() => setSplitOpen(true)}
-              className="w-full flex items-center justify-center gap-[8px] py-[10px] rounded-[10px] font-['Inter',sans-serif] font-bold text-[12px] tracking-[0.5px] uppercase cursor-pointer border-none transition-all"
-              style={{
-                backgroundColor: "rgba(89,238,80,0.08)",
-                border: "1px solid rgba(89,238,80,0.2)",
-                color: "#59ee50",
-              }}
-            >
-              ⊞ Separar Cuenta
-            </button>
-
             {/* Action buttons */}
             <div className="grid grid-cols-2 gap-[10px]">
               <button
@@ -1330,105 +1381,6 @@ export function Dashboard() {
           </div>
         )}
       </div>
-
-      {/* SEPARAR CUENTA MODAL */}
-      {splitOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{ backgroundColor: "rgba(0,0,0,0.7)" }}
-          onClick={(e) => { if (e.target === e.currentTarget) setSplitOpen(false); }}
-        >
-          <div className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[20px] p-[28px] w-[380px] flex flex-col gap-[20px] shadow-xl">
-            <div className="flex items-center justify-between">
-              <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[20px]">
-                Separar Cuenta
-              </span>
-              <button
-                onClick={() => setSplitOpen(false)}
-                className="text-[#6b7280] bg-transparent border-none cursor-pointer text-[20px] hover:text-white transition-colors leading-none"
-              >
-                ×
-              </button>
-            </div>
-
-            {/* Total */}
-            <div className="bg-[#131313] rounded-[12px] p-[16px] flex justify-between items-center">
-              <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[12px] tracking-[0.8px] uppercase">
-                Total de la cuenta
-              </span>
-              <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#59ee50] text-[18px]">
-                {RD(total)}
-              </span>
-            </div>
-
-            {/* Parts selector */}
-            <div className="flex flex-col gap-[12px]">
-              <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
-                Dividir en
-              </span>
-              <div className="flex items-center justify-center gap-[16px]">
-                <button
-                  onClick={() => setSplitParts((p) => Math.max(2, p - 1))}
-                  className="bg-[#262626] border border-[rgba(72,72,71,0.3)] rounded-[12px] size-[44px] flex items-center justify-center font-bold text-white text-[20px] cursor-pointer border-none transition-colors hover:bg-[#333]"
-                >
-                  −
-                </button>
-                <div className="text-center">
-                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[36px]">
-                    {splitParts}
-                  </span>
-                  <div className="font-['Inter',sans-serif] text-[#6b7280] text-[11px] uppercase tracking-[0.5px]">
-                    personas
-                  </div>
-                </div>
-                <button
-                  onClick={() => setSplitParts((p) => Math.min(12, p + 1))}
-                  className="bg-[#262626] border border-[rgba(72,72,71,0.3)] rounded-[12px] size-[44px] flex items-center justify-center font-bold text-white text-[20px] cursor-pointer border-none transition-colors hover:bg-[#333]"
-                >
-                  +
-                </button>
-              </div>
-            </div>
-
-            {/* Per person amount */}
-            <div
-              className="rounded-[16px] p-[20px] flex flex-col items-center gap-[4px]"
-              style={{ backgroundColor: "rgba(89,238,80,0.06)", border: "1px solid rgba(89,238,80,0.15)" }}
-            >
-              <span className="font-['Inter',sans-serif] text-[#59ee50] text-[11px] tracking-[0.8px] uppercase">
-                Cada persona paga
-              </span>
-              <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#59ee50] text-[28px]">
-                {RD(perPerson)}
-              </span>
-            </div>
-
-            {/* Items breakdown */}
-            <div className="bg-[#131313] rounded-[12px] p-[14px] flex flex-col gap-[6px]">
-              {cart.map((item) => (
-                <div key={item.plato.id} className="flex justify-between">
-                  <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[12px]">
-                    {item.cantidad}× {item.plato.nombre}
-                  </span>
-                  <span className="font-['Inter',sans-serif] text-white text-[12px]">
-                    {RD((item.plato.precio * item.cantidad) / splitParts)} c/u
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            {/* Actions */}
-            <div className="flex gap-[10px]">
-              <button
-                onClick={() => setSplitOpen(false)}
-                className="flex-1 bg-[#ff906d] rounded-[12px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[12px] tracking-[0.5px] uppercase cursor-pointer border-none"
-              >
-                Listo
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* PAGO MODAL */}
       {showPaymentModal && selectedMesa && (() => {

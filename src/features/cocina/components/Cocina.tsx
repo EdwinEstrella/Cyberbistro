@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { insforgeClient } from "../../../shared/lib/insforge";
+import { useAuth } from "../../../shared/hooks/useAuth";
 
 interface ComandaItem {
   nombre: string;
@@ -77,6 +78,7 @@ function printComanda(comanda: Comanda, empresaNombre: string) {
 }
 
 export function Cocina() {
+  const { tenantId, loading: authLoading } = useAuth();
   const [cocinaActiva, setCocinaActiva] = useState(true);
   const [comandas, setComandas] = useState<Comanda[]>([]);
   const [loading, setLoading] = useState(true);
@@ -84,43 +86,60 @@ export function Cocina() {
   const empresaNombreRef = useRef("CyberBistro");
 
   useEffect(() => {
+    if (authLoading) return;
+    if (!tenantId) {
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
     async function load() {
-      const [estadoRes, comandasRes, configRes] = await Promise.all([
-        insforgeClient.database.from("cocina_estado").select("*").limit(1),
+      const [estadoRes, comandasRes, tenantRes] = await Promise.all([
+        insforgeClient.database
+          .from("cocina_estado")
+          .select("*")
+          .eq("tenant_id", tenantId)
+          .limit(1),
         insforgeClient.database
           .from("comandas")
           .select("*")
+          .eq("tenant_id", tenantId)
           .in("estado", ["pendiente", "en_preparacion", "listo"])
           .order("created_at", { ascending: true }),
         insforgeClient.database
-          .from("configuracion")
-          .select("valor")
-          .eq("clave", "nombre_empresa")
-          .limit(1),
+          .from("tenants")
+          .select("nombre_negocio")
+          .eq("id", tenantId)
+          .maybeSingle(),
       ]);
 
+      if (cancelled) return;
       if (!estadoRes.error && estadoRes.data?.[0]) {
         setCocinaActiva(estadoRes.data[0].activa);
       }
       if (!comandasRes.error && comandasRes.data) {
         setComandas(comandasRes.data as Comanda[]);
       }
-      if (!configRes.error && configRes.data?.[0]) {
-        empresaNombreRef.current = configRes.data[0].valor;
+      if (!tenantRes.error && tenantRes.data?.nombre_negocio) {
+        empresaNombreRef.current = tenantRes.data.nombre_negocio;
       }
       setLoading(false);
     }
     load();
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, tenantId]);
 
   async function toggleCocina() {
+    if (!tenantId) return;
     setToggling(true);
     const newActiva = !cocinaActiva;
 
-    // First, try to get the current record
     const { data: existing, error: selectError } = await insforgeClient.database
       .from("cocina_estado")
       .select("*")
+      .eq("tenant_id", tenantId)
       .limit(1);
 
     if (selectError) {
@@ -132,17 +151,19 @@ export function Cocina() {
 
     let error;
     if (existing && existing.length > 0) {
-      // Update existing record
       const result = await insforgeClient.database
         .from("cocina_estado")
         .update({ activa: newActiva, changed_at: new Date().toISOString() })
         .eq("id", existing[0].id);
       error = result.error;
     } else {
-      // Insert first record
       const result = await insforgeClient.database
         .from("cocina_estado")
-        .insert({ activa: newActiva, changed_at: new Date().toISOString() });
+        .insert({
+          activa: newActiva,
+          changed_at: new Date().toISOString(),
+          tenant_id: tenantId,
+        });
       error = result.error;
     }
 
@@ -201,6 +222,16 @@ export function Cocina() {
         <span className="font-['Space_Grotesk',sans-serif] text-[#6b7280] text-[16px]">
           Cargando comandas...
         </span>
+      </div>
+    );
+  }
+
+  if (!tenantId) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-6">
+        <p className="font-['Inter',sans-serif] text-[#adaaaa] text-[14px] text-center">
+          Iniciá sesión con una cuenta vinculada a un negocio para ver la cocina.
+        </p>
       </div>
     );
   }

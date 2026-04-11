@@ -5,6 +5,7 @@ import imgLoginRegistro from "figma:asset/47f7239cc7433af3270415eeec94f9bdbb11cd
 import imgDecorativeScanlineEffect from "figma:asset/70a05c412757c6d4e1cffbb0780858880dce7a5a.png";
 import { TitleBar } from "../../window";
 import { insforgeClient } from "../../../shared/lib/insforge";
+import { PinGateModal } from "../../../shared/components/PinGate";
 
 // Hoist static SVG paths to avoid re-creation
 const ICONS = {
@@ -50,6 +51,7 @@ export function Login() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
+  const [showPinGate, setShowPinGate] = useState(false);
 
   useEffect(() => {
     setIsVisible(true);
@@ -267,7 +269,7 @@ export function Login() {
               <div className="relative shrink-0 w-full flex flex-col gap-3 sm:gap-4 items-center">
                 <div
                   className="flex gap-2 sm:gap-2 items-center cursor-pointer transition-all duration-300 hover:gap-3 group"
-                  onClick={() => navigate('/register')}
+                  onClick={() => setShowPinGate(true)}
                 >
                   <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff6aa0] text-[11px] sm:text-[12px] tracking-[1.1px] sm:tracking-[1.2px] uppercase transition-colors duration-300 group-hover:text-[#ff906d]">
                     Registrar Nueva Unidad
@@ -287,6 +289,20 @@ export function Login() {
           <div aria-hidden="true" className="absolute border border-[rgba(72,72,71,0.2)] border-solid inset-0 pointer-events-none rounded-[8px] sm:rounded-[12px] shadow-[0px_0px_40px_-10px_rgba(255,144,109,0.3)] transition-opacity duration-300 hover:opacity-50" />
         </div>
       </div>
+
+        {/* PIN Gate Modal for Registration */}
+        {showPinGate && (
+          <PinGateModal
+            onUnlock={() => {
+              setShowPinGate(false);
+              navigate('/register');
+            }}
+            onCancel={() => setShowPinGate(false)}
+            title="Registro de Nueva Unidad"
+            subtitle="Ingresá la clave maestra para continuar"
+            correctPin="1110"
+          />
+        )}
     </div>
     </div>
   );

@@ -1,14 +1,22 @@
 import { useState, useEffect } from "react";
 import { insforgeClient } from "../../../shared/lib/insforge";
+import { MESAS_CONFIG } from "../config/mesas";
 
 type Estado = "libre" | "ocupada" | "limpieza";
 
-interface Mesa {
+interface MesaEstadoDB {
   id: number;
-  numero: number;
-  fila: number;
-  columna: number;
-  capacidad: number;
+  estado: Estado;
+  fusionada: boolean;
+  fusion_padre_id: number | null;
+  fusion_hijos: number[];
+  span_filas: number;
+  span_columnas: number;
+}
+
+type MesaConfig = (typeof MESAS_CONFIG)[number];
+
+interface Mesa extends MesaConfig {
   estado: Estado;
   fusionada: boolean;
   fusion_padre_id: number | null;
@@ -83,27 +91,61 @@ export function Tables() {
   const [mesaTotals, setMesaTotals] = useState<Record<number, number>>({});
 
   useEffect(() => {
+    // Inicializar mesas desde configuración estática
+    const mesasIniciales = MESAS_CONFIG.map((config) => ({
+      ...config,
+      estado: "libre" as Estado,
+      fusionada: false,
+      fusion_padre_id: null,
+      fusion_hijos: [],
+      span_filas: 1,
+      span_columnas: 1,
+    }));
+    setMesas(mesasIniciales);
+
+    // Cargar solo estados desde la base de datos
     Promise.all([
       insforgeClient.database
-        .from("mesas")
-        .select("*")
-        .order("fila", { ascending: true })
-        .order("columna", { ascending: true }),
+        .from("mesas_estado")
+        .select("*"),
       insforgeClient.database
         .from("comandas")
         .select("mesa_id,items")
         .in("estado", ["pendiente", "en_preparacion", "listo"]),
-    ]).then(([mesasRes, comandasRes]) => {
-      if (!mesasRes.error && mesasRes.data) {
-        setMesas(
-          (mesasRes.data as Mesa[]).map((m) => ({
-            ...m,
-            fusion_hijos: m.fusion_hijos ?? [],
-            span_filas: m.span_filas ?? 1,
-            span_columnas: m.span_columnas ?? 1,
-          }))
+    ]).then(([estadosRes, comandasRes]) => {
+      if (!estadosRes.error && estadosRes.data && estadosRes.data.length > 0) {
+        // Crear mapa de estados por ID
+        const estadosMap = new Map<number, MesaEstadoDB>();
+        for (const e of estadosRes.data as MesaEstadoDB[]) {
+          estadosMap.set(e.id, {
+            ...e,
+            fusion_hijos: e.fusion_hijos ?? [],
+            span_filas: e.span_filas ?? 1,
+            span_columnas: e.span_columnas ?? 1,
+          });
+        }
+
+        // Actualizar mesas con los estados de la base de datos
+        setMesas((prev) =>
+          prev.map((m) => {
+            const estadoDB = estadosMap.get(m.id);
+            if (estadoDB) {
+              return {
+                ...m,
+                estado: estadoDB.estado,
+                fusionada: estadoDB.fusionada,
+                fusion_padre_id: estadoDB.fusion_padre_id,
+                fusion_hijos: estadoDB.fusion_hijos,
+                span_filas: estadoDB.span_filas,
+                span_columnas: estadoDB.span_columnas,
+              };
+            }
+            return m;
+          })
         );
       }
+
+      // Calcular totales de comandas
       if (!comandasRes.error && comandasRes.data) {
         const totals: Record<number, number> = {};
         for (const c of comandasRes.data as ComandaRaw[]) {
@@ -116,6 +158,7 @@ export function Tables() {
         }
         setMesaTotals(totals);
       }
+
       setLoading(false);
     });
   }, []);
@@ -135,10 +178,11 @@ export function Tables() {
   const limpieza = mesas.filter((m) => !m.fusionada && m.estado === "limpieza").length;
 
   async function changeEstado(mesaId: number, estado: Estado) {
+    // Guardar estado en base de datos
     const { error } = await insforgeClient.database
-      .from("mesas")
-      .update({ estado })
-      .eq("id", mesaId);
+      .from("mesas_estado")
+      .upsert({ id: mesaId, estado }, { onConflict: "id" });
+
     if (!error) {
       setMesas((prev) => prev.map((m) => (m.id === mesaId ? { ...m, estado } : m)));
     }
@@ -167,17 +211,20 @@ export function Tables() {
 
     await Promise.all([
       insforgeClient.database
-        .from("mesas")
-        .update({
+        .from("mesas_estado")
+        .upsert({
+          id: parentId,
           span_columnas: newSpanCols,
           span_filas: newSpanFilas,
           fusion_hijos: newHijos,
-        })
-        .eq("id", parentId),
+        }, { onConflict: "id" }),
       insforgeClient.database
-        .from("mesas")
-        .update({ fusionada: true, fusion_padre_id: parentId })
-        .eq("id", childId),
+        .from("mesas_estado")
+        .upsert({
+          id: childId,
+          fusionada: true,
+          fusion_padre_id: parentId,
+        }, { onConflict: "id" }),
     ]);
 
     setMesas((prev) =>
@@ -204,14 +251,21 @@ export function Tables() {
 
     await Promise.all([
       insforgeClient.database
-        .from("mesas")
-        .update({ span_columnas: 1, span_filas: 1, fusion_hijos: [] })
-        .eq("id", parentId),
+        .from("mesas_estado")
+        .upsert({
+          id: parentId,
+          span_columnas: 1,
+          span_filas: 1,
+          fusion_hijos: [],
+        }, { onConflict: "id" }),
       ...childIds.map((childId) =>
         insforgeClient.database
-          .from("mesas")
-          .update({ fusionada: false, fusion_padre_id: null })
-          .eq("id", childId)
+          .from("mesas_estado")
+          .upsert({
+            id: childId,
+            fusionada: false,
+            fusion_padre_id: null,
+          }, { onConflict: "id" })
       ),
     ]);
 

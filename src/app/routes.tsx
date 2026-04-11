@@ -1,5 +1,5 @@
 import { createHashRouter } from "react-router";
-import { Login } from "../features/auth";
+import { Login, Register } from "../features/auth";
 import { AppLayout } from "./components/AppLayout";
 import { Dashboard } from "../features/dashboard";
 import { Tables } from "../features/tables";
@@ -11,6 +11,7 @@ import { Ajustes } from "../features/ajustes";
 
 export const router = createHashRouter([
   { path: "/", Component: Login },
+  { path: "/register", Component: Register },
   {
     Component: AppLayout,
     children: [

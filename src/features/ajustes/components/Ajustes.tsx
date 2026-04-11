@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { insforgeClient } from "../../../shared/lib/insforge";
+import { useAuth } from "../../../shared/hooks/useAuth";
 
 interface Config {
   nombre_empresa: string;
@@ -8,6 +9,7 @@ interface Config {
 }
 
 export function Ajustes() {
+  const { tenantId, loading: authLoading } = useAuth();
   const [config, setConfig] = useState<Config>({
     nombre_empresa: "",
     rnc: "",
@@ -21,46 +23,58 @@ export function Ajustes() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    if (authLoading) return;
+
+    if (!tenantId) {
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
     insforgeClient.database
-      .from("configuracion")
-      .select("clave,valor")
+      .from("tenants")
+      .select("nombre_negocio, rnc, logo_url")
+      .eq("id", tenantId)
+      .maybeSingle()
       .then(({ data, error }) => {
+        if (cancelled) return;
         if (!error && data) {
-          const cfg: Config = { nombre_empresa: "", rnc: "", logo_url: "" };
-          for (const row of data as { clave: string; valor: string }[]) {
-            if (row.clave === "nombre_empresa") cfg.nombre_empresa = row.valor;
-            if (row.clave === "rnc") cfg.rnc = row.valor;
-            if (row.clave === "logo_url") cfg.logo_url = row.valor;
-          }
-          setConfig(cfg);
+          setConfig({
+            nombre_empresa: data.nombre_negocio ?? "",
+            rnc: data.rnc ?? "",
+            logo_url: data.logo_url ?? "",
+          });
         }
         setLoading(false);
       });
-  }, []);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, tenantId]);
 
   async function handleSave() {
+    if (!tenantId) {
+      setSaveError("No hay negocio vinculado a tu cuenta.");
+      return;
+    }
+
     setSaving(true);
     setSavedOk(false);
     setSaveError("");
 
-    const entries: Array<{ clave: string; valor: string }> = [
-      { clave: "nombre_empresa", valor: config.nombre_empresa },
-      { clave: "rnc", valor: config.rnc },
-      { clave: "logo_url", valor: config.logo_url },
-    ];
+    const { error } = await insforgeClient.database
+      .from("tenants")
+      .update({
+        nombre_negocio: config.nombre_empresa.trim() || "Mi negocio",
+        rnc: config.rnc.trim() || null,
+        logo_url: config.logo_url.trim() || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", tenantId);
 
-    const results = await Promise.all(
-      entries.map((entry) =>
-        insforgeClient.database
-          .from("configuracion")
-          .update({ valor: entry.valor, updated_at: new Date().toISOString() })
-          .eq("clave", entry.clave)
-      )
-    );
-
-    const anyError = results.find((r) => r.error);
-    if (anyError?.error) {
-      setSaveError("Error al guardar. Intentá de nuevo.");
+    if (error) {
+      setSaveError(error.message || "Error al guardar. Intentá de nuevo.");
     } else {
       setSavedOk(true);
       setTimeout(() => setSavedOk(false), 3000);
@@ -83,16 +97,26 @@ export function Ajustes() {
       setConfig((prev) => ({ ...prev, logo_url: data.publicUrl }));
     }
     setUploading(false);
-    // Reset file input so same file can be re-uploaded
     e.target.value = "";
   }
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <span className="font-['Space_Grotesk',sans-serif] text-[#6b7280] text-[16px]">
           Cargando configuración...
         </span>
+      </div>
+    );
+  }
+
+  if (!tenantId) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-6">
+        <p className="font-['Inter',sans-serif] text-[#adaaaa] text-[14px] text-center max-w-md">
+          Tu usuario no está vinculado a un negocio. Iniciá sesión con una cuenta de administrador o
+          completá el registro de unidad.
+        </p>
       </div>
     );
   }
@@ -119,14 +143,13 @@ export function Ajustes() {
           </div>
         )}
 
-        {/* Información del negocio */}
         <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-[28px] flex flex-col gap-[20px]">
           <div className="flex flex-col gap-[4px]">
             <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px]">
               Información del Negocio
             </span>
             <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">
-              Aparece en el encabezado de comandas, facturas e impresiones.
+              Datos de tu negocio (multitenant). Aparecen en comandas, facturas e impresiones.
             </span>
           </div>
 
@@ -159,7 +182,6 @@ export function Ajustes() {
           </div>
         </div>
 
-        {/* Logo */}
         <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-[28px] flex flex-col gap-[20px]">
           <div className="flex flex-col gap-[4px]">
             <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px]">
@@ -170,7 +192,6 @@ export function Ajustes() {
             </span>
           </div>
 
-          {/* Preview */}
           {config.logo_url ? (
             <div className="bg-[#1a1a1a] rounded-[12px] p-[20px] flex items-center justify-center min-h-[100px] border border-[rgba(72,72,71,0.2)]">
               <img
