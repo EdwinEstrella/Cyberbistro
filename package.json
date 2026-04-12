@@ -1,6 +1,6 @@
 {
   "name": "cyberbistro",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Cyberbistro Desktop App",
   "author": "Edwin",
   "main": "dist-electron/main.js",
