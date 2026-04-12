@@ -1,6 +1,17 @@
 import { useState, useEffect, useCallback } from "react";
+import { Eye, Printer } from "lucide-react";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
+import { buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
+import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
+import { printThermalHtml } from "../../../shared/lib/thermalPrint";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "../../../shared/ui/dialog";
 
 type InvoiceStatus = "pagada" | "pendiente" | "cancelada";
 
@@ -26,6 +37,7 @@ interface Invoice {
   items: InvoiceItem[];
   created_at: string;
   pagada_at: string | null;
+  notas?: string | null;
 }
 
 const statusConfig: Record<InvoiceStatus, { label: string; color: string; bg: string; shadow?: string }> = {
@@ -50,6 +62,7 @@ export function Billing() {
   const [currentPage, setCurrentPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<string>("todos");
   const [methodFilter, setMethodFilter] = useState<string>("todos");
+  const [invoiceModal, setInvoiceModal] = useState<Invoice | null>(null);
 
   // Stats
   const [totalRevenue, setTotalRevenue] = useState(0);
@@ -121,18 +134,67 @@ export function Billing() {
   const endIndex = startIndex + itemsPerPage;
   const pageData = filteredInvoices.slice(startIndex, endIndex);
 
-  function getMethodIcon(method: string) {
+  function getMethodDisplay(method: string): { label: string; pillClass: string } {
     switch (method) {
       case "efectivo":
-        return { icon: "💵", label: "Efectivo" };
+        return { label: "Efectivo", pillClass: "bg-[rgba(89,238,80,0.12)] text-[#59ee50]" };
       case "tarjeta":
-        return { icon: "💳", label: "Tarjeta" };
+        return { label: "Tarjeta", pillClass: "bg-[rgba(147,197,253,0.12)] text-[#93c5fd]" };
       case "digital":
-        return { icon: "📱", label: "Digital" };
+        return { label: "Digital", pillClass: "bg-[rgba(255,144,109,0.12)] text-[#ff906d]" };
       default:
-        return { icon: "💵", label: method };
+        return { label: method, pillClass: "bg-[#333] text-[#adaaaa]" };
     }
   }
+
+  const printInvoice = useCallback(
+    async (inv: Invoice) => {
+      const tid = inv.tenant_id ?? tenantId;
+      if (!tid) return;
+
+      const { data: tenant, error: tenantError } = await insforgeClient.database
+        .from("tenants")
+        .select("nombre_negocio, rnc, direccion, telefono, logo_url")
+        .eq("id", tid)
+        .single();
+
+      if (tenantError || !tenant) {
+        console.error("Error al cargar datos del negocio para imprimir:", tenantError);
+        return;
+      }
+
+      const items = Array.isArray(inv.items) ? inv.items : [];
+      const paperWidthMm = getThermalPrintSettings().paperWidthMm;
+      const html = buildFacturaReceiptHtml(
+        {
+          nombre_negocio: tenant.nombre_negocio,
+          rnc: tenant.rnc,
+          direccion: tenant.direccion,
+          telefono: tenant.telefono,
+          logo_url: tenant.logo_url,
+        },
+        {
+          items,
+          subtotal: inv.subtotal,
+          itbis: inv.itbis,
+          total: inv.total,
+          metodo_pago: inv.metodo_pago,
+          mesa_numero: inv.mesa_numero,
+          notas: inv.notas ?? null,
+          pagada_at: inv.pagada_at,
+          created_at: inv.created_at,
+        },
+        inv.numero_factura,
+        paperWidthMm
+      );
+
+      const res = await printThermalHtml(html);
+      if (!res.ok && res.error) {
+        console.warn("Impresión factura:", res.error);
+      }
+    },
+    [tenantId]
+  );
 
   if (authLoading) {
     return (
@@ -303,7 +365,7 @@ export function Billing() {
           ) : (
             pageData.map((inv, idx) => {
               const status = statusConfig[inv.estado];
-              const method = getMethodIcon(inv.metodo_pago);
+              const method = getMethodDisplay(inv.metodo_pago);
               const date = new Date(inv.created_at);
               return (
                 <div
@@ -360,11 +422,10 @@ export function Billing() {
                     </div>
                   </div>
                   {/* Method */}
-                  <div className="py-9 flex gap-3 items-center">
-                    <span className="text-lg shrink-0" aria-hidden>
-                      {method.icon}
-                    </span>
-                    <span className="font-['Inter',sans-serif] text-[rgba(255,255,255,0.75)] text-[14px] leading-snug">
+                  <div className="py-9 flex items-center">
+                    <span
+                      className={`font-['Inter',sans-serif] text-[11px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-md shrink-0 ${method.pillClass}`}
+                    >
                       {method.label}
                     </span>
                   </div>
@@ -395,18 +456,22 @@ export function Billing() {
                   {/* Actions */}
                   <div className="py-9 flex gap-3 justify-end">
                     <button
-                      className="bg-[#262626] rounded-lg size-10 flex items-center justify-center border-none cursor-pointer hover:bg-[#333] transition-colors shrink-0"
-                      title="Ver detalles"
+                      className="bg-[#262626] rounded-lg size-10 flex items-center justify-center border-none cursor-pointer hover:bg-[#333] transition-colors shrink-0 text-[#adaaaa]"
+                      title="Ver factura"
                       type="button"
+                      aria-label="Ver factura"
+                      onClick={() => setInvoiceModal(inv)}
                     >
-                      👁
+                      <Eye className="size-[18px]" strokeWidth={2} aria-hidden />
                     </button>
                     <button
-                      className="bg-[#262626] rounded-lg size-10 flex items-center justify-center border-none cursor-pointer hover:bg-[#333] transition-colors shrink-0"
-                      title="Imprimir"
+                      className="bg-[#262626] rounded-lg size-10 flex items-center justify-center border-none cursor-pointer hover:bg-[#333] transition-colors shrink-0 text-[#adaaaa]"
+                      title="Imprimir factura"
                       type="button"
+                      aria-label="Imprimir factura"
+                      onClick={() => void printInvoice(inv)}
                     >
-                      🖨
+                      <Printer className="size-[18px]" strokeWidth={2} aria-hidden />
                     </button>
                   </div>
                 </div>
@@ -485,6 +550,116 @@ export function Billing() {
           )}
         </div>
       </div>
+
+      <Dialog open={invoiceModal !== null} onOpenChange={(open) => !open && setInvoiceModal(null)}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto border-[rgba(255,255,255,0.08)] bg-[#201f1f] text-white sm:max-w-lg">
+          {invoiceModal ? (
+            <>
+              <DialogHeader>
+                <DialogTitle className="font-['Space_Grotesk',sans-serif] text-xl text-white">
+                  Factura #{String(invoiceModal.numero_factura).padStart(4, "0")}
+                </DialogTitle>
+                <DialogDescription className="font-['Inter',sans-serif] text-[#adaaaa] text-left">
+                  {new Date(invoiceModal.created_at).toLocaleString("es-DO")}
+                  {invoiceModal.mesa_numero != null && invoiceModal.mesa_numero !== 0
+                    ? ` · Mesa ${invoiceModal.mesa_numero}`
+                    : " · Para llevar"}
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4 pt-2">
+                <div className="flex flex-wrap gap-2 items-center">
+                  {(() => {
+                    const st = statusConfig[invoiceModal.estado];
+                    const md = getMethodDisplay(invoiceModal.metodo_pago);
+                    return (
+                      <>
+                        <div
+                          className="flex gap-2 items-center px-3 py-1.5 rounded-full w-fit"
+                          style={{ backgroundColor: st.bg, boxShadow: st.shadow }}
+                        >
+                          <div className="rounded-full size-2 shrink-0" style={{ backgroundColor: st.color }} />
+                          <span
+                            className="font-['Inter',sans-serif] font-bold text-[10px] tracking-wide uppercase"
+                            style={{ color: st.color }}
+                          >
+                            {st.label}
+                          </span>
+                        </div>
+                        <span
+                          className={`font-['Inter',sans-serif] text-[10px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-md ${md.pillClass}`}
+                        >
+                          {md.label}
+                        </span>
+                      </>
+                    );
+                  })()}
+                </div>
+
+                <div className="rounded-xl border border-[rgba(255,255,255,0.08)] overflow-hidden">
+                  <div className="grid grid-cols-[2.5rem_1fr_auto] gap-2 px-3 py-2 bg-[#262626] font-['Inter',sans-serif] text-[10px] font-bold uppercase tracking-wide text-[#adaaaa]">
+                    <span>Cant.</span>
+                    <span>Producto</span>
+                    <span className="text-right">Subtotal</span>
+                  </div>
+                  <ul className="divide-y divide-[rgba(255,255,255,0.06)]">
+                    {(Array.isArray(invoiceModal.items) ? invoiceModal.items : []).map((line, i) => (
+                      <li key={`${line.plato_id}-${i}`} className="grid grid-cols-[2.5rem_1fr_auto] gap-2 px-3 py-2.5 text-[14px]">
+                        <span className="font-['Space_Grotesk',sans-serif] tabular-nums text-white">{line.cantidad}</span>
+                        <span className="font-['Inter',sans-serif] text-[rgba(255,255,255,0.9)] min-w-0 break-words">
+                          {line.nombre}
+                        </span>
+                        <span className="font-['Space_Grotesk',sans-serif] tabular-nums text-white text-right shrink-0">
+                          {RD(line.subtotal)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="space-y-1.5 font-['Inter',sans-serif] text-[14px] text-[#adaaaa]">
+                  <div className="flex justify-between">
+                    <span>Subtotal</span>
+                    <span className="text-white tabular-nums">{RD(invoiceModal.subtotal)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>ITBIS</span>
+                    <span className="text-white tabular-nums">{RD(invoiceModal.itbis)}</span>
+                  </div>
+                  {invoiceModal.propina > 0 ? (
+                    <div className="flex justify-between">
+                      <span>Propina</span>
+                      <span className="text-white tabular-nums">{RD(invoiceModal.propina)}</span>
+                    </div>
+                  ) : null}
+                  <div className="flex justify-between pt-2 border-t border-[rgba(255,255,255,0.08)] font-['Space_Grotesk',sans-serif] font-bold text-[17px] text-white">
+                    <span>Total</span>
+                    <span className="tabular-nums">{RD(invoiceModal.total)}</span>
+                  </div>
+                </div>
+
+                {invoiceModal.notas ? (
+                  <p className="font-['Inter',sans-serif] text-[13px] text-[#adaaaa]">
+                    <span className="text-white/80 font-medium">Nota: </span>
+                    {invoiceModal.notas}
+                  </p>
+                ) : null}
+
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded-lg bg-[#59ee50] text-black font-['Inter',sans-serif] font-bold text-[13px] px-4 py-2.5 border-none cursor-pointer hover:opacity-90 transition-opacity"
+                    onClick={() => void printInvoice(invoiceModal)}
+                  >
+                    <Printer className="size-4" strokeWidth={2} aria-hidden />
+                    Imprimir
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

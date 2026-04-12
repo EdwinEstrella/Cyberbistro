@@ -51,10 +51,20 @@ const RD = (n: number) =>
   "RD$ " +
   n.toLocaleString("es-DO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+const ITBIS_RATE = 0.18;
+
+interface ConsumoAbiertoRow {
+  mesa_numero: number | null;
+  subtotal: number;
+  estado: string;
+}
+
 export function Cierre() {
   const { tenantId, loading: authLoading } = useAuth();
   const [fecha, setFecha] = useState(todayYmd);
   const [facturas, setFacturas] = useState<FacturaRow[]>([]);
+  /** Líneas de cuenta abierta en POS (estado ≠ pagado); no es factura hasta cobrar. */
+  const [consumosAbiertos, setConsumosAbiertos] = useState<ConsumoAbiertoRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [printing, setPrinting] = useState(false);
@@ -102,6 +112,39 @@ export function Cierre() {
     };
   }, [facturas]);
 
+  const resumenCuentasAbiertas = useMemo(() => {
+    const lineas = consumosAbiertos.length;
+    if (lineas === 0) {
+      return {
+        lineas: 0,
+        mesasDistintas: 0,
+        subtotal: 0,
+        itbisEst: 0,
+        totalEst: 0,
+        porMesa: [] as { mesa: number; subtotal: number }[],
+      };
+    }
+    const subtotal = consumosAbiertos.reduce((s, r) => s + Number(r.subtotal), 0);
+    const itbisEst = subtotal * ITBIS_RATE;
+    const totalEst = subtotal + itbisEst;
+    const mesaMap = new Map<number, number>();
+    for (const r of consumosAbiertos) {
+      const mn = Number(r.mesa_numero) || 0;
+      mesaMap.set(mn, (mesaMap.get(mn) ?? 0) + Number(r.subtotal));
+    }
+    const porMesa = [...mesaMap.entries()]
+      .map(([mesa, st]) => ({ mesa, subtotal: st }))
+      .sort((a, b) => b.subtotal - a.subtotal);
+    return {
+      lineas,
+      mesasDistintas: mesaMap.size,
+      subtotal,
+      itbisEst,
+      totalEst,
+      porMesa,
+    };
+  }, [consumosAbiertos]);
+
   const fechaLegible = useMemo(() => {
     const b = localDayBoundsIso(fecha);
     if (!b) return fecha;
@@ -116,12 +159,14 @@ export function Cierre() {
   const cargar = useCallback(async () => {
     if (!tenantId) {
       setFacturas([]);
+      setConsumosAbiertos([]);
       setLoading(false);
       return;
     }
     const bounds = localDayBoundsIso(fecha);
     if (!bounds) {
       setLoadError("Fecha inválida.");
+      setConsumosAbiertos([]);
       setLoading(false);
       return;
     }
@@ -129,20 +174,34 @@ export function Cierre() {
     setLoading(true);
     setLoadError("");
 
-    const { data, error } = await insforgeClient.database
-      .from("facturas")
-      .select("id, estado, metodo_pago, subtotal, itbis, total, created_at")
-      .eq("tenant_id", tenantId)
-      .gte("created_at", bounds.start)
-      .lte("created_at", bounds.end)
-      .order("created_at", { ascending: true });
+    const [factRes, consRes] = await Promise.all([
+      insforgeClient.database
+        .from("facturas")
+        .select("id, estado, metodo_pago, subtotal, itbis, total, created_at")
+        .eq("tenant_id", tenantId)
+        .gte("created_at", bounds.start)
+        .lte("created_at", bounds.end)
+        .order("created_at", { ascending: true }),
+      insforgeClient.database
+        .from("consumos")
+        .select("mesa_numero, subtotal, estado")
+        .eq("tenant_id", tenantId)
+        .neq("estado", "pagado"),
+    ]);
 
-    if (error) {
-      setLoadError(error.message || "No se pudieron cargar las facturas.");
+    if (factRes.error) {
+      setLoadError(factRes.error.message || "No se pudieron cargar las facturas.");
       setFacturas([]);
     } else {
-      setFacturas((data as FacturaRow[]) ?? []);
+      setFacturas((factRes.data as FacturaRow[]) ?? []);
     }
+
+    if (consRes.error) {
+      setConsumosAbiertos([]);
+    } else {
+      setConsumosAbiertos((consRes.data as ConsumoAbiertoRow[]) ?? []);
+    }
+
     setLoading(false);
   }, [tenantId, fecha]);
 
@@ -192,6 +251,11 @@ export function Cierre() {
         itbisPagado: resumen.itbisPagado,
         porMetodo: resumen.porMetodo,
         ticketPromedioPagado: resumen.ticketPromedioPagado,
+        cuentasAbiertasLineas: resumenCuentasAbiertas.lineas,
+        cuentasAbiertasMesas: resumenCuentasAbiertas.mesasDistintas,
+        cuentasAbiertasSubtotal: resumenCuentasAbiertas.subtotal,
+        cuentasAbiertasItbisEst: resumenCuentasAbiertas.itbisEst,
+        cuentasAbiertasTotalEst: resumenCuentasAbiertas.totalEst,
       },
       paperWidthMm
     );
@@ -233,8 +297,8 @@ export function Cierre() {
           Cierre de día
         </h1>
         <p className="font-['Inter',sans-serif] text-[#6b7280] text-[13px] mt-2">
-          Resumen de facturas del día (por fecha de emisión), solo de tu negocio. Imprimí el ticket
-          térmico para archivo o arqueo de caja.
+          Facturas del día según la fecha elegida. Además se muestra todo lo que sigue en cuenta abierta
+          en el POS (consumos sin facturar), para que el cierre refleje cobrado + pendiente de cobrar.
         </p>
       </div>
 
@@ -287,6 +351,59 @@ export function Cierre() {
         <StatCard title="Facturas pagadas" value={String(resumen.pagadas.length)} />
         <StatCard title="Pendientes" value={`${resumen.pendientes.length} · ${RD(resumen.totalPendiente)}`} accent="#ff6aa0" />
         <StatCard title="Canceladas" value={String(resumen.canceladas.length)} accent="#ff716c" />
+      </div>
+
+      <div className="bg-[#131313] rounded-[20px] border border-[rgba(255,144,109,0.2)] p-6">
+        <h2 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[16px] mb-1">
+          Cuentas abiertas en POS (sin facturar)
+        </h2>
+        <p className="font-['Inter',sans-serif] text-[#6b7280] text-[12px] mb-4">
+          Incluye lo ya entregado en mesa: sigue aquí hasta que cobrás en Cajero. No usa la fecha de
+          arriba; es el saldo vivo al pulsar Actualizar.
+        </p>
+        {resumenCuentasAbiertas.lineas === 0 ? (
+          <p className="font-['Inter',sans-serif] text-[#59ee50] text-[13px]">
+            No hay consumos pendientes de facturar.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <StatCard
+                title="Líneas / mesas con saldo"
+                value={`${resumenCuentasAbiertas.lineas} · ${resumenCuentasAbiertas.mesasDistintas}`}
+                accent="#ff906d"
+              />
+              <StatCard title="Subtotal pendiente" value={RD(resumenCuentasAbiertas.subtotal)} />
+              <StatCard
+                title="Total estimado (+ ITBIS 18%)"
+                value={RD(resumenCuentasAbiertas.totalEst)}
+                accent="#ffd06d"
+              />
+            </div>
+            {resumenCuentasAbiertas.porMesa.length > 0 && (
+              <div>
+                <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] uppercase tracking-wide mb-2">
+                  Por mesa (subtotal)
+                </div>
+                <ul className="flex flex-col gap-2 max-h-[200px] overflow-y-auto">
+                  {resumenCuentasAbiertas.porMesa.map(({ mesa, subtotal }) => (
+                    <li
+                      key={mesa}
+                      className="flex justify-between items-center border-b border-[rgba(72,72,71,0.2)] pb-2 last:border-0"
+                    >
+                      <span className="font-['Inter',sans-serif] text-white text-[14px]">
+                        {mesa === 0 ? "Para llevar" : `Mesa ${mesa}`}
+                      </span>
+                      <span className="font-['Space_Grotesk',sans-serif] text-[#ff906d] text-[14px] tabular-nums">
+                        {RD(subtotal)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-6">

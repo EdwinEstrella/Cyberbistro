@@ -138,7 +138,7 @@ export function buildComandaReceiptHtml(
     id: string;
     numero_comanda?: number | null;
     mesa_numero: number | null;
-    items: Array<{ nombre: string; cantidad: number; precio?: number }>;
+    items: Array<{ nombre: string; cantidad: number; precio?: number; categoria?: string }>;
     notas?: string | null;
     created_at?: string | null;
   },
@@ -148,13 +148,16 @@ export function buildComandaReceiptHtml(
   const num = comanda.numero_comanda != null ? String(comanda.numero_comanda) : comanda.id.slice(0, 8).toUpperCase();
 
   const rows = comanda.items
-    .map(
-      (it) => `
+    .map((it) => {
+      const label = it.categoria
+        ? `[${it.categoria}] ${it.nombre}`
+        : it.nombre;
+      return `
     <tr class="item-row">
       <td style="font-weight:bold;font-size:13px;width:18%">${it.cantidad}×</td>
-      <td style="font-size:12px">${escapeHtml(it.nombre)}</td>
-    </tr>`
-    )
+      <td style="font-size:12px">${escapeHtml(label)}</td>
+    </tr>`;
+    })
     .join("");
 
   const body = `
@@ -236,6 +239,12 @@ export interface CierreDiaThermalData {
   /** Filas ordenadas para el ticket. */
   porMetodo: Array<{ etiqueta: string; cantidad: number; total: number }>;
   ticketPromedioPagado: number;
+  /** Consumos sin facturar al momento del cierre (cuentas abiertas en POS). */
+  cuentasAbiertasLineas?: number;
+  cuentasAbiertasMesas?: number;
+  cuentasAbiertasSubtotal?: number;
+  cuentasAbiertasItbisEst?: number;
+  cuentasAbiertasTotalEst?: number;
 }
 
 function rd(n: number): string {
@@ -280,6 +289,23 @@ export function buildCierreDiaReceiptHtml(
     <tr><td style="font-size:10px">ITBIS</td><td style="text-align:right;font-size:10px">${rd(data.itbisPagado)}</td></tr>
     <tr><td style="font-size:10px">Ticket prom. (pagadas)</td><td style="text-align:right;font-size:10px">${data.facturasPagadas > 0 ? rd(data.ticketPromedioPagado) : "—"}</td></tr>
   </table>
+  ${
+    data.cuentasAbiertasLineas != null &&
+    data.cuentasAbiertasLineas > 0 &&
+    data.cuentasAbiertasSubtotal != null
+      ? `
+  <div class="double-divider"></div>
+  <div style="font-size:10px;font-weight:bold;margin-bottom:4px">Cuentas abiertas (sin facturar)</div>
+  <table>
+    <tr><td style="font-size:10px">Líneas / mesas con saldo</td><td style="text-align:right;font-size:10px">${data.cuentasAbiertasLineas} / ${data.cuentasAbiertasMesas ?? "—"}</td></tr>
+    <tr><td style="font-size:10px">Subtotal pendiente</td><td style="text-align:right;font-size:10px">${rd(data.cuentasAbiertasSubtotal)}</td></tr>
+    <tr><td style="font-size:10px">ITBIS est. (18%)</td><td style="text-align:right;font-size:10px">${data.cuentasAbiertasItbisEst != null ? rd(data.cuentasAbiertasItbisEst) : "—"}</td></tr>
+    <tr class="total"><td>TOTAL EST. PENDIENTE</td><td style="text-align:right">${data.cuentasAbiertasTotalEst != null ? rd(data.cuentasAbiertasTotalEst) : "—"}</td></tr>
+  </table>
+  <div class="center" style="font-size:8px;margin-top:4px">Cobrar en POS; no incluido en total cobrado</div>
+  `
+      : ""
+  }
   <div class="double-divider"></div>
   <div style="font-size:10px;font-weight:bold;margin-bottom:4px">Por método de pago (pagadas)</div>
   <table>

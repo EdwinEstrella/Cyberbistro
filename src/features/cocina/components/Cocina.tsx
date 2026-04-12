@@ -7,6 +7,8 @@ interface ComandaItem {
   nombre: string;
   cantidad: number;
   precio: number;
+  /** Categoría del plato (p. ej. Bebidas, Entradas); comandas antiguas pueden no tenerla */
+  categoria?: string;
   notas?: string;
 }
 
@@ -27,7 +29,7 @@ function printComanda(comanda: Comanda, empresaNombre: string) {
     .map(
       (item) => `
       <tr>
-        <td style="padding:2px 0">${item.cantidad}x ${item.nombre}</td>
+        <td style="padding:2px 0">${item.cantidad}x ${item.categoria ? `[${item.categoria}] ` : ""}${item.nombre}</td>
         <td style="text-align:right;padding:2px 0">$${(item.precio * item.cantidad).toFixed(2)}</td>
       </tr>
       ${item.notas ? `<tr><td colspan="2" style="font-size:10px;color:#666;padding:0 0 6px 12px">↳ ${item.notas}</td></tr>` : ""}
@@ -202,6 +204,14 @@ export function Cocina() {
       .update({ estado: nextEstado })
       .eq("id", id);
     if (!error) {
+      if (nextEstado === "listo" && tenantId) {
+        await insforgeClient.database
+          .from("consumos")
+          .update({ estado: "listo", updated_at: new Date().toISOString() })
+          .eq("comanda_id", id)
+          .eq("tenant_id", tenantId)
+          .eq("estado", "enviado_cocina");
+      }
       if (nextEstado === "entregado") {
         setComandas((prev) => prev.filter((c) => c.id !== id));
       } else {
@@ -378,7 +388,13 @@ export function Cocina() {
                         <div key={i}>
                           <div className="flex justify-between gap-[8px]">
                             <span className="font-['Inter',sans-serif] text-white text-[12px]">
-                              {item.cantidad}× {item.nombre}
+                              {item.cantidad}×{" "}
+                              {item.categoria ? (
+                                <>
+                                  <span className="text-[#adaaaa]">[{item.categoria}]</span>{" "}
+                                </>
+                              ) : null}
+                              {item.nombre}
                             </span>
                           </div>
                           {item.notas && (

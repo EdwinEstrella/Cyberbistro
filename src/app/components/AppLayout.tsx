@@ -11,6 +11,7 @@ import {
   showSoporteInSidebar,
 } from "../../shared/lib/roleNav";
 import { RoleGuard } from "./RoleGuard";
+import { PersistentCobrarHint } from "./PersistentCobrarHint";
 import { useAppUpdate } from "../../features/updates/AppUpdateContext";
 
 const mainNavItems = [
@@ -43,7 +44,7 @@ function filterMainNavForRol(rol: string | null) {
 export function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { rol, signOut } = useAuth();
+  const { rol, signOut, tenantId } = useAuth();
   const { hasUpdateBellAlert, showUpdateBellToast } = useAppUpdate();
   const [cocinaActiva, setCocinaActiva] = useState(true);
 
@@ -247,9 +248,12 @@ export function AppLayout() {
             </div>
           </header>
 
-          <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
-            <Outlet />
-          </main>
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+              <Outlet />
+            </main>
+            <PersistentCobrarHint visible={Boolean(tenantId) && rol !== "cocina"} />
+          </div>
         </div>
       </div>
       </RoleGuard>

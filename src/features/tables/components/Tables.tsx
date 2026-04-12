@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { MESAS_CONFIG } from "../config/mesas";
+import { MesaCloseAccountModal } from "../../billing/components/MesaCloseAccountModal";
 
 type Estado = "libre" | "ocupada" | "limpieza";
 
@@ -79,6 +80,49 @@ function getAdjacentMesas(mesa: Mesa, allMesas: Mesa[]): Mesa[] {
 const RD = (n: number) =>
   "RD$ " + n.toLocaleString("es-DO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+function etiquetaEstadoConsumo(estado: string): string {
+  switch (estado) {
+    case "enviado_cocina":
+      return "En cocina / barra";
+    case "listo":
+      return "Listo para servir";
+    case "entregado":
+      return "Entregado en mesa";
+    case "pedido":
+      return "Pedido";
+    default:
+      return estado;
+  }
+}
+
+function etiquetaEstadoComanda(estado: string | undefined): string | null {
+  if (!estado) return null;
+  switch (estado) {
+    case "pendiente":
+      return "Cocina: pendiente";
+    case "en_preparacion":
+      return "Cocina: preparando";
+    case "listo":
+      return "Cocina: listo";
+    case "entregado":
+      return "Cocina: comanda cerrada";
+    default:
+      return null;
+  }
+}
+
+interface ConsumoPanelRow {
+  id: string;
+  nombre: string;
+  cantidad: number;
+  subtotal: number;
+  precio_unitario: number;
+  estado: string;
+  tipo: string;
+  created_at: string;
+  comanda_id: string | null;
+}
+
 interface ComandaRaw {
   mesa_numero: number | null;
   items: Array<{ precio: number; cantidad: number }>;
@@ -91,6 +135,10 @@ export function Tables() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [mergeMode, setMergeMode] = useState(false);
   const [mesaTotals, setMesaTotals] = useState<Record<number, number>>({});
+  const [historialConsumos, setHistorialConsumos] = useState<ConsumoPanelRow[]>([]);
+  const [comandaEstados, setComandaEstados] = useState<Record<string, string>>({});
+  const [showCloseAccountModal, setShowCloseAccountModal] = useState(false);
+  const [historialVersion, setHistorialVersion] = useState(0);
 
   useEffect(() => {
     const mesasIniciales = MESAS_CONFIG.map((config) => ({
@@ -175,6 +223,76 @@ export function Tables() {
       setLoading(false);
     });
   }, [authLoading, tenantId]);
+
+  const selectedMesaNumero = useMemo(() => {
+    if (selectedId == null) return null;
+    return mesas.find((m) => m.id === selectedId)?.numero ?? null;
+  }, [mesas, selectedId]);
+
+  useEffect(() => {
+    if (!tenantId || selectedMesaNumero == null) {
+      setHistorialConsumos([]);
+      setComandaEstados({});
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadHistorial() {
+      const { data, error } = await insforgeClient.database
+        .from("consumos")
+        .select("id, nombre, cantidad, subtotal, precio_unitario, estado, tipo, created_at, comanda_id")
+        .eq("tenant_id", tenantId)
+        .eq("mesa_numero", selectedMesaNumero)
+        .neq("estado", "pagado")
+        .order("created_at", { ascending: false });
+
+      if (cancelled) return;
+      if (error || !data) {
+        setHistorialConsumos([]);
+        setComandaEstados({});
+        return;
+      }
+
+      const rows = data as ConsumoPanelRow[];
+      setHistorialConsumos(rows);
+
+      const cids = [...new Set(rows.map((r) => r.comanda_id).filter(Boolean))] as string[];
+      if (cids.length === 0) {
+        setComandaEstados({});
+        return;
+      }
+
+      const { data: coms, error: comErr } = await insforgeClient.database
+        .from("comandas")
+        .select("id, estado")
+        .in("id", cids);
+
+      if (cancelled) return;
+      if (comErr || !coms) {
+        setComandaEstados({});
+        return;
+      }
+
+      const map: Record<string, string> = {};
+      for (const c of coms as { id: string; estado: string }[]) {
+        map[c.id] = c.estado;
+      }
+      setComandaEstados(map);
+    }
+
+    void loadHistorial();
+    const tick = setInterval(() => void loadHistorial(), 25000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(tick);
+    };
+  }, [tenantId, selectedMesaNumero, historialVersion]);
+
+  useEffect(() => {
+    if (selectedId == null) setShowCloseAccountModal(false);
+  }, [selectedId]);
 
   const selectedMesa = mesas.find((m) => m.id === selectedId) ?? null;
   const adjacentMesas = selectedMesa ? getAdjacentMesas(selectedMesa, mesas) : [];
@@ -613,6 +731,83 @@ export function Tables() {
               </span>
             </div>
 
+            <div className="h-px bg-[rgba(72,72,71,0.2)]" />
+
+            {/* Historial de esta mesa (cómo cobrar: barra fija inferior en toda la app) */}
+            <div className="rounded-[12px] border border-[rgba(72,72,71,0.28)] bg-[#161616] p-[14px] flex flex-col gap-[10px] shrink-0">
+              <div className="flex flex-col gap-1">
+                <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
+                  Historial / pedido en cuenta
+                </span>
+                <span className="font-['Inter',sans-serif] text-[#6b7280] text-[10px] leading-snug">
+                  Mesa {selectedMesa.numero}. Podés cobrar aquí con el mismo flujo que en Venta (método de pago y factura).
+                </span>
+              </div>
+              <div className="flex flex-col gap-[8px] max-h-[200px] overflow-y-auto pr-0.5 min-h-[3rem]">
+                {historialConsumos.length === 0 ? (
+                  <p className="font-['Inter',sans-serif] text-[#6b7280] text-[12px] text-center py-3 m-0">
+                    Sin líneas en cuenta en el POS.
+                  </p>
+                ) : (
+                  historialConsumos.map((row) => {
+                    const comandaEst = row.comanda_id ? comandaEstados[row.comanda_id] : undefined;
+                    const cocinaLbl = etiquetaEstadoComanda(comandaEst);
+                    return (
+                      <div
+                        key={row.id}
+                        className="rounded-[10px] border border-[rgba(72,72,71,0.25)] bg-[#1a1a1a] px-[12px] py-[10px] flex flex-col gap-[6px]"
+                      >
+                        <div className="flex items-start justify-between gap-[8px]">
+                          <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] leading-tight">
+                            {row.cantidad}× {row.nombre}
+                          </span>
+                          <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[13px] shrink-0 tabular-nums">
+                            {RD(Number(row.subtotal))}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-[6px] items-center">
+                          <span
+                            className={`font-['Inter',sans-serif] text-[9px] font-bold uppercase tracking-wide px-[8px] py-[3px] rounded-full ${
+                              row.tipo === "cocina"
+                                ? "bg-[rgba(255,144,109,0.12)] text-[#ff906d]"
+                                : "bg-[rgba(89,238,80,0.12)] text-[#59ee50]"
+                            }`}
+                          >
+                            {row.tipo === "cocina" ? "Cocina" : "Directo"}
+                          </span>
+                          <span className="font-['Inter',sans-serif] text-[9px] font-bold uppercase tracking-wide px-[8px] py-[3px] rounded-full bg-[rgba(255,255,255,0.06)] text-[#adaaaa]">
+                            {etiquetaEstadoConsumo(row.estado)}
+                          </span>
+                          {cocinaLbl ? (
+                            <span className="font-['Inter',sans-serif] text-[9px] font-bold uppercase tracking-wide px-[8px] py-[3px] rounded-full bg-[rgba(255,208,109,0.1)] text-[#ffd06d]">
+                              {cocinaLbl}
+                            </span>
+                          ) : null}
+                        </div>
+                        <span className="font-['Inter',sans-serif] text-[#6b7280] text-[10px]">
+                          {new Date(row.created_at).toLocaleString("es-DO", {
+                            day: "2-digit",
+                            month: "short",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+              {historialConsumos.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowCloseAccountModal(true)}
+                  className="w-full mt-1 py-[12px] rounded-[10px] border-none cursor-pointer font-['Space_Grotesk',sans-serif] font-bold text-[#5b1600] text-[11px] tracking-[1.2px] uppercase bg-[#ff906d] hover:bg-[#ff784d] transition-colors"
+                >
+                  Cerrar cuenta / Cobrar
+                </button>
+              )}
+            </div>
+
             {/* Balance pendiente */}
             {(() => {
               const t =
@@ -693,6 +888,18 @@ export function Tables() {
           </div>
         )}
       </div>
+
+      {selectedMesa && tenantId && (
+        <MesaCloseAccountModal
+          open={showCloseAccountModal}
+          onClose={() => setShowCloseAccountModal(false)}
+          tenantId={tenantId}
+          mesaNumero={selectedMesa.numero}
+          onSettled={() => {
+            setHistorialVersion((v) => v + 1);
+          }}
+        />
+      )}
     </div>
   );
 }

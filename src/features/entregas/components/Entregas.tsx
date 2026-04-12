@@ -1,18 +1,19 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { insforgeClient } from "../../../shared/lib/insforge";
+import { useAuth } from "../../../shared/hooks/useAuth";
 
 interface MesaConPedido {
-  /** id de factura (agrupa por ticket; evita mezclar varios para llevar con mesa_numero 0) */
+  /** Agrupa por mesa (`mesa-2`, `mesa-0` para llevar) — cuenta abierta, no factura */
   id: string;
   numero: number;
   items: ItemEntrega[];
   total: number;
   pagada: boolean;
-  factura_id?: string;
   created_at: string;
 }
 
 interface ItemEntrega {
+  consumo_id: string;
   plato_id: number;
   nombre: string;
   cantidad: number;
@@ -30,112 +31,157 @@ const RD = (n: number) =>
   });
 
 export function Entregas() {
+  const { tenantId, loading: authLoading } = useAuth();
   const [mesasConPedido, setMesasConPedido] = useState<MesaConPedido[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filtroEstado, setFiltroEstado] = useState<"todos" | "pendientes" | "completos">("todos");
+  const [filtroEstado, setFiltroEstado] = useState<"todos" | "falta_entregar" | "listo_cobro">("todos");
+
+  const loadEntregas = useCallback(
+    async (opts?: { soft?: boolean }) => {
+      const soft = opts?.soft === true;
+      if (!tenantId) {
+        setMesasConPedido([]);
+        if (!soft) setLoading(false);
+        return;
+      }
+
+      if (!soft) setLoading(true);
+
+      const { data: consumos, error } = await insforgeClient.database
+        .from("consumos")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .neq("estado", "pagado")
+        .order("created_at", { ascending: true });
+
+      if (error) {
+        console.error(error);
+        setMesasConPedido([]);
+        if (!soft) setLoading(false);
+        return;
+      }
+
+      if (!consumos?.length) {
+        setMesasConPedido([]);
+        if (!soft) setLoading(false);
+        return;
+      }
+
+      const platoIds = [...new Set((consumos as { plato_id: number }[]).map((c) => c.plato_id))];
+      const { data: platos } =
+        platoIds.length > 0
+          ? await insforgeClient.database.from("platos").select("id, va_a_cocina").in("id", platoIds)
+          : { data: [] as { id: number; va_a_cocina: boolean }[] };
+
+      const platoMap = new Map((platos ?? []).map((p) => [p.id, p.va_a_cocina]));
+
+      const comandaIds = [
+        ...new Set(
+          (consumos as { comanda_id: string | null }[])
+            .map((c) => c.comanda_id)
+            .filter((id): id is string => Boolean(id))
+        ),
+      ];
+      const { data: comandasRows } =
+        comandaIds.length > 0
+          ? await insforgeClient.database.from("comandas").select("id, estado").in("id", comandaIds)
+          : { data: [] as { id: string; estado: string }[] };
+
+      const comandaEstadoById = new Map((comandasRows ?? []).map((c) => [c.id, c.estado]));
+
+      const mesasMap = new Map<string, MesaConPedido>();
+
+      for (const row of consumos as {
+        id: string;
+        mesa_numero: number | null;
+        plato_id: number;
+        nombre: string;
+        cantidad: number;
+        precio_unitario: number;
+        subtotal: number;
+        tipo: string;
+        estado: string;
+        comanda_id: string | null;
+        created_at: string;
+      }[]) {
+        const num = Number(row.mesa_numero) || 0;
+        const groupKey = `mesa-${num}`;
+
+        if (!mesasMap.has(groupKey)) {
+          mesasMap.set(groupKey, {
+            id: groupKey,
+            numero: num,
+            items: [],
+            total: 0,
+            pagada: false,
+            created_at: row.created_at,
+          });
+        }
+
+        const mesa = mesasMap.get(groupKey)!;
+        if (row.created_at > mesa.created_at) mesa.created_at = row.created_at;
+
+        const vaACocina =
+          row.tipo === "cocina" && platoMap.get(row.plato_id) !== false;
+        const lineaEntregada = !vaACocina || row.estado === "entregado";
+        const cantidad_entregada = lineaEntregada ? row.cantidad : 0;
+        const comanda_estado = row.comanda_id ? comandaEstadoById.get(row.comanda_id) : undefined;
+
+        mesa.items.push({
+          consumo_id: row.id,
+          plato_id: row.plato_id,
+          nombre: row.nombre,
+          cantidad: row.cantidad,
+          cantidad_entregada,
+          precio_unitario: Number(row.precio_unitario),
+          subtotal: Number(row.subtotal),
+          va_a_cocina: vaACocina,
+          comanda_estado,
+        });
+
+        mesa.total += Number(row.subtotal);
+      }
+
+      const mesas = Array.from(mesasMap.values()).sort((a, b) => {
+        if (a.numero === 0 && b.numero !== 0) return 1;
+        if (b.numero === 0 && a.numero !== 0) return -1;
+        return a.numero - b.numero;
+      });
+
+      setMesasConPedido(mesas);
+      if (!soft) setLoading(false);
+    },
+    [tenantId]
+  );
 
   useEffect(() => {
-    loadEntregas();
-    // Recargar cada 30 segundos
-    const interval = setInterval(loadEntregas, 30000);
-    return () => clearInterval(interval);
-  }, []);
-
-  async function loadEntregas() {
-    setLoading(true);
-
-    // Obtener facturas recientes (últimas 24 horas) que tengan items
-    const hace24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-
-    const { data: facturas, error } = await insforgeClient.database
-      .from("facturas")
-      .select("*")
-      .gte("created_at", hace24h)
-      .order("created_at", { ascending: false });
-
-    if (error || !facturas) {
+    if (authLoading) return;
+    if (!tenantId) {
+      setMesasConPedido([]);
       setLoading(false);
       return;
     }
+    void loadEntregas();
+    const interval = setInterval(() => loadEntregas({ soft: true }), 30000);
+    return () => clearInterval(interval);
+  }, [authLoading, tenantId, loadEntregas]);
 
-    // Obtener información de platos para saber cuáles van a cocina
-    const { data: platos } = await insforgeClient.database
-      .from("platos")
-      .select("id, va_a_cocina")
-      .in("id", [...new Set(facturas.flatMap((f: any) => f.items.map((i: any) => i.plato_id)))]);
+  /** Marca el consumo como entregado en mesa (cuenta abierta; al cobrar pasa a pagado). */
+  async function marcarEntregado(consumoId: string) {
+    if (!tenantId) return;
+    const { error: upErr } = await insforgeClient.database
+      .from("consumos")
+      .update({ estado: "entregado", updated_at: new Date().toISOString() })
+      .eq("id", consumoId)
+      .eq("tenant_id", tenantId);
 
-    const platoMap = new Map(platos?.map((p: any) => [p.id, p.va_a_cocina]) || []);
-
-    // Obtener comandas activas para saber el estado de los items de cocina
-    const { data: comandas } = await insforgeClient.database
-      .from("comandas")
-      .select("*")
-      .in("estado", ["pendiente", "en_preparacion", "listo"]);
-
-    // Una tarjeta por factura (facturas no tienen mesa_id en BD)
-    const mesasMap = new Map<string, MesaConPedido>();
-
-    for (const factura of facturas as any[]) {
-      const groupKey = factura.id as string;
-
-      if (!mesasMap.has(groupKey)) {
-        mesasMap.set(groupKey, {
-          id: groupKey,
-          numero: Number(factura.mesa_numero) || 0,
-          items: [],
-          total: 0,
-          pagada: factura.estado === "pagada",
-          factura_id: factura.id,
-          created_at: factura.created_at,
-        });
-      }
-
-      const mesa = mesasMap.get(groupKey)!;
-
-      for (const item of factura.items) {
-        const vaACocina = platoMap.get(item.plato_id) !== false;
-        const comanda = comandas?.find((c: any) =>
-          c.mesa_numero === factura.mesa_numero &&
-          c.items.some((i: any) => i.nombre === item.nombre && i.cantidad === item.cantidad)
-        );
-
-        mesa.items.push({
-          plato_id: item.plato_id,
-          nombre: item.nombre,
-          cantidad: item.cantidad,
-          cantidad_entregada: 0, // TODO: Guardar en BD
-          precio_unitario: item.precio_unitario,
-          subtotal: item.subtotal,
-          va_a_cocina: vaACocina,
-          comanda_estado: comanda?.estado,
-        });
-
-        mesa.total += item.subtotal;
-      }
+    if (upErr) {
+      console.error(upErr);
+      alert(`No se pudo guardar la entrega: ${upErr.message}`);
+      return;
     }
 
-    const mesas = Array.from(mesasMap.values());
-    setMesasConPedido(mesas);
-    setLoading(false);
-  }
-
-  async function marcarEntregado(mesaId: string, platoId: number, cantidad: number) {
-    // TODO: Implementar tracking de entregas en BD
-    // Por ahora solo actualizamos estado local
-    setMesasConPedido((prev) =>
-      prev.map((mesa) =>
-        mesa.id === mesaId
-          ? {
-              ...mesa,
-              items: mesa.items.map((item) =>
-                item.plato_id === platoId
-                  ? { ...item, cantidad_entregada: Math.min(item.cantidad_entregada + cantidad, item.cantidad) }
-                  : item
-              ),
-            }
-          : mesa
-      )
-    );
+    await loadEntregas({ soft: true });
   }
 
   function todosEntregados(mesa: MesaConPedido): boolean {
@@ -155,10 +201,31 @@ export function Entregas() {
   }
 
   const mesasFiltradas = mesasConPedido.filter((mesa) => {
-    if (filtroEstado === "pendientes") return !todosEntregados(mesa);
-    if (filtroEstado === "completos") return todosEntregados(mesa);
+    if (filtroEstado === "falta_entregar") return !todosEntregados(mesa);
+    if (filtroEstado === "listo_cobro") return todosEntregados(mesa);
     return true;
   });
+
+  if (authLoading) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <span className="font-['Space_Grotesk',sans-serif] text-[#6b7280] text-[16px]">
+          Cargando sesión...
+        </span>
+      </div>
+    );
+  }
+
+  if (!tenantId) {
+    return (
+      <div className="flex-1 flex items-center justify-center p-6">
+        <p className="font-['Inter',sans-serif] text-[#adaaaa] text-[14px] text-center max-w-md">
+          Tu usuario no está vinculado a un negocio. Las entregas se filtran por restaurante
+          (multitenant).
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -182,12 +249,12 @@ export function Entregas() {
               className="font-['Space_Grotesk',sans-serif] text-[10px] tracking-[0.5px] uppercase font-bold"
               style={{ color: "#ff906d" }}
             >
-              Pedidos Activos
+              Cuentas abiertas
             </span>
           </div>
         </div>
 
-        <div className="flex gap-[8px]">
+        <div className="flex flex-wrap gap-[8px]">
           <button
             onClick={() => setFiltroEstado("todos")}
             className={`px-[16px] py-[8px] rounded-[8px] font-['Inter',sans-serif] font-bold text-[11px] uppercase cursor-pointer border-none transition-all ${
@@ -199,27 +266,28 @@ export function Entregas() {
             Todos
           </button>
           <button
-            onClick={() => setFiltroEstado("pendientes")}
+            onClick={() => setFiltroEstado("falta_entregar")}
             className={`px-[16px] py-[8px] rounded-[8px] font-['Inter',sans-serif] font-bold text-[11px] uppercase cursor-pointer border-none transition-all ${
-              filtroEstado === "pendientes"
+              filtroEstado === "falta_entregar"
                 ? "bg-[#ff906d] text-[#5b1600]"
                 : "bg-[#262626] text-[#adaaaa]"
             }`}
           >
-            Pendientes
+            Falta entregar
           </button>
           <button
-            onClick={() => setFiltroEstado("completos")}
+            onClick={() => setFiltroEstado("listo_cobro")}
             className={`px-[16px] py-[8px] rounded-[8px] font-['Inter',sans-serif] font-bold text-[11px] uppercase cursor-pointer border-none transition-all ${
-              filtroEstado === "completos"
+              filtroEstado === "listo_cobro"
                 ? "bg-[#ff906d] text-[#5b1600]"
                 : "bg-[#262626] text-[#adaaaa]"
             }`}
           >
-            Completos
+            Listo p/ cobro
           </button>
           <button
-            onClick={loadEntregas}
+            type="button"
+            onClick={() => loadEntregas()}
             className="bg-[#262626] rounded-[8px] border border-[rgba(72,72,71,0.2)] flex gap-[8px] items-center px-[16px] py-[8px] cursor-pointer hover:border-[rgba(255,144,109,0.3)] transition-colors"
           >
             <span className="font-['Inter',sans-serif] text-white text-[12px]">↻</span>
@@ -235,10 +303,16 @@ export function Entregas() {
           </span>
         </div>
       ) : mesasFiltradas.length === 0 ? (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <span className="font-['Inter',sans-serif] text-[#6b7280] text-[14px]">
-              No hay pedidos activos
+        <div className="flex-1 flex items-center justify-center px-4">
+          <div className="text-center max-w-md">
+            <span className="font-['Inter',sans-serif] text-[#6b7280] text-[14px] block">
+              {mesasConPedido.length === 0
+                ? "No hay cuentas abiertas en el POS."
+                : filtroEstado === "falta_entregar"
+                  ? "Ninguna mesa con entrega pendiente. Probá «Todos» o «Listo p/ cobro»."
+                  : filtroEstado === "listo_cobro"
+                    ? "Ninguna mesa con entrega completa aún. Usá «Todos» o «Falta entregar»."
+                    : "No hay resultados para este filtro."}
             </span>
           </div>
         </div>
@@ -272,33 +346,43 @@ export function Entregas() {
                       </div>
                     </div>
 
-                    <div
-                      className={`px-[10px] py-[4px] rounded-full flex items-center gap-[6px] ${
-                        completo ? "bg-[rgba(89,238,80,0.1)]" : "bg-[rgba(255,144,109,0.1)]"
-                      }`}
-                    >
+                    <div className="flex flex-col items-end gap-[4px]">
                       <div
-                        className="rounded-full size-[6px]"
-                        style={{ backgroundColor: completo ? "#59ee50" : "#ff906d" }}
-                      />
-                      <span
-                        className="font-['Inter',sans-serif] font-bold text-[10px] tracking-[0.5px] uppercase"
-                        style={{ color: completo ? "#59ee50" : "#ff906d" }}
+                        className={`px-[10px] py-[4px] rounded-full flex items-center gap-[6px] ${
+                          completo ? "bg-[rgba(89,238,80,0.1)]" : "bg-[rgba(255,144,109,0.1)]"
+                        }`}
                       >
-                        {completo ? "Completo" : "Pendiente"}
-                      </span>
+                        <div
+                          className="rounded-full size-[6px]"
+                          style={{ backgroundColor: completo ? "#59ee50" : "#ff906d" }}
+                        />
+                        <span
+                          className="font-['Inter',sans-serif] font-bold text-[10px] tracking-[0.5px] uppercase"
+                          style={{ color: completo ? "#59ee50" : "#ff906d" }}
+                        >
+                          {completo ? "Entrega lista" : "Falta entregar"}
+                        </span>
+                      </div>
+                      {completo ? (
+                        <span className="font-['Inter',sans-serif] text-[9px] text-[#ffd06d] tracking-wide uppercase font-bold text-right max-w-[9rem] leading-tight">
+                          Cuenta abierta → cobrar en POS
+                        </span>
+                      ) : null}
                     </div>
                   </div>
 
                   {/* Items */}
                   <div className="p-[16px] flex flex-col gap-[8px] max-h-[240px] overflow-y-auto">
-                    {mesa.items.map((item, idx) => {
-                      const entregado = item.cantidad_entregada >= item.cantidad;
-                      const queda = item.cantidad - item.cantidad_entregada;
+                    {mesa.items.map((item) => {
+                      const entregado =
+                        !item.va_a_cocina || item.cantidad_entregada >= item.cantidad;
+                      const queda = item.va_a_cocina
+                        ? Math.max(0, item.cantidad - item.cantidad_entregada)
+                        : 0;
 
                       return (
                         <div
-                          key={idx}
+                          key={item.consumo_id}
                           className={`rounded-[10px] p-[12px] border ${
                             entregado
                               ? "bg-[rgba(89,238,80,0.05)] border-[rgba(89,238,80,0.15)]"
@@ -362,7 +446,7 @@ export function Entregas() {
 
                             {item.va_a_cocina && queda > 0 && (
                               <button
-                                onClick={() => marcarEntregado(mesa.id, item.plato_id, queda)}
+                                onClick={() => marcarEntregado(item.consumo_id)}
                                 className="shrink-0 bg-[#59ee50] rounded-[8px] px-[10px] py-[6px] font-['Inter',sans-serif] font-bold text-[10px] uppercase text-[#0e0e0e] cursor-pointer border-none hover:bg-[#4ade4f] transition-colors"
                               >
                                 Entregar {queda}
@@ -398,10 +482,10 @@ export function Entregas() {
                   )}
 
                   {/* Footer */}
-                  <div className="px-[16px] py-[12px] border-t border-[rgba(72,72,71,0.15)] bg-[rgba(38,38,38,0.3)] flex items-center justify-between">
+                  <div className="px-[16px] py-[12px] border-t border-[rgba(72,72,71,0.15)] bg-[rgba(38,38,38,0.3)] flex items-center justify-between gap-[12px]">
                     <div className="flex flex-col gap-[2px]">
                       <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.5px]">
-                        Total cuenta
+                        Total cuenta (sin facturar)
                       </span>
                       <span className="font-['Space_Grotesk',sans-serif] font-bold text-[16px]" style={{ color: "#ff906d" }}>
                         {RD(mesa.total)}
