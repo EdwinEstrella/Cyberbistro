@@ -20,6 +20,15 @@ export type AppUpdatePhase =
   | "ready";
 
 const PROGRESS_TOAST_ID = "cyberbistro-app-update";
+const CHECK_UPDATE_TOAST_ID = "cyberbistro-check-update";
+/** Mismo repo que `build.publish` en package.json (comprobación en paralelo si el updater no notifica). */
+const GITHUB_LATEST_RELEASE_API =
+  "https://api.github.com/repos/EdwinEstrella/Cyberbistro/releases/latest";
+
+function normalizeReleaseTag(tag: string | undefined): string {
+  if (!tag) return "";
+  return tag.replace(/^v/i, "").trim();
+}
 
 type AppUpdateContextValue = {
   phase: AppUpdatePhase;
@@ -59,7 +68,31 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
     }
     manualCheckPendingRef.current = true;
     setPhase("checking");
-    toast.loading("Buscando actualizaciones…", { id: "cyberbistro-check-update", duration: 8000 });
+    toast.loading("Buscando actualizaciones…", {
+      id: CHECK_UPDATE_TOAST_ID,
+      duration: 60_000,
+    });
+
+    const current = String(__APP_VERSION__).trim();
+    void fetch(GITHUB_LATEST_RELEASE_API, {
+      headers: { Accept: "application/vnd.github+json" },
+    })
+      .then((r) => (r.ok ? (r.json() as Promise<{ tag_name?: string }>) : null))
+      .then((data) => {
+        if (data == null || !manualCheckPendingRef.current) return;
+        const remote = normalizeReleaseTag(data.tag_name);
+        if (!remote) return;
+        if (remote === current) {
+          manualCheckPendingRef.current = false;
+          toast.dismiss(CHECK_UPDATE_TOAST_ID);
+          setPhase("idle");
+          toast.success("Ya tenés la última versión (coincide con el último release en GitHub).");
+        }
+      })
+      .catch(() => {
+        /* sin red o rate limit: sigue el flujo por electron-updater */
+      });
+
     api.checkForUpdates();
   }, []);
 
@@ -97,7 +130,7 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
     return api.onUpdateEvents({
       onUpdateAvailable: (info: UpdateInfoPayload) => {
         manualCheckPendingRef.current = false;
-        toast.dismiss("cyberbistro-check-update");
+        toast.dismiss(CHECK_UPDATE_TOAST_ID);
         setRemoteVersion(info.version);
         setPhase("available");
         setDownloadPercent(null);
@@ -107,7 +140,7 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
         });
       },
       onUpdateNotAvailable: () => {
-        toast.dismiss("cyberbistro-check-update");
+        toast.dismiss(CHECK_UPDATE_TOAST_ID);
         if (manualCheckPendingRef.current) {
           toast.success("Ya tenés la última versión instalada.");
           manualCheckPendingRef.current = false;
@@ -135,7 +168,7 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
       },
       onUpdateError: (msg) => {
         manualCheckPendingRef.current = false;
-        toast.dismiss("cyberbistro-check-update");
+        toast.dismiss(CHECK_UPDATE_TOAST_ID);
         toast.dismiss(PROGRESS_TOAST_ID);
         setPhase("idle");
         setDownloadPercent(null);
@@ -143,6 +176,20 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
       },
     });
   }, [installUpdate]);
+
+  useEffect(() => {
+    if (phase !== "checking") return;
+    const t = window.setTimeout(() => {
+      manualCheckPendingRef.current = false;
+      toast.dismiss(CHECK_UPDATE_TOAST_ID);
+      setPhase((prev) => (prev === "checking" ? "idle" : prev));
+      toast.message("No hubo respuesta a tiempo", {
+        description:
+          "Comprobá tu conexión o probá de nuevo. Si ya estás actualizado, podés ignorar este aviso.",
+      });
+    }, 45_000);
+    return () => window.clearTimeout(t);
+  }, [phase]);
 
   const value = useMemo(
     () => ({

@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import svgPaths from "../../../imports/svg-qgatbhef3k";
+import { useVentaCartSearch } from "../../../app/context/VentaCartSearchContext";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { MESAS_CONFIG } from "../../tables/config/mesas";
 import { useAuth } from "../../../shared/hooks/useAuth";
@@ -78,6 +79,7 @@ const tickerItems = [
 ];
 
 export function Dashboard() {
+  const { query: cartSearchQuery } = useVentaCartSearch();
   const { tenantId, user, loading: authLoading, refreshSession, signOut } = useAuth();
   const [platos, setPlatos] = useState<Plato[]>([]);
   const [mesas, setMesas] = useState<MesaBasic[]>([]);
@@ -186,10 +188,22 @@ export function Dashboard() {
     "Todos",
     ...sortCategoriesForTabs(platos.map((p) => p.categoria)),
   ];
-  const filtered =
-    activeCategory === "Todos"
-      ? platos
-      : platos.filter((p) => p.categoria === activeCategory);
+
+  const cartSearchNorm = cartSearchQuery.trim().toLowerCase();
+
+  /** Sin búsqueda: respeta la categoría. Con búsqueda: toda la carta (evita choque categoría vs texto). */
+  const filteredPlatosForGrid = useMemo(() => {
+    const byCategory =
+      activeCategory === "Todos"
+        ? platos
+        : platos.filter((p) => p.categoria === activeCategory);
+    if (!cartSearchNorm) return byCategory;
+    return platos.filter((p) => {
+      const n = p.nombre.toLowerCase();
+      const c = p.categoria.toLowerCase();
+      return n.includes(cartSearchNorm) || c.includes(cartSearchNorm);
+    });
+  }, [platos, activeCategory, cartSearchNorm]);
 
   const cartSubtotal = cart.reduce((s, i) => s + i.plato.precio * i.cantidad, 0);
   const cartItbis = cartSubtotal * ITBIS;
@@ -201,6 +215,30 @@ export function Dashboard() {
   const panelBillSubtotal = hasCuentaEnMesa ? cuentaSubtotal : cartSubtotal;
   const panelBillItbis = panelBillSubtotal * ITBIS;
   const panelBillTotal = panelBillSubtotal + panelBillItbis;
+
+  const matchesPedidoSearch = useCallback(
+    (nombre: string) =>
+      !cartSearchNorm || nombre.toLowerCase().includes(cartSearchNorm),
+    [cartSearchNorm]
+  );
+
+  const filteredCart = useMemo(
+    () => cart.filter((i) => matchesPedidoSearch(i.plato.nombre)),
+    [cart, matchesPedidoSearch]
+  );
+
+  const filteredMesaConsumos = useMemo(
+    () => mesaConsumos.filter((c) => matchesPedidoSearch(c.nombre)),
+    [mesaConsumos, matchesPedidoSearch]
+  );
+
+  const pedidoSearchActive = cartSearchNorm.length > 0;
+  const hasAnyPedidoLines = cart.length > 0 || mesaConsumos.length > 0;
+  const pedidoSearchSinCoincidencias =
+    pedidoSearchActive &&
+    hasAnyPedidoLines &&
+    filteredCart.length === 0 &&
+    filteredMesaConsumos.length === 0;
 
   const showEmptyHint =
     cart.length === 0 &&
@@ -829,9 +867,23 @@ export function Dashboard() {
               Cargando carta...
             </span>
           </div>
+        ) : filteredPlatosForGrid.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-[40px] gap-[8px] px-4">
+            <span className="font-['Space_Grotesk',sans-serif] text-[#6b7280] text-[14px] text-center">
+              {cartSearchNorm
+                ? "Ningún plato coincide con la búsqueda en la carta."
+                : "No hay platos en esta categoría."}
+            </span>
+            {cartSearchNorm ? (
+              <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[12px] text-center">
+                La búsqueda del encabezado recorre toda la carta; borrá el texto para volver al filtro por
+                categoría.
+              </span>
+            ) : null}
+          </div>
         ) : (
           <div className="grid gap-[16px]" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))" }}>
-            {filtered.map((plato) => {
+            {filteredPlatosForGrid.map((plato) => {
               const inCart = cart.find((i) => i.plato.id === plato.id);
               const cc = catColor(plato.categoria);
               return (
@@ -1071,12 +1123,12 @@ export function Dashboard() {
 
         {/* Cuenta en mesa + carrito nuevo */}
         <div className="flex-1 overflow-y-auto p-[20px] flex flex-col gap-[16px] min-h-0">
-          {selectedMesa && mesaConsumos.length > 0 && (
+          {selectedMesa && filteredMesaConsumos.length > 0 && (
             <div className="flex flex-col gap-[12px]">
               <span className="font-['Inter',sans-serif] text-[#ff906d] text-[10px] tracking-[0.6px] uppercase font-bold">
                 En mesa (cuenta abierta)
               </span>
-              {mesaConsumos.map((c) => (
+              {filteredMesaConsumos.map((c) => (
                 <div key={c.id} className="flex gap-[12px]">
                   <div
                     className="w-[4px] rounded-full shrink-0"
@@ -1100,6 +1152,17 @@ export function Dashboard() {
             </div>
           )}
 
+          {pedidoSearchSinCoincidencias && (
+            <div className="flex flex-col items-center justify-center py-[20px] gap-[6px]">
+              <span className="font-['Inter',sans-serif] text-[#ff716c] text-[12px] text-center px-2">
+                Ningún plato en el pedido coincide con la búsqueda.
+              </span>
+              <span className="font-['Inter',sans-serif] text-[#6b7280] text-[11px] text-center px-2">
+                Probá otro texto o borrá el filtro del encabezado.
+              </span>
+            </div>
+          )}
+
           {showEmptyHint && (
             <div className="flex flex-col items-center justify-center py-[24px] gap-[8px]">
               <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px] text-center px-2">
@@ -1112,13 +1175,13 @@ export function Dashboard() {
             </div>
           )}
 
-          {cart.length > 0 && selectedMesa && (
+          {filteredCart.length > 0 && selectedMesa && (
             <span className="font-['Inter',sans-serif] text-[#59ee50] text-[10px] tracking-[0.6px] uppercase font-bold -mb-2">
               Nuevo pedido (carrito)
             </span>
           )}
 
-          {cart.map((item) => {
+          {filteredCart.map((item) => {
             const cc = catColor(item.plato.categoria);
             return (
               <div key={item.plato.id} className="flex gap-[12px]">

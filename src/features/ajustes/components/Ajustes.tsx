@@ -7,8 +7,15 @@ import {
   getThermalPrintSettings,
   saveThermalPrintSettings,
 } from "../../../shared/lib/thermalStorage";
-import { buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
-import type { TenantReceiptInfo } from "../../../shared/lib/receiptTemplates";
+import {
+  buildFacturaReceiptHtml,
+  buildComandaReceiptHtml,
+  buildSplitTicketHtml,
+  buildThermalSplitLineHtml,
+  buildCierreDiaReceiptHtml,
+  type TenantReceiptInfo,
+  type CierreDiaThermalData,
+} from "../../../shared/lib/receiptTemplates";
 import {
   saveTenantLogoUrl,
   uploadTenantLogoFile,
@@ -19,7 +26,65 @@ interface Config {
   nombre_empresa: string;
   rnc: string;
   logo_url: string;
+  direccion: string;
+  telefono: string;
 }
+
+/** Factura de ejemplo: solo para vista previa en Ajustes (mismos campos que un cobro real). */
+const SAMPLE_FACTURA_THERMAL: Parameters<typeof buildFacturaReceiptHtml>[1] = {
+  items: [
+    { nombre: "Plato del menú (ejemplo)", cantidad: 2, precio_unitario: 275.5, subtotal: 551 },
+    { nombre: "Bebida (ejemplo)", cantidad: 1, precio_unitario: 85, subtotal: 85 },
+  ],
+  subtotal: 636,
+  itbis: 114.48,
+  total: 750.48,
+  metodo_pago: "efectivo",
+  mesa_numero: 4,
+  notas: "Vista previa — ítems y totales son de ejemplo.",
+  estado: "pagada",
+};
+
+const SAMPLE_COMANDA_THERMAL: Parameters<typeof buildComandaReceiptHtml>[1] = {
+  id: "preview-comanda",
+  numero_comanda: 42,
+  mesa_numero: 4,
+  items: [
+    { nombre: "Plato del menú (ejemplo)", cantidad: 2, categoria: "General" },
+    { nombre: "Bebida (ejemplo)", cantidad: 1, categoria: "Bebidas" },
+  ],
+  notas: "Vista previa — nota de cocina de ejemplo.",
+};
+
+const SAMPLE_CIERRE_THERMAL_BASE: Omit<CierreDiaThermalData, "generadoEn" | "generadoAtIso"> = {
+  fechaOperacion: "12/04/2026",
+  facturasPagadas: 14,
+  facturasPendientes: 2,
+  facturasCanceladas: 0,
+  totalPagado: 12450.75,
+  subtotalPagado: 10551.48,
+  itbisPagado: 1899.27,
+  porMetodo: [
+    { etiqueta: "Efectivo", cantidad: 8, total: 6200 },
+    { etiqueta: "Tarjeta", cantidad: 5, total: 5250.75 },
+    { etiqueta: "Digital", cantidad: 1, total: 1000 },
+  ],
+  ticketPromedioPagado: 889.34,
+  cuentasAbiertasLineas: 5,
+  cuentasAbiertasMesas: 2,
+  cuentasAbiertasSubtotal: 450,
+  cuentasAbiertasItbisEst: 81,
+  cuentasAbiertasTotalEst: 531,
+};
+
+type ThermalPreviewKind = "factura" | "comanda" | "cierre" | "split";
+
+const THERMAL_PREVIEW_TABS: { id: ThermalPreviewKind; label: string }[] = [
+  { id: "factura", label: "Factura" },
+  { id: "comanda", label: "Comanda" },
+  { id: "cierre", label: "Cierre" },
+  { id: "split", label: "Separar cuenta" },
+];
 
 export function Ajustes() {
   const { tenantId, loading: authLoading } = useAuth();
@@ -27,7 +92,12 @@ export function Ajustes() {
     nombre_empresa: "",
     rnc: "",
     logo_url: "",
+    direccion: "",
+    telefono: "",
   });
+  const [thermalPreviewNonce, setThermalPreviewNonce] = useState(0);
+  const [thermalPreviewKind, setThermalPreviewKind] =
+    useState<ThermalPreviewKind>("factura");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedOk, setSavedOk] = useState(false);
@@ -47,7 +117,7 @@ export function Ajustes() {
     let cancelled = false;
     insforgeClient.database
       .from("tenants")
-      .select("nombre_negocio, rnc, logo_url")
+      .select("nombre_negocio, rnc, logo_url, direccion, telefono")
       .eq("id", tenantId)
       .maybeSingle()
       .then(({ data, error }) => {
@@ -57,6 +127,8 @@ export function Ajustes() {
             nombre_empresa: data.nombre_negocio ?? "",
             rnc: data.rnc ?? "",
             logo_url: data.logo_url ?? "",
+            direccion: data.direccion ?? "",
+            telefono: data.telefono ?? "",
           });
         }
         setLoading(false);
@@ -84,6 +156,8 @@ export function Ajustes() {
         nombre_negocio: config.nombre_empresa.trim() || "Mi negocio",
         rnc: config.rnc.trim() || null,
         logo_url: config.logo_url.trim() || null,
+        direccion: config.direccion.trim() || null,
+        telefono: config.telefono.trim() || null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", tenantId);
@@ -127,6 +201,94 @@ export function Ajustes() {
     setUploading(false);
     e.target.value = "";
   }
+
+  const tenantPreview: TenantReceiptInfo = useMemo(
+    () => ({
+      nombre_negocio: config.nombre_empresa.trim() || "Tu negocio",
+      rnc: config.rnc.trim() || null,
+      direccion: config.direccion.trim() || null,
+      telefono: config.telefono.trim() || null,
+      logo_url: config.logo_url.trim() || null,
+    }),
+    [
+      config.nombre_empresa,
+      config.rnc,
+      config.direccion,
+      config.telefono,
+      config.logo_url,
+    ]
+  );
+
+  const thermalPreviewHtml = useMemo(() => {
+    void thermalPreviewNonce;
+    const { paperWidthMm } = getThermalPrintSettings();
+    const nowIso = new Date().toISOString();
+
+    switch (thermalPreviewKind) {
+      case "factura": {
+        const sample = { ...SAMPLE_FACTURA_THERMAL, pagada_at: nowIso };
+        return buildFacturaReceiptHtml(tenantPreview, sample, 1, paperWidthMm);
+      }
+      case "comanda": {
+        return buildComandaReceiptHtml(
+          tenantPreview,
+          { ...SAMPLE_COMANDA_THERMAL, created_at: nowIso },
+          paperWidthMm
+        );
+      }
+      case "cierre": {
+        const cierreData: CierreDiaThermalData = {
+          ...SAMPLE_CIERRE_THERMAL_BASE,
+          generadoAtIso: nowIso,
+          generadoEn: new Date().toLocaleString("es-DO", {
+            timeZone: "America/Santo_Domingo",
+          }),
+        };
+        return buildCierreDiaReceiptHtml(tenantPreview, cierreData, paperWidthMm);
+      }
+      case "split": {
+        const rowsP1 =
+          buildThermalSplitLineHtml("Plato del menú (ejemplo)", 1, 375.24) +
+          buildThermalSplitLineHtml("Bebida (ejemplo)", 1, 85);
+        const rowsP2 = buildThermalSplitLineHtml("Postre (ejemplo)", 1, 120);
+        return buildSplitTicketHtml(
+          tenantPreview,
+          [
+            {
+              personIndex: 1,
+              splitParts: 2,
+              rowsHtml: rowsP1,
+              totalLine: "RD$ 460.24",
+            },
+            {
+              personIndex: 2,
+              splitParts: 2,
+              rowsHtml: rowsP2,
+              totalLine: "RD$ 120.00",
+            },
+          ],
+          4,
+          paperWidthMm
+        );
+      }
+      default:
+        return buildFacturaReceiptHtml(
+          tenantPreview,
+          { ...SAMPLE_FACTURA_THERMAL, pagada_at: nowIso },
+          1,
+          paperWidthMm
+        );
+    }
+  }, [tenantPreview, thermalPreviewNonce, thermalPreviewKind]);
+
+  const thermalIframeTitle =
+    thermalPreviewKind === "factura"
+      ? "Vista previa factura térmica"
+      : thermalPreviewKind === "comanda"
+        ? "Vista previa comanda térmica"
+        : thermalPreviewKind === "cierre"
+          ? "Vista previa cierre de día"
+          : "Vista previa separar cuenta";
 
   if (authLoading || loading) {
     return (
@@ -178,7 +340,8 @@ export function Ajustes() {
                 Información del Negocio
               </span>
               <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">
-                Datos de tu negocio (multitenant). Aparecen en comandas, facturas e impresiones.
+                Datos de tu negocio (multitenant). Aparecen en comandas, facturas térmicas y en la vista
+                previa de abajo.
               </span>
             </div>
 
@@ -208,12 +371,86 @@ export function Ajustes() {
                   className="input-field"
                 />
               </Field>
+              <Field label="Dirección">
+                <input
+                  type="text"
+                  value={config.direccion}
+                  onChange={(e) =>
+                    setConfig((prev) => ({ ...prev, direccion: e.target.value }))
+                  }
+                  placeholder="Calle, ciudad (opcional)"
+                  className="input-field"
+                />
+              </Field>
+              <Field label="Teléfono">
+                <input
+                  type="text"
+                  value={config.telefono}
+                  onChange={(e) =>
+                    setConfig((prev) => ({ ...prev, telefono: e.target.value }))
+                  }
+                  placeholder="809-000-0000"
+                  className="input-field"
+                />
+              </Field>
+            </div>
+          </div>
+
+          <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-[28px] flex flex-col gap-[16px]">
+            <div className="flex flex-col gap-[4px]">
+              <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px]">
+                Vista previa — tickets térmicos
+              </span>
+              <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px] leading-relaxed">
+                Elegí el tipo de documento como en el POS (pestañas de categoría). Los datos de ejemplo son
+                fictivos; el encabezado (nombre, RNC, dirección, teléfono y logo) refleja lo que escribís
+                arriba. El ancho del papel sigue la opción guardada en{" "}
+                <span className="text-[#adaaaa]">Impresión térmica</span> (tras &quot;Guardar
+                impresión&quot;).
+              </span>
+            </div>
+            <div className="flex gap-[12px] overflow-x-auto pb-[4px] shrink-0 -mx-[4px] px-[4px]">
+              {THERMAL_PREVIEW_TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setThermalPreviewKind(tab.id)}
+                  className="px-[24px] py-[10px] rounded-[12px] shrink-0 font-['Space_Grotesk',sans-serif] font-bold text-[14px] tracking-[1.2px] uppercase border-none cursor-pointer transition-all"
+                  style={{
+                    backgroundColor:
+                      thermalPreviewKind === tab.id ? "#ff906d" : "#201f1f",
+                    color: thermalPreviewKind === tab.id ? "#0e0e0e" : "#adaaaa",
+                    boxShadow:
+                      thermalPreviewKind === tab.id
+                        ? "0 0 16px rgba(255,144,109,0.2)"
+                        : undefined,
+                  }}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <div className="rounded-[14px] border border-[rgba(72,72,71,0.35)] bg-[#1e1e1e] overflow-hidden flex justify-center p-[16px] min-h-[200px]">
+              <iframe
+                title={thermalIframeTitle}
+                srcDoc={thermalPreviewHtml}
+                className="bg-white rounded-[4px] shadow-[0_8px_32px_rgba(0,0,0,0.35)] border-0"
+                style={{
+                  width: "80mm",
+                  minHeight: "420px",
+                  maxHeight: "560px",
+                  transform: "scale(1.05)",
+                  transformOrigin: "top center",
+                }}
+              />
             </div>
           </div>
 
           <AppDesktopUpdateCard />
 
-          <ThermalPrintSettingsCard />
+          <ThermalPrintSettingsCard
+            onThermalSaved={() => setThermalPreviewNonce((n) => n + 1)}
+          />
 
           <button
             onClick={handleSave}
@@ -389,7 +626,11 @@ function AppDesktopUpdateCard() {
   );
 }
 
-function ThermalPrintSettingsCard() {
+function ThermalPrintSettingsCard({
+  onThermalSaved,
+}: {
+  onThermalSaved?: () => void;
+}) {
   const [paperWidthMm, setPaperWidthMm] = useState<PaperWidthMm>(80);
   const [printerName, setPrinterName] = useState("");
   const [printers, setPrinters] = useState<ThermalPrinterInfo[]>([]);
@@ -424,6 +665,7 @@ function ThermalPrintSettingsCard() {
 
   function handleSaveThermal() {
     saveThermalPrintSettings({ paperWidthMm, printerName });
+    onThermalSaved?.();
     setThermalSaved(true);
     setTimeout(() => setThermalSaved(false), 2500);
   }

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router";
 
+import { VentaCartSearchProvider } from "../context/VentaCartSearchContext";
 import svgPaths from "../../imports/svg-qgatbhef3k";
 import { TitleBar } from "../../features/window";
 import { insforgeClient } from "../../shared/lib/insforge";
@@ -47,6 +48,13 @@ export function AppLayout() {
   const { rol, signOut, tenantId } = useAuth();
   const { hasUpdateBellAlert, showUpdateBellToast } = useAppUpdate();
   const [cocinaActiva, setCocinaActiva] = useState(true);
+  const [ventaCartSearch, setVentaCartSearch] = useState("");
+
+  const isVentaRoute = location.pathname === "/dashboard";
+
+  useEffect(() => {
+    if (!isVentaRoute) setVentaCartSearch("");
+  }, [isVentaRoute]);
 
   const sideNavItems = useMemo(() => {
     const main = filterMainNavForRol(rol);
@@ -77,6 +85,7 @@ export function AppLayout() {
       <TitleBar />
 
       <RoleGuard>
+      <VentaCartSearchProvider value={{ query: ventaCartSearch, setQuery: setVentaCartSearch }}>
       <div className="flex flex-1 min-h-0">
         {/* Sidebar */}
         <aside className="bg-[#131313] flex flex-col w-[256px] shrink-0 min-h-0 self-stretch z-20">
@@ -190,20 +199,30 @@ export function AppLayout() {
               </div>
             </div>
             <div className="flex gap-[12px] sm:gap-[24px] items-center shrink-0">
-              <div className="hidden md:relative md:block">
-                <div className="bg-[#131313] rounded-[2px] w-[256px] pl-[40px] pr-[16px] py-[6px]">
-                  <span className="font-['Space_Grotesk',sans-serif] text-[#6b7280] text-[12px] tracking-[-0.6px] uppercase">
-                    BUSCAR...
-                  </span>
+              {isVentaRoute ? (
+                <div className="hidden md:relative md:block">
+                  <label htmlFor="venta-cart-search" className="sr-only">
+                    Buscar en la carta y en el pedido actual
+                  </label>
+                  <input
+                    id="venta-cart-search"
+                    type="search"
+                    value={ventaCartSearch}
+                    onChange={(e) => setVentaCartSearch(e.target.value)}
+                    placeholder="BUSCAR CARTA O PEDIDO..."
+                    autoComplete="off"
+                    className="bg-[#131313] rounded-[2px] w-[min(256px,28vw)] min-w-[160px] pl-[40px] pr-[16px] py-[6px] font-['Space_Grotesk',sans-serif] text-[#e5e5e5] text-[12px] tracking-[-0.6px] uppercase border border-[rgba(72,72,71,0.35)] outline-none focus:border-[rgba(255,144,109,0.45)] placeholder:text-[#6b7280]"
+                  />
+                  <svg
+                    className="absolute left-[14px] top-1/2 -translate-y-1/2 w-[10.5px] h-[10.5px] pointer-events-none"
+                    fill="none"
+                    viewBox="0 0 10.5 10.5"
+                    aria-hidden
+                  >
+                    <path d={svgPaths.p210dd580} fill="#ADAAAA" />
+                  </svg>
                 </div>
-                <svg
-                  className="absolute left-[14px] top-1/2 -translate-y-1/2 w-[10.5px] h-[10.5px]"
-                  fill="none"
-                  viewBox="0 0 10.5 10.5"
-                >
-                  <path d={svgPaths.p210dd580} fill="#ADAAAA" />
-                </svg>
-              </div>
+              ) : null}
               <div className="flex gap-[16px] items-center">
                 <svg className="w-[18px] h-[21px]" fill="none" viewBox="0 0 18 21">
                   <path d={svgPaths.pe40b59c} fill="#ADAAAA" />
@@ -256,6 +275,7 @@ export function AppLayout() {
           </div>
         </div>
       </div>
+      </VentaCartSearchProvider>
       </RoleGuard>
     </div>
   );

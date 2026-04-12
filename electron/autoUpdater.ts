@@ -68,15 +68,28 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null) {
     })
 
     ipcMain.on('check-for-updates', () => {
-      autoUpdater.checkForUpdates().catch((err) => {
-        log.warn('checkForUpdates (IPC) failed', err)
-      })
+      void autoUpdater
+        .checkForUpdates()
+        .then((result) => {
+          // Tras un check previo (p. ej. al abrir la app), a veces el promise resuelve
+          // sin volver a emitir `update-not-available` y el renderer queda en "Buscando…".
+          if (result?.isUpdateAvailable === false) send('update-not-available')
+        })
+        .catch((err: Error) => {
+          log.warn('checkForUpdates (IPC) failed', err)
+          send('update-error', err?.message ? String(err.message) : String(err))
+        })
     })
   }
 
   setTimeout(() => {
-    autoUpdater.checkForUpdates().catch((err) => {
-      log.warn('checkForUpdates failed', err)
-    })
+    void autoUpdater
+      .checkForUpdates()
+      .then((result) => {
+        if (result?.isUpdateAvailable === false) send('update-not-available')
+      })
+      .catch((err) => {
+        log.warn('checkForUpdates failed', err)
+      })
   }, 3000)
 }
