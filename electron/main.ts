@@ -1,10 +1,24 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
+import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setupAutoUpdater } from './autoUpdater'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 let mainWindow: BrowserWindow | null = null
+
+/** Una sola instancia: evita iconos duplicados en la barra de tareas (Windows) y re-enfoca la ventana. */
+const gotTheLock = app.requestSingleInstanceLock()
+if (!gotTheLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (!mainWindow) return
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show()
+    mainWindow.focus()
+  })
+}
 
 /** Debe coincidir con `build.appId` en package.json (atajos NSIS + barra de tareas Windows). */
 const WINDOWS_APP_USER_MODEL_ID = 'com.edwin.cyberbistro'
@@ -32,83 +46,22 @@ function applyWindowsTaskbarIdentity(win: BrowserWindow) {
   }
 }
 
-ipcMain.handle('printers:list', async () => {
-  const w = mainWindow || BrowserWindow.getAllWindows()[0]
-  if (!w) return []
-  try {
-    const list = await w.webContents.getPrintersAsync()
-    return list.map((p) => ({
-      name: p.name,
-      displayName: p.displayName || p.name,
-      description: p.description || '',
-      isDefault: Boolean((p as { isDefault?: boolean }).isDefault),
-    }))
-  } catch (e) {
-    console.error('printers:list', e)
-    return []
+function resolveWindowIconPath(): string {
+  const icoPackaged = path.join(process.resourcesPath, 'icon.ico')
+  const icoDev = path.join(__dirname, '../icon.ico')
+  const pngDev = path.join(__dirname, '../assets/icons/icon.png')
+
+  if (process.platform === 'linux') {
+    const pngPackaged = path.join(process.resourcesPath, 'icon.png')
+    if (app.isPackaged && fs.existsSync(pngPackaged)) return pngPackaged
+    if (!app.isPackaged && fs.existsSync(pngDev)) return pngDev
   }
-})
 
-ipcMain.handle(
-  'print:thermal',
-  async (
-    _event,
-    opts: { html: string; deviceName?: string; silent?: boolean; paperWidthMm?: number }
-  ): Promise<{ ok: boolean; error?: string }> => {
-    return new Promise((resolve) => {
-      const printWin = new BrowserWindow({
-        width: 420,
-        height: 900,
-        show: false,
-        webPreferences: {
-          nodeIntegration: false,
-          contextIsolation: true,
-          sandbox: false,
-        },
-      })
-
-      const fail = (msg: string) => {
-        if (!printWin.isDestroyed()) printWin.close()
-        resolve({ ok: false, error: msg })
-      }
-
-      const timer = setTimeout(() => fail('Tiempo de impresión agotado'), 45000)
-
-      printWin.webContents.once('did-fail-load', (_e, code, desc) => {
-        clearTimeout(timer)
-        fail(`Carga fallida: ${code} ${desc}`)
-      })
-
-      printWin.webContents.once('did-finish-load', () => {
-        setTimeout(() => {
-          const silent = Boolean(opts.silent && opts.deviceName)
-          printWin.webContents.print(
-            {
-              silent,
-              printBackground: true,
-              deviceName: opts.deviceName || undefined,
-            },
-            (success, failureReason) => {
-              clearTimeout(timer)
-              if (!printWin.isDestroyed()) printWin.close()
-              if (success) resolve({ ok: true })
-              else resolve({ ok: false, error: String(failureReason || 'Error de impresión') })
-            }
-          )
-        }, 450)
-      })
-
-      const url = 'data:text/html;charset=utf-8,' + encodeURIComponent(opts.html)
-      printWin.loadURL(url).catch((err) => {
-        clearTimeout(timer)
-        fail(err instanceof Error ? err.message : String(err))
-      })
-    })
-  }
-)
-
-// Detect if we're in development mode
-const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
+  const ico = app.isPackaged ? icoPackaged : icoDev
+  if (fs.existsSync(ico)) return ico
+  if (fs.existsSync(pngDev)) return pngDev
+  return ico
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -116,9 +69,7 @@ function createWindow() {
     height: 600,
     frame: false,
     titleBarStyle: 'hidden',
-    icon: app.isPackaged
-      ? path.join(process.resourcesPath, 'icon.ico')
-      : path.join(__dirname, '../icon.ico'),
+    icon: resolveWindowIconPath(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
@@ -156,56 +107,133 @@ function createWindow() {
   applyWindowsTaskbarIdentity(mainWindow)
 }
 
-// Window controls handlers
-ipcMain.on('window-minimize', () => {
-  console.log('main: window-minimize received')
-  if (mainWindow) {
-    mainWindow.minimize()
-    console.log('main: window minimized')
-  }
-})
-
-ipcMain.on('window-maximize', () => {
-  console.log('main: window-maximize received')
-  if (mainWindow) {
-    if (mainWindow.isMaximized()) {
-      mainWindow.unmaximize()
-      console.log('main: window unmaximized')
-    } else {
-      mainWindow.maximize()
-      console.log('main: window maximized')
-    }
-  }
-})
-
-ipcMain.on('window-close', () => {
-  console.log('main: window-close received')
-  if (mainWindow) {
-    mainWindow.close()
-    console.log('main: window closed')
-  }
-})
-
-app.whenReady().then(() => {
-  if (process.platform === 'win32') {
-    app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID)
-  }
-
-  createWindow()
-
-  if (app.isPackaged) {
-    setupAutoUpdater(() => mainWindow)
-  }
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
+if (gotTheLock) {
+  ipcMain.handle('printers:list', async () => {
+    const w = mainWindow || BrowserWindow.getAllWindows()[0]
+    if (!w) return []
+    try {
+      const list = await w.webContents.getPrintersAsync()
+      return list.map((p) => ({
+        name: p.name,
+        displayName: p.displayName || p.name,
+        description: p.description || '',
+        isDefault: Boolean((p as { isDefault?: boolean }).isDefault),
+      }))
+    } catch (e) {
+      console.error('printers:list', e)
+      return []
     }
   })
-})
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
-})
+  ipcMain.handle(
+    'print:thermal',
+    async (
+      _event,
+      opts: { html: string; deviceName?: string; silent?: boolean; paperWidthMm?: number }
+    ): Promise<{ ok: boolean; error?: string }> => {
+      return new Promise((resolve) => {
+        const printWin = new BrowserWindow({
+          width: 420,
+          height: 900,
+          show: false,
+          webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            sandbox: false,
+          },
+        })
+
+        const fail = (msg: string) => {
+          if (!printWin.isDestroyed()) printWin.close()
+          resolve({ ok: false, error: msg })
+        }
+
+        const timer = setTimeout(() => fail('Tiempo de impresión agotado'), 45000)
+
+        printWin.webContents.once('did-fail-load', (_e, code, desc) => {
+          clearTimeout(timer)
+          fail(`Carga fallida: ${code} ${desc}`)
+        })
+
+        printWin.webContents.once('did-finish-load', () => {
+          setTimeout(() => {
+            const silent = Boolean(opts.silent && opts.deviceName)
+            printWin.webContents.print(
+              {
+                silent,
+                printBackground: true,
+                deviceName: opts.deviceName || undefined,
+              },
+              (success, failureReason) => {
+                clearTimeout(timer)
+                if (!printWin.isDestroyed()) printWin.close()
+                if (success) resolve({ ok: true })
+                else resolve({ ok: false, error: String(failureReason || 'Error de impresión') })
+              }
+            )
+          }, 450)
+        })
+
+        const url = 'data:text/html;charset=utf-8,' + encodeURIComponent(opts.html)
+        printWin.loadURL(url).catch((err) => {
+          clearTimeout(timer)
+          fail(err instanceof Error ? err.message : String(err))
+        })
+      })
+    }
+  )
+
+  // Window controls handlers (solo instancia principal)
+  ipcMain.on('window-minimize', () => {
+    console.log('main: window-minimize received')
+    if (mainWindow) {
+      mainWindow.minimize()
+      console.log('main: window minimized')
+    }
+  })
+
+  ipcMain.on('window-maximize', () => {
+    console.log('main: window-maximize received')
+    if (mainWindow) {
+      if (mainWindow.isMaximized()) {
+        mainWindow.unmaximize()
+        console.log('main: window unmaximized')
+      } else {
+        mainWindow.maximize()
+        console.log('main: window maximized')
+      }
+    }
+  })
+
+  ipcMain.on('window-close', () => {
+    console.log('main: window-close received')
+    if (mainWindow) {
+      mainWindow.close()
+      console.log('main: window closed')
+    }
+  })
+
+  app.whenReady().then(() => {
+    if (process.platform === 'win32') {
+      app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID)
+    }
+
+    createWindow()
+
+    if (app.isPackaged) {
+      setupAutoUpdater(() => mainWindow)
+    }
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow()
+      }
+    })
+  })
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+      app.quit()
+    }
+  })
+}
