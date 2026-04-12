@@ -3,7 +3,7 @@
 ## Requisitos
 
 - Cuenta de GitHub con permisos en el repo configurado en `package.json` → `build.publish` (actualmente `EdwinEstrella/Cyberbistro`).
-- Un [Personal Access Token](https://github.com/settings/tokens) con alcance **repo** para subir releases (variable de entorno `GH_TOKEN`).
+- Un [Personal Access Token](https://github.com/settings/tokens) con alcance **repo** para subir releases (variable de entorno `GH_TOKEN` o `GITHUB_TOKEN`).
 
 ## Generar el instalador .exe localmente (sin subir)
 
@@ -13,17 +13,28 @@ npm run dist:win
 
 Salida en la carpeta `release/`: instalador NSIS (`.exe`), `latest.yml` y archivos asociados que `electron-updater` usa en GitHub Releases.
 
-## Publicar una nueva versión en GitHub
+## Publicar una nueva versión en GitHub (release **Latest**)
 
-1. Incrementa `"version"` en `package.json` (debe coincidir con el tag de la release).
-2. Ejecuta en PowerShell (sustituye el token):
+GitHub marca como **Latest** el release más reciente que **no** sea borrador ni *prerelease*. Esta app publica con `releaseType: "release"` y tag `vX.Y.Z` (`vPrefixedTagName: true` en `package.json`), así que cada `release:win` exitoso deja ese release como candidato a Latest si la versión en `package.json` es la semver más alta del repo.
+
+### Checklist rápido
+
+1. **Subir la versión** (elige una opción):
+   - `npm version patch --no-git-tag-version` → incrementa `1.0.x` en `package.json` y `package-lock.json`, o
+   - `npm version minor` / `npm version major` si también querés commit + tag automáticos en git.
+2. **Commit** de `package.json` / `package-lock.json` (y `RELEASE.md` si lo tocás) y **push** a la rama principal cuando corresponda.
+3. **Publicar artefactos** (instalador + `latest.yml`):
 
 ```powershell
-$env:GH_TOKEN="ghp_TU_TOKEN_AQUI"
+$env:GH_TOKEN="ghp_TU_TOKEN_AQUI"   # o GITHUB_TOKEN; fine-grained PAT con repo + releases
 npm run release:win
 ```
 
-Esto ejecuta `vite build` y `electron-builder --win --publish always`, creando o actualizando el release en GitHub con el `.exe` y `latest.yml`.
+**Comando exacto:** equivale a `npm run icon:build && npm run build && electron-builder --win --publish always`.
+
+**Nota:** `gh auth login` no sustituye al token; `electron-builder` usa **`GH_TOKEN`** o **`GITHUB_TOKEN`**. Sin token, el build local puede terminar pero la subida a GitHub falla.
+
+**Auto-actualización:** las apps instaladas consultan `latest.yml` del release Latest; al publicar una versión nueva, los usuarios con versión anterior recibirán la actualización según el flujo de `electron-updater` en la app.
 
 ## Comportamiento en la app empaquetada
 
@@ -32,7 +43,7 @@ Esto ejecuta `vite build` y `electron-builder --win --publish always`, creando o
 
 ## Windows: firma, icono en el .exe y `winCodeSign`
 
-`build.win.signAndEditExecutable` está en **`false`** en este repo para evitar fallos al extraer `winCodeSign` cuando Windows no permite **enlaces simbólicos** (sin modo desarrollador). En ese modo el `.exe` puede mostrar el icono genérico de Electron en el explorador; la ventana de la app sigue usando `icon.ico` desde `extraResources`. Para incrustar icono en el ejecutable, pon `signAndEditExecutable` en `true` y activa el modo desarrollador o construye en un entorno con symlinks.
+`build.win.signAndEditExecutable` está en **`false`** en este repo para evitar fallos al extraer `winCodeSign` cuando Windows no permite **enlaces simbólicos** (sin modo desarrollador). Sin el paso de edición del binario, el `.exe` principal puede quedar con el icono por defecto de Electron en el Explorador aunque NSIS sí use tu `icon.ico` en instalador y desinstalador. Para compensarlo, el hook **`build.afterPack`** (`scripts/after-pack-win-icon.cjs`) aplica `icon.ico` al ejecutable con **`rcedit`**, sin reactivar `winCodeSign`. Alternativa: pon `signAndEditExecutable` en `true` y activa el modo desarrollador o construye donde existan symlinks.
 
 Para distribución pública, conviene un certificado de firma de código (Authenticode) y configurar `CSC_LINK` / `CSC_KEY_PASSWORD` según la [documentación de electron-builder](https://www.electron.build/code-signing).
 

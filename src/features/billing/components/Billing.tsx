@@ -183,6 +183,8 @@ export function Billing() {
           notas: inv.notas ?? null,
           pagada_at: inv.pagada_at,
           created_at: inv.created_at,
+          estado: inv.estado,
+          propina: inv.propina,
         },
         inv.numero_factura,
         paperWidthMm

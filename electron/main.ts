@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeImage } from 'electron'
+import type { NativeImage } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -23,21 +24,28 @@ if (!gotTheLock) {
 /** Debe coincidir con `build.appId` en package.json (atajos NSIS + barra de tareas Windows). */
 const WINDOWS_APP_USER_MODEL_ID = 'com.edwin.cyberbistro'
 
-function resolveWindowsTrayIconPath(): string {
-  return path.resolve(
-    app.isPackaged
-      ? path.join(process.resourcesPath, 'icon.ico')
-      : path.join(__dirname, '../icon.ico')
-  )
+/** Antes de `ready`: el shell de Windows asocia mejor el icono del botón de la barra de tareas. */
+if (gotTheLock && process.platform === 'win32') {
+  app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID)
+}
+
+/**
+ * RelaunchIconResource: el shell usa el icono embebido en el .exe.
+ * - Instalado: Cyberbistro.exe (afterPack + rcedit).
+ * - Dev: electron.exe parcheado en postinstall con scripts/patch-dev-electron-icon.cjs.
+ */
+function windowsTaskbarRelaunchIcon(): { appIconPath: string; appIconIndex: number } {
+  return { appIconPath: process.execPath, appIconIndex: 0 }
 }
 
 function applyWindowsTaskbarIdentity(win: BrowserWindow) {
   if (process.platform !== 'win32') return
-  const iconPath = resolveWindowsTrayIconPath()
+  const { appIconPath, appIconIndex } = windowsTaskbarRelaunchIcon()
   try {
     win.setAppDetails({
       appId: WINDOWS_APP_USER_MODEL_ID,
-      appIconPath: iconPath,
+      appIconPath,
+      appIconIndex,
       relaunchCommand: process.execPath,
       relaunchDisplayName: 'Cyberbistro',
     })
@@ -46,30 +54,44 @@ function applyWindowsTaskbarIdentity(win: BrowserWindow) {
   }
 }
 
-function resolveWindowIconPath(): string {
-  const icoPackaged = path.join(process.resourcesPath, 'icon.ico')
-  const icoDev = path.join(__dirname, '../icon.ico')
-  const pngDev = path.join(__dirname, '../assets/icons/icon.png')
+function loadWindowIconImage(): NativeImage | undefined {
+  const raw = resolveWindowIconPath()
+  const abs = path.resolve(raw)
+  if (!fs.existsSync(abs)) return undefined
+  const img = nativeImage.createFromPath(abs)
+  return img.isEmpty() ? undefined : img
+}
 
+/**
+ * Windows/macOS: ruta fija a icon.ico (comportamiento alineado con b112a4a; evita fallos de icono en
+ * acceso directo / barra de tareas por comprobar exists y caer en PNG dentro del asar).
+ * Linux: PNG empaquetado o en dev si existe.
+ */
+function resolveWindowIconPath(): string {
   if (process.platform === 'linux') {
     const pngPackaged = path.join(process.resourcesPath, 'icon.png')
+    const pngDev = path.join(__dirname, '../assets/icons/icon.png')
     if (app.isPackaged && fs.existsSync(pngPackaged)) return pngPackaged
     if (!app.isPackaged && fs.existsSync(pngDev)) return pngDev
   }
 
-  const ico = app.isPackaged ? icoPackaged : icoDev
-  if (fs.existsSync(ico)) return ico
-  if (fs.existsSync(pngDev)) return pngDev
-  return ico
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'icon.ico')
+  }
+  const fromAppRoot = path.join(app.getAppPath(), 'icon.ico')
+  if (fs.existsSync(fromAppRoot)) return fromAppRoot
+  return path.join(__dirname, '../icon.ico')
 }
 
 function createWindow() {
+  const iconImage = loadWindowIconImage()
+
   mainWindow = new BrowserWindow({
     width: 800,
     height: 600,
     frame: false,
     titleBarStyle: 'hidden',
-    icon: resolveWindowIconPath(),
+    ...(iconImage ? { icon: iconImage } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
@@ -77,6 +99,8 @@ function createWindow() {
       webSecurity: true
     }
   })
+
+  applyWindowsTaskbarIdentity(mainWindow)
 
   // Load from Vite dev server in development, or from files in production
   // VITE_DEV_SERVER_URL is set by vite-plugin-electron during development
@@ -92,6 +116,13 @@ function createWindow() {
     })
   }
 
+  mainWindow.once('ready-to-show', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    applyWindowsTaskbarIdentity(mainWindow)
+    const img = loadWindowIconImage()
+    if (img) mainWindow.setIcon(img)
+  })
+
   // Maximize window on startup
   mainWindow.maximize()
 
@@ -103,8 +134,6 @@ function createWindow() {
   mainWindow.on('unmaximize', () => {
     mainWindow?.webContents.send('window-maximized', false)
   })
-
-  applyWindowsTaskbarIdentity(mainWindow)
 }
 
 if (gotTheLock) {
@@ -214,10 +243,6 @@ if (gotTheLock) {
   })
 
   app.whenReady().then(() => {
-    if (process.platform === 'win32') {
-      app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID)
-    }
-
     createWindow()
 
     if (app.isPackaged) {

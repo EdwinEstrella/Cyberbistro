@@ -86,18 +86,20 @@ if (!gotTheLock) {
   });
 }
 const WINDOWS_APP_USER_MODEL_ID = "com.edwin.cyberbistro";
-function resolveWindowsTrayIconPath() {
-  return path.resolve(
-    electron.app.isPackaged ? path.join(process.resourcesPath, "icon.ico") : path.join(__dirname$1, "../icon.ico")
-  );
+if (gotTheLock && process.platform === "win32") {
+  electron.app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID);
+}
+function windowsTaskbarRelaunchIcon() {
+  return { appIconPath: process.execPath, appIconIndex: 0 };
 }
 function applyWindowsTaskbarIdentity(win) {
   if (process.platform !== "win32") return;
-  const iconPath = resolveWindowsTrayIconPath();
+  const { appIconPath, appIconIndex } = windowsTaskbarRelaunchIcon();
   try {
     win.setAppDetails({
       appId: WINDOWS_APP_USER_MODEL_ID,
-      appIconPath: iconPath,
+      appIconPath,
+      appIconIndex,
       relaunchCommand: process.execPath,
       relaunchDisplayName: "Cyberbistro"
     });
@@ -105,27 +107,35 @@ function applyWindowsTaskbarIdentity(win) {
     console.warn("setAppDetails failed:", e);
   }
 }
+function loadWindowIconImage() {
+  const raw = resolveWindowIconPath();
+  const abs = path.resolve(raw);
+  if (!fs.existsSync(abs)) return void 0;
+  const img = electron.nativeImage.createFromPath(abs);
+  return img.isEmpty() ? void 0 : img;
+}
 function resolveWindowIconPath() {
-  const icoPackaged = path.join(process.resourcesPath, "icon.ico");
-  const icoDev = path.join(__dirname$1, "../icon.ico");
-  const pngDev = path.join(__dirname$1, "../assets/icons/icon.png");
   if (process.platform === "linux") {
     const pngPackaged = path.join(process.resourcesPath, "icon.png");
+    const pngDev = path.join(__dirname$1, "../assets/icons/icon.png");
     if (electron.app.isPackaged && fs.existsSync(pngPackaged)) return pngPackaged;
     if (!electron.app.isPackaged && fs.existsSync(pngDev)) return pngDev;
   }
-  const ico = electron.app.isPackaged ? icoPackaged : icoDev;
-  if (fs.existsSync(ico)) return ico;
-  if (fs.existsSync(pngDev)) return pngDev;
-  return ico;
+  if (electron.app.isPackaged) {
+    return path.join(process.resourcesPath, "icon.ico");
+  }
+  const fromAppRoot = path.join(electron.app.getAppPath(), "icon.ico");
+  if (fs.existsSync(fromAppRoot)) return fromAppRoot;
+  return path.join(__dirname$1, "../icon.ico");
 }
 function createWindow() {
+  const iconImage = loadWindowIconImage();
   mainWindow = new electron.BrowserWindow({
     width: 800,
     height: 600,
     frame: false,
     titleBarStyle: "hidden",
-    icon: resolveWindowIconPath(),
+    ...iconImage ? { icon: iconImage } : {},
     webPreferences: {
       preload: path.join(__dirname$1, "preload.cjs"),
       nodeIntegration: false,
@@ -133,6 +143,7 @@ function createWindow() {
       webSecurity: true
     }
   });
+  applyWindowsTaskbarIdentity(mainWindow);
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {
@@ -144,6 +155,12 @@ function createWindow() {
       console.error("did-fail-load:", { code, desc, url });
     });
   }
+  mainWindow.once("ready-to-show", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    applyWindowsTaskbarIdentity(mainWindow);
+    const img = loadWindowIconImage();
+    if (img) mainWindow.setIcon(img);
+  });
   mainWindow.maximize();
   mainWindow.on("maximize", () => {
     mainWindow == null ? void 0 : mainWindow.webContents.send("window-maximized", true);
@@ -151,7 +168,6 @@ function createWindow() {
   mainWindow.on("unmaximize", () => {
     mainWindow == null ? void 0 : mainWindow.webContents.send("window-maximized", false);
   });
-  applyWindowsTaskbarIdentity(mainWindow);
 }
 if (gotTheLock) {
   electron.ipcMain.handle("printers:list", async () => {
@@ -246,9 +262,6 @@ if (gotTheLock) {
     }
   });
   electron.app.whenReady().then(() => {
-    if (process.platform === "win32") {
-      electron.app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID);
-    }
     createWindow();
     if (electron.app.isPackaged) {
       setupAutoUpdater(() => mainWindow);

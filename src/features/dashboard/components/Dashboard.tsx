@@ -7,6 +7,7 @@ import {
   buildFacturaReceiptHtml,
   buildComandaReceiptHtml,
   buildSplitTicketHtml,
+  buildThermalSplitLineHtml,
 } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
@@ -685,9 +686,12 @@ export function Dashboard() {
       logo_url: tenantRow.logo_url,
     };
 
-    const rows = cart.map(
-      (i) =>
-        `<tr class="item-row"><td>${i.cantidad}× ${i.plato.nombre.replace(/</g, "&lt;")}</td><td style="text-align:right">RD$ ${((i.plato.precio * i.cantidad) / splitParts).toFixed(2)}</td></tr>`
+    const rows = cart.map((i) =>
+      buildThermalSplitLineHtml(
+        i.plato.nombre,
+        i.cantidad,
+        (i.plato.precio * i.cantidad) / splitParts
+      )
     );
 
     const parts = Array.from({ length: splitParts }, (_, idx) => ({

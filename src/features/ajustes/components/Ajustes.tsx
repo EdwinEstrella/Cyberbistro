@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import type { ThermalPrinterInfo } from "../../../shared/types/electron";
@@ -7,6 +7,8 @@ import {
   getThermalPrintSettings,
   saveThermalPrintSettings,
 } from "../../../shared/lib/thermalStorage";
+import { buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
+import type { TenantReceiptInfo } from "../../../shared/lib/receiptTemplates";
 import {
   saveTenantLogoUrl,
   uploadTenantLogoFile,

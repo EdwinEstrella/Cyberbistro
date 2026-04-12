@@ -236,13 +236,15 @@ export function Cierre() {
     };
 
     const { paperWidthMm } = getThermalPrintSettings();
-    const generadoEn = new Date().toLocaleString("es-DO");
+    const now = new Date();
+    const generadoEn = now.toLocaleString("es-DO", { timeZone: "America/Santo_Domingo" });
 
     const html = buildCierreDiaReceiptHtml(
       tenantInfo,
       {
         fechaOperacion: fechaLegible,
         generadoEn,
+        generadoAtIso: now.toISOString(),
         facturasPagadas: resumen.pagadas.length,
         facturasPendientes: resumen.pendientes.length,
         facturasCanceladas: resumen.canceladas.length,

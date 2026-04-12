@@ -31,7 +31,7 @@ function thermalStyles(paperWidthMm: PaperWidthMm): string {
       color: #000;
       background: #fff;
     }
-    h1 { text-align: center; font-size: 14px; margin: 0 0 4px; font-weight: bold; }
+    h1 { text-align: center; font-size: 14px; margin: 0 0 4px; font-weight: bold; text-transform: uppercase; }
     h2 { text-align: center; font-size: 12px; margin: 0 0 6px; font-weight: bold; letter-spacing: 0.5px; }
     .center { text-align: center; }
     .divider { border: none; border-top: 1px dashed #000; margin: 6px 0; }
@@ -39,10 +39,18 @@ function thermalStyles(paperWidthMm: PaperWidthMm): string {
     table { width: 100%; border-collapse: collapse; }
     .header-row td { padding: 2px 0; font-size: 10px; }
     .total { font-weight: bold; font-size: 12px; }
-    .footer { text-align: center; font-size: 9px; margin-top: 6px; }
-    .logo-wrap { text-align: center; margin-bottom: 6px; }
-    .logo-wrap img { max-width: 100%; max-height: 56px; object-fit: contain; }
+    .total-xl td { font-weight: bold; font-size: 14px; padding-top: 4px; }
+    .footer { text-align: center; font-size: 9px; margin-top: 8px; }
+    .logo-wrap { text-align: center; margin-bottom: 8px; }
+    .logo-wrap img { max-width: 100%; max-height: 44px; object-fit: contain; }
     .item-row td { padding: 3px 0; vertical-align: top; }
+    .fdo-company-line { text-align: center; font-size: 10px; margin: 1px 0; }
+    .fdo-items-head th { text-align: left; font-size: 10px; padding: 4px 0 2px; border-bottom: 1px solid #000; font-weight: bold; }
+    .fdo-items-head th.r { text-align: right; }
+    .fdo-items-head th.c { text-align: center; }
+    .fdo-item-name { font-weight: bold; padding-top: 5px; font-size: 11px; }
+    .fdo-item-sub td { font-size: 10px; padding: 1px 0 2px; }
+    .fdo-pay-row td { font-size: 10px; padding: 2px 0; }
   `;
 }
 
@@ -54,11 +62,37 @@ function headerBlock(t: TenantReceiptInfo, opts?: { omitRnc?: boolean }): string
   const rncTrim = t.rnc?.trim() ?? "";
   const rnc =
     !opts?.omitRnc && rncTrim
-      ? `<div class="center" style="font-size:11px;font-weight:bold;margin:2px 0;">R.N.C. ${escapeHtml(rncTrim)}</div>`
+      ? `<p class="fdo-company-line" style="font-weight:bold">RNC: ${escapeHtml(rncTrim)}</p>`
       : "";
-  const dir = t.direccion ? `<div class="center" style="font-size:9px;">${escapeHtml(t.direccion)}</div>` : "";
-  const tel = t.telefono ? `<div class="center" style="font-size:9px;">Tel: ${escapeHtml(t.telefono)}</div>` : "";
+  const dir = t.direccion
+    ? `<p class="fdo-company-line">${escapeHtml(t.direccion)}</p>`
+    : "";
+  const tel = t.telefono
+    ? `<p class="fdo-company-line">Tel: ${escapeHtml(t.telefono)}</p>`
+    : "";
   return `${logo}<h1>${nombre}</h1>${rnc}${dir}${tel}`;
+}
+
+/** Fecha/hora República Dominicana (misma idea que FacturaDo-Taller). */
+function formatFacturaDateParts(iso: string | undefined | null): { date: string; time: string } {
+  const d = new Date(iso || Date.now());
+  const date = new Intl.DateTimeFormat("es-DO", {
+    timeZone: "America/Santo_Domingo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+  const time = new Intl.DateTimeFormat("es-DO", {
+    timeZone: "America/Santo_Domingo",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  }).format(d);
+  return { date, time };
+}
+
+function rdFixed(n: number): string {
+  return `RD$ ${Number(n).toFixed(2)}`;
 }
 
 export function buildFacturaReceiptHtml(
@@ -73,60 +107,106 @@ export function buildFacturaReceiptHtml(
     notas: string | null;
     pagada_at?: string | null;
     created_at?: string;
+    /** Cobro / facturación electrónica ticket (estilo FacturaDo). */
+    estado?: "pagada" | "pendiente" | "cancelada" | string;
+    propina?: number;
+    cliente_nombre?: string | null;
+    cliente_rnc?: string | null;
+    ncf?: string | null;
+    ncf_tipo?: string | null;
   },
   numeroFactura: number,
   paperWidthMm: PaperWidthMm
 ): string {
-  const fecha = new Date(factura.pagada_at || factura.created_at || Date.now()).toLocaleString("es-DO");
+  const when = factura.pagada_at || factura.created_at || new Date().toISOString();
+  const { date: fechaStr, time: horaStr } = formatFacturaDateParts(when);
   const mesaLabel =
     factura.mesa_numero != null && factura.mesa_numero !== 0
       ? String(factura.mesa_numero)
       : "Para llevar";
 
+  const estadoRaw = (factura.estado || "pagada").toLowerCase();
+  const estadoEtiqueta =
+    estadoRaw === "pagada" ? "PAGADO" : estadoRaw === "pendiente" ? "PENDIENTE" : estadoRaw === "cancelada" ? "CANCELADA" : String(factura.estado || "").toUpperCase();
+
+  const clienteNombre = (factura.cliente_nombre || "").trim() || "Consumidor Final";
+  const clienteRnc = (factura.cliente_rnc || "").trim();
+  const ncf = (factura.ncf || "").trim();
+  const ncfTipo = (factura.ncf_tipo || "").trim();
+  const propina = Number(factura.propina ?? 0);
+
   const itemsRows = factura.items
-    .map(
-      (item) => `
-    <tr class="item-row">
-      <td style="width:12%">${item.cantidad}</td>
-      <td style="width:53%">${escapeHtml(item.nombre)}</td>
-      <td style="width:35%;text-align:right">RD$ ${Number(item.subtotal ?? item.cantidad * Number(item.precio_unitario ?? 0)).toFixed(2)}</td>
-    </tr>`
-    )
+    .map((item) => {
+      const qty = item.cantidad;
+      const pu = Number(item.precio_unitario ?? 0);
+      const line = Number(item.subtotal ?? qty * pu);
+      const precioStr = rdFixed(pu);
+      return `
+    <tr><td colspan="3" class="fdo-item-name">${escapeHtml(item.nombre)}</td></tr>
+    <tr class="fdo-item-sub">
+      <td colspan="2">${precioStr} × ${qty}</td>
+      <td style="text-align:right;font-weight:bold">${rdFixed(line)}</td>
+    </tr>`;
+    })
     .join("");
 
-  const rncFactura = tenant.rnc?.trim();
-  const rncFacturaCell = rncFactura ? escapeHtml(rncFactura) : "No registrado";
+  const metaCliente =
+    clienteRnc !== ""
+      ? `<tr class="header-row"><td>RNC/Céd.</td><td style="text-align:right">${escapeHtml(clienteRnc)}</td></tr>`
+      : "";
+  const metaNcfTipo =
+    ncfTipo !== ""
+      ? `<tr class="header-row"><td>Tipo NCF</td><td style="text-align:right">${escapeHtml(ncfTipo)}</td></tr>`
+      : "";
+  const metaNcf =
+    ncf !== ""
+      ? `<tr class="header-row"><td>NCF</td><td style="text-align:right;font-weight:bold;font-size:10px">${escapeHtml(ncf)}</td></tr>`
+      : "";
+
+  const propinaRow =
+    propina > 0
+      ? `<tr><td>Propina</td><td style="text-align:right">${rdFixed(propina)}</td></tr>`
+      : "";
 
   const body = `
-  ${headerBlock(tenant, { omitRnc: true })}
+  ${headerBlock(tenant)}
   <div class="divider"></div>
-  <h2>FACTURA DE VENTA</h2>
   <table>
-    <tr class="header-row"><td>R.N.C.</td><td style="text-align:right;font-weight:bold;font-size:11px">${rncFacturaCell}</td></tr>
-    <tr class="header-row"><td>Factura N°</td><td style="text-align:right">#${String(numeroFactura).padStart(6, "0")}</td></tr>
-    <tr class="header-row"><td>Fecha</td><td style="text-align:right">${escapeHtml(fecha)}</td></tr>
+    <tr class="header-row"><td><strong>Factura</strong></td><td style="text-align:right;font-weight:bold">#${String(numeroFactura).padStart(6, "0")}</td></tr>
+    <tr class="header-row"><td>Fecha</td><td style="text-align:right">${escapeHtml(fechaStr)}</td></tr>
+    <tr class="header-row"><td>Hora</td><td style="text-align:right">${escapeHtml(horaStr)}</td></tr>
+    <tr class="header-row"><td>Cliente</td><td style="text-align:right">${escapeHtml(clienteNombre)}</td></tr>
+    ${metaCliente}
+    ${metaNcfTipo}
+    ${metaNcf}
     <tr class="header-row"><td>Mesa</td><td style="text-align:right">${escapeHtml(mesaLabel)}</td></tr>
     <tr class="header-row"><td>Método</td><td style="text-align:right">${escapeHtml(factura.metodo_pago.toUpperCase())}</td></tr>
   </table>
-  <div class="double-divider"></div>
+  <div class="divider"></div>
   <table>
-    <thead><tr style="border-bottom:1px solid #000;font-size:10px;"><th style="text-align:left;padding:4px 0">CANT</th><th style="text-align:left">DESCRIP.</th><th style="text-align:right">IMPORTE</th></tr></thead>
+    <thead class="fdo-items-head"><tr><th>Desc</th><th class="r">Cant</th><th class="r">Total</th></tr></thead>
     <tbody>${itemsRows}</tbody>
   </table>
-  <div class="double-divider"></div>
+  <div class="divider"></div>
   <table>
-    <tr><td>Subtotal</td><td style="text-align:right">RD$ ${Number(factura.subtotal).toFixed(2)}</td></tr>
-    <tr><td>ITBIS (18%)</td><td style="text-align:right">RD$ ${Number(factura.itbis).toFixed(2)}</td></tr>
-    <tr class="total"><td>TOTAL</td><td style="text-align:right">RD$ ${Number(factura.total).toFixed(2)}</td></tr>
+    <tr><td>Subtotal</td><td style="text-align:right">${rdFixed(factura.subtotal)}</td></tr>
+    <tr><td>ITBIS</td><td style="text-align:right">${rdFixed(factura.itbis)}</td></tr>
+    ${propinaRow}
+    <tr class="total-xl"><td>TOTAL</td><td style="text-align:right">${rdFixed(factura.total)}</td></tr>
   </table>
-  ${factura.notas ? `<div class="divider"></div><div style="font-size:10px"><b>Nota:</b> ${escapeHtml(factura.notas)}</div>` : ""}
+  <div class="divider"></div>
+  <table>
+    <tr class="fdo-pay-row"><td>Estado</td><td style="text-align:right;font-weight:bold">${escapeHtml(estadoEtiqueta)}</td></tr>
+  </table>
+  ${factura.notas ? `<div class="divider"></div><div style="font-size:10px"><b>Notas:</b> ${escapeHtml(factura.notas)}</div>` : ""}
   <div class="double-divider"></div>
   <div class="footer">
-    <div>¡Gracias por su visita!</div>
-    <div style="margin-top:4px">Documento no fiscal valor informativo</div>
+    <p style="margin:0 0 4px">¡Gracias por su compra!</p>
+    <p style="margin:0;font-size:8px">Documento no fiscal — valor informativo</p>
+    <p style="margin:6px 0 0;font-size:8px;opacity:0.85">CyberBistro OS</p>
   </div>
   <div class="divider"></div>
-  <div class="center" style="font-size:8px">${escapeHtml(new Date().toLocaleString("es-DO"))}</div>
+  <div class="center" style="font-size:8px">${escapeHtml(new Date().toLocaleString("es-DO", { timeZone: "America/Santo_Domingo" }))}</div>
   `;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Factura</title><style>${thermalStyles(paperWidthMm)}</style></head><body>${body}</body></html>`;
@@ -144,18 +224,23 @@ export function buildComandaReceiptHtml(
   },
   paperWidthMm: PaperWidthMm
 ): string {
-  const fecha = new Date(comanda.created_at || Date.now()).toLocaleString("es-DO");
+  const when = comanda.created_at || new Date().toISOString();
+  const { date: fechaStr, time: horaStr } = formatFacturaDateParts(when);
   const num = comanda.numero_comanda != null ? String(comanda.numero_comanda) : comanda.id.slice(0, 8).toUpperCase();
+  const mesaLabel = comanda.mesa_numero != null ? String(comanda.mesa_numero) : "—";
 
   const rows = comanda.items
     .map((it) => {
-      const label = it.categoria
-        ? `[${it.categoria}] ${it.nombre}`
-        : it.nombre;
+      const cat = (it.categoria || "").trim();
+      const catCell =
+        cat !== ""
+          ? `<span style="font-size:10px">[${escapeHtml(cat)}]</span>`
+          : `<span style="font-size:10px">—</span>`;
       return `
-    <tr class="item-row">
-      <td style="font-weight:bold;font-size:13px;width:18%">${it.cantidad}×</td>
-      <td style="font-size:12px">${escapeHtml(label)}</td>
+    <tr><td colspan="2" class="fdo-item-name">${escapeHtml(it.nombre)}</td></tr>
+    <tr class="fdo-item-sub">
+      <td>${catCell}</td>
+      <td style="text-align:right;font-weight:bold;font-size:12px">${it.cantidad}×</td>
     </tr>`;
     })
     .join("");
@@ -165,18 +250,38 @@ export function buildComandaReceiptHtml(
   <div class="divider"></div>
   <h2>COMANDA — COCINA</h2>
   <table>
-    <tr class="header-row"><td>Comanda</td><td style="text-align:right">#${escapeHtml(num)}</td></tr>
-    <tr class="header-row"><td>Fecha</td><td style="text-align:right">${escapeHtml(fecha)}</td></tr>
-    <tr class="header-row"><td>Mesa</td><td style="text-align:right">${comanda.mesa_numero != null ? escapeHtml(String(comanda.mesa_numero)) : "—"}</td></tr>
+    <tr class="header-row"><td><strong>Comanda</strong></td><td style="text-align:right;font-weight:bold">#${escapeHtml(num)}</td></tr>
+    <tr class="header-row"><td>Fecha</td><td style="text-align:right">${escapeHtml(fechaStr)}</td></tr>
+    <tr class="header-row"><td>Hora</td><td style="text-align:right">${escapeHtml(horaStr)}</td></tr>
+    <tr class="header-row"><td>Mesa</td><td style="text-align:right;font-weight:bold">${escapeHtml(mesaLabel)}</td></tr>
   </table>
-  <div class="double-divider"></div>
-  <table><tbody>${rows}</tbody></table>
+  <div class="divider"></div>
+  <table>
+    <thead class="fdo-items-head"><tr><th>Plato</th><th class="r">Cant.</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
   ${comanda.notas ? `<div class="divider"></div><div style="font-size:10px"><b>Nota cocina:</b> ${escapeHtml(comanda.notas)}</div>` : ""}
   <div class="double-divider"></div>
-  <div class="footer">Preparar en orden — CyberBistro OS</div>
+  <div class="footer">
+    <p style="margin:0 0 4px">Preparar en orden de llegada</p>
+    <p style="margin:0;font-size:8px;opacity:0.85">CyberBistro OS</p>
+  </div>
+  <div class="divider"></div>
+  <div class="center" style="font-size:8px">${escapeHtml(new Date().toLocaleString("es-DO", { timeZone: "America/Santo_Domingo" }))}</div>
   `;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Comanda</title><style>${thermalStyles(paperWidthMm)}</style></head><body>${body}</body></html>`;
+}
+
+/** Una línea de ítem para ticket de separar cuenta (mismo estilo que factura térmica). */
+export function buildThermalSplitLineHtml(platoNombre: string, cantidad: number, importeLinea: number): string {
+  const line = Number(importeLinea);
+  return `
+    <tr><td colspan="2" class="fdo-item-name">${escapeHtml(platoNombre)}</td></tr>
+    <tr class="fdo-item-sub">
+      <td>${cantidad}×</td>
+      <td style="text-align:right;font-weight:bold">${rdFixed(line)}</td>
+    </tr>`;
 }
 
 function splitSection(
@@ -197,12 +302,19 @@ function splitSection(
   ${headerBlock(tenant)}
   <div class="divider"></div>
   <h2>SEPARAR CUENTA</h2>
-  <div class="center" style="font-size:11px;margin-bottom:6px">${escapeHtml(mesa)}</div>
-  <div class="center" style="font-size:11px;font-weight:bold">Persona ${opts.personIndex} de ${opts.splitParts}</div>
+  <table>
+    <tr class="header-row"><td>Ubicación</td><td style="text-align:right;font-weight:bold">${escapeHtml(mesa)}</td></tr>
+    <tr class="header-row"><td>Parte</td><td style="text-align:right;font-weight:bold">Persona ${opts.personIndex} de ${opts.splitParts}</td></tr>
+  </table>
   <div class="divider"></div>
-  <table>${opts.rowsHtml}</table>
+  <table>
+    <thead class="fdo-items-head"><tr><th>Concepto</th><th class="r">Importe</th></tr></thead>
+    <tbody>${opts.rowsHtml}</tbody>
+  </table>
   <div class="divider"></div>
-  <table style="width:100%"><tr class="total"><td>TOTAL</td><td style="text-align:right">${opts.totalLine}</td></tr></table>
+  <table><tr class="total-xl"><td>TOTAL</td><td style="text-align:right">${opts.totalLine}</td></tr></table>
+  <div class="double-divider"></div>
+  <div class="footer" style="font-size:8px">CyberBistro OS — cuenta dividida</div>
   </section>`;
 }
 
@@ -228,8 +340,10 @@ export function buildSplitTicketHtml(
 export interface CierreDiaThermalData {
   /** Fecha del día operativo (texto local). */
   fechaOperacion: string;
-  /** Momento en que se generó el reporte. */
+  /** Momento en que se generó el reporte (texto, respaldo). */
   generadoEn: string;
+  /** ISO para Fecha/Hora en zona DO (misma lógica que factura/comanda). */
+  generadoAtIso?: string;
   facturasPagadas: number;
   facturasPendientes: number;
   facturasCanceladas: number;
@@ -259,35 +373,43 @@ export function buildCierreDiaReceiptHtml(
   const metodoRows = data.porMetodo
     .map(
       (m) => `
-    <tr class="item-row">
-      <td style="width:55%;font-size:10px">${escapeHtml(m.etiqueta)}</td>
-      <td style="width:20%;text-align:center;font-size:10px">${m.cantidad}</td>
-      <td style="width:25%;text-align:right;font-size:10px">${rd(m.total)}</td>
+    <tr class="fdo-item-sub">
+      <td style="width:55%">${escapeHtml(m.etiqueta)}</td>
+      <td style="width:20%;text-align:center;font-weight:bold">${m.cantidad}</td>
+      <td style="width:25%;text-align:right;font-weight:bold">${rd(m.total)}</td>
     </tr>`
     )
     .join("");
+
+  const genIso = data.generadoAtIso?.trim();
+  const genParts = genIso ? formatFacturaDateParts(genIso) : null;
+  const generadoRows = genParts
+    ? `
+    <tr class="header-row"><td>Impreso — Fecha</td><td style="text-align:right;font-size:10px">${escapeHtml(genParts.date)}</td></tr>
+    <tr class="header-row"><td>Impreso — Hora</td><td style="text-align:right;font-size:10px">${escapeHtml(genParts.time)}</td></tr>`
+    : `<tr class="header-row"><td>Generado</td><td style="text-align:right;font-size:10px">${escapeHtml(data.generadoEn)}</td></tr>`;
 
   const body = `
   ${headerBlock(tenant)}
   <div class="divider"></div>
   <h2>CIERRE DE DÍA</h2>
-  <div class="center" style="font-size:10px;margin-bottom:4px">Resumen operativo (no fiscal)</div>
+  <p class="center fdo-company-line" style="margin:0 0 6px;font-size:10px">Resumen operativo (no fiscal)</p>
   <table>
-    <tr class="header-row"><td>Día operativo</td><td style="text-align:right;font-size:10px">${escapeHtml(data.fechaOperacion)}</td></tr>
-    <tr class="header-row"><td>Generado</td><td style="text-align:right;font-size:10px">${escapeHtml(data.generadoEn)}</td></tr>
+    <tr class="header-row"><td><strong>Día operativo</strong></td><td style="text-align:right;font-weight:bold;font-size:10px">${escapeHtml(data.fechaOperacion)}</td></tr>
+    ${generadoRows}
   </table>
   <div class="double-divider"></div>
   <table>
-    <tr><td style="font-size:10px">Facturas pagadas</td><td style="text-align:right;font-weight:bold">${data.facturasPagadas}</td></tr>
-    <tr><td style="font-size:10px">Facturas pendientes</td><td style="text-align:right">${data.facturasPendientes}</td></tr>
-    <tr><td style="font-size:10px">Facturas canceladas</td><td style="text-align:right">${data.facturasCanceladas}</td></tr>
+    <tr class="header-row"><td>Facturas pagadas</td><td style="text-align:right;font-weight:bold">${data.facturasPagadas}</td></tr>
+    <tr class="header-row"><td>Facturas pendientes</td><td style="text-align:right">${data.facturasPendientes}</td></tr>
+    <tr class="header-row"><td>Facturas canceladas</td><td style="text-align:right">${data.facturasCanceladas}</td></tr>
   </table>
   <div class="divider"></div>
   <table>
-    <tr class="total"><td>TOTAL COBRADO (pagadas)</td><td style="text-align:right">${rd(data.totalPagado)}</td></tr>
-    <tr><td style="font-size:10px">Subtotal</td><td style="text-align:right;font-size:10px">${rd(data.subtotalPagado)}</td></tr>
-    <tr><td style="font-size:10px">ITBIS</td><td style="text-align:right;font-size:10px">${rd(data.itbisPagado)}</td></tr>
-    <tr><td style="font-size:10px">Ticket prom. (pagadas)</td><td style="text-align:right;font-size:10px">${data.facturasPagadas > 0 ? rd(data.ticketPromedioPagado) : "—"}</td></tr>
+    <tr class="total-xl"><td>TOTAL COBRADO</td><td style="text-align:right">${rd(data.totalPagado)}</td></tr>
+    <tr class="header-row"><td>Subtotal (pagadas)</td><td style="text-align:right">${rd(data.subtotalPagado)}</td></tr>
+    <tr class="header-row"><td>ITBIS (pagadas)</td><td style="text-align:right">${rd(data.itbisPagado)}</td></tr>
+    <tr class="header-row"><td>Ticket prom.</td><td style="text-align:right">${data.facturasPagadas > 0 ? rd(data.ticketPromedioPagado) : "—"}</td></tr>
   </table>
   ${
     data.cuentasAbiertasLineas != null &&
@@ -295,30 +417,30 @@ export function buildCierreDiaReceiptHtml(
     data.cuentasAbiertasSubtotal != null
       ? `
   <div class="double-divider"></div>
-  <div style="font-size:10px;font-weight:bold;margin-bottom:4px">Cuentas abiertas (sin facturar)</div>
+  <p style="font-size:10px;font-weight:bold;margin:0 0 4px">Cuentas abiertas (sin facturar)</p>
   <table>
-    <tr><td style="font-size:10px">Líneas / mesas con saldo</td><td style="text-align:right;font-size:10px">${data.cuentasAbiertasLineas} / ${data.cuentasAbiertasMesas ?? "—"}</td></tr>
-    <tr><td style="font-size:10px">Subtotal pendiente</td><td style="text-align:right;font-size:10px">${rd(data.cuentasAbiertasSubtotal)}</td></tr>
-    <tr><td style="font-size:10px">ITBIS est. (18%)</td><td style="text-align:right;font-size:10px">${data.cuentasAbiertasItbisEst != null ? rd(data.cuentasAbiertasItbisEst) : "—"}</td></tr>
+    <tr class="header-row"><td>Líneas / mesas</td><td style="text-align:right;font-size:10px">${data.cuentasAbiertasLineas} / ${data.cuentasAbiertasMesas ?? "—"}</td></tr>
+    <tr class="header-row"><td>Subtotal pendiente</td><td style="text-align:right;font-size:10px">${rd(data.cuentasAbiertasSubtotal)}</td></tr>
+    <tr class="header-row"><td>ITBIS est. (18%)</td><td style="text-align:right;font-size:10px">${data.cuentasAbiertasItbisEst != null ? rd(data.cuentasAbiertasItbisEst) : "—"}</td></tr>
     <tr class="total"><td>TOTAL EST. PENDIENTE</td><td style="text-align:right">${data.cuentasAbiertasTotalEst != null ? rd(data.cuentasAbiertasTotalEst) : "—"}</td></tr>
   </table>
-  <div class="center" style="font-size:8px;margin-top:4px">Cobrar en POS; no incluido en total cobrado</div>
+  <p class="center" style="font-size:8px;margin:4px 0 0">No incluido en total cobrado — cobrar en POS</p>
   `
       : ""
   }
   <div class="double-divider"></div>
-  <div style="font-size:10px;font-weight:bold;margin-bottom:4px">Por método de pago (pagadas)</div>
   <table>
-    <thead><tr style="font-size:9px;border-bottom:1px solid #000"><th style="text-align:left;padding:2px 0">Método</th><th style="text-align:center">#</th><th style="text-align:right">Total</th></tr></thead>
-    <tbody>${metodoRows || `<tr><td colspan="3" class="center" style="font-size:10px">Sin ventas pagadas</td></tr>`}</tbody>
+    <thead class="fdo-items-head"><tr><th>Método</th><th class="c">#</th><th class="r">Total</th></tr></thead>
+    <tbody>${metodoRows || `<tr><td colspan="3" class="center" style="font-size:10px;padding:6px 0">Sin ventas pagadas</td></tr>`}</tbody>
   </table>
   <div class="double-divider"></div>
   <div class="footer">
-    <div>Conserve este documento para su control interno.</div>
-    <div style="margin-top:4px">No constituye comprobante fiscal</div>
+    <p style="margin:0 0 4px">Conserve para control interno</p>
+    <p style="margin:0;font-size:8px">No constituye comprobante fiscal</p>
+    <p style="margin:6px 0 0;font-size:8px;opacity:0.85">CyberBistro OS — Cierre</p>
   </div>
   <div class="divider"></div>
-  <div class="center" style="font-size:8px">CyberBistro OS — Cierre</div>
+  <div class="center" style="font-size:8px">${escapeHtml(new Date().toLocaleString("es-DO", { timeZone: "America/Santo_Domingo" }))}</div>
   `;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Cierre día</title><style>${thermalStyles(paperWidthMm)}</style></head><body>${body}</body></html>`;
