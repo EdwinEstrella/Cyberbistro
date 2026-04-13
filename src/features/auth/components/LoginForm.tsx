@@ -7,6 +7,8 @@ import imgLoginRegistro from "figma:asset/47f7239cc7433af3270415eeec94f9bdbb11cd
 import imgDecorativeScanlineEffect from "figma:asset/70a05c412757c6d4e1cffbb0780858880dce7a5a.png";
 import { TitleBar } from "../../window";
 import { insforgeClient } from "../../../shared/lib/insforge";
+import { resolveTenantUserForSession } from "../../../shared/lib/resolveTenantUserFromAuth";
+import { writeTenantSessionCache } from "../../../shared/lib/tenantSessionCache";
 import { defaultRouteForRol } from "../../../shared/lib/roleNav";
 import { PinGateModal } from "../../../shared/components/PinGate";
 
@@ -92,13 +94,16 @@ export function Login() {
     }
 
     if (data?.user) {
-      const { data: tu } = await insforgeClient.database
-        .from("tenant_users")
-        .select("rol")
-        .eq("auth_user_id", data.user.id)
-        .maybeSingle();
-      const r = (tu as { rol?: string } | null)?.rol ?? null;
-      const dest = defaultRouteForRol(r);
+      const tu = await resolveTenantUserForSession(data.user);
+      if (!tu) {
+        setError(
+          "Esta cuenta no está vinculada a ningún negocio. El administrador debe darte acceso desde Soporte."
+        );
+        await insforgeClient.auth.signOut();
+        return;
+      }
+      writeTenantSessionCache(data.user.id, tu);
+      const dest = defaultRouteForRol(tu.rol);
       setIsVisible(false);
       setTimeout(() => navigate(dest), 300);
     }
@@ -128,7 +133,7 @@ export function Login() {
           </div>
         </div>
         <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] sm:text-[12px] text-center tracking-[1px] sm:tracking-[1.2px] uppercase">
-          Gastronomy Operating System v4.0.2
+          Gastronomy Operating System · {__APP_VERSION__}
         </div>
       </div>
     </div>

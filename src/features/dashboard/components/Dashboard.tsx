@@ -80,7 +80,7 @@ const tickerItems = [
 
 export function Dashboard() {
   const { query: cartSearchQuery } = useVentaCartSearch();
-  const { tenantId, user, loading: authLoading, refreshSession, signOut } = useAuth();
+  const { tenantId, user, loading: authLoading } = useAuth();
   const [platos, setPlatos] = useState<Plato[]>([]);
   const [mesas, setMesas] = useState<MesaBasic[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -763,48 +763,27 @@ export function Dashboard() {
     );
   }
 
-  if (!tenantId) {
+  /* Sesión InsForge válida = ya pasó el login; tenant/rol vienen de la misma sesión (estado + caché en useAuth). */
+  if (!user) {
     return (
       <div className="flex items-center justify-center h-screen bg-[#0e0e0e]">
         <div className="text-center max-w-md px-6">
-          <div className="text-[#ff7346] font-['Space_Grotesk',sans-serif] text-[20px] mb-4">
-            {user ? "No se pudo cargar el negocio" : "No autenticado"}
+          <div className="text-[#adaaaa] font-['Space_Grotesk',sans-serif] text-[18px] mb-2">
+            No autenticado
           </div>
-          <div className="text-[#adaaaa] font-['Inter',sans-serif] text-[14px] leading-relaxed space-y-4">
-            {user ? (
-              <>
-                <p className="m-0">
-                  No se encontró el vínculo de tu usuario con un negocio en este momento. Suele ser un
-                  fallo de red o del servidor; <span className="text-white/90">usar la misma cuenta en
-                  varios dispositivos no borra ese vínculo</span> por sí solo.
-                </p>
-                <p className="m-0 text-[13px] text-[#6b7280]">
-                  Si el problema sigue tras reintentar, comprobá en InsForge que tu usuario tenga fila
-                  en <code className="text-[#adaaaa]">tenant_users</code> con tu <code className="text-[#adaaaa]">auth_user_id</code>.
-                </p>
-                <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
-                  <button
-                    type="button"
-                    disabled={authLoading}
-                    onClick={() => refreshSession({ showLoading: true })}
-                    className="rounded-[12px] bg-[#ff906d] px-6 py-3 font-['Space_Grotesk',sans-serif] font-bold text-[#2a0f00] text-[13px] uppercase tracking-wide border-none cursor-pointer disabled:opacity-50"
-                  >
-                    {authLoading ? "Cargando…" : "Reintentar"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={authLoading}
-                    onClick={() => void signOut().catch(() => {})}
-                    className="rounded-[12px] border border-[rgba(255,255,255,0.15)] bg-transparent px-6 py-3 font-['Inter',sans-serif] font-semibold text-[#adaaaa] text-[13px] cursor-pointer hover:border-[rgba(255,144,109,0.4)] hover:text-white disabled:opacity-50"
-                  >
-                    Cerrar sesión
-                  </button>
-                </div>
-              </>
-            ) : (
-              <p className="m-0">Por favor iniciá sesión</p>
-            )}
-          </div>
+          <p className="text-[#6b7280] font-['Inter',sans-serif] text-[14px] m-0">
+            Iniciá sesión para usar el punto de venta.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!tenantId) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-[#0e0e0e]">
+        <div className="text-center max-w-md px-6 text-[#adaaaa] font-['Inter',sans-serif] text-[14px]">
+          Preparando tu sesión…
         </div>
       </div>
     );

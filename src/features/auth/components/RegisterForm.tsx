@@ -5,6 +5,7 @@ import imgLoginRegistro from "figma:asset/47f7239cc7433af3270415eeec94f9bdbb11cd
 import imgDecorativeScanlineEffect from "figma:asset/70a05c412757c6d4e1cffbb0780858880dce7a5a.png";
 import { TitleBar } from "../../window";
 import { insforgeClient } from "../../../shared/lib/insforge";
+import { writeTenantSessionCache } from "../../../shared/lib/tenantSessionCache";
 import { PinGateModal } from "../../../shared/components/PinGate";
 import { APP_ACCESS_PIN } from "../../../shared/lib/accessPin";
 
@@ -166,6 +167,13 @@ export function Register() {
       if (insertError) {
         throw new Error(insertError.message || "Error al guardar usuario local");
       }
+
+      writeTenantSessionCache(authUserId, {
+        tenant_id: tenantId,
+        email: email.trim(),
+        rol: "admin",
+        nombre: nombreNegocio.trim() || null,
+      });
 
       setSuccess(true);
       setLoading(false);

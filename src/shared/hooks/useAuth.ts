@@ -1,6 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { UserSchema } from '@insforge/sdk';
 import { insforgeClient } from '../lib/insforge';
+import {
+  readTenantSessionCache,
+  writeTenantSessionCache,
+  clearTenantSessionCache,
+  type TenantSessionRow,
+} from '../lib/tenantSessionCache';
+import { resolveTenantUserForSession } from '../lib/resolveTenantUserFromAuth';
 
 interface TenantUser {
   tenant_id: string;
@@ -9,33 +16,13 @@ interface TenantUser {
   nombre: string;
 }
 
-async function fetchTenantUser(authUserId: string) {
-  return insforgeClient.database
-    .from('tenant_users')
-    .select('tenant_id, email, rol, nombre')
-    .eq('auth_user_id', authUserId)
-    .maybeSingle();
-}
-
-/** Reintentos solo si hay error de red/API; si no hay fila en BD, no insiste. */
-async function fetchTenantUserWithRetry(authUserId: string) {
-  const maxAttempts = 4;
-  let lastError: unknown = null;
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    if (attempt > 0) {
-      await new Promise((r) => setTimeout(r, 350 * attempt));
-    }
-    const { data, error } = await fetchTenantUser(authUserId);
-    if (!error && data) {
-      return { data, error: null as null };
-    }
-    if (!error && !data) {
-      return { data: null, error: null as null };
-    }
-    lastError = error;
-  }
-  console.warn('useAuth: tenant_users no respondió tras reintentos', lastError);
-  return { data: null, error: lastError };
+function rowToTenantUser(data: TenantSessionRow): TenantUser {
+  return {
+    tenant_id: data.tenant_id,
+    email: data.email,
+    rol: data.rol,
+    nombre: data.nombre ?? '',
+  };
 }
 
 export function useAuth() {
@@ -67,11 +54,16 @@ export function useAuth() {
 
       setUser(u);
 
-      const { data: tenantUserData } = await fetchTenantUserWithRetry(u.id);
+      const cached = readTenantSessionCache();
+      if (cached?.authUserId === u.id) {
+        setTenantUser(rowToTenantUser(cached));
+      }
 
-      if (tenantUserData) {
-        setTenantUser(tenantUserData);
-      } else {
+      const resolved = await resolveTenantUserForSession(u);
+      if (resolved) {
+        setTenantUser(rowToTenantUser(resolved));
+        writeTenantSessionCache(u.id, resolved);
+      } else if (!(cached?.authUserId === u.id)) {
         setTenantUser(null);
       }
     } catch (err) {
@@ -85,41 +77,29 @@ export function useAuth() {
     void loadUserData({ silent: false });
   }, [loadUserData]);
 
-  useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') {
-        void loadUserData({ silent: true });
-      }
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [loadUserData]);
-
-  useEffect(() => {
-    const id = window.setInterval(
-      () => {
-        void loadUserData({ silent: true });
-      },
-      4 * 60 * 1000
-    );
-    return () => window.clearInterval(id);
-  }, [loadUserData]);
-
   const signOut = async () => {
     const { error } = await insforgeClient.auth.signOut();
     if (error) {
       console.error('Error signing out:', error);
       throw error;
     }
+    clearTenantSessionCache();
     setUser(null);
     setTenantUser(null);
   };
 
+  /** Tras `signInWithPassword`, la caché ya tiene tenant + rol; no hace falta “volver a buscar” en el primer render. */
+  const cachedRow = user ? readTenantSessionCache() : null;
+  const cacheBelongsToUser =
+    cachedRow != null && user != null && cachedRow.authUserId === user.id;
+  const tenantUserEffective: TenantUser | null =
+    tenantUser ?? (cacheBelongsToUser ? rowToTenantUser(cachedRow) : null);
+
   return {
     user,
-    tenantUser,
-    tenantId: tenantUser?.tenant_id || null,
-    rol: tenantUser?.rol || null,
+    tenantUser: tenantUserEffective,
+    tenantId: tenantUserEffective?.tenant_id ?? null,
+    rol: tenantUserEffective?.rol ?? null,
     loading,
     signOut,
     isAuthenticated: !!user,

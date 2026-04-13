@@ -53,7 +53,7 @@ function Container2() {
   return (
     <div className="content-stretch flex flex-col items-center relative shrink-0 w-full" data-name="Container">
       <div className="flex flex-col font-['Inter:Regular',sans-serif] font-normal h-[16px] justify-center leading-[0] not-italic relative shrink-0 text-[#adaaaa] text-[12px] text-center tracking-[1.2px] uppercase w-[291.08px]">
-        <p className="leading-[16px]">Gastronomy Operating System v4.0.2</p>
+        <p className="leading-[16px]">Gastronomy Operating System · {__APP_VERSION__}</p>
       </div>
     </div>
   );
