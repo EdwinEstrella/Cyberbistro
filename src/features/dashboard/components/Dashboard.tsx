@@ -7,8 +7,6 @@ import { useAuth } from "../../../shared/hooks/useAuth";
 import {
   buildFacturaReceiptHtml,
   buildComandaReceiptHtml,
-  buildSplitTicketHtml,
-  buildThermalSplitLineHtml,
 } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
@@ -17,10 +15,10 @@ import {
   sortCategoriesForTabs,
 } from "../../../shared/lib/menuCategories";
 import { MesaCloseAccountModal } from "../../billing/components/MesaCloseAccountModal";
+import { DashboardTickerStrip } from "./DashboardTickerStrip";
 import {
   incrementTenantNcfSequence,
-  loadTenantNcfRow,
-  ncfPayloadForInsert,
+  resolveNcfForNewInvoice,
 } from "../../../shared/lib/invoiceNcf";
 
 interface Plato {
@@ -76,13 +74,6 @@ function catColor(cat: string) {
   return MENU_CATEGORY_COLORS[cat] ?? "#adaaaa";
 }
 
-const tickerItems = [
-  { text: "Sistema de punto de venta CyberBistro OS", color: "#adaaaa" },
-  { text: "● Cocina en vivo: activa", color: "#59ee50" },
-  { text: "Seleccioná una mesa y agregá platos al pedido", color: "#adaaaa" },
-  { text: "● Enviá a cocina con un clic", color: "#ff906d" },
-];
-
 export function Dashboard() {
   const { query: cartSearchQuery } = useVentaCartSearch();
   const { tenantId, user, loading: authLoading } = useAuth();
@@ -105,7 +96,6 @@ export function Dashboard() {
   const [mesaConsumos, setMesaConsumos] = useState<Consumo[]>([]);
   const [mesaAccountLoading, setMesaAccountLoading] = useState(false);
   /** Partes para ticket “separar cuenta” (solo referencia en carrito; reparte ítems en ronda, no el monto). */
-  const splitParts = 2;
   const [isTakeout, setIsTakeout] = useState(false);
 
   useEffect(() => {
@@ -299,51 +289,6 @@ export function Dashboard() {
     }
   }
 
-  // Verificar si una mesa se puede liberar (sin deuda)
-  async function canFreeMesa(mesa: MesaBasic): Promise<boolean> {
-    if (!tenantId) return true;
-    const { data, error } = await insforgeClient.database
-      .from("consumos")
-      .select("id")
-      .eq("tenant_id", tenantId)
-      .eq("mesa_numero", mesa.numero)
-      .neq("estado", "pagado")
-      .limit(1);
-
-    if (error) return true;
-    return !data?.length;
-  }
-
-  // Liberar mesa (marcar como libre)
-  async function freeMesa(mesa: MesaBasic) {
-    if (!tenantId) return;
-    const canFree = await canFreeMesa(mesa);
-
-    if (!canFree) {
-      alert(`⚠️ La mesa ${mesa.numero} tiene deuda pendiente. Cobrar antes de liberar.`);
-      return;
-    }
-
-    const { error } = await insforgeClient.database
-      .from("mesas_estado")
-      .upsert(
-        { id: parseInt(mesa.id, 10), estado: "libre", tenant_id: tenantId },
-        { onConflict: "tenant_id,id" }
-      );
-
-    if (!error) {
-      setMesas((prev) =>
-        prev.map((m) =>
-          m.id === mesa.id ? { ...m, estado: 'libre', deuda_pendiente: 0, items_pendientes: 0 } : m
-        )
-      );
-      if (selectedMesa?.id === mesa.id) {
-        setSelectedMesa(null);
-        setCart([]);
-      }
-    }
-  }
-
   // Cargar consumos de una mesa (cuenta abierta en POS)
   const loadTableConsumption = useCallback(
     async (mesaNumero: number): Promise<Consumo[]> => {
@@ -471,9 +416,15 @@ export function Dashboard() {
 
     // Crear comanda para items de cocina
     if (kitchenItems.length > 0) {
+      if (!tenantId) {
+        alert("No se pudo verificar cocina: sesión sin negocio asignado.");
+        setSending(false);
+        return;
+      }
       const { data: estadoData } = await insforgeClient.database
         .from("cocina_estado")
         .select("activa")
+        .eq("tenant_id", tenantId)
         .limit(1);
 
       if (estadoData?.[0]?.activa === false) {
@@ -676,8 +627,7 @@ export function Dashboard() {
     const itbis = subtotal * ITBIS;
     const total = subtotal + itbis;
 
-    const ncfRow = tenantId ? await loadTenantNcfRow(tenantId) : null;
-    const ncfPart = ncfPayloadForInsert(ncfRow);
+    const ncfPart = tenantId ? await resolveNcfForNewInvoice(tenantId) : null;
 
     const facturaData: Record<string, unknown> = {
       tenant_id: tenantId,
@@ -710,7 +660,7 @@ export function Dashboard() {
       return;
     }
 
-    if (tenantId && ncfPart) {
+    if (tenantId && ncfPart && !ncfPart.sequenceReservedAtomically) {
       await incrementTenantNcfSequence(tenantId, ncfPart.usedSequence);
     }
 
@@ -722,71 +672,6 @@ export function Dashboard() {
     setTimeout(() => setChargeOk(false), 3000);
     setShowPaymentModal(false);
     setCharging(false);
-  }
-
-  async function printSplit() {
-    if (!tenantId) return;
-    if (cart.length === 0) {
-      alert("No hay ítems en el carrito para repartir.");
-      return;
-    }
-    const { data: tenantRow } = await insforgeClient.database
-      .from("tenants")
-      .select("nombre_negocio, rnc, direccion, telefono, logo_url")
-      .eq("id", tenantId)
-      .single();
-    if (!tenantRow) {
-      alert("No se encontró el negocio para imprimir.");
-      return;
-    }
-
-    const branding = {
-      nombre_negocio: tenantRow.nombre_negocio,
-      rnc: tenantRow.rnc,
-      direccion: tenantRow.direccion,
-      telefono: tenantRow.telefono,
-      logo_url: tenantRow.logo_url,
-    };
-
-    const lineSubtotals = cart.map((i) => i.plato.precio * i.cantidad);
-    const subtotalByPerson = Array(splitParts).fill(0) as number[];
-    const rowsByPerson: string[][] = Array.from({ length: splitParts }, () => []);
-    cart.forEach((item, idx) => {
-      const p = idx % splitParts;
-      const line = lineSubtotals[idx];
-      subtotalByPerson[p] += line;
-      rowsByPerson[p].push(
-        buildThermalSplitLineHtml(item.plato.nombre, item.cantidad, line)
-      );
-    });
-
-    const parts = Array.from({ length: splitParts }, (_, idx) => {
-      const st = subtotalByPerson[idx];
-      const itb = st * ITBIS;
-      const tot = st + itb;
-      const rowsHtml =
-        rowsByPerson[idx].length > 0
-          ? rowsByPerson[idx].join("")
-          : `<div style="font-size:12px;color:#666;padding:4px 0">Sin ítems en esta parte</div>`;
-      return {
-        personIndex: idx + 1,
-        splitParts,
-        rowsHtml,
-        totalLine: `RD$ ${tot.toFixed(2)} (incl. ITBIS)`,
-      };
-    }).filter((_, idx) => subtotalByPerson[idx] > 0);
-
-    const paperWidthMm = getThermalPrintSettings().paperWidthMm;
-    const html = buildSplitTicketHtml(
-      branding,
-      parts,
-      selectedMesa?.numero ?? null,
-      paperWidthMm
-    );
-    const res = await printThermalHtml(html);
-    if (!res.ok && res.error) {
-      console.warn("Impresión split:", res.error);
-    }
   }
 
   // Verificar autenticación y tenant (después de todos los hooks)
@@ -830,20 +715,7 @@ export function Dashboard() {
     <div className="flex flex-col lg:flex-row gap-[24px] lg:gap-[32px] p-4 sm:p-[32px] flex-1 overflow-y-auto lg:overflow-hidden min-h-0">
       {/* LEFT: Menu */}
       <div className="lg:flex-1 flex flex-col gap-[24px] min-w-0 lg:overflow-auto">
-        {/* Ticker */}
-        <div className="bg-[#131313] py-[8px] border-b border-[rgba(255,144,109,0.1)] overflow-hidden shrink-0">
-          <div className="flex gap-[48px]">
-            {tickerItems.map((item, i) => (
-              <span
-                key={i}
-                className="font-['Space_Grotesk',sans-serif] text-[10px] tracking-[2px] uppercase whitespace-nowrap"
-                style={{ color: item.color }}
-              >
-                {item.text}
-              </span>
-            ))}
-          </div>
-        </div>
+        <DashboardTickerStrip />
 
         {/* Categories */}
         <div className="flex gap-[12px] overflow-x-auto pb-[4px] shrink-0">

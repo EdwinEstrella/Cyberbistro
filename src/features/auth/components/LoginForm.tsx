@@ -198,6 +198,7 @@ export function Login() {
               {/* Error Message */}
               {error && (
                 <div
+                  id="login-auth-error"
                   className="bg-[rgba(255,115,70,0.1)] border border-[#ff7346] rounded-[6px] sm:rounded-[8px] p-2 sm:p-3 transition-all duration-300 animate-shake"
                   role="alert"
                 >
@@ -211,9 +212,12 @@ export function Login() {
               <div className="relative shrink-0 w-full flex flex-col gap-3 sm:gap-4">
                 {/* Email Input */}
                 <div className="relative shrink-0 w-full group">
-                  <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff7346] text-[9px] sm:text-[10px] tracking-[0.8px] sm:tracking-[1px] uppercase mb-1 sm:mb-2 transition-colors duration-300 group-hover:text-[#ff906d]">
+                  <label
+                    htmlFor="login-email"
+                    className="block font-['Space_Grotesk',sans-serif] font-bold text-[#ff7346] text-[9px] sm:text-[10px] tracking-[0.8px] sm:tracking-[1px] uppercase mb-1 sm:mb-2 transition-colors duration-300 group-hover:text-[#ff906d] cursor-pointer"
+                  >
                     Correo
-                  </div>
+                  </label>
                   <div className="bg-[#131313] relative w-full rounded-[6px] sm:rounded-[8px] transition-all duration-300 group-hover:shadow-[0px_0px_20px_-5px_rgba(255,144,109,0.2)] focus-within:shadow-[0px_0px_20px_-5px_rgba(255,144,109,0.3)]">
                     <div className="flex items-center relative">
                       <div className="absolute left-3 sm:left-[18px] w-3 sm:w-[15px] transition-colors duration-300 group-hover:scale-110">
@@ -222,10 +226,14 @@ export function Login() {
                         </svg>
                       </div>
                       <input
+                        id="login-email"
                         type="email"
+                        autoComplete="email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         placeholder="usuario@correo.com"
+                        aria-invalid={Boolean(error)}
+                        aria-describedby={error ? "login-auth-error" : undefined}
                         className="w-full bg-transparent font-['Inter',sans-serif] text-[14px] sm:text-[16px] text-white placeholder:text-[rgba(72,72,71,0.5)] pl-10 sm:pl-12 pr-4 py-3 sm:py-4 outline-none transition-colors duration-300"
                         onKeyDown={handleKeyDown}
                       />
@@ -236,9 +244,12 @@ export function Login() {
 
                 {/* Password Input */}
                 <div className="relative shrink-0 w-full group">
-                  <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff7346] text-[9px] sm:text-[10px] tracking-[0.8px] sm:tracking-[1px] uppercase mb-1 sm:mb-2 transition-colors duration-300 group-hover:text-[#ff906d]">
+                  <label
+                    htmlFor="login-password"
+                    className="block font-['Space_Grotesk',sans-serif] font-bold text-[#ff7346] text-[9px] sm:text-[10px] tracking-[0.8px] sm:tracking-[1px] uppercase mb-1 sm:mb-2 transition-colors duration-300 group-hover:text-[#ff906d] cursor-pointer"
+                  >
                     Contraseña
-                  </div>
+                  </label>
                   <div className="bg-[#131313] relative w-full rounded-[6px] sm:rounded-[8px] transition-all duration-300 group-hover:shadow-[0px_0px_20px_-5px_rgba(255,144,109,0.2)] focus-within:shadow-[0px_0px_20px_-5px_rgba(255,144,109,0.3)]">
                     <div className="flex items-center relative">
                       <div className="absolute left-3 sm:left-[17px] w-4 sm:w-[19px] transition-colors duration-300 group-hover:scale-110">
@@ -247,10 +258,14 @@ export function Login() {
                         </svg>
                       </div>
                       <input
+                        id="login-password"
                         type="password"
+                        autoComplete="current-password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         placeholder="•••••••••••••"
+                        aria-invalid={Boolean(error)}
+                        aria-describedby={error ? "login-auth-error" : undefined}
                         className="w-full bg-transparent font-['Inter',sans-serif] text-[14px] sm:text-[16px] text-white placeholder:text-[rgba(72,72,71,0.5)] pl-10 sm:pl-12 pr-4 py-3 sm:py-4 outline-none transition-colors duration-300"
                         onKeyDown={handleKeyDown}
                       />

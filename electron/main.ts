@@ -161,6 +161,9 @@ if (gotTheLock) {
       opts: { html: string; deviceName?: string; silent?: boolean; paperWidthMm?: number }
     ): Promise<{ ok: boolean; error?: string }> => {
       return new Promise((resolve) => {
+        // Ventana oculta solo para cargar data: URL e invocar webContents.print().
+        // sandbox: false — requerido en algunos entornos para loadURL(data:) + impresión silenciosa.
+        // webSecurity/contextIsolation activos (sin nodeIntegration) limitan riesgo frente a HTML arbitrario del renderer.
         const printWin = new BrowserWindow({
           width: 420,
           height: 900,

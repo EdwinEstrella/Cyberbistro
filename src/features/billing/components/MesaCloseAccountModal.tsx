@@ -1,12 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import {
   incrementTenantNcfSequence,
-  loadTenantNcfRow,
-  ncfPayloadForInsert,
+  resolveNcfForNewInvoice,
 } from "../../../shared/lib/invoiceNcf";
 
 const ITBIS = 0.18;
@@ -110,6 +109,8 @@ export function MesaCloseAccountModal({
   onSettled,
   onPaidFull,
 }: MesaCloseAccountModalProps) {
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const closeBtnRef = useRef<HTMLButtonElement | null>(null);
   const [mesaConsumos, setMesaConsumos] = useState<MesaConsumoRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [charging, setCharging] = useState(false);
@@ -146,6 +147,19 @@ export function MesaCloseAccountModal({
       cancelled = true;
     };
   }, [open, tenantId, mesaNumero]);
+
+  useEffect(() => {
+    if (!open) return;
+    closeBtnRef.current?.focus();
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, onClose]);
 
   useEffect(() => {
     if (!open || !splitMode || mesaConsumos.length === 0) return;
@@ -286,8 +300,7 @@ export function MesaCloseAccountModal({
 
         const { facturaItems, subtotal, itbis, total } = groupConsumosForFactura(consumosToInvoice);
 
-        const ncfRow = await loadTenantNcfRow(tenantId);
-        const ncfPart = ncfPayloadForInsert(ncfRow);
+        const ncfPart = await resolveNcfForNewInvoice(tenantId);
 
         const insertRow: Record<string, unknown> = {
           tenant_id: tenantId,
@@ -319,7 +332,7 @@ export function MesaCloseAccountModal({
           break;
         }
 
-        if (ncfPart) {
+        if (ncfPart && !ncfPart.sequenceReservedAtomically) {
           await incrementTenantNcfSequence(tenantId, ncfPart.usedSequence);
         }
 
@@ -376,8 +389,7 @@ export function MesaCloseAccountModal({
     const consumosToBill = mesaConsumos;
     const { facturaItems, subtotal, itbis, total } = groupConsumosForFactura(consumosToBill);
 
-    const ncfRow = await loadTenantNcfRow(tenantId);
-    const ncfPart = ncfPayloadForInsert(ncfRow);
+    const ncfPart = await resolveNcfForNewInvoice(tenantId);
 
     const facturaData: Record<string, unknown> = {
       tenant_id: tenantId,
@@ -410,7 +422,7 @@ export function MesaCloseAccountModal({
       return;
     }
 
-    if (ncfPart) {
+    if (ncfPart && !ncfPart.sequenceReservedAtomically) {
       await incrementTenantNcfSequence(tenantId, ncfPart.usedSequence);
     }
 
@@ -473,33 +485,42 @@ export function MesaCloseAccountModal({
 
   return (
     <div
+      ref={overlayRef}
       className="fixed inset-0 z-50 flex items-center justify-center"
       style={{ backgroundColor: "rgba(0,0,0,0.7)" }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[20px] p-[28px] w-[700px] max-h-[90vh] overflow-y-auto flex flex-col gap-[20px] shadow-xl">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mesa-close-title"
+        aria-describedby="mesa-close-description"
+        className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[20px] p-[28px] w-[700px] max-h-[90vh] overflow-y-auto flex flex-col gap-[20px] shadow-xl"
+      >
         <div className="flex items-center justify-between">
           <div>
-            <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[20px]">
+            <span id="mesa-close-title" className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[20px]">
               Cobrar Mesa {mesaNumero}
             </span>
             {loading ? (
-              <div className="text-[#adaaaa] text-[12px] mt-1">Cargando cuenta…</div>
+              <div id="mesa-close-description" className="text-[#adaaaa] text-[12px] mt-1">Cargando cuenta…</div>
             ) : mesaConsumos.length > 0 ? (
-              <div className="text-[#adaaaa] text-[12px] mt-1">
+              <div id="mesa-close-description" className="text-[#adaaaa] text-[12px] mt-1">
                 {mesaConsumos.length} items pendientes
               </div>
             ) : (
-              <div className="text-[#adaaaa] text-[12px] mt-1">Sin líneas pendientes</div>
+              <div id="mesa-close-description" className="text-[#adaaaa] text-[12px] mt-1">Sin líneas pendientes</div>
             )}
           </div>
           <button
+            ref={closeBtnRef}
             type="button"
             onClick={() => {
               onClose();
             }}
+            aria-label="Cerrar modal de cobro de mesa"
             className="text-[#6b7280] bg-transparent border-none cursor-pointer text-[20px] hover:text-white transition-colors leading-none"
           >
             ×
@@ -545,6 +566,7 @@ export function MesaCloseAccountModal({
                 <button
                   type="button"
                   onClick={() => setSplitParts((p) => Math.max(2, p - 1))}
+                  aria-label="Reducir número de personas"
                   className="w-[32px] h-[32px] bg-[#383838] hover:bg-[#444] text-white rounded-[8px] flex items-center justify-center font-bold text-[14px] transition-colors"
                 >
                   −
@@ -555,6 +577,7 @@ export function MesaCloseAccountModal({
                 <button
                   type="button"
                   onClick={() => setSplitParts((p) => Math.min(12, p + 1))}
+                  aria-label="Aumentar número de personas"
                   className="w-[32px] h-[32px] bg-[#383838] hover:bg-[#444] text-white rounded-[8px] flex items-center justify-center font-bold text-[14px] transition-colors"
                 >
                   +

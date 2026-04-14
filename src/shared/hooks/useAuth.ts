@@ -25,9 +25,23 @@ function rowToTenantUser(data: TenantSessionRow): TenantUser {
   };
 }
 
+const AUTH_RETRIES = 5;
+const SESSION_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
+
+function isAuthUnauthorized(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const e = error as { statusCode?: number; message?: string; error?: string };
+  if (e.statusCode === 401) return true;
+  const msg = `${e.error ?? ''} ${e.message ?? ''}`.toLowerCase();
+  return msg.includes('401') || msg.includes('invalid token') || msg.includes('unauthorized');
+}
+
 export function useAuth() {
   const [user, setUser] = useState<UserSchema | null>(null);
-  const [tenantUser, setTenantUser] = useState<TenantUser | null>(null);
+  const [tenantUser, setTenantUser] = useState<TenantUser | null>(() => {
+    const cached = readTenantSessionCache();
+    return cached ? rowToTenantUser(cached) : null;
+  });
   const [loading, setLoading] = useState(true);
 
   const loadUserData = useCallback(async (opts?: { silent?: boolean }) => {
@@ -40,15 +54,19 @@ export function useAuth() {
         return authData.user;
       };
 
-      let u = await tryAuth();
-      if (!u) {
-        await new Promise((r) => setTimeout(r, 450));
+      let u: UserSchema | null = null;
+      for (let attempt = 0; attempt < AUTH_RETRIES; attempt++) {
+        if (attempt > 0) {
+          await new Promise((r) => setTimeout(r, 280 * attempt));
+        }
         u = await tryAuth();
+        if (u) break;
       }
 
       if (!u) {
         setUser(null);
-        setTenantUser(null);
+        // Si no hay usuario en este intento, mantenemos el contexto cacheado;
+        // RoleGuard sigue controlando el acceso por `isAuthenticated`.
         return;
       }
 
@@ -76,6 +94,49 @@ export function useAuth() {
   useEffect(() => {
     void loadUserData({ silent: false });
   }, [loadUserData]);
+
+  useEffect(() => {
+    const refresh = () => void loadUserData({ silent: true });
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [loadUserData]);
+
+  // Mantiene viva la sesión mientras la app Electron esté abierta.
+  useEffect(() => {
+    if (!user) return;
+    let active = true;
+    const refreshInBackground = async () => {
+      const { error } = await insforgeClient.auth.refreshSession();
+      if (!active) return;
+      if (error) {
+        if (isAuthUnauthorized(error)) {
+          clearTenantSessionCache();
+          setUser(null);
+          setTenantUser(null);
+          return;
+        }
+        console.warn('Refresh de sesión falló (se mantiene sesión actual):', error);
+        return;
+      }
+      void loadUserData({ silent: true });
+    };
+
+    const id = window.setInterval(() => {
+      void refreshInBackground();
+    }, SESSION_REFRESH_INTERVAL_MS);
+
+    return () => {
+      active = false;
+      window.clearInterval(id);
+    };
+  }, [user, loadUserData]);
 
   const signOut = async () => {
     const { error } = await insforgeClient.auth.signOut();

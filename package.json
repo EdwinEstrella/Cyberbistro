@@ -1,6 +1,6 @@
 {
   "name": "cyberbistro",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "description": "Cyberbistro Desktop App",
   "author": "Edwin",
   "main": "dist-electron/main.js",
@@ -68,7 +68,9 @@
     "make": "npm run build && electron-forge make",
     "dist:win": "npm run icon:build && npm run build && electron-builder --win",
     "release:win": "npm run icon:build && npm run build && electron-builder --win --publish always",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@electron-forge/cli": "^7.11.1",
@@ -87,7 +89,8 @@
     "sharp": "^0.34.5",
     "tailwindcss": "4.1.12",
     "vite": "6.4.2",
-    "vite-plugin-electron": "^0.29.0"
+    "vite-plugin-electron": "^0.29.0",
+    "vitest": "^3.2.4"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",

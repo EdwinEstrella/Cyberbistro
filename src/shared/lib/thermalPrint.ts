@@ -22,7 +22,8 @@ export interface PrintThermalResult {
 }
 
 /**
- * Imprime HTML térmico: en Electron usa IPC + impresora del sistema; en navegador, ventana + print().
+ * Impresión térmica: **ruta principal** en escritorio es Electron (`preload` → proceso principal → impresora).
+ * Si no hay `electronAPI` (p. ej. `vite` solo en el navegador para desarrollo), se usa un fallback con `window.print()`.
  */
 export async function printThermalHtml(html: string): Promise<PrintThermalResult> {
   const settings = getThermalPrintSettings();

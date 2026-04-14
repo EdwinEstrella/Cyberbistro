@@ -2,6 +2,22 @@
 @import './tailwind.css';
 @import './theme.css';
 
+/* Tokens compartidos (CyberBistro) — usar en CSS custom / futuros componentes */
+:root {
+  --cb-radius-sm: 2px;
+  --cb-radius-md: 12px;
+  --cb-radius-lg: 24px;
+  --cb-space-xs: 8px;
+  --cb-space-sm: 16px;
+  --cb-space-md: 24px;
+  --cb-space-lg: 32px;
+  --cb-accent: #ff906d;
+  --cb-accent-muted: rgba(255, 144, 109, 0.1);
+  --cb-surface: #131313;
+  --cb-surface-elevated: #201f1f;
+  --cb-border-subtle: rgba(72, 72, 71, 0.2);
+}
+
 /* Ocultar barras de scroll globalmente */
 * {
   scrollbar-width: none; /* Firefox */

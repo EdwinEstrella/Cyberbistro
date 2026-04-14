@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Eye, Printer } from "lucide-react";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
@@ -61,17 +61,11 @@ function itemCount(inv: Invoice): number {
 export function Billing() {
   const { tenantId, loading: authLoading } = useAuth();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [filteredInvoices, setFilteredInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<string>("todos");
   const [methodFilter, setMethodFilter] = useState<string>("todos");
   const [invoiceModal, setInvoiceModal] = useState<Invoice | null>(null);
-
-  // Stats
-  const [totalRevenue, setTotalRevenue] = useState(0);
-  const [pendingCount, setPendingCount] = useState(0);
-  const [pendingAmount, setPendingAmount] = useState(0);
 
   const loadInvoices = useCallback(async () => {
     if (!tenantId) {
@@ -102,41 +96,41 @@ export function Billing() {
   }, [authLoading, loadInvoices]);
 
   useEffect(() => {
-    applyFilters();
-  }, [invoices, statusFilter, methodFilter]);
-
-  useEffect(() => {
     setCurrentPage(1);
   }, [statusFilter, methodFilter]);
 
-  function applyFilters() {
+  const filteredInvoices = useMemo(() => {
     let filtered = invoices;
-
     if (statusFilter !== "todos") {
       filtered = filtered.filter((inv) => inv.estado === statusFilter);
     }
-
     if (methodFilter !== "todos") {
       filtered = filtered.filter((inv) => inv.metodo_pago === methodFilter);
     }
+    return filtered;
+  }, [invoices, statusFilter, methodFilter]);
 
-    setFilteredInvoices(filtered);
-
-    // Calculate stats
+  const { totalRevenue, pendingCount, pendingAmount } = useMemo(() => {
     const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const recentInvoices = invoices.filter((inv) => new Date(inv.created_at) > last24h && inv.estado === "pagada");
-    setTotalRevenue(recentInvoices.reduce((sum, inv) => sum + inv.total, 0));
-
+    const recentInvoices = invoices.filter(
+      (inv) => new Date(inv.created_at) > last24h && inv.estado === "pagada"
+    );
     const pending = invoices.filter((inv) => inv.estado === "pendiente");
-    setPendingCount(pending.length);
-    setPendingAmount(pending.reduce((sum, inv) => sum + inv.total, 0));
-  }
+    return {
+      totalRevenue: recentInvoices.reduce((sum, inv) => sum + inv.total, 0),
+      pendingCount: pending.length,
+      pendingAmount: pending.reduce((sum, inv) => sum + inv.total, 0),
+    };
+  }, [invoices]);
 
   const itemsPerPage = 10;
-  const totalPages = Math.ceil(filteredInvoices.length / itemsPerPage);
+  const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / itemsPerPage));
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
-  const pageData = filteredInvoices.slice(startIndex, endIndex);
+  const pageData = useMemo(
+    () => filteredInvoices.slice(startIndex, endIndex),
+    [filteredInvoices, startIndex, endIndex]
+  );
 
   function getMethodDisplay(method: string): { label: string; pillClass: string } {
     switch (method) {

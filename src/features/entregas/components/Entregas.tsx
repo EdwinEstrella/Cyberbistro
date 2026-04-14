@@ -68,13 +68,6 @@ export function Entregas() {
       }
 
       const platoIds = [...new Set((consumos as { plato_id: number }[]).map((c) => c.plato_id))];
-      const { data: platos } =
-        platoIds.length > 0
-          ? await insforgeClient.database.from("platos").select("id, va_a_cocina").in("id", platoIds)
-          : { data: [] as { id: number; va_a_cocina: boolean }[] };
-
-      const platoMap = new Map((platos ?? []).map((p) => [p.id, p.va_a_cocina]));
-
       const comandaIds = [
         ...new Set(
           (consumos as { comanda_id: string | null }[])
@@ -82,10 +75,20 @@ export function Entregas() {
             .filter((id): id is string => Boolean(id))
         ),
       ];
-      const { data: comandasRows } =
+
+      const [platosRes, comandasRes] = await Promise.all([
+        platoIds.length > 0
+          ? insforgeClient.database.from("platos").select("id, va_a_cocina").in("id", platoIds)
+          : Promise.resolve({ data: [] as { id: number; va_a_cocina: boolean }[], error: null }),
         comandaIds.length > 0
-          ? await insforgeClient.database.from("comandas").select("id, estado").in("id", comandaIds)
-          : { data: [] as { id: string; estado: string }[] };
+          ? insforgeClient.database.from("comandas").select("id, estado").in("id", comandaIds)
+          : Promise.resolve({ data: [] as { id: string; estado: string }[], error: null }),
+      ]);
+
+      const platos = platosRes.data;
+      const comandasRows = comandasRes.data;
+
+      const platoMap = new Map((platos ?? []).map((p) => [p.id, p.va_a_cocina]));
 
       const comandaEstadoById = new Map((comandasRows ?? []).map((c) => [c.id, c.estado]));
 

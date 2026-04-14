@@ -57,3 +57,14 @@ export function prepareNcfForFacturaInsert(row: TenantNcfRow): {
   if (!ncf) return null;
   return { ncf, ncf_tipo: etiquetaTipoNcf(codigo), usedSequence: seq };
 }
+
+/** Construye el payload de factura a partir de la secuencia ya reservada en BD (RPC atómico). */
+export function ncfPayloadFromReservedSequence(
+  ncfTipoDefault: string | null | undefined,
+  seqReserved: number
+): { ncf: string; ncf_tipo: string; usedSequence: number } | null {
+  const codigo = (ncfTipoDefault || "").trim().toUpperCase();
+  const ncf = construirCadenaNcf(codigo, seqReserved);
+  if (!ncf) return null;
+  return { ncf, ncf_tipo: etiquetaTipoNcf(codigo), usedSequence: seqReserved };
+}

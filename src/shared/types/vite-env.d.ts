@@ -2,6 +2,15 @@
 
 declare const __APP_VERSION__: string;
 
+interface ImportMetaEnv {
+  readonly VITE_INSFORGE_BASE_URL?: string;
+  readonly VITE_INSFORGE_ANON_KEY?: string;
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}
+
 // Figma asset virtual modules resolved by the figmaAssetResolver Vite plugin
 declare module 'figma:asset/*' {
   const src: string;

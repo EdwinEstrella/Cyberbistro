@@ -2,6 +2,21 @@
 
 const { contextBridge, ipcRenderer } = require('electron')
 
+function isPrintThermalPayload(v) {
+  if (v === null || typeof v !== 'object') return false
+  if (typeof v.html !== 'string' || v.html.length === 0) return false
+  if (v.html.length > 5_000_000) return false
+  if (v.deviceName !== undefined && typeof v.deviceName !== 'string') return false
+  if (v.silent !== undefined && typeof v.silent !== 'boolean') return false
+  if (
+    v.paperWidthMm !== undefined &&
+    (typeof v.paperWidthMm !== 'number' || !Number.isFinite(v.paperWidthMm))
+  ) {
+    return false
+  }
+  return true
+}
+
 contextBridge.exposeInMainWorld('electronAPI', {
   minimize: () => {
     console.log('preload: minimize called')
@@ -24,7 +39,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
   },
   listPrinters: () => ipcRenderer.invoke('printers:list'),
-  printThermal: (opts) => ipcRenderer.invoke('print:thermal', opts),
+  printThermal: (opts) => {
+    if (!isPrintThermalPayload(opts)) {
+      return Promise.resolve({ ok: false, error: 'Payload de impresión inválido' })
+    }
+    return ipcRenderer.invoke('print:thermal', opts)
+  },
   checkForUpdates: () => {
     ipcRenderer.send('check-for-updates')
   },

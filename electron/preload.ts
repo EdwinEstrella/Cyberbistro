@@ -1,5 +1,26 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
+function isPrintThermalPayload(v: unknown): v is {
+  html: string
+  deviceName?: string
+  silent?: boolean
+  paperWidthMm?: number
+} {
+  if (v === null || typeof v !== 'object') return false
+  const o = v as Record<string, unknown>
+  if (typeof o.html !== 'string' || o.html.length === 0) return false
+  if (o.html.length > 5_000_000) return false
+  if (o.deviceName !== undefined && typeof o.deviceName !== 'string') return false
+  if (o.silent !== undefined && typeof o.silent !== 'boolean') return false
+  if (
+    o.paperWidthMm !== undefined &&
+    (typeof o.paperWidthMm !== 'number' || !Number.isFinite(o.paperWidthMm))
+  ) {
+    return false
+  }
+  return true
+}
+
 contextBridge.exposeInMainWorld('electronAPI', {
   minimize: () => {
     console.log('preload: minimize called')
@@ -22,7 +43,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
   },
   listPrinters: () => ipcRenderer.invoke('printers:list'),
-  printThermal: (opts: unknown) => ipcRenderer.invoke('print:thermal', opts),
+  printThermal: (opts: unknown) => {
+    if (!isPrintThermalPayload(opts)) {
+      return Promise.resolve({ ok: false, error: 'Payload de impresión inválido' })
+    }
+    return ipcRenderer.invoke('print:thermal', opts)
+  },
 })
 
 window.addEventListener('DOMContentLoaded', () => {

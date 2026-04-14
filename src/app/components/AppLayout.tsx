@@ -64,18 +64,28 @@ export function AppLayout() {
     return main;
   }, [rol]);
 
-  // Re-fetch kitchen status on every route change so the badge stays in sync
+  // Re-fetch kitchen status per tenant on route change (never mix tenants in SaaS)
   useEffect(() => {
+    if (!tenantId) {
+      setCocinaActiva(true);
+      return;
+    }
+    let cancelled = false;
     insforgeClient.database
       .from("cocina_estado")
       .select("activa")
+      .eq("tenant_id", tenantId)
       .limit(1)
       .then(({ data, error }) => {
+        if (cancelled) return;
         if (!error && data?.[0]) {
           setCocinaActiva(data[0].activa);
         }
       });
-  }, [location.pathname]);
+    return () => {
+      cancelled = true;
+    };
+  }, [location.pathname, tenantId]);
 
   const isAjustesActive = location.pathname === "/ajustes";
 
@@ -88,20 +98,25 @@ export function AppLayout() {
       <VentaCartSearchProvider value={{ query: ventaCartSearch, setQuery: setVentaCartSearch }}>
       <div className="flex flex-1 min-h-0">
         {/* Sidebar */}
-        <aside className="bg-[#131313] flex flex-col w-[256px] shrink-0 min-h-0 self-stretch z-20">
+        <aside
+          className="bg-[#131313] flex flex-col w-[256px] shrink-0 min-h-0 self-stretch z-20"
+          aria-label="Navegación principal"
+        >
           <nav className="flex-1 flex flex-col gap-[8px] px-[16px] pt-[16px]">
             {sideNavItems.map((item) => {
               const isActive = location.pathname === item.path;
               return (
-                <div
+                <button
                   key={item.label}
+                  type="button"
                   onClick={() => navigate(item.path)}
-                  className={`flex gap-[16px] items-center px-[16px] py-[12px] rounded-none cursor-pointer relative ${isActive ? "bg-[#262626]" : ""}`}
+                  aria-current={isActive ? "page" : undefined}
+                  className={`flex gap-[16px] items-center px-[16px] py-[12px] rounded-none cursor-pointer relative border-none bg-transparent text-left w-full ${isActive ? "bg-[#262626]" : ""}`}
                 >
                   {isActive && (
-                    <div className="absolute left-0 top-0 bottom-0 w-[4px] bg-[#ff906d]" />
+                    <div className="absolute left-0 top-0 bottom-0 w-[4px] bg-[#ff906d]" aria-hidden />
                   )}
-                  <svg className="shrink-0 size-[18px]" fill="none" viewBox={item.viewBox}>
+                  <svg className="shrink-0 size-[18px]" fill="none" viewBox={item.viewBox} aria-hidden>
                     <path
                       d={item.icon}
                       fill={isActive ? "#FF906D" : "#6B7280"}
@@ -114,7 +129,7 @@ export function AppLayout() {
                   >
                     {item.label}
                   </span>
-                </div>
+                </button>
               );
             })}
           </nav>
@@ -122,14 +137,16 @@ export function AppLayout() {
           <div className="border-t border-[rgba(72,72,71,0.2)] px-[16px] py-[16px] flex flex-col gap-[8px]">
             {/* Ajustes — solo administrador del negocio */}
             {showAjustesInSidebar(rol) && (
-              <div
+              <button
+                type="button"
                 onClick={() => navigate("/ajustes")}
-                className={`flex gap-[16px] items-center px-[16px] py-[12px] cursor-pointer relative ${isAjustesActive ? "bg-[#262626]" : ""}`}
+                aria-current={isAjustesActive ? "page" : undefined}
+                className={`flex gap-[16px] items-center px-[16px] py-[12px] cursor-pointer relative border-none bg-transparent text-left w-full ${isAjustesActive ? "bg-[#262626]" : ""}`}
               >
                 {isAjustesActive && (
-                  <div className="absolute left-0 top-0 bottom-0 w-[4px] bg-[#ff906d]" />
+                  <div className="absolute left-0 top-0 bottom-0 w-[4px] bg-[#ff906d]" aria-hidden />
                 )}
-                <svg className="shrink-0 w-[20px] h-[20px]" fill="none" viewBox="0 0 20.1 20">
+                <svg className="shrink-0 w-[20px] h-[20px]" fill="none" viewBox="0 0 20.1 20" aria-hidden>
                   <path d={svgPaths.p3cdadd00} fill={isAjustesActive ? "#FF906D" : "#6B7280"} />
                 </svg>
                 <span
@@ -139,12 +156,12 @@ export function AppLayout() {
                 >
                   Ajustes
                 </span>
-              </div>
+              </button>
             )}
 
-            {/* Cerrar Sesión */}
-            <div
-              className="flex gap-[16px] items-center px-[16px] py-[12px] cursor-pointer"
+            <button
+              type="button"
+              className="flex gap-[16px] items-center px-[16px] py-[12px] cursor-pointer border-none bg-transparent text-left w-full"
               onClick={async () => {
                 try {
                   await signOut();
@@ -154,13 +171,13 @@ export function AppLayout() {
                 navigate("/");
               }}
             >
-              <svg className="shrink-0 size-[18px]" fill="none" viewBox="0 0 18 18">
+              <svg className="shrink-0 size-[18px]" fill="none" viewBox="0 0 18 18" aria-hidden>
                 <path d={svgPaths.p3e9df400} fill="#6B7280" />
               </svg>
               <span className="font-['Space_Grotesk',sans-serif] text-[#6b7280] text-[16px] tracking-[-0.4px]">
                 Cerrar Sesión
               </span>
-            </div>
+            </button>
           </div>
         </aside>
 
@@ -174,29 +191,48 @@ export function AppLayout() {
               </span>
               <div className="hidden sm:block bg-[rgba(72,72,71,0.3)] h-[16px] w-px" />
               {/* Cocina en Vivo badge — reactive to DB */}
-              <div
-                className={`bg-[#201f1f] flex gap-[8px] items-center px-[13px] py-[5px] rounded-full border border-[rgba(72,72,71,0.2)] transition-all ${
-                  canAccessCocinaRoute(rol) ? "cursor-pointer" : "cursor-default opacity-90"
-                }`}
-                onClick={() => {
-                  if (canAccessCocinaRoute(rol)) navigate("/cocina");
-                }}
-                title={
-                  canAccessCocinaRoute(rol)
-                    ? cocinaActiva
-                      ? "Cocina abierta"
-                      : "Cocina cerrada"
-                    : "Estado de cocina (solo personal de cocina o administrador abre la vista)"
-                }
-              >
+              {canAccessCocinaRoute(rol) ? (
+                <button
+                  type="button"
+                  className="bg-[#201f1f] flex gap-[8px] items-center px-[13px] py-[5px] rounded-full border border-[rgba(72,72,71,0.2)] transition-all cursor-pointer"
+                  onClick={() => navigate("/cocina")}
+                  title={cocinaActiva ? "Cocina abierta" : "Cocina cerrada"}
+                  aria-label={
+                    cocinaActiva
+                      ? "Cocina abierta. Ir a vista cocina."
+                      : "Cocina cerrada. Ir a vista cocina."
+                  }
+                >
+                  <span
+                    className="rounded-full size-[8px] transition-colors"
+                    style={{ backgroundColor: cocinaActiva ? "#59ee50" : "#ff716c" }}
+                    aria-hidden
+                  />
+                  <span className="font-['Space_Grotesk',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.5px] uppercase">
+                    {cocinaActiva ? "Cocina en Vivo" : "Cocina Cerrada"}
+                  </span>
+                </button>
+              ) : (
                 <div
-                  className="rounded-full size-[8px] transition-colors"
-                  style={{ backgroundColor: cocinaActiva ? "#59ee50" : "#ff716c" }}
-                />
-                <span className="font-['Space_Grotesk',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.5px] uppercase">
-                  {cocinaActiva ? "Cocina en Vivo" : "Cocina Cerrada"}
-                </span>
-              </div>
+                  className="bg-[#201f1f] flex gap-[8px] items-center px-[13px] py-[5px] rounded-full border border-[rgba(72,72,71,0.2)] transition-all cursor-default opacity-90"
+                  title="Estado de cocina (solo personal de cocina o administrador abre la vista)"
+                  role="status"
+                  aria-label={
+                    cocinaActiva
+                      ? "Estado: cocina abierta (solo lectura)"
+                      : "Estado: cocina cerrada (solo lectura)"
+                  }
+                >
+                  <span
+                    className="rounded-full size-[8px] transition-colors"
+                    style={{ backgroundColor: cocinaActiva ? "#59ee50" : "#ff716c" }}
+                    aria-hidden
+                  />
+                  <span className="font-['Space_Grotesk',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.5px] uppercase">
+                    {cocinaActiva ? "Cocina en Vivo" : "Cocina Cerrada"}
+                  </span>
+                </div>
+              )}
             </div>
             <div className="flex gap-[12px] sm:gap-[24px] items-center shrink-0">
               {isVentaRoute ? (

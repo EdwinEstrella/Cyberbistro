@@ -2,9 +2,11 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { MESAS_CONFIG } from "../config/mesas";
+import { estadoColors, estadoLabels, type MesaEstadoVisual } from "../config/estadoTheme";
 import { MesaCloseAccountModal } from "../../billing/components/MesaCloseAccountModal";
+import { TableMesaCard } from "./TableMesaCard";
 
-type Estado = "libre" | "ocupada" | "limpieza";
+type Estado = MesaEstadoVisual;
 
 interface MesaEstadoDB {
   id: number;
@@ -26,33 +28,6 @@ interface Mesa extends MesaConfig {
   span_filas: number;
   span_columnas: number;
 }
-
-const estadoColors: Record<Estado, { border: string; bg: string; text: string; dot: string }> = {
-  libre: {
-    border: "rgba(89,238,80,0.5)",
-    bg: "rgba(89,238,80,0.06)",
-    text: "#59ee50",
-    dot: "#59ee50",
-  },
-  ocupada: {
-    border: "rgba(255,113,108,0.5)",
-    bg: "rgba(255,113,108,0.06)",
-    text: "#ff716c",
-    dot: "#ff716c",
-  },
-  limpieza: {
-    border: "rgba(255,144,109,0.5)",
-    bg: "rgba(255,144,109,0.06)",
-    text: "#ff906d",
-    dot: "#ff906d",
-  },
-};
-
-const estadoLabels: Record<Estado, string> = {
-  libre: "Libre",
-  ocupada: "Ocupada",
-  limpieza: "Limpieza",
-};
 
 function getAdjacentMesas(mesa: Mesa, allMesas: Mesa[]): Mesa[] {
   const visible = allMesas.filter((m) => !m.fusionada && m.id !== mesa.id);
@@ -550,114 +525,19 @@ export function Tables() {
             {visibleMesas.map((mesa) => {
               const isSelected = selectedId === mesa.id;
               const isMergeTarget = mergeMode && adjacentIds.has(mesa.id);
-              const isMerged = mesa.fusion_hijos.length > 0;
-              const colors = estadoColors[mesa.estado];
-
+              const deudaTotal =
+                (deudaPorMesa[mesa.numero] ?? 0) +
+                mesa.fusion_hijos.reduce((s, cid) => s + (deudaPorMesa[cid] ?? 0), 0);
               return (
-                <div
+                <TableMesaCard
                   key={mesa.id}
-                  onClick={() => handleMesaClick(mesa)}
-                  style={{
-                    gridColumn: `${mesa.columna} / span ${mesa.span_columnas}`,
-                    gridRow: `${mesa.fila} / span ${mesa.span_filas}`,
-                    backgroundColor: isSelected
-                      ? "rgba(255,144,109,0.12)"
-                      : isMergeTarget
-                      ? "rgba(89,238,80,0.08)"
-                      : colors.bg,
-                    border: isSelected
-                      ? "2px solid rgba(255,144,109,0.8)"
-                      : isMergeTarget
-                      ? "2px solid rgba(89,238,80,0.7)"
-                      : `2px solid ${colors.border}`,
-                    boxShadow: isSelected
-                      ? "0 0 20px rgba(255,144,109,0.25)"
-                      : isMergeTarget
-                      ? "0 0 16px rgba(89,238,80,0.2)"
-                      : undefined,
-                    borderRadius: 12,
-                    cursor: "pointer",
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 6,
-                    position: "relative",
-                    userSelect: "none",
-                    transition: "border 0.15s, box-shadow 0.15s, background 0.15s",
-                  }}
-                >
-                  {/* Merged indicator */}
-                  {isMerged && (
-                    <div
-                      className="absolute top-[6px] right-[6px] bg-[rgba(255,144,109,0.15)] rounded-[4px] px-[6px] py-[2px]"
-                    >
-                      <span className="font-['Inter',sans-serif] text-[#ff906d] text-[8px] tracking-[0.8px] uppercase font-bold">
-                        Fusionada
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Merge target "+" */}
-                  {isMergeTarget && (
-                    <div
-                      className="absolute inset-0 flex items-center justify-center rounded-[12px]"
-                      style={{ backgroundColor: "rgba(89,238,80,0.06)" }}
-                    >
-                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#59ee50] text-[28px]">
-                        +
-                      </span>
-                    </div>
-                  )}
-
-                  {!isMergeTarget && (
-                    <>
-                      {/* Mesa number */}
-                      <span
-                        className="font-['Space_Grotesk',sans-serif] font-bold text-[22px]"
-                        style={{ color: isSelected ? "#ff906d" : colors.text }}
-                      >
-                        {mesa.numero.toString().padStart(2, "0")}
-                      </span>
-
-                      {/* Status dot + label */}
-                      <div className="flex items-center gap-[5px]">
-                        <div
-                          className="rounded-full size-[6px]"
-                          style={{ backgroundColor: colors.dot }}
-                        />
-                        <span
-                          className="font-['Inter',sans-serif] text-[9px] tracking-[0.8px] uppercase"
-                          style={{ color: colors.text, opacity: 0.7 }}
-                        >
-                          {estadoLabels[mesa.estado]}
-                        </span>
-                      </div>
-
-                      {/* Pending bill */}
-                      {(() => {
-                        const t =
-                          (deudaPorMesa[mesa.numero] ?? 0) +
-                          mesa.fusion_hijos.reduce(
-                            (s, cid) => s + (deudaPorMesa[cid] ?? 0),
-                            0
-                          );
-                        return t > 0 ? (
-                          <span
-                            className="font-['Space_Grotesk',sans-serif] font-bold text-[10px]"
-                            style={{ color: isSelected ? "#ff906d" : colors.text }}
-                          >
-                            {RD(t)}
-                          </span>
-                        ) : (
-                          <span className="font-['Inter',sans-serif] text-[10px] text-[rgba(173,170,170,0.5)]">
-                            {mesa.capacidad} pax
-                          </span>
-                        );
-                      })()}
-                    </>
-                  )}
-                </div>
+                  mesa={mesa}
+                  isSelected={isSelected}
+                  isMergeTarget={isMergeTarget}
+                  deudaTotal={deudaTotal}
+                  onClick={handleMesaClick}
+                  formatCurrency={RD}
+                />
               );
             })}
           </div>
