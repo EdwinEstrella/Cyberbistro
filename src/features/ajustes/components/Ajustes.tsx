@@ -21,6 +21,11 @@ import {
   uploadTenantLogoFile,
 } from "../../../shared/lib/tenantLogoStorage";
 import { useAppUpdate } from "../../updates/AppUpdateContext";
+import {
+  construirCadenaNcf,
+  etiquetaTipoNcf,
+  NCF_TIPO_OPCIONES,
+} from "../../../shared/lib/ncf";
 
 interface Config {
   nombre_empresa: string;
@@ -28,6 +33,9 @@ interface Config {
   logo_url: string;
   direccion: string;
   telefono: string;
+  ncf_fiscal_activo: boolean;
+  ncf_tipo_default: string;
+  ncf_secuencia_siguiente: number;
 }
 
 /** Factura de ejemplo: solo para vista previa en Ajustes (mismos campos que un cobro real). */
@@ -94,6 +102,9 @@ export function Ajustes() {
     logo_url: "",
     direccion: "",
     telefono: "",
+    ncf_fiscal_activo: false,
+    ncf_tipo_default: "B01",
+    ncf_secuencia_siguiente: 1,
   });
   const [thermalPreviewNonce, setThermalPreviewNonce] = useState(0);
   const [thermalPreviewKind, setThermalPreviewKind] =
@@ -102,37 +113,74 @@ export function Ajustes() {
   const [saving, setSaving] = useState(false);
   const [savedOk, setSavedOk] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [partialSaveNote, setPartialSaveNote] = useState("");
   const [uploading, setUploading] = useState(false);
   const [logoUploadError, setLogoUploadError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const TENANT_FIELDS_BASE =
+    "nombre_negocio, rnc, logo_url, direccion, telefono";
+  const TENANT_FIELDS_NCF = "ncf_fiscal_activo, ncf_tipo_default, ncf_secuencia_siguiente";
 
   useEffect(() => {
     if (authLoading) return;
 
     if (!tenantId) {
       setLoading(false);
+      setLoadError("");
       return;
     }
 
     let cancelled = false;
-    insforgeClient.database
-      .from("tenants")
-      .select("nombre_negocio, rnc, logo_url, direccion, telefono")
-      .eq("id", tenantId)
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        if (!error && data) {
-          setConfig({
-            nombre_empresa: data.nombre_negocio ?? "",
-            rnc: data.rnc ?? "",
-            logo_url: data.logo_url ?? "",
-            direccion: data.direccion ?? "",
-            telefono: data.telefono ?? "",
-          });
-        }
+    setLoadError("");
+
+    void (async () => {
+      let res = await insforgeClient.database
+        .from("tenants")
+        .select(`${TENANT_FIELDS_BASE}, ${TENANT_FIELDS_NCF}`)
+        .eq("id", tenantId)
+        .maybeSingle();
+
+      if (res.error && !cancelled) {
+        res = await insforgeClient.database
+          .from("tenants")
+          .select(TENANT_FIELDS_BASE)
+          .eq("id", tenantId)
+          .maybeSingle();
+      }
+
+      if (cancelled) return;
+
+      if (res.error) {
+        setLoadError(
+          res.error.message ||
+            "No se pudo cargar el negocio. Si acabás de desplegar cambios, ejecutá el SQL de columnas NCF o revisá la consola."
+        );
         setLoading(false);
-      });
+        return;
+      }
+
+      const data = res.data;
+      if (data) {
+        const seqRaw = (data as { ncf_secuencia_siguiente?: number | null }).ncf_secuencia_siguiente;
+        setConfig({
+          nombre_empresa: data.nombre_negocio ?? "",
+          rnc: data.rnc ?? "",
+          logo_url: data.logo_url ?? "",
+          direccion: data.direccion ?? "",
+          telefono: data.telefono ?? "",
+          ncf_fiscal_activo: Boolean((data as { ncf_fiscal_activo?: boolean | null }).ncf_fiscal_activo),
+          ncf_tipo_default:
+            ((data as { ncf_tipo_default?: string | null }).ncf_tipo_default || "B01").trim() || "B01",
+          ncf_secuencia_siguiente:
+            seqRaw != null && Number.isFinite(Number(seqRaw)) && Number(seqRaw) >= 1
+              ? Math.floor(Number(seqRaw))
+              : 1,
+        });
+      }
+      setLoading(false);
+    })();
 
     return () => {
       cancelled = true;
@@ -148,19 +196,58 @@ export function Ajustes() {
     setSaving(true);
     setSavedOk(false);
     setSaveError("");
+    setPartialSaveNote("");
     setLogoUploadError("");
 
-    const { error } = await insforgeClient.database
+    const seq = Math.floor(Number(config.ncf_secuencia_siguiente));
+    if (config.ncf_fiscal_activo) {
+      if (!config.ncf_tipo_default.trim()) {
+        setSaveError("Elegí un tipo de comprobante fiscal (NCF).");
+        setSaving(false);
+        return;
+      }
+      if (!Number.isFinite(seq) || seq < 1 || seq > 99999999) {
+        setSaveError("La secuencia NCF debe ser un número entre 1 y 99.999.999.");
+        setSaving(false);
+        return;
+      }
+    }
+
+    const baseUpdate = {
+      nombre_negocio: config.nombre_empresa.trim() || "Mi negocio",
+      rnc: config.rnc.trim() || null,
+      logo_url: config.logo_url.trim() || null,
+      direccion: config.direccion.trim() || null,
+      telefono: config.telefono.trim() || null,
+      updated_at: new Date().toISOString(),
+    };
+    const ncfUpdate = {
+      ncf_fiscal_activo: config.ncf_fiscal_activo,
+      ncf_tipo_default: config.ncf_tipo_default.trim().toUpperCase() || null,
+      ncf_secuencia_siguiente: Number.isFinite(seq) && seq >= 1 ? seq : 1,
+    };
+
+    let { error } = await insforgeClient.database
       .from("tenants")
-      .update({
-        nombre_negocio: config.nombre_empresa.trim() || "Mi negocio",
-        rnc: config.rnc.trim() || null,
-        logo_url: config.logo_url.trim() || null,
-        direccion: config.direccion.trim() || null,
-        telefono: config.telefono.trim() || null,
-        updated_at: new Date().toISOString(),
-      })
+      .update({ ...baseUpdate, ...ncfUpdate })
       .eq("id", tenantId);
+
+    if (error) {
+      const msg = (error.message || "").toLowerCase();
+      if (msg.includes("column") || msg.includes("ncf_") || msg.includes("does not exist")) {
+        const retry = await insforgeClient.database.from("tenants").update(baseUpdate).eq("id", tenantId);
+        error = retry.error;
+        if (!retry.error) {
+          setPartialSaveNote(
+            "Datos básicos guardados. Las columnas NCF aún no existen en la base: ejecutá insforge-sql/add-ncf-fiscal-columns.sql para poder guardar también NCF."
+          );
+          setSaving(false);
+          setSavedOk(true);
+          setTimeout(() => setSavedOk(false), 5000);
+          return;
+        }
+      }
+    }
 
     if (error) {
       setSaveError(error.message || "Error al guardar. Intentá de nuevo.");
@@ -225,8 +312,19 @@ export function Ajustes() {
     const nowIso = new Date().toISOString();
 
     switch (thermalPreviewKind) {
-      case "factura": {
-        const sample = { ...SAMPLE_FACTURA_THERMAL, pagada_at: nowIso };
+      case "factura":
+      default: {
+        let sample = { ...SAMPLE_FACTURA_THERMAL, pagada_at: nowIso };
+        if (config.ncf_fiscal_activo) {
+          const ncf = construirCadenaNcf(config.ncf_tipo_default, config.ncf_secuencia_siguiente);
+          if (ncf) {
+            sample = {
+              ...sample,
+              ncf,
+              ncf_tipo: etiquetaTipoNcf(config.ncf_tipo_default),
+            };
+          }
+        }
         return buildFacturaReceiptHtml(tenantPreview, sample, 1, paperWidthMm);
       }
       case "comanda": {
@@ -271,15 +369,15 @@ export function Ajustes() {
           paperWidthMm
         );
       }
-      default:
-        return buildFacturaReceiptHtml(
-          tenantPreview,
-          { ...SAMPLE_FACTURA_THERMAL, pagada_at: nowIso },
-          1,
-          paperWidthMm
-        );
     }
-  }, [tenantPreview, thermalPreviewNonce, thermalPreviewKind]);
+  }, [
+    tenantPreview,
+    thermalPreviewNonce,
+    thermalPreviewKind,
+    config.ncf_fiscal_activo,
+    config.ncf_tipo_default,
+    config.ncf_secuencia_siguiente,
+  ]);
 
   const thermalIframeTitle =
     thermalPreviewKind === "factura"
@@ -326,6 +424,22 @@ export function Ajustes() {
               </span>
             </div>
           )}
+
+          {partialSaveNote && (
+            <div className="bg-[rgba(255,144,109,0.08)] border border-[rgba(255,144,109,0.25)] rounded-[12px] px-[20px] py-[12px]">
+              <span className="font-['Inter',sans-serif] text-[#ff906d] text-[13px]">
+                {partialSaveNote}
+              </span>
+            </div>
+          )}
+          {loadError && (
+            <div className="bg-[rgba(255,113,108,0.05)] border border-[rgba(255,113,108,0.2)] rounded-[12px] px-[20px] py-[12px]">
+              <span className="font-['Inter',sans-serif] text-[#ff716c] text-[13px]">
+                {loadError}
+              </span>
+            </div>
+          )}
+
           {saveError && (
             <div className="bg-[rgba(255,113,108,0.05)] border border-[rgba(255,113,108,0.2)] rounded-[12px] px-[20px] py-[12px]">
               <span className="font-['Inter',sans-serif] text-[#ff716c] text-[13px]">
@@ -394,6 +508,84 @@ export function Ajustes() {
                 />
               </Field>
             </div>
+          </div>
+
+          <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-[28px] flex flex-col gap-[20px]">
+            <div className="flex flex-col gap-[4px]">
+              <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px]">
+                Comprobante fiscal (NCF)
+              </span>
+              <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px] leading-relaxed">
+                Configurá el tipo DGII y el número en el que vas (p. ej. si el último papel fue
+                B0100000150, poné <span className="text-[#adaaaa]">151</span>). Cada cobro generado
+                desde el POS guardará el NCF en la factura y subirá la secuencia en uno. Ejecutá el
+                script SQL <span className="text-[#adaaaa]">insforge-sql/add-ncf-fiscal-columns.sql</span>{" "}
+                en tu base InsForge si aún no existen las columnas.
+              </span>
+            </div>
+
+            <label className="flex items-center gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={config.ncf_fiscal_activo}
+                onChange={(e) =>
+                  setConfig((prev) => ({ ...prev, ncf_fiscal_activo: e.target.checked }))
+                }
+                className="size-4 rounded border-[rgba(72,72,71,0.5)] accent-[#ff906d]"
+              />
+              <span className="font-['Inter',sans-serif] text-[14px] text-white">
+                Asignar NCF automáticamente al cobrar
+              </span>
+            </label>
+
+            <Field label="Tipo de comprobante">
+              <select
+                value={config.ncf_tipo_default}
+                onChange={(e) =>
+                  setConfig((prev) => ({ ...prev, ncf_tipo_default: e.target.value }))
+                }
+                disabled={!config.ncf_fiscal_activo}
+                className="input-field disabled:opacity-50"
+              >
+                {NCF_TIPO_OPCIONES.map((o) => (
+                  <option key={o.codigo} value={o.codigo}>
+                    {o.descripcion}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field label="Próximo número de secuencia (1 – 99.999.999)">
+              <input
+                type="number"
+                min={1}
+                max={99999999}
+                value={config.ncf_secuencia_siguiente}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10);
+                  setConfig((prev) => ({
+                    ...prev,
+                    ncf_secuencia_siguiente: Number.isFinite(v) ? v : 1,
+                  }));
+                }}
+                disabled={!config.ncf_fiscal_activo}
+                className="input-field disabled:opacity-50"
+              />
+            </Field>
+
+            {config.ncf_fiscal_activo ? (
+              <p className="font-['Inter',sans-serif] text-[13px] text-[#59ee50] m-0">
+                {(() => {
+                  const ncf = construirCadenaNcf(
+                    config.ncf_tipo_default,
+                    config.ncf_secuencia_siguiente
+                  );
+                  return ncf
+                    ? `Vista previa — próximo NCF: ${ncf}`
+                    : "Revisá el tipo (B01, E32…) y la secuencia.";
+                })()}
+              </p>
+            ) : null}
           </div>
 
           <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-[28px] flex flex-col gap-[16px]">

@@ -38,6 +38,10 @@ interface Invoice {
   created_at: string;
   pagada_at: string | null;
   notas?: string | null;
+  ncf?: string | null;
+  ncf_tipo?: string | null;
+  cliente_nombre?: string | null;
+  cliente_rnc?: string | null;
 }
 
 const statusConfig: Record<InvoiceStatus, { label: string; color: string; bg: string; shadow?: string }> = {
@@ -142,6 +146,8 @@ export function Billing() {
         return { label: "Tarjeta", pillClass: "bg-[rgba(147,197,253,0.12)] text-[#93c5fd]" };
       case "digital":
         return { label: "Digital", pillClass: "bg-[rgba(255,144,109,0.12)] text-[#ff906d]" };
+      case "transferencia":
+        return { label: "Transferencia", pillClass: "bg-[rgba(196,181,253,0.12)] text-[#c4b5fd]" };
       default:
         return { label: method, pillClass: "bg-[#333] text-[#adaaaa]" };
     }
@@ -149,8 +155,10 @@ export function Billing() {
 
   const printInvoice = useCallback(
     async (inv: Invoice) => {
+      if (!tenantId) return;
+      if (inv.tenant_id != null && inv.tenant_id !== tenantId) return;
+
       const tid = inv.tenant_id ?? tenantId;
-      if (!tid) return;
 
       const { data: tenant, error: tenantError } = await insforgeClient.database
         .from("tenants")
@@ -185,6 +193,10 @@ export function Billing() {
           created_at: inv.created_at,
           estado: inv.estado,
           propina: inv.propina,
+          ncf: inv.ncf ?? null,
+          ncf_tipo: inv.ncf_tipo ?? null,
+          cliente_nombre: inv.cliente_nombre ?? null,
+          cliente_rnc: inv.cliente_rnc ?? null,
         },
         inv.numero_factura,
         paperWidthMm
@@ -333,6 +345,7 @@ export function Billing() {
             <option value="efectivo">Efectivo</option>
             <option value="tarjeta">Tarjeta</option>
             <option value="digital">Digital</option>
+            <option value="transferencia">Transferencia</option>
           </select>
         </div>
         <button
@@ -618,6 +631,22 @@ export function Billing() {
                     ))}
                   </ul>
                 </div>
+
+                {invoiceModal.ncf ? (
+                  <div className="rounded-xl border border-[rgba(89,238,80,0.25)] bg-[rgba(89,238,80,0.06)] px-3 py-2.5 space-y-1">
+                    <div className="font-['Inter',sans-serif] text-[10px] font-bold uppercase tracking-wide text-[#59ee50]">
+                      Comprobante fiscal
+                    </div>
+                    <div className="font-['Space_Grotesk',sans-serif] text-[15px] font-bold text-white tracking-wide">
+                      {invoiceModal.ncf}
+                    </div>
+                    {invoiceModal.ncf_tipo ? (
+                      <div className="font-['Inter',sans-serif] text-[12px] text-[#adaaaa] leading-snug">
+                        {invoiceModal.ncf_tipo}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 <div className="space-y-1.5 font-['Inter',sans-serif] text-[14px] text-[#adaaaa]">
                   <div className="flex justify-between">

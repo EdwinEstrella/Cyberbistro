@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { MESAS_CONFIG } from "../config/mesas";
@@ -123,22 +123,42 @@ interface ConsumoPanelRow {
   comanda_id: string | null;
 }
 
-interface ComandaRaw {
-  mesa_numero: number | null;
-  items: Array<{ precio: number; cantidad: number }>;
-}
-
 export function Tables() {
   const { tenantId, loading: authLoading } = useAuth();
   const [mesas, setMesas] = useState<Mesa[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [mergeMode, setMergeMode] = useState(false);
-  const [mesaTotals, setMesaTotals] = useState<Record<number, number>>({});
+  /** Deuda real = consumos no pagados (misma fuente que el historial del panel). */
+  const [deudaPorMesa, setDeudaPorMesa] = useState<Record<number, number>>({});
   const [historialConsumos, setHistorialConsumos] = useState<ConsumoPanelRow[]>([]);
   const [comandaEstados, setComandaEstados] = useState<Record<string, string>>({});
   const [showCloseAccountModal, setShowCloseAccountModal] = useState(false);
   const [historialVersion, setHistorialVersion] = useState(0);
+
+  const refreshDeudaPorMesa = useCallback(async () => {
+    if (!tenantId) {
+      setDeudaPorMesa({});
+      return;
+    }
+    const { data, error } = await insforgeClient.database
+      .from("consumos")
+      .select("mesa_numero, subtotal")
+      .eq("tenant_id", tenantId)
+      .neq("estado", "pagado");
+
+    if (error || !data) {
+      setDeudaPorMesa({});
+      return;
+    }
+    const map: Record<number, number> = {};
+    for (const row of data as { mesa_numero: number | null; subtotal: number }[]) {
+      const mn = Number(row.mesa_numero);
+      if (!Number.isFinite(mn) || mn <= 0) continue;
+      map[mn] = (map[mn] ?? 0) + Number(row.subtotal);
+    }
+    setDeudaPorMesa(map);
+  }, [tenantId]);
 
   useEffect(() => {
     const mesasIniciales = MESAS_CONFIG.map((config) => ({
@@ -155,74 +175,63 @@ export function Tables() {
     if (authLoading) return;
 
     if (!tenantId) {
-      setMesaTotals({});
+      setDeudaPorMesa({});
       setLoading(false);
       return;
     }
 
     setLoading(true);
 
-    Promise.all([
-      insforgeClient.database
-        .from("mesas_estado")
-        .select("*")
-        .eq("tenant_id", tenantId),
-      insforgeClient.database
-        .from("comandas")
-        .select("mesa_numero,items")
-        .eq("tenant_id", tenantId)
-        .in("estado", ["pendiente", "en_preparacion", "listo"]),
-    ]).then(([estadosRes, comandasRes]) => {
-      if (!estadosRes.error && estadosRes.data && estadosRes.data.length > 0) {
-        // Crear mapa de estados por ID
-        const estadosMap = new Map<number, MesaEstadoDB>();
-        for (const e of estadosRes.data as MesaEstadoDB[]) {
-          estadosMap.set(e.id, {
-            ...e,
-            fusion_hijos: e.fusion_hijos ?? [],
-            span_filas: e.span_filas ?? 1,
-            span_columnas: e.span_columnas ?? 1,
-          });
-        }
+    void insforgeClient.database
+      .from("mesas_estado")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .then((estadosRes) => {
+        if (!estadosRes.error && estadosRes.data && estadosRes.data.length > 0) {
+          const estadosMap = new Map<number, MesaEstadoDB>();
+          for (const e of estadosRes.data as MesaEstadoDB[]) {
+            estadosMap.set(e.id, {
+              ...e,
+              fusion_hijos: e.fusion_hijos ?? [],
+              span_filas: e.span_filas ?? 1,
+              span_columnas: e.span_columnas ?? 1,
+            });
+          }
 
-        // Actualizar mesas con los estados de la base de datos
-        setMesas((prev) =>
-          prev.map((m) => {
-            const estadoDB = estadosMap.get(m.id);
-            if (estadoDB) {
-              return {
-                ...m,
-                estado: estadoDB.estado,
-                fusionada: estadoDB.fusionada,
-                fusion_padre_id: estadoDB.fusion_padre_id,
-                fusion_hijos: estadoDB.fusion_hijos,
-                span_filas: estadoDB.span_filas,
-                span_columnas: estadoDB.span_columnas,
-              };
-            }
-            return m;
-          })
-        );
-      }
-
-      // Calcular totales de comandas
-      if (!comandasRes.error && comandasRes.data) {
-        const totals: Record<number, number> = {};
-        for (const c of comandasRes.data as ComandaRaw[]) {
-          const mn = c.mesa_numero;
-          if (mn == null || mn === 0) continue;
-          const sum = (c.items ?? []).reduce(
-            (s, i) => s + (i.precio ?? 0) * (i.cantidad ?? 0),
-            0
+          setMesas((prev) =>
+            prev.map((m) => {
+              const estadoDB = estadosMap.get(m.id);
+              if (estadoDB) {
+                return {
+                  ...m,
+                  estado: estadoDB.estado,
+                  fusionada: estadoDB.fusionada,
+                  fusion_padre_id: estadoDB.fusion_padre_id,
+                  fusion_hijos: estadoDB.fusion_hijos,
+                  span_filas: estadoDB.span_filas,
+                  span_columnas: estadoDB.span_columnas,
+                };
+              }
+              return m;
+            })
           );
-          totals[mn] = (totals[mn] ?? 0) + sum;
         }
-        setMesaTotals(totals);
-      }
 
-      setLoading(false);
-    });
-  }, [authLoading, tenantId]);
+        setLoading(false);
+        void refreshDeudaPorMesa();
+      });
+  }, [authLoading, tenantId, refreshDeudaPorMesa]);
+
+  useEffect(() => {
+    if (!tenantId || authLoading) return;
+    const id = window.setInterval(() => void refreshDeudaPorMesa(), 20000);
+    return () => window.clearInterval(id);
+  }, [tenantId, authLoading, refreshDeudaPorMesa]);
+
+  useEffect(() => {
+    if (!tenantId) return;
+    void refreshDeudaPorMesa();
+  }, [tenantId, historialVersion, refreshDeudaPorMesa]);
 
   const selectedMesaNumero = useMemo(() => {
     if (selectedId == null) return null;
@@ -628,9 +637,9 @@ export function Tables() {
                       {/* Pending bill */}
                       {(() => {
                         const t =
-                          (mesaTotals[mesa.id] ?? 0) +
+                          (deudaPorMesa[mesa.numero] ?? 0) +
                           mesa.fusion_hijos.reduce(
-                            (s, cid) => s + (mesaTotals[cid] ?? 0),
+                            (s, cid) => s + (deudaPorMesa[cid] ?? 0),
                             0
                           );
                         return t > 0 ? (
@@ -811,9 +820,9 @@ export function Tables() {
             {/* Balance pendiente */}
             {(() => {
               const t =
-                (mesaTotals[selectedMesa.id] ?? 0) +
+                (deudaPorMesa[selectedMesa.numero] ?? 0) +
                 selectedMesa.fusion_hijos.reduce(
-                  (s, cid) => s + (mesaTotals[cid] ?? 0),
+                  (s, cid) => s + (deudaPorMesa[cid] ?? 0),
                   0
                 );
               return t > 0 ? (
@@ -897,6 +906,12 @@ export function Tables() {
           mesaNumero={selectedMesa.numero}
           onSettled={() => {
             setHistorialVersion((v) => v + 1);
+            void refreshDeudaPorMesa();
+          }}
+          onPaidFull={async () => {
+            setHistorialVersion((v) => v + 1);
+            await refreshDeudaPorMesa();
+            await changeEstado(selectedMesa.id, "libre");
           }}
         />
       )}

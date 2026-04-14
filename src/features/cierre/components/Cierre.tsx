@@ -41,6 +41,7 @@ const METODO_ETIQUETA: Record<string, string> = {
   efectivo: "Efectivo",
   tarjeta: "Tarjeta",
   digital: "Digital",
+  transferencia: "Transferencia",
 };
 
 function etiquetaMetodo(m: string): string {

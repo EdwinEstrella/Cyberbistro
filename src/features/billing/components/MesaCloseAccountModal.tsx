@@ -3,6 +3,11 @@ import { insforgeClient } from "../../../shared/lib/insforge";
 import { buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
+import {
+  incrementTenantNcfSequence,
+  loadTenantNcfRow,
+  ncfPayloadForInsert,
+} from "../../../shared/lib/invoiceNcf";
 
 const ITBIS = 0.18;
 
@@ -54,6 +59,49 @@ async function loadTableConsumption(
   return data as MesaConsumoRow[];
 }
 
+function groupConsumosForFactura(consumos: MesaConsumoRow[]) {
+  const groupedItems = consumos.reduce(
+    (acc, consumo) => {
+      const key = consumo.plato_id;
+      if (!acc[key]) {
+        acc[key] = {
+          plato_id: consumo.plato_id,
+          nombre: consumo.nombre,
+          cantidad: 0,
+          precio_unitario: consumo.precio_unitario,
+          subtotal: 0,
+        };
+      }
+      acc[key].cantidad += consumo.cantidad;
+      acc[key].subtotal += consumo.subtotal;
+      return acc;
+    },
+    {} as Record<
+      number,
+      { plato_id: number; nombre: string; cantidad: number; precio_unitario: number; subtotal: number }
+    >
+  );
+  const facturaItems = Object.values(groupedItems);
+  const subtotal = consumos.reduce((sum, c) => sum + Number(c.subtotal), 0);
+  const itbis = subtotal * ITBIS;
+  const total = subtotal + itbis;
+  return { facturaItems, subtotal, itbis, total };
+}
+
+/** Cierra comandas de cocina abiertas para esta mesa (evita que la vista Mesas siga sumando su total). */
+async function cerrarComandasCocinaMesa(tenantId: string, mesaNumero: number): Promise<void> {
+  const { error } = await insforgeClient.database
+    .from("comandas")
+    .update({ estado: "entregado", updated_at: new Date().toISOString() })
+    .eq("tenant_id", tenantId)
+    .eq("mesa_numero", mesaNumero)
+    .in("estado", ["pendiente", "en_preparacion", "listo"]);
+
+  if (error) {
+    console.warn("MesaCloseAccountModal: no se pudieron cerrar comandas de cocina:", error);
+  }
+}
+
 export function MesaCloseAccountModal({
   open,
   onClose,
@@ -65,11 +113,12 @@ export function MesaCloseAccountModal({
   const [mesaConsumos, setMesaConsumos] = useState<MesaConsumoRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [charging, setCharging] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<"efectivo" | "tarjeta" | "digital">(
-    "efectivo"
-  );
+  const [paymentMethod, setPaymentMethod] = useState<
+    "efectivo" | "tarjeta" | "digital" | "transferencia"
+  >("efectivo");
   const [splitMode, setSplitMode] = useState(false);
-  const [selectedConsumos, setSelectedConsumos] = useState<Set<string>>(new Set());
+  /** En modo dividir: cada línea de consumo va a una persona 1..splitParts (ítem completo, no se parte el monto). */
+  const [personByConsumoId, setPersonByConsumoId] = useState<Record<string, number>>({});
   const [splitParts, setSplitParts] = useState(2);
 
   const refreshConsumos = useCallback(async () => {
@@ -80,7 +129,7 @@ export function MesaCloseAccountModal({
   useEffect(() => {
     if (!open) {
       setSplitMode(false);
-      setSelectedConsumos(new Set());
+      setPersonByConsumoId({});
       setPaymentMethod("efectivo");
       return;
     }
@@ -98,11 +147,31 @@ export function MesaCloseAccountModal({
     };
   }, [open, tenantId, mesaNumero]);
 
+  useEffect(() => {
+    if (!open || !splitMode || mesaConsumos.length === 0) return;
+    setPersonByConsumoId((prev) => {
+      const next = { ...prev };
+      const allowed = new Set(mesaConsumos.map((c) => c.id));
+      for (const k of Object.keys(next)) {
+        if (!allowed.has(k)) delete next[k];
+      }
+      for (const c of mesaConsumos) {
+        let p = next[c.id];
+        if (p == null || !Number.isFinite(p)) p = 1;
+        next[c.id] = Math.min(Math.max(1, Math.floor(p)), splitParts);
+      }
+      return next;
+    });
+  }, [open, splitMode, mesaConsumos, splitParts]);
+
   async function printFactura(facturaId: string, numeroFactura: number) {
+    if (!tenantId) return;
+
     const { data: factura, error: facturaError } = await insforgeClient.database
       .from("facturas")
       .select("*")
       .eq("id", facturaId)
+      .eq("tenant_id", tenantId)
       .single();
 
     if (facturaError || !factura) {
@@ -113,7 +182,7 @@ export function MesaCloseAccountModal({
     const { data: tenant } = await insforgeClient.database
       .from("tenants")
       .select("nombre_negocio, rnc, direccion, telefono, logo_url")
-      .eq("id", factura.tenant_id)
+      .eq("id", tenantId)
       .single();
 
     if (!tenant) {
@@ -141,85 +210,86 @@ export function MesaCloseAccountModal({
     }
   }
 
-  function toggleConsumoSelection(consumoId: string) {
-    setSelectedConsumos((prev) => {
-      const next = new Set(prev);
-      if (next.has(consumoId)) next.delete(consumoId);
-      else next.add(consumoId);
-      return next;
-    });
+  function collectPersonGroups(): Map<number, MesaConsumoRow[]> {
+    const m = new Map<number, MesaConsumoRow[]>();
+    for (let p = 1; p <= splitParts; p++) m.set(p, []);
+    for (const c of mesaConsumos) {
+      const raw = personByConsumoId[c.id];
+      const p = Math.min(
+        Math.max(1, raw == null || !Number.isFinite(raw) ? 1 : Math.floor(raw)),
+        splitParts
+      );
+      m.get(p)!.push(c);
+    }
+    return m;
   }
 
-  function selectAllConsumos() {
-    setSelectedConsumos(new Set(mesaConsumos.map((c) => c.id)));
-  }
-
-  function clearConsumoSelection() {
-    setSelectedConsumos(new Set());
-  }
-
-  function splitConsumosEqually() {
+  function assignRoundRobinByItems() {
     if (mesaConsumos.length === 0) return;
-    const itemsPerPerson = Math.ceil(mesaConsumos.length / splitParts);
-    const next = new Set<string>();
-    mesaConsumos.forEach((consumo, index) => {
-      if (index < itemsPerPerson) next.add(consumo.id);
+    const next: Record<string, number> = { ...personByConsumoId };
+    mesaConsumos.forEach((c, i) => {
+      next[c.id] = (i % splitParts) + 1;
     });
-    setSelectedConsumos(next);
+    setPersonByConsumoId(next);
+  }
+
+  function assignAllToPerson(person: number) {
+    const p = Math.min(Math.max(1, person), splitParts);
+    const next: Record<string, number> = {};
+    for (const c of mesaConsumos) next[c.id] = p;
+    setPersonByConsumoId(next);
   }
 
   function calculateTotals() {
-    const consumosToBill =
-      splitMode && selectedConsumos.size > 0
-        ? mesaConsumos.filter((c) => selectedConsumos.has(c.id))
-        : mesaConsumos;
-
-    const subtotal = consumosToBill.reduce((sum, c) => sum + Number(c.subtotal), 0);
+    const subtotal = mesaConsumos.reduce((sum, c) => sum + Number(c.subtotal), 0);
     const itbis = subtotal * ITBIS;
     const total = subtotal + itbis;
     return { subtotal, itbis, total };
   }
 
-  async function createPartialInvoice() {
+  /**
+   * Emite una factura por grupo de persona. Cada factura obtiene su propio NCF (secuencia +1 por factura).
+   * `mode === "all"`: todas las personas con ítems. `mode === n`: solo persona n.
+   */
+  async function createSplitInvoices(mode: "all" | number) {
     if (!tenantId) return;
-    if (selectedConsumos.size === 0) {
-      alert("Selecciona al menos un item para cobrar");
+
+    const groups = collectPersonGroups();
+    const personsWithItems = Array.from({ length: splitParts }, (_, i) => i + 1).filter(
+      (p) => (groups.get(p)?.length ?? 0) > 0
+    );
+
+    const order =
+      mode === "all"
+        ? personsWithItems
+        : typeof mode === "number" && mode >= 1 && mode <= splitParts
+          ? (groups.get(mode)?.length ?? 0) > 0
+            ? [mode]
+            : []
+          : [];
+
+    if (order.length === 0) {
+      alert(
+        mode === "all"
+          ? "No hay ítems asignados a ninguna persona."
+          : `La persona ${mode} no tiene ítems asignados.`
+      );
       return;
     }
 
     setCharging(true);
 
-    const consumosToInvoice = mesaConsumos.filter((c) => selectedConsumos.has(c.id));
+    try {
+      for (const personIndex of order) {
+        const consumosToInvoice = groups.get(personIndex)!;
+        if (consumosToInvoice.length === 0) continue;
 
-    const groupedItems = consumosToInvoice.reduce(
-      (acc, consumo) => {
-        const key = consumo.plato_id;
-        if (!acc[key]) {
-          acc[key] = {
-            plato_id: consumo.plato_id,
-            nombre: consumo.nombre,
-            cantidad: 0,
-            precio_unitario: consumo.precio_unitario,
-            subtotal: 0,
-          };
-        }
-        acc[key].cantidad += consumo.cantidad;
-        acc[key].subtotal += consumo.subtotal;
-        return acc;
-      },
-      {} as Record<number, { plato_id: number; nombre: string; cantidad: number; precio_unitario: number; subtotal: number }>
-    );
+        const { facturaItems, subtotal, itbis, total } = groupConsumosForFactura(consumosToInvoice);
 
-    const facturaItems = Object.values(groupedItems);
+        const ncfRow = await loadTenantNcfRow(tenantId);
+        const ncfPart = ncfPayloadForInsert(ncfRow);
 
-    const subtotal = consumosToInvoice.reduce((sum, c) => sum + Number(c.subtotal), 0);
-    const itbis = subtotal * ITBIS;
-    const total = subtotal + itbis;
-
-    const { data: factura, error: facturaError } = await insforgeClient.database
-      .from("facturas")
-      .insert([
-        {
+        const insertRow: Record<string, unknown> = {
           tenant_id: tenantId,
           mesa_numero: mesaNumero,
           metodo_pago: paymentMethod,
@@ -229,52 +299,67 @@ export function MesaCloseAccountModal({
           propina: 0,
           total,
           items: facturaItems,
-          notas: `Cuenta parcial (${selectedConsumos.size} items)`,
+          notas: `Mesa ${mesaNumero} — Persona ${personIndex} de ${splitParts} (${consumosToInvoice.length} líneas)`,
           pagada_at: new Date().toISOString(),
-        },
-      ])
-      .select()
-      .single();
+        };
+        if (ncfPart) {
+          insertRow.ncf = ncfPart.ncf;
+          insertRow.ncf_tipo = ncfPart.ncf_tipo;
+        }
 
-    if (facturaError || !factura) {
-      console.error("Error al crear factura parcial:", facturaError);
-      alert(`Error al procesar el pago: ${facturaError?.message || "Error desconocido"}`);
+        const { data: factura, error: facturaError } = await insforgeClient.database
+          .from("facturas")
+          .insert([insertRow])
+          .select()
+          .single();
+
+        if (facturaError || !factura) {
+          console.error("Error al crear factura (cuenta dividida):", facturaError);
+          alert(`Error al facturar persona ${personIndex}: ${facturaError?.message || "Error desconocido"}`);
+          break;
+        }
+
+        if (ncfPart) {
+          await incrementTenantNcfSequence(tenantId, ncfPart.usedSequence);
+        }
+
+        await printFactura(factura.id, factura.numero_factura);
+
+        const consumoIds = consumosToInvoice.map((c) => c.id);
+        const { error: updateError } = await insforgeClient.database
+          .from("consumos")
+          .update({
+            estado: "pagado",
+            factura_id: factura.id,
+            updated_at: new Date().toISOString(),
+          })
+          .in("id", consumoIds);
+
+        if (updateError) {
+          console.error("Error al marcar consumos como pagados:", updateError);
+        }
+      }
+    } finally {
       setCharging(false);
-      return;
     }
-
-    await printFactura(factura.id, factura.numero_factura);
-
-    const consumoIds = Array.from(selectedConsumos);
-    const { error: updateError } = await insforgeClient.database
-      .from("consumos")
-      .update({
-        estado: "pagado",
-        factura_id: factura.id,
-        updated_at: new Date().toISOString(),
-      })
-      .in("id", consumoIds);
-
-    if (updateError) {
-      console.error("Error al marcar consumos como pagados:", updateError);
-    }
-
-    const clearedCount = consumoIds.length;
-    setSelectedConsumos(new Set());
 
     const updatedConsumos = await refreshConsumos();
     setMesaConsumos(updatedConsumos);
     await onSettled?.(updatedConsumos);
 
-    setCharging(false);
-
     if (updatedConsumos.length === 0) {
+      await cerrarComandasCocinaMesa(tenantId, mesaNumero);
+      if (mode === "all" && order.length > 1) {
+        alert(`✅ Se emitieron ${order.length} facturas (cada una con su NCF si está activo).`);
+      }
       setSplitMode(false);
+      setPersonByConsumoId({});
       onPaidFull?.();
       onClose();
     } else {
+      const partsDone = mode === "all" ? order.length : 1;
       alert(
-        `✅ Cuenta parcial cobrada (${clearedCount} items).\n\nQuedan ${updatedConsumos.length} items pendientes por cobrar.`
+        `✅ Factura(s) emitida(s): ${partsDone}.\n\nQuedan ${updatedConsumos.length} línea(s) pendiente(s) en la mesa.`
       );
     }
   }
@@ -289,31 +374,10 @@ export function MesaCloseAccountModal({
     setCharging(true);
 
     const consumosToBill = mesaConsumos;
+    const { facturaItems, subtotal, itbis, total } = groupConsumosForFactura(consumosToBill);
 
-    const groupedItems = consumosToBill.reduce(
-      (acc, consumo) => {
-        const key = consumo.plato_id;
-        if (!acc[key]) {
-          acc[key] = {
-            plato_id: consumo.plato_id,
-            nombre: consumo.nombre,
-            cantidad: 0,
-            precio_unitario: consumo.precio_unitario,
-            subtotal: 0,
-          };
-        }
-        acc[key].cantidad += consumo.cantidad;
-        acc[key].subtotal += consumo.subtotal;
-        return acc;
-      },
-      {} as Record<number, { plato_id: number; nombre: string; cantidad: number; precio_unitario: number; subtotal: number }>
-    );
-
-    const facturaItems = Object.values(groupedItems);
-
-    const subtotal = consumosToBill.reduce((sum, c) => sum + Number(c.subtotal), 0);
-    const itbis = subtotal * ITBIS;
-    const total = subtotal + itbis;
+    const ncfRow = await loadTenantNcfRow(tenantId);
+    const ncfPart = ncfPayloadForInsert(ncfRow);
 
     const facturaData: Record<string, unknown> = {
       tenant_id: tenantId,
@@ -328,6 +392,10 @@ export function MesaCloseAccountModal({
       mesa_numero: mesaNumero,
       notas: `Mesa ${mesaNumero}`,
     };
+    if (ncfPart) {
+      facturaData.ncf = ncfPart.ncf;
+      facturaData.ncf_tipo = ncfPart.ncf_tipo;
+    }
 
     const { data: factura, error: facturaError } = await insforgeClient.database
       .from("facturas")
@@ -340,6 +408,10 @@ export function MesaCloseAccountModal({
       alert(`Error al procesar el pago: ${facturaError?.message || "Error desconocido"}`);
       setCharging(false);
       return;
+    }
+
+    if (ncfPart) {
+      await incrementTenantNcfSequence(tenantId, ncfPart.usedSequence);
     }
 
     await printFactura(factura.id, factura.numero_factura);
@@ -362,16 +434,42 @@ export function MesaCloseAccountModal({
     setMesaConsumos(restantes);
     await onSettled?.(restantes);
 
+    if (restantes.length === 0) {
+      await cerrarComandasCocinaMesa(tenantId, mesaNumero);
+    }
+
     setCharging(false);
     setSplitMode(false);
-    setSelectedConsumos(new Set());
-    onPaidFull?.();
-    onClose();
+    setPersonByConsumoId({});
+
+    if (restantes.length === 0) {
+      onPaidFull?.();
+      onClose();
+    } else {
+      alert(
+        `La factura se generó pero quedan ${restantes.length} consumo(s) sin marcar como pagado. Revisá la base de datos o intentá de nuevo.`
+      );
+    }
   }
 
   if (!open) return null;
 
   const { subtotal: calcSubtotal, itbis: calcItbis, total: calcTotal } = calculateTotals();
+  const splitGroups = splitMode && mesaConsumos.length > 0 ? collectPersonGroups() : null;
+  const personsWithItems =
+    splitGroups != null
+      ? Array.from({ length: splitParts }, (_, i) => i + 1).filter(
+          (p) => (splitGroups.get(p)?.length ?? 0) > 0
+        )
+      : [];
+
+  function personIndexForConsumo(c: MesaConsumoRow): number {
+    const raw = personByConsumoId[c.id];
+    return Math.min(
+      Math.max(1, raw == null || !Number.isFinite(raw) ? 1 : Math.floor(raw)),
+      splitParts
+    );
+  }
 
   return (
     <div
@@ -419,7 +517,7 @@ export function MesaCloseAccountModal({
               type="button"
               onClick={() => {
                 setSplitMode(!splitMode);
-                if (!splitMode) setSelectedConsumos(new Set());
+                if (!splitMode) setPersonByConsumoId({});
               }}
               className={`px-4 py-2 rounded-[8px] font-['Inter',sans-serif] font-bold text-[12px] transition-all ${
                 splitMode ? "bg-[#ff906d] text-[#5b1600]" : "bg-[#383838] text-[#adaaaa]"
@@ -432,30 +530,17 @@ export function MesaCloseAccountModal({
 
         {splitMode && mesaConsumos.length > 0 && (
           <div className="bg-[#262626] rounded-[12px] p-[12px] flex flex-col gap-[12px]">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-[6px]">
               <span className="font-['Inter',sans-serif] text-white text-[13px]">
-                Selecciona items que va a pagar esta persona
+                Asigná cada línea a una persona. Cada persona recibe su propia factura (y su NCF si está activo).
               </span>
-              <div className="flex gap-[8px]">
-                <button
-                  type="button"
-                  onClick={selectAllConsumos}
-                  className="px-3 py-1 bg-[#383838] hover:bg-[#444] text-white text-[11px] rounded-[6px] transition-colors"
-                >
-                  Todos
-                </button>
-                <button
-                  type="button"
-                  onClick={clearConsumoSelection}
-                  className="px-3 py-1 bg-[#383838] hover:bg-[#444] text-white text-[11px] rounded-[6px] transition-colors"
-                >
-                  Limpiar
-                </button>
-              </div>
+              <span className="text-[#adaaaa] text-[11px]">
+                Los ítems no se parten por monto: va el artículo completo a la persona que elijas.
+              </span>
             </div>
 
             <div className="flex items-center gap-[12px] flex-wrap">
-              <span className="text-[#adaaaa] text-[12px]">Dividir entre:</span>
+              <span className="text-[#adaaaa] text-[12px]">Personas:</span>
               <div className="flex items-center gap-[8px]">
                 <button
                   type="button"
@@ -474,89 +559,94 @@ export function MesaCloseAccountModal({
                 >
                   +
                 </button>
-                <span className="text-[#adaaaa] text-[12px]">personas</span>
               </div>
               <button
                 type="button"
-                onClick={splitConsumosEqually}
-                className="ml-auto px-4 py-2 bg-[#59ee50] hover:bg-[#4cd444] text-[#0e0e0e] text-[12px] font-bold rounded-[8px] transition-colors"
+                onClick={assignRoundRobinByItems}
+                className="px-4 py-2 bg-[#59ee50] hover:bg-[#4cd444] text-[#0e0e0e] text-[12px] font-bold rounded-[8px] transition-colors"
               >
-                Dividir equitativamente
+                Repartir ítems en ronda
+              </button>
+              <button
+                type="button"
+                onClick={() => assignAllToPerson(1)}
+                className="px-3 py-2 bg-[#383838] hover:bg-[#444] text-white text-[11px] font-bold rounded-[8px] transition-colors"
+              >
+                Todo a persona 1
               </button>
             </div>
           </div>
         )}
 
         {splitMode && mesaConsumos.length > 0 && (
-          <div className="max-h-[200px] overflow-y-auto flex flex-col gap-[6px]">
+          <div className="max-h-[220px] overflow-y-auto flex flex-col gap-[8px]">
             {mesaConsumos.map((consumo) => {
-              const isSelected = selectedConsumos.has(consumo.id);
+              const activePerson = personIndexForConsumo(consumo);
               return (
-                <button
-                  type="button"
+                <div
                   key={consumo.id}
-                  onClick={() => toggleConsumoSelection(consumo.id)}
-                  className={`rounded-[8px] p-[10px] flex items-center justify-between transition-all cursor-pointer text-left w-full border-none ${
-                    isSelected
-                      ? "bg-[#ff906d]/20 border-2 border-[#ff906d]"
-                      : "bg-[#262626] border-2 border-transparent hover:border-[rgba(255,144,109,0.3)]"
-                  }`}
+                  className="rounded-[8px] p-[10px] bg-[#262626] border border-[rgba(72,72,71,0.35)] flex flex-col gap-[8px] sm:flex-row sm:items-center sm:justify-between"
                 >
-                  <div className="flex items-center gap-[10px]">
-                    <div
-                      className={`w-[18px] h-[18px] rounded-[5px] border-2 flex items-center justify-center transition-all shrink-0 ${
-                        isSelected ? "bg-[#ff906d] border-[#ff906d]" : "border-[#6b7280]"
-                      }`}
-                    >
-                      {isSelected && <span className="text-[#5b1600] text-[12px] font-bold">✓</span>}
+                  <div>
+                    <div className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px]">
+                      {consumo.cantidad}× {consumo.nombre}
                     </div>
-                    <div>
-                      <div className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px]">
-                        {consumo.cantidad}× {consumo.nombre}
-                      </div>
-                      <div className="text-[#adaaaa] text-[11px]">
-                        RD$ {Number(consumo.precio_unitario).toFixed(2)} c/u
-                      </div>
+                    <div className="text-[#adaaaa] text-[11px]">
+                      RD$ {Number(consumo.precio_unitario).toFixed(2)} c/u · línea{" "}
+                      <span className="text-[#ff906d]">RD$ {Number(consumo.subtotal).toFixed(2)}</span>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[14px]">
-                      RD$ {Number(consumo.subtotal).toFixed(2)}
-                    </div>
+                  <div className="flex items-center gap-[6px] flex-wrap shrink-0">
+                    <span className="text-[#6b7280] text-[10px] uppercase tracking-wide mr-[4px]">Persona</span>
+                    {Array.from({ length: splitParts }, (_, i) => {
+                      const pn = i + 1;
+                      const on = pn === activePerson;
+                      return (
+                        <button
+                          key={pn}
+                          type="button"
+                          onClick={() =>
+                            setPersonByConsumoId((prev) => ({
+                              ...prev,
+                              [consumo.id]: pn,
+                            }))
+                          }
+                          className={`min-w-[32px] h-[32px] px-[8px] rounded-[8px] font-['Space_Grotesk',sans-serif] font-bold text-[12px] border-none cursor-pointer transition-colors ${
+                            on
+                              ? "bg-[#ff906d] text-[#5b1600]"
+                              : "bg-[#383838] text-[#adaaaa] hover:bg-[#444] hover:text-white"
+                          }`}
+                        >
+                          {pn}
+                        </button>
+                      );
+                    })}
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
         )}
 
         <div className="bg-[#131313] rounded-[12px] p-[14px] flex flex-col gap-[8px]">
-          {splitMode && selectedConsumos.size > 0 && (
+          {splitMode && splitGroups != null && (
             <>
-              <div className="flex justify-between">
-                <span className="font-['Inter',sans-serif] text-[#59ee50] text-[11px]">
-                  Seleccionado ({selectedConsumos.size} items)
-                </span>
-                <span className="font-['Inter',sans-serif] text-[#59ee50] text-[11px]">
-                  {RD(
-                    mesaConsumos
-                      .filter((c) => selectedConsumos.has(c.id))
-                      .reduce((sum, c) => sum + Number(c.subtotal), 0)
-                  )}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">
-                  Restante ({mesaConsumos.length - selectedConsumos.size} items)
-                </span>
-                <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">
-                  {RD(
-                    mesaConsumos
-                      .filter((c) => !selectedConsumos.has(c.id))
-                      .reduce((sum, c) => sum + Number(c.subtotal), 0)
-                  )}
-                </span>
-              </div>
+              {Array.from({ length: splitParts }, (_, i) => i + 1).map((p) => {
+                const rows = splitGroups.get(p) ?? [];
+                if (rows.length === 0) return null;
+                const st = rows.reduce((s, c) => s + Number(c.subtotal), 0);
+                const itb = st * ITBIS;
+                return (
+                  <div key={p} className="flex justify-between gap-[8px]">
+                    <span className="font-['Inter',sans-serif] text-[#59ee50] text-[11px]">
+                      Persona {p} · {rows.length} línea{rows.length !== 1 ? "s" : ""}
+                    </span>
+                    <span className="font-['Inter',sans-serif] text-[#59ee50] text-[11px] text-right">
+                      {RD(st)} + ITBIS {RD(itb)} = {RD(st + itb)}
+                    </span>
+                  </div>
+                );
+              })}
               <div className="border-t border-[rgba(72,72,71,0.3)] my-[4px]" />
             </>
           )}
@@ -571,7 +661,7 @@ export function MesaCloseAccountModal({
           </div>
           <div className="border-t border-[rgba(72,72,71,0.15)] pt-[6px] flex justify-between">
             <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[12px]">
-              {splitMode && selectedConsumos.size > 0 ? "TOTAL PARCIAL" : "TOTAL"}
+              {splitMode ? "TOTAL MESA" : "TOTAL"}
             </span>
             <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[14px]">
               {RD(calcTotal)}
@@ -583,12 +673,13 @@ export function MesaCloseAccountModal({
           <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
             Método de pago
           </span>
-          <div className="grid grid-cols-3 gap-[8px]">
+          <div className="grid grid-cols-2 gap-[8px]">
             {(
               [
                 { value: "efectivo" as const, label: "Efectivo", icon: "💵" },
                 { value: "tarjeta" as const, label: "Tarjeta", icon: "💳" },
                 { value: "digital" as const, label: "Digital", icon: "📱" },
+                { value: "transferencia" as const, label: "Transferencia", icon: "🏦" },
               ] as const
             ).map((method) => (
               <button
@@ -610,33 +701,64 @@ export function MesaCloseAccountModal({
           </div>
         </div>
 
-        <div className="flex gap-[10px]">
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex-1 bg-[#262626] border border-[rgba(72,72,71,0.3)] rounded-[12px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#adaaaa] text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:border-[rgba(255,144,109,0.3)] hover:text-white transition-colors"
-          >
-            Cancelar
-          </button>
+        <div className="flex flex-col gap-[10px]">
+          <div className="flex gap-[10px]">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 bg-[#262626] border border-[rgba(72,72,71,0.3)] rounded-[12px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#adaaaa] text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:border-[rgba(255,144,109,0.3)] hover:text-white transition-colors"
+            >
+              Cancelar
+            </button>
 
-          {splitMode && selectedConsumos.size > 0 ? (
-            <button
-              type="button"
-              onClick={() => void createPartialInvoice()}
-              disabled={charging || loading}
-              className="flex-1 bg-[#ff906d] rounded-[12px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#5b1600] text-[12px] tracking-[0.5px] uppercase cursor-pointer border-none disabled:opacity-50 hover:bg-[#ff784d] transition-opacity"
-            >
-              {charging ? "Procesando..." : `Cobrar ${selectedConsumos.size} items`}
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => void createInvoice()}
-              disabled={charging || loading || mesaConsumos.length === 0}
-              className="flex-1 bg-[#59ee50] rounded-[12px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#0e0e0e] text-[12px] tracking-[0.5px] uppercase cursor-pointer border-none disabled:opacity-50 transition-opacity"
-            >
-              {charging ? "Procesando..." : "Confirmar Pago"}
-            </button>
+            {splitMode ? (
+              <button
+                type="button"
+                onClick={() => void createSplitInvoices("all")}
+                disabled={charging || loading || personsWithItems.length === 0}
+                className="flex-1 bg-[#ff906d] rounded-[12px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#5b1600] text-[12px] tracking-[0.5px] uppercase cursor-pointer border-none disabled:opacity-50 hover:bg-[#ff784d] transition-opacity"
+              >
+                {charging
+                  ? "Procesando..."
+                  : personsWithItems.length <= 1
+                    ? "Emitir factura(s)"
+                    : `Emitir ${personsWithItems.length} facturas`}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void createInvoice()}
+                disabled={charging || loading || mesaConsumos.length === 0}
+                className="flex-1 bg-[#59ee50] rounded-[12px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#0e0e0e] text-[12px] tracking-[0.5px] uppercase cursor-pointer border-none disabled:opacity-50 transition-opacity"
+              >
+                {charging ? "Procesando..." : "Confirmar Pago"}
+              </button>
+            )}
+          </div>
+
+          {splitMode && mesaConsumos.length > 0 && (
+            <div className="flex flex-col gap-[6px]">
+              <span className="text-[#6b7280] text-[10px] uppercase tracking-wide text-center">
+                Cobrar solo una persona (una factura)
+              </span>
+              <div className="flex flex-wrap gap-[6px] justify-center">
+                {Array.from({ length: splitParts }, (_, i) => i + 1).map((p) => {
+                  const n = (splitGroups?.get(p) ?? []).length;
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => void createSplitInvoices(p)}
+                      disabled={charging || loading || n === 0}
+                      className="px-3 py-2 bg-[#383838] hover:bg-[#444] disabled:opacity-40 text-white text-[11px] font-bold rounded-[8px] border-none cursor-pointer transition-colors"
+                    >
+                      Solo P{p}
+                      {n > 0 ? ` (${n})` : ""}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           )}
         </div>
       </div>

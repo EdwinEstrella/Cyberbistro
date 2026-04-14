@@ -21,9 +21,12 @@ function thermalStyles(paperWidthMm: PaperWidthMm): string {
   return `
     @page { size: ${paperWidthMm}mm auto; margin: 2mm; }
     * { box-sizing: border-box; }
+    html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     body {
-      font-family: 'Courier New', Consolas, monospace;
-      font-size: 11px;
+      font-family: Consolas, 'Courier New', Courier, monospace;
+      font-size: 16px;
+      font-weight: 600;
+      line-height: 1.35;
       width: ${bodyMax};
       max-width: ${bodyMax};
       margin: 0 auto;
@@ -31,26 +34,26 @@ function thermalStyles(paperWidthMm: PaperWidthMm): string {
       color: #000;
       background: #fff;
     }
-    h1 { text-align: center; font-size: 14px; margin: 0 0 4px; font-weight: bold; text-transform: uppercase; }
-    h2 { text-align: center; font-size: 12px; margin: 0 0 6px; font-weight: bold; letter-spacing: 0.5px; }
+    h1 { text-align: center; font-size: 21px; margin: 0 0 4px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
+    h2 { text-align: center; font-size: 17px; margin: 0 0 6px; font-weight: 700; letter-spacing: 0.5px; }
     .center { text-align: center; }
     .divider { border: none; border-top: 1px dashed #000; margin: 6px 0; }
     .double-divider { border: none; border-top: 3px double #000; margin: 8px 0; }
     table { width: 100%; border-collapse: collapse; }
-    .header-row td { padding: 2px 0; font-size: 10px; }
-    .total { font-weight: bold; font-size: 12px; }
-    .total-xl td { font-weight: bold; font-size: 14px; padding-top: 4px; }
-    .footer { text-align: center; font-size: 9px; margin-top: 8px; }
+    .header-row td { padding: 3px 0; font-size: 14px; font-weight: 600; }
+    .total { font-weight: 700; font-size: 17px; }
+    .total-xl td { font-weight: 700; font-size: 20px; padding-top: 4px; }
+    .footer { text-align: center; font-size: 13px; margin-top: 8px; font-weight: 600; }
     .logo-wrap { text-align: center; margin-bottom: 8px; }
-    .logo-wrap img { max-width: 100%; max-height: 44px; object-fit: contain; }
+    .logo-wrap img { max-width: 100%; max-height: 52px; object-fit: contain; }
     .item-row td { padding: 3px 0; vertical-align: top; }
-    .fdo-company-line { text-align: center; font-size: 10px; margin: 1px 0; }
-    .fdo-items-head th { text-align: left; font-size: 10px; padding: 4px 0 2px; border-bottom: 1px solid #000; font-weight: bold; }
+    .fdo-company-line { text-align: center; font-size: 14px; margin: 2px 0; font-weight: 600; }
+    .fdo-items-head th { text-align: left; font-size: 14px; padding: 5px 0 3px; border-bottom: 2px solid #000; font-weight: 700; }
     .fdo-items-head th.r { text-align: right; }
     .fdo-items-head th.c { text-align: center; }
-    .fdo-item-name { font-weight: bold; padding-top: 5px; font-size: 11px; }
-    .fdo-item-sub td { font-size: 10px; padding: 1px 0 2px; }
-    .fdo-pay-row td { font-size: 10px; padding: 2px 0; }
+    .fdo-item-name { font-weight: 700; padding-top: 5px; font-size: 16px; }
+    .fdo-item-sub td { font-size: 14px; padding: 2px 0 3px; font-weight: 600; }
+    .fdo-pay-row td { font-size: 14px; padding: 3px 0; font-weight: 600; }
   `;
 }
 
@@ -133,6 +136,7 @@ export function buildFacturaReceiptHtml(
   const clienteRnc = (factura.cliente_rnc || "").trim();
   const ncf = (factura.ncf || "").trim();
   const ncfTipo = (factura.ncf_tipo || "").trim();
+  const esComprobanteFiscal = ncf.length > 0;
   const propina = Number(factura.propina ?? 0);
 
   const itemsRows = factura.items
@@ -160,7 +164,7 @@ export function buildFacturaReceiptHtml(
       : "";
   const metaNcf =
     ncf !== ""
-      ? `<tr class="header-row"><td>NCF</td><td style="text-align:right;font-weight:bold;font-size:10px">${escapeHtml(ncf)}</td></tr>`
+      ? `<tr class="header-row"><td>NCF</td><td style="text-align:right;font-weight:bold;font-size:14px">${escapeHtml(ncf)}</td></tr>`
       : "";
 
   const propinaRow =
@@ -198,15 +202,19 @@ export function buildFacturaReceiptHtml(
   <table>
     <tr class="fdo-pay-row"><td>Estado</td><td style="text-align:right;font-weight:bold">${escapeHtml(estadoEtiqueta)}</td></tr>
   </table>
-  ${factura.notas ? `<div class="divider"></div><div style="font-size:10px"><b>Notas:</b> ${escapeHtml(factura.notas)}</div>` : ""}
+  ${factura.notas ? `<div class="divider"></div><div style="font-size:14px;font-weight:600"><b>Notas:</b> ${escapeHtml(factura.notas)}</div>` : ""}
   <div class="double-divider"></div>
   <div class="footer">
     <p style="margin:0 0 4px">¡Gracias por su compra!</p>
-    <p style="margin:0;font-size:8px">Documento no fiscal — valor informativo</p>
-    <p style="margin:6px 0 0;font-size:8px;opacity:0.85">CyberBistro OS</p>
+    <p style="margin:0;font-size:13px;font-weight:600">${
+      esComprobanteFiscal
+        ? "Comprobante fiscal (NCF) — cumplir obligaciones DGII según su régimen"
+        : "Documento no fiscal — valor informativo"
+    }</p>
+    <p style="margin:6px 0 0;font-size:13px;font-weight:600">CyberBistro OS</p>
   </div>
   <div class="divider"></div>
-  <div class="center" style="font-size:8px">${escapeHtml(new Date().toLocaleString("es-DO", { timeZone: "America/Santo_Domingo" }))}</div>
+  <div class="center" style="font-size:13px;font-weight:600">${escapeHtml(new Date().toLocaleString("es-DO", { timeZone: "America/Santo_Domingo" }))}</div>
   `;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Factura</title><style>${thermalStyles(paperWidthMm)}</style></head><body>${body}</body></html>`;
@@ -234,13 +242,13 @@ export function buildComandaReceiptHtml(
       const cat = (it.categoria || "").trim();
       const catCell =
         cat !== ""
-          ? `<span style="font-size:10px">[${escapeHtml(cat)}]</span>`
-          : `<span style="font-size:10px">—</span>`;
+          ? `<span style="font-size:14px">[${escapeHtml(cat)}]</span>`
+          : `<span style="font-size:14px">—</span>`;
       return `
     <tr><td colspan="2" class="fdo-item-name">${escapeHtml(it.nombre)}</td></tr>
     <tr class="fdo-item-sub">
       <td>${catCell}</td>
-      <td style="text-align:right;font-weight:bold;font-size:12px">${it.cantidad}×</td>
+      <td style="text-align:right;font-weight:bold;font-size:17px">${it.cantidad}×</td>
     </tr>`;
     })
     .join("");
@@ -260,14 +268,14 @@ export function buildComandaReceiptHtml(
     <thead class="fdo-items-head"><tr><th>Plato</th><th class="r">Cant.</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
-  ${comanda.notas ? `<div class="divider"></div><div style="font-size:10px"><b>Nota cocina:</b> ${escapeHtml(comanda.notas)}</div>` : ""}
+  ${comanda.notas ? `<div class="divider"></div><div style="font-size:14px;font-weight:600"><b>Nota cocina:</b> ${escapeHtml(comanda.notas)}</div>` : ""}
   <div class="double-divider"></div>
   <div class="footer">
     <p style="margin:0 0 4px">Preparar en orden de llegada</p>
-    <p style="margin:0;font-size:8px;opacity:0.85">CyberBistro OS</p>
+    <p style="margin:0;font-size:13px;font-weight:600">CyberBistro OS</p>
   </div>
   <div class="divider"></div>
-  <div class="center" style="font-size:8px">${escapeHtml(new Date().toLocaleString("es-DO", { timeZone: "America/Santo_Domingo" }))}</div>
+  <div class="center" style="font-size:13px;font-weight:600">${escapeHtml(new Date().toLocaleString("es-DO", { timeZone: "America/Santo_Domingo" }))}</div>
   `;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Comanda</title><style>${thermalStyles(paperWidthMm)}</style></head><body>${body}</body></html>`;
@@ -314,7 +322,7 @@ function splitSection(
   <div class="divider"></div>
   <table><tr class="total-xl"><td>TOTAL</td><td style="text-align:right">${opts.totalLine}</td></tr></table>
   <div class="double-divider"></div>
-  <div class="footer" style="font-size:8px">CyberBistro OS — cuenta dividida</div>
+  <div class="footer" style="font-size:13px">CyberBistro OS — cuenta dividida</div>
   </section>`;
 }
 
@@ -385,17 +393,17 @@ export function buildCierreDiaReceiptHtml(
   const genParts = genIso ? formatFacturaDateParts(genIso) : null;
   const generadoRows = genParts
     ? `
-    <tr class="header-row"><td>Impreso — Fecha</td><td style="text-align:right;font-size:10px">${escapeHtml(genParts.date)}</td></tr>
-    <tr class="header-row"><td>Impreso — Hora</td><td style="text-align:right;font-size:10px">${escapeHtml(genParts.time)}</td></tr>`
-    : `<tr class="header-row"><td>Generado</td><td style="text-align:right;font-size:10px">${escapeHtml(data.generadoEn)}</td></tr>`;
+    <tr class="header-row"><td>Impreso — Fecha</td><td style="text-align:right;font-size:14px">${escapeHtml(genParts.date)}</td></tr>
+    <tr class="header-row"><td>Impreso — Hora</td><td style="text-align:right;font-size:14px">${escapeHtml(genParts.time)}</td></tr>`
+    : `<tr class="header-row"><td>Generado</td><td style="text-align:right;font-size:14px">${escapeHtml(data.generadoEn)}</td></tr>`;
 
   const body = `
   ${headerBlock(tenant)}
   <div class="divider"></div>
   <h2>CIERRE DE DÍA</h2>
-  <p class="center fdo-company-line" style="margin:0 0 6px;font-size:10px">Resumen operativo (no fiscal)</p>
+  <p class="center fdo-company-line" style="margin:0 0 6px;font-size:14px">Resumen operativo (no fiscal)</p>
   <table>
-    <tr class="header-row"><td><strong>Día operativo</strong></td><td style="text-align:right;font-weight:bold;font-size:10px">${escapeHtml(data.fechaOperacion)}</td></tr>
+    <tr class="header-row"><td><strong>Día operativo</strong></td><td style="text-align:right;font-weight:bold;font-size:14px">${escapeHtml(data.fechaOperacion)}</td></tr>
     ${generadoRows}
   </table>
   <div class="double-divider"></div>
@@ -417,30 +425,30 @@ export function buildCierreDiaReceiptHtml(
     data.cuentasAbiertasSubtotal != null
       ? `
   <div class="double-divider"></div>
-  <p style="font-size:10px;font-weight:bold;margin:0 0 4px">Cuentas abiertas (sin facturar)</p>
+  <p style="font-size:14px;font-weight:700;margin:0 0 4px">Cuentas abiertas (sin facturar)</p>
   <table>
-    <tr class="header-row"><td>Líneas / mesas</td><td style="text-align:right;font-size:10px">${data.cuentasAbiertasLineas} / ${data.cuentasAbiertasMesas ?? "—"}</td></tr>
-    <tr class="header-row"><td>Subtotal pendiente</td><td style="text-align:right;font-size:10px">${rd(data.cuentasAbiertasSubtotal)}</td></tr>
-    <tr class="header-row"><td>ITBIS est. (18%)</td><td style="text-align:right;font-size:10px">${data.cuentasAbiertasItbisEst != null ? rd(data.cuentasAbiertasItbisEst) : "—"}</td></tr>
+    <tr class="header-row"><td>Líneas / mesas</td><td style="text-align:right;font-size:14px">${data.cuentasAbiertasLineas} / ${data.cuentasAbiertasMesas ?? "—"}</td></tr>
+    <tr class="header-row"><td>Subtotal pendiente</td><td style="text-align:right;font-size:14px">${rd(data.cuentasAbiertasSubtotal)}</td></tr>
+    <tr class="header-row"><td>ITBIS est. (18%)</td><td style="text-align:right;font-size:14px">${data.cuentasAbiertasItbisEst != null ? rd(data.cuentasAbiertasItbisEst) : "—"}</td></tr>
     <tr class="total"><td>TOTAL EST. PENDIENTE</td><td style="text-align:right">${data.cuentasAbiertasTotalEst != null ? rd(data.cuentasAbiertasTotalEst) : "—"}</td></tr>
   </table>
-  <p class="center" style="font-size:8px;margin:4px 0 0">No incluido en total cobrado — cobrar en POS</p>
+  <p class="center" style="font-size:13px;margin:4px 0 0;font-weight:600">No incluido en total cobrado — cobrar en POS</p>
   `
       : ""
   }
   <div class="double-divider"></div>
   <table>
     <thead class="fdo-items-head"><tr><th>Método</th><th class="c">#</th><th class="r">Total</th></tr></thead>
-    <tbody>${metodoRows || `<tr><td colspan="3" class="center" style="font-size:10px;padding:6px 0">Sin ventas pagadas</td></tr>`}</tbody>
+    <tbody>${metodoRows || `<tr><td colspan="3" class="center" style="font-size:14px;padding:6px 0;font-weight:600">Sin ventas pagadas</td></tr>`}</tbody>
   </table>
   <div class="double-divider"></div>
   <div class="footer">
     <p style="margin:0 0 4px">Conserve para control interno</p>
-    <p style="margin:0;font-size:8px">No constituye comprobante fiscal</p>
-    <p style="margin:6px 0 0;font-size:8px;opacity:0.85">CyberBistro OS — Cierre</p>
+    <p style="margin:0;font-size:13px;font-weight:600">No constituye comprobante fiscal</p>
+    <p style="margin:6px 0 0;font-size:13px;font-weight:600">CyberBistro OS — Cierre</p>
   </div>
   <div class="divider"></div>
-  <div class="center" style="font-size:8px">${escapeHtml(new Date().toLocaleString("es-DO", { timeZone: "America/Santo_Domingo" }))}</div>
+  <div class="center" style="font-size:13px;font-weight:600">${escapeHtml(new Date().toLocaleString("es-DO", { timeZone: "America/Santo_Domingo" }))}</div>
   `;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Cierre día</title><style>${thermalStyles(paperWidthMm)}</style></head><body>${body}</body></html>`;

@@ -17,6 +17,11 @@ import {
   sortCategoriesForTabs,
 } from "../../../shared/lib/menuCategories";
 import { MesaCloseAccountModal } from "../../billing/components/MesaCloseAccountModal";
+import {
+  incrementTenantNcfSequence,
+  loadTenantNcfRow,
+  ncfPayloadForInsert,
+} from "../../../shared/lib/invoiceNcf";
 
 interface Plato {
   id: number;
@@ -91,13 +96,15 @@ export function Dashboard() {
   const [kitchenClosed, setKitchenClosed] = useState(false);
   const [charging, setCharging] = useState(false);
   const [chargeOk, setChargeOk] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<"efectivo" | "tarjeta" | "digital">("efectivo");
+  const [paymentMethod, setPaymentMethod] = useState<
+    "efectivo" | "tarjeta" | "digital" | "transferencia"
+  >("efectivo");
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showConsumosModal, setShowConsumosModal] = useState(false);
   const [showMesaDropdown, setShowMesaDropdown] = useState(false);
   const [mesaConsumos, setMesaConsumos] = useState<Consumo[]>([]);
   const [mesaAccountLoading, setMesaAccountLoading] = useState(false);
-  /** Partes para ticket dividido (impresión); el split de cuenta en mesa vive en MesaCloseAccountModal. */
+  /** Partes para ticket “separar cuenta” (solo referencia en carrito; reparte ítems en ronda, no el monto). */
   const splitParts = 2;
   const [isTakeout, setIsTakeout] = useState(false);
 
@@ -208,7 +215,6 @@ export function Dashboard() {
   const cartSubtotal = cart.reduce((s, i) => s + i.plato.precio * i.cantidad, 0);
   const cartItbis = cartSubtotal * ITBIS;
   const cartTotal = cartSubtotal + cartItbis;
-  const perPerson = splitParts > 0 ? cartTotal / splitParts : cartTotal;
 
   const cuentaSubtotal = mesaConsumos.reduce((s, c) => s + Number(c.subtotal), 0);
   const hasCuentaEnMesa = Boolean(selectedMesa && mesaConsumos.length > 0);
@@ -404,10 +410,13 @@ export function Dashboard() {
   }
 
   async function printFactura(facturaId: string, numeroFactura: number) {
+    if (!tenantId) return;
+
     const { data: factura, error: facturaError } = await insforgeClient.database
       .from("facturas")
       .select("*")
       .eq("id", facturaId)
+      .eq("tenant_id", tenantId)
       .single();
 
     if (facturaError || !factura) {
@@ -418,7 +427,7 @@ export function Dashboard() {
     const { data: tenant } = await insforgeClient.database
       .from("tenants")
       .select("nombre_negocio, rnc, direccion, telefono, logo_url")
-      .eq("id", factura.tenant_id)
+      .eq("id", tenantId)
       .single();
 
     if (!tenant) {
@@ -667,7 +676,10 @@ export function Dashboard() {
     const itbis = subtotal * ITBIS;
     const total = subtotal + itbis;
 
-    const facturaData = {
+    const ncfRow = tenantId ? await loadTenantNcfRow(tenantId) : null;
+    const ncfPart = ncfPayloadForInsert(ncfRow);
+
+    const facturaData: Record<string, unknown> = {
       tenant_id: tenantId,
       metodo_pago: paymentMethod,
       estado: "pagada" as const,
@@ -680,6 +692,10 @@ export function Dashboard() {
       mesa_numero: 0,
       notas: "Para llevar",
     };
+    if (ncfPart) {
+      facturaData.ncf = ncfPart.ncf;
+      facturaData.ncf_tipo = ncfPart.ncf_tipo;
+    }
 
     const { data: factura, error: facturaError } = await insforgeClient.database
       .from("facturas")
@@ -694,6 +710,10 @@ export function Dashboard() {
       return;
     }
 
+    if (tenantId && ncfPart) {
+      await incrementTenantNcfSequence(tenantId, ncfPart.usedSequence);
+    }
+
     await printFactura(factura.id, factura.numero_factura);
 
     setCart([]);
@@ -706,6 +726,10 @@ export function Dashboard() {
 
   async function printSplit() {
     if (!tenantId) return;
+    if (cart.length === 0) {
+      alert("No hay ítems en el carrito para repartir.");
+      return;
+    }
     const { data: tenantRow } = await insforgeClient.database
       .from("tenants")
       .select("nombre_negocio, rnc, direccion, telefono, logo_url")
@@ -724,20 +748,33 @@ export function Dashboard() {
       logo_url: tenantRow.logo_url,
     };
 
-    const rows = cart.map((i) =>
-      buildThermalSplitLineHtml(
-        i.plato.nombre,
-        i.cantidad,
-        (i.plato.precio * i.cantidad) / splitParts
-      )
-    );
+    const lineSubtotals = cart.map((i) => i.plato.precio * i.cantidad);
+    const subtotalByPerson = Array(splitParts).fill(0) as number[];
+    const rowsByPerson: string[][] = Array.from({ length: splitParts }, () => []);
+    cart.forEach((item, idx) => {
+      const p = idx % splitParts;
+      const line = lineSubtotals[idx];
+      subtotalByPerson[p] += line;
+      rowsByPerson[p].push(
+        buildThermalSplitLineHtml(item.plato.nombre, item.cantidad, line)
+      );
+    });
 
-    const parts = Array.from({ length: splitParts }, (_, idx) => ({
-      personIndex: idx + 1,
-      splitParts,
-      rowsHtml: rows.join(""),
-      totalLine: `RD$ ${perPerson.toFixed(2)}`,
-    }));
+    const parts = Array.from({ length: splitParts }, (_, idx) => {
+      const st = subtotalByPerson[idx];
+      const itb = st * ITBIS;
+      const tot = st + itb;
+      const rowsHtml =
+        rowsByPerson[idx].length > 0
+          ? rowsByPerson[idx].join("")
+          : `<div style="font-size:12px;color:#666;padding:4px 0">Sin ítems en esta parte</div>`;
+      return {
+        personIndex: idx + 1,
+        splitParts,
+        rowsHtml,
+        totalLine: `RD$ ${tot.toFixed(2)} (incl. ITBIS)`,
+      };
+    }).filter((_, idx) => subtotalByPerson[idx] > 0);
 
     const paperWidthMm = getThermalPrintSettings().paperWidthMm;
     const html = buildSplitTicketHtml(
@@ -1338,9 +1375,31 @@ export function Dashboard() {
             setMesaConsumos(remaining as Consumo[]);
             await refreshMesaDebt(selectedMesa.id, selectedMesa.numero);
           }}
-          onPaidFull={() => {
+          onPaidFull={async () => {
             setChargeOk(true);
             setTimeout(() => setChargeOk(false), 3000);
+            if (!tenantId || !selectedMesa) return;
+            const { error } = await insforgeClient.database.from("mesas_estado").upsert(
+              {
+                id: parseInt(selectedMesa.id, 10),
+                estado: "libre",
+                tenant_id: tenantId,
+              },
+              { onConflict: "tenant_id,id" }
+            );
+            if (!error) {
+              setMesas((prev) =>
+                prev.map((m) =>
+                  m.id === selectedMesa.id
+                    ? { ...m, estado: "libre", deuda_pendiente: 0, items_pendientes: 0 }
+                    : m
+                )
+              );
+            }
+            await refreshMesaDebt(selectedMesa.id, selectedMesa.numero);
+            setSelectedMesa(null);
+            setMesaConsumos([]);
+            setCart([]);
           }}
         />
       )}
@@ -1426,11 +1485,12 @@ export function Dashboard() {
               <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
                 Método de pago
               </span>
-              <div className="grid grid-cols-3 gap-[8px]">
+              <div className="grid grid-cols-2 gap-[8px]">
                 {[
                   { value: "efectivo" as const, label: "Efectivo", icon: "💵" },
                   { value: "tarjeta" as const, label: "Tarjeta", icon: "💳" },
                   { value: "digital" as const, label: "Digital", icon: "📱" },
+                  { value: "transferencia" as const, label: "Transferencia", icon: "🏦" },
                 ].map((method) => (
                   <button
                     type="button"
