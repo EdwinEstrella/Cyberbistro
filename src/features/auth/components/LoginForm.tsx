@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router";
 
 const LOGIN_NOTICE_KEY = "cyberbistro_login_notice";
+const REFRESH_TOKEN_KEY = "insforge_refresh_token";
 import svgPaths from "../../../imports/svg-h2gjocs89h";
 import imgLoginRegistro from "figma:asset/47f7239cc7433af3270415eeec94f9bdbb11cd99.png";
 import imgDecorativeScanlineEffect from "figma:asset/70a05c412757c6d4e1cffbb0780858880dce7a5a.png";
@@ -49,6 +50,22 @@ const BIOMETRIC_INDICATORS = (
   </div>
 );
 
+function extractRefreshTokenFromSignInPayload(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const maybeData = data as {
+    refreshToken?: unknown;
+    session?: { refreshToken?: unknown };
+    tokens?: { refreshToken?: unknown };
+  };
+  const direct = maybeData.refreshToken;
+  if (typeof direct === "string" && direct.trim().length > 0) return direct;
+  const inSession = maybeData.session?.refreshToken;
+  if (typeof inSession === "string" && inSession.trim().length > 0) return inSession;
+  const inTokens = maybeData.tokens?.refreshToken;
+  if (typeof inTokens === "string" && inTokens.trim().length > 0) return inTokens;
+  return null;
+}
+
 export function Login() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
@@ -85,12 +102,28 @@ export function Login() {
       email,
       password
     });
+    console.info("[AuthFlow] login response", {
+      hasData: Boolean(data),
+      hasUser: Boolean(data?.user),
+      hasDirectRefreshToken:
+        Boolean(data && typeof data === "object" && "refreshToken" in data),
+    });
 
     setIsLoading(false);
 
     if (authError) {
       setError(authError.message || "Error al iniciar sesión");
       return;
+    }
+
+    const refreshToken = extractRefreshTokenFromSignInPayload(data);
+    if (refreshToken) {
+      localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+      console.info("[AuthFlow] login refresh token stored", {
+        tokenLength: refreshToken.length,
+      });
+    } else {
+      console.warn("[AuthFlow] login without refresh token in payload");
     }
 
     if (data?.user) {

@@ -3,6 +3,9 @@
 declare const __APP_VERSION__: string;
 
 interface ImportMetaEnv {
+  readonly DEV: boolean;
+  readonly PROD: boolean;
+  readonly MODE: string;
   readonly VITE_INSFORGE_BASE_URL?: string;
   readonly VITE_INSFORGE_ANON_KEY?: string;
 }

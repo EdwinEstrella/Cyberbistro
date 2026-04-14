@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { UserSchema } from '@insforge/sdk';
-import { insforgeClient } from '../lib/insforge';
+import { insforgeClient, isInsforgeEnvConfigured } from '../lib/insforge';
 import {
   readTenantSessionCache,
   writeTenantSessionCache,
@@ -26,14 +26,60 @@ function rowToTenantUser(data: TenantSessionRow): TenantUser {
 }
 
 const AUTH_RETRIES = 5;
-const SESSION_REFRESH_INTERVAL_MS = 10 * 60 * 1000;
+const AUTH_LOG_PREFIX = '[AuthFlow]';
+const REFRESH_BLOCK_MS = 30_000;
+const REFRESH_TOKEN_KEY = 'insforge_refresh_token';
 
-function isAuthUnauthorized(error: unknown): boolean {
+let refreshInFlight: Promise<'ok' | 'unauthorized' | 'error'> | null = null;
+let refreshBlockedUntil = 0;
+
+function logAuth(message: string, payload?: unknown): void {
+  if (payload === undefined) console.info(`${AUTH_LOG_PREFIX} ${message}`);
+  else console.info(`${AUTH_LOG_PREFIX} ${message}`, payload);
+}
+
+function isUnauthorizedError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
   const e = error as { statusCode?: number; message?: string; error?: string };
-  if (e.statusCode === 401) return true;
+  if (e.statusCode === 401 || e.statusCode === 403) return true;
   const msg = `${e.error ?? ''} ${e.message ?? ''}`.toLowerCase();
-  return msg.includes('401') || msg.includes('invalid token') || msg.includes('unauthorized');
+  return msg.includes('unauthorized') || msg.includes('forbidden') || msg.includes('invalid token');
+}
+
+function readRefreshToken(): string | null {
+  const token = localStorage.getItem(REFRESH_TOKEN_KEY);
+  return token && token.trim().length > 0 ? token : null;
+}
+
+function extractRefreshTokenFromPayload(data: unknown): string | null {
+  if (!data || typeof data !== 'object') return null;
+  const maybeData = data as {
+    refreshToken?: unknown;
+    session?: { refreshToken?: unknown };
+    tokens?: { refreshToken?: unknown };
+  };
+  const direct = maybeData.refreshToken;
+  if (typeof direct === 'string' && direct.trim().length > 0) return direct;
+  const inSession = maybeData.session?.refreshToken;
+  if (typeof inSession === 'string' && inSession.trim().length > 0) return inSession;
+  const inTokens = maybeData.tokens?.refreshToken;
+  if (typeof inTokens === 'string' && inTokens.trim().length > 0) return inTokens;
+  return null;
+}
+
+function extractUserFromAuthPayload(data: unknown): UserSchema | null {
+  if (!data || typeof data !== 'object') return null;
+  const maybeData = data as {
+    user?: unknown;
+    session?: { user?: unknown };
+  };
+  if (maybeData.user && typeof maybeData.user === 'object') {
+    return maybeData.user as UserSchema;
+  }
+  if (maybeData.session?.user && typeof maybeData.session.user === 'object') {
+    return maybeData.session.user as UserSchema;
+  }
+  return null;
 }
 
 export function useAuth() {
@@ -44,117 +90,238 @@ export function useAuth() {
   });
   const [loading, setLoading] = useState(true);
 
+  const userRef = useRef<UserSchema | null>(null);
+  userRef.current = user;
+
+  const clearSession = useCallback(() => {
+    clearTenantSessionCache();
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+    setUser(null);
+    setTenantUser(null);
+  }, []);
+
   const loadUserData = useCallback(async (opts?: { silent?: boolean }) => {
     const silent = opts?.silent === true;
+    logAuth('loadUserData:start', { silent });
     if (!silent) setLoading(true);
-    try {
-      const tryAuth = async () => {
-        const { data: authData, error: authError } = await insforgeClient.auth.getCurrentUser();
-        if (authError || !authData?.user) return null;
-        return authData.user;
-      };
 
+    try {
       let u: UserSchema | null = null;
+
       for (let attempt = 0; attempt < AUTH_RETRIES; attempt++) {
-        if (attempt > 0) {
-          await new Promise((r) => setTimeout(r, 280 * attempt));
+        logAuth('auth attempt', { attempt: attempt + 1, total: AUTH_RETRIES });
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 280 * attempt));
+
+        const { data, error } = await insforgeClient.auth.getCurrentUser();
+        if (error) {
+          logAuth('getCurrentUser:error', error);
+          if (isUnauthorizedError(error)) break;
+          continue;
         }
-        u = await tryAuth();
-        if (u) break;
+        if (data?.user) {
+          u = data.user;
+          break;
+        }
       }
 
       if (!u) {
-        setUser(null);
-        // Si no hay usuario en este intento, mantenemos el contexto cacheado;
-        // RoleGuard sigue controlando el acceso por `isAuthenticated`.
-        return;
+        const storedToken = readRefreshToken();
+        logAuth('loadUserData:no-user', {
+          hasStoredRefreshToken: Boolean(storedToken),
+        });
+
+        // Bootstrap de sesión en server-mode: intenta recuperar usuario usando refresh token.
+        if (storedToken && isInsforgeEnvConfigured) {
+          if (refreshInFlight) {
+            logAuth('bootstrap refresh:reuse in-flight');
+            await refreshInFlight;
+          }
+          logAuth('bootstrap refresh:start', { tokenLength: storedToken.length });
+          const { data: refreshed, error: refreshError } = await insforgeClient.auth.refreshSession({
+            refreshToken: storedToken,
+          });
+
+          if (!refreshError) {
+            const rotated = extractRefreshTokenFromPayload(refreshed);
+            if (rotated) localStorage.setItem(REFRESH_TOKEN_KEY, rotated);
+            const refreshedUser = extractUserFromAuthPayload(refreshed);
+            logAuth('bootstrap refresh:ok', {
+              rotatedToken: Boolean(rotated),
+              hasUserInPayload: Boolean(refreshedUser),
+            });
+
+            if (refreshedUser) {
+              u = refreshedUser;
+              setUser(u);
+              logAuth('loadUserData:user-ok-from-bootstrap-refresh-payload', {
+                userId: u.id,
+                email: u.email,
+              });
+            } else {
+              const { data: authDataAfterRefresh, error: authErrorAfterRefresh } =
+                await insforgeClient.auth.getCurrentUser();
+              if (!authErrorAfterRefresh && authDataAfterRefresh?.user) {
+                u = authDataAfterRefresh.user;
+                setUser(u);
+                logAuth('loadUserData:user-ok-after-bootstrap-refresh', {
+                  userId: u.id,
+                  email: u.email,
+                });
+              } else {
+                logAuth('bootstrap refresh:no-user-after-refresh', {
+                  hasAuthError: Boolean(authErrorAfterRefresh),
+                });
+              }
+            }
+          } else if (isUnauthorizedError(refreshError)) {
+            refreshBlockedUntil = Date.now() + REFRESH_BLOCK_MS;
+            localStorage.removeItem(REFRESH_TOKEN_KEY);
+            logAuth('bootstrap refresh unauthorized -> token removed', refreshError);
+          } else {
+            logAuth('bootstrap refresh transient error', refreshError);
+          }
+        }
+
+        if (!u) {
+          if (!userRef.current) {
+            setLoading(false);
+          }
+          return;
+        }
       }
 
       setUser(u);
+      logAuth('loadUserData:user-ok', { userId: u.id, email: u.email });
 
       const cached = readTenantSessionCache();
       if (cached?.authUserId === u.id) {
         setTenantUser(rowToTenantUser(cached));
+        logAuth('tenant cache hit', { tenantId: cached.tenant_id, rol: cached.rol });
       }
 
       const resolved = await resolveTenantUserForSession(u);
       if (resolved) {
         setTenantUser(rowToTenantUser(resolved));
         writeTenantSessionCache(u.id, resolved);
-      } else if (!(cached?.authUserId === u.id)) {
-        setTenantUser(null);
+        logAuth('tenant resolved from backend', { tenantId: resolved.tenant_id, rol: resolved.rol });
       }
     } catch (err) {
       console.error('Error loading user data:', err);
     } finally {
       if (!silent) setLoading(false);
+      logAuth('loadUserData:end', { silent });
     }
   }, []);
 
   useEffect(() => {
+    logAuth('mount: initial auth load');
     void loadUserData({ silent: false });
-  }, [loadUserData]);
+  }, []);
 
   useEffect(() => {
-    const refresh = () => void loadUserData({ silent: true });
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') refresh();
-    };
-    window.addEventListener('focus', refresh);
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => {
-      window.removeEventListener('focus', refresh);
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
-  }, [loadUserData]);
+    const doRefresh = async () => {
+      const currentUser = userRef.current;
+      logAuth('focus/visibility refresh triggered', {
+        hasUser: Boolean(currentUser),
+        isInsforgeEnvConfigured,
+      });
 
-  // Mantiene viva la sesión mientras la app Electron esté abierta.
-  useEffect(() => {
-    if (!user) return;
-    let active = true;
-    const refreshInBackground = async () => {
-      const { error } = await insforgeClient.auth.refreshSession();
-      if (!active) return;
-      if (error) {
-        if (isAuthUnauthorized(error)) {
-          clearTenantSessionCache();
-          setUser(null);
-          setTenantUser(null);
-          return;
-        }
-        console.warn('Refresh de sesión falló (se mantiene sesión actual):', error);
+      if (!currentUser || !isInsforgeEnvConfigured) {
+        await loadUserData({ silent: true });
         return;
       }
-      void loadUserData({ silent: true });
+
+      if (Date.now() < refreshBlockedUntil) {
+        logAuth('refreshSession:skip-blocked');
+        return;
+      }
+
+      if (refreshInFlight) {
+        logAuth('refreshSession:skip-in-flight');
+        await refreshInFlight;
+        return;
+      }
+
+      refreshInFlight = (async (): Promise<'ok' | 'unauthorized' | 'error'> => {
+        const storedToken = localStorage.getItem(REFRESH_TOKEN_KEY);
+
+        if (!storedToken) {
+          logAuth('refreshSession:no-token-stored -> skip');
+          await loadUserData({ silent: true });
+          return 'ok';
+        }
+
+        const { data, error } = await insforgeClient.auth.refreshSession({
+          refreshToken: storedToken,
+        });
+
+        if (error) {
+          logAuth('refreshSession:error', error);
+          if (isUnauthorizedError(error)) {
+            refreshBlockedUntil = Date.now() + REFRESH_BLOCK_MS;
+            logAuth('refreshSession:unauthorized -> clearing session');
+            clearSession();
+            return 'unauthorized';
+          }
+          logAuth('refreshSession:transient-error -> keeping session');
+          return 'error';
+        }
+
+        const refreshToken = extractRefreshTokenFromPayload(data);
+        if (refreshToken) {
+          localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+          logAuth('refreshSession:ok -> token updated');
+        } else {
+          logAuth('refreshSession:ok');
+        }
+
+        const refreshedUser = extractUserFromAuthPayload(data);
+        if (refreshedUser) {
+          setUser(refreshedUser);
+          logAuth('refreshSession:ok -> user updated from payload', {
+            userId: refreshedUser.id,
+          });
+        }
+
+        refreshBlockedUntil = 0;
+        return 'ok';
+      })();
+
+      const result = await refreshInFlight;
+      refreshInFlight = null;
+
+      if (result === 'ok') {
+        await loadUserData({ silent: true });
+      }
     };
 
-    const id = window.setInterval(() => {
-      void refreshInBackground();
-    }, SESSION_REFRESH_INTERVAL_MS);
+    const onFocus = () => void doRefresh();
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void doRefresh();
+    };
+
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+    logAuth('listeners attached', { events: ['focus', 'visibilitychange'] });
 
     return () => {
-      active = false;
-      window.clearInterval(id);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+      logAuth('listeners detached');
     };
-  }, [user, loadUserData]);
+  }, [loadUserData, clearSession]);
 
   const signOut = async () => {
+    logAuth('signOut:start');
     const { error } = await insforgeClient.auth.signOut();
-    if (error) {
-      console.error('Error signing out:', error);
-      throw error;
-    }
-    clearTenantSessionCache();
-    setUser(null);
-    setTenantUser(null);
+    if (error) console.error('Error signing out:', error);
+    clearSession();
+    logAuth('signOut:done');
   };
 
-  /** Tras `signInWithPassword`, la caché ya tiene tenant + rol; no hace falta “volver a buscar” en el primer render. */
   const cachedRow = user ? readTenantSessionCache() : null;
-  const cacheBelongsToUser =
-    cachedRow != null && user != null && cachedRow.authUserId === user.id;
-  const tenantUserEffective: TenantUser | null =
-    tenantUser ?? (cacheBelongsToUser ? rowToTenantUser(cachedRow) : null);
+  const cacheBelongsToUser = cachedRow != null && user != null && cachedRow.authUserId === user.id;
+  const tenantUserEffective = tenantUser ?? (cacheBelongsToUser ? rowToTenantUser(cachedRow) : null);
 
   return {
     user,
