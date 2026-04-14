@@ -239,7 +239,7 @@ export function Ajustes() {
         error = retry.error;
         if (!retry.error) {
           setPartialSaveNote(
-            "Datos básicos guardados. Las columnas NCF aún no existen en la base: ejecutá insforge-sql/add-ncf-fiscal-columns.sql para poder guardar también NCF."
+            "Datos básicos guardados. Las columnas NCF aún no existen en la base: creá en tenants y facturas desde el editor SQL de InsForge las columnas NCF para poder guardar también NCF."
           );
           setSaving(false);
           setSavedOk(true);
@@ -518,9 +518,9 @@ export function Ajustes() {
               <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px] leading-relaxed">
                 Configurá el tipo DGII y el número en el que vas (p. ej. si el último papel fue
                 B0100000150, poné <span className="text-[#adaaaa]">151</span>). Cada cobro generado
-                desde el POS guardará el NCF en la factura y subirá la secuencia en uno. Ejecutá el
-                script SQL <span className="text-[#adaaaa]">insforge-sql/add-ncf-fiscal-columns.sql</span>{" "}
-                en tu base InsForge si aún no existen las columnas.
+                desde el POS guardará el NCF en la factura y subirá la secuencia en uno. Si aún no
+                existen las columnas, creá en tu base (editor SQL de InsForge) las de NCF en{" "}
+                <span className="text-[#adaaaa]">tenants</span> y <span className="text-[#adaaaa]">facturas</span>.
               </span>
             </div>
 
