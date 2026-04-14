@@ -153,7 +153,7 @@ async function loadUserDataShared(opts?: { silent?: boolean }): Promise<void> {
         const storedToken = readRefreshToken();
         logAuth('loadUserData:no-user', { hasStoredRefreshToken: Boolean(storedToken) });
 
-        if (storedToken && isInsforgeEnvConfigured) {
+        if (storedToken) {
           logAuth('bootstrap refresh:start', { tokenLength: storedToken.length });
           const { data: refreshed, error: refreshError } = await insforgeClient.auth.refreshSession({
             refreshToken: storedToken,
@@ -245,7 +245,7 @@ async function doRefreshShared(): Promise<void> {
     isInsforgeEnvConfigured,
   });
 
-  if (!currentUser || !isInsforgeEnvConfigured) {
+  if (!currentUser) {
     await loadUserDataShared({ silent: true });
     return;
   }
