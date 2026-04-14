@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { UserSchema } from '@insforge/sdk';
 import { insforgeClient, isInsforgeEnvConfigured } from '../lib/insforge';
 import {
@@ -14,6 +14,12 @@ interface TenantUser {
   email: string;
   rol: string;
   nombre: string;
+}
+
+interface SharedAuthState {
+  user: UserSchema | null;
+  tenantUser: TenantUser | null;
+  loading: boolean;
 }
 
 function rowToTenantUser(data: TenantSessionRow): TenantUser {
@@ -32,10 +38,35 @@ const REFRESH_TOKEN_KEY = 'insforge_refresh_token';
 
 let refreshInFlight: Promise<'ok' | 'unauthorized' | 'error'> | null = null;
 let refreshBlockedUntil = 0;
+let loadUserDataInFlight: Promise<void> | null = null;
+let initializedOnce = false;
+let activeConsumers = 0;
+let cleanupGlobalListeners: (() => void) | null = null;
+
+const subscribers = new Set<() => void>();
+
+const initialCached = readTenantSessionCache();
+const sharedState: SharedAuthState = {
+  user: null,
+  tenantUser: initialCached ? rowToTenantUser(initialCached) : null,
+  loading: true,
+};
 
 function logAuth(message: string, payload?: unknown): void {
   if (payload === undefined) console.info(`${AUTH_LOG_PREFIX} ${message}`);
   else console.info(`${AUTH_LOG_PREFIX} ${message}`, payload);
+}
+
+function notifySubscribers(): void {
+  subscribers.forEach((fn) => fn());
+}
+
+function patchSharedState(patch: Partial<SharedAuthState>): void {
+  sharedState.user = patch.user === undefined ? sharedState.user : patch.user;
+  sharedState.tenantUser =
+    patch.tenantUser === undefined ? sharedState.tenantUser : patch.tenantUser;
+  sharedState.loading = patch.loading === undefined ? sharedState.loading : patch.loading;
+  notifySubscribers();
 }
 
 function isUnauthorizedError(error: unknown): boolean {
@@ -82,28 +113,22 @@ function extractUserFromAuthPayload(data: unknown): UserSchema | null {
   return null;
 }
 
-export function useAuth() {
-  const [user, setUser] = useState<UserSchema | null>(null);
-  const [tenantUser, setTenantUser] = useState<TenantUser | null>(() => {
-    const cached = readTenantSessionCache();
-    return cached ? rowToTenantUser(cached) : null;
-  });
-  const [loading, setLoading] = useState(true);
+function clearSessionShared(): void {
+  clearTenantSessionCache();
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
+  patchSharedState({ user: null, tenantUser: null });
+}
 
-  const userRef = useRef<UserSchema | null>(null);
-  userRef.current = user;
+async function loadUserDataShared(opts?: { silent?: boolean }): Promise<void> {
+  if (loadUserDataInFlight) {
+    await loadUserDataInFlight;
+    return;
+  }
 
-  const clearSession = useCallback(() => {
-    clearTenantSessionCache();
-    localStorage.removeItem(REFRESH_TOKEN_KEY);
-    setUser(null);
-    setTenantUser(null);
-  }, []);
-
-  const loadUserData = useCallback(async (opts?: { silent?: boolean }) => {
+  loadUserDataInFlight = (async () => {
     const silent = opts?.silent === true;
     logAuth('loadUserData:start', { silent });
-    if (!silent) setLoading(true);
+    if (!silent) patchSharedState({ loading: true });
 
     try {
       let u: UserSchema | null = null;
@@ -126,16 +151,9 @@ export function useAuth() {
 
       if (!u) {
         const storedToken = readRefreshToken();
-        logAuth('loadUserData:no-user', {
-          hasStoredRefreshToken: Boolean(storedToken),
-        });
+        logAuth('loadUserData:no-user', { hasStoredRefreshToken: Boolean(storedToken) });
 
-        // Bootstrap de sesión en server-mode: intenta recuperar usuario usando refresh token.
         if (storedToken && isInsforgeEnvConfigured) {
-          if (refreshInFlight) {
-            logAuth('bootstrap refresh:reuse in-flight');
-            await refreshInFlight;
-          }
           logAuth('bootstrap refresh:start', { tokenLength: storedToken.length });
           const { data: refreshed, error: refreshError } = await insforgeClient.auth.refreshSession({
             refreshToken: storedToken,
@@ -152,7 +170,7 @@ export function useAuth() {
 
             if (refreshedUser) {
               u = refreshedUser;
-              setUser(u);
+              patchSharedState({ user: u });
               logAuth('loadUserData:user-ok-from-bootstrap-refresh-payload', {
                 userId: u.id,
                 email: u.email,
@@ -162,7 +180,7 @@ export function useAuth() {
                 await insforgeClient.auth.getCurrentUser();
               if (!authErrorAfterRefresh && authDataAfterRefresh?.user) {
                 u = authDataAfterRefresh.user;
-                setUser(u);
+                patchSharedState({ user: u });
                 logAuth('loadUserData:user-ok-after-bootstrap-refresh', {
                   userId: u.id,
                   email: u.email,
@@ -183,141 +201,174 @@ export function useAuth() {
         }
 
         if (!u) {
-          if (!userRef.current) {
-            setLoading(false);
-          }
           return;
         }
       }
 
-      setUser(u);
+      patchSharedState({ user: u });
       logAuth('loadUserData:user-ok', { userId: u.id, email: u.email });
 
       const cached = readTenantSessionCache();
       if (cached?.authUserId === u.id) {
-        setTenantUser(rowToTenantUser(cached));
+        patchSharedState({ tenantUser: rowToTenantUser(cached) });
         logAuth('tenant cache hit', { tenantId: cached.tenant_id, rol: cached.rol });
       }
 
       const resolved = await resolveTenantUserForSession(u);
       if (resolved) {
-        setTenantUser(rowToTenantUser(resolved));
+        patchSharedState({ tenantUser: rowToTenantUser(resolved) });
         writeTenantSessionCache(u.id, resolved);
-        logAuth('tenant resolved from backend', { tenantId: resolved.tenant_id, rol: resolved.rol });
+        logAuth('tenant resolved from backend', {
+          tenantId: resolved.tenant_id,
+          rol: resolved.rol,
+        });
       }
     } catch (err) {
       console.error('Error loading user data:', err);
     } finally {
-      if (!silent) setLoading(false);
+      if (!silent) patchSharedState({ loading: false });
       logAuth('loadUserData:end', { silent });
     }
-  }, []);
+  })();
+
+  try {
+    await loadUserDataInFlight;
+  } finally {
+    loadUserDataInFlight = null;
+  }
+}
+
+async function doRefreshShared(): Promise<void> {
+  const currentUser = sharedState.user;
+  logAuth('focus/visibility refresh triggered', {
+    hasUser: Boolean(currentUser),
+    isInsforgeEnvConfigured,
+  });
+
+  if (!currentUser || !isInsforgeEnvConfigured) {
+    await loadUserDataShared({ silent: true });
+    return;
+  }
+
+  if (Date.now() < refreshBlockedUntil) {
+    logAuth('refreshSession:skip-blocked');
+    return;
+  }
+
+  if (refreshInFlight) {
+    logAuth('refreshSession:skip-in-flight');
+    await refreshInFlight;
+    return;
+  }
+
+  refreshInFlight = (async (): Promise<'ok' | 'unauthorized' | 'error'> => {
+    const storedToken = readRefreshToken();
+    if (!storedToken) {
+      logAuth('refreshSession:no-token-stored -> skip');
+      await loadUserDataShared({ silent: true });
+      return 'ok';
+    }
+
+    const { data, error } = await insforgeClient.auth.refreshSession({
+      refreshToken: storedToken,
+    });
+
+    if (error) {
+      logAuth('refreshSession:error', error);
+      if (isUnauthorizedError(error)) {
+        refreshBlockedUntil = Date.now() + REFRESH_BLOCK_MS;
+        logAuth('refreshSession:unauthorized -> clearing session');
+        clearSessionShared();
+        return 'unauthorized';
+      }
+      logAuth('refreshSession:transient-error -> keeping session');
+      return 'error';
+    }
+
+    const refreshToken = extractRefreshTokenFromPayload(data);
+    if (refreshToken) {
+      localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+      logAuth('refreshSession:ok -> token updated');
+    } else {
+      logAuth('refreshSession:ok');
+    }
+
+    const refreshedUser = extractUserFromAuthPayload(data);
+    if (refreshedUser) {
+      patchSharedState({ user: refreshedUser });
+      logAuth('refreshSession:ok -> user updated from payload', { userId: refreshedUser.id });
+    }
+
+    refreshBlockedUntil = 0;
+    return 'ok';
+  })();
+
+  const result = await refreshInFlight;
+  refreshInFlight = null;
+  if (result === 'ok') {
+    await loadUserDataShared({ silent: true });
+  }
+}
+
+function ensureGlobalListeners(): void {
+  if (cleanupGlobalListeners) return;
+  const onFocus = () => void doRefreshShared();
+  const onVisibility = () => {
+    if (document.visibilityState === 'visible') void doRefreshShared();
+  };
+  window.addEventListener('focus', onFocus);
+  document.addEventListener('visibilitychange', onVisibility);
+  logAuth('listeners attached', { events: ['focus', 'visibilitychange'] });
+  cleanupGlobalListeners = () => {
+    window.removeEventListener('focus', onFocus);
+    document.removeEventListener('visibilitychange', onVisibility);
+    logAuth('listeners detached');
+    cleanupGlobalListeners = null;
+  };
+}
+
+export function useAuth() {
+  const [user, setUser] = useState<UserSchema | null>(sharedState.user);
+  const [tenantUser, setTenantUser] = useState<TenantUser | null>(sharedState.tenantUser);
+  const [loading, setLoading] = useState(sharedState.loading);
 
   useEffect(() => {
-    logAuth('mount: initial auth load');
-    void loadUserData({ silent: false });
-  }, []);
-
-  useEffect(() => {
-    const doRefresh = async () => {
-      const currentUser = userRef.current;
-      logAuth('focus/visibility refresh triggered', {
-        hasUser: Boolean(currentUser),
-        isInsforgeEnvConfigured,
-      });
-
-      if (!currentUser || !isInsforgeEnvConfigured) {
-        await loadUserData({ silent: true });
-        return;
-      }
-
-      if (Date.now() < refreshBlockedUntil) {
-        logAuth('refreshSession:skip-blocked');
-        return;
-      }
-
-      if (refreshInFlight) {
-        logAuth('refreshSession:skip-in-flight');
-        await refreshInFlight;
-        return;
-      }
-
-      refreshInFlight = (async (): Promise<'ok' | 'unauthorized' | 'error'> => {
-        const storedToken = localStorage.getItem(REFRESH_TOKEN_KEY);
-
-        if (!storedToken) {
-          logAuth('refreshSession:no-token-stored -> skip');
-          await loadUserData({ silent: true });
-          return 'ok';
-        }
-
-        const { data, error } = await insforgeClient.auth.refreshSession({
-          refreshToken: storedToken,
-        });
-
-        if (error) {
-          logAuth('refreshSession:error', error);
-          if (isUnauthorizedError(error)) {
-            refreshBlockedUntil = Date.now() + REFRESH_BLOCK_MS;
-            logAuth('refreshSession:unauthorized -> clearing session');
-            clearSession();
-            return 'unauthorized';
-          }
-          logAuth('refreshSession:transient-error -> keeping session');
-          return 'error';
-        }
-
-        const refreshToken = extractRefreshTokenFromPayload(data);
-        if (refreshToken) {
-          localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
-          logAuth('refreshSession:ok -> token updated');
-        } else {
-          logAuth('refreshSession:ok');
-        }
-
-        const refreshedUser = extractUserFromAuthPayload(data);
-        if (refreshedUser) {
-          setUser(refreshedUser);
-          logAuth('refreshSession:ok -> user updated from payload', {
-            userId: refreshedUser.id,
-          });
-        }
-
-        refreshBlockedUntil = 0;
-        return 'ok';
-      })();
-
-      const result = await refreshInFlight;
-      refreshInFlight = null;
-
-      if (result === 'ok') {
-        await loadUserData({ silent: true });
-      }
+    const sync = () => {
+      setUser(sharedState.user);
+      setTenantUser(sharedState.tenantUser);
+      setLoading(sharedState.loading);
     };
+    subscribers.add(sync);
+    activeConsumers += 1;
+    sync();
 
-    const onFocus = () => void doRefresh();
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') void doRefresh();
-    };
-
-    window.addEventListener('focus', onFocus);
-    document.addEventListener('visibilitychange', onVisibility);
-    logAuth('listeners attached', { events: ['focus', 'visibilitychange'] });
+    ensureGlobalListeners();
+    if (!initializedOnce) {
+      initializedOnce = true;
+      logAuth('mount: initial auth load');
+      void loadUserDataShared({ silent: false });
+    }
 
     return () => {
-      window.removeEventListener('focus', onFocus);
-      document.removeEventListener('visibilitychange', onVisibility);
-      logAuth('listeners detached');
+      subscribers.delete(sync);
+      activeConsumers = Math.max(0, activeConsumers - 1);
+      if (activeConsumers === 0 && cleanupGlobalListeners) {
+        cleanupGlobalListeners();
+      }
     };
-  }, [loadUserData, clearSession]);
+  }, []);
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     logAuth('signOut:start');
     const { error } = await insforgeClient.auth.signOut();
     if (error) console.error('Error signing out:', error);
-    clearSession();
+    clearSessionShared();
     logAuth('signOut:done');
-  };
+  }, []);
+
+  const refreshSession = useCallback((opts?: { showLoading?: boolean }) => {
+    void loadUserDataShared({ silent: opts?.showLoading !== true });
+  }, []);
 
   const cachedRow = user ? readTenantSessionCache() : null;
   const cacheBelongsToUser = cachedRow != null && user != null && cachedRow.authUserId === user.id;
@@ -331,7 +382,6 @@ export function useAuth() {
     loading,
     signOut,
     isAuthenticated: !!user,
-    refreshSession: (opts?: { showLoading?: boolean }) =>
-      void loadUserData({ silent: opts?.showLoading !== true }),
+    refreshSession,
   };
 }
