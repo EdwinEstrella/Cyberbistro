@@ -34,9 +34,10 @@ const soporteNavItem = {
 function filterMainNavForRol(rol: string | null) {
   if (rol === "admin") return [...mainNavItems];
   if (rol === "cocina") return mainNavItems.filter((i) => i.path === "/cocina");
-  if (rol === "mesero" || rol === "cajero") {
+  if (rol === "mesero" || rol === "cajero" || rol === "ventas" || rol === "cajera") {
     const base = ["/dashboard", "/tables", "/entregas"] as const;
-    const allow = rol === "cajero" ? [...base, "/cierre"] : [...base];
+    const withCierre = rol === "cajero" || rol === "cajera" || rol === "ventas";
+    const allow = withCierre ? ([...base, "/cierre"] as const) : base;
     return mainNavItems.filter((i) => allow.includes(i.path as (typeof allow)[number]));
   }
   return mainNavItems.filter((i) => i.path === "/dashboard");

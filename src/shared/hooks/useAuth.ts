@@ -116,7 +116,10 @@ function extractUserFromAuthPayload(data: unknown): UserSchema | null {
 function clearSessionShared(): void {
   clearTenantSessionCache();
   localStorage.removeItem(REFRESH_TOKEN_KEY);
-  patchSharedState({ user: null, tenantUser: null });
+  // loading: true evita que RoleGuard redirija a login en el primer paint (user aún null) antes de que loadUserData termine.
+  patchSharedState({ user: null, tenantUser: null, loading: true });
+  // Tras logout, el próximo montaje de useAuth debe volver a ejecutar loadUserDataShared (nuevo usuario / token).
+  initializedOnce = false;
 }
 
 async function loadUserDataShared(opts?: { silent?: boolean }): Promise<void> {

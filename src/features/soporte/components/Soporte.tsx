@@ -11,8 +11,10 @@ import {
 
 const STAFF_ROLES = [
   { value: "mesero", label: "Mesero / Venta" },
+  { value: "ventas", label: "Ventas (piso + cierre)" },
   { value: "cocina", label: "Cocina" },
   { value: "cajero", label: "Cajero" },
+  { value: "cajera", label: "Cajera (piso + cierre)" },
 ] as const;
 
 interface TenantUserRow {
@@ -770,7 +772,7 @@ function UsuariosPanel() {
           <div className="flex flex-col gap-[4px]">
             <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px]">Crear usuario de equipo</span>
             <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">
-              Queda vinculado solo al restaurante de tu sesión (no a otros negocios). Elegí rol de venta, cocina o cajero; esos usuarios no ven el módulo Soporte.
+              Queda vinculado solo al restaurante de tu sesión (no a otros negocios). Elegí rol (mesero, ventas, cocina, cajero o cajera); esos usuarios no ven el módulo Soporte.
             </span>
           </div>
           {success && (
@@ -938,7 +940,7 @@ export function Soporte() {
           Soporte solo está disponible para la cuenta del negocio
         </span>
         <span className="font-['Inter',sans-serif] text-[#6b7280] text-[13px] text-center max-w-md leading-relaxed">
-          Los usuarios de equipo (venta, cocina, cajero) no tienen acceso a este módulo. Solo el administrador puede gestionar la carta y crear usuarios para su restaurante.
+          Los usuarios de equipo (mesero, ventas, cocina, cajero, cajera) no tienen acceso a este módulo. Solo el administrador puede gestionar la carta y crear usuarios para su restaurante.
         </span>
         <button
           type="button"
