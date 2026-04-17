@@ -31,11 +31,20 @@ export interface DownloadProgressPayload {
 }
 
 export interface UpdateEventHandlers {
+  onChecking?: () => void;
   onUpdateAvailable?: (info: UpdateInfoPayload) => void;
   onUpdateNotAvailable?: () => void;
   onDownloadProgress?: (progress: DownloadProgressPayload) => void;
   onUpdateDownloaded?: (info: UpdateInfoPayload) => void;
-  onUpdateError?: (message: string) => void;
+  onUpdateError?: (payload: unknown) => void;
+}
+
+export interface UpdateStatePayload {
+  phase: "idle" | "checking" | "available" | "downloading" | "ready" | "error" | "unsupported";
+  remoteVersion: string | null;
+  downloadedVersion: string | null;
+  percent: number;
+  error: string;
 }
 
 export interface ElectronAPI {
@@ -47,7 +56,9 @@ export interface ElectronAPI {
   listPrinters?: () => Promise<ThermalPrinterInfo[]>;
   printThermal?: (opts: PrintThermalOptions) => Promise<PrintThermalResponse>;
   checkForUpdates?: () => void;
+  downloadUpdate?: () => void;
   installUpdate?: () => void;
+  getUpdateState?: () => Promise<UpdateStatePayload>;
   onUpdateEvents?: (handlers: UpdateEventHandlers) => () => void;
 }
 

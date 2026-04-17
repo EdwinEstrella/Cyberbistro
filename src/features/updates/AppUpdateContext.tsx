@@ -4,12 +4,11 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { toast } from "sonner";
-import type { UpdateInfoPayload } from "@/shared/types/electron";
+import type { UpdateInfoPayload, UpdateStatePayload } from "@/shared/types/electron";
 
 export type AppUpdatePhase =
   | "idle"
@@ -17,28 +16,23 @@ export type AppUpdatePhase =
   | "checking"
   | "available"
   | "downloading"
-  | "ready";
-
-const PROGRESS_TOAST_ID = "cyberbistro-app-update";
-const CHECK_UPDATE_TOAST_ID = "cyberbistro-check-update";
-/** Mismo repo que `build.publish` en package.json (comprobación en paralelo si el updater no notifica). */
-const GITHUB_LATEST_RELEASE_API =
-  "https://api.github.com/repos/EdwinEstrella/Cyberbistro/releases/latest";
-
-function normalizeReleaseTag(tag: string | undefined): string {
-  if (!tag) return "";
-  return tag.replace(/^v/i, "").trim();
-}
+  | "ready"
+  | "error";
 
 type AppUpdateContextValue = {
   phase: AppUpdatePhase;
   remoteVersion: string | null;
   downloadPercent: number | null;
+  errorDetail: string;
+  isUpdateCardVisible: boolean;
   /** Campanita: hay actualización en curso o lista para instalar */
   hasUpdateBellAlert: boolean;
   checkForUpdates: () => void;
+  downloadUpdate: () => void;
   installUpdate: () => void;
   showUpdateBellToast: () => void;
+  openUpdateCard: () => void;
+  closeUpdateCard: () => void;
 };
 
 const AppUpdateContext = createContext<AppUpdateContextValue | null>(null);
@@ -51,14 +45,34 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
   );
   const [remoteVersion, setRemoteVersion] = useState<string | null>(null);
   const [downloadPercent, setDownloadPercent] = useState<number | null>(null);
-  const manualCheckPendingRef = useRef(false);
+  const [errorDetail, setErrorDetail] = useState("");
+  const [isUpdateCardVisible, setIsUpdateCardVisible] = useState(false);
 
   const hasUpdateBellAlert =
-    phase === "available" || phase === "downloading" || phase === "ready";
+    phase === "available" || phase === "downloading" || phase === "ready" || phase === "error";
+
+  const setPhaseState = useCallback(
+    (next: AppUpdatePhase, extra?: { version?: string | null; percent?: number | null; error?: string }) => {
+      setPhase(next);
+      if (extra?.version !== undefined) setRemoteVersion(extra.version);
+      if (extra?.percent !== undefined) setDownloadPercent(extra.percent);
+      if (extra?.error !== undefined) setErrorDetail(extra.error);
+      if (next !== "error" && extra?.error === undefined) setErrorDetail("");
+    },
+    []
+  );
 
   const installUpdate = useCallback(() => {
     window.electronAPI?.installUpdate?.();
   }, []);
+
+  const downloadUpdate = useCallback(() => {
+    const api = window.electronAPI;
+    if (!api?.downloadUpdate) return;
+    setPhaseState("downloading", { percent: downloadPercent ?? 0 });
+    setIsUpdateCardVisible(true);
+    api.downloadUpdate();
+  }, [downloadPercent, setPhaseState]);
 
   const checkForUpdates = useCallback(() => {
     const api = window.electronAPI;
@@ -66,149 +80,142 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
       toast.error("Las actualizaciones solo están disponibles en la app de escritorio.");
       return;
     }
-    manualCheckPendingRef.current = true;
-    setPhase("checking");
-    toast.loading("Buscando actualizaciones…", {
-      id: CHECK_UPDATE_TOAST_ID,
-      duration: 60_000,
-    });
-
-    const current = String(__APP_VERSION__).trim();
-    void fetch(GITHUB_LATEST_RELEASE_API, {
-      headers: { Accept: "application/vnd.github+json" },
-    })
-      .then((r) => (r.ok ? (r.json() as Promise<{ tag_name?: string }>) : null))
-      .then((data) => {
-        if (data == null || !manualCheckPendingRef.current) return;
-        const remote = normalizeReleaseTag(data.tag_name);
-        if (!remote) return;
-        if (remote === current) {
-          manualCheckPendingRef.current = false;
-          toast.dismiss(CHECK_UPDATE_TOAST_ID);
-          setPhase("idle");
-          toast.success("Ya tenés la última versión (coincide con el último release en GitHub).");
-        }
-      })
-      .catch(() => {
-        /* sin red o rate limit: sigue el flujo por electron-updater */
-      });
-
+    setPhaseState("checking", { percent: 0 });
+    setIsUpdateCardVisible(false);
     api.checkForUpdates();
-  }, []);
+  }, [setPhaseState]);
 
   const showUpdateBellToast = useCallback(() => {
     if (!hasUpdateBellAlert) {
       toast.info("No hay actualizaciones pendientes en este momento.");
       return;
     }
-    const v = remoteVersion ?? "nueva";
-    if (phase === "ready") {
-      toast.message(`CyberBistro ${v} listo`, {
-        description: "Reiniciá la app para aplicar la actualización.",
-        action: {
-          label: "Reiniciar e instalar",
-          onClick: () => installUpdate(),
-        },
-      });
-      return;
-    }
-    if (phase === "downloading") {
-      toast.message(`Descargando ${v}`, {
-        description: `Progreso: ${downloadPercent ?? 0}%`,
-      });
-      return;
-    }
-    toast.message(`Actualización disponible (${v})`, {
-      description: "Se está descargando en segundo plano. Podés seguir usando la app.",
-    });
-  }, [downloadPercent, hasUpdateBellAlert, installUpdate, phase, remoteVersion]);
+    setIsUpdateCardVisible(true);
+  }, [hasUpdateBellAlert]);
+
+  const openUpdateCard = useCallback(() => {
+    setIsUpdateCardVisible(true);
+  }, []);
+
+  const closeUpdateCard = useCallback(() => {
+    setIsUpdateCardVisible(false);
+  }, []);
+
+  const hydrateFromState = useCallback(
+    (state: UpdateStatePayload | null | undefined) => {
+      if (!state) return;
+      const phaseFromMain = state.phase === "unsupported" ? "idle" : state.phase;
+      if (phaseFromMain === "ready") {
+        setPhaseState("ready", {
+          version: state.downloadedVersion ?? state.remoteVersion,
+          percent: 100,
+        });
+      } else if (phaseFromMain === "downloading") {
+        setPhaseState("downloading", {
+          version: state.remoteVersion,
+          percent: Number(state.percent) || 0,
+        });
+      } else if (phaseFromMain === "available") {
+        setPhaseState("available", {
+          version: state.remoteVersion,
+          percent: 0,
+        });
+      } else if (phaseFromMain === "error") {
+        setPhaseState("error", {
+          version: state.remoteVersion,
+          error: state.error || "",
+        });
+      } else {
+        setPhaseState("idle", { percent: 0 });
+      }
+    },
+    [setPhaseState]
+  );
 
   useEffect(() => {
     const api = window.electronAPI;
     if (!api?.onUpdateEvents) return;
 
+    void api.getUpdateState?.().then((state) => hydrateFromState(state)).catch(() => {});
+
     return api.onUpdateEvents({
+      onChecking: () => {
+        setPhaseState("checking", { percent: 0 });
+      },
       onUpdateAvailable: (info: UpdateInfoPayload) => {
-        manualCheckPendingRef.current = false;
-        toast.dismiss(CHECK_UPDATE_TOAST_ID);
-        setRemoteVersion(info.version);
-        setPhase("available");
-        setDownloadPercent(null);
-        toast.loading(`Nueva versión ${info.version}. Descargando…`, {
-          id: PROGRESS_TOAST_ID,
-          duration: Infinity,
+        setPhaseState("available", {
+          version: info?.version ?? remoteVersion,
+          percent: 0,
         });
+        setIsUpdateCardVisible(true);
       },
       onUpdateNotAvailable: () => {
-        toast.dismiss(CHECK_UPDATE_TOAST_ID);
-        if (manualCheckPendingRef.current) {
-          toast.success("Ya tenés la última versión instalada.");
-          manualCheckPendingRef.current = false;
+        if (phase !== "ready" && phase !== "downloading") {
+          setPhaseState("idle", { percent: 0 });
         }
-        setPhase((p) => (p === "checking" || p === "idle" ? "idle" : p));
       },
       onDownloadProgress: (p) => {
-        setPhase("downloading");
-        setDownloadPercent(p.percent);
-        toast.loading(`Descargando actualización: ${p.percent}%`, {
-          id: PROGRESS_TOAST_ID,
-          duration: Infinity,
+        setPhaseState("downloading", {
+          percent: Number(p.percent) || 0,
         });
+        setIsUpdateCardVisible(true);
       },
       onUpdateDownloaded: (info) => {
-        manualCheckPendingRef.current = false;
-        toast.dismiss(PROGRESS_TOAST_ID);
-        setPhase("ready");
-        setRemoteVersion(info.version);
-        setDownloadPercent(100);
-        const ok = window.confirm(
-          `La versión ${info.version} está lista. ¿Reiniciar ahora para instalar la actualización?`
-        );
-        if (ok) installUpdate();
+        setPhaseState("ready", {
+          version: info?.version ?? remoteVersion,
+          percent: 100,
+        });
+        setIsUpdateCardVisible(true);
       },
-      onUpdateError: (msg) => {
-        manualCheckPendingRef.current = false;
-        toast.dismiss(CHECK_UPDATE_TOAST_ID);
-        toast.dismiss(PROGRESS_TOAST_ID);
-        setPhase("idle");
-        setDownloadPercent(null);
-        toast.error(`Error de actualización: ${msg}`);
+      onUpdateError: (payload) => {
+        const detail =
+          typeof payload === "string"
+            ? payload.trim()
+            : payload && typeof payload === "object" && "message" in payload
+            ? String((payload as { message?: string }).message ?? "").trim()
+            : payload && typeof payload === "object" && "error" in payload
+            ? String((payload as { error?: string }).error ?? "").trim()
+            : "";
+        setPhase((prev) => {
+          if (prev === "ready") return prev;
+          return "error";
+        });
+        if (phase !== "ready") {
+          setErrorDetail(detail);
+          setIsUpdateCardVisible(true);
+        }
       },
     });
-  }, [installUpdate]);
-
-  useEffect(() => {
-    if (phase !== "checking") return;
-    const t = window.setTimeout(() => {
-      manualCheckPendingRef.current = false;
-      toast.dismiss(CHECK_UPDATE_TOAST_ID);
-      setPhase((prev) => (prev === "checking" ? "idle" : prev));
-      toast.message("No hubo respuesta a tiempo", {
-        description:
-          "Comprobá tu conexión o probá de nuevo. Si ya estás actualizado, podés ignorar este aviso.",
-      });
-    }, 45_000);
-    return () => window.clearTimeout(t);
-  }, [phase]);
+  }, [hydrateFromState, phase, remoteVersion, setPhaseState]);
 
   const value = useMemo(
     () => ({
       phase,
       remoteVersion,
       downloadPercent,
+      errorDetail,
+      isUpdateCardVisible,
       hasUpdateBellAlert,
       checkForUpdates,
+      downloadUpdate,
       installUpdate,
       showUpdateBellToast,
+      openUpdateCard,
+      closeUpdateCard,
     }),
     [
       phase,
       remoteVersion,
       downloadPercent,
+      errorDetail,
+      isUpdateCardVisible,
       hasUpdateBellAlert,
       checkForUpdates,
+      downloadUpdate,
       installUpdate,
       showUpdateBellToast,
+      openUpdateCard,
+      closeUpdateCard,
     ]
   );
 

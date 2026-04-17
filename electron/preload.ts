@@ -49,6 +49,47 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
     return ipcRenderer.invoke('print:thermal', opts)
   },
+  checkForUpdates: () => {
+    ipcRenderer.send('check-for-updates')
+  },
+  downloadUpdate: () => {
+    ipcRenderer.send('download-update')
+  },
+  installUpdate: () => {
+    ipcRenderer.send('install-update')
+  },
+  getUpdateState: () => ipcRenderer.invoke('get-update-state'),
+  onUpdateEvents(handlers: {
+    onChecking?: () => void
+    onUpdateAvailable?: (info: unknown) => void
+    onUpdateNotAvailable?: () => void
+    onDownloadProgress?: (progress: unknown) => void
+    onUpdateDownloaded?: (info: unknown) => void
+    onUpdateError?: (payload: unknown) => void
+  }) {
+    const onChecking = () => handlers.onChecking?.()
+    const onAvailable = (_e: unknown, info: unknown) => handlers.onUpdateAvailable?.(info)
+    const onNotAvailable = () => handlers.onUpdateNotAvailable?.()
+    const onProgress = (_e: unknown, progress: unknown) => handlers.onDownloadProgress?.(progress)
+    const onDownloaded = (_e: unknown, info: unknown) => handlers.onUpdateDownloaded?.(info)
+    const onError = (_e: unknown, payload: unknown) => handlers.onUpdateError?.(payload)
+
+    if (handlers.onChecking) ipcRenderer.on('checking-for-update', onChecking)
+    if (handlers.onUpdateAvailable) ipcRenderer.on('update-available', onAvailable)
+    if (handlers.onUpdateNotAvailable) ipcRenderer.on('update-not-available', onNotAvailable)
+    if (handlers.onDownloadProgress) ipcRenderer.on('download-progress', onProgress)
+    if (handlers.onUpdateDownloaded) ipcRenderer.on('update-downloaded', onDownloaded)
+    if (handlers.onUpdateError) ipcRenderer.on('update-error', onError)
+
+    return () => {
+      if (handlers.onChecking) ipcRenderer.removeListener('checking-for-update', onChecking)
+      if (handlers.onUpdateAvailable) ipcRenderer.removeListener('update-available', onAvailable)
+      if (handlers.onUpdateNotAvailable) ipcRenderer.removeListener('update-not-available', onNotAvailable)
+      if (handlers.onDownloadProgress) ipcRenderer.removeListener('download-progress', onProgress)
+      if (handlers.onUpdateDownloaded) ipcRenderer.removeListener('update-downloaded', onDownloaded)
+      if (handlers.onUpdateError) ipcRenderer.removeListener('update-error', onError)
+    }
+  },
 })
 
 window.addEventListener('DOMContentLoaded', () => {

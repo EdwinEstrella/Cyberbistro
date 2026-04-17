@@ -7,6 +7,13 @@ const electronUpdater = require("electron-updater");
 const log = require("electron-log");
 var _documentCurrentScript = typeof document !== "undefined" ? document.currentScript : null;
 let listenersAttached = false;
+const updateState = {
+  phase: "idle",
+  remoteVersion: null,
+  downloadedVersion: null,
+  percent: 0,
+  error: ""
+};
 function getTargetWindow(getMain) {
   const focused = electron.BrowserWindow.getFocusedWindow();
   if (focused && !focused.isDestroyed()) return focused;
@@ -18,7 +25,7 @@ function getTargetWindow(getMain) {
 function setupAutoUpdater(getMainWindow) {
   electronUpdater.autoUpdater.logger = log;
   electronUpdater.autoUpdater.logger.transports.file.level = "info";
-  electronUpdater.autoUpdater.autoDownload = true;
+  electronUpdater.autoUpdater.autoDownload = false;
   if (process.platform === "win32" && !process.env.CSC_LINK && !process.env.WIN_CSC_LINK) {
     electronUpdater.autoUpdater.verifyUpdateCodeSignature = false;
   }
@@ -29,6 +36,11 @@ function setupAutoUpdater(getMainWindow) {
   if (!listenersAttached) {
     listenersAttached = true;
     electronUpdater.autoUpdater.on("update-available", (info) => {
+      updateState.phase = "available";
+      updateState.remoteVersion = info.version ?? null;
+      updateState.downloadedVersion = null;
+      updateState.percent = 0;
+      updateState.error = "";
       send("update-available", {
         version: info.version,
         releaseDate: info.releaseDate,
@@ -36,9 +48,16 @@ function setupAutoUpdater(getMainWindow) {
       });
     });
     electronUpdater.autoUpdater.on("update-not-available", () => {
+      if (updateState.phase !== "ready") {
+        updateState.phase = "idle";
+        updateState.percent = 0;
+      }
       send("update-not-available");
     });
     electronUpdater.autoUpdater.on("download-progress", (progress) => {
+      updateState.phase = "downloading";
+      updateState.percent = Math.round(progress.percent);
+      updateState.error = "";
       send("download-progress", {
         percent: Math.round(progress.percent),
         transferred: progress.transferred,
@@ -47,6 +66,10 @@ function setupAutoUpdater(getMainWindow) {
       });
     });
     electronUpdater.autoUpdater.on("update-downloaded", (info) => {
+      updateState.phase = "ready";
+      updateState.downloadedVersion = info.version ?? null;
+      updateState.percent = 100;
+      updateState.error = "";
       send("update-downloaded", {
         version: info.version,
         releaseDate: info.releaseDate,
@@ -55,19 +78,41 @@ function setupAutoUpdater(getMainWindow) {
     });
     electronUpdater.autoUpdater.on("error", (err) => {
       log.error("autoUpdater error", err);
+      if (updateState.phase !== "ready") {
+        updateState.phase = "error";
+        updateState.error = (err == null ? void 0 : err.message) ? String(err.message) : String(err);
+      }
       send("update-error", err.message);
     });
     electron.ipcMain.on("install-update", () => {
       electronUpdater.autoUpdater.quitAndInstall(false, true);
     });
+    electron.ipcMain.on("download-update", () => {
+      updateState.phase = "downloading";
+      updateState.percent = Math.max(0, updateState.percent || 0);
+      updateState.error = "";
+      void electronUpdater.autoUpdater.downloadUpdate().catch((err) => {
+        log.warn("downloadUpdate (IPC) failed", err);
+        updateState.phase = "error";
+        updateState.error = (err == null ? void 0 : err.message) ? String(err.message) : String(err);
+        send("update-error", updateState.error);
+      });
+    });
     electron.ipcMain.on("check-for-updates", () => {
+      updateState.phase = "checking";
+      updateState.percent = 0;
+      updateState.error = "";
+      send("checking-for-update");
       void electronUpdater.autoUpdater.checkForUpdates().then((result) => {
         if ((result == null ? void 0 : result.isUpdateAvailable) === false) send("update-not-available");
       }).catch((err) => {
         log.warn("checkForUpdates (IPC) failed", err);
+        updateState.phase = "error";
+        updateState.error = (err == null ? void 0 : err.message) ? String(err.message) : String(err);
         send("update-error", (err == null ? void 0 : err.message) ? String(err.message) : String(err));
       });
     });
+    electron.ipcMain.handle("get-update-state", () => ({ ...updateState }));
   }
   setTimeout(() => {
     void electronUpdater.autoUpdater.checkForUpdates().then((result) => {

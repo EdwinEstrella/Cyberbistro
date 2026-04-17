@@ -775,8 +775,8 @@ function AppDesktopUpdateCard() {
         return "Buscando una versión más reciente en el servidor…";
       case "available":
         return remoteVersion
-          ? `Versión ${remoteVersion} encontrada. Descarga en curso…`
-          : "Nueva versión encontrada. Descarga en curso…";
+          ? `Versión ${remoteVersion} encontrada. Aceptá la actualización desde la tarjeta flotante para iniciar descarga.`
+          : "Nueva versión encontrada. Aceptá la actualización desde la tarjeta flotante para iniciar descarga.";
       case "downloading":
         return `Descargando actualización… ${downloadPercent ?? 0}%`;
       case "ready":

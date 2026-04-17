@@ -4,6 +4,24 @@ import log from 'electron-log'
 
 let listenersAttached = false
 
+type UpdatePhase = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error' | 'unsupported'
+
+type UpdateState = {
+  phase: UpdatePhase
+  remoteVersion: string | null
+  downloadedVersion: string | null
+  percent: number
+  error: string
+}
+
+const updateState: UpdateState = {
+  phase: 'idle',
+  remoteVersion: null,
+  downloadedVersion: null,
+  percent: 0,
+  error: '',
+}
+
 function getTargetWindow(getMain: () => BrowserWindow | null) {
   const focused = BrowserWindow.getFocusedWindow()
   if (focused && !focused.isDestroyed()) return focused
@@ -16,7 +34,7 @@ function getTargetWindow(getMain: () => BrowserWindow | null) {
 export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null) {
   autoUpdater.logger = log
   autoUpdater.logger.transports.file.level = 'info'
-  autoUpdater.autoDownload = true
+  autoUpdater.autoDownload = false
   if (process.platform === 'win32' && !process.env.CSC_LINK && !process.env.WIN_CSC_LINK) {
     autoUpdater.verifyUpdateCodeSignature = false
   }
@@ -30,6 +48,11 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null) {
     listenersAttached = true
 
     autoUpdater.on('update-available', (info) => {
+      updateState.phase = 'available'
+      updateState.remoteVersion = info.version ?? null
+      updateState.downloadedVersion = null
+      updateState.percent = 0
+      updateState.error = ''
       send('update-available', {
         version: info.version,
         releaseDate: info.releaseDate,
@@ -38,10 +61,17 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null) {
     })
 
     autoUpdater.on('update-not-available', () => {
+      if (updateState.phase !== 'ready') {
+        updateState.phase = 'idle'
+        updateState.percent = 0
+      }
       send('update-not-available')
     })
 
     autoUpdater.on('download-progress', (progress) => {
+      updateState.phase = 'downloading'
+      updateState.percent = Math.round(progress.percent)
+      updateState.error = ''
       send('download-progress', {
         percent: Math.round(progress.percent),
         transferred: progress.transferred,
@@ -51,6 +81,10 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null) {
     })
 
     autoUpdater.on('update-downloaded', (info) => {
+      updateState.phase = 'ready'
+      updateState.downloadedVersion = info.version ?? null
+      updateState.percent = 100
+      updateState.error = ''
       send('update-downloaded', {
         version: info.version,
         releaseDate: info.releaseDate,
@@ -60,6 +94,10 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null) {
 
     autoUpdater.on('error', (err) => {
       log.error('autoUpdater error', err)
+      if (updateState.phase !== 'ready') {
+        updateState.phase = 'error'
+        updateState.error = err?.message ? String(err.message) : String(err)
+      }
       send('update-error', err.message)
     })
 
@@ -67,7 +105,23 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null) {
       autoUpdater.quitAndInstall(false, true)
     })
 
+    ipcMain.on('download-update', () => {
+      updateState.phase = 'downloading'
+      updateState.percent = Math.max(0, updateState.percent || 0)
+      updateState.error = ''
+      void autoUpdater.downloadUpdate().catch((err: Error) => {
+        log.warn('downloadUpdate (IPC) failed', err)
+        updateState.phase = 'error'
+        updateState.error = err?.message ? String(err.message) : String(err)
+        send('update-error', updateState.error)
+      })
+    })
+
     ipcMain.on('check-for-updates', () => {
+      updateState.phase = 'checking'
+      updateState.percent = 0
+      updateState.error = ''
+      send('checking-for-update')
       void autoUpdater
         .checkForUpdates()
         .then((result) => {
@@ -77,9 +131,13 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null) {
         })
         .catch((err: Error) => {
           log.warn('checkForUpdates (IPC) failed', err)
+          updateState.phase = 'error'
+          updateState.error = err?.message ? String(err.message) : String(err)
           send('update-error', err?.message ? String(err.message) : String(err))
         })
     })
+
+    ipcMain.handle('get-update-state', () => ({ ...updateState }))
   }
 
   setTimeout(() => {

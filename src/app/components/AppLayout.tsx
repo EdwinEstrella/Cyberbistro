@@ -15,6 +15,7 @@ import {
 import { RoleGuard } from "./RoleGuard";
 import { PersistentCobrarHint } from "./PersistentCobrarHint";
 import { useAppUpdate } from "../../features/updates/AppUpdateContext";
+import { AppUpdateOverlay } from "../../features/updates/components/AppUpdateOverlay";
 
 const mainNavItems = [
   { label: "Venta", icon: svgPaths.p20793584, viewBox: "0 0 18 18", path: "/dashboard" },
@@ -313,6 +314,7 @@ export function AppLayout() {
         </div>
       </div>
       </VentaCartSearchProvider>
+      <AppUpdateOverlay />
       </RoleGuard>
     </div>
   );
