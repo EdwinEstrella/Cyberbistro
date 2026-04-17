@@ -116,7 +116,23 @@ function extractUserFromAuthPayload(data: unknown): UserSchema | null {
 function clearSessionShared(): void {
   clearTenantSessionCache();
   localStorage.removeItem(REFRESH_TOKEN_KEY);
-  patchSharedState({ user: null, tenantUser: null });
+  patchSharedState({ user: null, tenantUser: null, loading: false });
+}
+
+export function hydrateAuthStateAfterLogin(user: UserSchema, tenantRow: TenantSessionRow): void {
+  writeTenantSessionCache(user.id, tenantRow);
+  refreshBlockedUntil = 0;
+  initializedOnce = true;
+  patchSharedState({
+    user,
+    tenantUser: rowToTenantUser(tenantRow),
+    loading: false,
+  });
+  logAuth('hydrate-after-login', {
+    userId: user.id,
+    tenantId: tenantRow.tenant_id,
+    rol: tenantRow.rol,
+  });
 }
 
 async function loadUserDataShared(opts?: { silent?: boolean }): Promise<void> {
@@ -343,9 +359,9 @@ export function useAuth() {
     sync();
 
     ensureGlobalListeners();
-    if (!initializedOnce) {
+    if (!initializedOnce || sharedState.user == null) {
       initializedOnce = true;
-      logAuth('mount: initial auth load');
+      logAuth('mount: auth load', { reason: sharedState.user ? 'first-mount' : 'missing-user' });
       void loadUserDataShared({ silent: false });
     }
 
@@ -362,6 +378,10 @@ export function useAuth() {
     logAuth('signOut:start');
     const { error } = await insforgeClient.auth.signOut();
     if (error) console.error('Error signing out:', error);
+    refreshInFlight = null;
+    loadUserDataInFlight = null;
+    refreshBlockedUntil = 0;
+    initializedOnce = false;
     clearSessionShared();
     logAuth('signOut:done');
   }, []);

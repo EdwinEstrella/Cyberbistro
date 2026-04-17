@@ -9,7 +9,7 @@ import imgDecorativeScanlineEffect from "figma:asset/70a05c412757c6d4e1cffbb0780
 import { TitleBar } from "../../window";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { resolveTenantUserForSession } from "../../../shared/lib/resolveTenantUserFromAuth";
-import { writeTenantSessionCache } from "../../../shared/lib/tenantSessionCache";
+import { hydrateAuthStateAfterLogin } from "../../../shared/hooks/useAuth";
 import { defaultRouteForRol } from "../../../shared/lib/roleNav";
 import { PinGateModal } from "../../../shared/components/PinGate";
 
@@ -135,7 +135,7 @@ export function Login() {
         await insforgeClient.auth.signOut();
         return;
       }
-      writeTenantSessionCache(data.user.id, tu);
+      hydrateAuthStateAfterLogin(data.user, tu);
       const dest = defaultRouteForRol(tu.rol);
       setIsVisible(false);
       setTimeout(() => navigate(dest), 300);

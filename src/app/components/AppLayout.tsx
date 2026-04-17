@@ -8,6 +8,7 @@ import { insforgeClient } from "../../shared/lib/insforge";
 import { useAuth } from "../../shared/hooks/useAuth";
 import {
   canAccessCocinaRoute,
+  normalizeTenantRol,
   showAjustesInSidebar,
   showSoporteInSidebar,
 } from "../../shared/lib/roleNav";
@@ -32,11 +33,11 @@ const soporteNavItem = {
 } as const;
 
 function filterMainNavForRol(rol: string | null) {
-  if (rol === "admin") return [...mainNavItems];
-  if (rol === "cocina") return mainNavItems.filter((i) => i.path === "/cocina");
-  if (rol === "mesero" || rol === "cajero") {
-    const base = ["/dashboard", "/tables", "/entregas"] as const;
-    const allow = rol === "cajero" ? [...base, "/cierre"] : [...base];
+  const normalized = normalizeTenantRol(rol);
+  if (normalized === "admin") return [...mainNavItems];
+  if (normalized === "cocina") return mainNavItems.filter((i) => i.path === "/cocina");
+  if (normalized === "cajera") {
+    const allow = ["/dashboard", "/tables", "/entregas", "/cierre"] as const;
     return mainNavItems.filter((i) => allow.includes(i.path as (typeof allow)[number]));
   }
   return mainNavItems.filter((i) => i.path === "/dashboard");

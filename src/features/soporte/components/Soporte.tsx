@@ -10,9 +10,8 @@ import {
 } from "../../../shared/lib/menuCategories";
 
 const STAFF_ROLES = [
-  { value: "mesero", label: "Mesero / Venta" },
+  { value: "cajera", label: "Cajera / Venta" },
   { value: "cocina", label: "Cocina" },
-  { value: "cajero", label: "Cajero" },
 ] as const;
 
 interface TenantUserRow {
@@ -557,7 +556,7 @@ function UsuariosPanel() {
   const [password, setPassword] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
   const [nombre, setNombre] = useState("");
-  const [rol, setRol] = useState<(typeof STAFF_ROLES)[number]["value"]>("mesero");
+  const [rol, setRol] = useState<(typeof STAFF_ROLES)[number]["value"]>("cajera");
   const [creating, setCreating] = useState(false);
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
@@ -704,7 +703,7 @@ function UsuariosPanel() {
     setPassword("");
     setAdminPassword("");
     setNombre("");
-    setRol("mesero");
+    setRol("cajera");
     setCreating(false);
     await loadUsers();
   }
@@ -770,7 +769,7 @@ function UsuariosPanel() {
           <div className="flex flex-col gap-[4px]">
             <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px]">Crear usuario de equipo</span>
             <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">
-              Queda vinculado solo al restaurante de tu sesión (no a otros negocios). Elegí rol de venta, cocina o cajero; esos usuarios no ven el módulo Soporte.
+              Queda vinculado solo al restaurante de tu sesión (no a otros negocios). Elegí rol de cajera/venta o cocina; esos usuarios no ven el módulo Soporte.
             </span>
           </div>
           {success && (
@@ -938,7 +937,7 @@ export function Soporte() {
           Soporte solo está disponible para la cuenta del negocio
         </span>
         <span className="font-['Inter',sans-serif] text-[#6b7280] text-[13px] text-center max-w-md leading-relaxed">
-          Los usuarios de equipo (venta, cocina, cajero) no tienen acceso a este módulo. Solo el administrador puede gestionar la carta y crear usuarios para su restaurante.
+          Los usuarios de equipo (cajera/venta, cocina) no tienen acceso a este módulo. Solo el administrador puede gestionar la carta y crear usuarios para su restaurante.
         </span>
         <button
           type="button"

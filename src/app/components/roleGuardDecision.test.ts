@@ -35,7 +35,7 @@ describe("getRoleGuardDecision", () => {
         isAuthenticated: true,
         userExists: true,
         tenantId: null,
-        rol: "mesero",
+        rol: "cajera",
         pathname: "/dashboard",
       })
     ).toEqual({ type: "tenant_link_required" });
@@ -47,7 +47,7 @@ describe("getRoleGuardDecision", () => {
       isAuthenticated: true,
       userExists: true,
       tenantId: "tenant-1",
-      rol: "mesero",
+      rol: "cajera",
       pathname: "/soporte",
     });
     expect(decision.type).toBe("redirect_role");
