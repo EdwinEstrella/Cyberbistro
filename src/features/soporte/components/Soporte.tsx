@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Navigate, useNavigate } from "react-router";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
+import { useTenantCurrency } from "../../../shared/hooks/useTenantCurrency";
 import { APP_ACCESS_PIN } from "../../../shared/lib/accessPin";
 import {
   MENU_CATEGORIES,
@@ -104,9 +105,6 @@ interface Plato {
   va_a_cocina: boolean;
 }
 
-const RD = (n: number) =>
-  "RD$ " + n.toLocaleString("es-DO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
 function catColor(cat: string) {
   return MENU_CATEGORY_COLORS[cat] ?? "#adaaaa";
 }
@@ -117,6 +115,7 @@ type FormMode = "add" | "edit" | null;
 
 function CartaPanel() {
   const { tenantId, loading: authLoading } = useAuth();
+  const { formatMoney, currencySymbol } = useTenantCurrency();
   const [platos, setPlatos] = useState<Plato[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -407,7 +406,7 @@ function CartaPanel() {
                       </span>
                     </div>
                     <span className="font-['Space_Grotesk',sans-serif] font-bold text-[13px]" style={{ color: cc }}>
-                      {RD(plato.precio)}
+                      {formatMoney(plato.precio)}
                     </span>
                   </div>
                 );
@@ -454,7 +453,7 @@ function CartaPanel() {
 
           {/* Precio */}
           <div className="flex flex-col gap-[6px]">
-            <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">Precio (RD$)</label>
+            <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">{`Precio (${currencySymbol})`}</label>
             <input
               type="number"
               min="0"

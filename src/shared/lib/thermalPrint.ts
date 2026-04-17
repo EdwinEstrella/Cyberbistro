@@ -34,7 +34,10 @@ export async function printThermalHtml(html: string): Promise<PrintThermalResult
       const res = await api.printThermal({
         html,
         deviceName: settings.printerName || undefined,
-        silent: Boolean(settings.printerName?.trim()),
+        // En escritorio siempre imprimimos en modo silencioso:
+        // - si hay impresora guardada, la usa
+        // - si no, usa la predeterminada del sistema
+        silent: true,
         paperWidthMm: settings.paperWidthMm,
       });
       return res ?? { ok: false, error: "Sin respuesta del proceso principal" };

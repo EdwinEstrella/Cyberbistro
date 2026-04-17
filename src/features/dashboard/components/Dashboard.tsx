@@ -10,6 +10,7 @@ import {
 } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
+import { useTenantCurrency } from "../../../shared/hooks/useTenantCurrency";
 import {
   MENU_CATEGORY_COLORS,
   sortCategoriesForTabs,
@@ -64,12 +65,6 @@ interface Consumo {
 
 const ITBIS = 0.18;
 
-const RD = (n: number) =>
-  "RD$ " + n.toLocaleString("es-DO", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-
 function catColor(cat: string) {
   return MENU_CATEGORY_COLORS[cat] ?? "#adaaaa";
 }
@@ -77,6 +72,7 @@ function catColor(cat: string) {
 export function Dashboard() {
   const { query: cartSearchQuery } = useVentaCartSearch();
   const { tenantId, user, loading: authLoading } = useAuth();
+  const { formatMoney, currencySymbol } = useTenantCurrency();
   const [platos, setPlatos] = useState<Plato[]>([]);
   const [mesas, setMesas] = useState<MesaBasic[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -813,7 +809,7 @@ export function Dashboard() {
                       className="font-['Space_Grotesk',sans-serif] font-bold text-[16px] mt-auto"
                       style={{ color: cc }}
                     >
-                      {RD(plato.precio)}
+                      {formatMoney(plato.precio)}
                     </span>
                   </div>
 
@@ -1028,7 +1024,7 @@ export function Dashboard() {
                         {c.cantidad}× {c.nombre}
                       </span>
                       <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[13px] shrink-0 tabular-nums">
-                        {RD(Number(c.subtotal))}
+                        {formatMoney(Number(c.subtotal))}
                       </span>
                     </div>
                     <span className="font-['Inter',sans-serif] text-[#6b7280] text-[9px] uppercase tracking-wide">
@@ -1122,7 +1118,7 @@ export function Dashboard() {
                       className="font-['Space_Grotesk',sans-serif] font-bold text-[14px]"
                       style={{ color: cc }}
                     >
-                      {RD(item.plato.precio * item.cantidad)}
+                      {formatMoney(item.plato.precio * item.cantidad)}
                     </span>
                   </div>
                 </div>
@@ -1142,7 +1138,7 @@ export function Dashboard() {
             {cartSubtotal > 0 && hasCuentaEnMesa && (
               <div className="bg-[rgba(89,238,80,0.06)] border border-[rgba(89,238,80,0.15)] rounded-[8px] px-[10px] py-[8px]">
                 <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] leading-snug">
-                  Carrito sin enviar: <span className="text-[#59ee50] font-semibold">{RD(cartTotal)}</span>
+                  Carrito sin enviar: <span className="text-[#59ee50] font-semibold">{formatMoney(cartTotal)}</span>
                   . Tocá <span className="text-white">Cocina</span> para sumarlo a la cuenta de la mesa antes de cobrar todo junto.
                 </span>
               </div>
@@ -1154,7 +1150,7 @@ export function Dashboard() {
                   Subtotal {hasCuentaEnMesa ? "(en mesa)" : ""}
                 </span>
                 <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[1px] uppercase">
-                  {RD(panelBillSubtotal)}
+                  {formatMoney(panelBillSubtotal)}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -1162,7 +1158,7 @@ export function Dashboard() {
                   ITBIS (18%)
                 </span>
                 <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[1px] uppercase">
-                  {RD(panelBillItbis)}
+                  {formatMoney(panelBillItbis)}
                 </span>
               </div>
               <div className="border-t border-[rgba(72,72,71,0.15)] pt-[8px] flex items-center justify-between">
@@ -1170,7 +1166,7 @@ export function Dashboard() {
                   Total
                 </span>
                 <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#59ee50] text-[20px]">
-                  {RD(panelBillTotal)}
+                  {formatMoney(panelBillTotal)}
                 </span>
               </div>
             </div>
@@ -1216,7 +1212,7 @@ export function Dashboard() {
               className="w-full flex gap-[10px] items-center justify-center py-[14px] rounded-[12px] bg-[#ff906d] border-none cursor-pointer transition-opacity hover:bg-[#ff784d] disabled:opacity-45 disabled:cursor-not-allowed"
             >
               <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#5b1600] text-[14px] tracking-[2px] uppercase">
-                Cobrar {RD(panelBillTotal)}
+                Cobrar {formatMoney(panelBillTotal)}
               </span>
               <svg className="size-[14px]" fill="none" viewBox="0 0 16 16">
                 <path d={svgPaths.p1a406200} fill="#5B1600" />
@@ -1316,11 +1312,11 @@ export function Dashboard() {
                       {line.cantidad}× {line.plato.nombre}
                     </div>
                     <div className="text-[#adaaaa] text-[11px]">
-                      RD$ {Number(line.plato.precio).toFixed(2)} c/u
+                      {`${currencySymbol} ${Number(line.plato.precio).toFixed(2)} c/u`}
                     </div>
                   </div>
                   <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[14px]">
-                    RD$ {(line.plato.precio * line.cantidad).toFixed(2)}
+                    {`${currencySymbol} ${(line.plato.precio * line.cantidad).toFixed(2)}`}
                   </div>
                 </div>
               ))}
@@ -1332,7 +1328,7 @@ export function Dashboard() {
                   Subtotal
                 </span>
                 <span className="font-['Inter',sans-serif] text-white text-[11px]">
-                  {RD(calcSubtotal)}
+                  {formatMoney(calcSubtotal)}
                 </span>
               </div>
               <div className="flex justify-between">
@@ -1340,7 +1336,7 @@ export function Dashboard() {
                   ITBIS (18%)
                 </span>
                 <span className="font-['Inter',sans-serif] text-white text-[11px]">
-                  {RD(calcItbis)}
+                  {formatMoney(calcItbis)}
                 </span>
               </div>
               <div className="border-t border-[rgba(72,72,71,0.15)] pt-[6px] flex justify-between">
@@ -1348,7 +1344,7 @@ export function Dashboard() {
                   TOTAL
                 </span>
                 <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[14px]">
-                  {RD(calcTotal)}
+                  {formatMoney(calcTotal)}
                 </span>
               </div>
             </div>
@@ -1422,7 +1418,9 @@ export function Dashboard() {
                 </span>
                 {mesaConsumos.length > 0 && (
                   <div className="text-[#adaaaa] text-[12px] mt-1">
-                    Total pendiente: RD$ {mesaConsumos.reduce((sum, c) => sum + Number(c.subtotal), 0).toFixed(2)}
+                    {`Total pendiente: ${currencySymbol} ${mesaConsumos
+                      .reduce((sum, c) => sum + Number(c.subtotal), 0)
+                      .toFixed(2)}`}
                   </div>
                 )}
               </div>
@@ -1480,10 +1478,10 @@ export function Dashboard() {
                     </div>
                     <div className="text-right">
                       <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[16px]">
-                        RD$ {Number(consumo.subtotal).toFixed(2)}
+                        {`${currencySymbol} ${Number(consumo.subtotal).toFixed(2)}`}
                       </div>
                       <div className="text-[#adaaaa] text-[11px]">
-                        RD$ {Number(consumo.precio_unitario).toFixed(2)} c/u
+                        {`${currencySymbol} ${Number(consumo.precio_unitario).toFixed(2)} c/u`}
                       </div>
                     </div>
                   </div>

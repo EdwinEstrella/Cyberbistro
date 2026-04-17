@@ -48,16 +48,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkForUpdates: () => {
     ipcRenderer.send('check-for-updates')
   },
+  downloadUpdate: () => {
+    ipcRenderer.send('download-update')
+  },
   installUpdate: () => {
     ipcRenderer.send('install-update')
   },
+  getUpdateState: () => ipcRenderer.invoke('get-update-state'),
   onUpdateEvents(handlers) {
+    const onChecking = () => handlers.onChecking?.()
     const onAvailable = (_e, info) => handlers.onUpdateAvailable?.(info)
     const onNotAvailable = () => handlers.onUpdateNotAvailable?.()
     const onProgress = (_e, progress) => handlers.onDownloadProgress?.(progress)
     const onDownloaded = (_e, info) => handlers.onUpdateDownloaded?.(info)
-    const onError = (_e, message) => handlers.onUpdateError?.(message)
+    const onError = (_e, payload) => handlers.onUpdateError?.(payload)
 
+    if (handlers.onChecking) ipcRenderer.on('checking-for-update', onChecking)
     if (handlers.onUpdateAvailable) ipcRenderer.on('update-available', onAvailable)
     if (handlers.onUpdateNotAvailable) ipcRenderer.on('update-not-available', onNotAvailable)
     if (handlers.onDownloadProgress) ipcRenderer.on('download-progress', onProgress)
@@ -65,6 +71,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     if (handlers.onUpdateError) ipcRenderer.on('update-error', onError)
 
     return () => {
+      if (handlers.onChecking) ipcRenderer.removeListener('checking-for-update', onChecking)
       if (handlers.onUpdateAvailable) ipcRenderer.removeListener('update-available', onAvailable)
       if (handlers.onUpdateNotAvailable) ipcRenderer.removeListener('update-not-available', onNotAvailable)
       if (handlers.onDownloadProgress) ipcRenderer.removeListener('download-progress', onProgress)

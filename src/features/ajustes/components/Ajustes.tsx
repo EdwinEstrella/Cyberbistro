@@ -33,10 +33,16 @@ interface Config {
   logo_url: string;
   direccion: string;
   telefono: string;
+  currency_code: "DOP" | "ARS";
   ncf_fiscal_activo: boolean;
   ncf_tipo_default: string;
   ncf_secuencia_siguiente: number;
 }
+
+const CURRENCY_OPTIONS: Array<{ code: Config["currency_code"]; label: string }> = [
+  { code: "DOP", label: "Peso dominicano (RD$)" },
+  { code: "ARS", label: "Peso argentino (AR$)" },
+];
 
 /** Factura de ejemplo: solo para vista previa en Ajustes (mismos campos que un cobro real). */
 const SAMPLE_FACTURA_THERMAL: Parameters<typeof buildFacturaReceiptHtml>[1] = {
@@ -102,6 +108,7 @@ export function Ajustes() {
     logo_url: "",
     direccion: "",
     telefono: "",
+    currency_code: "DOP",
     ncf_fiscal_activo: false,
     ncf_tipo_default: "B01",
     ncf_secuencia_siguiente: 1,
@@ -121,6 +128,7 @@ export function Ajustes() {
 
   const TENANT_FIELDS_BASE =
     "nombre_negocio, rnc, logo_url, direccion, telefono";
+  const TENANT_FIELDS_CURRENCY = "moneda";
   const TENANT_FIELDS_NCF = "ncf_fiscal_activo, ncf_tipo_default, ncf_secuencia_siguiente";
 
   useEffect(() => {
@@ -138,11 +146,21 @@ export function Ajustes() {
     void (async () => {
       let res = await insforgeClient.database
         .from("tenants")
-        .select(`${TENANT_FIELDS_BASE}, ${TENANT_FIELDS_NCF}`)
+        .select(`${TENANT_FIELDS_BASE}, ${TENANT_FIELDS_CURRENCY}, ${TENANT_FIELDS_NCF}`)
         .eq("id", tenantId)
         .maybeSingle();
 
       if (res.error && !cancelled) {
+        // Fallback: esquema alterno si la divisa está en currency_code.
+        res = await insforgeClient.database
+          .from("tenants")
+          .select(`${TENANT_FIELDS_BASE}, currency_code, ${TENANT_FIELDS_NCF}`)
+          .eq("id", tenantId)
+          .maybeSingle();
+      }
+
+      if (res.error && !cancelled) {
+        // Fallback final: solo campos base (cuando también faltan columnas NCF).
         res = await insforgeClient.database
           .from("tenants")
           .select(TENANT_FIELDS_BASE)
@@ -164,12 +182,20 @@ export function Ajustes() {
       const data = res.data;
       if (data) {
         const seqRaw = (data as { ncf_secuencia_siguiente?: number | null }).ncf_secuencia_siguiente;
+        const currencyRaw = (
+          (data as { moneda?: string | null }).moneda ||
+          (data as { currency_code?: string | null }).currency_code ||
+          "DOP"
+        )
+          .trim()
+          .toUpperCase();
         setConfig({
           nombre_empresa: data.nombre_negocio ?? "",
           rnc: data.rnc ?? "",
           logo_url: data.logo_url ?? "",
           direccion: data.direccion ?? "",
           telefono: data.telefono ?? "",
+          currency_code: currencyRaw === "ARS" ? "ARS" : "DOP",
           ncf_fiscal_activo: Boolean((data as { ncf_fiscal_activo?: boolean | null }).ncf_fiscal_activo),
           ncf_tipo_default:
             ((data as { ncf_tipo_default?: string | null }).ncf_tipo_default || "B01").trim() || "B01",
@@ -221,6 +247,12 @@ export function Ajustes() {
       telefono: config.telefono.trim() || null,
       updated_at: new Date().toISOString(),
     };
+    const currencyUpdateMoneda = {
+      moneda: config.currency_code,
+    };
+    const currencyUpdateCode = {
+      currency_code: config.currency_code,
+    };
     const ncfUpdate = {
       ncf_fiscal_activo: config.ncf_fiscal_activo,
       ncf_tipo_default: config.ncf_tipo_default.trim().toUpperCase() || null,
@@ -229,23 +261,54 @@ export function Ajustes() {
 
     let { error } = await insforgeClient.database
       .from("tenants")
-      .update({ ...baseUpdate, ...ncfUpdate })
+      .update({ ...baseUpdate, ...currencyUpdateMoneda, ...ncfUpdate })
       .eq("id", tenantId);
 
     if (error) {
-      const msg = (error.message || "").toLowerCase();
-      if (msg.includes("column") || msg.includes("ncf_") || msg.includes("does not exist")) {
-        const retry = await insforgeClient.database.from("tenants").update(baseUpdate).eq("id", tenantId);
-        error = retry.error;
-        if (!retry.error) {
-          setPartialSaveNote(
-            "Datos básicos guardados. Las columnas NCF aún no existen en la base: creá en tenants y facturas desde el editor SQL de InsForge las columnas NCF para poder guardar también NCF."
-          );
-          setSaving(false);
-          setSavedOk(true);
-          setTimeout(() => setSavedOk(false), 5000);
-          return;
-        }
+      // Fallback 1: esquema alterno si la divisa vive en currency_code.
+      const retryWithoutCurrency = await insforgeClient.database
+        .from("tenants")
+        .update({ ...baseUpdate, ...currencyUpdateCode, ...ncfUpdate })
+        .eq("id", tenantId);
+      error = retryWithoutCurrency.error;
+
+      if (!retryWithoutCurrency.error) {
+        setSaving(false);
+        setSavedOk(true);
+        setTimeout(() => setSavedOk(false), 5000);
+        return;
+      }
+
+      // Fallback 2: guardar sin divisa (si faltan columnas de moneda).
+      const retryWithoutAnyCurrency = await insforgeClient.database
+        .from("tenants")
+        .update({ ...baseUpdate, ...ncfUpdate })
+        .eq("id", tenantId);
+      error = retryWithoutAnyCurrency.error;
+      if (!retryWithoutAnyCurrency.error) {
+        setPartialSaveNote(
+          "Datos guardados, pero no se pudo persistir la divisa. Revisá columnas `tenants.moneda` o `tenants.currency_code`."
+        );
+        setSaving(false);
+        setSavedOk(true);
+        setTimeout(() => setSavedOk(false), 5000);
+        return;
+      }
+
+      // Fallback 3: guardar solo base (si faltan también columnas NCF).
+      const retryBaseOnly = await insforgeClient.database
+        .from("tenants")
+        .update(baseUpdate)
+        .eq("id", tenantId);
+      error = retryBaseOnly.error;
+      if (!retryBaseOnly.error) {
+        setPartialSaveNote(
+          "Datos básicos guardados. Faltan columnas para guardar NCF/divisa (`tenants.currency_code` y/o columnas NCF)."
+        );
+        setSaving(false);
+        setSavedOk(true);
+        setTimeout(() => setSavedOk(false), 5000);
+        return;
       }
     }
 
@@ -296,6 +359,7 @@ export function Ajustes() {
       direccion: config.direccion.trim() || null,
       telefono: config.telefono.trim() || null,
       logo_url: config.logo_url.trim() || null,
+      moneda: config.currency_code,
     }),
     [
       config.nombre_empresa,
@@ -303,6 +367,7 @@ export function Ajustes() {
       config.direccion,
       config.telefono,
       config.logo_url,
+      config.currency_code,
     ]
   );
 
@@ -345,10 +410,11 @@ export function Ajustes() {
         return buildCierreDiaReceiptHtml(tenantPreview, cierreData, paperWidthMm);
       }
       case "split": {
+        const splitSymbol = config.currency_code === "ARS" ? "AR$" : "RD$";
         const rowsP1 =
-          buildThermalSplitLineHtml("Plato del menú (ejemplo)", 1, 375.24) +
-          buildThermalSplitLineHtml("Bebida (ejemplo)", 1, 85);
-        const rowsP2 = buildThermalSplitLineHtml("Postre (ejemplo)", 1, 120);
+          buildThermalSplitLineHtml("Plato del menú (ejemplo)", 1, 375.24, config.currency_code) +
+          buildThermalSplitLineHtml("Bebida (ejemplo)", 1, 85, config.currency_code);
+        const rowsP2 = buildThermalSplitLineHtml("Postre (ejemplo)", 1, 120, config.currency_code);
         return buildSplitTicketHtml(
           tenantPreview,
           [
@@ -356,13 +422,13 @@ export function Ajustes() {
               personIndex: 1,
               splitParts: 2,
               rowsHtml: rowsP1,
-              totalLine: "RD$ 460.24",
+              totalLine: `${splitSymbol} 460.24`,
             },
             {
               personIndex: 2,
               splitParts: 2,
               rowsHtml: rowsP2,
-              totalLine: "RD$ 120.00",
+              totalLine: `${splitSymbol} 120.00`,
             },
           ],
           4,
@@ -506,6 +572,24 @@ export function Ajustes() {
                   placeholder="809-000-0000"
                   className="input-field"
                 />
+              </Field>
+              <Field label="Divisa">
+                <select
+                  value={config.currency_code}
+                  onChange={(e) =>
+                    setConfig((prev) => ({
+                      ...prev,
+                      currency_code: e.target.value === "ARS" ? "ARS" : "DOP",
+                    }))
+                  }
+                  className="input-field cursor-pointer"
+                >
+                  {CURRENCY_OPTIONS.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.label}
+                    </option>
+                  ))}
+                </select>
               </Field>
             </div>
           </div>
@@ -915,7 +999,7 @@ function ThermalPrintSettingsCard({
               onChange={(e) => setPrinterName(e.target.value)}
               className="input-field cursor-pointer"
             >
-              <option value="">Predeterminada del sistema (o elegir al imprimir)</option>
+              <option value="">Predeterminada del sistema</option>
               {printers.map((p) => (
                 <option key={p.name} value={p.name}>
                   {p.displayName || p.name}

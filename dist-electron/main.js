@@ -261,7 +261,7 @@ if (gotTheLock) {
         });
         printWin.webContents.once("did-finish-load", () => {
           setTimeout(() => {
-            const silent = Boolean(opts.silent && opts.deviceName);
+            const silent = Boolean(opts.silent);
             printWin.webContents.print(
               {
                 silent,

@@ -6,6 +6,7 @@ export interface TenantReceiptInfo {
   direccion: string | null;
   telefono: string | null;
   logo_url: string | null;
+  moneda?: string | null;
 }
 
 function escapeHtml(s: string): string {
@@ -94,8 +95,20 @@ function formatFacturaDateParts(iso: string | undefined | null): { date: string;
   return { date, time };
 }
 
-function rdFixed(n: number): string {
-  return `RD$ ${Number(n).toFixed(2)}`;
+function tenantCurrencyCode(tenant: TenantReceiptInfo): "DOP" | "ARS" {
+  return String(tenant.moneda || "").trim().toUpperCase() === "ARS" ? "ARS" : "DOP";
+}
+
+function currencySymbol(tenant: TenantReceiptInfo): string {
+  return tenantCurrencyCode(tenant) === "ARS" ? "AR$" : "RD$";
+}
+
+function currencyLocale(tenant: TenantReceiptInfo): string {
+  return tenantCurrencyCode(tenant) === "ARS" ? "es-AR" : "es-DO";
+}
+
+function rdFixed(n: number, tenant: TenantReceiptInfo): string {
+  return `${currencySymbol(tenant)} ${Number(n).toFixed(2)}`;
 }
 
 export function buildFacturaReceiptHtml(
@@ -136,7 +149,6 @@ export function buildFacturaReceiptHtml(
   const clienteRnc = (factura.cliente_rnc || "").trim();
   const ncf = (factura.ncf || "").trim();
   const ncfTipo = (factura.ncf_tipo || "").trim();
-  const esComprobanteFiscal = ncf.length > 0;
   const propina = Number(factura.propina ?? 0);
 
   const itemsRows = factura.items
@@ -144,12 +156,12 @@ export function buildFacturaReceiptHtml(
       const qty = item.cantidad;
       const pu = Number(item.precio_unitario ?? 0);
       const line = Number(item.subtotal ?? qty * pu);
-      const precioStr = rdFixed(pu);
+      const precioStr = rdFixed(pu, tenant);
       return `
     <tr><td colspan="3" class="fdo-item-name">${escapeHtml(item.nombre)}</td></tr>
     <tr class="fdo-item-sub">
       <td colspan="2">${precioStr} × ${qty}</td>
-      <td style="text-align:right;font-weight:bold">${rdFixed(line)}</td>
+      <td style="text-align:right;font-weight:bold">${rdFixed(line, tenant)}</td>
     </tr>`;
     })
     .join("");
@@ -169,7 +181,7 @@ export function buildFacturaReceiptHtml(
 
   const propinaRow =
     propina > 0
-      ? `<tr><td>Propina</td><td style="text-align:right">${rdFixed(propina)}</td></tr>`
+      ? `<tr><td>Propina</td><td style="text-align:right">${rdFixed(propina, tenant)}</td></tr>`
       : "";
 
   const body = `
@@ -193,10 +205,10 @@ export function buildFacturaReceiptHtml(
   </table>
   <div class="divider"></div>
   <table>
-    <tr><td>Subtotal</td><td style="text-align:right">${rdFixed(factura.subtotal)}</td></tr>
-    <tr><td>ITBIS</td><td style="text-align:right">${rdFixed(factura.itbis)}</td></tr>
+    <tr><td>Subtotal</td><td style="text-align:right">${rdFixed(factura.subtotal, tenant)}</td></tr>
+    <tr><td>ITBIS</td><td style="text-align:right">${rdFixed(factura.itbis, tenant)}</td></tr>
     ${propinaRow}
-    <tr class="total-xl"><td>TOTAL</td><td style="text-align:right">${rdFixed(factura.total)}</td></tr>
+    <tr class="total-xl"><td>TOTAL</td><td style="text-align:right">${rdFixed(factura.total, tenant)}</td></tr>
   </table>
   <div class="divider"></div>
   <table>
@@ -206,12 +218,6 @@ export function buildFacturaReceiptHtml(
   <div class="double-divider"></div>
   <div class="footer">
     <p style="margin:0 0 4px">¡Gracias por su compra!</p>
-    <p style="margin:0;font-size:13px;font-weight:600">${
-      esComprobanteFiscal
-        ? "Comprobante fiscal (NCF) — cumplir obligaciones DGII según su régimen"
-        : "Documento no fiscal — valor informativo"
-    }</p>
-    <p style="margin:6px 0 0;font-size:13px;font-weight:600">CyberBistro OS</p>
   </div>
   <div class="divider"></div>
   <div class="center" style="font-size:13px;font-weight:600">${escapeHtml(new Date().toLocaleString("es-DO", { timeZone: "America/Santo_Domingo" }))}</div>
@@ -282,13 +288,19 @@ export function buildComandaReceiptHtml(
 }
 
 /** Una línea de ítem para ticket de separar cuenta (mismo estilo que factura térmica). */
-export function buildThermalSplitLineHtml(platoNombre: string, cantidad: number, importeLinea: number): string {
+export function buildThermalSplitLineHtml(
+  platoNombre: string,
+  cantidad: number,
+  importeLinea: number,
+  currencyCode: "DOP" | "ARS" = "DOP"
+): string {
   const line = Number(importeLinea);
+  const symbol = currencyCode === "ARS" ? "AR$" : "RD$";
   return `
     <tr><td colspan="2" class="fdo-item-name">${escapeHtml(platoNombre)}</td></tr>
     <tr class="fdo-item-sub">
       <td>${cantidad}×</td>
-      <td style="text-align:right;font-weight:bold">${rdFixed(line)}</td>
+      <td style="text-align:right;font-weight:bold">${symbol} ${line.toFixed(2)}</td>
     </tr>`;
 }
 
@@ -369,8 +381,11 @@ export interface CierreDiaThermalData {
   cuentasAbiertasTotalEst?: number;
 }
 
-function rd(n: number): string {
-  return `RD$ ${Number(n).toLocaleString("es-DO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function rd(n: number, tenant: TenantReceiptInfo): string {
+  return `${currencySymbol(tenant)} ${Number(n).toLocaleString(currencyLocale(tenant), {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 export function buildCierreDiaReceiptHtml(
@@ -384,7 +399,7 @@ export function buildCierreDiaReceiptHtml(
     <tr class="fdo-item-sub">
       <td style="width:55%">${escapeHtml(m.etiqueta)}</td>
       <td style="width:20%;text-align:center;font-weight:bold">${m.cantidad}</td>
-      <td style="width:25%;text-align:right;font-weight:bold">${rd(m.total)}</td>
+      <td style="width:25%;text-align:right;font-weight:bold">${rd(m.total, tenant)}</td>
     </tr>`
     )
     .join("");
@@ -414,10 +429,10 @@ export function buildCierreDiaReceiptHtml(
   </table>
   <div class="divider"></div>
   <table>
-    <tr class="total-xl"><td>TOTAL COBRADO</td><td style="text-align:right">${rd(data.totalPagado)}</td></tr>
-    <tr class="header-row"><td>Subtotal (pagadas)</td><td style="text-align:right">${rd(data.subtotalPagado)}</td></tr>
-    <tr class="header-row"><td>ITBIS (pagadas)</td><td style="text-align:right">${rd(data.itbisPagado)}</td></tr>
-    <tr class="header-row"><td>Ticket prom.</td><td style="text-align:right">${data.facturasPagadas > 0 ? rd(data.ticketPromedioPagado) : "—"}</td></tr>
+    <tr class="total-xl"><td>TOTAL COBRADO</td><td style="text-align:right">${rd(data.totalPagado, tenant)}</td></tr>
+    <tr class="header-row"><td>Subtotal (pagadas)</td><td style="text-align:right">${rd(data.subtotalPagado, tenant)}</td></tr>
+    <tr class="header-row"><td>ITBIS (pagadas)</td><td style="text-align:right">${rd(data.itbisPagado, tenant)}</td></tr>
+    <tr class="header-row"><td>Ticket prom.</td><td style="text-align:right">${data.facturasPagadas > 0 ? rd(data.ticketPromedioPagado, tenant) : "—"}</td></tr>
   </table>
   ${
     data.cuentasAbiertasLineas != null &&
@@ -428,9 +443,9 @@ export function buildCierreDiaReceiptHtml(
   <p style="font-size:14px;font-weight:700;margin:0 0 4px">Cuentas abiertas (sin facturar)</p>
   <table>
     <tr class="header-row"><td>Líneas / mesas</td><td style="text-align:right;font-size:14px">${data.cuentasAbiertasLineas} / ${data.cuentasAbiertasMesas ?? "—"}</td></tr>
-    <tr class="header-row"><td>Subtotal pendiente</td><td style="text-align:right;font-size:14px">${rd(data.cuentasAbiertasSubtotal)}</td></tr>
-    <tr class="header-row"><td>ITBIS est. (18%)</td><td style="text-align:right;font-size:14px">${data.cuentasAbiertasItbisEst != null ? rd(data.cuentasAbiertasItbisEst) : "—"}</td></tr>
-    <tr class="total"><td>TOTAL EST. PENDIENTE</td><td style="text-align:right">${data.cuentasAbiertasTotalEst != null ? rd(data.cuentasAbiertasTotalEst) : "—"}</td></tr>
+    <tr class="header-row"><td>Subtotal pendiente</td><td style="text-align:right;font-size:14px">${rd(data.cuentasAbiertasSubtotal, tenant)}</td></tr>
+    <tr class="header-row"><td>ITBIS est. (18%)</td><td style="text-align:right;font-size:14px">${data.cuentasAbiertasItbisEst != null ? rd(data.cuentasAbiertasItbisEst, tenant) : "—"}</td></tr>
+    <tr class="total"><td>TOTAL EST. PENDIENTE</td><td style="text-align:right">${data.cuentasAbiertasTotalEst != null ? rd(data.cuentasAbiertasTotalEst, tenant) : "—"}</td></tr>
   </table>
   <p class="center" style="font-size:13px;margin:4px 0 0;font-weight:600">No incluido en total cobrado — cobrar en POS</p>
   `
