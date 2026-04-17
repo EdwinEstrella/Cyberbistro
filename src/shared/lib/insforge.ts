@@ -7,17 +7,28 @@ const FALLBACK_ANON_KEY =
 const ENV_BASE_URL = import.meta.env.VITE_INSFORGE_BASE_URL?.trim();
 const ENV_ANON_KEY = import.meta.env.VITE_INSFORGE_ANON_KEY?.trim();
 
+/** Solo true si ambas variables de build están definidas; nunca mezclar URL de env con key de fallback. */
 export const isInsforgeEnvConfigured = Boolean(ENV_BASE_URL && ENV_ANON_KEY);
 
+const hasPartialEnv =
+  Boolean(ENV_BASE_URL || ENV_ANON_KEY) && !isInsforgeEnvConfigured;
+
+const effectiveBaseUrl = isInsforgeEnvConfigured
+  ? (ENV_BASE_URL as string)
+  : FALLBACK_BASE_URL;
+const effectiveAnonKey = isInsforgeEnvConfigured
+  ? (ENV_ANON_KEY as string)
+  : FALLBACK_ANON_KEY;
+
 function readInsforgeConfig(): InsForgeConfig {
-  if (!isInsforgeEnvConfigured) {
+  if (hasPartialEnv) {
     console.warn(
-      'Cyberbistro: faltan VITE_INSFORGE_BASE_URL/VITE_INSFORGE_ANON_KEY. Se usa fallback para no romper la app, pero la sesión puede fallar. Definí .env y reconstruí el build de Electron.'
+      'Cyberbistro: .env incompleto (definí **ambas** VITE_INSFORGE_BASE_URL y VITE_INSFORGE_ANON_KEY, o ninguna). Se usan los valores embebidos del build para no mezclar URL y clave.'
     );
   }
   return {
-    baseUrl: ENV_BASE_URL || FALLBACK_BASE_URL,
-    anonKey: ENV_ANON_KEY || FALLBACK_ANON_KEY,
+    baseUrl: effectiveBaseUrl,
+    anonKey: effectiveAnonKey,
     // En Electron gestionamos refresh manualmente al recuperar foco.
     autoRefreshToken: false,
     // Campos opcionales soportados por versiones recientes del SDK.
@@ -30,12 +41,11 @@ function readInsforgeConfig(): InsForgeConfig {
  * Cliente InsForge para el renderer de **Electron** (Chromium embebido, uso en escritorio).
  * No es un sitio público en la web, pero el .asar sigue siendo inspeccionable: solo anonKey aquí.
  *
- * Si aparece "Invalid token", regenerá la anon key en InsForge y actualizá `.env` antes del build.
+ * Si aparece "Invalid token", regenerá la anon key en InsForge y actualizá las variables de build (o estos fallbacks) antes del release.
  */
 export const insforgeClient = createClient(readInsforgeConfig());
 
-const effectiveBaseUrl = ENV_BASE_URL || FALLBACK_BASE_URL;
-const source = isInsforgeEnvConfigured ? 'env' : 'fallback';
+const source = isInsforgeEnvConfigured ? 'env' : 'embedded';
 console.info('[InsForge] client initialized', {
   baseUrl: effectiveBaseUrl,
   source,

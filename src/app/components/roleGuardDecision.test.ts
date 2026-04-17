@@ -52,4 +52,31 @@ describe("getRoleGuardDecision", () => {
     });
     expect(decision.type).toBe("redirect_role");
   });
+
+  it("mesero no puede abrir cierre", () => {
+    const decision = getRoleGuardDecision({
+      loading: false,
+      isAuthenticated: true,
+      userExists: true,
+      tenantId: "tenant-1",
+      rol: "mesero",
+      pathname: "/cierre",
+    });
+    expect(decision).toEqual({ type: "redirect_role", to: "/dashboard" });
+  });
+
+  it("ventas y cajera pueden abrir cierre", () => {
+    for (const rol of ["ventas", "cajera"] as const) {
+      expect(
+        getRoleGuardDecision({
+          loading: false,
+          isAuthenticated: true,
+          userExists: true,
+          tenantId: "tenant-1",
+          rol,
+          pathname: "/cierre",
+        })
+      ).toEqual({ type: "allow" });
+    }
+  });
 });
