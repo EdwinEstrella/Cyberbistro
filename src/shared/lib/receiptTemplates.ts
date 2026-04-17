@@ -232,7 +232,7 @@ export function buildComandaReceiptHtml(
     id: string;
     numero_comanda?: number | null;
     mesa_numero: number | null;
-    items: Array<{ nombre: string; cantidad: number; precio?: number; categoria?: string }>;
+    items: Array<{ nombre: string; cantidad: number; precio?: number; categoria?: string; notas?: string }>;
     notas?: string | null;
     created_at?: string | null;
   },
@@ -240,8 +240,16 @@ export function buildComandaReceiptHtml(
 ): string {
   const when = comanda.created_at || new Date().toISOString();
   const { date: fechaStr, time: horaStr } = formatFacturaDateParts(when);
-  const num = comanda.numero_comanda != null ? String(comanda.numero_comanda) : comanda.id.slice(0, 8).toUpperCase();
-  const mesaLabel = comanda.mesa_numero != null ? String(comanda.mesa_numero) : "—";
+  const num =
+    comanda.numero_comanda != null
+      ? String(comanda.numero_comanda).padStart(4, "0")
+      : comanda.id.slice(0, 8).toUpperCase();
+  const mesaLabel =
+    comanda.mesa_numero != null && comanda.mesa_numero !== 0
+      ? String(comanda.mesa_numero)
+      : comanda.mesa_numero === 0
+        ? "Para llevar"
+        : "—";
 
   const rows = comanda.items
     .map((it) => {
@@ -250,12 +258,17 @@ export function buildComandaReceiptHtml(
         cat !== ""
           ? `<span style="font-size:14px">[${escapeHtml(cat)}]</span>`
           : `<span style="font-size:14px">—</span>`;
+      const notasLine = (it.notas || "").trim()
+        ? `<tr><td colspan="2" class="fdo-item-sub" style="padding-top:0;padding-bottom:6px;font-size:13px">↳ ${escapeHtml(
+            (it.notas || "").trim()
+          )}</td></tr>`
+        : "";
       return `
     <tr><td colspan="2" class="fdo-item-name">${escapeHtml(it.nombre)}</td></tr>
     <tr class="fdo-item-sub">
       <td>${catCell}</td>
       <td style="text-align:right;font-weight:bold;font-size:17px">${it.cantidad}×</td>
-    </tr>`;
+    </tr>${notasLine}`;
     })
     .join("");
 

@@ -13,7 +13,6 @@ import {
   showSoporteInSidebar,
 } from "../../shared/lib/roleNav";
 import { RoleGuard } from "./RoleGuard";
-import { PersistentCobrarHint } from "./PersistentCobrarHint";
 import { useAppUpdate } from "../../features/updates/AppUpdateContext";
 import { AppUpdateOverlay } from "../../features/updates/components/AppUpdateOverlay";
 
@@ -309,7 +308,6 @@ export function AppLayout() {
             <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
               <Outlet />
             </main>
-            <PersistentCobrarHint visible={Boolean(tenantId) && rol !== "cocina"} />
           </div>
         </div>
       </div>

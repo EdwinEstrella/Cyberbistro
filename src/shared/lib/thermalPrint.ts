@@ -23,6 +23,7 @@ export interface PrintThermalResult {
 
 /**
  * Impresión térmica: **ruta principal** en escritorio es Electron (`preload` → proceso principal → impresora).
+ * Siempre abre el diálogo de impresión del sistema (no silencioso).
  * Si no hay `electronAPI` (p. ej. `vite` solo en el navegador para desarrollo), se usa un fallback con `window.print()`.
  */
 export async function printThermalHtml(html: string): Promise<PrintThermalResult> {
@@ -34,10 +35,7 @@ export async function printThermalHtml(html: string): Promise<PrintThermalResult
       const res = await api.printThermal({
         html,
         deviceName: settings.printerName || undefined,
-        // En escritorio siempre imprimimos en modo silencioso:
-        // - si hay impresora guardada, la usa
-        // - si no, usa la predeterminada del sistema
-        silent: true,
+        silent: false,
         paperWidthMm: settings.paperWidthMm,
       });
       return res ?? { ok: false, error: "Sin respuesta del proceso principal" };

@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Eye, Printer } from "lucide-react";
+import { Eye, Printer, Trash2 } from "lucide-react";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
+import { APP_ACCESS_PIN } from "../../../shared/lib/accessPin";
+import { PinGateModal } from "../../../shared/components/PinGate";
 import { buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
@@ -66,6 +68,8 @@ export function Billing() {
   const [statusFilter, setStatusFilter] = useState<string>("todos");
   const [methodFilter, setMethodFilter] = useState<string>("todos");
   const [invoiceModal, setInvoiceModal] = useState<Invoice | null>(null);
+  const [deletePinInvoice, setDeletePinInvoice] = useState<Invoice | null>(null);
+  const [deletingInvoiceId, setDeletingInvoiceId] = useState<string | null>(null);
 
   const loadInvoices = useCallback(async () => {
     if (!tenantId) {
@@ -202,6 +206,51 @@ export function Billing() {
       }
     },
     [tenantId]
+  );
+
+  const deleteInvoiceAndTraces = useCallback(
+    async (inv: Invoice) => {
+      if (!tenantId) return;
+      if (inv.tenant_id != null && inv.tenant_id !== tenantId) return;
+
+      setDeletingInvoiceId(inv.id);
+      const now = new Date().toISOString();
+
+      const { error: consumosError } = await insforgeClient.database
+        .from("consumos")
+        .update({
+          factura_id: null,
+          estado: "entregado",
+          updated_at: now,
+        })
+        .eq("tenant_id", tenantId)
+        .eq("factura_id", inv.id);
+
+      if (consumosError) {
+        console.error("Error al desvincular consumos de la factura:", consumosError);
+        alert(`No se pudo limpiar consumos vinculados: ${consumosError.message}`);
+        setDeletingInvoiceId(null);
+        return;
+      }
+
+      const { error: facturaError } = await insforgeClient.database
+        .from("facturas")
+        .delete()
+        .eq("id", inv.id)
+        .eq("tenant_id", tenantId);
+
+      if (facturaError) {
+        console.error("Error al eliminar factura:", facturaError);
+        alert(`No se pudo eliminar la factura: ${facturaError.message}`);
+        setDeletingInvoiceId(null);
+        return;
+      }
+
+      setInvoiceModal((open) => (open?.id === inv.id ? null : open));
+      await loadInvoices();
+      setDeletingInvoiceId(null);
+    },
+    [tenantId, loadInvoices]
   );
 
   if (authLoading) {
@@ -482,6 +531,16 @@ export function Billing() {
                     >
                       <Printer className="size-[18px]" strokeWidth={2} aria-hidden />
                     </button>
+                    <button
+                      className="bg-[#262626] rounded-lg size-10 flex items-center justify-center border-none cursor-pointer hover:bg-[rgba(255,113,108,0.15)] transition-colors shrink-0 text-[#ff716c] disabled:opacity-40"
+                      title="Eliminar factura (clave Soporte)"
+                      type="button"
+                      aria-label="Eliminar factura, requiere clave de Soporte"
+                      disabled={deletingInvoiceId === inv.id}
+                      onClick={() => setDeletePinInvoice(inv)}
+                    >
+                      <Trash2 className="size-[18px]" strokeWidth={2} aria-hidden />
+                    </button>
                   </div>
                 </div>
               );
@@ -670,7 +729,16 @@ export function Billing() {
                   </p>
                 ) : null}
 
-                <div className="flex justify-end pt-2">
+                <div className="flex flex-wrap justify-between gap-3 pt-2">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded-lg border border-[rgba(255,113,108,0.35)] bg-transparent text-[#ff716c] font-['Inter',sans-serif] font-bold text-[13px] px-4 py-2.5 cursor-pointer hover:bg-[rgba(255,113,108,0.08)] transition-colors disabled:opacity-40"
+                    disabled={deletingInvoiceId === invoiceModal.id}
+                    onClick={() => setDeletePinInvoice(invoiceModal)}
+                  >
+                    <Trash2 className="size-4" strokeWidth={2} aria-hidden />
+                    Eliminar
+                  </button>
                   <button
                     type="button"
                     className="inline-flex items-center gap-2 rounded-lg bg-[#59ee50] text-black font-['Inter',sans-serif] font-bold text-[13px] px-4 py-2.5 border-none cursor-pointer hover:opacity-90 transition-opacity"
@@ -685,6 +753,20 @@ export function Billing() {
           ) : null}
         </DialogContent>
       </Dialog>
+
+      {deletePinInvoice ? (
+        <PinGateModal
+          correctPin={APP_ACCESS_PIN}
+          title="Eliminar factura"
+          subtitle={`Factura #${String(deletePinInvoice.numero_factura).padStart(4, "0")}. Ingresá la misma clave que en Soporte para borrar el registro y desvincular líneas de mesa.`}
+          onUnlock={() => {
+            const target = deletePinInvoice;
+            setDeletePinInvoice(null);
+            void deleteInvoiceAndTraces(target);
+          }}
+          onCancel={() => setDeletePinInvoice(null)}
+        />
+      ) : null}
     </div>
   );
 }

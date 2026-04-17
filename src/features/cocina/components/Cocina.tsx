@@ -2,6 +2,9 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { useCocinaRealtimeSync } from "../useCocinaRealtimeSync";
+import { buildComandaReceiptHtml, type TenantReceiptInfo } from "../../../shared/lib/receiptTemplates";
+import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
+import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 
 interface ComandaItem {
   nombre: string;
@@ -24,69 +27,13 @@ interface Comanda {
   created_at: string;
 }
 
-function printComanda(comanda: Comanda, empresaNombre: string) {
-  const itemsHtml = comanda.items
-    .map(
-      (item) => `
-      <tr>
-        <td style="padding:2px 0">${item.cantidad}x ${item.categoria ? `[${item.categoria}] ` : ""}${item.nombre}</td>
-        <td style="text-align:right;padding:2px 0">$${(item.precio * item.cantidad).toFixed(2)}</td>
-      </tr>
-      ${item.notas ? `<tr><td colspan="2" style="font-size:10px;color:#666;padding:0 0 6px 12px">↳ ${item.notas}</td></tr>` : ""}
-    `
-    )
-    .join("");
-
-  const total = comanda.items.reduce((sum, i) => sum + i.precio * i.cantidad, 0);
-
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <style>
-    @page { size: 80mm auto; margin: 4mm; }
-    body { font-family: monospace; font-size: 12px; width: 72mm; margin: 0; }
-    h1 { text-align: center; font-size: 15px; margin: 0 0 2px; }
-    .center { text-align: center; }
-    .divider { border: none; border-top: 1px dashed #000; margin: 6px 0; }
-    table { width: 100%; border-collapse: collapse; }
-    .total { font-weight: bold; font-size: 14px; }
-  </style>
-</head>
-<body>
-  <h1>${empresaNombre}</h1>
-  <div class="center">COMANDA #${String(comanda.numero_comanda).padStart(4, "0")}</div>
-  <div class="center">${comanda.mesa_numero != null && comanda.mesa_numero !== 0 ? `Mesa ${comanda.mesa_numero}` : "Para llevar"}</div>
-  <hr class="divider">
-  <table>${itemsHtml}</table>
-  <hr class="divider">
-  <table>
-    <tr class="total">
-      <td>TOTAL</td>
-      <td style="text-align:right">$${total.toFixed(2)}</td>
-    </tr>
-  </table>
-  ${comanda.notas ? `<hr class="divider"><div><b>Notas:</b> ${comanda.notas}</div>` : ""}
-  <hr class="divider">
-  <div class="center" style="font-size:10px">${new Date(comanda.created_at).toLocaleString("es-DO")}</div>
-  <script>window.onload = function() { window.print(); setTimeout(function(){ window.close(); }, 500); }</script>
-</body>
-</html>`;
-
-  const w = window.open("", "_blank", "width=340,height=600");
-  if (w) {
-    w.document.write(html);
-    w.document.close();
-  }
-}
-
 export function Cocina() {
   const { tenantId, loading: authLoading } = useAuth();
   const [cocinaActiva, setCocinaActiva] = useState(true);
   const [comandas, setComandas] = useState<Comanda[]>([]);
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(false);
-  const empresaNombreRef = useRef("CyberBistro");
+  const tenantReceiptRef = useRef<TenantReceiptInfo | null>(null);
 
   const reloadComandas = useCallback(async () => {
     if (!tenantId) return;
@@ -130,7 +77,7 @@ export function Cocina() {
           .order("created_at", { ascending: true }),
         insforgeClient.database
           .from("tenants")
-          .select("nombre_negocio")
+          .select("nombre_negocio, rnc, direccion, telefono, logo_url, moneda")
           .eq("id", tenantId)
           .maybeSingle(),
       ]);
@@ -142,8 +89,23 @@ export function Cocina() {
       if (!comandasRes.error && comandasRes.data) {
         setComandas(comandasRes.data as Comanda[]);
       }
-      if (!tenantRes.error && tenantRes.data?.nombre_negocio) {
-        empresaNombreRef.current = tenantRes.data.nombre_negocio;
+      if (!tenantRes.error && tenantRes.data) {
+        const t = tenantRes.data as {
+          nombre_negocio: string | null;
+          rnc: string | null;
+          direccion: string | null;
+          telefono: string | null;
+          logo_url: string | null;
+          moneda?: string | null;
+        };
+        tenantReceiptRef.current = {
+          nombre_negocio: t.nombre_negocio,
+          rnc: t.rnc,
+          direccion: t.direccion,
+          telefono: t.telefono,
+          logo_url: t.logo_url,
+          moneda: t.moneda ?? null,
+        };
       }
       setLoading(false);
     }
@@ -221,6 +183,66 @@ export function Cocina() {
       }
     }
   }
+
+  const printComandaThermal = useCallback(
+    async (comanda: Comanda) => {
+      let tenant = tenantReceiptRef.current;
+      if (!tenant && tenantId) {
+        const { data } = await insforgeClient.database
+          .from("tenants")
+          .select("nombre_negocio, rnc, direccion, telefono, logo_url, moneda")
+          .eq("id", tenantId)
+          .maybeSingle();
+        if (data) {
+          const t = data as {
+            nombre_negocio: string | null;
+            rnc: string | null;
+            direccion: string | null;
+            telefono: string | null;
+            logo_url: string | null;
+            moneda?: string | null;
+          };
+          tenant = {
+            nombre_negocio: t.nombre_negocio,
+            rnc: t.rnc,
+            direccion: t.direccion,
+            telefono: t.telefono,
+            logo_url: t.logo_url,
+            moneda: t.moneda ?? null,
+          };
+          tenantReceiptRef.current = tenant;
+        }
+      }
+      if (!tenant) {
+        alert("No se pudieron cargar los datos del negocio para imprimir la comanda.");
+        return;
+      }
+      const paperWidthMm = getThermalPrintSettings().paperWidthMm;
+      const html = buildComandaReceiptHtml(
+        tenant,
+        {
+          id: comanda.id,
+          numero_comanda: comanda.numero_comanda,
+          mesa_numero: comanda.mesa_numero,
+          items: comanda.items.map((i) => ({
+            nombre: i.nombre,
+            cantidad: i.cantidad,
+            precio: i.precio,
+            categoria: i.categoria,
+            notas: i.notas,
+          })),
+          notas: comanda.notas,
+          created_at: comanda.created_at,
+        },
+        paperWidthMm
+      );
+      const res = await printThermalHtml(html);
+      if (!res.ok && res.error) {
+        console.warn("Impresión comanda (cocina):", res.error);
+      }
+    },
+    [tenantId]
+  );
 
   const columns = [
     {
@@ -416,9 +438,8 @@ export function Cocina() {
                     {/* Actions */}
                     <div className="px-[14px] py-[10px] border-t border-[rgba(72,72,71,0.1)] flex gap-[8px]">
                       <button
-                        onClick={() =>
-                          printComanda(comanda, empresaNombreRef.current)
-                        }
+                        type="button"
+                        onClick={() => void printComandaThermal(comanda)}
                         className="flex-1 bg-[#262626] rounded-[8px] py-[7px] font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.5px] uppercase font-bold cursor-pointer border-none hover:bg-[#2e2e2e] transition-colors"
                       >
                         Imprimir

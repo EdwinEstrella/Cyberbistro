@@ -52,6 +52,8 @@ function getAdjacentMesas(mesa: Mesa, allMesas: Mesa[]): Mesa[] {
   });
 }
 
+const ITBIS = 0.18;
+
 const RD = (n: number) =>
   "RD$ " + n.toLocaleString("es-DO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -109,7 +111,13 @@ export function Tables() {
   const [historialConsumos, setHistorialConsumos] = useState<ConsumoPanelRow[]>([]);
   const [comandaEstados, setComandaEstados] = useState<Record<string, string>>({});
   const [showCloseAccountModal, setShowCloseAccountModal] = useState(false);
+  /** Cobro desde Mesas: por defecto sin ITBIS en la factura; activable antes de cerrar cuenta. */
+  const [mesaItbisEnabled, setMesaItbisEnabled] = useState(false);
   const [historialVersion, setHistorialVersion] = useState(0);
+
+  useEffect(() => {
+    setMesaItbisEnabled(false);
+  }, [selectedId]);
 
   const refreshDeudaPorMesa = useCallback(async () => {
     if (!tenantId) {
@@ -622,7 +630,7 @@ export function Tables() {
 
             <div className="h-px bg-[rgba(72,72,71,0.2)]" />
 
-            {/* Historial de esta mesa (cómo cobrar: barra fija inferior en toda la app) */}
+            {/* Historial de esta mesa */}
             <div className="rounded-[12px] border border-[rgba(72,72,71,0.28)] bg-[#161616] p-[14px] flex flex-col gap-[10px] shrink-0">
               <div className="flex flex-col gap-1">
                 <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
@@ -687,13 +695,43 @@ export function Tables() {
                 )}
               </div>
               {historialConsumos.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setShowCloseAccountModal(true)}
-                  className="w-full mt-1 py-[12px] rounded-[10px] border-none cursor-pointer font-['Space_Grotesk',sans-serif] font-bold text-[#5b1600] text-[11px] tracking-[1.2px] uppercase bg-[#ff906d] hover:bg-[#ff784d] transition-colors"
-                >
-                  Cerrar cuenta / Cobrar
-                </button>
+                <>
+                  <div className="flex items-center justify-between gap-[10px] rounded-[10px] border border-[rgba(72,72,71,0.28)] bg-[#131313] px-[12px] py-[10px]">
+                    <div className="flex flex-col min-w-0">
+                      <span className="font-['Inter',sans-serif] text-white text-[12px] font-semibold leading-tight">
+                        ITBIS 18% en la factura
+                      </span>
+                      <span className="font-['Inter',sans-serif] text-[#6b7280] text-[10px] leading-snug">
+                        Por defecto apagado; activalo para sumarlo al total al cobrar
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={mesaItbisEnabled}
+                      onClick={() => setMesaItbisEnabled((v) => !v)}
+                      aria-label={
+                        mesaItbisEnabled ? "Desactivar ITBIS al cobrar mesa" : "Activar ITBIS 18% al cobrar mesa"
+                      }
+                      className={`relative h-[30px] w-[54px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${
+                        mesaItbisEnabled ? "bg-[#59ee50]" : "bg-[#383838]"
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-[5px] left-[5px] block size-[20px] rounded-full bg-white shadow transition-transform duration-200 ease-out ${
+                          mesaItbisEnabled ? "translate-x-[24px]" : "translate-x-0"
+                        }`}
+                      />
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowCloseAccountModal(true)}
+                    className="w-full mt-1 py-[12px] rounded-[10px] border-none cursor-pointer font-['Space_Grotesk',sans-serif] font-bold text-[#5b1600] text-[11px] tracking-[1.2px] uppercase bg-[#ff906d] hover:bg-[#ff784d] transition-colors"
+                  >
+                    Cerrar cuenta / Cobrar
+                  </button>
+                </>
               )}
             </div>
 
@@ -784,6 +822,7 @@ export function Tables() {
           onClose={() => setShowCloseAccountModal(false)}
           tenantId={tenantId}
           mesaNumero={selectedMesa.numero}
+          itbisRate={mesaItbisEnabled ? ITBIS : 0}
           onSettled={() => {
             setHistorialVersion((v) => v + 1);
             void refreshDeudaPorMesa();

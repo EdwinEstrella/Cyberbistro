@@ -37,6 +37,8 @@ export interface MesaCloseAccountModalProps {
   onClose: () => void;
   tenantId: string | null;
   mesaNumero: number;
+  /** Por defecto 18% (`ITBIS`). Pasá `0` para facturar sin ITBIS (p. ej. desde Venta con ITBIS apagado). */
+  itbisRate?: number;
   onSettled?: (remaining: MesaConsumoRow[]) => void | Promise<void>;
   /** Solo cuando la mesa queda sin consumos pendientes tras un cobro completo. */
   onPaidFull?: () => void;
@@ -58,7 +60,7 @@ async function loadTableConsumption(
   return data as MesaConsumoRow[];
 }
 
-function groupConsumosForFactura(consumos: MesaConsumoRow[]) {
+function groupConsumosForFactura(consumos: MesaConsumoRow[], itbisRate: number) {
   const groupedItems = consumos.reduce(
     (acc, consumo) => {
       const key = consumo.plato_id;
@@ -82,7 +84,7 @@ function groupConsumosForFactura(consumos: MesaConsumoRow[]) {
   );
   const facturaItems = Object.values(groupedItems);
   const subtotal = consumos.reduce((sum, c) => sum + Number(c.subtotal), 0);
-  const itbis = subtotal * ITBIS;
+  const itbis = subtotal * itbisRate;
   const total = subtotal + itbis;
   return { facturaItems, subtotal, itbis, total };
 }
@@ -106,6 +108,7 @@ export function MesaCloseAccountModal({
   onClose,
   tenantId,
   mesaNumero,
+  itbisRate = ITBIS,
   onSettled,
   onPaidFull,
 }: MesaCloseAccountModalProps) {
@@ -256,7 +259,7 @@ export function MesaCloseAccountModal({
 
   function calculateTotals() {
     const subtotal = mesaConsumos.reduce((sum, c) => sum + Number(c.subtotal), 0);
-    const itbis = subtotal * ITBIS;
+    const itbis = subtotal * itbisRate;
     const total = subtotal + itbis;
     return { subtotal, itbis, total };
   }
@@ -298,7 +301,7 @@ export function MesaCloseAccountModal({
         const consumosToInvoice = groups.get(personIndex)!;
         if (consumosToInvoice.length === 0) continue;
 
-        const { facturaItems, subtotal, itbis, total } = groupConsumosForFactura(consumosToInvoice);
+        const { facturaItems, subtotal, itbis, total } = groupConsumosForFactura(consumosToInvoice, itbisRate);
 
         const ncfPart = await resolveNcfForNewInvoice(tenantId);
 
@@ -387,7 +390,7 @@ export function MesaCloseAccountModal({
     setCharging(true);
 
     const consumosToBill = mesaConsumos;
-    const { facturaItems, subtotal, itbis, total } = groupConsumosForFactura(consumosToBill);
+    const { facturaItems, subtotal, itbis, total } = groupConsumosForFactura(consumosToBill, itbisRate);
 
     const ncfPart = await resolveNcfForNewInvoice(tenantId);
 
@@ -658,14 +661,22 @@ export function MesaCloseAccountModal({
                 const rows = splitGroups.get(p) ?? [];
                 if (rows.length === 0) return null;
                 const st = rows.reduce((s, c) => s + Number(c.subtotal), 0);
-                const itb = st * ITBIS;
+                const itb = st * itbisRate;
                 return (
                   <div key={p} className="flex justify-between gap-[8px]">
                     <span className="font-['Inter',sans-serif] text-[#59ee50] text-[11px]">
                       Persona {p} · {rows.length} línea{rows.length !== 1 ? "s" : ""}
                     </span>
                     <span className="font-['Inter',sans-serif] text-[#59ee50] text-[11px] text-right">
-                      {RD(st)} + ITBIS {RD(itb)} = {RD(st + itb)}
+                      {RD(st)}
+                      {itbisRate > 0 ? (
+                        <>
+                          {" "}
+                          + ITBIS {RD(itb)} = {RD(st + itb)}
+                        </>
+                      ) : (
+                        <> = {RD(st)}</>
+                      )}
                     </span>
                   </div>
                 );
@@ -679,7 +690,9 @@ export function MesaCloseAccountModal({
             <span className="font-['Inter',sans-serif] text-white text-[11px]">{RD(calcSubtotal)}</span>
           </div>
           <div className="flex justify-between">
-            <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">ITBIS (18%)</span>
+            <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">
+              {itbisRate > 0 ? "ITBIS (18%)" : "ITBIS (no incluido)"}
+            </span>
             <span className="font-['Inter',sans-serif] text-white text-[11px]">{RD(calcItbis)}</span>
           </div>
           <div className="border-t border-[rgba(72,72,71,0.15)] pt-[6px] flex justify-between">

@@ -93,6 +93,8 @@ export function Dashboard() {
   const [mesaAccountLoading, setMesaAccountLoading] = useState(false);
   /** Partes para ticket “separar cuenta” (solo referencia en carrito; reparte ítems en ronda, no el monto). */
   const [isTakeout, setIsTakeout] = useState(false);
+  /** Por defecto sin ITBIS en totales y factura; se activa desde el carrito. */
+  const [cartItbisEnabled, setCartItbisEnabled] = useState(false);
 
   useEffect(() => {
     // Inicializar mesas desde configuración estática
@@ -199,13 +201,14 @@ export function Dashboard() {
   }, [platos, activeCategory, cartSearchNorm]);
 
   const cartSubtotal = cart.reduce((s, i) => s + i.plato.precio * i.cantidad, 0);
-  const cartItbis = cartSubtotal * ITBIS;
+  const billItbisRate = cartItbisEnabled ? ITBIS : 0;
+  const cartItbis = cartSubtotal * billItbisRate;
   const cartTotal = cartSubtotal + cartItbis;
 
   const cuentaSubtotal = mesaConsumos.reduce((s, c) => s + Number(c.subtotal), 0);
   const hasCuentaEnMesa = Boolean(selectedMesa && mesaConsumos.length > 0);
   const panelBillSubtotal = hasCuentaEnMesa ? cuentaSubtotal : cartSubtotal;
-  const panelBillItbis = panelBillSubtotal * ITBIS;
+  const panelBillItbis = panelBillSubtotal * billItbisRate;
   const panelBillTotal = panelBillSubtotal + panelBillItbis;
 
   const matchesPedidoSearch = useCallback(
@@ -345,7 +348,8 @@ export function Dashboard() {
   /** Totales del modal "para llevar" (sin mesa). */
   function calculateTakeoutTotals() {
     const subtotal = cart.reduce((sum, i) => sum + i.plato.precio * i.cantidad, 0);
-    const itbis = subtotal * ITBIS;
+    const rate = cartItbisEnabled ? ITBIS : 0;
+    const itbis = subtotal * rate;
     const total = subtotal + itbis;
     return { subtotal, itbis, total };
   }
@@ -458,18 +462,27 @@ export function Dashboard() {
       if (data && tenantId) {
         const { data: tenantRow } = await insforgeClient.database
           .from("tenants")
-          .select("nombre_negocio, rnc, direccion, telefono, logo_url")
+          .select("nombre_negocio, rnc, direccion, telefono, logo_url, moneda")
           .eq("id", tenantId)
           .single();
         if (tenantRow) {
           const paperWidthMm = getThermalPrintSettings().paperWidthMm;
+          const tr = tenantRow as {
+            nombre_negocio: string | null;
+            rnc: string | null;
+            direccion: string | null;
+            telefono: string | null;
+            logo_url: string | null;
+            moneda?: string | null;
+          };
           const comandaHtml = buildComandaReceiptHtml(
             {
-              nombre_negocio: tenantRow.nombre_negocio,
-              rnc: tenantRow.rnc,
-              direccion: tenantRow.direccion,
-              telefono: tenantRow.telefono,
-              logo_url: tenantRow.logo_url,
+              nombre_negocio: tr.nombre_negocio,
+              rnc: tr.rnc,
+              direccion: tr.direccion,
+              telefono: tr.telefono,
+              logo_url: tr.logo_url,
+              moneda: tr.moneda ?? null,
             },
             {
               id: data.id,
@@ -620,7 +633,8 @@ export function Dashboard() {
     const facturaItems = Object.values(groupedItems);
 
     const subtotal = consumosToBill.reduce((sum, c) => sum + Number(c.subtotal), 0);
-    const itbis = subtotal * ITBIS;
+    const rate = cartItbisEnabled ? ITBIS : 0;
+    const itbis = subtotal * rate;
     const total = subtotal + itbis;
 
     const ncfPart = tenantId ? await resolveNcfForNewInvoice(tenantId) : null;
@@ -1145,6 +1159,32 @@ export function Dashboard() {
             )}
             {/* Totals (mesa abierta o solo carrito / para llevar) */}
             <div className="flex flex-col gap-[6px]">
+              <div className="flex items-center justify-between gap-[10px] rounded-[10px] border border-[rgba(72,72,71,0.28)] bg-[#131313] px-[12px] py-[10px] mb-[2px]">
+                <div className="flex flex-col min-w-0">
+                  <span className="font-['Inter',sans-serif] text-white text-[12px] font-semibold leading-tight">
+                    ITBIS 18%
+                  </span>
+                  <span className="font-['Inter',sans-serif] text-[#6b7280] text-[10px] leading-snug">
+                    Por defecto apagado; activalo para sumarlo al total y a la factura
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={cartItbisEnabled}
+                  onClick={() => setCartItbisEnabled((v) => !v)}
+                  aria-label={cartItbisEnabled ? "Desactivar ITBIS en el total" : "Activar ITBIS 18% en el total"}
+                  className={`relative h-[30px] w-[54px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${
+                    cartItbisEnabled ? "bg-[#59ee50]" : "bg-[#383838]"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-[5px] left-[5px] block size-[20px] rounded-full bg-white shadow transition-transform duration-200 ease-out ${
+                      cartItbisEnabled ? "translate-x-[24px]" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </div>
               <div className="flex justify-between">
                 <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[1px] uppercase">
                   Subtotal {hasCuentaEnMesa ? "(en mesa)" : ""}
@@ -1155,7 +1195,7 @@ export function Dashboard() {
               </div>
               <div className="flex justify-between">
                 <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[1px] uppercase">
-                  ITBIS (18%)
+                  {cartItbisEnabled ? "ITBIS (18%)" : "ITBIS (no incluido)"}
                 </span>
                 <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[1px] uppercase">
                   {formatMoney(panelBillItbis)}
@@ -1238,6 +1278,7 @@ export function Dashboard() {
           open
           tenantId={tenantId}
           mesaNumero={selectedMesa.numero}
+          itbisRate={billItbisRate}
           onClose={() => setShowPaymentModal(false)}
           onSettled={async (remaining) => {
             setMesaConsumos(remaining as Consumo[]);
@@ -1333,7 +1374,7 @@ export function Dashboard() {
               </div>
               <div className="flex justify-between">
                 <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">
-                  ITBIS (18%)
+                  {cartItbisEnabled ? "ITBIS (18%)" : "ITBIS (no incluido)"}
                 </span>
                 <span className="font-['Inter',sans-serif] text-white text-[11px]">
                   {formatMoney(calcItbis)}

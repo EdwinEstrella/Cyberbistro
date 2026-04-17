@@ -162,12 +162,13 @@ if (gotTheLock) {
     ): Promise<{ ok: boolean; error?: string }> => {
       return new Promise((resolve) => {
         // Ventana oculta solo para cargar data: URL e invocar webContents.print().
-        // sandbox: false — requerido en algunos entornos para loadURL(data:) + impresión silenciosa.
+        // sandbox: false — requerido en algunos entornos para loadURL(data:) + impresión.
         // webSecurity/contextIsolation activos (sin nodeIntegration) limitan riesgo frente a HTML arbitrario del renderer.
         const printWin = new BrowserWindow({
           width: 420,
           height: 900,
           show: false,
+          backgroundColor: '#ffffff',
           webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
@@ -189,10 +190,10 @@ if (gotTheLock) {
 
         printWin.webContents.once('did-finish-load', () => {
           setTimeout(() => {
-            const silent = Boolean(opts.silent)
+            // Siempre con diálogo de impresión (no silencioso), para elegir impresora y opciones en cada ticket.
             printWin.webContents.print(
               {
-                silent,
+                silent: false,
                 printBackground: true,
                 deviceName: opts.deviceName || undefined,
               },
@@ -250,6 +251,16 @@ if (gotTheLock) {
 
     if (app.isPackaged) {
       setupAutoUpdater(() => mainWindow)
+    } else {
+      // En dev `setupAutoUpdater` no corre; el renderer igual llama `getUpdateState()` → IPC sin handler.
+      ipcMain.removeHandler('get-update-state')
+      ipcMain.handle('get-update-state', () => ({
+        phase: 'unsupported' as const,
+        remoteVersion: null,
+        downloadedVersion: null,
+        percent: 0,
+        error: '',
+      }))
     }
 
     app.on('activate', () => {
