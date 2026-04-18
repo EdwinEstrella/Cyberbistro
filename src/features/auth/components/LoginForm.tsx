@@ -1,17 +1,21 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router";
-
-const LOGIN_NOTICE_KEY = "cyberbistro_login_notice";
-const REFRESH_TOKEN_KEY = "insforge_refresh_token";
 import svgPaths from "../../../imports/svg-h2gjocs89h";
 import imgLoginRegistro from "figma:asset/47f7239cc7433af3270415eeec94f9bdbb11cd99.png";
 import imgDecorativeScanlineEffect from "figma:asset/70a05c412757c6d4e1cffbb0780858880dce7a5a.png";
 import { TitleBar } from "../../window";
-import { insforgeClient } from "../../../shared/lib/insforge";
+import {
+  insforgeClient,
+  formatInsforgeConnectivityError,
+} from "../../../shared/lib/insforge";
+import { INSFORGE_REFRESH_TOKEN_STORAGE_KEY } from "../../../shared/lib/insforgeAuthStorage";
 import { resolveTenantUserForSession } from "../../../shared/lib/resolveTenantUserFromAuth";
 import { hydrateAuthStateAfterLogin } from "../../../shared/hooks/useAuth";
 import { defaultRouteForRol } from "../../../shared/lib/roleNav";
 import { PinGateModal } from "../../../shared/components/PinGate";
+
+const LOGIN_NOTICE_KEY = "cyberbistro_login_notice";
+const REFRESH_TOKEN_KEY = INSFORGE_REFRESH_TOKEN_STORAGE_KEY;
 
 // Hoist static SVG paths to avoid re-creation
 const ICONS = {
@@ -112,13 +116,19 @@ export function Login() {
     setIsLoading(false);
 
     if (authError) {
-      setError(authError.message || "Error al iniciar sesión");
+      const connectivity = formatInsforgeConnectivityError(authError);
+      setError(connectivity ?? (authError.message || "Error al iniciar sesión"));
       return;
     }
 
     const refreshToken = extractRefreshTokenFromSignInPayload(data);
     if (refreshToken) {
       localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+      try {
+        insforgeClient.getHttpClient().setRefreshToken(refreshToken);
+      } catch {
+        /* ignore */
+      }
       console.info("[AuthFlow] login refresh token stored", {
         tokenLength: refreshToken.length,
       });

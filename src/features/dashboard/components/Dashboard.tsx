@@ -3,7 +3,7 @@ import svgPaths from "../../../imports/svg-qgatbhef3k";
 import { useVentaCartSearch } from "../../../app/context/VentaCartSearchContext";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { MESAS_CONFIG } from "../../tables/config/mesas";
-import { useAuth } from "../../../shared/hooks/useAuth";
+import { useAuth, ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
 import {
   buildFacturaReceiptHtml,
   buildComandaReceiptHtml,
@@ -210,30 +210,6 @@ export function Dashboard() {
   const panelBillSubtotal = hasCuentaEnMesa ? cuentaSubtotal : cartSubtotal;
   const panelBillItbis = panelBillSubtotal * billItbisRate;
   const panelBillTotal = panelBillSubtotal + panelBillItbis;
-
-  const matchesPedidoSearch = useCallback(
-    (nombre: string) =>
-      !cartSearchNorm || nombre.toLowerCase().includes(cartSearchNorm),
-    [cartSearchNorm]
-  );
-
-  const filteredCart = useMemo(
-    () => cart.filter((i) => matchesPedidoSearch(i.plato.nombre)),
-    [cart, matchesPedidoSearch]
-  );
-
-  const filteredMesaConsumos = useMemo(
-    () => mesaConsumos.filter((c) => matchesPedidoSearch(c.nombre)),
-    [mesaConsumos, matchesPedidoSearch]
-  );
-
-  const pedidoSearchActive = cartSearchNorm.length > 0;
-  const hasAnyPedidoLines = cart.length > 0 || mesaConsumos.length > 0;
-  const pedidoSearchSinCoincidencias =
-    pedidoSearchActive &&
-    hasAnyPedidoLines &&
-    filteredCart.length === 0 &&
-    filteredMesaConsumos.length === 0;
 
   const showEmptyHint =
     cart.length === 0 &&
@@ -601,6 +577,7 @@ export function Dashboard() {
     }));
 
     setCharging(true);
+    await ensureAuthSessionFresh();
 
     const groupedItems = consumosToBill.reduce(
       (acc, consumo) => {
@@ -1021,12 +998,12 @@ export function Dashboard() {
 
         {/* Cuenta en mesa + carrito nuevo */}
         <div className="flex-1 overflow-y-auto p-[20px] flex flex-col gap-[16px] min-h-0">
-          {selectedMesa && filteredMesaConsumos.length > 0 && (
+          {selectedMesa && mesaConsumos.length > 0 && (
             <div className="flex flex-col gap-[12px]">
               <span className="font-['Inter',sans-serif] text-[#ff906d] text-[10px] tracking-[0.6px] uppercase font-bold">
                 En mesa (cuenta abierta)
               </span>
-              {filteredMesaConsumos.map((c) => (
+              {mesaConsumos.map((c) => (
                 <div key={c.id} className="flex gap-[12px]">
                   <div
                     className="w-[4px] rounded-full shrink-0"
@@ -1050,17 +1027,6 @@ export function Dashboard() {
             </div>
           )}
 
-          {pedidoSearchSinCoincidencias && (
-            <div className="flex flex-col items-center justify-center py-[20px] gap-[6px]">
-              <span className="font-['Inter',sans-serif] text-[#ff716c] text-[12px] text-center px-2">
-                Ningún plato en el pedido coincide con la búsqueda.
-              </span>
-              <span className="font-['Inter',sans-serif] text-[#6b7280] text-[11px] text-center px-2">
-                Probá otro texto o borrá el filtro del encabezado.
-              </span>
-            </div>
-          )}
-
           {showEmptyHint && (
             <div className="flex flex-col items-center justify-center py-[24px] gap-[8px]">
               <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px] text-center px-2">
@@ -1073,13 +1039,13 @@ export function Dashboard() {
             </div>
           )}
 
-          {filteredCart.length > 0 && selectedMesa && (
+          {cart.length > 0 && selectedMesa && (
             <span className="font-['Inter',sans-serif] text-[#59ee50] text-[10px] tracking-[0.6px] uppercase font-bold -mb-2">
               Nuevo pedido (carrito)
             </span>
           )}
 
-          {filteredCart.map((item) => {
+          {cart.map((item) => {
             const cc = catColor(item.plato.categoria);
             return (
               <div key={item.plato.id} className="flex gap-[12px]">

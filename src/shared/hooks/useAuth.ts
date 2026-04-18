@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { UserSchema } from '@insforge/sdk';
-import { insforgeClient, isInsforgeEnvConfigured } from '../lib/insforge';
+import { insforgeClient } from '../lib/insforge';
+import { INSFORGE_REFRESH_TOKEN_STORAGE_KEY } from '../lib/insforgeAuthStorage';
 import {
   readTenantSessionCache,
   writeTenantSessionCache,
@@ -34,7 +35,7 @@ function rowToTenantUser(data: TenantSessionRow): TenantUser {
 const AUTH_RETRIES = 5;
 const AUTH_LOG_PREFIX = '[AuthFlow]';
 const REFRESH_BLOCK_MS = 30_000;
-const REFRESH_TOKEN_KEY = 'insforge_refresh_token';
+const REFRESH_TOKEN_KEY = INSFORGE_REFRESH_TOKEN_STORAGE_KEY;
 
 let refreshInFlight: Promise<'ok' | 'unauthorized' | 'error'> | null = null;
 let refreshBlockedUntil = 0;
@@ -116,6 +117,12 @@ function extractUserFromAuthPayload(data: unknown): UserSchema | null {
 function clearSessionShared(): void {
   clearTenantSessionCache();
   localStorage.removeItem(REFRESH_TOKEN_KEY);
+  try {
+    insforgeClient.getHttpClient().setAuthToken(null);
+    insforgeClient.getHttpClient().setRefreshToken(null);
+  } catch {
+    /* ignore */
+  }
   patchSharedState({ user: null, tenantUser: null, loading: false });
 }
 
@@ -169,7 +176,12 @@ async function loadUserDataShared(opts?: { silent?: boolean }): Promise<void> {
         const storedToken = readRefreshToken();
         logAuth('loadUserData:no-user', { hasStoredRefreshToken: Boolean(storedToken) });
 
-        if (storedToken && isInsforgeEnvConfigured) {
+        if (storedToken) {
+          try {
+            insforgeClient.getHttpClient().setRefreshToken(storedToken);
+          } catch {
+            /* ignore */
+          }
           logAuth('bootstrap refresh:start', { tokenLength: storedToken.length });
           const { data: refreshed, error: refreshError } = await insforgeClient.auth.refreshSession({
             refreshToken: storedToken,
@@ -256,15 +268,10 @@ async function loadUserDataShared(opts?: { silent?: boolean }): Promise<void> {
 
 async function doRefreshShared(): Promise<void> {
   const currentUser = sharedState.user;
-  logAuth('focus/visibility refresh triggered', {
+  logAuth('focus/visibility/interval refresh triggered', {
     hasUser: Boolean(currentUser),
-    isInsforgeEnvConfigured,
+    hasStoredRefresh: Boolean(readRefreshToken()),
   });
-
-  if (!currentUser || !isInsforgeEnvConfigured) {
-    await loadUserDataShared({ silent: true });
-    return;
-  }
 
   if (Date.now() < refreshBlockedUntil) {
     logAuth('refreshSession:skip-blocked');
@@ -280,9 +287,15 @@ async function doRefreshShared(): Promise<void> {
   refreshInFlight = (async (): Promise<'ok' | 'unauthorized' | 'error'> => {
     const storedToken = readRefreshToken();
     if (!storedToken) {
-      logAuth('refreshSession:no-token-stored -> skip');
+      logAuth('refreshSession:no-token-stored -> loadUserData');
       await loadUserDataShared({ silent: true });
       return 'ok';
+    }
+
+    try {
+      insforgeClient.getHttpClient().setRefreshToken(storedToken);
+    } catch {
+      /* ignore */
     }
 
     const { data, error } = await insforgeClient.auth.refreshSession({
@@ -326,6 +339,9 @@ async function doRefreshShared(): Promise<void> {
   }
 }
 
+/** Intervalo de rotación: el cliente PostgREST no pasa por el `request()` del SDK, así que renovamos antes de que venza el access. */
+const SESSION_ROTATE_MS = 9 * 60 * 1000;
+
 function ensureGlobalListeners(): void {
   if (cleanupGlobalListeners) return;
   const onFocus = () => void doRefreshShared();
@@ -334,13 +350,25 @@ function ensureGlobalListeners(): void {
   };
   window.addEventListener('focus', onFocus);
   document.addEventListener('visibilitychange', onVisibility);
-  logAuth('listeners attached', { events: ['focus', 'visibilitychange'] });
+  const intervalId = window.setInterval(() => void doRefreshShared(), SESSION_ROTATE_MS);
+  logAuth('listeners attached', {
+    events: ['focus', 'visibilitychange', `interval:${SESSION_ROTATE_MS}ms`],
+  });
   cleanupGlobalListeners = () => {
     window.removeEventListener('focus', onFocus);
     document.removeEventListener('visibilitychange', onVisibility);
+    window.clearInterval(intervalId);
     logAuth('listeners detached');
     cleanupGlobalListeners = null;
   };
+}
+
+/**
+ * Renueva el access token cuando hay refresh en localStorage (flujo mobile / `isServerMode`).
+ * Útil antes de operaciones PostgREST (p. ej. facturar): esas rutas no disparan el retry 401 del `HttpClient`.
+ */
+export async function ensureAuthSessionFresh(): Promise<void> {
+  await doRefreshShared();
 }
 
 export function useAuth() {

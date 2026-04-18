@@ -1,5 +1,6 @@
 import { createClient } from '@insforge/sdk';
-import type { InsForgeConfig } from '@insforge/sdk';
+import type { InsForgeConfig, InsForgeClient } from '@insforge/sdk';
+import { INSFORGE_REFRESH_TOKEN_STORAGE_KEY } from './insforgeAuthStorage';
 
 const FALLBACK_BASE_URL = 'https://restaurante.azokia.com';
 const FALLBACK_ANON_KEY =
@@ -20,6 +21,36 @@ const effectiveAnonKey = isInsforgeEnvConfigured
   ? (ENV_ANON_KEY as string)
   : FALLBACK_ANON_KEY;
 
+/** Para mensajes de error (login) y logs; coincide con la URL del cliente InsForge. */
+export function getInsforgeResolvedBaseUrl(): string {
+  return effectiveBaseUrl;
+}
+
+/** Errores de red/DNS que no suelen traer un cuerpo JSON útil del API. */
+export function formatInsforgeConnectivityError(error: unknown): string | null {
+  if (!error || typeof error !== 'object') return null;
+  const e = error as { message?: string; statusCode?: number; error?: string };
+  const msg = `${e.message ?? ''}`.toLowerCase();
+  const code = `${e.error ?? ''}`.toLowerCase();
+  const looksNetwork =
+    (e.statusCode === 0 && (e.error === 'NETWORK_ERROR' || code === 'network_error')) ||
+    msg.includes('failed to fetch') ||
+    msg.includes('network request failed') ||
+    msg.includes('err_name_not_resolved') ||
+    msg.includes('net::err_') ||
+    msg.includes('load failed') ||
+    msg.includes('networkerror');
+
+  if (!looksNetwork) return null;
+
+  const url = getInsforgeResolvedBaseUrl();
+  const envHint = isInsforgeEnvConfigured
+    ? 'Comprobá tu conexión a internet o que el backend esté en línea.'
+    : 'Estás usando la URL embebida del proyecto (sin .env completo). Si ese host ya no existe o no resuelve en DNS, creá un archivo `.env` en la raíz con `VITE_INSFORGE_BASE_URL` y `VITE_INSFORGE_ANON_KEY` (copialos del panel de InsForge; podés usar los mismos que en Nexo/Zyron si comparten backend).';
+
+  return `No se pudo conectar a ${url}. ${envHint}`;
+}
+
 function readInsforgeConfig(): InsForgeConfig {
   if (hasPartialEnv) {
     console.warn(
@@ -29,26 +60,43 @@ function readInsforgeConfig(): InsForgeConfig {
   return {
     baseUrl: effectiveBaseUrl,
     anonKey: effectiveAnonKey,
-    // En Electron gestionamos refresh manualmente al recuperar foco.
-    autoRefreshToken: false,
-    // Campos opcionales soportados por versiones recientes del SDK.
-    persistSession: true,
+    /**
+     * `true` (default del SDK): ante 401 `INVALID_TOKEN` en peticiones que pasan por `HttpClient`,
+     * se renueva la sesión y se reintenta. Las consultas PostgREST usan `fetch` directo (sin ese
+     * reintento); por eso además refrescamos en `useAuth` y antes de cobrar.
+     */
+    autoRefreshToken: true,
+    /** Flujo `client_type=mobile` + refresh en body; adecuado para Electron (InsForge SDK). */
     isServerMode: true,
-  } as InsForgeConfig;
+  };
+}
+
+/** Tras reiniciar la app, el `HttpClient` pierde el refresh en RAM; lo rehidratamos desde localStorage. */
+function primeHttpClientRefreshFromStorage(client: InsForgeClient): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    const token = localStorage.getItem(INSFORGE_REFRESH_TOKEN_STORAGE_KEY)?.trim();
+    if (token) client.getHttpClient().setRefreshToken(token);
+  } catch {
+    /* storage no accesible */
+  }
 }
 
 /**
  * Cliente InsForge para el renderer de **Electron** (Chromium embebido, uso en escritorio).
  * No es un sitio público en la web, pero el .asar sigue siendo inspeccionable: solo anonKey aquí.
  *
- * Si aparece "Invalid token", regenerá la anon key en InsForge y actualizá las variables de build (o estos fallbacks) antes del release.
+ * Si aparece "Invalid token" de inmediato tras deploy, revisá anon key / URL del proyecto.
+ * Si aparece tras mucho tiempo de uso, suele ser access token caducado: ver `useAuth` y refresh en localStorage.
  */
-export const insforgeClient = createClient(readInsforgeConfig());
+const _insforgeClient = createClient(readInsforgeConfig());
+primeHttpClientRefreshFromStorage(_insforgeClient);
+export const insforgeClient = _insforgeClient;
 
 const source = isInsforgeEnvConfigured ? 'env' : 'embedded';
 console.info('[InsForge] client initialized', {
   baseUrl: effectiveBaseUrl,
   source,
-  autoRefreshToken: false,
-  persistSession: true,
+  autoRefreshToken: true,
+  isServerMode: true,
 });

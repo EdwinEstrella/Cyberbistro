@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { insforgeClient } from "../../../shared/lib/insforge";
+import { ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
 import { buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
@@ -295,6 +296,7 @@ export function MesaCloseAccountModal({
     }
 
     setCharging(true);
+    await ensureAuthSessionFresh();
 
     try {
       for (const personIndex of order) {
@@ -388,6 +390,7 @@ export function MesaCloseAccountModal({
     }
 
     setCharging(true);
+    await ensureAuthSessionFresh();
 
     const consumosToBill = mesaConsumos;
     const { facturaItems, subtotal, itbis, total } = groupConsumosForFactura(consumosToBill, itbisRate);
