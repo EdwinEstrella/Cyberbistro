@@ -8,6 +8,19 @@ import { insforgeClient } from "../../../shared/lib/insforge";
 import { writeTenantSessionCache } from "../../../shared/lib/tenantSessionCache";
 import { PinGateModal } from "../../../shared/components/PinGate";
 import { APP_ACCESS_PIN } from "../../../shared/lib/accessPin";
+import { INSFORGE_REFRESH_TOKEN_STORAGE_KEY } from "../../../shared/lib/insforgeAuthStorage";
+
+function extractRefreshTokenFromPayload(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const maybeData = data as any;
+  const direct = maybeData.refreshToken || maybeData.refresh_token;
+  if (typeof direct === "string" && direct.trim().length > 0) return direct;
+  const inSession = maybeData.session?.refreshToken || maybeData.session?.refresh_token;
+  if (typeof inSession === "string" && inSession.trim().length > 0) return inSession;
+  const inTokens = maybeData.tokens?.refreshToken || maybeData.tokens?.refresh_token;
+  if (typeof inTokens === "string" && inTokens.trim().length > 0) return inTokens;
+  return null;
+}
 
 export function Register() {
   const [email, setEmail] = useState("");
@@ -62,6 +75,14 @@ export function Register() {
           throw new Error(authError.message || "Error al crear usuario");
         }
 
+        const refreshToken = extractRefreshTokenFromPayload(signData);
+        if (refreshToken) {
+          localStorage.setItem(INSFORGE_REFRESH_TOKEN_STORAGE_KEY, refreshToken);
+          try {
+            insforgeClient.getHttpClient().setRefreshToken(refreshToken);
+          } catch { /* ignore */ }
+        }
+
         const newUserId = signData?.user?.id;
         if (newUserId) {
           setRegisteredAuthUserId(newUserId);
@@ -113,11 +134,16 @@ export function Register() {
       }
 
       if (!authUserId && email && password) {
-        const { error: signInErr } = await insforgeClient.auth.signInWithPassword({
+        const { data: signInData, error: signInErr } = await insforgeClient.auth.signInWithPassword({
           email: email.trim(),
           password,
         });
         if (!signInErr) {
+          const refreshToken = extractRefreshTokenFromPayload(signInData);
+          if (refreshToken) {
+            localStorage.setItem(INSFORGE_REFRESH_TOKEN_STORAGE_KEY, refreshToken);
+            try { insforgeClient.getHttpClient().setRefreshToken(refreshToken); } catch { /* ignore */ }
+          }
           const { data: cur2 } = await insforgeClient.auth.getCurrentUser();
           if (cur2?.user?.id) authUserId = cur2.user.id;
         }

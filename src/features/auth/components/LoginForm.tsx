@@ -56,16 +56,12 @@ const BIOMETRIC_INDICATORS = (
 
 function extractRefreshTokenFromSignInPayload(data: unknown): string | null {
   if (!data || typeof data !== "object") return null;
-  const maybeData = data as {
-    refreshToken?: unknown;
-    session?: { refreshToken?: unknown };
-    tokens?: { refreshToken?: unknown };
-  };
-  const direct = maybeData.refreshToken;
+  const maybeData = data as any;
+  const direct = maybeData.refreshToken || maybeData.refresh_token;
   if (typeof direct === "string" && direct.trim().length > 0) return direct;
-  const inSession = maybeData.session?.refreshToken;
+  const inSession = maybeData.session?.refreshToken || maybeData.session?.refresh_token;
   if (typeof inSession === "string" && inSession.trim().length > 0) return inSession;
-  const inTokens = maybeData.tokens?.refreshToken;
+  const inTokens = maybeData.tokens?.refreshToken || maybeData.tokens?.refresh_token;
   if (typeof inTokens === "string" && inTokens.trim().length > 0) return inTokens;
   return null;
 }

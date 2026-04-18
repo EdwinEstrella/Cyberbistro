@@ -61,11 +61,10 @@ function readInsforgeConfig(): InsForgeConfig {
     baseUrl: effectiveBaseUrl,
     anonKey: effectiveAnonKey,
     /**
-     * `true` (default del SDK): ante 401 `INVALID_TOKEN` en peticiones que pasan por `HttpClient`,
-     * se renueva la sesión y se reintenta. Las consultas PostgREST usan `fetch` directo (sin ese
-     * reintento); por eso además refrescamos en `useAuth` y antes de cobrar.
+     * `false` prevent the SDK from auto-refreshing internally and burning the token
+     * without exposing the new rotated token to localStorage.
      */
-    autoRefreshToken: true,
+    autoRefreshToken: false,
     /** Flujo `client_type=mobile` + refresh en body; adecuado para Electron (InsForge SDK). */
     isServerMode: true,
   };
