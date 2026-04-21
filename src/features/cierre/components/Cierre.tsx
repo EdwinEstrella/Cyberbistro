@@ -268,39 +268,49 @@ export function Cierre() {
   }, [authLoading, cargar]);
 
   async function handleStartCycle() {
-    if (!tenantId) return;
-    if (hasOpenCycle) {
-      setPrintMsg("Ya existe un ciclo abierto para este día operativo.");
+  if (!tenantId) return;
+  // If there's an open cycle, close it before starting a new one
+  if (hasOpenCycle && currentCycle) {
+    const closeAt = new Date().toISOString();
+    const { error: closeError } = await insforgeClient.database
+      .from("cierres_operativos")
+      .update({
+        closed_at: closeAt,
+        closed_by_auth_user_id: user?.id ?? null,
+      })
+      .eq("id", currentCycle.id)
+      .eq("tenant_id", tenantId);
+    if (closeError) {
+      setPrintMsg(closeError.message || "No se pudo cerrar el ciclo existente.");
       return;
     }
-
-    setStartingCycle(true);
-    setPrintMsg("");
-
-    const nextCycleNumber = (cycles[0]?.cycle_number ?? 0) + 1;
-    const { error } = await insforgeClient.database.from("cierres_operativos").insert([
-      {
-        tenant_id: tenantId,
-        business_day: fecha,
-        cycle_number: nextCycleNumber,
-        opened_at: new Date().toISOString(),
-        opened_by_auth_user_id: user?.id ?? null,
-      },
-    ]);
-
-    if (error) {
-      setPrintMsg(error.message || "No se pudo iniciar el ciclo operativo.");
-    } else {
-      setPrintMsg(`Ciclo #${nextCycleNumber} iniciado.`);
-      await cargar();
-    }
-
-    setStartingCycle(false);
   }
 
-  async function handleImprimir() {
-    // Refresh data to ensure latest sales are included in the closure report
+  setStartingCycle(true);
+  setPrintMsg("");
+
+  const nextCycleNumber = (cycles[0]?.cycle_number ?? 0) + 1;
+  const { error } = await insforgeClient.database.from("cierres_operativos").insert([
+    {
+      tenant_id: tenantId,
+      business_day: fecha,
+      cycle_number: nextCycleNumber,
+      opened_at: new Date().toISOString(),
+      opened_by_auth_user_id: user?.id ?? null,
+    },
+  ]);
+
+  if (error) {
+    setPrintMsg(error.message || "No se pudo iniciar el ciclo operativo.");
+  } else {
+    setPrintMsg(`Ciclo #${nextCycleNumber} iniciado.`);
     await cargar();
+  }
+
+  setStartingCycle(false);
+}
+
+  async function handleImprimir() {
     if (!tenantId) return;
     if (!currentCycle) {
       setPrintMsg("Debes iniciar un ciclo operativo antes de imprimir el cierre.");
@@ -310,28 +320,80 @@ export function Cierre() {
       setPrintMsg("El ciclo mostrado ya fue cerrado. Iniciá un nuevo ciclo para continuar.");
       return;
     }
-    if (resumenCuentasAbiertas.lineas > 0) {
-      setPrintMsg(
-        "No se puede imprimir el cierre mientras existan mesas con deudas pendientes. Cerrá o cobrá todas las mesas primero."
-      );
-      return;
-    }
 
     setPrinting(true);
     setPrintMsg("");
 
-    const { data: tenant, error: tErr } = await insforgeClient.database
-      .from("tenants")
-      .select("nombre_negocio, rnc, direccion, telefono, logo_url")
-      .eq("id", tenantId)
-      .maybeSingle();
+    // Fetch de datos frescos del ciclo actual directamente — evita leer state stale
+    const closedAtIso = new Date().toISOString();
+    const cycleStart = currentCycle.opened_at;
+    const cycleEnd = closedAtIso;
 
-    if (tErr || !tenant) {
+    const [tenantRes, factRes, consRes] = await Promise.all([
+      insforgeClient.database
+        .from("tenants")
+        .select("nombre_negocio, rnc, direccion, telefono, logo_url")
+        .eq("id", tenantId)
+        .maybeSingle(),
+      insforgeClient.database
+        .from("facturas")
+        .select("id, estado, metodo_pago, subtotal, itbis, total, created_at")
+        .eq("tenant_id", tenantId)
+        .gte("created_at", cycleStart)
+        .lte("created_at", cycleEnd)
+        .order("created_at", { ascending: true }),
+      insforgeClient.database
+        .from("consumos")
+        .select("mesa_numero, subtotal, estado")
+        .eq("tenant_id", tenantId)
+        .neq("estado", "pagado"),
+    ]);
+
+    if (tenantRes.error || !tenantRes.data) {
       setPrintMsg("No se pudo cargar los datos del negocio.");
       setPrinting(false);
       return;
     }
 
+    if (factRes.error) {
+      setPrintMsg(factRes.error.message || "No se pudieron cargar las facturas del ciclo.");
+      setPrinting(false);
+      return;
+    }
+
+    const facturasSnapshot = (factRes.data as FacturaRow[]) ?? [];
+    const consumosSnapshot = (consRes.data as ConsumoAbiertoRow[]) ?? [];
+
+    // Verificar mesas pendientes con datos frescos
+    if (consumosSnapshot.length > 0) {
+      setPrintMsg(
+        "No se puede imprimir el cierre mientras existan mesas con deudas pendientes. Cerrá o cobrá todas las mesas primero."
+      );
+      setPrinting(false);
+      return;
+    }
+
+    // Calcular resumen con datos frescos del ciclo
+    const pagadas = facturasSnapshot.filter((f) => f.estado === "pagada");
+    const pendientes = facturasSnapshot.filter((f) => f.estado === "pendiente");
+    const canceladas = facturasSnapshot.filter((f) => f.estado === "cancelada");
+    const totalPagado = pagadas.reduce((s, f) => s + Number(f.total), 0);
+    const subtotalPagado = pagadas.reduce((s, f) => s + Number(f.subtotal), 0);
+    const itbisPagado = pagadas.reduce((s, f) => s + Number(f.itbis), 0);
+    const porMetodoMap = new Map<string, { cantidad: number; total: number }>();
+    for (const f of pagadas) {
+      const key = f.metodo_pago || "otro";
+      const cur = porMetodoMap.get(key) ?? { cantidad: 0, total: 0 };
+      cur.cantidad += 1;
+      cur.total += Number(f.total);
+      porMetodoMap.set(key, cur);
+    }
+    const porMetodo = [...porMetodoMap.entries()]
+      .map(([metodo, v]) => ({ etiqueta: etiquetaMetodo(metodo), cantidad: v.cantidad, total: v.total }))
+      .sort((a, b) => b.total - a.total);
+    const ticketPromedioPagado = pagadas.length > 0 ? totalPagado / pagadas.length : 0;
+
+    const tenant = tenantRes.data;
     const tenantInfo: TenantReceiptInfo = {
       nombre_negocio: tenant.nombre_negocio ?? null,
       rnc: tenant.rnc ?? null,
@@ -340,7 +402,6 @@ export function Cierre() {
       logo_url: tenant.logo_url ?? null,
     };
 
-    const closedAtIso = new Date().toISOString();
     const { paperWidthMm } = getThermalPrintSettings();
     const html = buildCierreDiaReceiptHtml(
       tenantInfo,
@@ -351,14 +412,14 @@ export function Cierre() {
         generadoAtIso: closedAtIso,
         abiertoAtIso: currentCycle.opened_at,
         cerradoAtIso: closedAtIso,
-        facturasPagadas: resumen.pagadas.length,
-        facturasPendientes: resumen.pendientes.length,
-        facturasCanceladas: resumen.canceladas.length,
-        totalPagado: resumen.totalPagado,
-        subtotalPagado: resumen.subtotalPagado,
-        itbisPagado: resumen.itbisPagado,
-        porMetodo: resumen.porMetodo,
-        ticketPromedioPagado: resumen.ticketPromedioPagado,
+        facturasPagadas: pagadas.length,
+        facturasPendientes: pendientes.length,
+        facturasCanceladas: canceladas.length,
+        totalPagado,
+        subtotalPagado,
+        itbisPagado,
+        porMetodo,
+        ticketPromedioPagado,
       },
       paperWidthMm
     );
@@ -391,15 +452,17 @@ export function Cierre() {
     }
 
     const nextCycleNumber = currentCycle.cycle_number + 1;
-    const { error: nextCycleError } = await insforgeClient.database.from("cierres_operativos").insert([
-      {
-        tenant_id: tenantId,
-        business_day: currentCycle.business_day,
-        cycle_number: nextCycleNumber,
-        opened_at: closedAtIso,
-        opened_by_auth_user_id: user?.id ?? null,
-      },
-    ]);
+    const { error: nextCycleError } = await insforgeClient.database
+      .from("cierres_operativos")
+      .insert([
+        {
+          tenant_id: tenantId,
+          business_day: currentCycle.business_day,
+          cycle_number: nextCycleNumber,
+          opened_at: closedAtIso,
+          opened_by_auth_user_id: user?.id ?? null,
+        },
+      ]);
 
     if (nextCycleError) {
       setPrintMsg(
@@ -471,7 +534,8 @@ export function Cierre() {
           type="button"
           onClick={() => void handleStartCycle()}
           disabled={startingCycle || loading || hasOpenCycle}
-          className="bg-[#262626] rounded-[12px] border border-[rgba(255,144,109,0.24)] px-5 py-3 font-['Inter',sans-serif] text-[#ffcf9f] text-[13px] cursor-pointer hover:border-[rgba(255,144,109,0.45)] disabled:opacity-50"
+          title={hasOpenCycle ? `Ya hay un ciclo abierto (#${currentCycle?.cycle_number}). Cerrá el actual con "Imprimir cierre" primero.` : undefined}
+          className="bg-[#262626] rounded-[12px] border border-[rgba(255,144,109,0.24)] px-5 py-3 font-['Inter',sans-serif] text-[#ffcf9f] text-[13px] cursor-pointer hover:border-[rgba(255,144,109,0.45)] disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {startingCycle ? "Iniciando..." : "Iniciar nuevo ciclo"}
         </button>

@@ -1,1 +1,339 @@
-"use strict";const t=require("electron"),m=require("node:fs"),c=require("node:path"),P=require("node:url"),r=require("electron-updater"),u=require("electron-log");var h=typeof document<"u"?document.currentScript:null;let v=!1;const a={phase:"idle",remoteVersion:null,downloadedVersion:null,percent:0,error:""};function C(i){const o=t.BrowserWindow.getFocusedWindow();if(o&&!o.isDestroyed())return o;const e=i();return e&&!e.isDestroyed()?e:t.BrowserWindow.getAllWindows().find(d=>!d.isDestroyed())??null}function D(i){r.autoUpdater.logger=u,r.autoUpdater.logger.transports.file.level="info",r.autoUpdater.autoDownload=!1,process.platform==="win32"&&!process.env.CSC_LINK&&!process.env.WIN_CSC_LINK&&(r.autoUpdater.verifyUpdateCodeSignature=!1);const o=(e,s)=>{const d=C(i);d&&d.webContents.send(e,s)};v||(v=!0,r.autoUpdater.on("update-available",e=>{a.phase="available",a.remoteVersion=e.version??null,a.downloadedVersion=null,a.percent=0,a.error="",o("update-available",{version:e.version,releaseDate:e.releaseDate,releaseNotes:e.releaseNotes})}),r.autoUpdater.on("update-not-available",()=>{a.phase!=="ready"&&(a.phase="idle",a.percent=0),o("update-not-available")}),r.autoUpdater.on("download-progress",e=>{a.phase="downloading",a.percent=Math.round(e.percent),a.error="",o("download-progress",{percent:Math.round(e.percent),transferred:e.transferred,total:e.total,bytesPerSecond:e.bytesPerSecond})}),r.autoUpdater.on("update-downloaded",e=>{a.phase="ready",a.downloadedVersion=e.version??null,a.percent=100,a.error="",o("update-downloaded",{version:e.version,releaseDate:e.releaseDate,releaseNotes:e.releaseNotes})}),r.autoUpdater.on("error",e=>{u.error("autoUpdater error",e),a.phase!=="ready"&&(a.phase="error",a.error=e!=null&&e.message?String(e.message):String(e)),o("update-error",e.message)}),t.ipcMain.on("install-update",()=>{r.autoUpdater.quitAndInstall(!1,!0)}),t.ipcMain.on("download-update",()=>{a.phase="downloading",a.percent=Math.max(0,a.percent||0),a.error="",r.autoUpdater.downloadUpdate().catch(e=>{u.warn("downloadUpdate (IPC) failed",e),a.phase="error",a.error=e!=null&&e.message?String(e.message):String(e),o("update-error",a.error)})}),t.ipcMain.on("check-for-updates",()=>{a.phase="checking",a.percent=0,a.error="",o("checking-for-update"),r.autoUpdater.checkForUpdates().then(e=>{(e==null?void 0:e.isUpdateAvailable)===!1&&o("update-not-available")}).catch(e=>{u.warn("checkForUpdates (IPC) failed",e),a.phase="error",a.error=e!=null&&e.message?String(e.message):String(e),o("update-error",e!=null&&e.message?String(e.message):String(e))})}),t.ipcMain.handle("get-update-state",()=>({...a}))),setTimeout(()=>{r.autoUpdater.checkForUpdates().then(e=>{(e==null?void 0:e.isUpdateAvailable)===!1&&o("update-not-available")}).catch(e=>{u.warn("checkForUpdates failed",e)})},3e3)}const f=c.dirname(P.fileURLToPath(typeof document>"u"?require("url").pathToFileURL(__filename).href:h&&h.tagName.toUpperCase()==="SCRIPT"&&h.src||new URL("main.js",document.baseURI).href));let n=null;const g=t.app.requestSingleInstanceLock();g?t.app.on("second-instance",()=>{n&&(n.isMinimized()&&n.restore(),n.show(),n.focus())}):t.app.quit();const b="com.edwin.cyberbistro";g&&process.platform==="win32"&&t.app.setAppUserModelId(b);function _(){return{appIconPath:process.execPath,appIconIndex:0}}function U(i){if(process.platform!=="win32")return;const{appIconPath:o,appIconIndex:e}=_();try{i.setAppDetails({appId:b,appIconPath:o,appIconIndex:e,relaunchCommand:process.execPath,relaunchDisplayName:"Cyberbistro"})}catch(s){console.warn("setAppDetails failed:",s)}}function y(){const i=k(),o=c.resolve(i);if(!m.existsSync(o))return;const e=t.nativeImage.createFromPath(o);return e.isEmpty()?void 0:e}function k(){if(process.platform==="linux"){const o=c.join(process.resourcesPath,"icon.png"),e=c.join(f,"../assets/icons/icon.png");if(t.app.isPackaged&&m.existsSync(o))return o;if(!t.app.isPackaged&&m.existsSync(e))return e}if(t.app.isPackaged)return c.join(process.resourcesPath,"icon.ico");const i=c.join(t.app.getAppPath(),"icon.ico");return m.existsSync(i)?i:c.join(f,"../icon.ico")}function I(){const i=y();if(n=new t.BrowserWindow({width:800,height:600,frame:!1,titleBarStyle:"hidden",...i?{icon:i}:{},webPreferences:{preload:c.join(f,"preload.cjs"),nodeIntegration:!1,contextIsolation:!0,webSecurity:!0}}),U(n),process.env.VITE_DEV_SERVER_URL)n.loadURL(process.env.VITE_DEV_SERVER_URL);else{const o=c.join(f,"../dist/index.html");n.loadFile(o).catch(e=>{console.error("loadFile failed:",o,e)}),n.webContents.on("did-fail-load",(e,s,d,p)=>{console.error("did-fail-load:",{code:s,desc:d,url:p})})}n.once("ready-to-show",()=>{if(!n||n.isDestroyed())return;U(n);const o=y();o&&n.setIcon(o)}),n.maximize(),n.on("maximize",()=>{n==null||n.webContents.send("window-maximized",!0)}),n.on("unmaximize",()=>{n==null||n.webContents.send("window-maximized",!1)})}g&&(t.ipcMain.handle("printers:list",async()=>{const i=n||t.BrowserWindow.getAllWindows()[0];if(!i)return[];try{return(await i.webContents.getPrintersAsync()).map(e=>({name:e.name,displayName:e.displayName||e.name,description:e.description||"",isDefault:!!e.isDefault}))}catch(o){return console.error("printers:list",o),[]}}),t.ipcMain.handle("print:thermal",async(i,o)=>new Promise(e=>{const s=new t.BrowserWindow({width:420,height:900,show:!1,backgroundColor:"#ffffff",webPreferences:{nodeIntegration:!1,contextIsolation:!0,sandbox:!1}}),d=l=>{s.isDestroyed()||s.close(),e({ok:!1,error:l})},p=setTimeout(()=>d("Tiempo de impresión agotado"),45e3);s.webContents.once("did-fail-load",(l,w,x)=>{clearTimeout(p),d(`Carga fallida: ${w} ${x}`)}),s.webContents.once("did-finish-load",()=>{setTimeout(()=>{s.webContents.print({silent:!1,printBackground:!0,deviceName:o.deviceName||void 0},(l,w)=>{clearTimeout(p),s.isDestroyed()||s.close(),e(l?{ok:!0}:{ok:!1,error:String(w||"Error de impresión")})})},450)});const S="data:text/html;charset=utf-8,"+encodeURIComponent(o.html);s.loadURL(S).catch(l=>{clearTimeout(p),d(l instanceof Error?l.message:String(l))})})),t.ipcMain.on("window-minimize",()=>{console.log("main: window-minimize received"),n&&(n.minimize(),console.log("main: window minimized"))}),t.ipcMain.on("window-maximize",()=>{console.log("main: window-maximize received"),n&&(n.isMaximized()?(n.unmaximize(),console.log("main: window unmaximized")):(n.maximize(),console.log("main: window maximized")))}),t.ipcMain.on("window-close",()=>{console.log("main: window-close received"),n&&(n.close(),console.log("main: window closed"))}),t.app.whenReady().then(()=>{I(),t.app.isPackaged?D(()=>n):(t.ipcMain.removeHandler("get-update-state"),t.ipcMain.handle("get-update-state",()=>({phase:"unsupported",remoteVersion:null,downloadedVersion:null,percent:0,error:""}))),t.app.on("activate",()=>{t.BrowserWindow.getAllWindows().length===0&&I()})}),t.app.on("window-all-closed",()=>{process.platform!=="darwin"&&t.app.quit()}));
+"use strict";
+const electron = require("electron");
+const fs = require("node:fs");
+const path = require("node:path");
+const node_url = require("node:url");
+const electronUpdater = require("electron-updater");
+const log = require("electron-log");
+var _documentCurrentScript = typeof document !== "undefined" ? document.currentScript : null;
+let listenersAttached = false;
+const updateState = {
+  phase: "idle",
+  remoteVersion: null,
+  downloadedVersion: null,
+  percent: 0,
+  error: ""
+};
+function getTargetWindow(getMain) {
+  const focused = electron.BrowserWindow.getFocusedWindow();
+  if (focused && !focused.isDestroyed()) return focused;
+  const main = getMain();
+  if (main && !main.isDestroyed()) return main;
+  const all = electron.BrowserWindow.getAllWindows();
+  return all.find((w) => !w.isDestroyed()) ?? null;
+}
+function setupAutoUpdater(getMainWindow) {
+  electronUpdater.autoUpdater.logger = log;
+  electronUpdater.autoUpdater.logger.transports.file.level = "info";
+  electronUpdater.autoUpdater.autoDownload = false;
+  if (process.platform === "win32" && !process.env.CSC_LINK && !process.env.WIN_CSC_LINK) {
+    electronUpdater.autoUpdater.verifyUpdateCodeSignature = false;
+  }
+  const send = (channel, payload) => {
+    const win = getTargetWindow(getMainWindow);
+    if (win) win.webContents.send(channel, payload);
+  };
+  if (!listenersAttached) {
+    listenersAttached = true;
+    electronUpdater.autoUpdater.on("update-available", (info) => {
+      updateState.phase = "available";
+      updateState.remoteVersion = info.version ?? null;
+      updateState.downloadedVersion = null;
+      updateState.percent = 0;
+      updateState.error = "";
+      send("update-available", {
+        version: info.version,
+        releaseDate: info.releaseDate,
+        releaseNotes: info.releaseNotes
+      });
+    });
+    electronUpdater.autoUpdater.on("update-not-available", () => {
+      if (updateState.phase !== "ready") {
+        updateState.phase = "idle";
+        updateState.percent = 0;
+      }
+      send("update-not-available");
+    });
+    electronUpdater.autoUpdater.on("download-progress", (progress) => {
+      updateState.phase = "downloading";
+      updateState.percent = Math.round(progress.percent);
+      updateState.error = "";
+      send("download-progress", {
+        percent: Math.round(progress.percent),
+        transferred: progress.transferred,
+        total: progress.total,
+        bytesPerSecond: progress.bytesPerSecond
+      });
+    });
+    electronUpdater.autoUpdater.on("update-downloaded", (info) => {
+      updateState.phase = "ready";
+      updateState.downloadedVersion = info.version ?? null;
+      updateState.percent = 100;
+      updateState.error = "";
+      send("update-downloaded", {
+        version: info.version,
+        releaseDate: info.releaseDate,
+        releaseNotes: info.releaseNotes
+      });
+    });
+    electronUpdater.autoUpdater.on("error", (err) => {
+      log.error("autoUpdater error", err);
+      if (updateState.phase !== "ready") {
+        updateState.phase = "error";
+        updateState.error = (err == null ? void 0 : err.message) ? String(err.message) : String(err);
+      }
+      send("update-error", err.message);
+    });
+    electron.ipcMain.on("install-update", () => {
+      electronUpdater.autoUpdater.quitAndInstall(false, true);
+    });
+    electron.ipcMain.on("download-update", () => {
+      updateState.phase = "downloading";
+      updateState.percent = Math.max(0, updateState.percent || 0);
+      updateState.error = "";
+      void electronUpdater.autoUpdater.downloadUpdate().catch((err) => {
+        log.warn("downloadUpdate (IPC) failed", err);
+        updateState.phase = "error";
+        updateState.error = (err == null ? void 0 : err.message) ? String(err.message) : String(err);
+        send("update-error", updateState.error);
+      });
+    });
+    electron.ipcMain.on("check-for-updates", () => {
+      updateState.phase = "checking";
+      updateState.percent = 0;
+      updateState.error = "";
+      send("checking-for-update");
+      void electronUpdater.autoUpdater.checkForUpdates().then((result) => {
+        if ((result == null ? void 0 : result.isUpdateAvailable) === false) send("update-not-available");
+      }).catch((err) => {
+        log.warn("checkForUpdates (IPC) failed", err);
+        updateState.phase = "error";
+        updateState.error = (err == null ? void 0 : err.message) ? String(err.message) : String(err);
+        send("update-error", (err == null ? void 0 : err.message) ? String(err.message) : String(err));
+      });
+    });
+    electron.ipcMain.handle("get-update-state", () => ({ ...updateState }));
+  }
+  setTimeout(() => {
+    void electronUpdater.autoUpdater.checkForUpdates().then((result) => {
+      if ((result == null ? void 0 : result.isUpdateAvailable) === false) send("update-not-available");
+    }).catch((err) => {
+      log.warn("checkForUpdates failed", err);
+    });
+  }, 3e3);
+}
+const __dirname$1 = path.dirname(node_url.fileURLToPath(typeof document === "undefined" ? require("url").pathToFileURL(__filename).href : _documentCurrentScript && _documentCurrentScript.tagName.toUpperCase() === "SCRIPT" && _documentCurrentScript.src || new URL("main.js", document.baseURI).href));
+let mainWindow = null;
+const gotTheLock = electron.app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  electron.app.quit();
+} else {
+  electron.app.on("second-instance", () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  });
+}
+const WINDOWS_APP_USER_MODEL_ID = "com.edwin.cyberbistro";
+if (gotTheLock && process.platform === "win32") {
+  electron.app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID);
+}
+function windowsTaskbarRelaunchIcon() {
+  return { appIconPath: process.execPath, appIconIndex: 0 };
+}
+function applyWindowsTaskbarIdentity(win) {
+  if (process.platform !== "win32") return;
+  const { appIconPath, appIconIndex } = windowsTaskbarRelaunchIcon();
+  try {
+    win.setAppDetails({
+      appId: WINDOWS_APP_USER_MODEL_ID,
+      appIconPath,
+      appIconIndex,
+      relaunchCommand: process.execPath,
+      relaunchDisplayName: "Cyberbistro"
+    });
+  } catch (e) {
+    console.warn("setAppDetails failed:", e);
+  }
+}
+function loadWindowIconImage() {
+  const raw = resolveWindowIconPath();
+  const abs = path.resolve(raw);
+  if (!fs.existsSync(abs)) return void 0;
+  const img = electron.nativeImage.createFromPath(abs);
+  return img.isEmpty() ? void 0 : img;
+}
+function resolveWindowIconPath() {
+  if (process.platform === "linux") {
+    const pngPackaged = path.join(process.resourcesPath, "icon.png");
+    const pngDev = path.join(__dirname$1, "../assets/icons/icon.png");
+    if (electron.app.isPackaged && fs.existsSync(pngPackaged)) return pngPackaged;
+    if (!electron.app.isPackaged && fs.existsSync(pngDev)) return pngDev;
+  }
+  if (electron.app.isPackaged) {
+    return path.join(process.resourcesPath, "icon.ico");
+  }
+  const fromAppRoot = path.join(electron.app.getAppPath(), "icon.ico");
+  if (fs.existsSync(fromAppRoot)) return fromAppRoot;
+  return path.join(__dirname$1, "../icon.ico");
+}
+function createWindow() {
+  const iconImage = loadWindowIconImage();
+  mainWindow = new electron.BrowserWindow({
+    width: 800,
+    height: 600,
+    frame: false,
+    titleBarStyle: "hidden",
+    ...iconImage ? { icon: iconImage } : {},
+    webPreferences: {
+      preload: path.join(__dirname$1, "preload.cjs"),
+      nodeIntegration: false,
+      contextIsolation: true,
+      webSecurity: true
+    }
+  });
+  applyWindowsTaskbarIdentity(mainWindow);
+  if (process.env.VITE_DEV_SERVER_URL) {
+    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+  } else {
+    const indexPath = path.join(__dirname$1, "../dist/index.html");
+    mainWindow.loadFile(indexPath).catch((err) => {
+      console.error("loadFile failed:", indexPath, err);
+    });
+    mainWindow.webContents.on("did-fail-load", (_e, code, desc, url) => {
+      console.error("did-fail-load:", { code, desc, url });
+    });
+  }
+  mainWindow.once("ready-to-show", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    applyWindowsTaskbarIdentity(mainWindow);
+    const img = loadWindowIconImage();
+    if (img) mainWindow.setIcon(img);
+  });
+  mainWindow.maximize();
+  mainWindow.on("maximize", () => {
+    mainWindow == null ? void 0 : mainWindow.webContents.send("window-maximized", true);
+  });
+  mainWindow.on("unmaximize", () => {
+    mainWindow == null ? void 0 : mainWindow.webContents.send("window-maximized", false);
+  });
+}
+if (gotTheLock) {
+  electron.ipcMain.handle("printers:list", async () => {
+    const w = mainWindow || electron.BrowserWindow.getAllWindows()[0];
+    if (!w) return [];
+    try {
+      const list = await w.webContents.getPrintersAsync();
+      return list.map((p) => ({
+        name: p.name,
+        displayName: p.displayName || p.name,
+        description: p.description || "",
+        isDefault: Boolean(p.isDefault)
+      }));
+    } catch (e) {
+      console.error("printers:list", e);
+      return [];
+    }
+  });
+  electron.ipcMain.handle(
+    "print:thermal",
+    async (_event, opts) => {
+      return new Promise((resolve) => {
+        const printWin = new electron.BrowserWindow({
+          width: 420,
+          height: 900,
+          show: false,
+          backgroundColor: "#ffffff",
+          webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            sandbox: false
+          }
+        });
+        const fail = (msg) => {
+          if (!printWin.isDestroyed()) printWin.close();
+          resolve({ ok: false, error: msg });
+        };
+        const timer = setTimeout(() => fail("Tiempo de impresión agotado"), 45e3);
+        printWin.webContents.once("did-fail-load", (_e, code, desc) => {
+          clearTimeout(timer);
+          fail(`Carga fallida: ${code} ${desc}`);
+        });
+        printWin.webContents.once("did-finish-load", () => {
+          setTimeout(() => {
+            printWin.webContents.print(
+              {
+                silent: false,
+                printBackground: true,
+                deviceName: opts.deviceName || void 0
+              },
+              (success, failureReason) => {
+                clearTimeout(timer);
+                if (!printWin.isDestroyed()) printWin.close();
+                if (success) resolve({ ok: true });
+                else resolve({ ok: false, error: String(failureReason || "Error de impresión") });
+              }
+            );
+          }, 450);
+        });
+        const url = "data:text/html;charset=utf-8," + encodeURIComponent(opts.html);
+        printWin.loadURL(url).catch((err) => {
+          clearTimeout(timer);
+          fail(err instanceof Error ? err.message : String(err));
+        });
+      });
+    }
+  );
+  electron.ipcMain.on("window-minimize", () => {
+    console.log("main: window-minimize received");
+    if (mainWindow) {
+      mainWindow.minimize();
+      console.log("main: window minimized");
+    }
+  });
+  electron.ipcMain.on("window-maximize", () => {
+    console.log("main: window-maximize received");
+    if (mainWindow) {
+      if (mainWindow.isMaximized()) {
+        mainWindow.unmaximize();
+        console.log("main: window unmaximized");
+      } else {
+        mainWindow.maximize();
+        console.log("main: window maximized");
+      }
+    }
+  });
+  electron.ipcMain.on("window-close", () => {
+    console.log("main: window-close received");
+    if (mainWindow) {
+      mainWindow.close();
+      console.log("main: window closed");
+    }
+  });
+  electron.app.whenReady().then(() => {
+    createWindow();
+    if (electron.app.isPackaged) {
+      setupAutoUpdater(() => mainWindow);
+    } else {
+      electron.ipcMain.removeHandler("get-update-state");
+      electron.ipcMain.handle("get-update-state", () => ({
+        phase: "unsupported",
+        remoteVersion: null,
+        downloadedVersion: null,
+        percent: 0,
+        error: ""
+      }));
+    }
+    electron.app.on("activate", () => {
+      if (electron.BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+      }
+    });
+  });
+  electron.app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") {
+      electron.app.quit();
+    }
+  });
+}
