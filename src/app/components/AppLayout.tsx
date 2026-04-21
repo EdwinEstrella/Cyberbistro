@@ -312,8 +312,9 @@ export function AppLayout() {
         </div>
       </div>
       </VentaCartSearchProvider>
-      <AppUpdateOverlay />
+      /* AppUpdateOverlay moved below RoleGuard */
       </RoleGuard>
+      <AppUpdateOverlay />
     </div>
   );
 }
