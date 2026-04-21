@@ -1,6 +1,31 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import svgPaths from "../../../imports/svg-qgatbhef3k";
 import { useVentaCartSearch } from "../../../app/context/VentaCartSearchContext";
+
+// Utility to get today's date in YYYY-MM-DD format
+function todayYmd(): string {
+  const n = new Date();
+  const y = n.getFullYear();
+  const mo = String(n.getMonth() + 1).padStart(2, "0");
+  const da = String(n.getDate()).padStart(2, "0");
+  return `${y}-${mo}-${da}`;
+}
+
+// Checks if there is an open operational cycle for the tenant today
+async function hasOpenCycle(tenantId: string): Promise<boolean> {
+  const { data, error } = await insforgeClient.database
+    .from("cierres_operativos")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("business_day", todayYmd())
+    .is("closed_at", null);
+  if (error) {
+    console.warn("Error checking open cycle:", error);
+    return false;
+  }
+  return (data && (data as any[]).length > 0);
+}
+
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { MESAS_CONFIG } from "../../tables/config/mesas";
 import { useAuth, ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
@@ -535,7 +560,18 @@ export function Dashboard() {
     setMesaConsumos(consumosActualizados);
   }
 
-  function openPaymentModal() {
+  async function openPaymentModal() {
+    // Verificar que exista un ciclo operativo abierto antes de permitir cualquier cobro
+    if (!tenantId) {
+      alert("No hay negocio activo.");
+      return;
+    }
+    const cycleOpen = await hasOpenCycle(tenantId);
+    if (!cycleOpen) {
+      alert("No hay un ciclo operativo abierto. Inicie un ciclo antes de cobrar.");
+      return;
+    }
+
     if (selectedMesa) {
       setShowPaymentModal(true);
       return;
@@ -557,6 +593,15 @@ export function Dashboard() {
   async function createInvoice() {
     if (cart.length === 0) {
       alert("No hay items para cobrar");
+      return;
+    }
+    if (!tenantId) {
+      alert("No hay negocio activo.");
+      return;
+    }
+    const cycleOpen = await hasOpenCycle(tenantId);
+    if (!cycleOpen) {
+      alert("No hay un ciclo operativo abierto. Inicie un ciclo antes de cobrar.");
       return;
     }
 
@@ -909,7 +954,7 @@ export function Dashboard() {
                               setShowMesaDropdown(false);
                               setCart([]);
                               setIsTakeout(false);
-                              await markMesaAsOccupied(mesa);
+                              // Occupation now handled after order is sent; removed premature marking
                             }}
                             className="flex flex-col items-center justify-center py-[8px] rounded-[8px] cursor-pointer border-none transition-all"
                             style={{ backgroundColor: bgColor }}
@@ -1236,32 +1281,48 @@ export function Dashboard() {
             setMesaConsumos(remaining as Consumo[]);
             await refreshMesaDebt(selectedMesa.id, selectedMesa.numero);
           }}
-          onPaidFull={async () => {
-            setChargeOk(true);
-            setTimeout(() => setChargeOk(false), 3000);
-            if (!tenantId || !selectedMesa) return;
-            const { error } = await insforgeClient.database.from("mesas_estado").upsert(
-              {
-                id: parseInt(selectedMesa.id, 10),
-                estado: "libre",
-                tenant_id: tenantId,
-              },
-              { onConflict: "tenant_id,id" }
-            );
-            if (!error) {
-              setMesas((prev) =>
-                prev.map((m) =>
-                  m.id === selectedMesa.id
-                    ? { ...m, estado: "libre", deuda_pendiente: 0, items_pendientes: 0 }
-                    : m
-                )
+onPaidFull={async () => {
+              setChargeOk(true);
+              setTimeout(() => setChargeOk(false), 3000);
+              if (!tenantId || !selectedMesa) return;
+              // Verify mesa is clean before freeing it
+              const { data: pending, error: pendingErr } = await insforgeClient.database
+                .from('consumos')
+                .select('id')
+                .eq('tenant_id', tenantId)
+                .eq('mesa_numero', selectedMesa.numero)
+                .neq('estado', 'pagado');
+              if (pendingErr) {
+                console.warn('Error checking pending consumos for mesa:', pendingErr);
+              }
+              if (pending && (pending as any[]).length > 0) {
+                alert('No se puede liberar la mesa porque todavía tiene consumos pendientes. Cierra la cuenta primero.');
+                return;
+              }
+
+              const { error } = await insforgeClient.database.from("mesas_estado").upsert(
+                {
+                  id: parseInt(selectedMesa.id, 10),
+                  estado: "libre",
+                  tenant_id: tenantId,
+                },
+                { onConflict: "tenant_id,id" }
               );
-            }
-            await refreshMesaDebt(selectedMesa.id, selectedMesa.numero);
-            setSelectedMesa(null);
-            setMesaConsumos([]);
-            setCart([]);
-          }}
+              if (!error) {
+                setMesas((prev) =>
+                  prev.map((m) =>
+                    m.id === selectedMesa.id
+                      ? { ...m, estado: "libre", deuda_pendiente: 0, items_pendientes: 0 }
+                      : m
+                  )
+                );
+              }
+await refreshMesaDebt(selectedMesa.id, selectedMesa.numero);
+    await markMesaAsOccupied(selectedMesa);
+              setSelectedMesa(null);
+              setMesaConsumos([]);
+              setCart([]);
+            }}
         />
       )}
 

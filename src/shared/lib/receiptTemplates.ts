@@ -145,10 +145,8 @@ export function buildFacturaReceiptHtml(
   const estadoEtiqueta =
     estadoRaw === "pagada" ? "PAGADO" : estadoRaw === "pendiente" ? "PENDIENTE" : estadoRaw === "cancelada" ? "CANCELADA" : String(factura.estado || "").toUpperCase();
 
-  const clienteNombre = (factura.cliente_nombre || "").trim() || "Consumidor Final";
   const clienteRnc = (factura.cliente_rnc || "").trim();
   const ncf = (factura.ncf || "").trim();
-  const ncfTipo = (factura.ncf_tipo || "").trim();
   const propina = Number(factura.propina ?? 0);
 
   const itemsRows = factura.items
@@ -170,10 +168,6 @@ export function buildFacturaReceiptHtml(
     clienteRnc !== ""
       ? `<tr class="header-row"><td>RNC/Céd.</td><td style="text-align:right">${escapeHtml(clienteRnc)}</td></tr>`
       : "";
-  const metaNcfTipo =
-    ncfTipo !== ""
-      ? `<tr class="header-row"><td>Tipo NCF</td><td style="text-align:right">${escapeHtml(ncfTipo)}</td></tr>`
-      : "";
   const metaNcf =
     ncf !== ""
       ? `<tr class="header-row"><td>NCF</td><td style="text-align:right;font-weight:bold;font-size:14px">${escapeHtml(ncf)}</td></tr>`
@@ -191,9 +185,7 @@ export function buildFacturaReceiptHtml(
     <tr class="header-row"><td><strong>Factura</strong></td><td style="text-align:right;font-weight:bold">#${String(numeroFactura).padStart(6, "0")}</td></tr>
     <tr class="header-row"><td>Fecha</td><td style="text-align:right">${escapeHtml(fechaStr)}</td></tr>
     <tr class="header-row"><td>Hora</td><td style="text-align:right">${escapeHtml(horaStr)}</td></tr>
-    <tr class="header-row"><td>Cliente</td><td style="text-align:right">${escapeHtml(clienteNombre)}</td></tr>
     ${metaCliente}
-    ${metaNcfTipo}
     ${metaNcf}
     <tr class="header-row"><td>Mesa</td><td style="text-align:right">${escapeHtml(mesaLabel)}</td></tr>
     <tr class="header-row"><td>Método</td><td style="text-align:right">${escapeHtml(factura.metodo_pago.toUpperCase())}</td></tr>
@@ -373,10 +365,13 @@ export function buildSplitTicketHtml(
 export interface CierreDiaThermalData {
   /** Fecha del día operativo (texto local). */
   fechaOperacion: string;
+  cicloNumero?: number;
   /** Momento en que se generó el reporte (texto, respaldo). */
   generadoEn: string;
   /** ISO para Fecha/Hora en zona DO (misma lógica que factura/comanda). */
   generadoAtIso?: string;
+  abiertoAtIso?: string;
+  cerradoAtIso?: string;
   facturasPagadas: number;
   facturasPendientes: number;
   facturasCanceladas: number;
@@ -419,11 +414,29 @@ export function buildCierreDiaReceiptHtml(
 
   const genIso = data.generadoAtIso?.trim();
   const genParts = genIso ? formatFacturaDateParts(genIso) : null;
+  const abiertoParts = data.abiertoAtIso?.trim() ? formatFacturaDateParts(data.abiertoAtIso) : null;
+  const cerradoParts = data.cerradoAtIso?.trim() ? formatFacturaDateParts(data.cerradoAtIso) : null;
   const generadoRows = genParts
     ? `
     <tr class="header-row"><td>Impreso — Fecha</td><td style="text-align:right;font-size:14px">${escapeHtml(genParts.date)}</td></tr>
     <tr class="header-row"><td>Impreso — Hora</td><td style="text-align:right;font-size:14px">${escapeHtml(genParts.time)}</td></tr>`
     : `<tr class="header-row"><td>Generado</td><td style="text-align:right;font-size:14px">${escapeHtml(data.generadoEn)}</td></tr>`;
+  const cicloRows = `
+    ${
+      data.cicloNumero != null
+        ? `<tr class="header-row"><td>Ciclo</td><td style="text-align:right;font-weight:bold;font-size:14px">#${data.cicloNumero}</td></tr>`
+        : ""
+    }
+    ${
+      abiertoParts
+        ? `<tr class="header-row"><td>Apertura</td><td style="text-align:right;font-size:14px">${escapeHtml(abiertoParts.date)} ${escapeHtml(abiertoParts.time)}</td></tr>`
+        : ""
+    }
+    ${
+      cerradoParts
+        ? `<tr class="header-row"><td>Cierre</td><td style="text-align:right;font-size:14px">${escapeHtml(cerradoParts.date)} ${escapeHtml(cerradoParts.time)}</td></tr>`
+        : ""
+    }`;
 
   const body = `
   ${headerBlock(tenant)}
@@ -432,6 +445,7 @@ export function buildCierreDiaReceiptHtml(
   <p class="center fdo-company-line" style="margin:0 0 6px;font-size:14px">Resumen operativo (no fiscal)</p>
   <table>
     <tr class="header-row"><td><strong>Día operativo</strong></td><td style="text-align:right;font-weight:bold;font-size:14px">${escapeHtml(data.fechaOperacion)}</td></tr>
+    ${cicloRows}
     ${generadoRows}
   </table>
   <div class="double-divider"></div>

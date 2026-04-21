@@ -18,6 +18,21 @@ interface FacturaRow {
   created_at: string;
 }
 
+interface ConsumoAbiertoRow {
+  mesa_numero: number | null;
+  subtotal: number;
+  estado: string;
+}
+
+interface CierreOperativoRow {
+  id: string;
+  business_day: string;
+  cycle_number: number;
+  opened_at: string;
+  closed_at: string | null;
+  printed_at: string | null;
+}
+
 function todayYmd(): string {
   const n = new Date();
   const y = n.getFullYear();
@@ -26,15 +41,37 @@ function todayYmd(): string {
   return `${y}-${mo}-${da}`;
 }
 
-function localDayBoundsIso(ymd: string): { start: string; end: string } | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
-  if (!m) return null;
-  const y = Number(m[1]);
-  const mo = Number(m[2]);
-  const d = Number(m[3]);
-  const start = new Date(y, mo - 1, d, 0, 0, 0, 0);
-  const end = new Date(y, mo - 1, d, 23, 59, 59, 999);
-  return { start: start.toISOString(), end: end.toISOString() };
+function ymdToLongLabel(ymd: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+  if (!match) return ymd;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return new Intl.DateTimeFormat("es-DO", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }).format(date);
+}
+
+function formatCycleDateTime(iso: string | null | undefined): string {
+  if (!iso) return "Pendiente";
+  return new Intl.DateTimeFormat("es-DO", {
+    timeZone: "America/Santo_Domingo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  }).format(new Date(iso));
+}
+
+function buildCycleWindow(cycle: CierreOperativoRow | null): { start: string; end: string } | null {
+  if (!cycle) return null;
+  return {
+    start: cycle.opened_at,
+    end: cycle.closed_at ?? new Date().toISOString(),
+  };
 }
 
 const METODO_ETIQUETA: Record<string, string> = {
@@ -54,22 +91,23 @@ const RD = (n: number) =>
 
 const ITBIS_RATE = 0.18;
 
-interface ConsumoAbiertoRow {
-  mesa_numero: number | null;
-  subtotal: number;
-  estado: string;
-}
-
 export function Cierre() {
-  const { tenantId, loading: authLoading } = useAuth();
+  const { tenantId, user, loading: authLoading } = useAuth();
   const [fecha, setFecha] = useState(todayYmd);
+  const [cycles, setCycles] = useState<CierreOperativoRow[]>([]);
   const [facturas, setFacturas] = useState<FacturaRow[]>([]);
-  /** Líneas de cuenta abierta en POS (estado ≠ pagado); no es factura hasta cobrar. */
   const [consumosAbiertos, setConsumosAbiertos] = useState<ConsumoAbiertoRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [startingCycle, setStartingCycle] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [printing, setPrinting] = useState(false);
   const [printMsg, setPrintMsg] = useState("");
+
+  const currentCycle = useMemo(
+    () => cycles.find((cycle) => !cycle.closed_at) ?? cycles[0] ?? null,
+    [cycles]
+  );
+  const hasOpenCycle = currentCycle != null && currentCycle.closed_at == null;
 
   const resumen = useMemo(() => {
     const pagadas = facturas.filter((f) => f.estado === "pagada");
@@ -97,9 +135,6 @@ export function Cierre() {
       }))
       .sort((a, b) => b.total - a.total);
 
-    const ticketPromedioPagado =
-      pagadas.length > 0 ? totalPagado / pagadas.length : 0;
-
     return {
       pagadas,
       pendientes,
@@ -109,7 +144,8 @@ export function Cierre() {
       itbisPagado,
       totalPendiente,
       porMetodo,
-      ticketPromedioPagado,
+      ticketPromedioPagado:
+        pagadas.length > 0 ? totalPagado / pagadas.length : 0,
     };
   }, [facturas]);
 
@@ -125,6 +161,7 @@ export function Cierre() {
         porMesa: [] as { mesa: number; subtotal: number }[],
       };
     }
+
     const subtotal = consumosAbiertos.reduce((s, r) => s + Number(r.subtotal), 0);
     const itbisEst = subtotal * ITBIS_RATE;
     const totalEst = subtotal + itbisEst;
@@ -136,6 +173,7 @@ export function Cierre() {
     const porMesa = [...mesaMap.entries()]
       .map(([mesa, st]) => ({ mesa, subtotal: st }))
       .sort((a, b) => b.subtotal - a.subtotal);
+
     return {
       lineas,
       mesasDistintas: mesaMap.size,
@@ -146,27 +184,12 @@ export function Cierre() {
     };
   }, [consumosAbiertos]);
 
-  const fechaLegible = useMemo(() => {
-    const b = localDayBoundsIso(fecha);
-    if (!b) return fecha;
-    return new Date(b.start).toLocaleDateString("es-DO", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-  }, [fecha]);
+  const fechaLegible = useMemo(() => ymdToLongLabel(fecha), [fecha]);
 
   const cargar = useCallback(async () => {
     if (!tenantId) {
+      setCycles([]);
       setFacturas([]);
-      setConsumosAbiertos([]);
-      setLoading(false);
-      return;
-    }
-    const bounds = localDayBoundsIso(fecha);
-    if (!bounds) {
-      setLoadError("Fecha inválida.");
       setConsumosAbiertos([]);
       setLoading(false);
       return;
@@ -175,23 +198,56 @@ export function Cierre() {
     setLoading(true);
     setLoadError("");
 
-    const [factRes, consRes] = await Promise.all([
-      insforgeClient.database
-        .from("facturas")
-        .select("id, estado, metodo_pago, subtotal, itbis, total, created_at")
-        .eq("tenant_id", tenantId)
-        .gte("created_at", bounds.start)
-        .lte("created_at", bounds.end)
-        .order("created_at", { ascending: true }),
-      insforgeClient.database
-        .from("consumos")
-        .select("mesa_numero, subtotal, estado")
-        .eq("tenant_id", tenantId)
-        .neq("estado", "pagado"),
-    ]);
+    const cyclesRes = await insforgeClient.database
+      .from("cierres_operativos")
+      .select("id, business_day, cycle_number, opened_at, closed_at, printed_at")
+      .eq("tenant_id", tenantId)
+      .eq("business_day", fecha)
+      .order("cycle_number", { ascending: false });
+
+    if (cyclesRes.error) {
+      setLoadError(cyclesRes.error.message || "No se pudieron cargar los cierres operativos.");
+      setCycles([]);
+      setFacturas([]);
+      setConsumosAbiertos([]);
+      setLoading(false);
+      return;
+    }
+
+    const cycleRows = (cyclesRes.data as CierreOperativoRow[]) ?? [];
+    setCycles(cycleRows);
+
+    const selectedCycle = cycleRows.find((cycle) => !cycle.closed_at) ?? cycleRows[0] ?? null;
+    const cycleWindow = buildCycleWindow(selectedCycle);
+
+    if (!cycleWindow) {
+      setFacturas([]);
+      setConsumosAbiertos([]);
+      setLoading(false);
+      return;
+    }
+
+    const factPromise = insforgeClient.database
+      .from("facturas")
+      .select("id, estado, metodo_pago, subtotal, itbis, total, created_at")
+      .eq("tenant_id", tenantId)
+      .gte("created_at", cycleWindow.start)
+      .lte("created_at", cycleWindow.end)
+      .order("created_at", { ascending: true });
+
+    const consPromise =
+      selectedCycle?.closed_at == null
+        ? insforgeClient.database
+            .from("consumos")
+            .select("mesa_numero, subtotal, estado")
+            .eq("tenant_id", tenantId)
+            .neq("estado", "pagado")
+        : Promise.resolve({ data: [], error: null });
+
+    const [factRes, consRes] = await Promise.all([factPromise, consPromise]);
 
     if (factRes.error) {
-      setLoadError(factRes.error.message || "No se pudieron cargar las facturas.");
+      setLoadError(factRes.error.message || "No se pudieron cargar las facturas del ciclo.");
       setFacturas([]);
     } else {
       setFacturas((factRes.data as FacturaRow[]) ?? []);
@@ -211,8 +267,56 @@ export function Cierre() {
     void cargar();
   }, [authLoading, cargar]);
 
-  async function handleImprimir() {
+  async function handleStartCycle() {
     if (!tenantId) return;
+    if (hasOpenCycle) {
+      setPrintMsg("Ya existe un ciclo abierto para este día operativo.");
+      return;
+    }
+
+    setStartingCycle(true);
+    setPrintMsg("");
+
+    const nextCycleNumber = (cycles[0]?.cycle_number ?? 0) + 1;
+    const { error } = await insforgeClient.database.from("cierres_operativos").insert([
+      {
+        tenant_id: tenantId,
+        business_day: fecha,
+        cycle_number: nextCycleNumber,
+        opened_at: new Date().toISOString(),
+        opened_by_auth_user_id: user?.id ?? null,
+      },
+    ]);
+
+    if (error) {
+      setPrintMsg(error.message || "No se pudo iniciar el ciclo operativo.");
+    } else {
+      setPrintMsg(`Ciclo #${nextCycleNumber} iniciado.`);
+      await cargar();
+    }
+
+    setStartingCycle(false);
+  }
+
+  async function handleImprimir() {
+    // Refresh data to ensure latest sales are included in the closure report
+    await cargar();
+    if (!tenantId) return;
+    if (!currentCycle) {
+      setPrintMsg("Debes iniciar un ciclo operativo antes de imprimir el cierre.");
+      return;
+    }
+    if (currentCycle.closed_at) {
+      setPrintMsg("El ciclo mostrado ya fue cerrado. Iniciá un nuevo ciclo para continuar.");
+      return;
+    }
+    if (resumenCuentasAbiertas.lineas > 0) {
+      setPrintMsg(
+        "No se puede imprimir el cierre mientras existan mesas con deudas pendientes. Cerrá o cobrá todas las mesas primero."
+      );
+      return;
+    }
+
     setPrinting(true);
     setPrintMsg("");
 
@@ -236,16 +340,17 @@ export function Cierre() {
       logo_url: tenant.logo_url ?? null,
     };
 
+    const closedAtIso = new Date().toISOString();
     const { paperWidthMm } = getThermalPrintSettings();
-    const now = new Date();
-    const generadoEn = now.toLocaleString("es-DO", { timeZone: "America/Santo_Domingo" });
-
     const html = buildCierreDiaReceiptHtml(
       tenantInfo,
       {
         fechaOperacion: fechaLegible,
-        generadoEn,
-        generadoAtIso: now.toISOString(),
+        cicloNumero: currentCycle.cycle_number,
+        generadoEn: formatCycleDateTime(closedAtIso),
+        generadoAtIso: closedAtIso,
+        abiertoAtIso: currentCycle.opened_at,
+        cerradoAtIso: closedAtIso,
         facturasPagadas: resumen.pagadas.length,
         facturasPendientes: resumen.pendientes.length,
         facturasCanceladas: resumen.canceladas.length,
@@ -254,11 +359,6 @@ export function Cierre() {
         itbisPagado: resumen.itbisPagado,
         porMetodo: resumen.porMetodo,
         ticketPromedioPagado: resumen.ticketPromedioPagado,
-        cuentasAbiertasLineas: resumenCuentasAbiertas.lineas,
-        cuentasAbiertasMesas: resumenCuentasAbiertas.mesasDistintas,
-        cuentasAbiertasSubtotal: resumenCuentasAbiertas.subtotal,
-        cuentasAbiertasItbisEst: resumenCuentasAbiertas.itbisEst,
-        cuentasAbiertasTotalEst: resumenCuentasAbiertas.totalEst,
       },
       paperWidthMm
     );
@@ -266,11 +366,52 @@ export function Cierre() {
     const res = await printThermalHtml(html);
     if (!res.ok) {
       setPrintMsg(res.error || "Error al enviar a la impresora.");
-    } else {
-      setPrintMsg("Listo. Si usás navegador, se abrió el cuadro de impresión para guardar PDF o imprimir.");
-      setTimeout(() => setPrintMsg(""), 5000);
+      setPrinting(false);
+      return;
     }
+
+    const { error: closeError } = await insforgeClient.database
+      .from("cierres_operativos")
+      .update({
+        closed_at: closedAtIso,
+        printed_at: closedAtIso,
+        closed_by_auth_user_id: user?.id ?? null,
+      })
+      .eq("id", currentCycle.id)
+      .eq("tenant_id", tenantId);
+
+    if (closeError) {
+      setPrintMsg(
+        closeError.message ||
+          "Se imprimió el cierre, pero no se pudo registrar el cierre del ciclo."
+      );
+      setPrinting(false);
+      await cargar();
+      return;
+    }
+
+    const nextCycleNumber = currentCycle.cycle_number + 1;
+    const { error: nextCycleError } = await insforgeClient.database.from("cierres_operativos").insert([
+      {
+        tenant_id: tenantId,
+        business_day: currentCycle.business_day,
+        cycle_number: nextCycleNumber,
+        opened_at: closedAtIso,
+        opened_by_auth_user_id: user?.id ?? null,
+      },
+    ]);
+
+    if (nextCycleError) {
+      setPrintMsg(
+        nextCycleError.message ||
+          "El cierre se imprimió, pero no se pudo abrir el nuevo ciclo automáticamente."
+      );
+    } else {
+      setPrintMsg(`Cierre impreso. Se abrió automáticamente el ciclo #${nextCycleNumber}.`);
+    }
+
     setPrinting(false);
+    await cargar();
   }
 
   if (authLoading) {
@@ -287,28 +428,29 @@ export function Cierre() {
     return (
       <div className="flex-1 flex items-center justify-center p-6">
         <p className="font-['Inter',sans-serif] text-[#adaaaa] text-[14px] text-center max-w-md">
-          Tu usuario no está vinculado a un negocio. El cierre solo incluye facturas de tu negocio.
+          Tu usuario no está vinculado a un negocio. El cierre solo incluye datos de tu negocio.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 min-h-0 p-4 sm:p-6 lg:p-[32px] overflow-y-auto flex flex-col gap-6 max-w-[900px]">
+    <div className="flex-1 min-h-0 p-4 sm:p-6 lg:p-[32px] overflow-y-auto flex flex-col gap-6 max-w-[980px]">
       <div>
         <h1 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[28px]">
-          Cierre de día
+          Cierre operativo
         </h1>
         <p className="font-['Inter',sans-serif] text-[#6b7280] text-[13px] mt-2">
-          Facturas del día según la fecha elegida. Además se muestra todo lo que sigue en cuenta abierta
-          en el POS (consumos sin facturar), para que el cierre refleje cobrado + pendiente de cobrar.
+          El cierre ahora trabaja por ciclos operativos. Solo se puede imprimir si no hay mesas con
+          saldo pendiente, y al imprimir se abre automáticamente un nuevo ciclo para el mismo día
+          operativo.
         </p>
       </div>
 
       <div className="flex flex-wrap items-end gap-4">
         <label className="flex flex-col gap-2">
           <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] uppercase tracking-wide">
-            Día a cerrar
+            Día operativo
           </span>
           <input
             type="date"
@@ -323,15 +465,23 @@ export function Cierre() {
           disabled={loading}
           className="bg-[#262626] rounded-[12px] border border-[rgba(72,72,71,0.3)] px-5 py-3 font-['Inter',sans-serif] text-[#adaaaa] text-[13px] cursor-pointer hover:border-[rgba(255,144,109,0.35)] disabled:opacity-50"
         >
-          {loading ? "Cargando…" : "Actualizar"}
+          {loading ? "Cargando..." : "Actualizar"}
+        </button>
+        <button
+          type="button"
+          onClick={() => void handleStartCycle()}
+          disabled={startingCycle || loading || hasOpenCycle}
+          className="bg-[#262626] rounded-[12px] border border-[rgba(255,144,109,0.24)] px-5 py-3 font-['Inter',sans-serif] text-[#ffcf9f] text-[13px] cursor-pointer hover:border-[rgba(255,144,109,0.45)] disabled:opacity-50"
+        >
+          {startingCycle ? "Iniciando..." : "Iniciar nuevo ciclo"}
         </button>
         <button
           type="button"
           onClick={() => void handleImprimir()}
-          disabled={printing || loading}
+          disabled={printing || loading || !hasOpenCycle}
           className="bg-[#ff906d] rounded-[12px] px-6 py-3 font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[13px] uppercase tracking-wide cursor-pointer border-none shadow-[0px_0px_16px_0px_rgba(255,144,109,0.25)] disabled:opacity-50"
         >
-          {printing ? "Imprimiendo…" : "Imprimir cierre (térmica)"}
+          {printing ? "Imprimiendo..." : "Imprimir cierre (térmica)"}
         </button>
       </div>
 
@@ -347,26 +497,106 @@ export function Cierre() {
         </div>
       )}
 
-      <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[14px] capitalize">{fechaLegible}</div>
+      <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-4">
+        <div className="bg-[#131313] rounded-[20px] border border-[rgba(255,144,109,0.2)] p-6">
+          <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[12px] uppercase tracking-wide mb-2">
+            {fechaLegible}
+          </div>
+          {currentCycle ? (
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px]">
+                    Ciclo #{currentCycle.cycle_number}
+                  </div>
+                  <div className="font-['Inter',sans-serif] text-[#6b7280] text-[13px] mt-1">
+                    {currentCycle.closed_at == null ? "Abierto" : "Cerrado"}
+                  </div>
+                </div>
+                <span
+                  className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-wide font-['Inter',sans-serif] ${
+                    currentCycle.closed_at == null
+                      ? "bg-[rgba(89,238,80,0.12)] text-[#59ee50]"
+                      : "bg-[rgba(255,144,109,0.12)] text-[#ffcf9f]"
+                  }`}
+                >
+                  {currentCycle.closed_at == null ? "En curso" : "Finalizado"}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <InfoRow label="Hora de entrada" value={formatCycleDateTime(currentCycle.opened_at)} />
+                <InfoRow label="Hora de salida" value={formatCycleDateTime(currentCycle.closed_at)} />
+              </div>
+              <p className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">
+                Si el restaurante extiende horario después de medianoche, este ciclo sigue atado al día
+                operativo seleccionado y no al cambio de fecha calendario.
+              </p>
+            </div>
+          ) : (
+            <p className="font-['Inter',sans-serif] text-[#adaaaa] text-[13px]">
+              No hay ciclos registrados para este día operativo. Iniciá uno para comenzar el control de
+              cierre.
+            </p>
+          )}
+        </div>
+
+        <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-6">
+          <h2 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[16px] mb-4">
+            Historial del día
+          </h2>
+          {cycles.length === 0 ? (
+            <p className="font-['Inter',sans-serif] text-[#6b7280] text-[13px]">
+              Sin ciclos todavía.
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-3 max-h-[260px] overflow-y-auto">
+              {cycles.map((cycle) => (
+                <li
+                  key={cycle.id}
+                  className="rounded-[14px] border border-[rgba(72,72,71,0.18)] px-4 py-3"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-['Space_Grotesk',sans-serif] text-white text-[15px]">
+                      Ciclo #{cycle.cycle_number}
+                    </span>
+                    <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] uppercase tracking-wide">
+                      {cycle.closed_at == null ? "Abierto" : "Cerrado"}
+                    </span>
+                  </div>
+                  <div className="font-['Inter',sans-serif] text-[#6b7280] text-[12px] mt-2">
+                    Entrada: {formatCycleDateTime(cycle.opened_at)}
+                  </div>
+                  <div className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">
+                    Salida: {formatCycleDateTime(cycle.closed_at)}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard title="Total cobrado (pagadas)" value={RD(resumen.totalPagado)} accent="#59ee50" />
         <StatCard title="Facturas pagadas" value={String(resumen.pagadas.length)} />
-        <StatCard title="Pendientes" value={`${resumen.pendientes.length} · ${RD(resumen.totalPendiente)}`} accent="#ff6aa0" />
+        <StatCard
+          title="Pendientes"
+          value={`${resumen.pendientes.length} · ${RD(resumen.totalPendiente)}`}
+          accent="#ff6aa0"
+        />
         <StatCard title="Canceladas" value={String(resumen.canceladas.length)} accent="#ff716c" />
       </div>
 
       <div className="bg-[#131313] rounded-[20px] border border-[rgba(255,144,109,0.2)] p-6">
         <h2 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[16px] mb-1">
-          Cuentas abiertas en POS (sin facturar)
+          Mesas con deuda pendiente
         </h2>
         <p className="font-['Inter',sans-serif] text-[#6b7280] text-[12px] mb-4">
-          Incluye lo ya entregado en mesa: sigue aquí hasta que cobrás en Cajero. No usa la fecha de
-          arriba; es el saldo vivo al pulsar Actualizar.
+          Mientras exista una mesa con saldo abierto, el sistema bloquea la impresión del cierre.
         </p>
         {resumenCuentasAbiertas.lineas === 0 ? (
           <p className="font-['Inter',sans-serif] text-[#59ee50] text-[13px]">
-            No hay consumos pendientes de facturar.
+            No hay consumos pendientes de facturar. El cierre puede imprimirse.
           </p>
         ) : (
           <div className="flex flex-col gap-4">
@@ -414,7 +644,9 @@ export function Cierre() {
           Por método de pago (solo pagadas)
         </h2>
         {resumen.porMetodo.length === 0 ? (
-          <p className="font-['Inter',sans-serif] text-[#6b7280] text-[13px]">Sin ventas pagadas en este día.</p>
+          <p className="font-['Inter',sans-serif] text-[#6b7280] text-[13px]">
+            Sin ventas pagadas en este ciclo.
+          </p>
         ) : (
           <ul className="flex flex-col gap-3">
             {resumen.porMetodo.map((m) => (
@@ -434,13 +666,17 @@ export function Cierre() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-6">
-          <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] uppercase mb-2">Subtotal (pagadas)</div>
+          <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] uppercase mb-2">
+            Subtotal (pagadas)
+          </div>
           <div className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[22px]">
             {RD(resumen.subtotalPagado)}
           </div>
         </div>
         <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-6">
-          <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] uppercase mb-2">ITBIS (pagadas)</div>
+          <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] uppercase mb-2">
+            ITBIS (pagadas)
+          </div>
           <div className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[22px]">
             {RD(resumen.itbisPagado)}
           </div>
@@ -454,6 +690,17 @@ export function Cierre() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-[#1a1a1a] rounded-[14px] px-4 py-3 border border-[rgba(72,72,71,0.18)]">
+      <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] uppercase tracking-wide mb-1">
+        {label}
+      </div>
+      <div className="font-['Inter',sans-serif] text-white text-[14px]">{value}</div>
     </div>
   );
 }

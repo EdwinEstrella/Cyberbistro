@@ -216,15 +216,11 @@ export function Billing() {
       setDeletingInvoiceId(inv.id);
       const now = new Date().toISOString();
 
-      const { error: consumosError } = await insforgeClient.database
-        .from("consumos")
-        .update({
-          factura_id: null,
-          estado: "entregado",
-          updated_at: now,
-        })
-        .eq("tenant_id", tenantId)
-        .eq("factura_id", inv.id);
+const { error: consumosError } = await insforgeClient.database
+          .from("consumos")
+          .delete()
+          .eq("tenant_id", tenantId)
+          .eq("factura_id", inv.id);
 
       if (consumosError) {
         console.error("Error al desvincular consumos de la factura:", consumosError);

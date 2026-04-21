@@ -11,6 +11,31 @@ import {
 
 const ITBIS = 0.18;
 
+// Utility to get today's date in YYYY-MM-DD format
+function todayYmd(): string {
+  const n = new Date();
+  const y = n.getFullYear();
+  const mo = String(n.getMonth() + 1).padStart(2, "0");
+  const da = String(n.getDate()).padStart(2, "0");
+  return `${y}-${mo}-${da}`;
+}
+
+// Checks if there is an open operational cycle for the tenant today
+async function hasOpenCycle(tenantId: string): Promise<boolean> {
+  const { data, error } = await insforgeClient.database
+    .from("cierres_operativos")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("business_day", todayYmd())
+    .is("closed_at", null);
+  if (error) {
+    console.warn("Error checking open cycle:", error);
+    return false;
+  }
+  return (data && (data as any[]).length > 0);
+}
+
+
 const RD = (n: number) =>
   "RD$ " + n.toLocaleString("es-DO", {
     minimumFractionDigits: 2,
@@ -270,6 +295,13 @@ export function MesaCloseAccountModal({
    * `mode === "all"`: todas las personas con ítems. `mode === n`: solo persona n.
    */
   async function createSplitInvoices(mode: "all" | number) {
+  if (!tenantId) return;
+  // Ensure there is an open operational cycle before creating invoices
+  const cycleOpen = await hasOpenCycle(tenantId);
+  if (!cycleOpen) {
+    alert("No hay un ciclo operativo abierto. Inicie un ciclo antes de cobrar.");
+    return;
+  }
     if (!tenantId) return;
 
     const groups = collectPersonGroups();
@@ -383,6 +415,13 @@ export function MesaCloseAccountModal({
   }
 
   async function createInvoice() {
+  if (!tenantId) return;
+  // Ensure there is an open operational cycle before creating an invoice
+  const cycleOpen = await hasOpenCycle(tenantId);
+  if (!cycleOpen) {
+    alert("No hay un ciclo operativo abierto. Inicie un ciclo antes de cobrar.");
+    return;
+  }
     if (!tenantId) return;
     if (mesaConsumos.length === 0) {
       alert("No hay consumos pendientes para cobrar");

@@ -1,0 +1,35 @@
+[AuthFlow] auth attempt {attempt: 2, total: 5}
+@insforge_sdk.js?v=6c8c9946:11979  GET https://restaurante.azokia.com/api/database/records/cierres_operativos?select=id&tenant_id=eq.52f71b49-4dab-4373-89a1-6e4be981ee21&business_day=eq.2026-04-21&closed_at=eq.null 400 (Bad Request)
+(anonymous) @ @insforge_sdk.js?v=6c8c9946:11979
+then @ @insforge_sdk.js?v=6c8c9946:120
+MesaCloseAccountModal.tsx:32 Error checking open cycle: {code: '22007', details: null, hint: null, message: 'invalid input syntax for type timestamp with time zone: "null"'}
+hasOpenCycle @ MesaCloseAccountModal.tsx:32
+await in hasOpenCycle
+createInvoice @ MesaCloseAccountModal.tsx:420
+onClick @ MesaCloseAccountModal.tsx:808
+callCallback2 @ chunk-YQ5BCTVV.js?v=6c8c9946:3680
+invokeGuardedCallbackDev @ chunk-YQ5BCTVV.js?v=6c8c9946:3705
+invokeGuardedCallback @ chunk-YQ5BCTVV.js?v=6c8c9946:3739
+invokeGuardedCallbackAndCatchFirstError @ chunk-YQ5BCTVV.js?v=6c8c9946:3742
+executeDispatch @ chunk-YQ5BCTVV.js?v=6c8c9946:7046
+processDispatchQueueItemsInOrder @ chunk-YQ5BCTVV.js?v=6c8c9946:7066
+processDispatchQueue @ chunk-YQ5BCTVV.js?v=6c8c9946:7075
+dispatchEventsForPlugins @ chunk-YQ5BCTVV.js?v=6c8c9946:7083
+(anonymous) @ chunk-YQ5BCTVV.js?v=6c8c9946:7206
+batchedUpdates$1 @ chunk-YQ5BCTVV.js?v=6c8c9946:18966
+batchedUpdates @ chunk-YQ5BCTVV.js?v=6c8c9946:3585
+dispatchEventForPluginEventSystem @ chunk-YQ5BCTVV.js?v=6c8c9946:7205
+dispatchEventWithEnableCapturePhaseSelectiveHydrationWithoutDiscreteEventReplay @ chunk-YQ5BCTVV.js?v=6c8c9946:5484
+dispatchEvent @ chunk-YQ5BCTVV.js?v=6c8c9946:5478
+dispatchDiscreteEvent @ chunk-YQ5BCTVV.js?v=6c8c9946:5455
+useAuth.ts:58 [AuthFlow] auth attempt {attempt: 3, total: 5}
+useAuth.ts:58 [AuthFlow] auth attempt {attempt: 4, total: 5}
+useAuth.ts:58 [AuthFlow] auth attempt {attempt: 5, total: 5}
+useAuth.ts:58 [AuthFlow] loadUserData:no-user {hasStoredRefreshToken: true}
+useAuth.ts:58 [AuthFlow] bootstrap refresh:start {tokenLength: 233}
+useAuth.ts:58 [AuthFlow] bootstrap refresh:ok {rotatedToken: true, hasUserInPayload: true}
+useAuth.ts:58 [AuthFlow] loadUserData:user-ok-from-bootstrap-refresh-payload {userId: '43262738-5c52-4436-94c3-8a3996f4cd60', email: 'dmole@gmail.com'}
+useAuth.ts:58 [AuthFlow] loadUserData:user-ok {userId: '43262738-5c52-4436-94c3-8a3996f4cd60', email: 'dmole@gmail.com'}
+useAuth.ts:58 [AuthFlow] tenant cache hit {tenantId: '52f71b49-4dab-4373-89a1-6e4be981ee21', rol: 'admin'}
+useAuth.ts:58 [AuthFlow] tenant resolved from backend {tenantId: '52f71b49-4dab-4373-89a1-6e4be981ee21', rol: 'admin'}
+useAuth.ts:58 [AuthFlow] loadUserData:end {silent: true}

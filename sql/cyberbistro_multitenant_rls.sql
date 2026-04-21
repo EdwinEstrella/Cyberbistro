@@ -27,7 +27,7 @@ DO $$
 DECLARE
   t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['facturas','consumos','comandas','mesas_estado','cocina_estado','platos'] LOOP
+  FOREACH t IN ARRAY ARRAY['facturas','consumos','comandas','mesas_estado','cocina_estado','platos','cierres_operativos'] LOOP
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('DROP POLICY IF EXISTS cb_%I_tenant_isolation ON public.%I', t, t);
     EXECUTE format(
