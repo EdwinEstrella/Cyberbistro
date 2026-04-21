@@ -1178,18 +1178,7 @@ export function Dashboard() {
             </div>
 
             {/* Action buttons */}
-            <div className="grid grid-cols-2 gap-[10px]">
-              <button
-                onClick={() => window.location.hash = "/billing"}
-                className="flex gap-[6px] items-center justify-center py-[12px] rounded-[12px] border-2 border-[#59ee50] bg-transparent cursor-pointer hover:bg-[rgba(89,238,80,0.1)] transition-colors"
-              >
-                <svg className="w-[13px] h-[12px]" fill="none" viewBox="0 0 15 13.5">
-                  <path d={svgPaths.p18098d80} fill="#59EE50" />
-                </svg>
-                <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#59ee50] text-[11px] tracking-[1px] uppercase">
-                  Venta
-                </span>
-              </button>
+            <div className="grid grid-cols-1 gap-[10px]">
               <button
                 onClick={sendToKitchen}
                 disabled={sending || !selectedMesa}
@@ -1199,11 +1188,8 @@ export function Dashboard() {
                   color: selectedMesa ? "#59ee50" : "#6b7280",
                 }}
               >
-                <svg className="w-[10px] h-[13px]" fill="none" viewBox="0 0 11.25 15">
-                  <path d={svgPaths.p30f20700} fill={selectedMesa ? "#59EE50" : "#6B7280"} />
-                </svg>
                 <span className="font-['Space_Grotesk',sans-serif] font-bold text-[11px] tracking-[1px] uppercase">
-                  {sending ? "Enviando..." : "Cocina"}
+                  {sending ? "Agregando..." : "+ Agregar"}
                 </span>
               </button>
             </div>
