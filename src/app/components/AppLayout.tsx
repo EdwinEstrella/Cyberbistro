@@ -50,6 +50,7 @@ export function AppLayout() {
   const { hasUpdateBellAlert, showUpdateBellToast } = useAppUpdate();
   const [cocinaActiva, setCocinaActiva] = useState(true);
   const [ventaCartSearch, setVentaCartSearch] = useState("");
+  const [sidebarHidden, setSidebarHidden] = useState(false);
 
   const isVentaRoute = location.pathname === "/dashboard";
 
@@ -93,15 +94,24 @@ export function AppLayout() {
   return (
     <div className="bg-[#0e0e0e] flex flex-col h-full min-h-0 w-full overflow-hidden">
       {/* TitleBar */}
-      <TitleBar />
+      <TitleBar
+        showSidebarToggle
+        sidebarHidden={sidebarHidden}
+        onToggleSidebar={() => setSidebarHidden((prev) => !prev)}
+      />
 
       <RoleGuard>
       <VentaCartSearchProvider value={{ query: ventaCartSearch, setQuery: setVentaCartSearch }}>
       <div className="flex flex-1 min-h-0">
         {/* Sidebar */}
         <aside
-          className="bg-[#131313] flex flex-col w-[256px] shrink-0 min-h-0 self-stretch z-20"
+          className={`bg-[#131313] flex flex-col shrink-0 min-h-0 self-stretch z-20 overflow-hidden transition-[width,opacity,transform,border-color] duration-300 ease-out ${
+            sidebarHidden
+              ? "w-0 opacity-0 -translate-x-3 border-r border-transparent"
+              : "w-[256px] opacity-100 translate-x-0 border-r border-[rgba(72,72,71,0.18)]"
+          }`}
           aria-label="Navegación principal"
+          aria-hidden={sidebarHidden}
         >
           <nav className="flex-1 flex flex-col gap-[8px] px-[16px] pt-[16px]">
             {sideNavItems.map((item) => {

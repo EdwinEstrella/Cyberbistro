@@ -2,7 +2,17 @@ import { useEffect, useState } from "react";
 import type { ElectronAPI } from "../../../shared/types/electron";
 import svgPaths from "../../../imports/svg-h2gjocs89h";
 
-export function TitleBar() {
+interface TitleBarProps {
+  showSidebarToggle?: boolean;
+  sidebarHidden?: boolean;
+  onToggleSidebar?: () => void;
+}
+
+export function TitleBar({
+  showSidebarToggle = false,
+  sidebarHidden = false,
+  onToggleSidebar,
+}: TitleBarProps) {
   const [isMaximized, setIsMaximized] = useState(false);
 
   useEffect(() => {
@@ -59,6 +69,68 @@ export function TitleBar() {
             v{__APP_VERSION__}
           </span>
         </div>
+        {showSidebarToggle ? (
+          <button
+            type="button"
+            onClick={onToggleSidebar}
+            className="w-8 h-8 rounded-[8px] inline-flex items-center justify-center bg-transparent hover:bg-[rgba(255,144,109,0.12)] transition-colors shrink-0 ml-1 p-0"
+            style={{ WebkitAppRegion: "no-drag" as any }}
+            aria-label={sidebarHidden ? "Mostrar barra lateral" : "Ocultar barra lateral"}
+            title={sidebarHidden ? "Mostrar sidebar" : "Ocultar sidebar"}
+          >
+            {sidebarHidden ? (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+                <rect
+                  x="3"
+                  y="3"
+                  width="18"
+                  height="18"
+                  rx="2"
+                  ry="2"
+                  stroke="#FF906D"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <line
+                  x1="9"
+                  y1="3"
+                  x2="9"
+                  y2="21"
+                  stroke="#FF906D"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+                <rect
+                  x="3"
+                  y="3"
+                  width="18"
+                  height="18"
+                  rx="2"
+                  ry="2"
+                  stroke="#FF906D"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <line
+                  x1="9"
+                  y1="3"
+                  x2="9"
+                  y2="21"
+                  stroke="#FF906D"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            )}
+          </button>
+        ) : null}
       </div>
 
       {/* Center - Empty drag area */}
