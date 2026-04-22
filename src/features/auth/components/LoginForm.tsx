@@ -16,6 +16,7 @@ import { PinGateModal } from "../../../shared/components/PinGate";
 
 const LOGIN_NOTICE_KEY = "cyberbistro_login_notice";
 const REFRESH_TOKEN_KEY = INSFORGE_REFRESH_TOKEN_STORAGE_KEY;
+const REMEMBER_LOGIN_KEY = "cyberbistro_remember_login";
 
 // Hoist static SVG paths to avoid re-creation
 const ICONS = {
@@ -70,6 +71,7 @@ export function Login() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberLogin, setRememberLogin] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -85,6 +87,27 @@ export function Login() {
     if (stored) {
       setNotice(stored);
       sessionStorage.removeItem(LOGIN_NOTICE_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(REMEMBER_LOGIN_KEY);
+      if (!raw) return;
+
+      const parsed = JSON.parse(raw) as {
+        email?: unknown;
+        password?: unknown;
+        enabled?: unknown;
+      };
+
+      if (parsed.enabled !== true) return;
+
+      setEmail(typeof parsed.email === "string" ? parsed.email : "");
+      setPassword(typeof parsed.password === "string" ? parsed.password : "");
+      setRememberLogin(true);
+    } catch {
+      localStorage.removeItem(REMEMBER_LOGIN_KEY);
     }
   }, []);
 
@@ -117,6 +140,23 @@ export function Login() {
       return;
     }
 
+    try {
+      if (rememberLogin) {
+        localStorage.setItem(
+          REMEMBER_LOGIN_KEY,
+          JSON.stringify({
+            enabled: true,
+            email,
+            password,
+          })
+        );
+      } else {
+        localStorage.removeItem(REMEMBER_LOGIN_KEY);
+      }
+    } catch {
+      /* ignore storage errors */
+    }
+
     const refreshToken = extractRefreshTokenFromSignInPayload(data);
     if (refreshToken) {
       localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
@@ -146,7 +186,7 @@ export function Login() {
       setIsVisible(false);
       setTimeout(() => navigate(dest), 300);
     }
-  }, [email, password, navigate]);
+  }, [email, password, navigate, rememberLogin]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
@@ -312,6 +352,45 @@ export function Login() {
                     <div aria-hidden="true" className="absolute border-[#484847] border-b border-solid inset-0 pointer-events-none rounded-[inherit] transition-colors duration-300 group-hover:border-[rgba(255,144,109,0.3)]" />
                   </div>
                 </div>
+
+                <label
+                  htmlFor="login-remember"
+                  className="group relative flex items-center justify-between gap-4 rounded-[8px] sm:rounded-[10px] bg-[rgba(19,19,19,0.9)] px-3 sm:px-4 py-3 cursor-pointer transition-all duration-300 hover:bg-[rgba(24,24,24,0.96)] hover:shadow-[0px_0px_20px_-8px_rgba(255,144,109,0.25)]"
+                >
+                  <div aria-hidden="true" className="absolute inset-0 rounded-[inherit] border border-[rgba(72,72,71,0.28)] transition-colors duration-300 group-hover:border-[rgba(255,144,109,0.26)]" />
+                  <div className="relative flex items-center gap-3 min-w-0">
+                    <input
+                      id="login-remember"
+                      type="checkbox"
+                      checked={rememberLogin}
+                      onChange={(e) => {
+                        const nextChecked = e.target.checked;
+                        setRememberLogin(nextChecked);
+                        if (!nextChecked) {
+                          localStorage.removeItem(REMEMBER_LOGIN_KEY);
+                        }
+                      }}
+                      className="peer sr-only"
+                    />
+                    <span className="relative flex size-[18px] sm:size-5 items-center justify-center rounded-[5px] border border-[rgba(72,72,71,0.7)] bg-[#101010] transition-all duration-300 peer-checked:border-[#ff906d] peer-checked:bg-[linear-gradient(180deg,rgba(255,144,109,0.22)_0%,rgba(255,106,160,0.18)_100%)] peer-checked:shadow-[0px_0px_16px_-6px_rgba(255,144,109,0.75)]">
+                      <span className="h-2 w-2 rounded-full bg-[#ff906d] scale-0 opacity-0 transition-all duration-300 peer-checked:scale-100 peer-checked:opacity-100 peer-checked:shadow-[0px_0px_10px_0px_rgba(255,144,109,0.9)]" />
+                    </span>
+                    <div className="flex flex-col">
+                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[11px] sm:text-[12px] tracking-[0.08em] uppercase">
+                        Recordar
+                      </span>
+                      <span className="font-['Inter',sans-serif] text-[#7c7c7c] text-[10px] sm:text-[11px] leading-relaxed">
+                        Guarda correo y contraseÃ±a en este equipo
+                      </span>
+                    </div>
+                  </div>
+                  <div className="relative flex items-center gap-1.5">
+                    <span className={`h-1.5 w-1.5 rounded-full transition-all duration-300 ${rememberLogin ? "bg-[#ff906d] shadow-[0px_0px_8px_0px_rgba(255,144,109,0.9)]" : "bg-[#4a4a4a]"}`} />
+                    <span className="font-['Inter',sans-serif] text-[10px] uppercase tracking-[0.18em] text-[#8a8a8a]">
+                      local
+                    </span>
+                  </div>
+                </label>
 
                 {/* Biometric Button */}
                 <div
