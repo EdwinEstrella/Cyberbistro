@@ -8,17 +8,17 @@ async function main() {
     anonKey: FALLBACK_ANON_KEY,
     isServerMode: true
   });
-  
-  const rnd = Math.floor(Math.random()*10000);
-  console.log("Calling signUp...");
-  const res = await client.auth.signUp({
-    email: `test${rnd}@test.com`, 
-    password: "password123"
+
+  console.log("Calling login...");
+  const res = await client.auth.signInWithPassword({
+    email: "dmole@gmail.com",
+    password: "123456"
   });
-  
-  if (res.error) console.log("Error:", res.error);
+
+  console.log("Error:", res.error);
   if (res.data) {
-     console.log("DATA JSON:", JSON.stringify(res.data, null, 2));
+    console.log("Data keys:", Object.keys(res.data));
+    console.log("DATA JSON:", JSON.stringify(res.data, null, 2));
   }
 }
 main().catch(console.error);

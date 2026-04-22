@@ -70,6 +70,8 @@ export function Billing() {
   const [invoiceModal, setInvoiceModal] = useState<Invoice | null>(null);
   const [deletePinInvoice, setDeletePinInvoice] = useState<Invoice | null>(null);
   const [deletingInvoiceId, setDeletingInvoiceId] = useState<string | null>(null);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const loadInvoices = useCallback(async () => {
     if (!tenantId) {
@@ -101,7 +103,7 @@ export function Billing() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [statusFilter, methodFilter]);
+  }, [statusFilter, methodFilter, dateFrom, dateTo]);
 
   const filteredInvoices = useMemo(() => {
     let filtered = invoices;
@@ -111,8 +113,16 @@ export function Billing() {
     if (methodFilter !== "todos") {
       filtered = filtered.filter((inv) => inv.metodo_pago === methodFilter);
     }
+    if (dateFrom) {
+      const from = new Date(dateFrom + "T00:00:00").getTime();
+      filtered = filtered.filter((inv) => new Date(inv.created_at).getTime() >= from);
+    }
+    if (dateTo) {
+      const to = new Date(dateTo + "T23:59:59").getTime();
+      filtered = filtered.filter((inv) => new Date(inv.created_at).getTime() <= to);
+    }
     return filtered;
-  }, [invoices, statusFilter, methodFilter]);
+  }, [invoices, statusFilter, methodFilter, dateFrom, dateTo]);
 
   const { totalRevenue, pendingCount, pendingAmount } = useMemo(() => {
     const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -282,41 +292,45 @@ const { error: consumosError } = await insforgeClient.database
   return (
     <div className="flex-1 p-5 sm:p-8 lg:p-10 flex flex-col gap-6 sm:gap-8 lg:gap-10 overflow-auto max-w-[1600px] w-full mx-auto">
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 sm:gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {/* Revenue */}
-        <div className="bg-[#201f1f] rounded-[24px] overflow-hidden relative min-h-[200px]">
-          <div className="flex flex-col gap-5 p-6 sm:p-8 pb-14">
-            <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[13px] tracking-wide uppercase">
+        <div className="bg-[#201f1f] rounded-[18px] overflow-hidden relative min-h-[140px]">
+          <div className="flex flex-col gap-3 p-5 pb-10">
+            <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-wide uppercase">
               Ingreso Total (24h)
             </div>
-            <div className="flex items-end min-h-[3.5rem]">
-              <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[40px] sm:text-[44px] tracking-tight leading-none">
-                {RD(totalRevenue).replace("RD$ ", "")}
+            <div className="flex items-baseline gap-1.5">
+              <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[13px] leading-none">$</span>
+              <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[28px] tracking-tight leading-none tabular-nums">
+                {totalRevenue.toLocaleString("es-DO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
-            <div className="flex gap-2 items-center pt-1">
-              <span className="font-['Inter',sans-serif] font-medium text-[#59ee50] text-[15px] leading-snug">
+            <div className="flex gap-2 items-center">
+              <span className="font-['Inter',sans-serif] font-medium text-[#59ee50] text-[12px] leading-snug">
                 Facturas recientes
               </span>
             </div>
           </div>
-          <div className="absolute bg-[rgba(255,144,109,0.05)] blur-[32px] right-[-16px] rounded-full size-[96px] top-[-16px]" />
+          <div className="absolute bg-[rgba(255,144,109,0.05)] blur-[32px] right-[-16px] rounded-full size-[80px] top-[-16px]" />
         </div>
 
         {/* Average Ticket */}
-        <div className="bg-[#201f1f] rounded-[24px] overflow-hidden min-h-[200px]">
-          <div className="flex flex-col gap-5 p-6 sm:p-8 pb-14">
-            <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[13px] tracking-wide uppercase">
+        <div className="bg-[#201f1f] rounded-[18px] overflow-hidden min-h-[140px]">
+          <div className="flex flex-col gap-3 p-5 pb-10">
+            <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-wide uppercase">
               Ticket Promedio
             </div>
-            <div className="flex items-end min-h-[3.5rem]">
-              <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[40px] sm:text-[44px] tracking-tight leading-none">
-                {invoices.length > 0 ? RD(invoices.reduce((sum, inv) => sum + inv.total, 0) / invoices.length).replace("RD$ ", "") : "RD$ 0"}
+            <div className="flex items-baseline gap-1.5">
+              <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[13px] leading-none">$</span>
+              <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[28px] tracking-tight leading-none tabular-nums">
+                {invoices.length > 0
+                  ? (invoices.reduce((sum, inv) => sum + inv.total, 0) / invoices.length).toLocaleString("es-DO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                  : "0.00"}
               </span>
             </div>
-            <div className="flex gap-3 items-center pt-1">
+            <div className="flex gap-3 items-center">
               <div className="bg-white/40 h-px w-3 shrink-0" />
-              <span className="font-['Inter',sans-serif] font-medium text-white/40 text-[15px] leading-snug">
+              <span className="font-['Inter',sans-serif] font-medium text-white/40 text-[12px] leading-snug">
                 {invoices.length} facturas totales
               </span>
             </div>
@@ -324,16 +338,16 @@ const { error: consumosError } = await insforgeClient.database
         </div>
 
         {/* Pending */}
-        <div className="bg-[#201f1f] rounded-[24px] overflow-hidden min-h-[200px]">
-          <div className="flex flex-col gap-5 p-6 sm:p-8 pb-10">
-            <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[13px] tracking-wide uppercase">
+        <div className="bg-[#201f1f] rounded-[18px] overflow-hidden min-h-[140px]">
+          <div className="flex flex-col gap-3 p-5 pb-8">
+            <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-wide uppercase">
               Facturas Pendientes
             </div>
-            <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff6aa0] text-[40px] sm:text-[44px] tracking-tight leading-none min-h-[3.5rem] flex items-end">
+            <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff6aa0] text-[28px] tracking-tight leading-none tabular-nums">
               {pendingCount}
             </div>
-            <div className="flex gap-2 items-center pt-1">
-              <span className="font-['Inter',sans-serif] font-medium text-[#ff6aa0] text-[15px] leading-snug">
+            <div className="flex gap-2 items-center">
+              <span className="font-['Inter',sans-serif] font-medium text-[#ff6aa0] text-[12px] leading-snug">
                 {RD(pendingAmount)} en espera
               </span>
             </div>
@@ -341,18 +355,18 @@ const { error: consumosError } = await insforgeClient.database
         </div>
 
         {/* Total Invoices */}
-        <div className="bg-[#131313] rounded-[24px] border border-[rgba(255,144,109,0.05)] min-h-[200px]">
-          <div className="flex flex-col justify-between gap-6 p-6 sm:p-8 h-full min-h-[200px]">
-            <div className="flex items-start justify-between gap-4">
-              <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[13px] tracking-wide uppercase leading-relaxed max-w-[60%]">
-                Total Facturas
-              </span>
-              <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[32px] shrink-0 tabular-nums">
-                {invoices.length}
-              </span>
+        <div className="bg-[#131313] rounded-[18px] border border-[rgba(255,144,109,0.05)] min-h-[140px]">
+          <div className="flex flex-col gap-3 p-5 pb-10">
+            <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-wide uppercase">
+              Total Facturas
             </div>
-            <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[13px] leading-relaxed">
-              Registradas en el sistema
+            <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[28px] tracking-tight leading-none tabular-nums">
+              {invoices.length}
+            </div>
+            <div className="flex gap-2 items-center">
+              <span className="font-['Inter',sans-serif] font-medium text-[#adaaaa] text-[12px] leading-snug">
+                Registradas en el sistema
+              </span>
             </div>
           </div>
         </div>
@@ -361,8 +375,34 @@ const { error: consumosError } = await insforgeClient.database
       {/* Filters Bar */}
       <div className="backdrop-blur-[6px] bg-[rgba(38,38,38,0.6)] rounded-2xl border border-[rgba(255,255,255,0.05)] p-4 sm:p-5 flex flex-wrap items-center gap-4 sm:gap-5 justify-between">
         <div className="flex flex-wrap gap-3 sm:gap-4 items-stretch sm:items-center">
-          <div className="bg-black rounded-xl border border-[rgba(72,72,71,0.3)] flex items-center px-5 py-3 min-h-[44px]">
-            <span className="font-['Inter',sans-serif] text-white text-[15px]">Todas las fechas</span>
+          <div className="flex items-center gap-2">
+            <input
+              id="date-from"
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="bg-black rounded-xl border border-[rgba(72,72,71,0.3)] px-4 py-3 min-h-[44px] font-['Inter',sans-serif] text-white text-[14px] cursor-pointer focus:border-[rgba(255,144,109,0.4)] outline-none"
+              title="Desde"
+            />
+            <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[13px] shrink-0">→</span>
+            <input
+              id="date-to"
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="bg-black rounded-xl border border-[rgba(72,72,71,0.3)] px-4 py-3 min-h-[44px] font-['Inter',sans-serif] text-white text-[14px] cursor-pointer focus:border-[rgba(255,144,109,0.4)] outline-none"
+              title="Hasta"
+            />
+            {(dateFrom || dateTo) && (
+              <button
+                type="button"
+                onClick={() => { setDateFrom(""); setDateTo(""); }}
+                className="font-['Inter',sans-serif] text-[#adaaaa] text-[12px] hover:text-white transition-colors px-2"
+                title="Limpiar rango"
+              >
+                ✕
+              </button>
+            )}
           </div>
           <select
             value={statusFilter}
@@ -398,7 +438,7 @@ const { error: consumosError } = await insforgeClient.database
       <div className="overflow-x-auto rounded-[24px] -mx-1 px-1">
         <div className="bg-[#131313] rounded-[24px] border border-[rgba(72,72,71,0.1)] overflow-hidden min-w-[920px]">
           {/* Header Row — columnas más anchas y texto legible */}
-          <div className="bg-[rgba(32,31,31,0.5)] grid grid-cols-[minmax(7rem,8rem)_minmax(8.5rem,10rem)_minmax(11rem,1.2fr)_minmax(7.5rem,9rem)_minmax(8.5rem,10rem)_minmax(7.5rem,9rem)_minmax(9.5rem,11rem)] px-6 sm:px-10 gap-x-4">
+          <div className="bg-[rgba(32,31,31,0.5)] grid grid-cols-[minmax(7rem,8rem)_minmax(8.5rem,10rem)_minmax(11rem,1.2fr)_minmax(7.5rem,9rem)_minmax(8.5rem,10rem)_minmax(9rem,11rem)_minmax(9.5rem,11rem)] px-6 sm:px-10 gap-x-4">
             {["ID\nFactura", "Fecha", "Mesa", "Método", "Estado", "Monto", "Acciones"].map((h, i) => (
               <div key={i} className={`py-6 ${i >= 5 ? "text-right" : ""}`}>
                 <span className="font-['Inter',sans-serif] font-bold text-[#adaaaa] text-[11px] sm:text-xs tracking-[0.12em] uppercase whitespace-pre-line leading-relaxed block">
@@ -423,7 +463,7 @@ const { error: consumosError } = await insforgeClient.database
               return (
                 <div
                   key={inv.id}
-                  className={`grid grid-cols-[minmax(7rem,8rem)_minmax(8.5rem,10rem)_minmax(11rem,1.2fr)_minmax(7.5rem,9rem)_minmax(8.5rem,10rem)_minmax(7.5rem,9rem)_minmax(9.5rem,11rem)] px-6 sm:px-10 gap-x-4 items-center ${idx > 0 ? "border-t border-[rgba(255,255,255,0.05)]" : ""}`}
+                  className={`grid grid-cols-[minmax(7rem,8rem)_minmax(8.5rem,10rem)_minmax(11rem,1.2fr)_minmax(7.5rem,9rem)_minmax(8.5rem,10rem)_minmax(9rem,11rem)_minmax(9.5rem,11rem)] px-6 sm:px-10 gap-x-4 items-center ${idx > 0 ? "border-t border-[rgba(255,255,255,0.05)]" : ""}`}
                 >
                   {/* ID */}
                   <div className="py-9">
