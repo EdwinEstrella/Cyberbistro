@@ -66,14 +66,6 @@ function formatCycleDateTime(iso: string | null | undefined): string {
   }).format(new Date(iso));
 }
 
-function buildCycleWindow(cycle: CierreOperativoRow | null): { start: string; end: string } | null {
-  if (!cycle) return null;
-  return {
-    start: cycle.opened_at,
-    end: cycle.closed_at ?? new Date().toISOString(),
-  };
-}
-
 const METODO_ETIQUETA: Record<string, string> = {
   efectivo: "Efectivo",
   tarjeta: "Tarjeta",
@@ -198,12 +190,20 @@ export function Cierre() {
     setLoading(true);
     setLoadError("");
 
-    const cyclesRes = await insforgeClient.database
-      .from("cierres_operativos")
-      .select("id, business_day, cycle_number, opened_at, closed_at, printed_at")
-      .eq("tenant_id", tenantId)
-      .eq("business_day", fecha)
-      .order("cycle_number", { ascending: false });
+    // Ronda 1: ciclos del día + consumos pendientes en paralelo
+    const [cyclesRes, consRes] = await Promise.all([
+      insforgeClient.database
+        .from("cierres_operativos")
+        .select("id, business_day, cycle_number, opened_at, closed_at, printed_at")
+        .eq("tenant_id", tenantId)
+        .eq("business_day", fecha)
+        .order("cycle_number", { ascending: false }),
+      insforgeClient.database
+        .from("consumos")
+        .select("mesa_numero, subtotal, estado")
+        .eq("tenant_id", tenantId)
+        .neq("estado", "pagado"),
+    ]);
 
     if (cyclesRes.error) {
       setLoadError(cyclesRes.error.message || "No se pudieron cargar los cierres operativos.");
@@ -217,47 +217,34 @@ export function Cierre() {
     const cycleRows = (cyclesRes.data as CierreOperativoRow[]) ?? [];
     setCycles(cycleRows);
 
-    const selectedCycle = cycleRows.find((cycle) => !cycle.closed_at) ?? cycleRows[0] ?? null;
-    const cycleWindow = buildCycleWindow(selectedCycle);
+    const selectedCycle = cycleRows.find((c) => !c.closed_at) ?? cycleRows[0] ?? null;
 
-    if (!cycleWindow) {
+    // Ronda 2: facturas filtradas por los timestamps exactos del ciclo (sin magia de timezone)
+    if (selectedCycle) {
+      const factRes = await insforgeClient.database
+        .from("facturas")
+        .select("id, estado, metodo_pago, subtotal, itbis, total, created_at")
+        .eq("tenant_id", tenantId)
+        .gte("created_at", selectedCycle.opened_at)
+        .lte("created_at", selectedCycle.closed_at ?? new Date().toISOString())
+        .order("created_at", { ascending: true });
+
+      if (factRes.error) {
+        setLoadError(factRes.error.message || "No se pudieron cargar las facturas del ciclo.");
+        setFacturas([]);
+      } else {
+        setFacturas((factRes.data as FacturaRow[]) ?? []);
+      }
+    } else {
       setFacturas([]);
-      setConsumosAbiertos([]);
-      setLoading(false);
-      return;
     }
 
-    const factPromise = insforgeClient.database
-      .from("facturas")
-      .select("id, estado, metodo_pago, subtotal, itbis, total, created_at")
-      .eq("tenant_id", tenantId)
-      .gte("created_at", cycleWindow.start)
-      .lte("created_at", cycleWindow.end)
-      .order("created_at", { ascending: true });
-
-    const consPromise =
+    // Consumos: solo relevantes cuando el ciclo está abierto
+    setConsumosAbiertos(
       selectedCycle?.closed_at == null
-        ? insforgeClient.database
-            .from("consumos")
-            .select("mesa_numero, subtotal, estado")
-            .eq("tenant_id", tenantId)
-            .neq("estado", "pagado")
-        : Promise.resolve({ data: [], error: null });
-
-    const [factRes, consRes] = await Promise.all([factPromise, consPromise]);
-
-    if (factRes.error) {
-      setLoadError(factRes.error.message || "No se pudieron cargar las facturas del ciclo.");
-      setFacturas([]);
-    } else {
-      setFacturas((factRes.data as FacturaRow[]) ?? []);
-    }
-
-    if (consRes.error) {
-      setConsumosAbiertos([]);
-    } else {
-      setConsumosAbiertos((consRes.data as ConsumoAbiertoRow[]) ?? []);
-    }
+        ? (consRes.data as ConsumoAbiertoRow[]) ?? []
+        : []
+    );
 
     setLoading(false);
   }, [tenantId, fecha]);
