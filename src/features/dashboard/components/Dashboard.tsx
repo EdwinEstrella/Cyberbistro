@@ -611,6 +611,7 @@ export function Dashboard() {
       comanda_id: null,
       plato_id: item.plato.id,
       nombre: item.plato.nombre,
+      categoria: item.plato.categoria || "General",
       cantidad: item.cantidad,
       precio_unitario: item.plato.precio,
       subtotal: item.plato.precio * item.cantidad,
@@ -631,6 +632,7 @@ export function Dashboard() {
           acc[key] = {
             plato_id: consumo.plato_id,
             nombre: consumo.nombre,
+            categoria: (consumo as { categoria?: string }).categoria || "General",
             cantidad: 0,
             precio_unitario: consumo.precio_unitario,
             subtotal: 0,
@@ -645,6 +647,7 @@ export function Dashboard() {
         {
           plato_id: number;
           nombre: string;
+          categoria: string;
           cantidad: number;
           precio_unitario: number;
           subtotal: number;

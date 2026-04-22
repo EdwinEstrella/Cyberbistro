@@ -48,6 +48,7 @@ export interface MesaConsumoRow {
   comanda_id: string | null;
   plato_id: number;
   nombre: string;
+  categoria?: string;
   cantidad: number;
   precio_unitario: number;
   subtotal: number;
@@ -86,7 +87,26 @@ async function loadTableConsumption(
   return data as MesaConsumoRow[];
 }
 
-function groupConsumosForFactura(consumos: MesaConsumoRow[], itbisRate: number) {
+async function groupConsumosForFactura(
+  tenantId: string,
+  consumos: MesaConsumoRow[],
+  itbisRate: number
+) {
+  const plateIds = [...new Set(consumos.map((consumo) => consumo.plato_id))];
+  const categoriaPorPlato = new Map<number, string>();
+
+  if (plateIds.length > 0) {
+    const { data } = await insforgeClient.database
+      .from("platos")
+      .select("id, categoria")
+      .eq("tenant_id", tenantId)
+      .in("id", plateIds);
+
+    for (const plate of (data as Array<{ id: number; categoria?: string | null }>) ?? []) {
+      categoriaPorPlato.set(plate.id, plate.categoria?.trim() || "General");
+    }
+  }
+
   const groupedItems = consumos.reduce(
     (acc, consumo) => {
       const key = consumo.plato_id;
@@ -94,6 +114,10 @@ function groupConsumosForFactura(consumos: MesaConsumoRow[], itbisRate: number) 
         acc[key] = {
           plato_id: consumo.plato_id,
           nombre: consumo.nombre,
+          categoria:
+            consumo.categoria?.trim() ||
+            categoriaPorPlato.get(consumo.plato_id) ||
+            "General",
           cantidad: 0,
           precio_unitario: consumo.precio_unitario,
           subtotal: 0,
@@ -105,7 +129,14 @@ function groupConsumosForFactura(consumos: MesaConsumoRow[], itbisRate: number) 
     },
     {} as Record<
       number,
-      { plato_id: number; nombre: string; cantidad: number; precio_unitario: number; subtotal: number }
+      {
+        plato_id: number;
+        nombre: string;
+        categoria: string;
+        cantidad: number;
+        precio_unitario: number;
+        subtotal: number;
+      }
     >
   );
   const facturaItems = Object.values(groupedItems);
@@ -335,7 +366,11 @@ export function MesaCloseAccountModal({
         const consumosToInvoice = groups.get(personIndex)!;
         if (consumosToInvoice.length === 0) continue;
 
-        const { facturaItems, subtotal, itbis, total } = groupConsumosForFactura(consumosToInvoice, itbisRate);
+        const { facturaItems, subtotal, itbis, total } = await groupConsumosForFactura(
+          tenantId,
+          consumosToInvoice,
+          itbisRate
+        );
 
         const ncfPart = await resolveNcfForNewInvoice(tenantId);
 
@@ -432,7 +467,11 @@ export function MesaCloseAccountModal({
     await ensureAuthSessionFresh();
 
     const consumosToBill = mesaConsumos;
-    const { facturaItems, subtotal, itbis, total } = groupConsumosForFactura(consumosToBill, itbisRate);
+    const { facturaItems, subtotal, itbis, total } = await groupConsumosForFactura(
+      tenantId,
+      consumosToBill,
+      itbisRate
+    );
 
     const ncfPart = await resolveNcfForNewInvoice(tenantId);
 

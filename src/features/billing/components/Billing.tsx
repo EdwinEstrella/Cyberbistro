@@ -21,6 +21,7 @@ type BillingView = "facturas" | "ciclos";
 interface InvoiceItem {
   plato_id: number;
   nombre: string;
+  categoria?: string;
   cantidad: number;
   precio_unitario: number;
   subtotal: number;

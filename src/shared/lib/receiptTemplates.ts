@@ -114,7 +114,7 @@ function rdFixed(n: number, tenant: TenantReceiptInfo): string {
 export function buildFacturaReceiptHtml(
   tenant: TenantReceiptInfo,
   factura: {
-    items: Array<{ cantidad: number; nombre: string; precio_unitario?: number; subtotal?: number }>;
+    items: Array<{ cantidad: number; nombre: string; categoria?: string; precio_unitario?: number; subtotal?: number }>;
     subtotal: number;
     itbis: number;
     total: number;
@@ -155,8 +155,14 @@ export function buildFacturaReceiptHtml(
       const pu = Number(item.precio_unitario ?? 0);
       const line = Number(item.subtotal ?? qty * pu);
       const precioStr = rdFixed(pu, tenant);
+      const categoria = (item.categoria || "").trim();
+      const categoriaRow =
+        categoria !== ""
+          ? `<tr><td colspan="3" style="font-size:13px;font-weight:700;padding-top:5px;padding-bottom:0">${escapeHtml(categoria)}</td></tr>`
+          : "";
       return `
-    <tr><td colspan="3" class="fdo-item-name">${escapeHtml(item.nombre)}</td></tr>
+    ${categoriaRow}
+    <tr><td colspan="3" class="fdo-item-name" style="padding-top:${categoria !== "" ? "1px" : "5px"}">${escapeHtml(item.nombre)}</td></tr>
     <tr class="fdo-item-sub">
       <td colspan="2">${precioStr} × ${qty}</td>
       <td style="text-align:right;font-weight:bold">${rdFixed(line, tenant)}</td>

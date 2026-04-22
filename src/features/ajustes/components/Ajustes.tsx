@@ -70,6 +70,26 @@ const SAMPLE_COMANDA_THERMAL: Parameters<typeof buildComandaReceiptHtml>[1] = {
   notas: "Vista previa — nota de cocina de ejemplo.",
 };
 
+const SAMPLE_FACTURA_THERMAL_PREVIEW: Parameters<typeof buildFacturaReceiptHtml>[1] = {
+  ...SAMPLE_FACTURA_THERMAL,
+  items: [
+    {
+      nombre: "Plato del menÃº (ejemplo)",
+      categoria: "General",
+      cantidad: 2,
+      precio_unitario: 275.5,
+      subtotal: 551,
+    },
+    {
+      nombre: "Bebida (ejemplo)",
+      categoria: "Bebidas",
+      cantidad: 1,
+      precio_unitario: 85,
+      subtotal: 85,
+    },
+  ],
+};
+
 const SAMPLE_CIERRE_THERMAL_BASE: Omit<CierreDiaThermalData, "generadoEn" | "generadoAtIso"> = {
   fechaOperacion: "12/04/2026",
   facturasPagadas: 14,
@@ -379,7 +399,7 @@ export function Ajustes() {
     switch (thermalPreviewKind) {
       case "factura":
       default: {
-        let sample = { ...SAMPLE_FACTURA_THERMAL, pagada_at: nowIso };
+        let sample = { ...SAMPLE_FACTURA_THERMAL_PREVIEW, pagada_at: nowIso };
         if (config.ncf_fiscal_activo) {
           const ncf = construirCadenaNcf(config.ncf_tipo_default, config.ncf_secuencia_siguiente);
           if (ncf) {
