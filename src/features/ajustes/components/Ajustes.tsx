@@ -497,11 +497,21 @@ export function Ajustes() {
 
   return (
     <div className="flex-1 min-h-0 p-4 sm:p-[32px]">
-      <div className="mx-auto max-w-[1100px] grid grid-cols-1 lg:grid-cols-[1fr_minmax(300px,400px)] gap-8 items-start">
-        <div className="flex flex-col gap-[28px] min-w-0 order-2 lg:order-1">
-          <h1 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[28px]">
-            Ajustes
-          </h1>
+      <div className="mx-auto max-w-[1440px] grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-6 xl:gap-8 items-start">
+        <div className="flex flex-col gap-[24px] min-w-0 order-2 xl:order-1">
+          <div className="rounded-[24px] border border-[rgba(255,144,109,0.12)] bg-[linear-gradient(180deg,rgba(24,24,24,0.94)_0%,rgba(19,19,19,0.96)_100%)] px-6 py-6 sm:px-8 sm:py-7 shadow-[0_18px_60px_-30px_rgba(255,144,109,0.32)]">
+            <div className="flex flex-col gap-2">
+              <span className="font-['Inter',sans-serif] text-[11px] uppercase tracking-[0.28em] text-[#ff906d]">
+                Configuración operativa
+              </span>
+              <h1 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[28px] sm:text-[34px] leading-none m-0">
+                Ajustes del negocio
+              </h1>
+              <p className="font-['Inter',sans-serif] text-[#8c8c8c] text-[14px] leading-relaxed max-w-3xl m-0">
+                Organizá branding, NCF y configuración térmica desde una vista más compacta y alineada.
+              </p>
+            </div>
+          </div>
 
           {savedOk && (
             <div className="bg-[rgba(89,238,80,0.05)] border border-[rgba(89,238,80,0.2)] rounded-[12px] px-[20px] py-[12px]">
@@ -534,18 +544,18 @@ export function Ajustes() {
             </div>
           )}
 
-          <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-[28px] flex flex-col gap-[20px]">
+          <div className="grid grid-cols-1 2xl:grid-cols-2 gap-[24px] items-start">
+
+          <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-[28px] flex flex-col gap-[20px] h-full">
             <div className="flex flex-col gap-[4px]">
               <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px]">
                 Información del Negocio
               </span>
-              <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">
-                Datos de tu negocio (multitenant). Aparecen en comandas, facturas térmicas y en la vista
-                previa de abajo.
-              </span>
+
             </div>
 
-            <div className="flex flex-col gap-[16px]">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-[16px]">
+              <div className="md:col-span-2">
               <Field label="Nombre del Negocio">
                 <input
                   type="text"
@@ -560,6 +570,7 @@ export function Ajustes() {
                   className="input-field"
                 />
               </Field>
+              </div>
               <Field label="RNC">
                 <input
                   type="text"
@@ -614,18 +625,12 @@ export function Ajustes() {
             </div>
           </div>
 
-          <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-[28px] flex flex-col gap-[20px]">
+          <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-[28px] flex flex-col gap-[20px] h-full">
             <div className="flex flex-col gap-[4px]">
               <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px]">
                 Comprobante fiscal (NCF)
               </span>
-              <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px] leading-relaxed">
-                Configurá el tipo DGII y el número en el que vas (p. ej. si el último papel fue
-                B0100000150, poné <span className="text-[#adaaaa]">151</span>). Cada cobro generado
-                desde el POS guardará el NCF en la factura y subirá la secuencia en uno. Si aún no
-                existen las columnas, creá en tu base (editor SQL de InsForge) las de NCF en{" "}
-                <span className="text-[#adaaaa]">tenants</span> y <span className="text-[#adaaaa]">facturas</span>.
-              </span>
+
             </div>
 
             <label className="flex items-center gap-3 cursor-pointer select-none">
@@ -692,18 +697,12 @@ export function Ajustes() {
             ) : null}
           </div>
 
-          <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-[28px] flex flex-col gap-[16px]">
+          <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-[28px] flex flex-col gap-[16px] 2xl:col-span-2">
             <div className="flex flex-col gap-[4px]">
               <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px]">
                 Vista previa — tickets térmicos
               </span>
-              <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px] leading-relaxed">
-                Elegí el tipo de documento como en el POS (pestañas de categoría). Los datos de ejemplo son
-                fictivos; el encabezado (nombre, RNC, dirección, teléfono y logo) refleja lo que escribís
-                arriba. El ancho del papel sigue la opción guardada en{" "}
-                <span className="text-[#adaaaa]">Impresión térmica</span> (tras &quot;Guardar
-                impresión&quot;).
-              </span>
+
             </div>
             <div className="flex gap-[12px] overflow-x-auto pb-[4px] shrink-0 -mx-[4px] px-[4px]">
               {THERMAL_PREVIEW_TABS.map((tab) => (
@@ -742,11 +741,15 @@ export function Ajustes() {
             </div>
           </div>
 
-          <AppDesktopUpdateCard />
+          <div className="2xl:col-span-2 grid grid-cols-1 2xl:grid-cols-2 gap-[24px]">
+            <AppDesktopUpdateCard />
 
-          <ThermalPrintSettingsCard
-            onThermalSaved={() => setThermalPreviewNonce((n) => n + 1)}
-          />
+            <ThermalPrintSettingsCard
+              onThermalSaved={() => setThermalPreviewNonce((n) => n + 1)}
+            />
+          </div>
+
+          </div>
 
           <button
             onClick={handleSave}
@@ -757,16 +760,13 @@ export function Ajustes() {
           </button>
         </div>
 
-        <aside className="min-w-0 order-1 lg:order-2 lg:sticky lg:top-4 lg:self-start">
+        <aside className="min-w-0 order-1 xl:order-2 xl:sticky xl:top-4 xl:self-start">
           <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-[28px] flex flex-col gap-[20px]">
             <div className="flex flex-col gap-[4px]">
               <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px]">
                 Logo del Negocio
               </span>
-              <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">
-                Se imprime en comandas y facturas. Podés subir archivo o pegar una URL (guardá con el
-                botón de abajo si solo cambiás la URL).
-              </span>
+
             </div>
 
             {logoUploadError && (
@@ -837,6 +837,45 @@ export function Ajustes() {
             >
               {uploading ? "Subiendo..." : "Seleccionar imagen"}
             </button>
+          </div>
+
+          <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-[24px] flex flex-col gap-[16px]">
+            <div className="flex flex-col gap-[4px]">
+              <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px]">
+                Resumen rapido
+              </span>
+              <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px] leading-relaxed">
+                Estado actual del negocio y de la emisiÃ³n fiscal.
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-[14px] bg-[#1a1a1a] border border-[rgba(72,72,71,0.2)] px-4 py-4">
+                <div className="font-['Inter',sans-serif] text-[10px] uppercase tracking-[0.18em] text-[#6b7280]">
+                  Divisa
+                </div>
+                <div className="font-['Space_Grotesk',sans-serif] text-white text-[18px] font-bold mt-2">
+                  {config.currency_code}
+                </div>
+              </div>
+              <div className="rounded-[14px] bg-[#1a1a1a] border border-[rgba(72,72,71,0.2)] px-4 py-4">
+                <div className="font-['Inter',sans-serif] text-[10px] uppercase tracking-[0.18em] text-[#6b7280]">
+                  NCF
+                </div>
+                <div className="font-['Space_Grotesk',sans-serif] text-white text-[18px] font-bold mt-2">
+                  {config.ncf_fiscal_activo ? "Activo" : "Off"}
+                </div>
+              </div>
+              <div className="rounded-[14px] bg-[#1a1a1a] border border-[rgba(72,72,71,0.2)] px-4 py-4 col-span-2">
+                <div className="font-['Inter',sans-serif] text-[10px] uppercase tracking-[0.18em] text-[#6b7280]">
+                  PrÃ³ximo comprobante
+                </div>
+                <div className="font-['Space_Grotesk',sans-serif] text-white text-[16px] font-bold mt-2 break-all">
+                  {config.ncf_fiscal_activo
+                    ? construirCadenaNcf(config.ncf_tipo_default, config.ncf_secuencia_siguiente) || "Sin definir"
+                    : "NCF desactivado"}
+                </div>
+              </div>
+            </div>
           </div>
         </aside>
       </div>
@@ -1070,3 +1109,4 @@ function Field({
     </div>
   );
 }
+
