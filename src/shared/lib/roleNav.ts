@@ -4,21 +4,23 @@
  * Login: cada rol ve solo lo necesario.
  */
 
-export type TenantRol = "admin" | "cocina" | "cajera";
+export type TenantRol = "admin" | "cocina" | "cajera" | "mesero";
 
 const VENTA_PATHS = ["/dashboard", "/tables", "/entregas"] as const;
 
-/** Cierre de día / caja — admin ve todo; cajera también. */
+/** Cierre de día / caja — admin ve todo; cajera y ventas también. */
 export const CIERRE_PATH = "/cierre";
 
 /**
  * Canonicaliza roles legacy para evitar duplicados operativos:
- * - "mesero", "vender", "vendedor", "cajero" => "cajera"
+ * - "vender", "vendedor", "ventas" => "cajera"  (acceso a ventas + cierre)
+ * - "cajero"                       => "cajera"
+ * - "mesero"                       => "mesero"  (solo ventas, sin cierre)
  */
 export function normalizeTenantRol(rol: string | null): TenantRol | null {
   if (!rol) return null;
-  if (rol === "admin" || rol === "cocina" || rol === "cajera") return rol;
-  if (rol === "mesero" || rol === "vender" || rol === "vendedor" || rol === "cajero") {
+  if (rol === "admin" || rol === "cocina" || rol === "cajera" || rol === "mesero") return rol;
+  if (rol === "vender" || rol === "vendedor" || rol === "ventas" || rol === "cajero") {
     return "cajera";
   }
   return null;
@@ -47,6 +49,9 @@ export function isAppRouteAllowed(rol: string | null, pathname: string): boolean
     if ((VENTA_PATHS as readonly string[]).includes(pathname)) return true;
     if (pathname === CIERRE_PATH) return true;
     return false;
+  }
+  if (normalized === "mesero") {
+    return (VENTA_PATHS as readonly string[]).includes(pathname);
   }
   return pathname === "/dashboard";
 }
