@@ -214,7 +214,6 @@ export function Billing() {
       if (inv.tenant_id != null && inv.tenant_id !== tenantId) return;
 
       setDeletingInvoiceId(inv.id);
-      const now = new Date().toISOString();
 
 const { error: consumosError } = await insforgeClient.database
           .from("consumos")
