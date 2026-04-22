@@ -74,7 +74,7 @@ const SAMPLE_FACTURA_THERMAL_PREVIEW: Parameters<typeof buildFacturaReceiptHtml>
   ...SAMPLE_FACTURA_THERMAL,
   items: [
     {
-      nombre: "Plato del menÃº (ejemplo)",
+      nombre: "Plato del menú (ejemplo)",
       categoria: "General",
       cantidad: 2,
       precio_unitario: 275.5,
@@ -845,7 +845,7 @@ export function Ajustes() {
                 Resumen rapido
               </span>
               <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px] leading-relaxed">
-                Estado actual del negocio y de la emisiÃ³n fiscal.
+                Estado actual del negocio y de la emisión fiscal.
               </span>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -867,7 +867,7 @@ export function Ajustes() {
               </div>
               <div className="rounded-[14px] bg-[#1a1a1a] border border-[rgba(72,72,71,0.2)] px-4 py-4 col-span-2">
                 <div className="font-['Inter',sans-serif] text-[10px] uppercase tracking-[0.18em] text-[#6b7280]">
-                  PrÃ³ximo comprobante
+                  Proximo comprobante
                 </div>
                 <div className="font-['Space_Grotesk',sans-serif] text-white text-[16px] font-bold mt-2 break-all">
                   {config.ncf_fiscal_activo
