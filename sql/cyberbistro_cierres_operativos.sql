@@ -14,13 +14,23 @@ CREATE TABLE IF NOT EXISTS public.cierres_operativos (
   opened_by_auth_user_id uuid NULL,
   closed_by_auth_user_id uuid NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT cierres_operativos_unique_cycle UNIQUE (tenant_id, business_day, cycle_number),
   CONSTRAINT cierres_operativos_closed_after_open CHECK (closed_at IS NULL OR closed_at >= opened_at),
   CONSTRAINT cierres_operativos_printed_after_open CHECK (printed_at IS NULL OR printed_at >= opened_at)
 );
 
+ALTER TABLE public.cierres_operativos
+  DROP CONSTRAINT IF EXISTS cierres_operativos_unique_cycle;
+
+DROP INDEX IF EXISTS public.cierres_operativos_unique_cycle;
+
+CREATE UNIQUE INDEX IF NOT EXISTS cierres_operativos_unique_cycle
+  ON public.cierres_operativos (tenant_id, cycle_number);
+
 CREATE INDEX IF NOT EXISTS cierres_operativos_tenant_day_idx
   ON public.cierres_operativos (tenant_id, business_day, cycle_number DESC);
+
+CREATE INDEX IF NOT EXISTS cierres_operativos_tenant_cycle_idx
+  ON public.cierres_operativos (tenant_id, cycle_number DESC);
 
 CREATE INDEX IF NOT EXISTS cierres_operativos_open_idx
   ON public.cierres_operativos (tenant_id, business_day)

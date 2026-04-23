@@ -33,6 +33,10 @@ interface CierreOperativoRow {
   printed_at: string | null;
 }
 
+interface CycleNumberRow {
+  cycle_number: number;
+}
+
 function todayYmd(): string {
   const n = new Date();
   const y = n.getFullYear();
@@ -82,6 +86,13 @@ const RD = (n: number) =>
   n.toLocaleString("es-DO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const ITBIS_RATE = 0.18;
+const MAX_START_CYCLE_ATTEMPTS = 3;
+
+function isUniqueCycleNumberError(message: string | undefined): boolean {
+  if (!message) return false;
+  const normalized = message.toLowerCase();
+  return normalized.includes("duplicate") || normalized.includes("unique");
+}
 
 export function Cierre() {
   const { tenantId, user, loading: authLoading } = useAuth();
@@ -270,22 +281,53 @@ export function Cierre() {
     setStartingCycle(true);
     setPrintMsg("");
 
-    const nextCycleNumber = (cycles[0]?.cycle_number ?? 0) + 1;
-    const { error } = await insforgeClient.database.from("cierres_operativos").insert([
-      {
-        tenant_id: tenantId,
-        business_day: fecha,
-        cycle_number: nextCycleNumber,
-        opened_at: new Date().toISOString(),
-        opened_by_auth_user_id: user?.id ?? null,
-      },
-    ]);
+    let cycleStarted = false;
+    let errorMessage = "";
 
-    if (error) {
-      setPrintMsg(error.message || "No se pudo iniciar el ciclo operativo.");
-    } else {
-      setPrintMsg(`Ciclo #${nextCycleNumber} iniciado.`);
-      await cargar();
+    for (let attempt = 0; attempt < MAX_START_CYCLE_ATTEMPTS; attempt += 1) {
+      const { data: latestCycleData, error: latestCycleError } = await insforgeClient.database
+        .from("cierres_operativos")
+        .select("cycle_number")
+        .eq("tenant_id", tenantId)
+        .order("cycle_number", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (latestCycleError) {
+        errorMessage = latestCycleError.message || "No se pudo calcular el siguiente ciclo.";
+        break;
+      }
+
+      const nextCycleNumber = ((latestCycleData as CycleNumberRow | null)?.cycle_number ?? 0) + 1;
+      const { error } = await insforgeClient.database.from("cierres_operativos").insert([
+        {
+          tenant_id: tenantId,
+          business_day: fecha,
+          cycle_number: nextCycleNumber,
+          opened_at: new Date().toISOString(),
+          opened_by_auth_user_id: user?.id ?? null,
+        },
+      ]);
+
+      if (!error) {
+        setPrintMsg(`Ciclo #${nextCycleNumber} iniciado.`);
+        await cargar();
+        cycleStarted = true;
+        break;
+      }
+
+      const isRetryable =
+        isUniqueCycleNumberError(error.message) &&
+        attempt < MAX_START_CYCLE_ATTEMPTS - 1;
+
+      if (!isRetryable) {
+        errorMessage = error.message || "No se pudo iniciar el ciclo operativo.";
+        break;
+      }
+    }
+
+    if (!cycleStarted) {
+      setPrintMsg(errorMessage || "No se pudo iniciar el ciclo operativo.");
     }
 
     setStartingCycle(false);
