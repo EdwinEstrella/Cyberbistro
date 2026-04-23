@@ -865,29 +865,6 @@ export function Ajustes() {
               </select>
             </Field>
 
-            <Field label="Próximo número de secuencia (1 – 99.999.999)">
-              <input
-                type="number"
-                min={1}
-                max={99999999}
-                value={config.ncf_secuencia_siguiente}
-                onChange={(e) => {
-                  const v = parseInt(e.target.value, 10);
-                  const nextValue = Number.isFinite(v) ? v : 1;
-                  setConfig((prev) => ({
-                    ...prev,
-                    ncf_secuencia_siguiente: nextValue,
-                    ncf_secuencias_por_tipo: {
-                      ...prev.ncf_secuencias_por_tipo,
-                      [prev.ncf_tipo_default]: nextValue,
-                    },
-                  }));
-                }}
-                disabled={!config.ncf_fiscal_activo}
-                className="input-field disabled:opacity-50"
-              />
-            </Field>
-
             <Field label="Secuencias configuradas por tipo B">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-[12px]">
                 {NCF_B_TIPO_OPCIONES.map((o) => (

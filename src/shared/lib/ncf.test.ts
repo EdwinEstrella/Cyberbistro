@@ -4,6 +4,7 @@ import {
   buildTenantNcfUpdatePayload,
   construirCadenaNcf,
   esCodigoNcfValido,
+  ncfTypeRequiresClientRnc,
   prepareNcfForFacturaInsert,
 } from "./ncf";
 
@@ -12,6 +13,11 @@ describe("ncf", () => {
     expect(esCodigoNcfValido("B01")).toBe(true);
     expect(esCodigoNcfValido("e32")).toBe(true);
     expect(esCodigoNcfValido("X01")).toBe(false);
+  });
+
+  it("ncfTypeRequiresClientRnc solo exige RNC para B01", () => {
+    expect(ncfTypeRequiresClientRnc("B01")).toBe(true);
+    expect(ncfTypeRequiresClientRnc("B02")).toBe(false);
   });
 
   it("construirCadenaNcf arma 11 caracteres", () => {

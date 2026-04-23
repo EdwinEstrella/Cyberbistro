@@ -12,6 +12,7 @@ import {
   DEFAULT_NCF_B_CODE,
   isNcfBCode,
   NCF_B_TIPO_OPCIONES,
+  ncfTypeRequiresClientRnc,
   type NcfBCode,
 } from "../../../shared/lib/ncf";
 import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
@@ -188,6 +189,7 @@ export function MesaCloseAccountModal({
   >("efectivo");
   const [ncfFiscalActive, setNcfFiscalActive] = useState(false);
   const [selectedNcfType, setSelectedNcfType] = useState<NcfBCode>(DEFAULT_NCF_B_CODE);
+  const [clientRnc, setClientRnc] = useState("");
   const [splitMode, setSplitMode] = useState(false);
   /** En modo dividir: cada línea de consumo va a una persona 1..splitParts (ítem completo, no se parte el monto). */
   const [personByConsumoId, setPersonByConsumoId] = useState<Record<string, number>>({});
@@ -203,6 +205,7 @@ export function MesaCloseAccountModal({
       setSplitMode(false);
       setPersonByConsumoId({});
       setPaymentMethod("efectivo");
+      setClientRnc("");
       return;
     }
     if (!tenantId) return;
@@ -390,6 +393,16 @@ export function MesaCloseAccountModal({
       return;
     }
 
+    const normalizedClientRnc = clientRnc.trim();
+    if (
+      ncfFiscalActive &&
+      ncfTypeRequiresClientRnc(selectedNcfType) &&
+      normalizedClientRnc === ""
+    ) {
+      alert("Debes indicar el RNC del cliente para emitir una factura B01.");
+      return;
+    }
+
     setCharging(true);
     await ensureAuthSessionFresh();
 
@@ -425,6 +438,9 @@ export function MesaCloseAccountModal({
         if (ncfPart) {
           insertRow.ncf = ncfPart.ncf;
           insertRow.ncf_tipo = ncfPart.ncf_tipo;
+        }
+        if (normalizedClientRnc !== "") {
+          insertRow.cliente_rnc = normalizedClientRnc;
         }
 
         const { data: factura, error: facturaError } = await insforgeClient.database
@@ -498,6 +514,16 @@ export function MesaCloseAccountModal({
       return;
     }
 
+    const normalizedClientRnc = clientRnc.trim();
+    if (
+      ncfFiscalActive &&
+      ncfTypeRequiresClientRnc(selectedNcfType) &&
+      normalizedClientRnc === ""
+    ) {
+      alert("Debes indicar el RNC del cliente para emitir una factura B01.");
+      return;
+    }
+
     setCharging(true);
     await ensureAuthSessionFresh();
 
@@ -529,6 +555,9 @@ export function MesaCloseAccountModal({
     if (ncfPart) {
       facturaData.ncf = ncfPart.ncf;
       facturaData.ncf_tipo = ncfPart.ncf_tipo;
+    }
+    if (normalizedClientRnc !== "") {
+      facturaData.cliente_rnc = normalizedClientRnc;
     }
 
     const { data: factura, error: facturaError } = await insforgeClient.database
@@ -847,6 +876,21 @@ export function MesaCloseAccountModal({
             <span className="font-['Inter',sans-serif] text-[#6b7280] text-[11px] leading-relaxed">
               Este cobro emitira el tipo seleccionado. Si divides la cuenta, todas las facturas de esta ronda usan el mismo NCF.
             </span>
+          </div>
+        ) : null}
+
+        {ncfFiscalActive && ncfTypeRequiresClientRnc(selectedNcfType) ? (
+          <div className="flex flex-col gap-[8px]">
+            <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
+              RNC del cliente
+            </span>
+            <input
+              type="text"
+              value={clientRnc}
+              onChange={(e) => setClientRnc(e.target.value)}
+              placeholder="RNC del cliente"
+              className="w-full rounded-[12px] border border-[rgba(72,72,71,0.3)] bg-[#262626] px-[14px] py-[12px] font-['Inter',sans-serif] text-white text-[13px] outline-none"
+            />
           </div>
         ) : null}
 

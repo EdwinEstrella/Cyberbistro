@@ -83,6 +83,10 @@ export function isNcfBCode(tipoCodigo: string | null | undefined): tipoCodigo is
   return NCF_B_TIPO_OPCIONES.some((opcion) => opcion.codigo === normalizeCode(tipoCodigo));
 }
 
+export function ncfTypeRequiresClientRnc(tipoCodigo: string | null | undefined): boolean {
+  return normalizeCode(tipoCodigo) === "B01";
+}
+
 export function etiquetaTipoNcf(codigo: string): string {
   const normalized = normalizeCode(codigo);
   const row = NCF_TIPO_OPCIONES.find((opcion) => opcion.codigo === normalized);

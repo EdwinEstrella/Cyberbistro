@@ -50,6 +50,7 @@ import {
   DEFAULT_NCF_B_CODE,
   isNcfBCode,
   NCF_B_TIPO_OPCIONES,
+  ncfTypeRequiresClientRnc,
   type NcfBCode,
 } from "../../../shared/lib/ncf";
 import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
@@ -129,6 +130,7 @@ export function Dashboard() {
   const [cartItbisEnabled, setCartItbisEnabled] = useState(false);
   const [tenantNcfFiscalActive, setTenantNcfFiscalActive] = useState(false);
   const [selectedNcfType, setSelectedNcfType] = useState<NcfBCode>(DEFAULT_NCF_B_CODE);
+  const [takeoutClientRnc, setTakeoutClientRnc] = useState("");
 
   useEffect(() => {
     if (authLoading || !tenantId) return;
@@ -609,6 +611,7 @@ export function Dashboard() {
         alert("No hay items en el carrito para cobrar.");
         return;
       }
+      setTakeoutClientRnc("");
       setMesaConsumos([]);
       setShowPaymentModal(true);
       return;
@@ -624,6 +627,15 @@ export function Dashboard() {
     }
     if (!tenantId) {
       alert("No hay negocio activo.");
+      return;
+    }
+    const normalizedClientRnc = takeoutClientRnc.trim();
+    if (
+      tenantNcfFiscalActive &&
+      ncfTypeRequiresClientRnc(selectedNcfType) &&
+      normalizedClientRnc === ""
+    ) {
+      alert("Debes indicar el RNC del cliente para emitir una factura B01.");
       return;
     }
     const cycleOpen = await hasOpenCycle(tenantId);
@@ -691,9 +703,9 @@ export function Dashboard() {
 
     const ncfPart = tenantId
       ? await resolveNcfForNewInvoice(
-          tenantId,
-          tenantNcfFiscalActive ? selectedNcfType : null
-        )
+        tenantId,
+        tenantNcfFiscalActive ? selectedNcfType : null
+      )
       : null;
 
     const facturaData: Record<string, unknown> = {
@@ -712,6 +724,9 @@ export function Dashboard() {
     if (ncfPart) {
       facturaData.ncf = ncfPart.ncf;
       facturaData.ncf_tipo = ncfPart.ncf_tipo;
+    }
+    if (normalizedClientRnc !== "") {
+      facturaData.cliente_rnc = normalizedClientRnc;
     }
 
     const { data: factura, error: facturaError } = await insforgeClient.database
@@ -734,6 +749,7 @@ export function Dashboard() {
     await printFactura(factura.id, factura.numero_factura);
 
     setCart([]);
+    setTakeoutClientRnc("");
     setMesaConsumos([]);
     setChargeOk(true);
     setTimeout(() => setChargeOk(false), 3000);
@@ -969,18 +985,18 @@ export function Dashboard() {
                           isSelected
                             ? "#ff784d"
                             : mesa.estado === "ocupada"
-                            ? "rgba(255,113,108,0.15)"
-                            : mesa.estado === "limpieza"
-                            ? "rgba(255,144,109,0.15)"
-                            : "rgba(38,38,38,0.8)";
+                              ? "rgba(255,113,108,0.15)"
+                              : mesa.estado === "limpieza"
+                                ? "rgba(255,144,109,0.15)"
+                                : "rgba(38,38,38,0.8)";
                         const textColor =
                           isSelected
                             ? "#460f00"
                             : mesa.estado === "ocupada"
-                            ? "#ff716c"
-                            : mesa.estado === "limpieza"
-                            ? "#ff906d"
-                            : "#adaaaa";
+                              ? "#ff716c"
+                              : mesa.estado === "limpieza"
+                                ? "#ff906d"
+                                : "#adaaaa";
                         return (
                           <button
                             key={mesa.id}
@@ -1033,9 +1049,8 @@ export function Dashboard() {
                   setSelectedMesa(null);
                 }
               }}
-              className={`flex items-center gap-[8px] rounded-[6px] px-[10px] py-[4px] cursor-pointer border-none transition-all ${
-                isTakeout ? "bg-[#59ee50]" : "bg-[rgba(72,72,71,0.3)]"
-              }`}
+              className={`flex items-center gap-[8px] rounded-[6px] px-[10px] py-[4px] cursor-pointer border-none transition-all ${isTakeout ? "bg-[#59ee50]" : "bg-[rgba(72,72,71,0.3)]"
+                }`}
             >
               <svg className="w-[14px] h-[14px]" fill="none" viewBox="0 0 15 13.5">
                 <path
@@ -1044,9 +1059,8 @@ export function Dashboard() {
                 />
               </svg>
               <span
-                className={`font-['Inter',sans-serif] font-bold text-[10px] uppercase ${
-                  isTakeout ? "text-[#0e0e0e]" : "text-[#adaaaa]"
-                }`}
+                className={`font-['Inter',sans-serif] font-bold text-[10px] uppercase ${isTakeout ? "text-[#0e0e0e]" : "text-[#adaaaa]"
+                  }`}
               >
                 Para llevar
               </span>
@@ -1220,42 +1234,56 @@ export function Dashboard() {
                   aria-checked={cartItbisEnabled}
                   onClick={() => setCartItbisEnabled((v) => !v)}
                   aria-label={cartItbisEnabled ? "Desactivar ITBIS en el total" : "Activar ITBIS 18% en el total"}
-                  className={`relative h-[30px] w-[54px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${
-                    cartItbisEnabled ? "bg-[#59ee50]" : "bg-[#383838]"
-                  }`}
+                  className={`relative h-[30px] w-[54px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${cartItbisEnabled ? "bg-[#59ee50]" : "bg-[#383838]"
+                    }`}
                 >
                   <span
-                    className={`absolute top-[5px] left-[5px] block size-[20px] rounded-full bg-white shadow transition-transform duration-200 ease-out ${
-                      cartItbisEnabled ? "translate-x-[24px]" : "translate-x-0"
-                    }`}
+                    className={`absolute top-[5px] left-[5px] block size-[20px] rounded-full bg-white shadow transition-transform duration-200 ease-out ${cartItbisEnabled ? "translate-x-[24px]" : "translate-x-0"
+                      }`}
                   />
                 </button>
               </div>
               {tenantNcfFiscalActive ? (
-                <div className="flex items-center justify-between gap-[12px] rounded-[10px] border border-[rgba(72,72,71,0.28)] bg-[#131313] px-[12px] py-[10px]">
-                  <div className="flex flex-col min-w-0">
-                    <span className="font-['Inter',sans-serif] text-white text-[12px] font-semibold leading-tight">
-                      Tipo NCF
-                    </span>
-                    <span className="font-['Inter',sans-serif] text-[#6b7280] text-[10px] leading-snug">
-                      Cambialo solo para este cobro si necesitas emitir otro comprobante.
-                    </span>
+                <div className="flex flex-col gap-[10px] rounded-[10px] border border-[rgba(72,72,71,0.28)] bg-[#131313] px-[12px] py-[10px]">
+                  <div className="flex items-center justify-between gap-[12px]">
+                    <div className="flex flex-col min-w-0">
+                      <span className="font-['Inter',sans-serif] text-white text-[12px] font-semibold leading-tight">
+                        Tipo NCF
+                      </span>
+                      <span className="font-['Inter',sans-serif] text-[#6b7280] text-[10px] leading-snug">
+                        Cambialo solo para este cobro si necesitas emitir otro comprobante.
+                      </span>
+                    </div>
+                    <select
+                      value={selectedNcfType}
+                      onChange={(e) =>
+                        setSelectedNcfType(
+                          isNcfBCode(e.target.value) ? e.target.value : DEFAULT_NCF_B_CODE
+                        )
+                      }
+                      className="min-w-[168px] rounded-[10px] border border-[rgba(72,72,71,0.3)] bg-[#1a1a1a] px-[12px] py-[9px] font-['Inter',sans-serif] text-[12px] text-white outline-none"
+                    >
+                      {NCF_B_TIPO_OPCIONES.map((opcion) => (
+                        <option key={opcion.codigo} value={opcion.codigo}>
+                          {opcion.codigo}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                  <select
-                    value={selectedNcfType}
-                    onChange={(e) =>
-                      setSelectedNcfType(
-                        isNcfBCode(e.target.value) ? e.target.value : DEFAULT_NCF_B_CODE
-                      )
-                    }
-                    className="min-w-[168px] rounded-[10px] border border-[rgba(72,72,71,0.3)] bg-[#1a1a1a] px-[12px] py-[9px] font-['Inter',sans-serif] text-[12px] text-white outline-none"
-                  >
-                    {NCF_B_TIPO_OPCIONES.map((opcion) => (
-                      <option key={opcion.codigo} value={opcion.codigo}>
-                        {opcion.codigo}
-                      </option>
-                    ))}
-                  </select>
+                  {ncfTypeRequiresClientRnc(selectedNcfType) ? (
+                    <div className="flex flex-col gap-[6px]">
+                      <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">
+                        RNC del cliente
+                      </span>
+                      <input
+                        type="text"
+                        value={takeoutClientRnc}
+                        onChange={(e) => setTakeoutClientRnc(e.target.value)}
+                        placeholder="RNC del cliente"
+                        className="w-full rounded-[10px] border border-[rgba(72,72,71,0.3)] bg-[#1a1a1a] px-[12px] py-[9px] font-['Inter',sans-serif] text-[12px] text-white outline-none"
+                      />
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
               <div className="flex justify-between">
@@ -1344,48 +1372,48 @@ export function Dashboard() {
             setMesaConsumos(remaining as Consumo[]);
             await refreshMesaDebt(selectedMesa.id, selectedMesa.numero);
           }}
-onPaidFull={async () => {
-              setChargeOk(true);
-              setTimeout(() => setChargeOk(false), 3000);
-              if (!tenantId || !selectedMesa) return;
-              // Verify mesa is clean before freeing it
-              const { data: pending, error: pendingErr } = await insforgeClient.database
-                .from('consumos')
-                .select('id')
-                .eq('tenant_id', tenantId)
-                .eq('mesa_numero', selectedMesa.numero)
-                .neq('estado', 'pagado');
-              if (pendingErr) {
-                console.warn('Error checking pending consumos for mesa:', pendingErr);
-              }
-              if (pending && (pending as any[]).length > 0) {
-                alert('No se puede liberar la mesa porque todavía tiene consumos pendientes. Cierra la cuenta primero.');
-                return;
-              }
+          onPaidFull={async () => {
+            setChargeOk(true);
+            setTimeout(() => setChargeOk(false), 3000);
+            if (!tenantId || !selectedMesa) return;
+            // Verify mesa is clean before freeing it
+            const { data: pending, error: pendingErr } = await insforgeClient.database
+              .from('consumos')
+              .select('id')
+              .eq('tenant_id', tenantId)
+              .eq('mesa_numero', selectedMesa.numero)
+              .neq('estado', 'pagado');
+            if (pendingErr) {
+              console.warn('Error checking pending consumos for mesa:', pendingErr);
+            }
+            if (pending && (pending as any[]).length > 0) {
+              alert('No se puede liberar la mesa porque todavía tiene consumos pendientes. Cierra la cuenta primero.');
+              return;
+            }
 
-              const { error } = await insforgeClient.database.from("mesas_estado").upsert(
-                {
-                  id: parseInt(selectedMesa.id, 10),
-                  estado: "libre",
-                  tenant_id: tenantId,
-                },
-                { onConflict: "tenant_id,id" }
+            const { error } = await insforgeClient.database.from("mesas_estado").upsert(
+              {
+                id: parseInt(selectedMesa.id, 10),
+                estado: "libre",
+                tenant_id: tenantId,
+              },
+              { onConflict: "tenant_id,id" }
+            );
+            if (!error) {
+              setMesas((prev) =>
+                prev.map((m) =>
+                  m.id === selectedMesa.id
+                    ? { ...m, estado: "libre", deuda_pendiente: 0, items_pendientes: 0 }
+                    : m
+                )
               );
-              if (!error) {
-                setMesas((prev) =>
-                  prev.map((m) =>
-                    m.id === selectedMesa.id
-                      ? { ...m, estado: "libre", deuda_pendiente: 0, items_pendientes: 0 }
-                      : m
-                  )
-                );
-              }
-await refreshMesaDebt(selectedMesa.id, selectedMesa.numero);
-    await markMesaAsOccupied(selectedMesa);
-              setSelectedMesa(null);
-              setMesaConsumos([]);
-              setCart([]);
-            }}
+            }
+            await refreshMesaDebt(selectedMesa.id, selectedMesa.numero);
+            await markMesaAsOccupied(selectedMesa);
+            setSelectedMesa(null);
+            setMesaConsumos([]);
+            setCart([]);
+          }}
         />
       )}
 
@@ -1394,127 +1422,175 @@ await refreshMesaDebt(selectedMesa.id, selectedMesa.numero);
         const { subtotal: calcSubtotal, itbis: calcItbis, total: calcTotal } =
           calculateTakeoutTotals();
         return (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
-          style={{ backgroundColor: "rgba(0,0,0,0.7)" }}
-          onClick={(e) => { if (e.target === e.currentTarget) setShowPaymentModal(false); }}
-        >
-          <div className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[20px] p-[28px] w-[700px] max-h-[90vh] overflow-y-auto flex flex-col gap-[20px] shadow-xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[20px]">
-                  Cobrar para llevar
-                </span>
-                <div className="text-[#adaaaa] text-[12px] mt-1">
-                  {cart.length} ítem{cart.length !== 1 ? "s" : ""} en el carrito
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center"
+            style={{ backgroundColor: "rgba(0,0,0,0.7)" }}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setTakeoutClientRnc("");
+                setShowPaymentModal(false);
+              }
+            }}
+          >
+            <div className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[20px] p-[28px] w-[700px] max-h-[90vh] overflow-y-auto flex flex-col gap-[20px] shadow-xl">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[20px]">
+                    Cobrar para llevar
+                  </span>
+                  <div className="text-[#adaaaa] text-[12px] mt-1">
+                    {cart.length} ítem{cart.length !== 1 ? "s" : ""} en el carrito
+                  </div>
                 </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowPaymentModal(false)}
-                className="text-[#6b7280] bg-transparent border-none cursor-pointer text-[20px] hover:text-white transition-colors leading-none"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="max-h-[220px] overflow-y-auto flex flex-col gap-[8px] rounded-[12px] bg-[#131313] p-[12px]">
-              {cart.map((line) => (
-                <div
-                  key={line.plato.id}
-                  className="flex items-center justify-between rounded-[8px] bg-[#262626] px-[12px] py-[10px]"
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTakeoutClientRnc("");
+                    setShowPaymentModal(false);
+                  }}
+                  className="text-[#6b7280] bg-transparent border-none cursor-pointer text-[20px] hover:text-white transition-colors leading-none"
                 >
-                  <div>
-                    <div className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px]">
-                      {line.cantidad}× {line.plato.nombre}
-                    </div>
-                    <div className="text-[#adaaaa] text-[11px]">
-                      {`${currencySymbol} ${Number(line.plato.precio).toFixed(2)} c/u`}
-                    </div>
-                  </div>
-                  <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[14px]">
-                    {`${currencySymbol} ${(line.plato.precio * line.cantidad).toFixed(2)}`}
-                  </div>
-                </div>
-              ))}
-            </div>
+                  ×
+                </button>
+              </div>
 
-            <div className="bg-[#131313] rounded-[12px] p-[14px] flex flex-col gap-[8px]">
-              <div className="flex justify-between">
-                <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">
-                  Subtotal
-                </span>
-                <span className="font-['Inter',sans-serif] text-white text-[11px]">
-                  {formatMoney(calcSubtotal)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">
-                  {cartItbisEnabled ? "ITBIS (18%)" : "ITBIS (no incluido)"}
-                </span>
-                <span className="font-['Inter',sans-serif] text-white text-[11px]">
-                  {formatMoney(calcItbis)}
-                </span>
-              </div>
-              <div className="border-t border-[rgba(72,72,71,0.15)] pt-[6px] flex justify-between">
-                <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[12px]">
-                  TOTAL
-                </span>
-                <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[14px]">
-                  {formatMoney(calcTotal)}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-[12px]">
-              <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
-                Método de pago
-              </span>
-              <div className="grid grid-cols-2 gap-[8px]">
-                {[
-                  { value: "efectivo" as const, label: "Efectivo", icon: "💵" },
-                  { value: "tarjeta" as const, label: "Tarjeta", icon: "💳" },
-                  { value: "digital" as const, label: "Digital", icon: "📱" },
-                  { value: "transferencia" as const, label: "Transferencia", icon: "🏦" },
-                ].map((method) => (
-                  <button
-                    type="button"
-                    key={method.value}
-                    onClick={() => setPaymentMethod(method.value)}
-                    className={`flex flex-col items-center gap-[8px] py-[12px] rounded-[12px] cursor-pointer border-none transition-all ${
-                      paymentMethod === method.value
-                        ? "bg-[#ff906d] text-[#5b1600]"
-                        : "bg-[#262626] text-white hover:bg-[#333]"
-                    }`}
+              <div className="max-h-[220px] overflow-y-auto flex flex-col gap-[8px] rounded-[12px] bg-[#131313] p-[12px]">
+                {cart.map((line) => (
+                  <div
+                    key={line.plato.id}
+                    className="flex items-center justify-between rounded-[8px] bg-[#262626] px-[12px] py-[10px]"
                   >
-                    <span className="text-[20px]">{method.icon}</span>
-                    <span className="font-['Inter',sans-serif] font-bold text-[10px] uppercase">
-                      {method.label}
-                    </span>
-                  </button>
+                    <div>
+                      <div className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px]">
+                        {line.cantidad}× {line.plato.nombre}
+                      </div>
+                      <div className="text-[#adaaaa] text-[11px]">
+                        {`${currencySymbol} ${Number(line.plato.precio).toFixed(2)} c/u`}
+                      </div>
+                    </div>
+                    <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[14px]">
+                      {`${currencySymbol} ${(line.plato.precio * line.cantidad).toFixed(2)}`}
+                    </div>
+                  </div>
                 ))}
               </div>
-            </div>
 
-            <div className="flex gap-[10px]">
-              <button
-                type="button"
-                onClick={() => setShowPaymentModal(false)}
-                className="flex-1 bg-[#262626] border border-[rgba(72,72,71,0.3)] rounded-[12px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#adaaaa] text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:border-[rgba(255,144,109,0.3)] hover:text-white transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={() => void createInvoice()}
-                disabled={charging}
-                className="flex-1 bg-[#59ee50] rounded-[12px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#0e0e0e] text-[12px] tracking-[0.5px] uppercase cursor-pointer border-none disabled:opacity-50 transition-opacity"
-              >
-                {charging ? "Procesando..." : "Confirmar Pago"}
-              </button>
+              <div className="bg-[#131313] rounded-[12px] p-[14px] flex flex-col gap-[8px]">
+                <div className="flex justify-between">
+                  <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">
+                    Subtotal
+                  </span>
+                  <span className="font-['Inter',sans-serif] text-white text-[11px]">
+                    {formatMoney(calcSubtotal)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">
+                    {cartItbisEnabled ? "ITBIS (18%)" : "ITBIS (no incluido)"}
+                  </span>
+                  <span className="font-['Inter',sans-serif] text-white text-[11px]">
+                    {formatMoney(calcItbis)}
+                  </span>
+                </div>
+                <div className="border-t border-[rgba(72,72,71,0.15)] pt-[6px] flex justify-between">
+                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[12px]">
+                    TOTAL
+                  </span>
+                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[14px]">
+                    {formatMoney(calcTotal)}
+                  </span>
+                </div>
+              </div>
+
+              {tenantNcfFiscalActive ? (
+                <div className="flex flex-col gap-[12px]">
+                  <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
+                    Tipo NCF
+                  </span>
+                  <select
+                    value={selectedNcfType}
+                    onChange={(e) =>
+                      setSelectedNcfType(
+                        isNcfBCode(e.target.value) ? e.target.value : DEFAULT_NCF_B_CODE
+                      )
+                    }
+                    className="w-full rounded-[12px] border border-[rgba(72,72,71,0.3)] bg-[#262626] px-[14px] py-[12px] font-['Inter',sans-serif] text-white text-[13px] outline-none"
+                  >
+                    {NCF_B_TIPO_OPCIONES.map((opcion) => (
+                      <option key={opcion.codigo} value={opcion.codigo}>
+                        {opcion.codigo} - {opcion.descripcion.replace(`${opcion.codigo} - `, "")}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
+
+              {tenantNcfFiscalActive && ncfTypeRequiresClientRnc(selectedNcfType) ? (
+                <div className="flex flex-col gap-[8px]">
+                  <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
+                    RNC del cliente
+                  </span>
+                  <input
+                    type="text"
+                    value={takeoutClientRnc}
+                    onChange={(e) => setTakeoutClientRnc(e.target.value)}
+                    placeholder="RNC del cliente"
+                    className="w-full rounded-[12px] border border-[rgba(72,72,71,0.3)] bg-[#262626] px-[14px] py-[12px] font-['Inter',sans-serif] text-white text-[13px] outline-none"
+                  />
+                </div>
+              ) : null}
+
+              <div className="flex flex-col gap-[12px]">
+                <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
+                  Método de pago
+                </span>
+                <div className="grid grid-cols-2 gap-[8px]">
+                  {[
+                    { value: "efectivo" as const, label: "Efectivo", icon: "💵" },
+                    { value: "tarjeta" as const, label: "Tarjeta", icon: "💳" },
+                    { value: "digital" as const, label: "Digital", icon: "📱" },
+                    { value: "transferencia" as const, label: "Transferencia", icon: "🏦" },
+                  ].map((method) => (
+                    <button
+                      type="button"
+                      key={method.value}
+                      onClick={() => setPaymentMethod(method.value)}
+                      className={`flex flex-col items-center gap-[8px] py-[12px] rounded-[12px] cursor-pointer border-none transition-all ${paymentMethod === method.value
+                        ? "bg-[#ff906d] text-[#5b1600]"
+                        : "bg-[#262626] text-white hover:bg-[#333]"
+                        }`}
+                    >
+                      <span className="text-[20px]">{method.icon}</span>
+                      <span className="font-['Inter',sans-serif] font-bold text-[10px] uppercase">
+                        {method.label}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-[10px]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTakeoutClientRnc("");
+                    setShowPaymentModal(false);
+                  }}
+                  className="flex-1 bg-[#262626] border border-[rgba(72,72,71,0.3)] rounded-[12px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#adaaaa] text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:border-[rgba(255,144,109,0.3)] hover:text-white transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void createInvoice()}
+                  disabled={charging}
+                  className="flex-1 bg-[#59ee50] rounded-[12px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#0e0e0e] text-[12px] tracking-[0.5px] uppercase cursor-pointer border-none disabled:opacity-50 transition-opacity"
+                >
+                  {charging ? "Procesando..." : "Confirmar Pago"}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
         );
       })()}
 
@@ -1566,22 +1642,20 @@ await refreshMesaDebt(selectedMesa.id, selectedMesa.numero);
                           {consumo.cantidad}× {consumo.nombre}
                         </span>
                         <span
-                          className={`text-[10px] px-2 py-0.5 rounded ${
-                            consumo.tipo === "cocina"
-                              ? "bg-[#ff906d]/20 text-[#ff906d]"
-                              : "bg-[#59ee50]/20 text-[#59ee50]"
-                          }`}
+                          className={`text-[10px] px-2 py-0.5 rounded ${consumo.tipo === "cocina"
+                            ? "bg-[#ff906d]/20 text-[#ff906d]"
+                            : "bg-[#59ee50]/20 text-[#59ee50]"
+                            }`}
                         >
                           {consumo.tipo === "cocina" ? "🍳 Cocina" : "🥤 Directo"}
                         </span>
                         <span
-                          className={`text-[10px] px-2 py-0.5 rounded ${
-                            consumo.estado === "pagado"
-                              ? "bg-green-500/20 text-green-500"
-                              : consumo.estado === "entregado"
+                          className={`text-[10px] px-2 py-0.5 rounded ${consumo.estado === "pagado"
+                            ? "bg-green-500/20 text-green-500"
+                            : consumo.estado === "entregado"
                               ? "bg-blue-500/20 text-blue-500"
                               : "bg-yellow-500/20 text-yellow-500"
-                          }`}
+                            }`}
                         >
                           {consumo.estado}
                         </span>

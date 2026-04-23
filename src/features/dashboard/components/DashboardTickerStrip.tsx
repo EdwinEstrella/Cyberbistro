@@ -4,7 +4,7 @@ const TICKER_ITEMS = [
   { text: "Sistema de punto de venta CyberBistro OS", color: "#adaaaa" },
   { text: "● Cocina en vivo: activa", color: "#59ee50" },
   { text: "Seleccioná una mesa y agregá platos al pedido", color: "#adaaaa" },
-  { text: "● Enviá a cocina con un clic", color: "#ff906d" },
+  { text: "● Envía a cocina con un clic", color: "#ff906d" },
 ] as const;
 
 function DashboardTickerStripBase() {
