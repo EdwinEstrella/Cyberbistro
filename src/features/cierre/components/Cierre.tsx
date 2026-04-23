@@ -136,8 +136,7 @@ export function Cierre() {
       itbisPagado,
       totalPendiente,
       porMetodo,
-      ticketPromedioPagado:
-        pagadas.length > 0 ? totalPagado / pagadas.length : 0,
+      ticketPromedioPagado: pagadas.length > 0 ? totalPagado / pagadas.length : 0,
     };
   }, [facturas]);
 
@@ -190,7 +189,6 @@ export function Cierre() {
     setLoading(true);
     setLoadError("");
 
-    // Ronda 1: ciclos del día + consumos pendientes en paralelo
     const [cyclesRes, consRes] = await Promise.all([
       insforgeClient.database
         .from("cierres_operativos")
@@ -219,7 +217,6 @@ export function Cierre() {
 
     const selectedCycle = cycleRows.find((c) => !c.closed_at) ?? cycleRows[0] ?? null;
 
-    // Ronda 2: facturas filtradas por los timestamps exactos del ciclo (sin magia de timezone)
     if (selectedCycle) {
       const factRes = await insforgeClient.database
         .from("facturas")
@@ -239,11 +236,8 @@ export function Cierre() {
       setFacturas([]);
     }
 
-    // Consumos: solo relevantes cuando el ciclo está abierto
     setConsumosAbiertos(
-      selectedCycle?.closed_at == null
-        ? (consRes.data as ConsumoAbiertoRow[]) ?? []
-        : []
+      selectedCycle?.closed_at == null ? ((consRes.data as ConsumoAbiertoRow[]) ?? []) : []
     );
 
     setLoading(false);
@@ -255,47 +249,47 @@ export function Cierre() {
   }, [authLoading, cargar]);
 
   async function handleStartCycle() {
-  if (!tenantId) return;
-  // If there's an open cycle, close it before starting a new one
-  if (hasOpenCycle && currentCycle) {
-    const closeAt = new Date().toISOString();
-    const { error: closeError } = await insforgeClient.database
-      .from("cierres_operativos")
-      .update({
-        closed_at: closeAt,
-        closed_by_auth_user_id: user?.id ?? null,
-      })
-      .eq("id", currentCycle.id)
-      .eq("tenant_id", tenantId);
-    if (closeError) {
-      setPrintMsg(closeError.message || "No se pudo cerrar el ciclo existente.");
-      return;
+    if (!tenantId) return;
+
+    if (hasOpenCycle && currentCycle) {
+      const closeAt = new Date().toISOString();
+      const { error: closeError } = await insforgeClient.database
+        .from("cierres_operativos")
+        .update({
+          closed_at: closeAt,
+          closed_by_auth_user_id: user?.id ?? null,
+        })
+        .eq("id", currentCycle.id)
+        .eq("tenant_id", tenantId);
+      if (closeError) {
+        setPrintMsg(closeError.message || "No se pudo cerrar el ciclo existente.");
+        return;
+      }
     }
+
+    setStartingCycle(true);
+    setPrintMsg("");
+
+    const nextCycleNumber = (cycles[0]?.cycle_number ?? 0) + 1;
+    const { error } = await insforgeClient.database.from("cierres_operativos").insert([
+      {
+        tenant_id: tenantId,
+        business_day: fecha,
+        cycle_number: nextCycleNumber,
+        opened_at: new Date().toISOString(),
+        opened_by_auth_user_id: user?.id ?? null,
+      },
+    ]);
+
+    if (error) {
+      setPrintMsg(error.message || "No se pudo iniciar el ciclo operativo.");
+    } else {
+      setPrintMsg(`Ciclo #${nextCycleNumber} iniciado.`);
+      await cargar();
+    }
+
+    setStartingCycle(false);
   }
-
-  setStartingCycle(true);
-  setPrintMsg("");
-
-  const nextCycleNumber = (cycles[0]?.cycle_number ?? 0) + 1;
-  const { error } = await insforgeClient.database.from("cierres_operativos").insert([
-    {
-      tenant_id: tenantId,
-      business_day: fecha,
-      cycle_number: nextCycleNumber,
-      opened_at: new Date().toISOString(),
-      opened_by_auth_user_id: user?.id ?? null,
-    },
-  ]);
-
-  if (error) {
-    setPrintMsg(error.message || "No se pudo iniciar el ciclo operativo.");
-  } else {
-    setPrintMsg(`Ciclo #${nextCycleNumber} iniciado.`);
-    await cargar();
-  }
-
-  setStartingCycle(false);
-}
 
   async function handleImprimir() {
     if (!tenantId) return;
@@ -304,14 +298,13 @@ export function Cierre() {
       return;
     }
     if (currentCycle.closed_at) {
-      setPrintMsg("El ciclo mostrado ya fue cerrado. Iniciá un nuevo ciclo para continuar.");
+      setPrintMsg("El ciclo mostrado ya fue cerrado. Inicia un nuevo ciclo para continuar.");
       return;
     }
 
     setPrinting(true);
     setPrintMsg("");
 
-    // Fetch de datos frescos del ciclo actual directamente — evita leer state stale
     const closedAtIso = new Date().toISOString();
     const cycleStart = currentCycle.opened_at;
     const cycleEnd = closedAtIso;
@@ -351,16 +344,14 @@ export function Cierre() {
     const facturasSnapshot = (factRes.data as FacturaRow[]) ?? [];
     const consumosSnapshot = (consRes.data as ConsumoAbiertoRow[]) ?? [];
 
-    // Verificar mesas pendientes con datos frescos
     if (consumosSnapshot.length > 0) {
       setPrintMsg(
-        "No se puede imprimir el cierre mientras existan mesas con deudas pendientes. Cerrá o cobrá todas las mesas primero."
+        "No se puede imprimir el cierre mientras existan mesas con deudas pendientes. Cierra o cobra todas las mesas primero."
       );
       setPrinting(false);
       return;
     }
 
-    // Calcular resumen con datos frescos del ciclo
     const pagadas = facturasSnapshot.filter((f) => f.estado === "pagada");
     const pendientes = facturasSnapshot.filter((f) => f.estado === "pendiente");
     const canceladas = facturasSnapshot.filter((f) => f.estado === "cancelada");
@@ -376,7 +367,11 @@ export function Cierre() {
       porMetodoMap.set(key, cur);
     }
     const porMetodo = [...porMetodoMap.entries()]
-      .map(([metodo, v]) => ({ etiqueta: etiquetaMetodo(metodo), cantidad: v.cantidad, total: v.total }))
+      .map(([metodo, v]) => ({
+        etiqueta: etiquetaMetodo(metodo),
+        cantidad: v.cantidad,
+        total: v.total,
+      }))
       .sort((a, b) => b.total - a.total);
     const ticketPromedioPagado = pagadas.length > 0 ? totalPagado / pagadas.length : 0;
 
@@ -431,35 +426,16 @@ export function Cierre() {
     if (closeError) {
       setPrintMsg(
         closeError.message ||
-          "Se imprimió el cierre, pero no se pudo registrar el cierre del ciclo."
+          "Se imprimio el cierre, pero no se pudo registrar el cierre del ciclo."
       );
       setPrinting(false);
       await cargar();
       return;
     }
 
-    const nextCycleNumber = currentCycle.cycle_number + 1;
-    const { error: nextCycleError } = await insforgeClient.database
-      .from("cierres_operativos")
-      .insert([
-        {
-          tenant_id: tenantId,
-          business_day: currentCycle.business_day,
-          cycle_number: nextCycleNumber,
-          opened_at: closedAtIso,
-          opened_by_auth_user_id: user?.id ?? null,
-        },
-      ]);
-
-    if (nextCycleError) {
-      setPrintMsg(
-        nextCycleError.message ||
-          "El cierre se imprimió, pero no se pudo abrir el nuevo ciclo automáticamente."
-      );
-    } else {
-      setPrintMsg(`Cierre impreso. Se abrió automáticamente el ciclo #${nextCycleNumber}.`);
-    }
-
+    setPrintMsg(
+      "Cierre impreso y ciclo cerrado. Si necesitas seguir operando, inicia un nuevo ciclo manualmente."
+    );
     setPrinting(false);
     await cargar();
   }
@@ -468,7 +444,7 @@ export function Cierre() {
     return (
       <div className="flex-1 flex items-center justify-center">
         <span className="font-['Space_Grotesk',sans-serif] text-[#6b7280] text-[16px]">
-          Cargando sesión...
+          Cargando sesion...
         </span>
       </div>
     );
@@ -478,7 +454,7 @@ export function Cierre() {
     return (
       <div className="flex-1 flex items-center justify-center p-6">
         <p className="font-['Inter',sans-serif] text-[#adaaaa] text-[14px] text-center max-w-md">
-          Tu usuario no está vinculado a un negocio. El cierre solo incluye datos de tu negocio.
+          Tu usuario no esta vinculado a un negocio. El cierre solo incluye datos de tu negocio.
         </p>
       </div>
     );
@@ -491,16 +467,16 @@ export function Cierre() {
           Cierre operativo
         </h1>
         <p className="font-['Inter',sans-serif] text-[#6b7280] text-[13px] mt-2">
-          El cierre ahora trabaja por ciclos operativos. Solo se puede imprimir si no hay mesas con
-          saldo pendiente, y al imprimir se abre automáticamente un nuevo ciclo para el mismo día
-          operativo.
+          El cierre trabaja por ciclos operativos. Solo se puede imprimir si no hay mesas con saldo
+          pendiente. Al imprimir, el ciclo actual se cierra y el siguiente debe iniciarse
+          manualmente.
         </p>
       </div>
 
       <div className="flex flex-wrap items-end gap-4">
         <label className="flex flex-col gap-2">
           <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] uppercase tracking-wide">
-            Día operativo
+            Dia operativo
           </span>
           <input
             type="date"
@@ -521,7 +497,11 @@ export function Cierre() {
           type="button"
           onClick={() => void handleStartCycle()}
           disabled={startingCycle || loading || hasOpenCycle}
-          title={hasOpenCycle ? `Ya hay un ciclo abierto (#${currentCycle?.cycle_number}). Cerrá el actual con "Imprimir cierre" primero.` : undefined}
+          title={
+            hasOpenCycle
+              ? `Ya hay un ciclo abierto (#${currentCycle?.cycle_number}). Cierra el actual con "Imprimir cierre" primero.`
+              : undefined
+          }
           className="bg-[#262626] rounded-[12px] border border-[rgba(255,144,109,0.24)] px-5 py-3 font-['Inter',sans-serif] text-[#ffcf9f] text-[13px] cursor-pointer hover:border-[rgba(255,144,109,0.45)] disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {startingCycle ? "Iniciando..." : "Iniciar nuevo ciclo"}
@@ -532,7 +512,7 @@ export function Cierre() {
           disabled={printing || loading || !hasOpenCycle}
           className="bg-[#ff906d] rounded-[12px] px-6 py-3 font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[13px] uppercase tracking-wide cursor-pointer border-none shadow-[0px_0px_16px_0px_rgba(255,144,109,0.25)] disabled:opacity-50"
         >
-          {printing ? "Imprimiendo..." : "Imprimir cierre (térmica)"}
+          {printing ? "Imprimiendo..." : "Imprimir cierre (termica)"}
         </button>
       </div>
 
@@ -579,25 +559,25 @@ export function Cierre() {
                 <InfoRow label="Hora de salida" value={formatCycleDateTime(currentCycle.closed_at)} />
               </div>
               <p className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">
-                Si el restaurante extiende horario después de medianoche, este ciclo sigue atado al día
-                operativo seleccionado y no al cambio de fecha calendario.
+                Si el restaurante extiende horario despues de medianoche, este ciclo sigue atado al
+                dia operativo seleccionado y no al cambio de fecha calendario.
               </p>
             </div>
           ) : (
             <p className="font-['Inter',sans-serif] text-[#adaaaa] text-[13px]">
-              No hay ciclos registrados para este día operativo. Iniciá uno para comenzar el control de
-              cierre.
+              No hay ciclos registrados para este dia operativo. Inicia uno para comenzar el control
+              de cierre.
             </p>
           )}
         </div>
 
         <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-6">
           <h2 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[16px] mb-4">
-            Historial del día
+            Historial del dia
           </h2>
           {cycles.length === 0 ? (
             <p className="font-['Inter',sans-serif] text-[#6b7280] text-[13px]">
-              Sin ciclos todavía.
+              Sin ciclos todavia.
             </p>
           ) : (
             <ul className="flex flex-col gap-3 max-h-[260px] overflow-y-auto">
@@ -643,7 +623,7 @@ export function Cierre() {
           Mesas con deuda pendiente
         </h2>
         <p className="font-['Inter',sans-serif] text-[#6b7280] text-[12px] mb-4">
-          Mientras exista una mesa con saldo abierto, el sistema bloquea la impresión del cierre.
+          Mientras exista una mesa con saldo abierto, el sistema bloquea la impresion del cierre.
         </p>
         {resumenCuentasAbiertas.lineas === 0 ? (
           <p className="font-['Inter',sans-serif] text-[#59ee50] text-[13px]">
@@ -653,7 +633,7 @@ export function Cierre() {
           <div className="flex flex-col gap-4">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <StatCard
-                title="Líneas / mesas con saldo"
+                title="Lineas / mesas con saldo"
                 value={`${resumenCuentasAbiertas.lineas} · ${resumenCuentasAbiertas.mesasDistintas}`}
                 accent="#ff906d"
               />
@@ -692,7 +672,7 @@ export function Cierre() {
 
       <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-6">
         <h2 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[16px] mb-4">
-          Por método de pago (solo pagadas)
+          Por metodo de pago (solo pagadas)
         </h2>
         {resumen.porMetodo.length === 0 ? (
           <p className="font-['Inter',sans-serif] text-[#6b7280] text-[13px]">
@@ -737,7 +717,7 @@ export function Cierre() {
             Ticket promedio (pagadas)
           </div>
           <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[22px]">
-            {resumen.pagadas.length > 0 ? RD(resumen.ticketPromedioPagado) : "—"}
+            {resumen.pagadas.length > 0 ? RD(resumen.ticketPromedioPagado) : "-"}
           </div>
         </div>
       </div>
