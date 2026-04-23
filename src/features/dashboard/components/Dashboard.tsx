@@ -46,6 +46,13 @@ import {
   incrementTenantNcfSequence,
   resolveNcfForNewInvoice,
 } from "../../../shared/lib/invoiceNcf";
+import {
+  DEFAULT_NCF_B_CODE,
+  isNcfBCode,
+  NCF_B_TIPO_OPCIONES,
+  type NcfBCode,
+} from "../../../shared/lib/ncf";
+import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
 
 interface Plato {
   id: number;
@@ -120,6 +127,26 @@ export function Dashboard() {
   const [isTakeout, setIsTakeout] = useState(false);
   /** Por defecto sin ITBIS en totales y factura; se activa desde el carrito. */
   const [cartItbisEnabled, setCartItbisEnabled] = useState(false);
+  const [tenantNcfFiscalActive, setTenantNcfFiscalActive] = useState(false);
+  const [selectedNcfType, setSelectedNcfType] = useState<NcfBCode>(DEFAULT_NCF_B_CODE);
+
+  useEffect(() => {
+    if (authLoading || !tenantId) return;
+
+    let cancelled = false;
+
+    void loadTenantBillingSettings(tenantId).then((settings) => {
+      if (cancelled) return;
+
+      setCartItbisEnabled(settings?.defaultItbisEnabled ?? false);
+      setTenantNcfFiscalActive(settings?.ncfFiscalActive ?? false);
+      setSelectedNcfType(settings?.defaultNcfType ?? DEFAULT_NCF_B_CODE);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, tenantId]);
 
   useEffect(() => {
     // Inicializar mesas desde configuración estática
@@ -662,7 +689,12 @@ export function Dashboard() {
     const itbis = subtotal * rate;
     const total = subtotal + itbis;
 
-    const ncfPart = tenantId ? await resolveNcfForNewInvoice(tenantId) : null;
+    const ncfPart = tenantId
+      ? await resolveNcfForNewInvoice(
+          tenantId,
+          tenantNcfFiscalActive ? selectedNcfType : null
+        )
+      : null;
 
     const facturaData: Record<string, unknown> = {
       tenant_id: tenantId,
@@ -696,7 +728,7 @@ export function Dashboard() {
     }
 
     if (tenantId && ncfPart && !ncfPart.sequenceReservedAtomically) {
-      await incrementTenantNcfSequence(tenantId, ncfPart.usedSequence);
+      await incrementTenantNcfSequence(tenantId, ncfPart.tipoCodigo, ncfPart.usedSequence);
     }
 
     await printFactura(factura.id, factura.numero_factura);
@@ -1179,7 +1211,7 @@ export function Dashboard() {
                     ITBIS 18%
                   </span>
                   <span className="font-['Inter',sans-serif] text-[#6b7280] text-[10px] leading-snug">
-                    Por defecto apagado; activalo para sumarlo al total y a la factura
+                    Usa la preferencia de Ajustes al abrir y puedes cambiarlo para este cobro
                   </span>
                 </div>
                 <button
@@ -1199,6 +1231,33 @@ export function Dashboard() {
                   />
                 </button>
               </div>
+              {tenantNcfFiscalActive ? (
+                <div className="flex items-center justify-between gap-[12px] rounded-[10px] border border-[rgba(72,72,71,0.28)] bg-[#131313] px-[12px] py-[10px]">
+                  <div className="flex flex-col min-w-0">
+                    <span className="font-['Inter',sans-serif] text-white text-[12px] font-semibold leading-tight">
+                      Tipo NCF
+                    </span>
+                    <span className="font-['Inter',sans-serif] text-[#6b7280] text-[10px] leading-snug">
+                      Cambialo solo para este cobro si necesitas emitir otro comprobante.
+                    </span>
+                  </div>
+                  <select
+                    value={selectedNcfType}
+                    onChange={(e) =>
+                      setSelectedNcfType(
+                        isNcfBCode(e.target.value) ? e.target.value : DEFAULT_NCF_B_CODE
+                      )
+                    }
+                    className="min-w-[168px] rounded-[10px] border border-[rgba(72,72,71,0.3)] bg-[#1a1a1a] px-[12px] py-[9px] font-['Inter',sans-serif] text-[12px] text-white outline-none"
+                  >
+                    {NCF_B_TIPO_OPCIONES.map((opcion) => (
+                      <option key={opcion.codigo} value={opcion.codigo}>
+                        {opcion.codigo}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
               <div className="flex justify-between">
                 <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[1px] uppercase">
                   Subtotal {hasCuentaEnMesa ? "(en mesa)" : ""}
@@ -1279,6 +1338,7 @@ export function Dashboard() {
           tenantId={tenantId}
           mesaNumero={selectedMesa.numero}
           itbisRate={billItbisRate}
+          initialNcfType={tenantNcfFiscalActive ? selectedNcfType : null}
           onClose={() => setShowPaymentModal(false)}
           onSettled={async (remaining) => {
             setMesaConsumos(remaining as Consumo[]);

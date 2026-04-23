@@ -8,6 +8,13 @@ import {
   incrementTenantNcfSequence,
   resolveNcfForNewInvoice,
 } from "../../../shared/lib/invoiceNcf";
+import {
+  DEFAULT_NCF_B_CODE,
+  isNcfBCode,
+  NCF_B_TIPO_OPCIONES,
+  type NcfBCode,
+} from "../../../shared/lib/ncf";
+import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
 
 const ITBIS = 0.18;
 
@@ -66,6 +73,7 @@ export interface MesaCloseAccountModalProps {
   mesaNumero: number;
   /** Por defecto 18% (`ITBIS`). Pasá `0` para facturar sin ITBIS (p. ej. desde Venta con ITBIS apagado). */
   itbisRate?: number;
+  initialNcfType?: NcfBCode | null;
   onSettled?: (remaining: MesaConsumoRow[]) => void | Promise<void>;
   /** Solo cuando la mesa queda sin consumos pendientes tras un cobro completo. */
   onPaidFull?: () => void;
@@ -166,6 +174,7 @@ export function MesaCloseAccountModal({
   tenantId,
   mesaNumero,
   itbisRate = ITBIS,
+  initialNcfType = null,
   onSettled,
   onPaidFull,
 }: MesaCloseAccountModalProps) {
@@ -177,6 +186,8 @@ export function MesaCloseAccountModal({
   const [paymentMethod, setPaymentMethod] = useState<
     "efectivo" | "tarjeta" | "digital" | "transferencia"
   >("efectivo");
+  const [ncfFiscalActive, setNcfFiscalActive] = useState(false);
+  const [selectedNcfType, setSelectedNcfType] = useState<NcfBCode>(DEFAULT_NCF_B_CODE);
   const [splitMode, setSplitMode] = useState(false);
   /** En modo dividir: cada línea de consumo va a una persona 1..splitParts (ítem completo, no se parte el monto). */
   const [personByConsumoId, setPersonByConsumoId] = useState<Record<string, number>>({});
@@ -237,6 +248,27 @@ export function MesaCloseAccountModal({
       return next;
     });
   }, [open, splitMode, mesaConsumos, splitParts]);
+
+  useEffect(() => {
+    if (!open || !tenantId) return;
+
+    let cancelled = false;
+
+    void loadTenantBillingSettings(tenantId).then((settings) => {
+      if (cancelled) return;
+
+      setNcfFiscalActive(settings?.ncfFiscalActive ?? false);
+      setSelectedNcfType(
+        initialNcfType && isNcfBCode(initialNcfType)
+          ? initialNcfType
+          : settings?.defaultNcfType ?? DEFAULT_NCF_B_CODE
+      );
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, tenantId, initialNcfType]);
 
   async function printFactura(facturaId: string, numeroFactura: number) {
     if (!tenantId) return;
@@ -372,7 +404,10 @@ export function MesaCloseAccountModal({
           itbisRate
         );
 
-        const ncfPart = await resolveNcfForNewInvoice(tenantId);
+        const ncfPart = await resolveNcfForNewInvoice(
+          tenantId,
+          ncfFiscalActive ? selectedNcfType : null
+        );
 
         const insertRow: Record<string, unknown> = {
           tenant_id: tenantId,
@@ -405,7 +440,7 @@ export function MesaCloseAccountModal({
         }
 
         if (ncfPart && !ncfPart.sequenceReservedAtomically) {
-          await incrementTenantNcfSequence(tenantId, ncfPart.usedSequence);
+          await incrementTenantNcfSequence(tenantId, ncfPart.tipoCodigo, ncfPart.usedSequence);
         }
 
         await printFactura(factura.id, factura.numero_factura);
@@ -473,7 +508,10 @@ export function MesaCloseAccountModal({
       itbisRate
     );
 
-    const ncfPart = await resolveNcfForNewInvoice(tenantId);
+    const ncfPart = await resolveNcfForNewInvoice(
+      tenantId,
+      ncfFiscalActive ? selectedNcfType : null
+    );
 
     const facturaData: Record<string, unknown> = {
       tenant_id: tenantId,
@@ -507,7 +545,7 @@ export function MesaCloseAccountModal({
     }
 
     if (ncfPart && !ncfPart.sequenceReservedAtomically) {
-      await incrementTenantNcfSequence(tenantId, ncfPart.usedSequence);
+      await incrementTenantNcfSequence(tenantId, ncfPart.tipoCodigo, ncfPart.usedSequence);
     }
 
     await printFactura(factura.id, factura.numero_factura);
@@ -785,6 +823,32 @@ export function MesaCloseAccountModal({
             </span>
           </div>
         </div>
+
+        {ncfFiscalActive ? (
+          <div className="flex flex-col gap-[10px]">
+            <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
+              Tipo NCF
+            </span>
+            <select
+              value={selectedNcfType}
+              onChange={(e) =>
+                setSelectedNcfType(
+                  isNcfBCode(e.target.value) ? e.target.value : DEFAULT_NCF_B_CODE
+                )
+              }
+              className="w-full rounded-[12px] border border-[rgba(72,72,71,0.3)] bg-[#262626] px-[14px] py-[12px] font-['Inter',sans-serif] text-white text-[13px] outline-none"
+            >
+              {NCF_B_TIPO_OPCIONES.map((opcion) => (
+                <option key={opcion.codigo} value={opcion.codigo}>
+                  {opcion.codigo} - {opcion.descripcion.replace(`${opcion.codigo} - `, "")}
+                </option>
+              ))}
+            </select>
+            <span className="font-['Inter',sans-serif] text-[#6b7280] text-[11px] leading-relaxed">
+              Este cobro emitira el tipo seleccionado. Si divides la cuenta, todas las facturas de esta ronda usan el mismo NCF.
+            </span>
+          </div>
+        ) : null}
 
         <div className="flex flex-col gap-[12px]">
           <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">

@@ -5,6 +5,8 @@ import { MESAS_CONFIG } from "../config/mesas";
 import { estadoColors, estadoLabels, type MesaEstadoVisual } from "../config/estadoTheme";
 import { MesaCloseAccountModal } from "../../billing/components/MesaCloseAccountModal";
 import { TableMesaCard } from "./TableMesaCard";
+import { DEFAULT_NCF_B_CODE, type NcfBCode } from "../../../shared/lib/ncf";
+import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
 
 type Estado = MesaEstadoVisual;
 
@@ -113,11 +115,30 @@ export function Tables() {
   const [showCloseAccountModal, setShowCloseAccountModal] = useState(false);
   /** Cobro desde Mesas: por defecto sin ITBIS en la factura; activable antes de cerrar cuenta. */
   const [mesaItbisEnabled, setMesaItbisEnabled] = useState(false);
+  const [mesaItbisDefaultEnabled, setMesaItbisDefaultEnabled] = useState(false);
+  const [defaultNcfType, setDefaultNcfType] = useState<NcfBCode>(DEFAULT_NCF_B_CODE);
   const [historialVersion, setHistorialVersion] = useState(0);
 
   useEffect(() => {
-    setMesaItbisEnabled(false);
-  }, [selectedId]);
+    setMesaItbisEnabled(mesaItbisDefaultEnabled);
+  }, [selectedId, mesaItbisDefaultEnabled]);
+
+  useEffect(() => {
+    if (authLoading || !tenantId) return;
+
+    let cancelled = false;
+
+    void loadTenantBillingSettings(tenantId).then((settings) => {
+      if (cancelled) return;
+      setMesaItbisDefaultEnabled(settings?.defaultItbisEnabled ?? false);
+      setMesaItbisEnabled(settings?.defaultItbisEnabled ?? false);
+      setDefaultNcfType(settings?.defaultNcfType ?? DEFAULT_NCF_B_CODE);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, tenantId]);
 
   const refreshDeudaPorMesa = useCallback(async () => {
     if (!tenantId) {
@@ -702,7 +723,7 @@ export function Tables() {
                         ITBIS 18% en la factura
                       </span>
                       <span className="font-['Inter',sans-serif] text-[#6b7280] text-[10px] leading-snug">
-                        Por defecto apagado; activalo para sumarlo al total al cobrar
+                        Toma el valor guardado en Ajustes, pero puedes cambiarlo antes de cobrar
                       </span>
                     </div>
                     <button
@@ -823,6 +844,7 @@ export function Tables() {
           tenantId={tenantId}
           mesaNumero={selectedMesa.numero}
           itbisRate={mesaItbisEnabled ? ITBIS : 0}
+          initialNcfType={defaultNcfType}
           onSettled={() => {
             setHistorialVersion((v) => v + 1);
             void refreshDeudaPorMesa();

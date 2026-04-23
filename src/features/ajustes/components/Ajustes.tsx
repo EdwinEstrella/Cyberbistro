@@ -22,9 +22,17 @@ import {
 } from "../../../shared/lib/tenantLogoStorage";
 import { useAppUpdate } from "../../updates/AppUpdateContext";
 import {
+  buildBSequenceMapFromRow,
+  buildNcfSequenceMapForSave,
+  buildTenantNcfUpdatePayload,
+  DEFAULT_NCF_B_CODE,
+  NCF_B_SEQUENCE_FIELDS_SELECT,
   construirCadenaNcf,
   etiquetaTipoNcf,
-  NCF_TIPO_OPCIONES,
+  isNcfBCode,
+  NCF_B_TIPO_OPCIONES,
+  type NcfBCode,
+  type TenantNcfRow,
 } from "../../../shared/lib/ncf";
 
 interface Config {
@@ -34,9 +42,11 @@ interface Config {
   direccion: string;
   telefono: string;
   currency_code: "DOP" | "ARS";
+  itbis_cobro_por_defecto: boolean;
   ncf_fiscal_activo: boolean;
-  ncf_tipo_default: string;
+  ncf_tipo_default: NcfBCode;
   ncf_secuencia_siguiente: number;
+  ncf_secuencias_por_tipo: Record<NcfBCode, number>;
 }
 
 const CURRENCY_OPTIONS: Array<{ code: Config["currency_code"]; label: string }> = [
@@ -129,9 +139,11 @@ export function Ajustes() {
     direccion: "",
     telefono: "",
     currency_code: "DOP",
+    itbis_cobro_por_defecto: false,
     ncf_fiscal_activo: false,
-    ncf_tipo_default: "B01",
+    ncf_tipo_default: DEFAULT_NCF_B_CODE,
     ncf_secuencia_siguiente: 1,
+    ncf_secuencias_por_tipo: buildBSequenceMapFromRow(null),
   });
   const [thermalPreviewNonce, setThermalPreviewNonce] = useState(0);
   const [thermalPreviewKind, setThermalPreviewKind] =
@@ -149,7 +161,8 @@ export function Ajustes() {
   const TENANT_FIELDS_BASE =
     "nombre_negocio, rnc, logo_url, direccion, telefono";
   const TENANT_FIELDS_CURRENCY = "moneda";
-  const TENANT_FIELDS_NCF = "ncf_fiscal_activo, ncf_tipo_default, ncf_secuencia_siguiente";
+  const TENANT_FIELDS_NCF =
+    `itbis_cobro_por_defecto, ncf_fiscal_activo, ncf_tipo_default, ncf_secuencia_siguiente, ncf_secuencias_por_tipo, ${NCF_B_SEQUENCE_FIELDS_SELECT}`;
 
   useEffect(() => {
     if (authLoading) return;
@@ -199,9 +212,27 @@ export function Ajustes() {
         return;
       }
 
-      const data = res.data;
+      const data = res.data as
+        | (TenantNcfRow & {
+            nombre_negocio?: string | null;
+            rnc?: string | null;
+            logo_url?: string | null;
+            direccion?: string | null;
+            telefono?: string | null;
+            moneda?: string | null;
+            currency_code?: string | null;
+            itbis_cobro_por_defecto?: boolean | null;
+          })
+        | null;
       if (data) {
-        const seqRaw = (data as { ncf_secuencia_siguiente?: number | null }).ncf_secuencia_siguiente;
+        const tenantNcfData = data as TenantNcfRow & {
+          ncf_tipo_default?: string | null;
+          ncf_fiscal_activo?: boolean | null;
+          itbis_cobro_por_defecto?: boolean | null;
+        };
+        const defaultTypeRaw = tenantNcfData.ncf_tipo_default;
+        const defaultType = isNcfBCode(defaultTypeRaw) ? defaultTypeRaw : DEFAULT_NCF_B_CODE;
+        const ncfSequences = buildBSequenceMapFromRow(tenantNcfData);
         const currencyRaw = (
           (data as { moneda?: string | null }).moneda ||
           (data as { currency_code?: string | null }).currency_code ||
@@ -216,13 +247,11 @@ export function Ajustes() {
           direccion: data.direccion ?? "",
           telefono: data.telefono ?? "",
           currency_code: currencyRaw === "ARS" ? "ARS" : "DOP",
-          ncf_fiscal_activo: Boolean((data as { ncf_fiscal_activo?: boolean | null }).ncf_fiscal_activo),
-          ncf_tipo_default:
-            ((data as { ncf_tipo_default?: string | null }).ncf_tipo_default || "B01").trim() || "B01",
-          ncf_secuencia_siguiente:
-            seqRaw != null && Number.isFinite(Number(seqRaw)) && Number(seqRaw) >= 1
-              ? Math.floor(Number(seqRaw))
-              : 1,
+          itbis_cobro_por_defecto: Boolean(tenantNcfData.itbis_cobro_por_defecto),
+          ncf_fiscal_activo: Boolean(tenantNcfData.ncf_fiscal_activo),
+          ncf_tipo_default: defaultType,
+          ncf_secuencia_siguiente: ncfSequences[defaultType] ?? 1,
+          ncf_secuencias_por_tipo: ncfSequences,
         });
       }
       setLoading(false);
@@ -234,6 +263,8 @@ export function Ajustes() {
   }, [authLoading, tenantId]);
 
   async function handleSave() {
+    return handleSaveNcfByType();
+
     if (!tenantId) {
       setSaveError("No hay negocio vinculado a tu cuenta.");
       return;
@@ -245,14 +276,20 @@ export function Ajustes() {
     setPartialSaveNote("");
     setLogoUploadError("");
 
-    const seq = Math.floor(Number(config.ncf_secuencia_siguiente));
+    const nextBSequences = Object.fromEntries(
+      NCF_B_TIPO_OPCIONES.map((opcion) => {
+        const seq = Math.floor(Number(config.ncf_secuencias_por_tipo[opcion.codigo]));
+        return [opcion.codigo, Number.isFinite(seq) && seq >= 1 ? seq : 1];
+      })
+    ) as Record<NcfBCode, number>;
+    const nextDefaultSequence = nextBSequences[config.ncf_tipo_default] ?? 1;
     if (config.ncf_fiscal_activo) {
       if (!config.ncf_tipo_default.trim()) {
         setSaveError("Elegí un tipo de comprobante fiscal (NCF).");
         setSaving(false);
         return;
       }
-      if (!Number.isFinite(seq) || seq < 1 || seq > 99999999) {
+      for (const _opcion of NCF_B_TIPO_OPCIONES) {
         setSaveError("La secuencia NCF debe ser un número entre 1 y 99.999.999.");
         setSaving(false);
         return;
@@ -275,8 +312,9 @@ export function Ajustes() {
     };
     const ncfUpdate = {
       ncf_fiscal_activo: config.ncf_fiscal_activo,
-      ncf_tipo_default: config.ncf_tipo_default.trim().toUpperCase() || null,
-      ncf_secuencia_siguiente: Number.isFinite(seq) && seq >= 1 ? seq : 1,
+      ncf_tipo_default: config.ncf_tipo_default,
+      ncf_secuencia_siguiente: nextDefaultSequence,
+      ncf_secuencias_por_tipo: buildNcfSequenceMapForSave(nextBSequences),
     };
 
     let { error } = await insforgeClient.database
@@ -284,7 +322,7 @@ export function Ajustes() {
       .update({ ...baseUpdate, ...currencyUpdateMoneda, ...ncfUpdate })
       .eq("id", tenantId);
 
-    if (error) {
+    if (error?.message) {
       // Fallback 1: esquema alterno si la divisa vive en currency_code.
       const retryWithoutCurrency = await insforgeClient.database
         .from("tenants")
@@ -332,9 +370,141 @@ export function Ajustes() {
       }
     }
 
-    if (error) {
-      setSaveError(error.message || "Error al guardar. Intentá de nuevo.");
+    if (error?.message) {
+      setSaveError(error?.message || "Error al guardar. Intentá de nuevo.");
     } else {
+      setSavedOk(true);
+      setTimeout(() => setSavedOk(false), 3000);
+    }
+    setSaving(false);
+  }
+
+  async function handleSaveNcfByType() {
+    if (!tenantId) {
+      setSaveError("No hay negocio vinculado a tu cuenta.");
+      return;
+    }
+
+    setSaving(true);
+    setSavedOk(false);
+    setSaveError("");
+    setPartialSaveNote("");
+    setLogoUploadError("");
+
+    const nextBSequences = Object.fromEntries(
+      NCF_B_TIPO_OPCIONES.map((opcion) => {
+        const seq = Math.floor(Number(config.ncf_secuencias_por_tipo[opcion.codigo]));
+        return [opcion.codigo, Number.isFinite(seq) && seq >= 1 ? seq : 1];
+      })
+    ) as Record<NcfBCode, number>;
+
+    if (config.ncf_fiscal_activo) {
+      for (const opcion of NCF_B_TIPO_OPCIONES) {
+        const seq = nextBSequences[opcion.codigo];
+        if (!Number.isFinite(seq) || seq < 1 || seq > 99999999) {
+          setSaveError(
+            `La secuencia de ${opcion.codigo} debe ser un numero entre 1 y 99.999.999.`
+          );
+          setSaving(false);
+          return;
+        }
+      }
+    }
+
+    const ncfUpdate = buildTenantNcfUpdatePayload(
+      config.ncf_fiscal_activo,
+      config.ncf_tipo_default,
+      nextBSequences,
+      config.ncf_secuencias_por_tipo
+    );
+    const nextDefaultSequence = ncfUpdate.ncf_secuencia_siguiente;
+    const baseUpdate = {
+      nombre_negocio: config.nombre_empresa.trim() || "Mi negocio",
+      rnc: config.rnc.trim() || null,
+      logo_url: config.logo_url.trim() || null,
+      direccion: config.direccion.trim() || null,
+      telefono: config.telefono.trim() || null,
+      updated_at: new Date().toISOString(),
+    };
+    const currencyUpdateMoneda = {
+      moneda: config.currency_code,
+    };
+    const currencyUpdateCode = {
+      currency_code: config.currency_code,
+    };
+    const billingUpdate = {
+      itbis_cobro_por_defecto: config.itbis_cobro_por_defecto,
+      ...ncfUpdate,
+    };
+
+    let { error } = await insforgeClient.database
+      .from("tenants")
+      .update({ ...baseUpdate, ...currencyUpdateMoneda, ...billingUpdate })
+      .eq("id", tenantId);
+
+    if (error?.message) {
+      const retryWithoutCurrency = await insforgeClient.database
+        .from("tenants")
+        .update({ ...baseUpdate, ...currencyUpdateCode, ...billingUpdate })
+        .eq("id", tenantId);
+      error = retryWithoutCurrency.error;
+
+      if (!retryWithoutCurrency.error) {
+        setConfig((prev) => ({
+          ...prev,
+          ncf_secuencias_por_tipo: nextBSequences,
+          ncf_secuencia_siguiente: nextDefaultSequence,
+        }));
+        setSaving(false);
+        setSavedOk(true);
+        setTimeout(() => setSavedOk(false), 5000);
+        return;
+      }
+
+      const retryWithoutAnyCurrency = await insforgeClient.database
+        .from("tenants")
+        .update({ ...baseUpdate, ...billingUpdate })
+        .eq("id", tenantId);
+      error = retryWithoutAnyCurrency.error;
+      if (!retryWithoutAnyCurrency.error) {
+        setConfig((prev) => ({
+          ...prev,
+          ncf_secuencias_por_tipo: nextBSequences,
+          ncf_secuencia_siguiente: nextDefaultSequence,
+        }));
+        setPartialSaveNote(
+          "Datos guardados, pero no se pudo persistir la divisa. Revisa columnas `tenants.moneda` o `tenants.currency_code`."
+        );
+        setSaving(false);
+        setSavedOk(true);
+        setTimeout(() => setSavedOk(false), 5000);
+        return;
+      }
+
+      const retryBaseOnly = await insforgeClient.database
+        .from("tenants")
+        .update(baseUpdate)
+        .eq("id", tenantId);
+      error = retryBaseOnly.error;
+      if (!retryBaseOnly.error) {
+        setPartialSaveNote(
+          "Datos basicos guardados. Faltan columnas para guardar NCF, ITBIS por defecto o divisa."
+        );
+        setSaving(false);
+        setSavedOk(true);
+        setTimeout(() => setSavedOk(false), 5000);
+        return;
+      }
+    }
+
+    if (error?.message) {
+      setSaveError(error?.message || "Error al guardar. Intenta de nuevo.");
+    } else {
+      setConfig((prev) => ({
+        ...prev,
+        ncf_secuencias_por_tipo: nextBSequences,
+        ncf_secuencia_siguiente: nextDefaultSequence,
+      }));
       setSavedOk(true);
       setTimeout(() => setSavedOk(false), 3000);
     }
@@ -633,6 +803,28 @@ export function Ajustes() {
 
             </div>
 
+            <div className="rounded-[14px] border border-[rgba(72,72,71,0.22)] bg-[#1a1a1a] px-[16px] py-[14px] flex flex-col gap-[10px]">
+              <label className="flex items-start gap-3 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={config.itbis_cobro_por_defecto}
+                  onChange={(e) =>
+                    setConfig((prev) => ({
+                      ...prev,
+                      itbis_cobro_por_defecto: e.target.checked,
+                    }))
+                  }
+                  className="mt-[2px] size-4 rounded border-[rgba(72,72,71,0.5)] accent-[#59ee50]"
+                />
+                <span className="font-['Inter',sans-serif] text-[14px] text-white leading-snug">
+                  Activar ITBIS por defecto al cobrar
+                </span>
+              </label>
+              <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px] leading-relaxed">
+                Venta y Mesas arrancan con el switch de ITBIS en el estado que elijas aqui, pero puedes cambiarlo manualmente en cada cobro.
+              </span>
+            </div>
+
             <label className="flex items-center gap-3 cursor-pointer select-none">
               <input
                 type="checkbox"
@@ -651,12 +843,21 @@ export function Ajustes() {
               <select
                 value={config.ncf_tipo_default}
                 onChange={(e) =>
-                  setConfig((prev) => ({ ...prev, ncf_tipo_default: e.target.value }))
+                  setConfig((prev) => {
+                    const nextType = (isNcfBCode(e.target.value)
+                      ? e.target.value
+                      : DEFAULT_NCF_B_CODE) as NcfBCode;
+                    return {
+                      ...prev,
+                      ncf_tipo_default: nextType,
+                      ncf_secuencia_siguiente: prev.ncf_secuencias_por_tipo[nextType] ?? 1,
+                    };
+                  })
                 }
                 disabled={!config.ncf_fiscal_activo}
                 className="input-field disabled:opacity-50"
               >
-                {NCF_TIPO_OPCIONES.map((o) => (
+                {NCF_B_TIPO_OPCIONES.map((o) => (
                   <option key={o.codigo} value={o.codigo}>
                     {o.descripcion}
                   </option>
@@ -672,14 +873,68 @@ export function Ajustes() {
                 value={config.ncf_secuencia_siguiente}
                 onChange={(e) => {
                   const v = parseInt(e.target.value, 10);
+                  const nextValue = Number.isFinite(v) ? v : 1;
                   setConfig((prev) => ({
                     ...prev,
-                    ncf_secuencia_siguiente: Number.isFinite(v) ? v : 1,
+                    ncf_secuencia_siguiente: nextValue,
+                    ncf_secuencias_por_tipo: {
+                      ...prev.ncf_secuencias_por_tipo,
+                      [prev.ncf_tipo_default]: nextValue,
+                    },
                   }));
                 }}
                 disabled={!config.ncf_fiscal_activo}
                 className="input-field disabled:opacity-50"
               />
+            </Field>
+
+            <Field label="Secuencias configuradas por tipo B">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-[12px]">
+                {NCF_B_TIPO_OPCIONES.map((o) => (
+                  <div
+                    key={o.codigo}
+                    className="rounded-[12px] border border-[rgba(72,72,71,0.22)] bg-[#1a1a1a] px-[14px] py-[12px] flex flex-col gap-[8px]"
+                  >
+                    <div className="flex items-center justify-between gap-[12px]">
+                      <span className="font-['Space_Grotesk',sans-serif] text-white text-[14px] font-bold">
+                        {o.codigo}
+                      </span>
+                      <span className="font-['Inter',sans-serif] text-[#6b7280] text-[11px]">
+                        {config.ncf_tipo_default === o.codigo ? "Predeterminado" : "Disponible"}
+                      </span>
+                    </div>
+                    <input
+                      type="number"
+                      min={1}
+                      max={99999999}
+                      value={config.ncf_secuencias_por_tipo[o.codigo]}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value, 10);
+                        const nextValue = Number.isFinite(v) ? v : 1;
+                        setConfig((prev) => {
+                          const nextSequences = {
+                            ...prev.ncf_secuencias_por_tipo,
+                            [o.codigo]: nextValue,
+                          };
+                          return {
+                            ...prev,
+                            ncf_secuencias_por_tipo: nextSequences,
+                            ncf_secuencia_siguiente:
+                              o.codigo === prev.ncf_tipo_default
+                                ? nextValue
+                                : prev.ncf_secuencia_siguiente,
+                          };
+                        });
+                      }}
+                      disabled={!config.ncf_fiscal_activo}
+                      className="input-field disabled:opacity-50"
+                    />
+                    <span className="font-['Inter',sans-serif] text-[#6b7280] text-[11px] leading-relaxed">
+                      {o.descripcion}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </Field>
 
             {config.ncf_fiscal_activo ? (
@@ -863,6 +1118,14 @@ export function Ajustes() {
                 </div>
                 <div className="font-['Space_Grotesk',sans-serif] text-white text-[18px] font-bold mt-2">
                   {config.ncf_fiscal_activo ? "Activo" : "Off"}
+                </div>
+              </div>
+              <div className="rounded-[14px] bg-[#1a1a1a] border border-[rgba(72,72,71,0.2)] px-4 py-4">
+                <div className="font-['Inter',sans-serif] text-[10px] uppercase tracking-[0.18em] text-[#6b7280]">
+                  ITBIS default
+                </div>
+                <div className="font-['Space_Grotesk',sans-serif] text-white text-[18px] font-bold mt-2">
+                  {config.itbis_cobro_por_defecto ? "Activo" : "Off"}
                 </div>
               </div>
               <div className="rounded-[14px] bg-[#1a1a1a] border border-[rgba(72,72,71,0.2)] px-4 py-4 col-span-2">
