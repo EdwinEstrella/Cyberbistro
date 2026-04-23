@@ -14,7 +14,6 @@ import {
 } from "../../shared/lib/roleNav";
 import { RoleGuard } from "./RoleGuard";
 import { useAppUpdate } from "../../features/updates/AppUpdateContext";
-import { AppUpdateOverlay } from "../../features/updates/components/AppUpdateOverlay";
 
 const mainNavItems = [
   { label: "Venta", icon: svgPaths.p20793584, viewBox: "0 0 18 18", path: "/dashboard" },
@@ -321,10 +320,7 @@ export function AppLayout() {
           </div>
         </div>
       </div>
-      </VentaCartSearchProvider>
-      /* AppUpdateOverlay moved below RoleGuard */
-      </RoleGuard>
-      <AppUpdateOverlay />
-    </div>
-  );
+</VentaCartSearchProvider>
+</div>
+);
 }

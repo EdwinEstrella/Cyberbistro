@@ -1,6 +1,7 @@
 import { RouterProvider } from "react-router";
 import { Toaster } from "sonner";
 import { AppUpdateProvider } from "../features/updates/AppUpdateContext";
+import { AppUpdateOverlay } from "../features/updates/components/AppUpdateOverlay";
 import { router } from "./routes";
 
 export default function App() {
@@ -9,6 +10,7 @@ export default function App() {
       <Toaster richColors position="top-center" closeButton />
       <AppUpdateProvider>
         <RouterProvider router={router} />
+        <AppUpdateOverlay />
       </AppUpdateProvider>
     </div>
   );
