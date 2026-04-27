@@ -128,6 +128,7 @@ export function Dashboard() {
   const [mesaAccountLoading, setMesaAccountLoading] = useState(false);
   /** Partes para ticket “separar cuenta” (solo referencia en carrito; reparte ítems en ronda, no el monto). */
   const [isTakeout, setIsTakeout] = useState(false);
+  const [deletingConsumoId, setDeletingConsumoId] = useState<string | null>(null);
   /** Por defecto sin ITBIS en totales y factura; se activa desde el carrito. */
   const [cartItbisEnabled, setCartItbisEnabled] = useState(false);
   const [tenantNcfFiscalActive, setTenantNcfFiscalActive] = useState(false);
@@ -386,6 +387,37 @@ export function Dashboard() {
         m.id === mesaId ? { ...m, deuda_pendiente, items_pendientes } : m
       )
     );
+  }
+
+  async function deleteConsumo(consumoId: string) {
+    if (!tenantId || !selectedMesa) return;
+    const consumo = mesaConsumos.find((c) => c.id === consumoId);
+    if (!consumo) return;
+
+    const confirmed = window.confirm(
+      `¿Eliminar "${consumo.cantidad}× ${consumo.nombre}" de la cuenta?\n\nEsta acción no se puede deshacer.`
+    );
+    if (!confirmed) return;
+
+    setDeletingConsumoId(consumoId);
+
+    const { error } = await insforgeClient.database
+      .from("consumos")
+      .delete()
+      .eq("id", consumoId)
+      .eq("tenant_id", tenantId);
+
+    if (error) {
+      console.error("Error al eliminar consumo:", error);
+      alert(`Error al eliminar: ${error.message}`);
+      setDeletingConsumoId(null);
+      return;
+    }
+
+    // Update local state
+    setMesaConsumos((prev) => prev.filter((c) => c.id !== consumoId));
+    await refreshMesaDebt(selectedMesa.id, selectedMesa.numero);
+    setDeletingConsumoId(null);
   }
 
   /** Totales del modal "para llevar" (sin mesa). */
@@ -1111,7 +1143,14 @@ export function Dashboard() {
                 En mesa (cuenta abierta)
               </span>
               {mesaConsumos.map((c) => (
-                <div key={c.id} className="flex gap-[12px]">
+                <div
+                  key={c.id}
+                  className="flex gap-[12px]"
+                  style={{
+                    opacity: deletingConsumoId === c.id ? 0.4 : 1,
+                    transition: "opacity 0.2s ease",
+                  }}
+                >
                   <div
                     className="w-[4px] rounded-full shrink-0"
                     style={{ backgroundColor: "rgba(255,144,109,0.45)" }}
@@ -1121,9 +1160,22 @@ export function Dashboard() {
                       <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] uppercase leading-tight">
                         {c.cantidad}× {c.nombre}
                       </span>
-                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[13px] shrink-0 tabular-nums">
-                        {formatMoney(Number(c.subtotal))}
-                      </span>
+                      <div className="flex items-center gap-[6px] shrink-0">
+                        <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[13px] tabular-nums">
+                          {formatMoney(Number(c.subtotal))}
+                        </span>
+                        <button
+                          onClick={() => void deleteConsumo(c.id)}
+                          disabled={deletingConsumoId === c.id}
+                          title="Eliminar de la cuenta"
+                          className="bg-transparent border-none cursor-pointer p-[2px] transition-opacity hover:opacity-100 disabled:cursor-wait"
+                          style={{ opacity: 0.5 }}
+                        >
+                          <svg fill="none" viewBox="0 0 8.16667 8.16667" className="size-[10px]">
+                            <path d={svgPaths.p2317cf00} fill="#FF716C" />
+                          </svg>
+                        </button>
+                      </div>
                     </div>
                     <span className="font-['Inter',sans-serif] text-[#6b7280] text-[9px] uppercase tracking-wide">
                       {c.tipo === "cocina" ? "Cocina" : "Directo"} · {c.estado.replace(/_/g, " ")}
