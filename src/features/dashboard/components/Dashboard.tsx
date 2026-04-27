@@ -3,22 +3,12 @@ import { useLocation } from "react-router";
 import svgPaths from "../../../imports/svg-qgatbhef3k";
 import { useVentaCartSearch } from "../../../app/context/VentaCartSearchContext";
 
-// Utility to get today's date in YYYY-MM-DD format
-function todayYmd(): string {
-  const n = new Date();
-  const y = n.getFullYear();
-  const mo = String(n.getMonth() + 1).padStart(2, "0");
-  const da = String(n.getDate()).padStart(2, "0");
-  return `${y}-${mo}-${da}`;
-}
-
-// Checks if there is an open operational cycle for the tenant today
+// Checks if there is an open operational cycle for the tenant (any business day)
 async function hasOpenCycle(tenantId: string): Promise<boolean> {
   const { data, error } = await insforgeClient.database
     .from("cierres_operativos")
     .select("id")
     .eq("tenant_id", tenantId)
-    .eq("business_day", todayYmd())
     .is("closed_at", null);
   if (error) {
     console.warn("Error checking open cycle:", error);
