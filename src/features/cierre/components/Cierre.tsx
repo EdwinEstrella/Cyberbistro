@@ -262,20 +262,9 @@ export function Cierre() {
   async function handleStartCycle() {
     if (!tenantId) return;
 
-    if (hasOpenCycle && currentCycle) {
-      const closeAt = new Date().toISOString();
-      const { error: closeError } = await insforgeClient.database
-        .from("cierres_operativos")
-        .update({
-          closed_at: closeAt,
-          closed_by_auth_user_id: user?.id ?? null,
-        })
-        .eq("id", currentCycle.id)
-        .eq("tenant_id", tenantId);
-      if (closeError) {
-        setPrintMsg(closeError.message || "No se pudo cerrar el ciclo existente.");
-        return;
-      }
+    if (hasOpenCycle) {
+      setPrintMsg("Acción denegada: Ya hay un ciclo operativo abierto. Por normas de seguridad, debes cerrar rigurosamente el ciclo actual antes de iniciar uno nuevo.");
+      return;
     }
 
     setStartingCycle(true);
@@ -333,10 +322,10 @@ export function Cierre() {
     setStartingCycle(false);
   }
 
-  async function handleImprimir() {
+  async function handleCerrarCiclo() {
     if (!tenantId) return;
     if (!currentCycle) {
-      setPrintMsg("Debes iniciar un ciclo operativo antes de imprimir el cierre.");
+      setPrintMsg("Debes iniciar un ciclo operativo antes de cerrarlo.");
       return;
     }
     if (currentCycle.closed_at) {
@@ -351,7 +340,48 @@ export function Cierre() {
     const cycleStart = currentCycle.opened_at;
     const cycleEnd = closedAtIso;
 
-    const [tenantRes, factRes, consRes] = await Promise.all([
+    // Verificar si hay mesas con deuda
+    const consRes = await insforgeClient.database
+      .from("consumos")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .neq("estado", "pagado");
+
+    if (consRes.error) {
+      setPrintMsg(consRes.error.message || "Error verificando cuentas pendientes.");
+      setPrinting(false);
+      return;
+    }
+    
+    const consumosSnapshot = (consRes.data as any[]) ?? [];
+    if (consumosSnapshot.length > 0) {
+      setPrintMsg(
+        "No se puede cerrar el ciclo mientras existan mesas con deudas pendientes. Cierra o cobra todas las mesas primero."
+      );
+      setPrinting(false);
+      return;
+    }
+
+    // CERRAR EL CICLO EN LA BASE DE DATOS PRIMERO
+    const { error: closeError } = await insforgeClient.database
+      .from("cierres_operativos")
+      .update({
+        closed_at: closedAtIso,
+        closed_by_auth_user_id: user?.id ?? null,
+      })
+      .eq("id", currentCycle.id)
+      .eq("tenant_id", tenantId);
+
+    if (closeError) {
+      setPrintMsg(closeError.message || "Error al intentar cerrar el ciclo en la base de datos.");
+      setPrinting(false);
+      return;
+    }
+
+    setPrintMsg("Ciclo cerrado exitosamente. Generando reporte para imprimir...");
+
+    // Cargar datos para el recibo
+    const [tenantRes, factRes] = await Promise.all([
       insforgeClient.database
         .from("tenants")
         .select("nombre_negocio, rnc, direccion, telefono, logo_url")
@@ -363,121 +393,87 @@ export function Cierre() {
         .eq("tenant_id", tenantId)
         .gte("created_at", cycleStart)
         .lte("created_at", cycleEnd)
-        .order("created_at", { ascending: true }),
-      insforgeClient.database
-        .from("consumos")
-        .select("mesa_numero, subtotal, estado")
-        .eq("tenant_id", tenantId)
-        .neq("estado", "pagado"),
+        .order("created_at", { ascending: true })
     ]);
 
-    if (tenantRes.error || !tenantRes.data) {
-      setPrintMsg("No se pudo cargar los datos del negocio.");
-      setPrinting(false);
-      return;
-    }
+    let printed = false;
+    
+    if (tenantRes.error || !tenantRes.data || factRes.error) {
+      setPrintMsg("Ciclo cerrado, pero hubo un error al cargar los datos para imprimir el recibo.");
+    } else {
+      const facturasSnapshot = (factRes.data as FacturaRow[]) ?? [];
+      const pagadas = facturasSnapshot.filter((f) => f.estado === "pagada");
+      const pendientes = facturasSnapshot.filter((f) => f.estado === "pendiente");
+      const canceladas = facturasSnapshot.filter((f) => f.estado === "cancelada");
+      const totalPagado = pagadas.reduce((s, f) => s + Number(f.total), 0);
+      const subtotalPagado = pagadas.reduce((s, f) => s + Number(f.subtotal), 0);
+      const itbisPagado = pagadas.reduce((s, f) => s + Number(f.itbis), 0);
+      const porMetodoMap = new Map<string, { cantidad: number; total: number }>();
+      for (const f of pagadas) {
+        const key = f.metodo_pago || "otro";
+        const cur = porMetodoMap.get(key) ?? { cantidad: 0, total: 0 };
+        cur.cantidad += 1;
+        cur.total += Number(f.total);
+        porMetodoMap.set(key, cur);
+      }
+      const porMetodo = [...porMetodoMap.entries()]
+        .map(([metodo, v]) => ({
+          etiqueta: etiquetaMetodo(metodo),
+          cantidad: v.cantidad,
+          total: v.total,
+        }))
+        .sort((a, b) => b.total - a.total);
+      const ticketPromedioPagado = pagadas.length > 0 ? totalPagado / pagadas.length : 0;
 
-    if (factRes.error) {
-      setPrintMsg(factRes.error.message || "No se pudieron cargar las facturas del ciclo.");
-      setPrinting(false);
-      return;
-    }
+      const tenant = tenantRes.data;
+      const tenantInfo: TenantReceiptInfo = {
+        nombre_negocio: tenant.nombre_negocio ?? null,
+        rnc: tenant.rnc ?? null,
+        direccion: tenant.direccion ?? null,
+        telefono: tenant.telefono ?? null,
+        logo_url: tenant.logo_url ?? null,
+      };
 
-    const facturasSnapshot = (factRes.data as FacturaRow[]) ?? [];
-    const consumosSnapshot = (consRes.data as ConsumoAbiertoRow[]) ?? [];
-
-    if (consumosSnapshot.length > 0) {
-      setPrintMsg(
-        "No se puede imprimir el cierre mientras existan mesas con deudas pendientes. Cierra o cobra todas las mesas primero."
+      const { paperWidthMm } = getThermalPrintSettings();
+      const html = buildCierreDiaReceiptHtml(
+        tenantInfo,
+        {
+          fechaOperacion: fechaLegible,
+          cicloNumero: currentCycle.cycle_number,
+          generadoEn: formatCycleDateTime(closedAtIso),
+          generadoAtIso: closedAtIso,
+          abiertoAtIso: currentCycle.opened_at,
+          cerradoAtIso: closedAtIso,
+          facturasPagadas: pagadas.length,
+          facturasPendientes: pendientes.length,
+          facturasCanceladas: canceladas.length,
+          totalPagado,
+          subtotalPagado,
+          itbisPagado,
+          porMetodo,
+          ticketPromedioPagado,
+        },
+        paperWidthMm
       );
-      setPrinting(false);
-      return;
+
+      const res = await printThermalHtml(html);
+      if (res.ok) {
+        printed = true;
+        // Update printed_at
+        await insforgeClient.database
+          .from("cierres_operativos")
+          .update({ printed_at: closedAtIso })
+          .eq("id", currentCycle.id)
+          .eq("tenant_id", tenantId);
+      } else {
+        setPrintMsg("Ciclo cerrado correctamente, pero falló la impresión: " + (res.error || "Error desconocido."));
+      }
     }
 
-    const pagadas = facturasSnapshot.filter((f) => f.estado === "pagada");
-    const pendientes = facturasSnapshot.filter((f) => f.estado === "pendiente");
-    const canceladas = facturasSnapshot.filter((f) => f.estado === "cancelada");
-    const totalPagado = pagadas.reduce((s, f) => s + Number(f.total), 0);
-    const subtotalPagado = pagadas.reduce((s, f) => s + Number(f.subtotal), 0);
-    const itbisPagado = pagadas.reduce((s, f) => s + Number(f.itbis), 0);
-    const porMetodoMap = new Map<string, { cantidad: number; total: number }>();
-    for (const f of pagadas) {
-      const key = f.metodo_pago || "otro";
-      const cur = porMetodoMap.get(key) ?? { cantidad: 0, total: 0 };
-      cur.cantidad += 1;
-      cur.total += Number(f.total);
-      porMetodoMap.set(key, cur);
-    }
-    const porMetodo = [...porMetodoMap.entries()]
-      .map(([metodo, v]) => ({
-        etiqueta: etiquetaMetodo(metodo),
-        cantidad: v.cantidad,
-        total: v.total,
-      }))
-      .sort((a, b) => b.total - a.total);
-    const ticketPromedioPagado = pagadas.length > 0 ? totalPagado / pagadas.length : 0;
-
-    const tenant = tenantRes.data;
-    const tenantInfo: TenantReceiptInfo = {
-      nombre_negocio: tenant.nombre_negocio ?? null,
-      rnc: tenant.rnc ?? null,
-      direccion: tenant.direccion ?? null,
-      telefono: tenant.telefono ?? null,
-      logo_url: tenant.logo_url ?? null,
-    };
-
-    const { paperWidthMm } = getThermalPrintSettings();
-    const html = buildCierreDiaReceiptHtml(
-      tenantInfo,
-      {
-        fechaOperacion: fechaLegible,
-        cicloNumero: currentCycle.cycle_number,
-        generadoEn: formatCycleDateTime(closedAtIso),
-        generadoAtIso: closedAtIso,
-        abiertoAtIso: currentCycle.opened_at,
-        cerradoAtIso: closedAtIso,
-        facturasPagadas: pagadas.length,
-        facturasPendientes: pendientes.length,
-        facturasCanceladas: canceladas.length,
-        totalPagado,
-        subtotalPagado,
-        itbisPagado,
-        porMetodo,
-        ticketPromedioPagado,
-      },
-      paperWidthMm
-    );
-
-    const res = await printThermalHtml(html);
-    if (!res.ok) {
-      setPrintMsg(res.error || "Error al enviar a la impresora.");
-      setPrinting(false);
-      return;
+    if (printed) {
+      setPrintMsg("Ciclo cerrado e impreso. Inicia un nuevo ciclo si necesitas seguir operando.");
     }
 
-    const { error: closeError } = await insforgeClient.database
-      .from("cierres_operativos")
-      .update({
-        closed_at: closedAtIso,
-        printed_at: closedAtIso,
-        closed_by_auth_user_id: user?.id ?? null,
-      })
-      .eq("id", currentCycle.id)
-      .eq("tenant_id", tenantId);
-
-    if (closeError) {
-      setPrintMsg(
-        closeError.message ||
-          "Se imprimio el cierre, pero no se pudo registrar el cierre del ciclo."
-      );
-      setPrinting(false);
-      await cargar();
-      return;
-    }
-
-    setPrintMsg(
-      "Cierre impreso y ciclo cerrado. Si necesitas seguir operando, inicia un nuevo ciclo manualmente."
-    );
     setPrinting(false);
     await cargar();
   }
@@ -541,7 +537,7 @@ export function Cierre() {
           disabled={startingCycle || loading || hasOpenCycle}
           title={
             hasOpenCycle
-              ? `Ya hay un ciclo abierto (#${currentCycle?.cycle_number}). Cierra el actual con "Imprimir cierre" primero.`
+              ? `Ya hay un ciclo abierto (#${currentCycle?.cycle_number}). Cierra el actual con "Cerrar ciclo" primero.`
               : undefined
           }
           className="bg-[#262626] rounded-[12px] border border-[rgba(255,144,109,0.24)] px-5 py-3 font-['Inter',sans-serif] text-[#ffcf9f] text-[13px] cursor-pointer hover:border-[rgba(255,144,109,0.45)] disabled:opacity-50 disabled:cursor-not-allowed"
@@ -550,11 +546,11 @@ export function Cierre() {
         </button>
         <button
           type="button"
-          onClick={() => void handleImprimir()}
+          onClick={() => void handleCerrarCiclo()}
           disabled={printing || loading || !hasOpenCycle}
           className="bg-[#ff906d] rounded-[12px] px-6 py-3 font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[13px] uppercase tracking-wide cursor-pointer border-none shadow-[0px_0px_16px_0px_rgba(255,144,109,0.25)] disabled:opacity-50"
         >
-          {printing ? "Imprimiendo..." : "Imprimir cierre (termica)"}
+          {printing ? "Cerrando..." : "Cerrar ciclo"}
         </button>
       </div>
 

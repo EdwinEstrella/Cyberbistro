@@ -321,6 +321,7 @@ export function AppLayout() {
         </div>
       </div>
 </VentaCartSearchProvider>
-</div>
-);
+      </RoleGuard>
+    </div>
+  );
 }

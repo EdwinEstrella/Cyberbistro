@@ -1,12 +1,11 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { useNavigate } from "react-router";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { MESAS_CONFIG } from "../config/mesas";
 import { estadoColors, estadoLabels, type MesaEstadoVisual } from "../config/estadoTheme";
-import { MesaCloseAccountModal } from "../../billing/components/MesaCloseAccountModal";
 import { TableMesaCard } from "./TableMesaCard";
-import { DEFAULT_NCF_B_CODE, type NcfBCode } from "../../../shared/lib/ncf";
-import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
+
 
 type Estado = MesaEstadoVisual;
 
@@ -54,7 +53,7 @@ function getAdjacentMesas(mesa: Mesa, allMesas: Mesa[]): Mesa[] {
   });
 }
 
-const ITBIS = 0.18;
+
 
 const RD = (n: number) =>
   "RD$ " + n.toLocaleString("es-DO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -112,33 +111,10 @@ export function Tables() {
   const [deudaPorMesa, setDeudaPorMesa] = useState<Record<number, number>>({});
   const [historialConsumos, setHistorialConsumos] = useState<ConsumoPanelRow[]>([]);
   const [comandaEstados, setComandaEstados] = useState<Record<string, string>>({});
-  const [showCloseAccountModal, setShowCloseAccountModal] = useState(false);
-  /** Cobro desde Mesas: por defecto sin ITBIS en la factura; activable antes de cerrar cuenta. */
-  const [mesaItbisEnabled, setMesaItbisEnabled] = useState(false);
-  const [mesaItbisDefaultEnabled, setMesaItbisDefaultEnabled] = useState(false);
-  const [defaultNcfType, setDefaultNcfType] = useState<NcfBCode>(DEFAULT_NCF_B_CODE);
-  const [historialVersion, setHistorialVersion] = useState(0);
+  const navigate = useNavigate();
 
-  useEffect(() => {
-    setMesaItbisEnabled(mesaItbisDefaultEnabled);
-  }, [selectedId, mesaItbisDefaultEnabled]);
 
-  useEffect(() => {
-    if (authLoading || !tenantId) return;
 
-    let cancelled = false;
-
-    void loadTenantBillingSettings(tenantId).then((settings) => {
-      if (cancelled) return;
-      setMesaItbisDefaultEnabled(settings?.defaultItbisEnabled ?? false);
-      setMesaItbisEnabled(settings?.defaultItbisEnabled ?? false);
-      setDefaultNcfType(settings?.defaultNcfType ?? DEFAULT_NCF_B_CODE);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [authLoading, tenantId]);
 
   const refreshDeudaPorMesa = useCallback(async () => {
     if (!tenantId) {
@@ -235,7 +211,7 @@ export function Tables() {
   useEffect(() => {
     if (!tenantId) return;
     void refreshDeudaPorMesa();
-  }, [tenantId, historialVersion, refreshDeudaPorMesa]);
+  }, [tenantId, refreshDeudaPorMesa]);
 
   const selectedMesaNumero = useMemo(() => {
     if (selectedId == null) return null;
@@ -301,11 +277,7 @@ export function Tables() {
       cancelled = true;
       clearInterval(tick);
     };
-  }, [tenantId, selectedMesaNumero, historialVersion]);
-
-  useEffect(() => {
-    if (selectedId == null) setShowCloseAccountModal(false);
-  }, [selectedId]);
+  }, [tenantId, selectedMesaNumero]);
 
   const selectedMesa = mesas.find((m) => m.id === selectedId) ?? null;
   const adjacentMesas = selectedMesa ? getAdjacentMesas(selectedMesa, mesas) : [];
@@ -321,16 +293,7 @@ export function Tables() {
   const ocupada = mesas.filter((m) => !m.fusionada && m.estado === "ocupada").length;
   const limpieza = mesas.filter((m) => !m.fusionada && m.estado === "limpieza").length;
 
-  async function changeEstado(mesaId: number, estado: Estado) {
-    if (!tenantId) return;
-    const { error } = await insforgeClient.database
-      .from("mesas_estado")
-      .upsert({ id: mesaId, estado, tenant_id: tenantId }, { onConflict: "tenant_id,id" });
 
-    if (!error) {
-      setMesas((prev) => prev.map((m) => (m.id === mesaId ? { ...m, estado } : m)));
-    }
-  }
 
   async function mergeMesas(parentId: number, childId: number) {
     if (!tenantId) return;
@@ -597,43 +560,22 @@ export function Tables() {
 
             <div className="h-px bg-[rgba(72,72,71,0.2)]" />
 
-            {/* Estado */}
+            {/* Estado (Sólo Lectura) */}
             <div className="flex flex-col gap-[10px]">
               <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
-                Estado
+                Estado Actual (Automático)
               </span>
-              <div className="flex flex-col gap-[6px]">
-                {(["libre", "ocupada", "limpieza"] as Estado[]).map((e) => {
-                  const c = estadoColors[e];
-                  const isActive = selectedMesa.estado === e;
-                  return (
-                    <button
-                      key={e}
-                      onClick={() => changeEstado(selectedMesa.id, e)}
-                      className="flex items-center gap-[10px] px-[14px] py-[10px] rounded-[10px] cursor-pointer border-none transition-all text-left"
-                      style={{
-                        backgroundColor: isActive ? c.bg : "transparent",
-                        border: isActive ? `1px solid ${c.border}` : "1px solid rgba(72,72,71,0.2)",
-                      }}
-                    >
-                      <div
-                        className="rounded-full size-[8px] shrink-0"
-                        style={{ backgroundColor: c.dot }}
-                      />
-                      <span
-                        className="font-['Inter',sans-serif] text-[13px] font-semibold"
-                        style={{ color: isActive ? c.text : "#6b7280" }}
-                      >
-                        {estadoLabels[e]}
-                      </span>
-                      {isActive && (
-                        <span className="ml-auto font-['Inter',sans-serif] text-[10px]" style={{ color: c.text }}>
-                          ✓
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
+              <div className="flex items-center gap-[10px] px-[14px] py-[10px] rounded-[10px] border border-[rgba(72,72,71,0.2)] bg-[#1a1a1a]">
+                <div
+                  className="rounded-full size-[8px] shrink-0"
+                  style={{ backgroundColor: estadoColors[selectedMesa.estado].dot }}
+                />
+                <span
+                  className="font-['Inter',sans-serif] text-[13px] font-semibold"
+                  style={{ color: estadoColors[selectedMesa.estado].text }}
+                >
+                  {estadoLabels[selectedMesa.estado]}
+                </span>
               </div>
             </div>
 
@@ -716,43 +658,13 @@ export function Tables() {
                 )}
               </div>
               {historialConsumos.length > 0 && (
-                <>
-                  <div className="flex items-center justify-between gap-[10px] rounded-[10px] border border-[rgba(72,72,71,0.28)] bg-[#131313] px-[12px] py-[10px]">
-                    <div className="flex flex-col min-w-0">
-                      <span className="font-['Inter',sans-serif] text-white text-[12px] font-semibold leading-tight">
-                        ITBIS 18% en la factura
-                      </span>
-                      <span className="font-['Inter',sans-serif] text-[#6b7280] text-[10px] leading-snug">
-                        Toma el valor guardado en Ajustes, pero puedes cambiarlo antes de cobrar
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={mesaItbisEnabled}
-                      onClick={() => setMesaItbisEnabled((v) => !v)}
-                      aria-label={
-                        mesaItbisEnabled ? "Desactivar ITBIS al cobrar mesa" : "Activar ITBIS 18% al cobrar mesa"
-                      }
-                      className={`relative h-[30px] w-[54px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${
-                        mesaItbisEnabled ? "bg-[#59ee50]" : "bg-[#383838]"
-                      }`}
-                    >
-                      <span
-                        className={`absolute top-[5px] left-[5px] block size-[20px] rounded-full bg-white shadow transition-transform duration-200 ease-out ${
-                          mesaItbisEnabled ? "translate-x-[24px]" : "translate-x-0"
-                        }`}
-                      />
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowCloseAccountModal(true)}
-                    className="w-full mt-1 py-[12px] rounded-[10px] border-none cursor-pointer font-['Space_Grotesk',sans-serif] font-bold text-[#5b1600] text-[11px] tracking-[1.2px] uppercase bg-[#ff906d] hover:bg-[#ff784d] transition-colors"
-                  >
-                    Cerrar cuenta / Cobrar
-                  </button>
-                </>
+                <button
+                  type="button"
+                  onClick={() => navigate("/dashboard", { state: { selectMesaNumero: selectedMesa.numero } })}
+                  className="w-full mt-1 py-[12px] rounded-[10px] border-none cursor-pointer font-['Space_Grotesk',sans-serif] font-bold text-[#5b1600] text-[11px] tracking-[1.2px] uppercase bg-[#ff906d] hover:bg-[#ff784d] transition-colors"
+                >
+                  Ir al Carrito a Cobrar
+                </button>
               )}
             </div>
 
@@ -837,25 +749,7 @@ export function Tables() {
         )}
       </div>
 
-      {selectedMesa && tenantId && (
-        <MesaCloseAccountModal
-          open={showCloseAccountModal}
-          onClose={() => setShowCloseAccountModal(false)}
-          tenantId={tenantId}
-          mesaNumero={selectedMesa.numero}
-          itbisRate={mesaItbisEnabled ? ITBIS : 0}
-          initialNcfType={defaultNcfType}
-          onSettled={() => {
-            setHistorialVersion((v) => v + 1);
-            void refreshDeudaPorMesa();
-          }}
-          onPaidFull={async () => {
-            setHistorialVersion((v) => v + 1);
-            await refreshDeudaPorMesa();
-            await changeEstado(selectedMesa.id, "libre");
-          }}
-        />
-      )}
+
     </div>
   );
 }

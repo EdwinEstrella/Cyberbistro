@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useLocation } from "react-router";
 import svgPaths from "../../../imports/svg-qgatbhef3k";
 import { useVentaCartSearch } from "../../../app/context/VentaCartSearchContext";
 
@@ -105,6 +106,7 @@ function catColor(cat: string) {
 export function Dashboard() {
   const { query: cartSearchQuery } = useVentaCartSearch();
   const { tenantId, user, loading: authLoading } = useAuth();
+  const location = useLocation();
   const { formatMoney, currencySymbol } = useTenantCurrency();
   const [platos, setPlatos] = useState<Plato[]>([]);
   const [mesas, setMesas] = useState<MesaBasic[]>([]);
@@ -232,6 +234,17 @@ export function Dashboard() {
       }
     });
   }, [tenantId]);
+
+  useEffect(() => {
+    if (mesas.length > 0 && location.state && (location.state as any).selectMesaNumero) {
+      const mesaToSelect = mesas.find((m) => m.numero === (location.state as any).selectMesaNumero);
+      if (mesaToSelect) {
+        setSelectedMesa(mesaToSelect);
+        // Clear state so it doesn't re-trigger
+        window.history.replaceState({}, document.title);
+      }
+    }
+  }, [mesas, location.state]);
 
   const categories = [
     "Todos",
