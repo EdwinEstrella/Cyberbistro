@@ -18,7 +18,8 @@ async function hasOpenCycle(tenantId: string): Promise<boolean> {
 }
 
 import { insforgeClient } from "../../../shared/lib/insforge";
-import { MESAS_CONFIG } from "../../tables/config/mesas";
+import { generateMesasConfig } from "../../tables/config/mesas";
+import { loadCantidadMesas } from "../../../shared/lib/tenantMesasSettings";
 import { useAuth, ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
 import {
   buildFacturaReceiptHtml,
@@ -144,18 +145,8 @@ export function Dashboard() {
   }, [authLoading, tenantId]);
 
   useEffect(() => {
-    // Inicializar mesas desde configuración estática
-    const mesasIniciales = MESAS_CONFIG.map((config) => ({
-      id: config.id.toString(),
-      numero: config.numero,
-      estado: 'libre' as const,
-      fusionada: false,
-      fusion_padre_id: null,
-      fusion_hijos: [],
-      deuda_pendiente: 0,
-      items_pendientes: 0,
-    }));
-    setMesas(mesasIniciales);
+    // Set initial to empty since it depends on the database
+    setMesas([]);
 
     // Esperar a tener el tenant_id antes de cargar datos
     if (!tenantId) return;
@@ -177,8 +168,21 @@ export function Dashboard() {
         .select("mesa_numero, subtotal")
         .eq("tenant_id", tenantId)
         .neq("estado", "pagado"),
-    ]).then(([platosRes, estadosRes, consumosPendRes]) => {
+      loadCantidadMesas(tenantId)
+    ]).then(([platosRes, estadosRes, consumosPendRes, cantidadMesas]) => {
       if (!platosRes.error && platosRes.data) setPlatos(platosRes.data as Plato[]);
+
+      const configArray = generateMesasConfig(cantidadMesas);
+      let currentMesas = configArray.map((config) => ({
+        id: config.id.toString(),
+        numero: config.numero,
+        estado: 'libre' as const,
+        fusionada: false,
+        fusion_padre_id: null,
+        fusion_hijos: [],
+        deuda_pendiente: 0,
+        items_pendientes: 0,
+      }));
 
       if (!estadosRes.error && estadosRes.data && estadosRes.data.length > 0) {
         // Crear mapa de estados por ID
@@ -188,18 +192,16 @@ export function Dashboard() {
         }
 
         // Actualizar mesas con los estados de la base de datos
-        setMesas((prev) =>
-          prev.map((m) => {
-            const estadoDB = estadosMap.get(parseInt(m.id));
-            if (estadoDB) {
-              return {
-                ...m,
-                estado: estadoDB.estado ?? 'libre',
-              };
-            }
-            return m;
-          })
-        );
+        currentMesas = currentMesas.map((m) => {
+          const estadoDB = estadosMap.get(parseInt(m.id));
+          if (estadoDB) {
+            return {
+              ...m,
+              estado: estadoDB.estado ?? 'libre',
+            };
+          }
+          return m;
+        });
       }
 
       if (!consumosPendRes.error && consumosPendRes.data) {
@@ -212,17 +214,17 @@ export function Dashboard() {
           cur.items += 1;
           deudaPorNumero.set(mn, cur);
         }
-        setMesas((prev) =>
-          prev.map((m) => {
-            const agg = deudaPorNumero.get(m.numero);
-            return {
-              ...m,
-              deuda_pendiente: agg?.deuda ?? 0,
-              items_pendientes: agg?.items ?? 0,
-            };
-          })
-        );
+        currentMesas = currentMesas.map((m) => {
+          const agg = deudaPorNumero.get(m.numero);
+          return {
+            ...m,
+            deuda_pendiente: agg?.deuda ?? 0,
+            items_pendientes: agg?.items ?? 0,
+          };
+        });
       }
+      
+      setMesas(currentMesas);
     });
   }, [tenantId]);
 

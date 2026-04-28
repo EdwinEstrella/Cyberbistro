@@ -9,6 +9,7 @@ import {
   MENU_CATEGORY_COLORS,
   sortCategoriesForTabs,
 } from "../../../shared/lib/menuCategories";
+import { loadCantidadMesas, saveCantidadMesas } from "../../../shared/lib/tenantMesasSettings";
 
 const STAFF_ROLES = [
   { value: "cajera", label: "Cajera / Venta" },
@@ -866,9 +867,82 @@ function UsuariosPanel() {
 }
 
 // ─────────────────────────────────────────────
+// PANEL DE MESAS
+// ─────────────────────────────────────────────
+function MesasPanel() {
+  const { tenantId } = useAuth();
+  const [cantidad, setCantidad] = useState<number>(20);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!tenantId) return;
+    loadCantidadMesas(tenantId).then(val => {
+      setCantidad(val);
+      setLoading(false);
+    });
+  }, [tenantId]);
+
+  async function handleSave() {
+    if (!tenantId) return;
+    if (cantidad < 1 || cantidad > 100) {
+      alert("La cantidad debe estar entre 1 y 100.");
+      return;
+    }
+    setSaving(true);
+    const { error } = await saveCantidadMesas(tenantId, cantidad);
+    setSaving(false);
+    if (error) {
+      alert("Error al guardar: " + error.message);
+    } else {
+      alert("Configuración de mesas guardada exitosamente.");
+    }
+  }
+
+  if (loading) return <div className="p-8 text-[#6b7280]">Cargando configuración...</div>;
+
+  return (
+    <div className="flex-1 overflow-y-auto p-4 sm:p-[32px]">
+      <div className="max-w-[500px]">
+        <h2 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px] mb-[4px]">Configuración de Mesas</h2>
+        <p className="font-['Inter',sans-serif] text-[#6b7280] text-[13px] mb-[24px]">
+          Modifica la cantidad total de mesas disponibles en tu restaurante. El sistema generará automáticamente la distribución.
+        </p>
+        
+        <div className="bg-[#111111] border border-[rgba(72,72,71,0.2)] rounded-[16px] p-[20px] flex flex-col gap-[20px]">
+          <div className="flex flex-col gap-[6px]">
+            <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">
+              Cantidad de Mesas
+            </label>
+            <input
+              type="number"
+              min="1"
+              max="100"
+              value={cantidad}
+              onChange={(e) => setCantidad(parseInt(e.target.value) || 1)}
+              className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-[14px] py-[11px] font-['Inter',sans-serif] text-white text-[13px] outline-none w-full"
+              onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(255,144,109,0.4)")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(72,72,71,0.3)")}
+            />
+          </div>
+          
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="bg-[#ff906d] rounded-[12px] px-[20px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[13px] tracking-[0.5px] uppercase cursor-pointer border-none shadow-[0_0_20px_rgba(255,144,109,0.15)] transition-opacity disabled:opacity-50 self-start"
+          >
+            {saving ? "Guardando..." : "Guardar cambios"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // MAIN PANEL (tabs after unlock)
 // ─────────────────────────────────────────────
-type Tab = "usuarios" | "carta";
+type Tab = "usuarios" | "carta" | "mesas";
 
 function SoportePanel({ onLock }: { onLock: () => void }) {
   const [activeTab, setActiveTab] = useState<Tab>("carta");
@@ -879,7 +953,7 @@ function SoportePanel({ onLock }: { onLock: () => void }) {
       <div className="flex flex-wrap items-center justify-between px-4 sm:px-[32px] pt-[16px] sm:pt-[20px] pb-[0px] gap-[8px] border-b border-[rgba(72,72,71,0.2)] shrink-0">
         <div className="flex items-end gap-[4px]">
           <h1 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[24px] mr-[16px]">Soporte</h1>
-          {(["carta", "usuarios"] as Tab[]).map((tab) => (
+          {(["carta", "usuarios", "mesas"] as Tab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -889,7 +963,7 @@ function SoportePanel({ onLock }: { onLock: () => void }) {
                 borderBottom: activeTab === tab ? "2px solid #ff906d" : "2px solid transparent",
               }}
             >
-              {tab === "carta" ? "Carta" : "Usuarios"}
+              {tab === "carta" ? "Carta" : tab === "usuarios" ? "Usuarios" : "Mesas"}
             </button>
           ))}
         </div>
@@ -903,7 +977,7 @@ function SoportePanel({ onLock }: { onLock: () => void }) {
 
       {/* Tab content */}
       <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-        {activeTab === "carta" ? <CartaPanel /> : <UsuariosPanel />}
+        {activeTab === "carta" ? <CartaPanel /> : activeTab === "usuarios" ? <UsuariosPanel /> : <MesasPanel />}
       </div>
     </div>
   );

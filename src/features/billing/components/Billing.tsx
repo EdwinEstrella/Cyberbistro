@@ -932,7 +932,7 @@ export function Billing() {
                         <p className="font-['Inter',sans-serif] text-[#c5c5c5] text-[14px] leading-relaxed max-w-3xl">
                           Opero desde {formatDateTime(cycle.opened_at)} hasta {formatDateTime(cycle.closed_at)}.
                           {entry.firstSaleAt
-                            ? ` Vendio desde ${formatHour(entry.firstSaleAt)} hasta ${formatHour(entry.lastSaleAt)}.`
+                            ? ` Vendio desde ${formatDateTime(entry.firstSaleAt)} hasta ${formatDateTime(entry.lastSaleAt)}.`
                             : " No tuvo ventas registradas."}
                         </p>
                       </div>
@@ -999,7 +999,7 @@ export function Billing() {
                               Hora primera venta
                             </div>
                             <div className="font-['Space_Grotesk',sans-serif] text-white text-[18px] font-bold mt-2">
-                              {formatHour(entry.firstSaleAt)}
+                              {formatDateTime(entry.firstSaleAt)}
                             </div>
                           </div>
                           <div className="rounded-2xl bg-[#111111] border border-[rgba(255,255,255,0.05)] px-4 py-4">
@@ -1007,7 +1007,7 @@ export function Billing() {
                               Hora ultima venta
                             </div>
                             <div className="font-['Space_Grotesk',sans-serif] text-white text-[18px] font-bold mt-2">
-                              {formatHour(entry.lastSaleAt)}
+                              {formatDateTime(entry.lastSaleAt)}
                             </div>
                           </div>
                         </div>

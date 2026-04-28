@@ -105,6 +105,7 @@ export function Cierre() {
   const [loadError, setLoadError] = useState("");
   const [printing, setPrinting] = useState(false);
   const [printMsg, setPrintMsg] = useState("");
+  const [globalHasOpenCycle, setGlobalHasOpenCycle] = useState(false);
 
   const currentCycle = useMemo(
     () => cycles.find((cycle) => !cycle.closed_at) ?? cycles[0] ?? null,
@@ -200,7 +201,7 @@ export function Cierre() {
     setLoading(true);
     setLoadError("");
 
-    const [cyclesRes, consRes] = await Promise.all([
+    const [cyclesRes, consRes, openGlobalRes] = await Promise.all([
       insforgeClient.database
         .from("cierres_operativos")
         .select("id, business_day, cycle_number, opened_at, closed_at, printed_at")
@@ -212,6 +213,12 @@ export function Cierre() {
         .select("mesa_numero, subtotal, estado")
         .eq("tenant_id", tenantId)
         .neq("estado", "pagado"),
+      insforgeClient.database
+        .from("cierres_operativos")
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .is("closed_at", null)
+        .limit(1),
     ]);
 
     if (cyclesRes.error) {
@@ -251,8 +258,29 @@ export function Cierre() {
       selectedCycle?.closed_at == null ? ((consRes.data as ConsumoAbiertoRow[]) ?? []) : []
     );
 
+    setGlobalHasOpenCycle(!!(openGlobalRes.data && openGlobalRes.data.length > 0));
+
     setLoading(false);
   }, [tenantId, fecha]);
+
+  useEffect(() => {
+    if (authLoading || !tenantId) return;
+    let cancelled = false;
+    insforgeClient.database
+      .from("cierres_operativos")
+      .select("business_day")
+      .eq("tenant_id", tenantId)
+      .is("closed_at", null)
+      .order("opened_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then((res) => {
+        if (!cancelled && res.data && res.data.business_day) {
+          setFecha(res.data.business_day);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [authLoading, tenantId]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -262,7 +290,7 @@ export function Cierre() {
   async function handleStartCycle() {
     if (!tenantId) return;
 
-    if (hasOpenCycle) {
+    if (globalHasOpenCycle) {
       setPrintMsg("Acción denegada: Ya hay un ciclo operativo abierto. Por normas de seguridad, debes cerrar rigurosamente el ciclo actual antes de iniciar uno nuevo.");
       return;
     }
@@ -534,10 +562,10 @@ export function Cierre() {
         <button
           type="button"
           onClick={() => void handleStartCycle()}
-          disabled={startingCycle || loading || hasOpenCycle}
+          disabled={startingCycle || loading || globalHasOpenCycle}
           title={
-            hasOpenCycle
-              ? `Ya hay un ciclo abierto (#${currentCycle?.cycle_number}). Cierra el actual con "Cerrar ciclo" primero.`
+            globalHasOpenCycle
+              ? `Ya hay un ciclo abierto en esta u otra fecha. Debes buscarlo y cerrarlo primero.`
               : undefined
           }
           className="bg-[#262626] rounded-[12px] border border-[rgba(255,144,109,0.24)] px-5 py-3 font-['Inter',sans-serif] text-[#ffcf9f] text-[13px] cursor-pointer hover:border-[rgba(255,144,109,0.45)] disabled:opacity-50 disabled:cursor-not-allowed"

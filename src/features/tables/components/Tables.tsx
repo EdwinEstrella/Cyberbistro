@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
-import { MESAS_CONFIG } from "../config/mesas";
+import { generateMesasConfig, type MesaConfig } from "../config/mesas";
+import { loadCantidadMesas } from "../../../shared/lib/tenantMesasSettings";
 import { estadoColors, estadoLabels, type MesaEstadoVisual } from "../config/estadoTheme";
 import { TableMesaCard } from "./TableMesaCard";
 
@@ -19,7 +20,6 @@ interface MesaEstadoDB {
   span_columnas: number;
 }
 
-type MesaConfig = (typeof MESAS_CONFIG)[number];
 
 interface Mesa extends MesaConfig {
   estado: Estado;
@@ -141,16 +141,8 @@ export function Tables() {
   }, [tenantId]);
 
   useEffect(() => {
-    const mesasIniciales = MESAS_CONFIG.map((config) => ({
-      ...config,
-      estado: "libre" as Estado,
-      fusionada: false,
-      fusion_padre_id: null,
-      fusion_hijos: [],
-      span_filas: 1,
-      span_columnas: 1,
-    }));
-    setMesas(mesasIniciales);
+    // Se cargarán las mesas cuando se obtenga la cantidad real
+    setMesas([]);
 
     if (authLoading) return;
 
@@ -162,12 +154,22 @@ export function Tables() {
 
     setLoading(true);
 
-    void insforgeClient.database
-      .from("mesas_estado")
-      .select("*")
-      .eq("tenant_id", tenantId)
-      .then((estadosRes) => {
-        if (!estadosRes.error && estadosRes.data && estadosRes.data.length > 0) {
+    Promise.all([
+      insforgeClient.database.from("mesas_estado").select("*").eq("tenant_id", tenantId),
+      loadCantidadMesas(tenantId)
+    ]).then(([estadosRes, cantidadMesas]) => {
+      const configArray = generateMesasConfig(cantidadMesas);
+      const mesasIniciales = configArray.map((config) => ({
+        ...config,
+        estado: "libre" as Estado,
+        fusionada: false,
+        fusion_padre_id: null,
+        fusion_hijos: [],
+        span_filas: 1,
+        span_columnas: 1,
+      }));
+
+      if (!estadosRes.error && estadosRes.data && estadosRes.data.length > 0) {
           const estadosMap = new Map<number, MesaEstadoDB>();
           for (const e of estadosRes.data as MesaEstadoDB[]) {
             estadosMap.set(e.id, {
@@ -178,8 +180,8 @@ export function Tables() {
             });
           }
 
-          setMesas((prev) =>
-            prev.map((m) => {
+          setMesas(
+            mesasIniciales.map((m) => {
               const estadoDB = estadosMap.get(m.id);
               if (estadoDB) {
                 return {
@@ -195,6 +197,8 @@ export function Tables() {
               return m;
             })
           );
+        } else {
+          setMesas(mesasIniciales);
         }
 
         setLoading(false);
