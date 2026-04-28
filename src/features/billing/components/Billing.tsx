@@ -104,13 +104,7 @@ function formatDateTime(iso: string | null | undefined): string {
   });
 }
 
-function formatHour(iso: string | null | undefined): string {
-  if (!iso) return "Sin ventas";
-  return new Date(iso).toLocaleTimeString("es-DO", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
+
 
 function getMethodDisplay(method: string): { label: string; pillClass: string } {
   switch (method) {
