@@ -93,6 +93,47 @@ function itemCount(inv: Invoice): number {
   return Array.isArray(items) ? items.length : 0;
 }
 
+async function hydrateInvoiceItemCategories(tenantId: string, rawInvoices: Invoice[]): Promise<Invoice[]> {
+  const plateIds = [
+    ...new Set(
+      rawInvoices.flatMap((invoice) =>
+        Array.isArray(invoice.items)
+          ? invoice.items
+              .map((item) => Number(item.plato_id))
+              .filter((id) => Number.isFinite(id))
+          : []
+      )
+    ),
+  ];
+
+  const categoriaPorPlato = new Map<number, string>();
+
+  if (plateIds.length > 0) {
+    const { data } = await insforgeClient.database
+      .from("platos")
+      .select("id, categoria")
+      .eq("tenant_id", tenantId)
+      .in("id", plateIds);
+
+    for (const plate of (data as Array<{ id: number; categoria?: string | null }>) ?? []) {
+      categoriaPorPlato.set(plate.id, plate.categoria?.trim() || "General");
+    }
+  }
+
+  return rawInvoices.map((invoice) => ({
+    ...invoice,
+    items: Array.isArray(invoice.items)
+      ? invoice.items.map((item) => ({
+          ...item,
+          categoria:
+            item.categoria?.trim() ||
+            categoriaPorPlato.get(Number(item.plato_id)) ||
+            "General",
+        }))
+      : [],
+  }));
+}
+
 function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "Pendiente";
   return new Date(iso).toLocaleString("es-DO", {
@@ -173,7 +214,8 @@ export function Billing() {
     ]);
 
     if (!invoicesRes.error && invoicesRes.data) {
-      setInvoices(invoicesRes.data as Invoice[]);
+      const hydratedInvoices = await hydrateInvoiceItemCategories(tenantId, invoicesRes.data as Invoice[]);
+      setInvoices(hydratedInvoices);
     } else {
       setInvoices([]);
     }
@@ -1221,8 +1263,13 @@ export function Billing() {
                     {(Array.isArray(invoiceModal.items) ? invoiceModal.items : []).map((line, i) => (
                       <li key={`${line.plato_id}-${i}`} className="grid grid-cols-[2.5rem_1fr_auto] gap-2 px-3 py-2.5 text-[14px]">
                         <span className="font-['Space_Grotesk',sans-serif] tabular-nums text-white">{line.cantidad}</span>
-                        <span className="font-['Inter',sans-serif] text-[rgba(255,255,255,0.9)] min-w-0 break-words">
-                          {line.nombre}
+                        <span className="min-w-0 space-y-1">
+                          <span className="block font-['Inter',sans-serif] text-[rgba(255,255,255,0.9)] break-words">
+                            {line.nombre}
+                          </span>
+                          <span className="inline-flex max-w-full rounded-md bg-[rgba(255,144,109,0.1)] px-2 py-0.5 font-['Inter',sans-serif] text-[11px] font-bold uppercase tracking-wide text-[#ff906d]">
+                            <span className="truncate">{line.categoria?.trim() || "General"}</span>
+                          </span>
                         </span>
                         <span className="font-['Space_Grotesk',sans-serif] tabular-nums text-white text-right shrink-0">
                           {RD(line.subtotal)}

@@ -173,10 +173,10 @@ export function Dashboard() {
       if (!platosRes.error && platosRes.data) setPlatos(platosRes.data as Plato[]);
 
       const configArray = generateMesasConfig(cantidadMesas);
-      let currentMesas = configArray.map((config) => ({
+      let currentMesas: MesaBasic[] = configArray.map((config) => ({
         id: config.id.toString(),
         numero: config.numero,
-        estado: 'libre' as const,
+        estado: 'libre',
         fusionada: false,
         fusion_padre_id: null,
         fusion_hijos: [],
@@ -184,28 +184,8 @@ export function Dashboard() {
         items_pendientes: 0,
       }));
 
-      if (!estadosRes.error && estadosRes.data && estadosRes.data.length > 0) {
-        // Crear mapa de estados por ID
-        const estadosMap = new Map<number, any>();
-        for (const e of estadosRes.data) {
-          estadosMap.set(e.id, e);
-        }
-
-        // Actualizar mesas con los estados de la base de datos
-        currentMesas = currentMesas.map((m) => {
-          const estadoDB = estadosMap.get(parseInt(m.id));
-          if (estadoDB) {
-            return {
-              ...m,
-              estado: estadoDB.estado ?? 'libre',
-            };
-          }
-          return m;
-        });
-      }
-
+      const deudaPorNumero = new Map<number, { deuda: number; items: number }>();
       if (!consumosPendRes.error && consumosPendRes.data) {
-        const deudaPorNumero = new Map<number, { deuda: number; items: number }>();
         for (const row of consumosPendRes.data as { mesa_numero: number | null; subtotal: number }[]) {
           const mn = row.mesa_numero ?? 0;
           if (mn <= 0) continue;
@@ -214,10 +194,40 @@ export function Dashboard() {
           cur.items += 1;
           deudaPorNumero.set(mn, cur);
         }
+      }
+
+      if (!estadosRes.error && estadosRes.data && estadosRes.data.length > 0) {
+        // Crear mapa de estados por ID
+        const estadosMap = new Map<number, any>();
+        for (const e of estadosRes.data) {
+          estadosMap.set(e.id, e);
+        }
+
+        // La ocupacion se deriva de consumos pendientes; mesas_estado conserva fusion/layout.
+        currentMesas = currentMesas.map((m) => {
+          const estadoDB = estadosMap.get(parseInt(m.id));
+          const agg = deudaPorNumero.get(m.numero);
+          if (estadoDB) {
+            return {
+              ...m,
+              estado: agg && agg.items > 0 ? 'ocupada' : 'libre',
+              deuda_pendiente: agg?.deuda ?? 0,
+              items_pendientes: agg?.items ?? 0,
+            };
+          }
+          return {
+            ...m,
+            estado: agg && agg.items > 0 ? 'ocupada' : 'libre',
+            deuda_pendiente: agg?.deuda ?? 0,
+            items_pendientes: agg?.items ?? 0,
+          };
+        });
+      } else if (deudaPorNumero.size > 0) {
         currentMesas = currentMesas.map((m) => {
           const agg = deudaPorNumero.get(m.numero);
           return {
             ...m,
+            estado: agg && agg.items > 0 ? 'ocupada' : 'libre',
             deuda_pendiente: agg?.deuda ?? 0,
             items_pendientes: agg?.items ?? 0,
           };
@@ -303,25 +313,33 @@ export function Dashboard() {
     setCart((prev) => prev.filter((i) => i.plato.id !== platoId));
   }
 
-  // Marcar mesa como ocupada cuando se selecciona
-  async function markMesaAsOccupied(mesa: MesaBasic) {
-    if (mesa.estado === "ocupada") return;
+  async function syncMesaStateFromOpenAccount(mesaId: string, mesaNumero: number) {
     if (!tenantId) return;
+    const { data, error } = await insforgeClient.database
+      .from("consumos")
+      .select("subtotal")
+      .eq("tenant_id", tenantId)
+      .eq("mesa_numero", mesaNumero)
+      .neq("estado", "pagado");
 
-    const { error } = await insforgeClient.database
+    if (error) return;
+    const rows = data ?? [];
+    const deuda_pendiente = rows.reduce((s, r) => s + Number((r as { subtotal: number }).subtotal), 0);
+    const items_pendientes = rows.length;
+    const estado = items_pendientes > 0 ? "ocupada" : "libre";
+
+    await insforgeClient.database
       .from("mesas_estado")
       .upsert(
-        { id: parseInt(mesa.id, 10), estado: "ocupada", tenant_id: tenantId },
+        { id: parseInt(mesaId, 10), estado, tenant_id: tenantId },
         { onConflict: "tenant_id,id" }
       );
 
-    if (!error) {
-      setMesas((prev) =>
-        prev.map((m) =>
-          m.id === mesa.id ? { ...m, estado: 'ocupada' } : m
-        )
-      );
-    }
+    setMesas((prev) =>
+      prev.map((m) =>
+        m.id === mesaId ? { ...m, estado, deuda_pendiente, items_pendientes } : m
+      )
+    );
   }
 
   // Cargar consumos de una mesa (cuenta abierta en POS)
@@ -362,23 +380,7 @@ export function Dashboard() {
   }, [selectedMesa?.id, selectedMesa?.numero, loadTableConsumption]);
 
   async function refreshMesaDebt(mesaId: string, mesaNumero: number) {
-    if (!tenantId) return;
-    const { data, error } = await insforgeClient.database
-      .from("consumos")
-      .select("subtotal")
-      .eq("tenant_id", tenantId)
-      .eq("mesa_numero", mesaNumero)
-      .neq("estado", "pagado");
-
-    if (error) return;
-    const rows = data ?? [];
-    const deuda_pendiente = rows.reduce((s, r) => s + Number((r as { subtotal: number }).subtotal), 0);
-    const items_pendientes = rows.length;
-    setMesas((prev) =>
-      prev.map((m) =>
-        m.id === mesaId ? { ...m, deuda_pendiente, items_pendientes } : m
-      )
-    );
+    await syncMesaStateFromOpenAccount(mesaId, mesaNumero);
   }
 
   async function deleteConsumo(consumoId: string) {
@@ -1466,7 +1468,6 @@ export function Dashboard() {
               );
             }
             await refreshMesaDebt(selectedMesa.id, selectedMesa.numero);
-            await markMesaAsOccupied(selectedMesa);
             setSelectedMesa(null);
             setMesaConsumos([]);
             setCart([]);

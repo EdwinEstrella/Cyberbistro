@@ -138,6 +138,12 @@ export function Tables() {
       map[mn] = (map[mn] ?? 0) + Number(row.subtotal);
     }
     setDeudaPorMesa(map);
+    setMesas((prev) =>
+      prev.map((mesa) => ({
+        ...mesa,
+        estado: map[mesa.numero] ? "ocupada" : "libre",
+      }))
+    );
   }, [tenantId]);
 
   useEffect(() => {
@@ -156,8 +162,13 @@ export function Tables() {
 
     Promise.all([
       insforgeClient.database.from("mesas_estado").select("*").eq("tenant_id", tenantId),
+      insforgeClient.database
+        .from("consumos")
+        .select("mesa_numero, subtotal")
+        .eq("tenant_id", tenantId)
+        .neq("estado", "pagado"),
       loadCantidadMesas(tenantId)
-    ]).then(([estadosRes, cantidadMesas]) => {
+    ]).then(([estadosRes, consumosPendRes, cantidadMesas]) => {
       const configArray = generateMesasConfig(cantidadMesas);
       const mesasIniciales = configArray.map((config) => ({
         ...config,
@@ -168,6 +179,15 @@ export function Tables() {
         span_filas: 1,
         span_columnas: 1,
       }));
+
+      const deudaPorNumero = new Map<number, number>();
+      if (!consumosPendRes.error && consumosPendRes.data) {
+        for (const row of consumosPendRes.data as { mesa_numero: number | null; subtotal: number }[]) {
+          const mn = Number(row.mesa_numero);
+          if (!Number.isFinite(mn) || mn <= 0) continue;
+          deudaPorNumero.set(mn, (deudaPorNumero.get(mn) ?? 0) + Number(row.subtotal));
+        }
+      }
 
       if (!estadosRes.error && estadosRes.data && estadosRes.data.length > 0) {
           const estadosMap = new Map<number, MesaEstadoDB>();
@@ -186,7 +206,7 @@ export function Tables() {
               if (estadoDB) {
                 return {
                   ...m,
-                  estado: estadoDB.estado,
+                  estado: deudaPorNumero.has(m.numero) ? "ocupada" : "libre",
                   fusionada: estadoDB.fusionada,
                   fusion_padre_id: estadoDB.fusion_padre_id,
                   fusion_hijos: estadoDB.fusion_hijos,
@@ -194,11 +214,16 @@ export function Tables() {
                   span_columnas: estadoDB.span_columnas,
                 };
               }
-              return m;
+              return { ...m, estado: deudaPorNumero.has(m.numero) ? "ocupada" : "libre" };
             })
           );
         } else {
-          setMesas(mesasIniciales);
+          setMesas(
+            mesasIniciales.map((m) => ({
+              ...m,
+              estado: deudaPorNumero.has(m.numero) ? "ocupada" : "libre",
+            }))
+          );
         }
 
         setLoading(false);
