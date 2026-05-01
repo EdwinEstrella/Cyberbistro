@@ -242,6 +242,7 @@ export function Dashboard() {
     if (mesas.length > 0 && location.state && (location.state as any).selectMesaNumero) {
       const mesaToSelect = mesas.find((m) => m.numero === (location.state as any).selectMesaNumero);
       if (mesaToSelect) {
+        setMesaConsumos([]);
         setSelectedMesa(mesaToSelect);
         // Clear state so it doesn't re-trigger
         window.history.replaceState({}, document.title);
@@ -283,10 +284,10 @@ export function Dashboard() {
 
   const showEmptyHint =
     cart.length === 0 &&
-    (!selectedMesa || mesaAccountLoading || mesaConsumos.length === 0);
+    !selectedMesa;
 
   const showOrderFooter =
-    cart.length > 0 || (selectedMesa && (mesaAccountLoading || mesaConsumos.length > 0));
+    cart.length > 0 || hasCuentaEnMesa;
 
   function addToCart(plato: Plato) {
     setCart((prev) => {
@@ -367,6 +368,7 @@ export function Dashboard() {
       return;
     }
     let cancelled = false;
+    setMesaConsumos([]);
     setMesaAccountLoading(true);
     void loadTableConsumption(selectedMesa.numero).then((rows) => {
       if (!cancelled) {
@@ -1040,10 +1042,13 @@ export function Dashboard() {
                           <button
                             key={mesa.id}
                             onClick={async () => {
-                              setSelectedMesa(mesa);
                               setShowMesaDropdown(false);
-                              setCart([]);
                               setIsTakeout(false);
+                              if (selectedMesa?.id === mesa.id) return;
+                              setMesaConsumos([]);
+                              setMesaAccountLoading(false);
+                              setSelectedMesa(mesa);
+                              setCart([]);
                               // Occupation now handled after order is sent; removed premature marking
                             }}
                             className="flex flex-col items-center justify-center py-[8px] rounded-[8px] cursor-pointer border-none transition-all"
@@ -1183,11 +1188,7 @@ export function Dashboard() {
           {showEmptyHint && (
             <div className="flex flex-col items-center justify-center py-[24px] gap-[8px]">
               <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px] text-center px-2">
-                {!selectedMesa
-                  ? "Seleccioná una mesa y hacé clic en los platos para agregarlos."
-                  : mesaAccountLoading
-                    ? "Cargando cuenta de la mesa…"
-                    : "No hay consumos en esta mesa todavía. Agregá platos y enviá a cocina."}
+                Seleccioná una mesa y hacé clic en los platos para agregarlos.
               </span>
             </div>
           )}
