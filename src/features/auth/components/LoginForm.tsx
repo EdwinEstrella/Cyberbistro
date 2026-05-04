@@ -429,7 +429,7 @@ export function Login() {
                   </div>
                 </label>
 
-                {/* Biometric Button */}
+                {/* Biometric Button (Comentado a pedido)
                 <div
                   className="bg-[#262626] relative rounded-[8px] sm:rounded-[12px] shrink-0 w-full cursor-pointer transition-all duration-300 hover:bg-[#2a2a2a] hover:shadow-[0px_0px_20px_-5px_rgba(255,106,160,0.3)] active:scale-95"
                 >
@@ -448,6 +448,7 @@ export function Login() {
                     {BIOMETRIC_INDICATORS}
                   </div>
                 </div>
+                */}
 
                 {/* Login Button */}
                 <button

@@ -846,23 +846,22 @@ export function Dashboard() {
               key={cat}
               onClick={() => setActiveCategory(cat)}
               className="px-[24px] py-[10px] rounded-[12px] shrink-0 font-['Space_Grotesk',sans-serif] font-bold text-[14px] tracking-[1.2px] uppercase border-none cursor-pointer transition-all"
-              style={{
+               style={{
                 backgroundColor:
                   activeCategory === cat
-                    ? catColor(cat) === "#adaaaa"
+                    ? catColor(cat) === "#a1a1aa"
                       ? "#ff906d"
                       : catColor(cat)
-                    : "#201f1f",
+                    : "#1a1a1a",
                 color:
                   activeCategory === cat
-                    ? cat === "Todos"
-                      ? "#5b1600"
-                      : "#0e0e0e"
-                    : "#adaaaa",
+                    ? "#000000"
+                    : "#a1a1aa",
                 boxShadow:
                   activeCategory === cat
-                    ? `0 0 16px rgba(255,144,109,0.2)`
+                    ? `0 0 20px ${catColor(cat)}40`
                     : undefined,
+                border: activeCategory === cat ? "none" : "1px solid rgba(255,255,255,0.05)"
               }}
             >
               {cat}
@@ -899,8 +898,11 @@ export function Dashboard() {
               return (
                 <div
                   key={plato.id}
-                  className="bg-[#201f1f] rounded-[16px] flex flex-col overflow-hidden border border-[rgba(72,72,71,0.1)] transition-all cursor-pointer group"
-                  style={{ borderTop: `3px solid ${cc}` }}
+                  className="bg-[#1a1a1a] rounded-[16px] flex flex-col overflow-hidden border border-[rgba(255,255,255,0.05)] transition-all cursor-pointer group hover:scale-[1.02] active:scale-[0.98]"
+                  style={{ 
+                    borderTop: `3px solid ${cc}`,
+                    boxShadow: `0 4px 20px -10px ${cc}40, 0 0 15px -5px ${cc}20`
+                  }}
                   onClick={() => addToCart(plato)}
                 >
                   {/* Color header */}
@@ -911,29 +913,29 @@ export function Dashboard() {
                   <div className="flex flex-col gap-[8px] p-[16px] flex-1">
                     {/* Category badge */}
                     <div
-                      className="rounded-[4px] px-[6px] py-[2px] w-fit"
+                      className="rounded-[4px] px-[6px] py-[2.5px] w-fit"
                       style={{
-                        backgroundColor: `${cc}15`,
-                        border: `1px solid ${cc}30`,
+                        backgroundColor: `${cc}25`,
+                        border: `1px solid ${cc}50`,
                       }}
                     >
                       <span
-                        className="font-['Inter',sans-serif] font-bold text-[9px] tracking-[0.8px] uppercase"
-                        style={{ color: cc }}
+                        className="font-['Inter',sans-serif] font-extrabold text-[9px] tracking-[1px] uppercase"
+                        style={{ color: cc, textShadow: `0 0 8px ${cc}40` }}
                       >
                         {plato.categoria}
                       </span>
                     </div>
-
+ 
                     {/* Name */}
-                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[14px] uppercase leading-tight">
+                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[14.5px] uppercase leading-tight tracking-tight">
                       {plato.nombre}
                     </span>
-
+ 
                     {/* Price */}
                     <span
-                      className="font-['Space_Grotesk',sans-serif] font-bold text-[16px] mt-auto"
-                      style={{ color: cc }}
+                      className="font-['Space_Grotesk',sans-serif] font-bold text-[17px] mt-auto"
+                      style={{ color: cc, textShadow: `0 0 10px ${cc}30` }}
                     >
                       {formatMoney(plato.precio)}
                     </span>

@@ -24,25 +24,25 @@ export const MENU_CATEGORIES: string[] = [
  * Legacy "Burritos sandwich" tiene su propio tono para no duplicar Burritos.
  */
 export const MENU_CATEGORY_COLORS: Record<string, string> = {
-  Entradas: "#868e96",
-  Hamburguesas: "#e64980",
-  Pastas: "#fbbf24",
-  Sushi: "#fb923c",
-  Postres: "#f87171",
-  Bebidas: "#15803d",
-  Mofongos: "#a69069",
-  Mariscos: "#0d9488",
-  Salchipapa: "#d97706",
-  Quesadillas: "#c2410c",
-  Yaroas: "#9333ea",
-  Burritos: "#0ea5e9",
-  Sandwich: "#0369a1",
+  Entradas: "#9ca3af",
+  Hamburguesas: "#ff2d55",
+  Pastas: "#ffd60a",
+  Sushi: "#ff9f0a",
+  Postres: "#ff3b30",
+  Bebidas: "#32d74b",
+  Mofongos: "#eab308",
+  Mariscos: "#64d2ff",
+  Salchipapa: "#ff9500",
+  Quesadillas: "#fb7185",
+  Yaroas: "#bf5af2",
+  Burritos: "#5ac8fa",
+  Sandwich: "#007aff",
   /** Legacy: platos guardados antes del split (hex distinto de Burritos). */
-  "Burritos sandwich": "#0891b2",
-  Tacos: "#c026d3",
-  "Menú especial": "#065f46",
-  "Plato del día": "#f59e0b",
-  General: "#52525b",
+  "Burritos sandwich": "#22d3ee",
+  Tacos: "#ff375f",
+  "Menú especial": "#34c759",
+  "Plato del día": "#facc15",
+  General: "#a1a1aa",
 }
 
 const orderIndex = new Map(MENU_CATEGORIES.map((c, i) => [c, i]))
