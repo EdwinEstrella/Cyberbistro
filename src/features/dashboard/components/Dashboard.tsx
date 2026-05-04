@@ -33,7 +33,6 @@ import {
   sortCategoriesForTabs,
 } from "../../../shared/lib/menuCategories";
 import { MesaCloseAccountModal } from "../../billing/components/MesaCloseAccountModal";
-import { DashboardTickerStrip } from "./DashboardTickerStrip";
 import {
   incrementTenantNcfSequence,
   resolveNcfForNewInvoice,
@@ -836,31 +835,30 @@ export function Dashboard() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
+    <div className="flex h-full min-h-0 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden bg-background transition-colors duration-300">
       {/* LEFT: Menu */}
       <div className="flex min-w-0 flex-col gap-[24px] p-4 sm:p-[32px] lg:flex-1 lg:overflow-auto">
-        {/* Categories */}
-        <div className="flex gap-[12px] overflow-x-auto pb-[4px] shrink-0">
+        {/* Categories - Wrapped to avoid horizontal scroll and hidden behind cart */}
+        <div className="flex flex-wrap gap-[10px] shrink-0">
           {categories.map((cat) => (
             <button
               key={cat}
               onClick={() => setActiveCategory(cat)}
-              className="px-[24px] py-[10px] rounded-[999px] shrink-0 font-['Space_Grotesk',sans-serif] font-bold text-[14px] tracking-[0.2px] border cursor-pointer transition-all"
+              className="px-[18px] py-[8px] rounded-[999px] shrink-0 font-['Space_Grotesk',sans-serif] font-bold text-[13px] tracking-[0.2px] border border-black/10 dark:border-white/10 cursor-pointer transition-all"
               style={{
                 backgroundColor:
                   activeCategory === cat
                     ? cat === "Todos"
                       ? "#15803d"
                       : catColor(cat)
-                    : "var(--cb-pos-category-bg)",
+                    : "var(--cb-pos-category-bg, transparent)",
                 color:
                   activeCategory === cat
                     ? "#ffffff"
-                    : "var(--cb-pos-category-text)",
-                borderColor: "black",
+                    : "var(--foreground)",
                 boxShadow:
                   activeCategory === cat
-                    ? `0 12px 24px -18px rgba(244,95,31,0.55)`
+                    ? `0 8px 16px -6px rgba(0,0,0,0.2)`
                     : undefined,
               }}
             >
@@ -872,19 +870,19 @@ export function Dashboard() {
         {/* Items grid */}
         {platos.length === 0 ? (
           <div className="flex items-center justify-center py-[40px]">
-            <span className="font-['Space_Grotesk',sans-serif] text-[#6b7280] text-[14px]">
+            <span className="font-['Space_Grotesk',sans-serif] text-muted-foreground text-[14px]">
               Cargando carta...
             </span>
           </div>
         ) : filteredPlatosForGrid.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-[40px] gap-[8px] px-4">
-            <span className="font-['Space_Grotesk',sans-serif] text-[#6b7280] text-[14px] text-center">
+            <span className="font-['Space_Grotesk',sans-serif] text-muted-foreground text-[14px] text-center">
               {cartSearchNorm
                 ? "Ningún plato coincide con la búsqueda en la carta."
                 : "No hay platos en esta categoría."}
             </span>
             {cartSearchNorm ? (
-              <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[12px] text-center">
+              <span className="font-['Inter',sans-serif] text-muted-foreground text-[12px] text-center">
                 La búsqueda del encabezado recorre toda la carta; borrá el texto para volver al filtro por
                 categoría.
               </span>
@@ -898,7 +896,7 @@ export function Dashboard() {
               return (
                 <div
                   key={plato.id}
-                  className="rounded-[12px] flex flex-col overflow-hidden border border-black dark:border-black transition-all cursor-pointer group light:shadow-[0_18px_45px_-34px_rgba(15,23,42,0.45)]"
+                  className="rounded-[12px] flex flex-col overflow-hidden border border-black/10 dark:border-white/5 transition-all cursor-pointer group shadow-sm hover:shadow-md"
                   data-pos-card="true"
                   style={{ borderTop: `3px solid ${cc}` }}
                   onClick={() => addToCart(plato)}
@@ -908,7 +906,7 @@ export function Dashboard() {
                     className="h-[6px] w-full shrink-0"
                     style={{ backgroundColor: `${cc}20` }}
                   />
-                  <div className="flex flex-col gap-[8px] p-[16px] flex-1">
+                  <div className="flex flex-col gap-[8px] p-[16px] flex-1 bg-card">
                     {/* Category badge */}
                     <div
                       className="rounded-[4px] px-[6px] py-[2px] w-fit"
@@ -926,14 +924,14 @@ export function Dashboard() {
                     </div>
 
                     {/* Name */}
-                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-[14px] leading-tight" style={{ color: "var(--cb-pos-card-text)" }}>
+                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-[14px] leading-tight text-foreground">
                       {plato.nombre}
                     </span>
 
                     {/* Price */}
                     <span
                       className="font-['Space_Grotesk',sans-serif] font-bold text-[16px] mt-auto"
-                      style={{ color: `var(--cb-pos-price, ${cc})` }}
+                      style={{ color: cc }}
                     >
                       {formatMoney(plato.precio)}
                     </span>
@@ -941,10 +939,9 @@ export function Dashboard() {
 
                   {/* Add button */}
                   <div
-                    className="flex items-center justify-center py-[10px] transition-colors"
+                    className="flex items-center justify-center py-[10px] transition-colors bg-muted/30 group-hover:bg-muted/50"
                     style={{
-                      backgroundColor: inCart ? `${cc}20` : "var(--cb-dashboard-card-footer)",
-                      borderTop: "1px solid var(--cb-border-subtle)",
+                      borderTop: "1px solid var(--border)",
                     }}
                   >
                     {inCart ? (
@@ -955,7 +952,7 @@ export function Dashboard() {
                         {inCart.cantidad} en carrito
                       </span>
                     ) : (
-                      <span className="font-['Inter',sans-serif] font-bold text-[11px] tracking-[0.5px] uppercase text-[#6b7280] light:text-[#5a4d41] group-hover:text-white light:group-hover:text-[#17130f] transition-colors">
+                      <span className="font-['Inter',sans-serif] font-bold text-[11px] tracking-[0.5px] uppercase text-muted-foreground group-hover:text-foreground transition-colors">
                         + Agregar
                       </span>
                     )}
@@ -968,9 +965,9 @@ export function Dashboard() {
       </div>
 
       {/* RIGHT: Order Panel */}
-      <div className="w-full shrink-0 backdrop-blur-[12px] bg-[rgba(32,31,31,0.6)] light:bg-white border border-black dark:border-black shadow-[0px_25px_50px_-12px_rgba(0,0,0,0.25)] light:shadow-none flex flex-col lg:h-full lg:w-[380px] lg:border-y-0 lg:border-r-0 lg:border-l lg:rounded-none">
+      <div className="w-full shrink-0 bg-sidebar border-l border-black/10 dark:border-white/10 flex flex-col lg:h-full lg:w-[380px] lg:rounded-none shadow-xl transition-colors duration-300">
         {/* Header */}
-        <div className="border-b border-black dark:border-black px-[24px] pt-[20px] pb-[20px] shrink-0">
+        <div className="border-b border-black/10 dark:border-white/10 px-[24px] pt-[20px] pb-[20px] shrink-0">
           {/* Título */}
           <div className="text-center">
             <span className="font-['Space_Grotesk',sans-serif] font-bold text-black dark:text-white text-[18px] uppercase">
@@ -984,35 +981,33 @@ export function Dashboard() {
             <div className="relative">
               <button
                 onClick={() => setShowMesaDropdown((v) => !v)}
-                className="flex items-center gap-[6px] rounded-[6px] px-[10px] py-[4px] border-none cursor-pointer transition-all"
-                style={{ backgroundColor: selectedMesa ? "#ff784d" : "rgba(72,72,71,0.3)" }}
+                className="flex items-center gap-[6px] rounded-[6px] px-[10px] py-[4px] border-none cursor-pointer transition-all bg-muted hover:bg-muted/80"
+                style={{ backgroundColor: selectedMesa ? "#ff784d" : undefined }}
               >
                 <span
-                  className="font-['Inter',sans-serif] font-bold text-[11px] uppercase"
-                  style={{ color: selectedMesa ? "#460f00" : "var(--cb-pos-category-text)" }}
+                  className={`font-['Inter',sans-serif] font-bold text-[11px] uppercase ${selectedMesa ? "text-[#460f00]" : "text-foreground"}`}
                 >
                   {selectedMesa ? `Mesa ${selectedMesa.numero}` : "Seleccionar mesa"}
                 </span>
-                <span style={{ color: selectedMesa ? "#460f00" : "var(--cb-pos-category-text)", fontSize: 9 }}>▼</span>
+                <span style={{ color: selectedMesa ? "#460f00" : "currentColor", fontSize: 9 }}>▼</span>
               </button>
 
               {showMesaDropdown && (
                 <div
-                  className="absolute top-[calc(100%+6px)] left-0 z-50 bg-[#1a1a1a] border border-black rounded-[12px] p-[8px] shadow-xl"
+                  className="absolute top-[calc(100%+6px)] left-0 z-50 bg-card border border-border rounded-[12px] p-[8px] shadow-2xl"
                   style={{ minWidth: 180, maxHeight: 260, overflowY: "auto" }}
                 >
                   {/* Opción: sin mesa */}
                   <button
                     onClick={() => { setSelectedMesa(null); setShowMesaDropdown(false); setCart([]); }}
-                    className="w-full text-left flex items-center gap-[8px] px-[10px] py-[7px] rounded-[8px] cursor-pointer border-none transition-colors hover:bg-[rgba(72,72,71,0.3)]"
-                    style={{ backgroundColor: !selectedMesa ? "rgba(89,238,80,0.08)" : "transparent" }}
+                    className="w-full text-left flex items-center gap-[8px] px-[10px] py-[7px] rounded-[8px] cursor-pointer border-none transition-colors hover:bg-muted"
                   >
-                    <span className="font-['Inter',sans-serif] text-[12px]" style={{ color: !selectedMesa ? "#59ee50" : "#adaaaa" }}>
+                    <span className={`font-['Inter',sans-serif] text-[12px] ${!selectedMesa ? "text-primary font-bold" : "text-muted-foreground"}`}>
                       Sin mesa
                     </span>
                   </button>
 
-                  <div className="h-px bg-black my-[6px]" />
+                  <div className="h-px bg-border my-[6px]" />
 
                   {/* Lista de mesas */}
                   <div className="grid grid-cols-4 gap-[4px]">
@@ -1028,7 +1023,7 @@ export function Dashboard() {
                               ? "rgba(255,113,108,0.15)"
                               : mesa.estado === "limpieza"
                                 ? "rgba(255,144,109,0.15)"
-                                : "rgba(38,38,38,0.8)";
+                                : "var(--muted)";
                         const textColor =
                           isSelected
                             ? "#460f00"
@@ -1036,7 +1031,7 @@ export function Dashboard() {
                               ? "#ff716c"
                               : mesa.estado === "limpieza"
                                 ? "#ff906d"
-                                : "#adaaaa";
+                                : "var(--muted-foreground)";
                         return (
                           <button
                             key={mesa.id}
@@ -1048,7 +1043,6 @@ export function Dashboard() {
                               setMesaAccountLoading(false);
                               setSelectedMesa(mesa);
                               setCart([]);
-                              // Occupation now handled after order is sent; removed premature marking
                             }}
                             className="flex flex-col items-center justify-center py-[8px] rounded-[8px] cursor-pointer border-none transition-all"
                             style={{ backgroundColor: bgColor }}
@@ -1063,22 +1057,6 @@ export function Dashboard() {
                         );
                       })}
                   </div>
-
-                  {/* Leyenda */}
-                  <div className="flex gap-[10px] mt-[8px] px-[4px]">
-                    <div className="flex items-center gap-[4px]">
-                      <div className="size-[6px] rounded-full bg-[#59ee50]" />
-                      <span className="font-['Inter',sans-serif] text-[9px] text-[#adaaaa]">Libre</span>
-                    </div>
-                    <div className="flex items-center gap-[4px]">
-                      <div className="size-[6px] rounded-full bg-[#ff716c]" />
-                      <span className="font-['Inter',sans-serif] text-[9px] text-[#adaaaa]">Ocupada</span>
-                    </div>
-                    <div className="flex items-center gap-[4px]">
-                      <div className="size-[6px] rounded-full bg-[#ff906d]" />
-                      <span className="font-['Inter',sans-serif] text-[9px] text-[#adaaaa]">Limpieza</span>
-                    </div>
-                  </div>
                 </div>
               )}
             </div>
@@ -1088,56 +1066,29 @@ export function Dashboard() {
               onClick={() => {
                 setIsTakeout(!isTakeout);
                 if (selectedMesa && !isTakeout) {
-                  // Si está activando takeoff y hay mesa seleccionada, deseleccionar
                   setSelectedMesa(null);
                 }
               }}
-              className={`flex items-center gap-[8px] rounded-[6px] px-[10px] py-[4px] cursor-pointer border-none transition-all ${isTakeout ? "bg-[#59ee50]" : "bg-[rgba(72,72,71,0.3)]"
-                }`}
+              className={`flex items-center gap-[8px] rounded-[6px] px-[10px] py-[4px] cursor-pointer border-none transition-all ${isTakeout ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
             >
               <svg className="w-[14px] h-[14px]" fill="none" viewBox="0 0 15 13.5">
                 <path
                   d={svgPaths.p18098d80}
-                  fill={isTakeout ? "#0e0e0e" : "#adaaaa"}
+                  fill="currentColor"
                 />
               </svg>
-              <span
-                className={`font-['Inter',sans-serif] font-bold text-[10px] uppercase ${isTakeout ? "text-[#0e0e0e]" : "text-[#adaaaa]"
-                  }`}
-              >
+              <span className="font-['Inter',sans-serif] font-bold text-[10px] uppercase">
                 Para llevar
               </span>
             </button>
           </div>
-
-          {kitchenClosed && (
-            <div className="mt-[8px] bg-[rgba(255,113,108,0.08)] border border-[rgba(255,113,108,0.2)] rounded-[8px] px-[10px] py-[6px]">
-              <span className="font-['Inter',sans-serif] text-[#ff716c] text-[11px]">
-                La cocina está cerrada.
-              </span>
-            </div>
-          )}
-          {sentOk && (
-            <div className="mt-[8px] bg-[rgba(89,238,80,0.08)] border border-[rgba(89,238,80,0.2)] rounded-[8px] px-[10px] py-[6px]">
-              <span className="font-['Inter',sans-serif] text-[#59ee50] text-[11px]">
-                Comanda enviada a cocina.
-              </span>
-            </div>
-          )}
-          {chargeOk && (
-            <div className="mt-[8px] bg-[rgba(89,238,80,0.08)] border border-[rgba(89,238,80,0.2)] rounded-[8px] px-[10px] py-[6px]">
-              <span className="font-['Inter',sans-serif] text-[#59ee50] text-[11px]">
-                Factura generada correctamente.
-              </span>
-            </div>
-          )}
         </div>
 
         {/* Cuenta en mesa + carrito nuevo */}
-        <div className="flex-1 overflow-y-auto p-[20px] flex flex-col gap-[16px] min-h-0">
+        <div className="flex-1 overflow-y-auto p-[20px] flex flex-col gap-[16px] min-h-0 bg-background/30">
           {selectedMesa && mesaConsumos.length > 0 && (
             <div className="flex flex-col gap-[12px]">
-              <span className="font-['Inter',sans-serif] text-[#ff906d] text-[10px] tracking-[0.6px] uppercase font-bold">
+              <span className="font-['Inter',sans-serif] text-primary text-[10px] tracking-[0.6px] uppercase font-bold">
                 En mesa (cuenta abierta)
               </span>
               {mesaConsumos.map((c) => (
@@ -1151,23 +1102,21 @@ export function Dashboard() {
                 >
                   <div
                     className="w-[4px] rounded-full shrink-0"
-                    style={{ backgroundColor: "rgba(255,144,109,0.45)" }}
+                    style={{ backgroundColor: "var(--primary)" }}
                   />
                   <div className="flex-1 flex flex-col gap-[4px] min-w-0">
                     <div className="flex items-start justify-between gap-[8px]">
-                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-black dark:text-white text-[13px] uppercase leading-tight">
+                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-foreground text-[13px] uppercase leading-tight">
                         {c.cantidad}× {c.nombre}
                       </span>
                       <div className="flex items-center gap-[6px] shrink-0">
-                        <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[13px] tabular-nums">
+                        <span className="font-['Space_Grotesk',sans-serif] font-bold text-primary text-[13px] tabular-nums">
                           {formatMoney(Number(c.subtotal))}
                         </span>
                         <button
                           onClick={() => void deleteConsumo(c.id)}
                           disabled={deletingConsumoId === c.id}
-                          title="Eliminar de la cuenta"
-                          className="bg-transparent border-none cursor-pointer p-[2px] transition-opacity hover:opacity-100 disabled:cursor-wait"
-                          style={{ opacity: 0.5 }}
+                          className="bg-transparent border-none cursor-pointer p-[2px] transition-opacity hover:opacity-100 opacity-50"
                         >
                           <svg fill="none" viewBox="0 0 8.16667 8.16667" className="size-[10px]">
                             <path d={svgPaths.p2317cf00} fill="#FF716C" />
@@ -1175,7 +1124,7 @@ export function Dashboard() {
                         </button>
                       </div>
                     </div>
-                    <span className="font-['Inter',sans-serif] text-black/60 dark:text-[#6b7280] text-[9px] uppercase tracking-wide">
+                    <span className="font-['Inter',sans-serif] text-muted-foreground text-[9px] uppercase tracking-wide">
                       {c.tipo === "cocina" ? "Cocina" : "Directo"} · {c.estado.replace(/_/g, " ")}
                     </span>
                   </div>
@@ -1184,236 +1133,99 @@ export function Dashboard() {
             </div>
           )}
 
-          {showEmptyHint && (
-            <div className="flex flex-col items-center justify-center py-[24px] gap-[8px]">
-              <span className="font-['Inter',sans-serif] text-black/40 dark:text-[#6b7280] text-[12px] text-center px-2">
-                Seleccioná una mesa y hacé clic en los platos para agregarlos.
+          {cart.length > 0 && (
+            <div className="flex flex-col gap-[12px]">
+              <span className="font-['Inter',sans-serif] text-[#15803d] text-[10px] tracking-[0.6px] uppercase font-bold">
+                Nuevo pedido (carrito)
               </span>
+              {cart.map((item) => {
+                const cc = catColor(item.plato.categoria);
+                return (
+                  <div key={item.plato.id} className="flex gap-[12px]">
+                    <div
+                      className="w-[4px] rounded-full shrink-0"
+                      style={{ backgroundColor: cc }}
+                    />
+                    <div className="flex-1 flex flex-col gap-[4px]">
+                      <div className="flex items-start justify-between gap-[8px]">
+                        <span className="font-['Space_Grotesk',sans-serif] font-bold text-foreground text-[13px] uppercase leading-tight">
+                          {item.plato.nombre}
+                        </span>
+                        <button
+                          onClick={() => removeItem(item.plato.id)}
+                          className="shrink-0 mt-[2px] bg-transparent border-none cursor-pointer"
+                        >
+                          <svg fill="none" viewBox="0 0 8.16667 8.16667" className="size-[8px]">
+                            <path d={svgPaths.p2317cf00} fill="#FF716C" fillOpacity="0.6" />
+                          </svg>
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-between pt-[4px]">
+                        <div className="bg-muted flex gap-[10px] items-center px-[10px] py-[5px] rounded-[6px] border border-border">
+                          <button
+                            onClick={() => changeQty(item.plato.id, -1)}
+                            className="bg-transparent border-none cursor-pointer text-muted-foreground hover:text-foreground"
+                          >
+                            −
+                          </button>
+                          <span className="font-['Space_Grotesk',sans-serif] font-bold text-foreground text-[12px] min-w-[16px] text-center">
+                            {String(item.cantidad).padStart(2, "0")}
+                          </span>
+                          <button
+                            onClick={() => addToCart(item.plato)}
+                            className="bg-transparent border-none cursor-pointer text-muted-foreground hover:text-foreground"
+                          >
+                            +
+                          </button>
+                        </div>
+                        <span className="font-['Space_Grotesk',sans-serif] font-bold text-[14px] text-foreground">
+                          {formatMoney(item.plato.precio * item.cantidad)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
-
-          {cart.length > 0 && selectedMesa && (
-            <span className="font-['Inter',sans-serif] text-[#59ee50] text-[10px] tracking-[0.6px] uppercase font-bold -mb-2">
-              Nuevo pedido (carrito)
-            </span>
-          )}
-
-          {cart.map((item) => {
-            const cc = catColor(item.plato.categoria);
-            return (
-              <div key={item.plato.id} className="flex gap-[12px]">
-                {/* Category color indicator */}
-                <div
-                  className="w-[4px] rounded-full shrink-0"
-                  style={{ backgroundColor: cc }}
-                />
-                <div className="flex-1 flex flex-col gap-[4px]">
-                  <div className="flex items-start justify-between gap-[8px]">
-                    <div className="flex flex-col gap-[2px]">
-                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-black dark:text-white text-[13px] uppercase leading-tight">
-                        {item.plato.nombre}
-                      </span>
-                      {item.plato.va_a_cocina === false && (
-                        <span className="font-['Inter',sans-serif] text-[#59ee50] text-[9px] tracking-[0.5px] uppercase">
-                          ⚡ Directo
-                        </span>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => removeItem(item.plato.id)}
-                      className="shrink-0 mt-[2px] bg-transparent border-none cursor-pointer"
-                    >
-                      <svg fill="none" viewBox="0 0 8.16667 8.16667" className="size-[8px]">
-                        <path d={svgPaths.p2317cf00} fill="#FF716C" fillOpacity="0.6" />
-                      </svg>
-                    </button>
-                  </div>
-                  <div className="flex items-center justify-between pt-[4px]">
-                    {/* Quantity control */}
-                    <div className="bg-input-background flex gap-[10px] items-center px-[10px] py-[5px] rounded-[6px] border border-black dark:border-white/20">
-                      <button
-                        onClick={() => changeQty(item.plato.id, -1)}
-                        className="bg-transparent border-none cursor-pointer p-0 w-[12px] h-[12px] flex items-center justify-center text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white"
-                      >
-                        −
-                      </button>
-                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-black dark:text-white text-[12px] min-w-[16px] text-center">
-                        {String(item.cantidad).padStart(2, "0")}
-                      </span>
-                      <button
-                        onClick={() => addToCart(item.plato)}
-                        className="bg-transparent border-none cursor-pointer p-0 w-[12px] h-[12px] flex items-center justify-center text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white"
-                      >
-                        +
-                      </button>
-                    </div>
-                    <span
-                      className="font-['Space_Grotesk',sans-serif] font-bold text-[14px]"
-                      style={{ color: cc }}
-                    >
-                      {formatMoney(item.plato.precio * item.cantidad)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
         </div>
 
         {/* Totals & Actions */}
         {showOrderFooter && (
-          <div className="backdrop-blur-[6px] bg-[rgba(38,38,38,0.8)] light:bg-white border-t border-black dark:border-black rounded-b-[16px] px-[20px] py-[20px] flex flex-col gap-[16px] shrink-0">
-            {mesaAccountLoading && (
-              <span className="font-['Inter',sans-serif] text-black/60 dark:text-[#adaaaa] text-[11px] text-center">
-                Actualizando total…
-              </span>
-            )}
-            {cartSubtotal > 0 && hasCuentaEnMesa && (
-              <div className="bg-[rgba(89,238,80,0.06)] border border-[rgba(89,238,80,0.15)] rounded-[8px] px-[10px] py-[8px]">
-                <span className="font-['Inter',sans-serif] text-black/60 dark:text-[#adaaaa] text-[10px] leading-snug">
-                  Carrito sin enviar: <span className="text-[#59ee50] font-semibold">{formatMoney(cartTotal)}</span>
-                  . Tocá <span className="text-black dark:text-white">Cocina</span> para sumarlo a la cuenta de la mesa antes de cobrar todo junto.
-                </span>
-              </div>
-            )}
-            {/* Totals (mesa abierta o solo carrito / para llevar) */}
+          <div className="bg-sidebar border-t border-black dark:border-white/10 px-[20px] py-[20px] flex flex-col gap-[16px] shrink-0 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
             <div className="flex flex-col gap-[6px]">
-              <div className="flex items-center justify-between gap-[10px] rounded-[10px] border border-black dark:border-white/20 bg-input-background px-[12px] py-[10px] mb-[2px]">
-                <div className="flex flex-col min-w-0">
-                  <span className="font-['Inter',sans-serif] text-black dark:text-white text-[12px] font-semibold leading-tight">
-                    ITBIS 18%
-                  </span>
-                  <span className="font-['Inter',sans-serif] text-black/60 dark:text-[#6b7280] text-[10px] leading-snug">
-                    Usa la preferencia de Ajustes al abrir y puedes cambiarlo para este cobro
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={cartItbisEnabled}
-                  onClick={() => setCartItbisEnabled((v) => !v)}
-                  aria-label={cartItbisEnabled ? "Desactivar ITBIS en el total" : "Activar ITBIS 18% en el total"}
-                  className={`relative h-[30px] w-[54px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${cartItbisEnabled ? "bg-[#59ee50]" : "bg-[#383838]"
-                    }`}
-                >
-                  <span
-                    className={`absolute top-[5px] left-[5px] block size-[20px] rounded-full bg-white shadow transition-transform duration-200 ease-out ${cartItbisEnabled ? "translate-x-[24px]" : "translate-x-0"
-                      }`}
-                  />
-                </button>
-              </div>
-              {tenantNcfFiscalActive ? (
-                <div className="flex flex-col gap-[10px] rounded-[10px] border border-black dark:border-white/20 bg-input-background px-[12px] py-[10px]">
-                  <div className="flex items-center justify-between gap-[12px]">
-                    <div className="flex flex-col min-w-0">
-                      <span className="font-['Inter',sans-serif] text-black dark:text-white text-[12px] font-semibold leading-tight">
-                        Tipo NCF
-                      </span>
-                      <span className="font-['Inter',sans-serif] text-black/60 dark:text-[#6b7280] text-[10px] leading-snug">
-                        Cambialo solo para este cobro si necesitas emitir otro comprobante.
-                      </span>
-                    </div>
-                    <select
-                      value={selectedNcfType}
-                      onChange={(e) =>
-                        setSelectedNcfType(
-                          isNcfBCode(e.target.value) ? e.target.value : DEFAULT_NCF_B_CODE
-                        )
-                      }
-                      className="min-w-[168px] rounded-[10px] border border-black dark:border-white/30 bg-background px-[12px] py-[9px] font-['Inter',sans-serif] text-[12px] text-black dark:text-white outline-none"
-                    >
-                      {NCF_B_TIPO_OPCIONES.map((opcion) => (
-                        <option key={opcion.codigo} value={opcion.codigo}>
-                          {opcion.codigo}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  {ncfTypeRequiresClientRnc(selectedNcfType) ? (
-                    <div className="flex flex-col gap-[6px]">
-                      <span className="font-['Inter',sans-serif] text-black/60 dark:text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">
-                        RNC del cliente
-                      </span>
-                      <input
-                        type="text"
-                        value={takeoutClientRnc}
-                        onChange={(e) => setTakeoutClientRnc(e.target.value)}
-                        placeholder="RNC del cliente"
-                        className="w-full rounded-[10px] border border-black dark:border-white/30 bg-background px-[12px] py-[9px] font-['Inter',sans-serif] text-[12px] text-black dark:text-white outline-none"
-                      />
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-              <div className="flex justify-between">
-                <span className="font-['Inter',sans-serif] text-black/60 dark:text-[#adaaaa] text-[11px] tracking-[1px] uppercase">
-                  Subtotal {hasCuentaEnMesa ? "(en mesa)" : ""}
-                </span>
-                <span className="font-['Inter',sans-serif] text-black/60 dark:text-[#adaaaa] text-[11px] tracking-[1px] uppercase">
-                  {formatMoney(panelBillSubtotal)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-['Inter',sans-serif] text-black/60 dark:text-[#adaaaa] text-[11px] tracking-[1px] uppercase">
-                  {cartItbisEnabled ? "ITBIS (18%)" : "ITBIS (no incluido)"}
-                </span>
-                <span className="font-['Inter',sans-serif] text-black/60 dark:text-[#adaaaa] text-[11px] tracking-[1px] uppercase">
-                  {formatMoney(panelBillItbis)}
-                </span>
-              </div>
-              <div className="border-t border-black dark:border-black pt-[8px] flex items-center justify-between">
+              <div className="border-t border-black dark:border-white/10 pt-[12px] flex items-center justify-between">
                 <span className="font-['Space_Grotesk',sans-serif] font-bold text-black dark:text-white text-[16px] uppercase">
                   Total
                 </span>
-                <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#15803d] text-[20px]">
+                <span className="font-['Space_Grotesk',sans-serif] font-bold text-primary text-[22px]">
                   {formatMoney(panelBillTotal)}
                 </span>
               </div>
             </div>
 
-            {/* Action buttons */}
             <div className="grid grid-cols-1 gap-[10px]">
               <button
                 onClick={sendToKitchen}
                 disabled={sending || !selectedMesa}
-                className="flex gap-[6px] items-center justify-center py-[12px] rounded-[12px] border-2 bg-transparent cursor-pointer transition-colors disabled:opacity-50"
-                style={{
-                  borderColor: selectedMesa ? "#15803d" : "black",
-                  color: selectedMesa ? "#15803d" : "black",
-                }}
+                className={`flex gap-[6px] items-center justify-center py-[12px] rounded-[12px] border-2 cursor-pointer transition-all font-bold uppercase text-[11px] tracking-[1px] ${selectedMesa ? "border-primary text-primary hover:bg-primary/10" : "border-black text-black opacity-50 cursor-not-allowed"}`}
               >
-                <span className="font-['Space_Grotesk',sans-serif] font-bold text-[11px] tracking-[1px] uppercase">
-                  {sending ? "Agregando..." : "+ Agregar"}
-                </span>
+                {sending ? "Enviando..." : "+ Enviar a Cocina"}
               </button>
             </div>
 
             <button
               onClick={openPaymentModal}
-              disabled={
-                selectedMesa
-                  ? mesaAccountLoading || mesaConsumos.length === 0
-                  : cart.length === 0
-              }
-              className="w-full flex gap-[10px] items-center justify-center py-[14px] rounded-[12px] bg-[#ff906d] border-none cursor-pointer transition-opacity hover:bg-[#ff784d] disabled:opacity-45 disabled:cursor-not-allowed"
+              disabled={selectedMesa ? mesaAccountLoading || mesaConsumos.length === 0 : cart.length === 0}
+              className="w-full flex gap-[10px] items-center justify-center py-[14px] rounded-[12px] bg-primary text-primary-foreground border-none cursor-pointer transition-all hover:opacity-90 disabled:opacity-45"
             >
-              <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#5b1600] text-[14px] tracking-[2px] uppercase">
+              <span className="font-['Space_Grotesk',sans-serif] font-bold text-[14px] tracking-[2px] uppercase">
                 Cobrar {formatMoney(panelBillTotal)}
               </span>
               <svg className="size-[14px]" fill="none" viewBox="0 0 16 16">
-                <path d={svgPaths.p1a406200} fill="#5B1600" />
+                <path d={svgPaths.p1a406200} fill="currentColor" />
               </svg>
             </button>
-          </div>
-        )}
-
-        {cart.length === 0 && (
-          <div className="px-[20px] pb-[20px] shrink-0">
-            <div className="bg-input-background rounded-[12px] p-[16px] border border-black dark:border-white/20 text-center">
-              <span className="font-['Inter',sans-serif] text-black/60 dark:text-[#6b7280] text-[11px] tracking-[0.5px] uppercase">
-                {hasCuentaEnMesa ? "Sin ítems nuevos en carrito" : "Carrito vacío"}
-              </span>
-            </div>
           </div>
         )}
       </div>

@@ -270,8 +270,8 @@ export function Cocina() {
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <span className="font-['Space_Grotesk',sans-serif] text-[#6b7280] text-[16px]">
+      <div className="flex-1 flex items-center justify-center bg-background">
+        <span className="font-['Space_Grotesk',sans-serif] text-muted-foreground text-[16px]">
           Cargando comandas...
         </span>
       </div>
@@ -280,8 +280,8 @@ export function Cocina() {
 
   if (!tenantId) {
     return (
-      <div className="flex-1 flex items-center justify-center p-6">
-        <p className="font-['Inter',sans-serif] text-[#adaaaa] text-[14px] text-center">
+      <div className="flex-1 flex items-center justify-center p-6 bg-background">
+        <p className="font-['Inter',sans-serif] text-muted-foreground text-[14px] text-center">
           Iniciá sesión con una cuenta vinculada a un negocio para ver la cocina.
         </p>
       </div>
@@ -289,28 +289,22 @@ export function Cocina() {
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className="flex-1 flex flex-col overflow-hidden bg-background transition-colors duration-300">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between px-4 sm:px-[32px] py-[14px] sm:py-[20px] gap-[12px] border-b border-[rgba(72,72,71,0.2)]">
+      <div className="flex flex-wrap items-center justify-between px-4 sm:px-[32px] py-[14px] sm:py-[20px] gap-[12px] border-b border-black dark:border-white/10">
         <div className="flex items-center gap-[16px]">
-          <h1 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[28px]">
+          <h1 className="font-['Space_Grotesk',sans-serif] font-bold text-foreground text-[28px]">
             Cocina
           </h1>
           <div
-            className="flex gap-[6px] items-center px-[12px] py-[4px] rounded-full"
-            style={{
-              backgroundColor: cocinaActiva
-                ? "rgba(89,238,80,0.1)"
-                : "rgba(255,113,108,0.1)",
-            }}
+            className="flex gap-[6px] items-center px-[12px] py-[4px] rounded-full border border-black dark:border-white/10 bg-card"
           >
             <div
               className="rounded-full size-[8px]"
               style={{ backgroundColor: cocinaActiva ? "#59ee50" : "#ff716c" }}
             />
             <span
-              className="font-['Space_Grotesk',sans-serif] text-[10px] tracking-[0.5px] uppercase font-bold"
-              style={{ color: cocinaActiva ? "#59ee50" : "#ff716c" }}
+              className="font-['Space_Grotesk',sans-serif] text-[10px] tracking-[0.5px] uppercase font-bold text-foreground"
             >
               {cocinaActiva ? "En Vivo" : "Cerrada"}
             </span>
@@ -320,13 +314,7 @@ export function Cocina() {
         <button
           onClick={toggleCocina}
           disabled={toggling}
-          className="flex gap-[8px] items-center px-[24px] py-[10px] rounded-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[14px] transition-all cursor-pointer border-none disabled:opacity-50"
-          style={{
-            backgroundColor: cocinaActiva
-              ? "rgba(255,113,108,0.12)"
-              : "rgba(89,238,80,0.12)",
-            color: cocinaActiva ? "#ff716c" : "#59ee50",
-          }}
+          className={`flex gap-[8px] items-center px-[24px] py-[10px] rounded-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[14px] transition-all cursor-pointer border border-black dark:border-white/10 disabled:opacity-50 ${cocinaActiva ? "bg-destructive/10 text-destructive hover:bg-destructive/20" : "bg-primary/10 text-primary hover:bg-primary/20"}`}
         >
           {toggling
             ? "Actualizando..."
@@ -337,8 +325,8 @@ export function Cocina() {
       </div>
 
       {!cocinaActiva && (
-        <div className="mx-[32px] mt-[16px] bg-[rgba(255,113,108,0.05)] border border-[rgba(255,113,108,0.2)] rounded-[12px] px-[20px] py-[12px]">
-          <span className="font-['Inter',sans-serif] text-[#ff716c] text-[13px]">
+        <div className="mx-[32px] mt-[16px] bg-destructive/5 border border-destructive/20 rounded-[12px] px-[20px] py-[12px]">
+          <span className="font-['Inter',sans-serif] text-destructive text-[13px]">
             La cocina está cerrada. No se pueden tomar nuevos pedidos desde las
             mesas.
           </span>
@@ -352,21 +340,21 @@ export function Cocina() {
           return (
             <div
               key={col.key}
-              className="min-w-[220px] flex-1 flex flex-col bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] overflow-hidden"
+              className="min-w-[280px] flex-1 flex flex-col bg-card rounded-[20px] border border-black dark:border-white/10 overflow-hidden shadow-sm"
             >
               {/* Column header */}
-              <div className="flex items-center justify-between px-[20px] py-[14px] border-b border-[rgba(72,72,71,0.15)]">
+              <div className="flex items-center justify-between px-[20px] py-[14px] border-b border-black dark:border-white/10 bg-muted/30">
                 <div className="flex items-center gap-[8px]">
                   <div
                     className="rounded-full size-[8px]"
                     style={{ backgroundColor: col.color }}
                   />
-                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px]">
+                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-foreground text-[13px] uppercase tracking-wide">
                     {col.title}
                   </span>
                 </div>
                 <div
-                  className="rounded-full size-[20px] flex items-center justify-center"
+                  className="rounded-full size-[20px] flex items-center justify-center border border-black/10 dark:border-white/10"
                   style={{ backgroundColor: `${col.color}20` }}
                 >
                   <span
@@ -379,10 +367,10 @@ export function Cocina() {
               </div>
 
               {/* Cards */}
-              <div className="flex-1 overflow-y-auto flex flex-col gap-[10px] p-[14px]">
+              <div className="flex-1 overflow-y-auto flex flex-col gap-[10px] p-[14px] bg-background/50">
                 {items.length === 0 && (
                   <div className="flex-1 flex items-center justify-center py-[40px]">
-                    <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">
+                    <span className="font-['Inter',sans-serif] text-muted-foreground text-[12px]">
                       Sin comandas
                     </span>
                   </div>
@@ -390,14 +378,14 @@ export function Cocina() {
                 {items.map((comanda) => (
                   <div
                     key={comanda.id}
-                    className="bg-[#1a1a1a] rounded-[14px] border border-[rgba(72,72,71,0.2)] overflow-hidden"
+                    className="bg-card rounded-[14px] border border-black dark:border-white/10 overflow-hidden shadow-sm hover:shadow-md transition-shadow"
                   >
                     {/* Card header */}
-                    <div className="px-[14px] py-[10px] border-b border-[rgba(72,72,71,0.1)] flex items-center justify-between">
-                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[13px]">
+                    <div className="px-[14px] py-[10px] border-b border-black/10 dark:border-white/5 flex items-center justify-between bg-muted/10">
+                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-primary text-[13px]">
                         #{String(comanda.numero_comanda).padStart(4, "0")}
                       </span>
-                      <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">
+                      <span className="font-['Inter',sans-serif] text-muted-foreground text-[11px] font-bold uppercase">
                         {comanda.mesa_numero != null && comanda.mesa_numero !== 0
                           ? `Mesa ${comanda.mesa_numero}`
                           : "Para llevar"}
@@ -405,30 +393,28 @@ export function Cocina() {
                     </div>
 
                     {/* Items */}
-                    <div className="px-[14px] py-[10px] flex flex-col gap-[4px]">
+                    <div className="px-[14px] py-[10px] flex flex-col gap-[6px]">
                       {comanda.items.map((item, i) => (
-                        <div key={i}>
+                        <div key={i} className="flex flex-col gap-[2px]">
                           <div className="flex justify-between gap-[8px]">
-                            <span className="font-['Inter',sans-serif] text-white text-[12px]">
+                            <span className="font-['Inter',sans-serif] text-foreground text-[12px] font-medium">
                               {item.cantidad}×{" "}
                               {item.categoria ? (
-                                <>
-                                  <span className="text-[#adaaaa]">[{item.categoria}]</span>{" "}
-                                </>
+                                <span className="text-muted-foreground text-[10px]">[{item.categoria}] </span>
                               ) : null}
                               {item.nombre}
                             </span>
                           </div>
                           {item.notas && (
-                            <span className="font-['Inter',sans-serif] text-[#6b7280] text-[10px] italic">
+                            <span className="font-['Inter',sans-serif] text-muted-foreground text-[10px] italic bg-muted/20 px-2 py-1 rounded">
                               ↳ {item.notas}
                             </span>
                           )}
                         </div>
                       ))}
                       {comanda.notas && (
-                        <div className="mt-[6px] bg-[rgba(255,144,109,0.05)] rounded-[8px] px-[10px] py-[6px]">
-                          <span className="font-['Inter',sans-serif] text-[#ff906d] text-[10px]">
+                        <div className="mt-[6px] bg-primary/5 border border-primary/10 rounded-[8px] px-[10px] py-[6px]">
+                          <span className="font-['Inter',sans-serif] text-primary text-[10px] font-bold uppercase tracking-tight">
                             {comanda.notas}
                           </span>
                         </div>
@@ -436,17 +422,17 @@ export function Cocina() {
                     </div>
 
                     {/* Actions */}
-                    <div className="px-[14px] py-[10px] border-t border-[rgba(72,72,71,0.1)] flex gap-[8px]">
+                    <div className="px-[14px] py-[10px] border-t border-black/10 dark:border-white/5 flex gap-[8px] bg-muted/5">
                       <button
                         type="button"
                         onClick={() => void printComandaThermal(comanda)}
-                        className="flex-1 bg-[#262626] rounded-[8px] py-[7px] font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.5px] uppercase font-bold cursor-pointer border-none hover:bg-[#2e2e2e] transition-colors"
+                        className="flex-1 bg-muted rounded-[8px] py-[7px] font-['Inter',sans-serif] text-foreground text-[10px] tracking-[0.5px] uppercase font-bold cursor-pointer border border-black/10 dark:border-white/10 hover:bg-muted/80 transition-colors"
                       >
                         Imprimir
                       </button>
                       <button
                         onClick={() => advanceComanda(comanda.id, col.next)}
-                        className="flex-1 rounded-[8px] py-[7px] font-['Inter',sans-serif] text-[10px] tracking-[0.5px] uppercase font-bold cursor-pointer border-none transition-colors"
+                        className="flex-1 rounded-[8px] py-[7px] font-['Inter',sans-serif] text-[10px] tracking-[0.5px] uppercase font-bold cursor-pointer border border-black/10 dark:border-white/10 transition-colors"
                         style={{
                           backgroundColor: `${col.color}20`,
                           color: col.color,

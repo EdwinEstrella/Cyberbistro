@@ -53,7 +53,7 @@ export function TitleBar({
 
   return (
     <div
-      className="flex items-center justify-between h-9 bg-background border-b border-black dark:border-black select-none transition-colors duration-300"
+      className="flex items-center justify-between h-9 bg-background border-b border-black dark:border-white/10 select-none transition-colors duration-300"
       style={{ WebkitAppRegion: 'drag' as any }}
     >
       {/* Left side - Title/Logo */}

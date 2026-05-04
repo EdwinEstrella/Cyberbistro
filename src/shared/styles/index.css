@@ -5,41 +5,57 @@
 /* Tokens compartidos (CyberBistro) — usar en CSS custom / futuros componentes */
 :root {
   --cb-radius-sm: 2px;
-  --cb-radius-md: 12px;
-  --cb-radius-lg: 24px;
+  --cb-radius-md: 0px;
+  --cb-radius-lg: 0px;
   --cb-space-xs: 8px;
   --cb-space-sm: 16px;
   --cb-space-md: 24px;
   --cb-space-lg: 32px;
-  --cb-accent: #ff906d;
-  --cb-accent-muted: rgba(255, 144, 109, 0.1);
-  --cb-surface: #131313;
-  --cb-surface-elevated: #201f1f;
-  --cb-border-subtle: rgba(72, 72, 71, 0.2);
-  --cb-dashboard-card-footer: rgba(38, 38, 38, 0.6);
-  --cb-pos-category-bg: #201f1f;
-  --cb-pos-category-text: #adaaaa;
-  --cb-pos-card: #201f1f;
-  --cb-pos-card-text: #ffffff;
-  --cb-pos-cart: rgba(32, 31, 31, 0.6);
-  --cb-pos-cart-footer: rgba(38, 38, 38, 0.8);
-  --cb-pos-price: #59ee50;
+  --cb-accent: oklch(0.6996 0.2020 44.4414);
+  --cb-accent-muted: color-mix(in oklch, var(--primary) 12%, transparent);
+  --cb-surface: var(--card);
+  --cb-surface-elevated: var(--secondary);
+  --cb-border-subtle: var(--border);
+  --cb-dashboard-card-footer: var(--secondary);
+  --cb-pos-category-bg: var(--card);
+  --cb-pos-category-text: var(--muted-foreground);
+  --cb-pos-card: var(--card);
+  --cb-pos-card-text: var(--card-foreground);
+  --cb-pos-cart: var(--card);
+  --cb-pos-cart-footer: var(--secondary);
+  --cb-pos-price: oklch(0.7653 0.1306 194.7689);
 }
 
 .light {
-  --cb-accent: #f45f1f;
-  --cb-accent-muted: rgba(244, 95, 31, 0.1);
-  --cb-surface: #ffffff;
-  --cb-surface-elevated: #ffffff;
-  --cb-border-subtle: #dfe6ee;
-  --cb-dashboard-card-footer: #f8fafc;
-  --cb-pos-category-bg: #ffffff;
-  --cb-pos-category-text: #334155;
-  --cb-pos-card: #ffffff;
-  --cb-pos-card-text: #162033;
-  --cb-pos-cart: #ffffff;
-  --cb-pos-cart-footer: #f8fafc;
-  --cb-pos-price: #14998f;
+  --cb-accent: var(--primary);
+  --cb-accent-muted: color-mix(in oklch, var(--primary) 12%, transparent);
+  --cb-surface: var(--card);
+  --cb-surface-elevated: var(--background);
+  --cb-border-subtle: var(--border);
+  --cb-dashboard-card-footer: var(--muted);
+  --cb-pos-category-bg: var(--card);
+  --cb-pos-category-text: var(--muted-foreground);
+  --cb-pos-card: var(--card);
+  --cb-pos-card-text: var(--card-foreground);
+  --cb-pos-cart: var(--card);
+  --cb-pos-cart-footer: var(--muted);
+  --cb-pos-price: var(--chart-2);
+}
+
+.dark {
+  --cb-accent: var(--primary);
+  --cb-accent-muted: color-mix(in oklch, var(--primary) 12%, transparent);
+  --cb-surface: var(--card);
+  --cb-surface-elevated: var(--secondary);
+  --cb-border-subtle: var(--border);
+  --cb-dashboard-card-footer: var(--secondary);
+  --cb-pos-category-bg: var(--card);
+  --cb-pos-category-text: var(--muted-foreground);
+  --cb-pos-card: var(--card);
+  --cb-pos-card-text: var(--card-foreground);
+  --cb-pos-cart: var(--card);
+  --cb-pos-cart-footer: var(--secondary);
+  --cb-pos-price: var(--chart-2);
 }
 
 /* Ocultar barras de scroll globalmente */
