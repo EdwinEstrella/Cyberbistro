@@ -273,9 +273,23 @@ export function Ajustes() {
                         {NCF_B_TIPO_OPCIONES.map(o => <option key={o.codigo} value={o.codigo}>{o.descripcion}</option>)}
                       </select>
                     </Field>
-                    <div className="bg-muted/50 rounded-xl p-4 border border-border">
-                       <span className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">Próximo NCF</span>
-                       <span className="text-primary font-mono font-bold text-lg">{construirCadenaNcf(config.ncf_tipo_default, config.ncf_secuencia_siguiente) || "---"}</span>
+                    <div className="mt-4 pt-4 border-t border-border flex flex-col gap-4">
+                      <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Secuencias Configuradas por Tipo B</span>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {NCF_B_TIPO_OPCIONES.map(o => (
+                          <div key={o.codigo} className="bg-background rounded-[16px] border border-black/5 dark:border-white/5 p-4 flex flex-col gap-3 hover:border-primary/20 transition-colors">
+                             <div className="flex justify-between items-center">
+                               <span className="font-bold font-['Space_Grotesk'] text-foreground text-lg">{o.codigo}</span>
+                               <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">{o.codigo === config.ncf_tipo_default ? "Predeterminado" : "Disponible"}</span>
+                             </div>
+                             <input type="number" min="1" value={config.ncf_secuencias_por_tipo[o.codigo] || 1} onChange={e => setConfig(p => ({ ...p, ncf_secuencias_por_tipo: { ...p.ncf_secuencias_por_tipo, [o.codigo]: Math.max(1, parseInt(e.target.value) || 1) } }))} className="bg-muted/30 border border-black/10 dark:border-white/10 rounded-xl px-4 py-3 font-mono text-foreground font-bold outline-none focus:border-primary/50 transition-all" />
+                             <span className="text-[11px] text-muted-foreground/80 leading-relaxed">{o.codigo} - {o.descripcion}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-2 text-[13px] font-bold text-green-500/90 tracking-wide">
+                        Vista previa — próximo NCF: {construirCadenaNcf(config.ncf_tipo_default, config.ncf_secuencias_por_tipo[config.ncf_tipo_default] || 1) || "---"}
+                      </div>
                     </div>
                   </div>
                 )}

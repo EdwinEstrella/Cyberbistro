@@ -189,8 +189,8 @@ export function Cierre() {
               <button onClick={() => void cargar()} className="bg-muted text-foreground px-6 py-2.5 rounded-xl font-bold uppercase text-[11px] tracking-widest border border-border hover:bg-black/5 dark:hover:bg-white/10 transition-all cursor-pointer">Actualizar</button>
            </div>
            <div className="flex gap-3">
-              <button onClick={handleStartCycle} disabled={startingCycle || globalHasOpenCycle} className="bg-muted text-primary border border-primary/20 rounded-xl px-6 py-2.5 font-bold uppercase text-[11px] tracking-widest hover:bg-primary/5 disabled:opacity-30 transition-all cursor-pointer">Iniciar Ciclo</button>
-              <button onClick={handleCerrarCiclo} disabled={printing || !hasOpenCycle} className="bg-primary text-primary-foreground shadow-lg rounded-xl px-8 py-2.5 font-bold uppercase text-[11px] tracking-widest hover:opacity-90 disabled:opacity-40 transition-all cursor-pointer border-none">Cerrar & Imprimir</button>
+              <button onClick={handleStartCycle} disabled={startingCycle || globalHasOpenCycle} className="bg-muted text-white border border-primary/20 rounded-xl px-6 py-2.5 font-bold uppercase text-[11px] tracking-widest hover:bg-primary/5 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer">Iniciar Ciclo</button>
+              <button onClick={handleCerrarCiclo} disabled={printing || !hasOpenCycle} className="bg-primary text-primary-foreground shadow-lg rounded-xl px-8 py-2.5 font-bold uppercase text-[11px] tracking-widest hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer border-none">Cerrar & Imprimir</button>
            </div>
         </div>
 
