@@ -1,10 +1,9 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Navigate, useNavigate } from "react-router";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { useTenantCurrency } from "../../../shared/hooks/useTenantCurrency";
 import { APP_ACCESS_PIN } from "../../../shared/lib/accessPin";
-import { useTheme } from "../../../shared/context/ThemeContext";
 import {
   MENU_CATEGORIES,
   MENU_CATEGORY_COLORS,
@@ -44,8 +43,6 @@ interface TenantRow {
 function PinGate({ onUnlock }: { onUnlock: () => void }) {
   const [pin, setPin] = useState("");
   const [shaking, setShaking] = useState(false);
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
 
   function handleDigit(digit: string) {
     if (pin.length >= 4) return;
@@ -64,11 +61,11 @@ function PinGate({ onUnlock }: { onUnlock: () => void }) {
   const keys = ["1","2","3","4","5","6","7","8","9","","0","⌫"];
 
   return (
-    <div className="flex-1 flex items-center justify-center bg-background transition-colors duration-300">
+    <div className="flex-1 flex items-center justify-center">
       <div className="flex flex-col items-center gap-[32px]">
         <div className="flex flex-col items-center gap-[6px]">
-          <span className={`font-['Space_Grotesk',sans-serif] font-bold text-[24px] ${isDark ? "text-white" : "text-black"}`}>Soporte</span>
-          <span className="font-['Inter',sans-serif] text-muted-foreground text-[13px]">Ingresá el PIN para continuar</span>
+          <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[24px]">Soporte</span>
+          <span className="font-['Inter',sans-serif] text-[#6b7280] text-[13px]">Ingresá el PIN para continuar</span>
         </div>
         <div
           className="flex gap-[14px]"
@@ -80,7 +77,7 @@ function PinGate({ onUnlock }: { onUnlock: () => void }) {
               key={i}
               className="size-[14px] rounded-full transition-all duration-150"
               style={{
-                backgroundColor: i < pin.length ? (shaking ? "#ff716c" : "#ff906d") : "var(--muted)",
+                backgroundColor: i < pin.length ? (shaking ? "#ff716c" : "#ff906d") : "rgba(72,72,71,0.4)",
                 boxShadow: i < pin.length && !shaking ? "0 0 10px rgba(255,144,109,0.5)" : undefined,
               }}
             />
@@ -94,10 +91,11 @@ function PinGate({ onUnlock }: { onUnlock: () => void }) {
               <button
                 key={i}
                 onClick={() => isDel ? setPin((p) => p.slice(0,-1)) : handleDigit(key)}
-                className={`w-[72px] h-[72px] rounded-[16px] font-['Space_Grotesk',sans-serif] font-bold text-[20px] cursor-pointer border transition-all active:scale-95 ${isDark ? "bg-card border-white/10 text-white" : "bg-white border-black text-black"}`}
+                className="w-[72px] h-[72px] rounded-[16px] font-['Space_Grotesk',sans-serif] font-bold text-[20px] cursor-pointer border-none transition-all active:scale-95"
                 style={{
-                  backgroundColor: isDel ? (isDark ? "rgba(255,113,108,0.1)" : "rgba(255,113,108,0.05)") : undefined,
-                  color: isDel ? "#ff716c" : undefined,
+                  backgroundColor: isDel ? "rgba(255,113,108,0.1)" : "rgba(38,38,38,0.9)",
+                  color: isDel ? "#ff716c" : "white",
+                  border: "1px solid rgba(72,72,71,0.3)",
                 }}
               >{key}</button>
             );
@@ -131,8 +129,6 @@ type FormMode = "add" | "edit" | null;
 function CartaPanel() {
   const { tenantId, loading: authLoading } = useAuth();
   const { formatMoney, currencySymbol } = useTenantCurrency();
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
   const [platos, setPlatos] = useState<Plato[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -246,6 +242,7 @@ function CartaPanel() {
     const plato = platos.find((p) => p.id === id);
     if (!plato) return;
 
+    // Verificar si tiene consumos asociados
     const { data: consumos, error: consumosError } = await insforgeClient.database
       .from("consumos")
       .select("id")
@@ -259,7 +256,10 @@ function CartaPanel() {
     }
 
     const tieneHistorial = consumos && consumos.length > 0;
+
+    // Construir mensaje de confirmación
     let mensaje = `¿Estás seguro de eliminar "${plato.nombre}"?\n\n`;
+
     if (tieneHistorial) {
       mensaje += `⚠️ ESTE PLATO TIENE HISTORIAL:\n`;
       mensaje += `• ${consumos.length} consumo(s) asociado(s)\n`;
@@ -268,45 +268,60 @@ function CartaPanel() {
     } else {
       mensaje += `Este plato no tiene historial de consumo.\n\n`;
     }
+
     mensaje += `¿Confirmas la eliminación?`;
 
+    // Confirmar con el usuario
     const confirmado = confirm(mensaje);
-    if (!confirmado) return;
 
+    if (!confirmado) {
+      return; // Usuario canceló
+    }
+
+    // Eliminar consumos asociados primero (en cascada manual)
     if (tieneHistorial) {
       const { error: deleteConsumosError } = await insforgeClient.database
         .from("consumos")
         .delete()
         .eq("plato_id", id)
         .eq("tenant_id", tenantId);
+
       if (deleteConsumosError) {
+        console.error("Error al eliminar consumos:", deleteConsumosError);
         alert(`Error al eliminar consumos: ${deleteConsumosError.message}`);
         return;
       }
     }
 
+    // Finalmente eliminar el plato
     const { error: deletePlatoError } = await insforgeClient.database
       .from("platos")
       .delete()
       .eq("id", id)
       .eq("tenant_id", tenantId);
+
     if (deletePlatoError) {
+      console.error("Error al eliminar plato:", deletePlatoError);
       alert(`Error al eliminar el plato: ${deletePlatoError.message}`);
       return;
     }
 
+    // Actualizar UI
     setPlatos((prev) => prev.filter((p) => p.id !== id));
+
+    // Cerrar modal si estaba abierto este plato
     if (selectedId === id) {
       setSelectedId(null);
       setMode(null);
     }
+
     alert(`✅ Plato "${plato.nombre}" eliminado correctamente.${tieneHistorial ? ` (${consumos.length} consumo(s) eliminado(s) en cascada)` : ""}`);
   }
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-background">
-        <span className="font-['Space_Grotesk',sans-serif] text-muted-foreground text-[14px]">Cargando carta...</span>
+      <div className="flex-1 flex items-center justify-center">
+        <span className="font-['Space_Grotesk',sans-serif] text-[#6b7280] text-[14px]">Cargando carta...</span>
       </div>
     );
   }
@@ -315,32 +330,37 @@ function CartaPanel() {
   const GAP = 10;
 
   return (
-    <div className="flex-1 flex overflow-hidden min-h-0 bg-background transition-colors duration-300">
+    <div className="flex-1 flex overflow-hidden min-h-0">
+      {/* Main grid area */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Toolbar */}
-        <div className={`flex flex-wrap items-center justify-between gap-[12px] px-4 sm:px-[24px] py-[12px] sm:py-[16px] border-b shrink-0 ${isDark ? "border-white/10" : "border-black/10"}`}>
-          <div className="flex flex-wrap gap-[8px]">
+        <div className="flex flex-wrap items-center justify-between gap-[12px] px-4 sm:px-[24px] py-[12px] sm:py-[16px] border-b border-[rgba(72,72,71,0.15)] shrink-0">
+          <div className="flex gap-[8px] overflow-x-auto">
             {categories.map((cat) => (
               <button
                 key={cat}
                 onClick={() => setActiveFilter(cat)}
-                className={`px-[14px] py-[6px] rounded-[8px] shrink-0 font-['Inter',sans-serif] font-bold text-[11px] tracking-[0.5px] uppercase border cursor-pointer transition-all ${activeFilter === cat ? "bg-primary text-primary-foreground border-primary" : (isDark ? "bg-card border-white/10 text-muted-foreground" : "bg-muted border-black/5 text-muted-foreground")}`}
+                className="px-[14px] py-[6px] rounded-[8px] shrink-0 font-['Inter',sans-serif] font-bold text-[11px] tracking-[0.5px] uppercase border-none cursor-pointer transition-all"
+                style={{
+                  backgroundColor: activeFilter === cat ? "#ff906d" : "rgba(38,38,38,0.6)",
+                  color: activeFilter === cat ? "#460f00" : "#6b7280",
+                }}
               >{cat}</button>
             ))}
           </div>
           <button
             onClick={openAdd}
-            className="bg-primary text-primary-foreground rounded-[10px] px-[16px] py-[8px] font-['Space_Grotesk',sans-serif] font-bold text-[12px] tracking-[0.5px] uppercase border-none cursor-pointer shrink-0 shadow-lg hover:opacity-90 transition-all"
+            className="bg-[#ff906d] rounded-[10px] px-[16px] py-[8px] font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[12px] tracking-[0.5px] uppercase border-none cursor-pointer shrink-0 shadow-[0_0_16px_rgba(255,144,109,0.2)]"
           >
             + Nuevo Plato
           </button>
         </div>
 
         {/* Grid */}
-        <div className="flex-1 overflow-auto p-[20px] bg-background/30">
+        <div className="flex-1 overflow-auto p-[20px]">
           {filtered.length === 0 ? (
             <div className="flex items-center justify-center py-[40px]">
-              <span className="font-['Inter',sans-serif] text-muted-foreground text-[12px]">Sin platos en esta categoría.</span>
+              <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">Sin platos en esta categoría.</span>
             </div>
           ) : (
             <div
@@ -360,9 +380,10 @@ function CartaPanel() {
                     style={{
                       width: CELL,
                       height: CELL,
-                      backgroundColor: isSelected ? (isDark ? "rgba(255,144,109,0.12)" : "rgba(255,144,109,0.08)") : (isDark ? "oklch(0.2178 0 0)" : "white"),
-                      border: isSelected ? "2px solid var(--primary)" : (isDark ? `1px solid rgba(255,255,255,0.08)` : `1px solid black`),
+                      backgroundColor: isSelected ? "rgba(255,144,109,0.1)" : "rgba(26,26,26,0.9)",
+                      border: isSelected ? "2px solid rgba(255,144,109,0.7)" : `2px solid ${cc}30`,
                       borderTop: `3px solid ${cc}`,
+                      boxShadow: isSelected ? "0 0 16px rgba(255,144,109,0.2)" : undefined,
                       borderRadius: 12,
                       cursor: "pointer",
                       display: "flex",
@@ -374,27 +395,26 @@ function CartaPanel() {
                       transition: "all 0.15s",
                       opacity: plato.disponible ? 1 : 0.4,
                     }}
-                    className="shadow-sm hover:shadow-md"
                   >
                     <div className="flex flex-col gap-[4px] w-full">
                       <div className="flex items-center gap-[4px] flex-wrap">
                         <div
                           className="rounded-[4px] px-[5px] py-[2px]"
-                          style={{ backgroundColor: `${cc}15`, border: `1px solid ${cc}30` }}
+                          style={{ backgroundColor: `${cc}15` }}
                         >
                           <span className="font-['Inter',sans-serif] font-bold text-[8px] tracking-[0.8px] uppercase" style={{ color: cc }}>
                             {plato.categoria}
                           </span>
                         </div>
                         {!plato.va_a_cocina && (
-                          <div className="rounded-[4px] px-[5px] py-[2px] bg-[#15803d]/10 border border-[#15803d]/20">
-                            <span className="font-['Inter',sans-serif] font-bold text-[8px] tracking-[0.5px] uppercase text-[#15803d]">
+                          <div className="rounded-[4px] px-[5px] py-[2px] bg-[rgba(89,238,80,0.1)]">
+                            <span className="font-['Inter',sans-serif] font-bold text-[8px] tracking-[0.5px] uppercase text-[#59ee50]">
                               Directo
                             </span>
                           </div>
                         )}
                       </div>
-                      <span className={`font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase leading-tight line-clamp-2 ${isDark ? "text-white" : "text-black"}`}>
+                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[12px] uppercase leading-tight line-clamp-2">
                         {plato.nombre}
                       </span>
                     </div>
@@ -411,100 +431,122 @@ function CartaPanel() {
 
       {/* Side panel */}
       {mode !== null && (
-        <div className={`w-[320px] shrink-0 border-l flex flex-col p-[24px] gap-[16px] overflow-y-auto shadow-xl transition-all ${isDark ? "bg-card border-white/10" : "bg-white border-black"}`}>
+        <div className="w-[280px] shrink-0 bg-[#131313] border-l border-[rgba(72,72,71,0.2)] flex flex-col p-[24px] gap-[16px] overflow-y-auto">
           <div className="flex items-center justify-between">
-            <span className={`font-['Space_Grotesk',sans-serif] font-bold text-[18px] ${isDark ? "text-white" : "text-black"}`}>
+            <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px]">
               {mode === "add" ? "Nuevo Plato" : "Editar Plato"}
             </span>
             <button
               onClick={() => { setMode(null); setSelectedId(null); }}
-              className="text-muted-foreground bg-transparent border-none cursor-pointer text-[22px] hover:text-foreground transition-colors leading-none"
+              className="text-[#6b7280] bg-transparent border-none cursor-pointer text-[18px] hover:text-white transition-colors"
             >×</button>
           </div>
 
-          <div className={`h-px ${isDark ? "bg-white/10" : "bg-black/10"}`} />
+          <div className="h-px bg-[rgba(72,72,71,0.2)]" />
 
           {error && (
-            <div className="bg-destructive/10 border border-destructive/20 rounded-[8px] px-[12px] py-[8px]">
-              <span className="font-['Inter',sans-serif] text-destructive text-[12px] font-medium">{error}</span>
+            <div className="bg-[rgba(255,113,108,0.06)] border border-[rgba(255,113,108,0.2)] rounded-[8px] px-[12px] py-[8px]">
+              <span className="font-['Inter',sans-serif] text-[#ff716c] text-[12px]">{error}</span>
             </div>
           )}
 
-          <div className="flex flex-col gap-[16px]">
-            <Field label="Nombre">
-              <input
-                type="text"
-                value={form.nombre}
-                onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
-                placeholder="Nombre del plato"
-                className={`w-full rounded-[10px] px-[14px] py-[10px] font-['Inter',sans-serif] text-[13px] outline-none border transition-colors ${isDark ? "bg-background border-white/10 text-white focus:border-primary/50" : "bg-muted border-black/10 text-black focus:border-primary"}`}
-              />
-            </Field>
-
-            <Field label={`Precio (${currencySymbol})`}>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={form.precio}
-                onChange={(e) => setForm((f) => ({ ...f, precio: e.target.value }))}
-                placeholder="0.00"
-                className={`w-full rounded-[10px] px-[14px] py-[10px] font-['Inter',sans-serif] text-[13px] outline-none border transition-colors ${isDark ? "bg-background border-white/10 text-white focus:border-primary/50" : "bg-muted border-black/10 text-black focus:border-primary"}`}
-              />
-            </Field>
-
-            <Field label="Categoría">
-              <select
-                value={form.categoria}
-                onChange={(e) => setForm((f) => ({ ...f, categoria: e.target.value }))}
-                className={`w-full rounded-[10px] px-[14px] py-[10px] font-['Inter',sans-serif] text-[13px] outline-none border cursor-pointer transition-colors ${isDark ? "bg-background border-white/10 text-white" : "bg-muted border-black/10 text-black"}`}
-              >
-                {CATEGORIAS.map((c) => (
-                  <option key={c} value={c} style={{ backgroundColor: isDark ? "#1a1a1a" : "white" }}>{c}</option>
-                ))}
-              </select>
-            </Field>
-
-            <div className="flex items-center justify-between">
-              <span className="font-['Inter',sans-serif] text-muted-foreground text-[11px] tracking-[0.5px] uppercase font-bold">Disponible</span>
-              <button
-                onClick={() => setForm((f) => ({ ...f, disponible: !f.disponible }))}
-                className={`rounded-full px-[12px] py-[5px] font-['Inter',sans-serif] font-bold text-[10px] tracking-[0.5px] uppercase border cursor-pointer transition-all ${form.disponible ? "bg-[#15803d]/10 text-[#15803d] border-[#15803d]/20" : "bg-muted text-muted-foreground border-black/5"}`}
-              >
-                {form.disponible ? "Sí" : "No"}
-              </button>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="flex flex-col gap-[2px]">
-                <span className="font-['Inter',sans-serif] text-muted-foreground text-[11px] tracking-[0.5px] uppercase font-bold">Pasa por cocina</span>
-                <span className="font-['Inter',sans-serif] text-muted-foreground text-[9px]">Bebidas/Botellas → No</span>
-              </div>
-              <button
-                onClick={() => setForm((f) => ({ ...f, va_a_cocina: !f.va_a_cocina }))}
-                className={`rounded-full px-[12px] py-[5px] font-['Inter',sans-serif] font-bold text-[10px] tracking-[0.5px] uppercase border cursor-pointer transition-all ${form.va_a_cocina ? "bg-primary/10 text-primary border-primary/20" : "bg-muted text-muted-foreground border-black/5"}`}
-              >
-                {form.va_a_cocina ? "Sí" : "No"}
-              </button>
-            </div>
+          {/* Nombre */}
+          <div className="flex flex-col gap-[6px]">
+            <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">Nombre</label>
+            <input
+              type="text"
+              value={form.nombre}
+              onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
+              placeholder="Nombre del plato"
+              className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[8px] px-[12px] py-[10px] font-['Inter',sans-serif] text-white text-[13px] outline-none w-full"
+              onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(255,144,109,0.4)")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(72,72,71,0.3)")}
+            />
           </div>
 
-          <div className={`h-px mt-2 ${isDark ? "bg-white/10" : "bg-black/10"}`} />
+          {/* Precio */}
+          <div className="flex flex-col gap-[6px]">
+            <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">{`Precio (${currencySymbol})`}</label>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.precio}
+              onChange={(e) => setForm((f) => ({ ...f, precio: e.target.value }))}
+              placeholder="0.00"
+              className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[8px] px-[12px] py-[10px] font-['Inter',sans-serif] text-white text-[13px] outline-none w-full"
+              onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(255,144,109,0.4)")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(72,72,71,0.3)")}
+            />
+          </div>
 
+          {/* Categoria */}
+          <div className="flex flex-col gap-[6px]">
+            <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">Categoría</label>
+            <select
+              value={form.categoria}
+              onChange={(e) => setForm((f) => ({ ...f, categoria: e.target.value }))}
+              className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[8px] px-[12px] py-[10px] font-['Inter',sans-serif] text-white text-[13px] outline-none w-full cursor-pointer"
+            >
+              {CATEGORIAS.map((c) => (
+                <option key={c} value={c} style={{ backgroundColor: "#1a1a1a" }}>{c}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Disponible */}
+          <div className="flex items-center justify-between">
+            <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.5px] uppercase">Disponible</span>
+            <button
+              onClick={() => setForm((f) => ({ ...f, disponible: !f.disponible }))}
+              className="rounded-full px-[12px] py-[5px] font-['Inter',sans-serif] font-bold text-[10px] tracking-[0.5px] uppercase border-none cursor-pointer transition-all"
+              style={{
+                backgroundColor: form.disponible ? "rgba(89,238,80,0.12)" : "rgba(72,72,71,0.2)",
+                color: form.disponible ? "#59ee50" : "#6b7280",
+                border: form.disponible ? "1px solid rgba(89,238,80,0.3)" : "1px solid rgba(72,72,71,0.3)",
+              }}
+            >
+              {form.disponible ? "Sí" : "No"}
+            </button>
+          </div>
+
+          {/* Va a cocina */}
+          <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-[2px]">
+              <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.5px] uppercase">Pasa por cocina</span>
+              <span className="font-['Inter',sans-serif] text-[#6b7280] text-[9px]">Ej: bebidas en botella → No</span>
+            </div>
+            <button
+              onClick={() => setForm((f) => ({ ...f, va_a_cocina: !f.va_a_cocina }))}
+              className="rounded-full px-[12px] py-[5px] font-['Inter',sans-serif] font-bold text-[10px] tracking-[0.5px] uppercase border-none cursor-pointer transition-all"
+              style={{
+                backgroundColor: form.va_a_cocina ? "rgba(255,144,109,0.12)" : "rgba(72,72,71,0.2)",
+                color: form.va_a_cocina ? "#ff906d" : "#6b7280",
+                border: form.va_a_cocina ? "1px solid rgba(255,144,109,0.3)" : "1px solid rgba(72,72,71,0.3)",
+              }}
+            >
+              {form.va_a_cocina ? "Sí" : "No"}
+            </button>
+          </div>
+
+          <div className="h-px bg-[rgba(72,72,71,0.2)]" />
+
+          {/* Save */}
           <button
             onClick={handleSave}
             disabled={saving}
-            className="bg-primary text-primary-foreground rounded-[12px] px-[16px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[14px] uppercase tracking-[1px] border-none cursor-pointer shadow-lg hover:opacity-90 transition-all disabled:opacity-50"
+            className="bg-[#ff906d] rounded-[10px] px-[16px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[13px] tracking-[0.5px] uppercase border-none cursor-pointer disabled:opacity-50 shadow-[0_0_16px_rgba(255,144,109,0.15)]"
           >
             {saving ? "Guardando..." : "Guardar"}
           </button>
 
+          {/* Delete (edit mode only) */}
           {mode === "edit" && selected && (
             <button
               onClick={() => handleDelete(selected.id)}
-              className={`rounded-[12px] px-[16px] py-[12px] font-['Inter',sans-serif] font-bold text-[12px] uppercase cursor-pointer border transition-colors ${isDark ? "bg-transparent border-destructive/40 text-destructive hover:bg-destructive/10" : "bg-white border-destructive/60 text-destructive hover:bg-destructive/5"}`}
+              className="bg-[#ff4444] border border-[rgba(255,68,68,0.2)] rounded-[10px] px-[16px] py-[10px] font-['Inter',sans-serif] font-bold text-white text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:bg-[rgba(255,68,68,0.8)] transition-colors shadow-[0_0_16px_rgba(255,68,68,0.15)]"
             >
-              Eliminar plato
+              🗑️ Eliminar plato
             </button>
           )}
         </div>
@@ -519,8 +561,6 @@ function CartaPanel() {
 function UsuariosPanel() {
   const { tenantId, tenantUser, user } = useAuth();
   const navigate = useNavigate();
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
   const [teamUsers, setTeamUsers] = useState<TenantUserRow[]>([]);
   const [tenantLimitConfig, setTenantLimitConfig] = useState<TenantUserLimitConfig>({
     userLimitEnabled: false,
@@ -584,7 +624,7 @@ function UsuariosPanel() {
       alert("No podés eliminar el único administrador del negocio.");
       return;
     }
-    if (!confirm(`¿Eliminar el acceso de «${row.email}» a este negocio?`)) {
+    if (!confirm(`¿Eliminar el acceso de «${row.email}» a este negocio?\n\nNo borra el usuario en el sistema de login; solo desvincula al equipo de este restaurante.`)) {
       return;
     }
     setDeletingId(row.id);
@@ -595,7 +635,7 @@ function UsuariosPanel() {
       .eq("tenant_id", tenantId);
     setDeletingId(null);
     if (delErr) {
-      alert(`Error: ${delErr.message}`);
+      alert(`Error al eliminar: ${delErr.message}`);
       return;
     }
     await loadUsers();
@@ -603,19 +643,19 @@ function UsuariosPanel() {
 
   async function handleCreate() {
     if (!email.trim() || !password.trim()) {
-      setError("Email y contraseña son requeridos.");
+      setError("Email y contraseña del nuevo usuario son requeridos.");
       return;
     }
     if (!adminPassword.trim()) {
-      setError("Ingresá tu contraseña de administrador para finalizar.");
+      setError("Ingresá tu contraseña de administrador para finalizar (la sesión cambia al nuevo usuario al registrarlo).");
       return;
     }
     if (password.length < 6) {
-      setError("Mínimo 6 caracteres para el nuevo usuario.");
+      setError("La contraseña del nuevo usuario debe tener al menos 6 caracteres.");
       return;
     }
     if (!tenantId || !adminEmail) {
-      setError("Sin sesión de negocio válida.");
+      setError("No hay restaurante asociado a tu sesión.");
       return;
     }
 
@@ -623,28 +663,35 @@ function UsuariosPanel() {
     setError("");
     setSuccess("");
 
+    const staffEmail = email.trim();
     const currentForRole = countActiveUsersByRole(teamUsers, rol);
     const roleLimit = getLimitForRole(tenantLimitConfig, rol);
     if (roleLimit !== null && currentForRole >= roleLimit) {
-      setError(`Límite alcanzado para rol ${formatRoleLabel(rol)} (${roleLimit}).`);
+      setError(
+        `No se puede crear otro usuario con rol ${formatRoleLabel(rol)}. El límite configurado para este restaurante es ${roleLimit}.`
+      );
       setCreating(false);
       return;
     }
 
     const { data: signData, error: authError } = await insforgeClient.auth.signUp({
-      email: email.trim(),
+      email: staffEmail,
       password,
     });
 
     if (authError) {
-      setError(typeof authError === "string" ? authError : (authError as any)?.message ?? "Error Auth.");
+      const msg =
+        typeof authError === "string"
+          ? authError
+          : (authError as { message?: string })?.message ?? "Error al crear el usuario.";
+      setError(msg);
       setCreating(false);
       return;
     }
 
-    const newUserId = (signData as any)?.user?.id;
+    const newUserId = (signData as { user?: { id?: string } } | null)?.user?.id;
     if (!newUserId) {
-      setError("Error interno: No se obtuvo el ID del nuevo usuario.");
+      setError("El usuario de acceso se creó pero no se obtuvo su ID. Contactá soporte técnico.");
       setCreating(false);
       return;
     }
@@ -653,7 +700,7 @@ function UsuariosPanel() {
       {
         auth_user_id: newUserId,
         tenant_id: tenantId,
-        email: email.trim(),
+        email: staffEmail,
         password_hash: "MANAGED_BY_AUTH",
         rol,
         nombre: nombre.trim() || null,
@@ -663,80 +710,91 @@ function UsuariosPanel() {
 
     if (insertError) {
       await insforgeClient.auth.signOut();
-      sessionStorage.setItem("cyberbistro_login_notice", `Usuario creado pero no vinculado. Re-ingresa con tu cuenta.`);
+      sessionStorage.setItem(
+        "cyberbistro_login_notice",
+        `Se creó el acceso para ${staffEmail} pero no se pudo vincular al negocio (${insertError.message}). Iniciá sesión de nuevo con tu cuenta de administrador (${adminEmail}) y revisá usuarios o contactá soporte.`
+      );
       navigate("/", { replace: true });
+      setCreating(false);
       return;
     }
 
     await insforgeClient.auth.signOut();
+
     const { error: reinError } = await insforgeClient.auth.signInWithPassword({
       email: adminEmail,
       password: adminPassword,
     });
 
     if (reinError) {
-      sessionStorage.setItem("cyberbistro_login_notice", `Usuario creado. Iniciá sesión de nuevo.`);
+      sessionStorage.setItem(
+        "cyberbistro_login_notice",
+        `Usuario ${staffEmail} creado y asignado a tu negocio. Iniciá sesión de nuevo con ${adminEmail}.`
+      );
       navigate("/", { replace: true });
+      setCreating(false);
       return;
     }
 
-    setSuccess(`Usuario ${email} creado correctamente.`);
-    setEmail(""); setPassword(""); setAdminPassword(""); setNombre(""); setRol("cajera");
+    setSuccess(`Usuario ${staffEmail} creado y asignado a tu negocio con rol «${rol}».`);
+    setEmail("");
+    setPassword("");
+    setAdminPassword("");
+    setNombre("");
+    setRol("cajera");
     setCreating(false);
     await loadUsers();
   }
 
   return (
-    <div className="flex-1 p-4 sm:p-[32px] overflow-auto bg-background transition-colors duration-300">
+    <div className="flex-1 p-4 sm:p-[32px] overflow-auto">
       <div className="max-w-[920px] flex flex-col gap-[24px]">
-        <section className={`rounded-[20px] border p-[28px] flex flex-col gap-[16px] shadow-sm ${isDark ? "bg-card border-white/5" : "bg-white border-black"}`}>
+        <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-[28px] flex flex-col gap-[16px]">
           <div className="flex flex-col gap-[4px]">
-            <span className={`font-['Space_Grotesk',sans-serif] font-bold text-[18px] ${isDark ? "text-white" : "text-black"}`}>Usuarios del negocio</span>
-            <span className="font-['Inter',sans-serif] text-muted-foreground text-[12px] font-medium leading-relaxed">
+            <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px]">Usuarios del negocio</span>
+            <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">
               Solo usuarios vinculados a tu restaurante. El administrador no puede borrarse a sí mismo ni quitar el único admin.
             </span>
             {tenantLimitConfig.userLimitEnabled ? (
-              <div className="mt-1 flex items-center gap-2">
-                 <div className="size-2 rounded-full bg-[#ffb020]" />
-                 <span className="font-['Inter',sans-serif] text-[#ffb020] text-[11px] font-bold uppercase tracking-wide">
-                   Límites activos · Cajera: {tenantLimitConfig.cajeraUserLimit ?? "∞"} · Cocina: {tenantLimitConfig.cocinaUserLimit ?? "∞"}
-                 </span>
-              </div>
+              <span className="font-['Inter',sans-serif] text-[#ffb020] text-[12px]">
+                Límites activos. Cajera: {tenantLimitConfig.cajeraUserLimit ?? "∞"} · Cocina: {tenantLimitConfig.cocinaUserLimit ?? "∞"}
+              </span>
             ) : null}
           </div>
-          
           {listLoading ? (
-            <span className="font-['Inter',sans-serif] text-muted-foreground text-[13px] font-bold">Cargando lista…</span>
+            <span className="font-['Inter',sans-serif] text-[#6b7280] text-[13px]">Cargando lista…</span>
           ) : teamUsers.length === 0 ? (
-            <span className="font-['Inter',sans-serif] text-muted-foreground text-[13px] font-bold">No hay usuarios registrados.</span>
+            <span className="font-['Inter',sans-serif] text-[#6b7280] text-[13px]">No hay usuarios registrados.</span>
           ) : (
-            <div className={`overflow-x-auto rounded-[12px] border ${isDark ? "border-white/10" : "border-black/10 shadow-sm"}`}>
+            <div className="overflow-x-auto rounded-[12px] border border-[rgba(72,72,71,0.2)]">
               <table className="w-full text-left border-collapse min-w-[520px]">
                 <thead>
-                  <tr className={`${isDark ? "bg-muted/20 text-white/60" : "bg-muted/50 text-black/60"} font-['Inter',sans-serif] text-[10px] uppercase tracking-wide`}>
-                    <th className="px-[16px] py-[12px]">Email</th>
-                    <th className="px-[16px] py-[12px]">Nombre</th>
-                    <th className="px-[16px] py-[12px]">Rol</th>
-                    <th className="px-[16px] py-[12px]">Activo</th>
-                    <th className="px-[16px] py-[12px] w-[100px]"></th>
+                  <tr className="bg-[#1a1a1a] text-[#adaaaa] font-['Inter',sans-serif] text-[10px] uppercase tracking-wide">
+                    <th className="px-[14px] py-[10px]">Email</th>
+                    <th className="px-[14px] py-[10px]">Nombre</th>
+                    <th className="px-[14px] py-[10px]">Rol</th>
+                    <th className="px-[14px] py-[10px]">Activo</th>
+                    <th className="px-[14px] py-[10px] w-[100px]"></th>
                   </tr>
                 </thead>
-                <tbody className={`font-['Inter',sans-serif] text-[13px] font-medium ${isDark ? "text-white" : "text-black"}`}>
+                <tbody className="font-['Inter',sans-serif] text-[13px] text-white">
                   {teamUsers.map((u) => {
                     const isSelf = Boolean(u.auth_user_id && user?.id && u.auth_user_id === user.id);
-                    const canDelete = !isSelf && !(u.rol === "admin" && teamUsers.filter(x => x.rol === "admin").length <= 1);
+                    const adminCount = teamUsers.filter((x) => x.rol === "admin" && x.activo !== false).length;
+                    const onlyAdminLeft = u.rol === "admin" && adminCount <= 1;
+                    const canDelete = !isSelf && !onlyAdminLeft;
                     return (
-                      <tr key={u.id} className={`border-t transition-colors hover:bg-muted/5 ${isDark ? "border-white/5" : "border-black/5"}`}>
-                        <td className="px-[16px] py-[14px] font-bold">{u.email}</td>
-                        <td className="px-[16px] py-[14px] text-muted-foreground font-medium">{u.nombre || "—"}</td>
-                        <td className="px-[16px] py-[14px] capitalize">{u.rol}</td>
-                        <td className="px-[16px] py-[14px]">{u.activo === false ? "No" : "Sí"}</td>
-                        <td className="px-[16px] py-[14px]">
+                      <tr key={u.id} className="border-t border-[rgba(72,72,71,0.15)]">
+                        <td className="px-[14px] py-[10px]">{u.email}</td>
+                        <td className="px-[14px] py-[10px] text-[#adaaaa]">{u.nombre || "—"}</td>
+                        <td className="px-[14px] py-[10px] capitalize">{u.rol}</td>
+                        <td className="px-[14px] py-[10px]">{u.activo === false ? "No" : "Sí"}</td>
+                        <td className="px-[14px] py-[10px]">
                           <button
                             type="button"
                             disabled={!canDelete || deletingId === u.id}
                             onClick={() => void handleDeleteUser(u)}
-                            className="text-destructive text-[11px] font-bold uppercase tracking-wide cursor-pointer bg-transparent border-none disabled:opacity-30 hover:underline"
+                            className="text-[#ff716c] text-[11px] font-bold uppercase tracking-wide cursor-pointer bg-transparent border-none disabled:opacity-30 disabled:cursor-not-allowed"
                           >
                             {deletingId === u.id ? "…" : "Eliminar"}
                           </button>
@@ -748,93 +806,104 @@ function UsuariosPanel() {
               </table>
             </div>
           )}
-        </section>
+        </div>
 
-        <section className={`rounded-[20px] border p-[28px] flex flex-col gap-[18px] shadow-sm ${isDark ? "bg-card border-white/5" : "bg-white border-black"}`}>
+        <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-[28px] flex flex-col gap-[18px]">
           <div className="flex flex-col gap-[4px]">
-            <span className={`font-['Space_Grotesk',sans-serif] font-bold text-[18px] ${isDark ? "text-white" : "text-black"}`}>Crear usuario de equipo</span>
-            <span className="font-['Inter',sans-serif] text-muted-foreground text-[12px] font-medium leading-relaxed">
-              Queda vinculado solo al restaurante de tu sesión. Elegí rol de cajera/venta o cocina.
+            <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px]">Crear usuario de equipo</span>
+            <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">
+              Queda vinculado solo al restaurante de tu sesión (no a otros negocios). Elegí rol de cajera/venta o cocina; esos usuarios no ven el módulo Soporte.
             </span>
           </div>
-          
           {success && (
-            <div className="bg-[#15803d]/10 border border-[#15803d]/20 rounded-[10px] px-[16px] py-[10px]">
-              <span className="font-['Inter',sans-serif] text-[#15803d] text-[13px] font-bold">{success}</span>
+            <div className="bg-[rgba(89,238,80,0.05)] border border-[rgba(89,238,80,0.2)] rounded-[10px] px-[16px] py-[10px]">
+              <span className="font-['Inter',sans-serif] text-[#59ee50] text-[13px]">{success}</span>
             </div>
           )}
           {error && (
-            <div className="bg-destructive/10 border border-destructive/20 rounded-[10px] px-[16px] py-[10px]">
-              <span className="font-['Inter',sans-serif] text-destructive text-[13px] font-bold">{error}</span>
+            <div className="bg-[rgba(255,113,108,0.05)] border border-[rgba(255,113,108,0.2)] rounded-[10px] px-[16px] py-[10px]">
+              <span className="font-['Inter',sans-serif] text-[#ff716c] text-[13px]">{error}</span>
             </div>
           )}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-[16px]">
-            <Field label="Rol en el negocio">
+          <div className="flex flex-col gap-[12px]">
+            <div className="flex flex-col gap-[6px]">
+              <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">Rol en el negocio</label>
               <select
                 value={rol}
-                onChange={(e) => setRol(e.target.value as any)}
-                className={`w-full rounded-[10px] px-[14px] py-[11px] font-['Inter',sans-serif] text-[13px] outline-none border cursor-pointer transition-colors ${isDark ? "bg-background border-white/10 text-white" : "bg-muted border-black/10 text-black"}`}
+                onChange={(e) => setRol(e.target.value as (typeof STAFF_ROLES)[number]["value"])}
+                className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-[14px] py-[11px] font-['Inter',sans-serif] text-white text-[13px] outline-none w-full cursor-pointer"
               >
                 {STAFF_ROLES.map((r) => (
-                  <option key={r.value} value={r.value} style={{ backgroundColor: isDark ? "#1a1a1a" : "white" }}>{r.label}</option>
+                  <option key={r.value} value={r.value} style={{ backgroundColor: "#1a1a1a" }}>
+                    {r.label}
+                  </option>
                 ))}
               </select>
-            </Field>
-
-            <Field label="Nombre (opcional)">
+            </div>
+            <div className="flex flex-col gap-[6px]">
+              <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">Nombre (opcional)</label>
               <input
                 type="text"
                 value={nombre}
                 onChange={(e) => setNombre(e.target.value)}
                 placeholder="Ej. María — cocina"
-                className={`w-full rounded-[10px] px-[14px] py-[11px] font-['Inter',sans-serif] text-[13px] outline-none border transition-colors ${isDark ? "bg-background border-white/10 text-white focus:border-primary/50" : "bg-muted border-black/10 text-black focus:border-primary"}`}
+                className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-[14px] py-[11px] font-['Inter',sans-serif] text-white text-[13px] outline-none w-full"
+                onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(255,144,109,0.4)")}
+                onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(72,72,71,0.3)")}
               />
-            </Field>
-
-            <Field label="Email del nuevo usuario">
+            </div>
+            <div className="flex flex-col gap-[6px]">
+              <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">Email del nuevo usuario</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="usuario@restaurante.com"
-                className={`w-full rounded-[10px] px-[14px] py-[11px] font-['Inter',sans-serif] text-[13px] outline-none border transition-colors ${isDark ? "bg-background border-white/10 text-white focus:border-primary/50" : "bg-muted border-black/10 text-black focus:border-primary"}`}
+                className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-[14px] py-[11px] font-['Inter',sans-serif] text-white text-[13px] outline-none w-full"
+                onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(255,144,109,0.4)")}
+                onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(72,72,71,0.3)")}
               />
-            </Field>
-
-            <Field label="Contraseña del nuevo usuario">
+            </div>
+            <div className="flex flex-col gap-[6px]">
+              <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">Contraseña del nuevo usuario</label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Mínimo 6 caracteres"
-                className={`w-full rounded-[10px] px-[14px] py-[11px] font-['Inter',sans-serif] text-[13px] outline-none border transition-colors ${isDark ? "bg-background border-white/10 text-white focus:border-primary/50" : "bg-muted border-black/10 text-black focus:border-primary"}`}
+                className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-[14px] py-[11px] font-['Inter',sans-serif] text-white text-[13px] outline-none w-full"
+                onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(255,144,109,0.4)")}
+                onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(72,72,71,0.3)")}
               />
-            </Field>
-
-            <div className="md:col-span-2">
-              <div className={`h-px my-4 ${isDark ? "bg-white/10" : "bg-black/10"}`} />
-              <Field label="Tu contraseña de administrador">
-                <span className="font-['Inter',sans-serif] text-muted-foreground text-[11px] mb-2 block font-medium">Requerida para confirmar la operación y re-autenticar tu sesión.</span>
-                <input
-                  type="password"
-                  value={adminPassword}
-                  onChange={(e) => setAdminPassword(e.target.value)}
-                  placeholder="Tu contraseña actual"
-                  className={`w-full rounded-[10px] px-[14px] py-[11px] font-['Inter',sans-serif] text-[13px] outline-none border transition-colors ${isDark ? "bg-background border-white/10 text-white focus:border-primary/50" : "bg-muted border-black/10 text-black focus:border-primary"}`}
-                />
-              </Field>
+            </div>
+            <div className="h-px bg-[rgba(72,72,71,0.2)]" />
+            <div className="flex flex-col gap-[6px]">
+              <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">Tu contraseña de administrador</label>
+              <span className="font-['Inter',sans-serif] text-[#6b7280] text-[11px]">
+                Al registrar al usuario, la sesión pasa a esa cuenta un instante; con tu clave volvemos a tu sesión de dueño.
+              </span>
+              <input
+                type="password"
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                placeholder="Contraseña de tu cuenta actual"
+                className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-[14px] py-[11px] font-['Inter',sans-serif] text-white text-[13px] outline-none w-full"
+                onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(255,144,109,0.4)")}
+                onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(72,72,71,0.3)")}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleCreate();
+                }}
+              />
             </div>
           </div>
-
           <button
             onClick={handleCreate}
             disabled={creating}
-            className="bg-primary text-primary-foreground rounded-[12px] px-[28px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[14px] uppercase tracking-[1px] border-none cursor-pointer shadow-lg hover:opacity-90 transition-all disabled:opacity-50 self-start mt-4"
+            className="bg-[#ff906d] rounded-[12px] px-[20px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[13px] tracking-[0.5px] uppercase cursor-pointer border-none shadow-[0_0_20px_rgba(255,144,109,0.15)] transition-opacity disabled:opacity-50 self-start"
           >
             {creating ? "Creando..." : "Crear usuario"}
           </button>
-        </section>
+        </div>
       </div>
     </div>
   );
@@ -845,8 +914,6 @@ function UsuariosPanel() {
 // ─────────────────────────────────────────────
 function MesasPanel() {
   const { tenantId } = useAuth();
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
   const [cantidad, setCantidad] = useState<number>(20);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -861,39 +928,51 @@ function MesasPanel() {
 
   async function handleSave() {
     if (!tenantId) return;
-    if (cantidad < 1 || cantidad > 100) { alert("Entre 1 y 100."); return; }
+    if (cantidad < 1 || cantidad > 100) {
+      alert("La cantidad debe estar entre 1 y 100.");
+      return;
+    }
     setSaving(true);
     const { error } = await saveCantidadMesas(tenantId, cantidad);
     setSaving(false);
-    if (error) alert("Error: " + error.message);
-    else alert("Configuración guardada.");
+    if (error) {
+      alert("Error al guardar: " + error.message);
+    } else {
+      alert("Configuración de mesas guardada exitosamente.");
+    }
   }
 
-  if (loading) return <div className="p-8 text-muted-foreground font-bold bg-background transition-colors duration-300">Cargando...</div>;
+  if (loading) return <div className="p-8 text-[#6b7280]">Cargando configuración...</div>;
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 sm:p-[32px] bg-background transition-colors duration-300">
+    <div className="flex-1 overflow-y-auto p-4 sm:p-[32px]">
       <div className="max-w-[500px]">
-        <h2 className={`font-['Space_Grotesk',sans-serif] font-bold text-[18px] mb-[4px] ${isDark ? "text-white" : "text-black"}`}>Configuración de Mesas</h2>
-        <p className="font-['Inter',sans-serif] text-muted-foreground text-[13px] mb-[24px] font-medium leading-relaxed">
-          Modifica la cantidad total de mesas disponibles. El sistema las distribuirá en la grilla automáticamente.
+        <h2 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px] mb-[4px]">Configuración de Mesas</h2>
+        <p className="font-['Inter',sans-serif] text-[#6b7280] text-[13px] mb-[24px]">
+          Modifica la cantidad total de mesas disponibles en tu restaurante. El sistema generará automáticamente la distribución.
         </p>
         
-        <div className={`rounded-[20px] border p-[28px] flex flex-col gap-[20px] shadow-sm ${isDark ? "bg-card border-white/5" : "bg-white border-black"}`}>
-          <Field label="Cantidad de Mesas">
+        <div className="bg-[#111111] border border-[rgba(72,72,71,0.2)] rounded-[16px] p-[20px] flex flex-col gap-[20px]">
+          <div className="flex flex-col gap-[6px]">
+            <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">
+              Cantidad de Mesas
+            </label>
             <input
               type="number"
-              min="1" max="100"
+              min="1"
+              max="100"
               value={cantidad}
               onChange={(e) => setCantidad(parseInt(e.target.value) || 1)}
-              className={`w-full rounded-[10px] px-[14px] py-[11px] font-['Inter',sans-serif] text-[13px] outline-none border transition-colors ${isDark ? "bg-background border-white/10 text-white focus:border-primary/50" : "bg-muted border-black/10 text-black focus:border-primary"}`}
+              className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-[14px] py-[11px] font-['Inter',sans-serif] text-white text-[13px] outline-none w-full"
+              onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(255,144,109,0.4)")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(72,72,71,0.3)")}
             />
-          </Field>
+          </div>
           
           <button
             onClick={handleSave}
             disabled={saving}
-            className="bg-primary text-primary-foreground rounded-[12px] px-[24px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[14px] uppercase tracking-[1px] border-none cursor-pointer shadow-lg hover:opacity-90 transition-all disabled:opacity-50 self-start"
+            className="bg-[#ff906d] rounded-[12px] px-[20px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[13px] tracking-[0.5px] uppercase cursor-pointer border-none shadow-[0_0_20px_rgba(255,144,109,0.15)] transition-opacity disabled:opacity-50 self-start"
           >
             {saving ? "Guardando..." : "Guardar cambios"}
           </button>
@@ -910,36 +989,36 @@ type Tab = "usuarios" | "carta" | "mesas";
 
 function SoportePanel({ onLock }: { onLock: () => void }) {
   const [activeTab, setActiveTab] = useState<Tab>("carta");
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-background transition-colors duration-300">
+    <div className="flex-1 flex flex-col overflow-hidden">
       {/* Tab header */}
-      <div className={`flex flex-wrap items-center justify-between px-4 sm:px-[32px] pt-[16px] sm:pt-[20px] border-b shrink-0 ${isDark ? "border-white/10" : "border-black"}`}>
+      <div className="flex flex-wrap items-center justify-between px-4 sm:px-[32px] pt-[16px] sm:pt-[20px] pb-[0px] gap-[8px] border-b border-[rgba(72,72,71,0.2)] shrink-0">
         <div className="flex items-end gap-[4px]">
-          <h1 className={`font-['Space_Grotesk',sans-serif] font-bold text-[24px] mr-[16px] ${isDark ? "text-white" : "text-black"}`}>Soporte</h1>
+          <h1 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[24px] mr-[16px]">Soporte</h1>
           {(["carta", "usuarios", "mesas"] as Tab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`px-[16px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[13px] tracking-[0.5px] uppercase border-none cursor-pointer transition-all bg-transparent relative ${activeTab === tab ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+              className="px-[16px] py-[10px] font-['Space_Grotesk',sans-serif] font-bold text-[13px] tracking-[0.5px] uppercase border-none cursor-pointer transition-all bg-transparent"
+              style={{
+                color: activeTab === tab ? "#ff906d" : "#6b7280",
+                borderBottom: activeTab === tab ? "2px solid #ff906d" : "2px solid transparent",
+              }}
             >
               {tab === "carta" ? "Carta" : tab === "usuarios" ? "Usuarios" : "Mesas"}
-              {activeTab === tab && (
-                <div className="absolute bottom-[-1px] left-0 right-0 h-[2px] bg-primary rounded-t-full" />
-              )}
             </button>
           ))}
         </div>
         <button
           onClick={onLock}
-          className={`font-['Inter',sans-serif] text-[11px] tracking-[0.5px] uppercase font-bold cursor-pointer bg-muted/50 border rounded-[8px] px-[12px] py-[6px] transition-all mb-[12px] ${isDark ? "border-white/10 text-white hover:bg-muted" : "border-black text-black hover:bg-muted"}`}
+          className="font-['Inter',sans-serif] text-[#6b7280] text-[11px] tracking-[0.5px] uppercase cursor-pointer bg-transparent border border-[rgba(72,72,71,0.3)] rounded-[8px] px-[12px] py-[6px] hover:text-[#adaaaa] transition-colors mb-[10px]"
         >
           Bloquear
         </button>
       </div>
 
+      {/* Tab content */}
       <div className="flex-1 overflow-hidden flex flex-col min-h-0">
         {activeTab === "carta" ? <CartaPanel /> : activeTab === "usuarios" ? <UsuariosPanel /> : <MesasPanel />}
       </div>
@@ -953,40 +1032,35 @@ function SoportePanel({ onLock }: { onLock: () => void }) {
 export function Soporte() {
   const navigate = useNavigate();
   const { loading, isAuthenticated, rol } = useAuth();
-  const { theme } = useTheme();
-  const isDark = theme === "dark";
   const [unlocked, setUnlocked] = useState(false);
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center min-h-[200px] bg-background">
-        <span className="font-['Space_Grotesk',sans-serif] text-muted-foreground text-[14px] font-bold">Cargando...</span>
+      <div className="flex-1 flex items-center justify-center min-h-[200px]">
+        <span className="font-['Space_Grotesk',sans-serif] text-[#6b7280] text-[14px]">Cargando...</span>
       </div>
     );
   }
 
-  if (!isAuthenticated) return <Navigate to="/" replace />;
+  if (!isAuthenticated) {
+    return <Navigate to="/" replace />;
+  }
 
   if (rol !== "admin") {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8 min-h-[320px] bg-background">
-        <div className={`rounded-full size-16 flex items-center justify-center ${isDark ? "bg-card" : "bg-muted"}`}>
-          <span className="text-2xl">🔒</span>
-        </div>
-        <div className="flex flex-col items-center gap-2">
-          <span className={`font-['Space_Grotesk',sans-serif] font-bold text-[20px] text-center max-w-md ${isDark ? "text-white" : "text-black"}`}>
-            Soporte Restringido
-          </span>
-          <span className="font-['Inter',sans-serif] text-muted-foreground text-[13px] text-center max-w-md leading-relaxed font-medium">
-            Los usuarios de equipo no tienen acceso a este módulo. Solo el administrador puede gestionar la configuración.
-          </span>
-        </div>
+      <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 min-h-[320px]">
+        <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[20px] text-center max-w-md">
+          Soporte solo está disponible para la cuenta del negocio
+        </span>
+        <span className="font-['Inter',sans-serif] text-[#6b7280] text-[13px] text-center max-w-md leading-relaxed">
+          Los usuarios de equipo (cajera/venta, cocina) no tienen acceso a este módulo. Solo el administrador puede gestionar la carta y crear usuarios para su restaurante.
+        </span>
         <button
           type="button"
           onClick={() => navigate("/dashboard")}
-          className="bg-primary text-primary-foreground rounded-[12px] px-[28px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[13px] tracking-[0.5px] uppercase cursor-pointer border-none shadow-lg hover:opacity-90 transition-all"
+          className="mt-2 bg-[#ff906d] rounded-[12px] px-[24px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[13px] tracking-[0.5px] uppercase cursor-pointer border-none"
         >
-          Volver al panel
+          Ir al panel
         </button>
       </div>
     );
@@ -994,14 +1068,4 @@ export function Soporte() {
 
   if (!unlocked) return <PinGate onUnlock={() => setUnlocked(true)} />;
   return <SoportePanel onLock={() => setUnlocked(false)} />;
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  const { theme } = useTheme();
-  return (
-    <div className="flex flex-col gap-[8px]">
-      <label className={`font-['Inter',sans-serif] font-bold text-[11px] tracking-[0.8px] uppercase ${theme === "dark" ? "text-white/60" : "text-black/60"}`}>{label}</label>
-      {children}
-    </div>
-  );
 }

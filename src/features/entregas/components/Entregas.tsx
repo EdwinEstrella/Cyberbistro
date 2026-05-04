@@ -231,22 +231,26 @@ export function Entregas() {
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-background transition-colors duration-300">
+    <div className="flex-1 flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between px-4 sm:px-[32px] py-[14px] sm:py-[20px] gap-[12px] border-b border-black dark:border-white/10">
+      <div className="flex flex-wrap items-center justify-between px-4 sm:px-[32px] py-[14px] sm:py-[20px] gap-[12px] border-b border-[rgba(72,72,71,0.2)]">
         <div className="flex items-center gap-[16px]">
-          <h1 className="font-['Space_Grotesk',sans-serif] font-bold text-foreground text-[28px]">
+          <h1 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[28px]">
             Entregas
           </h1>
           <div
-            className="flex gap-[6px] items-center px-[12px] py-[4px] rounded-full border border-black dark:border-white/10 bg-card"
+            className="flex gap-[6px] items-center px-[12px] py-[4px] rounded-full"
+            style={{
+              backgroundColor: "rgba(255,144,109,0.1)",
+            }}
           >
             <div
               className="rounded-full size-[8px]"
               style={{ backgroundColor: "#ff906d" }}
             />
             <span
-              className="font-['Space_Grotesk',sans-serif] text-[10px] tracking-[0.5px] uppercase font-bold text-foreground"
+              className="font-['Space_Grotesk',sans-serif] text-[10px] tracking-[0.5px] uppercase font-bold"
+              style={{ color: "#ff906d" }}
             >
               Cuentas abiertas
             </span>
@@ -256,30 +260,30 @@ export function Entregas() {
         <div className="flex flex-wrap gap-[8px]">
           <button
             onClick={() => setFiltroEstado("todos")}
-            className={`px-[16px] py-[8px] rounded-[8px] font-['Inter',sans-serif] font-bold text-[11px] uppercase cursor-pointer border border-black dark:border-white/10 transition-all ${
+            className={`px-[16px] py-[8px] rounded-[8px] font-['Inter',sans-serif] font-bold text-[11px] uppercase cursor-pointer border-none transition-all ${
               filtroEstado === "todos"
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted text-muted-foreground"
+                ? "bg-[#ff906d] text-[#5b1600]"
+                : "bg-[#262626] text-[#adaaaa]"
             }`}
           >
             Todos
           </button>
           <button
             onClick={() => setFiltroEstado("falta_entregar")}
-            className={`px-[16px] py-[8px] rounded-[8px] font-['Inter',sans-serif] font-bold text-[11px] uppercase cursor-pointer border border-black dark:border-white/10 transition-all ${
+            className={`px-[16px] py-[8px] rounded-[8px] font-['Inter',sans-serif] font-bold text-[11px] uppercase cursor-pointer border-none transition-all ${
               filtroEstado === "falta_entregar"
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted text-muted-foreground"
+                ? "bg-[#ff906d] text-[#5b1600]"
+                : "bg-[#262626] text-[#adaaaa]"
             }`}
           >
             Falta entregar
           </button>
           <button
             onClick={() => setFiltroEstado("listo_cobro")}
-            className={`px-[16px] py-[8px] rounded-[8px] font-['Inter',sans-serif] font-bold text-[11px] uppercase cursor-pointer border border-black dark:border-white/10 transition-all ${
+            className={`px-[16px] py-[8px] rounded-[8px] font-['Inter',sans-serif] font-bold text-[11px] uppercase cursor-pointer border-none transition-all ${
               filtroEstado === "listo_cobro"
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted text-muted-foreground"
+                ? "bg-[#ff906d] text-[#5b1600]"
+                : "bg-[#262626] text-[#adaaaa]"
             }`}
           >
             Listo p/ cobro
@@ -287,24 +291,24 @@ export function Entregas() {
           <button
             type="button"
             onClick={() => loadEntregas()}
-            className="bg-muted rounded-[8px] border border-black dark:border-white/10 flex gap-[8px] items-center px-[16px] py-[8px] cursor-pointer hover:bg-muted/80 transition-colors"
+            className="bg-[#262626] rounded-[8px] border border-[rgba(72,72,71,0.2)] flex gap-[8px] items-center px-[16px] py-[8px] cursor-pointer hover:border-[rgba(255,144,109,0.3)] transition-colors"
           >
-            <span className="font-['Inter',sans-serif] text-foreground text-[12px]">↻</span>
+            <span className="font-['Inter',sans-serif] text-white text-[12px]">↻</span>
           </button>
         </div>
       </div>
 
       {/* Content */}
       {loading ? (
-        <div className="flex-1 flex items-center justify-center bg-background">
-          <span className="font-['Space_Grotesk',sans-serif] text-muted-foreground text-[16px]">
+        <div className="flex-1 flex items-center justify-center">
+          <span className="font-['Space_Grotesk',sans-serif] text-[#6b7280] text-[16px]">
             Cargando entregas...
           </span>
         </div>
       ) : mesasFiltradas.length === 0 ? (
-        <div className="flex-1 flex items-center justify-center px-4 bg-background">
+        <div className="flex-1 flex items-center justify-center px-4">
           <div className="text-center max-w-md">
-            <span className="font-['Inter',sans-serif] text-muted-foreground text-[14px] block">
+            <span className="font-['Inter',sans-serif] text-[#6b7280] text-[14px] block">
               {mesasConPedido.length === 0
                 ? "No hay cuentas abiertas en el POS."
                 : filtroEstado === "falta_entregar"
@@ -316,7 +320,7 @@ export function Entregas() {
           </div>
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto px-4 sm:px-[32px] py-[24px] bg-background/50">
+        <div className="flex-1 overflow-y-auto px-4 sm:px-[32px] py-[24px]">
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-[20px]">
             {mesasFiltradas.map((mesa) => {
               const progreso = progresoEntrega(mesa);
@@ -325,21 +329,21 @@ export function Entregas() {
               return (
                 <div
                   key={mesa.id}
-                  className="bg-card rounded-[16px] border border-black dark:border-white/10 overflow-hidden shadow-sm hover:shadow-md transition-shadow"
+                  className="bg-[#1a1a1a] rounded-[16px] border border-[rgba(72,72,71,0.2)] overflow-hidden"
                 >
                   {/* Header */}
-                  <div className="px-[20px] py-[16px] border-b border-black/10 dark:border-white/5 flex items-center justify-between bg-muted/10">
+                  <div className="px-[20px] py-[16px] border-b border-[rgba(72,72,71,0.15)] flex items-center justify-between">
                     <div className="flex items-center gap-[12px]">
-                      <div className="rounded-[8px] flex items-center justify-center h-[36px] px-[12px] bg-primary/10 border border-primary/20">
-                        <span className="font-['Space_Grotesk',sans-serif] font-bold text-[16px] text-primary">
+                      <div className="rounded-[8px] flex items-center justify-center h-[36px] px-[12px] bg-[rgba(255,144,109,0.1)]">
+                        <span className="font-['Space_Grotesk',sans-serif] font-bold text-[16px]" style={{ color: "#ff906d" }}>
                           {mesa.numero !== 0 ? String(mesa.numero).padStart(2, "0") : "PL"}
                         </span>
                       </div>
                       <div>
-                        <div className="font-['Space_Grotesk',sans-serif] font-bold text-foreground text-[14px]">
+                        <div className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[14px]">
                           {mesa.numero !== 0 ? `Mesa ${mesa.numero}` : "Para llevar"}
                         </div>
-                        <div className="font-['Inter',sans-serif] text-muted-foreground text-[11px] font-bold uppercase">
+                        <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">
                           {mesa.items.length} productos
                         </div>
                       </div>
@@ -347,26 +351,31 @@ export function Entregas() {
 
                     <div className="flex flex-col items-end gap-[4px]">
                       <div
-                        className={`px-[10px] py-[4px] rounded-full flex items-center gap-[6px] border ${
-                          completo ? "bg-[#15803d]/10 border-[#15803d]/20" : "bg-primary/10 border-primary/20"
+                        className={`px-[10px] py-[4px] rounded-full flex items-center gap-[6px] ${
+                          completo ? "bg-[rgba(89,238,80,0.1)]" : "bg-[rgba(255,144,109,0.1)]"
                         }`}
                       >
                         <div
                           className="rounded-full size-[6px]"
-                          style={{ backgroundColor: completo ? "#15803d" : "#ff906d" }}
+                          style={{ backgroundColor: completo ? "#59ee50" : "#ff906d" }}
                         />
                         <span
                           className="font-['Inter',sans-serif] font-bold text-[10px] tracking-[0.5px] uppercase"
-                          style={{ color: completo ? "#15803d" : "#ff906d" }}
+                          style={{ color: completo ? "#59ee50" : "#ff906d" }}
                         >
-                          {completo ? "Listo" : "Pendiente"}
+                          {completo ? "Entrega lista" : "Falta entregar"}
                         </span>
                       </div>
+                      {completo ? (
+                        <span className="font-['Inter',sans-serif] text-[9px] text-[#ffd06d] tracking-wide uppercase font-bold text-right max-w-[9rem] leading-tight">
+                          Cuenta abierta → cobrar en POS
+                        </span>
+                      ) : null}
                     </div>
                   </div>
 
                   {/* Items */}
-                  <div className="p-[16px] flex flex-col gap-[8px] max-h-[240px] overflow-y-auto bg-background/30">
+                  <div className="p-[16px] flex flex-col gap-[8px] max-h-[240px] overflow-y-auto">
                     {mesa.items.map((item) => {
                       const entregado =
                         !item.va_a_cocina || item.cantidad_entregada >= item.cantidad;
@@ -379,15 +388,15 @@ export function Entregas() {
                           key={item.consumo_id}
                           className={`rounded-[10px] p-[12px] border ${
                             entregado
-                              ? "bg-[#15803d]/5 border-[#15803d]/10"
-                              : "bg-primary/5 border-primary/10"
+                              ? "bg-[rgba(89,238,80,0.05)] border-[rgba(89,238,80,0.15)]"
+                              : "bg-[rgba(255,144,109,0.05)] border-[rgba(255,144,109,0.15)]"
                           }`}
                         >
                           <div className="flex items-start justify-between gap-[8px]">
                             <div className="flex-1">
                               <div className="flex items-center gap-[8px]">
                                 <span className={`font-['Space_Grotesk',sans-serif] font-bold text-[13px] uppercase ${
-                                  entregado ? "text-[#15803d]" : "text-foreground"
+                                  entregado ? "text-[#59ee50]" : "text-white"
                                 }`}>
                                   {item.nombre}
                                 </span>
@@ -400,9 +409,9 @@ export function Entregas() {
                                       ? "rgba(255,208,109,0.15)"
                                       : "rgba(255,144,109,0.15)",
                                     color: item.comanda_estado === "listo"
-                                      ? "#15803d"
+                                      ? "#59ee50"
                                       : item.comanda_estado === "en_preparacion"
-                                      ? "#d97706"
+                                      ? "#ffd06d"
                                       : "#ff906d",
                                   }}>
                                     {item.comanda_estado === "listo"
@@ -414,24 +423,24 @@ export function Entregas() {
                                 )}
 
                                 {item.va_a_cocina === false && (
-                                  <span className="px-[6px] py-[2px] rounded-[4px] bg-[#15803d]/10 font-['Inter',sans-serif] font-bold text-[8px] uppercase tracking-[0.5px] text-[#15803d]">
+                                  <span className="px-[6px] py-[2px] rounded-[4px] bg-[rgba(89,238,80,0.1)] font-['Inter',sans-serif] font-bold text-[8px] uppercase tracking-[0.5px] text-[#59ee50]">
                                     Directo
                                   </span>
                                 )}
                               </div>
 
                               <div className="mt-[6px] flex items-center gap-[12px]">
-                                <span className="font-['Inter',sans-serif] text-muted-foreground text-[12px] font-bold">
+                                <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[12px]">
                                   {item.cantidad} × {RD(item.precio_unitario)}
                                 </span>
-                                <span className="font-['Space_Grotesk',sans-serif] font-bold text-[14px]" style={{ color: entregado ? "#15803d" : "#ff906d" }}>
+                                <span className="font-['Space_Grotesk',sans-serif] font-bold text-[14px]" style={{ color: entregado ? "#59ee50" : "#ff906d" }}>
                                   {RD(item.subtotal)}
                                 </span>
                               </div>
 
                               {queda > 0 && (
-                                <div className="mt-[6px] text-primary">
-                                  <span className="font-['Inter',sans-serif] text-[11px] font-bold uppercase tracking-tighter">
+                                <div className="mt-[6px] text-[#ff906d]">
+                                  <span className="font-['Inter',sans-serif] text-[11px]">
                                     {queda > 1 ? `Quedan ${queda} por entregar` : `Queda ${queda} por entregar`}
                                   </span>
                                 </div>
@@ -441,7 +450,7 @@ export function Entregas() {
                             {item.va_a_cocina && queda > 0 && (
                               <button
                                 onClick={() => marcarEntregado(item.consumo_id)}
-                                className="shrink-0 bg-primary text-primary-foreground rounded-[8px] px-[12px] py-[8px] font-['Inter',sans-serif] font-bold text-[10px] uppercase cursor-pointer border-none hover:opacity-90 transition-opacity shadow-sm"
+                                className="shrink-0 bg-[#59ee50] rounded-[8px] px-[10px] py-[6px] font-['Inter',sans-serif] font-bold text-[10px] uppercase text-[#0e0e0e] cursor-pointer border-none hover:bg-[#4ade4f] transition-colors"
                               >
                                 Entregar {queda}
                               </button>
@@ -454,21 +463,21 @@ export function Entregas() {
 
                   {/* Progreso */}
                   {mesa.items.some((i) => i.va_a_cocina) && (
-                    <div className="px-[16px] pb-[16px] bg-background/30">
+                    <div className="px-[16px] pb-[16px]">
                       <div className="flex items-center justify-between mb-[6px]">
-                        <span className="font-['Inter',sans-serif] text-muted-foreground text-[11px] uppercase tracking-[0.5px] font-bold">
-                          Entrega
+                        <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] uppercase tracking-[0.5px]">
+                          Progreso de entrega
                         </span>
-                        <span className="font-['Space_Grotesk',sans-serif] font-bold text-[11px]" style={{ color: completo ? "#15803d" : "#ff906d" }}>
+                        <span className="font-['Space_Grotesk',sans-serif] font-bold text-[11px]" style={{ color: completo ? "#59ee50" : "#ff906d" }}>
                           {Math.round(progreso)}%
                         </span>
                       </div>
-                      <div className="h-[6px] bg-muted rounded-full overflow-hidden border border-black/5 dark:border-white/5">
+                      <div className="h-[6px] bg-[#131313] rounded-full overflow-hidden">
                         <div
                           className="h-full transition-all duration-500"
                           style={{
                             width: `${progreso}%`,
-                            backgroundColor: completo ? "#15803d" : "#ff906d",
+                            backgroundColor: completo ? "#59ee50" : "#ff906d",
                           }}
                         />
                       </div>
@@ -476,20 +485,20 @@ export function Entregas() {
                   )}
 
                   {/* Footer */}
-                  <div className="px-[16px] py-[14px] border-t border-black/10 dark:border-white/5 bg-muted/20 flex items-center justify-between gap-[12px]">
+                  <div className="px-[16px] py-[12px] border-t border-[rgba(72,72,71,0.15)] bg-[rgba(38,38,38,0.3)] flex items-center justify-between gap-[12px]">
                     <div className="flex flex-col gap-[2px]">
-                      <span className="font-['Inter',sans-serif] text-muted-foreground text-[10px] uppercase tracking-[0.5px] font-bold">
-                        Subtotal Cuenta
+                      <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.5px]">
+                        Total cuenta (sin facturar)
                       </span>
-                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-[16px] text-primary">
+                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-[16px]" style={{ color: "#ff906d" }}>
                         {RD(mesa.total)}
                       </span>
                     </div>
 
                     {mesa.pagada && (
-                      <div className="flex items-center gap-[6px] px-[10px] py-[4px] rounded-full bg-[#15803d]/10 border border-[#15803d]/20">
-                        <div className="rounded-full size-[5px]" style={{ backgroundColor: "#15803d" }} />
-                        <span className="font-['Inter',sans-serif] font-bold text-[10px] uppercase tracking-[0.5px] text-[#15803d]">
+                      <div className="flex items-center gap-[6px] px-[10px] py-[4px] rounded-full bg-[rgba(89,238,80,0.1)]">
+                        <div className="rounded-full size-[5px]" style={{ backgroundColor: "#59ee50" }} />
+                        <span className="font-['Inter',sans-serif] font-bold text-[10px] uppercase tracking-[0.5px] text-[#59ee50]">
                           Pagada
                         </span>
                       </div>

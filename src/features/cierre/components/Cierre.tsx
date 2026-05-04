@@ -527,12 +527,12 @@ export function Cierre() {
   }
 
   return (
-    <div className="flex-1 min-h-0 p-4 sm:p-6 lg:p-[32px] overflow-y-auto flex flex-col gap-6 max-w-[980px] bg-background transition-colors duration-300">
+    <div className="flex-1 min-h-0 p-4 sm:p-6 lg:p-[32px] overflow-y-auto flex flex-col gap-6 max-w-[980px]">
       <div>
-        <h1 className="font-['Space_Grotesk',sans-serif] font-bold text-foreground text-[28px]">
+        <h1 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[28px]">
           Cierre operativo
         </h1>
-        <p className="font-['Inter',sans-serif] text-muted-foreground text-[13px] mt-2 leading-relaxed">
+        <p className="font-['Inter',sans-serif] text-[#6b7280] text-[13px] mt-2">
           El cierre trabaja por ciclos operativos. Solo se puede imprimir si no hay mesas con saldo
           pendiente. Al imprimir, el ciclo actual se cierra y el siguiente debe iniciarse
           manualmente.
@@ -541,21 +541,21 @@ export function Cierre() {
 
       <div className="flex flex-wrap items-end gap-4">
         <label className="flex flex-col gap-2">
-          <span className="font-['Inter',sans-serif] text-muted-foreground text-[11px] uppercase tracking-wide font-bold">
+          <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] uppercase tracking-wide">
             Dia operativo
           </span>
           <input
             type="date"
             value={fecha}
             onChange={(e) => setFecha(e.target.value)}
-            className="bg-muted border border-black dark:border-white/20 rounded-[12px] px-4 py-3 font-['Inter',sans-serif] text-foreground text-[14px] outline-none focus:border-primary transition-colors"
+            className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[12px] px-4 py-3 font-['Inter',sans-serif] text-white text-[14px] outline-none focus:border-[rgba(255,144,109,0.4)]"
           />
         </label>
         <button
           type="button"
           onClick={() => void cargar()}
           disabled={loading}
-          className="bg-muted rounded-[12px] border border-black dark:border-white/20 px-5 py-3 font-['Inter',sans-serif] text-foreground text-[13px] font-bold cursor-pointer hover:bg-muted/80 disabled:opacity-50 transition-colors"
+          className="bg-[#262626] rounded-[12px] border border-[rgba(72,72,71,0.3)] px-5 py-3 font-['Inter',sans-serif] text-[#adaaaa] text-[13px] cursor-pointer hover:border-[rgba(255,144,109,0.35)] disabled:opacity-50"
         >
           {loading ? "Cargando..." : "Actualizar"}
         </button>
@@ -568,7 +568,7 @@ export function Cierre() {
               ? `Ya hay un ciclo abierto en esta u otra fecha. Debes buscarlo y cerrarlo primero.`
               : undefined
           }
-          className="bg-muted rounded-[12px] border border-black dark:border-white/20 px-5 py-3 font-['Inter',sans-serif] text-primary text-[13px] font-bold cursor-pointer hover:bg-muted/80 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="bg-[#262626] rounded-[12px] border border-[rgba(255,144,109,0.24)] px-5 py-3 font-['Inter',sans-serif] text-[#ffcf9f] text-[13px] cursor-pointer hover:border-[rgba(255,144,109,0.45)] disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {startingCycle ? "Iniciando..." : "Iniciar nuevo ciclo"}
         </button>
@@ -576,45 +576,45 @@ export function Cierre() {
           type="button"
           onClick={() => void handleCerrarCiclo()}
           disabled={printing || loading || !hasOpenCycle}
-          className="bg-primary text-primary-foreground rounded-[12px] px-6 py-3 font-['Space_Grotesk',sans-serif] font-bold text-[13px] uppercase tracking-wide cursor-pointer border-none shadow-lg hover:opacity-90 disabled:opacity-50 transition-all"
+          className="bg-[#ff906d] rounded-[12px] px-6 py-3 font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[13px] uppercase tracking-wide cursor-pointer border-none shadow-[0px_0px_16px_0px_rgba(255,144,109,0.25)] disabled:opacity-50"
         >
           {printing ? "Cerrando..." : "Cerrar ciclo"}
         </button>
       </div>
 
       {loadError && (
-        <div className="bg-destructive/10 border border-destructive/20 rounded-[12px] px-4 py-3">
-          <span className="font-['Inter',sans-serif] text-destructive text-[13px] font-medium">{loadError}</span>
+        <div className="bg-[rgba(255,113,108,0.08)] border border-[rgba(255,113,108,0.25)] rounded-[12px] px-4 py-3">
+          <span className="font-['Inter',sans-serif] text-[#ff716c] text-[13px]">{loadError}</span>
         </div>
       )}
 
       {printMsg && (
-        <div className="bg-primary/10 border border-primary/20 rounded-[12px] px-4 py-3">
-          <span className="font-['Inter',sans-serif] text-primary text-[13px] font-bold">{printMsg}</span>
+        <div className="bg-[rgba(89,238,80,0.06)] border border-[rgba(89,238,80,0.2)] rounded-[12px] px-4 py-3">
+          <span className="font-['Inter',sans-serif] text-[#59ee50] text-[13px]">{printMsg}</span>
         </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-4">
-        <div className="bg-card rounded-[20px] border border-black dark:border-white/10 p-6 shadow-sm">
-          <div className="font-['Inter',sans-serif] text-muted-foreground text-[12px] uppercase tracking-wide mb-2 font-bold">
+        <div className="bg-[#131313] rounded-[20px] border border-[rgba(255,144,109,0.2)] p-6">
+          <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[12px] uppercase tracking-wide mb-2">
             {fechaLegible}
           </div>
           {currentCycle ? (
             <div className="flex flex-col gap-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <div className="font-['Space_Grotesk',sans-serif] font-bold text-foreground text-[18px]">
+                  <div className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px]">
                     Ciclo #{currentCycle.cycle_number}
                   </div>
-                  <div className="font-['Inter',sans-serif] text-muted-foreground text-[13px] mt-1 font-medium">
+                  <div className="font-['Inter',sans-serif] text-[#6b7280] text-[13px] mt-1">
                     {currentCycle.closed_at == null ? "Abierto" : "Cerrado"}
                   </div>
                 </div>
                 <span
-                  className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-wide font-['Inter',sans-serif] font-bold border ${
+                  className={`rounded-full px-3 py-1 text-[11px] uppercase tracking-wide font-['Inter',sans-serif] ${
                     currentCycle.closed_at == null
-                      ? "bg-[#15803d]/10 text-[#15803d] border-[#15803d]/20"
-                      : "bg-primary/10 text-primary border-primary/20"
+                      ? "bg-[rgba(89,238,80,0.12)] text-[#59ee50]"
+                      : "bg-[rgba(255,144,109,0.12)] text-[#ffcf9f]"
                   }`}
                 >
                   {currentCycle.closed_at == null ? "En curso" : "Finalizado"}
@@ -624,46 +624,46 @@ export function Cierre() {
                 <InfoRow label="Hora de entrada" value={formatCycleDateTime(currentCycle.opened_at)} />
                 <InfoRow label="Hora de salida" value={formatCycleDateTime(currentCycle.closed_at)} />
               </div>
-              <p className="font-['Inter',sans-serif] text-muted-foreground text-[12px] leading-relaxed">
+              <p className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">
                 Si el restaurante extiende horario despues de medianoche, este ciclo sigue atado al
                 dia operativo seleccionado y no al cambio de fecha calendario.
               </p>
             </div>
           ) : (
-            <p className="font-['Inter',sans-serif] text-muted-foreground text-[13px]">
+            <p className="font-['Inter',sans-serif] text-[#adaaaa] text-[13px]">
               No hay ciclos registrados para este dia operativo. Inicia uno para comenzar el control
               de cierre.
             </p>
           )}
         </div>
 
-        <div className="bg-card rounded-[20px] border border-black dark:border-white/10 p-6 shadow-sm">
-          <h2 className="font-['Space_Grotesk',sans-serif] font-bold text-foreground text-[16px] mb-4 uppercase tracking-tight">
+        <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-6">
+          <h2 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[16px] mb-4">
             Historial del dia
           </h2>
           {cycles.length === 0 ? (
-            <p className="font-['Inter',sans-serif] text-muted-foreground text-[13px]">
+            <p className="font-['Inter',sans-serif] text-[#6b7280] text-[13px]">
               Sin ciclos todavia.
             </p>
           ) : (
-            <ul className="flex flex-col gap-3 max-h-[260px] overflow-y-auto m-0 p-0 list-none">
+            <ul className="flex flex-col gap-3 max-h-[260px] overflow-y-auto">
               {cycles.map((cycle) => (
                 <li
                   key={cycle.id}
-                  className="rounded-[14px] border border-black/10 dark:border-white/5 px-4 py-3 bg-muted/20"
+                  className="rounded-[14px] border border-[rgba(72,72,71,0.18)] px-4 py-3"
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <span className="font-['Space_Grotesk',sans-serif] text-foreground text-[15px] font-bold">
+                    <span className="font-['Space_Grotesk',sans-serif] text-white text-[15px]">
                       Ciclo #{cycle.cycle_number}
                     </span>
-                    <span className="font-['Inter',sans-serif] text-muted-foreground text-[11px] uppercase tracking-wide font-bold">
+                    <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] uppercase tracking-wide">
                       {cycle.closed_at == null ? "Abierto" : "Cerrado"}
                     </span>
                   </div>
-                  <div className="font-['Inter',sans-serif] text-muted-foreground text-[12px] mt-2">
+                  <div className="font-['Inter',sans-serif] text-[#6b7280] text-[12px] mt-2">
                     Entrada: {formatCycleDateTime(cycle.opened_at)}
                   </div>
-                  <div className="font-['Inter',sans-serif] text-muted-foreground text-[12px]">
+                  <div className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">
                     Salida: {formatCycleDateTime(cycle.closed_at)}
                   </div>
                 </li>
@@ -674,59 +674,57 @@ export function Cierre() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Total cobrado" value={RD(resumen.totalPagado)} accent="#15803d" />
+        <StatCard title="Total cobrado (pagadas)" value={RD(resumen.totalPagado)} accent="#59ee50" />
         <StatCard title="Facturas pagadas" value={String(resumen.pagadas.length)} />
         <StatCard
           title="Pendientes"
           value={`${resumen.pendientes.length} · ${RD(resumen.totalPendiente)}`}
-          accent="#d4183d"
+          accent="#ff6aa0"
         />
-        <StatCard title="Canceladas" value={String(resumen.canceladas.length)} accent="#d4183d" />
+        <StatCard title="Canceladas" value={String(resumen.canceladas.length)} accent="#ff716c" />
       </div>
 
-      <div className="bg-card rounded-[20px] border border-primary/20 p-6 shadow-sm">
-        <h2 className="font-['Space_Grotesk',sans-serif] font-bold text-foreground text-[16px] mb-1 uppercase tracking-tight">
+      <div className="bg-[#131313] rounded-[20px] border border-[rgba(255,144,109,0.2)] p-6">
+        <h2 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[16px] mb-1">
           Mesas con deuda pendiente
         </h2>
-        <p className="font-['Inter',sans-serif] text-muted-foreground text-[12px] mb-4">
+        <p className="font-['Inter',sans-serif] text-[#6b7280] text-[12px] mb-4">
           Mientras exista una mesa con saldo abierto, el sistema bloquea la impresion del cierre.
         </p>
         {resumenCuentasAbiertas.lineas === 0 ? (
-          <div className="bg-[#15803d]/10 border border-[#15803d]/20 rounded-[12px] px-4 py-3">
-            <p className="font-['Inter',sans-serif] text-[#15803d] text-[13px] font-bold m-0 text-center uppercase tracking-wide">
-              No hay consumos pendientes. Cierre habilitado.
-            </p>
-          </div>
+          <p className="font-['Inter',sans-serif] text-[#59ee50] text-[13px]">
+            No hay consumos pendientes de facturar. El cierre puede imprimirse.
+          </p>
         ) : (
           <div className="flex flex-col gap-4">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <StatCard
-                title="Lineas / mesas"
+                title="Lineas / mesas con saldo"
                 value={`${resumenCuentasAbiertas.lineas} · ${resumenCuentasAbiertas.mesasDistintas}`}
-                accent="var(--primary)"
+                accent="#ff906d"
               />
-              <StatCard title="Subtotal" value={RD(resumenCuentasAbiertas.subtotal)} />
+              <StatCard title="Subtotal pendiente" value={RD(resumenCuentasAbiertas.subtotal)} />
               <StatCard
-                title="Total estimado (+18%)"
+                title="Total estimado (+ ITBIS 18%)"
                 value={RD(resumenCuentasAbiertas.totalEst)}
-                accent="#d97706"
+                accent="#ffd06d"
               />
             </div>
             {resumenCuentasAbiertas.porMesa.length > 0 && (
               <div>
-                <div className="font-['Inter',sans-serif] text-muted-foreground text-[11px] uppercase tracking-wide mb-2 font-bold">
+                <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] uppercase tracking-wide mb-2">
                   Por mesa (subtotal)
                 </div>
-                <ul className="flex flex-col gap-2 max-h-[200px] overflow-y-auto m-0 p-0 list-none">
+                <ul className="flex flex-col gap-2 max-h-[200px] overflow-y-auto">
                   {resumenCuentasAbiertas.porMesa.map(({ mesa, subtotal }) => (
                     <li
                       key={mesa}
-                      className="flex justify-between items-center border-b border-black/5 dark:border-white/5 pb-2 last:border-0"
+                      className="flex justify-between items-center border-b border-[rgba(72,72,71,0.2)] pb-2 last:border-0"
                     >
-                      <span className="font-['Inter',sans-serif] text-foreground text-[14px] font-medium">
+                      <span className="font-['Inter',sans-serif] text-white text-[14px]">
                         {mesa === 0 ? "Para llevar" : `Mesa ${mesa}`}
                       </span>
-                      <span className="font-['Space_Grotesk',sans-serif] text-primary text-[14px] tabular-nums font-bold">
+                      <span className="font-['Space_Grotesk',sans-serif] text-[#ff906d] text-[14px] tabular-nums">
                         {RD(subtotal)}
                       </span>
                     </li>
@@ -738,24 +736,24 @@ export function Cierre() {
         )}
       </div>
 
-      <div className="bg-card rounded-[20px] border border-black dark:border-white/10 p-6 shadow-sm">
-        <h2 className="font-['Space_Grotesk',sans-serif] font-bold text-foreground text-[16px] mb-4 uppercase tracking-tight">
-          Ventas por metodo de pago
+      <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-6">
+        <h2 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[16px] mb-4">
+          Por metodo de pago (solo pagadas)
         </h2>
         {resumen.porMetodo.length === 0 ? (
-          <p className="font-['Inter',sans-serif] text-muted-foreground text-[13px] text-center py-4 bg-muted/20 rounded-[12px]">
+          <p className="font-['Inter',sans-serif] text-[#6b7280] text-[13px]">
             Sin ventas pagadas en este ciclo.
           </p>
         ) : (
-          <ul className="flex flex-col gap-3 m-0 p-0 list-none">
+          <ul className="flex flex-col gap-3">
             {resumen.porMetodo.map((m) => (
               <li
                 key={m.etiqueta}
-                className="flex justify-between items-center border-b border-black/5 dark:border-white/5 pb-3 last:border-0"
+                className="flex justify-between items-center border-b border-[rgba(72,72,71,0.2)] pb-3 last:border-0"
               >
-                <span className="font-['Inter',sans-serif] text-foreground text-[14px] font-bold">{m.etiqueta}</span>
-                <span className="font-['Inter',sans-serif] text-muted-foreground text-[13px] font-medium">
-                  {m.cantidad} fact. · <span className="text-foreground font-bold">{RD(m.total)}</span>
+                <span className="font-['Inter',sans-serif] text-white text-[14px]">{m.etiqueta}</span>
+                <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[13px]">
+                  {m.cantidad} fact. · {RD(m.total)}
                 </span>
               </li>
             ))}
@@ -764,34 +762,28 @@ export function Cierre() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="bg-card rounded-[20px] border border-black dark:border-white/10 p-6 shadow-sm">
-          <div className="font-['Inter',sans-serif] text-muted-foreground text-[11px] uppercase mb-2 font-bold">
+        <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-6">
+          <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] uppercase mb-2">
             Subtotal (pagadas)
           </div>
-          <div className="font-['Space_Grotesk',sans-serif] font-bold text-foreground text-[22px]">
+          <div className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[22px]">
             {RD(resumen.subtotalPagado)}
           </div>
         </div>
-        <div className="bg-card rounded-[20px] border border-black dark:border-white/10 p-6 shadow-sm">
-          <div className="font-['Inter',sans-serif] text-muted-foreground text-[11px] uppercase mb-2 font-bold">
+        <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-6">
+          <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] uppercase mb-2">
             ITBIS (pagadas)
           </div>
-          <div className="font-['Space_Grotesk',sans-serif] font-bold text-foreground text-[22px]">
+          <div className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[22px]">
             {RD(resumen.itbisPagado)}
           </div>
         </div>
-        <div className="bg-card rounded-[20px] border border-black dark:border-white/10 p-6 shadow-sm sm:col-span-2 flex items-center justify-between">
-          <div className="flex flex-col">
-            <div className="font-['Inter',sans-serif] text-muted-foreground text-[11px] uppercase mb-2 font-bold">
-              Ticket promedio
-            </div>
-            <div className="font-['Space_Grotesk',sans-serif] font-bold text-primary text-[24px]">
-              {resumen.pagadas.length > 0 ? RD(resumen.ticketPromedioPagado) : "-"}
-            </div>
+        <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-6 sm:col-span-2">
+          <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] uppercase mb-2">
+            Ticket promedio (pagadas)
           </div>
-          <div className="text-right">
-             <div className="font-['Inter',sans-serif] text-muted-foreground text-[11px] uppercase mb-2 font-bold">Total Ciclo</div>
-             <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#15803d] text-[28px]">{RD(resumen.totalPagado)}</div>
+          <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[22px]">
+            {resumen.pagadas.length > 0 ? RD(resumen.ticketPromedioPagado) : "-"}
           </div>
         </div>
       </div>
@@ -801,11 +793,11 @@ export function Cierre() {
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-muted/30 rounded-[14px] px-4 py-3 border border-black/5 dark:border-white/10">
-      <div className="font-['Inter',sans-serif] text-muted-foreground text-[11px] uppercase tracking-wide mb-1 font-bold">
+    <div className="bg-[#1a1a1a] rounded-[14px] px-4 py-3 border border-[rgba(72,72,71,0.18)]">
+      <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] uppercase tracking-wide mb-1">
         {label}
       </div>
-      <div className="font-['Inter',sans-serif] text-foreground text-[14px] font-medium">{value}</div>
+      <div className="font-['Inter',sans-serif] text-white text-[14px]">{value}</div>
     </div>
   );
 }
@@ -820,13 +812,13 @@ function StatCard({
   accent?: string;
 }) {
   return (
-    <div className="bg-card rounded-[16px] p-5 border border-black dark:border-white/10 shadow-sm">
-      <div className="font-['Inter',sans-serif] text-muted-foreground text-[11px] uppercase tracking-wide mb-2 font-bold">
+    <div className="bg-[#201f1f] rounded-[16px] p-5 border border-[rgba(72,72,71,0.12)]">
+      <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] uppercase tracking-wide mb-2">
         {title}
       </div>
       <div
         className="font-['Space_Grotesk',sans-serif] font-bold text-[20px] sm:text-[22px]"
-        style={{ color: accent ?? "var(--foreground)" }}
+        style={{ color: accent ?? "#fff" }}
       >
         {value}
       </div>
