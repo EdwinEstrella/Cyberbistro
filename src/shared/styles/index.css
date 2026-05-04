@@ -17,13 +17,29 @@
   --cb-surface-elevated: #201f1f;
   --cb-border-subtle: rgba(72, 72, 71, 0.2);
   --cb-dashboard-card-footer: rgba(38, 38, 38, 0.6);
+  --cb-pos-category-bg: #201f1f;
+  --cb-pos-category-text: #adaaaa;
+  --cb-pos-card: #201f1f;
+  --cb-pos-card-text: #ffffff;
+  --cb-pos-cart: rgba(32, 31, 31, 0.6);
+  --cb-pos-cart-footer: rgba(38, 38, 38, 0.8);
+  --cb-pos-price: #59ee50;
 }
 
 .light {
-  --cb-surface: #fff8ee;
-  --cb-surface-elevated: #fff8ee;
-  --cb-border-subtle: rgba(28, 21, 16, 0.16);
-  --cb-dashboard-card-footer: rgba(226, 216, 202, 0.8);
+  --cb-accent: #f45f1f;
+  --cb-accent-muted: rgba(244, 95, 31, 0.1);
+  --cb-surface: #ffffff;
+  --cb-surface-elevated: #ffffff;
+  --cb-border-subtle: #dfe6ee;
+  --cb-dashboard-card-footer: #f8fafc;
+  --cb-pos-category-bg: #ffffff;
+  --cb-pos-category-text: #334155;
+  --cb-pos-card: #ffffff;
+  --cb-pos-card-text: #162033;
+  --cb-pos-cart: #ffffff;
+  --cb-pos-cart-footer: #f8fafc;
+  --cb-pos-price: #14998f;
 }
 
 /* Ocultar barras de scroll globalmente */

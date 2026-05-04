@@ -836,9 +836,9 @@ export function Dashboard() {
   }
 
   return (
-    <div className="flex flex-col lg:flex-row gap-[24px] lg:gap-[32px] p-4 sm:p-[32px] flex-1 overflow-y-auto lg:overflow-hidden min-h-0">
+    <div className="flex h-full min-h-0 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
       {/* LEFT: Menu */}
-      <div className="lg:flex-1 flex flex-col gap-[24px] min-w-0 lg:overflow-auto">
+      <div className="flex min-w-0 flex-col gap-[24px] p-4 sm:p-[32px] lg:flex-1 lg:overflow-auto">
         <DashboardTickerStrip />
 
         {/* Categories */}
@@ -847,23 +847,25 @@ export function Dashboard() {
             <button
               key={cat}
               onClick={() => setActiveCategory(cat)}
-              className="px-[24px] py-[10px] rounded-[12px] shrink-0 font-['Space_Grotesk',sans-serif] font-bold text-[14px] tracking-[1.2px] uppercase border-none cursor-pointer transition-all"
+              className="px-[24px] py-[10px] rounded-[999px] shrink-0 font-['Space_Grotesk',sans-serif] font-bold text-[14px] tracking-[0.2px] border cursor-pointer transition-all"
               style={{
                 backgroundColor:
                   activeCategory === cat
                     ? catColor(cat) === "#adaaaa"
-                      ? "#ff906d"
+                      ? "var(--cb-accent)"
                       : catColor(cat)
-                    : "#201f1f",
+                    : "var(--cb-pos-category-bg)",
                 color:
                   activeCategory === cat
                     ? cat === "Todos"
-                      ? "#5b1600"
+                      ? "#ffffff"
                       : "#0e0e0e"
-                    : "#adaaaa",
+                    : "var(--cb-pos-category-text)",
+                borderColor:
+                  activeCategory === cat ? "transparent" : "var(--cb-border-subtle)",
                 boxShadow:
                   activeCategory === cat
-                    ? `0 0 16px rgba(255,144,109,0.2)`
+                    ? `0 12px 24px -18px rgba(244,95,31,0.55)`
                     : undefined,
               }}
             >
@@ -901,7 +903,8 @@ export function Dashboard() {
               return (
                 <div
                   key={plato.id}
-                  className="bg-[#201f1f] light:bg-[#fff8ee] rounded-[16px] flex flex-col overflow-hidden border border-[rgba(72,72,71,0.1)] light:border-[rgba(28,21,16,0.16)] transition-all cursor-pointer group light:shadow-[0_18px_45px_-30px_rgba(24,18,14,0.45)]"
+                  className="rounded-[12px] flex flex-col overflow-hidden border transition-all cursor-pointer group light:shadow-[0_18px_45px_-34px_rgba(15,23,42,0.45)]"
+                  data-pos-card="true"
                   style={{ borderTop: `3px solid ${cc}` }}
                   onClick={() => addToCart(plato)}
                 >
@@ -928,14 +931,14 @@ export function Dashboard() {
                     </div>
 
                     {/* Name */}
-                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-white light:text-[#17130f] text-[14px] uppercase leading-tight">
+                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-[14px] leading-tight" style={{ color: "var(--cb-pos-card-text)" }}>
                       {plato.nombre}
                     </span>
 
                     {/* Price */}
                     <span
                       className="font-['Space_Grotesk',sans-serif] font-bold text-[16px] mt-auto"
-                      style={{ color: cc }}
+                      style={{ color: `var(--cb-pos-price, ${cc})` }}
                     >
                       {formatMoney(plato.precio)}
                     </span>
@@ -946,6 +949,7 @@ export function Dashboard() {
                     className="flex items-center justify-center py-[10px] transition-colors"
                     style={{
                       backgroundColor: inCart ? `${cc}20` : "var(--cb-dashboard-card-footer)",
+                      borderTop: "1px solid var(--cb-border-subtle)",
                     }}
                   >
                     {inCart ? (
@@ -969,12 +973,12 @@ export function Dashboard() {
       </div>
 
       {/* RIGHT: Order Panel */}
-      <div className="w-full lg:w-[340px] shrink-0 backdrop-blur-[12px] bg-[rgba(32,31,31,0.6)] light:bg-[#fff8ee] rounded-[16px] border border-[rgba(72,72,71,0.1)] light:border-[rgba(28,21,16,0.16)] shadow-[0px_25px_50px_-12px_rgba(0,0,0,0.25)] light:shadow-[0_24px_70px_-40px_rgba(24,18,14,0.55)] flex flex-col lg:self-start lg:sticky lg:top-0 lg:max-h-[calc(100vh-160px)]">
+      <div className="w-full shrink-0 backdrop-blur-[12px] bg-[rgba(32,31,31,0.6)] light:bg-white border border-[rgba(72,72,71,0.1)] light:border-[#dfe6ee] shadow-[0px_25px_50px_-12px_rgba(0,0,0,0.25)] light:shadow-none flex flex-col lg:h-full lg:w-[380px] lg:border-y-0 lg:border-r-0 lg:border-l lg:rounded-none">
         {/* Header */}
         <div className="border-b border-[rgba(72,72,71,0.2)] px-[24px] pt-[20px] pb-[20px] shrink-0">
           {/* Título */}
           <div className="text-center">
-            <span className="font-['Space_Grotesk',sans-serif] font-bold text-white light:text-[#17130f] text-[18px] uppercase">
+            <span className="font-['Space_Grotesk',sans-serif] font-bold text-white light:text-[#162033] text-[18px] uppercase">
               Pedido Actual
             </span>
           </div>

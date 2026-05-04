@@ -2,43 +2,43 @@
 
 :root {
   --font-size: 16px;
-  --background: #eee8df;
-  --foreground: #17130f;
-  --card: #fff8ee;
-  --card-foreground: #17130f;
-  --popover: #fff8ee;
-  --popover-foreground: #17130f;
-  --primary: #18120e;
-  --primary-foreground: #fff8ee;
-  --secondary: #e2d8ca;
-  --secondary-foreground: #17130f;
-  --muted: #dfd3c3;
-  --muted-foreground: #4f463d;
-  --accent: #d9cbbb;
-  --accent-foreground: #18120e;
+  --background: #f6f8fb;
+  --foreground: #162033;
+  --card: #ffffff;
+  --card-foreground: #162033;
+  --popover: #ffffff;
+  --popover-foreground: #162033;
+  --primary: #f45f1f;
+  --primary-foreground: #fff8f3;
+  --secondary: #eef3f8;
+  --secondary-foreground: #162033;
+  --muted: #e7edf4;
+  --muted-foreground: #5c6879;
+  --accent: #fff3ea;
+  --accent-foreground: #c94412;
   --destructive: #d4183d;
   --destructive-foreground: #ffffff;
-  --border: rgba(28, 21, 16, 0.18);
-  --input: #fffaf3;
-  --input-background: #fffaf3;
-  --switch-background: #b8aa99;
+  --border: #dfe6ee;
+  --input: #ffffff;
+  --input-background: #ffffff;
+  --switch-background: #d6dee8;
   --font-weight-medium: 500;
   --font-weight-normal: 400;
-  --ring: #9a4e32;
+  --ring: #f45f1f;
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
   --radius: 0.625rem;
-  --sidebar: #241b16;
-  --sidebar-foreground: #fff8ee;
-  --sidebar-primary: #ff906d;
-  --sidebar-primary-foreground: #18120e;
-  --sidebar-accent: #3a2a21;
-  --sidebar-accent-foreground: #fff8ee;
-  --sidebar-border: rgba(255, 144, 109, 0.18);
-  --sidebar-ring: #ff906d;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #162033;
+  --sidebar-primary: #f45f1f;
+  --sidebar-primary-foreground: #fff8f3;
+  --sidebar-accent: #fff3ea;
+  --sidebar-accent-foreground: #c94412;
+  --sidebar-border: #dfe6ee;
+  --sidebar-ring: #f45f1f;
 }
 
 .dark {
@@ -132,8 +132,8 @@
 
   .light body {
     background:
-      radial-gradient(circle at 18% 0%, rgba(255, 144, 109, 0.14), transparent 34%),
-      linear-gradient(135deg, #eee8df 0%, #e4dacd 48%, #d8ccbd 100%);
+      radial-gradient(circle at 22% 0%, rgba(244, 95, 31, 0.08), transparent 34%),
+      linear-gradient(135deg, #ffffff 0%, #f6f8fb 44%, #eef3f8 100%);
   }
 
   /**
@@ -189,6 +189,11 @@
 }
 
 @layer utilities {
+  [data-pos-card="true"] {
+    background-color: var(--cb-pos-card);
+    border-color: var(--cb-border-subtle);
+  }
+
   .light [class~="bg-\[\#0e0e0e\]"] {
     background-color: var(--background) !important;
   }
@@ -216,12 +221,22 @@
 
   .light [class~="text-\[\#adaaaa\]"],
   .light [class~="text-white\/50"] {
-    color: #2a221b !important;
+    color: #334155 !important;
   }
 
   .light [class~="text-\[\#6b7280\]"],
   .light [class~="text-\[\#484847\]"] {
     color: var(--muted-foreground) !important;
+  }
+
+  .light [class~="text-white"] {
+    color: var(--foreground) !important;
+  }
+
+  .light [class~="bg-\[\#ff4444\]"][class~="text-white"],
+  .light [class~="bg-\[\#ff4444\]"] [class~="text-white"],
+  .light [class~="hover\:bg-\[\#e81123\]"]:hover [class~="text-white"] {
+    color: #ffffff !important;
   }
 
   .light [class~="bg-\[\#131313\]"] [class~="text-white"],
