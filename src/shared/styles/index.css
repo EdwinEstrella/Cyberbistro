@@ -16,6 +16,14 @@
   --cb-surface: #131313;
   --cb-surface-elevated: #201f1f;
   --cb-border-subtle: rgba(72, 72, 71, 0.2);
+  --cb-dashboard-card-footer: rgba(38, 38, 38, 0.6);
+}
+
+.light {
+  --cb-surface: #fff8ee;
+  --cb-surface-elevated: #fff8ee;
+  --cb-border-subtle: rgba(28, 21, 16, 0.16);
+  --cb-dashboard-card-footer: rgba(226, 216, 202, 0.8);
 }
 
 /* Ocultar barras de scroll globalmente */

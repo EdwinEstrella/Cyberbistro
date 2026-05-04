@@ -31,11 +31,11 @@
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
   --radius: 0.625rem;
-  --sidebar: #201813;
+  --sidebar: #241b16;
   --sidebar-foreground: #fff8ee;
   --sidebar-primary: #ff906d;
   --sidebar-primary-foreground: #18120e;
-  --sidebar-accent: #2c211a;
+  --sidebar-accent: #3a2a21;
   --sidebar-accent-foreground: #fff8ee;
   --sidebar-border: rgba(255, 144, 109, 0.18);
   --sidebar-ring: #ff906d;
@@ -60,6 +60,8 @@
   --destructive-foreground: oklch(0.637 0.237 25.331);
   --border: oklch(0.269 0 0);
   --input: oklch(0.269 0 0);
+  --input-background: #131313;
+  --switch-background: oklch(0.269 0 0);
   --ring: oklch(0.439 0 0);
   --font-weight-medium: 500;
   --font-weight-normal: 400;
@@ -192,7 +194,8 @@
   }
 
   .light [class~="bg-\[\#131313\]"],
-  .light [class~="bg-\[\#111111\]"] {
+  .light [class~="bg-\[\#111111\]"],
+  .light [class~="bg-\[\#201f1f\]"] {
     background-color: var(--card) !important;
   }
 
@@ -207,6 +210,10 @@
     background-color: var(--accent) !important;
   }
 
+  .light [class~="bg-black"] {
+    background-color: var(--input-background) !important;
+  }
+
   .light [class~="text-\[\#adaaaa\]"],
   .light [class~="text-white\/50"] {
     color: #2a221b !important;
@@ -217,8 +224,26 @@
     color: var(--muted-foreground) !important;
   }
 
-  .light [class~="text-white"] {
+  .light [class~="bg-\[\#131313\]"] [class~="text-white"],
+  .light [class~="bg-\[\#111111\]"] [class~="text-white"],
+  .light [class~="bg-\[\#201f1f\]"] [class~="text-white"],
+  .light [class~="bg-\[\#1a1a1a\]"] [class~="text-white"],
+  .light [class~="bg-\[\#262626\]"] [class~="text-white"],
+  .light [class~="bg-\[\#383838\]"] [class~="text-white"],
+  .light [class~="bg-\[\#131313\]"][class~="text-white"],
+  .light [class~="bg-\[\#111111\]"][class~="text-white"],
+  .light [class~="bg-\[\#201f1f\]"][class~="text-white"],
+  .light [class~="bg-\[\#1a1a1a\]"][class~="text-white"],
+  .light [class~="bg-\[\#262626\]"][class~="text-white"],
+  .light [class~="bg-\[\#383838\]"][class~="text-white"],
+  .light [class~="bg-black"][class~="text-white"] {
     color: var(--foreground) !important;
+  }
+
+  .light [class~="text-white\/30"],
+  .light [class~="text-white\/40"],
+  .light [class~="text-white\/60"] {
+    color: color-mix(in srgb, var(--foreground) 55%, transparent) !important;
   }
 
   .light [class~="border-\[rgba\(72\,72\,71\,0\.15\)\]"],
@@ -231,8 +256,16 @@
   }
 
   .light [class*="bg-\[rgba\(38\,38\,38"],
+  .light [class*="bg-\[rgba\(32\,31\,31"],
   .light [class*="bg-\[rgba\(19\,19\,19"],
   .light [class*="bg-\[rgba\(24\,24\,24"] {
     background-color: color-mix(in srgb, var(--card) 88%, transparent) !important;
+  }
+
+  .light [class*="bg-\[rgba\(38\,38\,38"] [class~="text-white"],
+  .light [class*="bg-\[rgba\(32\,31\,31"] [class~="text-white"],
+  .light [class*="bg-\[rgba\(19\,19\,19"] [class~="text-white"],
+  .light [class*="bg-\[rgba\(24\,24\,24"] [class~="text-white"] {
+    color: var(--foreground) !important;
   }
 }

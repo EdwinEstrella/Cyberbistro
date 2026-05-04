@@ -901,7 +901,7 @@ export function Dashboard() {
               return (
                 <div
                   key={plato.id}
-                  className="bg-[#201f1f] rounded-[16px] flex flex-col overflow-hidden border border-[rgba(72,72,71,0.1)] transition-all cursor-pointer group"
+                  className="bg-[#201f1f] light:bg-[#fff8ee] rounded-[16px] flex flex-col overflow-hidden border border-[rgba(72,72,71,0.1)] light:border-[rgba(28,21,16,0.16)] transition-all cursor-pointer group light:shadow-[0_18px_45px_-30px_rgba(24,18,14,0.45)]"
                   style={{ borderTop: `3px solid ${cc}` }}
                   onClick={() => addToCart(plato)}
                 >
@@ -928,7 +928,7 @@ export function Dashboard() {
                     </div>
 
                     {/* Name */}
-                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[14px] uppercase leading-tight">
+                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-white light:text-[#17130f] text-[14px] uppercase leading-tight">
                       {plato.nombre}
                     </span>
 
@@ -945,7 +945,7 @@ export function Dashboard() {
                   <div
                     className="flex items-center justify-center py-[10px] transition-colors"
                     style={{
-                      backgroundColor: inCart ? `${cc}20` : "rgba(38,38,38,0.6)",
+                      backgroundColor: inCart ? `${cc}20` : "var(--cb-dashboard-card-footer)",
                     }}
                   >
                     {inCart ? (
@@ -956,7 +956,7 @@ export function Dashboard() {
                         {inCart.cantidad} en carrito
                       </span>
                     ) : (
-                      <span className="font-['Inter',sans-serif] font-bold text-[11px] tracking-[0.5px] uppercase text-[#6b7280] group-hover:text-white transition-colors">
+                      <span className="font-['Inter',sans-serif] font-bold text-[11px] tracking-[0.5px] uppercase text-[#6b7280] light:text-[#5a4d41] group-hover:text-white light:group-hover:text-[#17130f] transition-colors">
                         + Agregar
                       </span>
                     )}
@@ -969,12 +969,12 @@ export function Dashboard() {
       </div>
 
       {/* RIGHT: Order Panel */}
-      <div className="w-full lg:w-[340px] shrink-0 backdrop-blur-[12px] bg-[rgba(32,31,31,0.6)] rounded-[16px] border border-[rgba(72,72,71,0.1)] shadow-[0px_25px_50px_-12px_rgba(0,0,0,0.25)] flex flex-col lg:self-start lg:sticky lg:top-0 lg:max-h-[calc(100vh-160px)]">
+      <div className="w-full lg:w-[340px] shrink-0 backdrop-blur-[12px] bg-[rgba(32,31,31,0.6)] light:bg-[#fff8ee] rounded-[16px] border border-[rgba(72,72,71,0.1)] light:border-[rgba(28,21,16,0.16)] shadow-[0px_25px_50px_-12px_rgba(0,0,0,0.25)] light:shadow-[0_24px_70px_-40px_rgba(24,18,14,0.55)] flex flex-col lg:self-start lg:sticky lg:top-0 lg:max-h-[calc(100vh-160px)]">
         {/* Header */}
         <div className="border-b border-[rgba(72,72,71,0.2)] px-[24px] pt-[20px] pb-[20px] shrink-0">
           {/* Título */}
           <div className="text-center">
-            <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px] uppercase">
+            <span className="font-['Space_Grotesk',sans-serif] font-bold text-white light:text-[#17130f] text-[18px] uppercase">
               Pedido Actual
             </span>
           </div>
