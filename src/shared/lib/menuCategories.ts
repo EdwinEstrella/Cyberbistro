@@ -29,9 +29,9 @@ export const MENU_CATEGORY_COLORS: Record<string, string> = {
   Pastas: "#fbbf24",
   Sushi: "#fb923c",
   Postres: "#f87171",
-  Bebidas: "#4ade80",
+  Bebidas: "#15803d",
   Mofongos: "#a69069",
-  Mariscos: "#2dd4bf",
+  Mariscos: "#0d9488",
   Salchipapa: "#d97706",
   Quesadillas: "#c2410c",
   Yaroas: "#9333ea",
@@ -40,7 +40,7 @@ export const MENU_CATEGORY_COLORS: Record<string, string> = {
   /** Legacy: platos guardados antes del split (hex distinto de Burritos). */
   "Burritos sandwich": "#0891b2",
   Tacos: "#c026d3",
-  "Menú especial": "#059669",
+  "Menú especial": "#065f46",
   "Plato del día": "#f59e0b",
   General: "#52525b",
 }

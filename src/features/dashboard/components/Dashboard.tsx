@@ -839,8 +839,6 @@ export function Dashboard() {
     <div className="flex h-full min-h-0 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
       {/* LEFT: Menu */}
       <div className="flex min-w-0 flex-col gap-[24px] p-4 sm:p-[32px] lg:flex-1 lg:overflow-auto">
-        <DashboardTickerStrip />
-
         {/* Categories */}
         <div className="flex gap-[12px] overflow-x-auto pb-[4px] shrink-0">
           {categories.map((cat) => (
@@ -851,18 +849,15 @@ export function Dashboard() {
               style={{
                 backgroundColor:
                   activeCategory === cat
-                    ? catColor(cat) === "#adaaaa"
-                      ? "var(--cb-accent)"
+                    ? cat === "Todos"
+                      ? "#15803d"
                       : catColor(cat)
                     : "var(--cb-pos-category-bg)",
                 color:
                   activeCategory === cat
-                    ? cat === "Todos"
-                      ? "#ffffff"
-                      : "#0e0e0e"
+                    ? "#ffffff"
                     : "var(--cb-pos-category-text)",
-                borderColor:
-                  activeCategory === cat ? "transparent" : "var(--cb-border-subtle)",
+                borderColor: "black",
                 boxShadow:
                   activeCategory === cat
                     ? `0 12px 24px -18px rgba(244,95,31,0.55)`
@@ -903,7 +898,7 @@ export function Dashboard() {
               return (
                 <div
                   key={plato.id}
-                  className="rounded-[12px] flex flex-col overflow-hidden border transition-all cursor-pointer group light:shadow-[0_18px_45px_-34px_rgba(15,23,42,0.45)]"
+                  className="rounded-[12px] flex flex-col overflow-hidden border border-black dark:border-black transition-all cursor-pointer group light:shadow-[0_18px_45px_-34px_rgba(15,23,42,0.45)]"
                   data-pos-card="true"
                   style={{ borderTop: `3px solid ${cc}` }}
                   onClick={() => addToCart(plato)}
@@ -973,12 +968,12 @@ export function Dashboard() {
       </div>
 
       {/* RIGHT: Order Panel */}
-      <div className="w-full shrink-0 backdrop-blur-[12px] bg-[rgba(32,31,31,0.6)] light:bg-white border border-[rgba(72,72,71,0.1)] light:border-[#dfe6ee] shadow-[0px_25px_50px_-12px_rgba(0,0,0,0.25)] light:shadow-none flex flex-col lg:h-full lg:w-[380px] lg:border-y-0 lg:border-r-0 lg:border-l lg:rounded-none">
+      <div className="w-full shrink-0 backdrop-blur-[12px] bg-[rgba(32,31,31,0.6)] light:bg-white border border-black dark:border-black shadow-[0px_25px_50px_-12px_rgba(0,0,0,0.25)] light:shadow-none flex flex-col lg:h-full lg:w-[380px] lg:border-y-0 lg:border-r-0 lg:border-l lg:rounded-none">
         {/* Header */}
-        <div className="border-b border-[rgba(72,72,71,0.2)] px-[24px] pt-[20px] pb-[20px] shrink-0">
+        <div className="border-b border-black dark:border-black px-[24px] pt-[20px] pb-[20px] shrink-0">
           {/* Título */}
           <div className="text-center">
-            <span className="font-['Space_Grotesk',sans-serif] font-bold text-white light:text-[#162033] text-[18px] uppercase">
+            <span className="font-['Space_Grotesk',sans-serif] font-bold text-black dark:text-white text-[18px] uppercase">
               Pedido Actual
             </span>
           </div>
@@ -994,16 +989,16 @@ export function Dashboard() {
               >
                 <span
                   className="font-['Inter',sans-serif] font-bold text-[11px] uppercase"
-                  style={{ color: selectedMesa ? "#460f00" : "#adaaaa" }}
+                  style={{ color: selectedMesa ? "#460f00" : "var(--cb-pos-category-text)" }}
                 >
                   {selectedMesa ? `Mesa ${selectedMesa.numero}` : "Seleccionar mesa"}
                 </span>
-                <span style={{ color: selectedMesa ? "#460f00" : "#adaaaa", fontSize: 9 }}>▼</span>
+                <span style={{ color: selectedMesa ? "#460f00" : "var(--cb-pos-category-text)", fontSize: 9 }}>▼</span>
               </button>
 
               {showMesaDropdown && (
                 <div
-                  className="absolute top-[calc(100%+6px)] left-0 z-50 bg-[#1a1a1a] border border-[rgba(72,72,71,0.4)] rounded-[12px] p-[8px] shadow-xl"
+                  className="absolute top-[calc(100%+6px)] left-0 z-50 bg-[#1a1a1a] border border-black rounded-[12px] p-[8px] shadow-xl"
                   style={{ minWidth: 180, maxHeight: 260, overflowY: "auto" }}
                 >
                   {/* Opción: sin mesa */}
@@ -1017,7 +1012,7 @@ export function Dashboard() {
                     </span>
                   </button>
 
-                  <div className="h-px bg-[rgba(72,72,71,0.3)] my-[6px]" />
+                  <div className="h-px bg-black my-[6px]" />
 
                   {/* Lista de mesas */}
                   <div className="grid grid-cols-4 gap-[4px]">
@@ -1160,7 +1155,7 @@ export function Dashboard() {
                   />
                   <div className="flex-1 flex flex-col gap-[4px] min-w-0">
                     <div className="flex items-start justify-between gap-[8px]">
-                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] uppercase leading-tight">
+                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-black dark:text-white text-[13px] uppercase leading-tight">
                         {c.cantidad}× {c.nombre}
                       </span>
                       <div className="flex items-center gap-[6px] shrink-0">
@@ -1180,7 +1175,7 @@ export function Dashboard() {
                         </button>
                       </div>
                     </div>
-                    <span className="font-['Inter',sans-serif] text-[#6b7280] text-[9px] uppercase tracking-wide">
+                    <span className="font-['Inter',sans-serif] text-black/60 dark:text-[#6b7280] text-[9px] uppercase tracking-wide">
                       {c.tipo === "cocina" ? "Cocina" : "Directo"} · {c.estado.replace(/_/g, " ")}
                     </span>
                   </div>
@@ -1191,7 +1186,7 @@ export function Dashboard() {
 
           {showEmptyHint && (
             <div className="flex flex-col items-center justify-center py-[24px] gap-[8px]">
-              <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px] text-center px-2">
+              <span className="font-['Inter',sans-serif] text-black/40 dark:text-[#6b7280] text-[12px] text-center px-2">
                 Seleccioná una mesa y hacé clic en los platos para agregarlos.
               </span>
             </div>
@@ -1215,7 +1210,7 @@ export function Dashboard() {
                 <div className="flex-1 flex flex-col gap-[4px]">
                   <div className="flex items-start justify-between gap-[8px]">
                     <div className="flex flex-col gap-[2px]">
-                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] uppercase leading-tight">
+                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-black dark:text-white text-[13px] uppercase leading-tight">
                         {item.plato.nombre}
                       </span>
                       {item.plato.va_a_cocina === false && (
@@ -1235,19 +1230,19 @@ export function Dashboard() {
                   </div>
                   <div className="flex items-center justify-between pt-[4px]">
                     {/* Quantity control */}
-                    <div className="bg-[#131313] flex gap-[10px] items-center px-[10px] py-[5px] rounded-[6px] border border-[rgba(72,72,71,0.3)]">
+                    <div className="bg-input-background flex gap-[10px] items-center px-[10px] py-[5px] rounded-[6px] border border-black dark:border-white/20">
                       <button
                         onClick={() => changeQty(item.plato.id, -1)}
-                        className="bg-transparent border-none cursor-pointer p-0 w-[12px] h-[12px] flex items-center justify-center text-white/60 hover:text-white"
+                        className="bg-transparent border-none cursor-pointer p-0 w-[12px] h-[12px] flex items-center justify-center text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white"
                       >
                         −
                       </button>
-                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[12px] min-w-[16px] text-center">
+                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-black dark:text-white text-[12px] min-w-[16px] text-center">
                         {String(item.cantidad).padStart(2, "0")}
                       </span>
                       <button
                         onClick={() => addToCart(item.plato)}
-                        className="bg-transparent border-none cursor-pointer p-0 w-[12px] h-[12px] flex items-center justify-center text-white/60 hover:text-white"
+                        className="bg-transparent border-none cursor-pointer p-0 w-[12px] h-[12px] flex items-center justify-center text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white"
                       >
                         +
                       </button>
@@ -1267,28 +1262,28 @@ export function Dashboard() {
 
         {/* Totals & Actions */}
         {showOrderFooter && (
-          <div className="backdrop-blur-[6px] bg-[rgba(38,38,38,0.8)] border-t border-[rgba(72,72,71,0.2)] rounded-b-[16px] px-[20px] py-[20px] flex flex-col gap-[16px] shrink-0">
+          <div className="backdrop-blur-[6px] bg-[rgba(38,38,38,0.8)] light:bg-white border-t border-black dark:border-black rounded-b-[16px] px-[20px] py-[20px] flex flex-col gap-[16px] shrink-0">
             {mesaAccountLoading && (
-              <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] text-center">
+              <span className="font-['Inter',sans-serif] text-black/60 dark:text-[#adaaaa] text-[11px] text-center">
                 Actualizando total…
               </span>
             )}
             {cartSubtotal > 0 && hasCuentaEnMesa && (
               <div className="bg-[rgba(89,238,80,0.06)] border border-[rgba(89,238,80,0.15)] rounded-[8px] px-[10px] py-[8px]">
-                <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] leading-snug">
+                <span className="font-['Inter',sans-serif] text-black/60 dark:text-[#adaaaa] text-[10px] leading-snug">
                   Carrito sin enviar: <span className="text-[#59ee50] font-semibold">{formatMoney(cartTotal)}</span>
-                  . Tocá <span className="text-white">Cocina</span> para sumarlo a la cuenta de la mesa antes de cobrar todo junto.
+                  . Tocá <span className="text-black dark:text-white">Cocina</span> para sumarlo a la cuenta de la mesa antes de cobrar todo junto.
                 </span>
               </div>
             )}
             {/* Totals (mesa abierta o solo carrito / para llevar) */}
             <div className="flex flex-col gap-[6px]">
-              <div className="flex items-center justify-between gap-[10px] rounded-[10px] border border-[rgba(72,72,71,0.28)] bg-[#131313] px-[12px] py-[10px] mb-[2px]">
+              <div className="flex items-center justify-between gap-[10px] rounded-[10px] border border-black dark:border-white/20 bg-input-background px-[12px] py-[10px] mb-[2px]">
                 <div className="flex flex-col min-w-0">
-                  <span className="font-['Inter',sans-serif] text-white text-[12px] font-semibold leading-tight">
+                  <span className="font-['Inter',sans-serif] text-black dark:text-white text-[12px] font-semibold leading-tight">
                     ITBIS 18%
                   </span>
-                  <span className="font-['Inter',sans-serif] text-[#6b7280] text-[10px] leading-snug">
+                  <span className="font-['Inter',sans-serif] text-black/60 dark:text-[#6b7280] text-[10px] leading-snug">
                     Usa la preferencia de Ajustes al abrir y puedes cambiarlo para este cobro
                   </span>
                 </div>
@@ -1308,13 +1303,13 @@ export function Dashboard() {
                 </button>
               </div>
               {tenantNcfFiscalActive ? (
-                <div className="flex flex-col gap-[10px] rounded-[10px] border border-[rgba(72,72,71,0.28)] bg-[#131313] px-[12px] py-[10px]">
+                <div className="flex flex-col gap-[10px] rounded-[10px] border border-black dark:border-white/20 bg-input-background px-[12px] py-[10px]">
                   <div className="flex items-center justify-between gap-[12px]">
                     <div className="flex flex-col min-w-0">
-                      <span className="font-['Inter',sans-serif] text-white text-[12px] font-semibold leading-tight">
+                      <span className="font-['Inter',sans-serif] text-black dark:text-white text-[12px] font-semibold leading-tight">
                         Tipo NCF
                       </span>
-                      <span className="font-['Inter',sans-serif] text-[#6b7280] text-[10px] leading-snug">
+                      <span className="font-['Inter',sans-serif] text-black/60 dark:text-[#6b7280] text-[10px] leading-snug">
                         Cambialo solo para este cobro si necesitas emitir otro comprobante.
                       </span>
                     </div>
@@ -1325,7 +1320,7 @@ export function Dashboard() {
                           isNcfBCode(e.target.value) ? e.target.value : DEFAULT_NCF_B_CODE
                         )
                       }
-                      className="min-w-[168px] rounded-[10px] border border-[rgba(72,72,71,0.3)] bg-[#1a1a1a] px-[12px] py-[9px] font-['Inter',sans-serif] text-[12px] text-white outline-none"
+                      className="min-w-[168px] rounded-[10px] border border-black dark:border-white/30 bg-background px-[12px] py-[9px] font-['Inter',sans-serif] text-[12px] text-black dark:text-white outline-none"
                     >
                       {NCF_B_TIPO_OPCIONES.map((opcion) => (
                         <option key={opcion.codigo} value={opcion.codigo}>
@@ -1336,7 +1331,7 @@ export function Dashboard() {
                   </div>
                   {ncfTypeRequiresClientRnc(selectedNcfType) ? (
                     <div className="flex flex-col gap-[6px]">
-                      <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">
+                      <span className="font-['Inter',sans-serif] text-black/60 dark:text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">
                         RNC del cliente
                       </span>
                       <input
@@ -1344,33 +1339,33 @@ export function Dashboard() {
                         value={takeoutClientRnc}
                         onChange={(e) => setTakeoutClientRnc(e.target.value)}
                         placeholder="RNC del cliente"
-                        className="w-full rounded-[10px] border border-[rgba(72,72,71,0.3)] bg-[#1a1a1a] px-[12px] py-[9px] font-['Inter',sans-serif] text-[12px] text-white outline-none"
+                        className="w-full rounded-[10px] border border-black dark:border-white/30 bg-background px-[12px] py-[9px] font-['Inter',sans-serif] text-[12px] text-black dark:text-white outline-none"
                       />
                     </div>
                   ) : null}
                 </div>
               ) : null}
               <div className="flex justify-between">
-                <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[1px] uppercase">
+                <span className="font-['Inter',sans-serif] text-black/60 dark:text-[#adaaaa] text-[11px] tracking-[1px] uppercase">
                   Subtotal {hasCuentaEnMesa ? "(en mesa)" : ""}
                 </span>
-                <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[1px] uppercase">
+                <span className="font-['Inter',sans-serif] text-black/60 dark:text-[#adaaaa] text-[11px] tracking-[1px] uppercase">
                   {formatMoney(panelBillSubtotal)}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[1px] uppercase">
+                <span className="font-['Inter',sans-serif] text-black/60 dark:text-[#adaaaa] text-[11px] tracking-[1px] uppercase">
                   {cartItbisEnabled ? "ITBIS (18%)" : "ITBIS (no incluido)"}
                 </span>
-                <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[1px] uppercase">
+                <span className="font-['Inter',sans-serif] text-black/60 dark:text-[#adaaaa] text-[11px] tracking-[1px] uppercase">
                   {formatMoney(panelBillItbis)}
                 </span>
               </div>
-              <div className="border-t border-[rgba(72,72,71,0.15)] pt-[8px] flex items-center justify-between">
-                <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[16px] uppercase">
+              <div className="border-t border-black dark:border-black pt-[8px] flex items-center justify-between">
+                <span className="font-['Space_Grotesk',sans-serif] font-bold text-black dark:text-white text-[16px] uppercase">
                   Total
                 </span>
-                <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#59ee50] text-[20px]">
+                <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#15803d] text-[20px]">
                   {formatMoney(panelBillTotal)}
                 </span>
               </div>
@@ -1383,8 +1378,8 @@ export function Dashboard() {
                 disabled={sending || !selectedMesa}
                 className="flex gap-[6px] items-center justify-center py-[12px] rounded-[12px] border-2 bg-transparent cursor-pointer transition-colors disabled:opacity-50"
                 style={{
-                  borderColor: selectedMesa ? "#59ee50" : "rgba(72,72,71,0.4)",
-                  color: selectedMesa ? "#59ee50" : "#6b7280",
+                  borderColor: selectedMesa ? "#15803d" : "black",
+                  color: selectedMesa ? "#15803d" : "black",
                 }}
               >
                 <span className="font-['Space_Grotesk',sans-serif] font-bold text-[11px] tracking-[1px] uppercase">
@@ -1414,8 +1409,8 @@ export function Dashboard() {
 
         {cart.length === 0 && (
           <div className="px-[20px] pb-[20px] shrink-0">
-            <div className="bg-[#131313] rounded-[12px] p-[16px] text-center">
-              <span className="font-['Inter',sans-serif] text-[#6b7280] text-[11px] tracking-[0.5px] uppercase">
+            <div className="bg-input-background rounded-[12px] p-[16px] border border-black dark:border-white/20 text-center">
+              <span className="font-['Inter',sans-serif] text-black/60 dark:text-[#6b7280] text-[11px] tracking-[0.5px] uppercase">
                 {hasCuentaEnMesa ? "Sin ítems nuevos en carrito" : "Carrito vacío"}
               </span>
             </div>

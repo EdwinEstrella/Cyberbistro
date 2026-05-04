@@ -6,6 +6,7 @@ import { generateMesasConfig, type MesaConfig } from "../config/mesas";
 import { loadCantidadMesas } from "../../../shared/lib/tenantMesasSettings";
 import { estadoColors, estadoLabels, type MesaEstadoVisual } from "../config/estadoTheme";
 import { TableMesaCard } from "./TableMesaCard";
+import { useTheme } from "../../../shared/context/ThemeContext";
 
 
 type Estado = MesaEstadoVisual;
@@ -103,6 +104,8 @@ interface ConsumoPanelRow {
 
 export function Tables() {
   const { tenantId, loading: authLoading } = useAuth();
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const [mesas, setMesas] = useState<Mesa[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -482,7 +485,7 @@ export function Tables() {
 
   return (
     <div
-      className="flex-1 relative overflow-hidden flex flex-col"
+      className="flex-1 relative overflow-hidden flex flex-col bg-background transition-colors duration-300"
       onClick={(e) => {
         // Click on backdrop cancels merge/selection
         if (e.target === e.currentTarget) {
@@ -492,13 +495,13 @@ export function Tables() {
       }}
     >
       {/* Top bar */}
-      <div className="flex flex-wrap items-center justify-between px-4 sm:px-[32px] pt-[16px] sm:pt-[20px] pb-[12px] sm:pb-[16px] gap-[8px] shrink-0">
+      <div className={`flex flex-wrap items-center justify-between px-4 sm:px-[32px] pt-[16px] sm:pt-[20px] pb-[12px] sm:pb-[16px] gap-[8px] shrink-0 border-b ${isDark ? "border-white/10" : "border-black"}`}>
         <div className="flex flex-wrap items-center gap-[12px] sm:gap-[16px]">
-          <h1 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[28px]">
+          <h1 className={`font-['Space_Grotesk',sans-serif] font-bold text-[28px] ${isDark ? "text-white" : "text-black"}`}>
             Mesas
           </h1>
           {mergeMode && (
-            <div className="bg-[rgba(255,144,109,0.1)] border border-[rgba(255,144,109,0.3)] rounded-full px-[12px] py-[4px]">
+            <div className={`bg-[rgba(255,144,109,0.1)] border rounded-full px-[12px] py-[4px] ${isDark ? "border-[rgba(255,144,109,0.3)]" : "border-black"}`}>
               <span className="font-['Inter',sans-serif] text-[#ff906d] text-[11px] tracking-[0.5px] uppercase font-bold">
                 Seleccioná una mesa adyacente para fusionar
               </span>
@@ -506,10 +509,10 @@ export function Tables() {
           )}
         </div>
         <div className="flex flex-wrap gap-[8px] sm:gap-[12px]">
-          <StatusBadge color="#59ee50" label={`${libre} Libre${libre !== 1 ? "s" : ""}`} />
-          <StatusBadge color="#ff716c" label={`${ocupada} Ocupada${ocupada !== 1 ? "s" : ""}`} />
+          <StatusBadge color="#59ee50" label={`${libre} Libre${libre !== 1 ? "s" : ""}`} isDark={isDark} />
+          <StatusBadge color="#ff716c" label={`${ocupada} Ocupada${ocupada !== 1 ? "s" : ""}`} isDark={isDark} />
           {limpieza > 0 && (
-            <StatusBadge color="#ff906d" label={`${limpieza} Limpieza`} />
+            <StatusBadge color="#ff906d" label={`${limpieza} Limpieza`} isDark={isDark} />
           )}
         </div>
       </div>
@@ -532,7 +535,7 @@ export function Tables() {
               Array.from({ length: maxColumna }, (_, ci) => (
                 <div
                   key={`bg-${fi}-${ci}`}
-                  className="rounded-[4px] border border-[rgba(72,72,71,0.12)]"
+                  className={`rounded-[4px] border ${isDark ? "border-white/10" : "border-black/10"}`}
                   style={{
                     gridColumn: ci + 1,
                     gridRow: fi + 1,
@@ -566,14 +569,14 @@ export function Tables() {
 
         {/* Side info panel */}
         {selectedMesa && (
-          <div className="w-[280px] shrink-0 bg-[#131313] border-l border-[rgba(72,72,71,0.2)] flex flex-col p-[24px] gap-[20px] overflow-y-auto">
+          <div className={`w-[320px] shrink-0 border-l flex flex-col p-[24px] gap-[20px] overflow-y-auto shadow-xl transition-colors duration-300 ${isDark ? "bg-[#131313] border-white/10" : "bg-sidebar border-black"}`}>
             {/* Header */}
             <div className="flex items-start justify-between">
               <div className="flex flex-col gap-[2px]">
-                <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[22px]">
+                <span className={`font-['Space_Grotesk',sans-serif] font-bold text-[22px] ${isDark ? "text-white" : "text-black"}`}>
                   Mesa {selectedMesa.numero.toString().padStart(2, "0")}
                 </span>
-                <span className="font-['Inter',sans-serif] text-[#6b7280] text-[11px]">
+                <span className="font-['Inter',sans-serif] text-muted-foreground text-[11px]">
                   Fila {selectedMesa.fila} · Col {selectedMesa.columna}
                   {selectedMesa.fusion_hijos.length > 0 &&
                     ` · ${selectedMesa.span_columnas > 1 ? `${selectedMesa.span_columnas} cols` : `${selectedMesa.span_filas} filas`}`}
@@ -581,60 +584,59 @@ export function Tables() {
               </div>
               <button
                 onClick={() => { setSelectedId(null); setMergeMode(false); }}
-                className="text-[#6b7280] bg-transparent border-none cursor-pointer text-[18px] leading-none hover:text-white transition-colors"
+                className="text-muted-foreground bg-transparent border-none cursor-pointer text-[22px] leading-none hover:text-black dark:hover:text-white transition-colors"
               >
                 ×
               </button>
             </div>
 
-            <div className="h-px bg-[rgba(72,72,71,0.2)]" />
+            <div className={`h-px ${isDark ? "bg-white/10" : "bg-black"}`} />
 
             {/* Estado (Sólo Lectura) */}
             <div className="flex flex-col gap-[10px]">
-              <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
+              <span className={`font-['Inter',sans-serif] text-[11px] tracking-[0.8px] uppercase font-bold ${isDark ? "text-white" : "text-black"}`}>
                 Estado Actual (Automático)
               </span>
-              <div className="flex items-center gap-[10px] px-[14px] py-[10px] rounded-[10px] border border-[rgba(72,72,71,0.2)] bg-[#1a1a1a]">
+              <div className={`flex items-center gap-[10px] px-[14px] py-[10px] rounded-[10px] border ${isDark ? "border-white/10 bg-[#1a1a1a]" : "border-black bg-background"}`}>
                 <div
                   className="rounded-full size-[8px] shrink-0"
                   style={{ backgroundColor: estadoColors[selectedMesa.estado].dot }}
                 />
                 <span
-                  className="font-['Inter',sans-serif] text-[13px] font-semibold"
-                  style={{ color: estadoColors[selectedMesa.estado].text }}
+                  className={`font-['Inter',sans-serif] text-[13px] font-bold ${isDark ? "text-white" : "text-black"}`}
                 >
                   {estadoLabels[selectedMesa.estado]}
                 </span>
               </div>
             </div>
 
-            <div className="h-px bg-[rgba(72,72,71,0.2)]" />
+            <div className={`h-px ${isDark ? "bg-white/10" : "bg-black"}`} />
 
             {/* Capacidad */}
             <div className="flex items-center justify-between">
-              <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
+              <span className={`font-['Inter',sans-serif] text-[11px] tracking-[0.8px] uppercase font-bold ${isDark ? "text-white" : "text-black"}`}>
                 Capacidad
               </span>
-              <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[16px]">
+              <span className={`font-['Space_Grotesk',sans-serif] font-bold text-[16px] ${isDark ? "text-white" : "text-black"}`}>
                 {selectedMesa.capacidad} personas
               </span>
             </div>
 
-            <div className="h-px bg-[rgba(72,72,71,0.2)]" />
+            <div className={`h-px ${isDark ? "bg-white/10" : "bg-black"}`} />
 
             {/* Historial de esta mesa */}
-            <div className="rounded-[12px] border border-[rgba(72,72,71,0.28)] bg-[#161616] p-[14px] flex flex-col gap-[10px] shrink-0">
+            <div className={`rounded-[12px] border p-[14px] flex flex-col gap-[10px] shrink-0 ${isDark ? "bg-[#161616] border-white/10" : "bg-background border-black"}`}>
               <div className="flex flex-col gap-1">
-                <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
+                <span className={`font-['Inter',sans-serif] text-[11px] tracking-[0.8px] uppercase font-bold ${isDark ? "text-white" : "text-black"}`}>
                   Historial / pedido en cuenta
                 </span>
-                <span className="font-['Inter',sans-serif] text-[#6b7280] text-[10px] leading-snug">
+                <span className="font-['Inter',sans-serif] text-muted-foreground text-[10px] leading-snug">
                   Mesa {selectedMesa.numero}. Podés cobrar aquí con el mismo flujo que en Venta (método de pago y factura).
                 </span>
               </div>
-              <div className="flex flex-col gap-[8px] max-h-[200px] overflow-y-auto pr-0.5 min-h-[3rem]">
+              <div className="flex flex-col gap-[8px] max-h-[250px] overflow-y-auto pr-0.5 min-h-[3rem]">
                 {historialConsumos.length === 0 ? (
-                  <p className="font-['Inter',sans-serif] text-[#6b7280] text-[12px] text-center py-3 m-0">
+                  <p className="font-['Inter',sans-serif] text-muted-foreground text-[12px] text-center py-3 m-0">
                     Sin líneas en cuenta en el POS.
                   </p>
                 ) : (
@@ -644,10 +646,10 @@ export function Tables() {
                     return (
                       <div
                         key={row.id}
-                        className="rounded-[10px] border border-[rgba(72,72,71,0.25)] bg-[#1a1a1a] px-[12px] py-[10px] flex flex-col gap-[6px]"
+                        className={`rounded-[10px] border px-[12px] py-[10px] flex flex-col gap-[6px] ${isDark ? "bg-[#1a1a1a] border-white/10" : "bg-muted/30 border-black/10"}`}
                       >
                         <div className="flex items-start justify-between gap-[8px]">
-                          <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] leading-tight">
+                          <span className={`font-['Space_Grotesk',sans-serif] font-bold text-[13px] uppercase leading-tight ${isDark ? "text-white" : "text-black"}`}>
                             {row.cantidad}× {row.nombre}
                           </span>
                           <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[13px] shrink-0 tabular-nums">
@@ -664,7 +666,7 @@ export function Tables() {
                           >
                             {row.tipo === "cocina" ? "Cocina" : "Directo"}
                           </span>
-                          <span className="font-['Inter',sans-serif] text-[9px] font-bold uppercase tracking-wide px-[8px] py-[3px] rounded-full bg-[rgba(255,255,255,0.06)] text-[#adaaaa]">
+                          <span className={`font-['Inter',sans-serif] text-[9px] font-bold uppercase tracking-wide px-[8px] py-[3px] rounded-full ${isDark ? "bg-white/10 text-white" : "bg-black/10 text-black"}`}>
                             {etiquetaEstadoConsumo(row.estado)}
                           </span>
                           {cocinaLbl ? (
@@ -673,7 +675,7 @@ export function Tables() {
                             </span>
                           ) : null}
                         </div>
-                        <span className="font-['Inter',sans-serif] text-[#6b7280] text-[10px]">
+                        <span className="font-['Inter',sans-serif] text-muted-foreground text-[10px]">
                           {new Date(row.created_at).toLocaleString("es-DO", {
                             day: "2-digit",
                             month: "short",
@@ -707,12 +709,12 @@ export function Tables() {
                 );
               return t > 0 ? (
                 <>
-                  <div className="h-px bg-[rgba(72,72,71,0.2)]" />
+                  <div className={`h-px ${isDark ? "bg-white/10" : "bg-black"}`} />
                   <div className="flex items-center justify-between">
-                    <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
+                    <span className={`font-['Inter',sans-serif] text-[11px] tracking-[0.8px] uppercase font-bold ${isDark ? "text-white" : "text-black"}`}>
                       Debe
                     </span>
-                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[16px]">
+                    <span className={`font-['Space_Grotesk',sans-serif] font-bold text-[18px] ${isDark ? "text-white" : "text-black"}`}>
                       {RD(t)}
                     </span>
                   </div>
@@ -720,11 +722,11 @@ export function Tables() {
               ) : null;
             })()}
 
-            <div className="h-px bg-[rgba(72,72,71,0.2)]" />
+            <div className={`h-px ${isDark ? "bg-white/10" : "bg-black"}`} />
 
             {/* Acciones de fusión */}
             <div className="flex flex-col gap-[8px]">
-              <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
+              <span className={`font-['Inter',sans-serif] text-[11px] tracking-[0.8px] uppercase font-bold ${isDark ? "text-white" : "text-black"}`}>
                 Fusión
               </span>
 
@@ -732,26 +734,21 @@ export function Tables() {
               {adjacentMesas.length > 0 && (
                 <button
                   onClick={() => setMergeMode((m) => !m)}
-                  className="flex items-center gap-[10px] px-[14px] py-[11px] rounded-[10px] cursor-pointer border-none transition-all text-left"
+                  className={`flex items-center gap-[10px] px-[14px] py-[11px] rounded-[10px] cursor-pointer border transition-all text-left bg-background hover:bg-muted ${isDark ? "border-white/20" : "border-black"}`}
                   style={{
-                    backgroundColor: mergeMode
-                      ? "rgba(255,144,109,0.15)"
-                      : "rgba(38,38,38,0.8)",
-                    border: mergeMode
-                      ? "1px solid rgba(255,144,109,0.4)"
-                      : "1px solid rgba(72,72,71,0.3)",
-                    color: mergeMode ? "#ff906d" : "#adaaaa",
+                    color: mergeMode ? "#ff906d" : "inherit",
+                    borderColor: mergeMode ? "#ff906d" : undefined,
                   }}
                 >
                   <span className="text-[14px]">{mergeMode ? "⟵" : "⊞"}</span>
-                  <span className="font-['Inter',sans-serif] text-[13px] font-semibold">
+                  <span className={`font-['Inter',sans-serif] text-[13px] font-bold ${isDark ? "text-white" : "text-black"}`}>
                     {mergeMode ? "Cancelar fusión" : "Fusionar con adyacente"}
                   </span>
                 </button>
               )}
 
               {adjacentMesas.length === 0 && selectedMesa.fusion_hijos.length === 0 && (
-                <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">
+                <span className="font-['Inter',sans-serif] text-muted-foreground text-[12px]">
                   Sin mesas adyacentes compatibles.
                 </span>
               )}
@@ -760,15 +757,13 @@ export function Tables() {
               {selectedMesa.fusion_hijos.length > 0 && (
                 <button
                   onClick={() => splitMesa(selectedMesa.id)}
-                  className="flex items-center gap-[10px] px-[14px] py-[11px] rounded-[10px] cursor-pointer border-none transition-all text-left"
+                  className={`flex items-center gap-[10px] px-[14px] py-[11px] rounded-[10px] cursor-pointer border transition-all text-left bg-[rgba(255,113,108,0.08)] hover:bg-[rgba(255,113,108,0.15)] ${isDark ? "border-white/10" : "border-black"}`}
                   style={{
-                    backgroundColor: "rgba(255,113,108,0.08)",
-                    border: "1px solid rgba(255,113,108,0.25)",
                     color: "#ff716c",
                   }}
                 >
                   <span className="text-[14px]">⊟</span>
-                  <span className="font-['Inter',sans-serif] text-[13px] font-semibold">
+                  <span className="font-['Inter',sans-serif] text-[13px] font-bold">
                     Separar mesas
                   </span>
                 </button>
@@ -777,19 +772,17 @@ export function Tables() {
           </div>
         )}
       </div>
-
-
     </div>
   );
 }
 
-function StatusBadge({ color, label }: { color: string; label: string }) {
+function StatusBadge({ color, label, isDark }: { color: string; label: string, isDark: boolean }) {
   return (
     <div
-      className="flex gap-[6px] items-center px-[12px] py-[5px] rounded-full border border-[rgba(72,72,71,0.2)] bg-[#201f1f]"
+      className={`flex gap-[6px] items-center px-[12px] py-[5px] rounded-full border bg-background ${isDark ? "border-white/10" : "border-black"}`}
     >
       <div className="rounded-full size-[7px]" style={{ backgroundColor: color }} />
-      <span className="font-['Inter',sans-serif] font-bold text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">
+      <span className={`font-['Inter',sans-serif] font-bold text-[10px] tracking-[0.8px] uppercase ${isDark ? "text-white" : "text-black"}`}>
         {label}
       </span>
     </div>

@@ -107,7 +107,7 @@ export function AppLayout() {
           className={`bg-sidebar flex flex-col shrink-0 min-h-0 self-stretch z-20 overflow-hidden transition-[width,opacity,transform,border-color] duration-300 ease-out ${
             sidebarHidden
               ? "w-0 opacity-0 -translate-x-3 border-r border-transparent"
-              : "w-[256px] opacity-100 translate-x-0 border-r border-sidebar-border"
+              : "w-[256px] opacity-100 translate-x-0 border-r border-black dark:border-black"
           }`}
           aria-label="Navegación principal"
           aria-hidden={sidebarHidden}
@@ -130,12 +130,12 @@ export function AppLayout() {
                     <path
                       d={item.icon}
                       fill={isActive ? "#FF906D" : "currentColor"}
-                      className={isActive ? "" : "text-muted-foreground"}
+                      className={isActive ? "" : "text-black dark:text-white"}
                     />
                   </svg>
                   <span
                     className={`font-['Space_Grotesk',sans-serif] text-[16px] tracking-[-0.4px] ${
-                      isActive ? "font-bold text-[#ff906d]" : "text-muted-foreground"
+                      isActive ? "font-bold text-[#ff906d]" : "text-black dark:text-white"
                     }`}
                   >
                     {item.label}
@@ -145,7 +145,7 @@ export function AppLayout() {
             })}
           </nav>
 
-          <div className="border-t border-sidebar-border px-[16px] py-[16px] flex flex-col gap-[8px]">
+          <div className="border-t border-black dark:border-black px-[16px] py-[16px] flex flex-col gap-[8px]">
             {/* Ajustes — solo administrador del negocio */}
             {showAjustesInSidebar(rol) && (
               <button
@@ -158,11 +158,11 @@ export function AppLayout() {
                   <div className="absolute left-0 top-0 bottom-0 w-[4px] bg-[#ff906d]" aria-hidden />
                 )}
                 <svg className="shrink-0 w-[20px] h-[20px]" fill="none" viewBox="0 0 20.1 20" aria-hidden>
-                  <path d={svgPaths.p3cdadd00} fill={isAjustesActive ? "#FF906D" : "currentColor"} className={isAjustesActive ? "" : "text-muted-foreground"} />
+                  <path d={svgPaths.p3cdadd00} fill={isAjustesActive ? "#FF906D" : "currentColor"} className={isAjustesActive ? "" : "text-black dark:text-white"} />
                 </svg>
                 <span
                   className={`font-['Space_Grotesk',sans-serif] text-[16px] tracking-[-0.4px] ${
-                    isAjustesActive ? "font-bold text-[#ff906d]" : "text-muted-foreground"
+                    isAjustesActive ? "font-bold text-[#ff906d]" : "text-black dark:text-white"
                   }`}
                 >
                   Ajustes
@@ -183,9 +183,9 @@ export function AppLayout() {
               }}
             >
               <svg className="shrink-0 size-[18px]" fill="none" viewBox="0 0 18 18" aria-hidden>
-                <path d={svgPaths.p3e9df400} fill="currentColor" className="text-muted-foreground" />
+                <path d={svgPaths.p3e9df400} fill="currentColor" className="text-black dark:text-white" />
               </svg>
-              <span className="font-['Space_Grotesk',sans-serif] text-muted-foreground text-[16px] tracking-[-0.4px]">
+              <span className="font-['Space_Grotesk',sans-serif] text-black dark:text-white text-[16px] tracking-[-0.4px]">
                 Cerrar Sesión
               </span>
             </button>
@@ -195,7 +195,7 @@ export function AppLayout() {
         {/* Main area — min-h-0 + scroll en <main> para que el contenido no quede cortado (Electron) */}
         <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
           {/* Shared Header */}
-          <header className="backdrop-blur-[6px] bg-background/60 flex items-center justify-between h-[64px] px-4 sm:px-6 lg:px-[32px] border-b border-border sticky top-0 z-10 shadow-[0px_4px_24px_0px_rgba(255,144,109,0.08)] transition-colors duration-300">
+          <header className="backdrop-blur-[6px] bg-background/60 flex items-center justify-between h-[64px] px-4 sm:px-6 lg:px-[32px] border-b border-black dark:border-black sticky top-0 z-10 shadow-[0px_4px_24px_0px_rgba(255,144,109,0.08)] transition-colors duration-300">
             <div className="flex gap-[8px] sm:gap-[24px] items-center min-w-0">
               <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[14px] sm:text-[18px] uppercase">
                 CyberBistro OS
