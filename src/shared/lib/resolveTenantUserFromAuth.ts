@@ -1,6 +1,11 @@
 import type { UserSchema } from '@insforge/sdk';
 import { insforgeClient } from './insforge';
 import type { TenantSessionRow } from './tenantSessionCache';
+import {
+  isSuperAdminEmail,
+  SUPER_ADMIN_ROLE,
+  SUPER_ADMIN_TENANT_ID,
+} from './superAdmin';
 
 async function fetchTenantUserByAuthId(authUserId: string) {
   return insforgeClient.database
@@ -51,6 +56,18 @@ async function withRetry<T>(
  * Primero por `auth_user_id`, luego por email de la sesión.
  */
 export async function resolveTenantUserForSession(user: UserSchema): Promise<TenantSessionRow | null> {
+  if (isSuperAdminEmail(user.email)) {
+    return {
+      tenant_id: SUPER_ADMIN_TENANT_ID,
+      email: user.email ?? "",
+      rol: SUPER_ADMIN_ROLE,
+      nombre:
+        typeof user.profile?.name === "string" && user.profile.name.trim()
+          ? user.profile.name
+          : "Super Admin",
+    };
+  }
+
   const { data: byAuth } = await withRetry('tenant_users por auth_user_id', () =>
     fetchTenantUserByAuthId(user.id)
   );

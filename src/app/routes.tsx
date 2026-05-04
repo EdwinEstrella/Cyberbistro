@@ -9,10 +9,12 @@ import { Entregas } from "../features/entregas";
 import { Soporte } from "../features/soporte";
 import { Ajustes } from "../features/ajustes";
 import { Cierre } from "../features/cierre";
+import { SuperAdmin } from "../features/super-admin";
 
 export const router = createHashRouter([
   { path: "/", Component: Login },
   { path: "/register", Component: Register },
+  { path: "/super-admin", Component: SuperAdmin },
   {
     Component: AppLayout,
     children: [

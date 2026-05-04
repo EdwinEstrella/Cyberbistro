@@ -4,7 +4,9 @@
  * Login: cada rol ve solo lo necesario.
  */
 
-export type TenantRol = "admin" | "cocina" | "cajera" | "mesero";
+import { SUPER_ADMIN_ROLE, SUPER_ADMIN_ROUTE } from "./superAdmin";
+
+export type TenantRol = "admin" | "cocina" | "cajera" | "mesero" | typeof SUPER_ADMIN_ROLE;
 
 const VENTA_PATHS = ["/dashboard", "/tables", "/entregas"] as const;
 
@@ -19,7 +21,13 @@ export const CIERRE_PATH = "/cierre";
  */
 export function normalizeTenantRol(rol: string | null): TenantRol | null {
   if (!rol) return null;
-  if (rol === "admin" || rol === "cocina" || rol === "cajera" || rol === "mesero") return rol;
+  if (
+    rol === "admin" ||
+    rol === "cocina" ||
+    rol === "cajera" ||
+    rol === "mesero" ||
+    rol === SUPER_ADMIN_ROLE
+  ) return rol;
   if (rol === "vender" || rol === "vendedor" || rol === "ventas" || rol === "cajero") {
     return "cajera";
   }
@@ -29,6 +37,7 @@ export function normalizeTenantRol(rol: string | null): TenantRol | null {
 /** Primera pantalla tras iniciar sesión. */
 export function defaultRouteForRol(rol: string | null): string {
   const normalized = normalizeTenantRol(rol);
+  if (normalized === SUPER_ADMIN_ROLE) return SUPER_ADMIN_ROUTE;
   if (normalized === "cocina") return "/cocina";
   return "/dashboard";
 }
@@ -42,6 +51,7 @@ export function canAccessCocinaRoute(rol: string | null): boolean {
 /** Rutas bajo AppLayout permitidas para el rol (pathname exacto, hash router). */
 export function isAppRouteAllowed(rol: string | null, pathname: string): boolean {
   const normalized = normalizeTenantRol(rol);
+  if (normalized === SUPER_ADMIN_ROLE) return pathname === SUPER_ADMIN_ROUTE;
   if (normalized === "admin") return true;
   if (pathname === "/ajustes" || pathname === "/soporte") return false;
   if (normalized === "cocina") return pathname === "/cocina";

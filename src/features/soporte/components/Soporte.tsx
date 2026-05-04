@@ -10,6 +10,13 @@ import {
   sortCategoriesForTabs,
 } from "../../../shared/lib/menuCategories";
 import { loadCantidadMesas, saveCantidadMesas } from "../../../shared/lib/tenantMesasSettings";
+import {
+  countActiveUsersByRole,
+  extractTenantUserLimitConfig,
+  formatRoleLabel,
+  getLimitForRole,
+  type TenantUserLimitConfig,
+} from "../../../shared/lib/tenantUserLimits";
 
 const STAFF_ROLES = [
   { value: "cajera", label: "Cajera / Venta" },
@@ -23,6 +30,11 @@ interface TenantUserRow {
   nombre: string | null;
   activo: boolean | null;
   auth_user_id: string | null;
+}
+
+interface TenantRow {
+  id: string;
+  [key: string]: unknown;
 }
 
 // ─────────────────────────────────────────────
@@ -550,6 +562,13 @@ function UsuariosPanel() {
   const { tenantId, tenantUser, user } = useAuth();
   const navigate = useNavigate();
   const [teamUsers, setTeamUsers] = useState<TenantUserRow[]>([]);
+  const [tenantLimitConfig, setTenantLimitConfig] = useState<TenantUserLimitConfig>({
+    userLimitEnabled: false,
+    adminUserLimit: null,
+    cajeraUserLimit: null,
+    cocinaUserLimit: null,
+    meseroUserLimit: null,
+  });
   const [listLoading, setListLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [email, setEmail] = useState("");
@@ -570,13 +589,23 @@ function UsuariosPanel() {
       return;
     }
     setListLoading(true);
-    const { data, error: qErr } = await insforgeClient.database
-      .from("tenant_users")
-      .select("id, email, rol, nombre, activo, auth_user_id")
-      .eq("tenant_id", tenantId)
-      .order("email");
-    if (!qErr && data) setTeamUsers(data as TenantUserRow[]);
+    const [usersRes, tenantRes] = await Promise.all([
+      insforgeClient.database
+        .from("tenant_users")
+        .select("id, email, rol, nombre, activo, auth_user_id")
+        .eq("tenant_id", tenantId)
+        .order("email"),
+      insforgeClient.database
+        .from("tenants")
+        .select("*")
+        .eq("id", tenantId)
+        .maybeSingle(),
+    ]);
+    if (!usersRes.error && usersRes.data) setTeamUsers(usersRes.data as TenantUserRow[]);
     else setTeamUsers([]);
+    if (!tenantRes.error && tenantRes.data) {
+      setTenantLimitConfig(extractTenantUserLimitConfig(tenantRes.data as TenantRow));
+    }
     setListLoading(false);
   }
 
@@ -635,6 +664,15 @@ function UsuariosPanel() {
     setSuccess("");
 
     const staffEmail = email.trim();
+    const currentForRole = countActiveUsersByRole(teamUsers, rol);
+    const roleLimit = getLimitForRole(tenantLimitConfig, rol);
+    if (roleLimit !== null && currentForRole >= roleLimit) {
+      setError(
+        `No se puede crear otro usuario con rol ${formatRoleLabel(rol)}. El límite configurado para este restaurante es ${roleLimit}.`
+      );
+      setCreating(false);
+      return;
+    }
 
     const { data: signData, error: authError } = await insforgeClient.auth.signUp({
       email: staffEmail,
@@ -717,6 +755,11 @@ function UsuariosPanel() {
             <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">
               Solo usuarios vinculados a tu restaurante. El administrador no puede borrarse a sí mismo ni quitar el único admin.
             </span>
+            {tenantLimitConfig.userLimitEnabled ? (
+              <span className="font-['Inter',sans-serif] text-[#ffb020] text-[12px]">
+                Límites activos. Cajera: {tenantLimitConfig.cajeraUserLimit ?? "∞"} · Cocina: {tenantLimitConfig.cocinaUserLimit ?? "∞"}
+              </span>
+            ) : null}
           </div>
           {listLoading ? (
             <span className="font-['Inter',sans-serif] text-[#6b7280] text-[13px]">Cargando lista…</span>
