@@ -218,7 +218,7 @@ export function buildFacturaReceiptHtml(
     <p style="margin:0 0 4px">¡Gracias por su compra!</p>
   </div>
   <div class="divider"></div>
-  <div class="center" style="font-size:13px;font-weight:600">${escapeHtml(new Date().toLocaleString("es-DO", { timeZone: "America/Santo_Domingo" }))}</div>
+  <div class="center" style="font-size:13px;font-weight:600">${escapeHtml(new Date().toLocaleString("es-DO", { timeZone: "America/Santo_Domingo", hour12: true }))}</div>
   `;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Factura</title><style>${thermalStyles(paperWidthMm)}</style></head><body>${body}</body></html>`;
@@ -292,7 +292,7 @@ export function buildComandaReceiptHtml(
     <p style="margin:0;font-size:13px;font-weight:600">CyberBistro OS</p>
   </div>
   <div class="divider"></div>
-  <div class="center" style="font-size:13px;font-weight:600">${escapeHtml(new Date().toLocaleString("es-DO", { timeZone: "America/Santo_Domingo" }))}</div>
+  <div class="center" style="font-size:13px;font-weight:600">${escapeHtml(new Date().toLocaleString("es-DO", { timeZone: "America/Santo_Domingo", hour12: true }))}</div>
   `;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Comanda</title><style>${thermalStyles(paperWidthMm)}</style></head><body>${body}</body></html>`;
@@ -496,7 +496,7 @@ export function buildCierreDiaReceiptHtml(
     <p style="margin:6px 0 0;font-size:13px;font-weight:600">CyberBistro OS — Cierre</p>
   </div>
   <div class="divider"></div>
-  <div class="center" style="font-size:13px;font-weight:600">${escapeHtml(new Date().toLocaleString("es-DO", { timeZone: "America/Santo_Domingo" }))}</div>
+  <div class="center" style="font-size:13px;font-weight:600">${escapeHtml(new Date().toLocaleString("es-DO", { timeZone: "America/Santo_Domingo", hour12: true }))}</div>
   `;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Cierre día</title><style>${thermalStyles(paperWidthMm)}</style></head><body>${body}</body></html>`;

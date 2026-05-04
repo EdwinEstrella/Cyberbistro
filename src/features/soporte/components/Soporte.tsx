@@ -13,7 +13,6 @@ import { loadCantidadMesas, saveCantidadMesas } from "../../../shared/lib/tenant
 import {
   countActiveUsersByRole,
   extractTenantUserLimitConfig,
-  formatRoleLabel,
   getLimitForRole,
   type TenantUserLimitConfig,
 } from "../../../shared/lib/tenantUserLimits";
@@ -61,11 +60,11 @@ function PinGate({ onUnlock }: { onUnlock: () => void }) {
   const keys = ["1","2","3","4","5","6","7","8","9","","0","⌫"];
 
   return (
-    <div className="flex-1 flex items-center justify-center">
+    <div className="flex-1 flex items-center justify-center bg-background transition-colors duration-300">
       <div className="flex flex-col items-center gap-[32px]">
         <div className="flex flex-col items-center gap-[6px]">
-          <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[24px]">Soporte</span>
-          <span className="font-['Inter',sans-serif] text-[#6b7280] text-[13px]">Ingresá el PIN para continuar</span>
+          <span className="font-['Space_Grotesk',sans-serif] font-bold text-foreground text-[24px]">Soporte</span>
+          <span className="font-['Inter',sans-serif] text-muted-foreground text-[13px]">Ingresá el PIN para continuar</span>
         </div>
         <div
           className="flex gap-[14px]"
@@ -77,7 +76,7 @@ function PinGate({ onUnlock }: { onUnlock: () => void }) {
               key={i}
               className="size-[14px] rounded-full transition-all duration-150"
               style={{
-                backgroundColor: i < pin.length ? (shaking ? "#ff716c" : "#ff906d") : "rgba(72,72,71,0.4)",
+                backgroundColor: i < pin.length ? (shaking ? "#ff716c" : "#ff906d") : "var(--muted)",
                 boxShadow: i < pin.length && !shaking ? "0 0 10px rgba(255,144,109,0.5)" : undefined,
               }}
             />
@@ -91,11 +90,9 @@ function PinGate({ onUnlock }: { onUnlock: () => void }) {
               <button
                 key={i}
                 onClick={() => isDel ? setPin((p) => p.slice(0,-1)) : handleDigit(key)}
-                className="w-[72px] h-[72px] rounded-[16px] font-['Space_Grotesk',sans-serif] font-bold text-[20px] cursor-pointer border-none transition-all active:scale-95"
+                className="w-[72px] h-[72px] rounded-[16px] font-['Space_Grotesk',sans-serif] font-bold text-[20px] cursor-pointer transition-all active:scale-95 bg-muted text-foreground border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
                 style={{
-                  backgroundColor: isDel ? "rgba(255,113,108,0.1)" : "rgba(38,38,38,0.9)",
-                  color: isDel ? "#ff716c" : "white",
-                  border: "1px solid rgba(72,72,71,0.3)",
+                  color: isDel ? "#ff716c" : "currentColor",
                 }}
               >{key}</button>
             );
@@ -235,65 +232,11 @@ function CartaPanel() {
   }
 
   async function handleDelete(id: number) {
-    if (!tenantId) {
-      alert("No hay restaurante asociado a la sesión.");
-      return;
-    }
+    if (!tenantId) return;
     const plato = platos.find((p) => p.id === id);
     if (!plato) return;
+    if (!confirm(`¿Estás seguro de eliminar "${plato.nombre}"? Esta acción no se puede deshacer.`)) return;
 
-    // Verificar si tiene consumos asociados
-    const { data: consumos, error: consumosError } = await insforgeClient.database
-      .from("consumos")
-      .select("id")
-      .eq("plato_id", id)
-      .eq("tenant_id", tenantId);
-
-    if (consumosError) {
-      console.error("Error al verificar consumos:", consumosError);
-      alert("Error al verificar el historial del plato.");
-      return;
-    }
-
-    const tieneHistorial = consumos && consumos.length > 0;
-
-    // Construir mensaje de confirmación
-    let mensaje = `¿Estás seguro de eliminar "${plato.nombre}"?\n\n`;
-
-    if (tieneHistorial) {
-      mensaje += `⚠️ ESTE PLATO TIENE HISTORIAL:\n`;
-      mensaje += `• ${consumos.length} consumo(s) asociado(s)\n`;
-      mensaje += `• Se eliminarán TODOS los consumos relacionados\n`;
-      mensaje += `• Esta acción NO se puede deshacer\n\n`;
-    } else {
-      mensaje += `Este plato no tiene historial de consumo.\n\n`;
-    }
-
-    mensaje += `¿Confirmas la eliminación?`;
-
-    // Confirmar con el usuario
-    const confirmado = confirm(mensaje);
-
-    if (!confirmado) {
-      return; // Usuario canceló
-    }
-
-    // Eliminar consumos asociados primero (en cascada manual)
-    if (tieneHistorial) {
-      const { error: deleteConsumosError } = await insforgeClient.database
-        .from("consumos")
-        .delete()
-        .eq("plato_id", id)
-        .eq("tenant_id", tenantId);
-
-      if (deleteConsumosError) {
-        console.error("Error al eliminar consumos:", deleteConsumosError);
-        alert(`Error al eliminar consumos: ${deleteConsumosError.message}`);
-        return;
-      }
-    }
-
-    // Finalmente eliminar el plato
     const { error: deletePlatoError } = await insforgeClient.database
       .from("platos")
       .delete()
@@ -301,75 +244,49 @@ function CartaPanel() {
       .eq("tenant_id", tenantId);
 
     if (deletePlatoError) {
-      console.error("Error al eliminar plato:", deletePlatoError);
       alert(`Error al eliminar el plato: ${deletePlatoError.message}`);
       return;
     }
 
-    // Actualizar UI
     setPlatos((prev) => prev.filter((p) => p.id !== id));
-
-    // Cerrar modal si estaba abierto este plato
-    if (selectedId === id) {
-      setSelectedId(null);
-      setMode(null);
-    }
-
-    alert(`✅ Plato "${plato.nombre}" eliminado correctamente.${tieneHistorial ? ` (${consumos.length} consumo(s) eliminado(s) en cascada)` : ""}`);
+    if (selectedId === id) { setSelectedId(null); setMode(null); }
   }
 
-  if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <span className="font-['Space_Grotesk',sans-serif] text-[#6b7280] text-[14px]">Cargando carta...</span>
-      </div>
-    );
-  }
+  if (loading) return <div className="flex-1 flex items-center justify-center font-['Space_Grotesk'] text-muted-foreground">Cargando carta...</div>;
 
   const CELL = 140;
   const GAP = 10;
 
   return (
-    <div className="flex-1 flex overflow-hidden min-h-0">
-      {/* Main grid area */}
+    <div className="flex-1 flex overflow-hidden min-h-0 bg-background transition-colors duration-300">
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-[12px] px-4 sm:px-[24px] py-[12px] sm:py-[16px] border-b border-[rgba(72,72,71,0.15)] shrink-0">
+        <div className="flex flex-wrap items-center justify-between gap-[12px] px-4 sm:px-[24px] py-[12px] sm:py-[16px] border-b border-black/10 dark:border-white/10 shrink-0">
           <div className="flex gap-[8px] overflow-x-auto">
             {categories.map((cat) => (
               <button
                 key={cat}
                 onClick={() => setActiveFilter(cat)}
-                className="px-[14px] py-[6px] rounded-[8px] shrink-0 font-['Inter',sans-serif] font-bold text-[11px] tracking-[0.5px] uppercase border-none cursor-pointer transition-all"
+                className="px-[14px] py-[6px] rounded-[8px] shrink-0 font-['Inter',sans-serif] font-bold text-[11px] tracking-[0.5px] uppercase border border-black/5 dark:border-white/5 cursor-pointer transition-all bg-muted text-muted-foreground hover:text-foreground"
                 style={{
-                  backgroundColor: activeFilter === cat ? "#ff906d" : "rgba(38,38,38,0.6)",
-                  color: activeFilter === cat ? "#460f00" : "#6b7280",
+                  backgroundColor: activeFilter === cat ? "var(--primary)" : undefined,
+                  color: activeFilter === cat ? "var(--primary-foreground)" : undefined,
                 }}
               >{cat}</button>
             ))}
           </div>
           <button
             onClick={openAdd}
-            className="bg-[#ff906d] rounded-[10px] px-[16px] py-[8px] font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[12px] tracking-[0.5px] uppercase border-none cursor-pointer shrink-0 shadow-[0_0_16px_rgba(255,144,109,0.2)]"
+            className="bg-primary text-primary-foreground rounded-[10px] px-[16px] py-[8px] font-['Space_Grotesk',sans-serif] font-bold text-[12px] tracking-[0.5px] uppercase border-none cursor-pointer shrink-0 shadow-lg"
           >
             + Nuevo Plato
           </button>
         </div>
 
-        {/* Grid */}
         <div className="flex-1 overflow-auto p-[20px]">
           {filtered.length === 0 ? (
-            <div className="flex items-center justify-center py-[40px]">
-              <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">Sin platos en esta categoría.</span>
-            </div>
+            <div className="flex items-center justify-center py-[40px] text-muted-foreground font-['Inter'] text-[12px]">Sin platos en esta categoría.</div>
           ) : (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: `repeat(auto-fill, ${CELL}px)`,
-                gap: `${GAP}px`,
-              }}
-            >
+            <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, ${CELL}px)`, gap: `${GAP}px` }}>
               {filtered.map((plato) => {
                 const isSelected = selectedId === plato.id && mode === "edit";
                 const cc = catColor(plato.categoria);
@@ -377,50 +294,28 @@ function CartaPanel() {
                   <div
                     key={plato.id}
                     onClick={() => openEdit(plato)}
+                    className="bg-card rounded-[12px] border border-black/10 dark:border-white/10 cursor-pointer flex flex-col items-start justify-between p-[12px] transition-all relative overflow-hidden"
                     style={{
-                      width: CELL,
-                      height: CELL,
-                      backgroundColor: isSelected ? "rgba(255,144,109,0.1)" : "rgba(26,26,26,0.9)",
-                      border: isSelected ? "2px solid rgba(255,144,109,0.7)" : `2px solid ${cc}30`,
                       borderTop: `3px solid ${cc}`,
-                      boxShadow: isSelected ? "0 0 16px rgba(255,144,109,0.2)" : undefined,
-                      borderRadius: 12,
-                      cursor: "pointer",
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "flex-start",
-                      justifyContent: "space-between",
-                      padding: "12px",
-                      userSelect: "none",
-                      transition: "all 0.15s",
                       opacity: plato.disponible ? 1 : 0.4,
+                      boxShadow: isSelected ? "0 0 16px var(--primary-alpha)" : undefined,
+                      borderColor: isSelected ? "var(--primary)" : undefined,
                     }}
                   >
                     <div className="flex flex-col gap-[4px] w-full">
                       <div className="flex items-center gap-[4px] flex-wrap">
-                        <div
-                          className="rounded-[4px] px-[5px] py-[2px]"
-                          style={{ backgroundColor: `${cc}15` }}
-                        >
-                          <span className="font-['Inter',sans-serif] font-bold text-[8px] tracking-[0.8px] uppercase" style={{ color: cc }}>
-                            {plato.categoria}
-                          </span>
+                        <div className="rounded-[4px] px-[5px] py-[2px] border border-black/5" style={{ backgroundColor: `${cc}15` }}>
+                          <span className="font-['Inter',sans-serif] font-bold text-[8px] tracking-[0.8px] uppercase" style={{ color: cc }}>{plato.categoria}</span>
                         </div>
                         {!plato.va_a_cocina && (
-                          <div className="rounded-[4px] px-[5px] py-[2px] bg-[rgba(89,238,80,0.1)]">
-                            <span className="font-['Inter',sans-serif] font-bold text-[8px] tracking-[0.5px] uppercase text-[#59ee50]">
-                              Directo
-                            </span>
+                          <div className="rounded-[4px] px-[5px] py-[2px] bg-green-500/10 border border-green-500/20">
+                            <span className="font-['Inter',sans-serif] font-bold text-[8px] tracking-[0.5px] uppercase text-green-600 dark:text-green-400">Directo</span>
                           </div>
                         )}
                       </div>
-                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[12px] uppercase leading-tight line-clamp-2">
-                        {plato.nombre}
-                      </span>
+                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-foreground text-[12px] uppercase leading-tight line-clamp-2">{plato.nombre}</span>
                     </div>
-                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-[13px]" style={{ color: cc }}>
-                      {formatMoney(plato.precio)}
-                    </span>
+                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-[13px]" style={{ color: cc }}>{formatMoney(plato.precio)}</span>
                   </div>
                 );
               })}
@@ -429,128 +324,67 @@ function CartaPanel() {
         </div>
       </div>
 
-      {/* Side panel */}
       {mode !== null && (
-        <div className="w-[280px] shrink-0 bg-[#131313] border-l border-[rgba(72,72,71,0.2)] flex flex-col p-[24px] gap-[16px] overflow-y-auto">
+        <div className="w-[320px] shrink-0 bg-sidebar border-l border-black/10 dark:border-white/10 flex flex-col p-[24px] gap-[16px] overflow-y-auto shadow-xl">
           <div className="flex items-center justify-between">
-            <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px]">
-              {mode === "add" ? "Nuevo Plato" : "Editar Plato"}
-            </span>
-            <button
-              onClick={() => { setMode(null); setSelectedId(null); }}
-              className="text-[#6b7280] bg-transparent border-none cursor-pointer text-[18px] hover:text-white transition-colors"
-            >×</button>
+            <span className="font-['Space_Grotesk',sans-serif] font-bold text-foreground text-[18px]">{mode === "add" ? "Nuevo Plato" : "Editar Plato"}</span>
+            <button onClick={() => { setMode(null); setSelectedId(null); }} className="text-muted-foreground bg-transparent border-none cursor-pointer text-[20px] hover:text-foreground transition-colors">×</button>
           </div>
-
-          <div className="h-px bg-[rgba(72,72,71,0.2)]" />
-
-          {error && (
-            <div className="bg-[rgba(255,113,108,0.06)] border border-[rgba(255,113,108,0.2)] rounded-[8px] px-[12px] py-[8px]">
-              <span className="font-['Inter',sans-serif] text-[#ff716c] text-[12px]">{error}</span>
+          <div className="h-px bg-black/5 dark:bg-white/5" />
+          {error && <div className="bg-destructive/10 border border-destructive/20 rounded-[8px] px-[12px] py-[8px] text-destructive text-[12px] font-medium">{error}</div>}
+          
+          <div className="space-y-4">
+            <div className="flex flex-col gap-[6px]">
+              <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">Nombre</label>
+              <input type="text" value={form.nombre} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} className="input-field" placeholder="Nombre del plato" />
             </div>
-          )}
-
-          {/* Nombre */}
-          <div className="flex flex-col gap-[6px]">
-            <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">Nombre</label>
-            <input
-              type="text"
-              value={form.nombre}
-              onChange={(e) => setForm((f) => ({ ...f, nombre: e.target.value }))}
-              placeholder="Nombre del plato"
-              className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[8px] px-[12px] py-[10px] font-['Inter',sans-serif] text-white text-[13px] outline-none w-full"
-              onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(255,144,109,0.4)")}
-              onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(72,72,71,0.3)")}
-            />
-          </div>
-
-          {/* Precio */}
-          <div className="flex flex-col gap-[6px]">
-            <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">{`Precio (${currencySymbol})`}</label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.precio}
-              onChange={(e) => setForm((f) => ({ ...f, precio: e.target.value }))}
-              placeholder="0.00"
-              className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[8px] px-[12px] py-[10px] font-['Inter',sans-serif] text-white text-[13px] outline-none w-full"
-              onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(255,144,109,0.4)")}
-              onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(72,72,71,0.3)")}
-            />
-          </div>
-
-          {/* Categoria */}
-          <div className="flex flex-col gap-[6px]">
-            <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">Categoría</label>
-            <select
-              value={form.categoria}
-              onChange={(e) => setForm((f) => ({ ...f, categoria: e.target.value }))}
-              className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[8px] px-[12px] py-[10px] font-['Inter',sans-serif] text-white text-[13px] outline-none w-full cursor-pointer"
-            >
-              {CATEGORIAS.map((c) => (
-                <option key={c} value={c} style={{ backgroundColor: "#1a1a1a" }}>{c}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Disponible */}
-          <div className="flex items-center justify-between">
-            <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.5px] uppercase">Disponible</span>
-            <button
-              onClick={() => setForm((f) => ({ ...f, disponible: !f.disponible }))}
-              className="rounded-full px-[12px] py-[5px] font-['Inter',sans-serif] font-bold text-[10px] tracking-[0.5px] uppercase border-none cursor-pointer transition-all"
-              style={{
-                backgroundColor: form.disponible ? "rgba(89,238,80,0.12)" : "rgba(72,72,71,0.2)",
-                color: form.disponible ? "#59ee50" : "#6b7280",
-                border: form.disponible ? "1px solid rgba(89,238,80,0.3)" : "1px solid rgba(72,72,71,0.3)",
-              }}
-            >
-              {form.disponible ? "Sí" : "No"}
-            </button>
-          </div>
-
-          {/* Va a cocina */}
-          <div className="flex items-center justify-between">
-            <div className="flex flex-col gap-[2px]">
-              <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.5px] uppercase">Pasa por cocina</span>
-              <span className="font-['Inter',sans-serif] text-[#6b7280] text-[9px]">Ej: bebidas en botella → No</span>
+            <div className="flex flex-col gap-[6px]">
+              <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">{`Precio (${currencySymbol})`}</label>
+              <input type="number" step="0.01" value={form.precio} onChange={e => setForm(f => ({ ...f, precio: e.target.value }))} className="input-field" placeholder="0.00" />
             </div>
-            <button
-              onClick={() => setForm((f) => ({ ...f, va_a_cocina: !f.va_a_cocina }))}
-              className="rounded-full px-[12px] py-[5px] font-['Inter',sans-serif] font-bold text-[10px] tracking-[0.5px] uppercase border-none cursor-pointer transition-all"
-              style={{
-                backgroundColor: form.va_a_cocina ? "rgba(255,144,109,0.12)" : "rgba(72,72,71,0.2)",
-                color: form.va_a_cocina ? "#ff906d" : "#6b7280",
-                border: form.va_a_cocina ? "1px solid rgba(255,144,109,0.3)" : "1px solid rgba(72,72,71,0.3)",
-              }}
-            >
-              {form.va_a_cocina ? "Sí" : "No"}
-            </button>
+            <div className="flex flex-col gap-[6px]">
+              <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">Categoría</label>
+              <select value={form.categoria} onChange={e => setForm(f => ({ ...f, categoria: e.target.value }))} className="input-field cursor-pointer">
+                {CATEGORIAS.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            
+            <div className="flex items-center justify-between pt-2">
+              <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Disponible</span>
+              <button onClick={() => setForm(f => ({ ...f, disponible: !f.disponible }))} className={`rounded-full px-[12px] py-[5px] text-[10px] font-bold uppercase transition-all cursor-pointer border ${form.disponible ? "bg-green-500/10 border-green-500/30 text-green-600 dark:text-green-400" : "bg-muted border-border text-muted-foreground"}`}>{form.disponible ? "Sí" : "No"}</button>
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="flex flex-col"><span className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Cocina</span><span className="text-[9px] text-muted-foreground/60">¿Pasa por pedido de cocina?</span></div>
+              <button onClick={() => setForm(f => ({ ...f, va_a_cocina: !f.va_a_cocina }))} className={`rounded-full px-[12px] py-[5px] text-[10px] font-bold uppercase transition-all cursor-pointer border ${form.va_a_cocina ? "bg-primary/10 border-primary/30 text-primary" : "bg-muted border-border text-muted-foreground"}`}>{form.va_a_cocina ? "Sí" : "No"}</button>
+            </div>
           </div>
 
-          <div className="h-px bg-[rgba(72,72,71,0.2)]" />
-
-          {/* Save */}
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="bg-[#ff906d] rounded-[10px] px-[16px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[13px] tracking-[0.5px] uppercase border-none cursor-pointer disabled:opacity-50 shadow-[0_0_16px_rgba(255,144,109,0.15)]"
-          >
-            {saving ? "Guardando..." : "Guardar"}
-          </button>
-
-          {/* Delete (edit mode only) */}
-          {mode === "edit" && selected && (
-            <button
-              onClick={() => handleDelete(selected.id)}
-              className="bg-[#ff4444] border border-[rgba(255,68,68,0.2)] rounded-[10px] px-[16px] py-[10px] font-['Inter',sans-serif] font-bold text-white text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:bg-[rgba(255,68,68,0.8)] transition-colors shadow-[0_0_16px_rgba(255,68,68,0.15)]"
-            >
-              🗑️ Eliminar plato
-            </button>
-          )}
+          <div className="flex flex-col gap-3 mt-4 pt-4 border-t border-black/5 dark:border-white/5">
+            <button onClick={handleSave} disabled={saving} className="bg-primary text-primary-foreground rounded-xl py-3.5 font-bold uppercase text-[12px] tracking-widest shadow-lg hover:opacity-90 disabled:opacity-50 transition-all border-none cursor-pointer">{saving ? "Guardando..." : "Guardar Plato"}</button>
+            {mode === "edit" && selected && (
+              <button onClick={() => handleDelete(selected.id)} className="bg-destructive/10 text-destructive rounded-xl py-3.5 font-bold uppercase text-[12px] tracking-widest hover:bg-destructive/20 transition-all border border-destructive/20 cursor-pointer">Eliminar Plato</button>
+            )}
+          </div>
         </div>
       )}
+      <style>{`
+        .input-field {
+          width: 100%;
+          background: var(--muted);
+          border: 1px solid var(--border);
+          border-radius: 10px;
+          padding: 10px 14px;
+          font-family: 'Inter', sans-serif;
+          font-size: 14px;
+          color: var(--foreground);
+          outline: none;
+          transition: all 0.2s;
+        }
+        .input-field:focus {
+          border-color: var(--primary);
+          background: transparent;
+        }
+      `}</style>
     </div>
   );
 }
@@ -580,331 +414,133 @@ function UsuariosPanel() {
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
 
-  const adminEmail = tenantUser?.email?.trim() ?? "";
-
   async function loadUsers() {
-    if (!tenantId) {
-      setTeamUsers([]);
-      setListLoading(false);
-      return;
-    }
+    if (!tenantId) return;
     setListLoading(true);
     const [usersRes, tenantRes] = await Promise.all([
-      insforgeClient.database
-        .from("tenant_users")
-        .select("id, email, rol, nombre, activo, auth_user_id")
-        .eq("tenant_id", tenantId)
-        .order("email"),
-      insforgeClient.database
-        .from("tenants")
-        .select("*")
-        .eq("id", tenantId)
-        .maybeSingle(),
+      insforgeClient.database.from("tenant_users").select("id, email, rol, nombre, activo, auth_user_id").eq("tenant_id", tenantId).order("email"),
+      insforgeClient.database.from("tenants").select("*").eq("id", tenantId).maybeSingle(),
     ]);
     if (!usersRes.error && usersRes.data) setTeamUsers(usersRes.data as TenantUserRow[]);
-    else setTeamUsers([]);
-    if (!tenantRes.error && tenantRes.data) {
-      setTenantLimitConfig(extractTenantUserLimitConfig(tenantRes.data as TenantRow));
-    }
+    if (!tenantRes.error && tenantRes.data) setTenantLimitConfig(extractTenantUserLimitConfig(tenantRes.data as TenantRow));
     setListLoading(false);
   }
 
-  useEffect(() => {
-    void loadUsers();
-  }, [tenantId]);
+  useEffect(() => { void loadUsers(); }, [tenantId]);
 
   async function handleDeleteUser(row: TenantUserRow) {
-    if (!tenantId) return;
-    if (row.auth_user_id && user?.id && row.auth_user_id === user.id) {
-      alert("No podés eliminar tu propia cuenta desde aquí.");
-      return;
-    }
-    const activeAdmins = teamUsers.filter((u) => u.rol === "admin" && u.activo !== false);
-    if (row.rol === "admin" && activeAdmins.length <= 1) {
-      alert("No podés eliminar el único administrador del negocio.");
-      return;
-    }
-    if (!confirm(`¿Eliminar el acceso de «${row.email}» a este negocio?\n\nNo borra el usuario en el sistema de login; solo desvincula al equipo de este restaurante.`)) {
-      return;
-    }
+    if (!tenantId || (row.auth_user_id === user?.id)) return;
+    if (!confirm(`¿Eliminar el acceso de «${row.email}»?`)) return;
     setDeletingId(row.id);
-    const { error: delErr } = await insforgeClient.database
-      .from("tenant_users")
-      .delete()
-      .eq("id", row.id)
-      .eq("tenant_id", tenantId);
+    const { error } = await insforgeClient.database.from("tenant_users").delete().eq("id", row.id).eq("tenant_id", tenantId);
     setDeletingId(null);
-    if (delErr) {
-      alert(`Error al eliminar: ${delErr.message}`);
-      return;
-    }
-    await loadUsers();
+    if (error) alert(error.message); else await loadUsers();
   }
 
   async function handleCreate() {
-    if (!email.trim() || !password.trim()) {
-      setError("Email y contraseña del nuevo usuario son requeridos.");
-      return;
-    }
-    if (!adminPassword.trim()) {
-      setError("Ingresá tu contraseña de administrador para finalizar (la sesión cambia al nuevo usuario al registrarlo).");
-      return;
-    }
-    if (password.length < 6) {
-      setError("La contraseña del nuevo usuario debe tener al menos 6 caracteres.");
-      return;
-    }
-    if (!tenantId || !adminEmail) {
-      setError("No hay restaurante asociado a tu sesión.");
-      return;
-    }
-
-    setCreating(true);
-    setError("");
-    setSuccess("");
-
+    if (!email.trim() || !password.trim() || !adminPassword.trim()) { setError("Completa todos los campos."); return; }
+    if (!tenantId) return;
+    setCreating(true); setError(""); setSuccess("");
+    
     const staffEmail = email.trim();
     const currentForRole = countActiveUsersByRole(teamUsers, rol);
     const roleLimit = getLimitForRole(tenantLimitConfig, rol);
     if (roleLimit !== null && currentForRole >= roleLimit) {
-      setError(
-        `No se puede crear otro usuario con rol ${formatRoleLabel(rol)}. El límite configurado para este restaurante es ${roleLimit}.`
-      );
-      setCreating(false);
-      return;
+      setError(`Límite de usuarios (${roleLimit}) alcanzado para este rol.`);
+      setCreating(false); return;
     }
 
-    const { data: signData, error: authError } = await insforgeClient.auth.signUp({
-      email: staffEmail,
-      password,
-    });
+    const { data: signData, error: authError } = await insforgeClient.auth.signUp({ email: staffEmail, password });
+    if (authError) { setError((authError as any).message); setCreating(false); return; }
 
-    if (authError) {
-      const msg =
-        typeof authError === "string"
-          ? authError
-          : (authError as { message?: string })?.message ?? "Error al crear el usuario.";
-      setError(msg);
-      setCreating(false);
-      return;
-    }
-
-    const newUserId = (signData as { user?: { id?: string } } | null)?.user?.id;
-    if (!newUserId) {
-      setError("El usuario de acceso se creó pero no se obtuvo su ID. Contactá soporte técnico.");
-      setCreating(false);
-      return;
-    }
-
-    const { error: insertError } = await insforgeClient.database.from("tenant_users").insert([
-      {
-        auth_user_id: newUserId,
-        tenant_id: tenantId,
-        email: staffEmail,
-        password_hash: "MANAGED_BY_AUTH",
-        rol,
-        nombre: nombre.trim() || null,
-        activo: true,
-      },
-    ]);
-
-    if (insertError) {
-      await insforgeClient.auth.signOut();
-      sessionStorage.setItem(
-        "cyberbistro_login_notice",
-        `Se creó el acceso para ${staffEmail} pero no se pudo vincular al negocio (${insertError.message}). Iniciá sesión de nuevo con tu cuenta de administrador (${adminEmail}) y revisá usuarios o contactá soporte.`
-      );
-      navigate("/", { replace: true });
-      setCreating(false);
-      return;
-    }
+    const newUserId = (signData as any)?.user?.id;
+    const { error: insertError } = await insforgeClient.database.from("tenant_users").insert([{ auth_user_id: newUserId, tenant_id: tenantId, email: staffEmail, password_hash: "MANAGED_BY_AUTH", rol, nombre: nombre.trim() || null, activo: true }]);
+    
+    if (insertError) { setError(insertError.message); setCreating(false); return; }
 
     await insforgeClient.auth.signOut();
+    const { error: reinError } = await insforgeClient.auth.signInWithPassword({ email: tenantUser?.email ?? "", password: adminPassword });
+    if (reinError) { navigate("/"); return; }
 
-    const { error: reinError } = await insforgeClient.auth.signInWithPassword({
-      email: adminEmail,
-      password: adminPassword,
-    });
-
-    if (reinError) {
-      sessionStorage.setItem(
-        "cyberbistro_login_notice",
-        `Usuario ${staffEmail} creado y asignado a tu negocio. Iniciá sesión de nuevo con ${adminEmail}.`
-      );
-      navigate("/", { replace: true });
-      setCreating(false);
-      return;
-    }
-
-    setSuccess(`Usuario ${staffEmail} creado y asignado a tu negocio con rol «${rol}».`);
-    setEmail("");
-    setPassword("");
-    setAdminPassword("");
-    setNombre("");
-    setRol("cajera");
+    setSuccess(`Usuario creado.`); setEmail(""); setPassword(""); setAdminPassword(""); setNombre(""); await loadUsers();
     setCreating(false);
-    await loadUsers();
   }
 
   return (
-    <div className="flex-1 p-4 sm:p-[32px] overflow-auto">
-      <div className="max-w-[920px] flex flex-col gap-[24px]">
-        <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-[28px] flex flex-col gap-[16px]">
-          <div className="flex flex-col gap-[4px]">
-            <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px]">Usuarios del negocio</span>
-            <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">
-              Solo usuarios vinculados a tu restaurante. El administrador no puede borrarse a sí mismo ni quitar el único admin.
-            </span>
-            {tenantLimitConfig.userLimitEnabled ? (
-              <span className="font-['Inter',sans-serif] text-[#ffb020] text-[12px]">
-                Límites activos. Cajera: {tenantLimitConfig.cajeraUserLimit ?? "∞"} · Cocina: {tenantLimitConfig.cocinaUserLimit ?? "∞"}
-              </span>
-            ) : null}
-          </div>
-          {listLoading ? (
-            <span className="font-['Inter',sans-serif] text-[#6b7280] text-[13px]">Cargando lista…</span>
-          ) : teamUsers.length === 0 ? (
-            <span className="font-['Inter',sans-serif] text-[#6b7280] text-[13px]">No hay usuarios registrados.</span>
-          ) : (
-            <div className="overflow-x-auto rounded-[12px] border border-[rgba(72,72,71,0.2)]">
-              <table className="w-full text-left border-collapse min-w-[520px]">
-                <thead>
-                  <tr className="bg-[#1a1a1a] text-[#adaaaa] font-['Inter',sans-serif] text-[10px] uppercase tracking-wide">
-                    <th className="px-[14px] py-[10px]">Email</th>
-                    <th className="px-[14px] py-[10px]">Nombre</th>
-                    <th className="px-[14px] py-[10px]">Rol</th>
-                    <th className="px-[14px] py-[10px]">Activo</th>
-                    <th className="px-[14px] py-[10px] w-[100px]"></th>
-                  </tr>
-                </thead>
-                <tbody className="font-['Inter',sans-serif] text-[13px] text-white">
-                  {teamUsers.map((u) => {
-                    const isSelf = Boolean(u.auth_user_id && user?.id && u.auth_user_id === user.id);
-                    const adminCount = teamUsers.filter((x) => x.rol === "admin" && x.activo !== false).length;
-                    const onlyAdminLeft = u.rol === "admin" && adminCount <= 1;
-                    const canDelete = !isSelf && !onlyAdminLeft;
-                    return (
-                      <tr key={u.id} className="border-t border-[rgba(72,72,71,0.15)]">
-                        <td className="px-[14px] py-[10px]">{u.email}</td>
-                        <td className="px-[14px] py-[10px] text-[#adaaaa]">{u.nombre || "—"}</td>
-                        <td className="px-[14px] py-[10px] capitalize">{u.rol}</td>
-                        <td className="px-[14px] py-[10px]">{u.activo === false ? "No" : "Sí"}</td>
-                        <td className="px-[14px] py-[10px]">
-                          <button
-                            type="button"
-                            disabled={!canDelete || deletingId === u.id}
-                            onClick={() => void handleDeleteUser(u)}
-                            className="text-[#ff716c] text-[11px] font-bold uppercase tracking-wide cursor-pointer bg-transparent border-none disabled:opacity-30 disabled:cursor-not-allowed"
-                          >
-                            {deletingId === u.id ? "…" : "Eliminar"}
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+    <div className="flex-1 p-4 sm:p-8 bg-background transition-colors duration-300 overflow-y-auto">
+      <div className="max-w-[1000px] mx-auto grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] gap-8 items-start">
+        <div className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 sm:p-8 shadow-sm h-fit">
+          <h2 className="font-['Space_Grotesk'] text-xl font-bold text-foreground mb-1">Equipo de Trabajo</h2>
+          <p className="text-muted-foreground text-[13px] mb-6">Gestión de accesos para cajeras y personal de cocina.</p>
+          
+          {listLoading ? <div className="py-10 text-center text-muted-foreground text-sm">Cargando...</div> : (
+            <div className="overflow-x-auto rounded-xl border border-black/5 dark:border-white/5 bg-muted/20">
+               <table className="w-full text-left border-collapse">
+                  <thead className="bg-muted text-muted-foreground text-[10px] font-bold uppercase tracking-widest">
+                     <tr><th className="px-4 py-3">Email / Usuario</th><th className="px-4 py-3">Rol</th><th className="px-4 py-3 text-right">Acción</th></tr>
+                  </thead>
+                  <tbody className="text-[13px] divide-y divide-black/5 dark:divide-white/5">
+                     {teamUsers.map(u => (
+                        <tr key={u.id} className="hover:bg-muted/30 transition-colors">
+                           <td className="px-4 py-4"><div className="text-foreground font-medium">{u.email}</div><div className="text-[11px] text-muted-foreground">{u.nombre || "Sin nombre"}</div></td>
+                           <td className="px-4 py-4 uppercase text-[11px] font-bold text-primary">{u.rol}</td>
+                           <td className="px-4 py-4 text-right">
+                              <button onClick={() => void handleDeleteUser(u)} disabled={deletingId === u.id || u.auth_user_id === user?.id} className="text-destructive/60 hover:text-destructive font-bold text-[11px] uppercase tracking-widest border-none bg-transparent cursor-pointer disabled:opacity-20 transition-colors">Eliminar</button>
+                           </td>
+                        </tr>
+                     ))}
+                  </tbody>
+               </table>
             </div>
           )}
         </div>
 
-        <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] p-[28px] flex flex-col gap-[18px]">
-          <div className="flex flex-col gap-[4px]">
-            <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px]">Crear usuario de equipo</span>
-            <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">
-              Queda vinculado solo al restaurante de tu sesión (no a otros negocios). Elegí rol de cajera/venta o cocina; esos usuarios no ven el módulo Soporte.
-            </span>
-          </div>
-          {success && (
-            <div className="bg-[rgba(89,238,80,0.05)] border border-[rgba(89,238,80,0.2)] rounded-[10px] px-[16px] py-[10px]">
-              <span className="font-['Inter',sans-serif] text-[#59ee50] text-[13px]">{success}</span>
-            </div>
-          )}
-          {error && (
-            <div className="bg-[rgba(255,113,108,0.05)] border border-[rgba(255,113,108,0.2)] rounded-[10px] px-[16px] py-[10px]">
-              <span className="font-['Inter',sans-serif] text-[#ff716c] text-[13px]">{error}</span>
-            </div>
-          )}
-          <div className="flex flex-col gap-[12px]">
-            <div className="flex flex-col gap-[6px]">
-              <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">Rol en el negocio</label>
-              <select
-                value={rol}
-                onChange={(e) => setRol(e.target.value as (typeof STAFF_ROLES)[number]["value"])}
-                className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-[14px] py-[11px] font-['Inter',sans-serif] text-white text-[13px] outline-none w-full cursor-pointer"
-              >
-                {STAFF_ROLES.map((r) => (
-                  <option key={r.value} value={r.value} style={{ backgroundColor: "#1a1a1a" }}>
-                    {r.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex flex-col gap-[6px]">
-              <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">Nombre (opcional)</label>
-              <input
-                type="text"
-                value={nombre}
-                onChange={(e) => setNombre(e.target.value)}
-                placeholder="Ej. María — cocina"
-                className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-[14px] py-[11px] font-['Inter',sans-serif] text-white text-[13px] outline-none w-full"
-                onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(255,144,109,0.4)")}
-                onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(72,72,71,0.3)")}
-              />
-            </div>
-            <div className="flex flex-col gap-[6px]">
-              <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">Email del nuevo usuario</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="usuario@restaurante.com"
-                className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-[14px] py-[11px] font-['Inter',sans-serif] text-white text-[13px] outline-none w-full"
-                onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(255,144,109,0.4)")}
-                onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(72,72,71,0.3)")}
-              />
-            </div>
-            <div className="flex flex-col gap-[6px]">
-              <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">Contraseña del nuevo usuario</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Mínimo 6 caracteres"
-                className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-[14px] py-[11px] font-['Inter',sans-serif] text-white text-[13px] outline-none w-full"
-                onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(255,144,109,0.4)")}
-                onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(72,72,71,0.3)")}
-              />
-            </div>
-            <div className="h-px bg-[rgba(72,72,71,0.2)]" />
-            <div className="flex flex-col gap-[6px]">
-              <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">Tu contraseña de administrador</label>
-              <span className="font-['Inter',sans-serif] text-[#6b7280] text-[11px]">
-                Al registrar al usuario, la sesión pasa a esa cuenta un instante; con tu clave volvemos a tu sesión de dueño.
-              </span>
-              <input
-                type="password"
-                value={adminPassword}
-                onChange={(e) => setAdminPassword(e.target.value)}
-                placeholder="Contraseña de tu cuenta actual"
-                className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-[14px] py-[11px] font-['Inter',sans-serif] text-white text-[13px] outline-none w-full"
-                onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(255,144,109,0.4)")}
-                onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(72,72,71,0.3)")}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleCreate();
-                }}
-              />
-            </div>
-          </div>
-          <button
-            onClick={handleCreate}
-            disabled={creating}
-            className="bg-[#ff906d] rounded-[12px] px-[20px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[13px] tracking-[0.5px] uppercase cursor-pointer border-none shadow-[0_0_20px_rgba(255,144,109,0.15)] transition-opacity disabled:opacity-50 self-start"
-          >
-            {creating ? "Creando..." : "Crear usuario"}
-          </button>
+        <div className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 sm:p-8 shadow-sm h-fit flex flex-col gap-6">
+           <h2 className="font-['Space_Grotesk'] text-xl font-bold text-foreground">Crear Acceso</h2>
+           {success && <div className="bg-green-500/10 border border-green-500/20 rounded-xl px-4 py-3 text-green-600 dark:text-green-400 text-sm">{success}</div>}
+           {error && <div className="bg-destructive/10 border border-destructive/20 rounded-xl px-4 py-3 text-destructive text-sm">{error}</div>}
+           
+           <div className="space-y-4">
+              <div className="flex flex-col gap-1.5"><label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">Rol</label>
+                <select value={rol} onChange={e => setRol(e.target.value as any)} className="input-field cursor-pointer">
+                  {STAFF_ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1.5"><label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">Nombre</label>
+                <input type="text" value={nombre} onChange={e => setNombre(e.target.value)} className="input-field" placeholder="Ej. Juan - Caja" />
+              </div>
+              <div className="flex flex-col gap-1.5"><label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">Email</label>
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="input-field" placeholder="email@negocio.com" />
+              </div>
+              <div className="flex flex-col gap-1.5"><label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">Contraseña</label>
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="input-field" placeholder="Mín. 6 caracteres" />
+              </div>
+              <div className="h-px bg-black/5 dark:bg-white/5 my-2" />
+              <div className="flex flex-col gap-1.5"><label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">Tu Contraseña (Admin)</label>
+                <input type="password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} className="input-field" placeholder="Confirma tu acceso" />
+              </div>
+           </div>
+           <button onClick={handleCreate} disabled={creating} className="bg-primary text-primary-foreground rounded-xl py-3.5 font-bold uppercase text-[12px] tracking-widest shadow-lg hover:opacity-90 disabled:opacity-50 transition-all border-none cursor-pointer mt-2">{creating ? "Creando..." : "Registrar Miembro"}</button>
         </div>
       </div>
+      <style>{`
+        .input-field {
+          width: 100%;
+          background: var(--muted);
+          border: 1px solid var(--border);
+          border-radius: 10px;
+          padding: 10px 14px;
+          font-family: 'Inter', sans-serif;
+          font-size: 14px;
+          color: var(--foreground);
+          outline: none;
+          transition: all 0.2s;
+        }
+        .input-field:focus {
+          border-color: var(--primary);
+          background: transparent;
+        }
+      `}</style>
     </div>
   );
 }
@@ -920,64 +556,53 @@ function MesasPanel() {
 
   useEffect(() => {
     if (!tenantId) return;
-    loadCantidadMesas(tenantId).then(val => {
-      setCantidad(val);
-      setLoading(false);
-    });
+    loadCantidadMesas(tenantId).then(val => { setCantidad(val); setLoading(false); });
   }, [tenantId]);
 
   async function handleSave() {
     if (!tenantId) return;
-    if (cantidad < 1 || cantidad > 100) {
-      alert("La cantidad debe estar entre 1 y 100.");
-      return;
-    }
+    if (cantidad < 1 || cantidad > 100) { alert("Máximo 100 mesas."); return; }
     setSaving(true);
     const { error } = await saveCantidadMesas(tenantId, cantidad);
     setSaving(false);
-    if (error) {
-      alert("Error al guardar: " + error.message);
-    } else {
-      alert("Configuración de mesas guardada exitosamente.");
-    }
+    if (error) alert(error.message); else alert("Configuración guardada.");
   }
 
-  if (loading) return <div className="p-8 text-[#6b7280]">Cargando configuración...</div>;
+  if (loading) return <div className="p-10 text-muted-foreground font-['Space_Grotesk'] text-center">Cargando...</div>;
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 sm:p-[32px]">
-      <div className="max-w-[500px]">
-        <h2 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px] mb-[4px]">Configuración de Mesas</h2>
-        <p className="font-['Inter',sans-serif] text-[#6b7280] text-[13px] mb-[24px]">
-          Modifica la cantidad total de mesas disponibles en tu restaurante. El sistema generará automáticamente la distribución.
-        </p>
-        
-        <div className="bg-[#111111] border border-[rgba(72,72,71,0.2)] rounded-[16px] p-[20px] flex flex-col gap-[20px]">
-          <div className="flex flex-col gap-[6px]">
-            <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">
-              Cantidad de Mesas
-            </label>
-            <input
-              type="number"
-              min="1"
-              max="100"
-              value={cantidad}
-              onChange={(e) => setCantidad(parseInt(e.target.value) || 1)}
-              className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-[14px] py-[11px] font-['Inter',sans-serif] text-white text-[13px] outline-none w-full"
-              onFocus={(e) => (e.currentTarget.style.borderColor = "rgba(255,144,109,0.4)")}
-              onBlur={(e) => (e.currentTarget.style.borderColor = "rgba(72,72,71,0.3)")}
-            />
-          </div>
-          
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="bg-[#ff906d] rounded-[12px] px-[20px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[13px] tracking-[0.5px] uppercase cursor-pointer border-none shadow-[0_0_20px_rgba(255,144,109,0.15)] transition-opacity disabled:opacity-50 self-start"
-          >
-            {saving ? "Guardando..." : "Guardar cambios"}
-          </button>
+    <div className="flex-1 p-4 sm:p-10 bg-background transition-colors duration-300 overflow-y-auto">
+      <div className="max-w-[520px] mx-auto bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 sm:p-10 shadow-sm flex flex-col gap-8">
+        <div className="space-y-2">
+           <h2 className="font-['Space_Grotesk'] text-2xl font-bold text-foreground">Gestión de Mesas</h2>
+           <p className="text-muted-foreground text-sm leading-relaxed">Define la cantidad total de mesas para tu salón. El sistema ajustará la distribución automáticamente.</p>
+        </div>
+        <div className="flex flex-col gap-6">
+           <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">Cantidad de Mesas</label>
+              <input type="number" value={cantidad} onChange={e => setCantidad(parseInt(e.target.value) || 1)} className="input-field text-lg font-bold" />
+           </div>
+           <button onClick={handleSave} disabled={saving} className="bg-primary text-primary-foreground rounded-xl py-4 font-bold uppercase text-[12px] tracking-widest shadow-lg hover:opacity-90 disabled:opacity-50 transition-all border-none cursor-pointer">{saving ? "Guardando..." : "Guardar Distribución"}</button>
         </div>
       </div>
+      <style>{`
+        .input-field {
+          width: 100%;
+          background: var(--muted);
+          border: 1px solid var(--border);
+          border-radius: 12px;
+          padding: 12px 16px;
+          font-family: 'Inter', sans-serif;
+          font-size: 14px;
+          color: var(--foreground);
+          outline: none;
+          transition: all 0.2s;
+        }
+        .input-field:focus {
+          border-color: var(--primary);
+          background: transparent;
+        }
+      `}</style>
     </div>
   );
 }
@@ -991,34 +616,24 @@ function SoportePanel({ onLock }: { onLock: () => void }) {
   const [activeTab, setActiveTab] = useState<Tab>("carta");
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Tab header */}
-      <div className="flex flex-wrap items-center justify-between px-4 sm:px-[32px] pt-[16px] sm:pt-[20px] pb-[0px] gap-[8px] border-b border-[rgba(72,72,71,0.2)] shrink-0">
-        <div className="flex items-end gap-[4px]">
-          <h1 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[24px] mr-[16px]">Soporte</h1>
-          {(["carta", "usuarios", "mesas"] as Tab[]).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className="px-[16px] py-[10px] font-['Space_Grotesk',sans-serif] font-bold text-[13px] tracking-[0.5px] uppercase border-none cursor-pointer transition-all bg-transparent"
-              style={{
-                color: activeTab === tab ? "#ff906d" : "#6b7280",
-                borderBottom: activeTab === tab ? "2px solid #ff906d" : "2px solid transparent",
-              }}
-            >
-              {tab === "carta" ? "Carta" : tab === "usuarios" ? "Usuarios" : "Mesas"}
-            </button>
-          ))}
+    <div className="flex-1 flex flex-col overflow-hidden bg-background transition-colors duration-300">
+      <div className="flex flex-wrap items-center justify-between px-4 sm:px-[32px] pt-[20px] pb-0 border-b border-black/10 dark:border-white/10 shrink-0">
+        <div className="flex items-end gap-6">
+          <h1 className="font-['Space_Grotesk'] font-bold text-foreground text-2xl pb-4">Panel Soporte</h1>
+          <div className="flex gap-1">
+            {(["carta", "usuarios", "mesas"] as Tab[]).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`px-5 py-4 font-['Space_Grotesk'] font-bold text-[13px] tracking-widest uppercase border-b-2 transition-all bg-transparent cursor-pointer ${activeTab === tab ? "text-primary border-primary" : "text-muted-foreground border-transparent hover:text-foreground"}`}
+              >
+                {tab === "carta" ? "Carta" : tab === "usuarios" ? "Usuarios" : "Mesas"}
+              </button>
+            ))}
+          </div>
         </div>
-        <button
-          onClick={onLock}
-          className="font-['Inter',sans-serif] text-[#6b7280] text-[11px] tracking-[0.5px] uppercase cursor-pointer bg-transparent border border-[rgba(72,72,71,0.3)] rounded-[8px] px-[12px] py-[6px] hover:text-[#adaaaa] transition-colors mb-[10px]"
-        >
-          Bloquear
-        </button>
+        <button onClick={onLock} className="px-4 py-2 mb-4 bg-muted text-muted-foreground border border-border rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-black/5 dark:hover:bg-white/10 transition-all cursor-pointer">Cerrar Sesión</button>
       </div>
-
-      {/* Tab content */}
       <div className="flex-1 overflow-hidden flex flex-col min-h-0">
         {activeTab === "carta" ? <CartaPanel /> : activeTab === "usuarios" ? <UsuariosPanel /> : <MesasPanel />}
       </div>
@@ -1034,34 +649,15 @@ export function Soporte() {
   const { loading, isAuthenticated, rol } = useAuth();
   const [unlocked, setUnlocked] = useState(false);
 
-  if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center min-h-[200px]">
-        <span className="font-['Space_Grotesk',sans-serif] text-[#6b7280] text-[14px]">Cargando...</span>
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return <Navigate to="/" replace />;
-  }
+  if (loading) return <div className="flex-1 flex items-center justify-center font-['Space_Grotesk'] text-muted-foreground">Cargando...</div>;
+  if (!isAuthenticated) return <Navigate to="/" replace />;
 
   if (rol !== "admin") {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 min-h-[320px]">
-        <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[20px] text-center max-w-md">
-          Soporte solo está disponible para la cuenta del negocio
-        </span>
-        <span className="font-['Inter',sans-serif] text-[#6b7280] text-[13px] text-center max-w-md leading-relaxed">
-          Los usuarios de equipo (cajera/venta, cocina) no tienen acceso a este módulo. Solo el administrador puede gestionar la carta y crear usuarios para su restaurante.
-        </span>
-        <button
-          type="button"
-          onClick={() => navigate("/dashboard")}
-          className="mt-2 bg-[#ff906d] rounded-[12px] px-[24px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[13px] tracking-[0.5px] uppercase cursor-pointer border-none"
-        >
-          Ir al panel
-        </button>
+      <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8 bg-background">
+        <h2 className="font-['Space_Grotesk'] font-bold text-foreground text-2xl text-center max-w-md">Acceso Restringido</h2>
+        <p className="text-muted-foreground text-sm text-center max-w-md leading-relaxed">El módulo de Soporte está reservado para la administración del negocio. Si eres el dueño, asegúrate de estar usando tu cuenta principal.</p>
+        <button onClick={() => navigate("/dashboard")} className="bg-primary text-primary-foreground rounded-xl px-8 py-3 font-bold uppercase text-[12px] tracking-widest shadow-lg hover:opacity-90 transition-all border-none cursor-pointer">Volver al Panel</button>
       </div>
     );
   }

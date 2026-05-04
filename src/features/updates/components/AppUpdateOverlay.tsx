@@ -72,10 +72,6 @@ export function AppUpdateOverlay() {
   };
 
   const onSecondary = () => {
-    if (phase === "downloading" || phase === "ready") {
-      closeUpdateCard();
-      return;
-    }
     closeUpdateCard();
   };
 
@@ -83,29 +79,29 @@ export function AppUpdateOverlay() {
     <aside
       aria-live="polite"
       aria-label="Actualizaciones de la aplicación"
-      className="fixed bottom-6 right-6 z-[80] w-[320px] rounded-[16px] border border-[rgba(72,72,71,0.25)] bg-[rgba(14,14,14,0.92)] p-[16px] shadow-[0_16px_48px_rgba(0,0,0,0.45)] backdrop-blur-[8px]"
+      className="fixed bottom-6 right-6 z-[80] w-[320px] rounded-[24px] border border-black/10 dark:border-white/10 bg-card p-6 shadow-2xl backdrop-blur-[8px] animate-in slide-in-from-right-4 transition-colors duration-300"
     >
-      <div className="font-['Space_Grotesk',sans-serif] font-bold text-[15px] text-[#f5f5f5]">
+      <div className="font-['Space_Grotesk'] font-bold text-[16px] text-foreground">
         {title}
       </div>
-      <div className="mt-[8px] font-['Inter',sans-serif] text-[12px] leading-[18px] text-[#adaaaa]">
+      <div className="mt-2 font-['Inter'] text-[12px] leading-relaxed text-muted-foreground">
         {meta}
       </div>
 
-      {showProgress ? (
-        <div className="mt-[12px] h-[6px] w-full overflow-hidden rounded-full bg-[rgba(255,255,255,0.08)]">
+      {showProgress && (
+        <div className="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-black/5 dark:bg-white/5">
           <div
-            className="h-full rounded-full bg-[#ff906d] transition-[width] duration-300"
+            className="h-full bg-primary transition-[width] duration-300"
             style={{ width: `${progress}%` }}
           />
         </div>
-      ) : null}
+      )}
 
-      <div className="mt-[14px] flex items-center justify-end gap-[8px]">
+      <div className="mt-6 flex items-center justify-end gap-3">
         <button
           type="button"
           onClick={onSecondary}
-          className="rounded-[10px] border border-[rgba(72,72,71,0.4)] bg-[#1a1a1a] px-[12px] py-[8px] font-['Inter',sans-serif] text-[12px] text-[#bdbdbd]"
+          className="rounded-xl px-4 py-2 font-['Inter'] font-bold text-[11px] uppercase tracking-widest text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5 transition-all border-none bg-transparent cursor-pointer"
         >
           {secondaryLabel}
         </button>
@@ -113,7 +109,7 @@ export function AppUpdateOverlay() {
           type="button"
           onClick={onPrimary}
           disabled={primaryDisabled}
-          className="rounded-[10px] border border-[rgba(255,144,109,0.25)] bg-[#ff906d] px-[12px] py-[8px] font-['Inter',sans-serif] text-[12px] font-semibold text-[#2e1208] disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-xl bg-primary px-5 py-2 font-['Inter'] font-bold text-[11px] uppercase tracking-widest text-primary-foreground shadow-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all border-none cursor-pointer"
         >
           {primaryLabel}
         </button>

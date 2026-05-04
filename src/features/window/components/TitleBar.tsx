@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ElectronAPI } from "../../../shared/types/electron";
 import svgPaths from "../../../imports/svg-h2gjocs89h";
+import { useTheme } from "../../../shared/context/ThemeContext";
 
 interface TitleBarProps {
   showSidebarToggle?: boolean;
@@ -14,6 +15,7 @@ export function TitleBar({
   onToggleSidebar,
 }: TitleBarProps) {
   const [isMaximized, setIsMaximized] = useState(false);
+  const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
     // Listen for maximize/unmaximize events from main process
@@ -51,7 +53,7 @@ export function TitleBar({
 
   return (
     <div
-      className="flex items-center justify-between h-9 bg-[#0e0e0e] border-b border-[rgba(255,144,109,0.1)] select-none"
+      className="flex items-center justify-between h-9 bg-sidebar border-b border-black/10 dark:border-white/10 select-none transition-colors duration-300"
       style={{ WebkitAppRegion: 'drag' as any }}
     >
       {/* Left side - Title/Logo */}
@@ -65,7 +67,7 @@ export function TitleBar({
           <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[10px] tracking-[-0.5px] uppercase leading-tight">
             CyberBistro
           </span>
-          <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[8px] tracking-[0.8px] uppercase leading-tight">
+          <span className="font-['Inter',sans-serif] text-foreground/60 text-[8px] tracking-[0.8px] uppercase leading-tight">
             v{__APP_VERSION__}
           </span>
         </div>
@@ -73,7 +75,7 @@ export function TitleBar({
           <button
             type="button"
             onClick={onToggleSidebar}
-            className="w-8 h-8 rounded-[8px] inline-flex items-center justify-center bg-transparent hover:bg-[rgba(255,144,109,0.12)] transition-colors shrink-0 ml-1 p-0"
+            className="w-8 h-8 rounded-[8px] inline-flex items-center justify-center bg-transparent hover:bg-sidebar-accent transition-colors shrink-0 ml-1 p-0"
             style={{ WebkitAppRegion: "no-drag" as any }}
             aria-label={sidebarHidden ? "Mostrar barra lateral" : "Ocultar barra lateral"}
             title={sidebarHidden ? "Mostrar sidebar" : "Ocultar sidebar"}
@@ -138,48 +140,64 @@ export function TitleBar({
 
       {/* Right side - Window controls */}
       <div
-        className="flex items-center"
+        className="flex items-center h-full"
         style={{ WebkitAppRegion: 'no-drag' as any }}
       >
+        {/* Theme Toggle */}
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className="h-full px-3 flex items-center justify-center hover:bg-sidebar-accent border-none bg-transparent cursor-pointer text-foreground transition-all"
+          title={theme === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+        >
+          {theme === "dark" ? (
+            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m0-11.314l.707.707m11.314 11.314l.707.707M12 8a4 4 0 100 8 4 4 0 000-8z" />
+            </svg>
+          ) : (
+            <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+            </svg>
+          )}
+        </button>
+
         {/* Minimize Button */}
         <button
           onClick={handleMinimize}
-          className="w-11 h-9 flex items-center justify-center hover:bg-[rgba(255,255,255,0.05)] transition-colors"
+          className="w-11 h-full flex items-center justify-center hover:bg-white/5 transition-colors"
           aria-label="Minimizar"
           type="button"
         >
           <svg width="12" height="1" viewBox="0 0 12 1" fill="none">
-            <rect width="12" height="1" fill="#ADAAAA" />
+            <rect width="12" height="1" fill="currentColor" />
           </svg>
         </button>
 
         {/* Maximize/Restore Button */}
         <button
           onClick={handleMaximize}
-          className="w-11 h-9 flex items-center justify-center hover:bg-[rgba(255,255,255,0.05)] transition-colors"
+          className="w-11 h-full flex items-center justify-center hover:bg-white/5 transition-colors"
           aria-label={isMaximized ? "Restaurar" : "Maximizar"}
           type="button"
         >
           {isMaximized ? (
-            // Restore icon
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
               <path
                 d="M1 4V1H4M6 1H9V4M9 6V9H6M4 9H1V6"
-                stroke="#ADAAAA"
+                stroke="currentColor"
                 strokeWidth="1"
                 strokeLinecap="round"
                 strokeLinejoin="round"
               />
             </svg>
           ) : (
-            // Maximize icon
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
               <rect
                 x="0.5"
                 y="0.5"
                 width="9"
                 height="9"
-                stroke="#ADAAAA"
+                stroke="currentColor"
                 strokeWidth="1"
                 fill="none"
               />
@@ -190,14 +208,14 @@ export function TitleBar({
         {/* Close Button */}
         <button
           onClick={handleClose}
-          className="w-11 h-9 flex items-center justify-center hover:bg-[#e81123] transition-colors group"
+          className="w-11 h-full flex items-center justify-center hover:bg-[#e81123] transition-colors group"
           aria-label="Cerrar"
           type="button"
         >
           <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="group-hover:stroke-white">
             <path
               d="M1 1L9 9M9 1L1 9"
-              stroke="#ADAAAA"
+              stroke="currentColor"
               strokeWidth="1.5"
               strokeLinecap="round"
             />

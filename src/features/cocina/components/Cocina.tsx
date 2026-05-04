@@ -6,11 +6,11 @@ import { buildComandaReceiptHtml, type TenantReceiptInfo } from "../../../shared
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 
+
 interface ComandaItem {
   nombre: string;
   cantidad: number;
   precio: number;
-  /** Categoría del plato (p. ej. Bebidas, Entradas); comandas antiguas pueden no tenerla */
   categoria?: string;
   notas?: string;
 }
@@ -43,421 +43,111 @@ export function Cocina() {
       .eq("tenant_id", tenantId)
       .in("estado", ["pendiente", "en_preparacion", "listo"])
       .order("created_at", { ascending: true });
-    if (!error && data) {
-      setComandas(data as Comanda[]);
-    }
+    if (!error && data) setComandas(data as Comanda[]);
   }, [tenantId]);
 
-  const applyCocinaActivaFromRealtime = useCallback((activa: boolean) => {
-    setCocinaActiva(activa);
-  }, []);
-
-  useCocinaRealtimeSync(tenantId, reloadComandas, applyCocinaActivaFromRealtime);
+  useCocinaRealtimeSync(tenantId, reloadComandas, setCocinaActiva);
 
   useEffect(() => {
-    if (authLoading) return;
-    if (!tenantId) {
-      setLoading(false);
-      return;
-    }
-
+    if (authLoading || !tenantId) { if (!authLoading) setLoading(false); return; }
     let cancelled = false;
     async function load() {
       const [estadoRes, comandasRes, tenantRes] = await Promise.all([
-        insforgeClient.database
-          .from("cocina_estado")
-          .select("*")
-          .eq("tenant_id", tenantId)
-          .limit(1),
-        insforgeClient.database
-          .from("comandas")
-          .select("*")
-          .eq("tenant_id", tenantId)
-          .in("estado", ["pendiente", "en_preparacion", "listo"])
-          .order("created_at", { ascending: true }),
-        insforgeClient.database
-          .from("tenants")
-          .select("nombre_negocio, rnc, direccion, telefono, logo_url, moneda")
-          .eq("id", tenantId)
-          .maybeSingle(),
+        insforgeClient.database.from("cocina_estado").select("*").eq("tenant_id", tenantId).limit(1),
+        insforgeClient.database.from("comandas").select("*").eq("tenant_id", tenantId).in("estado", ["pendiente", "en_preparacion", "listo"]).order("created_at", { ascending: true }),
+        insforgeClient.database.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url, moneda").eq("id", tenantId).maybeSingle(),
       ]);
-
       if (cancelled) return;
-      if (!estadoRes.error && estadoRes.data?.[0]) {
-        setCocinaActiva(estadoRes.data[0].activa);
-      }
-      if (!comandasRes.error && comandasRes.data) {
-        setComandas(comandasRes.data as Comanda[]);
-      }
-      if (!tenantRes.error && tenantRes.data) {
-        const t = tenantRes.data as {
-          nombre_negocio: string | null;
-          rnc: string | null;
-          direccion: string | null;
-          telefono: string | null;
-          logo_url: string | null;
-          moneda?: string | null;
-        };
-        tenantReceiptRef.current = {
-          nombre_negocio: t.nombre_negocio,
-          rnc: t.rnc,
-          direccion: t.direccion,
-          telefono: t.telefono,
-          logo_url: t.logo_url,
-          moneda: t.moneda ?? null,
-        };
+      if (estadoRes.data?.[0]) setCocinaActiva(estadoRes.data[0].activa);
+      if (comandasRes.data) setComandas(comandasRes.data as Comanda[]);
+      if (tenantRes.data) {
+        const t = tenantRes.data as any;
+        tenantReceiptRef.current = { nombre_negocio: t.nombre_negocio, rnc: t.rnc, direccion: t.direccion, telefono: t.telefono, logo_url: t.logo_url, moneda: t.moneda ?? null };
       }
       setLoading(false);
     }
-    load();
-    return () => {
-      cancelled = true;
-    };
+    load(); return () => { cancelled = true; };
   }, [authLoading, tenantId]);
 
   async function toggleCocina() {
     if (!tenantId) return;
     setToggling(true);
     const newActiva = !cocinaActiva;
-
-    const { data: existing, error: selectError } = await insforgeClient.database
-      .from("cocina_estado")
-      .select("*")
-      .eq("tenant_id", tenantId)
-      .limit(1);
-
-    if (selectError) {
-      console.error("Error checking cocina_estado:", selectError);
-      alert("Error al verificar estado de cocina: " + selectError.message);
-      setToggling(false);
-      return;
-    }
-
-    let error;
-    if (existing && existing.length > 0) {
-      const result = await insforgeClient.database
-        .from("cocina_estado")
-        .update({ activa: newActiva, changed_at: new Date().toISOString() })
-        .eq("id", existing[0].id);
-      error = result.error;
-    } else {
-      const result = await insforgeClient.database
-        .from("cocina_estado")
-        .insert({
-          activa: newActiva,
-          changed_at: new Date().toISOString(),
-          tenant_id: tenantId,
-        });
-      error = result.error;
-    }
-
-    if (error) {
-      console.error("Error updating cocina_estado:", error);
-      alert("Error al cambiar estado de cocina: " + error.message);
-    } else {
-      setCocinaActiva(newActiva);
-    }
+    const { data: existing } = await insforgeClient.database.from("cocina_estado").select("id").eq("tenant_id", tenantId).limit(1);
+    const payload = { activa: newActiva, changed_at: new Date().toISOString(), tenant_id: tenantId };
+    const { error } = existing?.length ? await insforgeClient.database.from("cocina_estado").update(payload).eq("id", existing[0].id) : await insforgeClient.database.from("cocina_estado").insert(payload);
+    if (!error) setCocinaActiva(newActiva);
     setToggling(false);
   }
 
   async function advanceComanda(id: string, nextEstado: Comanda["estado"]) {
-    const { error } = await insforgeClient.database
-      .from("comandas")
-      .update({ estado: nextEstado })
-      .eq("id", id);
+    const { error } = await insforgeClient.database.from("comandas").update({ estado: nextEstado }).eq("id", id);
     if (!error) {
       if (nextEstado === "listo" && tenantId) {
-        await insforgeClient.database
-          .from("consumos")
-          .update({ estado: "listo", updated_at: new Date().toISOString() })
-          .eq("comanda_id", id)
-          .eq("tenant_id", tenantId)
-          .eq("estado", "enviado_cocina");
+        await insforgeClient.database.from("consumos").update({ estado: "listo", updated_at: new Date().toISOString() }).eq("comanda_id", id).eq("tenant_id", tenantId).eq("estado", "enviado_cocina");
       }
-      if (nextEstado === "entregado") {
-        setComandas((prev) => prev.filter((c) => c.id !== id));
-      } else {
-        setComandas((prev) =>
-          prev.map((c) => (c.id === id ? { ...c, estado: nextEstado } : c))
-        );
-      }
+      if (nextEstado === "entregado") setComandas(prev => prev.filter(c => c.id !== id));
+      else setComandas(prev => prev.map(c => c.id === id ? { ...c, estado: nextEstado } : c));
     }
   }
 
-  const printComandaThermal = useCallback(
-    async (comanda: Comanda) => {
-      let tenant = tenantReceiptRef.current;
-      if (!tenant && tenantId) {
-        const { data } = await insforgeClient.database
-          .from("tenants")
-          .select("nombre_negocio, rnc, direccion, telefono, logo_url, moneda")
-          .eq("id", tenantId)
-          .maybeSingle();
-        if (data) {
-          const t = data as {
-            nombre_negocio: string | null;
-            rnc: string | null;
-            direccion: string | null;
-            telefono: string | null;
-            logo_url: string | null;
-            moneda?: string | null;
-          };
-          tenant = {
-            nombre_negocio: t.nombre_negocio,
-            rnc: t.rnc,
-            direccion: t.direccion,
-            telefono: t.telefono,
-            logo_url: t.logo_url,
-            moneda: t.moneda ?? null,
-          };
-          tenantReceiptRef.current = tenant;
-        }
-      }
-      if (!tenant) {
-        alert("No se pudieron cargar los datos del negocio para imprimir la comanda.");
-        return;
-      }
-      const paperWidthMm = getThermalPrintSettings().paperWidthMm;
-      const html = buildComandaReceiptHtml(
-        tenant,
-        {
-          id: comanda.id,
-          numero_comanda: comanda.numero_comanda,
-          mesa_numero: comanda.mesa_numero,
-          items: comanda.items.map((i) => ({
-            nombre: i.nombre,
-            cantidad: i.cantidad,
-            precio: i.precio,
-            categoria: i.categoria,
-            notas: i.notas,
-          })),
-          notas: comanda.notas,
-          created_at: comanda.created_at,
-        },
-        paperWidthMm
-      );
-      const res = await printThermalHtml(html);
-      if (!res.ok && res.error) {
-        console.warn("Impresión comanda (cocina):", res.error);
-      }
-    },
-    [tenantId]
-  );
+  const printComanda = async (comanda: Comanda) => {
+    if (!tenantReceiptRef.current) return;
+    const { paperWidthMm } = getThermalPrintSettings();
+    const html = buildComandaReceiptHtml(tenantReceiptRef.current, comanda as any, paperWidthMm);
+    await printThermalHtml(html);
+  };
 
   const columns = [
-    {
-      key: "pendiente" as const,
-      title: "Pendientes",
-      color: "#ff906d",
-      next: "en_preparacion" as const,
-      nextLabel: "Iniciar",
-    },
-    {
-      key: "en_preparacion" as const,
-      title: "En Preparación",
-      color: "#ffd06d",
-      next: "listo" as const,
-      nextLabel: "Listo",
-    },
-    {
-      key: "listo" as const,
-      title: "Listos para entregar",
-      color: "#59ee50",
-      next: "entregado" as const,
-      nextLabel: "Entregado",
-    },
+    { key: "pendiente" as const, title: "Pendientes", color: "#ff906d", next: "en_preparacion" as const, nextLabel: "Iniciar" },
+    { key: "en_preparacion" as const, title: "En Preparación", color: "#ffd06d", next: "listo" as const, nextLabel: "Listo" },
+    { key: "listo" as const, title: "Listos para entregar", color: "#59ee50", next: "entregado" as const, nextLabel: "Entregado" },
   ];
 
-  if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <span className="font-['Space_Grotesk',sans-serif] text-[#6b7280] text-[16px]">
-          Cargando comandas...
-        </span>
-      </div>
-    );
-  }
-
-  if (!tenantId) {
-    return (
-      <div className="flex-1 flex items-center justify-center p-6">
-        <p className="font-['Inter',sans-serif] text-[#adaaaa] text-[14px] text-center">
-          Iniciá sesión con una cuenta vinculada a un negocio para ver la cocina.
-        </p>
-      </div>
-    );
-  }
+  if (loading) return <div className="flex-1 flex items-center justify-center font-['Space_Grotesk'] text-muted-foreground">Cargando comandas...</div>;
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between px-4 sm:px-[32px] py-[14px] sm:py-[20px] gap-[12px] border-b border-[rgba(72,72,71,0.2)]">
-        <div className="flex items-center gap-[16px]">
-          <h1 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[28px]">
-            Cocina
-          </h1>
-          <div
-            className="flex gap-[6px] items-center px-[12px] py-[4px] rounded-full"
-            style={{
-              backgroundColor: cocinaActiva
-                ? "rgba(89,238,80,0.1)"
-                : "rgba(255,113,108,0.1)",
-            }}
-          >
-            <div
-              className="rounded-full size-[8px]"
-              style={{ backgroundColor: cocinaActiva ? "#59ee50" : "#ff716c" }}
-            />
-            <span
-              className="font-['Space_Grotesk',sans-serif] text-[10px] tracking-[0.5px] uppercase font-bold"
-              style={{ color: cocinaActiva ? "#59ee50" : "#ff716c" }}
-            >
-              {cocinaActiva ? "En Vivo" : "Cerrada"}
-            </span>
+    <div className="flex-1 flex flex-col overflow-hidden bg-background transition-colors duration-300">
+      <div className="flex flex-wrap items-center justify-between px-4 sm:px-8 py-4 sm:py-6 gap-4 border-b border-black/10 dark:border-white/10 shrink-0">
+        <div className="flex items-center gap-4">
+          <h1 className="font-['Space_Grotesk'] font-bold text-foreground text-3xl">Cocina</h1>
+          <div className={`flex items-center gap-2 px-3 py-1 rounded-full border ${cocinaActiva ? 'bg-green-500/10 border-green-500/20 text-green-600 dark:text-green-400' : 'bg-destructive/10 border-destructive/20 text-destructive'}`}>
+             <div className={`size-2 rounded-full ${cocinaActiva ? 'bg-green-500 animate-pulse' : 'bg-destructive'}`} />
+             <span className="text-[10px] font-bold uppercase tracking-widest">{cocinaActiva ? "En Vivo" : "Cerrada"}</span>
           </div>
         </div>
-
-        <button
-          onClick={toggleCocina}
-          disabled={toggling}
-          className="flex gap-[8px] items-center px-[24px] py-[10px] rounded-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[14px] transition-all cursor-pointer border-none disabled:opacity-50"
-          style={{
-            backgroundColor: cocinaActiva
-              ? "rgba(255,113,108,0.12)"
-              : "rgba(89,238,80,0.12)",
-            color: cocinaActiva ? "#ff716c" : "#59ee50",
-          }}
-        >
-          {toggling
-            ? "Actualizando..."
-            : cocinaActiva
-            ? "Cerrar Cocina"
-            : "Abrir Cocina"}
-        </button>
+        <button onClick={toggleCocina} disabled={toggling} className={`px-6 py-2.5 rounded-xl font-bold uppercase text-[12px] tracking-widest transition-all cursor-pointer border ${cocinaActiva ? 'bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/20' : 'bg-green-600 text-white border-transparent hover:bg-green-700'}`}>{toggling ? "..." : (cocinaActiva ? "Cerrar Cocina" : "Abrir Cocina")}</button>
       </div>
 
-      {!cocinaActiva && (
-        <div className="mx-[32px] mt-[16px] bg-[rgba(255,113,108,0.05)] border border-[rgba(255,113,108,0.2)] rounded-[12px] px-[20px] py-[12px]">
-          <span className="font-['Inter',sans-serif] text-[#ff716c] text-[13px]">
-            La cocina está cerrada. No se pueden tomar nuevos pedidos desde las
-            mesas.
-          </span>
-        </div>
-      )}
-
-      {/* Kanban board */}
-      <div className="flex-1 overflow-x-auto flex gap-[16px] px-4 sm:px-[32px] py-[24px]">
-        {columns.map((col) => {
-          const items = comandas.filter((c) => c.estado === col.key);
+      <div className="flex-1 overflow-x-auto flex gap-6 px-4 sm:px-8 py-6 bg-muted/5">
+        {columns.map(col => {
+          const items = comandas.filter(c => c.estado === col.key);
           return (
-            <div
-              key={col.key}
-              className="min-w-[220px] flex-1 flex flex-col bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.15)] overflow-hidden"
-            >
-              {/* Column header */}
-              <div className="flex items-center justify-between px-[20px] py-[14px] border-b border-[rgba(72,72,71,0.15)]">
-                <div className="flex items-center gap-[8px]">
-                  <div
-                    className="rounded-full size-[8px]"
-                    style={{ backgroundColor: col.color }}
-                  />
-                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px]">
-                    {col.title}
-                  </span>
-                </div>
-                <div
-                  className="rounded-full size-[20px] flex items-center justify-center"
-                  style={{ backgroundColor: `${col.color}20` }}
-                >
-                  <span
-                    className="font-['Inter',sans-serif] font-bold text-[10px]"
-                    style={{ color: col.color }}
-                  >
-                    {items.length}
-                  </span>
-                </div>
-              </div>
-
-              {/* Cards */}
-              <div className="flex-1 overflow-y-auto flex flex-col gap-[10px] p-[14px]">
-                {items.length === 0 && (
-                  <div className="flex-1 flex items-center justify-center py-[40px]">
-                    <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">
-                      Sin comandas
-                    </span>
-                  </div>
-                )}
-                {items.map((comanda) => (
-                  <div
-                    key={comanda.id}
-                    className="bg-[#1a1a1a] rounded-[14px] border border-[rgba(72,72,71,0.2)] overflow-hidden"
-                  >
-                    {/* Card header */}
-                    <div className="px-[14px] py-[10px] border-b border-[rgba(72,72,71,0.1)] flex items-center justify-between">
-                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[13px]">
-                        #{String(comanda.numero_comanda).padStart(4, "0")}
-                      </span>
-                      <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">
-                        {comanda.mesa_numero != null && comanda.mesa_numero !== 0
-                          ? `Mesa ${comanda.mesa_numero}`
-                          : "Para llevar"}
-                      </span>
+            <div key={col.key} className="min-w-[300px] flex-1 flex flex-col bg-card rounded-[24px] border border-black/10 dark:border-white/10 overflow-hidden shadow-sm">
+               <div className="px-6 py-4 border-b border-black/5 dark:border-white/5 flex justify-between items-center bg-muted/30">
+                  <div className="flex items-center gap-3"><div className="size-2 rounded-full" style={{ backgroundColor: col.color }} /><span className="font-['Space_Grotesk'] font-bold text-foreground uppercase tracking-widest text-[13px]">{col.title}</span></div>
+                  <span className="text-[10px] font-bold text-muted-foreground bg-muted px-2 py-0.5 rounded-full">{items.length}</span>
+               </div>
+               <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
+                  {items.length === 0 ? <div className="py-20 text-center text-muted-foreground text-xs uppercase tracking-widest">Sin comandas</div> : items.map(c => (
+                    <div key={c.id} className="bg-background border border-black/5 dark:border-white/10 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                       <div className="px-4 py-3 border-b border-black/5 dark:border-white/5 flex justify-between items-center bg-muted/10">
+                          <span className="font-['Space_Grotesk'] font-bold text-primary text-[14px]">#{String(c.numero_comanda).padStart(4, "0")}</span>
+                          <span className="text-[11px] font-bold text-muted-foreground uppercase">{c.mesa_numero ? `Mesa ${c.mesa_numero}` : "Para llevar"}</span>
+                       </div>
+                       <div className="p-4 space-y-2">
+                          {c.items.map((it, i) => (
+                             <div key={i} className="flex flex-col gap-0.5"><div className="flex justify-between text-[13px] font-medium text-foreground"><span>{it.cantidad}× {it.nombre}</span></div>{it.notas && <span className="text-[10px] text-muted-foreground/60 italic ml-4">↳ {it.notas}</span>}</div>
+                          ))}
+                          {c.notas && <div className="mt-2 bg-primary/5 border border-primary/10 rounded-lg p-2.5 text-[11px] text-primary leading-relaxed">{c.notas}</div>}
+                       </div>
+                       <div className="p-3 border-t border-black/5 dark:border-white/5 flex gap-2">
+                          <button onClick={() => void printComanda(c)} className="flex-1 py-2 bg-muted text-muted-foreground rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-black/5 dark:hover:bg-white/10 transition-all border-none cursor-pointer">Imprimir</button>
+                          <button onClick={() => advanceComanda(c.id, col.next)} className="flex-1 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all border-none cursor-pointer" style={{ backgroundColor: `${col.color}20`, color: col.color }}>{col.nextLabel}</button>
+                       </div>
                     </div>
-
-                    {/* Items */}
-                    <div className="px-[14px] py-[10px] flex flex-col gap-[4px]">
-                      {comanda.items.map((item, i) => (
-                        <div key={i}>
-                          <div className="flex justify-between gap-[8px]">
-                            <span className="font-['Inter',sans-serif] text-white text-[12px]">
-                              {item.cantidad}×{" "}
-                              {item.categoria ? (
-                                <>
-                                  <span className="text-[#adaaaa]">[{item.categoria}]</span>{" "}
-                                </>
-                              ) : null}
-                              {item.nombre}
-                            </span>
-                          </div>
-                          {item.notas && (
-                            <span className="font-['Inter',sans-serif] text-[#6b7280] text-[10px] italic">
-                              ↳ {item.notas}
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                      {comanda.notas && (
-                        <div className="mt-[6px] bg-[rgba(255,144,109,0.05)] rounded-[8px] px-[10px] py-[6px]">
-                          <span className="font-['Inter',sans-serif] text-[#ff906d] text-[10px]">
-                            {comanda.notas}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Actions */}
-                    <div className="px-[14px] py-[10px] border-t border-[rgba(72,72,71,0.1)] flex gap-[8px]">
-                      <button
-                        type="button"
-                        onClick={() => void printComandaThermal(comanda)}
-                        className="flex-1 bg-[#262626] rounded-[8px] py-[7px] font-['Inter',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.5px] uppercase font-bold cursor-pointer border-none hover:bg-[#2e2e2e] transition-colors"
-                      >
-                        Imprimir
-                      </button>
-                      <button
-                        onClick={() => advanceComanda(comanda.id, col.next)}
-                        className="flex-1 rounded-[8px] py-[7px] font-['Inter',sans-serif] text-[10px] tracking-[0.5px] uppercase font-bold cursor-pointer border-none transition-colors"
-                        style={{
-                          backgroundColor: `${col.color}20`,
-                          color: col.color,
-                        }}
-                      >
-                        {col.nextLabel}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+               </div>
             </div>
           );
         })}

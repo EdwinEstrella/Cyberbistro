@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { estadoColors, estadoLabels, type MesaEstadoVisual } from "../config/estadoTheme";
+import { useTheme } from "../../../shared/context/ThemeContext";
 
 type MesaCardData = {
   id: number;
@@ -32,8 +33,17 @@ function TableMesaCardBase({
   onClick,
   formatCurrency,
 }: Props) {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const isMerged = mesa.fusion_hijos.length > 0;
-  const colors = estadoColors[mesa.estado];
+  
+  // Custom theme colors for light mode to match the mockup (occupied = coral/orange)
+  const colors = isDark ? estadoColors[mesa.estado] : {
+    bg: mesa.estado === 'ocupada' ? 'rgba(255,144,109,0.1)' : 'var(--card)',
+    border: mesa.estado === 'ocupada' ? '#ff906d' : 'rgba(0,0,0,0.1)',
+    text: mesa.estado === 'ocupada' ? '#ff784d' : 'var(--foreground)',
+    dot: mesa.estado === 'ocupada' ? '#ff906d' : (mesa.estado === 'libre' ? '#59ee50' : '#adaaaa')
+  };
 
   return (
     <button
@@ -52,12 +62,12 @@ function TableMesaCardBase({
           ? "2px solid rgba(255,144,109,0.8)"
           : isMergeTarget
             ? "2px solid rgba(89,238,80,0.7)"
-            : `2px solid ${colors.border}`,
+            : `1px solid ${colors.border}`,
         boxShadow: isSelected
           ? "0 0 20px rgba(255,144,109,0.25)"
           : isMergeTarget
             ? "0 0 16px rgba(89,238,80,0.2)"
-            : undefined,
+            : "0 2px 4px rgba(0,0,0,0.02)",
         borderRadius: 12,
         cursor: "pointer",
         display: "flex",
@@ -67,12 +77,12 @@ function TableMesaCardBase({
         gap: 6,
         position: "relative",
         userSelect: "none",
-        transition: "border 0.15s, box-shadow 0.15s, background 0.15s",
+        transition: "all 0.15s ease",
       }}
-      className="border-none p-0 text-left"
+      className="border-none p-0 text-left transition-colors duration-300"
     >
       {isMerged && (
-        <div className="absolute top-[6px] right-[6px] bg-[rgba(255,144,109,0.15)] rounded-[4px] px-[6px] py-[2px]">
+        <div className="absolute top-[6px] right-[6px] bg-[#ff906d]/15 rounded-[4px] px-[6px] py-[2px]">
           <span className="font-['Inter',sans-serif] text-[#ff906d] text-[8px] tracking-[0.8px] uppercase font-bold">
             Fusionada
           </span>
@@ -89,16 +99,16 @@ function TableMesaCardBase({
       ) : (
         <>
           <span
-            className="font-['Space_Grotesk',sans-serif] font-bold text-[22px]"
+            className="font-['Space_Grotesk',sans-serif] font-bold text-[22px] transition-colors duration-300"
             style={{ color: isSelected ? "#ff906d" : colors.text }}
           >
             {mesa.numero.toString().padStart(2, "0")}
           </span>
 
           <div className="flex items-center gap-[5px]">
-            <div className="rounded-full size-[6px]" style={{ backgroundColor: colors.dot }} />
+            <div className="rounded-full size-[6px] transition-colors duration-300" style={{ backgroundColor: colors.dot }} />
             <span
-              className="font-['Inter',sans-serif] text-[9px] tracking-[0.8px] uppercase"
+              className="font-['Inter',sans-serif] text-[9px] tracking-[0.8px] uppercase transition-colors duration-300"
               style={{ color: colors.text, opacity: 0.7 }}
             >
               {estadoLabels[mesa.estado]}
@@ -107,13 +117,13 @@ function TableMesaCardBase({
 
           {deudaTotal > 0 ? (
             <span
-              className="font-['Space_Grotesk',sans-serif] font-bold text-[10px]"
+              className="font-['Space_Grotesk',sans-serif] font-bold text-[10px] transition-colors duration-300"
               style={{ color: isSelected ? "#ff906d" : colors.text }}
             >
               {formatCurrency(deudaTotal)}
             </span>
           ) : (
-            <span className="font-['Inter',sans-serif] text-[10px] text-[rgba(173,170,170,0.5)]">
+            <span className="font-['Inter',sans-serif] text-[10px] text-muted-foreground/50 transition-colors duration-300">
               {mesa.capacidad} pax
             </span>
           )}

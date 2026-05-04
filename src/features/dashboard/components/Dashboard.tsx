@@ -33,7 +33,7 @@ import {
   sortCategoriesForTabs,
 } from "../../../shared/lib/menuCategories";
 import { MesaCloseAccountModal } from "../../billing/components/MesaCloseAccountModal";
-import { DashboardTickerStrip } from "./DashboardTickerStrip";
+// DashboardTickerStrip removed
 import {
   incrementTenantNcfSequence,
   resolveNcfForNewInvoice,
@@ -284,10 +284,10 @@ export function Dashboard() {
 
   const showEmptyHint =
     cart.length === 0 &&
-    !selectedMesa;
+    (!selectedMesa || mesaAccountLoading || mesaConsumos.length === 0);
 
   const showOrderFooter =
-    cart.length > 0 || hasCuentaEnMesa;
+    cart.length > 0 || (selectedMesa && (mesaAccountLoading || mesaConsumos.length > 0));
 
   function addToCart(plato: Plato) {
     setCart((prev) => {
@@ -836,13 +836,11 @@ export function Dashboard() {
   }
 
   return (
-    <div className="flex flex-col lg:flex-row gap-[24px] lg:gap-[32px] p-4 sm:p-[32px] flex-1 overflow-y-auto lg:overflow-hidden min-h-0">
+    <div className="flex h-full min-h-0 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
       {/* LEFT: Menu */}
-      <div className="lg:flex-1 flex flex-col gap-[24px] min-w-0 lg:overflow-auto">
-        <DashboardTickerStrip />
-
+      <div className="flex min-w-0 flex-col gap-[24px] p-4 sm:p-[32px] lg:flex-1 lg:overflow-auto">
         {/* Categories */}
-        <div className="flex gap-[12px] overflow-x-auto pb-[4px] shrink-0">
+        <div className="flex flex-wrap gap-[12px] pb-[4px] shrink-0">
           {categories.map((cat) => (
             <button
               key={cat}
@@ -969,9 +967,9 @@ export function Dashboard() {
       </div>
 
       {/* RIGHT: Order Panel */}
-      <div className="w-full lg:w-[340px] shrink-0 backdrop-blur-[12px] bg-[rgba(32,31,31,0.6)] rounded-[16px] border border-[rgba(72,72,71,0.1)] shadow-[0px_25px_50px_-12px_rgba(0,0,0,0.25)] flex flex-col lg:self-start lg:sticky lg:top-0 lg:max-h-[calc(100vh-160px)]">
+      <div className="w-full shrink-0 bg-[#0e0e0e] border-l border-[rgba(72,72,71,0.3)] flex flex-col lg:h-full lg:w-[380px] lg:rounded-none shadow-2xl relative">
         {/* Header */}
-        <div className="border-b border-[rgba(72,72,71,0.2)] px-[24px] pt-[20px] pb-[20px] shrink-0">
+        <div className="relative z-20 border-b border-[rgba(72,72,71,0.2)] px-[24px] pt-[20px] pb-[20px] shrink-0">
           {/* Título */}
           <div className="text-center">
             <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px] uppercase">
@@ -1188,7 +1186,11 @@ export function Dashboard() {
           {showEmptyHint && (
             <div className="flex flex-col items-center justify-center py-[24px] gap-[8px]">
               <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px] text-center px-2">
-                Seleccioná una mesa y hacé clic en los platos para agregarlos.
+                {!selectedMesa
+                  ? "Seleccioná una mesa y hacé clic en los platos para agregarlos."
+                  : mesaAccountLoading
+                    ? "Cargando cuenta de la mesa…"
+                    : "No hay consumos en esta mesa todavía. Agregá platos y enviá a cocina."}
               </span>
             </div>
           )}
@@ -1325,7 +1327,7 @@ export function Dashboard() {
                     >
                       {NCF_B_TIPO_OPCIONES.map((opcion) => (
                         <option key={opcion.codigo} value={opcion.codigo}>
-                          {opcion.codigo}
+                          {opcion.codigo} - {opcion.descripcion.replace(`${opcion.codigo} - `, "")}
                         </option>
                       ))}
                     </select>
@@ -1408,11 +1410,11 @@ export function Dashboard() {
           </div>
         )}
 
-        {cart.length === 0 && (
+        {cart.length === 0 && !hasCuentaEnMesa && (
           <div className="px-[20px] pb-[20px] shrink-0">
             <div className="bg-[#131313] rounded-[12px] p-[16px] text-center">
               <span className="font-['Inter',sans-serif] text-[#6b7280] text-[11px] tracking-[0.5px] uppercase">
-                {hasCuentaEnMesa ? "Sin ítems nuevos en carrito" : "Carrito vacío"}
+                Carrito vacío
               </span>
             </div>
           </div>
@@ -1723,6 +1725,7 @@ export function Dashboard() {
                         {new Date(consumo.created_at).toLocaleTimeString("es-DO", {
                           hour: "2-digit",
                           minute: "2-digit",
+                          hour12: true,
                         })}
                       </div>
                     </div>

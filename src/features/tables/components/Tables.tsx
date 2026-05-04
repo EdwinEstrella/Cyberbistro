@@ -4,22 +4,10 @@ import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { generateMesasConfig, type MesaConfig } from "../config/mesas";
 import { loadCantidadMesas } from "../../../shared/lib/tenantMesasSettings";
-import { estadoColors, estadoLabels, type MesaEstadoVisual } from "../config/estadoTheme";
+import { estadoLabels, type MesaEstadoVisual } from "../config/estadoTheme";
 import { TableMesaCard } from "./TableMesaCard";
 
-
 type Estado = MesaEstadoVisual;
-
-interface MesaEstadoDB {
-  id: number;
-  estado: Estado;
-  fusionada: boolean;
-  fusion_padre_id: number | null;
-  fusion_hijos: number[];
-  span_filas: number;
-  span_columnas: number;
-}
-
 
 interface Mesa extends MesaConfig {
   estado: Estado;
@@ -33,59 +21,23 @@ interface Mesa extends MesaConfig {
 function getAdjacentMesas(mesa: Mesa, allMesas: Mesa[]): Mesa[] {
   const visible = allMesas.filter((m) => !m.fusionada && m.id !== mesa.id);
   return visible.filter((m) => {
-    const rightOf =
-      m.fila === mesa.fila &&
-      m.columna === mesa.columna + mesa.span_columnas &&
-      m.span_filas === mesa.span_filas;
-    const leftOf =
-      m.fila === mesa.fila &&
-      m.columna + m.span_columnas === mesa.columna &&
-      m.span_filas === mesa.span_filas;
-    const below =
-      m.columna === mesa.columna &&
-      m.fila === mesa.fila + mesa.span_filas &&
-      m.span_columnas === mesa.span_columnas;
-    const above =
-      m.columna === mesa.columna &&
-      m.fila + m.span_filas === mesa.fila &&
-      m.span_columnas === mesa.span_columnas;
+    const rightOf = m.fila === mesa.fila && m.columna === mesa.columna + mesa.span_columnas && m.span_filas === mesa.span_filas;
+    const leftOf = m.fila === mesa.fila && m.columna + m.span_columnas === mesa.columna && m.span_filas === mesa.span_filas;
+    const below = m.columna === mesa.columna && m.fila === mesa.fila + mesa.span_filas && m.span_columnas === mesa.span_columnas;
+    const above = m.columna === mesa.columna && m.fila + m.span_filas === mesa.fila && m.span_columnas === mesa.span_columnas;
     return rightOf || leftOf || below || above;
   });
 }
 
-
-
-const RD = (n: number) =>
-  "RD$ " + n.toLocaleString("es-DO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const RD = (n: number) => "RD$ " + n.toLocaleString("es-DO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 function etiquetaEstadoConsumo(estado: string): string {
   switch (estado) {
-    case "enviado_cocina":
-      return "En cocina / barra";
-    case "listo":
-      return "Listo para servir";
-    case "entregado":
-      return "Entregado en mesa";
-    case "pedido":
-      return "Pedido";
-    default:
-      return estado;
-  }
-}
-
-function etiquetaEstadoComanda(estado: string | undefined): string | null {
-  if (!estado) return null;
-  switch (estado) {
-    case "pendiente":
-      return "Cocina: pendiente";
-    case "en_preparacion":
-      return "Cocina: preparando";
-    case "listo":
-      return "Cocina: listo";
-    case "entregado":
-      return "Cocina: comanda cerrada";
-    default:
-      return null;
+    case "enviado_cocina": return "En cocina / barra";
+    case "listo": return "Listo para servir";
+    case "entregado": return "Entregado en mesa";
+    case "pedido": return "Pedido";
+    default: return estado;
   }
 }
 
@@ -107,691 +59,185 @@ export function Tables() {
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [mergeMode, setMergeMode] = useState(false);
-  /** Deuda real = consumos no pagados (misma fuente que el historial del panel). */
   const [deudaPorMesa, setDeudaPorMesa] = useState<Record<number, number>>({});
   const [historialConsumos, setHistorialConsumos] = useState<ConsumoPanelRow[]>([]);
-  const [comandaEstados, setComandaEstados] = useState<Record<string, string>>({});
   const navigate = useNavigate();
 
-
-
-
   const refreshDeudaPorMesa = useCallback(async () => {
-    if (!tenantId) {
-      setDeudaPorMesa({});
-      return;
-    }
-    const { data, error } = await insforgeClient.database
-      .from("consumos")
-      .select("mesa_numero, subtotal")
-      .eq("tenant_id", tenantId)
-      .neq("estado", "pagado");
-
-    if (error || !data) {
-      setDeudaPorMesa({});
-      return;
-    }
+    if (!tenantId) { setDeudaPorMesa({}); return; }
+    const { data, error } = await insforgeClient.database.from("consumos").select("mesa_numero, subtotal").eq("tenant_id", tenantId).neq("estado", "pagado");
+    if (error || !data) { setDeudaPorMesa({}); return; }
     const map: Record<number, number> = {};
-    for (const row of data as { mesa_numero: number | null; subtotal: number }[]) {
+    for (const row of data as any[]) {
       const mn = Number(row.mesa_numero);
-      if (!Number.isFinite(mn) || mn <= 0) continue;
-      map[mn] = (map[mn] ?? 0) + Number(row.subtotal);
+      if (mn > 0) map[mn] = (map[mn] ?? 0) + Number(row.subtotal);
     }
     setDeudaPorMesa(map);
-    setMesas((prev) =>
-      prev.map((mesa) => ({
-        ...mesa,
-        estado: map[mesa.numero] ? "ocupada" : "libre",
-      }))
-    );
+    setMesas((prev) => prev.map((mesa) => ({ ...mesa, estado: map[mesa.numero] ? "ocupada" : "libre" })));
   }, [tenantId]);
 
   useEffect(() => {
-    // Se cargarán las mesas cuando se obtenga la cantidad real
     setMesas([]);
-
-    if (authLoading) return;
-
-    if (!tenantId) {
-      setDeudaPorMesa({});
-      setLoading(false);
-      return;
-    }
-
+    if (authLoading || !tenantId) { if (!authLoading) setLoading(false); return; }
     setLoading(true);
-
     Promise.all([
       insforgeClient.database.from("mesas_estado").select("*").eq("tenant_id", tenantId),
-      insforgeClient.database
-        .from("consumos")
-        .select("mesa_numero, subtotal")
-        .eq("tenant_id", tenantId)
-        .neq("estado", "pagado"),
+      insforgeClient.database.from("consumos").select("mesa_numero, subtotal").eq("tenant_id", tenantId).neq("estado", "pagado"),
       loadCantidadMesas(tenantId)
     ]).then(([estadosRes, consumosPendRes, cantidadMesas]) => {
       const configArray = generateMesasConfig(cantidadMesas);
-      const mesasIniciales = configArray.map((config) => ({
-        ...config,
-        estado: "libre" as Estado,
-        fusionada: false,
-        fusion_padre_id: null,
-        fusion_hijos: [],
-        span_filas: 1,
-        span_columnas: 1,
-      }));
-
+      const mesasIniciales = configArray.map((config) => ({ ...config, estado: "libre" as Estado, fusionada: false, fusion_padre_id: null, fusion_hijos: [], span_filas: 1, span_columnas: 1 }));
       const deudaPorNumero = new Map<number, number>();
-      if (!consumosPendRes.error && consumosPendRes.data) {
-        for (const row of consumosPendRes.data as { mesa_numero: number | null; subtotal: number }[]) {
+      if (consumosPendRes.data) {
+        for (const row of consumosPendRes.data as any[]) {
           const mn = Number(row.mesa_numero);
-          if (!Number.isFinite(mn) || mn <= 0) continue;
-          deudaPorNumero.set(mn, (deudaPorNumero.get(mn) ?? 0) + Number(row.subtotal));
+          if (mn > 0) deudaPorNumero.set(mn, (deudaPorNumero.get(mn) ?? 0) + Number(row.subtotal));
         }
       }
-
-      if (!estadosRes.error && estadosRes.data && estadosRes.data.length > 0) {
-          const estadosMap = new Map<number, MesaEstadoDB>();
-          for (const e of estadosRes.data as MesaEstadoDB[]) {
-            estadosMap.set(e.id, {
-              ...e,
-              fusion_hijos: e.fusion_hijos ?? [],
-              span_filas: e.span_filas ?? 1,
-              span_columnas: e.span_columnas ?? 1,
-            });
-          }
-
-          setMesas(
-            mesasIniciales.map((m) => {
-              const estadoDB = estadosMap.get(m.id);
-              if (estadoDB) {
-                return {
-                  ...m,
-                  estado: deudaPorNumero.has(m.numero) ? "ocupada" : "libre",
-                  fusionada: estadoDB.fusionada,
-                  fusion_padre_id: estadoDB.fusion_padre_id,
-                  fusion_hijos: estadoDB.fusion_hijos,
-                  span_filas: estadoDB.span_filas,
-                  span_columnas: estadoDB.span_columnas,
-                };
-              }
-              return { ...m, estado: deudaPorNumero.has(m.numero) ? "ocupada" : "libre" };
-            })
-          );
-        } else {
-          setMesas(
-            mesasIniciales.map((m) => ({
-              ...m,
-              estado: deudaPorNumero.has(m.numero) ? "ocupada" : "libre",
-            }))
-          );
-        }
-
-        setLoading(false);
-        void refreshDeudaPorMesa();
-      });
+      if (estadosRes.data && estadosRes.data.length > 0) {
+        const estadosMap = new Map<number, any>();
+        for (const e of estadosRes.data) estadosMap.set(e.id, e);
+        setMesas(mesasIniciales.map((m) => {
+          const e = estadosMap.get(m.id);
+          return { ...m, estado: deudaPorNumero.has(m.numero) ? "ocupada" : "libre", fusionada: !!e?.fusionada, fusion_padre_id: e?.fusion_padre_id ?? null, fusion_hijos: e?.fusion_hijos ?? [], span_filas: e?.span_filas ?? 1, span_columnas: e?.span_columnas ?? 1 };
+        }));
+      } else {
+        setMesas(mesasIniciales.map((m) => ({ ...m, estado: deudaPorNumero.has(m.numero) ? "ocupada" : "libre" })));
+      }
+      setLoading(false); refreshDeudaPorMesa();
+    });
   }, [authLoading, tenantId, refreshDeudaPorMesa]);
 
   useEffect(() => {
-    if (!tenantId || authLoading) return;
-    const id = window.setInterval(() => void refreshDeudaPorMesa(), 20000);
-    return () => window.clearInterval(id);
-  }, [tenantId, authLoading, refreshDeudaPorMesa]);
-
-  useEffect(() => {
     if (!tenantId) return;
-    void refreshDeudaPorMesa();
+    const tick = setInterval(() => void refreshDeudaPorMesa(), 20000);
+    return () => clearInterval(tick);
   }, [tenantId, refreshDeudaPorMesa]);
 
-  const selectedMesaNumero = useMemo(() => {
-    if (selectedId == null) return null;
-    return mesas.find((m) => m.id === selectedId)?.numero ?? null;
-  }, [mesas, selectedId]);
+  const selectedMesa = useMemo(() => mesas.find(m => m.id === selectedId) ?? null, [mesas, selectedId]);
+  const adjacentIds = useMemo(() => selectedMesa ? new Set(getAdjacentMesas(selectedMesa, mesas).map(m => m.id)) : new Set(), [selectedMesa, mesas]);
 
   useEffect(() => {
-    if (!tenantId || selectedMesaNumero == null) {
-      setHistorialConsumos([]);
-      setComandaEstados({});
-      return;
-    }
-
+    if (!tenantId || !selectedMesa) { setHistorialConsumos([]); return; }
     let cancelled = false;
-
-    async function loadHistorial() {
-      const { data, error } = await insforgeClient.database
-        .from("consumos")
-        .select("id, nombre, cantidad, subtotal, precio_unitario, estado, tipo, created_at, comanda_id")
-        .eq("tenant_id", tenantId)
-        .eq("mesa_numero", selectedMesaNumero)
-        .neq("estado", "pagado")
-        .order("created_at", { ascending: false });
-
-      if (cancelled) return;
-      if (error || !data) {
-        setHistorialConsumos([]);
-        setComandaEstados({});
-        return;
-      }
-
-      const rows = data as ConsumoPanelRow[];
-      setHistorialConsumos(rows);
-
-      const cids = [...new Set(rows.map((r) => r.comanda_id).filter(Boolean))] as string[];
-      if (cids.length === 0) {
-        setComandaEstados({});
-        return;
-      }
-
-      const { data: coms, error: comErr } = await insforgeClient.database
-        .from("comandas")
-        .select("id, estado")
-        .in("id", cids);
-
-      if (cancelled) return;
-      if (comErr || !coms) {
-        setComandaEstados({});
-        return;
-      }
-
-      const map: Record<string, string> = {};
-      for (const c of coms as { id: string; estado: string }[]) {
-        map[c.id] = c.estado;
-      }
-      setComandaEstados(map);
+    async function load() {
+      const { data } = await insforgeClient.database.from("consumos").select("*").eq("tenant_id", tenantId).eq("mesa_numero", selectedMesa!.numero).neq("estado", "pagado").order("created_at", { ascending: false });
+      if (cancelled || !data) return;
+      setHistorialConsumos(data as any[]);
     }
-
-    void loadHistorial();
-    const tick = setInterval(() => void loadHistorial(), 25000);
-
-    return () => {
-      cancelled = true;
-      clearInterval(tick);
-    };
-  }, [tenantId, selectedMesaNumero]);
-
-  const selectedMesa = mesas.find((m) => m.id === selectedId) ?? null;
-  const adjacentMesas = selectedMesa ? getAdjacentMesas(selectedMesa, mesas) : [];
-  const adjacentIds = new Set(adjacentMesas.map((m) => m.id));
-
-  const visibleMesas = mesas.filter((m) => !m.fusionada);
-
-  const maxFila = mesas.reduce((acc, m) => Math.max(acc, m.fila), 0);
-  const maxColumna = mesas.reduce((acc, m) => Math.max(acc, m.columna), 0);
-
-  // Stats
-  const libre = mesas.filter((m) => !m.fusionada && m.estado === "libre").length;
-  const ocupada = mesas.filter((m) => !m.fusionada && m.estado === "ocupada").length;
-  const limpieza = mesas.filter((m) => !m.fusionada && m.estado === "limpieza").length;
-
-
+    load();
+    const t = setInterval(load, 25000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [tenantId, selectedMesa?.numero]);
 
   async function mergeMesas(parentId: number, childId: number) {
     if (!tenantId) return;
-    const parent = mesas.find((m) => m.id === parentId)!;
-    const child = mesas.find((m) => m.id === childId)!;
-
-    const isHorizontal =
-      child.fila === parent.fila &&
-      child.columna === parent.columna + parent.span_columnas;
-    const isVertical =
-      child.columna === parent.columna &&
-      child.fila === parent.fila + parent.span_filas;
-
+    const parent = mesas.find(m => m.id === parentId)!;
+    const child = mesas.find(m => m.id === childId)!;
+    const isHorizontal = child.fila === parent.fila && child.columna === parent.columna + parent.span_columnas;
+    const isVertical = child.columna === parent.columna && child.fila === parent.fila + parent.span_filas;
     if (!isHorizontal && !isVertical) return;
-
-    const newSpanCols = isHorizontal
-      ? parent.span_columnas + child.span_columnas
-      : parent.span_columnas;
-    const newSpanFilas = isVertical
-      ? parent.span_filas + child.span_filas
-      : parent.span_filas;
+    const newSpanCols = isHorizontal ? parent.span_columnas + child.span_columnas : parent.span_columnas;
+    const newSpanFilas = isVertical ? parent.span_filas + child.span_filas : parent.span_filas;
     const newHijos = [...parent.fusion_hijos, childId];
-
     await Promise.all([
-      insforgeClient.database
-        .from("mesas_estado")
-        .upsert(
-          {
-            id: parentId,
-            tenant_id: tenantId,
-            span_columnas: newSpanCols,
-            span_filas: newSpanFilas,
-            fusion_hijos: newHijos,
-          },
-          { onConflict: "tenant_id,id" }
-        ),
-      insforgeClient.database
-        .from("mesas_estado")
-        .upsert(
-          {
-            id: childId,
-            tenant_id: tenantId,
-            fusionada: true,
-            fusion_padre_id: parentId,
-          },
-          { onConflict: "tenant_id,id" }
-        ),
+      insforgeClient.database.from("mesas_estado").upsert({ id: parentId, tenant_id: tenantId, span_columnas: newSpanCols, span_filas: newSpanFilas, fusion_hijos: newHijos }, { onConflict: "tenant_id,id" }),
+      insforgeClient.database.from("mesas_estado").upsert({ id: childId, tenant_id: tenantId, fusionada: true, fusion_padre_id: parentId }, { onConflict: "tenant_id,id" }),
     ]);
-
-    setMesas((prev) =>
-      prev.map((m) => {
-        if (m.id === parentId)
-          return {
-            ...m,
-            span_columnas: newSpanCols,
-            span_filas: newSpanFilas,
-            fusion_hijos: newHijos,
-          };
-        if (m.id === childId)
-          return { ...m, fusionada: true, fusion_padre_id: parentId };
-        return m;
-      })
-    );
-
+    setMesas(prev => prev.map(m => m.id === parentId ? { ...m, span_columnas: newSpanCols, span_filas: newSpanFilas, fusion_hijos: newHijos } : (m.id === childId ? { ...m, fusionada: true, fusion_padre_id: parentId } : m)));
     setMergeMode(false);
   }
 
   async function splitMesa(parentId: number) {
     if (!tenantId) return;
-    const parent = mesas.find((m) => m.id === parentId)!;
+    const parent = mesas.find(m => m.id === parentId)!;
     const childIds = parent.fusion_hijos;
-
     await Promise.all([
-      insforgeClient.database
-        .from("mesas_estado")
-        .upsert(
-          {
-            id: parentId,
-            tenant_id: tenantId,
-            span_columnas: 1,
-            span_filas: 1,
-            fusion_hijos: [],
-          },
-          { onConflict: "tenant_id,id" }
-        ),
-      ...childIds.map((childId) =>
-        insforgeClient.database
-          .from("mesas_estado")
-          .upsert(
-            {
-              id: childId,
-              tenant_id: tenantId,
-              fusionada: false,
-              fusion_padre_id: null,
-            },
-            { onConflict: "tenant_id,id" }
-          )
-      ),
+      insforgeClient.database.from("mesas_estado").upsert({ id: parentId, tenant_id: tenantId, span_columnas: 1, span_filas: 1, fusion_hijos: [] }, { onConflict: "tenant_id,id" }),
+      ...childIds.map(cid => insforgeClient.database.from("mesas_estado").upsert({ id: cid, tenant_id: tenantId, fusionada: false, fusion_padre_id: null }, { onConflict: "tenant_id,id" })),
     ]);
-
-    setMesas((prev) =>
-      prev.map((m) => {
-        if (m.id === parentId)
-          return { ...m, span_columnas: 1, span_filas: 1, fusion_hijos: [] };
-        if (childIds.includes(m.id))
-          return { ...m, fusionada: false, fusion_padre_id: null };
-        return m;
-      })
-    );
-
-    setSelectedId(null);
-    setMergeMode(false);
+    setMesas(prev => prev.map(m => m.id === parentId ? { ...m, span_columnas: 1, span_filas: 1, fusion_hijos: [] } : (childIds.includes(m.id) ? { ...m, fusionada: false, fusion_padre_id: null } : m)));
+    setSelectedId(null); setMergeMode(false);
   }
 
-  function handleMesaClick(mesa: Mesa) {
-    if (mergeMode && selectedId !== null && selectedId !== mesa.id) {
-      if (adjacentIds.has(mesa.id)) {
-        mergeMesas(selectedId, mesa.id);
-      } else {
-        setMergeMode(false);
-      }
-      return;
-    }
+  const CELL = 120;
+  const GAP = 10;
+  const maxFila = useMemo(() => mesas.reduce((acc, m) => Math.max(acc, m.fila), 0), [mesas]);
+  const maxColumna = useMemo(() => mesas.reduce((acc, m) => Math.max(acc, m.columna), 0), [mesas]);
 
-    if (selectedId === mesa.id) {
-      setSelectedId(null);
-      setMergeMode(false);
-    } else {
-      setSelectedId(mesa.id);
-      setMergeMode(false);
-    }
-  }
-
-  const CELL = 120; // px — square cell size
-  const GAP = 10; // px — gap between cells
-
-  if (authLoading || loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <span className="font-['Space_Grotesk',sans-serif] text-[#6b7280] text-[16px]">
-          {authLoading ? "Cargando sesión..." : "Cargando mesas..."}
-        </span>
-      </div>
-    );
-  }
-
-  if (!tenantId) {
-    return (
-      <div className="flex-1 flex items-center justify-center p-6">
-        <p className="font-['Inter',sans-serif] text-[#adaaaa] text-[14px] text-center max-w-md">
-          Tu usuario no está vinculado a un negocio. Las mesas y estados se guardan por restaurante
-          (multitenant).
-        </p>
-      </div>
-    );
-  }
+  if (authLoading || loading) return <div className="flex-1 flex items-center justify-center font-['Space_Grotesk'] text-muted-foreground">Cargando mesas...</div>;
 
   return (
-    <div
-      className="flex-1 relative overflow-hidden flex flex-col"
-      onClick={(e) => {
-        // Click on backdrop cancels merge/selection
-        if (e.target === e.currentTarget) {
-          setSelectedId(null);
-          setMergeMode(false);
-        }
-      }}
-    >
-      {/* Top bar */}
-      <div className="flex flex-wrap items-center justify-between px-4 sm:px-[32px] pt-[16px] sm:pt-[20px] pb-[12px] sm:pb-[16px] gap-[8px] shrink-0">
-        <div className="flex flex-wrap items-center gap-[12px] sm:gap-[16px]">
-          <h1 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[28px]">
-            Mesas
-          </h1>
-          {mergeMode && (
-            <div className="bg-[rgba(255,144,109,0.1)] border border-[rgba(255,144,109,0.3)] rounded-full px-[12px] py-[4px]">
-              <span className="font-['Inter',sans-serif] text-[#ff906d] text-[11px] tracking-[0.5px] uppercase font-bold">
-                Seleccioná una mesa adyacente para fusionar
-              </span>
-            </div>
-          )}
+    <div className="flex-1 bg-background transition-colors duration-300 flex flex-col min-h-0 overflow-hidden" onClick={e => { if (e.target === e.currentTarget) { setSelectedId(null); setMergeMode(false); } }}>
+      <div className="flex flex-wrap items-center justify-between px-4 sm:px-8 py-4 sm:py-6 gap-4 shrink-0 border-b border-black/5 dark:border-white/5">
+        <div className="flex items-center gap-4">
+          <h1 className="font-['Space_Grotesk'] font-bold text-foreground text-3xl">Plano de Mesas</h1>
+          {mergeMode && <div className="bg-primary/10 border border-primary/20 rounded-full px-4 py-1 text-primary text-[10px] font-bold uppercase tracking-widest animate-pulse">Selecciona adyacente para unir</div>}
         </div>
-        <div className="flex flex-wrap gap-[8px] sm:gap-[12px]">
-          <StatusBadge color="#59ee50" label={`${libre} Libre${libre !== 1 ? "s" : ""}`} />
-          <StatusBadge color="#ff716c" label={`${ocupada} Ocupada${ocupada !== 1 ? "s" : ""}`} />
-          {limpieza > 0 && (
-            <StatusBadge color="#ff906d" label={`${limpieza} Limpieza`} />
-          )}
+        <div className="flex gap-4">
+          <StatusBadge color="#59ee50" label={`${mesas.filter(m => !m.fusionada && m.estado === 'libre').length} Libres`} />
+          <StatusBadge color="#ff716c" label={`${mesas.filter(m => !m.fusionada && m.estado === 'ocupada').length} Ocupadas`} />
         </div>
       </div>
 
-      {/* Grid + Panel area */}
-      <div className="flex-1 flex gap-0 overflow-hidden">
-        {/* Grid scroll area */}
-        <div className="flex-1 overflow-auto flex items-start justify-center p-4 sm:p-[32px]">
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: `repeat(${maxColumna}, ${CELL}px)`,
-              gridTemplateRows: `repeat(${maxFila}, ${CELL}px)`,
-              gap: `${GAP}px`,
-              position: "relative",
-            }}
-          >
-            {/* Grid background lines (Excel-style) */}
-            {Array.from({ length: maxFila }, (_, fi) =>
-              Array.from({ length: maxColumna }, (_, ci) => (
-                <div
-                  key={`bg-${fi}-${ci}`}
-                  className="rounded-[4px] border border-[rgba(72,72,71,0.12)]"
-                  style={{
-                    gridColumn: ci + 1,
-                    gridRow: fi + 1,
-                    pointerEvents: "none",
-                  }}
-                />
-              ))
-            )}
-
-            {/* Mesa cards */}
-            {visibleMesas.map((mesa) => {
-              const isSelected = selectedId === mesa.id;
-              const isMergeTarget = mergeMode && adjacentIds.has(mesa.id);
-              const deudaTotal =
-                (deudaPorMesa[mesa.numero] ?? 0) +
-                mesa.fusion_hijos.reduce((s, cid) => s + (deudaPorMesa[cid] ?? 0), 0);
-              return (
-                <TableMesaCard
-                  key={mesa.id}
-                  mesa={mesa}
-                  isSelected={isSelected}
-                  isMergeTarget={isMergeTarget}
-                  deudaTotal={deudaTotal}
-                  onClick={handleMesaClick}
-                  formatCurrency={RD}
-                />
-              );
-            })}
+      <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 overflow-auto flex items-start justify-center p-8 bg-muted/5">
+          <div style={{ display: "grid", gridTemplateColumns: `repeat(${maxColumna}, ${CELL}px)`, gridTemplateRows: `repeat(${maxFila}, ${CELL}px)`, gap: `${GAP}px`, position: "relative" }}>
+             {Array.from({ length: maxFila * maxColumna }).map((_, i) => (
+                <div key={i} className="rounded-lg border border-black/5 dark:border-white/5 pointer-events-none" />
+             ))}
+             {mesas.filter(m => !m.fusionada).map(mesa => {
+                const isSelected = selectedId === mesa.id;
+                const deuda = (deudaPorMesa[mesa.numero] ?? 0) + mesa.fusion_hijos.reduce((s, cid) => s + (deudaPorMesa[cid] ?? 0), 0);
+                return <TableMesaCard key={mesa.id} mesa={mesa} isSelected={isSelected} isMergeTarget={mergeMode && adjacentIds.has(mesa.id)} deudaTotal={deuda} onClick={m => { if (mergeMode && adjacentIds.has(m.id)) { mergeMesas(selectedId!, m.id); } else { setSelectedId(m.id === selectedId ? null : m.id); setMergeMode(false); } }} formatCurrency={RD} />;
+             })}
           </div>
         </div>
 
-        {/* Side info panel */}
         {selectedMesa && (
-          <div className="w-[280px] shrink-0 bg-[#131313] border-l border-[rgba(72,72,71,0.2)] flex flex-col p-[24px] gap-[20px] overflow-y-auto">
-            {/* Header */}
-            <div className="flex items-start justify-between">
-              <div className="flex flex-col gap-[2px]">
-                <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[22px]">
-                  Mesa {selectedMesa.numero.toString().padStart(2, "0")}
-                </span>
-                <span className="font-['Inter',sans-serif] text-[#6b7280] text-[11px]">
-                  Fila {selectedMesa.fila} · Col {selectedMesa.columna}
-                  {selectedMesa.fusion_hijos.length > 0 &&
-                    ` · ${selectedMesa.span_columnas > 1 ? `${selectedMesa.span_columnas} cols` : `${selectedMesa.span_filas} filas`}`}
-                </span>
-              </div>
-              <button
-                onClick={() => { setSelectedId(null); setMergeMode(false); }}
-                className="text-[#6b7280] bg-transparent border-none cursor-pointer text-[18px] leading-none hover:text-white transition-colors"
-              >
-                ×
-              </button>
-            </div>
+          <div className="w-[320px] shrink-0 bg-sidebar border-l border-black/10 dark:border-white/10 flex flex-col p-6 gap-6 overflow-y-auto shadow-2xl transition-all duration-300">
+             <div className="flex justify-between items-start">
+                <div>
+                   <h2 className="font-['Space_Grotesk'] font-bold text-foreground text-2xl">Mesa {String(selectedMesa.numero).padStart(2, "0")}</h2>
+                   <p className="text-muted-foreground text-[11px] uppercase tracking-widest font-bold">Fila {selectedMesa.fila} · Col {selectedMesa.columna}</p>
+                </div>
+                <button onClick={() => setSelectedId(null)} className="text-muted-foreground hover:text-foreground text-2xl transition-colors border-none bg-transparent cursor-pointer">×</button>
+             </div>
 
-            <div className="h-px bg-[rgba(72,72,71,0.2)]" />
+             <div className="h-px bg-black/5 dark:bg-white/5" />
 
-            {/* Estado (Sólo Lectura) */}
-            <div className="flex flex-col gap-[10px]">
-              <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
-                Estado Actual (Automático)
-              </span>
-              <div className="flex items-center gap-[10px] px-[14px] py-[10px] rounded-[10px] border border-[rgba(72,72,71,0.2)] bg-[#1a1a1a]">
-                <div
-                  className="rounded-full size-[8px] shrink-0"
-                  style={{ backgroundColor: estadoColors[selectedMesa.estado].dot }}
-                />
-                <span
-                  className="font-['Inter',sans-serif] text-[13px] font-semibold"
-                  style={{ color: estadoColors[selectedMesa.estado].text }}
-                >
-                  {estadoLabels[selectedMesa.estado]}
-                </span>
-              </div>
-            </div>
+             <div className="space-y-4">
+                <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Capacidad</span><span className="text-foreground font-bold">{selectedMesa.capacidad} pax</span></div>
+                <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Estado</span><span className={`text-[10px] font-bold uppercase px-3 py-1 rounded-full ${selectedMesa.estado === 'libre' ? 'bg-green-500/10 text-green-600 dark:text-green-400' : 'bg-primary/10 text-primary'}`}>{estadoLabels[selectedMesa.estado]}</span></div>
+             </div>
 
-            <div className="h-px bg-[rgba(72,72,71,0.2)]" />
-
-            {/* Capacidad */}
-            <div className="flex items-center justify-between">
-              <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
-                Capacidad
-              </span>
-              <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[16px]">
-                {selectedMesa.capacidad} personas
-              </span>
-            </div>
-
-            <div className="h-px bg-[rgba(72,72,71,0.2)]" />
-
-            {/* Historial de esta mesa */}
-            <div className="rounded-[12px] border border-[rgba(72,72,71,0.28)] bg-[#161616] p-[14px] flex flex-col gap-[10px] shrink-0">
-              <div className="flex flex-col gap-1">
-                <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
-                  Historial / pedido en cuenta
-                </span>
-                <span className="font-['Inter',sans-serif] text-[#6b7280] text-[10px] leading-snug">
-                  Mesa {selectedMesa.numero}. Podés cobrar aquí con el mismo flujo que en Venta (método de pago y factura).
-                </span>
-              </div>
-              <div className="flex flex-col gap-[8px] max-h-[200px] overflow-y-auto pr-0.5 min-h-[3rem]">
-                {historialConsumos.length === 0 ? (
-                  <p className="font-['Inter',sans-serif] text-[#6b7280] text-[12px] text-center py-3 m-0">
-                    Sin líneas en cuenta en el POS.
-                  </p>
-                ) : (
-                  historialConsumos.map((row) => {
-                    const comandaEst = row.comanda_id ? comandaEstados[row.comanda_id] : undefined;
-                    const cocinaLbl = etiquetaEstadoComanda(comandaEst);
-                    return (
-                      <div
-                        key={row.id}
-                        className="rounded-[10px] border border-[rgba(72,72,71,0.25)] bg-[#1a1a1a] px-[12px] py-[10px] flex flex-col gap-[6px]"
-                      >
-                        <div className="flex items-start justify-between gap-[8px]">
-                          <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] leading-tight">
-                            {row.cantidad}× {row.nombre}
-                          </span>
-                          <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[13px] shrink-0 tabular-nums">
-                            {RD(Number(row.subtotal))}
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap gap-[6px] items-center">
-                          <span
-                            className={`font-['Inter',sans-serif] text-[9px] font-bold uppercase tracking-wide px-[8px] py-[3px] rounded-full ${
-                              row.tipo === "cocina"
-                                ? "bg-[rgba(255,144,109,0.12)] text-[#ff906d]"
-                                : "bg-[rgba(89,238,80,0.12)] text-[#59ee50]"
-                            }`}
-                          >
-                            {row.tipo === "cocina" ? "Cocina" : "Directo"}
-                          </span>
-                          <span className="font-['Inter',sans-serif] text-[9px] font-bold uppercase tracking-wide px-[8px] py-[3px] rounded-full bg-[rgba(255,255,255,0.06)] text-[#adaaaa]">
-                            {etiquetaEstadoConsumo(row.estado)}
-                          </span>
-                          {cocinaLbl ? (
-                            <span className="font-['Inter',sans-serif] text-[9px] font-bold uppercase tracking-wide px-[8px] py-[3px] rounded-full bg-[rgba(255,208,109,0.1)] text-[#ffd06d]">
-                              {cocinaLbl}
-                            </span>
-                          ) : null}
-                        </div>
-                        <span className="font-['Inter',sans-serif] text-[#6b7280] text-[10px]">
-                          {new Date(row.created_at).toLocaleString("es-DO", {
-                            day: "2-digit",
-                            month: "short",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </span>
+             <div className="flex-1 flex flex-col gap-4 min-h-0 bg-muted/20 rounded-2xl border border-black/5 dark:border-white/5 p-4 overflow-hidden">
+                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Pedido en mesa</span>
+                <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+                   {historialConsumos.length === 0 ? <p className="text-center text-muted-foreground text-xs py-8">Mesa vacía.</p> : historialConsumos.map(row => (
+                      <div key={row.id} className="bg-card border border-black/5 dark:border-white/5 rounded-xl p-3 flex flex-col gap-2 shadow-sm">
+                         <div className="flex justify-between items-start gap-2"><span className="text-foreground font-bold text-[13px] leading-tight">{row.cantidad}× {row.nombre}</span><span className="text-primary font-bold text-[13px] tabular-nums">{RD(Number(row.subtotal))}</span></div>
+                         <div className="flex gap-2"><span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full ${row.tipo === 'cocina' ? 'bg-orange-500/10 text-orange-500' : 'bg-green-500/10 text-green-500'}`}>{row.tipo}</span><span className="text-[9px] font-bold uppercase text-muted-foreground/60">{etiquetaEstadoConsumo(row.estado)}</span></div>
                       </div>
-                    );
-                  })
+                   ))}
+                </div>
+                {historialConsumos.length > 0 && (
+                   <button onClick={() => navigate("/dashboard", { state: { selectMesaNumero: selectedMesa.numero } })} className="w-full bg-primary text-primary-foreground py-3 rounded-xl font-bold uppercase text-[11px] tracking-widest shadow-lg hover:opacity-90 transition-all border-none cursor-pointer">Cobrar en POS</button>
                 )}
-              </div>
-              {historialConsumos.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => navigate("/dashboard", { state: { selectMesaNumero: selectedMesa.numero } })}
-                  className="w-full mt-1 py-[12px] rounded-[10px] border-none cursor-pointer font-['Space_Grotesk',sans-serif] font-bold text-[#5b1600] text-[11px] tracking-[1.2px] uppercase bg-[#ff906d] hover:bg-[#ff784d] transition-colors"
-                >
-                  Ir al Carrito a Cobrar
-                </button>
-              )}
-            </div>
+             </div>
 
-            {/* Balance pendiente */}
-            {(() => {
-              const t =
-                (deudaPorMesa[selectedMesa.numero] ?? 0) +
-                selectedMesa.fusion_hijos.reduce(
-                  (s, cid) => s + (deudaPorMesa[cid] ?? 0),
-                  0
-                );
-              return t > 0 ? (
-                <>
-                  <div className="h-px bg-[rgba(72,72,71,0.2)]" />
-                  <div className="flex items-center justify-between">
-                    <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
-                      Debe
-                    </span>
-                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[16px]">
-                      {RD(t)}
-                    </span>
-                  </div>
-                </>
-              ) : null;
-            })()}
-
-            <div className="h-px bg-[rgba(72,72,71,0.2)]" />
-
-            {/* Acciones de fusión */}
-            <div className="flex flex-col gap-[8px]">
-              <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
-                Fusión
-              </span>
-
-              {/* Merge button */}
-              {adjacentMesas.length > 0 && (
-                <button
-                  onClick={() => setMergeMode((m) => !m)}
-                  className="flex items-center gap-[10px] px-[14px] py-[11px] rounded-[10px] cursor-pointer border-none transition-all text-left"
-                  style={{
-                    backgroundColor: mergeMode
-                      ? "rgba(255,144,109,0.15)"
-                      : "rgba(38,38,38,0.8)",
-                    border: mergeMode
-                      ? "1px solid rgba(255,144,109,0.4)"
-                      : "1px solid rgba(72,72,71,0.3)",
-                    color: mergeMode ? "#ff906d" : "#adaaaa",
-                  }}
-                >
-                  <span className="text-[14px]">{mergeMode ? "⟵" : "⊞"}</span>
-                  <span className="font-['Inter',sans-serif] text-[13px] font-semibold">
-                    {mergeMode ? "Cancelar fusión" : "Fusionar con adyacente"}
-                  </span>
-                </button>
-              )}
-
-              {adjacentMesas.length === 0 && selectedMesa.fusion_hijos.length === 0 && (
-                <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">
-                  Sin mesas adyacentes compatibles.
-                </span>
-              )}
-
-              {/* Split button */}
-              {selectedMesa.fusion_hijos.length > 0 && (
-                <button
-                  onClick={() => splitMesa(selectedMesa.id)}
-                  className="flex items-center gap-[10px] px-[14px] py-[11px] rounded-[10px] cursor-pointer border-none transition-all text-left"
-                  style={{
-                    backgroundColor: "rgba(255,113,108,0.08)",
-                    border: "1px solid rgba(255,113,108,0.25)",
-                    color: "#ff716c",
-                  }}
-                >
-                  <span className="text-[14px]">⊟</span>
-                  <span className="font-['Inter',sans-serif] text-[13px] font-semibold">
-                    Separar mesas
-                  </span>
-                </button>
-              )}
-            </div>
+             <div className="space-y-3">
+                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Herramientas</span>
+                <button onClick={() => setMergeMode(!mergeMode)} className={`w-full py-3 rounded-xl font-bold uppercase text-[11px] tracking-widest border transition-all cursor-pointer ${mergeMode ? 'bg-primary/20 border-primary text-primary' : 'bg-muted border-border text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5'}`}>{mergeMode ? "Cancelar unión" : "Fusionar mesa"}</button>
+                {selectedMesa.fusion_hijos.length > 0 && <button onClick={() => splitMesa(selectedMesa.id)} className="w-full py-3 rounded-xl font-bold uppercase text-[11px] tracking-widest bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive/20 transition-all cursor-pointer">Separar mesas</button>}
+             </div>
           </div>
         )}
       </div>
-
-
     </div>
   );
 }
 
 function StatusBadge({ color, label }: { color: string; label: string }) {
-  return (
-    <div
-      className="flex gap-[6px] items-center px-[12px] py-[5px] rounded-full border border-[rgba(72,72,71,0.2)] bg-[#201f1f]"
-    >
-      <div className="rounded-full size-[7px]" style={{ backgroundColor: color }} />
-      <span className="font-['Inter',sans-serif] font-bold text-[#adaaaa] text-[10px] tracking-[0.8px] uppercase">
-        {label}
-      </span>
-    </div>
-  );
+  return <div className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-black/5 dark:border-white/5 bg-card/50 shadow-sm"><div className="size-2 rounded-full" style={{ backgroundColor: color }} /><span className="text-[10px] font-bold uppercase text-muted-foreground tracking-widest">{label}</span></div>;
 }
