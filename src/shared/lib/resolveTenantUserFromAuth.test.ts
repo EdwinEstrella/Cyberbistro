@@ -10,13 +10,15 @@ const mocks = vi.hoisted(() => {
   });
   const select = vi.fn(() => ({ eq, ilike, maybeSingle }));
   const from = vi.fn(() => ({ select }));
-  return { maybeSingle, ilike, from };
+  const rpc = vi.fn();
+  return { maybeSingle, ilike, from, rpc };
 });
 
 vi.mock("./insforge", () => ({
   insforgeClient: {
     database: {
       from: mocks.from,
+      rpc: mocks.rpc,
     },
   },
 }));
@@ -24,6 +26,7 @@ vi.mock("./insforge", () => ({
 describe("resolveTenantUserForSession", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.rpc.mockResolvedValue({ data: null, error: null });
   });
 
   it("resuelve por auth_user_id primero", async () => {
@@ -52,5 +55,19 @@ describe("resolveTenantUserForSession", () => {
     mocks.maybeSingle.mockResolvedValueOnce({ data: null, error: null });
     const row = await resolveTenantUserForSession({ id: "auth-3", email: null } as any);
     expect(row).toBeNull();
+  });
+
+  it("cae a rpc si RLS no permite resolver por consultas directas", async () => {
+    mocks.maybeSingle
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce({ data: null, error: null });
+    mocks.rpc.mockResolvedValueOnce({
+      data: [{ tenant_id: "t3", email: "u3@x.com", rol: "cajera", nombre: "U3" }],
+      error: null,
+    });
+
+    const row = await resolveTenantUserForSession({ id: "auth-4", email: "u3@x.com" } as any);
+    expect(row?.tenant_id).toBe("t3");
+    expect(mocks.rpc).toHaveBeenCalledWith("cyberbistro_resolve_tenant_user");
   });
 });

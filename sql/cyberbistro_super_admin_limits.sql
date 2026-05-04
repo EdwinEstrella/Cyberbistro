@@ -78,6 +78,8 @@ ALTER TABLE public.tenant_users ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS cb_tenants_super_admin_all ON public.tenants;
 DROP POLICY IF EXISTS cb_tenant_users_super_admin_all ON public.tenant_users;
+DROP POLICY IF EXISTS cb_tenant_users_self_select ON public.tenant_users;
+DROP POLICY IF EXISTS cb_tenants_member_select ON public.tenants;
 
 CREATE POLICY cb_tenants_super_admin_all
 ON public.tenants
@@ -90,6 +92,51 @@ ON public.tenant_users
 FOR ALL
 USING (public.cyberbistro_is_super_admin())
 WITH CHECK (public.cyberbistro_is_super_admin());
+
+-- Usuarios normales: necesario para que login pueda resolver su restaurante.
+-- Sin esta policy, activar RLS aqui rompe cuentas existentes que no sean super admin.
+CREATE POLICY cb_tenant_users_self_select
+ON public.tenant_users
+FOR SELECT
+USING (
+  auth_user_id = public.cyberbistro_auth_user_id()
+  OR lower(email) = lower(COALESCE(public.cyberbistro_auth_email(), ''))
+);
+
+CREATE POLICY cb_tenants_member_select
+ON public.tenants
+FOR SELECT
+USING (
+  EXISTS (
+    SELECT 1
+    FROM public.tenant_users tu
+    WHERE tu.tenant_id = tenants.id
+      AND (
+        tu.auth_user_id = public.cyberbistro_auth_user_id()
+        OR lower(tu.email) = lower(COALESCE(public.cyberbistro_auth_email(), ''))
+      )
+  )
+);
+
+CREATE OR REPLACE FUNCTION public.cyberbistro_resolve_tenant_user()
+RETURNS TABLE (
+  tenant_id uuid,
+  email text,
+  rol text,
+  nombre text
+)
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+  SELECT tu.tenant_id, tu.email, tu.rol, tu.nombre
+  FROM public.tenant_users tu
+  WHERE tu.auth_user_id = public.cyberbistro_auth_user_id()
+     OR lower(tu.email) = lower(COALESCE(public.cyberbistro_auth_email(), ''))
+  ORDER BY (tu.auth_user_id = public.cyberbistro_auth_user_id()) DESC
+  LIMIT 1;
+$$;
 
 CREATE OR REPLACE FUNCTION public.cyberbistro_super_admin_delete_tenant_user(p_tenant_user_id uuid)
 RETURNS jsonb
@@ -246,3 +293,4 @@ $$;
 GRANT EXECUTE ON FUNCTION public.cyberbistro_super_admin_delete_tenant_user(uuid) TO PUBLIC;
 GRANT EXECUTE ON FUNCTION public.cyberbistro_super_admin_block_tenant(uuid) TO PUBLIC;
 GRANT EXECUTE ON FUNCTION public.cyberbistro_super_admin_delete_tenant(uuid) TO PUBLIC;
+GRANT EXECUTE ON FUNCTION public.cyberbistro_resolve_tenant_user() TO PUBLIC;

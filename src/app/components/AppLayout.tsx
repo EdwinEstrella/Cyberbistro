@@ -91,7 +91,7 @@ export function AppLayout() {
   const isAjustesActive = location.pathname === "/ajustes";
 
   return (
-    <div className="bg-[#0e0e0e] flex flex-col h-full min-h-0 w-full overflow-hidden">
+    <div className="bg-background text-foreground flex flex-col h-full min-h-0 w-full overflow-hidden transition-colors duration-300">
       {/* TitleBar */}
       <TitleBar
         showSidebarToggle
@@ -104,10 +104,10 @@ export function AppLayout() {
       <div className="flex flex-1 min-h-0">
         {/* Sidebar */}
         <aside
-          className={`bg-[#131313] flex flex-col shrink-0 min-h-0 self-stretch z-20 overflow-hidden transition-[width,opacity,transform,border-color] duration-300 ease-out ${
+          className={`bg-sidebar flex flex-col shrink-0 min-h-0 self-stretch z-20 overflow-hidden transition-[width,opacity,transform,border-color] duration-300 ease-out ${
             sidebarHidden
               ? "w-0 opacity-0 -translate-x-3 border-r border-transparent"
-              : "w-[256px] opacity-100 translate-x-0 border-r border-[rgba(72,72,71,0.18)]"
+              : "w-[256px] opacity-100 translate-x-0 border-r border-sidebar-border"
           }`}
           aria-label="Navegación principal"
           aria-hidden={sidebarHidden}
@@ -121,7 +121,7 @@ export function AppLayout() {
                   type="button"
                   onClick={() => navigate(item.path)}
                   aria-current={isActive ? "page" : undefined}
-                  className={`flex gap-[16px] items-center px-[16px] py-[12px] rounded-none cursor-pointer relative border-none bg-transparent text-left w-full ${isActive ? "bg-[#262626]" : ""}`}
+                  className={`flex gap-[16px] items-center px-[16px] py-[12px] rounded-none cursor-pointer relative border-none bg-transparent text-left w-full hover:bg-sidebar-accent transition-colors ${isActive ? "bg-sidebar-accent" : ""}`}
                 >
                   {isActive && (
                     <div className="absolute left-0 top-0 bottom-0 w-[4px] bg-[#ff906d]" aria-hidden />
@@ -129,12 +129,13 @@ export function AppLayout() {
                   <svg className="shrink-0 size-[18px]" fill="none" viewBox={item.viewBox} aria-hidden>
                     <path
                       d={item.icon}
-                      fill={isActive ? "#FF906D" : "#6B7280"}
+                      fill={isActive ? "#FF906D" : "currentColor"}
+                      className={isActive ? "" : "text-muted-foreground"}
                     />
                   </svg>
                   <span
                     className={`font-['Space_Grotesk',sans-serif] text-[16px] tracking-[-0.4px] ${
-                      isActive ? "font-bold text-[#ff906d]" : "text-[#6b7280]"
+                      isActive ? "font-bold text-[#ff906d]" : "text-muted-foreground"
                     }`}
                   >
                     {item.label}
@@ -144,24 +145,24 @@ export function AppLayout() {
             })}
           </nav>
 
-          <div className="border-t border-[rgba(72,72,71,0.2)] px-[16px] py-[16px] flex flex-col gap-[8px]">
+          <div className="border-t border-sidebar-border px-[16px] py-[16px] flex flex-col gap-[8px]">
             {/* Ajustes — solo administrador del negocio */}
             {showAjustesInSidebar(rol) && (
               <button
                 type="button"
                 onClick={() => navigate("/ajustes")}
                 aria-current={isAjustesActive ? "page" : undefined}
-                className={`flex gap-[16px] items-center px-[16px] py-[12px] cursor-pointer relative border-none bg-transparent text-left w-full ${isAjustesActive ? "bg-[#262626]" : ""}`}
+                className={`flex gap-[16px] items-center px-[16px] py-[12px] cursor-pointer relative border-none bg-transparent text-left w-full hover:bg-sidebar-accent transition-colors ${isAjustesActive ? "bg-sidebar-accent" : ""}`}
               >
                 {isAjustesActive && (
                   <div className="absolute left-0 top-0 bottom-0 w-[4px] bg-[#ff906d]" aria-hidden />
                 )}
                 <svg className="shrink-0 w-[20px] h-[20px]" fill="none" viewBox="0 0 20.1 20" aria-hidden>
-                  <path d={svgPaths.p3cdadd00} fill={isAjustesActive ? "#FF906D" : "#6B7280"} />
+                  <path d={svgPaths.p3cdadd00} fill={isAjustesActive ? "#FF906D" : "currentColor"} className={isAjustesActive ? "" : "text-muted-foreground"} />
                 </svg>
                 <span
                   className={`font-['Space_Grotesk',sans-serif] text-[16px] tracking-[-0.4px] ${
-                    isAjustesActive ? "font-bold text-[#ff906d]" : "text-[#6b7280]"
+                    isAjustesActive ? "font-bold text-[#ff906d]" : "text-muted-foreground"
                   }`}
                 >
                   Ajustes
@@ -171,7 +172,7 @@ export function AppLayout() {
 
             <button
               type="button"
-              className="flex gap-[16px] items-center px-[16px] py-[12px] cursor-pointer border-none bg-transparent text-left w-full"
+              className="flex gap-[16px] items-center px-[16px] py-[12px] cursor-pointer border-none bg-transparent text-left w-full hover:bg-sidebar-accent transition-colors"
               onClick={async () => {
                 try {
                   await signOut();
@@ -182,9 +183,9 @@ export function AppLayout() {
               }}
             >
               <svg className="shrink-0 size-[18px]" fill="none" viewBox="0 0 18 18" aria-hidden>
-                <path d={svgPaths.p3e9df400} fill="#6B7280" />
+                <path d={svgPaths.p3e9df400} fill="currentColor" className="text-muted-foreground" />
               </svg>
-              <span className="font-['Space_Grotesk',sans-serif] text-[#6b7280] text-[16px] tracking-[-0.4px]">
+              <span className="font-['Space_Grotesk',sans-serif] text-muted-foreground text-[16px] tracking-[-0.4px]">
                 Cerrar Sesión
               </span>
             </button>
@@ -194,17 +195,17 @@ export function AppLayout() {
         {/* Main area — min-h-0 + scroll en <main> para que el contenido no quede cortado (Electron) */}
         <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
           {/* Shared Header */}
-          <header className="backdrop-blur-[6px] bg-[rgba(14,14,14,0.6)] flex items-center justify-between h-[64px] px-4 sm:px-6 lg:px-[32px] border-b border-[rgba(72,72,71,0.2)] sticky top-0 z-10 shadow-[0px_4px_24px_0px_rgba(255,144,109,0.08)]">
+          <header className="backdrop-blur-[6px] bg-background/60 flex items-center justify-between h-[64px] px-4 sm:px-6 lg:px-[32px] border-b border-border sticky top-0 z-10 shadow-[0px_4px_24px_0px_rgba(255,144,109,0.08)] transition-colors duration-300">
             <div className="flex gap-[8px] sm:gap-[24px] items-center min-w-0">
               <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[14px] sm:text-[18px] uppercase">
                 CyberBistro OS
               </span>
-              <div className="hidden sm:block bg-[rgba(72,72,71,0.3)] h-[16px] w-px" />
+              <div className="hidden sm:block bg-border h-[16px] w-px" />
               {/* Cocina en Vivo badge — reactive to DB */}
               {canAccessCocinaRoute(rol) ? (
                 <button
                   type="button"
-                  className="bg-[#201f1f] flex gap-[8px] items-center px-[13px] py-[5px] rounded-full border border-[rgba(72,72,71,0.2)] transition-all cursor-pointer"
+                  className="bg-accent/50 flex gap-[8px] items-center px-[13px] py-[5px] rounded-full border border-border transition-all cursor-pointer"
                   onClick={() => navigate("/cocina")}
                   title={cocinaActiva ? "Cocina abierta" : "Cocina cerrada"}
                   aria-label={
@@ -218,13 +219,13 @@ export function AppLayout() {
                     style={{ backgroundColor: cocinaActiva ? "#59ee50" : "#ff716c" }}
                     aria-hidden
                   />
-                  <span className="font-['Space_Grotesk',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.5px] uppercase">
+                  <span className="font-['Space_Grotesk',sans-serif] text-muted-foreground text-[10px] tracking-[0.5px] uppercase">
                     {cocinaActiva ? "Cocina en Vivo" : "Cocina Cerrada"}
                   </span>
                 </button>
               ) : (
                 <div
-                  className="bg-[#201f1f] flex gap-[8px] items-center px-[13px] py-[5px] rounded-full border border-[rgba(72,72,71,0.2)] transition-all cursor-default opacity-90"
+                  className="bg-accent/50 flex gap-[8px] items-center px-[13px] py-[5px] rounded-full border border-border transition-all cursor-default opacity-90"
                   title="Estado de cocina (solo personal de cocina o administrador abre la vista)"
                   role="status"
                   aria-label={
@@ -238,7 +239,7 @@ export function AppLayout() {
                     style={{ backgroundColor: cocinaActiva ? "#59ee50" : "#ff716c" }}
                     aria-hidden
                   />
-                  <span className="font-['Space_Grotesk',sans-serif] text-[#adaaaa] text-[10px] tracking-[0.5px] uppercase">
+                  <span className="font-['Space_Grotesk',sans-serif] text-muted-foreground text-[10px] tracking-[0.5px] uppercase">
                     {cocinaActiva ? "Cocina en Vivo" : "Cocina Cerrada"}
                   </span>
                 </div>
@@ -257,7 +258,7 @@ export function AppLayout() {
                     onChange={(e) => setVentaCartSearch(e.target.value)}
                     placeholder="BUSCAR CARTA O PEDIDO..."
                     autoComplete="off"
-                    className="bg-[#131313] rounded-[2px] w-[min(256px,28vw)] min-w-[160px] pl-[40px] pr-[16px] py-[6px] font-['Space_Grotesk',sans-serif] text-[#e5e5e5] text-[12px] tracking-[-0.6px] uppercase border border-[rgba(72,72,71,0.35)] outline-none focus:border-[rgba(255,144,109,0.45)] placeholder:text-[#6b7280]"
+                    className="bg-input-background rounded-[2px] w-[min(256px,28vw)] min-w-[160px] pl-[40px] pr-[16px] py-[6px] font-['Space_Grotesk',sans-serif] text-foreground text-[12px] tracking-[-0.6px] uppercase border border-border outline-none focus:border-[rgba(255,144,109,0.45)] placeholder:text-muted-foreground"
                   />
                   <svg
                     className="absolute left-[14px] top-1/2 -translate-y-1/2 w-[10.5px] h-[10.5px] pointer-events-none"
@@ -265,16 +266,16 @@ export function AppLayout() {
                     viewBox="0 0 10.5 10.5"
                     aria-hidden
                   >
-                    <path d={svgPaths.p210dd580} fill="#ADAAAA" />
+                    <path d={svgPaths.p210dd580} fill="currentColor" className="text-muted-foreground" />
                   </svg>
                 </div>
               ) : null}
               <div className="flex gap-[16px] items-center">
                 <svg className="w-[18px] h-[21px]" fill="none" viewBox="0 0 18 21">
-                  <path d={svgPaths.pe40b59c} fill="#ADAAAA" />
+                  <path d={svgPaths.pe40b59c} fill="currentColor" className="text-muted-foreground" />
                 </svg>
                 <svg className="w-[20px] h-[14.15px]" fill="none" viewBox="0 0 20 14.15">
-                  <path d={svgPaths.p793b600} fill="#ADAAAA" />
+                  <path d={svgPaths.p793b600} fill="currentColor" className="text-muted-foreground" />
                 </svg>
                 <button
                   type="button"
@@ -299,7 +300,8 @@ export function AppLayout() {
                   >
                     <path
                       d={svgPaths.p28252700}
-                      fill={hasUpdateBellAlert ? "#ff906d" : "#ADAAAA"}
+                      fill={hasUpdateBellAlert ? "#ff906d" : "currentColor"}
+                      className={hasUpdateBellAlert ? "" : "text-muted-foreground"}
                     />
                   </svg>
                   {hasUpdateBellAlert ? (

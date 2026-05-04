@@ -36,13 +36,12 @@ export function PinGateModal({ onUnlock, onCancel, title = "Clave Requerida", su
   const keys = ["1","2","3","4","5","6","7","8","9","","0","⌫"];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: "rgba(0,0,0,0.95)" }}>
-      <div className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[20px] p-[32px] w-full max-w-[320px]">
-        <h3 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px] text-center mb-2">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/95 backdrop-blur-sm transition-colors duration-300">
+      <div className="bg-card border border-border rounded-[20px] p-[32px] w-full max-w-[320px] shadow-2xl">
+        <h3 className="font-['Space_Grotesk',sans-serif] font-bold text-foreground text-[18px] text-center mb-2">
           {title}
         </h3>
-        <p className="font-['Inter',sans-serif] text-[#adaaaa] text-[12px] text-center mb-6">
+        <p className="font-['Inter',sans-serif] text-muted-foreground text-[12px] text-center mb-6">
           {subtitle}
         </p>
 
@@ -56,7 +55,7 @@ export function PinGateModal({ onUnlock, onCancel, title = "Clave Requerida", su
               key={i}
               className="size-[14px] rounded-full transition-all duration-150"
               style={{
-                backgroundColor: i < pin.length ? (shaking ? "#ff716c" : "#ff906d") : "rgba(72,72,71,0.4)",
+                backgroundColor: i < pin.length ? (shaking ? "#ff716c" : "#ff906d") : "var(--muted)",
                 boxShadow: i < pin.length && !shaking ? "0 0 10px rgba(255,144,109,0.5)" : undefined,
               }}
             />
@@ -71,11 +70,11 @@ export function PinGateModal({ onUnlock, onCancel, title = "Clave Requerida", su
               <button
                 key={i}
                 onClick={() => (isDel ? handleBackspace() : handleDigit(key))}
-                className="w-full aspect-square rounded-[16px] font-['Space_Grotesk',sans-serif] font-bold text-[20px] cursor-pointer border-none transition-all active:scale-95"
+                className="w-full aspect-square rounded-[16px] font-['Space_Grotesk',sans-serif] font-bold text-[20px] cursor-pointer border-none transition-all active:scale-95 flex items-center justify-center"
                 style={{
-                  backgroundColor: isDel ? "rgba(255,113,108,0.1)" : "rgba(38,38,38,0.9)",
-                  color: isDel ? "#ff716c" : "white",
-                  border: "1px solid rgba(72,72,71,0.3)",
+                  backgroundColor: isDel ? "rgba(255,113,108,0.1)" : "var(--accent)",
+                  color: isDel ? "#ff716c" : "var(--foreground)",
+                  border: "1px solid var(--border)",
                 }}
               >{key}</button>
             );
@@ -84,7 +83,7 @@ export function PinGateModal({ onUnlock, onCancel, title = "Clave Requerida", su
 
         <button
           onClick={onCancel}
-          className="w-full mt-4 py-3 bg-[#262626] text-[#adaaaa] rounded-[8px] font-['Inter',sans-serif] font-bold text-[12px] uppercase cursor-pointer border-none hover:bg-[#333] transition-colors"
+          className="w-full mt-4 py-3 bg-muted text-muted-foreground rounded-[8px] font-['Inter',sans-serif] font-bold text-[12px] uppercase cursor-pointer border-none hover:bg-accent transition-colors"
         >
           Cancelar
         </button>

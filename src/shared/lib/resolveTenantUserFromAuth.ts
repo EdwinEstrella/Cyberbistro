@@ -28,6 +28,15 @@ async function fetchTenantUserBySessionEmail(email: string) {
     .maybeSingle();
 }
 
+async function fetchTenantUserByRpc() {
+  return insforgeClient.database
+    .rpc('cyberbistro_resolve_tenant_user')
+    .then(({ data, error }) => ({
+      data: Array.isArray(data) ? (data[0] ?? null) : data,
+      error,
+    }));
+}
+
 async function withRetry<T>(
   label: string,
   fetcher: () => Promise<{ data: T | null; error: unknown }>
@@ -80,6 +89,9 @@ export async function resolveTenantUserForSession(user: UserSchema): Promise<Ten
     fetchTenantUserBySessionEmail(email)
   );
   if (byEmail) return byEmail as TenantSessionRow;
+
+  const { data: byRpc } = await withRetry('tenant_users por rpc', fetchTenantUserByRpc);
+  if (byRpc) return byRpc as TenantSessionRow;
 
   return null;
 }

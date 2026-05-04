@@ -10,7 +10,7 @@ import {
 } from "../../../shared/lib/insforge";
 import { INSFORGE_REFRESH_TOKEN_STORAGE_KEY } from "../../../shared/lib/insforgeAuthStorage";
 import { resolveTenantUserForSession } from "../../../shared/lib/resolveTenantUserFromAuth";
-import { hydrateAuthStateAfterLogin } from "../../../shared/hooks/useAuth";
+import { hydrateAuthStateAfterLogin, syncAuthClientAfterLogin } from "../../../shared/hooks/useAuth";
 import { defaultRouteForRol } from "../../../shared/lib/roleNav";
 import { PinGateModal } from "../../../shared/components/PinGate";
 
@@ -144,8 +144,11 @@ export function Login() {
 
   // Move interaction logic to event handler (Vercel best practice)
   const handleLogin = useCallback(async () => {
+    if (isLoading) return;
+
     if (!email || !password) {
       setError("Por favor completa todos los campos");
+      setIsLoading(false);
       return;
     }
 
@@ -163,10 +166,11 @@ export function Login() {
         Boolean(data && typeof data === "object" && "refreshToken" in data),
     });
 
-    setIsLoading(false);
+    syncAuthClientAfterLogin(data);
 
     if (authError) {
       const connectivity = formatInsforgeConnectivityError(authError);
+      setIsLoading(false);
       setError(connectivity ?? (authError.message || "Error al iniciar sesión"));
       return;
     }
@@ -210,6 +214,7 @@ export function Login() {
           "Esta cuenta no está vinculada a ningún negocio. El administrador debe darte acceso desde Soporte."
         );
         await insforgeClient.auth.signOut();
+        setIsLoading(false);
         return;
       }
       hydrateAuthStateAfterLogin(data.user, tu);
@@ -217,7 +222,8 @@ export function Login() {
       setIsVisible(false);
       setTimeout(() => navigate(dest), 300);
     }
-  }, [email, password, navigate, rememberLogin]);
+    setIsLoading(false);
+  }, [email, isLoading, password, navigate, rememberLogin]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
@@ -259,7 +265,7 @@ export function Login() {
       <div className="flex items-center justify-center p-4 relative flex-1 w-full overflow-hidden">
       {/* Background */}
       <div aria-hidden="true" className="absolute inset-0 pointer-events-none">
-        <div className="absolute bg-[#0e0e0e] inset-0" />
+        <div className="absolute bg-background inset-0 transition-colors duration-300" />
         <div className="absolute inset-0 overflow-hidden">
           <img
             alt=""

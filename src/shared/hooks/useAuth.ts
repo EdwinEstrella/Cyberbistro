@@ -95,6 +95,18 @@ function extractRefreshTokenFromPayload(data: unknown): string | null {
   return null;
 }
 
+function extractAccessTokenFromPayload(data: unknown): string | null {
+  if (!data || typeof data !== 'object') return null;
+  const maybeData = data as any;
+  const direct = maybeData.accessToken || maybeData.access_token;
+  if (typeof direct === 'string' && direct.trim().length > 0) return direct;
+  const inSession = maybeData.session?.accessToken || maybeData.session?.access_token;
+  if (typeof inSession === 'string' && inSession.trim().length > 0) return inSession;
+  const inTokens = maybeData.tokens?.accessToken || maybeData.tokens?.access_token;
+  if (typeof inTokens === 'string' && inTokens.trim().length > 0) return inTokens;
+  return null;
+}
+
 function extractUserFromAuthPayload(data: unknown): UserSchema | null {
   if (!data || typeof data !== 'object') return null;
   const maybeData = data as {
@@ -110,12 +122,37 @@ function extractUserFromAuthPayload(data: unknown): UserSchema | null {
   return null;
 }
 
+function syncSdkSession(data: unknown): void {
+  const accessToken = extractAccessTokenFromPayload(data);
+  const user = extractUserFromAuthPayload(data);
+
+  try {
+    if (accessToken) {
+      insforgeClient.getHttpClient().setAuthToken(accessToken);
+      const tokenManager = (insforgeClient as unknown as {
+        tokenManager?: {
+          setAccessToken?: (token: string) => void;
+          setUser?: (nextUser: UserSchema) => void;
+        };
+      }).tokenManager;
+      tokenManager?.setAccessToken?.(accessToken);
+      if (user) tokenManager?.setUser?.(user);
+    }
+  } catch {
+    /* best effort: InsForge SDK internals are not public API */
+  }
+}
+
 function clearSessionShared(): void {
   clearTenantSessionCache();
   localStorage.removeItem(REFRESH_TOKEN_KEY);
   try {
     insforgeClient.getHttpClient().setAuthToken(null);
     insforgeClient.getHttpClient().setRefreshToken(null);
+    const tokenManager = (insforgeClient as unknown as {
+      tokenManager?: { clearSession?: () => void };
+    }).tokenManager;
+    tokenManager?.clearSession?.();
   } catch {
     /* ignore */
   }
@@ -136,6 +173,10 @@ export function hydrateAuthStateAfterLogin(user: UserSchema, tenantRow: TenantSe
     tenantId: tenantRow.tenant_id,
     rol: tenantRow.rol,
   });
+}
+
+export function syncAuthClientAfterLogin(data: unknown): void {
+  syncSdkSession(data);
 }
 
 async function loadUserDataShared(opts?: { silent?: boolean }): Promise<void> {
@@ -184,6 +225,7 @@ async function loadUserDataShared(opts?: { silent?: boolean }): Promise<void> {
           });
 
           if (!refreshError) {
+            syncSdkSession(refreshed);
             const rotated = extractRefreshTokenFromPayload(refreshed);
             if (rotated) localStorage.setItem(REFRESH_TOKEN_KEY, rotated);
             const refreshedUser = extractUserFromAuthPayload(refreshed);
@@ -310,6 +352,7 @@ async function doRefreshShared(): Promise<void> {
       return 'error';
     }
 
+    syncSdkSession(data);
     const refreshToken = extractRefreshTokenFromPayload(data);
     if (refreshToken) {
       localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);

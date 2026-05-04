@@ -2,43 +2,43 @@
 
 :root {
   --font-size: 16px;
-  --background: #ffffff;
-  --foreground: oklch(0.145 0 0);
-  --card: #ffffff;
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: #030213;
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.95 0.0058 264.53);
-  --secondary-foreground: #030213;
-  --muted: #ececf0;
-  --muted-foreground: #717182;
-  --accent: #e9ebef;
-  --accent-foreground: #030213;
+  --background: #eee8df;
+  --foreground: #17130f;
+  --card: #fff8ee;
+  --card-foreground: #17130f;
+  --popover: #fff8ee;
+  --popover-foreground: #17130f;
+  --primary: #18120e;
+  --primary-foreground: #fff8ee;
+  --secondary: #e2d8ca;
+  --secondary-foreground: #17130f;
+  --muted: #dfd3c3;
+  --muted-foreground: #4f463d;
+  --accent: #d9cbbb;
+  --accent-foreground: #18120e;
   --destructive: #d4183d;
   --destructive-foreground: #ffffff;
-  --border: rgba(0, 0, 0, 0.1);
-  --input: transparent;
-  --input-background: #f3f3f5;
-  --switch-background: #cbced4;
+  --border: rgba(28, 21, 16, 0.18);
+  --input: #fffaf3;
+  --input-background: #fffaf3;
+  --switch-background: #b8aa99;
   --font-weight-medium: 500;
   --font-weight-normal: 400;
-  --ring: oklch(0.708 0 0);
+  --ring: #9a4e32;
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: #030213;
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: #201813;
+  --sidebar-foreground: #fff8ee;
+  --sidebar-primary: #ff906d;
+  --sidebar-primary-foreground: #18120e;
+  --sidebar-accent: #2c211a;
+  --sidebar-accent-foreground: #fff8ee;
+  --sidebar-border: rgba(255, 144, 109, 0.18);
+  --sidebar-ring: #ff906d;
 }
 
 .dark {
@@ -128,6 +128,12 @@
     @apply bg-background text-foreground;
   }
 
+  .light body {
+    background:
+      radial-gradient(circle at 18% 0%, rgba(255, 144, 109, 0.14), transparent 34%),
+      linear-gradient(135deg, #eee8df 0%, #e4dacd 48%, #d8ccbd 100%);
+  }
+
   /**
   * Default typography styles for HTML elements (h1-h4, p, label, button, input).
   * These are in @layer base, so Tailwind utility classes (like text-sm, text-lg) automatically override them.
@@ -177,5 +183,56 @@
     font-size: var(--text-base);
     font-weight: var(--font-weight-normal);
     line-height: 1.5;
+  }
+}
+
+@layer utilities {
+  .light [class~="bg-\[\#0e0e0e\]"] {
+    background-color: var(--background) !important;
+  }
+
+  .light [class~="bg-\[\#131313\]"],
+  .light [class~="bg-\[\#111111\]"] {
+    background-color: var(--card) !important;
+  }
+
+  .light [class~="bg-\[\#1a1a1a\]"],
+  .light [class~="bg-\[\#201713\]"] {
+    background-color: var(--secondary) !important;
+  }
+
+  .light [class~="bg-\[\#262626\]"],
+  .light [class~="bg-\[\#333\]"],
+  .light [class~="bg-\[\#383838\]"] {
+    background-color: var(--accent) !important;
+  }
+
+  .light [class~="text-\[\#adaaaa\]"],
+  .light [class~="text-white\/50"] {
+    color: #2a221b !important;
+  }
+
+  .light [class~="text-\[\#6b7280\]"],
+  .light [class~="text-\[\#484847\]"] {
+    color: var(--muted-foreground) !important;
+  }
+
+  .light [class~="text-white"] {
+    color: var(--foreground) !important;
+  }
+
+  .light [class~="border-\[rgba\(72\,72\,71\,0\.15\)\]"],
+  .light [class~="border-\[rgba\(72\,72\,71\,0\.18\)\]"],
+  .light [class~="border-\[rgba\(72\,72\,71\,0\.2\)\]"],
+  .light [class~="border-\[rgba\(72\,72\,71\,0\.3\)\]"],
+  .light [class~="border-\[rgba\(72\,72\,71\,0\.35\)\]"],
+  .light [class~="border-\[rgba\(72\,72\,71\,0\.4\)\]"] {
+    border-color: var(--border) !important;
+  }
+
+  .light [class*="bg-\[rgba\(38\,38\,38"],
+  .light [class*="bg-\[rgba\(19\,19\,19"],
+  .light [class*="bg-\[rgba\(24\,24\,24"] {
+    background-color: color-mix(in srgb, var(--card) 88%, transparent) !important;
   }
 }

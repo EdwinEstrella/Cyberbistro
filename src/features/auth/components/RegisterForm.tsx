@@ -225,7 +225,7 @@ export function Register() {
       <div className="flex items-center justify-center p-4 relative flex-1 w-full overflow-hidden">
       {/* Background */}
       <div aria-hidden="true" className="absolute inset-0 pointer-events-none">
-        <div className="absolute bg-[#0e0e0e] inset-0" />
+        <div className="absolute bg-background inset-0 transition-colors duration-300" />
         <div className="absolute inset-0 overflow-hidden">
           <img alt="" className="absolute h-full left-0 max-w-none top-0 w-full object-cover" src={imgLoginRegistro} />
         </div>
