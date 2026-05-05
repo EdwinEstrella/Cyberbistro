@@ -35,6 +35,7 @@
       "signAndEditExecutable": false
     },
     "nsis": {
+      "artifactName": "Cyberbistro-install.${ext}",
       "oneClick": false,
       "perMachine": false,
       "allowElevation": true,

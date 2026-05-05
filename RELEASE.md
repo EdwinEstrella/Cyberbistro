@@ -11,6 +11,8 @@
 npm run dist:win
 ```
 
+URL// https://github.com/EdwinEstrella/Cyberbistro/releases/latest/download/Cyberbistro-Install.exe
+
 Salida en la carpeta `release/`: instalador NSIS (`.exe`), `latest.yml` y archivos asociados que `electron-updater` usa en GitHub Releases.
 
 ## Publicar una nueva versión en GitHub (release **Latest**)
