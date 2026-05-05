@@ -170,7 +170,7 @@ export function Register() {
                     </div>
                   </div>
                   <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] sm:text-[12px] text-center tracking-[1px] sm:tracking-[1.2px] uppercase">
-                    Nueva Unidad CyberBistro
+                    Nueva Unidad Cloudix
                   </div>
                 </div>
               </div>

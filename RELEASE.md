@@ -1,8 +1,8 @@
-# Publicar Cyberbistro (NSIS + auto-actualización)
+# Publicar Cloudix (NSIS + auto-actualización)
 
 ## Requisitos
 
-- Cuenta de GitHub con permisos en el repo configurado en `package.json` → `build.publish` (actualmente `EdwinEstrella/Cyberbistro`).
+- Cuenta de GitHub con permisos en el repo configurado en `package.json` → `build.publish` (actualmente `EdwinEstrella/Cloudix`).
 - Un [Personal Access Token](https://github.com/settings/tokens) con alcance **repo** para subir releases (variable de entorno `GH_TOKEN` o `GITHUB_TOKEN`).
 
 ## Generar el instalador .exe localmente (sin subir)
@@ -11,7 +11,7 @@
 npm run dist:win
 ```
 
-URL// https://github.com/EdwinEstrella/Cyberbistro/releases/latest/download/Cyberbistro-Install.exe
+URL// https://github.com/EdwinEstrella/Cloudix/releases/latest/download/Cloudix-Install.exe
 
 Salida en la carpeta `release/`: instalador NSIS (`.exe`), `latest.yml` y archivos asociados que `electron-updater` usa en GitHub Releases.
 
@@ -63,6 +63,6 @@ El script `npm run make` sigue generando MSI con WiX; ese artefacto no es el que
 
 Tras **Siguiente** en la bienvenida deberías ver la carpeta de destino, luego la barra de progreso y la pantalla de finalización (con opción de ejecutar la app si `runAfterFinish` está activo).
 
-Si aun así falla: prueba `release\win-unpacked\Cyberbistro.exe`, revisa antivirus/SmartScreen, y los logs en `%USERPROFILE%\AppData\Roaming\Cyberbistro\logs\`.
+Si aun así falla: prueba `release\win-unpacked\Cloudix.exe`, revisa antivirus/SmartScreen, y los logs en `%USERPROFILE%\AppData\Roaming\Cloudix\logs\`.
 
 Para volver al instalador mínimo de una sola acción, en `package.json` → `build.nsis` pon `oneClick: true` y `allowToChangeInstallationDirectory: false` (y quita o ajusta `include` si no quieres UAC al instalar).

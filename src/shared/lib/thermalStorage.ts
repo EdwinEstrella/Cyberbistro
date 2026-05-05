@@ -1,4 +1,4 @@
-const STORAGE_KEY = "cyberbistro_thermal_print_v1";
+const STORAGE_KEY = "cloudix_thermal_print_v1";
 
 export type PaperWidthMm = 80 | 88;
 

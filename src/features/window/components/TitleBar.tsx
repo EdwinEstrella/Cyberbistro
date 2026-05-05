@@ -65,7 +65,7 @@ export function TitleBar({
         </div>
         <div className="flex flex-col">
           <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[10px] tracking-[-0.5px] uppercase leading-tight">
-            CyberBistro
+            Cloudix
           </span>
           <span className="font-['Inter',sans-serif] text-foreground/60 text-[8px] tracking-[0.8px] uppercase leading-tight">
             v{__APP_VERSION__}

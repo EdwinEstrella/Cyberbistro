@@ -1,7 +1,7 @@
 module.exports = {
   packagerConfig: {
-    name: 'Cyberbistro',
-    executableName: 'cyberbistro',
+    name: 'Cloudix',
+    executableName: 'cloudix',
     icon: './icon', // Sin extensión - Forge agrega .ico automáticamente
     asar: true,
     // Include only necessary files
@@ -29,10 +29,10 @@ module.exports = {
     ],
     // Windows-specific configuration
     win32metadata: {
-      CompanyName: 'Cyberbistro',
-      FileDescription: 'Cyberbistro Desktop App',
-      ProductName: 'Cyberbistro',
-      InternalName: 'cyberbistro'
+      CompanyName: 'Cloudix',
+      FileDescription: 'Cloudix Desktop App',
+      ProductName: 'Cloudix',
+      InternalName: 'cloudix'
     }
   },
   rebuildConfig: {},
@@ -40,9 +40,9 @@ module.exports = {
     {
       name: '@electron-forge/maker-squirrel',
       config: {
-        name: 'cyberbistro',
+        name: 'cloudix',
         authors: 'Edwin',
-        description: 'Cyberbistro Desktop App',
+        description: 'Cloudix Desktop App',
       },
     },
     {
@@ -60,8 +60,8 @@ module.exports = {
     {
       name: '@electron-forge/maker-wix',
       config: {
-        name: 'Cyberbistro',
-        manufacturer: 'Cyberbistro',
+        name: 'Cloudix',
+        manufacturer: 'Cloudix',
         // El instalador usa el icono del .exe empaquetado (definido en packagerConfig.icon)
       },
     },

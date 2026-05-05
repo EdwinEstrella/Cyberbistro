@@ -22,7 +22,7 @@ if (!gotTheLock) {
 }
 
 /** Debe coincidir con `build.appId` en package.json (atajos NSIS + barra de tareas Windows). */
-const WINDOWS_APP_USER_MODEL_ID = 'com.edwin.cyberbistro'
+const WINDOWS_APP_USER_MODEL_ID = 'com.edwin.cloudix'
 
 /** Antes de `ready`: el shell de Windows asocia mejor el icono del botón de la barra de tareas. */
 if (gotTheLock && process.platform === 'win32') {
@@ -31,7 +31,7 @@ if (gotTheLock && process.platform === 'win32') {
 
 /**
  * RelaunchIconResource: el shell usa el icono embebido en el .exe.
- * - Instalado: Cyberbistro.exe (afterPack + rcedit).
+ * - Instalado: Cloudix.exe (afterPack + rcedit).
  * - Dev: electron.exe parcheado en postinstall con scripts/patch-dev-electron-icon.cjs.
  */
 function windowsTaskbarRelaunchIcon(): { appIconPath: string; appIconIndex: number } {
@@ -47,7 +47,7 @@ function applyWindowsTaskbarIdentity(win: BrowserWindow) {
       appIconPath,
       appIconIndex,
       relaunchCommand: process.execPath,
-      relaunchDisplayName: 'Cyberbistro',
+      relaunchDisplayName: 'Cloudix',
     })
   } catch (e) {
     console.warn('setAppDetails failed:', e)

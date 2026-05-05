@@ -70,7 +70,7 @@ export function ncfPayloadForInsert(
 }
 
 /**
- * Reserva NCF de forma atomica si existe la RPC `cyberbistro_reserve_ncf` (ver sql/cyberbistro_reserve_ncf.sql).
+ * Reserva NCF de forma atomica si existe la RPC `cloudix_reserve_ncf` (ver sql/cloudix_reserve_ncf.sql).
  * Si la RPC no esta desplegada o falla, usa lectura + incremento posterior (legado, vulnerable a carreras).
  */
 export async function resolveNcfForNewInvoice(
@@ -84,7 +84,7 @@ export async function resolveNcfForNewInvoice(
     rpcArgs.p_ncf_tipo = preferredType.trim().toUpperCase();
   }
 
-  const { data, error } = await insforgeClient.database.rpc("cyberbistro_reserve_ncf", rpcArgs);
+  const { data, error } = await insforgeClient.database.rpc("cloudix_reserve_ncf", rpcArgs);
 
   if (!error && data != null) {
     const rows = Array.isArray(data) ? data : [data];

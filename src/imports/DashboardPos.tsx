@@ -1575,7 +1575,7 @@ function Container82() {
   return (
     <div className="content-stretch flex flex-col items-start relative shrink-0" data-name="Container">
       <div className="flex flex-col font-['Space_Grotesk:Bold',sans-serif] font-bold h-[28px] justify-center leading-[0] relative shrink-0 text-[#ff906d] text-[18px] uppercase w-[144.8px]">
-        <p className="leading-[28px]">CyberBistro OS</p>
+        <p className="leading-[28px]">Cloudix OS</p>
       </div>
     </div>
   );

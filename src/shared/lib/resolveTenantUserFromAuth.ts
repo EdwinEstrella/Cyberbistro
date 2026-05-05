@@ -30,7 +30,7 @@ async function fetchTenantUserBySessionEmail(email: string) {
 
 async function fetchTenantUserByRpc() {
   return insforgeClient.database
-    .rpc('cyberbistro_resolve_tenant_user')
+    .rpc('cloudix_resolve_tenant_user')
     .then(({ data, error }) => ({
       data: Array.isArray(data) ? (data[0] ?? null) : data,
       error,

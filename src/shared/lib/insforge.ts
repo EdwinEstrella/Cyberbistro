@@ -54,7 +54,7 @@ export function formatInsforgeConnectivityError(error: unknown): string | null {
 function readInsforgeConfig(): InsForgeConfig {
   if (hasPartialEnv) {
     console.warn(
-      'Cyberbistro: .env incompleto (definí **ambas** VITE_INSFORGE_BASE_URL y VITE_INSFORGE_ANON_KEY, o ninguna). Se usan los valores embebidos del build para no mezclar URL y clave.'
+      'Cloudix: .env incompleto (definí **ambas** VITE_INSFORGE_BASE_URL y VITE_INSFORGE_ANON_KEY, o ninguna). Se usan los valores embebidos del build para no mezclar URL y clave.'
     );
   }
   return {

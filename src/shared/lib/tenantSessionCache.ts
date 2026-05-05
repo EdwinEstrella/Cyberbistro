@@ -1,4 +1,4 @@
-const CACHE_KEY = 'cyberbistro_tenant_ctx_v1';
+const CACHE_KEY = 'cloudix_tenant_ctx_v1';
 
 export interface TenantSessionRow {
   tenant_id: string;

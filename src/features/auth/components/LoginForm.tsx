@@ -14,9 +14,9 @@ import { hydrateAuthStateAfterLogin, syncAuthClientAfterLogin } from "../../../s
 import { defaultRouteForRol } from "../../../shared/lib/roleNav";
 import { PinGateModal } from "../../../shared/components/PinGate";
 
-const LOGIN_NOTICE_KEY = "cyberbistro_login_notice";
+const LOGIN_NOTICE_KEY = "cloudix_login_notice";
 const REFRESH_TOKEN_KEY = INSFORGE_REFRESH_TOKEN_STORAGE_KEY;
-const REMEMBER_LOGIN_KEY = "cyberbistro_remember_login";
+const REMEMBER_LOGIN_KEY = "cloudix_remember_login";
 
 // Hoist static SVG paths to avoid re-creation
 const ICONS = {
@@ -245,7 +245,7 @@ export function Login() {
         </div>
         <div className="pt-2 sm:pt-4">
           <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[20px] sm:text-[28px] md:text-[36px] text-center tracking-[-1px] sm:tracking-[-1.8px] uppercase">
-            CyberBistro
+            Cloudix
           </div>
         </div>
         <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] sm:text-[12px] text-center tracking-[1px] sm:tracking-[1.2px] uppercase">

@@ -68,6 +68,6 @@ describe("resolveTenantUserForSession", () => {
 
     const row = await resolveTenantUserForSession({ id: "auth-4", email: "u3@x.com" } as any);
     expect(row?.tenant_id).toBe("t3");
-    expect(mocks.rpc).toHaveBeenCalledWith("cyberbistro_resolve_tenant_user");
+    expect(mocks.rpc).toHaveBeenCalledWith("cloudix_resolve_tenant_user");
   });
 });

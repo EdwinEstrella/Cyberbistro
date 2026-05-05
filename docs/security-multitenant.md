@@ -1,6 +1,6 @@
-# Seguridad y multitenant (Cyberbistro)
+# Seguridad y multitenant (Cloudix)
 
-Contexto: **Cyberbistro se distribuye y usa como app Electron en escritorio** (no como SPA pública en la web). El modelo de amenaza incluye usuarios con acceso al equipo y al `.asar`; por eso no debe ir apiKey de servicio en el cliente.
+Contexto: **Cloudix se distribuye y usa como app Electron en escritorio** (no como SPA pública en la web). El modelo de amenaza incluye usuarios con acceso al equipo y al `.asar`; por eso no debe ir apiKey de servicio en el cliente.
 
 ## Modelo de amenaza
 
@@ -34,15 +34,15 @@ Estado actual en este proyecto:
 
 - SQL aplicado en backend para habilitar RLS + políticas de aislamiento por `tenant_id` en:
   `facturas`, `consumos`, `comandas`, `mesas_estado`, `cocina_estado`, `platos`.
-- Script versionado: `sql/cyberbistro_multitenant_rls.sql`.
+- Script versionado: `sql/cloudix_multitenant_rls.sql`.
 
 ## NCF atómico
 
-La secuencia fiscal debe reservarse en **una sola transacción en Postgres** (función `cyberbistro_reserve_ncf` + RPC). Ver `sql/cyberbistro_reserve_ncf.sql`.
+La secuencia fiscal debe reservarse en **una sola transacción en Postgres** (función `cloudix_reserve_ncf` + RPC). Ver `sql/cloudix_reserve_ncf.sql`.
 
 Estado actual:
 
-- RPC `public.cyberbistro_reserve_ncf(uuid)` creada en backend.
+- RPC `public.cloudix_reserve_ncf(uuid)` creada en backend.
 - Cliente actualizado para usar la RPC de forma preferente (`resolveNcfForNewInvoice`) y fallback legado solo si la RPC no responde.
 
 ## Secretos

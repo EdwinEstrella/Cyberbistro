@@ -1,7 +1,7 @@
 -- Cuotas de usuarios por restaurante para el panel de Super Admin.
--- Ejecutar una vez en el SQL editor del backend real de CyberBistro.
+-- Ejecutar una vez en el SQL editor del backend real de cloudix.
 
-CREATE OR REPLACE FUNCTION public.cyberbistro_auth_email()
+CREATE OR REPLACE FUNCTION public.cloudix_auth_email()
 RETURNS text
 LANGUAGE sql
 STABLE
@@ -12,7 +12,7 @@ AS $$
   );
 $$;
 
-CREATE OR REPLACE FUNCTION public.cyberbistro_auth_user_id()
+CREATE OR REPLACE FUNCTION public.cloudix_auth_user_id()
 RETURNS uuid
 LANGUAGE sql
 STABLE
@@ -23,7 +23,7 @@ AS $$
   );
 $$;
 
-CREATE TABLE IF NOT EXISTS public.cyberbistro_super_admins (
+CREATE TABLE IF NOT EXISTS public.cloudix_super_admins (
   auth_user_id uuid PRIMARY KEY,
   email text NOT NULL UNIQUE,
   created_at timestamptz NOT NULL DEFAULT now()
@@ -32,22 +32,22 @@ CREATE TABLE IF NOT EXISTS public.cyberbistro_super_admins (
 -- IMPORTANTE:
 -- Reemplaza el UUID por el auth_user_id que muestra la pantalla Super Admin.
 -- El correo solo no siempre llega en los claims RLS; el sub/auth_user_id es el dato estable.
--- INSERT INTO public.cyberbistro_super_admins (auth_user_id, email)
+-- INSERT INTO public.cloudix_super_admins (auth_user_id, email)
 -- VALUES ('00000000-0000-0000-0000-000000000000', 'admin@gmail.com')
 -- ON CONFLICT (auth_user_id) DO UPDATE SET email = EXCLUDED.email;
 
-CREATE OR REPLACE FUNCTION public.cyberbistro_is_super_admin()
+CREATE OR REPLACE FUNCTION public.cloudix_is_super_admin()
 RETURNS boolean
 LANGUAGE sql
 STABLE
 AS $$
   SELECT EXISTS (
     SELECT 1
-    FROM public.cyberbistro_super_admins sa
-    WHERE sa.auth_user_id = public.cyberbistro_auth_user_id()
+    FROM public.cloudix_super_admins sa
+    WHERE sa.auth_user_id = public.cloudix_auth_user_id()
       AND lower(sa.email) = 'admin@gmail.com'
   )
-  OR lower(COALESCE(public.cyberbistro_auth_email(), '')) = 'admin@gmail.com';
+  OR lower(COALESCE(public.cloudix_auth_email(), '')) = 'admin@gmail.com';
 $$;
 
 ALTER TABLE public.tenants
@@ -84,14 +84,14 @@ DROP POLICY IF EXISTS cb_tenants_member_select ON public.tenants;
 CREATE POLICY cb_tenants_super_admin_all
 ON public.tenants
 FOR ALL
-USING (public.cyberbistro_is_super_admin())
-WITH CHECK (public.cyberbistro_is_super_admin());
+USING (public.cloudix_is_super_admin())
+WITH CHECK (public.cloudix_is_super_admin());
 
 CREATE POLICY cb_tenant_users_super_admin_all
 ON public.tenant_users
 FOR ALL
-USING (public.cyberbistro_is_super_admin())
-WITH CHECK (public.cyberbistro_is_super_admin());
+USING (public.cloudix_is_super_admin())
+WITH CHECK (public.cloudix_is_super_admin());
 
 -- Usuarios normales: necesario para que login pueda resolver su restaurante.
 -- Sin esta policy, activar RLS aqui rompe cuentas existentes que no sean super admin.
@@ -99,8 +99,8 @@ CREATE POLICY cb_tenant_users_self_select
 ON public.tenant_users
 FOR SELECT
 USING (
-  auth_user_id = public.cyberbistro_auth_user_id()
-  OR lower(email) = lower(COALESCE(public.cyberbistro_auth_email(), ''))
+  auth_user_id = public.cloudix_auth_user_id()
+  OR lower(email) = lower(COALESCE(public.cloudix_auth_email(), ''))
 );
 
 CREATE POLICY cb_tenants_member_select
@@ -112,13 +112,13 @@ USING (
     FROM public.tenant_users tu
     WHERE tu.tenant_id = tenants.id
       AND (
-        tu.auth_user_id = public.cyberbistro_auth_user_id()
-        OR lower(tu.email) = lower(COALESCE(public.cyberbistro_auth_email(), ''))
+        tu.auth_user_id = public.cloudix_auth_user_id()
+        OR lower(tu.email) = lower(COALESCE(public.cloudix_auth_email(), ''))
       )
   )
 );
 
-CREATE OR REPLACE FUNCTION public.cyberbistro_resolve_tenant_user()
+CREATE OR REPLACE FUNCTION public.cloudix_resolve_tenant_user()
 RETURNS TABLE (
   tenant_id uuid,
   email text,
@@ -132,13 +132,13 @@ SET search_path = public
 AS $$
   SELECT tu.tenant_id, tu.email, tu.rol, tu.nombre
   FROM public.tenant_users tu
-  WHERE tu.auth_user_id = public.cyberbistro_auth_user_id()
-     OR lower(tu.email) = lower(COALESCE(public.cyberbistro_auth_email(), ''))
-  ORDER BY (tu.auth_user_id = public.cyberbistro_auth_user_id()) DESC
+  WHERE tu.auth_user_id = public.cloudix_auth_user_id()
+     OR lower(tu.email) = lower(COALESCE(public.cloudix_auth_email(), ''))
+  ORDER BY (tu.auth_user_id = public.cloudix_auth_user_id()) DESC
   LIMIT 1;
 $$;
 
-CREATE OR REPLACE FUNCTION public.cyberbistro_super_admin_delete_tenant_user(p_tenant_user_id uuid)
+CREATE OR REPLACE FUNCTION public.cloudix_super_admin_delete_tenant_user(p_tenant_user_id uuid)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -147,7 +147,7 @@ AS $$
 DECLARE
   target_row public.tenant_users%ROWTYPE;
 BEGIN
-  IF NOT public.cyberbistro_is_super_admin() THEN
+  IF NOT public.cloudix_is_super_admin() THEN
     RAISE EXCEPTION 'Solo super admin puede eliminar usuarios';
   END IF;
 
@@ -203,7 +203,7 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION public.cyberbistro_super_admin_block_tenant(p_tenant_id uuid)
+CREATE OR REPLACE FUNCTION public.cloudix_super_admin_block_tenant(p_tenant_id uuid)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -212,7 +212,7 @@ AS $$
 DECLARE
   affected_users integer := 0;
 BEGIN
-  IF NOT public.cyberbistro_is_super_admin() THEN
+  IF NOT public.cloudix_is_super_admin() THEN
     RAISE EXCEPTION 'Solo super admin puede bloquear restaurantes';
   END IF;
 
@@ -242,7 +242,7 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION public.cyberbistro_super_admin_delete_tenant(p_tenant_id uuid)
+CREATE OR REPLACE FUNCTION public.cloudix_super_admin_delete_tenant(p_tenant_id uuid)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -252,7 +252,7 @@ DECLARE
   auth_ids uuid[];
   deleted_users integer := 0;
 BEGIN
-  IF NOT public.cyberbistro_is_super_admin() THEN
+  IF NOT public.cloudix_is_super_admin() THEN
     RAISE EXCEPTION 'Solo super admin puede eliminar restaurantes';
   END IF;
 
@@ -290,7 +290,7 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.cyberbistro_super_admin_delete_tenant_user(uuid) TO PUBLIC;
-GRANT EXECUTE ON FUNCTION public.cyberbistro_super_admin_block_tenant(uuid) TO PUBLIC;
-GRANT EXECUTE ON FUNCTION public.cyberbistro_super_admin_delete_tenant(uuid) TO PUBLIC;
-GRANT EXECUTE ON FUNCTION public.cyberbistro_resolve_tenant_user() TO PUBLIC;
+GRANT EXECUTE ON FUNCTION public.cloudix_super_admin_delete_tenant_user(uuid) TO PUBLIC;
+GRANT EXECUTE ON FUNCTION public.cloudix_super_admin_block_tenant(uuid) TO PUBLIC;
+GRANT EXECUTE ON FUNCTION public.cloudix_super_admin_delete_tenant(uuid) TO PUBLIC;
+GRANT EXECUTE ON FUNCTION public.cloudix_resolve_tenant_user() TO PUBLIC;

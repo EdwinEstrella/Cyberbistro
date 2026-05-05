@@ -28,7 +28,7 @@ module.exports = {
     {
       name: '@electron-forge/maker-wix',
       config: {
-        name: 'Cyberbistro',
+        name: 'Cloudix',
         manufacturer: 'Edwin',
         language: 3082,
         icon: './icon.ico',

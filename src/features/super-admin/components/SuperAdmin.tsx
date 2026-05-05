@@ -264,7 +264,7 @@ export function SuperAdmin() {
     setInfo("");
 
     const { error: rpcError } = await insforgeClient.database.rpc(
-      "cyberbistro_super_admin_delete_tenant_user",
+      "cloudix_super_admin_delete_tenant_user",
       { p_tenant_user_id: row.id }
     );
 
@@ -290,7 +290,7 @@ export function SuperAdmin() {
     setInfo("");
 
     const { error: rpcError } = await insforgeClient.database.rpc(
-      "cyberbistro_super_admin_block_tenant",
+      "cloudix_super_admin_block_tenant",
       { p_tenant_id: tenant.id }
     );
 
@@ -321,7 +321,7 @@ export function SuperAdmin() {
     setInfo("");
 
     const { error: rpcError } = await insforgeClient.database.rpc(
-      "cyberbistro_super_admin_delete_tenant",
+      "cloudix_super_admin_delete_tenant",
       { p_tenant_id: tenant.id }
     );
 
@@ -567,7 +567,7 @@ export function SuperAdmin() {
                   Super Admin
                 </span>
                 <span className="font-['Inter',sans-serif] text-[#6b7280] text-[13px] max-w-[760px] leading-relaxed">
-                  Vista global de restaurantes y usuarios creados en CyberBistro. Este acceso queda reservado al correo {SUPER_ADMIN_EMAIL}.
+                  Vista global de restaurantes y usuarios creados en cloudix. Este acceso queda reservado al correo {SUPER_ADMIN_EMAIL}.
                 </span>
                 <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] break-all">
                   Auth user ID: {user?.id ?? "sin sesion"}
@@ -609,7 +609,7 @@ export function SuperAdmin() {
             {!columnsReady ? (
               <div className="bg-[rgba(255,176,32,0.08)] border border-[rgba(255,176,32,0.25)] rounded-[12px] px-4 py-3">
                 <span className="font-['Inter',sans-serif] text-[#ffb020] text-[13px]">
-                  La UI de limites esta lista, pero este backend todavia no expone las columnas de cuotas en tenants. Ejecuta el script sql/cyberbistro_super_admin_limits.sql.
+                  La UI de limites esta lista, pero este backend todavia no expone las columnas de cuotas en tenants. Ejecuta el script sql/cloudix_super_admin_limits.sql.
                 </span>
               </div>
             ) : null}

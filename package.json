@@ -1,12 +1,12 @@
 {
-  "name": "cyberbistro",
+  "name": "cloudix",
   "version": "12.0.17",
-  "description": "Cyberbistro Desktop App",
+  "description": "Cloudix Desktop App",
   "author": "Edwin",
   "main": "dist-electron/main.js",
   "build": {
-    "appId": "com.edwin.cyberbistro",
-    "productName": "Cyberbistro",
+    "appId": "com.edwin.cloudix",
+    "productName": "Cloudix",
     "directories": {
       "output": "release",
       "buildResources": "."
@@ -35,7 +35,7 @@
       "signAndEditExecutable": false
     },
     "nsis": {
-      "artifactName": "Cyberbistro-install.${ext}",
+      "artifactName": "Cloudix-install.${ext}",
       "oneClick": false,
       "perMachine": false,
       "allowElevation": true,
@@ -54,7 +54,7 @@
       {
         "provider": "github",
         "owner": "EdwinEstrella",
-        "repo": "Cyberbistro",
+        "repo": "Cloudix",
         "releaseType": "release",
         "vPrefixedTagName": true
       }

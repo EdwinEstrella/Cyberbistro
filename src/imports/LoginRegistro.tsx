@@ -43,7 +43,7 @@ function Heading() {
   return (
     <div className="content-stretch flex flex-col items-center pt-[16px] relative shrink-0 w-full" data-name="Heading 1">
       <div className="flex flex-col font-['Space_Grotesk:Bold',sans-serif] font-bold h-[40px] justify-center leading-[0] relative shrink-0 text-[#ff906d] text-[36px] text-center tracking-[-1.8px] uppercase w-[214.5px]">
-        <p className="leading-[40px]">CyberBistro</p>
+        <p className="leading-[40px]">Cloudix</p>
       </div>
     </div>
   );

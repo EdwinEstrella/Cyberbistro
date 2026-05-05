@@ -2,7 +2,7 @@
 @import './tailwind.css';
 @import './theme.css';
 
-/* Tokens compartidos (CyberBistro) — usar en CSS custom / futuros componentes */
+/* Tokens compartidos (Cloudix) — usar en CSS custom / futuros componentes */
 :root {
   --cb-radius-sm: 2px;
   --cb-radius-md: 0px;

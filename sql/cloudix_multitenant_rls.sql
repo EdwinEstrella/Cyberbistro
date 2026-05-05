@@ -1,7 +1,7 @@
 -- Políticas RLS multitenant para tablas de negocio.
 -- Ejecutar una vez por backend (idempotente) desde InsForge SQL editor o MCP run-raw-sql.
 
-CREATE OR REPLACE FUNCTION public.cyberbistro_auth_user_id()
+CREATE OR REPLACE FUNCTION public.cloudix_auth_user_id()
 RETURNS uuid
 LANGUAGE sql
 STABLE
@@ -12,7 +12,7 @@ AS $$
   );
 $$;
 
-CREATE OR REPLACE FUNCTION public.cyberbistro_auth_email()
+CREATE OR REPLACE FUNCTION public.cloudix_auth_email()
 RETURNS text
 LANGUAGE sql
 STABLE
@@ -40,10 +40,10 @@ BEGIN
            WHERE tu.tenant_id = %I.tenant_id
              AND tu.activo IS TRUE
              AND (
-               tu.auth_user_id = public.cyberbistro_auth_user_id()
+               tu.auth_user_id = public.cloudix_auth_user_id()
                OR (
                  tu.auth_user_id IS NULL
-                 AND lower(tu.email) = lower(public.cyberbistro_auth_email())
+                 AND lower(tu.email) = lower(public.cloudix_auth_email())
                )
              )
          )
@@ -55,10 +55,10 @@ BEGIN
            WHERE tu.tenant_id = %I.tenant_id
              AND tu.activo IS TRUE
              AND (
-               tu.auth_user_id = public.cyberbistro_auth_user_id()
+               tu.auth_user_id = public.cloudix_auth_user_id()
                OR (
                  tu.auth_user_id IS NULL
-                 AND lower(tu.email) = lower(public.cyberbistro_auth_email())
+                 AND lower(tu.email) = lower(public.cloudix_auth_email())
                )
              )
          )

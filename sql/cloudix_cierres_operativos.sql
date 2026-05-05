@@ -50,10 +50,10 @@ USING (
     WHERE tu.tenant_id = cierres_operativos.tenant_id
       AND tu.activo IS TRUE
       AND (
-        tu.auth_user_id = public.cyberbistro_auth_user_id()
+        tu.auth_user_id = public.cloudix_auth_user_id()
         OR (
           tu.auth_user_id IS NULL
-          AND lower(tu.email) = lower(public.cyberbistro_auth_email())
+          AND lower(tu.email) = lower(public.cloudix_auth_email())
         )
       )
   )
@@ -65,10 +65,10 @@ WITH CHECK (
     WHERE tu.tenant_id = cierres_operativos.tenant_id
       AND tu.activo IS TRUE
       AND (
-        tu.auth_user_id = public.cyberbistro_auth_user_id()
+        tu.auth_user_id = public.cloudix_auth_user_id()
         OR (
           tu.auth_user_id IS NULL
-          AND lower(tu.email) = lower(public.cyberbistro_auth_email())
+          AND lower(tu.email) = lower(public.cloudix_auth_email())
         )
       )
   )

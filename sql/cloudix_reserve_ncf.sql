@@ -1,11 +1,11 @@
 -- Ejecutar en el SQL editor de InsForge (o via MCP run-raw-sql) una vez por backend.
 -- Reserva el NCF del tipo pedido y avanza solo su columna de secuencia.
--- Requiere `sql/cyberbistro_tenant_ncf_columnas_itbis.sql`.
+-- Requiere `sql/cloudix_tenant_ncf_columnas_itbis.sql`.
 
-DROP FUNCTION IF EXISTS public.cyberbistro_reserve_ncf(uuid);
-DROP FUNCTION IF EXISTS public.cyberbistro_reserve_ncf(uuid, text);
+DROP FUNCTION IF EXISTS public.cloudix_reserve_ncf(uuid);
+DROP FUNCTION IF EXISTS public.cloudix_reserve_ncf(uuid, text);
 
-CREATE OR REPLACE FUNCTION public.cyberbistro_reserve_ncf(
+CREATE OR REPLACE FUNCTION public.cloudix_reserve_ncf(
   p_tenant_id uuid,
   p_ncf_tipo text DEFAULT null
 )
@@ -141,4 +141,4 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.cyberbistro_reserve_ncf(uuid, text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.cloudix_reserve_ncf(uuid, text) TO authenticated;

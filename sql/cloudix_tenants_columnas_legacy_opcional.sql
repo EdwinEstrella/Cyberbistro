@@ -1,7 +1,7 @@
 -- Revision manual de columnas en `public.tenants`.
 -- No ejecutar a ciegas. Algunas columnas siguen como compatibilidad.
 --
--- Verificado contra el codigo actual de Cyberbistro:
+-- Verificado contra el codigo actual de Cloudix:
 -- 1. `activa` sigue usandose al crear el tenant en RegisterForm.
 -- 2. `email` e `idioma` no aparecen referenciadas por la app actual.
 -- 3. `ncf_secuencia_siguiente` y `ncf_secuencias_por_tipo` quedaron como legado /

@@ -33,7 +33,7 @@ if (!fs.existsSync(iconPath)) {
 ;(async () => {
   try {
     await rcedit(electronExe, { icon: iconPath })
-    console.log('[patch-dev-electron-icon] Icono de Cyberbistro aplicado a electron.exe (modo dev).')
+    console.log('[patch-dev-electron-icon] Icono de Cloudix aplicado a electron.exe (modo dev).')
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     console.warn('[patch-dev-electron-icon] No se pudo parchear electron.exe:', msg)

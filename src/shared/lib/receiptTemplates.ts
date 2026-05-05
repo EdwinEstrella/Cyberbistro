@@ -59,7 +59,7 @@ function thermalStyles(paperWidthMm: PaperWidthMm): string {
 }
 
 function headerBlock(t: TenantReceiptInfo, opts?: { omitRnc?: boolean }): string {
-  const nombre = escapeHtml(t.nombre_negocio || "CyberBistro");
+  const nombre = escapeHtml(t.nombre_negocio || "Cloudix");
   const logo = t.logo_url
     ? `<div class="logo-wrap"><img src="${escapeHtml(t.logo_url)}" alt="" crossorigin="anonymous" /></div>`
     : "";
@@ -289,7 +289,7 @@ export function buildComandaReceiptHtml(
   <div class="double-divider"></div>
   <div class="footer">
     <p style="margin:0 0 4px">Preparar en orden de llegada</p>
-    <p style="margin:0;font-size:13px;font-weight:600">CyberBistro OS</p>
+    <p style="margin:0;font-size:13px;font-weight:600">Cloudix OS</p>
   </div>
   <div class="divider"></div>
   <div class="center" style="font-size:13px;font-weight:600">${escapeHtml(new Date().toLocaleString("es-DO", { timeZone: "America/Santo_Domingo", hour12: true }))}</div>
@@ -345,7 +345,7 @@ function splitSection(
   <div class="divider"></div>
   <table><tr class="total-xl"><td>TOTAL</td><td style="text-align:right">${opts.totalLine}</td></tr></table>
   <div class="double-divider"></div>
-  <div class="footer" style="font-size:13px">CyberBistro OS — cuenta dividida</div>
+  <div class="footer" style="font-size:13px">Cloudix OS — cuenta dividida</div>
   </section>`;
 }
 
@@ -493,7 +493,7 @@ export function buildCierreDiaReceiptHtml(
   <div class="footer">
     <p style="margin:0 0 4px">Conserve para control interno</p>
     <p style="margin:0;font-size:13px;font-weight:600">No constituye comprobante fiscal</p>
-    <p style="margin:6px 0 0;font-size:13px;font-weight:600">CyberBistro OS — Cierre</p>
+    <p style="margin:6px 0 0;font-size:13px;font-weight:600">Cloudix OS — Cierre</p>
   </div>
   <div class="divider"></div>
   <div class="center" style="font-size:13px;font-weight:600">${escapeHtml(new Date().toLocaleString("es-DO", { timeZone: "America/Santo_Domingo", hour12: true }))}</div>
