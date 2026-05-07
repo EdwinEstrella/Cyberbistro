@@ -35,7 +35,7 @@
       "signAndEditExecutable": false
     },
     "nsis": {
-      "artifactName": "Cloudix-install.${ext}",
+      "artifactName": "Cloudix-Install.${ext}",
       "oneClick": false,
       "perMachine": false,
       "allowElevation": true,

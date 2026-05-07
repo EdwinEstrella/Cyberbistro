@@ -11,9 +11,15 @@
 npm run dist:win
 ```
 
-URL// https://github.com/EdwinEstrella/Cloudix/releases/latest/download/Cloudix-Install.exe
+URL fija para el botón de descarga de la web:
 
-Salida en la carpeta `release/`: instalador NSIS (`.exe`), `latest.yml` y archivos asociados que `electron-updater` usa en GitHub Releases.
+```text
+https://github.com/EdwinEstrella/Cloudix/releases/latest/download/Cloudix-Install.exe
+```
+
+`build.nsis.artifactName` está configurado como `Cloudix-Install.${ext}`, por eso cada release sube el instalador con el mismo nombre (`Cloudix-Install.exe`). GitHub resuelve `/releases/latest/download/...` hacia el release marcado como **Latest**, así que el botón de la web no necesita cambiar cuando publiques una nueva versión.
+
+Salida en la carpeta `release/`: instalador NSIS (`Cloudix-Install.exe`), `latest.yml` y archivos asociados que `electron-updater` usa en GitHub Releases.
 
 ## Publicar una nueva versión en GitHub (release **Latest**)
 
