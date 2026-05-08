@@ -343,16 +343,15 @@ export function Billing() {
     });
   }, [cycleSummaries, dateFrom, dateTo]);
 
-  const { totalRevenue, pendingCount, pendingAmount } = useMemo(() => {
+  const { totalRevenue, paidCount, cancelledCount } = useMemo(() => {
     const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const recentInvoices = invoices.filter(
       (inv) => new Date(inv.created_at) > last24h && inv.estado === "pagada"
     );
-    const pending = invoices.filter((inv) => inv.estado === "pendiente");
     return {
       totalRevenue: recentInvoices.reduce((sum, inv) => sum + inv.total, 0),
-      pendingCount: pending.length,
-      pendingAmount: pending.reduce((sum, inv) => sum + inv.total, 0),
+      paidCount: invoices.filter((inv) => inv.estado === "pagada").length,
+      cancelledCount: invoices.filter((inv) => inv.estado === "cancelada").length,
     };
   }, [invoices]);
 
@@ -556,10 +555,10 @@ export function Billing() {
             color: "text-foreground"
           },
           {
-            label: view === "facturas" ? "Pendientes" : "Facturas en Ciclos",
-            value: view === "facturas" ? pendingCount : filteredCycleSummaries.reduce((s, e) => s + e.invoices.length, 0),
+            label: view === "facturas" ? "Facturas Pagadas" : "Facturas en Ciclos",
+            value: view === "facturas" ? paidCount : filteredCycleSummaries.reduce((s, e) => s + e.invoices.length, 0),
             isMoney: false,
-            sub: view === "facturas" ? RD(pendingAmount) : "Total en ciclos",
+            sub: view === "facturas" ? `${cancelledCount} canceladas` : "Total en ciclos",
             color: "text-pink-600 dark:text-pink-400"
           },
           {
@@ -607,7 +606,6 @@ export function Billing() {
               >
                 <option value="todos">Todos los Estados</option>
                 <option value="pagada">Pagadas</option>
-                <option value="pendiente">Pendientes</option>
                 <option value="cancelada">Canceladas</option>
               </select>
               <select

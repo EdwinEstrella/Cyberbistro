@@ -21,6 +21,7 @@ const mainNavItems = [
   { label: "Cocina", icon: svgPaths.p643d217, viewBox: "0 0 20 20", path: "/cocina" },
   { label: "Entregas", icon: svgPaths.p18098d80, viewBox: "0 0 15 13.5", path: "/entregas" },
   { label: "Analíticas", icon: svgPaths.p30837e80, viewBox: "0 0 18 18", path: "/billing" },
+  { label: "Gastos", icon: svgPaths.p2fcd0500, viewBox: "0 0 18 18", path: "/gastos" },
   { label: "Cierre", icon: svgPaths.p2fcd0500, viewBox: "0 0 18 18", path: "/cierre" },
 ] as const;
 
@@ -36,7 +37,7 @@ function filterMainNavForRol(rol: string | null) {
   if (normalized === "admin") return [...mainNavItems];
   if (normalized === "cocina") return mainNavItems.filter((i) => i.path === "/cocina");
   if (normalized === "cajera") {
-    const allow = ["/dashboard", "/tables", "/entregas", "/cierre"] as const;
+    const allow = ["/dashboard", "/tables", "/entregas", "/gastos", "/cierre"] as const;
     return mainNavItems.filter((i) => allow.includes(i.path as (typeof allow)[number]));
   }
   return mainNavItems.filter((i) => i.path === "/dashboard");

@@ -12,6 +12,7 @@ const VENTA_PATHS = ["/dashboard", "/tables", "/entregas"] as const;
 
 /** Cierre de día / caja — admin ve todo; cajera y ventas también. */
 export const CIERRE_PATH = "/cierre";
+export const GASTOS_PATH = "/gastos";
 
 /**
  * Canonicaliza roles legacy para evitar duplicados operativos:
@@ -58,6 +59,7 @@ export function isAppRouteAllowed(rol: string | null, pathname: string): boolean
   if (normalized === "cajera") {
     if ((VENTA_PATHS as readonly string[]).includes(pathname)) return true;
     if (pathname === CIERRE_PATH) return true;
+    if (pathname === GASTOS_PATH) return true;
     return false;
   }
   if (normalized === "mesero") {

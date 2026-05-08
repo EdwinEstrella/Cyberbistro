@@ -384,6 +384,9 @@ export interface CierreDiaThermalData {
   totalPagado: number;
   subtotalPagado: number;
   itbisPagado: number;
+  gastosTotal?: number;
+  gastosCantidad?: number;
+  netoOperativo?: number;
   /** Filas ordenadas para el ticket. */
   porMetodo: Array<{ etiqueta: string; cantidad: number; total: number }>;
   ticketPromedioPagado: number;
@@ -457,7 +460,6 @@ export function buildCierreDiaReceiptHtml(
   <div class="double-divider"></div>
   <table>
     <tr class="header-row"><td>Facturas pagadas</td><td style="text-align:right;font-weight:bold">${data.facturasPagadas}</td></tr>
-    <tr class="header-row"><td>Facturas pendientes</td><td style="text-align:right">${data.facturasPendientes}</td></tr>
     <tr class="header-row"><td>Facturas canceladas</td><td style="text-align:right">${data.facturasCanceladas}</td></tr>
   </table>
   <div class="divider"></div>
@@ -466,6 +468,12 @@ export function buildCierreDiaReceiptHtml(
     <tr class="header-row"><td>Subtotal (pagadas)</td><td style="text-align:right">${rd(data.subtotalPagado, tenant)}</td></tr>
     <tr class="header-row"><td>ITBIS (pagadas)</td><td style="text-align:right">${rd(data.itbisPagado, tenant)}</td></tr>
     <tr class="header-row"><td>Ticket prom.</td><td style="text-align:right">${data.facturasPagadas > 0 ? rd(data.ticketPromedioPagado, tenant) : "—"}</td></tr>
+  </table>
+  <div class="divider"></div>
+  <table>
+    <tr class="header-row"><td>Gastos del ciclo</td><td style="text-align:right;font-weight:bold">${rd(data.gastosTotal ?? 0, tenant)}</td></tr>
+    <tr class="header-row"><td>Registros de gasto</td><td style="text-align:right">${data.gastosCantidad ?? 0}</td></tr>
+    <tr class="total-xl"><td>NETO OPERATIVO</td><td style="text-align:right">${rd(data.netoOperativo ?? data.totalPagado - (data.gastosTotal ?? 0), tenant)}</td></tr>
   </table>
   ${
     data.cuentasAbiertasLineas != null &&

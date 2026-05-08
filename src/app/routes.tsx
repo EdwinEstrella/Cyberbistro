@@ -4,6 +4,7 @@ import { AppLayout } from "./components/AppLayout";
 import { Dashboard } from "../features/dashboard";
 import { Tables } from "../features/tables";
 import { Billing } from "../features/billing";
+import { Gastos } from "../features/gastos";
 import { Cocina } from "../features/cocina";
 import { Entregas } from "../features/entregas";
 import { Soporte } from "../features/soporte";
@@ -21,6 +22,7 @@ export const router = createHashRouter([
       { path: "/dashboard", Component: Dashboard },
       { path: "/tables", Component: Tables },
       { path: "/billing", Component: Billing },
+      { path: "/gastos", Component: Gastos },
       { path: "/cierre", Component: Cierre },
       { path: "/cocina", Component: Cocina },
       { path: "/entregas", Component: Entregas },

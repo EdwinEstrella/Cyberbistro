@@ -24,6 +24,21 @@ interface ConsumoAbiertoRow {
   estado: string;
 }
 
+interface GastoRow {
+  id: string;
+  category_id: string | null;
+  cycle_id: string | null;
+  descripcion: string;
+  proveedor: string | null;
+  monto: number;
+  fecha_gasto: string;
+}
+
+interface GastoCategoriaRow {
+  id: string;
+  nombre: string;
+}
+
 interface CierreOperativoRow {
   id: string;
   business_day: string;
@@ -104,6 +119,8 @@ export function Cierre() {
   const [fecha, setFecha] = useState(todayYmd);
   const [cycles, setCycles] = useState<CierreOperativoRow[]>([]);
   const [facturas, setFacturas] = useState<FacturaRow[]>([]);
+  const [gastos, setGastos] = useState<GastoRow[]>([]);
+  const [gastoCategorias, setGastoCategorias] = useState<GastoCategoriaRow[]>([]);
   const [consumosAbiertos, setConsumosAbiertos] = useState<ConsumoAbiertoRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [startingCycle, setStartingCycle] = useState(false);
@@ -136,21 +153,51 @@ export function Cierre() {
     return { lineas: consumosAbiertos.length, mesasDistintas: mesaMap.size, subtotal, itbisEst: subtotal * ITBIS_RATE, totalEst: subtotal * (1 + ITBIS_RATE), porMesa: [...mesaMap.entries()].map(([mesa, st]) => ({ mesa, subtotal: st })).sort((a, b) => b.subtotal - a.subtotal) };
   }, [consumosAbiertos]);
 
+  const categoriaGastoPorId = useMemo(() => new Map(gastoCategorias.map((cat) => [cat.id, cat.nombre])), [gastoCategorias]);
+
+  const resumenGastos = useMemo(() => {
+    const total = gastos.reduce((s, gasto) => s + Number(gasto.monto), 0);
+    const porCategoriaMap = new Map<string, { etiqueta: string; cantidad: number; total: number }>();
+    for (const gasto of gastos) {
+      const etiqueta = gasto.category_id ? categoriaGastoPorId.get(gasto.category_id) ?? "Sin categoría" : "Sin categoría";
+      const cur = porCategoriaMap.get(etiqueta) ?? { etiqueta, cantidad: 0, total: 0 };
+      cur.cantidad += 1;
+      cur.total += Number(gasto.monto);
+      porCategoriaMap.set(etiqueta, cur);
+    }
+    return {
+      total,
+      cantidad: gastos.length,
+      neto: resumen.totalPagado - total,
+      porCategoria: [...porCategoriaMap.values()].sort((a, b) => b.total - a.total),
+    };
+  }, [gastos, categoriaGastoPorId, resumen.totalPagado]);
+
   const cargar = useCallback(async () => {
-    if (!tenantId) { setCycles([]); setFacturas([]); setConsumosAbiertos([]); setLoading(false); return; }
+    if (!tenantId) { setCycles([]); setFacturas([]); setGastos([]); setGastoCategorias([]); setConsumosAbiertos([]); setLoading(false); return; }
     setLoading(true); setLoadError("");
-    const [cyclesRes, consRes, openGlobalRes] = await Promise.all([
+    const [cyclesRes, consRes, openGlobalRes, categoriasRes] = await Promise.all([
       insforgeClient.database.from("cierres_operativos").select("*").eq("tenant_id", tenantId).eq("business_day", fecha).order("cycle_number", { ascending: false }),
       insforgeClient.database.from("consumos").select("mesa_numero, subtotal, estado").eq("tenant_id", tenantId).neq("estado", "pagado"),
       insforgeClient.database.from("cierres_operativos").select("id").eq("tenant_id", tenantId).is("closed_at", null).limit(1),
+      insforgeClient.database.from("gasto_categorias").select("id, nombre").eq("tenant_id", tenantId),
     ]);
     if (cyclesRes.error) { setLoadError(cyclesRes.error.message); setLoading(false); return; }
+    if (categoriasRes.error) { setLoadError(categoriasRes.error.message); setLoading(false); return; }
+    setGastoCategorias((categoriasRes.data as GastoCategoriaRow[] | null) ?? []);
     const cycleRows = cyclesRes.data as CierreOperativoRow[]; setCycles(cycleRows);
     const sel = cycleRows.find(c => !c.closed_at) ?? cycleRows[0] ?? null;
     if (sel) {
-      const factRes = await insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).gte("created_at", sel.opened_at).lte("created_at", sel.closed_at ?? new Date().toISOString()).order("created_at", { ascending: true });
+      const [factRes, gastosRes] = await Promise.all([
+        insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).gte("created_at", sel.opened_at).lte("created_at", sel.closed_at ?? new Date().toISOString()).order("created_at", { ascending: true }),
+        insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, fecha_gasto").eq("tenant_id", tenantId).eq("cycle_id", sel.id).order("fecha_gasto", { ascending: true }),
+      ]);
       setFacturas(factRes.data as FacturaRow[] ?? []);
-    } else setFacturas([]);
+      setGastos(gastosRes.data as GastoRow[] ?? []);
+    } else {
+      setFacturas([]);
+      setGastos([]);
+    }
     setConsumosAbiertos(sel?.closed_at == null ? (consRes.data as any[] ?? []) : []);
     setGlobalHasOpenCycle(!!(openGlobalRes.data?.length));
     setLoading(false);
@@ -193,10 +240,16 @@ export function Cierre() {
     if (pend?.length) { setPrintMsg("No se puede cerrar con mesas pendientes."); setPrinting(false); return; }
     const now = new Date().toISOString();
 
-    const factRes = await insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).gte("created_at", currentCycle.opened_at).lte("created_at", now).order("created_at", { ascending: true });
+    const [factRes, gastosRes] = await Promise.all([
+      insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).gte("created_at", currentCycle.opened_at).lte("created_at", now).order("created_at", { ascending: true }),
+      insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, fecha_gasto").eq("tenant_id", tenantId).eq("cycle_id", currentCycle.id).order("fecha_gasto", { ascending: true }),
+    ]);
     if (factRes.error) { setPrintMsg(factRes.error.message); setPrinting(false); return; }
+    if (gastosRes.error) { setPrintMsg(gastosRes.error.message); setPrinting(false); return; }
 
     const facturasCiclo = (factRes.data as FacturaRow[] | null) ?? [];
+    const gastosCiclo = (gastosRes.data as GastoRow[] | null) ?? [];
+    const totalGastosCiclo = gastosCiclo.reduce((s, gasto) => s + Number(gasto.monto), 0);
     const pag = facturasCiclo.filter((f: any) => f.estado === "pagada");
     if (pag.length === 0) {
       const { error: deleteError } = await insforgeClient.database.from("cierres_operativos").delete().eq("id", currentCycle.id).eq("tenant_id", tenantId).is("closed_at", null);
@@ -224,6 +277,7 @@ export function Cierre() {
         facturasPagadas: pag.length, facturasPendientes: facturasCiclo.filter((f: any) => f.estado === "pendiente").length, facturasCanceladas: facturasCiclo.filter((f: any) => f.estado === "cancelada").length,
         totalPagado: totalPag, subtotalPagado: pag.reduce((s: number, f: any) => s + Number(f.subtotal), 0), itbisPagado: pag.reduce((s: number, f: any) => s + Number(f.itbis), 0),
         porMetodo: [...metMap.values()].sort((a, b) => b.total - a.total), ticketPromedioPagado: pag.length ? totalPag / pag.length : 0,
+        gastosTotal: totalGastosCiclo, gastosCantidad: gastosCiclo.length, netoOperativo: totalPag - totalGastosCiclo,
       }, paperWidthMm);
       const res = await printThermalHtml(html);
       if (res.ok) await insforgeClient.database.from("cierres_operativos").update({ printed_at: now }).eq("id", currentCycle.id);
@@ -290,14 +344,35 @@ export function Cierre() {
            {[
              { label: "Total Cobrado", val: RD(resumen.totalPagado), color: "text-green-600 dark:text-green-400" },
              { label: "Facturas", val: resumen.pagadas.length, color: "text-foreground" },
-             { label: "Pendientes", val: `${resumen.pendientes.length} (${RD(resumen.totalPendiente)})`, color: "text-primary" },
-             { label: "Canceladas", val: resumen.canceladas.length, color: "text-destructive" }
+             { label: "Gastos", val: RD(resumenGastos.total), color: "text-primary" },
+             { label: "Neto", val: RD(resumenGastos.neto), color: resumenGastos.neto >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive" }
            ].map((st, i) => (
              <div key={i} className="bg-card rounded-[20px] border border-black/10 dark:border-white/5 p-5 shadow-sm">
                 <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">{st.label}</div>
                 <div className={`font-['Space_Grotesk'] text-xl font-bold ${st.color}`}>{st.val}</div>
              </div>
            ))}
+        </div>
+
+        <div className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 sm:p-8 shadow-sm">
+           <h2 className="font-['Space_Grotesk'] text-xl font-bold text-foreground mb-4">Gastos del ciclo</h2>
+           {resumenGastos.cantidad ? (
+             <div className="space-y-4">
+               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                 <div className="bg-primary/5 border border-primary/20 p-4 rounded-xl"><div className="text-[10px] font-bold text-primary uppercase mb-1">Total gastos</div><div className="text-primary font-bold text-lg">{RD(resumenGastos.total)}</div></div>
+                 <div className="bg-muted/50 p-4 rounded-xl border border-border"><div className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Registros</div><div className="text-foreground font-bold text-lg">{resumenGastos.cantidad}</div></div>
+                 <div className="bg-muted/50 p-4 rounded-xl border border-border"><div className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Neto operativo</div><div className={`font-bold text-lg ${resumenGastos.neto >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>{RD(resumenGastos.neto)}</div></div>
+               </div>
+               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                 {resumenGastos.porCategoria.map(cat => (
+                   <div key={cat.etiqueta} className="p-3 rounded-xl border border-black/5 dark:border-white/5 bg-muted/20 flex justify-between items-center">
+                     <span className="text-xs font-bold text-foreground">{cat.etiqueta} · {cat.cantidad}</span>
+                     <span className="text-xs text-primary font-bold tabular-nums">{RD(cat.total)}</span>
+                   </div>
+                 ))}
+               </div>
+             </div>
+           ) : <p className="text-muted-foreground font-medium py-4">No hay gastos registrados para este ciclo.</p>}
         </div>
 
         <div className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 sm:p-8 shadow-sm">
