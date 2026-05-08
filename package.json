@@ -96,6 +96,7 @@
   "dependencies": {
     "@emotion/react": "11.14.0",
     "@emotion/styled": "11.14.1",
+    "@insforge/cli": "^0.1.70",
     "@insforge/sdk": "^1.2.4",
     "@mui/icons-material": "7.3.5",
     "@mui/material": "7.3.5",

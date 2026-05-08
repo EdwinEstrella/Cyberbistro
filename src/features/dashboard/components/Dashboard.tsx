@@ -246,6 +246,7 @@ export function Dashboard() {
       const mesaToSelect = mesas.find((m) => m.numero === (location.state as any).selectMesaNumero);
       if (mesaToSelect) {
         setMesaConsumos([]);
+        setMesaAccountLoading(true);
         setSelectedMesa(mesaToSelect);
         // Clear state so it doesn't re-trigger
         window.history.replaceState({}, document.title);
@@ -285,12 +286,15 @@ export function Dashboard() {
   const panelBillItbis = panelBillSubtotal * billItbisRate;
   const panelBillTotal = panelBillSubtotal + panelBillItbis;
 
+  const hasCartItems = cart.length > 0;
+  const canSendCartToMesa = Boolean(selectedMesa && hasCartItems);
+
   const showEmptyHint =
-    cart.length === 0 &&
+    !hasCartItems &&
     (!selectedMesa || mesaAccountLoading || mesaConsumos.length === 0);
 
   const showOrderFooter =
-    cart.length > 0 || (selectedMesa && (mesaAccountLoading || mesaConsumos.length > 0));
+    hasCartItems || hasCuentaEnMesa;
 
   function addToCart(plato: Plato) {
     setCart((prev) => {
@@ -1049,7 +1053,7 @@ export function Dashboard() {
                               setIsTakeout(false);
                               if (selectedMesa?.id === mesa.id) return;
                               setMesaConsumos([]);
-                              setMesaAccountLoading(false);
+                              setMesaAccountLoading(true);
                               setSelectedMesa(mesa);
                               setCart([]);
                               // Occupation now handled after order is sent; removed premature marking
@@ -1379,22 +1383,23 @@ export function Dashboard() {
               </div>
             </div>
 
-            {/* Action buttons */}
-            <div className="grid grid-cols-1 gap-[10px]">
-              <button
-                onClick={sendToKitchen}
-                disabled={sending || !selectedMesa}
-                className="flex gap-[6px] items-center justify-center py-[12px] rounded-[12px] border-2 bg-transparent cursor-pointer transition-colors disabled:opacity-50"
-                style={{
-                  borderColor: selectedMesa ? "#59ee50" : "rgba(72,72,71,0.4)",
-                  color: selectedMesa ? "#59ee50" : "#6b7280",
-                }}
-              >
-                <span className="font-['Space_Grotesk',sans-serif] font-bold text-[11px] tracking-[1px] uppercase">
-                  {sending ? "Agregando..." : "+ Agregar"}
-                </span>
-              </button>
-            </div>
+            {canSendCartToMesa && (
+              <div className="grid grid-cols-1 gap-[10px]">
+                <button
+                  onClick={sendToKitchen}
+                  disabled={sending}
+                  className="flex gap-[6px] items-center justify-center py-[12px] rounded-[12px] border-2 bg-transparent cursor-pointer transition-colors disabled:opacity-50"
+                  style={{
+                    borderColor: "#59ee50",
+                    color: "#59ee50",
+                  }}
+                >
+                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-[11px] tracking-[1px] uppercase">
+                    {sending ? "Agregando..." : "+ Agregar"}
+                  </span>
+                </button>
+              </div>
+            )}
 
             <button
               onClick={openPaymentModal}
@@ -1415,7 +1420,7 @@ export function Dashboard() {
           </div>
         )}
 
-        {cart.length === 0 && !hasCuentaEnMesa && (
+        {cart.length === 0 && !hasCuentaEnMesa && !mesaAccountLoading && (
           <div className="px-[20px] pb-[20px] shrink-0">
             <div className="bg-muted rounded-[12px] p-[16px] text-center dark:bg-[#131313]">
               <span className="font-['Inter',sans-serif] text-[#6b7280] text-[11px] tracking-[0.5px] uppercase">
