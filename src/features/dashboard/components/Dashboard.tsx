@@ -29,10 +29,7 @@ import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { useTenantCurrency } from "../../../shared/hooks/useTenantCurrency";
 import { useTheme } from "../../../shared/context/ThemeContext";
-import {
-  MENU_CATEGORY_COLORS,
-  sortCategoriesForTabs,
-} from "../../../shared/lib/menuCategories";
+import { suggestCategoryColor, sortCategoriesForTabs } from "../../../shared/lib/menuCategories";
 import { MesaCloseAccountModal } from "../../billing/components/MesaCloseAccountModal";
 // DashboardTickerStrip removed
 import {
@@ -55,6 +52,14 @@ interface Plato {
   categoria: string;
   disponible: boolean;
   va_a_cocina: boolean;
+}
+
+interface MenuCategoryRow {
+  id: string;
+  tenant_id: string;
+  nombre: string;
+  color: string;
+  sort_order: number;
 }
 
 interface MesaBasic {
@@ -91,10 +96,6 @@ interface Consumo {
 
 const ITBIS = 0.18;
 
-function catColor(cat: string) {
-  return MENU_CATEGORY_COLORS[cat] ?? "#adaaaa";
-}
-
 export function Dashboard() {
   const { query: cartSearchQuery } = useVentaCartSearch();
   const { tenantId, user, loading: authLoading } = useAuth();
@@ -103,6 +104,7 @@ export function Dashboard() {
   const { formatMoney, currencySymbol } = useTenantCurrency();
   const isDark = theme === "dark";
   const [platos, setPlatos] = useState<Plato[]>([]);
+  const [menuCategories, setMenuCategories] = useState<MenuCategoryRow[]>([]);
   const [mesas, setMesas] = useState<MesaBasic[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [activeCategory, setActiveCategory] = useState("Todos");
@@ -150,6 +152,7 @@ export function Dashboard() {
   useEffect(() => {
     // Set initial to empty since it depends on the database
     setMesas([]);
+    setMenuCategories([]);
 
     // Esperar a tener el tenant_id antes de cargar datos
     if (!tenantId) return;
@@ -171,9 +174,18 @@ export function Dashboard() {
         .select("mesa_numero, subtotal")
         .eq("tenant_id", tenantId)
         .neq("estado", "pagado"),
+      insforgeClient.database
+        .from("menu_categories")
+        .select("id, tenant_id, nombre, color, sort_order")
+        .eq("tenant_id", tenantId)
+        .order("sort_order")
+        .order("nombre"),
       loadCantidadMesas(tenantId)
-    ]).then(([platosRes, estadosRes, consumosPendRes, cantidadMesas]) => {
+    ]).then(([platosRes, estadosRes, consumosPendRes, categoriesRes, cantidadMesas]) => {
       if (!platosRes.error && platosRes.data) setPlatos(platosRes.data as Plato[]);
+      if (!categoriesRes.error && categoriesRes.data) {
+        setMenuCategories(categoriesRes.data as MenuCategoryRow[]);
+      }
 
       const configArray = generateMesasConfig(cantidadMesas);
       let currentMesas: MesaBasic[] = configArray.map((config) => ({
@@ -254,10 +266,22 @@ export function Dashboard() {
     }
   }, [mesas, location.state]);
 
+  const categoryOrder = menuCategories.map((category) => category.nombre);
+  const categoryColorMap = useMemo(
+    () => new Map(menuCategories.map((category) => [category.nombre, category.color])),
+    [menuCategories]
+  );
   const categories = [
     "Todos",
-    ...sortCategoriesForTabs(platos.map((p) => p.categoria)),
+    ...(categoryOrder.length > 0
+      ? sortCategoriesForTabs(categoryOrder, categoryOrder)
+      : sortCategoriesForTabs(platos.map((p) => p.categoria))),
   ];
+
+  const getCatColor = useCallback(
+    (cat: string) => categoryColorMap.get(cat) ?? suggestCategoryColor(cat),
+    [categoryColorMap]
+  );
 
   const cartSearchNorm = cartSearchQuery.trim().toLowerCase();
 
@@ -856,9 +880,9 @@ export function Dashboard() {
                style={{
                 backgroundColor:
                   activeCategory === cat
-                    ? catColor(cat) === "#a1a1aa"
+                    ? getCatColor(cat) === "#a1a1aa"
                       ? "#ff906d"
-                      : catColor(cat)
+                      : getCatColor(cat)
                     : isDark ? "#1a1a1a" : "#ffffff",
                 color:
                   activeCategory === cat
@@ -866,7 +890,7 @@ export function Dashboard() {
                     : isDark ? "#a1a1aa" : "#4b5563",
                 boxShadow:
                   activeCategory === cat
-                    ? `0 0 20px ${catColor(cat)}40`
+                    ? `0 0 20px ${getCatColor(cat)}40`
                     : undefined,
                 border: activeCategory === cat ? "none" : `1px solid ${isDark ? "rgba(255,255,255,0.05)" : "rgba(15,23,42,0.08)"}`
               }}
@@ -901,7 +925,7 @@ export function Dashboard() {
           <div className="grid gap-[16px]" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))" }}>
             {filteredPlatosForGrid.map((plato) => {
               const inCart = cart.find((i) => i.plato.id === plato.id);
-              const cc = catColor(plato.categoria);
+              const cc = getCatColor(plato.categoria);
               return (
                 <div
                   key={plato.id}
@@ -1211,7 +1235,7 @@ export function Dashboard() {
           )}
 
           {cart.map((item) => {
-            const cc = catColor(item.plato.categoria);
+            const cc = getCatColor(item.plato.categoria);
             return (
               <div key={item.plato.id} className="flex gap-[12px]">
                 {/* Category color indicator */}

@@ -47,14 +47,6 @@ const STATUS_INDICATORS = (
   </>
 );
 
-const BIOMETRIC_INDICATORS = (
-  <div className="flex gap-1 sm:gap-1 items-start">
-    <div className="bg-[rgba(255,106,160,0.4)] h-2 sm:h-3 rounded-[9999px] w-1 sm:w-1 animate-pulse" />
-    <div className="bg-[#ff6aa0] h-2 sm:h-3 rounded-[9999px] w-1 sm:w-1 animate-pulse" />
-    <div className="bg-[rgba(255,106,160,0.4)] h-2 sm:h-3 rounded-[9999px] w-1 sm:w-1 animate-pulse" />
-  </div>
-);
-
 function extractRefreshTokenFromSignInPayload(data: unknown): string | null {
   if (!data || typeof data !== "object") return null;
   const maybeData = data as any;

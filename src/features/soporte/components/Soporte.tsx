@@ -1,12 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Navigate, useNavigate } from "react-router";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { useTenantCurrency } from "../../../shared/hooks/useTenantCurrency";
 import { APP_ACCESS_PIN } from "../../../shared/lib/accessPin";
 import {
-  MENU_CATEGORIES,
-  MENU_CATEGORY_COLORS,
+  DEFAULT_MENU_CATEGORY_SUGGESTIONS,
+  normalizeCategoryName,
+  suggestCategoryColor,
   sortCategoriesForTabs,
 } from "../../../shared/lib/menuCategories";
 import { loadCantidadMesas, saveCantidadMesas } from "../../../shared/lib/tenantMesasSettings";
@@ -115,11 +116,13 @@ interface Plato {
   va_a_cocina: boolean;
 }
 
-function catColor(cat: string) {
-  return MENU_CATEGORY_COLORS[cat] ?? "#adaaaa";
+interface MenuCategoryRow {
+  id: string;
+  tenant_id: string;
+  nombre: string;
+  color: string;
+  sort_order: number;
 }
-
-const CATEGORIAS = MENU_CATEGORIES;
 
 type FormMode = "add" | "edit" | null;
 
@@ -127,6 +130,7 @@ function CartaPanel() {
   const { tenantId, loading: authLoading } = useAuth();
   const { formatMoney, currencySymbol } = useTenantCurrency();
   const [platos, setPlatos] = useState<Plato[]>([]);
+  const [menuCategories, setMenuCategories] = useState<MenuCategoryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [mode, setMode] = useState<FormMode>(null);
@@ -139,27 +143,47 @@ function CartaPanel() {
     if (authLoading) return;
     if (!tenantId) {
       setPlatos([]);
+      setMenuCategories([]);
       setLoading(false);
       return;
     }
     setLoading(true);
-    insforgeClient.database
-      .from("platos")
-      .select("*")
-      .eq("tenant_id", tenantId)
-      .order("categoria")
-      .then(({ data, error }) => {
-        if (!error && data) setPlatos(data as Plato[]);
+    Promise.all([
+      insforgeClient.database
+        .from("platos")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .order("categoria"),
+      insforgeClient.database
+        .from("menu_categories")
+        .select("id, tenant_id, nombre, color, sort_order")
+        .eq("tenant_id", tenantId)
+        .order("sort_order")
+        .order("nombre"),
+    ]).then(([platosRes, categoriesRes]) => {
+        if (!platosRes.error && platosRes.data) setPlatos(platosRes.data as Plato[]);
+        if (!categoriesRes.error && categoriesRes.data) {
+          setMenuCategories(categoriesRes.data as MenuCategoryRow[]);
+        }
         setLoading(false);
       });
   }, [tenantId, authLoading]);
 
   const selected = platos.find((p) => p.id === selectedId) ?? null;
-  const categories = ["Todos", ...sortCategoriesForTabs(platos.map((p) => p.categoria))];
+  const categoryOrder = menuCategories.map((category) => category.nombre);
+  const categoryColorMap = useMemo(
+    () => new Map(menuCategories.map((category) => [category.nombre, category.color])),
+    [menuCategories]
+  );
+  const categoryOptions = categoryOrder.length > 0
+    ? sortCategoriesForTabs(categoryOrder, categoryOrder)
+    : sortCategoriesForTabs(["General", ...platos.map((p) => p.categoria)]);
+  const categories = ["Todos", ...sortCategoriesForTabs([...categoryOptions, ...platos.map((p) => p.categoria)], categoryOptions)];
+  const getCatColor = (cat: string) => categoryColorMap.get(cat) ?? suggestCategoryColor(cat);
   const filtered = activeFilter === "Todos" ? platos : platos.filter((p) => p.categoria === activeFilter);
 
   function openAdd() {
-    setForm({ nombre: "", precio: "", categoria: "General", disponible: true, va_a_cocina: true });
+    setForm({ nombre: "", precio: "", categoria: categoryOptions[0] ?? "General", disponible: true, va_a_cocina: true });
     setSelectedId(null);
     setMode("add");
     setError("");
@@ -172,6 +196,23 @@ function CartaPanel() {
     setError("");
   }
 
+  async function ensureCategoryExists(nombre: string, color = suggestCategoryColor(nombre)) {
+    if (!tenantId) return null;
+    const normalized = normalizeCategoryName(nombre);
+    const existing = menuCategories.find((category) => category.nombre.toLowerCase() === normalized.toLowerCase());
+    if (existing) return existing;
+
+    const { data, error: insertError } = await insforgeClient.database
+      .from("menu_categories")
+      .insert([{ tenant_id: tenantId, nombre: normalized, color, sort_order: menuCategories.length }])
+      .select()
+      .single();
+    if (insertError || !data) return null;
+    const row = data as MenuCategoryRow;
+    setMenuCategories((prev) => [...prev, row]);
+    return row;
+  }
+
   async function handleSave() {
     if (!form.nombre.trim()) { setError("El nombre es requerido."); return; }
     const precio = parseFloat(form.precio);
@@ -182,6 +223,7 @@ function CartaPanel() {
     }
     setSaving(true);
     setError("");
+    await ensureCategoryExists(form.categoria, getCatColor(form.categoria));
 
     if (mode === "add") {
       const { data, error: err } = await insforgeClient.database
@@ -289,7 +331,7 @@ function CartaPanel() {
             <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, ${CELL}px)`, gap: `${GAP}px` }}>
               {filtered.map((plato) => {
                 const isSelected = selectedId === plato.id && mode === "edit";
-                const cc = catColor(plato.categoria);
+                const cc = getCatColor(plato.categoria);
                 return (
                   <div
                     key={plato.id}
@@ -345,7 +387,7 @@ function CartaPanel() {
             <div className="flex flex-col gap-[6px]">
               <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">Categoría</label>
               <select value={form.categoria} onChange={e => setForm(f => ({ ...f, categoria: e.target.value }))} className="input-field cursor-pointer">
-                {CATEGORIAS.map(c => <option key={c} value={c}>{c}</option>)}
+                {categoryOptions.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             
@@ -392,6 +434,314 @@ function CartaPanel() {
 // ─────────────────────────────────────────────
 // USUARIOS PANEL
 // ─────────────────────────────────────────────
+function CategoriasPanel() {
+  const { tenantId, loading: authLoading } = useAuth();
+  const [platos, setPlatos] = useState<Plato[]>([]);
+  const [menuCategories, setMenuCategories] = useState<MenuCategoryRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [categoryDraft, setCategoryDraft] = useState("");
+  const [categoryColorDraft, setCategoryColorDraft] = useState("#ff906d");
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (!tenantId) {
+      setPlatos([]);
+      setMenuCategories([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    Promise.all([
+      insforgeClient.database.from("platos").select("*").eq("tenant_id", tenantId).order("categoria"),
+      insforgeClient.database.from("menu_categories").select("id, tenant_id, nombre, color, sort_order").eq("tenant_id", tenantId).order("sort_order").order("nombre"),
+    ]).then(([platosRes, categoriesRes]) => {
+      if (!platosRes.error && platosRes.data) setPlatos(platosRes.data as Plato[]);
+      if (!categoriesRes.error && categoriesRes.data) setMenuCategories(categoriesRes.data as MenuCategoryRow[]);
+      setLoading(false);
+    });
+  }, [tenantId, authLoading]);
+
+  const categoryOrder = menuCategories.map((category) => category.nombre);
+  const categoryOptions = categoryOrder.length > 0
+    ? sortCategoriesForTabs(categoryOrder, categoryOrder)
+    : sortCategoriesForTabs(["General", ...platos.map((p) => p.categoria)]);
+  const categorySuggestions = sortCategoriesForTabs(
+    [
+      ...DEFAULT_MENU_CATEGORY_SUGGESTIONS,
+      ...platos.map((p) => p.categoria),
+    ].filter((name) => !categoryOptions.some((created) => created.toLowerCase() === normalizeCategoryName(name).toLowerCase())),
+    DEFAULT_MENU_CATEGORY_SUGGESTIONS
+  );
+
+  function assignedCountFor(categoryName: string) {
+    return platos.filter((plato) => plato.categoria === categoryName).length;
+  }
+
+  function resetForm() {
+    setEditingCategoryId(null);
+    setCategoryDraft("");
+    setCategoryColorDraft("#ff906d");
+    setError("");
+  }
+
+  function startEditCategory(category: MenuCategoryRow) {
+    setEditingCategoryId(category.id);
+    setCategoryDraft(category.nombre);
+    setCategoryColorDraft(category.color);
+    setError("");
+  }
+
+  async function ensureCategoryExists(nombre: string, color = suggestCategoryColor(nombre)) {
+    if (!tenantId) return null;
+    const normalized = normalizeCategoryName(nombre);
+    const existing = menuCategories.find((category) => category.nombre.toLowerCase() === normalized.toLowerCase());
+    if (existing) return existing;
+
+    const { data, error: insertError } = await insforgeClient.database
+      .from("menu_categories")
+      .insert([{ tenant_id: tenantId, nombre: normalized, color, sort_order: menuCategories.length }])
+      .select()
+      .single();
+    if (insertError || !data) {
+      setError(insertError?.message || "No se pudo crear la categoría.");
+      return null;
+    }
+    const row = data as MenuCategoryRow;
+    setMenuCategories((prev) => [...prev, row]);
+    return row;
+  }
+
+  async function handleSaveCategory() {
+    if (!tenantId) return;
+    const nombre = normalizeCategoryName(categoryDraft);
+    if (!nombre) {
+      setError("Escribe un nombre de categoría.");
+      return;
+    }
+    const duplicated = menuCategories.some(
+      (category) => category.id !== editingCategoryId && category.nombre.toLowerCase() === nombre.toLowerCase()
+    );
+    if (duplicated) {
+      setError("Ya existe una categoría con ese nombre.");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+
+    if (editingCategoryId) {
+      const current = menuCategories.find((category) => category.id === editingCategoryId);
+      const { data, error: updateError } = await insforgeClient.database
+        .from("menu_categories")
+        .update({ nombre, color: categoryColorDraft })
+        .eq("id", editingCategoryId)
+        .eq("tenant_id", tenantId)
+        .select()
+        .single();
+      if (updateError || !data) {
+        setError(updateError?.message || "No se pudo actualizar la categoría.");
+        setSaving(false);
+        return;
+      }
+      if (current && current.nombre !== nombre) {
+        const { error: platosError } = await insforgeClient.database
+          .from("platos")
+          .update({ categoria: nombre })
+          .eq("tenant_id", tenantId)
+          .eq("categoria", current.nombre);
+        if (platosError) {
+          setError(`Categoría guardada, pero no se pudieron actualizar los platos: ${platosError.message}`);
+          setSaving(false);
+          return;
+        }
+        setPlatos((prev) => prev.map((plato) => plato.categoria === current.nombre ? { ...plato, categoria: nombre } : plato));
+      }
+      setMenuCategories((prev) => prev.map((category) => category.id === editingCategoryId ? (data as MenuCategoryRow) : category));
+      resetForm();
+      setSaving(false);
+      return;
+    }
+
+    const created = await ensureCategoryExists(nombre, categoryColorDraft);
+    if (created) resetForm();
+    setSaving(false);
+  }
+
+  async function handleDeleteCategory(category: MenuCategoryRow) {
+    if (!tenantId) return;
+    const assignedCount = assignedCountFor(category.nombre);
+    if (assignedCount > 0) {
+      if (category.nombre === "General") {
+        setError("No puedes eliminar General mientras tenga platos asignados.");
+        return;
+      }
+      if (!confirm(`Eliminar "${category.nombre}"?\n\n${assignedCount} plato(s) pasarán a General.`)) return;
+      await ensureCategoryExists("General", "#a1a1aa");
+      const { error: platosError } = await insforgeClient.database
+        .from("platos")
+        .update({ categoria: "General" })
+        .eq("tenant_id", tenantId)
+        .eq("categoria", category.nombre);
+      if (platosError) {
+        setError(platosError.message);
+        return;
+      }
+      setPlatos((prev) => prev.map((plato) => plato.categoria === category.nombre ? { ...plato, categoria: "General" } : plato));
+    } else if (!confirm(`Eliminar categoría "${category.nombre}"?`)) {
+      return;
+    }
+
+    const { error: deleteError } = await insforgeClient.database
+      .from("menu_categories")
+      .delete()
+      .eq("id", category.id)
+      .eq("tenant_id", tenantId);
+    if (deleteError) {
+      setError(deleteError.message);
+      return;
+    }
+    setMenuCategories((prev) => prev.filter((item) => item.id !== category.id));
+    if (editingCategoryId === category.id) resetForm();
+  }
+
+  async function handleUseSuggestion(name: string) {
+    const normalized = normalizeCategoryName(name);
+    const created = await ensureCategoryExists(normalized, suggestCategoryColor(normalized));
+    if (created) resetForm();
+  }
+
+  if (loading) return <div className="flex-1 flex items-center justify-center font-['Space_Grotesk'] text-muted-foreground">Cargando categorías...</div>;
+
+  return (
+    <div className="flex-1 overflow-y-auto bg-background p-4 sm:p-8 transition-colors duration-300">
+      <div className="mx-auto grid max-w-[1100px] grid-cols-1 gap-6 lg:grid-cols-[1fr_340px]">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="font-['Space_Grotesk'] text-2xl font-bold text-foreground">Categorías</h2>
+              <p className="mt-1 text-[13px] text-muted-foreground">Organiza la carta de este restaurante sin afectar otros negocios.</p>
+            </div>
+            <span className="rounded-full border border-black/10 bg-card px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground dark:border-white/10">
+              {menuCategories.length} creadas
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {menuCategories.map((category) => {
+              const assignedCount = assignedCountFor(category.nombre);
+              return (
+                <div key={category.id} className="rounded-[14px] border border-black/10 bg-card p-4 shadow-sm dark:border-white/10">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span className="mt-1 size-4 shrink-0 rounded-full" style={{ backgroundColor: category.color }} />
+                      <div className="min-w-0">
+                        <div className="font-['Space_Grotesk'] text-[16px] font-bold uppercase leading-tight text-foreground">
+                          {category.nombre}
+                        </div>
+                        <div className="mt-1 text-[11px] text-muted-foreground">
+                          {assignedCount} plato{assignedCount === 1 ? "" : "s"} asignado{assignedCount === 1 ? "" : "s"}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 gap-2">
+                      <button type="button" onClick={() => startEditCategory(category)} className="rounded-[8px] border border-black/10 bg-muted px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground cursor-pointer dark:border-white/10">
+                        Editar
+                      </button>
+                      <button type="button" onClick={() => void handleDeleteCategory(category)} className="rounded-[8px] border border-destructive/20 bg-destructive/10 px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-destructive cursor-pointer">
+                        Eliminar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {categorySuggestions.length > 0 && (
+            <div className="rounded-[16px] border border-black/10 bg-card p-4 dark:border-white/10">
+              <div className="mb-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Sugeridas</div>
+              <div className="flex flex-wrap gap-2">
+                {categorySuggestions.slice(0, 14).map((name) => (
+                  <button key={name} type="button" onClick={() => void handleUseSuggestion(name)} className="rounded-full border border-black/10 bg-muted px-3 py-2 text-[11px] font-bold text-muted-foreground cursor-pointer hover:text-foreground dark:border-white/10">
+                    + {name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="h-fit rounded-[18px] border border-black/10 bg-card p-5 shadow-sm dark:border-white/10">
+          <div className="mb-4">
+            <h3 className="font-['Space_Grotesk'] text-lg font-bold text-foreground">
+              {editingCategoryId ? "Editar categoría" : "Nueva categoría"}
+            </h3>
+            <p className="mt-1 text-[12px] text-muted-foreground">El nombre se usará en la carta, POS, cocina y facturación.</p>
+          </div>
+          {error && (
+            <div className="mb-4 rounded-[10px] border border-destructive/20 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
+              {error}
+            </div>
+          )}
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="ml-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Nombre</label>
+              <input
+                type="text"
+                value={categoryDraft}
+                onChange={(e) => {
+                  setCategoryDraft(e.target.value);
+                  if (!editingCategoryId) setCategoryColorDraft(suggestCategoryColor(e.target.value));
+                }}
+                className="input-field"
+                placeholder="Ej. Parrilla"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="ml-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Color</label>
+              <div className="flex items-center gap-3">
+                <input type="color" value={categoryColorDraft} onChange={(e) => setCategoryColorDraft(e.target.value)} className="h-[44px] w-[58px] rounded-[12px] border border-border bg-transparent p-1 cursor-pointer" aria-label="Color de categoría" />
+                <div className="flex-1 rounded-[12px] border border-black/10 bg-muted px-3 py-2 text-[12px] font-bold text-foreground dark:border-white/10">
+                  {categoryColorDraft}
+                </div>
+              </div>
+            </div>
+            <button type="button" onClick={() => void handleSaveCategory()} disabled={saving} className="rounded-xl bg-primary py-3 font-bold uppercase tracking-widest text-primary-foreground border-none cursor-pointer disabled:opacity-50">
+              {saving ? "Guardando..." : editingCategoryId ? "Guardar cambios" : "Crear categoría"}
+            </button>
+            {editingCategoryId && (
+              <button type="button" onClick={resetForm} className="rounded-xl border border-black/10 bg-muted py-3 font-bold uppercase tracking-widest text-muted-foreground cursor-pointer dark:border-white/10">
+                Cancelar edición
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+      <style>{`
+        .input-field {
+          width: 100%;
+          background: var(--muted);
+          border: 1px solid var(--border);
+          border-radius: 12px;
+          padding: 12px 14px;
+          font-family: 'Inter', sans-serif;
+          font-size: 14px;
+          color: var(--foreground);
+          outline: none;
+          transition: all 0.2s;
+        }
+        .input-field:focus {
+          border-color: var(--primary);
+          background: transparent;
+        }
+      `}</style>
+    </div>
+  );
+}
+
 function UsuariosPanel() {
   const { tenantId, tenantUser, user } = useAuth();
   const navigate = useNavigate();
@@ -610,7 +960,7 @@ function MesasPanel() {
 // ─────────────────────────────────────────────
 // MAIN PANEL (tabs after unlock)
 // ─────────────────────────────────────────────
-type Tab = "usuarios" | "carta" | "mesas";
+type Tab = "usuarios" | "carta" | "categorias" | "mesas";
 
 function SoportePanel({ onLock }: { onLock: () => void }) {
   const [activeTab, setActiveTab] = useState<Tab>("carta");
@@ -621,13 +971,13 @@ function SoportePanel({ onLock }: { onLock: () => void }) {
         <div className="flex items-end gap-6">
           <h1 className="font-['Space_Grotesk'] font-bold text-foreground text-2xl pb-4">Panel Soporte</h1>
           <div className="flex gap-1">
-            {(["carta", "usuarios", "mesas"] as Tab[]).map((tab) => (
+            {(["carta", "usuarios", "mesas", "categorias"] as Tab[]).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
                 className={`px-5 py-4 font-['Space_Grotesk'] font-bold text-[13px] tracking-widest uppercase border-b-2 transition-all bg-transparent cursor-pointer ${activeTab === tab ? "text-primary border-primary" : "text-muted-foreground border-transparent hover:text-foreground"}`}
               >
-                {tab === "carta" ? "Carta" : tab === "usuarios" ? "Usuarios" : "Mesas"}
+                {tab === "carta" ? "Carta" : tab === "usuarios" ? "Usuarios" : tab === "mesas" ? "Mesas" : "Categorías"}
               </button>
             ))}
           </div>
@@ -635,7 +985,7 @@ function SoportePanel({ onLock }: { onLock: () => void }) {
         <button onClick={onLock} className="px-4 py-2 mb-4 bg-muted text-muted-foreground border border-border rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-black/5 dark:hover:bg-white/10 transition-all cursor-pointer">Cerrar Sesión</button>
       </div>
       <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-        {activeTab === "carta" ? <CartaPanel /> : activeTab === "usuarios" ? <UsuariosPanel /> : <MesasPanel />}
+        {activeTab === "carta" ? <CartaPanel /> : activeTab === "usuarios" ? <UsuariosPanel /> : activeTab === "mesas" ? <MesasPanel /> : <CategoriasPanel />}
       </div>
     </div>
   );
