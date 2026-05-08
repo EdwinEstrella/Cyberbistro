@@ -4,7 +4,7 @@ import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { APP_ACCESS_PIN } from "../../../shared/lib/accessPin";
 import { PinGateModal } from "../../../shared/components/PinGate";
-import { buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
+import { buildCierreDiaReceiptHtml, buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 // useTheme removed
@@ -58,6 +58,25 @@ interface CierreOperativoRow {
   printed_at: string | null;
 }
 
+interface ExpenseCategory {
+  id: string;
+  nombre: string;
+  color?: string | null;
+}
+
+interface Expense {
+  id: string;
+  tenant_id?: string;
+  category_id: string | null;
+  cycle_id: string | null;
+  descripcion: string;
+  proveedor: string | null;
+  monto: number;
+  metodo_pago: string | null;
+  fecha_gasto: string;
+  notas: string | null;
+}
+
 interface CycleMethodSummary {
   method: string;
   label: string;
@@ -71,7 +90,10 @@ interface CycleSummary {
   paidInvoices: Invoice[];
   pendingInvoices: Invoice[];
   cancelledInvoices: Invoice[];
+  expenses: Expense[];
   totalSold: number;
+  totalExpenses: number;
+  netTotal: number;
   subtotalSold: number;
   taxSold: number;
   avgTicket: number;
@@ -79,6 +101,7 @@ interface CycleSummary {
   lastSaleAt: string | null;
   methodBreakdown: CycleMethodSummary[];
   categoryBreakdown: { category: string; count: number; total: number }[];
+  expenseCategoryBreakdown: { category: string; count: number; total: number; color?: string | null }[];
 }
 
 const statusConfig: Record<InvoiceStatus, { label: string; color: string; bg: string; shadow?: string }> = {
@@ -176,12 +199,22 @@ function businessDayInFilter(businessDay: string, from: string, to: string): boo
   return true;
 }
 
+function ymdToLongLabel(ymd: string): string {
+  const normalized = ymd.includes("T") ? ymd.slice(0, 10) : ymd;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalized);
+  if (!match) return ymd;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return new Intl.DateTimeFormat("es-DO", { weekday: "long", year: "numeric", month: "long", day: "numeric" }).format(date);
+}
+
 export function Billing() {
   const { tenantId, loading: authLoading } = useAuth();
   // theme was declared but never read
   const [view, setView] = useState<BillingView>("facturas");
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [cycles, setCycles] = useState<CierreOperativoRow[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<string>("todos");
@@ -197,12 +230,14 @@ export function Billing() {
     if (!tenantId) {
       setInvoices([]);
       setCycles([]);
+      setExpenses([]);
+      setExpenseCategories([]);
       setLoading(false);
       return;
     }
 
     setLoading(true);
-    const [invoicesRes, cyclesRes] = await Promise.all([
+    const [invoicesRes, cyclesRes, expensesRes, expenseCategoriesRes] = await Promise.all([
       insforgeClient.database
         .from("facturas")
         .select("*")
@@ -213,6 +248,15 @@ export function Billing() {
         .select("id, business_day, cycle_number, opened_at, closed_at, printed_at")
         .eq("tenant_id", tenantId)
         .order("opened_at", { ascending: false }),
+      insforgeClient.database
+        .from("gastos")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .order("fecha_gasto", { ascending: false }),
+      insforgeClient.database
+        .from("gasto_categorias")
+        .select("id, nombre, color")
+        .eq("tenant_id", tenantId),
     ]);
 
     if (!invoicesRes.error && invoicesRes.data) {
@@ -226,6 +270,18 @@ export function Billing() {
       setCycles(cyclesRes.data as CierreOperativoRow[]);
     } else {
       setCycles([]);
+    }
+
+    if (!expensesRes.error && expensesRes.data) {
+      setExpenses(expensesRes.data as Expense[]);
+    } else {
+      setExpenses([]);
+    }
+
+    if (!expenseCategoriesRes.error && expenseCategoriesRes.data) {
+      setExpenseCategories(expenseCategoriesRes.data as ExpenseCategory[]);
+    } else {
+      setExpenseCategories([]);
     }
 
     setCurrentPage(1);
@@ -259,6 +315,8 @@ export function Billing() {
   }, [invoices, statusFilter, methodFilter, dateFrom, dateTo]);
 
   const cycleSummaries = useMemo<CycleSummary[]>(() => {
+    const expenseCategoryById = new Map(expenseCategories.map((cat) => [cat.id, cat]));
+
     return cycles.map((cycle) => {
       const cycleEndIso = cycle.closed_at ?? new Date().toISOString();
       const cycleInvoices = invoices
@@ -270,17 +328,22 @@ export function Billing() {
           );
         })
         .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      const cycleExpenses = expenses
+        .filter((expense) => expense.cycle_id === cycle.id)
+        .sort((a, b) => new Date(a.fecha_gasto).getTime() - new Date(b.fecha_gasto).getTime());
 
       const paidInvoices = cycleInvoices.filter((inv) => inv.estado === "pagada");
       const pendingInvoices = cycleInvoices.filter((inv) => inv.estado === "pendiente");
       const cancelledInvoices = cycleInvoices.filter((inv) => inv.estado === "cancelada");
       const totalSold = paidInvoices.reduce((sum, inv) => sum + inv.total, 0);
+      const totalExpenses = cycleExpenses.reduce((sum, expense) => sum + Number(expense.monto), 0);
       const subtotalSold = paidInvoices.reduce((sum, inv) => sum + inv.subtotal, 0);
       const taxSold = paidInvoices.reduce((sum, inv) => sum + inv.itbis, 0);
       const avgTicket = paidInvoices.length > 0 ? totalSold / paidInvoices.length : 0;
 
       const methodMap = new Map<string, CycleMethodSummary>();
       const categoryMap = new Map<string, { count: number; total: number }>();
+      const expenseCategoryMap = new Map<string, { category: string; count: number; total: number; color?: string | null }>();
       
       for (const inv of paidInvoices) {
         const display = getMethodDisplay(inv.metodo_pago);
@@ -305,13 +368,25 @@ export function Billing() {
         }
       }
 
+      for (const expense of cycleExpenses) {
+        const cat = expense.category_id ? expenseCategoryById.get(expense.category_id) : null;
+        const label = cat?.nombre || "Sin categoría";
+        const current = expenseCategoryMap.get(label) ?? { category: label, count: 0, total: 0, color: cat?.color };
+        current.count += 1;
+        current.total += Number(expense.monto);
+        expenseCategoryMap.set(label, current);
+      }
+
       return {
         cycle,
         invoices: cycleInvoices,
         paidInvoices,
         pendingInvoices,
         cancelledInvoices,
+        expenses: cycleExpenses,
         totalSold,
+        totalExpenses,
+        netTotal: totalSold - totalExpenses,
         subtotalSold,
         taxSold,
         avgTicket,
@@ -319,9 +394,10 @@ export function Billing() {
         lastSaleAt: cycleInvoices[cycleInvoices.length - 1]?.created_at ?? null,
         methodBreakdown: [...methodMap.values()].sort((a, b) => b.total - a.total),
         categoryBreakdown: [...categoryMap.entries()].map(([category, data]) => ({ category, ...data })).sort((a, b) => b.total - a.total),
+        expenseCategoryBreakdown: [...expenseCategoryMap.values()].sort((a, b) => b.total - a.total),
       };
     });
-  }, [cycles, invoices]);
+  }, [cycles, invoices, expenses, expenseCategories]);
 
   const filteredCycleSummaries = useMemo(() => {
     return cycleSummaries.filter(({ cycle, invoices: cycleInvoices }) => {
@@ -359,11 +435,14 @@ export function Billing() {
     const closedCycles = filteredCycleSummaries.filter((entry) => entry.cycle.closed_at != null);
     const activeCycles = filteredCycleSummaries.filter((entry) => entry.cycle.closed_at == null);
     const totalCycleSales = filteredCycleSummaries.reduce((sum, entry) => sum + entry.totalSold, 0);
+    const totalCycleExpenses = filteredCycleSummaries.reduce((sum, entry) => sum + entry.totalExpenses, 0);
     return {
       totalCycles: filteredCycleSummaries.length,
       closedCycles: closedCycles.length,
       activeCycles: activeCycles.length,
       totalCycleSales,
+      totalCycleExpenses,
+      netCycleTotal: totalCycleSales - totalCycleExpenses,
     };
   }, [filteredCycleSummaries]);
 
@@ -431,6 +510,64 @@ export function Billing() {
       }
     },
     [tenantId]
+  );
+
+  const printCycleReport = useCallback(
+    async (entry: CycleSummary) => {
+      if (!tenantId || !entry.cycle.closed_at) return;
+
+      const { data: tenant, error: tenantError } = await insforgeClient.database
+        .from("tenants")
+        .select("nombre_negocio, rnc, direccion, telefono, logo_url")
+        .eq("id", tenantId)
+        .single();
+
+      if (tenantError || !tenant) {
+        console.error("Error al cargar datos del negocio para imprimir cierre:", tenantError);
+        return;
+      }
+
+      const paperWidthMm = getThermalPrintSettings().paperWidthMm;
+      const html = buildCierreDiaReceiptHtml(
+        tenant as any,
+        {
+          fechaOperacion: ymdToLongLabel(entry.cycle.business_day),
+          cicloNumero: entry.cycle.cycle_number,
+          generadoEn: formatDateTime(new Date().toISOString()),
+          generadoAtIso: new Date().toISOString(),
+          abiertoAtIso: entry.cycle.opened_at,
+          cerradoAtIso: entry.cycle.closed_at,
+          facturasPagadas: entry.paidInvoices.length,
+          facturasPendientes: entry.pendingInvoices.length,
+          totalPagado: entry.totalSold,
+          subtotalPagado: entry.subtotalSold,
+          itbisPagado: entry.taxSold,
+          gastosTotal: entry.totalExpenses,
+          gastosCantidad: entry.expenses.length,
+          netoOperativo: entry.netTotal,
+          porMetodo: entry.methodBreakdown.map((method) => ({
+            etiqueta: method.label,
+            cantidad: method.count,
+            total: method.total,
+          })),
+          ticketPromedioPagado: entry.avgTicket,
+        },
+        paperWidthMm
+      );
+
+      const res = await printThermalHtml(html);
+      if (res.ok) {
+        await insforgeClient.database
+          .from("cierres_operativos")
+          .update({ printed_at: new Date().toISOString() })
+          .eq("id", entry.cycle.id)
+          .eq("tenant_id", tenantId);
+        await loadBillingData();
+      } else if (res.error) {
+        console.warn("Impresion cierre:", res.error);
+      }
+    },
+    [tenantId, loadBillingData]
   );
 
   const deleteInvoiceAndTraces = useCallback(
@@ -544,7 +681,7 @@ export function Billing() {
             label: view === "facturas" ? "Ingreso Total (24h)" : "Venta Total en Ciclos",
             value: (view === "facturas" ? totalRevenue : cycleKpis.totalCycleSales),
             isMoney: true,
-            sub: view === "facturas" ? "Facturas recientes" : `${cycleKpis.totalCycles} ciclos`,
+            sub: view === "facturas" ? "Facturas recientes" : `Gastos: ${RD(cycleKpis.totalCycleExpenses)}`,
             color: "text-green-600 dark:text-green-400"
           },
           {
@@ -555,10 +692,10 @@ export function Billing() {
             color: "text-foreground"
           },
           {
-            label: view === "facturas" ? "Facturas Pagadas" : "Facturas en Ciclos",
-            value: view === "facturas" ? paidCount : filteredCycleSummaries.reduce((s, e) => s + e.invoices.length, 0),
-            isMoney: false,
-            sub: view === "facturas" ? `${cancelledCount} canceladas` : "Total en ciclos",
+            label: view === "facturas" ? "Facturas Pagadas" : "Neto en Ciclos",
+            value: view === "facturas" ? paidCount : cycleKpis.netCycleTotal,
+            isMoney: view !== "facturas",
+            sub: view === "facturas" ? `${cancelledCount} canceladas` : "Ventas menos gastos",
             color: "text-pink-600 dark:text-pink-400"
           },
           {
@@ -696,11 +833,12 @@ export function Billing() {
                          <h2 className="font-['Space_Grotesk',sans-serif] text-[28px] font-bold text-foreground">Día {entry.cycle.business_day}</h2>
                          <p className="text-muted-foreground text-[14px]">Operación: {formatDateTime(entry.cycle.opened_at)} - {formatDateTime(entry.cycle.closed_at)}</p>
                       </div>
+                      <div className="flex flex-col gap-3 lg:items-end">
                       <div className="flex gap-4">
                          {[
                            { label: "Vendido", val: RD(entry.totalSold), color: "text-foreground" },
-                           { label: "Facturas", val: entry.invoices.length, color: "text-foreground" },
-                           { label: "Promedio", val: RD(entry.avgTicket), color: "text-primary" }
+                           { label: "Gastos", val: RD(entry.totalExpenses), color: "text-primary" },
+                           { label: "Neto", val: RD(entry.netTotal), color: entry.netTotal >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive" }
                          ].map((st, j) => (
                            <div key={j} className="bg-muted/50 rounded-2xl px-6 py-4 border border-black/5 dark:border-white/5">
                               <div className="text-[10px] font-bold uppercase text-muted-foreground mb-1">{st.label}</div>
@@ -708,15 +846,26 @@ export function Billing() {
                            </div>
                          ))}
                       </div>
+                      {entry.cycle.closed_at && (
+                        <button
+                          type="button"
+                          onClick={() => void printCycleReport(entry)}
+                          className="inline-flex items-center gap-2 rounded-xl bg-muted px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest text-foreground hover:bg-black/5 dark:hover:bg-white/10 border border-border"
+                        >
+                          <Printer size={15} />
+                          Reimprimir cierre
+                        </button>
+                      )}
+                      </div>
                    </div>
 
                    <button onClick={() => setExpandedCycleId(expandedCycleId === entry.cycle.id ? null : entry.cycle.id)} className="flex items-center gap-2 text-primary font-bold text-[13px] uppercase tracking-wider hover:opacity-80 transition-all border-none bg-transparent cursor-pointer">
-                      {expandedCycleId === entry.cycle.id ? "Ocultar detalle" : "Ver detalle de ventas"}
+                      {expandedCycleId === entry.cycle.id ? "Ocultar detalle" : "Ver detalle de ciclo"}
                       <ChevronDown size={16} className={`transition-transform ${expandedCycleId === entry.cycle.id ? "rotate-180" : ""}`} />
                    </button>
                    
                    {expandedCycleId === entry.cycle.id && (
-                     <div className="pt-6 mt-2 border-t border-black/10 dark:border-white/5 animate-in fade-in slide-in-from-top-2 grid grid-cols-1 md:grid-cols-2 gap-8">
+                     <div className="pt-6 mt-2 border-t border-black/10 dark:border-white/5 animate-in fade-in slide-in-from-top-2 grid grid-cols-1 xl:grid-cols-3 gap-8">
                         <div>
                           <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-4">Por Categoria</div>
                           <div className="space-y-3">
@@ -747,6 +896,52 @@ export function Billing() {
                              )) : (
                                <div className="text-muted-foreground text-[13px] italic">No hay cobros en este ciclo.</div>
                              )}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-4">Gastos del Ciclo</div>
+                          <div className="space-y-3">
+                            <div className="rounded-xl border border-black/5 dark:border-white/5 bg-muted/20 p-3">
+                              <div className="flex items-center justify-between">
+                                <span className="text-foreground font-medium text-[14px]">Total gastos</span>
+                                <span className="font-bold text-[14px]">{RD(entry.totalExpenses)}</span>
+                              </div>
+                              <div className="mt-1 text-[11px] text-muted-foreground">{entry.expenses.length} registros</div>
+                            </div>
+
+                            {entry.expenseCategoryBreakdown.length > 0 ? entry.expenseCategoryBreakdown.map((cat, idx) => (
+                              <div key={idx} className="flex justify-between items-center p-3 rounded-xl border border-black/5 dark:border-white/5 bg-muted/20">
+                                <div className="flex items-center gap-2">
+                                  <span className="size-2.5 rounded-full" style={{ backgroundColor: cat.color || "#ff906d" }} />
+                                  <div className="flex flex-col">
+                                    <span className="text-foreground font-medium text-[14px]">{cat.category}</span>
+                                    <span className="text-muted-foreground text-[11px]">{cat.count} gastos</span>
+                                  </div>
+                                </div>
+                                <span className="font-bold text-[14px]">{RD(cat.total)}</span>
+                              </div>
+                            )) : (
+                              <div className="text-muted-foreground text-[13px] italic">No hay gastos en este ciclo.</div>
+                            )}
+
+                            {entry.expenses.length > 0 && (
+                              <div className="max-h-[240px] overflow-y-auto pr-1 space-y-2">
+                                {entry.expenses.map((expense) => (
+                                  <div key={expense.id} className="rounded-xl border border-black/5 dark:border-white/5 bg-card/60 p-3">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="min-w-0">
+                                        <div className="text-[13px] font-semibold text-foreground truncate">{expense.descripcion}</div>
+                                        <div className="text-[11px] text-muted-foreground">
+                                          {formatDateTime(expense.fecha_gasto)}
+                                          {expense.proveedor ? ` · ${expense.proveedor}` : ""}
+                                        </div>
+                                      </div>
+                                      <div className="shrink-0 text-[13px] font-bold text-primary">{RD(expense.monto)}</div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </div>
                      </div>

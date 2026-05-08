@@ -1,4 +1,4 @@
-import type { PaperWidthMm } from "./thermalStorage";
+import { getThermalPrintSettings, type PaperWidthMm } from "./thermalStorage";
 
 export interface TenantReceiptInfo {
   nombre_negocio: string | null;
@@ -45,8 +45,8 @@ function thermalStyles(paperWidthMm: PaperWidthMm): string {
     .total { font-weight: 700; font-size: 17px; }
     .total-xl td { font-weight: 700; font-size: 20px; padding-top: 4px; }
     .footer { text-align: center; font-size: 13px; margin-top: 8px; font-weight: 600; }
-    .logo-wrap { text-align: center; margin-bottom: 8px; }
-    .logo-wrap img { max-width: 100%; max-height: 52px; object-fit: contain; }
+    .logo-wrap { display: flex; align-items: flex-start; justify-content: center; overflow: visible; }
+    .logo-wrap img { max-width: 100%; object-fit: contain; display: block; }
     .item-row td { padding: 3px 0; vertical-align: top; }
     .fdo-company-line { text-align: center; font-size: 14px; margin: 2px 0; font-weight: 600; }
     .fdo-items-head th { text-align: left; font-size: 14px; padding: 5px 0 3px; border-bottom: 2px solid #000; font-weight: 700; }
@@ -60,8 +60,13 @@ function thermalStyles(paperWidthMm: PaperWidthMm): string {
 
 function headerBlock(t: TenantReceiptInfo, opts?: { omitRnc?: boolean }): string {
   const nombre = escapeHtml(t.nombre_negocio || "Cloudix");
+  const logoSettings = getThermalPrintSettings();
+  const logoSize = logoSettings.logoSizePx;
+  const logoX = logoSettings.logoOffsetX;
+  const logoY = logoSettings.logoOffsetY;
+  const logoBoxHeight = logoSize + Math.max(logoY, 0) + 8;
   const logo = t.logo_url
-    ? `<div class="logo-wrap"><img src="${escapeHtml(t.logo_url)}" alt="" crossorigin="anonymous" /></div>`
+    ? `<div class="logo-wrap" style="height:${logoBoxHeight}px;margin-bottom:${Math.max(2, 8 - logoY)}px"><img src="${escapeHtml(t.logo_url)}" alt="" crossorigin="anonymous" style="max-height:${logoSize}px;transform:translate(${logoX}px, ${logoY}px)" /></div>`
     : "";
   const rncTrim = t.rnc?.trim() ?? "";
   const rnc =
@@ -380,7 +385,6 @@ export interface CierreDiaThermalData {
   cerradoAtIso?: string;
   facturasPagadas: number;
   facturasPendientes: number;
-  facturasCanceladas: number;
   totalPagado: number;
   subtotalPagado: number;
   itbisPagado: number;
@@ -460,7 +464,6 @@ export function buildCierreDiaReceiptHtml(
   <div class="double-divider"></div>
   <table>
     <tr class="header-row"><td>Facturas pagadas</td><td style="text-align:right;font-weight:bold">${data.facturasPagadas}</td></tr>
-    <tr class="header-row"><td>Facturas canceladas</td><td style="text-align:right">${data.facturasCanceladas}</td></tr>
   </table>
   <div class="divider"></div>
   <table>
@@ -469,12 +472,17 @@ export function buildCierreDiaReceiptHtml(
     <tr class="header-row"><td>ITBIS (pagadas)</td><td style="text-align:right">${rd(data.itbisPagado, tenant)}</td></tr>
     <tr class="header-row"><td>Ticket prom.</td><td style="text-align:right">${data.facturasPagadas > 0 ? rd(data.ticketPromedioPagado, tenant) : "—"}</td></tr>
   </table>
+  ${
+    (data.gastosTotal ?? 0) > 0
+      ? `
   <div class="divider"></div>
   <table>
     <tr class="header-row"><td>Gastos del ciclo</td><td style="text-align:right;font-weight:bold">${rd(data.gastosTotal ?? 0, tenant)}</td></tr>
     <tr class="header-row"><td>Registros de gasto</td><td style="text-align:right">${data.gastosCantidad ?? 0}</td></tr>
     <tr class="total-xl"><td>NETO OPERATIVO</td><td style="text-align:right">${rd(data.netoOperativo ?? data.totalPagado - (data.gastosTotal ?? 0), tenant)}</td></tr>
-  </table>
+  </table>`
+      : ""
+  }
   ${
     data.cuentasAbiertasLineas != null &&
     data.cuentasAbiertasLineas > 0 &&

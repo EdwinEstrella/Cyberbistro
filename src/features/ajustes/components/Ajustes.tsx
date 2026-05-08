@@ -84,10 +84,12 @@ const SAMPLE_CIERRE_THERMAL_BASE: Omit<CierreDiaThermalData, "generadoEn" | "gen
   fechaOperacion: "12/04/2026",
   facturasPagadas: 14,
   facturasPendientes: 2,
-  facturasCanceladas: 0,
   totalPagado: 12450.75,
   subtotalPagado: 10551.48,
   itbisPagado: 1899.27,
+  gastosTotal: 2750,
+  gastosCantidad: 3,
+  netoOperativo: 9700.75,
   porMetodo: [
     { etiqueta: "Efectivo", cantidad: 8, total: 6200 },
     { etiqueta: "Tarjeta", cantidad: 5, total: 5250.75 },
@@ -374,19 +376,24 @@ function AppDesktopUpdateCard() {
 }
 
 function ThermalPrintSettingsCard({ onThermalSaved }: { onThermalSaved?: () => void }) {
-  const [paperWidthMm, setPaperWidthMm] = useState<PaperWidthMm>(80);
-  const [printerName, setPrinterName] = useState("");
+  const initialThermalSettings = useMemo(() => getThermalPrintSettings(), []);
+  const [paperWidthMm, setPaperWidthMm] = useState<PaperWidthMm>(initialThermalSettings.paperWidthMm);
+  const [printerName, setPrinterName] = useState(initialThermalSettings.printerName);
+  const [logoSizePx, setLogoSizePx] = useState(initialThermalSettings.logoSizePx);
+  const [logoOffsetX, setLogoOffsetX] = useState(initialThermalSettings.logoOffsetX);
+  const [logoOffsetY, setLogoOffsetY] = useState(initialThermalSettings.logoOffsetY);
   const [printers, setPrinters] = useState<ThermalPrinterInfo[]>([]);
   useEffect(() => {
-    const s = getThermalPrintSettings();
-    setPaperWidthMm(s.paperWidthMm);
-    setPrinterName(s.printerName);
     if (window.electronAPI?.listPrinters) {
       window.electronAPI.listPrinters().then(setPrinters).catch(() => {});
     }
   }, []);
+  useEffect(() => {
+    saveThermalPrintSettings({ paperWidthMm, printerName, logoSizePx, logoOffsetX, logoOffsetY });
+    onThermalSaved?.();
+  }, [logoSizePx, logoOffsetX, logoOffsetY]);
   function handleSave() {
-    saveThermalPrintSettings({ paperWidthMm, printerName });
+    saveThermalPrintSettings({ paperWidthMm, printerName, logoSizePx, logoOffsetX, logoOffsetY });
     onThermalSaved?.();
     alert("Configuración de impresión guardada.");
   }
@@ -404,6 +411,21 @@ function ThermalPrintSettingsCard({ onThermalSaved }: { onThermalSaved?: () => v
           {printers.map(p => <option key={p.name} value={p.name}>{p.displayName || p.name}</option>)}
         </select>
       </Field>
+      <div className="border-t border-border pt-5 flex flex-col gap-4">
+        <div>
+          <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Logo en recibos</div>
+          <p className="text-xs text-muted-foreground leading-relaxed">Ajustes locales con límites para evitar superposición en el encabezado.</p>
+        </div>
+        <Field label={`Tamaño (${logoSizePx}px)`}>
+          <input type="range" min="32" max="90" value={logoSizePx} onChange={e => setLogoSizePx(Number(e.target.value))} className="w-full accent-primary" />
+        </Field>
+        <Field label={`Izquierda / Derecha (${logoOffsetX}px)`}>
+          <input type="range" min="-28" max="28" value={logoOffsetX} onChange={e => setLogoOffsetX(Number(e.target.value))} className="w-full accent-primary" />
+        </Field>
+        <Field label={`Arriba / Abajo (${logoOffsetY}px)`}>
+          <input type="range" min="-12" max="18" value={logoOffsetY} onChange={e => setLogoOffsetY(Number(e.target.value))} className="w-full accent-primary" />
+        </Field>
+      </div>
       <button onClick={handleSave} className="bg-muted text-foreground border border-border rounded-lg py-3 text-[11px] font-bold uppercase tracking-widest hover:bg-black/5 dark:hover:bg-white/10 transition-all cursor-pointer">Guardar Local</button>
     </div>
   );

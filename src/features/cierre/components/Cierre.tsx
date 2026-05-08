@@ -143,7 +143,7 @@ export function Cierre() {
       const cur = porMetodoMap.get(k) ?? { cantidad: 0, total: 0 };
       cur.cantidad += 1; cur.total += Number(f.total); porMetodoMap.set(k, cur);
     }
-    return { pagadas, pendientes: facturas.filter(f => f.estado === "pendiente"), canceladas: facturas.filter(f => f.estado === "cancelada"), totalPagado, subtotalPagado, itbisPagado, totalPendiente: facturas.filter(f => f.estado === "pendiente").reduce((s, f) => s + Number(f.total), 0), porMetodo: [...porMetodoMap.entries()].map(([etiqueta, v]) => ({ etiqueta: etiquetaMetodo(etiqueta), ...v })).sort((a, b) => b.total - a.total), ticketPromedioPagado: pagadas.length > 0 ? totalPagado / pagadas.length : 0 };
+    return { pagadas, pendientes: facturas.filter(f => f.estado === "pendiente"), totalPagado, subtotalPagado, itbisPagado, totalPendiente: facturas.filter(f => f.estado === "pendiente").reduce((s, f) => s + Number(f.total), 0), porMetodo: [...porMetodoMap.entries()].map(([etiqueta, v]) => ({ etiqueta: etiquetaMetodo(etiqueta), ...v })).sort((a, b) => b.total - a.total), ticketPromedioPagado: pagadas.length > 0 ? totalPagado / pagadas.length : 0 };
   }, [facturas]);
 
   const resumenCuentasAbiertas = useMemo(() => {
@@ -274,7 +274,7 @@ export function Cierre() {
       const { paperWidthMm } = getThermalPrintSettings();
       const html = buildCierreDiaReceiptHtml(tenantRes.data as any, {
         fechaOperacion: ymdToLongLabel(fecha), cicloNumero: currentCycle.cycle_number, generadoEn: formatCycleDateTime(now), generadoAtIso: now, abiertoAtIso: currentCycle.opened_at, cerradoAtIso: now,
-        facturasPagadas: pag.length, facturasPendientes: facturasCiclo.filter((f: any) => f.estado === "pendiente").length, facturasCanceladas: facturasCiclo.filter((f: any) => f.estado === "cancelada").length,
+        facturasPagadas: pag.length, facturasPendientes: facturasCiclo.filter((f: any) => f.estado === "pendiente").length,
         totalPagado: totalPag, subtotalPagado: pag.reduce((s: number, f: any) => s + Number(f.subtotal), 0), itbisPagado: pag.reduce((s: number, f: any) => s + Number(f.itbis), 0),
         porMetodo: [...metMap.values()].sort((a, b) => b.total - a.total), ticketPromedioPagado: pag.length ? totalPag / pag.length : 0,
         gastosTotal: totalGastosCiclo, gastosCantidad: gastosCiclo.length, netoOperativo: totalPag - totalGastosCiclo,
