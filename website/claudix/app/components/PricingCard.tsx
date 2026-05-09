@@ -40,7 +40,10 @@ export function PricingCard({ name, price, features, color, highlighted = false,
           ? (highlighted ? 'scale(1.02)' : 'translateY(0)') 
           : 'translateY(20px)',
         transitionDuration: '0.5s',
-        transitionProperty: 'opacity, transform',
+        transitionProperty: 'opacity, transform, box-shadow',
+        boxShadow: highlighted
+          ? `0 8px 40px -8px color-mix(in oklch, ${color}, transparent 40%), 0 0 20px -4px color-mix(in oklch, ${color}, transparent 70%)`
+          : `0 6px 30px -8px color-mix(in oklch, ${color}, transparent 65%), 0 0 15px -5px color-mix(in oklch, ${color}, transparent 80%)`,
       }}
     >
       {highlighted && (
