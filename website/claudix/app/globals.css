@@ -1,27 +1,28 @@
 @import "tailwindcss";
 
 :root {
-  --background: oklch(0.1822 0 0);
-  --foreground: oklch(0.9612 0 0);
-  --card: oklch(0.2178 0 0);
-  --card-foreground: oklch(0.9612 0 0);
-  --popover: oklch(0.1822 0 0);
-  --popover-foreground: oklch(0.9612 0 0);
-  --primary: oklch(0.6996 0.2020 44.4414);
-  --primary-foreground: oklch(0 0 0);
-  --secondary: oklch(0.3211 0 0);
-  --secondary-foreground: oklch(0.9612 0 0);
-  --muted: oklch(0.2686 0 0);
-  --muted-foreground: oklch(0.7252 0 0);
-  --accent: oklch(0.7512 0.1680 52.0772);
-  --accent-foreground: oklch(0 0 0);
-  --destructive: oklch(0.6280 0.2577 29.2339);
-  --destructive-foreground: oklch(0.9612 0 0);
-  --border: oklch(0.3715 0 0);
-  --input: oklch(0.3715 0 0);
-  --ring: oklch(0.6996 0.2020 44.4414);
-  --radius: 0rem;
-  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --background: oklch(0.13 0.01 260);
+  --foreground: oklch(0.96 0.005 260);
+  --card: oklch(0.17 0.012 260);
+  --card-foreground: oklch(0.96 0.005 260);
+  --popover: oklch(0.15 0.01 260);
+  --popover-foreground: oklch(0.96 0.005 260);
+  --primary: oklch(0.72 0.18 45);
+  --primary-foreground: oklch(0.12 0 0);
+  --secondary: oklch(0.24 0.015 260);
+  --secondary-foreground: oklch(0.96 0.005 260);
+  --muted: oklch(0.22 0.012 260);
+  --muted-foreground: oklch(0.65 0.02 260);
+  --accent: oklch(0.78 0.15 55);
+  --accent-foreground: oklch(0.12 0 0);
+  --destructive: oklch(0.63 0.26 29);
+  --destructive-foreground: oklch(0.96 0 0);
+  --border: oklch(0.28 0.015 260);
+  --input: oklch(0.28 0.015 260);
+  --ring: oklch(0.72 0.18 45);
+  --radius: 1rem;
+  --font-display-fallback: "Outfit", system-ui, sans-serif;
+  --font-body-fallback: "DM Sans", system-ui, sans-serif;
 }
 
 @theme inline {
@@ -40,8 +41,14 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --font-mono: var(--font-mono);
-  --radius-none: 0;
+  --font-display: var(--next-font-display, var(--font-display-fallback));
+  --font-body: var(--next-font-body, var(--font-body-fallback));
+  --radius-sm: calc(var(--radius) * 0.5);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) * 1.5);
+  --radius-xl: calc(var(--radius) * 2);
+  --radius-2xl: calc(var(--radius) * 3);
+  --radius-full: 9999px;
 }
 
 @layer base {
@@ -50,18 +57,82 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-family: var(--font-mono);
+    font-family: var(--font-body);
   }
   h1, h2, h3, h4, h5, h6 {
-    @apply font-mono uppercase tracking-tighter;
+    font-family: var(--font-display);
+    font-weight: 700;
   }
 }
 
 @layer utilities {
   .glow-primary {
-    box-shadow: 0 0 20px -5px var(--primary);
+    box-shadow: 
+      0 0 30px -5px oklch(0.72 0.18 45 / 0.4),
+      0 0 60px -15px oklch(0.72 0.18 45 / 0.2);
   }
-  .border-sharp {
-    border-radius: 0;
+  .glow-primary-soft {
+    box-shadow: 0 0 40px -10px oklch(0.72 0.18 45 / 0.25);
   }
+  .glass {
+    background: oklch(0.17 0.012 260 / 0.6);
+    backdrop-filter: blur(20px) saturate(1.5);
+    -webkit-backdrop-filter: blur(20px) saturate(1.5);
+  }
+  .glass-strong {
+    background: oklch(0.17 0.012 260 / 0.85);
+    backdrop-filter: blur(40px) saturate(1.8);
+    -webkit-backdrop-filter: blur(40px) saturate(1.8);
+  }
+  .gradient-text {
+    background: linear-gradient(135deg, oklch(0.72 0.18 45), oklch(0.82 0.14 60));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .gradient-primary {
+    background: linear-gradient(135deg, oklch(0.72 0.18 45), oklch(0.65 0.2 30));
+  }
+  .mesh-bg {
+    background: 
+      radial-gradient(ellipse 80% 60% at 20% 0%, oklch(0.72 0.18 45 / 0.08) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 50% at 80% 100%, oklch(0.65 0.2 300 / 0.06) 0%, transparent 60%),
+      var(--background);
+  }
+  .float-animation {
+    animation: float 6s ease-in-out infinite;
+  }
+  .pulse-glow {
+    animation: pulseGlow 4s ease-in-out infinite;
+  }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
 }

@@ -1,11 +1,17 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono } from "next/font/google";
+import { Outfit, DM_Sans } from "next/font/google";
 import "./globals.css";
 
-const ibmPlexMono = IBM_Plex_Mono({
+const outfit = Outfit({
+  weight: ["300", "400", "500", "600", "700", "800", "900"],
+  subsets: ["latin"],
+  variable: "--next-font-display",
+});
+
+const dmSans = DM_Sans({
   weight: ["400", "500", "600", "700"],
   subsets: ["latin"],
-  variable: "--font-ibm-plex-mono",
+  variable: "--next-font-body",
 });
 
 export const metadata: Metadata = {
@@ -21,9 +27,9 @@ export default function RootLayout({
   return (
     <html
       lang="es"
-      className={`${ibmPlexMono.variable} h-full antialiased dark`}
+      className={`${outfit.variable} ${dmSans.variable} h-full antialiased dark`}
     >
-      <body className="min-h-full flex flex-col font-mono selection:bg-primary selection:text-primary-foreground">
+      <body className="min-h-full flex flex-col font-body selection:bg-primary/30 selection:text-white">
         {children}
       </body>
     </html>
