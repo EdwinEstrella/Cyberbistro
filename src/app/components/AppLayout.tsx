@@ -17,6 +17,7 @@ import { useAppUpdate } from "../../features/updates/AppUpdateContext";
 
 const mainNavItems = [
   { label: "Venta", customIcon: "venta", path: "/dashboard" },
+  { label: "Camarera", customIcon: "entregas", path: "/camarera" },
   { label: "Mesas", customIcon: "mesas", path: "/tables" },
   { label: "Cocina", customIcon: "cocina", path: "/cocina" },
   { label: "Entregas", customIcon: "entregas", path: "/entregas" },
@@ -40,6 +41,7 @@ function filterMainNavForRol(rol: string | null) {
     const allow = ["/dashboard", "/tables", "/entregas", "/gastos", "/cierre"] as const;
     return mainNavItems.filter((i) => allow.includes(i.path as (typeof allow)[number]));
   }
+  if (normalized === "mesero") return mainNavItems.filter((i) => i.path === "/camarera");
   return mainNavItems.filter((i) => i.path === "/dashboard");
 }
 
@@ -126,6 +128,17 @@ export function AppLayout() {
   useEffect(() => {
     if (!isVentaRoute) setVentaCartSearch("");
   }, [isVentaRoute]);
+
+  useEffect(() => {
+    if (location.pathname !== "/camarera") return;
+    const mobileQuery = window.matchMedia("(max-width: 1024px)");
+    const syncMobileSidebar = () => {
+      if (mobileQuery.matches) setSidebarHidden(true);
+    };
+    syncMobileSidebar();
+    mobileQuery.addEventListener("change", syncMobileSidebar);
+    return () => mobileQuery.removeEventListener("change", syncMobileSidebar);
+  }, [location.pathname]);
 
   const sideNavItems = useMemo(() => {
     const main = filterMainNavForRol(rol);

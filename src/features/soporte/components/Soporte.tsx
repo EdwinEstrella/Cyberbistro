@@ -20,6 +20,7 @@ import {
 
 const STAFF_ROLES = [
   { value: "cajera", label: "Cajera / Venta" },
+  { value: "mesero", label: "Camarera / Mesero" },
   { value: "cocina", label: "Cocina" },
 ] as const;
 

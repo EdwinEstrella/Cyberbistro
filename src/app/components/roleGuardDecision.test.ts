@@ -53,7 +53,7 @@ describe("getRoleGuardDecision", () => {
     expect(decision.type).toBe("redirect_role");
   });
 
-  it("mesero no puede abrir cierre", () => {
+  it("mesero no puede abrir cierre y vuelve a camarera", () => {
     const decision = getRoleGuardDecision({
       loading: false,
       isAuthenticated: true,
@@ -62,7 +62,31 @@ describe("getRoleGuardDecision", () => {
       rol: "mesero",
       pathname: "/cierre",
     });
-    expect(decision).toEqual({ type: "redirect_role", to: "/dashboard" });
+    expect(decision).toEqual({ type: "redirect_role", to: "/camarera" });
+  });
+
+  it("mesero solo puede abrir el módulo de camarera", () => {
+    expect(
+      getRoleGuardDecision({
+        loading: false,
+        isAuthenticated: true,
+        userExists: true,
+        tenantId: "tenant-1",
+        rol: "mesero",
+        pathname: "/camarera",
+      })
+    ).toEqual({ type: "allow" });
+
+    expect(
+      getRoleGuardDecision({
+        loading: false,
+        isAuthenticated: true,
+        userExists: true,
+        tenantId: "tenant-1",
+        rol: "mesero",
+        pathname: "/dashboard",
+      })
+    ).toEqual({ type: "redirect_role", to: "/camarera" });
   });
 
   it("ventas y cajera pueden abrir cierre", () => {

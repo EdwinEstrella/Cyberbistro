@@ -11,6 +11,7 @@ import { Soporte } from "../features/soporte";
 import { Ajustes } from "../features/ajustes";
 import { Cierre } from "../features/cierre";
 import { SuperAdmin } from "../features/super-admin";
+import { Camarera } from "../features/camarera";
 
 export const router = createHashRouter([
   { path: "/", Component: Login },
@@ -26,6 +27,7 @@ export const router = createHashRouter([
       { path: "/cierre", Component: Cierre },
       { path: "/cocina", Component: Cocina },
       { path: "/entregas", Component: Entregas },
+      { path: "/camarera", Component: Camarera },
       { path: "/soporte", Component: Soporte },
       { path: "/ajustes", Component: Ajustes },
     ],

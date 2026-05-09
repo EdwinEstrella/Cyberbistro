@@ -40,6 +40,7 @@ export function defaultRouteForRol(rol: string | null): string {
   const normalized = normalizeTenantRol(rol);
   if (normalized === SUPER_ADMIN_ROLE) return SUPER_ADMIN_ROUTE;
   if (normalized === "cocina") return "/cocina";
+  if (normalized === "mesero") return "/camarera";
   return "/dashboard";
 }
 
@@ -63,7 +64,7 @@ export function isAppRouteAllowed(rol: string | null, pathname: string): boolean
     return false;
   }
   if (normalized === "mesero") {
-    return (VENTA_PATHS as readonly string[]).includes(pathname);
+    return pathname === "/camarera";
   }
   return pathname === "/dashboard";
 }
