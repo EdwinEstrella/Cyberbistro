@@ -397,7 +397,7 @@ export function Login() {
                         Recordar
                       </span>
                       <span className="font-['Inter',sans-serif] text-[#7c7c7c] text-[10px] sm:text-[11px] leading-relaxed">
-                        Guarda correo y contraseÃ±a en este equipo
+                        Guarda credenciales en este equipo
                       </span>
                     </div>
                   </div>
@@ -489,7 +489,8 @@ export function Login() {
                       <path d={ICONS.arrow} fill="#FF6AA0" />
                     </svg>
                   </div>
-                </div>
+                </div>
+
               </div>
             </div>
           </div>
