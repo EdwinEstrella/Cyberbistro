@@ -12,7 +12,17 @@ import {
   Monitor,
   Database,
   Check,
-  Zap
+  Zap,
+  Split,
+  Settings2,
+  Users,
+  LayoutGrid,
+  MapPin,
+  Laptop,
+  Printer,
+  MousePointer2,
+  Keyboard,
+  Clock
 } from "lucide-react";
 
 export default function LandingPage() {
@@ -35,18 +45,20 @@ export default function LandingPage() {
       {/* Navigation */}
       <nav className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-primary flex items-center justify-center">
-              <span className="text-primary-foreground font-bold">C</span>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 flex items-center justify-center">
+              <img src="/logo.svg" className="w-full h-full object-contain" alt="Cloudix Logo" />
             </div>
-            <span className="text-xl font-bold tracking-tighter uppercase">Cloudix</span>
+            <span className="text-2xl font-bold tracking-tighter uppercase">Cloudix</span>
           </div>
           <div className="hidden md:flex items-center gap-8">
             <a href="#features" className="text-sm font-medium hover:text-primary transition-colors uppercase tracking-widest">Funciones</a>
             <a href="#pricing" className="text-sm font-medium hover:text-primary transition-colors uppercase tracking-widest">Planes</a>
-            <button className="bg-primary text-primary-foreground px-6 py-2 text-sm font-bold uppercase tracking-widest hover:opacity-90 transition-all border-none cursor-pointer">
-              Empezar
-            </button>
+            <a href="https://wa.me/18095968986" target="_blank" rel="noopener noreferrer" className="contents">
+              <button className="bg-primary text-primary-foreground px-6 py-2 text-sm font-bold uppercase tracking-widest hover:opacity-90 transition-all border-none cursor-pointer">
+                Solicitar Demo
+              </button>
+            </a>
           </div>
         </div>
       </nav>
@@ -54,30 +66,35 @@ export default function LandingPage() {
       <main className="flex-1">
         {/* Hero Section */}
         <section className="relative py-24 md:py-32 overflow-hidden border-b border-border">
-          <div className="max-w-7xl mx-auto px-6 relative z-10">
+          <div className="max-w-7xl mx-auto px-6 relative z-10 text-center md:text-left">
             <motion.div 
-              className="max-w-3xl"
+              className="max-w-4xl"
               initial="initial"
               animate="animate"
               variants={stagger}
             >
               <motion.div variants={fadeIn} className="inline-block border border-primary/30 bg-primary/5 px-4 py-1 mb-6">
-                <span className="text-primary text-[10px] font-bold uppercase tracking-[0.3em]">Sistema Operativo v12.0</span>
+                <span className="text-primary text-[10px] font-bold uppercase tracking-[0.4em]">Tecnología que sabe a éxito</span>
               </motion.div>
-              <motion.h1 variants={fadeIn} className="text-5xl md:text-7xl font-bold mb-8 tracking-tighter leading-[0.9]">
-                EL CONTROL TOTAL DE TU <span className="text-primary">RESTAURANTE</span> EN UNA SOLA INTERFAZ.
+              <motion.h1 variants={fadeIn} className="text-5xl md:text-8xl font-bold mb-8 tracking-tighter leading-[0.85] uppercase">
+                Sistema de <span className="text-primary">Restaurante</span>
               </motion.h1>
-              <motion.p variants={fadeIn} className="text-xl text-muted-foreground mb-10 max-w-xl leading-relaxed">
-                Facturación fiscal NCF, comandas en tiempo real, gestión de mesas, registro de gastos y cierres operativos. Diseñado para la velocidad.
+              <motion.h2 variants={fadeIn} className="text-2xl md:text-3xl font-bold mb-8 tracking-tighter uppercase opacity-90">
+                Todo tu restaurante en un solo sistema.
+              </motion.h2>
+              <motion.p variants={fadeIn} className="text-xl text-muted-foreground mb-10 max-w-2xl leading-relaxed font-medium">
+                Control total de tu negocio, desde el pedido hasta la cocina, <span className="text-primary">en tiempo real.</span>
               </motion.p>
-              <motion.div variants={fadeIn} className="flex flex-col sm:flex-row gap-4">
-                <button className="bg-primary text-primary-foreground px-8 py-4 text-sm font-bold uppercase tracking-[0.2em] flex items-center justify-center gap-3 hover:glow-primary transition-all border-none cursor-pointer">
-                  Prueba Gratuita <ArrowRight size={18} />
+            <motion.div variants={fadeIn} className="flex flex-col sm:flex-row gap-4 justify-center md:justify-start">
+              <a href="https://wa.me/18095968986" target="_blank" rel="noopener noreferrer" className="contents">
+                <button className="bg-primary text-primary-foreground px-10 py-5 text-sm font-bold uppercase tracking-[0.2em] flex items-center justify-center gap-3 hover:glow-primary transition-all border-none cursor-pointer">
+                  ¡Pruébalo Gratis! <ArrowRight size={18} />
                 </button>
-                <button className="border border-border bg-transparent text-foreground px-8 py-4 text-sm font-bold uppercase tracking-[0.2em] hover:bg-muted/50 transition-all cursor-pointer">
-                  Ver Documentación
-                </button>
-              </motion.div>
+              </a>
+              <button className="border border-border bg-transparent text-foreground px-10 py-5 text-sm font-bold uppercase tracking-[0.2em] hover:bg-muted/50 transition-all cursor-pointer">
+                Ver Detalles
+              </button>
+            </motion.div>
             </motion.div>
           </div>
           
@@ -88,144 +105,197 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* Core Features Grid */}
-        <section id="features" className="py-24 bg-card/30">
+        {/* Features Section - From Flayer */}
+        <section id="features" className="py-24 border-b border-border">
           <div className="max-w-7xl mx-auto px-6">
-            <div className="flex flex-col md:flex-row md:items-end justify-between mb-16 gap-6">
-              <div className="max-w-xl">
-                <h2 className="text-[11px] font-bold text-primary uppercase tracking-[0.4em] mb-4">Capacidades Reales</h2>
-                <h3 className="text-4xl font-bold tracking-tighter uppercase">Todo lo que necesitas para operar sin fricción.</h3>
-              </div>
-              <p className="text-muted-foreground text-sm max-w-xs font-medium uppercase tracking-wider leading-relaxed">
-                Arquitectura robusta con sincronización en tiempo real e integración fiscal completa.
-              </p>
+            <div className="mb-16">
+              <h2 className="text-[11px] font-bold text-primary uppercase tracking-[0.5em] mb-4">Control Detallado</h2>
+              <h3 className="text-4xl md:text-5xl font-bold tracking-tighter uppercase max-w-2xl leading-none">Gestiona cada aspecto de tu negocio.</h3>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-0 border-t border-l border-border">
               <FeatureCard 
-                icon={<Receipt size={24} />}
-                title="Facturación NCF"
-                description="Emisión de comprobantes fiscales (B01, B02, etc.) con secuencias automáticas configurables por el usuario."
-              />
-              <FeatureCard 
-                icon={<Utensils size={24} />}
-                title="Gestión de Mesas"
-                description="Control visual del salón, apertura de cuentas por mesa y soporte para órdenes 'Para llevar'."
+                icon={<Clock size={24} />}
+                title="Cocina en Tiempo Real"
+                description="Visualiza y gestiona todos los pedidos al instante. Sin errores, sin demoras."
               />
               <FeatureCard 
                 icon={<ChefHat size={24} />}
                 title="Comandas Digitales"
-                description="Sincronización instantánea con la cocina. Visualización de estados y tiempos de preparación."
+                description="Envía pedidos directamente a cocina desde cualquier dispositivo."
               />
               <FeatureCard 
-                icon={<WalletCards size={24} />}
-                title="Registro de Gastos"
-                description="Control detallado de salidas de caja por categorías (Inventario, Nómina, Servicios) integrado al ciclo diario."
+                icon={<Receipt size={24} />}
+                title="Gestión de Pedidos"
+                description="Toma de pedidos rápida y organizada. Mejora la atención y acelera el servicio."
+              />
+              <FeatureCard 
+                icon={<Utensils size={24} />}
+                title="Control de Mesas"
+                description="Estado en tiempo real: disponible, ocupada, en espera, cuenta abierta."
+              />
+              <FeatureCard 
+                icon={<Split size={24} />}
+                title="Cuenta Separada"
+                description="Divide cuentas por persona o por ítem. Cobro fácil y sin confusiones."
               />
               <FeatureCard 
                 icon={<BarChart3 size={24} />}
-                title="Cierres de Caja"
-                description="Resumen operativo completo: ventas pagadas, pendientes, itbis recaudado y neto operativo por ciclo."
+                title="Reportes y Estadísticas"
+                description="Ventas, productos más vendidos, horas pico y mucho más."
               />
-              <FeatureCard 
-                icon={<ShieldCheck size={24} />}
-                title="Seguridad Multitenant"
-                description="Políticas RLS que garantizan el aislamiento total de datos entre diferentes negocios y sucursales."
-              />
+            </div>
+
+            <div className="mt-20 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-8">
+               <MiniFeature icon={<Settings2 size={18} />} label="Menú Personalizable" />
+               <MiniFeature icon={<Zap size={18} />} label="Modificadores y Extras" />
+               <MiniFeature icon={<Printer size={18} />} label="Impresión de Cocina y Bar" />
+               <MiniFeature icon={<LayoutGrid size={18} />} label="Múltiples Sucursales" />
+               <MiniFeature icon={<WalletCards size={18} />} label="Control de Caja y Turnos" />
+               <MiniFeature icon={<Monitor size={18} />} label="Integrado con Dispositivos" />
             </div>
           </div>
         </section>
 
-        {/* Pricing Section */}
-        <section id="pricing" className="py-24 border-t border-border">
+        {/* Subscription Plans */}
+        <section id="pricing" className="py-24 bg-card/30 border-b border-border">
           <div className="max-w-7xl mx-auto px-6">
             <div className="text-center mb-16">
-              <h2 className="text-[11px] font-bold text-primary uppercase tracking-[0.4em] mb-4">Planes</h2>
-              <h3 className="text-4xl font-bold tracking-tighter uppercase">Escalabilidad para tu negocio.</h3>
+              <h2 className="text-[11px] font-bold text-primary uppercase tracking-[0.5em] mb-4">Planes de Suscripción</h2>
+              <h3 className="text-4xl md:text-5xl font-bold tracking-tighter uppercase leading-none">Escalabilidad sin límites.</h3>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-0 border border-border">
               <PricingCard 
                 name="Básico"
                 price="40"
-                description="Ideal para pequeños locales y cafeterías."
+                color="oklch(0.75 0.15 140)"
                 features={[
-                  "Facturación Estándar",
-                  "Gestión de hasta 10 mesas",
-                  "Cierres Diarios",
-                  "Soporte vía Ticket"
+                  "1 Sucursal",
+                  "Hasta 5 Usuarios",
+                  "Comandas Digitales",
+                  "Reportes Básicos",
+                  "Soporte Estándar"
                 ]}
               />
               <PricingCard 
                 name="Profesional"
                 price="80"
-                description="Para restaurantes con alto volumen de ventas."
+                color="var(--primary)"
+                highlighted
                 features={[
-                  "Facturación Fiscal NCF",
-                  "Gestión de Mesas Ilimitadas",
-                  "Módulo de Gastos",
-                  "Comandas en Tiempo Real",
+                  "Hasta 3 Sucursales",
+                  "Usuarios Ilimitados",
+                  "Cocina en Tiempo Real",
+                  "Reportes Avanzados",
                   "Soporte Prioritario"
                 ]}
-                highlighted
               />
               <PricingCard 
-                name="Enterprise"
+                name="Empresarial"
                 price="150"
-                description="Solución completa para múltiples sucursales."
+                color="oklch(0.6 0.2 300)"
                 features={[
-                  "Todo lo del plan Pro",
-                  "Multi-sucursal centralizado",
-                  "Dashboard Estadístico Avanzado",
-                  "Integraciones Custom",
-                  "Account Manager Dedicado"
+                  "Sucursales Ilimitadas",
+                  "Todo lo del plan PRO",
+                  "Integraciones Avanzadas",
+                  "Personalización",
+                  "Soporte 24/7"
                 ]}
               />
             </div>
-          </div>
-        </section>
 
-        {/* Tech Stack / Architecture */}
-        <section className="py-24 border-t border-border bg-card/10">
-          <div className="max-w-7xl mx-auto px-6 text-center">
-            <h2 className="text-[11px] font-bold text-muted-foreground uppercase tracking-[0.5em] mb-12">Stack Tecnológico</h2>
-            <div className="flex flex-wrap justify-center gap-12 opacity-40 grayscale hover:grayscale-0 transition-all duration-500">
-              <TechIcon icon={<Monitor size={32} />} label="Electron" />
-              <TechIcon icon={<Database size={32} />} label="PostgreSQL" />
-              <TechIcon icon={<Zap size={32} />} label="Vite" />
-              <TechIcon icon={<ChefHat size={32} />} label="React" />
+            {/* Hardware Package Section */}
+            <div className="mt-20 bg-background border border-primary/40 p-8 md:p-12 relative overflow-hidden group">
+              <div className="absolute top-0 right-0 bg-primary px-4 py-1 text-[10px] font-bold uppercase tracking-widest">Oferta Especial</div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+                <div>
+                  <h4 className="text-4xl md:text-5xl font-bold tracking-tighter uppercase mb-4 leading-none text-primary">Paquete FULL</h4>
+                  <p className="text-xl font-bold uppercase tracking-tighter mb-8">¿Sin equipo para empezar? Nosotros te equipamos.</p>
+                  <div className="flex items-baseline gap-2 mb-10">
+                    <span className="text-6xl font-bold tracking-tighter text-primary">+$300</span>
+                    <span className="text-lg font-bold uppercase tracking-widest opacity-60">Pago Único</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
+                    <HardwareItem icon={<Laptop size={20} />} label="Computadora" />
+                    <HardwareItem icon={<Printer size={20} />} label="Impresora" />
+                    <HardwareItem icon={<MousePointer2 size={20} />} label="Mouse" />
+                    <HardwareItem icon={<Keyboard size={20} />} label="Teclado" />
+                  </div>
+                </div>
+                <div className="bg-card/50 border border-border p-8 flex flex-col gap-6">
+                  <div className="flex items-start gap-4">
+                    <div className="w-10 h-10 bg-primary/10 flex items-center justify-center shrink-0">
+                      <MapPin size={24} className="text-primary" />
+                    </div>
+                    <div>
+                      <h5 className="font-bold uppercase tracking-tight text-lg leading-none mb-2">Instalación Foránea</h5>
+                      <p className="text-sm text-muted-foreground font-medium">Fuera de Santo Domingo</p>
+                      <div className="mt-4 flex items-baseline gap-2">
+                        <span className="text-3xl font-bold tracking-tighter">+$40</span>
+                        <span className="text-[10px] font-bold uppercase opacity-60">Pago Único</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </section>
 
-        {/* CTA Section */}
-        <section className="py-24 bg-primary text-primary-foreground">
-          <div className="max-w-7xl mx-auto px-6 text-center">
-            <h2 className="text-5xl md:text-6xl font-bold mb-8 tracking-tighter uppercase leading-none">
-              ¿Listo para modernizar tu negocio?
+        {/* Final CTA */}
+        <section className="py-24 bg-primary text-primary-foreground relative overflow-hidden">
+          <div className="max-w-7xl mx-auto px-6 text-center relative z-10">
+            <h2 className="text-5xl md:text-7xl font-bold mb-8 tracking-tighter uppercase leading-[0.9]">
+              Tu restaurante más rápido, eficiente y rentable.
             </h2>
-            <button className="bg-primary-foreground text-primary px-10 py-5 text-sm font-bold uppercase tracking-[0.3em] hover:scale-105 transition-all border-none cursor-pointer">
-              Solicitar Demo
-            </button>
+            <div className="bg-primary-foreground/10 backdrop-blur-sm border border-primary-foreground/20 p-8 max-w-2xl mx-auto inline-block">
+              <h3 className="text-2xl font-bold uppercase tracking-tighter mb-4">¡Pruébalo Gratis!</h3>
+              <p className="text-sm font-bold uppercase tracking-widest opacity-90 mb-8">Solicita tu demostración sin compromiso.</p>
+              <a href="https://wa.me/18095968986" target="_blank" rel="noopener noreferrer" className="contents">
+                <button className="bg-primary-foreground text-primary px-12 py-5 text-sm font-bold uppercase tracking-[0.3em] hover:scale-105 transition-all border-none cursor-pointer">
+                  Contactar Ahora
+                </button>
+              </a>
+            </div>
           </div>
         </section>
       </main>
 
       {/* Footer */}
-      <footer className="py-12 border-t border-border bg-card/20">
-        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-8">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 bg-foreground flex items-center justify-center">
-              <span className="text-background text-[10px] font-bold">C</span>
+      <footer className="py-16 border-t border-border bg-card/40">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-12 mb-16">
+            <div>
+               <div className="flex items-center gap-3 mb-6">
+                <div className="w-8 h-8 bg-foreground flex items-center justify-center">
+                  <span className="text-background text-[10px] font-bold">A</span>
+                </div>
+                <span className="text-xl font-bold tracking-tighter uppercase text-foreground">Azokia LLC</span>
+              </div>
+              <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest leading-relaxed">
+                Tecnología que transforma. Resultados que crecen.
+              </p>
             </div>
-            <span className="text-lg font-bold tracking-tighter uppercase">Cloudix OS</span>
+            <div className="flex flex-col gap-4">
+              <h5 className="text-[10px] font-bold uppercase tracking-[0.4em] text-primary">Contacto</h5>
+              <p className="text-sm font-bold uppercase tracking-tighter">809-596-8988</p>
+              <p className="text-sm font-bold uppercase tracking-tighter">Teléfono / WhatsApp</p>
+            </div>
+            <div className="flex flex-col gap-4">
+              <h5 className="text-[10px] font-bold uppercase tracking-[0.4em] text-primary">Redes</h5>
+              <p className="text-sm font-bold uppercase tracking-tighter">@azokiallc</p>
+              <p className="text-sm font-bold uppercase tracking-tighter">azokia.com</p>
+            </div>
           </div>
-          <p className="text-[11px] text-muted-foreground uppercase tracking-widest">
-            © 2026 Cloudix Systems. Todos los derechos reservados.
-          </p>
-          <div className="flex gap-6">
-            <a href="#" className="text-[11px] font-bold uppercase tracking-widest hover:text-primary">Términos</a>
-            <a href="#" className="text-[11px] font-bold uppercase tracking-widest hover:text-primary">Privacidad</a>
+          <div className="pt-12 border-t border-border flex flex-col md:flex-row justify-between items-center gap-6">
+            <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-[0.3em]">
+              © 2026 Azokia LLC. Todos los derechos reservados.
+            </p>
+            <div className="flex gap-8 opacity-60">
+              <a href="#" className="text-[10px] font-bold uppercase tracking-widest hover:text-primary transition-colors">Términos</a>
+              <a href="#" className="text-[10px] font-bold uppercase tracking-widest hover:text-primary transition-colors">Privacidad</a>
+            </div>
           </div>
         </div>
       </footer>
@@ -236,54 +306,67 @@ export default function LandingPage() {
 function FeatureCard({ icon, title, description }: { icon: React.ReactNode, title: string, description: string }) {
   return (
     <div className="p-10 border-r border-b border-border hover:bg-primary/5 transition-colors group">
-      <div className="text-primary mb-6 group-hover:scale-110 transition-transform duration-300">
+      <div className="text-primary mb-8 group-hover:scale-110 transition-transform duration-300">
         {icon}
       </div>
-      <h4 className="text-xl font-bold mb-4 uppercase tracking-tighter">{title}</h4>
-      <p className="text-sm text-muted-foreground leading-relaxed font-medium">
+      <h4 className="text-2xl font-bold mb-4 uppercase tracking-tighter leading-none">{title}</h4>
+      <p className="text-sm text-muted-foreground leading-relaxed font-bold uppercase tracking-tight">
         {description}
       </p>
     </div>
   );
 }
 
-function PricingCard({ name, price, description, features, highlighted = false }: { 
+function MiniFeature({ icon, label }: { icon: React.ReactNode, label: string }) {
+  return (
+    <div className="flex flex-col gap-4 items-center text-center p-4 border border-transparent hover:border-border transition-all">
+      <div className="text-primary opacity-80">{icon}</div>
+      <span className="text-[10px] font-bold uppercase tracking-widest leading-tight">{label}</span>
+    </div>
+  );
+}
+
+function PricingCard({ name, price, features, color, highlighted = false }: { 
   name: string, 
   price: string, 
-  description: string, 
   features: string[],
+  color: string,
   highlighted?: boolean
 }) {
   return (
-    <div className={`p-8 border border-border flex flex-col transition-all ${highlighted ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'bg-card/30'}`}>
-      <h4 className="text-sm font-bold text-primary uppercase tracking-[0.3em] mb-2">{name}</h4>
-      <div className="flex items-baseline gap-1 mb-4">
-        <span className="text-4xl font-bold tracking-tighter uppercase">${price}</span>
-        <span className="text-muted-foreground text-xs uppercase font-bold tracking-widest">/ Mes</span>
+    <div className={`p-10 flex flex-col border-r border-border last:border-r-0 transition-all relative overflow-hidden ${highlighted ? 'bg-primary/[0.03]' : 'bg-transparent'}`}>
+      {highlighted && <div className="absolute top-0 left-0 w-full h-1 bg-primary"></div>}
+      <h4 className="text-sm font-bold uppercase tracking-[0.4em] mb-8 opacity-80" style={{ color: color }}>{name}</h4>
+      <div className="flex items-baseline gap-2 mb-10">
+        <span className="text-lg font-bold opacity-60">US$</span>
+        <span className="text-6xl font-bold tracking-tighter uppercase leading-none" style={{ color: color }}>{price}</span>
+        <span className="text-xs uppercase font-bold tracking-widest opacity-60">/ Mes</span>
       </div>
-      <p className="text-sm text-muted-foreground mb-8 font-medium leading-relaxed uppercase tracking-tight">
-        {description}
-      </p>
-      <div className="flex-1 space-y-4 mb-8">
+      <div className="flex-1 space-y-6 mb-12 border-t border-border/50 pt-10">
         {features.map((f, i) => (
-          <div key={i} className="flex items-start gap-3">
-            <Check size={16} className="text-primary mt-0.5 shrink-0" />
-            <span className="text-xs font-bold uppercase tracking-tighter text-foreground/80 leading-snug">{f}</span>
+          <div key={i} className="flex items-center gap-4">
+            <Check size={14} style={{ color: color }} className="shrink-0" />
+            <span className="text-xs font-bold uppercase tracking-widest text-foreground/90">{f}</span>
           </div>
         ))}
       </div>
-      <button className={`w-full py-4 text-[10px] font-bold uppercase tracking-[0.2em] transition-all border-none cursor-pointer ${highlighted ? 'bg-primary text-primary-foreground hover:glow-primary' : 'bg-muted text-foreground hover:bg-muted/80'}`}>
-        Seleccionar Plan
-      </button>
+      <div className="bg-muted/30 p-4 text-center mb-8 border border-border/50">
+        <span className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-60">Sin Equipo</span>
+      </div>
+      <a href="https://wa.me/18095968986" target="_blank" rel="noopener noreferrer" className="contents">
+        <button className="w-full py-5 text-[11px] font-bold uppercase tracking-[0.3em] transition-all border-none cursor-pointer hover:scale-[1.02] active:scale-[0.98]" style={{ backgroundColor: color, color: 'white' }}>
+          Seleccionar
+        </button>
+      </a>
     </div>
   );
 }
 
-function TechIcon({ icon, label }: { icon: React.ReactNode, label: string }) {
+function HardwareItem({ icon, label }: { icon: React.ReactNode, label: string }) {
   return (
-    <div className="flex items-center gap-3">
-      {icon}
-      <span className="text-sm font-bold uppercase tracking-widest">{label}</span>
+    <div className="flex flex-col items-center gap-3 p-4 border border-border hover:border-primary/50 transition-colors">
+      <div className="text-foreground opacity-80">{icon}</div>
+      <span className="text-[9px] font-bold uppercase tracking-widest text-center">{label}</span>
     </div>
   );
 }
