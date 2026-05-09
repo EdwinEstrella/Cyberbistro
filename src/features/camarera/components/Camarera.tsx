@@ -273,8 +273,8 @@ export function Camarera() {
       <div className="mx-auto max-w-[1280px] flex flex-col gap-4 sm:gap-5">
         {message ? <div className="rounded-2xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm font-semibold text-primary">{message}</div> : null}
 
-        <section className="grid grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)_360px] gap-4 lg:gap-5 items-start">
-          <aside className="rounded-[20px] sm:rounded-[24px] border border-black/10 dark:border-white/10 bg-card p-3 sm:p-5 xl:sticky xl:top-4">
+        <section className="grid grid-cols-1 xl:grid-cols-[360px_280px_minmax(0,1fr)] gap-4 lg:gap-5 items-start">
+          <aside className="order-2 rounded-[20px] sm:rounded-[24px] border border-black/10 dark:border-white/10 bg-card p-3 sm:p-5 xl:sticky xl:top-4">
             <h2 className="font-['Space_Grotesk'] text-sm sm:text-lg font-bold text-foreground">Mesas</h2>
             <div className="mt-3 sm:mt-4 grid grid-cols-5 min-[390px]:grid-cols-6 min-[480px]:grid-cols-7 sm:grid-cols-8 md:grid-cols-10 xl:grid-cols-3 gap-1.5 sm:gap-2">
               {mesas.map((mesa) => {
@@ -300,7 +300,7 @@ export function Camarera() {
             </div>
           </aside>
 
-          <main className="min-w-0 rounded-[24px] border border-black/10 dark:border-white/10 bg-card p-3 sm:p-5">
+          <main className="order-3 min-w-0 rounded-[24px] border border-black/10 dark:border-white/10 bg-card p-3 sm:p-5">
             <div className="mb-3">
               <label htmlFor="camarera-search" className="sr-only">Buscar platos</label>
               <input
@@ -351,7 +351,7 @@ export function Camarera() {
             </div>
           </main>
 
-          <aside className="rounded-[24px] border border-black/10 dark:border-white/10 bg-card p-4 sm:p-5 xl:sticky xl:top-4">
+          <aside className="order-1 rounded-[24px] border border-black/10 dark:border-white/10 bg-card p-4 sm:p-5 xl:sticky xl:top-4">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 className="font-['Space_Grotesk'] text-lg font-bold text-foreground">Pedido</h2>
