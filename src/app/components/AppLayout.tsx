@@ -130,7 +130,7 @@ export function AppLayout() {
   }, [isVentaRoute]);
 
   useEffect(() => {
-    if (location.pathname !== "/camarera") return;
+    if (!["/dashboard", "/billing", "/camarera"].includes(location.pathname)) return;
     const mobileQuery = window.matchMedia("(max-width: 1024px)");
     const syncMobileSidebar = () => {
       if (mobileQuery.matches) setSidebarHidden(true);

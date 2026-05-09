@@ -869,14 +869,14 @@ export function Dashboard() {
   return (
     <div className="flex h-full min-h-0 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
       {/* LEFT: Menu */}
-      <div className="flex min-w-0 flex-col gap-[24px] p-4 sm:p-[32px] lg:flex-1 lg:overflow-auto">
+      <div className="flex min-w-0 flex-col gap-4 sm:gap-[24px] p-3 sm:p-5 lg:p-[32px] lg:flex-1 lg:overflow-auto">
         {/* Categories */}
-        <div className="flex flex-wrap gap-[12px] pb-[4px] shrink-0">
+        <div className="flex gap-2 sm:gap-[12px] pb-1 shrink-0 overflow-x-auto lg:flex-wrap">
           {categories.map((cat) => (
             <button
               key={cat}
               onClick={() => setActiveCategory(cat)}
-              className="px-[24px] py-[10px] rounded-[12px] shrink-0 font-['Space_Grotesk',sans-serif] font-bold text-[14px] tracking-[1.2px] uppercase border-none cursor-pointer transition-all"
+              className="px-4 sm:px-[24px] py-2 sm:py-[10px] rounded-[12px] shrink-0 font-['Space_Grotesk',sans-serif] font-bold text-[12px] sm:text-[14px] tracking-[1px] sm:tracking-[1.2px] uppercase border-none cursor-pointer transition-all"
                style={{
                 backgroundColor:
                   activeCategory === cat
@@ -922,7 +922,7 @@ export function Dashboard() {
             ) : null}
           </div>
         ) : (
-          <div className="grid gap-[16px]" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))" }}>
+          <div className="grid gap-3 sm:gap-[16px]" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(145px, 100%), 1fr))" }}>
             {filteredPlatosForGrid.map((plato) => {
               const inCart = cart.find((i) => i.plato.id === plato.id);
               const cc = getCatColor(plato.categoria);
@@ -941,7 +941,7 @@ export function Dashboard() {
                     className="h-[6px] w-full shrink-0"
                     style={{ backgroundColor: `${cc}20` }}
                   />
-                  <div className="flex flex-col gap-[8px] p-[16px] flex-1">
+                  <div className="flex flex-col gap-[8px] p-3 sm:p-[16px] flex-1">
                     {/* Category badge */}
                     <div
                       className="rounded-[4px] px-[6px] py-[2.5px] w-fit"
@@ -959,13 +959,13 @@ export function Dashboard() {
                     </div>
  
                     {/* Name */}
-                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-foreground text-[14.5px] uppercase leading-tight tracking-tight">
+                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-foreground text-[12.5px] sm:text-[14.5px] uppercase leading-tight tracking-tight">
                       {plato.nombre}
                     </span>
  
                     {/* Price */}
                     <span
-                      className="font-['Space_Grotesk',sans-serif] font-bold text-[17px] mt-auto"
+                      className="font-['Space_Grotesk',sans-serif] font-bold text-[15px] sm:text-[17px] mt-auto"
                       style={{ color: cc, textShadow: `0 0 10px ${cc}30` }}
                     >
                       {formatMoney(plato.precio)}
@@ -1000,9 +1000,9 @@ export function Dashboard() {
       </div>
 
       {/* RIGHT: Order Panel */}
-      <div className="w-full shrink-0 bg-card border-l border-black/10 dark:bg-[#0e0e0e] dark:border-[rgba(72,72,71,0.3)] flex flex-col lg:h-full lg:w-[380px] lg:rounded-none shadow-2xl relative">
+      <div className="w-full shrink-0 bg-card border-t lg:border-t-0 lg:border-l border-black/10 dark:bg-[#0e0e0e] dark:border-[rgba(72,72,71,0.3)] flex flex-col lg:h-full lg:w-[380px] lg:rounded-none shadow-2xl relative">
         {/* Header */}
-        <div className="relative z-20 border-b border-black/10 dark:border-[rgba(72,72,71,0.2)] px-[24px] pt-[20px] pb-[20px] shrink-0">
+        <div className="relative z-20 border-b border-black/10 dark:border-[rgba(72,72,71,0.2)] px-4 sm:px-[24px] pt-4 sm:pt-[20px] pb-4 sm:pb-[20px] shrink-0">
           {/* Título */}
           <div className="text-center">
             <span className="font-['Space_Grotesk',sans-serif] font-bold text-foreground text-[18px] uppercase">
@@ -1011,7 +1011,7 @@ export function Dashboard() {
           </div>
 
           {/* Botones */}
-          <div className="flex items-center justify-center gap-[12px] mt-[16px]">
+          <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-[12px] mt-3 sm:mt-[16px]">
             {/* Mesa selector */}
             <div className="relative">
               <button

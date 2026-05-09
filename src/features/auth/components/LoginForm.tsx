@@ -34,19 +34,6 @@ const LOADING_SPINNER = (
   </div>
 );
 
-const STATUS_INDICATORS = (
-  <>
-    <div className="flex gap-2 sm:gap-2 items-center">
-      <div className="bg-[#59ee50] rounded-[9999px] shadow-[0px_0px_8px_0px_#59ee50] size-2 sm:size-2 animate-pulse" />
-      <span className="font-['Inter',sans-serif] font-medium text-[#adaaaa] text-[9px] sm:text-[10px] uppercase">Núcleo Seguro</span>
-    </div>
-    <div className="flex gap-2 sm:gap-2 items-center">
-      <div className="bg-[#ff906d] rounded-[9999px] shadow-[0px_0px_8px_0px_#ff906d] size-2 sm:size-2 animate-pulse" />
-      <span className="font-['Inter',sans-serif] font-medium text-[#adaaaa] text-[9px] sm:text-[10px] uppercase">Estación Activa</span>
-    </div>
-  </>
-);
-
 function extractRefreshTokenFromSignInPayload(data: unknown): string | null {
   if (!data || typeof data !== "object") return null;
   const maybeData = data as any;
@@ -69,6 +56,7 @@ export function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
   const [showPinGate, setShowPinGate] = useState(false);
+  const hasElectronUpdater = Boolean((window as any).electronAPI?.onUpdateEvents);
 
   // Updater states
   const [updatePhase, setUpdatePhase] = useState<'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error'>('idle');
@@ -249,12 +237,12 @@ export function Login() {
 
   return (
     <div
-      className="flex flex-col min-h-screen w-full transition-opacity duration-300"
+      className="flex flex-col min-h-dvh w-full transition-opacity duration-300"
       style={{ opacity: isVisible ? 1 : 0 }}
     >
       <TitleBar />
 
-      <div className="flex items-center justify-center p-4 relative flex-1 w-full overflow-hidden">
+      <div className="flex items-start sm:items-center justify-center p-3 sm:p-4 relative flex-1 w-full overflow-y-auto overflow-x-hidden">
       {/* Background */}
       <div aria-hidden="true" className="absolute inset-0 pointer-events-none">
         <div className="absolute bg-background inset-0 transition-colors duration-300" />
@@ -270,7 +258,7 @@ export function Login() {
 
       {/* Main Card */}
       <div
-        className="content-stretch flex flex-col gap-3 sm:gap-4 items-start w-full max-w-full sm:max-w-[400px] relative shrink-0 mx-auto transition-all duration-500 ease-out"
+        className="content-stretch flex flex-col gap-3 sm:gap-4 items-start w-full max-w-full sm:max-w-[400px] relative shrink-0 mx-auto my-2 sm:my-4 transition-all duration-500 ease-out"
         style={{
           transform: isVisible ? 'translateY(0)' : 'translateY(20px)',
           opacity: isVisible ? 1 : 0
@@ -282,7 +270,7 @@ export function Login() {
 
         <div className="backdrop-blur-[8px] bg-[rgba(38,38,38,0.6)] relative rounded-[8px] sm:rounded-[12px] shrink-0 w-full transition-all duration-300 hover:shadow-[0px_0px_40px_-10px_rgba(255,144,109,0.3)]">
           <div className="overflow-clip rounded-[inherit] size-full">
-            <div className="content-stretch flex flex-col gap-4 sm:gap-6 items-start p-3 sm:p-5 relative w-full">
+            <div className="content-stretch flex flex-col gap-3 sm:gap-6 items-start p-3 sm:p-5 relative w-full">
               {/* Scanline overlay */}
               <div className="absolute inset-px opacity-3">
                 <img alt="" className="absolute inset-0 max-w-none object-cover pointer-events-none size-full" src={imgDecorativeScanlineEffect} />
@@ -465,26 +453,27 @@ export function Login() {
               </div>
 
               {/* Updater Info */}
-              <div className="w-full mt-4 text-center font-['Inter',sans-serif] text-[11px] text-[#76777d] uppercase tracking-[0.05em] font-semibold">
-                <div className="mb-1">Versión {__APP_VERSION__}</div>
-                {updatePhase === 'checking' && (
-                  <div className="mt-1 bg-[rgba(38,38,38,0.6)] text-[#adaaaa] p-1.5 rounded-[4px]">Buscando actualizaciones...</div>
-                )}
-                {updatePhase === 'available' && (
-                  <div className="mt-1 bg-[rgba(0,102,204,0.1)] text-[#5c9ce6] p-1.5 rounded-[4px] animate-pulse">Actualización disponible. Descargando...</div>
-                )}
-                {updatePhase === 'downloading' && (
-                  <div className="mt-1 bg-[rgba(0,102,204,0.1)] text-[#5c9ce6] p-1.5 rounded-[4px]">Descargando: {updatePercent}%</div>
-                )}
-                {updatePhase === 'ready' && (
-                  <div className="mt-1 bg-[rgba(89,238,80,0.1)] text-[#59ee50] p-1.5 rounded-[4px]">
-                    Actualización lista. <button onClick={(e) => { e.preventDefault(); (window as any).electronAPI?.installUpdate(); }} className="underline hover:text-[#7dff75]">Instalar y reiniciar</button>
-                  </div>
-                )}
-                {updatePhase === 'error' && (
-                  <div className="mt-1 bg-[rgba(255,115,70,0.1)] text-[#ff7346] p-1.5 rounded-[4px]">Error de actualización</div>
-                )}
-              </div>
+              {hasElectronUpdater && updatePhase !== "idle" && (
+                <div className="w-full mt-2 sm:mt-4 text-center font-['Inter',sans-serif] text-[11px] text-[#76777d] uppercase tracking-[0.05em] font-semibold">
+                  {updatePhase === 'checking' && (
+                    <div className="mt-1 bg-[rgba(38,38,38,0.6)] text-[#adaaaa] p-1.5 rounded-[4px]">Buscando actualizaciones...</div>
+                  )}
+                  {updatePhase === 'available' && (
+                    <div className="mt-1 bg-[rgba(0,102,204,0.1)] text-[#5c9ce6] p-1.5 rounded-[4px] animate-pulse">Actualizaci?n disponible. Descargando...</div>
+                  )}
+                  {updatePhase === 'downloading' && (
+                    <div className="mt-1 bg-[rgba(0,102,204,0.1)] text-[#5c9ce6] p-1.5 rounded-[4px]">Descargando: {updatePercent}%</div>
+                  )}
+                  {updatePhase === 'ready' && (
+                    <div className="mt-1 bg-[rgba(89,238,80,0.1)] text-[#59ee50] p-1.5 rounded-[4px]">
+                      Actualizaci?n lista. <button onClick={(e) => { e.preventDefault(); (window as any).electronAPI?.installUpdate(); }} className="underline hover:text-[#7dff75]">Instalar y reiniciar</button>
+                    </div>
+                  )}
+                  {updatePhase === 'error' && (
+                    <div className="mt-1 bg-[rgba(255,115,70,0.1)] text-[#ff7346] p-1.5 rounded-[4px]">Error de actualizaci?n</div>
+                  )}
+                </div>
+              )}
 
               {/* Footer */}
               <div className="relative shrink-0 w-full flex flex-col gap-3 sm:gap-4 items-center">
@@ -500,10 +489,7 @@ export function Login() {
                       <path d={ICONS.arrow} fill="#FF6AA0" />
                     </svg>
                   </div>
-                </div>
-                <div className="pt-2 sm:pt-4 flex gap-4 sm:gap-6 items-center">
-                  {STATUS_INDICATORS}
-                </div>
+                </div>
               </div>
             </div>
           </div>

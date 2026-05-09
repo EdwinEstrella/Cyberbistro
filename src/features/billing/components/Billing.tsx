@@ -642,16 +642,16 @@ export function Billing() {
   const gridColsClass = "grid grid-cols-[80px_100px_1fr_100px_120px_120px_120px]";
 
   return (
-    <div className="flex-1 p-5 sm:p-8 lg:p-10 flex flex-col gap-6 sm:gap-8 lg:gap-10 overflow-auto max-w-[1600px] w-full mx-auto bg-background transition-colors duration-300">
+    <div className="flex-1 p-3 sm:p-6 lg:p-10 flex flex-col gap-4 sm:gap-6 lg:gap-10 overflow-auto max-w-[1600px] w-full mx-auto bg-background transition-colors duration-300">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="space-y-2">
-          <div className="font-['Inter',sans-serif] text-[12px] uppercase tracking-[0.28em] text-primary">
+          <div className="font-['Inter',sans-serif] text-[10px] sm:text-[12px] uppercase tracking-[0.22em] sm:tracking-[0.28em] text-primary">
             Analiticas operativas
           </div>
-          <h1 className="font-['Space_Grotesk',sans-serif] text-foreground text-[30px] sm:text-[38px] font-bold leading-none">
+          <h1 className="font-['Space_Grotesk',sans-serif] text-foreground text-[24px] sm:text-[38px] font-bold leading-none">
             Facturas y ciclos
           </h1>
-          <p className="font-['Inter',sans-serif] text-muted-foreground text-[14px] max-w-3xl leading-relaxed">
+          <p className="font-['Inter',sans-serif] text-muted-foreground text-[12px] sm:text-[14px] max-w-3xl leading-relaxed">
             Revisión de cobros y ciclos operativos cerrados.
           </p>
         </div>
@@ -678,7 +678,7 @@ export function Billing() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-2.5 sm:gap-4">
         {[
           {
             label: view === "facturas" ? "Ingreso Total (24h)" : "Venta Total en Ciclos",
@@ -709,31 +709,31 @@ export function Billing() {
             color: "text-primary"
           }
         ].map((kpi, i) => (
-          <div key={i} className="bg-card rounded-[18px] border border-black/10 dark:border-white/5 p-5 flex flex-col gap-3 min-h-[140px] shadow-sm">
-            <div className="font-['Inter',sans-serif] text-muted-foreground text-[11px] tracking-wide uppercase font-bold">{kpi.label}</div>
-            <div className={`font-['Space_Grotesk',sans-serif] font-bold text-[28px] tabular-nums ${kpi.color}`}>
+          <div key={i} className="bg-card rounded-[16px] sm:rounded-[18px] border border-black/10 dark:border-white/5 p-3 sm:p-5 flex flex-col gap-2 sm:gap-3 min-h-[112px] sm:min-h-[140px] shadow-sm">
+            <div className="font-['Inter',sans-serif] text-muted-foreground text-[9px] sm:text-[11px] tracking-wide uppercase font-bold leading-tight">{kpi.label}</div>
+            <div className={`font-['Space_Grotesk',sans-serif] font-bold text-[18px] sm:text-[28px] tabular-nums leading-tight break-words ${kpi.color}`}>
               {kpi.isMoney ? RD(kpi.value as number) : kpi.value}
             </div>
-            <div className="font-['Inter',sans-serif] text-muted-foreground text-[12px]">{kpi.sub}</div>
+            <div className="font-['Inter',sans-serif] text-muted-foreground text-[10px] sm:text-[12px]">{kpi.sub}</div>
           </div>
         ))}
       </div>
 
-      <div className="bg-card/50 backdrop-blur-[6px] rounded-2xl border border-black/10 dark:border-white/5 p-4 sm:p-5 flex flex-wrap items-center gap-4 sm:gap-5 justify-between">
-        <div className="flex flex-wrap gap-3 sm:gap-4 items-center">
-          <div className="flex items-center gap-2">
+      <div className="bg-card/50 backdrop-blur-[6px] rounded-2xl border border-black/10 dark:border-white/5 p-3 sm:p-5 flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-3 sm:gap-5 justify-between">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3 sm:gap-4 sm:items-center w-full lg:w-auto">
+          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 w-full sm:w-auto">
             <input
               type="date"
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
-              className="bg-muted rounded-xl border border-black/10 dark:border-white/10 px-4 py-2.5 font-['Inter',sans-serif] text-foreground text-[14px] outline-none focus:border-primary transition-colors"
+              className="min-w-0 bg-muted rounded-xl border border-black/10 dark:border-white/10 px-3 sm:px-4 py-2.5 font-['Inter',sans-serif] text-foreground text-[13px] sm:text-[14px] outline-none focus:border-primary transition-colors"
             />
             <span className="text-muted-foreground">a</span>
             <input
               type="date"
               value={dateTo}
               onChange={(e) => setDateTo(e.target.value)}
-              className="bg-muted rounded-xl border border-black/10 dark:border-white/10 px-4 py-2.5 font-['Inter',sans-serif] text-foreground text-[14px] outline-none focus:border-primary transition-colors"
+              className="min-w-0 bg-muted rounded-xl border border-black/10 dark:border-white/10 px-3 sm:px-4 py-2.5 font-['Inter',sans-serif] text-foreground text-[13px] sm:text-[14px] outline-none focus:border-primary transition-colors"
             />
           </div>
 
@@ -742,7 +742,7 @@ export function Billing() {
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="bg-muted rounded-xl border border-black/10 dark:border-white/10 px-4 py-2.5 font-['Inter',sans-serif] text-foreground text-[14px] outline-none cursor-pointer"
+                className="w-full sm:w-auto bg-muted rounded-xl border border-black/10 dark:border-white/10 px-4 py-2.5 font-['Inter',sans-serif] text-foreground text-[13px] sm:text-[14px] outline-none cursor-pointer"
               >
                 <option value="todos">Todos los Estados</option>
                 <option value="pagada">Pagadas</option>
@@ -751,7 +751,7 @@ export function Billing() {
               <select
                 value={methodFilter}
                 onChange={(e) => setMethodFilter(e.target.value)}
-                className="bg-muted rounded-xl border border-black/10 dark:border-white/10 px-4 py-2.5 font-['Inter',sans-serif] text-foreground text-[14px] outline-none cursor-pointer"
+                className="w-full sm:w-auto bg-muted rounded-xl border border-black/10 dark:border-white/10 px-4 py-2.5 font-['Inter',sans-serif] text-foreground text-[13px] sm:text-[14px] outline-none cursor-pointer"
               >
                 <option value="todos">Todos los Metodos</option>
                 <option value="efectivo">Efectivo</option>
@@ -762,11 +762,64 @@ export function Billing() {
             </>
           )}
         </div>
-        <button onClick={() => void loadBillingData()} className="bg-primary text-primary-foreground rounded-xl px-6 py-2.5 font-bold uppercase text-[12px] tracking-widest hover:opacity-90 transition-all">Actualizar</button>
+        <button onClick={() => void loadBillingData()} className="w-full lg:w-auto bg-primary text-primary-foreground rounded-xl px-6 py-2.5 font-bold uppercase text-[12px] tracking-widest hover:opacity-90 transition-all">Actualizar</button>
       </div>
 
       {view === "facturas" ? (
-        <div className="overflow-x-auto rounded-[24px] border border-black/10 dark:border-white/5 bg-card">
+        <>
+        <div className="md:hidden flex flex-col gap-3">
+          {pageData.length === 0 ? (
+            <div className="rounded-[20px] border border-black/10 bg-card p-8 text-center text-sm text-muted-foreground dark:border-white/5">
+              No se encontraron facturas.
+            </div>
+          ) : (
+            pageData.map((inv) => {
+              const status = statusConfig[inv.estado];
+              const method = getMethodDisplay(inv.metodo_pago);
+              const date = new Date(inv.created_at);
+              return (
+                <div key={inv.id} className="rounded-[20px] border border-black/10 bg-card p-4 shadow-sm dark:border-white/5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-['Space_Grotesk',sans-serif] text-lg font-bold text-foreground">
+                        #{String(inv.numero_factura).padStart(4, "0")}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {date.toLocaleDateString()} · {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
+                      </div>
+                    </div>
+                    <div className="text-right font-['Space_Grotesk',sans-serif] text-lg font-bold text-primary tabular-nums">
+                      {RD(inv.total)}
+                    </div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                    <div className="rounded-xl bg-muted/50 p-3">
+                      <div className="text-[10px] font-bold uppercase text-muted-foreground">Origen</div>
+                      <div className="mt-1 font-semibold text-foreground">{inv.mesa_numero ? `Mesa ${inv.mesa_numero}` : "Para llevar"}</div>
+                    </div>
+                    <div className="rounded-xl bg-muted/50 p-3">
+                      <div className="text-[10px] font-bold uppercase text-muted-foreground">Método</div>
+                      <div className="mt-1 font-semibold text-foreground">{method.label}</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 rounded-full border border-black/5 bg-muted/50 px-3 py-1 dark:border-white/5">
+                      <div className="size-1.5 rounded-full" style={{ backgroundColor: status.color }} />
+                      <span className="text-[10px] font-bold uppercase" style={{ color: status.color }}>{status.label}</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => setInvoiceModal(inv)} className="size-9 rounded-lg bg-muted flex items-center justify-center text-muted-foreground border-none"><Eye size={16} /></button>
+                      <button onClick={() => void printInvoice(inv)} className="size-9 rounded-lg bg-muted flex items-center justify-center text-muted-foreground border-none"><Printer size={16} /></button>
+                      <button onClick={() => setDeletePinInvoice(inv)} className="size-9 rounded-lg bg-muted flex items-center justify-center text-destructive/70 border-none"><Trash2 size={16} /></button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        <div className="hidden md:block overflow-x-auto rounded-[24px] border border-black/10 dark:border-white/5 bg-card">
           <div className="min-w-[1000px]">
             <div className={`${gridColsClass} bg-muted/50 border-b border-black/10 dark:border-white/10 px-6 py-4`}>
               {["ID", "Fecha", "Mesa / Origen", "Metodo", "Estado", "Monto", "Acciones"].map((h, i) => (
@@ -820,11 +873,12 @@ export function Billing() {
             </div>
           </div>
         </div>
+        </>
       ) : (
         <div className="flex flex-col gap-6">
           {filteredCycleSummaries.map((entry) => (
              <div key={entry.cycle.id} className="bg-card rounded-[24px] border border-black/10 dark:border-white/5 overflow-hidden shadow-sm">
-                <div className="p-6 sm:p-8 flex flex-col gap-6">
+                <div className="p-4 sm:p-8 flex flex-col gap-4 sm:gap-6">
                    <div className="flex flex-col lg:flex-row justify-between gap-6">
                       <div className="space-y-2">
                          <div className="flex items-center gap-3">
@@ -833,19 +887,19 @@ export function Billing() {
                                {entry.cycle.closed_at ? "Cerrado" : "Abierto"}
                             </span>
                          </div>
-                         <h2 className="font-['Space_Grotesk',sans-serif] text-[28px] font-bold text-foreground">Día {entry.cycle.business_day}</h2>
-                         <p className="text-muted-foreground text-[14px]">Operación: {formatDateTime(entry.cycle.opened_at)} - {formatDateTime(entry.cycle.closed_at)}</p>
+                         <h2 className="font-['Space_Grotesk',sans-serif] text-[21px] sm:text-[28px] font-bold text-foreground">Día {entry.cycle.business_day}</h2>
+                         <p className="text-muted-foreground text-[12px] sm:text-[14px]">Operación: {formatDateTime(entry.cycle.opened_at)} - {formatDateTime(entry.cycle.closed_at)}</p>
                       </div>
                       <div className="flex flex-col gap-3 lg:items-end">
-                      <div className="flex gap-4">
+                      <div className="grid grid-cols-3 gap-2 sm:flex sm:gap-4">
                          {[
                            { label: "Vendido", val: RD(entry.totalSold), color: "text-foreground" },
                            { label: "Gastos", val: RD(entry.totalExpenses), color: "text-primary" },
                            { label: "Neto", val: RD(entry.netTotal), color: entry.netTotal >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive" }
                          ].map((st, j) => (
-                           <div key={j} className="bg-muted/50 rounded-2xl px-6 py-4 border border-black/5 dark:border-white/5">
+                           <div key={j} className="bg-muted/50 rounded-2xl px-3 sm:px-6 py-3 sm:py-4 border border-black/5 dark:border-white/5 min-w-0">
                               <div className="text-[10px] font-bold uppercase text-muted-foreground mb-1">{st.label}</div>
-                              <div className={`font-['Space_Grotesk',sans-serif] text-[20px] font-bold tabular-nums ${st.color}`}>{st.val}</div>
+                              <div className={`font-['Space_Grotesk',sans-serif] text-[13px] sm:text-[20px] font-bold tabular-nums break-words ${st.color}`}>{st.val}</div>
                            </div>
                          ))}
                       </div>
@@ -868,7 +922,7 @@ export function Billing() {
                    </button>
                    
                    {expandedCycleId === entry.cycle.id && (
-                     <div className="pt-6 mt-2 border-t border-black/10 dark:border-white/5 animate-in fade-in slide-in-from-top-2 grid grid-cols-1 xl:grid-cols-3 gap-8">
+                     <div className="pt-4 sm:pt-6 mt-2 border-t border-black/10 dark:border-white/5 animate-in fade-in slide-in-from-top-2 grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-8">
                         <div>
                           <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-4">Por Categoria</div>
                           <div className="space-y-3">
