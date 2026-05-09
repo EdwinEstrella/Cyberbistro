@@ -280,7 +280,7 @@ export function MesaCloseAccountModal({
 
     const { data: tenant } = await insforgeClient.database
       .from("tenants")
-      .select("nombre_negocio, rnc, direccion, telefono, logo_url")
+      .select("nombre_negocio, rnc, direccion, telefono, logo_url, logo_size_px, logo_offset_x, logo_offset_y")
       .eq("id", tenantId)
       .single();
 
@@ -297,6 +297,9 @@ export function MesaCloseAccountModal({
         direccion: tenant.direccion,
         telefono: tenant.telefono,
         logo_url: tenant.logo_url,
+        logo_size_px: (tenant as any).logo_size_px,
+        logo_offset_x: (tenant as any).logo_offset_x,
+        logo_offset_y: (tenant as any).logo_offset_y,
       },
       factura as unknown as Parameters<typeof buildFacturaReceiptHtml>[1],
       numeroFactura,

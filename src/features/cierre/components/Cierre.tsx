@@ -265,7 +265,7 @@ export function Cierre() {
     setPrintMsg("Ciclo cerrado.");
     // Printing logic maintained identically
     const [tenantRes] = await Promise.all([
-      insforgeClient.database.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url").eq("id", tenantId).maybeSingle(),
+      insforgeClient.database.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url, logo_size_px, logo_offset_x, logo_offset_y").eq("id", tenantId).maybeSingle(),
     ]);
     if (tenantRes.data) {
       const metMap = new Map<string, any>();

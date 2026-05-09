@@ -1,4 +1,4 @@
-import { getThermalPrintSettings, type PaperWidthMm } from "./thermalStorage";
+import { type PaperWidthMm } from "./thermalStorage";
 
 export interface TenantReceiptInfo {
   nombre_negocio: string | null;
@@ -7,6 +7,15 @@ export interface TenantReceiptInfo {
   telefono: string | null;
   logo_url: string | null;
   moneda?: string | null;
+  logo_size_px?: number | null;
+  logo_offset_x?: number | null;
+  logo_offset_y?: number | null;
+}
+
+function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(n)));
 }
 
 function escapeHtml(s: string): string {
@@ -60,10 +69,9 @@ function thermalStyles(paperWidthMm: PaperWidthMm): string {
 
 function headerBlock(t: TenantReceiptInfo, opts?: { omitRnc?: boolean }): string {
   const nombre = escapeHtml(t.nombre_negocio || "Cloudix");
-  const logoSettings = getThermalPrintSettings();
-  const logoSize = logoSettings.logoSizePx;
-  const logoX = logoSettings.logoOffsetX;
-  const logoY = logoSettings.logoOffsetY;
+  const logoSize = clampNumber(t.logo_size_px, 32, 90, 52);
+  const logoX = clampNumber(t.logo_offset_x, -28, 28, 0);
+  const logoY = clampNumber(t.logo_offset_y, -12, 18, 0);
   const logoBoxHeight = logoSize + Math.max(logoY, 0) + 8;
   const logo = t.logo_url
     ? `<div class="logo-wrap" style="height:${logoBoxHeight}px;margin-bottom:${Math.max(2, 8 - logoY)}px"><img src="${escapeHtml(t.logo_url)}" alt="" crossorigin="anonymous" style="max-height:${logoSize}px;transform:translate(${logoX}px, ${logoY}px)" /></div>`
@@ -394,12 +402,6 @@ export interface CierreDiaThermalData {
   /** Filas ordenadas para el ticket. */
   porMetodo: Array<{ etiqueta: string; cantidad: number; total: number }>;
   ticketPromedioPagado: number;
-  /** Consumos sin facturar al momento del cierre (cuentas abiertas en POS). */
-  cuentasAbiertasLineas?: number;
-  cuentasAbiertasMesas?: number;
-  cuentasAbiertasSubtotal?: number;
-  cuentasAbiertasItbisEst?: number;
-  cuentasAbiertasTotalEst?: number;
 }
 
 function rd(n: number, tenant: TenantReceiptInfo): string {
@@ -455,7 +457,6 @@ export function buildCierreDiaReceiptHtml(
   ${headerBlock(tenant)}
   <div class="divider"></div>
   <h2>CIERRE DE DÍA</h2>
-  <p class="center fdo-company-line" style="margin:0 0 6px;font-size:14px">Resumen operativo (no fiscal)</p>
   <table>
     <tr class="header-row"><td><strong>Día operativo</strong></td><td style="text-align:right;font-weight:bold;font-size:14px">${escapeHtml(data.fechaOperacion)}</td></tr>
     ${cicloRows}
@@ -483,23 +484,6 @@ export function buildCierreDiaReceiptHtml(
   </table>`
       : ""
   }
-  ${
-    data.cuentasAbiertasLineas != null &&
-    data.cuentasAbiertasLineas > 0 &&
-    data.cuentasAbiertasSubtotal != null
-      ? `
-  <div class="double-divider"></div>
-  <p style="font-size:14px;font-weight:700;margin:0 0 4px">Cuentas abiertas (sin facturar)</p>
-  <table>
-    <tr class="header-row"><td>Líneas / mesas</td><td style="text-align:right;font-size:14px">${data.cuentasAbiertasLineas} / ${data.cuentasAbiertasMesas ?? "—"}</td></tr>
-    <tr class="header-row"><td>Subtotal pendiente</td><td style="text-align:right;font-size:14px">${rd(data.cuentasAbiertasSubtotal, tenant)}</td></tr>
-    <tr class="header-row"><td>ITBIS est. (18%)</td><td style="text-align:right;font-size:14px">${data.cuentasAbiertasItbisEst != null ? rd(data.cuentasAbiertasItbisEst, tenant) : "—"}</td></tr>
-    <tr class="total"><td>TOTAL EST. PENDIENTE</td><td style="text-align:right">${data.cuentasAbiertasTotalEst != null ? rd(data.cuentasAbiertasTotalEst, tenant) : "—"}</td></tr>
-  </table>
-  <p class="center" style="font-size:13px;margin:4px 0 0;font-weight:600">No incluido en total cobrado — cobrar en POS</p>
-  `
-      : ""
-  }
   <div class="double-divider"></div>
   <table>
     <thead class="fdo-items-head"><tr><th>Método</th><th class="c">#</th><th class="r">Total</th></tr></thead>
@@ -508,7 +492,6 @@ export function buildCierreDiaReceiptHtml(
   <div class="double-divider"></div>
   <div class="footer">
     <p style="margin:0 0 4px">Conserve para control interno</p>
-    <p style="margin:0;font-size:13px;font-weight:600">No constituye comprobante fiscal</p>
     <p style="margin:6px 0 0;font-size:13px;font-weight:600">Cloudix OS — Cierre</p>
   </div>
   <div class="divider"></div>

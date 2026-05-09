@@ -38,6 +38,9 @@ interface Config {
   nombre_empresa: string;
   rnc: string;
   logo_url: string;
+  logo_size_px: number;
+  logo_offset_x: number;
+  logo_offset_y: number;
   direccion: string;
   telefono: string;
   currency_code: "DOP" | "ARS";
@@ -96,11 +99,6 @@ const SAMPLE_CIERRE_THERMAL_BASE: Omit<CierreDiaThermalData, "generadoEn" | "gen
     { etiqueta: "Digital", cantidad: 1, total: 1000 },
   ],
   ticketPromedioPagado: 889.34,
-  cuentasAbiertasLineas: 5,
-  cuentasAbiertasMesas: 2,
-  cuentasAbiertasSubtotal: 450,
-  cuentasAbiertasItbisEst: 81,
-  cuentasAbiertasTotalEst: 531,
 };
 
 type ThermalPreviewKind = "factura" | "comanda" | "cierre" | "split";
@@ -118,6 +116,9 @@ export function Ajustes() {
     nombre_empresa: "",
     rnc: "",
     logo_url: "",
+    logo_size_px: 52,
+    logo_offset_x: 0,
+    logo_offset_y: 0,
     direccion: "",
     telefono: "",
     currency_code: "DOP",
@@ -133,7 +134,7 @@ export function Ajustes() {
   const [saving, setSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const TENANT_FIELDS_BASE = "nombre_negocio, rnc, logo_url, direccion, telefono";
+  const TENANT_FIELDS_BASE = "nombre_negocio, rnc, logo_url, logo_size_px, logo_offset_x, logo_offset_y, direccion, telefono";
   const TENANT_FIELDS_CURRENCY = "moneda";
   const TENANT_FIELDS_NCF = `itbis_cobro_por_defecto, ncf_fiscal_activo, ncf_tipo_default, ncf_secuencia_siguiente, ncf_secuencias_por_tipo, ${NCF_B_SEQUENCE_FIELDS_SELECT}`;
 
@@ -152,6 +153,9 @@ export function Ajustes() {
           nombre_empresa: data.nombre_negocio ?? "",
           rnc: data.rnc ?? "",
           logo_url: data.logo_url ?? "",
+          logo_size_px: Math.min(90, Math.max(32, Number(data.logo_size_px ?? 52))),
+          logo_offset_x: Math.min(28, Math.max(-28, Number(data.logo_offset_x ?? 0))),
+          logo_offset_y: Math.min(18, Math.max(-12, Number(data.logo_offset_y ?? 0))),
           direccion: data.direccion ?? "",
           telefono: data.telefono ?? "",
           currency_code: (data.moneda || "DOP") as any,
@@ -176,6 +180,9 @@ export function Ajustes() {
       nombre_negocio: config.nombre_empresa.trim(),
       rnc: config.rnc.trim() || null,
       logo_url: config.logo_url.trim() || null,
+      logo_size_px: Math.min(90, Math.max(32, Math.round(Number(config.logo_size_px) || 52))),
+      logo_offset_x: Math.min(28, Math.max(-28, Math.round(Number(config.logo_offset_x) || 0))),
+      logo_offset_y: Math.min(18, Math.max(-12, Math.round(Number(config.logo_offset_y) || 0))),
       direccion: config.direccion.trim() || null,
       telefono: config.telefono.trim() || null,
       moneda: config.currency_code,
@@ -203,6 +210,9 @@ export function Ajustes() {
     direccion: config.direccion.trim() || null,
     telefono: config.telefono.trim() || null,
     logo_url: config.logo_url.trim() || null,
+    logo_size_px: config.logo_size_px,
+    logo_offset_x: config.logo_offset_x,
+    logo_offset_y: config.logo_offset_y,
     moneda: config.currency_code,
   }), [config]);
 
@@ -327,6 +337,21 @@ export function Ajustes() {
               </div>
               <input ref={fileInputRef} type="file" className="hidden" onChange={handleLogoUpload} />
               <Field label="URL Remota"><input type="text" value={config.logo_url} onChange={e => setConfig(p => ({ ...p, logo_url: e.target.value }))} className="input-field" /></Field>
+              <div className="border-t border-border pt-5 flex flex-col gap-4">
+                <div>
+                  <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Logo en recibos</div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">Se guarda en InsForge al presionar Guardar Cambios.</p>
+                </div>
+                <Field label={`Tamaño (${config.logo_size_px}px)`}>
+                  <input type="range" min="32" max="90" value={config.logo_size_px} onChange={e => setConfig(p => ({ ...p, logo_size_px: Number(e.target.value) }))} className="w-full accent-primary" />
+                </Field>
+                <Field label={`Izquierda / Derecha (${config.logo_offset_x}px)`}>
+                  <input type="range" min="-28" max="28" value={config.logo_offset_x} onChange={e => setConfig(p => ({ ...p, logo_offset_x: Number(e.target.value) }))} className="w-full accent-primary" />
+                </Field>
+                <Field label={`Arriba / Abajo (${config.logo_offset_y}px)`}>
+                  <input type="range" min="-12" max="18" value={config.logo_offset_y} onChange={e => setConfig(p => ({ ...p, logo_offset_y: Number(e.target.value) }))} className="w-full accent-primary" />
+                </Field>
+              </div>
            </section>
 
            <ThermalPrintSettingsCard onThermalSaved={() => setThermalPreviewNonce(n => n + 1)} />
@@ -379,21 +404,14 @@ function ThermalPrintSettingsCard({ onThermalSaved }: { onThermalSaved?: () => v
   const initialThermalSettings = useMemo(() => getThermalPrintSettings(), []);
   const [paperWidthMm, setPaperWidthMm] = useState<PaperWidthMm>(initialThermalSettings.paperWidthMm);
   const [printerName, setPrinterName] = useState(initialThermalSettings.printerName);
-  const [logoSizePx, setLogoSizePx] = useState(initialThermalSettings.logoSizePx);
-  const [logoOffsetX, setLogoOffsetX] = useState(initialThermalSettings.logoOffsetX);
-  const [logoOffsetY, setLogoOffsetY] = useState(initialThermalSettings.logoOffsetY);
   const [printers, setPrinters] = useState<ThermalPrinterInfo[]>([]);
   useEffect(() => {
     if (window.electronAPI?.listPrinters) {
       window.electronAPI.listPrinters().then(setPrinters).catch(() => {});
     }
   }, []);
-  useEffect(() => {
-    saveThermalPrintSettings({ paperWidthMm, printerName, logoSizePx, logoOffsetX, logoOffsetY });
-    onThermalSaved?.();
-  }, [logoSizePx, logoOffsetX, logoOffsetY]);
   function handleSave() {
-    saveThermalPrintSettings({ paperWidthMm, printerName, logoSizePx, logoOffsetX, logoOffsetY });
+    saveThermalPrintSettings({ ...getThermalPrintSettings(), paperWidthMm, printerName });
     onThermalSaved?.();
     alert("Configuración de impresión guardada.");
   }
@@ -411,21 +429,6 @@ function ThermalPrintSettingsCard({ onThermalSaved }: { onThermalSaved?: () => v
           {printers.map(p => <option key={p.name} value={p.name}>{p.displayName || p.name}</option>)}
         </select>
       </Field>
-      <div className="border-t border-border pt-5 flex flex-col gap-4">
-        <div>
-          <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Logo en recibos</div>
-          <p className="text-xs text-muted-foreground leading-relaxed">Ajustes locales con límites para evitar superposición en el encabezado.</p>
-        </div>
-        <Field label={`Tamaño (${logoSizePx}px)`}>
-          <input type="range" min="32" max="90" value={logoSizePx} onChange={e => setLogoSizePx(Number(e.target.value))} className="w-full accent-primary" />
-        </Field>
-        <Field label={`Izquierda / Derecha (${logoOffsetX}px)`}>
-          <input type="range" min="-28" max="28" value={logoOffsetX} onChange={e => setLogoOffsetX(Number(e.target.value))} className="w-full accent-primary" />
-        </Field>
-        <Field label={`Arriba / Abajo (${logoOffsetY}px)`}>
-          <input type="range" min="-12" max="18" value={logoOffsetY} onChange={e => setLogoOffsetY(Number(e.target.value))} className="w-full accent-primary" />
-        </Field>
-      </div>
       <button onClick={handleSave} className="bg-muted text-foreground border border-border rounded-lg py-3 text-[11px] font-bold uppercase tracking-widest hover:bg-black/5 dark:hover:bg-white/10 transition-all cursor-pointer">Guardar Local</button>
     </div>
   );

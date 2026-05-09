@@ -464,7 +464,7 @@ export function Billing() {
 
       const { data: tenant, error: tenantError } = await insforgeClient.database
         .from("tenants")
-        .select("nombre_negocio, rnc, direccion, telefono, logo_url")
+        .select("nombre_negocio, rnc, direccion, telefono, logo_url, logo_size_px, logo_offset_x, logo_offset_y")
         .eq("id", tid)
         .single();
 
@@ -482,6 +482,9 @@ export function Billing() {
           direccion: tenant.direccion,
           telefono: tenant.telefono,
           logo_url: tenant.logo_url,
+          logo_size_px: (tenant as any).logo_size_px,
+          logo_offset_x: (tenant as any).logo_offset_x,
+          logo_offset_y: (tenant as any).logo_offset_y,
         },
         {
           items,
@@ -518,7 +521,7 @@ export function Billing() {
 
       const { data: tenant, error: tenantError } = await insforgeClient.database
         .from("tenants")
-        .select("nombre_negocio, rnc, direccion, telefono, logo_url")
+        .select("nombre_negocio, rnc, direccion, telefono, logo_url, logo_size_px, logo_offset_x, logo_offset_y")
         .eq("id", tenantId)
         .single();
 
