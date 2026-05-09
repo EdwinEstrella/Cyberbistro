@@ -26,6 +26,7 @@ module.exports = {
       /^\/yarn\.lock/,
       /^\/pnpm-lock\.yaml/,
       /^\/SOLUCION_ICONO\.md/,
+      /^\/website/,
     ],
     // Windows-specific configuration
     win32metadata: {

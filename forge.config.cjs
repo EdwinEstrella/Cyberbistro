@@ -10,6 +10,7 @@ function ignoreDevSymlinkPaths(relativePath) {
     '/.cursor/',
     '/.git/',
     '/agent-transcripts/',
+    '/website/',
   ];
   if (segments.some((s) => p.includes(s))) return true;
   if (/^\.agents(\/|$)/.test(p) || /^\.claude(\/|$)/.test(p)) return true;
