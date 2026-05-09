@@ -3,15 +3,19 @@ import { Outfit, DM_Sans } from "next/font/google";
 import "./globals.css";
 
 const outfit = Outfit({
-  weight: ["300", "400", "500", "600", "700", "800", "900"],
+  weight: ["400", "700", "800", "900"],
   subsets: ["latin"],
   variable: "--next-font-display",
+  display: "swap",
+  preload: true,
 });
 
 const dmSans = DM_Sans({
-  weight: ["400", "500", "600", "700"],
+  weight: ["400", "500", "600"],
   subsets: ["latin"],
   variable: "--next-font-body",
+  display: "swap",
+  preload: true,
 });
 
 export const metadata: Metadata = {
