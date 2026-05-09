@@ -4,6 +4,9 @@
   "description": "Cloudix Desktop App",
   "author": "Edwin",
   "main": "dist-electron/main.js",
+  "engines": {
+    "node": ">=22"
+  },
   "build": {
     "appId": "com.edwin.cloudix",
     "productName": "Cloudix",

@@ -6,7 +6,6 @@
  */
 const fs = require('node:fs')
 const path = require('node:path')
-const { rcedit } = require('rcedit')
 
 if (process.platform !== 'win32') {
   process.exit(0)
@@ -32,6 +31,7 @@ if (!fs.existsSync(iconPath)) {
 
 ;(async () => {
   try {
+    const { rcedit } = await import('rcedit')
     await rcedit(electronExe, { icon: iconPath })
     console.log('[patch-dev-electron-icon] Icono de Cloudix aplicado a electron.exe (modo dev).')
   } catch (e) {
