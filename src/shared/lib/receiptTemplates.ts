@@ -231,6 +231,9 @@ export function buildFacturaReceiptHtml(
     <p style="margin:0 0 4px">¡Gracias por su compra!</p>
   </div>
   <div class="divider"></div>
+  <div class="center" style="margin: 12px 0 8px">
+    <img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https://azokia.com" style="width: 120px; height: 120px;" />
+  </div>
   <div class="center" style="font-size:13px;font-weight:600">${escapeHtml(new Date().toLocaleString("es-DO", { timeZone: "America/Santo_Domingo", hour12: true }))}</div>
   `;
 

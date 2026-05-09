@@ -66,7 +66,7 @@ const SAMPLE_FACTURA_THERMAL_PREVIEW: Parameters<typeof buildFacturaReceiptHtml>
   total: 750.48,
   metodo_pago: "efectivo",
   mesa_numero: 4,
-  notas: "Vista previa.",
+  notas: null,
   estado: "pagada",
   propina: 0
 };
@@ -268,66 +268,6 @@ export function Ajustes() {
             </section>
 
             <section className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 flex flex-col gap-6">
-              <h2 className="font-['Space_Grotesk'] text-xl font-bold text-foreground">Configuración Fiscal</h2>
-              <div className="flex flex-col gap-4">
-                <label className="flex items-center gap-3 cursor-pointer group">
-                  <input type="checkbox" checked={config.itbis_cobro_por_defecto} onChange={e => setConfig(p => ({ ...p, itbis_cobro_por_defecto: e.target.checked }))} className="size-4 rounded accent-primary" />
-                  <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">Cobrar ITBIS por defecto</span>
-                </label>
-                <label className="flex items-center gap-3 cursor-pointer group border-t border-border pt-4">
-                  <input type="checkbox" checked={config.ncf_fiscal_activo} onChange={e => setConfig(p => ({ ...p, ncf_fiscal_activo: e.target.checked }))} className="size-4 rounded accent-primary" />
-                  <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">Activar emisión de NCF</span>
-                </label>
-                {config.ncf_fiscal_activo && (
-                  <div className="animate-in fade-in slide-in-from-top-2 duration-300 flex flex-col gap-4">
-                    <Field label="Tipo Predeterminado">
-                      <select value={config.ncf_tipo_default} onChange={e => setConfig(p => ({ ...p, ncf_tipo_default: e.target.value as any }))} className="input-field cursor-pointer">
-                        {NCF_B_TIPO_OPCIONES.map(o => <option key={o.codigo} value={o.codigo}>{o.descripcion}</option>)}
-                      </select>
-                    </Field>
-                    <div className="mt-4 pt-4 border-t border-border flex flex-col gap-4">
-                      <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Secuencias Configuradas por Tipo B</span>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {NCF_B_TIPO_OPCIONES.map(o => (
-                          <div key={o.codigo} className="bg-background rounded-[16px] border border-black/5 dark:border-white/5 p-4 flex flex-col gap-3 hover:border-primary/20 transition-colors">
-                             <div className="flex justify-between items-center">
-                               <span className="font-bold font-['Space_Grotesk'] text-foreground text-lg">{o.codigo}</span>
-                               <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">{o.codigo === config.ncf_tipo_default ? "Predeterminado" : "Disponible"}</span>
-                             </div>
-                             <input type="number" min="1" value={config.ncf_secuencias_por_tipo[o.codigo] || 1} onChange={e => setConfig(p => ({ ...p, ncf_secuencias_por_tipo: { ...p.ncf_secuencias_por_tipo, [o.codigo]: Math.max(1, parseInt(e.target.value) || 1) } }))} className="bg-muted/30 border border-black/10 dark:border-white/10 rounded-xl px-4 py-3 font-mono text-foreground font-bold outline-none focus:border-primary/50 transition-all" />
-                             <span className="text-[11px] text-muted-foreground/80 leading-relaxed">{o.codigo} - {o.descripcion}</span>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="mt-2 text-[13px] font-bold text-green-500/90 tracking-wide">
-                        Vista previa — próximo NCF: {construirCadenaNcf(config.ncf_tipo_default, config.ncf_secuencias_por_tipo[config.ncf_tipo_default] || 1) || "---"}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </section>
-          </div>
-
-          <section className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6">
-            <h2 className="font-['Space_Grotesk'] text-xl font-bold text-foreground mb-6">Vista Previa Impresión</h2>
-            <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
-              {THERMAL_PREVIEW_TABS.map(t => (
-                <button key={t.id} onClick={() => setThermalPreviewKind(t.id)} className={`px-4 py-2 rounded-lg text-[12px] font-bold uppercase tracking-widest transition-all cursor-pointer border-none ${thermalPreviewKind === t.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5"}`}>{t.label}</button>
-              ))}
-            </div>
-            <div className="bg-muted/30 rounded-2xl p-8 flex justify-center border border-dashed border-border min-h-[400px]">
-               <iframe srcDoc={thermalPreviewHtml} className="bg-white rounded shadow-2xl border-none w-[80mm] min-h-[500px] scale-95 origin-top" title="Thermal Preview" />
-            </div>
-          </section>
-
-          <button onClick={handleSave} disabled={saving} className="bg-primary text-primary-foreground rounded-xl py-4 font-bold uppercase text-sm tracking-[0.2em] shadow-lg hover:opacity-90 disabled:opacity-50 transition-all border-none cursor-pointer w-full md:w-fit md:px-12 self-end">
-            {saving ? "Guardando..." : "Guardar Cambios"}
-          </button>
-        </div>
-
-        <aside className="flex flex-col gap-6 lg:sticky lg:top-8">
-           <section className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 flex flex-col gap-6">
               <h2 className="font-['Space_Grotesk'] text-xl font-bold text-foreground">Identidad Visual</h2>
               <div className="aspect-video bg-muted/50 rounded-2xl border-2 border-dashed border-border flex items-center justify-center overflow-hidden relative group">
                 {config.logo_url ? <img src={config.logo_url} className="max-h-[80%] object-contain" /> : <span className="text-muted-foreground text-xs font-['Inter']">Sin Logo</span>}
@@ -345,15 +285,77 @@ export function Ajustes() {
                 <Field label={`Tamaño (${config.logo_size_px}px)`}>
                   <input type="range" min="32" max="90" value={config.logo_size_px} onChange={e => setConfig(p => ({ ...p, logo_size_px: Number(e.target.value) }))} className="w-full accent-primary" />
                 </Field>
-                <Field label={`Izquierda / Derecha (${config.logo_offset_x}px)`}>
-                  <input type="range" min="-28" max="28" value={config.logo_offset_x} onChange={e => setConfig(p => ({ ...p, logo_offset_x: Number(e.target.value) }))} className="w-full accent-primary" />
-                </Field>
-                <Field label={`Arriba / Abajo (${config.logo_offset_y}px)`}>
-                  <input type="range" min="-12" max="18" value={config.logo_offset_y} onChange={e => setConfig(p => ({ ...p, logo_offset_y: Number(e.target.value) }))} className="w-full accent-primary" />
-                </Field>
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label={`X (${config.logo_offset_x}px)`}>
+                    <input type="range" min="-28" max="28" value={config.logo_offset_x} onChange={e => setConfig(p => ({ ...p, logo_offset_x: Number(e.target.value) }))} className="w-full accent-primary" />
+                  </Field>
+                  <Field label={`Y (${config.logo_offset_y}px)`}>
+                    <input type="range" min="-12" max="18" value={config.logo_offset_y} onChange={e => setConfig(p => ({ ...p, logo_offset_y: Number(e.target.value) }))} className="w-full accent-primary" />
+                  </Field>
+                </div>
               </div>
-           </section>
+            </section>
+          </div>
 
+          <section className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6">
+            <h2 className="font-['Space_Grotesk'] text-xl font-bold text-foreground mb-6">Vista Previa Impresión</h2>
+            <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
+              {THERMAL_PREVIEW_TABS.map(t => (
+                <button key={t.id} onClick={() => setThermalPreviewKind(t.id)} className={`px-4 py-2 rounded-lg text-[12px] font-bold uppercase tracking-widest transition-all cursor-pointer border-none ${thermalPreviewKind === t.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5"}`}>{t.label}</button>
+              ))}
+            </div>
+            <div className="bg-muted/30 rounded-2xl p-8 flex justify-center border border-dashed border-border min-h-[400px]">
+               <iframe srcDoc={thermalPreviewHtml} className="bg-white rounded shadow-2xl border-none w-[80mm] min-h-[500px] scale-95 origin-top" title="Thermal Preview" />
+            </div>
+          </section>
+
+          <section className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 flex flex-col gap-6">
+            <h2 className="font-['Space_Grotesk'] text-xl font-bold text-foreground">Configuración Fiscal</h2>
+            <div className="flex flex-col gap-4">
+              <label className="flex items-center gap-3 cursor-pointer group">
+                <input type="checkbox" checked={config.itbis_cobro_por_defecto} onChange={e => setConfig(p => ({ ...p, itbis_cobro_por_defecto: e.target.checked }))} className="size-4 rounded accent-primary" />
+                <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">Cobrar ITBIS por defecto</span>
+              </label>
+              <label className="flex items-center gap-3 cursor-pointer group border-t border-border pt-4">
+                <input type="checkbox" checked={config.ncf_fiscal_activo} onChange={e => setConfig(p => ({ ...p, ncf_fiscal_activo: e.target.checked }))} className="size-4 rounded accent-primary" />
+                <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">Activar emisión de NCF</span>
+              </label>
+              {config.ncf_fiscal_activo && (
+                <div className="animate-in fade-in slide-in-from-top-2 duration-300 flex flex-col gap-4">
+                  <Field label="Tipo Predeterminado">
+                    <select value={config.ncf_tipo_default} onChange={e => setConfig(p => ({ ...p, ncf_tipo_default: e.target.value as any }))} className="input-field cursor-pointer">
+                      {NCF_B_TIPO_OPCIONES.map(o => <option key={o.codigo} value={o.codigo}>{o.descripcion}</option>)}
+                    </select>
+                  </Field>
+                  <div className="mt-4 pt-4 border-t border-border flex flex-col gap-4">
+                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Secuencias Configuradas por Tipo B</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {NCF_B_TIPO_OPCIONES.map(o => (
+                        <div key={o.codigo} className="bg-background rounded-[16px] border border-black/5 dark:border-white/5 p-4 flex flex-col gap-3 hover:border-primary/20 transition-colors">
+                           <div className="flex justify-between items-center">
+                             <span className="font-bold font-['Space_Grotesk'] text-foreground text-lg">{o.codigo}</span>
+                             <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">{o.codigo === config.ncf_tipo_default ? "Predeterminado" : "Disponible"}</span>
+                           </div>
+                           <input type="number" min="1" value={config.ncf_secuencias_por_tipo[o.codigo] || 1} onChange={e => setConfig(p => ({ ...p, ncf_secuencias_por_tipo: { ...p.ncf_secuencias_por_tipo, [o.codigo]: Math.max(1, parseInt(e.target.value) || 1) } }))} className="bg-muted/30 border border-black/10 dark:border-white/10 rounded-xl px-4 py-3 font-mono text-foreground font-bold outline-none focus:border-primary/50 transition-all" />
+                           <span className="text-[11px] text-muted-foreground/80 leading-relaxed">{o.codigo} - {o.descripcion}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-2 text-[13px] font-bold text-green-500/90 tracking-wide">
+                      Vista previa — próximo NCF: {construirCadenaNcf(config.ncf_tipo_default, config.ncf_secuencias_por_tipo[config.ncf_tipo_default] || 1) || "---"}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+
+          <button onClick={handleSave} disabled={saving} className="bg-primary text-primary-foreground rounded-xl py-4 font-bold uppercase text-sm tracking-[0.2em] shadow-lg hover:opacity-90 disabled:opacity-50 transition-all border-none cursor-pointer w-full md:w-fit md:px-12 self-end">
+            {saving ? "Guardando..." : "Guardar Cambios"}
+          </button>
+        </div>
+
+        <aside className="flex flex-col gap-6 lg:sticky lg:top-8">
            <ThermalPrintSettingsCard onThermalSaved={() => setThermalPreviewNonce(n => n + 1)} />
            <AppDesktopUpdateCard />
         </aside>
