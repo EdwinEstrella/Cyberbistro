@@ -161,66 +161,70 @@ export function TitleBar({
           )}
         </button>
 
-        {/* Minimize Button */}
-        <button
-          onClick={handleMinimize}
-          className="w-11 h-full flex items-center justify-center hover:bg-white/5 transition-colors"
-          aria-label="Minimizar"
-          type="button"
-        >
-          <svg width="12" height="1" viewBox="0 0 12 1" fill="none">
-            <rect width="12" height="1" fill="currentColor" />
-          </svg>
-        </button>
+        {Boolean(window.electronAPI) && (
+          <>
+            {/* Minimize Button */}
+            <button
+              onClick={handleMinimize}
+              className="w-11 h-full flex items-center justify-center hover:bg-white/5 transition-colors"
+              aria-label="Minimizar"
+              type="button"
+            >
+              <svg width="12" height="1" viewBox="0 0 12 1" fill="none">
+                <rect width="12" height="1" fill="currentColor" />
+              </svg>
+            </button>
 
-        {/* Maximize/Restore Button */}
-        <button
-          onClick={handleMaximize}
-          className="w-11 h-full flex items-center justify-center hover:bg-white/5 transition-colors"
-          aria-label={isMaximized ? "Restaurar" : "Maximizar"}
-          type="button"
-        >
-          {isMaximized ? (
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-              <path
-                d="M1 4V1H4M6 1H9V4M9 6V9H6M4 9H1V6"
-                stroke="currentColor"
-                strokeWidth="1"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          ) : (
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-              <rect
-                x="0.5"
-                y="0.5"
-                width="9"
-                height="9"
-                stroke="currentColor"
-                strokeWidth="1"
-                fill="none"
-              />
-            </svg>
-          )}
-        </button>
+            {/* Maximize/Restore Button */}
+            <button
+              onClick={handleMaximize}
+              className="w-11 h-full flex items-center justify-center hover:bg-white/5 transition-colors"
+              aria-label={isMaximized ? "Restaurar" : "Maximizar"}
+              type="button"
+            >
+              {isMaximized ? (
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                  <path
+                    d="M1 4V1H4M6 1H9V4M9 6V9H6M4 9H1V6"
+                    stroke="currentColor"
+                    strokeWidth="1"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              ) : (
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                  <rect
+                    x="0.5"
+                    y="0.5"
+                    width="9"
+                    height="9"
+                    stroke="currentColor"
+                    strokeWidth="1"
+                    fill="none"
+                  />
+                </svg>
+              )}
+            </button>
 
-        {/* Close Button */}
-        <button
-          onClick={handleClose}
-          className="w-11 h-full flex items-center justify-center hover:bg-[#e81123] transition-colors group"
-          aria-label="Cerrar"
-          type="button"
-        >
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="group-hover:stroke-white">
-            <path
-              d="M1 1L9 9M9 1L1 9"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
+            {/* Close Button */}
+            <button
+              onClick={handleClose}
+              className="w-11 h-full flex items-center justify-center hover:bg-[#e81123] transition-colors group"
+              aria-label="Cerrar"
+              type="button"
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="group-hover:stroke-white">
+                <path
+                  d="M1 1L9 9M9 1L1 9"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
