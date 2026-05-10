@@ -69,29 +69,6 @@ export default defineConfig(async () => ({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (!id.includes('node_modules')) return
-          if (id.includes('react') || id.includes('react-dom') || id.includes('react-router')) {
-            return 'vendor-react'
-          }
-          if (id.includes('@radix-ui') || id.includes('lucide-react') || id.includes('sonner') || id.includes('vaul')) {
-            return 'vendor-ui'
-          }
-          if (id.includes('@mui') || id.includes('@emotion')) {
-            return 'vendor-mui'
-          }
-          if (id.includes('recharts') || id.includes('date-fns')) {
-            return 'vendor-analytics'
-          }
-          if (id.includes('@insforge')) {
-            return 'vendor-insforge'
-          }
-          return 'vendor'
-        },
-      },
-    },
   },
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
