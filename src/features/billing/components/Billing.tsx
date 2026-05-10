@@ -432,19 +432,38 @@ export function Billing() {
   }, [invoices]);
 
   const cycleKpis = useMemo(() => {
-    const closedCycles = filteredCycleSummaries.filter((entry) => entry.cycle.closed_at != null);
-    const activeCycles = filteredCycleSummaries.filter((entry) => entry.cycle.closed_at == null);
-    const totalCycleSales = filteredCycleSummaries.reduce((sum, entry) => sum + entry.totalSold, 0);
-    const totalCycleExpenses = filteredCycleSummaries.reduce((sum, entry) => sum + entry.totalExpenses, 0);
+    const now = new Date();
+    const last24h = now.getTime() - 24 * 60 * 60 * 1000;
+    const weekStart = new Date(now);
+    weekStart.setHours(0, 0, 0, 0);
+    weekStart.setDate(now.getDate() - now.getDay());
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const latestCycle = cycleSummaries[0] ?? null;
+
+    const paidInvoices = invoices.filter((inv) => inv.estado === "pagada");
+    const salesLast24h = paidInvoices
+      .filter((inv) => new Date(inv.created_at).getTime() >= last24h)
+      .reduce((sum, inv) => sum + inv.total, 0);
+    const expensesLast24h = expenses
+      .filter((expense) => new Date(expense.fecha_gasto).getTime() >= last24h)
+      .reduce((sum, expense) => sum + Number(expense.monto), 0);
+    const weekSales = paidInvoices
+      .filter((inv) => new Date(inv.created_at).getTime() >= weekStart.getTime())
+      .reduce((sum, inv) => sum + inv.total, 0);
+    const monthSales = paidInvoices
+      .filter((inv) => new Date(inv.created_at).getTime() >= monthStart)
+      .reduce((sum, inv) => sum + inv.total, 0);
+
     return {
-      totalCycles: filteredCycleSummaries.length,
-      closedCycles: closedCycles.length,
-      activeCycles: activeCycles.length,
-      totalCycleSales,
-      totalCycleExpenses,
-      netCycleTotal: totalCycleSales - totalCycleExpenses,
+      latestCycleSales: latestCycle?.totalSold ?? 0,
+      latestCycleLabel: latestCycle
+        ? `Ciclo #${latestCycle.cycle.cycle_number}`
+        : "Sin ciclos",
+      netLast24h: salesLast24h - expensesLast24h,
+      weekSales,
+      monthSales,
     };
-  }, [filteredCycleSummaries]);
+  }, [cycleSummaries, invoices, expenses]);
 
   const itemsPerPage = 10;
   // totalPages removed
@@ -681,31 +700,31 @@ export function Billing() {
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-2.5 sm:gap-4">
         {[
           {
-            label: view === "facturas" ? "Ingreso Total (24h)" : "Venta Total en Ciclos",
-            value: (view === "facturas" ? totalRevenue : cycleKpis.totalCycleSales),
+            label: view === "facturas" ? "Ingreso Total (24h)" : "Ventas Total",
+            value: (view === "facturas" ? totalRevenue : cycleKpis.latestCycleSales),
             isMoney: true,
-            sub: view === "facturas" ? "Facturas recientes" : `Gastos: ${RD(cycleKpis.totalCycleExpenses)}`,
+            sub: view === "facturas" ? "Facturas recientes" : cycleKpis.latestCycleLabel,
             color: "text-green-600 dark:text-green-400"
           },
           {
-            label: view === "facturas" ? "Ticket Promedio" : "Ciclos Cerrados",
-            value: view === "facturas" ? (invoices.length > 0 ? invoices.reduce((s, i) => s + i.total, 0) / invoices.length : 0) : cycleKpis.closedCycles,
-            isMoney: view === "facturas",
-            sub: view === "facturas" ? `${invoices.length} totales` : `${cycleKpis.activeCycles} activos`,
+            label: view === "facturas" ? "Ticket Promedio" : "Últimas 24 horas",
+            value: view === "facturas" ? (invoices.length > 0 ? invoices.reduce((s, i) => s + i.total, 0) / invoices.length : 0) : cycleKpis.netLast24h,
+            isMoney: true,
+            sub: view === "facturas" ? `${invoices.length} totales` : "Últimas 24 horas",
             color: "text-foreground"
           },
           {
-            label: view === "facturas" ? "Facturas Pagadas" : "Neto en Ciclos",
-            value: view === "facturas" ? paidCount : cycleKpis.netCycleTotal,
+            label: view === "facturas" ? "Facturas Pagadas" : "Semana actual",
+            value: view === "facturas" ? paidCount : cycleKpis.weekSales,
             isMoney: view !== "facturas",
-            sub: view === "facturas" ? `${cancelledCount} canceladas` : "Ventas menos gastos",
+            sub: view === "facturas" ? `${cancelledCount} canceladas` : "Semana actual",
             color: "text-pink-600 dark:text-pink-400"
           },
           {
-            label: view === "facturas" ? "Total Facturas" : "Mas Reciente",
-            value: view === "facturas" ? invoices.length : (filteredCycleSummaries[0]?.cycle.cycle_number ?? "--"),
-            isMoney: false,
-            sub: view === "facturas" ? "En el sistema" : "Ultimo cierre",
+            label: view === "facturas" ? "Total Facturas" : "Mes actual",
+            value: view === "facturas" ? invoices.length : cycleKpis.monthSales,
+            isMoney: view !== "facturas",
+            sub: view === "facturas" ? "En el sistema" : "Mes actual",
             color: "text-primary"
           }
         ].map((kpi, i) => (

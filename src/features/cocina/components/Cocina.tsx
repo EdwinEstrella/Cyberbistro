@@ -99,9 +99,9 @@ export function Cocina() {
   };
 
   const columns = [
-    { key: "pendiente" as const, title: "Pendientes", color: "#ff906d", next: "en_preparacion" as const, nextLabel: "Iniciar" },
-    { key: "en_preparacion" as const, title: "En Preparación", color: "#ffd06d", next: "listo" as const, nextLabel: "Listo" },
-    { key: "listo" as const, title: "Listos para entregar", color: "#59ee50", next: "entregado" as const, nextLabel: "Entregado" },
+    { key: "pendiente" as const, title: "Pendientes", color: "#ff906d", next: "en_preparacion" as const, nextLabel: "Mover a preparación" },
+    { key: "en_preparacion" as const, title: "En Preparación", color: "#ffd06d", next: "listo" as const, nextLabel: "Listo para entrega" },
+    { key: "listo" as const, title: "Listos para entregar", color: "#59ee50", next: "entregado" as const, nextLabel: "Marcar entregado" },
   ];
 
   if (loading) return <div className="flex-1 flex items-center justify-center font-['Space_Grotesk'] text-muted-foreground">Cargando comandas...</div>;
@@ -119,16 +119,17 @@ export function Cocina() {
         <button onClick={toggleCocina} disabled={toggling} className={`px-6 py-2.5 rounded-xl font-bold uppercase text-[12px] tracking-widest transition-all cursor-pointer border ${cocinaActiva ? 'bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/20' : 'bg-green-600 text-white border-transparent hover:bg-green-700'}`}>{toggling ? "..." : (cocinaActiva ? "Cerrar Cocina" : "Abrir Cocina")}</button>
       </div>
 
-      <div className="flex-1 overflow-x-auto flex gap-6 px-4 sm:px-8 py-6 bg-muted/5">
+      <div className="flex-1 overflow-y-auto px-3 sm:px-8 py-4 sm:py-6 bg-muted/5">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-6">
         {columns.map(col => {
           const items = comandas.filter(c => c.estado === col.key);
           return (
-            <div key={col.key} className="min-w-[300px] flex-1 flex flex-col bg-card rounded-[24px] border border-black/10 dark:border-white/10 overflow-hidden shadow-sm">
-               <div className="px-6 py-4 border-b border-black/5 dark:border-white/5 flex justify-between items-center bg-muted/30">
+            <div key={col.key} className="min-w-0 flex flex-col bg-card rounded-[20px] sm:rounded-[24px] border border-black/10 dark:border-white/10 overflow-hidden shadow-sm">
+               <div className="px-4 sm:px-6 py-4 border-b border-black/5 dark:border-white/5 flex justify-between items-center bg-muted/30">
                   <div className="flex items-center gap-3"><div className="size-2 rounded-full" style={{ backgroundColor: col.color }} /><span className="font-['Space_Grotesk'] font-bold text-foreground uppercase tracking-widest text-[13px]">{col.title}</span></div>
                   <span className="text-[10px] font-bold text-muted-foreground bg-muted px-2 py-0.5 rounded-full">{items.length}</span>
                </div>
-               <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
+               <div className="flex-1 p-3 sm:p-4 flex flex-col gap-4">
                   {items.length === 0 ? <div className="py-20 text-center text-muted-foreground text-xs uppercase tracking-widest">Sin comandas</div> : items.map(c => (
                     <div key={c.id} className="bg-background border border-black/5 dark:border-white/10 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
                        <div className="px-4 py-3 border-b border-black/5 dark:border-white/5 flex justify-between items-center bg-muted/10">
@@ -141,9 +142,13 @@ export function Cocina() {
                           ))}
                           {c.notas && <div className="mt-2 bg-primary/5 border border-primary/10 rounded-lg p-2.5 text-[11px] text-primary leading-relaxed">{c.notas}</div>}
                        </div>
-                       <div className="p-3 border-t border-black/5 dark:border-white/5 flex gap-2">
-                          <button onClick={() => void printComanda(c)} className="flex-1 py-2 bg-muted text-muted-foreground rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-black/5 dark:hover:bg-white/10 transition-all border-none cursor-pointer">Imprimir</button>
-                          <button onClick={() => advanceComanda(c.id, col.next)} className="flex-1 py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all border-none cursor-pointer" style={{ backgroundColor: `${col.color}20`, color: col.color }}>{col.nextLabel}</button>
+                       <div className="p-3 border-t border-black/5 dark:border-white/5 grid grid-cols-1 sm:grid-cols-2 gap-2 bg-card/70">
+                          <button type="button" onClick={() => void printComanda(c)} className="min-h-[44px] rounded-xl bg-muted px-3 py-3 text-[11px] font-bold uppercase tracking-widest text-foreground hover:bg-black/5 dark:hover:bg-white/10 transition-all border border-black/5 dark:border-white/10 cursor-pointer">
+                            Imprimir comanda
+                          </button>
+                          <button type="button" onClick={() => void advanceComanda(c.id, col.next)} className="min-h-[44px] rounded-xl px-3 py-3 text-[11px] font-bold uppercase tracking-widest transition-all border border-transparent cursor-pointer" style={{ backgroundColor: `${col.color}24`, color: col.color }}>
+                            {col.nextLabel}
+                          </button>
                        </div>
                     </div>
                   ))}
@@ -151,6 +156,7 @@ export function Cocina() {
             </div>
           );
         })}
+        </div>
       </div>
     </div>
   );
