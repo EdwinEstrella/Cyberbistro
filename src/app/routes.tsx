@@ -1,35 +1,24 @@
 import { createHashRouter } from "react-router";
 import { Login, Register } from "../features/auth";
 import { AppLayout } from "./components/AppLayout";
-import { Dashboard } from "../features/dashboard";
-import { Tables } from "../features/tables";
-import { Billing } from "../features/billing";
-import { Gastos } from "../features/gastos";
-import { Cocina } from "../features/cocina";
-import { Entregas } from "../features/entregas";
-import { Soporte } from "../features/soporte";
-import { Ajustes } from "../features/ajustes";
-import { Cierre } from "../features/cierre";
-import { SuperAdmin } from "../features/super-admin";
-import { Camarera } from "../features/camarera";
 
 export const router = createHashRouter([
   { path: "/", Component: Login },
   { path: "/register", Component: Register },
-  { path: "/super-admin", Component: SuperAdmin },
+  { path: "/super-admin", lazy: () => import("../features/super-admin").then(({ SuperAdmin }) => ({ Component: SuperAdmin })) },
   {
     Component: AppLayout,
     children: [
-      { path: "/dashboard", Component: Dashboard },
-      { path: "/tables", Component: Tables },
-      { path: "/billing", Component: Billing },
-      { path: "/gastos", Component: Gastos },
-      { path: "/cierre", Component: Cierre },
-      { path: "/cocina", Component: Cocina },
-      { path: "/entregas", Component: Entregas },
-      { path: "/camarera", Component: Camarera },
-      { path: "/soporte", Component: Soporte },
-      { path: "/ajustes", Component: Ajustes },
+      { path: "/dashboard", lazy: () => import("../features/dashboard").then(({ Dashboard }) => ({ Component: Dashboard })) },
+      { path: "/tables", lazy: () => import("../features/tables").then(({ Tables }) => ({ Component: Tables })) },
+      { path: "/billing", lazy: () => import("../features/billing").then(({ Billing }) => ({ Component: Billing })) },
+      { path: "/gastos", lazy: () => import("../features/gastos").then(({ Gastos }) => ({ Component: Gastos })) },
+      { path: "/cierre", lazy: () => import("../features/cierre").then(({ Cierre }) => ({ Component: Cierre })) },
+      { path: "/cocina", lazy: () => import("../features/cocina").then(({ Cocina }) => ({ Component: Cocina })) },
+      { path: "/entregas", lazy: () => import("../features/entregas").then(({ Entregas }) => ({ Component: Entregas })) },
+      { path: "/camarera", lazy: () => import("../features/camarera").then(({ Camarera }) => ({ Component: Camarera })) },
+      { path: "/soporte", lazy: () => import("../features/soporte").then(({ Soporte }) => ({ Component: Soporte })) },
+      { path: "/ajustes", lazy: () => import("../features/ajustes").then(({ Ajustes }) => ({ Component: Ajustes })) },
     ],
   },
 ]);

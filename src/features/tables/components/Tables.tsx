@@ -160,8 +160,8 @@ export function Tables() {
     setSelectedId(null); setMergeMode(false);
   }
 
-  const CELL = 120;
-  const GAP = 10;
+  const CELL = "clamp(62px, 18vw, 120px)";
+  const GAP = "clamp(6px, 1.8vw, 10px)";
   const maxFila = useMemo(() => mesas.reduce((acc, m) => Math.max(acc, m.fila), 0), [mesas]);
   const maxColumna = useMemo(() => mesas.reduce((acc, m) => Math.max(acc, m.columna), 0), [mesas]);
 
@@ -169,20 +169,20 @@ export function Tables() {
 
   return (
     <div className="flex-1 bg-background transition-colors duration-300 flex flex-col min-h-0 overflow-hidden" onClick={e => { if (e.target === e.currentTarget) { setSelectedId(null); setMergeMode(false); } }}>
-      <div className="flex flex-wrap items-center justify-between px-4 sm:px-8 py-4 sm:py-6 gap-4 shrink-0 border-b border-black/5 dark:border-white/5">
-        <div className="flex items-center gap-4">
-          <h1 className="font-['Space_Grotesk'] font-bold text-foreground text-3xl">Plano de Mesas</h1>
-          {mergeMode && <div className="bg-primary/10 border border-primary/20 rounded-full px-4 py-1 text-primary text-[10px] font-bold uppercase tracking-widest animate-pulse">Selecciona adyacente para unir</div>}
+      <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between px-3 sm:px-8 py-3 sm:py-6 gap-3 sm:gap-4 shrink-0 border-b border-black/5 dark:border-white/5">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+          <h1 className="font-['Space_Grotesk'] font-bold text-foreground text-2xl sm:text-3xl">Plano de Mesas</h1>
+          {mergeMode && <div className="bg-primary/10 border border-primary/20 rounded-full px-3 sm:px-4 py-1 text-primary text-[9px] sm:text-[10px] font-bold uppercase tracking-widest animate-pulse">Seleccioná una mesa al lado para unir</div>}
         </div>
-        <div className="flex gap-4">
+        <div className="flex flex-wrap gap-2 sm:gap-4">
           <StatusBadge color="#59ee50" label={`${mesas.filter(m => !m.fusionada && m.estado === 'libre').length} Libres`} />
           <StatusBadge color="#ff716c" label={`${mesas.filter(m => !m.fusionada && m.estado === 'ocupada').length} Ocupadas`} />
         </div>
       </div>
 
-      <div className="flex-1 flex overflow-hidden">
-        <div className="flex-1 overflow-auto flex items-start justify-center p-8 bg-muted/5">
-          <div style={{ display: "grid", gridTemplateColumns: `repeat(${maxColumna}, ${CELL}px)`, gridTemplateRows: `repeat(${maxFila}, ${CELL}px)`, gap: `${GAP}px`, position: "relative" }}>
+      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+        <div className="flex-1 min-h-[48dvh] overflow-auto flex items-start justify-start lg:justify-center p-3 sm:p-8 bg-muted/5">
+          <div style={{ display: "grid", gridTemplateColumns: `repeat(${maxColumna}, ${CELL})`, gridTemplateRows: `repeat(${maxFila}, ${CELL})`, gap: GAP, position: "relative" }}>
              {Array.from({ length: maxFila * maxColumna }).map((_, i) => (
                 <div key={i} className="rounded-lg border border-black/5 dark:border-white/5 pointer-events-none" />
              ))}
@@ -195,10 +195,10 @@ export function Tables() {
         </div>
 
         {selectedMesa && (
-          <div className="w-[320px] shrink-0 bg-sidebar border-l border-black/10 dark:border-white/10 flex flex-col p-6 gap-6 overflow-y-auto shadow-2xl transition-all duration-300">
+          <div className="w-full lg:w-[320px] max-h-[52dvh] lg:max-h-none shrink-0 bg-sidebar border-t lg:border-t-0 lg:border-l border-black/10 dark:border-white/10 flex flex-col p-4 sm:p-6 gap-4 sm:gap-6 overflow-y-auto shadow-2xl transition-all duration-300">
              <div className="flex justify-between items-start">
                 <div>
-                   <h2 className="font-['Space_Grotesk'] font-bold text-foreground text-2xl">Mesa {String(selectedMesa.numero).padStart(2, "0")}</h2>
+                   <h2 className="font-['Space_Grotesk'] font-bold text-foreground text-xl sm:text-2xl">Mesa {String(selectedMesa.numero).padStart(2, "0")}</h2>
                    <p className="text-muted-foreground text-[11px] uppercase tracking-widest font-bold">Fila {selectedMesa.fila} · Col {selectedMesa.columna}</p>
                 </div>
                 <button onClick={() => setSelectedId(null)} className="text-muted-foreground hover:text-foreground text-2xl transition-colors border-none bg-transparent cursor-pointer">×</button>
@@ -239,5 +239,5 @@ export function Tables() {
 }
 
 function StatusBadge({ color, label }: { color: string; label: string }) {
-  return <div className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-black/5 dark:border-white/5 bg-card/50 shadow-sm"><div className="size-2 rounded-full" style={{ backgroundColor: color }} /><span className="text-[10px] font-bold uppercase text-muted-foreground tracking-widest">{label}</span></div>;
+  return <div className="flex items-center gap-2 px-3 sm:px-4 py-1.5 rounded-full border border-black/5 dark:border-white/5 bg-card/50 shadow-sm"><div className="size-2 rounded-full" style={{ backgroundColor: color }} /><span className="text-[9px] sm:text-[10px] font-bold uppercase text-muted-foreground tracking-widest">{label}</span></div>;
 }

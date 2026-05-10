@@ -33,6 +33,23 @@ const soporteNavItem = {
   path: "/soporte",
 } as const;
 
+const routePrefetchers: Record<string, () => Promise<unknown>> = {
+  "/dashboard": () => import("../../features/dashboard"),
+  "/tables": () => import("../../features/tables"),
+  "/billing": () => import("../../features/billing"),
+  "/gastos": () => import("../../features/gastos"),
+  "/cierre": () => import("../../features/cierre"),
+  "/cocina": () => import("../../features/cocina"),
+  "/entregas": () => import("../../features/entregas"),
+  "/camarera": () => import("../../features/camarera"),
+  "/soporte": () => import("../../features/soporte"),
+  "/ajustes": () => import("../../features/ajustes"),
+};
+
+function prefetchRoute(path: string) {
+  void routePrefetchers[path]?.();
+}
+
 function filterMainNavForRol(rol: string | null) {
   const normalized = normalizeTenantRol(rol);
   if (normalized === "admin") return [...mainNavItems];
@@ -141,7 +158,7 @@ export function AppLayout() {
   }, [isVentaRoute]);
 
   useEffect(() => {
-    if (!["/dashboard", "/billing", "/camarera"].includes(location.pathname)) return;
+    if (!["/dashboard", "/billing", "/camarera", "/tables"].includes(location.pathname)) return;
     const mobileQuery = window.matchMedia("(max-width: 1024px)");
     const syncMobileSidebar = () => {
       if (mobileQuery.matches) setSidebarHidden(true);
@@ -158,6 +175,36 @@ export function AppLayout() {
     }
     return main;
   }, [rol]);
+
+  useEffect(() => {
+    const allowedPaths = new Set<string>(sideNavItems.map((item) => item.path));
+    if (showAjustesInSidebar(rol)) allowedPaths.add("/ajustes");
+
+    let cancelled = false;
+    const warmRoutes = () => {
+      if (cancelled) return;
+      for (const path of allowedPaths) {
+        prefetchRoute(path);
+      }
+    };
+
+    const scheduler = window as Window & {
+      requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    const idleId = scheduler.requestIdleCallback
+      ? scheduler.requestIdleCallback(warmRoutes, { timeout: 1800 })
+      : window.setTimeout(warmRoutes, 600);
+
+    return () => {
+      cancelled = true;
+      if (scheduler.cancelIdleCallback) {
+        scheduler.cancelIdleCallback(idleId);
+      } else {
+        window.clearTimeout(idleId);
+      }
+    };
+  }, [rol, sideNavItems]);
 
   // Re-fetch kitchen status per tenant on route change (never mix tenants in SaaS)
   useEffect(() => {
@@ -213,6 +260,8 @@ export function AppLayout() {
                 <button
                   key={item.label}
                   type="button"
+                  onMouseEnter={() => prefetchRoute(item.path)}
+                  onFocus={() => prefetchRoute(item.path)}
                   onClick={() => navigate(item.path)}
                   aria-current={isActive ? "page" : undefined}
                   className={`flex gap-[16px] items-center px-[16px] py-[12px] rounded-[8px] cursor-pointer relative border-none text-left w-full transition-colors ${
@@ -251,6 +300,8 @@ export function AppLayout() {
             {showAjustesInSidebar(rol) && (
               <button
                 type="button"
+                onMouseEnter={() => prefetchRoute("/ajustes")}
+                onFocus={() => prefetchRoute("/ajustes")}
                 onClick={() => navigate("/ajustes")}
                 aria-current={isAjustesActive ? "page" : undefined}
                 className={`flex gap-[16px] items-center px-[16px] py-[12px] cursor-pointer relative border-none text-left w-full rounded-[8px] transition-colors ${

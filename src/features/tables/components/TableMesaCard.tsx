@@ -79,11 +79,11 @@ function TableMesaCardBase({
         userSelect: "none",
         transition: "all 0.15s ease",
       }}
-      className="border-none p-0 text-left transition-colors duration-300"
+      className="border-none p-0 text-left transition-colors duration-300 min-w-0 overflow-hidden"
     >
       {isMerged && (
-        <div className="absolute top-[6px] right-[6px] bg-[#ff906d]/15 rounded-[4px] px-[6px] py-[2px]">
-          <span className="font-['Inter',sans-serif] text-[#ff906d] text-[8px] tracking-[0.8px] uppercase font-bold">
+        <div className="absolute top-1 right-1 sm:top-[6px] sm:right-[6px] bg-[#ff906d]/15 rounded-[4px] px-1 sm:px-[6px] py-[2px]">
+          <span className="font-['Inter',sans-serif] text-[#ff906d] text-[7px] sm:text-[8px] tracking-[0.4px] sm:tracking-[0.8px] uppercase font-bold">
             Fusionada
           </span>
         </div>
@@ -94,21 +94,21 @@ function TableMesaCardBase({
           className="absolute inset-0 flex items-center justify-center rounded-[12px]"
           style={{ backgroundColor: "rgba(89,238,80,0.06)" }}
         >
-          <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#59ee50] text-[28px]">+</span>
+          <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#59ee50] text-[22px] sm:text-[28px]">+</span>
         </div>
       ) : (
         <>
           <span
-            className="font-['Space_Grotesk',sans-serif] font-bold text-[22px] transition-colors duration-300"
+            className="font-['Space_Grotesk',sans-serif] font-bold text-[16px] sm:text-[22px] transition-colors duration-300 leading-none"
             style={{ color: isSelected ? "#ff906d" : colors.text }}
           >
             {mesa.numero.toString().padStart(2, "0")}
           </span>
 
-          <div className="flex items-center gap-[5px]">
-            <div className="rounded-full size-[6px] transition-colors duration-300" style={{ backgroundColor: colors.dot }} />
+          <div className="flex items-center gap-1 sm:gap-[5px] max-w-full">
+            <div className="rounded-full size-1.5 shrink-0 transition-colors duration-300" style={{ backgroundColor: colors.dot }} />
             <span
-              className="font-['Inter',sans-serif] text-[9px] tracking-[0.8px] uppercase transition-colors duration-300"
+              className="font-['Inter',sans-serif] text-[7px] sm:text-[9px] tracking-[0.4px] sm:tracking-[0.8px] uppercase transition-colors duration-300 truncate"
               style={{ color: colors.text, opacity: 0.7 }}
             >
               {estadoLabels[mesa.estado]}
@@ -117,13 +117,13 @@ function TableMesaCardBase({
 
           {deudaTotal > 0 ? (
             <span
-              className="font-['Space_Grotesk',sans-serif] font-bold text-[10px] transition-colors duration-300"
+              className="font-['Space_Grotesk',sans-serif] font-bold text-[8px] sm:text-[10px] transition-colors duration-300 leading-tight px-1 text-center"
               style={{ color: isSelected ? "#ff906d" : colors.text }}
             >
               {formatCurrency(deudaTotal)}
             </span>
           ) : (
-            <span className="font-['Inter',sans-serif] text-[10px] text-muted-foreground/50 transition-colors duration-300">
+            <span className="font-['Inter',sans-serif] text-[8px] sm:text-[10px] text-muted-foreground/50 transition-colors duration-300">
               {mesa.capacidad} pax
             </span>
           )}
