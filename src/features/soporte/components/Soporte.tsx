@@ -745,7 +745,6 @@ function CategoriasPanel() {
 
 function UsuariosPanel() {
   const { tenantId, tenantUser, user } = useAuth();
-  const navigate = useNavigate();
   const [teamUsers, setTeamUsers] = useState<TenantUserRow[]>([]);
   const [tenantLimitConfig, setTenantLimitConfig] = useState<TenantUserLimitConfig>({
     userLimitEnabled: false,
