@@ -790,7 +790,7 @@ function UsuariosPanel() {
 
   async function handleCreate() {
     if (!email.trim() || !password.trim() || !adminPassword.trim()) { setError("Completa todos los campos."); return; }
-    if (!tenantId) return;
+    if (!tenantId || !tenantUser?.email) return;
     setCreating(true); setError(""); setSuccess("");
     
     const staffEmail = email.trim();
@@ -805,13 +805,13 @@ function UsuariosPanel() {
     if (authError) { setError((authError as any).message); setCreating(false); return; }
 
     const newUserId = (signData as any)?.user?.id;
+    await insforgeClient.auth.signOut();
+    const { error: reinError } = await insforgeClient.auth.signInWithPassword({ email: tenantUser.email, password: adminPassword });
+    if (reinError) { navigate("/"); return; }
+
     const { error: insertError } = await insforgeClient.database.from("tenant_users").insert([{ auth_user_id: newUserId, tenant_id: tenantId, email: staffEmail, password_hash: "MANAGED_BY_AUTH", rol, nombre: nombre.trim() || null, activo: true }]);
     
     if (insertError) { setError(insertError.message); setCreating(false); return; }
-
-    await insforgeClient.auth.signOut();
-    const { error: reinError } = await insforgeClient.auth.signInWithPassword({ email: tenantUser?.email ?? "", password: adminPassword });
-    if (reinError) { navigate("/"); return; }
 
     setSuccess(`Usuario creado.`); setEmail(""); setPassword(""); setAdminPassword(""); setNombre(""); await loadUsers();
     setCreating(false);
