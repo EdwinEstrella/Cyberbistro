@@ -288,6 +288,10 @@ async function loadUserDataShared(opts?: { silent?: boolean }): Promise<void> {
           tenantId: resolved.tenant_id,
           rol: resolved.rol,
         });
+      } else {
+        clearTenantSessionCache();
+        patchSharedState({ tenantUser: null });
+        logAuth('tenant not resolved from backend -> cache cleared');
       }
     } catch (err) {
       console.error('Error loading user data:', err);

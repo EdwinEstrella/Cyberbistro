@@ -3,15 +3,14 @@ import { resolveTenantUserForSession } from "./resolveTenantUserFromAuth";
 
 const mocks = vi.hoisted(() => {
   const maybeSingle = vi.fn();
-  const ilike = vi.fn(() => ({ maybeSingle }));
-  const eq: any = vi.fn((column: string) => {
-    if (column === "email") return { ilike };
-    return { eq, maybeSingle };
-  });
-  const select = vi.fn(() => ({ eq, ilike, maybeSingle }));
+  const chain: any = {};
+  const eq = vi.fn(() => chain);
+  const ilike = vi.fn(() => chain);
+  Object.assign(chain, { eq, ilike, maybeSingle });
+  const select = vi.fn(() => chain);
   const from = vi.fn(() => ({ select }));
   const rpc = vi.fn();
-  return { maybeSingle, ilike, from, rpc };
+  return { maybeSingle, eq, ilike, from, rpc };
 });
 
 vi.mock("./insforge", () => ({
@@ -55,6 +54,15 @@ describe("resolveTenantUserForSession", () => {
     mocks.maybeSingle.mockResolvedValueOnce({ data: null, error: null });
     const row = await resolveTenantUserForSession({ id: "auth-3", email: null } as any);
     expect(row).toBeNull();
+  });
+
+  it("filtra usuarios inactivos en las consultas directas", async () => {
+    mocks.maybeSingle.mockResolvedValueOnce({ data: null, error: null });
+
+    await resolveTenantUserForSession({ id: "auth-inactive", email: null } as any);
+
+    expect(mocks.eq).toHaveBeenCalledWith("auth_user_id", "auth-inactive");
+    expect(mocks.eq).toHaveBeenCalledWith("activo", true);
   });
 
   it("cae a rpc si RLS no permite resolver por consultas directas", async () => {

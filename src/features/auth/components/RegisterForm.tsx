@@ -10,6 +10,18 @@ import { PinGateModal } from "../../../shared/components/PinGate";
 import { APP_ACCESS_PIN } from "../../../shared/lib/accessPin";
 import { INSFORGE_REFRESH_TOKEN_STORAGE_KEY } from "../../../shared/lib/insforgeAuthStorage";
 
+function extractAccessTokenFromPayload(data: unknown): string | null {
+  if (!data || typeof data != "object") return null;
+  const maybeData = data as any;
+  const direct = maybeData.accessToken || maybeData.access_token;
+  if (typeof direct === "string" && direct.trim().length > 0) return direct;
+  const inSession = maybeData.session?.accessToken || maybeData.session?.access_token;
+  if (typeof inSession === "string" && inSession.trim().length > 0) return inSession;
+  const inTokens = maybeData.tokens?.accessToken || maybeData.tokens?.access_token;
+  if (typeof inTokens === "string" && inTokens.trim().length > 0) return inTokens;
+  return null;
+}
+
 function extractRefreshTokenFromPayload(data: unknown): string | null {
   if (!data || typeof data !== "object") return null;
   const maybeData = data as any;
@@ -30,6 +42,7 @@ export function Register() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [showPinGate, setShowPinGate] = useState(false);
+  const [registrationUnlocked, setRegistrationUnlocked] = useState(false);
   const [step, setStep] = useState<'account' | 'basic' | 'contact' | 'location'>('account');
 
   // Datos de la empresa
@@ -42,61 +55,80 @@ export function Register() {
 
   const navigate = useNavigate();
 
-  const handleRegister = async () => {
-    setError("");
-
-    // Paso 1: Crear usuario en Auth
-    if (step === 'account') {
-      if (!email || !password || !confirmPassword) {
-        setError("Por favor completa todos los campos");
-        return;
-      }
-
-      if (password !== confirmPassword) {
-        setError("Las contraseñas no coinciden");
-        return;
-      }
-
-      if (password.length < 6) {
-        setError("La contraseña debe tener al menos 6 caracteres");
-        return;
-      }
-
-      setLoading(true);
-
-      try {
-        // Crear usuario en Auth
-        const { data: signData, error: authError } = await insforgeClient.auth.signUp({
-          email,
-          password
-        });
-
-        if (authError) {
-          throw new Error(authError.message || "Error al crear usuario");
-        }
-
-        const refreshToken = extractRefreshTokenFromPayload(signData);
-        if (refreshToken) {
-          localStorage.setItem(INSFORGE_REFRESH_TOKEN_STORAGE_KEY, refreshToken);
-          try {
-            insforgeClient.getHttpClient().setRefreshToken(refreshToken);
-          } catch { /* ignore */ }
-        }
-
-        const newUserId = signData?.user?.id;
-        if (newUserId) {
-          setRegisteredAuthUserId(newUserId);
-        }
-
-        setLoading(false);
-        setStep('basic');
-      } catch (err: any) {
-        setError(err.message || "Error al crear cuenta");
-        setLoading(false);
-      }
+  const startAccountRegistration = async (pinAlreadyUnlocked = registrationUnlocked) => {
+    if (!email || !password || !confirmPassword) {
+      setError("Por favor completa todos los campos");
       return;
     }
 
+    if (password !== confirmPassword) {
+      setError("Las contrase?as no coinciden");
+      return;
+    }
+
+    if (password.length < 6) {
+      setError("La contrase?a debe tener al menos 6 caracteres");
+      return;
+    }
+
+    if (!pinAlreadyUnlocked) {
+      setShowPinGate(true);
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // Crear usuario en Auth
+      const { data: signData, error: authError } = await insforgeClient.auth.signUp({
+        email,
+        password
+      });
+
+      if (authError) {
+        throw new Error(authError.message || "Error al crear usuario");
+      }
+
+      if (signData?.requireEmailVerification) {
+        throw new Error("El backend todav?a est? exigiendo validar el correo. Desactiv? la verificaci?n de email en InsForge para este flujo de registro.");
+      }
+
+      const accessToken = extractAccessTokenFromPayload(signData);
+      if (accessToken) {
+        try {
+          insforgeClient.getHttpClient().setAuthToken(accessToken);
+        } catch { /* ignore */ }
+      }
+
+      const refreshToken = extractRefreshTokenFromPayload(signData);
+      if (refreshToken) {
+        localStorage.setItem(INSFORGE_REFRESH_TOKEN_STORAGE_KEY, refreshToken);
+        try {
+          insforgeClient.getHttpClient().setRefreshToken(refreshToken);
+        } catch { /* ignore */ }
+      }
+
+      const newUserId = signData?.user?.id;
+      if (newUserId) {
+        setRegisteredAuthUserId(newUserId);
+      }
+
+      setLoading(false);
+      setStep('basic');
+    } catch (err: any) {
+      setError(err.message || "Error al crear cuenta");
+      setLoading(false);
+    }
+  };
+
+  const handleRegister = async () => {
+    setError("");
+
+    // Paso 1: validar PIN una sola vez y crear usuario en Auth
+    if (step === 'account') {
+      await startAccountRegistration();
+      return;
+    }
     // Pasos de negocio: avanzar al siguiente
     if (step === 'basic') {
       if (!nombreNegocio.trim()) {
@@ -114,7 +146,7 @@ export function Register() {
 
     // Paso final: Crear tenant y actualizar usuario
     if (step === 'location') {
-      setShowPinGate(true);
+      completeRegistration();
     }
   };
 
@@ -139,6 +171,11 @@ export function Register() {
           password,
         });
         if (!signInErr) {
+          const accessToken = extractAccessTokenFromPayload(signInData);
+          if (accessToken) {
+            try { insforgeClient.getHttpClient().setAuthToken(accessToken); } catch { /* ignore */ }
+          }
+
           const refreshToken = extractRefreshTokenFromPayload(signInData);
           if (refreshToken) {
             localStorage.setItem(INSFORGE_REFRESH_TOKEN_STORAGE_KEY, refreshToken);
@@ -155,44 +192,28 @@ export function Register() {
         );
       }
 
-      // 2. Crear el tenant
-      const tenantData = {
-        nombre_negocio: nombreNegocio.trim(),
-        rnc: rnc.trim() || null,
-        direccion: direccion.trim() || null,
-        telefono: telefono.trim() || null,
-        activa: true
-      };
+      // 2. Crear el tenant y su usuario due?o en una sola operaci?n de BD.
+      // Direct inserts contra `tenants` + `tenant_users` rompen con RLS: todav?a no existe
+      // membres?a del tenant para que la policy pueda autorizar al usuario.
+      const { data: registrationRows, error: registrationError } = await insforgeClient.database.rpc(
+        'cyberbistro_register_tenant',
+        {
+          p_auth_user_id: authUserId,
+          p_email: email.trim(),
+          p_nombre_negocio: nombreNegocio.trim(),
+          p_rnc: rnc.trim() || null,
+          p_direccion: direccion.trim() || null,
+          p_telefono: telefono.trim() || null,
+        }
+      );
 
-      const { data: tenant, error: tenantError } = await insforgeClient.database
-        .from('tenants')
-        .insert([tenantData])
-        .select()
-        .single();
+      const registration = (Array.isArray(registrationRows) ? registrationRows[0] : registrationRows) as { tenant_id?: string } | null;
 
-      if (tenantError || !tenant) {
-        throw new Error(tenantError?.message || "Error al crear tenant");
+      if (registrationError || !registration?.tenant_id) {
+        throw new Error(registrationError?.message || "Error al crear tenant");
       }
 
-      const tenantId = tenant.id;
-
-      // 3. Guardar en tenant_users (conecta Auth user con Tenant usando auth_user_id)
-      const userTenantData = {
-        auth_user_id: authUserId,
-        tenant_id: tenantId,
-        email: email.trim(),
-        password_hash: 'MANAGED_BY_AUTH',
-        rol: 'admin',
-        nombre: nombreNegocio.trim()
-      };
-
-      const { error: insertError } = await insforgeClient.database
-        .from('tenant_users')
-        .insert([userTenantData]);
-
-      if (insertError) {
-        throw new Error(insertError.message || "Error al guardar usuario local");
-      }
+      const tenantId = registration.tenant_id;
 
       writeTenantSessionCache(authUserId, {
         tenant_id: tenantId,
@@ -215,7 +236,8 @@ export function Register() {
 
   const handlePinUnlock = () => {
     setShowPinGate(false);
-    completeRegistration();
+    setRegistrationUnlocked(true);
+    startAccountRegistration(true);
   };
 
   return (

@@ -305,6 +305,34 @@ export function SuperAdmin() {
     await loadData();
   }
 
+  async function unblockTenant(tenant: TenantRow) {
+    const confirmed = confirm(
+      `Desbloquear restaurante "${tenant.nombre_negocio || tenant.id}"?
+
+Esto reactiva el restaurante y todos sus usuarios. Revis? despu?s si quer?s eliminar o limitar alg?n usuario puntual.`
+    );
+    if (!confirmed) return;
+
+    setRowActionId(`tenant:${tenant.id}`);
+    setError("");
+    setInfo("");
+
+    const { error: rpcError } = await insforgeClient.database.rpc(
+      "cloudix_super_admin_unblock_tenant",
+      { p_tenant_id: tenant.id }
+    );
+
+    setRowActionId(null);
+
+    if (rpcError) {
+      setError(`No se pudo desbloquear el restaurante. ${rpcError.message}`);
+      return;
+    }
+
+    setInfo(`Restaurante ${tenant.nombre_negocio || tenant.id} desbloqueado.`);
+    await loadData();
+  }
+
   async function deleteTenant(tenant: TenantRow) {
     const confirmed = confirm(
       `Eliminar definitivamente restaurante "${tenant.nombre_negocio || tenant.id}"?\n\nEsto elimina el restaurante, todos sus usuarios, cuentas Auth vinculadas, carta, comandas, consumos, facturas, mesas, cocina y cierres. Esta accion no se puede deshacer.`
@@ -441,11 +469,13 @@ export function SuperAdmin() {
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              disabled={rowActionId === `tenant:${tenant.id}` || isBlocked}
-              onClick={() => void blockTenant(tenant)}
-              className="bg-[rgba(255,176,32,0.12)] border border-[rgba(255,176,32,0.25)] rounded-[10px] px-3 py-2 font-['Space_Grotesk',sans-serif] font-bold text-[#ffb020] text-[10px] uppercase cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              disabled={rowActionId === `tenant:${tenant.id}`}
+              onClick={() => void (isBlocked ? unblockTenant(tenant) : blockTenant(tenant))}
+              className={`${isBlocked ? "bg-[rgba(89,238,80,0.1)] border-[rgba(89,238,80,0.28)] text-[#59ee50]" : "bg-[rgba(255,176,32,0.12)] border-[rgba(255,176,32,0.25)] text-[#ffb020]"} border rounded-[10px] px-3 py-2 font-['Space_Grotesk',sans-serif] font-bold text-[10px] uppercase cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed`}
             >
-              {rowActionId === `tenant:${tenant.id}` ? "Bloqueando..." : "Bloquear restaurante"}
+              {rowActionId === `tenant:${tenant.id}`
+                ? isBlocked ? "Desbloqueando..." : "Bloqueando..."
+                : isBlocked ? "Desbloquear restaurante" : "Bloquear restaurante"}
             </button>
             <button
               type="button"

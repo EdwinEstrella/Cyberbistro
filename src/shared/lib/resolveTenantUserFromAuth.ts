@@ -12,6 +12,7 @@ async function fetchTenantUserByAuthId(authUserId: string) {
     .from('tenant_users')
     .select('tenant_id, email, rol, nombre')
     .eq('auth_user_id', authUserId)
+    .eq('activo', true)
     .maybeSingle();
 }
 
@@ -25,6 +26,7 @@ async function fetchTenantUserBySessionEmail(email: string) {
     .from('tenant_users')
     .select('tenant_id, email, rol, nombre')
     .ilike('email', normalized)
+    .eq('activo', true)
     .maybeSingle();
 }
 

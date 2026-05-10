@@ -132,13 +132,8 @@ SET search_path = public
 AS $$
   SELECT tu.tenant_id, tu.email, tu.rol, tu.nombre
   FROM public.tenant_users tu
-  JOIN public.tenants t ON t.id = tu.tenant_id
-  WHERE tu.activo IS TRUE
-    AND t.activa IS TRUE
-    AND (
-      tu.auth_user_id = public.cloudix_auth_user_id()
-      OR lower(tu.email) = lower(COALESCE(public.cloudix_auth_email(), ''))
-    )
+  WHERE tu.auth_user_id = public.cloudix_auth_user_id()
+     OR lower(tu.email) = lower(COALESCE(public.cloudix_auth_email(), ''))
   ORDER BY (tu.auth_user_id = public.cloudix_auth_user_id()) DESC
   LIMIT 1;
 $$;
@@ -247,45 +242,6 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION public.cloudix_super_admin_unblock_tenant(p_tenant_id uuid)
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  affected_users integer := 0;
-BEGIN
-  IF NOT public.cloudix_is_super_admin() THEN
-    RAISE EXCEPTION 'Solo super admin puede desbloquear restaurantes';
-  END IF;
-
-  UPDATE public.tenants
-  SET activa = true
-  WHERE id = p_tenant_id;
-
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'Restaurante no encontrado';
-  END IF;
-
-  UPDATE public.tenant_users
-  SET activo = true
-  WHERE tenant_id = p_tenant_id;
-
-  GET DIAGNOSTICS affected_users = ROW_COUNT;
-
-  UPDATE public.cocina_estado
-  SET activa = true, changed_at = now()
-  WHERE tenant_id = p_tenant_id;
-
-  RETURN jsonb_build_object(
-    'ok', true,
-    'tenant_id', p_tenant_id,
-    'unblocked_users', affected_users
-  );
-END;
-$$;
-
 CREATE OR REPLACE FUNCTION public.cloudix_super_admin_delete_tenant(p_tenant_id uuid)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -336,7 +292,6 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.cloudix_super_admin_delete_tenant_user(uuid) TO PUBLIC;
 GRANT EXECUTE ON FUNCTION public.cloudix_super_admin_block_tenant(uuid) TO PUBLIC;
-GRANT EXECUTE ON FUNCTION public.cloudix_super_admin_unblock_tenant(uuid) TO PUBLIC;
 GRANT EXECUTE ON FUNCTION public.cloudix_super_admin_delete_tenant(uuid) TO PUBLIC;
 GRANT EXECUTE ON FUNCTION public.cloudix_resolve_tenant_user() TO PUBLIC;
 
