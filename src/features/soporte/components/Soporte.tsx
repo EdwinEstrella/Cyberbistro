@@ -758,7 +758,6 @@ function UsuariosPanel() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [adminPassword, setAdminPassword] = useState("");
   const [nombre, setNombre] = useState("");
   const [rol, setRol] = useState<(typeof STAFF_ROLES)[number]["value"]>("cajera");
   const [creating, setCreating] = useState(false);
@@ -789,7 +788,7 @@ function UsuariosPanel() {
   }
 
   async function handleCreate() {
-    if (!email.trim() || !password.trim() || !adminPassword.trim()) { setError("Completa todos los campos."); return; }
+    if (!email.trim() || !password.trim()) { setError("Completa todos los campos."); return; }
     if (!tenantId || !tenantUser?.email) return;
     setCreating(true); setError(""); setSuccess("");
     
@@ -801,19 +800,24 @@ function UsuariosPanel() {
       setCreating(false); return;
     }
 
-    const { data: signData, error: authError } = await insforgeClient.auth.signUp({ email: staffEmail, password });
+    // Usamos un cliente temporal para evitar modificar la sesión actual de useAuth
+    const tempClient = (await import("@insforge/sdk")).createClient({
+      baseUrl: import.meta.env.VITE_INSFORGE_BASE_URL || "https://restaurante.azokia.com",
+      anonKey: import.meta.env.VITE_INSFORGE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3OC0xMjM0LTU2NzgtOTBhYi1jZGVmMTIzNDU2NzgiLCJlbWFpbCI6ImFub25AaW5zZm9yZ2UuY29tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU5NDAxMzF9.OQwbEoWPtw-inbXdU3D7c39RZn3c87FJ-HvMBF_jrn4",
+      isServerMode: true
+    });
+
+    const { data: signData, error: authError } = await tempClient.auth.signUp({ email: staffEmail, password });
     if (authError) { setError((authError as any).message); setCreating(false); return; }
 
     const newUserId = (signData as any)?.user?.id;
-    await insforgeClient.auth.signOut();
-    const { error: reinError } = await insforgeClient.auth.signInWithPassword({ email: tenantUser.email, password: adminPassword });
-    if (reinError) { navigate("/"); return; }
 
+    // Insertamos usando el cliente principal, el cual sigue autenticado como admin
     const { error: insertError } = await insforgeClient.database.from("tenant_users").insert([{ auth_user_id: newUserId, tenant_id: tenantId, email: staffEmail, password_hash: "MANAGED_BY_AUTH", rol, nombre: nombre.trim() || null, activo: true }]);
     
     if (insertError) { setError(insertError.message); setCreating(false); return; }
 
-    setSuccess(`Usuario creado.`); setEmail(""); setPassword(""); setAdminPassword(""); setNombre(""); await loadUsers();
+    setSuccess(`Usuario creado.`); setEmail(""); setPassword(""); setNombre(""); await loadUsers();
     setCreating(false);
   }
 
@@ -865,10 +869,6 @@ function UsuariosPanel() {
               </div>
               <div className="flex flex-col gap-1.5"><label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">Contraseña</label>
                 <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="input-field" placeholder="Mín. 6 caracteres" />
-              </div>
-              <div className="h-px bg-black/5 dark:bg-white/5 my-2" />
-              <div className="flex flex-col gap-1.5"><label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">Tu Contraseña (Admin)</label>
-                <input type="password" value={adminPassword} onChange={e => setAdminPassword(e.target.value)} className="input-field" placeholder="Confirma tu acceso" />
               </div>
            </div>
            <button onClick={handleCreate} disabled={creating} className="bg-primary text-primary-foreground rounded-xl py-3.5 font-bold uppercase text-[12px] tracking-widest shadow-lg hover:opacity-90 disabled:opacity-50 transition-all border-none cursor-pointer mt-2">{creating ? "Creando..." : "Registrar Miembro"}</button>
