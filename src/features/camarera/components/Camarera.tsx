@@ -7,6 +7,7 @@ import { loadCantidadMesas } from "../../../shared/lib/tenantMesasSettings";
 import { buildComandaReceiptHtml } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
+import { normalizeTenantRol } from "../../../shared/lib/roleNav";
 
 interface Plato {
   id: number;
@@ -22,6 +23,8 @@ interface MesaOption {
   numero: number;
   deuda_pendiente: number;
   items_pendientes: number;
+  mine_pending: boolean;
+  owner_names: string[];
 }
 
 interface CartItem {
@@ -40,6 +43,29 @@ interface MesaConsumoRow {
   tipo: "cocina" | "directo" | string;
   estado: string;
   created_at: string;
+  created_by_auth_user_id: string | null;
+}
+
+interface TenantUserLite {
+  auth_user_id: string | null;
+  nombre: string | null;
+  email: string | null;
+}
+
+interface MesaConsumoGroup {
+  key: string;
+  rows: MesaConsumoRow[];
+  ids: string[];
+  comandaIds: string[];
+  plato_id: number | null;
+  nombre: string;
+  cantidad: number;
+  precio_unitario: number;
+  subtotal: number;
+  tipo: string;
+  estado: string;
+  ownerId: string | null;
+  ownerName: string;
 }
 
 interface TenantPrintRow {
@@ -51,14 +77,78 @@ interface TenantPrintRow {
   moneda?: string | null;
 }
 
+function getTenantUserName(row: TenantUserLite | undefined, fallback = "Sin asignar") {
+  if (!row) return fallback;
+  return row.nombre?.trim() || row.email?.trim() || fallback;
+}
+
+function buildOwnerNameMap(users: TenantUserLite[]) {
+  const map = new Map<string, string>();
+  for (const userRow of users) {
+    if (!userRow.auth_user_id) continue;
+    map.set(userRow.auth_user_id, getTenantUserName(userRow));
+  }
+  return map;
+}
+
+function getMesaConsumoGroupKey(row: MesaConsumoRow) {
+  return [
+    row.plato_id ?? row.nombre,
+    row.nombre,
+    row.precio_unitario,
+    row.tipo,
+    row.estado,
+    row.created_by_auth_user_id ?? "sin-camarera",
+  ].join("|");
+}
+
+function groupMesaConsumos(rows: MesaConsumoRow[], ownerNameByAuthId: Map<string, string>) {
+  const groups = new Map<string, MesaConsumoGroup>();
+
+  for (const row of rows) {
+    const key = getMesaConsumoGroupKey(row);
+    const ownerName = row.created_by_auth_user_id
+      ? ownerNameByAuthId.get(row.created_by_auth_user_id) ?? "Camarera"
+      : "Sin asignar";
+    const current = groups.get(key);
+    if (!current) {
+      groups.set(key, {
+        key,
+        rows: [row],
+        ids: [row.id],
+        comandaIds: row.comanda_id ? [row.comanda_id] : [],
+        plato_id: row.plato_id,
+        nombre: row.nombre,
+        cantidad: Number(row.cantidad),
+        precio_unitario: Number(row.precio_unitario),
+        subtotal: Number(row.subtotal),
+        tipo: row.tipo,
+        estado: row.estado,
+        ownerId: row.created_by_auth_user_id,
+        ownerName,
+      });
+      continue;
+    }
+
+    current.rows.push(row);
+    current.ids.push(row.id);
+    if (row.comanda_id && !current.comandaIds.includes(row.comanda_id)) current.comandaIds.push(row.comanda_id);
+    current.cantidad += Number(row.cantidad);
+    current.subtotal += Number(row.subtotal);
+  }
+
+  return Array.from(groups.values());
+}
+
 export function Camarera() {
-  const { tenantId, user, loading: authLoading } = useAuth();
+  const { tenantId, user, rol, loading: authLoading } = useAuth();
   const { formatMoney } = useTenantCurrency();
   const [platos, setPlatos] = useState<Plato[]>([]);
   const [mesas, setMesas] = useState<MesaOption[]>([]);
   const [selectedMesaNumero, setSelectedMesaNumero] = useState<number | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [mesaConsumos, setMesaConsumos] = useState<MesaConsumoRow[]>([]);
+  const [ownerNameByAuthId, setOwnerNameByAuthId] = useState<Map<string, string>>(new Map());
   const [deletingConsumoId, setDeletingConsumoId] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState("Todos");
   const [searchQuery, setSearchQuery] = useState("");
@@ -86,22 +176,35 @@ export function Camarera() {
         .order("categoria"),
       insforgeClient.database
         .from("consumos")
-        .select("mesa_numero, subtotal")
+        .select("mesa_numero, subtotal, created_by_auth_user_id")
         .eq("tenant_id", tenantId)
         .neq("estado", "pagado"),
       loadCantidadMesas(tenantId),
-    ]).then(([platosRes, consumosRes, cantidadMesas]) => {
+      insforgeClient.database
+        .from("tenant_users")
+        .select("auth_user_id, nombre, email")
+        .eq("tenant_id", tenantId),
+    ]).then(([platosRes, consumosRes, cantidadMesas, usersRes]) => {
       if (cancelled) return;
       if (!platosRes.error && platosRes.data) setPlatos(platosRes.data as Plato[]);
 
-      const deudaPorMesa = new Map<number, { deuda: number; items: number }>();
+      const ownerMap = !usersRes.error && usersRes.data
+        ? buildOwnerNameMap(usersRes.data as TenantUserLite[])
+        : new Map<string, string>();
+      setOwnerNameByAuthId(ownerMap);
+
+      const deudaPorMesa = new Map<number, { deuda: number; items: number; mine: boolean; owners: Set<string> }>();
       if (!consumosRes.error && consumosRes.data) {
-        for (const row of consumosRes.data as Array<{ mesa_numero: number | null; subtotal: number }>) {
+        for (const row of consumosRes.data as Array<{ mesa_numero: number | null; subtotal: number; created_by_auth_user_id: string | null }>) {
           const mesaNumero = Number(row.mesa_numero);
           if (mesaNumero <= 0) continue;
-          const current = deudaPorMesa.get(mesaNumero) ?? { deuda: 0, items: 0 };
+          const current = deudaPorMesa.get(mesaNumero) ?? { deuda: 0, items: 0, mine: false, owners: new Set<string>() };
           current.deuda += Number(row.subtotal);
           current.items += 1;
+          if (row.created_by_auth_user_id && row.created_by_auth_user_id === user?.id) current.mine = true;
+          if (row.created_by_auth_user_id) {
+            current.owners.add(ownerMap.get(row.created_by_auth_user_id) ?? "Camarera");
+          }
           deudaPorMesa.set(mesaNumero, current);
         }
       }
@@ -114,6 +217,8 @@ export function Camarera() {
             numero: mesa.numero,
             deuda_pendiente: deuda?.deuda ?? 0,
             items_pendientes: deuda?.items ?? 0,
+            mine_pending: deuda?.mine ?? false,
+            owner_names: deuda ? Array.from(deuda.owners) : [],
           };
         })
       );
@@ -123,7 +228,7 @@ export function Camarera() {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, tenantId]);
+  }, [authLoading, tenantId, user?.id]);
 
   const loadSelectedMesaConsumos = useCallback(async (mesaNumero: number | null) => {
     if (!tenantId || !mesaNumero) {
@@ -132,7 +237,7 @@ export function Camarera() {
     }
     const { data, error } = await insforgeClient.database
       .from("consumos")
-      .select("id, comanda_id, plato_id, nombre, cantidad, precio_unitario, subtotal, tipo, estado, created_at")
+      .select("id, comanda_id, plato_id, nombre, cantidad, precio_unitario, subtotal, tipo, estado, created_at, created_by_auth_user_id")
       .eq("tenant_id", tenantId)
       .eq("mesa_numero", mesaNumero)
       .neq("estado", "pagado")
@@ -163,10 +268,24 @@ export function Camarera() {
   });
 
   const selectedMesa = mesas.find((mesa) => mesa.numero === selectedMesaNumero) ?? null;
+  const mesaConsumoGroups = useMemo(() => groupMesaConsumos(mesaConsumos, ownerNameByAuthId), [mesaConsumos, ownerNameByAuthId]);
+  const normalizedRole = normalizeTenantRol(rol);
+  const isCamareraRole = normalizedRole === "mesero";
+  const selectedMesaHasOtherOwner = Boolean(
+    selectedMesa && selectedMesa.items_pendientes > 0 && !selectedMesa.mine_pending
+  );
+  const canEditSelectedMesa = Boolean(selectedMesa) && (!isCamareraRole || !selectedMesaHasOtherOwner);
+  const selectedMesaOwnerLabel = selectedMesa?.owner_names.length
+    ? selectedMesa.owner_names.join(", ")
+    : selectedMesa?.items_pendientes ? "Sin asignar" : "Sin camarera";
   const cartTotal = cart.reduce((sum, item) => sum + item.plato.precio * item.cantidad, 0);
   const cartItemsCount = cart.reduce((sum, item) => sum + item.cantidad, 0);
 
   function addToCart(plato: Plato) {
+    if (!canEditSelectedMesa) {
+      setMessage("Esta mesa pertenece a otra camarera. Podés verla, pero no editarla.");
+      return;
+    }
     setCart((prev) => {
       const existing = prev.find((item) => item.plato.id === plato.id);
       if (existing) {
@@ -187,7 +306,7 @@ export function Camarera() {
   }
 
   async function submitOrder() {
-    if (!tenantId || !selectedMesa || cart.length === 0) return;
+    if (!tenantId || !selectedMesa || cart.length === 0 || !canEditSelectedMesa) return;
     setSending(true);
     setMessage("");
 
@@ -296,6 +415,8 @@ export function Camarera() {
               ...mesa,
               deuda_pendiente: mesa.deuda_pendiente + cartTotal,
               items_pendientes: mesa.items_pendientes + cart.length,
+              mine_pending: true,
+              owner_names: Array.from(new Set([...mesa.owner_names, ownerNameByAuthId.get(user?.id ?? "") ?? "Tu mesa"])),
             }
           : mesa
       )
@@ -306,18 +427,22 @@ export function Camarera() {
     setSending(false);
   }
 
-  async function deleteMesaConsumo(consumo: MesaConsumoRow) {
+  async function deleteMesaConsumoGroup(group: MesaConsumoGroup) {
     if (!tenantId || !selectedMesa) return;
-    const confirmed = confirm(`Eliminar ${consumo.cantidad}? ${consumo.nombre} de la Mesa ${selectedMesa.numero}?`);
+    if (isCamareraRole && group.ownerId !== user?.id) {
+      setMessage("Solo podés editar los consumos de tus propias mesas.");
+      return;
+    }
+    const confirmed = confirm(`Eliminar ${group.cantidad}× ${group.nombre} de la Mesa ${selectedMesa.numero}?`);
     if (!confirmed) return;
 
-    setDeletingConsumoId(consumo.id);
+    setDeletingConsumoId(group.key);
     setMessage("");
 
     const { error } = await insforgeClient.database
       .from("consumos")
       .delete()
-      .eq("id", consumo.id)
+      .in("id", group.ids)
       .eq("tenant_id", tenantId);
 
     if (error) {
@@ -326,39 +451,42 @@ export function Camarera() {
       return;
     }
 
-    if (consumo.comanda_id) {
+    for (const comandaId of group.comandaIds) {
       const { data: remaining } = await insforgeClient.database
         .from("consumos")
         .select("id")
         .eq("tenant_id", tenantId)
-        .eq("comanda_id", consumo.comanda_id)
+        .eq("comanda_id", comandaId)
         .neq("estado", "pagado");
 
       if (!remaining || remaining.length === 0) {
         await insforgeClient.database
           .from("comandas")
           .delete()
-          .eq("id", consumo.comanda_id)
+          .eq("id", comandaId)
           .eq("tenant_id", tenantId);
       } else {
+        const qtyToRemove = group.rows
+          .filter((row) => row.comanda_id === comandaId)
+          .reduce((sum, row) => sum + Number(row.cantidad), 0);
         const { data: comanda } = await insforgeClient.database
           .from("comandas")
           .select("items")
-          .eq("id", consumo.comanda_id)
+          .eq("id", comandaId)
           .eq("tenant_id", tenantId)
           .maybeSingle();
         const items = Array.isArray((comanda as { items?: unknown } | null)?.items)
           ? ([...((comanda as { items: Array<{ nombre?: string; cantidad?: number; precio?: number }> }).items)] as Array<{ nombre?: string; cantidad?: number; precio?: number }>)
           : [];
-        const idx = items.findIndex((item) => item.nombre === consumo.nombre && Number(item.precio) === Number(consumo.precio_unitario));
+        const idx = items.findIndex((item) => item.nombre === group.nombre && Number(item.precio) === Number(group.precio_unitario));
         if (idx >= 0) {
           const currentQty = Number(items[idx].cantidad || 0);
-          if (currentQty <= consumo.cantidad) items.splice(idx, 1);
-          else items[idx] = { ...items[idx], cantidad: currentQty - consumo.cantidad };
+          if (currentQty <= qtyToRemove) items.splice(idx, 1);
+          else items[idx] = { ...items[idx], cantidad: currentQty - qtyToRemove };
           await insforgeClient.database
             .from("comandas")
             .update({ items })
-            .eq("id", consumo.comanda_id)
+            .eq("id", comandaId)
             .eq("tenant_id", tenantId);
         }
       }
@@ -368,12 +496,12 @@ export function Camarera() {
     setMesas((prev) => prev.map((mesa) => mesa.numero === selectedMesa.numero
       ? {
           ...mesa,
-          deuda_pendiente: Math.max(0, mesa.deuda_pendiente - Number(consumo.subtotal)),
-          items_pendientes: Math.max(0, mesa.items_pendientes - 1),
+          deuda_pendiente: Math.max(0, mesa.deuda_pendiente - Number(group.subtotal)),
+          items_pendientes: Math.max(0, mesa.items_pendientes - group.ids.length),
         }
       : mesa
     ));
-    setMessage(`${consumo.nombre} eliminado de la mesa.`);
+    setMessage(`${group.nombre} eliminado de la mesa.`);
     setDeletingConsumoId(null);
   }
 
@@ -401,11 +529,13 @@ export function Camarera() {
                       selected
                         ? "border-primary bg-primary text-primary-foreground shadow-lg"
                         : mesa.items_pendientes > 0
-                          ? "border-destructive/50 bg-destructive/10 text-destructive hover:border-destructive"
+                          ? mesa.mine_pending
+                            ? "border-destructive/60 bg-destructive/10 text-destructive ring-2 ring-emerald-500/70 hover:border-destructive"
+                            : "border-destructive/50 bg-destructive/10 text-destructive hover:border-destructive"
                           : "border-black/10 dark:border-white/10 bg-muted/30 text-foreground hover:border-primary/50"
                     }`}
                   >
-                    <span className="block font-['Space_Grotesk'] text-sm sm:text-lg font-bold leading-none">{String(mesa.numero).padStart(2, "0")}</span>
+                    <span className="flex items-center gap-1 font-['Space_Grotesk'] text-sm sm:text-lg font-bold leading-none">{mesa.mine_pending ? <span className="size-2 rounded-full bg-emerald-500" aria-label="Tu mesa" /> : null}{String(mesa.numero).padStart(2, "0")}</span>
                     <span className={`mt-1 block text-[8px] sm:text-[10px] font-bold uppercase leading-none ${selected ? "text-primary-foreground/75" : mesa.items_pendientes > 0 ? "text-destructive/80" : "text-muted-foreground"}`}>
                       {mesa.items_pendientes > 0 ? `${mesa.items_pendientes} pend.` : "Libre"}
                     </span>
@@ -456,7 +586,8 @@ export function Camarera() {
                   key={plato.id}
                   type="button"
                   onClick={() => addToCart(plato)}
-                  className="min-h-[118px] sm:min-h-[132px] rounded-[18px] sm:rounded-[20px] border border-black/10 dark:border-white/10 bg-background p-3 sm:p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/45 active:scale-[0.98]"
+                  disabled={!canEditSelectedMesa}
+                  className="min-h-[118px] sm:min-h-[132px] rounded-[18px] sm:rounded-[20px] border border-black/10 dark:border-white/10 bg-background p-3 sm:p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/45 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <span className="block font-['Space_Grotesk'] text-sm sm:text-base font-bold text-foreground leading-tight">{plato.nombre}</span>
                   <span className="mt-2 block text-[11px] text-muted-foreground uppercase tracking-widest">{plato.categoria || "General"}</span>
@@ -470,7 +601,7 @@ export function Camarera() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 className="font-['Space_Grotesk'] text-lg font-bold text-foreground">Pedido</h2>
-                <p className="text-xs text-muted-foreground">{selectedMesa ? `Mesa ${String(selectedMesa.numero).padStart(2, "0")}` : "Seleccioná una mesa"}</p>
+                <p className="text-xs text-muted-foreground">{selectedMesa ? `Mesa ${String(selectedMesa.numero).padStart(2, "0")} - ${selectedMesaOwnerLabel}` : "Selecciona una mesa"}</p>
               </div>
               {cart.length > 0 ? (
                 <button type="button" onClick={() => setCart([])} className="text-[10px] font-bold uppercase tracking-widest text-destructive bg-transparent border-none">Vaciar</button>
@@ -482,31 +613,35 @@ export function Camarera() {
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Mesa actual</span>
                   <span className="text-[10px] font-bold uppercase tracking-widest text-destructive">
-                    {mesaConsumos.length > 0 ? `${mesaConsumos.length} pendiente(s)` : "Libre"}
+                    {mesaConsumoGroups.length > 0 ? `${mesaConsumoGroups.reduce((sum, group) => sum + group.cantidad, 0)} pendiente(s)` : "Libre"}
                   </span>
                 </div>
                 <div className="mt-3 max-h-44 overflow-y-auto space-y-2 pr-1">
-                  {mesaConsumos.length === 0 ? (
+                  {mesaConsumoGroups.length === 0 ? (
                     <p className="text-xs text-muted-foreground">No hay consumos cargados en esta mesa.</p>
-                  ) : mesaConsumos.map((consumo) => (
-                    <div key={consumo.id} className="rounded-xl border border-destructive/15 bg-destructive/5 p-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <p className="text-[13px] font-bold text-foreground leading-tight">{consumo.cantidad}? {consumo.nombre}</p>
-                          <p className="text-[10px] font-bold uppercase text-muted-foreground">{consumo.tipo} ? {consumo.estado}</p>
+                  ) : mesaConsumoGroups.map((group) => {
+                    const canDeleteGroup = !isCamareraRole || group.ownerId === user?.id;
+                    return (
+                      <div key={group.key} className={`rounded-xl border p-2 ${canDeleteGroup ? "border-destructive/15 bg-destructive/5" : "border-black/10 bg-muted/25 dark:border-white/10"}`}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="text-[13px] font-bold text-foreground leading-tight">{group.cantidad}× {group.nombre}</p>
+                            <p className="text-[10px] font-bold uppercase text-muted-foreground">{group.tipo} · {group.estado}</p>
+                            <p className="text-[10px] font-semibold text-muted-foreground">Camarera: {group.ownerName}</p>
+                          </div>
+                          <p className="text-[12px] font-bold text-destructive">{formatMoney(Number(group.subtotal))}</p>
                         </div>
-                        <p className="text-[12px] font-bold text-destructive">{formatMoney(Number(consumo.subtotal))}</p>
+                        <button
+                          type="button"
+                          onClick={() => void deleteMesaConsumoGroup(group)}
+                          disabled={!canDeleteGroup || deletingConsumoId === group.key}
+                          className="mt-2 text-[10px] font-bold uppercase tracking-widest text-destructive bg-transparent border-none disabled:opacity-40"
+                        >
+                          {deletingConsumoId === group.key ? "Eliminando..." : canDeleteGroup ? "Eliminar de mesa" : "Solo lectura"}
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => void deleteMesaConsumo(consumo)}
-                        disabled={deletingConsumoId === consumo.id}
-                        className="mt-2 text-[10px] font-bold uppercase tracking-widest text-destructive bg-transparent border-none disabled:opacity-50"
-                      >
-                        {deletingConsumoId === consumo.id ? "Eliminando..." : "Eliminar de mesa"}
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             ) : null}
@@ -514,7 +649,7 @@ export function Camarera() {
             <div className="mt-4 max-h-none xl:max-h-[48vh] overflow-y-auto space-y-3 pr-1">
               {cart.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-black/10 dark:border-white/10 p-6 text-center text-sm text-muted-foreground">
-                  Agregá platos desde la carta. Si algo se cargó mal, lo podés eliminar antes de mandar.
+                  {canEditSelectedMesa ? "Agrega platos desde la carta. Si algo se cargo mal, lo podes eliminar antes de mandar." : "Esta mesa es de otra camarera. Podes verla en rojo, pero no editarla."}
                 </div>
               ) : cart.map((item) => (
                 <div key={item.plato.id} className="rounded-2xl border border-black/10 dark:border-white/10 bg-background p-3">
@@ -545,7 +680,7 @@ export function Camarera() {
               <button
                 type="button"
                 onClick={submitOrder}
-                disabled={!selectedMesa || cart.length === 0 || sending}
+                disabled={!selectedMesa || cart.length === 0 || sending || !canEditSelectedMesa}
                 className="w-full rounded-2xl bg-primary px-5 py-4 font-bold uppercase tracking-widest text-primary-foreground shadow-lg transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
               >
                 {sending ? "Mandando..." : "Confirmar y mandar"}
@@ -565,7 +700,7 @@ export function Camarera() {
             <button
               type="button"
               onClick={submitOrder}
-              disabled={!selectedMesa || cart.length === 0 || sending}
+              disabled={!selectedMesa || cart.length === 0 || sending || !canEditSelectedMesa}
               className="shrink-0 rounded-2xl bg-primary px-4 py-3 text-[11px] font-bold uppercase tracking-widest text-primary-foreground shadow-lg disabled:opacity-45"
             >
               {sending ? "Mandando" : `Mandar ${cartItemsCount || ""}`}
