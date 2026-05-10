@@ -694,7 +694,7 @@ Esto reactiva el restaurante y todos sus usuarios. Revis? despu?s si quer?s elim
                           <span>{counts.admin} admin</span>
                           <span>{counts.cajera} cajera</span>
                           <span>{counts.cocina} cocina</span>
-                          <span>{counts.mesero} mesero</span>
+                          <span>{counts.mesero} camarera</span>
                         </div>
                       </button>
                     );

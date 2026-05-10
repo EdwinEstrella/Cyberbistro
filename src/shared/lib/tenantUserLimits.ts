@@ -62,5 +62,5 @@ export function formatRoleLabel(role: ManagedUserRole): string {
   if (role === "admin") return "Admin";
   if (role === "cajera") return "Cajera";
   if (role === "cocina") return "Cocina";
-  return "Mesero";
+  return "Camarera";
 }

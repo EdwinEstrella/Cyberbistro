@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { useTenantCurrency } from "../../../shared/hooks/useTenantCurrency";
@@ -29,6 +29,19 @@ interface CartItem {
   cantidad: number;
 }
 
+interface MesaConsumoRow {
+  id: string;
+  comanda_id: string | null;
+  plato_id: number | null;
+  nombre: string;
+  cantidad: number;
+  precio_unitario: number;
+  subtotal: number;
+  tipo: "cocina" | "directo" | string;
+  estado: string;
+  created_at: string;
+}
+
 interface TenantPrintRow {
   nombre_negocio: string | null;
   rnc: string | null;
@@ -39,12 +52,14 @@ interface TenantPrintRow {
 }
 
 export function Camarera() {
-  const { tenantId, loading: authLoading } = useAuth();
+  const { tenantId, user, loading: authLoading } = useAuth();
   const { formatMoney } = useTenantCurrency();
   const [platos, setPlatos] = useState<Plato[]>([]);
   const [mesas, setMesas] = useState<MesaOption[]>([]);
   const [selectedMesaNumero, setSelectedMesaNumero] = useState<number | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [mesaConsumos, setMesaConsumos] = useState<MesaConsumoRow[]>([]);
+  const [deletingConsumoId, setDeletingConsumoId] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState("Todos");
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -109,6 +124,30 @@ export function Camarera() {
       cancelled = true;
     };
   }, [authLoading, tenantId]);
+
+  const loadSelectedMesaConsumos = useCallback(async (mesaNumero: number | null) => {
+    if (!tenantId || !mesaNumero) {
+      setMesaConsumos([]);
+      return;
+    }
+    const { data, error } = await insforgeClient.database
+      .from("consumos")
+      .select("id, comanda_id, plato_id, nombre, cantidad, precio_unitario, subtotal, tipo, estado, created_at")
+      .eq("tenant_id", tenantId)
+      .eq("mesa_numero", mesaNumero)
+      .neq("estado", "pagado")
+      .order("created_at", { ascending: false });
+
+    if (error || !data) {
+      setMesaConsumos([]);
+      return;
+    }
+    setMesaConsumos(data as MesaConsumoRow[]);
+  }, [tenantId]);
+
+  useEffect(() => {
+    void loadSelectedMesaConsumos(selectedMesaNumero);
+  }, [loadSelectedMesaConsumos, selectedMesaNumero]);
 
   const categories = useMemo(
     () => ["Todos", ...Array.from(new Set(platos.map((p) => p.categoria || "General")))],
@@ -178,7 +217,7 @@ export function Camarera() {
 
       const { data: comanda, error } = await insforgeClient.database
         .from("comandas")
-        .insert([{ mesa_numero: selectedMesa.numero, estado: "pendiente", items, notas: null, tenant_id: tenantId }])
+        .insert([{ mesa_numero: selectedMesa.numero, estado: "pendiente", items, notas: null, tenant_id: tenantId, creado_por: user?.id ?? null }])
         .select()
         .single();
 
@@ -226,6 +265,7 @@ export function Camarera() {
         subtotal: item.plato.precio * item.cantidad,
         tipo: "cocina" as const,
         estado: "enviado_cocina" as const,
+        created_by_auth_user_id: user?.id ?? null,
       })),
       ...directItems.map((item) => ({
         mesa_numero: selectedMesa.numero,
@@ -238,6 +278,7 @@ export function Camarera() {
         subtotal: item.plato.precio * item.cantidad,
         tipo: "directo" as const,
         estado: "entregado" as const,
+        created_by_auth_user_id: user?.id ?? null,
       })),
     ];
 
@@ -260,8 +301,80 @@ export function Camarera() {
       )
     );
     setCart([]);
+    await loadSelectedMesaConsumos(selectedMesa.numero);
     setMessage(`Orden enviada a Mesa ${String(selectedMesa.numero).padStart(2, "0")}.`);
     setSending(false);
+  }
+
+  async function deleteMesaConsumo(consumo: MesaConsumoRow) {
+    if (!tenantId || !selectedMesa) return;
+    const confirmed = confirm(`Eliminar ${consumo.cantidad}? ${consumo.nombre} de la Mesa ${selectedMesa.numero}?`);
+    if (!confirmed) return;
+
+    setDeletingConsumoId(consumo.id);
+    setMessage("");
+
+    const { error } = await insforgeClient.database
+      .from("consumos")
+      .delete()
+      .eq("id", consumo.id)
+      .eq("tenant_id", tenantId);
+
+    if (error) {
+      setMessage(error.message || "No se pudo eliminar el consumo.");
+      setDeletingConsumoId(null);
+      return;
+    }
+
+    if (consumo.comanda_id) {
+      const { data: remaining } = await insforgeClient.database
+        .from("consumos")
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .eq("comanda_id", consumo.comanda_id)
+        .neq("estado", "pagado");
+
+      if (!remaining || remaining.length === 0) {
+        await insforgeClient.database
+          .from("comandas")
+          .delete()
+          .eq("id", consumo.comanda_id)
+          .eq("tenant_id", tenantId);
+      } else {
+        const { data: comanda } = await insforgeClient.database
+          .from("comandas")
+          .select("items")
+          .eq("id", consumo.comanda_id)
+          .eq("tenant_id", tenantId)
+          .maybeSingle();
+        const items = Array.isArray((comanda as { items?: unknown } | null)?.items)
+          ? ([...((comanda as { items: Array<{ nombre?: string; cantidad?: number; precio?: number }> }).items)] as Array<{ nombre?: string; cantidad?: number; precio?: number }>)
+          : [];
+        const idx = items.findIndex((item) => item.nombre === consumo.nombre && Number(item.precio) === Number(consumo.precio_unitario));
+        if (idx >= 0) {
+          const currentQty = Number(items[idx].cantidad || 0);
+          if (currentQty <= consumo.cantidad) items.splice(idx, 1);
+          else items[idx] = { ...items[idx], cantidad: currentQty - consumo.cantidad };
+          await insforgeClient.database
+            .from("comandas")
+            .update({ items })
+            .eq("id", consumo.comanda_id)
+            .eq("tenant_id", tenantId);
+        }
+      }
+    }
+
+    await loadSelectedMesaConsumos(selectedMesa.numero);
+    setMesas((prev) => prev.map((mesa) => mesa.numero === selectedMesa.numero
+      ? {
+          ...mesa,
+          deuda_pendiente: Math.max(0, mesa.deuda_pendiente - Number(consumo.subtotal)),
+          items_pendientes: Math.max(0, mesa.items_pendientes - 1),
+        }
+      : mesa
+    ));
+    setMessage(`${consumo.nombre} eliminado de la mesa.`);
+    setDeletingConsumoId(null);
   }
 
   if (authLoading || loading) {
@@ -287,11 +400,13 @@ export function Camarera() {
                     className={`min-h-[46px] sm:min-h-[58px] rounded-xl sm:rounded-2xl border px-1.5 py-1.5 sm:p-2 text-center sm:text-left transition-all active:scale-[0.98] ${
                       selected
                         ? "border-primary bg-primary text-primary-foreground shadow-lg"
-                        : "border-black/10 dark:border-white/10 bg-muted/30 text-foreground hover:border-primary/50"
+                        : mesa.items_pendientes > 0
+                          ? "border-destructive/50 bg-destructive/10 text-destructive hover:border-destructive"
+                          : "border-black/10 dark:border-white/10 bg-muted/30 text-foreground hover:border-primary/50"
                     }`}
                   >
                     <span className="block font-['Space_Grotesk'] text-sm sm:text-lg font-bold leading-none">{String(mesa.numero).padStart(2, "0")}</span>
-                    <span className={`mt-1 block text-[8px] sm:text-[10px] font-bold uppercase leading-none ${selected ? "text-primary-foreground/75" : "text-muted-foreground"}`}>
+                    <span className={`mt-1 block text-[8px] sm:text-[10px] font-bold uppercase leading-none ${selected ? "text-primary-foreground/75" : mesa.items_pendientes > 0 ? "text-destructive/80" : "text-muted-foreground"}`}>
                       {mesa.items_pendientes > 0 ? `${mesa.items_pendientes} pend.` : "Libre"}
                     </span>
                   </button>
@@ -361,6 +476,40 @@ export function Camarera() {
                 <button type="button" onClick={() => setCart([])} className="text-[10px] font-bold uppercase tracking-widest text-destructive bg-transparent border-none">Vaciar</button>
               ) : null}
             </div>
+
+            {selectedMesa ? (
+              <div className="mt-4 rounded-2xl border border-black/10 dark:border-white/10 bg-background p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Mesa actual</span>
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-destructive">
+                    {mesaConsumos.length > 0 ? `${mesaConsumos.length} pendiente(s)` : "Libre"}
+                  </span>
+                </div>
+                <div className="mt-3 max-h-44 overflow-y-auto space-y-2 pr-1">
+                  {mesaConsumos.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No hay consumos cargados en esta mesa.</p>
+                  ) : mesaConsumos.map((consumo) => (
+                    <div key={consumo.id} className="rounded-xl border border-destructive/15 bg-destructive/5 p-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-[13px] font-bold text-foreground leading-tight">{consumo.cantidad}? {consumo.nombre}</p>
+                          <p className="text-[10px] font-bold uppercase text-muted-foreground">{consumo.tipo} ? {consumo.estado}</p>
+                        </div>
+                        <p className="text-[12px] font-bold text-destructive">{formatMoney(Number(consumo.subtotal))}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void deleteMesaConsumo(consumo)}
+                        disabled={deletingConsumoId === consumo.id}
+                        className="mt-2 text-[10px] font-bold uppercase tracking-widest text-destructive bg-transparent border-none disabled:opacity-50"
+                      >
+                        {deletingConsumoId === consumo.id ? "Eliminando..." : "Eliminar de mesa"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             <div className="mt-4 max-h-none xl:max-h-[48vh] overflow-y-auto space-y-3 pr-1">
               {cart.length === 0 ? (

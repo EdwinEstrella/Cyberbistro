@@ -3,10 +3,12 @@ import { Navigate, useLocation, useNavigate } from "react-router";
 import { useAuth } from "../../shared/hooks/useAuth";
 import { getRoleGuardDecision } from "./roleGuardDecision";
 
-function TenantLinkRequired({
+function TenantAccessDenied({
+  reason,
   onRetry,
   onSignOut,
 }: {
+  reason: 'blocked' | 'unlinked';
   onRetry: () => void;
   onSignOut: () => Promise<void>;
 }) {
@@ -14,8 +16,9 @@ function TenantLinkRequired({
   return (
     <div className="flex-1 flex flex-col items-center justify-center min-h-[240px] gap-4 px-6 text-center">
       <p className="font-['Space_Grotesk',sans-serif] text-[#e5e5e5] text-[15px] max-w-md">
-        Tu sesión es válida pero esta cuenta no está vinculada a ningún negocio. Pedí acceso al administrador o
-        desde Soporte.
+        {reason === 'blocked'
+          ? 'Tu cuenta está bloqueada. Contactá al administrador del sistema para recuperar el acceso.'
+          : 'Esta cuenta no está vinculada a ningún negocio. El administrador debe darte acceso desde Soporte.'}
       </p>
       <div className="flex flex-wrap gap-3 justify-center">
         <button
@@ -45,7 +48,7 @@ function TenantLinkRequired({
 }
 
 export function RoleGuard({ children }: { children: ReactNode }) {
-  const { loading, isAuthenticated, rol, tenantId, user, signOut, refreshSession } = useAuth();
+  const { loading, isAuthenticated, rol, tenantId, user, signOut, refreshSession, tenantAccessDeniedReason } = useAuth();
   const location = useLocation();
   const decision = getRoleGuardDecision({
     loading,
@@ -54,6 +57,7 @@ export function RoleGuard({ children }: { children: ReactNode }) {
     tenantId,
     rol,
     pathname: location.pathname,
+    tenantAccessDeniedReason,
   });
 
   if (decision.type === "loading") {
@@ -68,9 +72,10 @@ export function RoleGuard({ children }: { children: ReactNode }) {
     return <Navigate to="/" replace state={{ from: location.pathname }} />;
   }
 
-  if (decision.type === "tenant_link_required") {
+  if (decision.type === "tenant_access_denied") {
     return (
-      <TenantLinkRequired
+      <TenantAccessDenied
+        reason={decision.reason}
         onRetry={() => refreshSession({ showLoading: true })}
         onSignOut={signOut}
       />

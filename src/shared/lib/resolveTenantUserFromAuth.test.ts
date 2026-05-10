@@ -25,6 +25,7 @@ vi.mock("./insforge", () => ({
 describe("resolveTenantUserForSession", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.maybeSingle.mockResolvedValue({ data: null, error: null });
     mocks.rpc.mockResolvedValue({ data: null, error: null });
   });
 

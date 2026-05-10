@@ -1,6 +1,6 @@
 {
   "name": "cloudix",
-  "version": "12.0.20",
+  "version": "12.0.21",
   "description": "Cloudix Desktop App",
   "author": "Edwin",
   "main": "dist-electron/main.js",

@@ -55,10 +55,13 @@ function filterMainNavForRol(rol: string | null) {
   if (normalized === "admin") return [...mainNavItems];
   if (normalized === "cocina") return mainNavItems.filter((i) => i.path === "/cocina");
   if (normalized === "cajera") {
-    const allow = ["/dashboard", "/tables", "/entregas", "/gastos", "/cierre"] as const;
+    const allow = ["/dashboard", "/tables", "/gastos", "/cierre"] as const;
     return mainNavItems.filter((i) => allow.includes(i.path as (typeof allow)[number]));
   }
-  if (normalized === "mesero") return mainNavItems.filter((i) => i.path === "/camarera");
+  if (normalized === "mesero") {
+    const allow = ["/camarera", "/entregas"] as const;
+    return mainNavItems.filter((i) => allow.includes(i.path as (typeof allow)[number]));
+  }
   return mainNavItems.filter((i) => i.path === "/dashboard");
 }
 

@@ -8,7 +8,7 @@ import {
   clearTenantSessionCache,
   type TenantSessionRow,
 } from '../lib/tenantSessionCache';
-import { resolveTenantUserForSession } from '../lib/resolveTenantUserFromAuth';
+import { resolveTenantAccessForSession } from '../lib/resolveTenantUserFromAuth';
 
 interface TenantUser {
   tenant_id: string;
@@ -21,6 +21,7 @@ interface SharedAuthState {
   user: UserSchema | null;
   tenantUser: TenantUser | null;
   loading: boolean;
+  tenantAccessDeniedReason: 'blocked' | 'unlinked' | null;
 }
 
 function rowToTenantUser(data: TenantSessionRow): TenantUser {
@@ -51,6 +52,7 @@ const sharedState: SharedAuthState = {
   user: null,
   tenantUser: initialCached ? rowToTenantUser(initialCached) : null,
   loading: true,
+  tenantAccessDeniedReason: null,
 };
 
 function logAuth(message: string, payload?: unknown): void {
@@ -67,6 +69,10 @@ function patchSharedState(patch: Partial<SharedAuthState>): void {
   sharedState.tenantUser =
     patch.tenantUser === undefined ? sharedState.tenantUser : patch.tenantUser;
   sharedState.loading = patch.loading === undefined ? sharedState.loading : patch.loading;
+  sharedState.tenantAccessDeniedReason =
+    patch.tenantAccessDeniedReason === undefined
+      ? sharedState.tenantAccessDeniedReason
+      : patch.tenantAccessDeniedReason;
   notifySubscribers();
 }
 
@@ -156,7 +162,7 @@ function clearSessionShared(): void {
   } catch {
     /* ignore */
   }
-  patchSharedState({ user: null, tenantUser: null, loading: false });
+  patchSharedState({ user: null, tenantUser: null, tenantAccessDeniedReason: null, loading: false });
 }
 
 export function hydrateAuthStateAfterLogin(user: UserSchema, tenantRow: TenantSessionRow): void {
@@ -166,6 +172,7 @@ export function hydrateAuthStateAfterLogin(user: UserSchema, tenantRow: TenantSe
   patchSharedState({
     user,
     tenantUser: rowToTenantUser(tenantRow),
+    tenantAccessDeniedReason: null,
     loading: false,
   });
   logAuth('hydrate-after-login', {
@@ -280,18 +287,21 @@ async function loadUserDataShared(opts?: { silent?: boolean }): Promise<void> {
         logAuth('tenant cache hit', { tenantId: cached.tenant_id, rol: cached.rol });
       }
 
-      const resolved = await resolveTenantUserForSession(u);
-      if (resolved) {
-        patchSharedState({ tenantUser: rowToTenantUser(resolved) });
-        writeTenantSessionCache(u.id, resolved);
+      const access = await resolveTenantAccessForSession(u);
+      if (access.status === 'active') {
+        patchSharedState({
+          tenantUser: rowToTenantUser(access.row),
+          tenantAccessDeniedReason: null,
+        });
+        writeTenantSessionCache(u.id, access.row);
         logAuth('tenant resolved from backend', {
-          tenantId: resolved.tenant_id,
-          rol: resolved.rol,
+          tenantId: access.row.tenant_id,
+          rol: access.row.rol,
         });
       } else {
         clearTenantSessionCache();
-        patchSharedState({ tenantUser: null });
-        logAuth('tenant not resolved from backend -> cache cleared');
+        patchSharedState({ tenantUser: null, tenantAccessDeniedReason: access.status });
+        logAuth('tenant not resolved from backend -> cache cleared', { reason: access.status });
       }
     } catch (err) {
       console.error('Error loading user data:', err);
@@ -418,12 +428,14 @@ export function useAuth() {
   const [user, setUser] = useState<UserSchema | null>(sharedState.user);
   const [tenantUser, setTenantUser] = useState<TenantUser | null>(sharedState.tenantUser);
   const [loading, setLoading] = useState(sharedState.loading);
+  const [tenantAccessDeniedReason, setTenantAccessDeniedReason] = useState(sharedState.tenantAccessDeniedReason);
 
   useEffect(() => {
     const sync = () => {
       setUser(sharedState.user);
       setTenantUser(sharedState.tenantUser);
       setLoading(sharedState.loading);
+      setTenantAccessDeniedReason(sharedState.tenantAccessDeniedReason);
     };
     subscribers.add(sync);
     activeConsumers += 1;
@@ -474,5 +486,6 @@ export function useAuth() {
     signOut,
     isAuthenticated: !!user,
     refreshSession,
+    tenantAccessDeniedReason,
   };
 }

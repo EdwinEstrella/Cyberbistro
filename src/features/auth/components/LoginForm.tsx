@@ -9,7 +9,11 @@ import {
   formatInsforgeConnectivityError,
 } from "../../../shared/lib/insforge";
 import { INSFORGE_REFRESH_TOKEN_STORAGE_KEY } from "../../../shared/lib/insforgeAuthStorage";
-import { resolveTenantUserForSession } from "../../../shared/lib/resolveTenantUserFromAuth";
+import {
+  BLOCKED_ACCOUNT_MESSAGE,
+  UNLINKED_ACCOUNT_MESSAGE,
+  resolveTenantAccessForSession,
+} from "../../../shared/lib/resolveTenantUserFromAuth";
 import { hydrateAuthStateAfterLogin, syncAuthClientAfterLogin } from "../../../shared/hooks/useAuth";
 import { defaultRouteForRol } from "../../../shared/lib/roleNav";
 import { PinGateModal } from "../../../shared/components/PinGate";
@@ -188,17 +192,15 @@ export function Login() {
     }
 
     if (data?.user) {
-      const tu = await resolveTenantUserForSession(data.user);
-      if (!tu) {
-        setError(
-          "Esta cuenta no está vinculada a ningún negocio. El administrador debe darte acceso desde Soporte."
-        );
+      const access = await resolveTenantAccessForSession(data.user);
+      if (access.status !== "active") {
+        setError(access.status === "blocked" ? BLOCKED_ACCOUNT_MESSAGE : UNLINKED_ACCOUNT_MESSAGE);
         await insforgeClient.auth.signOut();
         setIsLoading(false);
         return;
       }
-      hydrateAuthStateAfterLogin(data.user, tu);
-      const dest = defaultRouteForRol(tu.rol);
+      hydrateAuthStateAfterLogin(data.user, access.row);
+      const dest = defaultRouteForRol(access.row.rol);
       setIsVisible(false);
       setTimeout(() => navigate(dest), 300);
     }

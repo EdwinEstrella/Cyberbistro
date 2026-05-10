@@ -8,7 +8,7 @@ import { SUPER_ADMIN_ROLE, SUPER_ADMIN_ROUTE } from "./superAdmin";
 
 export type TenantRol = "admin" | "cocina" | "cajera" | "mesero" | typeof SUPER_ADMIN_ROLE;
 
-const VENTA_PATHS = ["/dashboard", "/tables", "/entregas"] as const;
+const VENTA_PATHS = ["/dashboard", "/tables"] as const;
 
 /** Cierre de día / caja — admin ve todo; cajera y ventas también. */
 export const CIERRE_PATH = "/cierre";
@@ -18,7 +18,8 @@ export const GASTOS_PATH = "/gastos";
  * Canonicaliza roles legacy para evitar duplicados operativos:
  * - "vender", "vendedor", "ventas" => "cajera"  (acceso a ventas + cierre)
  * - "cajero"                       => "cajera"
- * - "mesero"                       => "mesero"  (solo ventas, sin cierre)
+ * - "mesero"                       => "mesero"  (camarera + sus entregas)
+ * - "cocinero"                     => "cocina"
  */
 export function normalizeTenantRol(rol: string | null): TenantRol | null {
   if (!rol) return null;
@@ -32,6 +33,7 @@ export function normalizeTenantRol(rol: string | null): TenantRol | null {
   if (rol === "vender" || rol === "vendedor" || rol === "ventas" || rol === "cajero") {
     return "cajera";
   }
+  if (rol === "cocinero") return "cocina";
   return null;
 }
 
@@ -64,7 +66,7 @@ export function isAppRouteAllowed(rol: string | null, pathname: string): boolean
     return false;
   }
   if (normalized === "mesero") {
-    return pathname === "/camarera";
+    return pathname === "/camarera" || pathname === "/entregas";
   }
   return pathname === "/dashboard";
 }

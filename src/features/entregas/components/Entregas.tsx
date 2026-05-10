@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
+import { normalizeTenantRol } from "../../../shared/lib/roleNav";
 
 
 interface MesaConPedido {
@@ -27,7 +28,8 @@ interface ItemEntrega {
 const RD = (n: number) => "RD$ " + n.toLocaleString("es-DO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export function Entregas() {
-  const { tenantId, loading: authLoading } = useAuth();
+  const { tenantId, user, rol, loading: authLoading } = useAuth();
+  const isCamarera = normalizeTenantRol(rol) === "mesero";
   const [mesasConPedido, setMesasConPedido] = useState<MesaConPedido[]>([]);
   const [loading, setLoading] = useState(true);
   const [filtroEstado, setFiltroEstado] = useState<"todos" | "falta_entregar" | "listo_cobro">("todos");
@@ -36,7 +38,16 @@ export function Entregas() {
     const soft = opts?.soft === true;
     if (!tenantId) { setMesasConPedido([]); if (!soft) setLoading(false); return; }
     if (!soft) setLoading(true);
-    const { data: consumos } = await insforgeClient.database.from("consumos").select("*").eq("tenant_id", tenantId).neq("estado", "pagado").order("created_at", { ascending: true });
+    let consumosQuery = insforgeClient.database
+      .from("consumos")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .neq("estado", "pagado")
+      .order("created_at", { ascending: true });
+    if (isCamarera && user?.id) {
+      consumosQuery = consumosQuery.eq("created_by_auth_user_id", user.id);
+    }
+    const { data: consumos } = await consumosQuery;
     if (!consumos?.length) { setMesasConPedido([]); if (!soft) setLoading(false); return; }
     
     const platoIds = [...new Set(consumos.map((c: any) => c.plato_id))];
@@ -60,7 +71,7 @@ export function Entregas() {
     }
     setMesasConPedido(Array.from(mesasMap.values()).sort((a, b) => (a.numero === 0) ? 1 : (b.numero === 0 ? -1 : a.numero - b.numero)));
     if (!soft) setLoading(false);
-  }, [tenantId]);
+  }, [tenantId, isCamarera, user?.id]);
 
   useEffect(() => {
     if (authLoading || !tenantId) { if (!authLoading) setLoading(false); return; }
@@ -71,7 +82,9 @@ export function Entregas() {
 
   async function marcarEntregado(id: string) {
     if (!tenantId) return;
-    const { error } = await insforgeClient.database.from("consumos").update({ estado: "entregado", updated_at: new Date().toISOString() }).eq("id", id).eq("tenant_id", tenantId);
+    let updateQuery = insforgeClient.database.from("consumos").update({ estado: "entregado", updated_at: new Date().toISOString() }).eq("id", id).eq("tenant_id", tenantId);
+    if (isCamarera && user?.id) updateQuery = updateQuery.eq("created_by_auth_user_id", user.id);
+    const { error } = await updateQuery;
     if (!error) loadEntregas({ soft: true });
   }
 

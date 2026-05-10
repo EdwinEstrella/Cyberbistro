@@ -28,6 +28,19 @@ describe("getRoleGuardDecision", () => {
     ).toEqual({ type: "redirect_login" });
   });
 
+  it("ventas no puede abrir entregas", () => {
+    expect(
+      getRoleGuardDecision({
+        loading: false,
+        isAuthenticated: true,
+        userExists: true,
+        tenantId: "tenant-1",
+        rol: "ventas",
+        pathname: "/entregas",
+      })
+    ).toEqual({ type: "redirect_role", to: "/dashboard" });
+  });
+
   it("muestra bloqueo de vínculo tenant cuando hay usuario sin tenant", () => {
     expect(
       getRoleGuardDecision({
@@ -38,7 +51,7 @@ describe("getRoleGuardDecision", () => {
         rol: "cajera",
         pathname: "/dashboard",
       })
-    ).toEqual({ type: "tenant_link_required" });
+    ).toEqual({ type: "tenant_access_denied", reason: "unlinked" });
   });
 
   it("redirige por rol cuando la ruta no está permitida", () => {
@@ -53,7 +66,7 @@ describe("getRoleGuardDecision", () => {
     expect(decision.type).toBe("redirect_role");
   });
 
-  it("mesero no puede abrir cierre y vuelve a camarera", () => {
+  it("camarera no puede abrir cierre y vuelve a camarera", () => {
     const decision = getRoleGuardDecision({
       loading: false,
       isAuthenticated: true,
@@ -87,6 +100,17 @@ describe("getRoleGuardDecision", () => {
         pathname: "/dashboard",
       })
     ).toEqual({ type: "redirect_role", to: "/camarera" });
+
+    expect(
+      getRoleGuardDecision({
+        loading: false,
+        isAuthenticated: true,
+        userExists: true,
+        tenantId: "tenant-1",
+        rol: "mesero",
+        pathname: "/entregas",
+      })
+    ).toEqual({ type: "allow" });
   });
 
   it("ventas y cajera pueden abrir cierre", () => {
@@ -103,4 +127,31 @@ describe("getRoleGuardDecision", () => {
       ).toEqual({ type: "allow" });
     }
   });
+  it("ventas no puede abrir entregas", () => {
+    expect(
+      getRoleGuardDecision({
+        loading: false,
+        isAuthenticated: true,
+        userExists: true,
+        tenantId: "tenant-1",
+        rol: "ventas",
+        pathname: "/entregas",
+      })
+    ).toEqual({ type: "redirect_role", to: "/dashboard" });
+  });
+
+  it("muestra bloqueo específico cuando el tenant está bloqueado", () => {
+    expect(
+      getRoleGuardDecision({
+        loading: false,
+        isAuthenticated: true,
+        userExists: true,
+        tenantId: null,
+        rol: null,
+        pathname: "/dashboard",
+        tenantAccessDeniedReason: "blocked",
+      })
+    ).toEqual({ type: "tenant_access_denied", reason: "blocked" });
+  });
+
 });
