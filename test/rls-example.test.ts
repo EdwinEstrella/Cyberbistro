@@ -46,6 +46,12 @@ describe('Pruebas de Row Level Security (RLS) en Cloudix', () => {
     // Si no conectó, saltamos el test
     if (!isConnected) return;
 
+    // Empezamos transacción para poder usar SET LOCAL y no ensuciar el scope
+    await db.query('BEGIN');
+    
+    // Perder los privilegios de Superusuario/Dueño bajando al rol de app
+    await db.query('SET LOCAL ROLE authenticated');
+
     await db.query(`
       SELECT set_config('request.jwt.claims', 
         '{"sub": "${USER_A_ID}", "email": "usera@restaurantea.com"}', 
@@ -54,6 +60,9 @@ describe('Pruebas de Row Level Security (RLS) en Cloudix', () => {
     `);
 
     const result = await db.query('SELECT * FROM comandas');
+    
+    // Devolver la conexión a la normalidad
+    await db.query('ROLLBACK');
 
     expect(result.rows.length).toBe(1);
     expect(result.rows[0].tenant_id).toBe(TENANT_A_ID);

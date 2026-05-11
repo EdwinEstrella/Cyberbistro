@@ -20,6 +20,12 @@ let sql = '-- Archivo autogenerado para pruebas en CI/CD con RLS\n';
 sql += 'CREATE EXTENSION IF NOT EXISTS "pgcrypto";\n\n';
 
 sql += `-- ==========================================\n`;
+sql += `-- ROLES (Emulando PostgREST de InsForge)\n`;
+sql += `-- ==========================================\n`;
+sql += `DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'authenticated') THEN CREATE ROLE authenticated NOLOGIN; END IF; END $$;\n`;
+sql += `GRANT USAGE ON SCHEMA public TO authenticated;\n\n`;
+
+sql += `-- ==========================================\n`;
 sql += `-- FUNCIONES DE AUTENTICACIÓN SIMULADAS\n`;
 sql += `-- ==========================================\n`;
 sql += `CREATE OR REPLACE FUNCTION cyberbistro_is_super_admin() RETURNS boolean AS $$ BEGIN RETURN current_setting('request.jwt.claims', true)::jsonb ->> 'is_super_admin' = 'true'; EXCEPTION WHEN OTHERS THEN RETURN false; END $$ LANGUAGE plpgsql STABLE;\n`;
@@ -77,6 +83,9 @@ politicasData.forEach(pol => {
     }
     sql += ';\n\n';
 });
+
+sql += `GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;\n`;
+sql += `GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;\n`;
 
 // El output ahora es directamente dentro del mismo directorio 'test'
 const outPath = path.join(__dirname, 'schema.sql');
