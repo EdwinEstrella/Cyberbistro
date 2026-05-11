@@ -55,15 +55,17 @@ function normalizeName(value: string): string {
   return value.trim().replace(/\s+/g, " ");
 }
 
+const dateTimeFormatter = new Intl.DateTimeFormat("es-DO", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: true,
+});
+
 function formatDateTime(iso: string): string {
-  return new Intl.DateTimeFormat("es-DO", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  }).format(new Date(iso));
+  return dateTimeFormatter.format(new Date(iso));
 }
 
 export function Gastos() {

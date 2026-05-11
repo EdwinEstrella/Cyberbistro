@@ -1,0 +1,28 @@
+name: React Doctor
+
+on:
+  pull_request:
+    branches: [ "master", "dev" ]
+  push:
+    branches: [ "master" ]
+
+permissions:
+  contents: read
+  pull-requests: write # required to post PR comments
+
+jobs:
+  react-doctor:
+    name: React Health Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # required for `diff`
+
+      - name: Run React Doctor
+        uses: millionco/react-doctor@main
+        with:
+          diff: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref || 'master' }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          fail-on: none # Ponemos 'none' al principio para que no bloquee los deploys hasta que subamos el score

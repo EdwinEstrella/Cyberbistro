@@ -92,7 +92,7 @@ function PinGate({ onUnlock }: { onUnlock: () => void }) {
               <button
                 key={i}
                 onClick={() => isDel ? setPin((p) => p.slice(0,-1)) : handleDigit(key)}
-                className="w-[72px] h-[72px] rounded-[16px] font-['Space_Grotesk',sans-serif] font-bold text-[20px] cursor-pointer transition-all active:scale-95 bg-muted text-foreground border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
+                className="size-[72px] rounded-[16px] font-['Space_Grotesk',sans-serif] font-bold text-[20px] cursor-pointer transition-all active:scale-95 bg-muted text-foreground border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
                 style={{
                   color: isDel ? "#ff716c" : "currentColor",
                 }}

@@ -147,21 +147,21 @@ function SidebarCustomIcon({ name }: { name: "gastos" | "cocina" | "entregas" | 
 
 export function AppLayout() {
   const navigate = useNavigate();
-  const location = useLocation();
+  const routerLocation = useLocation();
   const { rol, signOut, tenantId } = useAuth();
   const { hasUpdateBellAlert, showUpdateBellToast } = useAppUpdate();
   const [cocinaActiva, setCocinaActiva] = useState(true);
   const [ventaCartSearch, setVentaCartSearch] = useState("");
   const [sidebarHidden, setSidebarHidden] = useState(false);
 
-  const isVentaRoute = location.pathname === "/dashboard";
+  const isVentaRoute = routerLocation.pathname === "/dashboard";
 
   useEffect(() => {
     if (!isVentaRoute) setVentaCartSearch("");
   }, [isVentaRoute]);
 
   useEffect(() => {
-    if (!["/dashboard", "/billing", "/camarera", "/tables"].includes(location.pathname)) return;
+    if (!["/dashboard", "/billing", "/camarera", "/tables"].includes(routerLocation.pathname)) return;
     const mobileQuery = window.matchMedia("(max-width: 1024px)");
     const syncMobileSidebar = () => {
       if (mobileQuery.matches) setSidebarHidden(true);
@@ -169,7 +169,7 @@ export function AppLayout() {
     syncMobileSidebar();
     mobileQuery.addEventListener("change", syncMobileSidebar);
     return () => mobileQuery.removeEventListener("change", syncMobileSidebar);
-  }, [location.pathname]);
+  }, [routerLocation.pathname]);
 
   const sideNavItems = useMemo(() => {
     const main = filterMainNavForRol(rol);
@@ -230,7 +230,7 @@ export function AppLayout() {
     return () => {
       cancelled = true;
     };
-  }, [location.pathname, tenantId]);
+  }, [routerLocation.pathname, tenantId]);
 
   const isAjustesActive = location.pathname === "/ajustes";
 
