@@ -35,6 +35,7 @@ describe('Pruebas de Row Level Security (RLS) en Cloudix', () => {
       await db.query(`INSERT INTO comandas (id, tenant_id, mesa_numero, estado) VALUES (gen_random_uuid(), $1, 10, 'abierta')`, [TENANT_B_ID]);
     } catch (e) {
       console.warn("Base de datos local no disponible para test RLS puro. Se saltará el test.");
+      isConnected = false;
     }
   });
 

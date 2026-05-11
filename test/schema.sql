@@ -13,9 +13,6 @@ CREATE INDEX cierres_operativos_tenant_cycle_idx ON public.cierres_operativos US
 CREATE INDEX cierres_operativos_tenant_day_idx ON public.cierres_operativos USING btree (tenant_id, business_day, cycle_number DESC);
 CREATE UNIQUE INDEX cierres_operativos_unique_cycle ON public.cierres_operativos USING btree (tenant_id, cycle_number);
 
--- Foreign key constraints for table: cierres_operativos
-ALTER TABLE cierres_operativos ADD CONSTRAINT cierres_operativos_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE;
-
 -- RLS enabled for table: cierres_operativos
 ALTER TABLE cierres_operativos ENABLE ROW LEVEL SECURITY;
 
@@ -39,9 +36,6 @@ CREATE TABLE IF NOT EXISTS cocina_estado (id uuid NOT NULL DEFAULT gen_random_uu
 -- Indexes for table: cocina_estado
 CREATE INDEX idx_cocina_estado_tenant ON public.cocina_estado USING btree (tenant_id);
 
--- Foreign key constraints for table: cocina_estado
-ALTER TABLE cocina_estado ADD CONSTRAINT cocina_estado_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE RESTRICT;
-
 -- RLS enabled for table: cocina_estado
 ALTER TABLE cocina_estado ENABLE ROW LEVEL SECURITY;
 
@@ -62,9 +56,6 @@ CREATE TABLE IF NOT EXISTS comandas (id uuid NOT NULL DEFAULT gen_random_uuid(),
 
 -- Indexes for table: comandas
 CREATE INDEX idx_comandas_tenant ON public.comandas USING btree (tenant_id);
-
--- Foreign key constraints for table: comandas
-ALTER TABLE comandas ADD CONSTRAINT comandas_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE RESTRICT;
 
 -- RLS enabled for table: comandas
 ALTER TABLE comandas ENABLE ROW LEVEL SECURITY;
@@ -96,12 +87,6 @@ CREATE INDEX idx_consumos_factura_id ON public.consumos USING btree (factura_id)
 CREATE INDEX idx_consumos_mesa_numero ON public.consumos USING btree (mesa_numero);
 CREATE INDEX idx_consumos_tenant ON public.consumos USING btree (tenant_id);
 
--- Foreign key constraints for table: consumos
-ALTER TABLE consumos ADD CONSTRAINT consumos_comanda_id_fkey FOREIGN KEY (comanda_id) REFERENCES comandas (id) ON DELETE SET NULL;
-ALTER TABLE consumos ADD CONSTRAINT consumos_factura_id_fkey FOREIGN KEY (factura_id) REFERENCES facturas (id) ON DELETE SET NULL;
-ALTER TABLE consumos ADD CONSTRAINT consumos_plato_id_fkey FOREIGN KEY (plato_id) REFERENCES platos (id) ON DELETE RESTRICT;
-ALTER TABLE consumos ADD CONSTRAINT consumos_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE RESTRICT;
-
 -- RLS enabled for table: consumos
 ALTER TABLE consumos ENABLE ROW LEVEL SECURITY;
 
@@ -127,9 +112,6 @@ CREATE INDEX idx_facturas_estado ON public.facturas USING btree (estado);
 CREATE INDEX idx_facturas_fecha ON public.facturas USING btree (created_at DESC);
 CREATE INDEX idx_facturas_tenant ON public.facturas USING btree (tenant_id);
 
--- Foreign key constraints for table: facturas
-ALTER TABLE facturas ADD CONSTRAINT facturas_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE RESTRICT;
-
 -- RLS enabled for table: facturas
 ALTER TABLE facturas ENABLE ROW LEVEL SECURITY;
 
@@ -147,9 +129,6 @@ CREATE TABLE IF NOT EXISTS gasto_categorias (id uuid NOT NULL DEFAULT gen_random
 -- Indexes for table: gasto_categorias
 CREATE INDEX gasto_categorias_tenant_idx ON public.gasto_categorias USING btree (tenant_id, activa, nombre);
 CREATE UNIQUE INDEX gasto_categorias_tenant_nombre_unique ON public.gasto_categorias USING btree (tenant_id, lower(TRIM(BOTH FROM nombre)));
-
--- Foreign key constraints for table: gasto_categorias
-ALTER TABLE gasto_categorias ADD CONSTRAINT gasto_categorias_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE;
 
 -- RLS enabled for table: gasto_categorias
 ALTER TABLE gasto_categorias ENABLE ROW LEVEL SECURITY;
@@ -170,11 +149,6 @@ CREATE INDEX gastos_tenant_category_idx ON public.gastos USING btree (tenant_id,
 CREATE INDEX gastos_tenant_cycle_idx ON public.gastos USING btree (tenant_id, cycle_id);
 CREATE INDEX gastos_tenant_fecha_idx ON public.gastos USING btree (tenant_id, fecha_gasto DESC);
 
--- Foreign key constraints for table: gastos
-ALTER TABLE gastos ADD CONSTRAINT gastos_category_id_fkey FOREIGN KEY (category_id) REFERENCES gasto_categorias (id) ON DELETE SET NULL;
-ALTER TABLE gastos ADD CONSTRAINT gastos_cycle_id_fkey FOREIGN KEY (cycle_id) REFERENCES cierres_operativos (id) ON DELETE SET NULL;
-ALTER TABLE gastos ADD CONSTRAINT gastos_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE;
-
 -- RLS enabled for table: gastos
 ALTER TABLE gastos ENABLE ROW LEVEL SECURITY;
 
@@ -193,9 +167,6 @@ CREATE TABLE IF NOT EXISTS menu_categories (id uuid NOT NULL DEFAULT gen_random_
 CREATE UNIQUE INDEX menu_categories_tenant_nombre_idx ON public.menu_categories USING btree (tenant_id, lower(nombre));
 CREATE INDEX menu_categories_tenant_sort_idx ON public.menu_categories USING btree (tenant_id, sort_order, nombre);
 
--- Foreign key constraints for table: menu_categories
-ALTER TABLE menu_categories ADD CONSTRAINT menu_categories_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE;
-
 -- RLS enabled for table: menu_categories
 ALTER TABLE menu_categories ENABLE ROW LEVEL SECURITY;
 
@@ -211,9 +182,6 @@ CREATE TABLE IF NOT EXISTS mesas_estado (id integer NOT NULL, estado varchar(20)
 
 -- Indexes for table: mesas_estado
 CREATE INDEX idx_mesas_estado_tenant ON public.mesas_estado USING btree (tenant_id);
-
--- Foreign key constraints for table: mesas_estado
-ALTER TABLE mesas_estado ADD CONSTRAINT mesas_estado_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE;
 
 -- RLS enabled for table: mesas_estado
 ALTER TABLE mesas_estado ENABLE ROW LEVEL SECURITY;
@@ -231,9 +199,6 @@ CREATE TABLE IF NOT EXISTS platos (id integer NOT NULL, nombre text NOT NULL, pr
 
 -- Indexes for table: platos
 CREATE INDEX idx_platos_tenant ON public.platos USING btree (tenant_id);
-
--- Foreign key constraints for table: platos
-ALTER TABLE platos ADD CONSTRAINT platos_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE RESTRICT;
 
 -- RLS enabled for table: platos
 ALTER TABLE platos ENABLE ROW LEVEL SECURITY;
@@ -255,9 +220,6 @@ CREATE INDEX idx_tenant_users_email ON public.tenant_users USING btree (email);
 CREATE INDEX idx_tenant_users_rol ON public.tenant_users USING btree (rol);
 CREATE INDEX idx_tenant_users_tenant ON public.tenant_users USING btree (tenant_id);
 CREATE UNIQUE INDEX tenant_users_tenant_id_email_key ON public.tenant_users USING btree (tenant_id, email);
-
--- Foreign key constraints for table: tenant_users
-ALTER TABLE tenant_users ADD CONSTRAINT tenant_users_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE;
 
 -- RLS enabled for table: tenant_users
 ALTER TABLE tenant_users ENABLE ROW LEVEL SECURITY;
@@ -290,3 +252,24 @@ CREATE POLICY cb_tenants_member_select ON tenants FOR SELECT TO public USING ((E
 CREATE POLICY cb_tenants_super_admin_all ON tenants FOR ALL TO public USING (cloudix_is_super_admin()) WITH CHECK (cloudix_is_super_admin());
 CREATE POLICY project_admin_policy ON tenants FOR ALL TO project_admin USING (true) WITH CHECK (true);
 
+
+
+-- Foreign keys (added at the end to avoid relation missing errors)
+
+-- Foreign keys (added at the end to avoid relation missing errors)
+ALTER TABLE cierres_operativos ADD CONSTRAINT cierres_operativos_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE;
+ALTER TABLE cocina_estado ADD CONSTRAINT cocina_estado_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE RESTRICT;
+ALTER TABLE comandas ADD CONSTRAINT comandas_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE RESTRICT;
+ALTER TABLE consumos ADD CONSTRAINT consumos_comanda_id_fkey FOREIGN KEY (comanda_id) REFERENCES comandas (id) ON DELETE SET NULL;
+ALTER TABLE consumos ADD CONSTRAINT consumos_factura_id_fkey FOREIGN KEY (factura_id) REFERENCES facturas (id) ON DELETE SET NULL;
+ALTER TABLE consumos ADD CONSTRAINT consumos_plato_id_fkey FOREIGN KEY (plato_id) REFERENCES platos (id) ON DELETE RESTRICT;
+ALTER TABLE consumos ADD CONSTRAINT consumos_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE RESTRICT;
+ALTER TABLE facturas ADD CONSTRAINT facturas_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE RESTRICT;
+ALTER TABLE gasto_categorias ADD CONSTRAINT gasto_categorias_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE;
+ALTER TABLE gastos ADD CONSTRAINT gastos_category_id_fkey FOREIGN KEY (category_id) REFERENCES gasto_categorias (id) ON DELETE SET NULL;
+ALTER TABLE gastos ADD CONSTRAINT gastos_cycle_id_fkey FOREIGN KEY (cycle_id) REFERENCES cierres_operativos (id) ON DELETE SET NULL;
+ALTER TABLE gastos ADD CONSTRAINT gastos_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE;
+ALTER TABLE menu_categories ADD CONSTRAINT menu_categories_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE;
+ALTER TABLE mesas_estado ADD CONSTRAINT mesas_estado_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE;
+ALTER TABLE platos ADD CONSTRAINT platos_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE RESTRICT;
+ALTER TABLE tenant_users ADD CONSTRAINT tenant_users_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES tenants (id) ON DELETE CASCADE;
