@@ -56,6 +56,7 @@ sql += `-- ==========================================\n`;
 const tablesWithRls = new Set(politicasData.map(p => p.tablename));
 tablesWithRls.forEach(tableName => {
     sql += `ALTER TABLE ${tableName} ENABLE ROW LEVEL SECURITY;\n`;
+    sql += `ALTER TABLE ${tableName} FORCE ROW LEVEL SECURITY;\n`;
 });
 
 politicasData.forEach(pol => {
