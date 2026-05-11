@@ -48,7 +48,7 @@ CREATE OR REPLACE FUNCTION realtime_notify_comandas() RETURNS trigger AS $$ BEGI
 
 
 -- Database Export
--- Generated on: 2026-05-11T15:35:24.673Z
+-- Generated on: 2026-05-11T16:06:56.928Z
 -- Format: SQL
 -- Include Data: false
 -- Row Limit: 1000 rows per table
@@ -338,4 +338,10 @@ CREATE POLICY cb_tenants_member_select ON tenants FOR SELECT TO public USING ((E
   WHERE ((tu.tenant_id = tenants.id) AND ((tu.auth_user_id = cloudix_auth_user_id()) OR (lower(tu.email) = lower(COALESCE(cloudix_auth_email(), ''::text))))))));
 CREATE POLICY cb_tenants_super_admin_all ON tenants FOR ALL TO public USING (cloudix_is_super_admin()) WITH CHECK (cloudix_is_super_admin());
 CREATE POLICY project_admin_policy ON tenants FOR ALL TO project_admin USING (true) WITH CHECK (true);
+
+-- Sequences
+CREATE SEQUENCE IF NOT EXISTS comandas_numero_comanda_seq START WITH 1 INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 NO CYCLE;
+CREATE SEQUENCE IF NOT EXISTS facturas_numero_factura_seq START WITH 1000 INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 NO CYCLE;
+CREATE SEQUENCE IF NOT EXISTS platos_id_seq START WITH 1 INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 NO CYCLE;
+CREATE SEQUENCE IF NOT EXISTS platos_tenant_seq START WITH 1 INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 NO CYCLE;
 

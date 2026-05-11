@@ -26,8 +26,8 @@ describe('Pruebas de Row Level Security (RLS) en Cloudix', () => {
       await db.query(`INSERT INTO tenants (id, nombre_negocio) VALUES ($1, 'Restaurante B') ON CONFLICT DO NOTHING`, [TENANT_B_ID]);
       
       await db.query(`
-        INSERT INTO tenant_users (id, tenant_id, auth_user_id, email, activo) 
-        VALUES (gen_random_uuid(), $1, $2, 'usera@restaurantea.com', true)
+        INSERT INTO tenant_users (id, tenant_id, auth_user_id, email, activo, password_hash, rol, nombre) 
+        VALUES (gen_random_uuid(), $1, $2, 'usera@restaurantea.com', true, 'mockhash', 'admin', 'Usuario A')
         ON CONFLICT DO NOTHING
       `, [TENANT_A_ID, USER_A_ID]);
 
