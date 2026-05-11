@@ -46,6 +46,7 @@ END $$ LANGUAGE plpgsql STABLE;
 CREATE OR REPLACE FUNCTION realtime_notify_cocina_estado() RETURNS trigger AS $$ BEGIN RETURN NEW; END; $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION realtime_notify_comandas() RETURNS trigger AS $$ BEGIN RETURN NEW; END; $$ LANGUAGE plpgsql;
 
+
 -- Database Export
 -- Generated on: 2026-05-11T15:35:24.673Z
 -- Format: SQL
