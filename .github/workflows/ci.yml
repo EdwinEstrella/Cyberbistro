@@ -16,4 +16,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
-      - run: npm run test
+      - name: Iniciar base de datos efímera (InsForge)
+        run: npx insforge start
+      - name: Ejecutar pruebas
+        run: npm run test
+

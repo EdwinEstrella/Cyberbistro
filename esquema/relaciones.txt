@@ -1,0 +1,158 @@
+[
+  {
+    "table_name": "messages",
+    "column_name": "channel_id",
+    "foreign_table_name": "channels",
+    "foreign_column_name": "id"
+  },
+  {
+    "table_name": "user_providers",
+    "column_name": "user_id",
+    "foreign_table_name": "users",
+    "foreign_column_name": "id"
+  },
+  {
+    "table_name": "user_providers",
+    "column_name": "user_id",
+    "foreign_table_name": "users",
+    "foreign_column_name": "id"
+  },
+  {
+    "table_name": "oauth_configs",
+    "column_name": "secret_id",
+    "foreign_table_name": "secrets",
+    "foreign_column_name": "id"
+  },
+  {
+    "table_name": "usage",
+    "column_name": "config_id",
+    "foreign_table_name": "configs",
+    "foreign_column_name": "id"
+  },
+  {
+    "table_name": "objects",
+    "column_name": "bucket",
+    "foreign_table_name": "buckets",
+    "foreign_column_name": "name"
+  },
+  {
+    "table_name": "job_logs",
+    "column_name": "job_id",
+    "foreign_table_name": "jobs",
+    "foreign_column_name": "id"
+  },
+  {
+    "table_name": "consumos",
+    "column_name": "comanda_id",
+    "foreign_table_name": "comandas",
+    "foreign_column_name": "id"
+  },
+  {
+    "table_name": "consumos",
+    "column_name": "factura_id",
+    "foreign_table_name": "facturas",
+    "foreign_column_name": "id"
+  },
+  {
+    "table_name": "consumos",
+    "column_name": "plato_id",
+    "foreign_table_name": "platos",
+    "foreign_column_name": "id"
+  },
+  {
+    "table_name": "platos",
+    "column_name": "tenant_id",
+    "foreign_table_name": "tenants",
+    "foreign_column_name": "id"
+  },
+  {
+    "table_name": "custom_oauth_configs",
+    "column_name": "secret_id",
+    "foreign_table_name": "secrets",
+    "foreign_column_name": "id"
+  },
+  {
+    "table_name": "facturas",
+    "column_name": "tenant_id",
+    "foreign_table_name": "tenants",
+    "foreign_column_name": "id"
+  },
+  {
+    "table_name": "comandas",
+    "column_name": "tenant_id",
+    "foreign_table_name": "tenants",
+    "foreign_column_name": "id"
+  },
+  {
+    "table_name": "consumos",
+    "column_name": "tenant_id",
+    "foreign_table_name": "tenants",
+    "foreign_column_name": "id"
+  },
+  {
+    "table_name": "cocina_estado",
+    "column_name": "tenant_id",
+    "foreign_table_name": "tenants",
+    "foreign_column_name": "id"
+  },
+  {
+    "table_name": "tenant_users",
+    "column_name": "tenant_id",
+    "foreign_table_name": "tenants",
+    "foreign_column_name": "id"
+  },
+  {
+    "table_name": "mesas_estado",
+    "column_name": "tenant_id",
+    "foreign_table_name": "tenants",
+    "foreign_column_name": "id"
+  },
+  {
+    "table_name": "tenant_users",
+    "column_name": "auth_user_id",
+    "foreign_table_name": "users",
+    "foreign_column_name": "id"
+  },
+  {
+    "table_name": "files",
+    "column_name": "deployment_id",
+    "foreign_table_name": "runs",
+    "foreign_column_name": "id"
+  },
+  {
+    "table_name": "cierres_operativos",
+    "column_name": "tenant_id",
+    "foreign_table_name": "tenants",
+    "foreign_column_name": "id"
+  },
+  {
+    "table_name": "gasto_categorias",
+    "column_name": "tenant_id",
+    "foreign_table_name": "tenants",
+    "foreign_column_name": "id"
+  },
+  {
+    "table_name": "menu_categories",
+    "column_name": "tenant_id",
+    "foreign_table_name": "tenants",
+    "foreign_column_name": "id"
+  },
+  {
+    "table_name": "gastos",
+    "column_name": "tenant_id",
+    "foreign_table_name": "tenants",
+    "foreign_column_name": "id"
+  },
+  {
+    "table_name": "gastos",
+    "column_name": "category_id",
+    "foreign_table_name": "gasto_categorias",
+    "foreign_column_name": "id"
+  },
+  {
+    "table_name": "gastos",
+    "column_name": "cycle_id",
+    "foreign_table_name": "cierres_operativos",
+    "foreign_column_name": "id"
+  }
+]

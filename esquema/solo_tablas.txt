@@ -1,0 +1,47 @@
+[
+  {
+    "table_name": "cloudix_super_admins"
+  },
+  {
+    "table_name": "cocina_estado"
+  },
+  {
+    "table_name": "comandas"
+  },
+  {
+    "table_name": "cierres_operativos"
+  },
+  {
+    "table_name": "configuracion"
+  },
+  {
+    "table_name": "tenant_users"
+  },
+  {
+    "table_name": "platos"
+  },
+  {
+    "table_name": "facturas"
+  },
+  {
+    "table_name": "mesas_estado"
+  },
+  {
+    "table_name": "tenants"
+  },
+  {
+    "table_name": "consumos"
+  },
+  {
+    "table_name": "cyberbistro_super_admins"
+  },
+  {
+    "table_name": "menu_categories"
+  },
+  {
+    "table_name": "gasto_categorias"
+  },
+  {
+    "table_name": "gastos"
+  }
+]

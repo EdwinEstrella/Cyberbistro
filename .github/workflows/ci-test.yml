@@ -1,0 +1,57 @@
+name: Cloudix CI Tests
+
+on:
+  push:
+    branches: [ "main", "dev" ]
+  pull_request:
+    branches: [ "main", "dev" ]
+
+jobs:
+  test:
+    name: Pruebas con BD Efímera + RLS
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: cloudix_test
+          POSTGRES_PASSWORD: supersecret_test
+          POSTGRES_DB: cloudix_testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout del código
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Generar Esquema SQL con RLS
+        run: node test/generate-schema-rls.js
+
+      - name: Inyectar Esquema a la BD Temporal
+        env:
+          PGPASSWORD: supersecret_test
+        run: |
+          echo "Creando tablas y políticas RLS..."
+          psql -h localhost -U cloudix_test -d cloudix_testdb -f test/schema.sql
+
+      - name: Ejecutar Pruebas
+        env:
+          DATABASE_URL: postgresql://cloudix_test:supersecret_test@localhost:5432/cloudix_testdb
+          NODE_ENV: test
+        run: |
+          npm run test

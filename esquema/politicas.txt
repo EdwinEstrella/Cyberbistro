@@ -1,0 +1,332 @@
+[
+  {
+    "schemaname": "public",
+    "tablename": "cocina_estado",
+    "policyname": "cb_cocina_estado_tenant_isolation",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "ALL",
+    "qual": "(cyberbistro_is_super_admin() OR (EXISTS ( SELECT 1\n   FROM tenant_users tu\n  WHERE ((tu.tenant_id = cocina_estado.tenant_id) AND (tu.activo IS TRUE) AND ((tu.auth_user_id = cyberbistro_auth_user_id()) OR ((tu.auth_user_id IS NULL) AND (lower(tu.email) = lower(cyberbistro_auth_email()))))))))",
+    "with_check": "(cyberbistro_is_super_admin() OR (EXISTS ( SELECT 1\n   FROM tenant_users tu\n  WHERE ((tu.tenant_id = cocina_estado.tenant_id) AND (tu.activo IS TRUE) AND ((tu.auth_user_id = cyberbistro_auth_user_id()) OR ((tu.auth_user_id IS NULL) AND (lower(tu.email) = lower(cyberbistro_auth_email()))))))))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "cocina_estado",
+    "policyname": "project_admin_policy",
+    "permissive": "PERMISSIVE",
+    "roles": "{project_admin}",
+    "cmd": "ALL",
+    "qual": "true",
+    "with_check": "true"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "comandas",
+    "policyname": "cb_comandas_tenant_isolation",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "ALL",
+    "qual": "(cyberbistro_is_super_admin() OR (EXISTS ( SELECT 1\n   FROM tenant_users tu\n  WHERE ((tu.tenant_id = comandas.tenant_id) AND (tu.activo IS TRUE) AND ((tu.auth_user_id = cyberbistro_auth_user_id()) OR ((tu.auth_user_id IS NULL) AND (lower(tu.email) = lower(cyberbistro_auth_email()))))))))",
+    "with_check": "(cyberbistro_is_super_admin() OR (EXISTS ( SELECT 1\n   FROM tenant_users tu\n  WHERE ((tu.tenant_id = comandas.tenant_id) AND (tu.activo IS TRUE) AND ((tu.auth_user_id = cyberbistro_auth_user_id()) OR ((tu.auth_user_id IS NULL) AND (lower(tu.email) = lower(cyberbistro_auth_email()))))))))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "comandas",
+    "policyname": "project_admin_policy",
+    "permissive": "PERMISSIVE",
+    "roles": "{project_admin}",
+    "cmd": "ALL",
+    "qual": "true",
+    "with_check": "true"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "cierres_operativos",
+    "policyname": "cb_cierres_operativos_tenant_isolation",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "ALL",
+    "qual": "(cyberbistro_is_super_admin() OR (EXISTS ( SELECT 1\n   FROM tenant_users tu\n  WHERE ((tu.tenant_id = cierres_operativos.tenant_id) AND (tu.activo IS TRUE) AND ((tu.auth_user_id = cyberbistro_auth_user_id()) OR ((tu.auth_user_id IS NULL) AND (lower(tu.email) = lower(cyberbistro_auth_email()))))))))",
+    "with_check": "(cyberbistro_is_super_admin() OR (EXISTS ( SELECT 1\n   FROM tenant_users tu\n  WHERE ((tu.tenant_id = cierres_operativos.tenant_id) AND (tu.activo IS TRUE) AND ((tu.auth_user_id = cyberbistro_auth_user_id()) OR ((tu.auth_user_id IS NULL) AND (lower(tu.email) = lower(cyberbistro_auth_email()))))))))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "cierres_operativos",
+    "policyname": "project_admin_policy",
+    "permissive": "PERMISSIVE",
+    "roles": "{project_admin}",
+    "cmd": "ALL",
+    "qual": "true",
+    "with_check": "true"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "tenant_users",
+    "policyname": "cb_tenant_users_admin_staff_delete",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "DELETE",
+    "qual": "((tenant_id = ANY (cyberbistro_current_admin_tenant_ids())) AND (rol = ANY (ARRAY['cajera'::text, 'mesero'::text, 'cocina'::text, 'cocinero'::text])))",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "tenant_users",
+    "policyname": "cb_tenant_users_admin_staff_insert",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "INSERT",
+    "qual": null,
+    "with_check": "((tenant_id = ANY (cyberbistro_current_admin_tenant_ids())) AND (rol = ANY (ARRAY['cajera'::text, 'mesero'::text, 'cocina'::text, 'cocinero'::text])) AND (activo IS TRUE))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "tenant_users",
+    "policyname": "cb_tenant_users_admin_staff_update",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "UPDATE",
+    "qual": "((tenant_id = ANY (cyberbistro_current_admin_tenant_ids())) AND (rol = ANY (ARRAY['cajera'::text, 'mesero'::text, 'cocina'::text, 'cocinero'::text])))",
+    "with_check": "((tenant_id = ANY (cyberbistro_current_admin_tenant_ids())) AND (rol = ANY (ARRAY['cajera'::text, 'mesero'::text, 'cocina'::text, 'cocinero'::text])))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "tenant_users",
+    "policyname": "cb_tenant_users_admin_team_select",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "(tenant_id = ANY (cyberbistro_current_admin_tenant_ids()))",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "tenant_users",
+    "policyname": "cb_tenant_users_self_select",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "((auth_user_id = cloudix_auth_user_id()) OR (lower(email) = lower(COALESCE(cloudix_auth_email(), ''::text))))",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "tenant_users",
+    "policyname": "cb_tenant_users_super_admin_all",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "ALL",
+    "qual": "cloudix_is_super_admin()",
+    "with_check": "cloudix_is_super_admin()"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "tenant_users",
+    "policyname": "project_admin_policy",
+    "permissive": "PERMISSIVE",
+    "roles": "{project_admin}",
+    "cmd": "ALL",
+    "qual": "true",
+    "with_check": "true"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "platos",
+    "policyname": "cb_platos_tenant_isolation",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "ALL",
+    "qual": "(cyberbistro_is_super_admin() OR (EXISTS ( SELECT 1\n   FROM tenant_users tu\n  WHERE ((tu.tenant_id = platos.tenant_id) AND (tu.activo IS TRUE) AND ((tu.auth_user_id = cyberbistro_auth_user_id()) OR ((tu.auth_user_id IS NULL) AND (lower(tu.email) = lower(cyberbistro_auth_email()))))))))",
+    "with_check": "(cyberbistro_is_super_admin() OR (EXISTS ( SELECT 1\n   FROM tenant_users tu\n  WHERE ((tu.tenant_id = platos.tenant_id) AND (tu.activo IS TRUE) AND ((tu.auth_user_id = cyberbistro_auth_user_id()) OR ((tu.auth_user_id IS NULL) AND (lower(tu.email) = lower(cyberbistro_auth_email()))))))))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "platos",
+    "policyname": "project_admin_policy",
+    "permissive": "PERMISSIVE",
+    "roles": "{project_admin}",
+    "cmd": "ALL",
+    "qual": "true",
+    "with_check": "true"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "facturas",
+    "policyname": "cb_facturas_tenant_isolation",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "ALL",
+    "qual": "(cyberbistro_is_super_admin() OR (EXISTS ( SELECT 1\n   FROM tenant_users tu\n  WHERE ((tu.tenant_id = facturas.tenant_id) AND (tu.activo IS TRUE) AND ((tu.auth_user_id = cyberbistro_auth_user_id()) OR ((tu.auth_user_id IS NULL) AND (lower(tu.email) = lower(cyberbistro_auth_email()))))))))",
+    "with_check": "(cyberbistro_is_super_admin() OR (EXISTS ( SELECT 1\n   FROM tenant_users tu\n  WHERE ((tu.tenant_id = facturas.tenant_id) AND (tu.activo IS TRUE) AND ((tu.auth_user_id = cyberbistro_auth_user_id()) OR ((tu.auth_user_id IS NULL) AND (lower(tu.email) = lower(cyberbistro_auth_email()))))))))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "facturas",
+    "policyname": "project_admin_policy",
+    "permissive": "PERMISSIVE",
+    "roles": "{project_admin}",
+    "cmd": "ALL",
+    "qual": "true",
+    "with_check": "true"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "mesas_estado",
+    "policyname": "cb_mesas_estado_tenant_isolation",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "ALL",
+    "qual": "(cyberbistro_is_super_admin() OR (EXISTS ( SELECT 1\n   FROM tenant_users tu\n  WHERE ((tu.tenant_id = mesas_estado.tenant_id) AND (tu.activo IS TRUE) AND ((tu.auth_user_id = cyberbistro_auth_user_id()) OR ((tu.auth_user_id IS NULL) AND (lower(tu.email) = lower(cyberbistro_auth_email()))))))))",
+    "with_check": "(cyberbistro_is_super_admin() OR (EXISTS ( SELECT 1\n   FROM tenant_users tu\n  WHERE ((tu.tenant_id = mesas_estado.tenant_id) AND (tu.activo IS TRUE) AND ((tu.auth_user_id = cyberbistro_auth_user_id()) OR ((tu.auth_user_id IS NULL) AND (lower(tu.email) = lower(cyberbistro_auth_email()))))))))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "mesas_estado",
+    "policyname": "project_admin_policy",
+    "permissive": "PERMISSIVE",
+    "roles": "{project_admin}",
+    "cmd": "ALL",
+    "qual": "true",
+    "with_check": "true"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "tenants",
+    "policyname": "cb_tenants_auth_insert",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "cmd": "INSERT",
+    "qual": null,
+    "with_check": "true"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "tenants",
+    "policyname": "cb_tenants_isolation",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "cmd": "ALL",
+    "qual": "(EXISTS ( SELECT 1\n   FROM tenant_users tu\n  WHERE ((tu.tenant_id = tenants.id) AND (tu.activo IS TRUE) AND ((tu.auth_user_id = cyberbistro_auth_user_id()) OR ((tu.auth_user_id IS NULL) AND (lower(tu.email) = lower(cyberbistro_auth_email())))))))",
+    "with_check": "(EXISTS ( SELECT 1\n   FROM tenant_users tu\n  WHERE ((tu.tenant_id = tenants.id) AND (tu.activo IS TRUE) AND ((tu.auth_user_id = cyberbistro_auth_user_id()) OR ((tu.auth_user_id IS NULL) AND (lower(tu.email) = lower(cyberbistro_auth_email())))))))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "tenants",
+    "policyname": "cb_tenants_member_select",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "(EXISTS ( SELECT 1\n   FROM tenant_users tu\n  WHERE ((tu.tenant_id = tenants.id) AND ((tu.auth_user_id = cloudix_auth_user_id()) OR (lower(tu.email) = lower(COALESCE(cloudix_auth_email(), ''::text)))))))",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "tenants",
+    "policyname": "cb_tenants_super_admin_all",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "ALL",
+    "qual": "cloudix_is_super_admin()",
+    "with_check": "cloudix_is_super_admin()"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "tenants",
+    "policyname": "project_admin_policy",
+    "permissive": "PERMISSIVE",
+    "roles": "{project_admin}",
+    "cmd": "ALL",
+    "qual": "true",
+    "with_check": "true"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "consumos",
+    "policyname": "cb_consumos_tenant_isolation",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "ALL",
+    "qual": "(cyberbistro_is_super_admin() OR (EXISTS ( SELECT 1\n   FROM tenant_users tu\n  WHERE ((tu.tenant_id = consumos.tenant_id) AND (tu.activo IS TRUE) AND ((tu.auth_user_id = cyberbistro_auth_user_id()) OR ((tu.auth_user_id IS NULL) AND (lower(tu.email) = lower(cyberbistro_auth_email()))))))))",
+    "with_check": "(cyberbistro_is_super_admin() OR (EXISTS ( SELECT 1\n   FROM tenant_users tu\n  WHERE ((tu.tenant_id = consumos.tenant_id) AND (tu.activo IS TRUE) AND ((tu.auth_user_id = cyberbistro_auth_user_id()) OR ((tu.auth_user_id IS NULL) AND (lower(tu.email) = lower(cyberbistro_auth_email()))))))))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "consumos",
+    "policyname": "project_admin_policy",
+    "permissive": "PERMISSIVE",
+    "roles": "{project_admin}",
+    "cmd": "ALL",
+    "qual": "true",
+    "with_check": "true"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "menu_categories",
+    "policyname": "cb_menu_categories_admin_all",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "ALL",
+    "qual": "(cyberbistro_is_super_admin() OR (tenant_id = ANY (cyberbistro_current_admin_tenant_ids())))",
+    "with_check": "(cyberbistro_is_super_admin() OR (tenant_id = ANY (cyberbistro_current_admin_tenant_ids())))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "menu_categories",
+    "policyname": "cb_menu_categories_tenant_select",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "(cyberbistro_is_super_admin() OR (EXISTS ( SELECT 1\n   FROM tenant_users tu\n  WHERE ((tu.tenant_id = menu_categories.tenant_id) AND (tu.activo IS TRUE) AND ((tu.auth_user_id = cyberbistro_auth_user_id()) OR ((tu.auth_user_id IS NULL) AND (lower(tu.email) = lower(cyberbistro_auth_email()))))))))",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "menu_categories",
+    "policyname": "project_admin_policy",
+    "permissive": "PERMISSIVE",
+    "roles": "{project_admin}",
+    "cmd": "ALL",
+    "qual": "true",
+    "with_check": "true"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "gasto_categorias",
+    "policyname": "cb_gasto_categorias_tenant_isolation",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "ALL",
+    "qual": "(cyberbistro_is_super_admin() OR (EXISTS ( SELECT 1\n   FROM tenant_users tu\n  WHERE ((tu.tenant_id = gasto_categorias.tenant_id) AND (tu.activo IS TRUE) AND ((tu.auth_user_id = cyberbistro_auth_user_id()) OR ((tu.auth_user_id IS NULL) AND (lower(tu.email) = lower(cyberbistro_auth_email()))))))))",
+    "with_check": "(cyberbistro_is_super_admin() OR (EXISTS ( SELECT 1\n   FROM tenant_users tu\n  WHERE ((tu.tenant_id = gasto_categorias.tenant_id) AND (tu.activo IS TRUE) AND ((tu.auth_user_id = cyberbistro_auth_user_id()) OR ((tu.auth_user_id IS NULL) AND (lower(tu.email) = lower(cyberbistro_auth_email()))))))))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "gasto_categorias",
+    "policyname": "project_admin_policy",
+    "permissive": "PERMISSIVE",
+    "roles": "{project_admin}",
+    "cmd": "ALL",
+    "qual": "true",
+    "with_check": "true"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "gastos",
+    "policyname": "cb_gastos_tenant_isolation",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "ALL",
+    "qual": "(cyberbistro_is_super_admin() OR (EXISTS ( SELECT 1\n   FROM tenant_users tu\n  WHERE ((tu.tenant_id = gastos.tenant_id) AND (tu.activo IS TRUE) AND ((tu.auth_user_id = cyberbistro_auth_user_id()) OR ((tu.auth_user_id IS NULL) AND (lower(tu.email) = lower(cyberbistro_auth_email()))))))))",
+    "with_check": "(cyberbistro_is_super_admin() OR (EXISTS ( SELECT 1\n   FROM tenant_users tu\n  WHERE ((tu.tenant_id = gastos.tenant_id) AND (tu.activo IS TRUE) AND ((tu.auth_user_id = cyberbistro_auth_user_id()) OR ((tu.auth_user_id IS NULL) AND (lower(tu.email) = lower(cyberbistro_auth_email()))))))))"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "gastos",
+    "policyname": "project_admin_policy",
+    "permissive": "PERMISSIVE",
+    "roles": "{project_admin}",
+    "cmd": "ALL",
+    "qual": "true",
+    "with_check": "true"
+  }
+]

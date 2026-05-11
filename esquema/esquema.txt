@@ -1,0 +1,797 @@
+[
+  {
+    "table_name": "cierres_operativos",
+    "column_name": "id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "cierres_operativos",
+    "column_name": "tenant_id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "cierres_operativos",
+    "column_name": "business_day",
+    "data_type": "date"
+  },
+  {
+    "table_name": "cierres_operativos",
+    "column_name": "cycle_number",
+    "data_type": "integer"
+  },
+  {
+    "table_name": "cierres_operativos",
+    "column_name": "opened_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_name": "cierres_operativos",
+    "column_name": "closed_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_name": "cierres_operativos",
+    "column_name": "printed_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_name": "cierres_operativos",
+    "column_name": "opened_by_auth_user_id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "cierres_operativos",
+    "column_name": "closed_by_auth_user_id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "cierres_operativos",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_name": "cloudix_super_admins",
+    "column_name": "auth_user_id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "cloudix_super_admins",
+    "column_name": "email",
+    "data_type": "text"
+  },
+  {
+    "table_name": "cloudix_super_admins",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_name": "cocina_estado",
+    "column_name": "id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "cocina_estado",
+    "column_name": "activa",
+    "data_type": "boolean"
+  },
+  {
+    "table_name": "cocina_estado",
+    "column_name": "changed_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_name": "cocina_estado",
+    "column_name": "changed_by",
+    "data_type": "character varying"
+  },
+  {
+    "table_name": "cocina_estado",
+    "column_name": "tenant_id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "comandas",
+    "column_name": "id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "comandas",
+    "column_name": "numero_comanda",
+    "data_type": "integer"
+  },
+  {
+    "table_name": "comandas",
+    "column_name": "mesa_id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "comandas",
+    "column_name": "mesa_numero",
+    "data_type": "integer"
+  },
+  {
+    "table_name": "comandas",
+    "column_name": "estado",
+    "data_type": "character varying"
+  },
+  {
+    "table_name": "comandas",
+    "column_name": "items",
+    "data_type": "jsonb"
+  },
+  {
+    "table_name": "comandas",
+    "column_name": "notas",
+    "data_type": "text"
+  },
+  {
+    "table_name": "comandas",
+    "column_name": "creado_por",
+    "data_type": "character varying"
+  },
+  {
+    "table_name": "comandas",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_name": "comandas",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_name": "comandas",
+    "column_name": "tenant_id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "configuracion",
+    "column_name": "clave",
+    "data_type": "character varying"
+  },
+  {
+    "table_name": "configuracion",
+    "column_name": "valor",
+    "data_type": "text"
+  },
+  {
+    "table_name": "configuracion",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_name": "consumos",
+    "column_name": "id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "consumos",
+    "column_name": "comanda_id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "consumos",
+    "column_name": "plato_id",
+    "data_type": "integer"
+  },
+  {
+    "table_name": "consumos",
+    "column_name": "nombre",
+    "data_type": "text"
+  },
+  {
+    "table_name": "consumos",
+    "column_name": "cantidad",
+    "data_type": "integer"
+  },
+  {
+    "table_name": "consumos",
+    "column_name": "precio_unitario",
+    "data_type": "numeric"
+  },
+  {
+    "table_name": "consumos",
+    "column_name": "subtotal",
+    "data_type": "numeric"
+  },
+  {
+    "table_name": "consumos",
+    "column_name": "tipo",
+    "data_type": "character varying"
+  },
+  {
+    "table_name": "consumos",
+    "column_name": "estado",
+    "data_type": "character varying"
+  },
+  {
+    "table_name": "consumos",
+    "column_name": "factura_id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "consumos",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_name": "consumos",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_name": "consumos",
+    "column_name": "tenant_id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "consumos",
+    "column_name": "mesa_numero",
+    "data_type": "integer"
+  },
+  {
+    "table_name": "consumos",
+    "column_name": "created_by_auth_user_id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "cyberbistro_super_admins",
+    "column_name": "auth_user_id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "cyberbistro_super_admins",
+    "column_name": "email",
+    "data_type": "text"
+  },
+  {
+    "table_name": "cyberbistro_super_admins",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_name": "facturas",
+    "column_name": "id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "facturas",
+    "column_name": "numero_factura",
+    "data_type": "integer"
+  },
+  {
+    "table_name": "facturas",
+    "column_name": "mesa_numero",
+    "data_type": "integer"
+  },
+  {
+    "table_name": "facturas",
+    "column_name": "comanda_ids",
+    "data_type": "ARRAY"
+  },
+  {
+    "table_name": "facturas",
+    "column_name": "cliente_nombre",
+    "data_type": "character varying"
+  },
+  {
+    "table_name": "facturas",
+    "column_name": "metodo_pago",
+    "data_type": "character varying"
+  },
+  {
+    "table_name": "facturas",
+    "column_name": "estado",
+    "data_type": "character varying"
+  },
+  {
+    "table_name": "facturas",
+    "column_name": "subtotal",
+    "data_type": "numeric"
+  },
+  {
+    "table_name": "facturas",
+    "column_name": "itbis",
+    "data_type": "numeric"
+  },
+  {
+    "table_name": "facturas",
+    "column_name": "propina",
+    "data_type": "numeric"
+  },
+  {
+    "table_name": "facturas",
+    "column_name": "total",
+    "data_type": "numeric"
+  },
+  {
+    "table_name": "facturas",
+    "column_name": "moneda",
+    "data_type": "character varying"
+  },
+  {
+    "table_name": "facturas",
+    "column_name": "items",
+    "data_type": "jsonb"
+  },
+  {
+    "table_name": "facturas",
+    "column_name": "notas",
+    "data_type": "text"
+  },
+  {
+    "table_name": "facturas",
+    "column_name": "creado_por",
+    "data_type": "character varying"
+  },
+  {
+    "table_name": "facturas",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_name": "facturas",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_name": "facturas",
+    "column_name": "pagada_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_name": "facturas",
+    "column_name": "tenant_id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "facturas",
+    "column_name": "ncf",
+    "data_type": "text"
+  },
+  {
+    "table_name": "facturas",
+    "column_name": "ncf_tipo",
+    "data_type": "text"
+  },
+  {
+    "table_name": "facturas",
+    "column_name": "cliente_rnc",
+    "data_type": "text"
+  },
+  {
+    "table_name": "gasto_categorias",
+    "column_name": "id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "gasto_categorias",
+    "column_name": "tenant_id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "gasto_categorias",
+    "column_name": "nombre",
+    "data_type": "text"
+  },
+  {
+    "table_name": "gasto_categorias",
+    "column_name": "descripcion",
+    "data_type": "text"
+  },
+  {
+    "table_name": "gasto_categorias",
+    "column_name": "color",
+    "data_type": "text"
+  },
+  {
+    "table_name": "gasto_categorias",
+    "column_name": "activa",
+    "data_type": "boolean"
+  },
+  {
+    "table_name": "gasto_categorias",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_name": "gasto_categorias",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_name": "gastos",
+    "column_name": "id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "gastos",
+    "column_name": "tenant_id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "gastos",
+    "column_name": "category_id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "gastos",
+    "column_name": "cycle_id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "gastos",
+    "column_name": "descripcion",
+    "data_type": "text"
+  },
+  {
+    "table_name": "gastos",
+    "column_name": "proveedor",
+    "data_type": "text"
+  },
+  {
+    "table_name": "gastos",
+    "column_name": "monto",
+    "data_type": "numeric"
+  },
+  {
+    "table_name": "gastos",
+    "column_name": "metodo_pago",
+    "data_type": "text"
+  },
+  {
+    "table_name": "gastos",
+    "column_name": "fecha_gasto",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_name": "gastos",
+    "column_name": "notas",
+    "data_type": "text"
+  },
+  {
+    "table_name": "gastos",
+    "column_name": "created_by_auth_user_id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "gastos",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_name": "gastos",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_name": "menu_categories",
+    "column_name": "id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "menu_categories",
+    "column_name": "tenant_id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "menu_categories",
+    "column_name": "nombre",
+    "data_type": "text"
+  },
+  {
+    "table_name": "menu_categories",
+    "column_name": "color",
+    "data_type": "text"
+  },
+  {
+    "table_name": "menu_categories",
+    "column_name": "sort_order",
+    "data_type": "integer"
+  },
+  {
+    "table_name": "menu_categories",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_name": "menu_categories",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_name": "mesas_estado",
+    "column_name": "id",
+    "data_type": "integer"
+  },
+  {
+    "table_name": "mesas_estado",
+    "column_name": "estado",
+    "data_type": "character varying"
+  },
+  {
+    "table_name": "mesas_estado",
+    "column_name": "fusionada",
+    "data_type": "boolean"
+  },
+  {
+    "table_name": "mesas_estado",
+    "column_name": "fusion_padre_id",
+    "data_type": "integer"
+  },
+  {
+    "table_name": "mesas_estado",
+    "column_name": "fusion_hijos",
+    "data_type": "ARRAY"
+  },
+  {
+    "table_name": "mesas_estado",
+    "column_name": "span_filas",
+    "data_type": "integer"
+  },
+  {
+    "table_name": "mesas_estado",
+    "column_name": "span_columnas",
+    "data_type": "integer"
+  },
+  {
+    "table_name": "mesas_estado",
+    "column_name": "tenant_id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "mesas_estado",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_name": "platos",
+    "column_name": "id",
+    "data_type": "integer"
+  },
+  {
+    "table_name": "platos",
+    "column_name": "nombre",
+    "data_type": "text"
+  },
+  {
+    "table_name": "platos",
+    "column_name": "precio",
+    "data_type": "numeric"
+  },
+  {
+    "table_name": "platos",
+    "column_name": "categoria",
+    "data_type": "text"
+  },
+  {
+    "table_name": "platos",
+    "column_name": "disponible",
+    "data_type": "boolean"
+  },
+  {
+    "table_name": "platos",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_name": "platos",
+    "column_name": "va_a_cocina",
+    "data_type": "boolean"
+  },
+  {
+    "table_name": "platos",
+    "column_name": "tenant_id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "tenant_users",
+    "column_name": "id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "tenant_users",
+    "column_name": "tenant_id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "tenant_users",
+    "column_name": "email",
+    "data_type": "text"
+  },
+  {
+    "table_name": "tenant_users",
+    "column_name": "password_hash",
+    "data_type": "text"
+  },
+  {
+    "table_name": "tenant_users",
+    "column_name": "rol",
+    "data_type": "text"
+  },
+  {
+    "table_name": "tenant_users",
+    "column_name": "nombre",
+    "data_type": "text"
+  },
+  {
+    "table_name": "tenant_users",
+    "column_name": "activo",
+    "data_type": "boolean"
+  },
+  {
+    "table_name": "tenant_users",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_name": "tenant_users",
+    "column_name": "last_login",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_name": "tenant_users",
+    "column_name": "auth_user_id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "id",
+    "data_type": "uuid"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "nombre_negocio",
+    "data_type": "text"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "rnc",
+    "data_type": "text"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "direccion",
+    "data_type": "text"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "telefono",
+    "data_type": "text"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "email",
+    "data_type": "text"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "moneda",
+    "data_type": "text"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "idioma",
+    "data_type": "text"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "activa",
+    "data_type": "boolean"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "created_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "updated_at",
+    "data_type": "timestamp with time zone"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "logo_url",
+    "data_type": "text"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "ncf_fiscal_activo",
+    "data_type": "boolean"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "ncf_tipo_default",
+    "data_type": "text"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "ncf_secuencia_siguiente",
+    "data_type": "integer"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "ncf_secuencias_por_tipo",
+    "data_type": "jsonb"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "itbis_cobro_por_defecto",
+    "data_type": "boolean"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "ncf_b01_secuencia_siguiente",
+    "data_type": "integer"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "ncf_b02_secuencia_siguiente",
+    "data_type": "integer"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "ncf_b14_secuencia_siguiente",
+    "data_type": "integer"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "ncf_b15_secuencia_siguiente",
+    "data_type": "integer"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "ncf_b16_secuencia_siguiente",
+    "data_type": "integer"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "ncf_b17_secuencia_siguiente",
+    "data_type": "integer"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "cantidad_mesas",
+    "data_type": "integer"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "user_limit_enabled",
+    "data_type": "boolean"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "admin_user_limit",
+    "data_type": "integer"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "cajera_user_limit",
+    "data_type": "integer"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "cocina_user_limit",
+    "data_type": "integer"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "mesero_user_limit",
+    "data_type": "integer"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "logo_size_px",
+    "data_type": "integer"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "logo_offset_x",
+    "data_type": "integer"
+  },
+  {
+    "table_name": "tenants",
+    "column_name": "logo_offset_y",
+    "data_type": "integer"
+  }
+]
