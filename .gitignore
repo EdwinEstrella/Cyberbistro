@@ -1,4 +1,6 @@
 # Dependencies
+.engram*
+.engram/
 node_modules/
 .gemini/
 # Build output
