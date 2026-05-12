@@ -18,7 +18,9 @@ async function main() {
   console.log("Error:", res.error);
   if (res.data) {
     console.log("Data keys:", Object.keys(res.data));
-    console.log("DATA JSON:", JSON.stringify(res.data, null, 2));
+    console.log("User:", res.data.user);
+    console.log("Has access token:", Boolean(res.data.accessToken));
+    console.log("Has refresh token:", Boolean(res.data.refreshToken));
   }
 }
 main().catch(console.error);
