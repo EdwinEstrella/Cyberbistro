@@ -17,6 +17,7 @@ import {
 import { hydrateAuthStateAfterLogin, syncAuthClientAfterLogin } from "../../../shared/hooks/useAuth";
 import { defaultRouteForRol } from "../../../shared/lib/roleNav";
 import { PinGateModal } from "../../../shared/components/PinGate";
+import { hashPin, saveLocalDeviceSession } from "../../../shared/lib/localFirst";
 
 const LOGIN_NOTICE_KEY = "cloudix_login_notice";
 const REFRESH_TOKEN_KEY = INSFORGE_REFRESH_TOKEN_STORAGE_KEY;
@@ -52,6 +53,7 @@ function extractRefreshTokenFromSignInPayload(data: unknown): string | null {
 
 export function Login() {
   const navigate = useNavigate();
+  const { isAuthenticated, loading: authLoading, tenantUser } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberLogin, setRememberLogin] = useState(false);
@@ -59,8 +61,18 @@ export function Login() {
   const [notice, setNotice] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
-  const [showPinGate, setShowPinGate] = useState(false);
+  const [showRegisterGate, setShowRegisterGate] = useState(false);
+  const [showPinSetup, setShowPinSetup] = useState(false);
+  const [pendingAuth, setPendingAuth] = useState<{ user: any; accessRow: any } | null>(null);
   const hasElectronUpdater = Boolean((window as any).electronAPI?.onUpdateEvents);
+
+  // Auto-redirect if already authenticated (e.g. offline fallback succeeded)
+  useEffect(() => {
+    if (isAuthenticated && !authLoading && tenantUser && !showPinSetup) {
+      const dest = defaultRouteForRol(tenantUser.rol);
+      navigate(dest);
+    }
+  }, [isAuthenticated, authLoading, tenantUser, navigate, showPinSetup]);
 
   // Updater states
   const [updatePhase, setUpdatePhase] = useState<'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error'>('idle');
@@ -201,10 +213,9 @@ export function Login() {
         setIsLoading(false);
         return;
       }
-      hydrateAuthStateAfterLogin(data.user, access.row);
-      const dest = defaultRouteForRol(access.row.rol);
-      setIsVisible(false);
-      setTimeout(() => navigate(dest), 300);
+      
+      setPendingAuth({ user: data.user, accessRow: access.row });
+      setShowPinSetup(true);
     }
     setIsLoading(false);
   }, [email, isLoading, password, navigate, rememberLogin]);
@@ -483,7 +494,7 @@ export function Login() {
               <div className="relative shrink-0 w-full flex flex-col gap-3 sm:gap-4 items-center">
                 <div
                   className="flex gap-2 sm:gap-2 items-center cursor-pointer transition-all duration-300 hover:gap-3 group"
-                  onClick={() => setShowPinGate(true)}
+                  onClick={() => setShowRegisterGate(true)}
                 >
                   <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff6aa0] text-[11px] sm:text-[12px] tracking-[1.1px] sm:tracking-[1.2px] uppercase transition-colors duration-300 group-hover:text-[#ff906d]">
                     Registrar Nueva Unidad
@@ -502,14 +513,42 @@ export function Login() {
         </div>
       </div>
 
+        {/* PIN Gate Modal for Offline Setup */}
+        {showPinSetup && pendingAuth && (
+          <PinGateModal
+            title="Crear PIN Offline"
+            subtitle="Crea un PIN de 4 dígitos para acceder cuando no haya internet"
+            onUnlock={async (pin) => {
+              if (!pin) return;
+              const hashed = await hashPin(pin);
+              await saveLocalDeviceSession(
+                pendingAuth.accessRow.tenant_id,
+                pendingAuth.user.id,
+                pendingAuth.user.email,
+                hashed,
+                pendingAuth.accessRow
+              );
+              hydrateAuthStateAfterLogin(pendingAuth.user, pendingAuth.accessRow);
+              const dest = defaultRouteForRol(pendingAuth.accessRow.rol);
+              setIsVisible(false);
+              setTimeout(() => navigate(dest), 300);
+            }}
+            onCancel={() => {
+              insforgeClient.auth.signOut();
+              setShowPinSetup(false);
+              setPendingAuth(null);
+            }}
+          />
+        )}
+
         {/* PIN Gate Modal for Registration */}
-        {showPinGate && (
+        {showRegisterGate && (
           <PinGateModal
             onUnlock={() => {
-              setShowPinGate(false);
+              setShowRegisterGate(false);
               navigate('/register');
             }}
-            onCancel={() => setShowPinGate(false)}
+            onCancel={() => setShowRegisterGate(false)}
             title="Registro de Nueva Unidad"
             subtitle="Ingresá la clave maestra para continuar"
             correctPin="1110"

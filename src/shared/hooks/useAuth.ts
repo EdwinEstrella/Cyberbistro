@@ -9,6 +9,7 @@ import {
   type TenantSessionRow,
 } from '../lib/tenantSessionCache';
 import { resolveTenantAccessForSession } from '../lib/resolveTenantUserFromAuth';
+import { getLocalDeviceSession, setLastTenantId } from '../lib/localFirst';
 
 interface TenantUser {
   tenant_id: string;
@@ -152,6 +153,11 @@ function syncSdkSession(data: unknown): void {
 function clearSessionShared(): void {
   clearTenantSessionCache();
   localStorage.removeItem(REFRESH_TOKEN_KEY);
+  import('../lib/localFirst').then(m => {
+    m.getLastTenantId().then(tenantId => {
+      if (tenantId) m.clearLocalDeviceSession(tenantId);
+    });
+  });
   try {
     insforgeClient.getHttpClient().setAuthToken(null);
     insforgeClient.getHttpClient().setRefreshToken(null);
@@ -167,6 +173,7 @@ function clearSessionShared(): void {
 
 export function hydrateAuthStateAfterLogin(user: UserSchema, tenantRow: TenantSessionRow): void {
   writeTenantSessionCache(user.id, tenantRow);
+  setLastTenantId(tenantRow.tenant_id);
   refreshBlockedUntil = 0;
   initializedOnce = true;
   patchSharedState({
@@ -274,6 +281,13 @@ async function loadUserDataShared(opts?: { silent?: boolean }): Promise<void> {
         }
 
         if (!u) {
+          const localSession = await getLocalDeviceSession();
+          if (localSession) {
+            u = { id: localSession.user_id, email: localSession.email, app_metadata: {}, user_metadata: {}, aud: '', created_at: '' } as UserSchema;
+            patchSharedState({ user: u, tenantUser: localSession.tenant_user_row as unknown as TenantUser, loading: false });
+            logAuth('loadUserData:offline-session-ok', { userId: u.id, email: u.email });
+            return;
+          }
           return;
         }
       }

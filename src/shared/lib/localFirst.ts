@@ -83,7 +83,7 @@ export interface SyncOutboxEntry {
   tenant_id: string;
   table_name: LocalFirstMirrorTable;
   row_id: string;
-  op: "insert" | "update" | "delete";
+  op: "insert" | "update" | "delete" | "upsert";
   payload: Record<string, unknown> | null;
   created_at: string;
   created_by_auth_user_id: string | null;
@@ -449,6 +449,8 @@ export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: nu
           result = await (insforgeClient.database.from(entry.table_name).insert(entry.payload as Record<string, unknown>) as any);
         } else if (entry.op === "update") {
           result = await (insforgeClient.database.from(entry.table_name).update(entry.payload as Record<string, unknown>).eq("id", entry.row_id) as any);
+        } else if (entry.op === "upsert") {
+          result = await (insforgeClient.database.from(entry.table_name).upsert(entry.payload as Record<string, unknown>, { onConflict: "tenant_id,id" }) as any);
         } else if (entry.op === "delete") {
           result = await (insforgeClient.database.from(entry.table_name).delete().eq("id", entry.row_id) as any);
         }
@@ -484,6 +486,81 @@ export interface LocalLicenseCache {
   validated_at: string;
   window_valid_until: string;
   tenant_users_activo: boolean;
+}
+
+export interface LocalDeviceSession {
+  tenant_id: string;
+  user_id: string;
+  email: string;
+  pin_hash: string;
+  created_at: string;
+  tenant_user_row: Record<string, unknown>;
+}
+
+export async function hashPin(pin: string): Promise<string> {
+  const msgUint8 = new TextEncoder().encode(pin);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+export async function saveLocalDeviceSession(
+  tenantId: string,
+  userId: string,
+  email: string,
+  pinHash: string,
+  tenantUserRow: Record<string, unknown>
+): Promise<void> {
+  const db = await openLocalFirstDbForSync(tenantId);
+  try {
+    const session: LocalDeviceSession = {
+      tenant_id: tenantId,
+      user_id: userId,
+      email,
+      pin_hash: pinHash,
+      created_at: new Date().toISOString(),
+      tenant_user_row: tenantUserRow,
+    };
+    await putOne(db, "local_device_session", session);
+  } finally {
+    db.close();
+  }
+}
+
+export async function getLastTenantId(): Promise<string | null> {
+  return localStorage.getItem("cloudix_last_tenant_id");
+}
+
+export function setLastTenantId(tenantId: string) {
+  localStorage.setItem("cloudix_last_tenant_id", tenantId);
+}
+
+export async function getLocalDeviceSession(tenantId?: string): Promise<LocalDeviceSession | null> {
+  const targetTenantId = tenantId ?? await getLastTenantId();
+  if (!targetTenantId) return null;
+  const db = await openLocalFirstDbForSync(targetTenantId);
+  try {
+    return await getOneFromStore<LocalDeviceSession>(db, "local_device_session", targetTenantId);
+  } finally {
+    db.close();
+  }
+}
+
+export async function clearLocalDeviceSession(tenantId: string): Promise<void> {
+  const db = await openLocalFirstDbForSync(tenantId);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction("local_device_session", "readwrite");
+      const store = tx.objectStore("local_device_session");
+      store.delete(tenantId);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (error) {
+    console.error("Error clearing local session:", error);
+  } finally {
+    db.close();
+  }
 }
 
 const OFFLINE_WINDOW_MS = 6 * 60 * 60 * 1000;
@@ -762,6 +839,7 @@ async function pullTablePage(tableName: LocalFirstMirrorTable, tenantId: string,
   let query = insforgeClient.database
     .from(tableName)
     .select("*")
+    .order("id", { ascending: true })
     .range(offset, offset + PAGE_SIZE - 1) as any;
 
   if (shouldFilterByTenant(tableName)) {

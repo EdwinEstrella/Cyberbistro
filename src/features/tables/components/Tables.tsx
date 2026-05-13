@@ -6,6 +6,7 @@ import { generateMesasConfig, type MesaConfig } from "../config/mesas";
 import { loadCantidadMesas } from "../../../shared/lib/tenantMesasSettings";
 import { estadoLabels, type MesaEstadoVisual } from "../config/estadoTheme";
 import { TableMesaCard } from "./TableMesaCard";
+import { getLocalFirstStatusSnapshot, readLocalMirror, enqueueLocalWrite, getDeviceId } from "../../../shared/lib/localFirst";
 
 type Estado = MesaEstadoVisual;
 
@@ -51,6 +52,7 @@ interface ConsumoPanelRow {
   tipo: string;
   created_at: string;
   comanda_id: string | null;
+  mesa_numero: number | null;
 }
 
 export function Tables() {
@@ -65,8 +67,20 @@ export function Tables() {
 
   const refreshDeudaPorMesa = useCallback(async () => {
     if (!tenantId) { setDeudaPorMesa({}); return; }
-    const { data, error } = await insforgeClient.database.from("consumos").select("mesa_numero, subtotal").eq("tenant_id", tenantId).neq("estado", "pagado");
-    if (error || !data) { setDeudaPorMesa({}); return; }
+    const snapshot = await getLocalFirstStatusSnapshot(tenantId);
+    const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
+    
+    let data;
+    if (localMode) {
+      const consumos = await readLocalMirror<any>(tenantId, "consumos");
+      data = consumos.filter((c: any) => c.estado !== "pagado");
+    } else {
+      const res = await insforgeClient.database.from("consumos").select("mesa_numero, subtotal").eq("tenant_id", tenantId).neq("estado", "pagado");
+      if (res.error) { setDeudaPorMesa({}); return; }
+      data = res.data;
+    }
+    
+    if (!data) { setDeudaPorMesa({}); return; }
     const map: Record<number, number> = {};
     for (const row of data as any[]) {
       const mn = Number(row.mesa_numero);
@@ -80,31 +94,35 @@ export function Tables() {
     setMesas([]);
     if (authLoading || !tenantId) { if (!authLoading) setLoading(false); return; }
     setLoading(true);
-    Promise.all([
-      insforgeClient.database.from("mesas_estado").select("*").eq("tenant_id", tenantId),
-      insforgeClient.database.from("consumos").select("mesa_numero, subtotal").eq("tenant_id", tenantId).neq("estado", "pagado"),
-      loadCantidadMesas(tenantId)
-    ]).then(([estadosRes, consumosPendRes, cantidadMesas]) => {
-      const configArray = generateMesasConfig(cantidadMesas);
-      const mesasIniciales = configArray.map((config) => ({ ...config, estado: "libre" as Estado, fusionada: false, fusion_padre_id: null, fusion_hijos: [], span_filas: 1, span_columnas: 1 }));
-      const deudaPorNumero = new Map<number, number>();
-      if (consumosPendRes.data) {
-        for (const row of consumosPendRes.data as any[]) {
-          const mn = Number(row.mesa_numero);
-          if (mn > 0) deudaPorNumero.set(mn, (deudaPorNumero.get(mn) ?? 0) + Number(row.subtotal));
+    
+    getLocalFirstStatusSnapshot(tenantId).then(snapshot => {
+      const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
+      Promise.all([
+        localMode ? readLocalMirror<any>(tenantId, "mesas_estado").then(r => ({ data: r })) : insforgeClient.database.from("mesas_estado").select("*").eq("tenant_id", tenantId),
+        localMode ? readLocalMirror<any>(tenantId, "consumos").then(r => ({ data: r.filter((c: any) => c.estado !== "pagado") })) : insforgeClient.database.from("consumos").select("mesa_numero, subtotal").eq("tenant_id", tenantId).neq("estado", "pagado"),
+        loadCantidadMesas(tenantId)
+      ]).then(([estadosRes, consumosPendRes, cantidadMesas]) => {
+        const configArray = generateMesasConfig(cantidadMesas);
+        const mesasIniciales = configArray.map((config) => ({ ...config, estado: "libre" as Estado, fusionada: false, fusion_padre_id: null, fusion_hijos: [], span_filas: 1, span_columnas: 1 }));
+        const deudaPorNumero = new Map<number, number>();
+        if (consumosPendRes.data) {
+          for (const row of consumosPendRes.data as any[]) {
+            const mn = Number(row.mesa_numero);
+            if (mn > 0) deudaPorNumero.set(mn, (deudaPorNumero.get(mn) ?? 0) + Number(row.subtotal));
+          }
         }
-      }
-      if (estadosRes.data && estadosRes.data.length > 0) {
-        const estadosMap = new Map<number, any>();
-        for (const e of estadosRes.data) estadosMap.set(e.id, e);
-        setMesas(mesasIniciales.map((m) => {
-          const e = estadosMap.get(m.id);
-          return { ...m, estado: deudaPorNumero.has(m.numero) ? "ocupada" : "libre", fusionada: !!e?.fusionada, fusion_padre_id: e?.fusion_padre_id ?? null, fusion_hijos: e?.fusion_hijos ?? [], span_filas: e?.span_filas ?? 1, span_columnas: e?.span_columnas ?? 1 };
-        }));
-      } else {
-        setMesas(mesasIniciales.map((m) => ({ ...m, estado: deudaPorNumero.has(m.numero) ? "ocupada" : "libre" })));
-      }
-      setLoading(false); refreshDeudaPorMesa();
+        if (estadosRes.data && estadosRes.data.length > 0) {
+          const estadosMap = new Map<number, any>();
+          for (const e of estadosRes.data) estadosMap.set(e.id, e);
+          setMesas(mesasIniciales.map((m) => {
+            const e = estadosMap.get(m.id);
+            return { ...m, estado: deudaPorNumero.has(m.numero) ? "ocupada" : "libre", fusionada: !!e?.fusionada, fusion_padre_id: e?.fusion_padre_id ?? null, fusion_hijos: e?.fusion_hijos ?? [], span_filas: e?.span_filas ?? 1, span_columnas: e?.span_columnas ?? 1 };
+          }));
+        } else {
+          setMesas(mesasIniciales.map((m) => ({ ...m, estado: deudaPorNumero.has(m.numero) ? "ocupada" : "libre" })));
+        }
+        setLoading(false); refreshDeudaPorMesa();
+      });
     });
   }, [authLoading, tenantId, refreshDeudaPorMesa]);
 
@@ -121,7 +139,16 @@ export function Tables() {
     if (!tenantId || !selectedMesa) { setHistorialConsumos([]); return; }
     let cancelled = false;
     async function load() {
-      const { data } = await insforgeClient.database.from("consumos").select("*").eq("tenant_id", tenantId).eq("mesa_numero", selectedMesa!.numero).neq("estado", "pagado").order("created_at", { ascending: false });
+      const snapshot = await getLocalFirstStatusSnapshot(tenantId);
+      const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
+      let data;
+      if (localMode) {
+        const consumos = await readLocalMirror<ConsumoPanelRow>(tenantId, "consumos");
+        data = consumos.filter(c => c.mesa_numero === selectedMesa!.numero && c.estado !== "pagado").sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      } else {
+        const { data: resData } = await insforgeClient.database.from("consumos").select("*").eq("tenant_id", tenantId).eq("mesa_numero", selectedMesa!.numero).neq("estado", "pagado").order("created_at", { ascending: false });
+        data = resData;
+      }
       if (cancelled || !data) return;
       setHistorialConsumos(data as any[]);
     }
@@ -140,10 +167,13 @@ export function Tables() {
     const newSpanCols = isHorizontal ? parent.span_columnas + child.span_columnas : parent.span_columnas;
     const newSpanFilas = isVertical ? parent.span_filas + child.span_filas : parent.span_filas;
     const newHijos = [...parent.fusion_hijos, childId];
+    
+    const deviceId = await getDeviceId();
     await Promise.all([
-      insforgeClient.database.from("mesas_estado").upsert({ id: parentId, tenant_id: tenantId, span_columnas: newSpanCols, span_filas: newSpanFilas, fusion_hijos: newHijos }, { onConflict: "tenant_id,id" }),
-      insforgeClient.database.from("mesas_estado").upsert({ id: childId, tenant_id: tenantId, fusionada: true, fusion_padre_id: parentId }, { onConflict: "tenant_id,id" }),
+      enqueueLocalWrite({ tenantId, tableName: "mesas_estado", op: "upsert", rowId: parentId.toString(), payload: { id: parentId, tenant_id: tenantId, span_columnas: newSpanCols, span_filas: newSpanFilas, fusion_hijos: newHijos }, deviceId }),
+      enqueueLocalWrite({ tenantId, tableName: "mesas_estado", op: "upsert", rowId: childId.toString(), payload: { id: childId, tenant_id: tenantId, fusionada: true, fusion_padre_id: parentId }, deviceId })
     ]);
+    
     setMesas(prev => prev.map(m => m.id === parentId ? { ...m, span_columnas: newSpanCols, span_filas: newSpanFilas, fusion_hijos: newHijos } : (m.id === childId ? { ...m, fusionada: true, fusion_padre_id: parentId } : m)));
     setMergeMode(false);
   }
@@ -152,10 +182,16 @@ export function Tables() {
     if (!tenantId) return;
     const parent = mesas.find(m => m.id === parentId)!;
     const childIds = parent.fusion_hijos;
-    await Promise.all([
-      insforgeClient.database.from("mesas_estado").upsert({ id: parentId, tenant_id: tenantId, span_columnas: 1, span_filas: 1, fusion_hijos: [] }, { onConflict: "tenant_id,id" }),
-      ...childIds.map(cid => insforgeClient.database.from("mesas_estado").upsert({ id: cid, tenant_id: tenantId, fusionada: false, fusion_padre_id: null }, { onConflict: "tenant_id,id" })),
-    ]);
+    
+    const deviceId = await getDeviceId();
+    const writes = [
+      enqueueLocalWrite({ tenantId, tableName: "mesas_estado", op: "upsert", rowId: parentId.toString(), payload: { id: parentId, tenant_id: tenantId, span_columnas: 1, span_filas: 1, fusion_hijos: [] }, deviceId })
+    ];
+    for (const cid of childIds) {
+      writes.push(enqueueLocalWrite({ tenantId, tableName: "mesas_estado", op: "upsert", rowId: cid.toString(), payload: { id: cid, tenant_id: tenantId, fusionada: false, fusion_padre_id: null }, deviceId }));
+    }
+    await Promise.all(writes);
+    
     setMesas(prev => prev.map(m => m.id === parentId ? { ...m, span_columnas: 1, span_filas: 1, fusion_hijos: [] } : (childIds.includes(m.id) ? { ...m, fusionada: false, fusion_padre_id: null } : m)));
     setSelectedId(null); setMergeMode(false);
   }

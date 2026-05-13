@@ -1,34 +1,51 @@
 import { useState } from "react";
 
 interface PinGateProps {
-  onUnlock: () => void;
+  onUnlock: (pin?: string) => void;
+  onVerify?: (pin: string) => Promise<boolean> | boolean;
   onCancel: () => void;
   title?: string;
   subtitle?: string;
   correctPin?: string;
 }
 
-export function PinGateModal({ onUnlock, onCancel, title = "Clave Requerida", subtitle = "Ingresá la clave para continuar", correctPin = "1110" }: PinGateProps) {
+export function PinGateModal({ onUnlock, onVerify, onCancel, title = "Clave Requerida", subtitle = "Ingresá la clave para continuar", correctPin }: PinGateProps) {
   const [pin, setPin] = useState("");
   const [shaking, setShaking] = useState(false);
+  const [verifying, setVerifying] = useState(false);
 
-  function handleDigit(digit: string) {
-    if (pin.length >= 4) return;
+  async function handleDigit(digit: string) {
+    if (pin.length >= 4 || verifying) return;
     const next = pin + digit;
     setPin(next);
 
     if (next.length === 4) {
-      if (next === correctPin) {
-        onUnlock();
+      if (onVerify) {
+        setVerifying(true);
+        const isValid = await onVerify(next);
+        setVerifying(false);
+        if (isValid) {
+          onUnlock(next);
+        } else {
+          setShaking(true);
+          setTimeout(() => { setPin(""); setShaking(false); }, 600);
+        }
+      } else if (correctPin) {
+        if (next === correctPin) {
+          onUnlock(next);
+        } else {
+          setShaking(true);
+          setTimeout(() => { setPin(""); setShaking(false); }, 600);
+        }
       } else {
-        setShaking(true);
-        setTimeout(() => { setPin(""); setShaking(false); }, 600);
+        // If no correctPin and no onVerify provided, just return the entered PIN
+        onUnlock(next);
       }
     }
   }
 
   function handleBackspace() {
-    if (pin.length > 0) {
+    if (pin.length > 0 && !verifying) {
       setPin(pin.slice(0, -1));
     }
   }
@@ -57,6 +74,7 @@ export function PinGateModal({ onUnlock, onCancel, title = "Clave Requerida", su
               style={{
                 backgroundColor: i < pin.length ? (shaking ? "#ff716c" : "#ff906d") : "var(--muted)",
                 boxShadow: i < pin.length && !shaking ? "0 0 10px rgba(255,144,109,0.5)" : undefined,
+                opacity: verifying ? 0.5 : 1,
               }}
             />
           ))}
@@ -69,8 +87,9 @@ export function PinGateModal({ onUnlock, onCancel, title = "Clave Requerida", su
             return (
               <button
                 key={i}
+                disabled={verifying}
                 onClick={() => (isDel ? handleBackspace() : handleDigit(key))}
-                className="w-full aspect-square rounded-[16px] font-['Space_Grotesk',sans-serif] font-bold text-[20px] cursor-pointer border-none transition-all active:scale-95 flex items-center justify-center"
+                className="w-full aspect-square rounded-[16px] font-['Space_Grotesk',sans-serif] font-bold text-[20px] cursor-pointer border-none transition-all active:scale-95 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{
                   backgroundColor: isDel ? "rgba(255,113,108,0.1)" : "var(--accent)",
                   color: isDel ? "#ff716c" : "var(--foreground)",
@@ -82,8 +101,9 @@ export function PinGateModal({ onUnlock, onCancel, title = "Clave Requerida", su
         </div>
 
         <button
+          disabled={verifying}
           onClick={onCancel}
-          className="w-full mt-4 py-3 bg-muted text-muted-foreground rounded-[8px] font-['Inter',sans-serif] font-bold text-[12px] uppercase cursor-pointer border-none hover:bg-accent transition-colors"
+          className="w-full mt-4 py-3 bg-muted text-muted-foreground rounded-[8px] font-['Inter',sans-serif] font-bold text-[12px] uppercase cursor-pointer border-none hover:bg-accent transition-colors disabled:opacity-50"
         >
           Cancelar
         </button>

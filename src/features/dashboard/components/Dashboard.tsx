@@ -788,17 +788,20 @@ export function Dashboard() {
     } catch { /* offline: skip NCF */ }
 
     const localFacturaId = crypto.randomUUID();
+    const nowIso = new Date().toISOString();
     const facturaData: Record<string, unknown> = {
       id: localFacturaId,
       tenant_id: tenantId,
+      numero_factura: 0,
       metodo_pago: paymentMethod,
       estado: "pagada" as const,
       subtotal,
       itbis,
-      propeller: 0,
+      propina: 0,
       total,
       items: facturaItems,
-      pagada_at: new Date().toISOString(),
+      created_at: nowIso,
+      pagada_at: nowIso,
       mesa_numero: 0,
       notas: "Para llevar",
     };

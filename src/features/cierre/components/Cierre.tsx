@@ -360,13 +360,21 @@ export function Cierre() {
     await enqueueLocalWrite({ tenantId, tableName: "cierres_operativos", rowId: currentCycle.id, op: "update", payload: { closed_at: now, closed_by_auth_user_id: user?.id }, deviceId });
     setPrintMsg("Ciclo cerrado.");
 
-    const tenantRes = await insforgeClient.database.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url, logo_size_px, logo_offset_x, logo_offset_y").eq("id", tenantId).maybeSingle();
-    if (tenantRes.data) {
+    let tenantData: any = null;
+    if (localMode) {
+      const allTenants = await readLocalMirror<any>(tenantId, "tenants");
+      tenantData = allTenants.find((t: any) => t.id === tenantId) ?? null;
+    } else {
+      const tenantRes = await insforgeClient.database.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url, logo_size_px, logo_offset_x, logo_offset_y").eq("id", tenantId).maybeSingle();
+      tenantData = tenantRes.data;
+    }
+
+    if (tenantData) {
       const metMap = new Map<string, any>();
       for (const f of pag) { const k = f.metodo_pago || "otro"; const cur = metMap.get(k) ?? { etiqueta: etiquetaMetodo(k), cantidad: 0, total: 0 }; cur.cantidad++; cur.total += Number(f.total); metMap.set(k, cur); }
       const totalPag = pag.reduce((s: number, f: any) => s + Number(f.total), 0);
       const { paperWidthMm } = getThermalPrintSettings();
-      const html = buildCierreDiaReceiptHtml(tenantRes.data as any, {
+      const html = buildCierreDiaReceiptHtml(tenantData as any, {
         fechaOperacion: ymdToLongLabel(fecha), cicloNumero: currentCycle.cycle_number, generadoEn: formatCycleDateTime(now), generadoAtIso: now, abiertoAtIso: getCycleStartIso(currentCycle), cerradoAtIso: now,
         facturasPagadas: pag.length, facturasPendientes: facturasCiclo.filter((f: any) => f.estado === "pendiente").length,
         totalPagado: totalPag, subtotalPagado: pag.reduce((s: number, f: any) => s + Number(f.subtotal), 0), itbisPagado: pag.reduce((s: number, f: any) => s + Number(f.itbis), 0),

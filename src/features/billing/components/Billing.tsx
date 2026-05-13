@@ -7,7 +7,7 @@ import { PinGateModal } from "../../../shared/components/PinGate";
 import { buildCierreDiaReceiptHtml, buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
-import { readLocalMirror, getLocalFirstStatusSnapshot } from "../../../shared/lib/localFirst";
+import { readLocalMirror, getLocalFirstStatusSnapshot, enqueueLocalWrite, getDeviceId } from "../../../shared/lib/localFirst";
 // useTheme removed
 import {
   Dialog,
@@ -625,32 +625,54 @@ const loadBillingData = useCallback(async () => {
       if (!tenantId) return;
       if (inv.tenant_id != null && inv.tenant_id !== tenantId) return;
 
-      const { error: consumosError } = await insforgeClient.database
-        .from("consumos")
-        .delete()
-        .eq("tenant_id", tenantId)
-        .eq("factura_id", inv.id);
+      try {
+        const deviceId = await getDeviceId();
 
-      if (consumosError) {
-        console.error("Error al desvincular consumos de la factura:", consumosError);
-        alert(`No se pudo limpiar consumos vinculados: ${consumosError.message}`);
-        return;
+        // 1. Fetch consumos to delete locally first
+        const snapshot = await getLocalFirstStatusSnapshot(tenantId);
+        const isOffline = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
+        
+        let consumosAsociados: any[] = [];
+        if (isOffline) {
+          const allConsumos = await readLocalMirror<any>(tenantId, "consumos");
+          consumosAsociados = allConsumos.filter((c: any) => c.factura_id === inv.id);
+        } else {
+          const { data } = await insforgeClient.database.from("consumos").select("id").eq("tenant_id", tenantId).eq("factura_id", inv.id);
+          if (data) consumosAsociados = data;
+        }
+
+        // 2. Queue deletion of each consumo
+        const writes = consumosAsociados.map(c => 
+          enqueueLocalWrite({
+            tenantId,
+            tableName: "consumos",
+            rowId: c.id,
+            op: "delete",
+            payload: { id: c.id },
+            deviceId
+          })
+        );
+
+        // 3. Queue deletion of invoice
+        writes.push(
+          enqueueLocalWrite({
+            tenantId,
+            tableName: "facturas",
+            rowId: inv.id,
+            op: "delete",
+            payload: { id: inv.id },
+            deviceId
+          })
+        );
+
+        await Promise.all(writes);
+
+        setInvoiceModal((open) => (open?.id === inv.id ? null : open));
+        await loadBillingData();
+      } catch (err: any) {
+        console.error("Error al eliminar offline:", err);
+        alert(`No se pudo eliminar la factura offline: ${err.message}`);
       }
-
-      const { error: facturaError } = await insforgeClient.database
-        .from("facturas")
-        .delete()
-        .eq("id", inv.id)
-        .eq("tenant_id", tenantId);
-
-      if (facturaError) {
-        console.error("Error al eliminar factura:", facturaError);
-        alert(`No se pudo eliminar la factura: ${facturaError.message}`);
-        return;
-      }
-
-      setInvoiceModal((open) => (open?.id === inv.id ? null : open));
-      await loadBillingData();
     },
     [tenantId, loadBillingData]
   );
