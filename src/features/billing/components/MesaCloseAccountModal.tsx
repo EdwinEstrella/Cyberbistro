@@ -16,11 +16,20 @@ import {
   type NcfBCode,
 } from "../../../shared/lib/ncf";
 import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
+import { enqueueLocalWrite, getDeviceId, getLocalFirstStatusSnapshot, readLocalMirror } from "../../../shared/lib/localFirst";
 
 const ITBIS = 0.18;
 
 // Checks if there is an open operational cycle for the tenant (any business day)
 async function hasOpenCycle(tenantId: string): Promise<boolean> {
+  try {
+    const snapshot = await getLocalFirstStatusSnapshot(tenantId);
+    const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
+    if (localMode) {
+      const cycles = await readLocalMirror<{ id: string; closed_at: string | null }>(tenantId, "cierres_operativos");
+      return cycles.some(c => !c.closed_at);
+    }
+  } catch { /* fall through to online */ }
   const { data, error } = await insforgeClient.database
     .from("cierres_operativos")
     .select("id")
@@ -266,23 +275,48 @@ export function MesaCloseAccountModal({
   async function printFactura(facturaId: string, numeroFactura: number) {
     if (!tenantId) return;
 
-    const { data: factura, error: facturaError } = await insforgeClient.database
-      .from("facturas")
-      .select("*")
-      .eq("id", facturaId)
-      .eq("tenant_id", tenantId)
-      .single();
+    let factura: any = null;
+    let tenant: any = null;
 
-    if (facturaError || !factura) {
-      console.error("Error al obtener factura:", facturaError);
+    try {
+      const snapshot = await getLocalFirstStatusSnapshot(tenantId);
+      const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
+
+      if (localMode) {
+        const allFacturas = await readLocalMirror<any>(tenantId, "facturas");
+        factura = allFacturas.find(f => f.id === facturaId);
+
+        const allTenants = await readLocalMirror<any>(tenantId, "tenants");
+        tenant = allTenants.find(t => t.id === tenantId);
+      } else {
+        const { data: factData, error: facturaError } = await insforgeClient.database
+          .from("facturas")
+          .select("*")
+          .eq("id", facturaId)
+          .eq("tenant_id", tenantId)
+          .single();
+        if (facturaError) {
+          console.error("Error al obtener factura:", facturaError);
+          return;
+        }
+        factura = factData;
+
+        const { data: tenantData } = await insforgeClient.database
+          .from("tenants")
+          .select("nombre_negocio, rnc, direccion, telefono, logo_url, logo_size_px, logo_offset_x, logo_offset_y")
+          .eq("id", tenantId)
+          .single();
+        tenant = tenantData;
+      }
+    } catch (err) {
+      console.error("Error leyendo datos para factura:", err);
       return;
     }
 
-    const { data: tenant } = await insforgeClient.database
-      .from("tenants")
-      .select("nombre_negocio, rnc, direccion, telefono, logo_url, logo_size_px, logo_offset_x, logo_offset_y")
-      .eq("id", tenantId)
-      .single();
+    if (!factura) {
+      console.error("Error: No se encontró la factura para imprimir");
+      return;
+    }
 
     if (!tenant) {
       console.error("Error: No se encontró información del tenant");
@@ -400,6 +434,16 @@ export function MesaCloseAccountModal({
     await ensureAuthSessionFresh();
 
     try {
+      const deviceId = await getDeviceId();
+      const snapshot = await getLocalFirstStatusSnapshot(tenantId);
+      const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
+      
+      let nextLocalInvoiceNum = 0;
+      if (localMode) {
+        const allLocalInvoices = await readLocalMirror<any>(tenantId, "facturas");
+        nextLocalInvoiceNum = allLocalInvoices.reduce((m, f) => Math.max(m, f.numero_factura || 0), 0) + 1;
+      }
+
       for (const personIndex of order) {
         const consumosToInvoice = groups.get(personIndex)!;
         if (consumosToInvoice.length === 0) continue;
@@ -415,8 +459,12 @@ export function MesaCloseAccountModal({
           ncfFiscalActive ? selectedNcfType : null
         );
 
+        const localFacturaId = crypto.randomUUID();
+        const now = new Date().toISOString();
         const insertRow: Record<string, unknown> = {
+          id: localFacturaId,
           tenant_id: tenantId,
+          numero_factura: localMode ? nextLocalInvoiceNum++ : 0,
           mesa_numero: mesaNumero,
           metodo_pago: paymentMethod,
           estado: "pagada",
@@ -426,7 +474,9 @@ export function MesaCloseAccountModal({
           total,
           items: facturaItems,
           notas: `Mesa ${mesaNumero} — Persona ${personIndex} de ${splitParts} (${consumosToInvoice.length} líneas)`,
-          pagada_at: new Date().toISOString(),
+          pagada_at: now,
+          created_at: now,
+          updated_at: now,
         };
         if (ncfPart) {
           insertRow.ncf = ncfPart.ncf;
@@ -436,36 +486,35 @@ export function MesaCloseAccountModal({
           insertRow.cliente_rnc = normalizedClientRnc;
         }
 
-        const { data: factura, error: facturaError } = await insforgeClient.database
-          .from("facturas")
-          .insert([insertRow])
-          .select()
-          .single();
-
-        if (facturaError || !factura) {
-          console.error("Error al crear factura (cuenta dividida):", facturaError);
-          alert(`Error al facturar persona ${personIndex}: ${facturaError?.message || "Error desconocido"}`);
-          break;
-        }
+        await enqueueLocalWrite({
+          tenantId,
+          tableName: "facturas",
+          rowId: localFacturaId,
+          op: "insert",
+          payload: insertRow,
+          deviceId,
+        });
 
         if (ncfPart && !ncfPart.sequenceReservedAtomically) {
           await incrementTenantNcfSequence(tenantId, ncfPart.tipoCodigo, ncfPart.usedSequence);
         }
 
-        await printFactura(factura.id, factura.numero_factura);
+        await printFactura(localFacturaId, 0);
 
         const consumoIds = consumosToInvoice.map((c) => c.id);
-        const { error: updateError } = await insforgeClient.database
-          .from("consumos")
-          .update({
-            estado: "pagado",
-            factura_id: factura.id,
-            updated_at: new Date().toISOString(),
-          })
-          .in("id", consumoIds);
-
-        if (updateError) {
-          console.error("Error al marcar consumos como pagados:", updateError);
+        for (const cid of consumoIds) {
+          await enqueueLocalWrite({
+            tenantId,
+            tableName: "consumos",
+            rowId: cid,
+            op: "update",
+            payload: {
+              estado: "pagado",
+              factura_id: localFacturaId,
+              updated_at: new Date().toISOString(),
+            },
+            deviceId,
+          });
         }
       }
     } finally {
@@ -494,13 +543,12 @@ export function MesaCloseAccountModal({
   }
 
   async function createInvoice() {
-  if (!tenantId) return;
-  // Ensure there is an open operational cycle before creating an invoice
-  const cycleOpen = await hasOpenCycle(tenantId);
-  if (!cycleOpen) {
-    alert("No hay un ciclo operativo abierto. Inicie un ciclo antes de cobrar.");
-    return;
-  }
+    if (!tenantId) return;
+    const cycleOpen = await hasOpenCycle(tenantId);
+    if (!cycleOpen) {
+      alert("No hay un ciclo operativo abierto. Inicie un ciclo antes de cobrar.");
+      return;
+    }
     if (!tenantId) return;
     if (mesaConsumos.length === 0) {
       alert("No hay consumos pendientes para cobrar");
@@ -520,6 +568,16 @@ export function MesaCloseAccountModal({
     setCharging(true);
     await ensureAuthSessionFresh();
 
+    const deviceId = await getDeviceId();
+    const snapshot = await getLocalFirstStatusSnapshot(tenantId);
+    const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
+
+    let nextLocalInvoiceNum = 0;
+    if (localMode) {
+      const allLocalInvoices = await readLocalMirror<any>(tenantId, "facturas");
+      nextLocalInvoiceNum = allLocalInvoices.reduce((m, f) => Math.max(m, f.numero_factura || 0), 0) + 1;
+    }
+
     const consumosToBill = mesaConsumos;
     const { facturaItems, subtotal, itbis, total } = await groupConsumosForFactura(
       tenantId,
@@ -532,8 +590,12 @@ export function MesaCloseAccountModal({
       ncfFiscalActive ? selectedNcfType : null
     );
 
+    const localFacturaId = crypto.randomUUID();
+    const now = new Date().toISOString();
     const facturaData: Record<string, unknown> = {
+      id: localFacturaId,
       tenant_id: tenantId,
+      numero_factura: localMode ? nextLocalInvoiceNum : 0,
       metodo_pago: paymentMethod,
       estado: "pagada",
       subtotal,
@@ -541,7 +603,9 @@ export function MesaCloseAccountModal({
       propina: 0,
       total,
       items: facturaItems,
-      pagada_at: new Date().toISOString(),
+      pagada_at: now,
+      created_at: now,
+      updated_at: now,
       mesa_numero: mesaNumero,
       notas: `Mesa ${mesaNumero}`,
     };
@@ -553,37 +617,35 @@ export function MesaCloseAccountModal({
       facturaData.cliente_rnc = normalizedClientRnc;
     }
 
-    const { data: factura, error: facturaError } = await insforgeClient.database
-      .from("facturas")
-      .insert([facturaData])
-      .select()
-      .single();
-
-    if (facturaError || !factura) {
-      console.error("Error al crear factura:", facturaError);
-      alert(`Error al procesar el pago: ${facturaError?.message || "Error desconocido"}`);
-      setCharging(false);
-      return;
-    }
+    await enqueueLocalWrite({
+      tenantId,
+      tableName: "facturas",
+      rowId: localFacturaId,
+      op: "insert",
+      payload: facturaData,
+      deviceId,
+    });
 
     if (ncfPart && !ncfPart.sequenceReservedAtomically) {
       await incrementTenantNcfSequence(tenantId, ncfPart.tipoCodigo, ncfPart.usedSequence);
     }
 
-    await printFactura(factura.id, factura.numero_factura);
+    await printFactura(localFacturaId, 0);
 
     const consumoIds = consumosToBill.map((c) => c.id);
-    const { error: updateError } = await insforgeClient.database
-      .from("consumos")
-      .update({
-        estado: "pagado",
-        factura_id: factura.id,
-        updated_at: new Date().toISOString(),
-      })
-      .in("id", consumoIds);
-
-    if (updateError) {
-      console.error("Error al marcar consumos como pagados:", updateError);
+    for (const cid of consumoIds) {
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "consumos",
+        rowId: cid,
+        op: "update",
+        payload: {
+          estado: "pagado",
+          factura_id: localFacturaId,
+          updated_at: new Date().toISOString(),
+        },
+        deviceId,
+      });
     }
 
     const restantes = await refreshConsumos();

@@ -5,6 +5,7 @@ import { useAuth } from "../../../shared/hooks/useAuth";
 import { buildCierreDiaReceiptHtml } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
+import { getLocalFirstStatusSnapshot, readLocalMirror, enqueueLocalWrite, getDeviceId } from "../../../shared/lib/localFirst";
 
 type FacturaEstado = "pagada" | "pendiente" | "cancelada";
 
@@ -16,6 +17,7 @@ interface FacturaRow {
   itbis: number;
   total: number;
   created_at: string;
+  pagada_at: string | null;
 }
 
 interface ConsumoAbiertoRow {
@@ -46,6 +48,7 @@ interface CierreOperativoRow {
   opened_at: string;
   closed_at: string | null;
   printed_at: string | null;
+  created_at: string;
 }
 
 function todayYmd(): string {
@@ -73,25 +76,41 @@ function etiquetaMetodo(m: string): string { return METODO_ETIQUETA[m] ?? m.char
 const RD = (n: number) => "RD$ " + n.toLocaleString("es-DO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const ITBIS_RATE = 0.18;
-const MAX_START_CYCLE_ATTEMPTS = 3;
 
-async function getPaidSalesCountForCycle(tenantId: string, cycle: Pick<CierreOperativoRow, "opened_at" | "closed_at">): Promise<number> {
+
+function getCycleStartIso(cycle: Pick<CierreOperativoRow, "opened_at" | "created_at">): string {
+  return new Date(cycle.created_at).getTime() < new Date(cycle.opened_at).getTime()
+    ? cycle.created_at
+    : cycle.opened_at;
+}
+
+function getInvoiceCycleIso(invoice: Pick<FacturaRow, "estado" | "created_at" | "pagada_at">): string {
+  return invoice.estado === "pagada" && invoice.pagada_at ? invoice.pagada_at : invoice.created_at;
+}
+
+function invoiceBelongsToCycle(invoice: FacturaRow, cycle: Pick<CierreOperativoRow, "opened_at" | "created_at" | "closed_at">, endIso = cycle.closed_at ?? new Date().toISOString()): boolean {
+  const invoiceCycleAt = new Date(getInvoiceCycleIso(invoice)).getTime();
+  return (
+    invoiceCycleAt >= new Date(getCycleStartIso(cycle)).getTime() &&
+    invoiceCycleAt <= new Date(endIso).getTime()
+  );
+}
+
+async function getPaidSalesCountForCycle(tenantId: string, cycle: Pick<CierreOperativoRow, "opened_at" | "created_at" | "closed_at">): Promise<number> {
   const { data, error } = await insforgeClient.database
     .from("facturas")
-    .select("id")
+    .select("id, estado, metodo_pago, subtotal, itbis, total, created_at, pagada_at")
     .eq("tenant_id", tenantId)
-    .eq("estado", "pagada")
-    .gte("created_at", cycle.opened_at)
-    .lte("created_at", cycle.closed_at ?? new Date().toISOString());
+    .eq("estado", "pagada");
 
   if (error) throw new Error(error.message);
-  return data?.length ?? 0;
+  return ((data as FacturaRow[] | null) ?? []).filter((invoice) => invoiceBelongsToCycle(invoice, cycle)).length;
 }
 
 async function discardLatestEmptyCycle(tenantId: string): Promise<boolean> {
   const { data, error } = await insforgeClient.database
     .from("cierres_operativos")
-    .select("id, business_day, cycle_number, opened_at, closed_at, printed_at")
+    .select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at")
     .eq("tenant_id", tenantId)
     .order("cycle_number", { ascending: false })
     .limit(1)
@@ -176,38 +195,73 @@ export function Cierre() {
   const cargar = useCallback(async () => {
     if (!tenantId) { setCycles([]); setFacturas([]); setGastos([]); setGastoCategorias([]); setConsumosAbiertos([]); setLoading(false); return; }
     setLoading(true); setLoadError("");
-    const [cyclesRes, consRes, openGlobalRes, categoriasRes] = await Promise.all([
-      insforgeClient.database.from("cierres_operativos").select("*").eq("tenant_id", tenantId).eq("business_day", fecha).order("cycle_number", { ascending: false }),
-      insforgeClient.database.from("consumos").select("mesa_numero, subtotal, estado").eq("tenant_id", tenantId).neq("estado", "pagado"),
-      insforgeClient.database.from("cierres_operativos").select("id").eq("tenant_id", tenantId).is("closed_at", null).limit(1),
-      insforgeClient.database.from("gasto_categorias").select("id, nombre").eq("tenant_id", tenantId),
-    ]);
-    if (cyclesRes.error) { setLoadError(cyclesRes.error.message); setLoading(false); return; }
-    if (categoriasRes.error) { setLoadError(categoriasRes.error.message); setLoading(false); return; }
-    setGastoCategorias((categoriasRes.data as GastoCategoriaRow[] | null) ?? []);
-    const cycleRows = cyclesRes.data as CierreOperativoRow[]; setCycles(cycleRows);
-    const sel = cycleRows.find(c => !c.closed_at) ?? cycleRows[0] ?? null;
-    if (sel) {
-      const [factRes, gastosRes] = await Promise.all([
-        insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).gte("created_at", sel.opened_at).lte("created_at", sel.closed_at ?? new Date().toISOString()).order("created_at", { ascending: true }),
-        insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, fecha_gasto").eq("tenant_id", tenantId).eq("cycle_id", sel.id).order("fecha_gasto", { ascending: true }),
+    try {
+      const snapshot = await getLocalFirstStatusSnapshot(tenantId);
+      const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
+
+      const [cyclesAll, consAll, openGlobal, categoriasData] = await Promise.all([
+        localMode
+          ? readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos")
+          : insforgeClient.database.from("cierres_operativos").select("*").eq("tenant_id", tenantId).eq("business_day", fecha).order("cycle_number", { ascending: false }).then(r => ({ data: r.data, error: r.error })),
+        localMode
+          ? readLocalMirror<ConsumoAbiertoRow>(tenantId, "consumos")
+          : insforgeClient.database.from("consumos").select("mesa_numero, subtotal, estado").eq("tenant_id", tenantId).neq("estado", "pagado").then(r => ({ data: r.data, error: r.error })),
+        localMode
+          ? readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos")
+          : insforgeClient.database.from("cierres_operativos").select("id").eq("tenant_id", tenantId).is("closed_at", null).limit(1).then(r => ({ data: r.data, error: r.error })),
+        localMode
+          ? readLocalMirror<GastoCategoriaRow>(tenantId, "gasto_categorias")
+          : insforgeClient.database.from("gasto_categorias").select("id, nombre").eq("tenant_id", tenantId).then(r => ({ data: r.data, error: r.error })),
       ]);
-      setFacturas(factRes.data as FacturaRow[] ?? []);
-      setGastos(gastosRes.data as GastoRow[] ?? []);
-    } else {
-      setFacturas([]);
-      setGastos([]);
+
+      if (!localMode && (cyclesAll as any).error) { setLoadError((cyclesAll as any).error.message); setLoading(false); return; }
+      if (!localMode && (categoriasData as any).error) { setLoadError((categoriasData as any).error.message); setLoading(false); return; }
+
+      const cycleRows = (cyclesAll as CierreOperativoRow[]).filter(c => c.business_day === fecha).sort((a, b) => b.cycle_number - a.cycle_number);
+      setCycles(cycleRows);
+      setGastoCategorias((categoriasData as GastoCategoriaRow[]) ?? []);
+
+      const openCycle = (openGlobal as CierreOperativoRow[]).find(c => !c.closed_at) ?? null;
+      const sel = openCycle ?? cycleRows[0] ?? null;
+
+      if (sel) {
+        const [factData, gastosData] = await Promise.all([
+          localMode
+            ? readLocalMirror<FacturaRow>(tenantId, "facturas")
+            : insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: true }).then(r => r.data ?? []),
+          localMode
+            ? readLocalMirror<GastoRow>(tenantId, "gastos").then(gs => gs.filter(g => g.cycle_id === sel.id))
+            : insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, fecha_gasto").eq("tenant_id", tenantId).eq("cycle_id", sel.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? []),
+        ]);
+
+        const allFacturas = (factData as FacturaRow[] | null) ?? [];
+        setFacturas(allFacturas.filter((invoice) => invoiceBelongsToCycle(invoice, sel)));
+        setGastos((gastosData as GastoRow[]) ?? []);
+      } else {
+        setFacturas([]);
+        setGastos([]);
+      }
+
+      const consumosAbiertosData = (consAll as ConsumoAbiertoRow[]) ?? [];
+      setConsumosAbiertos(sel?.closed_at == null ? consumosAbiertosData.filter(c => c.estado !== "pagado") : []);
+      setGlobalHasOpenCycle(!!openCycle);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Error cargando datos");
     }
-    setConsumosAbiertos(sel?.closed_at == null ? (consRes.data as any[] ?? []) : []);
-    setGlobalHasOpenCycle(!!(openGlobalRes.data?.length));
     setLoading(false);
   }, [tenantId, fecha]);
 
   useEffect(() => {
     if (authLoading || !tenantId) return;
-    insforgeClient.database.from("cierres_operativos").select("business_day").eq("tenant_id", tenantId).is("closed_at", null).order("opened_at", { ascending: false }).limit(1).maybeSingle().then(res => {
-      if (res.data?.business_day) setFecha(res.data.business_day);
-    });
+    getLocalFirstStatusSnapshot(tenantId).then(snapshot => {
+      const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
+      if (localMode) {
+        return readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos");
+      }
+      return insforgeClient.database.from("cierres_operativos").select("business_day").eq("tenant_id", tenantId).is("closed_at", null).order("opened_at", { ascending: false }).limit(1).maybeSingle().then(r => r.data ? [r.data] : []);
+    }).then((rows: any) => {
+      if (rows?.[0]?.business_day) setFecha(rows[0].business_day);
+    }).catch(() => {});
   }, [authLoading, tenantId]);
 
   useEffect(() => { if (!authLoading) void cargar(); }, [authLoading, cargar]);
@@ -216,17 +270,44 @@ export function Cierre() {
     if (!tenantId || globalHasOpenCycle) return;
     setStartingCycle(true); setPrintMsg("");
     try {
-      const discardedLatest = await discardLatestEmptyCycle(tenantId);
-      for (let attempt = 0; attempt < MAX_START_CYCLE_ATTEMPTS; attempt++) {
-        const { data: latest } = await insforgeClient.database.from("cierres_operativos").select("cycle_number").eq("tenant_id", tenantId).order("cycle_number", { ascending: false }).limit(1).maybeSingle();
-        const num = ((latest as any)?.cycle_number ?? 0) + 1;
-        const { error } = await insforgeClient.database.from("cierres_operativos").insert([{ tenant_id: tenantId, business_day: fecha, cycle_number: num, opened_at: new Date().toISOString(), opened_by_auth_user_id: user?.id }]);
-        if (!error) {
-          setPrintMsg(discardedLatest ? `Se descartó el último ciclo sin ventas. Ciclo #${num} iniciado.` : `Ciclo #${num} iniciado.`);
-          await cargar();
-          break;
+      const snapshot = await getLocalFirstStatusSnapshot(tenantId);
+      const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
+
+      let discardedLatest = false;
+      if (localMode) {
+        const allCycles = await readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos");
+        const latestEmpty = allCycles.filter(c => !c.closed_at);
+        if (latestEmpty.length > 0) {
+          const firstEmpty = latestEmpty[latestEmpty.length - 1];
+          await enqueueLocalWrite({ tenantId, tableName: "cierres_operativos", rowId: firstEmpty.id, op: "delete", deviceId: await getDeviceId() });
+          discardedLatest = true;
         }
+      } else {
+        discardedLatest = await discardLatestEmptyCycle(tenantId);
       }
+
+      let num = 1;
+      if (localMode) {
+        const allCycles = await readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos");
+        const maxNum = allCycles.reduce((m, c) => Math.max(m, c.cycle_number), 0);
+        num = maxNum + 1;
+      } else {
+        const { data: latest } = await insforgeClient.database.from("cierres_operativos").select("cycle_number").eq("tenant_id", tenantId).order("cycle_number", { ascending: false }).limit(1).maybeSingle();
+        num = ((latest as any)?.cycle_number ?? 0) + 1;
+      }
+
+      const localCycleId = crypto.randomUUID();
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "cierres_operativos",
+        rowId: localCycleId,
+        op: "insert",
+        payload: { id: localCycleId, tenant_id: tenantId, business_day: fecha, cycle_number: num, opened_by_auth_user_id: user?.id, opened_at: new Date().toISOString(), created_at: new Date().toISOString(), closed_at: null },
+        deviceId: await getDeviceId(),
+      });
+
+      setPrintMsg(discardedLatest ? `Se descartó el último ciclo sin ventas. Ciclo #${num} iniciado.` : `Ciclo #${num} iniciado.`);
+      await cargar();
     } catch (error) {
       setPrintMsg(error instanceof Error ? error.message : "No se pudo iniciar el ciclo.");
     }
@@ -236,51 +317,64 @@ export function Cierre() {
   async function handleCerrarCiclo() {
     if (!tenantId || !currentCycle || currentCycle.closed_at) return;
     setPrinting(true); setPrintMsg("");
-    const { data: pend } = await insforgeClient.database.from("consumos").select("id").eq("tenant_id", tenantId).neq("estado", "pagado");
-    if (pend?.length) { setPrintMsg("No se puede cerrar con mesas pendientes."); setPrinting(false); return; }
+
+    const snapshot = await getLocalFirstStatusSnapshot(tenantId);
+    const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
+
+    let pend: any[] = [];
+    if (localMode) {
+      const allConsumos = await readLocalMirror<ConsumoAbiertoRow>(tenantId, "consumos");
+      pend = allConsumos.filter(c => c.estado !== "pagado");
+    } else {
+      const res = await insforgeClient.database.from("consumos").select("id").eq("tenant_id", tenantId).neq("estado", "pagado");
+      pend = res.data ?? [];
+    }
+
+    if (pend.length) { setPrintMsg("No se puede cerrar con mesas pendientes."); setPrinting(false); return; }
     const now = new Date().toISOString();
 
-    const [factRes, gastosRes] = await Promise.all([
-      insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).gte("created_at", currentCycle.opened_at).lte("created_at", now).order("created_at", { ascending: true }),
-      insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, fecha_gasto").eq("tenant_id", tenantId).eq("cycle_id", currentCycle.id).order("fecha_gasto", { ascending: true }),
+    const [facturasAll, gastosAll] = await Promise.all([
+      localMode
+        ? readLocalMirror<FacturaRow>(tenantId, "facturas")
+        : insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: true }).then(r => r.data ?? []),
+      localMode
+        ? readLocalMirror<GastoRow>(tenantId, "gastos").then(gs => gs.filter(g => g.cycle_id === currentCycle.id))
+        : insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, fecha_gasto").eq("tenant_id", tenantId).eq("cycle_id", currentCycle.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? []),
     ]);
-    if (factRes.error) { setPrintMsg(factRes.error.message); setPrinting(false); return; }
-    if (gastosRes.error) { setPrintMsg(gastosRes.error.message); setPrinting(false); return; }
 
-    const facturasCiclo = (factRes.data as FacturaRow[] | null) ?? [];
-    const gastosCiclo = (gastosRes.data as GastoRow[] | null) ?? [];
+    const facturasCiclo = ((facturasAll as FacturaRow[]) ?? []).filter((invoice) => invoiceBelongsToCycle(invoice, currentCycle, now));
+    const gastosCiclo = (gastosAll as GastoRow[]) ?? [];
     const totalGastosCiclo = gastosCiclo.reduce((s, gasto) => s + Number(gasto.monto), 0);
     const pag = facturasCiclo.filter((f: any) => f.estado === "pagada");
+
+    const deviceId = await getDeviceId();
+
     if (pag.length === 0) {
-      const { error: deleteError } = await insforgeClient.database.from("cierres_operativos").delete().eq("id", currentCycle.id).eq("tenant_id", tenantId).is("closed_at", null);
-      if (deleteError) { setPrintMsg(deleteError.message); setPrinting(false); return; }
+      await enqueueLocalWrite({ tenantId, tableName: "cierres_operativos", rowId: currentCycle.id, op: "delete", deviceId });
       setPrintMsg(`Ciclo #${currentCycle.cycle_number} descartado porque no tuvo ventas. Puedes iniciarlo de nuevo.`);
       setPrinting(false);
       await cargar();
       return;
     }
 
-    const { error } = await insforgeClient.database.from("cierres_operativos").update({ closed_at: now, closed_by_auth_user_id: user?.id }).eq("id", currentCycle.id).eq("tenant_id", tenantId);
-    if (error) { setPrintMsg(error.message); setPrinting(false); return; }
+    await enqueueLocalWrite({ tenantId, tableName: "cierres_operativos", rowId: currentCycle.id, op: "update", payload: { closed_at: now, closed_by_auth_user_id: user?.id }, deviceId });
     setPrintMsg("Ciclo cerrado.");
-    // Printing logic maintained identically
-    const [tenantRes] = await Promise.all([
-      insforgeClient.database.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url, logo_size_px, logo_offset_x, logo_offset_y").eq("id", tenantId).maybeSingle(),
-    ]);
+
+    const tenantRes = await insforgeClient.database.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url, logo_size_px, logo_offset_x, logo_offset_y").eq("id", tenantId).maybeSingle();
     if (tenantRes.data) {
       const metMap = new Map<string, any>();
       for (const f of pag) { const k = f.metodo_pago || "otro"; const cur = metMap.get(k) ?? { etiqueta: etiquetaMetodo(k), cantidad: 0, total: 0 }; cur.cantidad++; cur.total += Number(f.total); metMap.set(k, cur); }
       const totalPag = pag.reduce((s: number, f: any) => s + Number(f.total), 0);
       const { paperWidthMm } = getThermalPrintSettings();
       const html = buildCierreDiaReceiptHtml(tenantRes.data as any, {
-        fechaOperacion: ymdToLongLabel(fecha), cicloNumero: currentCycle.cycle_number, generadoEn: formatCycleDateTime(now), generadoAtIso: now, abiertoAtIso: currentCycle.opened_at, cerradoAtIso: now,
+        fechaOperacion: ymdToLongLabel(fecha), cicloNumero: currentCycle.cycle_number, generadoEn: formatCycleDateTime(now), generadoAtIso: now, abiertoAtIso: getCycleStartIso(currentCycle), cerradoAtIso: now,
         facturasPagadas: pag.length, facturasPendientes: facturasCiclo.filter((f: any) => f.estado === "pendiente").length,
         totalPagado: totalPag, subtotalPagado: pag.reduce((s: number, f: any) => s + Number(f.subtotal), 0), itbisPagado: pag.reduce((s: number, f: any) => s + Number(f.itbis), 0),
         porMetodo: [...metMap.values()].sort((a, b) => b.total - a.total), ticketPromedioPagado: pag.length ? totalPag / pag.length : 0,
         gastosTotal: totalGastosCiclo, gastosCantidad: gastosCiclo.length, netoOperativo: totalPag - totalGastosCiclo,
       }, paperWidthMm);
       const res = await printThermalHtml(html);
-      if (res.ok) await insforgeClient.database.from("cierres_operativos").update({ printed_at: now }).eq("id", currentCycle.id);
+      if (res.ok) await enqueueLocalWrite({ tenantId, tableName: "cierres_operativos", rowId: currentCycle.id, op: "update", payload: { printed_at: now }, deviceId });
     }
     setPrinting(false); await cargar();
   }

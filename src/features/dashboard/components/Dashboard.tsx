@@ -5,6 +5,14 @@ import { useVentaCartSearch } from "../../../app/context/VentaCartSearchContext"
 
 // Checks if there is an open operational cycle for the tenant (any business day)
 async function hasOpenCycle(tenantId: string): Promise<boolean> {
+  try {
+    const snapshot = await getLocalFirstStatusSnapshot(tenantId);
+    const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
+    if (localMode) {
+      const cycles = await readLocalMirror<{ id: string; closed_at: string | null }>(tenantId, "cierres_operativos");
+      return cycles.some(c => !c.closed_at);
+    }
+  } catch { /* fall through to online */ }
   const { data, error } = await insforgeClient.database
     .from("cierres_operativos")
     .select("id")
@@ -44,6 +52,7 @@ import {
   type NcfBCode,
 } from "../../../shared/lib/ncf";
 import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
+import { getLocalFirstStatusSnapshot, readLocalMirror, enqueueLocalWrite, getDeviceId } from "../../../shared/lib/localFirst";
 
 interface Plato {
   id: number;
@@ -157,35 +166,54 @@ export function Dashboard() {
     // Esperar a tener el tenant_id antes de cargar datos
     if (!tenantId) return;
 
-    // Cargar platos y estados de mesas desde la base de datos (filtrados por tenant)
-    Promise.all([
-      insforgeClient.database
-        .from("platos")
-        .select("*")
-        .eq("tenant_id", tenantId)
-        .eq("disponible", true)
-        .order("categoria"),
-      insforgeClient.database
-        .from("mesas_estado")
-        .select("*")
-        .eq("tenant_id", tenantId),
-      insforgeClient.database
-        .from("consumos")
-        .select("mesa_numero, subtotal")
-        .eq("tenant_id", tenantId)
-        .neq("estado", "pagado"),
-      insforgeClient.database
-        .from("menu_categories")
-        .select("id, tenant_id, nombre, color, sort_order")
-        .eq("tenant_id", tenantId)
-        .order("sort_order")
-        .order("nombre"),
-      loadCantidadMesas(tenantId)
-    ]).then(([platosRes, estadosRes, consumosPendRes, categoriesRes, cantidadMesas]) => {
-      if (!platosRes.error && platosRes.data) setPlatos(platosRes.data as Plato[]);
-      if (!categoriesRes.error && categoriesRes.data) {
-        setMenuCategories(categoriesRes.data as MenuCategoryRow[]);
-      }
+    let cancelled = false;
+
+    const load = async () => {
+      const snapshot = await getLocalFirstStatusSnapshot(tenantId);
+      const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
+
+      const [platosData, categoriasData, estadosData, consumosData, cantidadMesas] = await Promise.all([
+        localMode
+          ? readLocalMirror<Plato>(tenantId, "platos")
+          : insforgeClient.database
+              .from("platos")
+              .select("*")
+              .eq("tenant_id", tenantId)
+              .eq("disponible", true)
+              .order("categoria")
+              .then(r => r.data ?? []),
+        localMode
+          ? readLocalMirror<MenuCategoryRow>(tenantId, "menu_categories")
+          : insforgeClient.database
+              .from("menu_categories")
+              .select("id, tenant_id, nombre, color, sort_order")
+              .eq("tenant_id", tenantId)
+              .order("sort_order")
+              .order("nombre")
+              .then(r => r.data ?? []),
+        localMode
+          ? readLocalMirror<any>(tenantId, "mesas_estado")
+          : insforgeClient.database
+              .from("mesas_estado")
+              .select("*")
+              .eq("tenant_id", tenantId)
+              .then(r => r.data ?? []),
+        localMode
+          ? readLocalMirror<{ mesa_numero: number | null; subtotal: number }>(tenantId, "consumos")
+          : insforgeClient.database
+              .from("consumos")
+              .select("mesa_numero, subtotal")
+              .eq("tenant_id", tenantId)
+              .neq("estado", "pagado")
+              .then(r => r.data ?? []),
+        loadCantidadMesas(tenantId),
+      ]);
+
+      if (cancelled) return;
+
+      const availablePlatos = (platosData as Plato[]).filter(p => p.disponible);
+      setPlatos(availablePlatos);
+      setMenuCategories(categoriasData as MenuCategoryRow[]);
 
       const configArray = generateMesasConfig(cantidadMesas);
       let currentMesas: MesaBasic[] = configArray.map((config) => ({
@@ -200,21 +228,19 @@ export function Dashboard() {
       }));
 
       const deudaPorNumero = new Map<number, { deuda: number; items: number }>();
-      if (!consumosPendRes.error && consumosPendRes.data) {
-        for (const row of consumosPendRes.data as { mesa_numero: number | null; subtotal: number }[]) {
-          const mn = row.mesa_numero ?? 0;
-          if (mn <= 0) continue;
-          const cur = deudaPorNumero.get(mn) ?? { deuda: 0, items: 0 };
-          cur.deuda += Number(row.subtotal);
-          cur.items += 1;
-          deudaPorNumero.set(mn, cur);
-        }
+      for (const row of consumosData) {
+        const mn = row.mesa_numero ?? 0;
+        if (mn <= 0) continue;
+        const cur = deudaPorNumero.get(mn) ?? { deuda: 0, items: 0 };
+        cur.deuda += Number(row.subtotal);
+        cur.items += 1;
+        deudaPorNumero.set(mn, cur);
       }
 
-      if (!estadosRes.error && estadosRes.data && estadosRes.data.length > 0) {
+      if (estadosData && estadosData.length > 0) {
         // Crear mapa de estados por ID
         const estadosMap = new Map<number, any>();
-        for (const e of estadosRes.data) {
+        for (const e of estadosData) {
           estadosMap.set(e.id, e);
         }
 
@@ -250,7 +276,10 @@ export function Dashboard() {
       }
       
       setMesas(currentMesas);
-    });
+    };
+
+    load().catch(console.error);
+    return () => { cancelled = true; };
   }, [tenantId]);
 
   useEffect(() => {
@@ -456,42 +485,17 @@ export function Dashboard() {
     return { subtotal, itbis, total };
   }
 
-  async function printFactura(facturaId: string, numeroFactura: number) {
-    if (!tenantId) return;
-
-    const { data: factura, error: facturaError } = await insforgeClient.database
-      .from("facturas")
-      .select("*")
-      .eq("id", facturaId)
-      .eq("tenant_id", tenantId)
-      .single();
-
-    if (facturaError || !factura) {
-      console.error("Error al obtener factura:", facturaError);
-      return;
-    }
-
-    const { data: tenant } = await insforgeClient.database
-      .from("tenants")
-      .select("nombre_negocio, rnc, direccion, telefono, logo_url")
-      .eq("id", tenantId)
-      .single();
-
-    if (!tenant) {
-      console.error("Error: No se encontró información del tenant");
-      return;
-    }
-
+  async function printFactura(facturaData: Record<string, unknown>, tenantData: { nombre_negocio: string | null; rnc: string | null; direccion: string | null; telefono: string | null; logo_url: string | null }, numeroFactura: number) {
     const paperWidthMm = getThermalPrintSettings().paperWidthMm;
     const html = buildFacturaReceiptHtml(
       {
-        nombre_negocio: tenant.nombre_negocio,
-        rnc: tenant.rnc,
-        direccion: tenant.direccion,
-        telefono: tenant.telefono,
-        logo_url: tenant.logo_url,
+        nombre_negocio: tenantData.nombre_negocio,
+        rnc: tenantData.rnc,
+        direccion: tenantData.direccion,
+        telefono: tenantData.telefono,
+        logo_url: tenantData.logo_url,
       },
-      factura as unknown as Parameters<typeof buildFacturaReceiptHtml>[1],
+      facturaData as unknown as Parameters<typeof buildFacturaReceiptHtml>[1],
       numeroFactura,
       paperWidthMm
     );
@@ -734,7 +738,7 @@ export function Dashboard() {
     }));
 
     setCharging(true);
-    await ensureAuthSessionFresh();
+    try { await ensureAuthSessionFresh(); } catch { /* offline: session remains valid */ }
 
     const groupedItems = consumosToBill.reduce(
       (acc, consumo) => {
@@ -773,20 +777,25 @@ export function Dashboard() {
     const itbis = subtotal * rate;
     const total = subtotal + itbis;
 
-    const ncfPart = tenantId
-      ? await resolveNcfForNewInvoice(
-        tenantId,
-        tenantNcfFiscalActive ? selectedNcfType : null
-      )
-      : null;
+    let ncfPart: Awaited<ReturnType<typeof resolveNcfForNewInvoice>> = null;
+    try {
+      ncfPart = tenantId
+        ? await resolveNcfForNewInvoice(
+          tenantId,
+          tenantNcfFiscalActive ? selectedNcfType : null
+        )
+        : null;
+    } catch { /* offline: skip NCF */ }
 
+    const localFacturaId = crypto.randomUUID();
     const facturaData: Record<string, unknown> = {
+      id: localFacturaId,
       tenant_id: tenantId,
       metodo_pago: paymentMethod,
       estado: "pagada" as const,
       subtotal,
       itbis,
-      propina: 0,
+      propeller: 0,
       total,
       items: facturaItems,
       pagada_at: new Date().toISOString(),
@@ -801,24 +810,68 @@ export function Dashboard() {
       facturaData.cliente_rnc = normalizedClientRnc;
     }
 
-    const { data: factura, error: facturaError } = await insforgeClient.database
-      .from("facturas")
-      .insert([facturaData])
-      .select()
-      .single();
-
-    if (facturaError || !factura) {
-      console.error("Error al crear factura:", facturaError);
-      alert(`Error al procesar el pago: ${facturaError?.message || "Error desconocido"}`);
-      setCharging(false);
-      return;
+    if (tenantId) {
+      const isOnline = navigator.onLine;
+      if (isOnline) {
+        try {
+          const { data: factura, error: facturaError } = await insforgeClient.database
+            .from("facturas")
+            .insert([facturaData])
+            .select()
+            .single();
+          if (!facturaError && factura) {
+            await enqueueLocalWrite({
+              tenantId,
+              tableName: "facturas",
+              rowId: (factura as { id: string }).id,
+              op: "insert",
+              payload: { ...facturaData, id: (factura as { id: string }).id },
+              deviceId: await getDeviceId(),
+            });
+          } else {
+            await enqueueLocalWrite({
+              tenantId,
+              tableName: "facturas",
+              rowId: localFacturaId,
+              op: "insert",
+              payload: facturaData,
+              deviceId: await getDeviceId(),
+            });
+          }
+        } catch {
+          await enqueueLocalWrite({
+            tenantId,
+            tableName: "facturas",
+            rowId: localFacturaId,
+            op: "insert",
+            payload: facturaData,
+            deviceId: await getDeviceId(),
+          });
+        }
+      } else {
+        await enqueueLocalWrite({
+          tenantId,
+          tableName: "facturas",
+          rowId: localFacturaId,
+          op: "insert",
+          payload: facturaData,
+          deviceId: await getDeviceId(),
+        });
+      }
     }
 
     if (tenantId && ncfPart && !ncfPart.sequenceReservedAtomically) {
       await incrementTenantNcfSequence(tenantId, ncfPart.tipoCodigo, ncfPart.usedSequence);
     }
 
-    await printFactura(factura.id, factura.numero_factura);
+    let tenantPrintData: { nombre_negocio: string | null; rnc: string | null; direccion: string | null; telefono: string | null; logo_url: string | null } | null = null;
+    try {
+      const { data: t } = await insforgeClient.database.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url").eq("id", tenantId).maybeSingle();
+      tenantPrintData = t;
+    } catch { /* offline: skip tenant print data */ }
+    if (tenantPrintData) {
+      await printFactura(facturaData, tenantPrintData, 0);
+    }
 
     setCart([]);
     setTakeoutClientRnc("");

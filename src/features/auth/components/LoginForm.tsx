@@ -118,9 +118,12 @@ export function Login() {
 
       if (parsed.enabled !== true) return;
 
-      setEmail(typeof parsed.email === "string" ? parsed.email : "");
-      setPassword(typeof parsed.password === "string" ? parsed.password : "");
+      const rememberedEmail = typeof parsed.email === "string" ? parsed.email : "";
+      setEmail(rememberedEmail);
       setRememberLogin(true);
+      if ("password" in parsed) {
+        localStorage.setItem(REMEMBER_LOGIN_KEY, JSON.stringify({ enabled: true, email: rememberedEmail }));
+      }
     } catch {
       localStorage.removeItem(REMEMBER_LOGIN_KEY);
     }
@@ -166,7 +169,6 @@ export function Login() {
           JSON.stringify({
             enabled: true,
             email,
-            password,
           })
         );
       } else {
@@ -399,7 +401,7 @@ export function Login() {
                         Recordar
                       </span>
                       <span className="font-['Inter',sans-serif] text-[#7c7c7c] text-[10px] sm:text-[11px] leading-relaxed">
-                        Guarda credenciales en este equipo
+                        Guarda solo el correo; nunca la contraseña
                       </span>
                     </div>
                   </div>

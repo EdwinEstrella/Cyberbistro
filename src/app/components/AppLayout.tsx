@@ -14,6 +14,8 @@ import {
 } from "../../shared/lib/roleNav";
 import { RoleGuard } from "./RoleGuard";
 import { useAppUpdate } from "../../features/updates/AppUpdateContext";
+import { LocalFirstStatusBadge } from "../../shared/components/LocalFirstStatusBadge";
+import { useLocalFirstBootstrap } from "../../shared/hooks/useLocalFirstBootstrap";
 
 const mainNavItems = [
   { label: "Venta", customIcon: "venta", path: "/dashboard" },
@@ -150,6 +152,7 @@ export function AppLayout() {
   const routerLocation = useLocation();
   const { rol, signOut, tenantId } = useAuth();
   const { hasUpdateBellAlert, showUpdateBellToast } = useAppUpdate();
+  const localFirst = useLocalFirstBootstrap(tenantId);
   const [cocinaActiva, setCocinaActiva] = useState(true);
   const [ventaCartSearch, setVentaCartSearch] = useState("");
   const [sidebarHidden, setSidebarHidden] = useState(false);
@@ -299,6 +302,13 @@ export function AppLayout() {
           </nav>
 
           <div className="border-t border-sidebar-border px-[16px] py-[16px] flex flex-col gap-[8px]">
+            <LocalFirstStatusBadge
+              status={localFirst.status}
+              message={localFirst.message}
+              completedHistoryTables={localFirst.completedHistoryTables}
+              totalHistoryTables={localFirst.totalHistoryTables}
+            />
+
             {/* Ajustes — solo administrador del negocio */}
             {showAjustesInSidebar(rol) && (
               <button

@@ -7,6 +7,7 @@ import { PinGateModal } from "../../../shared/components/PinGate";
 import { buildCierreDiaReceiptHtml, buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
+import { readLocalMirror, getLocalFirstStatusSnapshot } from "../../../shared/lib/localFirst";
 // useTheme removed
 import {
   Dialog,
@@ -56,6 +57,7 @@ interface CierreOperativoRow {
   opened_at: string;
   closed_at: string | null;
   printed_at: string | null;
+  created_at: string;
 }
 
 interface ExpenseCategory {
@@ -171,6 +173,16 @@ function formatDateTime(iso: string | null | undefined): string {
   });
 }
 
+function getCycleStartIso(cycle: Pick<CierreOperativoRow, "opened_at" | "created_at">): string {
+  return new Date(cycle.created_at).getTime() < new Date(cycle.opened_at).getTime()
+    ? cycle.created_at
+    : cycle.opened_at;
+}
+
+function getInvoiceCycleIso(invoice: Pick<Invoice, "estado" | "created_at" | "pagada_at">): string {
+  return invoice.estado === "pagada" && invoice.pagada_at ? invoice.pagada_at : invoice.created_at;
+}
+
 function getMethodDisplay(method: string): { label: string; pillClass: string } {
   switch (method) {
     case "efectivo":
@@ -226,7 +238,7 @@ export function Billing() {
   const [dateTo, setDateTo] = useState("");
   const [expandedCycleId, setExpandedCycleId] = useState<string | null>(null);
 
-  const loadBillingData = useCallback(async () => {
+const loadBillingData = useCallback(async () => {
     if (!tenantId) {
       setInvoices([]);
       setCycles([]);
@@ -237,26 +249,41 @@ export function Billing() {
     }
 
     setLoading(true);
+
+    let localMode = false;
+    try {
+      const snapshot = await getLocalFirstStatusSnapshot(tenantId);
+      localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
+    } catch { /* continue with remote */ }
+
     const [invoicesRes, cyclesRes, expensesRes, expenseCategoriesRes] = await Promise.all([
-      insforgeClient.database
-        .from("facturas")
-        .select("*")
-        .eq("tenant_id", tenantId)
-        .order("created_at", { ascending: false }),
-      insforgeClient.database
-        .from("cierres_operativos")
-        .select("id, business_day, cycle_number, opened_at, closed_at, printed_at")
-        .eq("tenant_id", tenantId)
-        .order("opened_at", { ascending: false }),
-      insforgeClient.database
-        .from("gastos")
-        .select("*")
-        .eq("tenant_id", tenantId)
-        .order("fecha_gasto", { ascending: false }),
-      insforgeClient.database
-        .from("gasto_categorias")
-        .select("id, nombre, color")
-        .eq("tenant_id", tenantId),
+      localMode
+        ? { data: await readLocalMirror<Invoice>(tenantId, "facturas").then(r => r.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())), error: null }
+        : insforgeClient.database
+            .from("facturas")
+            .select("*")
+            .eq("tenant_id", tenantId)
+            .order("created_at", { ascending: false }),
+      localMode
+        ? { data: await readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos").then(r => r.sort((a, b) => (b.cycle_number || 0) - (a.cycle_number || 0))), error: null }
+        : insforgeClient.database
+            .from("cierres_operativos")
+            .select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at")
+            .eq("tenant_id", tenantId)
+            .order("opened_at", { ascending: false }),
+      localMode
+        ? { data: await readLocalMirror<Expense>(tenantId, "gastos").then(r => r.sort((a, b) => new Date(b.fecha_gasto || 0).getTime() - new Date(a.fecha_gasto || 0).getTime())), error: null }
+        : insforgeClient.database
+            .from("gastos")
+            .select("*")
+            .eq("tenant_id", tenantId)
+            .order("fecha_gasto", { ascending: false }),
+      localMode
+        ? { data: await readLocalMirror<ExpenseCategory>(tenantId, "gasto_categorias"), error: null }
+        : insforgeClient.database
+            .from("gasto_categorias")
+            .select("id, nombre, color")
+            .eq("tenant_id", tenantId),
     ]);
 
     if (!invoicesRes.error && invoicesRes.data) {
@@ -318,16 +345,17 @@ export function Billing() {
     const expenseCategoryById = new Map(expenseCategories.map((cat) => [cat.id, cat]));
 
     return cycles.map((cycle) => {
+      const cycleStartIso = getCycleStartIso(cycle);
       const cycleEndIso = cycle.closed_at ?? new Date().toISOString();
       const cycleInvoices = invoices
         .filter((inv) => {
-          const createdAt = new Date(inv.created_at).getTime();
+          const invoiceCycleAt = new Date(getInvoiceCycleIso(inv)).getTime();
           return (
-            createdAt >= new Date(cycle.opened_at).getTime() &&
-            createdAt <= new Date(cycleEndIso).getTime()
+            invoiceCycleAt >= new Date(cycleStartIso).getTime() &&
+            invoiceCycleAt <= new Date(cycleEndIso).getTime()
           );
         })
-        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+        .sort((a, b) => new Date(getInvoiceCycleIso(a)).getTime() - new Date(getInvoiceCycleIso(b)).getTime());
       const cycleExpenses = expenses
         .filter((expense) => expense.cycle_id === cycle.id)
         .sort((a, b) => new Date(a.fecha_gasto).getTime() - new Date(b.fecha_gasto).getTime());
@@ -557,7 +585,7 @@ export function Billing() {
           cicloNumero: entry.cycle.cycle_number,
           generadoEn: formatDateTime(new Date().toISOString()),
           generadoAtIso: new Date().toISOString(),
-          abiertoAtIso: entry.cycle.opened_at,
+          abiertoAtIso: getCycleStartIso(entry.cycle),
           cerradoAtIso: entry.cycle.closed_at,
           facturasPagadas: entry.paidInvoices.length,
           facturasPendientes: entry.pendingInvoices.length,

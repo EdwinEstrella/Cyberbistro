@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, ReceiptText, RefreshCw, Sparkles, Tag, Trash2, WalletCards } from "lucide-react";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
+import { getLocalFirstStatusSnapshot, readLocalMirror, enqueueLocalWrite, getDeviceId } from "../../../shared/lib/localFirst";
 
 interface CategoriaGasto {
   id: string;
@@ -98,36 +99,33 @@ export function Gastos() {
 
     setLoading(true);
     setMessage("");
-    const [categoriasRes, gastosRes, cicloRes] = await Promise.all([
-      insforgeClient.database
-        .from("gasto_categorias")
-        .select("id, nombre, descripcion, color, activa")
-        .eq("tenant_id", tenantId)
-        .eq("activa", true)
-        .order("nombre", { ascending: true }),
-      insforgeClient.database
-        .from("gastos")
-        .select("*")
-        .eq("tenant_id", tenantId)
-        .order("fecha_gasto", { ascending: false })
-        .limit(80),
-      insforgeClient.database
-        .from("cierres_operativos")
-        .select("id, cycle_number, opened_at")
-        .eq("tenant_id", tenantId)
-        .is("closed_at", null)
-        .order("opened_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-    ]);
 
-    setCategorias((categoriasRes.data as CategoriaGasto[] | null) ?? []);
-    setGastos((gastosRes.data as GastoRow[] | null) ?? []);
-    setCicloAbierto((cicloRes.data as CicloAbierto | null) ?? null);
+    try {
+      const snapshot = await getLocalFirstStatusSnapshot(tenantId);
+      const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
 
-    if (categoriasRes.error) setMessage(categoriasRes.error.message);
-    else if (gastosRes.error) setMessage(gastosRes.error.message);
-    else if (cicloRes.error) setMessage(cicloRes.error.message);
+      const [categoriasData, gastosData, ciclosData] = await Promise.all([
+        localMode
+          ? readLocalMirror<CategoriaGasto>(tenantId, "gasto_categorias")
+          : insforgeClient.database.from("gasto_categorias").select("id, nombre, descripcion, color, activa").eq("tenant_id", tenantId).eq("activa", true).order("nombre", { ascending: true }).then(r => r.data ?? []),
+        localMode
+          ? readLocalMirror<GastoRow>(tenantId, "gastos")
+          : insforgeClient.database.from("gastos").select("*").eq("tenant_id", tenantId).order("fecha_gasto", { ascending: false }).limit(80).then(r => r.data ?? []),
+        localMode
+          ? readLocalMirror<CicloAbierto>(tenantId, "cierres_operativos")
+          : insforgeClient.database.from("cierres_operativos").select("id, cycle_number, opened_at, closed_at").eq("tenant_id", tenantId).is("closed_at", null).order("opened_at", { ascending: false }).limit(1).then(r => r.data ?? []),
+      ]);
+
+      setCategorias(localMode ? (categoriasData as CategoriaGasto[]).filter(c => c.activa) : (categoriasData as CategoriaGasto[]));
+      
+      const gList = localMode ? (gastosData as GastoRow[]).sort((a, b) => new Date(b.fecha_gasto).getTime() - new Date(a.fecha_gasto).getTime()).slice(0, 80) : (gastosData as GastoRow[]);
+      setGastos(gList);
+      
+      const openCycle = localMode ? (ciclosData as any[]).filter(c => !c.closed_at).sort((a, b) => new Date(b.opened_at).getTime() - new Date(a.opened_at).getTime())[0] ?? null : (ciclosData as any[])[0] ?? null;
+      setCicloAbierto(openCycle);
+    } catch (err: any) {
+      setMessage(err.message);
+    }
 
     setLoading(false);
   }, [tenantId]);
@@ -171,18 +169,20 @@ export function Gastos() {
 
     setSaving(true);
     setMessage("");
-    const { error } = await insforgeClient.database.from("gasto_categorias").insert([
-      {
-        tenant_id: tenantId,
-        nombre,
-        descripcion: categoriaForm.descripcion.trim() || null,
-        color: categoriaForm.color,
-      },
-    ]);
-    if (error) setMessage(error.message);
-    else {
+    try {
+      const id = crypto.randomUUID();
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "gasto_categorias",
+        rowId: id,
+        op: "insert",
+        payload: { id, tenant_id: tenantId, nombre, descripcion: categoriaForm.descripcion.trim() || null, color: categoriaForm.color, activa: true },
+        deviceId: await getDeviceId(),
+      });
       setCategoriaForm({ nombre: "", descripcion: "", color: "#ff906d" });
       await cargar();
+    } catch (err: any) {
+      setMessage(err.message);
     }
     setSaving(false);
   }
@@ -191,11 +191,20 @@ export function Gastos() {
     if (!tenantId) return;
     setSaving(true);
     setMessage("");
-    const { error } = await insforgeClient.database.from("gasto_categorias").insert([
-      { tenant_id: tenantId, nombre: cat.nombre, descripcion: cat.descripcion, color: cat.color },
-    ]);
-    if (error) setMessage(error.message);
-    else await cargar();
+    try {
+      const id = crypto.randomUUID();
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "gasto_categorias",
+        rowId: id,
+        op: "insert",
+        payload: { id, tenant_id: tenantId, nombre: cat.nombre, descripcion: cat.descripcion, color: cat.color, activa: true },
+        deviceId: await getDeviceId(),
+      });
+      await cargar();
+    } catch (err: any) {
+      setMessage(err.message);
+    }
     setSaving(false);
   }
 
@@ -215,22 +224,28 @@ export function Gastos() {
 
     setSaving(true);
     setMessage("");
-    const { error } = await insforgeClient.database.from("gastos").insert([
-      {
-        tenant_id: tenantId,
-        category_id: gastoForm.category_id || null,
-        cycle_id: cicloAbierto.id,
-        descripcion,
-        proveedor: gastoForm.proveedor.trim() || null,
-        monto,
-        metodo_pago: gastoForm.metodo_pago || null,
-        fecha_gasto: new Date(gastoForm.fecha_gasto).toISOString(),
-        notas: gastoForm.notas.trim() || null,
-        created_by_auth_user_id: user?.id ?? null,
-      },
-    ]);
-    if (error) setMessage(error.message);
-    else {
+    try {
+      const id = crypto.randomUUID();
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "gastos",
+        rowId: id,
+        op: "insert",
+        payload: {
+          id,
+          tenant_id: tenantId,
+          category_id: gastoForm.category_id || null,
+          cycle_id: cicloAbierto.id,
+          descripcion,
+          proveedor: gastoForm.proveedor.trim() || null,
+          monto,
+          metodo_pago: gastoForm.metodo_pago || null,
+          fecha_gasto: new Date(gastoForm.fecha_gasto).toISOString(),
+          notas: gastoForm.notas.trim() || null,
+          created_by_auth_user_id: user?.id ?? null,
+        },
+        deviceId: await getDeviceId(),
+      });
       setGastoForm({
         descripcion: "",
         monto: "",
@@ -242,6 +257,8 @@ export function Gastos() {
       });
       await cargar();
       setMessage(`Gasto registrado en ciclo #${cicloAbierto.cycle_number}.`);
+    } catch (err: any) {
+      setMessage(err.message);
     }
     setSaving(false);
   }
@@ -252,9 +269,18 @@ export function Gastos() {
     if (!ok) return;
     setSaving(true);
     setMessage("");
-    const { error } = await insforgeClient.database.from("gastos").delete().eq("id", gasto.id).eq("tenant_id", tenantId);
-    if (error) setMessage(error.message);
-    else await cargar();
+    try {
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "gastos",
+        rowId: gasto.id,
+        op: "delete",
+        deviceId: await getDeviceId(),
+      });
+      await cargar();
+    } catch (err: any) {
+      setMessage(err.message);
+    }
     setSaving(false);
   }
 
