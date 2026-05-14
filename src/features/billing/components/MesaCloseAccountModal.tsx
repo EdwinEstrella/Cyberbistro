@@ -111,7 +111,7 @@ async function loadTableConsumption(
         return Number(entry.payload?.mesa_numero) === mesaNumero;
       });
 
-      if (localPendingRows.length > 0 || hasPendingMesaWrites) {
+      if (hasPendingMesaWrites) {
         return localPendingRows;
       }
     }
@@ -530,14 +530,14 @@ export function MesaCloseAccountModal({
 
         await printFactura(localFacturaId, Number(insertRow.numero_factura));
 
-        const consumoIds = consumosToInvoice.map((c) => c.id);
-        for (const cid of consumoIds) {
+        for (const consumo of consumosToInvoice) {
           await enqueueLocalWrite({
             tenantId,
             tableName: "consumos",
-            rowId: cid,
+            rowId: consumo.id,
             op: "update",
             payload: {
+              mesa_numero: consumo.mesa_numero ?? mesaNumero,
               estado: "pagado",
               factura_id: localFacturaId,
               updated_at: new Date().toISOString(),
@@ -654,14 +654,14 @@ export function MesaCloseAccountModal({
 
     await printFactura(localFacturaId, nextFacturaNumber);
 
-    const consumoIds = consumosToBill.map((c) => c.id);
-    for (const cid of consumoIds) {
+    for (const consumo of consumosToBill) {
       await enqueueLocalWrite({
         tenantId,
         tableName: "consumos",
-        rowId: cid,
+        rowId: consumo.id,
         op: "update",
         payload: {
+          mesa_numero: consumo.mesa_numero ?? mesaNumero,
           estado: "pagado",
           factura_id: localFacturaId,
           updated_at: new Date().toISOString(),

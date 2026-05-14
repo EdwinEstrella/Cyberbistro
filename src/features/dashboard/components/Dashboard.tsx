@@ -200,7 +200,8 @@ export function Dashboard() {
               .eq("tenant_id", tenantId)
               .then(r => r.data ?? []),
         localMode
-          ? readLocalMirror<{ mesa_numero: number | null; subtotal: number }>(tenantId, "consumos")
+          ? readLocalMirror<{ mesa_numero: number | null; subtotal: number; estado?: string }>(tenantId, "consumos")
+              .then(rows => rows.filter(row => row.estado !== "pagado"))
           : insforgeClient.database
               .from("consumos")
               .select("mesa_numero, subtotal")
