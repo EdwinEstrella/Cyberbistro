@@ -14,7 +14,7 @@ import {
   UNLINKED_ACCOUNT_MESSAGE,
   resolveTenantAccessForSession,
 } from "../../../shared/lib/resolveTenantUserFromAuth";
-import { hydrateAuthStateAfterLogin, syncAuthClientAfterLogin } from "../../../shared/hooks/useAuth";
+import { hydrateAuthStateAfterLogin, syncAuthClientAfterLogin, useAuth } from "../../../shared/hooks/useAuth";
 import { defaultRouteForRol } from "../../../shared/lib/roleNav";
 import { PinGateModal } from "../../../shared/components/PinGate";
 import { hashPin, saveLocalDeviceSession } from "../../../shared/lib/localFirst";

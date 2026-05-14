@@ -52,7 +52,8 @@ import {
   type NcfBCode,
 } from "../../../shared/lib/ncf";
 import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
-import { getLocalFirstStatusSnapshot, readLocalMirror, enqueueLocalWrite, getDeviceId } from "../../../shared/lib/localFirst";
+import { getLocalFirstStatusSnapshot, readLocalMirror, enqueueLocalWrite, getDeviceId, writeLocalMirrorRow } from "../../../shared/lib/localFirst";
+import { getNextFacturaNumber } from "../../../shared/lib/invoiceNumber";
 
 interface Plato {
   id: number;
@@ -789,10 +790,11 @@ export function Dashboard() {
 
     const localFacturaId = crypto.randomUUID();
     const nowIso = new Date().toISOString();
+    const numeroFactura = await getNextFacturaNumber(tenantId);
     const facturaData: Record<string, unknown> = {
       id: localFacturaId,
       tenant_id: tenantId,
-      numero_factura: 0,
+      numero_factura: numeroFactura,
       metodo_pago: paymentMethod,
       estado: "pagada" as const,
       subtotal,
@@ -823,14 +825,8 @@ export function Dashboard() {
             .select()
             .single();
           if (!facturaError && factura) {
-            await enqueueLocalWrite({
-              tenantId,
-              tableName: "facturas",
-              rowId: (factura as { id: string }).id,
-              op: "insert",
-              payload: { ...facturaData, id: (factura as { id: string }).id },
-              deviceId: await getDeviceId(),
-            });
+            await writeLocalMirrorRow(tenantId, "facturas", factura as Record<string, unknown>);
+            Object.assign(facturaData, factura);
           } else {
             await enqueueLocalWrite({
               tenantId,
@@ -873,7 +869,7 @@ export function Dashboard() {
       tenantPrintData = t;
     } catch { /* offline: skip tenant print data */ }
     if (tenantPrintData) {
-      await printFactura(facturaData, tenantPrintData, 0);
+      await printFactura(facturaData, tenantPrintData, Number(facturaData.numero_factura) || numeroFactura);
     }
 
     setCart([]);

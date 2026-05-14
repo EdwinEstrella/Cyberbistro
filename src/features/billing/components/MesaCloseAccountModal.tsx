@@ -16,7 +16,8 @@ import {
   type NcfBCode,
 } from "../../../shared/lib/ncf";
 import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
-import { enqueueLocalWrite, getDeviceId, getLocalFirstStatusSnapshot, readLocalMirror } from "../../../shared/lib/localFirst";
+import { enqueueLocalWrite, getDeviceId, getLocalFirstStatusSnapshot, readLocalMirror, readLocalOutbox } from "../../../shared/lib/localFirst";
+import { getNextFacturaNumber } from "../../../shared/lib/invoiceNumber";
 
 const ITBIS = 0.18;
 
@@ -83,6 +84,41 @@ async function loadTableConsumption(
   tenantId: string,
   mesaNumero: number
 ): Promise<MesaConsumoRow[]> {
+  try {
+    const snapshot = await getLocalFirstStatusSnapshot(tenantId);
+    const shouldTrustLocal =
+      snapshot.status === "history_complete" ||
+      snapshot.status === "ready_history_syncing" ||
+      (typeof navigator !== "undefined" && !navigator.onLine);
+
+    if (shouldTrustLocal) {
+      const localRows = await readLocalMirror<MesaConsumoRow>(tenantId, "consumos");
+      const mesaRows = localRows
+        .filter((row) => row.mesa_numero === mesaNumero)
+        .sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
+      const localPendingRows = mesaRows.filter((row) => row.estado !== "pagado");
+
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        return localPendingRows;
+      }
+
+      const mesaRowIds = new Set(mesaRows.map((row) => row.id));
+      const outbox = await readLocalOutbox(tenantId);
+      const hasPendingMesaWrites = outbox.some((entry) => {
+        if (entry.status !== "pending" && entry.status !== "syncing" && entry.status !== "error") return false;
+        if (entry.table_name !== "consumos") return false;
+        if (mesaRowIds.has(entry.row_id)) return true;
+        return Number(entry.payload?.mesa_numero) === mesaNumero;
+      });
+
+      if (localPendingRows.length > 0 || hasPendingMesaWrites) {
+        return localPendingRows;
+      }
+    }
+  } catch {
+    if (typeof navigator !== "undefined" && !navigator.onLine) return [];
+  }
+
   const { data, error } = await insforgeClient.database
     .from("consumos")
     .select("*")
@@ -435,14 +471,7 @@ export function MesaCloseAccountModal({
 
     try {
       const deviceId = await getDeviceId();
-      const snapshot = await getLocalFirstStatusSnapshot(tenantId);
-      const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
-      
-      let nextLocalInvoiceNum = 0;
-      if (localMode) {
-        const allLocalInvoices = await readLocalMirror<any>(tenantId, "facturas");
-        nextLocalInvoiceNum = allLocalInvoices.reduce((m, f) => Math.max(m, f.numero_factura || 0), 0) + 1;
-      }
+      let nextFacturaNumber = await getNextFacturaNumber(tenantId);
 
       for (const personIndex of order) {
         const consumosToInvoice = groups.get(personIndex)!;
@@ -464,7 +493,7 @@ export function MesaCloseAccountModal({
         const insertRow: Record<string, unknown> = {
           id: localFacturaId,
           tenant_id: tenantId,
-          numero_factura: localMode ? nextLocalInvoiceNum++ : 0,
+          numero_factura: nextFacturaNumber++,
           mesa_numero: mesaNumero,
           metodo_pago: paymentMethod,
           estado: "pagada",
@@ -499,7 +528,7 @@ export function MesaCloseAccountModal({
           await incrementTenantNcfSequence(tenantId, ncfPart.tipoCodigo, ncfPart.usedSequence);
         }
 
-        await printFactura(localFacturaId, 0);
+        await printFactura(localFacturaId, Number(insertRow.numero_factura));
 
         const consumoIds = consumosToInvoice.map((c) => c.id);
         for (const cid of consumoIds) {
@@ -569,14 +598,7 @@ export function MesaCloseAccountModal({
     await ensureAuthSessionFresh();
 
     const deviceId = await getDeviceId();
-    const snapshot = await getLocalFirstStatusSnapshot(tenantId);
-    const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
-
-    let nextLocalInvoiceNum = 0;
-    if (localMode) {
-      const allLocalInvoices = await readLocalMirror<any>(tenantId, "facturas");
-      nextLocalInvoiceNum = allLocalInvoices.reduce((m, f) => Math.max(m, f.numero_factura || 0), 0) + 1;
-    }
+    const nextFacturaNumber = await getNextFacturaNumber(tenantId);
 
     const consumosToBill = mesaConsumos;
     const { facturaItems, subtotal, itbis, total } = await groupConsumosForFactura(
@@ -595,7 +617,7 @@ export function MesaCloseAccountModal({
     const facturaData: Record<string, unknown> = {
       id: localFacturaId,
       tenant_id: tenantId,
-      numero_factura: localMode ? nextLocalInvoiceNum : 0,
+      numero_factura: nextFacturaNumber,
       metodo_pago: paymentMethod,
       estado: "pagada",
       subtotal,
@@ -630,7 +652,7 @@ export function MesaCloseAccountModal({
       await incrementTenantNcfSequence(tenantId, ncfPart.tipoCodigo, ncfPart.usedSequence);
     }
 
-    await printFactura(localFacturaId, 0);
+    await printFactura(localFacturaId, nextFacturaNumber);
 
     const consumoIds = consumosToBill.map((c) => c.id);
     for (const cid of consumoIds) {

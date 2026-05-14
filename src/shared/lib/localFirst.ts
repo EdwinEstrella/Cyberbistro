@@ -672,6 +672,28 @@ export async function readLocalMirror<T = Record<string, unknown>>(
   }
 }
 
+export async function readLocalOutbox<T = SyncOutboxEntry>(tenantId: string): Promise<T[]> {
+  const db = await openLocalFirstDbForSync(tenantId);
+  try {
+    return await getAllFromStore<T>(db, "sync_outbox");
+  } finally {
+    db.close();
+  }
+}
+
+export async function writeLocalMirrorRow<T extends Record<string, unknown>>(
+  tenantId: string,
+  tableName: LocalFirstMirrorTable,
+  row: T
+): Promise<void> {
+  const db = await openLocalFirstDbForSync(tenantId);
+  try {
+    await putOne(db, tableName, row);
+  } finally {
+    db.close();
+  }
+}
+
 export async function readLocalMirrorRow<T = Record<string, unknown>>(
   tenantId: string,
   tableName: LocalFirstMirrorTable,
