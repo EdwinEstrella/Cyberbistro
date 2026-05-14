@@ -358,22 +358,24 @@ export function AppLayout() {
               </button>
             )}
 
-            <button
-              type="button"
-              className="flex gap-[16px] items-center px-[16px] py-[12px] cursor-pointer border border-[rgba(72,72,71,0.2)] bg-transparent text-left w-full rounded-[8px] text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors mt-2"
-              onClick={() => {
-                localStorage.setItem("cloudix_pos_locked", "true");
-                setIsLocked(true);
-              }}
-            >
-              <svg className="shrink-0 size-[18px]" fill="none" viewBox="0 0 24 24" aria-hidden>
-                <rect x="5" y="11" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                <path d="M8 11V7a4 4 0 0 1 8 0v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-              <span className="font-['Space_Grotesk',sans-serif] text-[16px] tracking-[-0.4px]">
-                Bloquear Caja
-              </span>
-            </button>
+            {Boolean((window as any).electronAPI) && (
+              <button
+                type="button"
+                className="flex gap-[16px] items-center px-[16px] py-[12px] cursor-pointer border border-[rgba(72,72,71,0.2)] bg-transparent text-left w-full rounded-[8px] text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors mt-2"
+                onClick={() => {
+                  localStorage.setItem("cloudix_pos_locked", "true");
+                  setIsLocked(true);
+                }}
+              >
+                <svg className="shrink-0 size-[18px]" fill="none" viewBox="0 0 24 24" aria-hidden>
+                  <rect x="5" y="11" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M8 11V7a4 4 0 0 1 8 0v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                <span className="font-['Space_Grotesk',sans-serif] text-[16px] tracking-[-0.4px]">
+                  Bloquear Caja
+                </span>
+              </button>
+            )}
 
             <button
               type="button"

@@ -133,8 +133,10 @@ export function Login() {
       const rememberedEmail = typeof parsed.email === "string" ? parsed.email : "";
       setEmail(rememberedEmail);
       setRememberLogin(true);
-      if ("password" in parsed) {
-        localStorage.setItem(REMEMBER_LOGIN_KEY, JSON.stringify({ enabled: true, email: rememberedEmail }));
+      
+      const rememberedPassword = typeof parsed.password === "string" ? parsed.password : "";
+      if (rememberedPassword) {
+        setPassword(rememberedPassword);
       }
     } catch {
       localStorage.removeItem(REMEMBER_LOGIN_KEY);
@@ -181,6 +183,7 @@ export function Login() {
           JSON.stringify({
             enabled: true,
             email,
+            password,
           })
         );
       } else {
@@ -214,8 +217,15 @@ export function Login() {
         return;
       }
       
-      setPendingAuth({ user: data.user, accessRow: access.row });
-      setShowPinSetup(true);
+      if (Boolean((window as any).electronAPI)) {
+        setPendingAuth({ user: data.user, accessRow: access.row });
+        setShowPinSetup(true);
+      } else {
+        hydrateAuthStateAfterLogin(data.user, access.row);
+        const dest = defaultRouteForRol(access.row.rol);
+        setIsVisible(false);
+        setTimeout(() => navigate(dest), 300);
+      }
     }
     setIsLoading(false);
   }, [email, isLoading, password, navigate, rememberLogin]);

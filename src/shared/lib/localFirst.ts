@@ -881,19 +881,19 @@ async function pullTablePage(tableName: LocalFirstMirrorTable, tenantId: string,
   let query = insforgeClient.database
     .from(tableName)
     .select("*")
-    .order("id", { ascending: true })
+    .order(tableName === "configuracion" ? "clave" : "id", { ascending: true })
     .range(offset, offset + PAGE_SIZE - 1) as any;
 
   if (shouldFilterByTenant(tableName)) {
     query = query.eq("tenant_id", tenantId);
   } else if (tableName === "configuracion") {
+    // configuracion is global
   } else {
     query = query.eq("id", tenantId);
   }
 
   return query;
 }
-
 export async function bootstrapLocalFirstPhase(args: {
   tenantId: string;
   phase: LocalFirstPhase;

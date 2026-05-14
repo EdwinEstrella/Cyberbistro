@@ -220,18 +220,23 @@ export function Cierre() {
       if (!useLocalCiclos && (cyclesAll as any).error) { setLoadError((cyclesAll as any).error.message); setLoading(false); return; }
       if (!useLocalCategorias && (categoriasData as any).error) { setLoadError((categoriasData as any).error.message); setLoading(false); return; }
 
-      const cycleRows = (cyclesAll as CierreOperativoRow[]).filter(c => c.business_day === fecha).sort((a, b) => b.cycle_number - a.cycle_number);
-      setCycles(cycleRows);
-      setGastoCategorias((categoriasData as GastoCategoriaRow[]) ?? []);
+      const cycleRowsArray = (useLocalCiclos ? cyclesAll : (cyclesAll as any).data ?? []) as CierreOperativoRow[];
+      const openGlobalArray = (useLocalCiclos ? openGlobal : (openGlobal as any).data ?? []) as CierreOperativoRow[];
+      const consAllArray = (useLocalConsumos ? consAll : (consAll as any).data ?? []) as ConsumoAbiertoRow[];
+      const categoriasArray = (useLocalCategorias ? categoriasData : (categoriasData as any).data ?? []) as GastoCategoriaRow[];
 
-      const openCycle = (openGlobal as CierreOperativoRow[]).find(c => !c.closed_at) ?? null;
+      const cycleRows = cycleRowsArray.filter(c => c.business_day === fecha).sort((a, b) => b.cycle_number - a.cycle_number);
+      setCycles(cycleRows);
+      setGastoCategorias(categoriasArray);
+
+      const openCycle = openGlobalArray.find(c => !c.closed_at) ?? null;
       const sel = openCycle ?? cycleRows[0] ?? null;
 
       if (sel) {
         const [factData, gastosData] = await Promise.all([
           shouldReadLocalFirst(tenantId, ["facturas"]).then(useLocal => useLocal
             ? readLocalMirror<FacturaRow>(tenantId, "facturas")
-            : insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: true }).then(r => r.data ?? [])),
+            : insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: false }).then(r => r.data ?? [])),
           shouldReadLocalFirst(tenantId, ["gastos"]).then(useLocal => useLocal
             ? readLocalMirror<GastoRow>(tenantId, "gastos").then(gs => gs.filter(g => g.cycle_id === sel.id))
             : insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, fecha_gasto").eq("tenant_id", tenantId).eq("cycle_id", sel.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? [])),
@@ -245,7 +250,7 @@ export function Cierre() {
         setGastos([]);
       }
 
-      const consumosAbiertosData = (consAll as ConsumoAbiertoRow[]) ?? [];
+      const consumosAbiertosData = consAllArray;
       setConsumosAbiertos(sel?.closed_at == null ? consumosAbiertosData.filter(c => c.estado !== "pagado") : []);
       setGlobalHasOpenCycle(!!openCycle);
     } catch (err) {
@@ -339,7 +344,7 @@ export function Cierre() {
       const [facturasAll, gastosAll] = await Promise.all([
       useLocalFacturas
         ? readLocalMirror<FacturaRow>(tenantId, "facturas")
-        : insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: true }).then(r => r.data ?? []),
+        : insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: false }).then(r => r.data ?? []),
       useLocalGastos
         ? readLocalMirror<GastoRow>(tenantId, "gastos").then(gs => gs.filter(g => g.cycle_id === currentCycle.id))
         : insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, fecha_gasto").eq("tenant_id", tenantId).eq("cycle_id", currentCycle.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? []),

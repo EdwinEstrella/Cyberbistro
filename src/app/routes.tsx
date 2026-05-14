@@ -8,6 +8,7 @@ export const router = createHashRouter([
   { path: "/super-admin", lazy: () => import("../features/super-admin").then(({ SuperAdmin }) => ({ Component: SuperAdmin })) },
   {
     Component: AppLayout,
+    HydrateFallback: () => null,
     children: [
       { path: "/dashboard", lazy: () => import("../features/dashboard").then(({ Dashboard }) => ({ Component: Dashboard })) },
       { path: "/tables", lazy: () => import("../features/tables").then(({ Tables }) => ({ Component: Tables })) },
@@ -21,4 +22,6 @@ export const router = createHashRouter([
       { path: "/ajustes", lazy: () => import("../features/ajustes").then(({ Ajustes }) => ({ Component: Ajustes })) },
     ],
   },
-]);
+], {
+  hydrationData: undefined,
+});

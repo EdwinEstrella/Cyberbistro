@@ -46,6 +46,8 @@ let initializedOnce = false;
 let activeConsumers = 0;
 let cleanupGlobalListeners: (() => void) | null = null;
 
+let isSigningOut = false;
+
 const subscribers = new Set<() => void>();
 
 const initialCached = readTenantSessionCache();
@@ -340,6 +342,11 @@ async function loadUserDataShared(opts?: { silent?: boolean }): Promise<void> {
 }
 
 async function doRefreshShared(): Promise<void> {
+  if (isSigningOut) {
+    logAuth('focus/visibility/interval refresh skipped (signing out)');
+    return;
+  }
+
   const currentUser = sharedState.user;
   logAuth('focus/visibility/interval refresh triggered', {
     hasUser: Boolean(currentUser),
@@ -479,15 +486,22 @@ export function useAuth() {
   }, []);
 
   const signOut = useCallback(async () => {
+    isSigningOut = true;
     logAuth('signOut:start');
-    const { error } = await insforgeClient.auth.signOut();
-    if (error) console.error('Error signing out:', error);
-    refreshInFlight = null;
-    loadUserDataInFlight = null;
-    refreshBlockedUntil = 0;
-    initializedOnce = false;
-    clearSessionShared();
-    logAuth('signOut:done');
+    try {
+      const { error } = await insforgeClient.auth.signOut();
+      if (error) console.error('Error signing out:', error);
+    } catch (e) {
+      console.error('Exception signing out:', e);
+    } finally {
+      refreshInFlight = null;
+      loadUserDataInFlight = null;
+      refreshBlockedUntil = 0;
+      initializedOnce = false;
+      clearSessionShared();
+      isSigningOut = false;
+      logAuth('signOut:done');
+    }
   }, []);
 
   const refreshSession = useCallback((opts?: { showLoading?: boolean }) => {
