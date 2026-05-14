@@ -1,6 +1,4 @@
 # Dependencies
-.engram*
-.engram/
 node_modules/
 .gemini/
 # Build output
@@ -38,11 +36,6 @@ Thumbs.db
 # yarn.lock
 # InsForge & AI agent skills
 .insforge
-.agent
-.agents
-.augment
-.claude
-.cline
 .github/copilot*
 .kilocode
 .qoder
