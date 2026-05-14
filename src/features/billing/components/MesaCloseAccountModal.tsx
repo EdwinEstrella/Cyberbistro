@@ -469,6 +469,7 @@ export function MesaCloseAccountModal({
     setCharging(true);
     await ensureAuthSessionFresh();
 
+    const paidConsumoIds = new Set<string>();
     try {
       const deviceId = await getDeviceId();
       let nextFacturaNumber = await getNextFacturaNumber(tenantId);
@@ -544,13 +545,14 @@ export function MesaCloseAccountModal({
             },
             deviceId,
           });
+          paidConsumoIds.add(consumo.id);
         }
       }
     } finally {
       setCharging(false);
     }
 
-    const updatedConsumos = await refreshConsumos();
+    const updatedConsumos = mesaConsumos.filter((consumo) => !paidConsumoIds.has(consumo.id));
     setMesaConsumos(updatedConsumos);
     await onSettled?.(updatedConsumos);
 
@@ -670,7 +672,8 @@ export function MesaCloseAccountModal({
       });
     }
 
-    const restantes = await refreshConsumos();
+    const paidConsumoIds = new Set(consumosToBill.map((consumo) => consumo.id));
+    const restantes = mesaConsumos.filter((consumo) => !paidConsumoIds.has(consumo.id));
     setMesaConsumos(restantes);
     await onSettled?.(restantes);
 
