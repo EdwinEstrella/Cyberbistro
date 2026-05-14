@@ -94,6 +94,18 @@ export interface SyncOutboxEntry {
 
 const PAGE_SIZE = 250;
 const DB_VERSION = 1;
+const FULL_REFRESH_ON_SYNC_TABLES = [
+  "tenant_users",
+  "platos",
+  "cocina_estado",
+  "cierres_operativos",
+] as const satisfies readonly LocalFirstMirrorTable[];
+
+export function isLocalFirstEnabled(): boolean {
+  if (typeof window === "undefined") return false;
+  if (Boolean((window as Window & { electronAPI?: unknown }).electronAPI)) return true;
+  return import.meta.env.VITE_ENABLE_WEB_LOCAL_FIRST === "true";
+}
 
 export function isLocalFirstMirrorTable(table: string): table is LocalFirstMirrorTable {
   return (LOCAL_FIRST_MIRROR_TABLES as readonly string[]).includes(table);
@@ -232,6 +244,27 @@ async function updateOutboxEntryStatus(
   });
 }
 
+async function writeDirectlyToServer(args: {
+  tableName: LocalFirstMirrorTable;
+  rowId: string;
+  op: SyncOutboxEntry["op"];
+  payload?: Record<string, unknown> | null;
+}): Promise<void> {
+  let result: { error?: { message?: string } | null } | null = null;
+  if (args.op === "insert") {
+    result = await (insforgeClient.database.from(args.tableName).insert([args.payload as Record<string, unknown>]) as any);
+  } else if (args.op === "update") {
+    result = await (insforgeClient.database.from(args.tableName).update(args.payload as Record<string, unknown>).eq("id", args.rowId) as any);
+  } else if (args.op === "upsert") {
+    result = await (insforgeClient.database.from(args.tableName).upsert(args.payload as Record<string, unknown>, { onConflict: "tenant_id,id" }) as any);
+  } else if (args.op === "delete") {
+    result = await (insforgeClient.database.from(args.tableName).delete().eq("id", args.rowId) as any);
+  }
+  if (result?.error) {
+    throw new Error(result.error.message || `No se pudo sincronizar ${args.tableName}.`);
+  }
+}
+
 export async function enqueueLocalWrite(args: {
   tenantId: string;
   tableName: LocalFirstMirrorTable;
@@ -241,6 +274,20 @@ export async function enqueueLocalWrite(args: {
   authUserId?: string | null;
   deviceId: string;
 }): Promise<void> {
+  const isOnline = typeof navigator === "undefined" || navigator.onLine;
+
+  if (isOnline) {
+    await writeDirectlyToServer(args);
+    if (isLocalFirstEnabled()) {
+      await applyLocalMirrorWrite(args);
+    }
+    return;
+  }
+
+  if (!isLocalFirstEnabled()) {
+    throw new Error("La versión web requiere conexión para escribir datos. Usá la app de escritorio para operar offline.");
+  }
+
   const entry = createSyncOutboxEntry({
     tenantId: args.tenantId,
     tableName: args.tableName,
@@ -253,6 +300,16 @@ export async function enqueueLocalWrite(args: {
   await writeLocalOutboxEntry(args.tenantId, entry);
 
   // Apply change locally to mirror table so the UI can see it immediately offline
+  await applyLocalMirrorWrite(args);
+}
+
+async function applyLocalMirrorWrite(args: {
+  tenantId: string;
+  tableName: LocalFirstMirrorTable;
+  rowId: string;
+  op: SyncOutboxEntry["op"];
+  payload?: Record<string, unknown> | null;
+}): Promise<void> {
   const db = await openLocalFirstDbForSync(args.tenantId);
   try {
     await new Promise<void>((resolve, reject) => {
@@ -393,7 +450,11 @@ export async function validateCierreCicleSequence(
   return { valid: true };
 }
 
+const pushOutboxLocks = new Set<string>();
+
 export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: number; failed: number }> {
+  if (pushOutboxLocks.has(tenantId)) return { pushed: 0, failed: 0 };
+  pushOutboxLocks.add(tenantId);
   const db = await openLocalFirstDbForSync(tenantId);
   let pushed = 0;
   let failed = 0;
@@ -446,7 +507,7 @@ export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: nu
       try {
         let result: { data?: unknown; error?: { message?: string } } | null = null;
         if (entry.op === "insert") {
-          result = await (insforgeClient.database.from(entry.table_name).insert(entry.payload as Record<string, unknown>) as any);
+          result = await (insforgeClient.database.from(entry.table_name).insert([entry.payload as Record<string, unknown>]) as any);
         } else if (entry.op === "update") {
           result = await (insforgeClient.database.from(entry.table_name).update(entry.payload as Record<string, unknown>).eq("id", entry.row_id) as any);
         } else if (entry.op === "upsert") {
@@ -469,6 +530,7 @@ export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: nu
     return { pushed, failed };
   } finally {
     db.close();
+    pushOutboxLocks.delete(tenantId);
   }
 }
 
@@ -697,8 +759,10 @@ export async function shouldReadLocalFirst(
   tenantId: string,
   tableNames?: readonly LocalFirstMirrorTable[]
 ): Promise<boolean> {
-  if (typeof navigator !== "undefined" && !navigator.onLine) return true;
-  return hasPendingLocalWrites(tenantId, tableNames);
+  void tenantId;
+  void tableNames;
+  if (!isLocalFirstEnabled()) return false;
+  return typeof navigator !== "undefined" && !navigator.onLine;
 }
 
 export async function writeLocalMirrorRow<T extends Record<string, unknown>>(
@@ -769,6 +833,61 @@ async function pullIncrementalChanges(
   return { rows, newCursor };
 }
 
+async function pullFullTableRows(
+  tenantId: string,
+  tableName: LocalFirstMirrorTable
+): Promise<Record<string, unknown>[]> {
+  let query = insforgeClient.database
+    .from(tableName)
+    .select("*")
+    .order(tableName === "configuracion" ? "clave" : "id", { ascending: true }) as any;
+
+  if (shouldFilterByTenant(tableName)) {
+    query = query.eq("tenant_id", tenantId);
+  } else if (tableName === "configuracion") {
+    // configuracion is global
+  } else {
+    query = query.eq("id", tenantId);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message || `Error full refresh ${tableName}`);
+  return Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
+}
+
+function replaceStoreRows(db: IDBDatabase, storeName: string, rows: readonly object[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(storeName, "readwrite");
+    const store = tx.objectStore(storeName);
+    store.clear();
+    for (const row of rows) store.put(row);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error(`No se pudo reemplazar ${storeName}.`));
+  });
+}
+
+export async function refreshFullTableMirror(
+  tenantId: string,
+  tableName: LocalFirstMirrorTable
+): Promise<number> {
+  const rows = await pullFullTableRows(tenantId, tableName);
+  const db = await openLocalFirstDbForSync(tenantId);
+  try {
+    await replaceStoreRows(db, tableName, rows);
+    await putOne(db, "sync_state", createSyncStateRow({
+      tenantId,
+      tableName,
+      phase: "incremental",
+      cursor: new Date().toISOString(),
+      completed: true,
+      rowCount: rows.length,
+    }));
+    return rows.length;
+  } finally {
+    db.close();
+  }
+}
+
 export async function pullIncrementalChangesForTable(
   tenantId: string,
   tableName: LocalFirstMirrorTable
@@ -807,7 +926,10 @@ export async function syncIncremental(tenantId: string): Promise<{ tablesUpdated
   let tablesUpdated = 0;
   let rowsPulled = 0;
   for (const tableName of LOCAL_FIRST_MIRROR_TABLES) {
-    const pulled = await pullIncrementalChangesForTable(tenantId, tableName);
+    if (await hasPendingLocalWrites(tenantId, [tableName])) continue;
+    const pulled = (FULL_REFRESH_ON_SYNC_TABLES as readonly LocalFirstMirrorTable[]).includes(tableName)
+      ? await refreshFullTableMirror(tenantId, tableName)
+      : await pullIncrementalChangesForTable(tenantId, tableName);
     if (pulled > 0) {
       tablesUpdated++;
       rowsPulled += pulled;

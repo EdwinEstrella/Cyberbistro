@@ -4,6 +4,7 @@ import {
   getLocalFirstStatusSnapshot,
   LOCAL_FIRST_HISTORY_TABLES,
   LOCAL_FIRST_IMMEDIATE_TABLES,
+  isLocalFirstEnabled,
   pushOutboxToServer,
   syncIncremental,
   type LocalFirstStatus,
@@ -31,6 +32,15 @@ export function useLocalFirstBootstrap(tenantId: string | null): LocalFirstBoots
       setState(EMPTY_STATE);
       return;
     }
+    if (!isLocalFirstEnabled()) {
+      setState({
+        status: "idle",
+        message: "Online: usando servidor como fuente de verdad.",
+        completedHistoryTables: 0,
+        totalHistoryTables: LOCAL_FIRST_HISTORY_TABLES.length,
+      });
+      return;
+    }
 
     let cancelled = false;
     const apply = (next: LocalFirstBootstrapState) => {
@@ -44,10 +54,8 @@ export function useLocalFirstBootstrap(tenantId: string | null): LocalFirstBoots
         if (snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing") {
           apply({ ...snapshot, status: "syncing", message: "Sincronizando cambios..." });
           try {
-            const [outboxResult, pullResult] = await Promise.all([
-              pushOutboxToServer(tenantId),
-              syncIncremental(tenantId),
-            ]);
+            const outboxResult = await pushOutboxToServer(tenantId);
+            const pullResult = await syncIncremental(tenantId);
             if (cancelled) return;
             const next = await getLocalFirstStatusSnapshot(tenantId);
             apply({
@@ -87,7 +95,8 @@ export function useLocalFirstBootstrap(tenantId: string | null): LocalFirstBoots
       try {
         const snapshot = await getLocalFirstStatusSnapshot(tenantId);
         if (snapshot.status === "history_complete") {
-          apply({ ...snapshot, message: "Historial completo disponible offline." });
+          apply({ ...snapshot, status: "syncing", message: "Sincronizando cambios..." });
+          await syncOnlineState();
           return;
         }
 

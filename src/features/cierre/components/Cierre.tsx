@@ -59,6 +59,14 @@ function todayYmd(): string {
   return `${y}-${mo}-${da}`;
 }
 
+function toYmd(value: string): string {
+  return value.slice(0, 10);
+}
+
+function sortByOpenedAtDesc<T extends Pick<CierreOperativoRow, "opened_at" | "created_at">>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => new Date(getCycleStartIso(b)).getTime() - new Date(getCycleStartIso(a)).getTime());
+}
+
 function ymdToLongLabel(ymd: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
   if (!match) return ymd;
@@ -94,43 +102,6 @@ function invoiceBelongsToCycle(invoice: FacturaRow, cycle: Pick<CierreOperativoR
     invoiceCycleAt >= new Date(getCycleStartIso(cycle)).getTime() &&
     invoiceCycleAt <= new Date(endIso).getTime()
   );
-}
-
-async function getPaidSalesCountForCycle(tenantId: string, cycle: Pick<CierreOperativoRow, "opened_at" | "created_at" | "closed_at">): Promise<number> {
-  const { data, error } = await insforgeClient.database
-    .from("facturas")
-    .select("id, estado, metodo_pago, subtotal, itbis, total, created_at, pagada_at")
-    .eq("tenant_id", tenantId)
-    .eq("estado", "pagada");
-
-  if (error) throw new Error(error.message);
-  return ((data as FacturaRow[] | null) ?? []).filter((invoice) => invoiceBelongsToCycle(invoice, cycle)).length;
-}
-
-async function discardLatestEmptyCycle(tenantId: string): Promise<boolean> {
-  const { data, error } = await insforgeClient.database
-    .from("cierres_operativos")
-    .select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at")
-    .eq("tenant_id", tenantId)
-    .order("cycle_number", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) throw new Error(error.message);
-  if (!data) return false;
-
-  const cycle = data as CierreOperativoRow;
-  const paidSalesCount = await getPaidSalesCountForCycle(tenantId, cycle);
-  if (paidSalesCount > 0) return false;
-
-  const { error: deleteError } = await insforgeClient.database
-    .from("cierres_operativos")
-    .delete()
-    .eq("id", cycle.id)
-    .eq("tenant_id", tenantId);
-
-  if (deleteError) throw new Error(deleteError.message);
-  return true;
 }
 
 export function Cierre() {
@@ -205,13 +176,13 @@ export function Cierre() {
       const [cyclesAll, consAll, openGlobal, categoriasData] = await Promise.all([
         useLocalCiclos
           ? readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos")
-          : insforgeClient.database.from("cierres_operativos").select("*").eq("tenant_id", tenantId).eq("business_day", fecha).order("cycle_number", { ascending: false }).then(r => ({ data: r.data, error: r.error })),
+          : insforgeClient.database.from("cierres_operativos").select("*").eq("tenant_id", tenantId).eq("business_day", toYmd(fecha)).order("cycle_number", { ascending: false }).then(r => ({ data: r.data, error: r.error })),
         useLocalConsumos
           ? readLocalMirror<ConsumoAbiertoRow>(tenantId, "consumos")
           : insforgeClient.database.from("consumos").select("mesa_numero, subtotal, estado").eq("tenant_id", tenantId).neq("estado", "pagado").then(r => ({ data: r.data, error: r.error })),
         useLocalCiclos
           ? readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos")
-          : insforgeClient.database.from("cierres_operativos").select("id").eq("tenant_id", tenantId).is("closed_at", null).limit(1).then(r => ({ data: r.data, error: r.error })),
+          : insforgeClient.database.from("cierres_operativos").select("*").eq("tenant_id", tenantId).is("closed_at", null).order("opened_at", { ascending: false }).limit(1).then(r => ({ data: r.data, error: r.error })),
         useLocalCategorias
           ? readLocalMirror<GastoCategoriaRow>(tenantId, "gasto_categorias")
           : insforgeClient.database.from("gasto_categorias").select("id, nombre").eq("tenant_id", tenantId).then(r => ({ data: r.data, error: r.error })),
@@ -225,11 +196,17 @@ export function Cierre() {
       const consAllArray = (useLocalConsumos ? consAll : (consAll as any).data ?? []) as ConsumoAbiertoRow[];
       const categoriasArray = (useLocalCategorias ? categoriasData : (categoriasData as any).data ?? []) as GastoCategoriaRow[];
 
-      const cycleRows = cycleRowsArray.filter(c => c.business_day === fecha).sort((a, b) => b.cycle_number - a.cycle_number);
-      setCycles(cycleRows);
       setGastoCategorias(categoriasArray);
 
-      const openCycle = openGlobalArray.find(c => !c.closed_at) ?? null;
+      const openCycle = sortByOpenedAtDesc(openGlobalArray.filter(c => !c.closed_at))[0] ?? null;
+      const cycleRows = cycleRowsArray.filter(c => toYmd(c.business_day) === toYmd(fecha)).sort((a, b) => b.cycle_number - a.cycle_number);
+      const visibleCycleRows = openCycle && !cycleRows.some(c => c.id === openCycle.id)
+        ? [openCycle, ...cycleRows]
+        : cycleRows;
+      setCycles(visibleCycleRows);
+      if (openCycle && toYmd(openCycle.business_day) !== toYmd(fecha)) {
+        setFecha(toYmd(openCycle.business_day));
+      }
       const sel = openCycle ?? cycleRows[0] ?? null;
 
       if (sel) {
@@ -267,7 +244,7 @@ export function Cierre() {
       }
       return insforgeClient.database.from("cierres_operativos").select("business_day").eq("tenant_id", tenantId).is("closed_at", null).order("opened_at", { ascending: false }).limit(1).maybeSingle().then(r => r.data ? [r.data] : []);
     }).then((rows: any) => {
-      if (rows?.[0]?.business_day) setFecha(rows[0].business_day);
+      if (rows?.[0]?.business_day) setFecha(toYmd(rows[0].business_day));
     }).catch(() => {});
   }, [authLoading, tenantId]);
 
@@ -279,17 +256,33 @@ export function Cierre() {
     try {
       const useLocalCiclos = await shouldReadLocalFirst(tenantId, ["cierres_operativos"]);
 
-      let discardedLatest = false;
       if (useLocalCiclos) {
         const allCycles = await readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos");
-        const latestEmpty = allCycles.filter(c => !c.closed_at);
-        if (latestEmpty.length > 0) {
-          const firstEmpty = latestEmpty[latestEmpty.length - 1];
-          await enqueueLocalWrite({ tenantId, tableName: "cierres_operativos", rowId: firstEmpty.id, op: "delete", deviceId: await getDeviceId() });
-          discardedLatest = true;
+        const openCycle = sortByOpenedAtDesc(allCycles.filter(c => !c.closed_at))[0] ?? null;
+        if (openCycle) {
+          setFecha(toYmd(openCycle.business_day));
+          setPrintMsg(`Ya existe un ciclo abierto (#${openCycle.cycle_number}). No voy a crear otro.`);
+          await cargar();
+          setStartingCycle(false);
+          return;
         }
       } else {
-        discardedLatest = await discardLatestEmptyCycle(tenantId);
+        const { data: openCycles, error: openError } = await insforgeClient.database
+          .from("cierres_operativos")
+          .select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at")
+          .eq("tenant_id", tenantId)
+          .is("closed_at", null)
+          .order("opened_at", { ascending: false })
+          .limit(1);
+        if (openError) throw new Error(openError.message);
+        const openCycle = ((openCycles as CierreOperativoRow[] | null) ?? [])[0] ?? null;
+        if (openCycle) {
+          setFecha(toYmd(openCycle.business_day));
+          setPrintMsg(`Ya existe un ciclo abierto (#${openCycle.cycle_number}). No voy a crear otro.`);
+          await cargar();
+          setStartingCycle(false);
+          return;
+        }
       }
 
       let num = 1;
@@ -308,11 +301,11 @@ export function Cierre() {
         tableName: "cierres_operativos",
         rowId: localCycleId,
         op: "insert",
-        payload: { id: localCycleId, tenant_id: tenantId, business_day: fecha, cycle_number: num, opened_by_auth_user_id: user?.id, opened_at: new Date().toISOString(), created_at: new Date().toISOString(), closed_at: null },
+        payload: { id: localCycleId, tenant_id: tenantId, business_day: toYmd(fecha), cycle_number: num, opened_by_auth_user_id: user?.id, opened_at: new Date().toISOString(), created_at: new Date().toISOString(), closed_at: null },
         deviceId: await getDeviceId(),
       });
 
-      setPrintMsg(discardedLatest ? `Se descartó el último ciclo sin ventas. Ciclo #${num} iniciado.` : `Ciclo #${num} iniciado.`);
+      setPrintMsg(`Ciclo #${num} iniciado.`);
       await cargar();
     } catch (error) {
       setPrintMsg(error instanceof Error ? error.message : "No se pudo iniciar el ciclo.");

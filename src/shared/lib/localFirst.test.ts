@@ -4,12 +4,14 @@ import {
   createSyncOutboxEntry,
   createSyncStateRow,
   getHistoricalSyncIncompleteMessage,
+  isLocalFirstEnabled,
   isLicenseValidOffline,
   isLocalFirstMirrorTable,
   LOCAL_FIRST_IMMEDIATE_TABLES,
   LOCAL_FIRST_MIRROR_TABLES,
   LOCAL_FIRST_METADATA_TABLES,
   resolveConflictForTable,
+  shouldReadLocalFirst,
   type LocalLicenseCache,
   type SyncOutboxEntry,
 } from "./localFirst";
@@ -66,6 +68,11 @@ describe("localFirst", () => {
     expect(getHistoricalSyncIncompleteMessage("history_complete")).toBeNull();
     expect(isLocalFirstMirrorTable("consumos")).toBe(true);
     expect(isLocalFirstMirrorTable("orders")).toBe(false);
+  });
+
+  it("desactiva local-first fuera de Electron para que la web lea siempre servidor", async () => {
+    expect(isLocalFirstEnabled()).toBe(false);
+    await expect(shouldReadLocalFirst("tenant-1", ["cierres_operativos"])).resolves.toBe(false);
   });
 
   it("valida licencia offline con ventana de 6 horas", () => {
