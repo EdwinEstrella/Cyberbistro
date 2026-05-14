@@ -7,7 +7,7 @@ import { PinGateModal } from "../../../shared/components/PinGate";
 import { buildCierreDiaReceiptHtml, buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
-import { readLocalMirror, getLocalFirstStatusSnapshot, enqueueLocalWrite, getDeviceId } from "../../../shared/lib/localFirst";
+import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 // useTheme removed
 import {
   Dialog,
@@ -250,35 +250,36 @@ const loadBillingData = useCallback(async () => {
 
     setLoading(true);
 
-    let localMode = false;
-    try {
-      const snapshot = await getLocalFirstStatusSnapshot(tenantId);
-      localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
-    } catch { /* continue with remote */ }
+    const [useLocalInvoices, useLocalCycles, useLocalExpenses, useLocalExpenseCategories] = await Promise.all([
+      shouldReadLocalFirst(tenantId, ["facturas"]),
+      shouldReadLocalFirst(tenantId, ["cierres_operativos"]),
+      shouldReadLocalFirst(tenantId, ["gastos"]),
+      shouldReadLocalFirst(tenantId, ["gasto_categorias"]),
+    ]);
 
     const [invoicesRes, cyclesRes, expensesRes, expenseCategoriesRes] = await Promise.all([
-      localMode
+      useLocalInvoices
         ? { data: await readLocalMirror<Invoice>(tenantId, "facturas").then(r => r.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())), error: null }
         : insforgeClient.database
             .from("facturas")
             .select("*")
             .eq("tenant_id", tenantId)
             .order("created_at", { ascending: false }),
-      localMode
+      useLocalCycles
         ? { data: await readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos").then(r => r.sort((a, b) => (b.cycle_number || 0) - (a.cycle_number || 0))), error: null }
         : insforgeClient.database
             .from("cierres_operativos")
             .select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at")
             .eq("tenant_id", tenantId)
             .order("opened_at", { ascending: false }),
-      localMode
+      useLocalExpenses
         ? { data: await readLocalMirror<Expense>(tenantId, "gastos").then(r => r.sort((a, b) => new Date(b.fecha_gasto || 0).getTime() - new Date(a.fecha_gasto || 0).getTime())), error: null }
         : insforgeClient.database
             .from("gastos")
             .select("*")
             .eq("tenant_id", tenantId)
             .order("fecha_gasto", { ascending: false }),
-      localMode
+      useLocalExpenseCategories
         ? { data: await readLocalMirror<ExpenseCategory>(tenantId, "gasto_categorias"), error: null }
         : insforgeClient.database
             .from("gasto_categorias")
@@ -629,11 +630,10 @@ const loadBillingData = useCallback(async () => {
         const deviceId = await getDeviceId();
 
         // 1. Fetch consumos to delete locally first
-        const snapshot = await getLocalFirstStatusSnapshot(tenantId);
-        const isOffline = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
+        const useLocalConsumos = await shouldReadLocalFirst(tenantId, ["consumos"]);
         
         let consumosAsociados: any[] = [];
-        if (isOffline) {
+        if (useLocalConsumos) {
           const allConsumos = await readLocalMirror<any>(tenantId, "consumos");
           consumosAsociados = allConsumos.filter((c: any) => c.factura_id === inv.id);
         } else {

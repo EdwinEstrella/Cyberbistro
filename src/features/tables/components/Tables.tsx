@@ -6,7 +6,7 @@ import { generateMesasConfig, type MesaConfig } from "../config/mesas";
 import { loadCantidadMesas } from "../../../shared/lib/tenantMesasSettings";
 import { estadoLabels, type MesaEstadoVisual } from "../config/estadoTheme";
 import { TableMesaCard } from "./TableMesaCard";
-import { getLocalFirstStatusSnapshot, readLocalMirror, enqueueLocalWrite, getDeviceId } from "../../../shared/lib/localFirst";
+import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 
 type Estado = MesaEstadoVisual;
 
@@ -67,11 +67,10 @@ export function Tables() {
 
   const refreshDeudaPorMesa = useCallback(async () => {
     if (!tenantId) { setDeudaPorMesa({}); return; }
-    const snapshot = await getLocalFirstStatusSnapshot(tenantId);
-    const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
+    const useLocalConsumos = await shouldReadLocalFirst(tenantId, ["consumos"]);
     
     let data;
-    if (localMode) {
+    if (useLocalConsumos) {
       const consumos = await readLocalMirror<any>(tenantId, "consumos");
       data = consumos.filter((c: any) => c.estado !== "pagado");
     } else {
@@ -95,11 +94,13 @@ export function Tables() {
     if (authLoading || !tenantId) { if (!authLoading) setLoading(false); return; }
     setLoading(true);
     
-    getLocalFirstStatusSnapshot(tenantId).then(snapshot => {
-      const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
+    Promise.all([
+      shouldReadLocalFirst(tenantId, ["mesas_estado"]),
+      shouldReadLocalFirst(tenantId, ["consumos"]),
+    ]).then(([useLocalMesas, useLocalConsumos]) => {
       Promise.all([
-        localMode ? readLocalMirror<any>(tenantId, "mesas_estado").then(r => ({ data: r })) : insforgeClient.database.from("mesas_estado").select("*").eq("tenant_id", tenantId),
-        localMode ? readLocalMirror<any>(tenantId, "consumos").then(r => ({ data: r.filter((c: any) => c.estado !== "pagado") })) : insforgeClient.database.from("consumos").select("mesa_numero, subtotal").eq("tenant_id", tenantId).neq("estado", "pagado"),
+        useLocalMesas ? readLocalMirror<any>(tenantId, "mesas_estado").then(r => ({ data: r })) : insforgeClient.database.from("mesas_estado").select("*").eq("tenant_id", tenantId),
+        useLocalConsumos ? readLocalMirror<any>(tenantId, "consumos").then(r => ({ data: r.filter((c: any) => c.estado !== "pagado") })) : insforgeClient.database.from("consumos").select("mesa_numero, subtotal").eq("tenant_id", tenantId).neq("estado", "pagado"),
         loadCantidadMesas(tenantId)
       ]).then(([estadosRes, consumosPendRes, cantidadMesas]) => {
         const configArray = generateMesasConfig(cantidadMesas);
@@ -137,16 +138,16 @@ export function Tables() {
 
   useEffect(() => {
     if (!tenantId || !selectedMesa) { setHistorialConsumos([]); return; }
+    const tid = tenantId;
     let cancelled = false;
     async function load() {
-      const snapshot = await getLocalFirstStatusSnapshot(tenantId);
-      const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
+      const useLocalConsumos = await shouldReadLocalFirst(tid, ["consumos"]);
       let data;
-      if (localMode) {
-        const consumos = await readLocalMirror<ConsumoPanelRow>(tenantId, "consumos");
+      if (useLocalConsumos) {
+        const consumos = await readLocalMirror<ConsumoPanelRow>(tid, "consumos");
         data = consumos.filter(c => c.mesa_numero === selectedMesa!.numero && c.estado !== "pagado").sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
       } else {
-        const { data: resData } = await insforgeClient.database.from("consumos").select("*").eq("tenant_id", tenantId).eq("mesa_numero", selectedMesa!.numero).neq("estado", "pagado").order("created_at", { ascending: false });
+        const { data: resData } = await insforgeClient.database.from("consumos").select("*").eq("tenant_id", tid).eq("mesa_numero", selectedMesa!.numero).neq("estado", "pagado").order("created_at", { ascending: false });
         data = resData;
       }
       if (cancelled || !data) return;

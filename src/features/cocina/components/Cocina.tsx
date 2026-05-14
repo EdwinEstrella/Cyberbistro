@@ -5,6 +5,7 @@ import { useCocinaRealtimeSync } from "../useCocinaRealtimeSync";
 import { buildComandaReceiptHtml, type TenantReceiptInfo } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
+import { enqueueLocalWrite, getDeviceId, readLocalMirror, shouldReadLocalFirst, writeLocalMirrorRow } from "../../../shared/lib/localFirst";
 
 
 interface ComandaItem {
@@ -37,6 +38,11 @@ export function Cocina() {
 
   const reloadComandas = useCallback(async () => {
     if (!tenantId) return;
+    if (await shouldReadLocalFirst(tenantId, ["comandas"])) {
+      const rows = await readLocalMirror<Comanda & { tenant_id?: string }>(tenantId, "comandas");
+      setComandas(rows.filter(c => c.tenant_id === tenantId && ["pendiente", "en_preparacion", "listo"].includes(c.estado)).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
+      return;
+    }
     const { data, error } = await insforgeClient.database
       .from("comandas")
       .select("*")
@@ -50,12 +56,18 @@ export function Cocina() {
 
   useEffect(() => {
     if (authLoading || !tenantId) { if (!authLoading) setLoading(false); return; }
+    const tid = tenantId;
     let cancelled = false;
     async function load() {
+      const [useLocalEstado, useLocalComandas, useLocalTenant] = await Promise.all([
+        shouldReadLocalFirst(tid, ["cocina_estado"]),
+        shouldReadLocalFirst(tid, ["comandas"]),
+        shouldReadLocalFirst(tid, ["tenants"]),
+      ]);
       const [estadoRes, comandasRes, tenantRes] = await Promise.all([
-        insforgeClient.database.from("cocina_estado").select("*").eq("tenant_id", tenantId).limit(1),
-        insforgeClient.database.from("comandas").select("*").eq("tenant_id", tenantId).in("estado", ["pendiente", "en_preparacion", "listo"]).order("created_at", { ascending: true }),
-        insforgeClient.database.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url, moneda").eq("id", tenantId).maybeSingle(),
+        useLocalEstado ? readLocalMirror<any>(tid, "cocina_estado").then(data => ({ data })) : insforgeClient.database.from("cocina_estado").select("*").eq("tenant_id", tid).limit(1),
+        useLocalComandas ? readLocalMirror<Comanda & { tenant_id?: string }>(tid, "comandas").then(data => ({ data: data.filter(c => c.tenant_id === tid && ["pendiente", "en_preparacion", "listo"].includes(c.estado)).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()) })) : insforgeClient.database.from("comandas").select("*").eq("tenant_id", tid).in("estado", ["pendiente", "en_preparacion", "listo"]).order("created_at", { ascending: true }),
+        useLocalTenant ? readLocalMirror<any>(tid, "tenants").then(data => ({ data: data.find(t => t.id === tid) ?? null })) : insforgeClient.database.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url, moneda").eq("id", tid).maybeSingle(),
       ]);
       if (cancelled) return;
       if (estadoRes.data?.[0]) setCocinaActiva(estadoRes.data[0].activa);
@@ -73,22 +85,49 @@ export function Cocina() {
     if (!tenantId) return;
     setToggling(true);
     const newActiva = !cocinaActiva;
-    const { data: existing } = await insforgeClient.database.from("cocina_estado").select("id").eq("tenant_id", tenantId).limit(1);
-    const payload = { activa: newActiva, changed_at: new Date().toISOString(), tenant_id: tenantId };
-    const { error } = existing?.length ? await insforgeClient.database.from("cocina_estado").update(payload).eq("id", existing[0].id) : await insforgeClient.database.from("cocina_estado").insert(payload);
-    if (!error) setCocinaActiva(newActiva);
+    const now = new Date().toISOString();
+    const localExisting = (await readLocalMirror<any>(tenantId, "cocina_estado").catch(() => [])).find((row: any) => row.tenant_id === tenantId);
+    const rowId = localExisting?.id ?? crypto.randomUUID();
+    const payload = { id: rowId, activa: newActiva, changed_at: now, updated_at: now, tenant_id: tenantId };
+    try {
+      if (!navigator.onLine) throw new Error("offline");
+      const { data: existing } = await insforgeClient.database.from("cocina_estado").select("id").eq("tenant_id", tenantId).limit(1);
+      const result = existing?.length
+        ? await insforgeClient.database.from("cocina_estado").update(payload).eq("id", existing[0].id).select().single()
+        : await insforgeClient.database.from("cocina_estado").insert(payload).select().single();
+      if (result.error) throw new Error(result.error.message);
+      await writeLocalMirrorRow(tenantId, "cocina_estado", result.data as Record<string, unknown>);
+    } catch {
+      await enqueueLocalWrite({ tenantId, tableName: "cocina_estado", rowId, op: "upsert", payload, deviceId: await getDeviceId() });
+    }
+    setCocinaActiva(newActiva);
     setToggling(false);
   }
 
   async function advanceComanda(id: string, nextEstado: Comanda["estado"]) {
-    const { error } = await insforgeClient.database.from("comandas").update({ estado: nextEstado }).eq("id", id);
-    if (!error) {
-      if (nextEstado === "listo" && tenantId) {
-        await insforgeClient.database.from("consumos").update({ estado: "listo", updated_at: new Date().toISOString() }).eq("comanda_id", id).eq("tenant_id", tenantId).eq("estado", "enviado_cocina");
+    if (!tenantId) return;
+    const now = new Date().toISOString();
+    const deviceId = await getDeviceId();
+    const updateComanda = { estado: nextEstado, updated_at: now };
+    try {
+      if (!navigator.onLine) throw new Error("offline");
+      const result = await insforgeClient.database.from("comandas").update(updateComanda).eq("id", id);
+      if (result.error) throw new Error(result.error.message);
+      if (nextEstado === "listo") {
+        const consumoResult = await insforgeClient.database.from("consumos").update({ estado: "listo", updated_at: now }).eq("comanda_id", id).eq("tenant_id", tenantId).eq("estado", "enviado_cocina");
+        if (consumoResult.error) throw new Error(consumoResult.error.message);
       }
-      if (nextEstado === "entregado") setComandas(prev => prev.filter(c => c.id !== id));
-      else setComandas(prev => prev.map(c => c.id === id ? { ...c, estado: nextEstado } : c));
+    } catch {
+      await enqueueLocalWrite({ tenantId, tableName: "comandas", rowId: id, op: "update", payload: updateComanda, deviceId });
+      if (nextEstado === "listo") {
+        const consumos = await readLocalMirror<any>(tenantId, "consumos");
+        await Promise.all(consumos
+          .filter((c: any) => c.comanda_id === id && c.tenant_id === tenantId && c.estado === "enviado_cocina")
+          .map((c: any) => enqueueLocalWrite({ tenantId, tableName: "consumos", rowId: c.id, op: "update", payload: { estado: "listo", updated_at: now }, deviceId })));
+      }
     }
+    if (nextEstado === "entregado") setComandas(prev => prev.filter(c => c.id !== id));
+    else setComandas(prev => prev.map(c => c.id === id ? { ...c, estado: nextEstado } : c));
   }
 
   const printComanda = async (comanda: Comanda) => {

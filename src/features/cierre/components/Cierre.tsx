@@ -5,7 +5,7 @@ import { useAuth } from "../../../shared/hooks/useAuth";
 import { buildCierreDiaReceiptHtml } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
-import { getLocalFirstStatusSnapshot, readLocalMirror, enqueueLocalWrite, getDeviceId } from "../../../shared/lib/localFirst";
+import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 
 type FacturaEstado = "pagada" | "pendiente" | "cancelada";
 
@@ -196,26 +196,29 @@ export function Cierre() {
     if (!tenantId) { setCycles([]); setFacturas([]); setGastos([]); setGastoCategorias([]); setConsumosAbiertos([]); setLoading(false); return; }
     setLoading(true); setLoadError("");
     try {
-      const snapshot = await getLocalFirstStatusSnapshot(tenantId);
-      const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
+      const [useLocalCiclos, useLocalConsumos, useLocalCategorias] = await Promise.all([
+        shouldReadLocalFirst(tenantId, ["cierres_operativos"]),
+        shouldReadLocalFirst(tenantId, ["consumos"]),
+        shouldReadLocalFirst(tenantId, ["gasto_categorias"]),
+      ]);
 
       const [cyclesAll, consAll, openGlobal, categoriasData] = await Promise.all([
-        localMode
+        useLocalCiclos
           ? readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos")
           : insforgeClient.database.from("cierres_operativos").select("*").eq("tenant_id", tenantId).eq("business_day", fecha).order("cycle_number", { ascending: false }).then(r => ({ data: r.data, error: r.error })),
-        localMode
+        useLocalConsumos
           ? readLocalMirror<ConsumoAbiertoRow>(tenantId, "consumos")
           : insforgeClient.database.from("consumos").select("mesa_numero, subtotal, estado").eq("tenant_id", tenantId).neq("estado", "pagado").then(r => ({ data: r.data, error: r.error })),
-        localMode
+        useLocalCiclos
           ? readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos")
           : insforgeClient.database.from("cierres_operativos").select("id").eq("tenant_id", tenantId).is("closed_at", null).limit(1).then(r => ({ data: r.data, error: r.error })),
-        localMode
+        useLocalCategorias
           ? readLocalMirror<GastoCategoriaRow>(tenantId, "gasto_categorias")
           : insforgeClient.database.from("gasto_categorias").select("id, nombre").eq("tenant_id", tenantId).then(r => ({ data: r.data, error: r.error })),
       ]);
 
-      if (!localMode && (cyclesAll as any).error) { setLoadError((cyclesAll as any).error.message); setLoading(false); return; }
-      if (!localMode && (categoriasData as any).error) { setLoadError((categoriasData as any).error.message); setLoading(false); return; }
+      if (!useLocalCiclos && (cyclesAll as any).error) { setLoadError((cyclesAll as any).error.message); setLoading(false); return; }
+      if (!useLocalCategorias && (categoriasData as any).error) { setLoadError((categoriasData as any).error.message); setLoading(false); return; }
 
       const cycleRows = (cyclesAll as CierreOperativoRow[]).filter(c => c.business_day === fecha).sort((a, b) => b.cycle_number - a.cycle_number);
       setCycles(cycleRows);
@@ -226,12 +229,12 @@ export function Cierre() {
 
       if (sel) {
         const [factData, gastosData] = await Promise.all([
-          localMode
+          shouldReadLocalFirst(tenantId, ["facturas"]).then(useLocal => useLocal
             ? readLocalMirror<FacturaRow>(tenantId, "facturas")
-            : insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: true }).then(r => r.data ?? []),
-          localMode
+            : insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: true }).then(r => r.data ?? [])),
+          shouldReadLocalFirst(tenantId, ["gastos"]).then(useLocal => useLocal
             ? readLocalMirror<GastoRow>(tenantId, "gastos").then(gs => gs.filter(g => g.cycle_id === sel.id))
-            : insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, fecha_gasto").eq("tenant_id", tenantId).eq("cycle_id", sel.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? []),
+            : insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, fecha_gasto").eq("tenant_id", tenantId).eq("cycle_id", sel.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? [])),
         ]);
 
         const allFacturas = (factData as FacturaRow[] | null) ?? [];
@@ -253,9 +256,8 @@ export function Cierre() {
 
   useEffect(() => {
     if (authLoading || !tenantId) return;
-    getLocalFirstStatusSnapshot(tenantId).then(snapshot => {
-      const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
-      if (localMode) {
+    shouldReadLocalFirst(tenantId, ["cierres_operativos"]).then(useLocal => {
+      if (useLocal) {
         return readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos");
       }
       return insforgeClient.database.from("cierres_operativos").select("business_day").eq("tenant_id", tenantId).is("closed_at", null).order("opened_at", { ascending: false }).limit(1).maybeSingle().then(r => r.data ? [r.data] : []);
@@ -270,11 +272,10 @@ export function Cierre() {
     if (!tenantId || globalHasOpenCycle) return;
     setStartingCycle(true); setPrintMsg("");
     try {
-      const snapshot = await getLocalFirstStatusSnapshot(tenantId);
-      const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
+      const useLocalCiclos = await shouldReadLocalFirst(tenantId, ["cierres_operativos"]);
 
       let discardedLatest = false;
-      if (localMode) {
+      if (useLocalCiclos) {
         const allCycles = await readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos");
         const latestEmpty = allCycles.filter(c => !c.closed_at);
         if (latestEmpty.length > 0) {
@@ -287,7 +288,7 @@ export function Cierre() {
       }
 
       let num = 1;
-      if (localMode) {
+      if (useLocalCiclos) {
         const allCycles = await readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos");
         const maxNum = allCycles.reduce((m, c) => Math.max(m, c.cycle_number), 0);
         num = maxNum + 1;
@@ -318,11 +319,13 @@ export function Cierre() {
     if (!tenantId || !currentCycle || currentCycle.closed_at) return;
     setPrinting(true); setPrintMsg("");
 
-    const snapshot = await getLocalFirstStatusSnapshot(tenantId);
-    const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
+    const useLocalConsumos = await shouldReadLocalFirst(tenantId, ["consumos"]);
+    const useLocalFacturas = await shouldReadLocalFirst(tenantId, ["facturas"]);
+    const useLocalGastos = await shouldReadLocalFirst(tenantId, ["gastos"]);
+    const useLocalTenants = await shouldReadLocalFirst(tenantId, ["tenants"]);
 
     let pend: any[] = [];
-    if (localMode) {
+    if (useLocalConsumos) {
       const allConsumos = await readLocalMirror<ConsumoAbiertoRow>(tenantId, "consumos");
       pend = allConsumos.filter(c => c.estado !== "pagado");
     } else {
@@ -333,11 +336,11 @@ export function Cierre() {
     if (pend.length) { setPrintMsg("No se puede cerrar con mesas pendientes."); setPrinting(false); return; }
     const now = new Date().toISOString();
 
-    const [facturasAll, gastosAll] = await Promise.all([
-      localMode
+      const [facturasAll, gastosAll] = await Promise.all([
+      useLocalFacturas
         ? readLocalMirror<FacturaRow>(tenantId, "facturas")
         : insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: true }).then(r => r.data ?? []),
-      localMode
+      useLocalGastos
         ? readLocalMirror<GastoRow>(tenantId, "gastos").then(gs => gs.filter(g => g.cycle_id === currentCycle.id))
         : insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, fecha_gasto").eq("tenant_id", tenantId).eq("cycle_id", currentCycle.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? []),
     ]);
@@ -361,7 +364,7 @@ export function Cierre() {
     setPrintMsg("Ciclo cerrado.");
 
     let tenantData: any = null;
-    if (localMode) {
+    if (useLocalTenants) {
       const allTenants = await readLocalMirror<any>(tenantId, "tenants");
       tenantData = allTenants.find((t: any) => t.id === tenantId) ?? null;
     } else {

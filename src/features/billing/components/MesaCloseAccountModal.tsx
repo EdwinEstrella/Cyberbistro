@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
 import { buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
@@ -229,11 +229,6 @@ export function MesaCloseAccountModal({
   /** En modo dividir: cada línea de consumo va a una persona 1..splitParts (ítem completo, no se parte el monto). */
   const [personByConsumoId, setPersonByConsumoId] = useState<Record<string, number>>({});
   const [splitParts, setSplitParts] = useState(2);
-
-  const refreshConsumos = useCallback(async () => {
-    if (!tenantId) return [];
-    return loadTableConsumption(tenantId, mesaNumero);
-  }, [tenantId, mesaNumero]);
 
   useEffect(() => {
     if (!open) {

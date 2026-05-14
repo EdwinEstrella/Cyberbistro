@@ -681,6 +681,26 @@ export async function readLocalOutbox<T = SyncOutboxEntry>(tenantId: string): Pr
   }
 }
 
+export async function hasPendingLocalWrites(
+  tenantId: string,
+  tableNames?: readonly LocalFirstMirrorTable[]
+): Promise<boolean> {
+  const tableSet = tableNames ? new Set<string>(tableNames) : null;
+  const outbox = await readLocalOutbox<SyncOutboxEntry>(tenantId);
+  return outbox.some((entry) => {
+    if (tableSet && !tableSet.has(entry.table_name)) return false;
+    return entry.status === "pending" || entry.status === "syncing" || entry.status === "error";
+  });
+}
+
+export async function shouldReadLocalFirst(
+  tenantId: string,
+  tableNames?: readonly LocalFirstMirrorTable[]
+): Promise<boolean> {
+  if (typeof navigator !== "undefined" && !navigator.onLine) return true;
+  return hasPendingLocalWrites(tenantId, tableNames);
+}
+
 export async function writeLocalMirrorRow<T extends Record<string, unknown>>(
   tenantId: string,
   tableName: LocalFirstMirrorTable,

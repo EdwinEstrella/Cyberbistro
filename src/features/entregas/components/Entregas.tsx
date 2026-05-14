@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { normalizeTenantRol } from "../../../shared/lib/roleNav";
+import { enqueueLocalWrite, getDeviceId, readLocalMirror, shouldReadLocalFirst, writeLocalMirrorRow } from "../../../shared/lib/localFirst";
 
 
 interface MesaConPedido {
@@ -38,23 +39,44 @@ export function Entregas() {
     const soft = opts?.soft === true;
     if (!tenantId) { setMesasConPedido([]); if (!soft) setLoading(false); return; }
     if (!soft) setLoading(true);
-    let consumosQuery = insforgeClient.database
-      .from("consumos")
-      .select("*")
-      .eq("tenant_id", tenantId)
-      .neq("estado", "pagado")
-      .order("created_at", { ascending: true });
-    if (isCamarera && user?.id) {
-      consumosQuery = consumosQuery.eq("created_by_auth_user_id", user.id);
+    let consumos: any[] = [];
+    if (await shouldReadLocalFirst(tenantId, ["consumos"])) {
+      consumos = (await readLocalMirror<any>(tenantId, "consumos"))
+        .filter(c => c.tenant_id === tenantId && c.estado !== "pagado")
+        .filter(c => !isCamarera || !user?.id || c.created_by_auth_user_id === user.id)
+        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    } else {
+      let consumosQuery = insforgeClient.database
+        .from("consumos")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .neq("estado", "pagado")
+        .order("created_at", { ascending: true });
+      if (isCamarera && user?.id) {
+        consumosQuery = consumosQuery.eq("created_by_auth_user_id", user.id);
+      }
+      const { data } = await consumosQuery;
+      consumos = data ?? [];
     }
-    const { data: consumos } = await consumosQuery;
     if (!consumos?.length) { setMesasConPedido([]); if (!soft) setLoading(false); return; }
     
     const platoIds = [...new Set(consumos.map((c: any) => c.plato_id))];
     const comandaIds = [...new Set(consumos.map((c: any) => c.comanda_id).filter(Boolean))];
+    const [useLocalPlatos, useLocalComandas] = await Promise.all([
+      shouldReadLocalFirst(tenantId, ["platos"]),
+      shouldReadLocalFirst(tenantId, ["comandas"]),
+    ]);
     const [platosRes, comandasRes] = await Promise.all([
-      platoIds.length > 0 ? insforgeClient.database.from("platos").select("id, va_a_cocina").in("id", platoIds) : Promise.resolve({ data: [] }),
-      comandaIds.length > 0 ? insforgeClient.database.from("comandas").select("id, estado").in("id", comandaIds) : Promise.resolve({ data: [] }),
+      platoIds.length > 0
+        ? useLocalPlatos
+          ? readLocalMirror<any>(tenantId, "platos").then(rows => ({ data: rows.filter(p => platoIds.includes(p.id)) }))
+          : insforgeClient.database.from("platos").select("id, va_a_cocina").in("id", platoIds)
+        : Promise.resolve({ data: [] }),
+      comandaIds.length > 0
+        ? useLocalComandas
+          ? readLocalMirror<any>(tenantId, "comandas").then(rows => ({ data: rows.filter(c => comandaIds.includes(c.id)) }))
+          : insforgeClient.database.from("comandas").select("id, estado").in("id", comandaIds)
+        : Promise.resolve({ data: [] }),
     ]);
     const platoMap = new Map(platosRes.data?.map((p: any) => [p.id, p.va_a_cocina]));
     const comandaEstadoById = new Map(comandasRes.data?.map((c: any) => [c.id, c.estado]));
@@ -82,10 +104,19 @@ export function Entregas() {
 
   async function marcarEntregado(id: string) {
     if (!tenantId) return;
-    let updateQuery = insforgeClient.database.from("consumos").update({ estado: "entregado", updated_at: new Date().toISOString() }).eq("id", id).eq("tenant_id", tenantId);
-    if (isCamarera && user?.id) updateQuery = updateQuery.eq("created_by_auth_user_id", user.id);
-    const { error } = await updateQuery;
-    if (!error) loadEntregas({ soft: true });
+    const payload = { estado: "entregado", updated_at: new Date().toISOString() };
+    try {
+      if (!navigator.onLine) throw new Error("offline");
+      let updateQuery = insforgeClient.database.from("consumos").update(payload).eq("id", id).eq("tenant_id", tenantId);
+      if (isCamarera && user?.id) updateQuery = updateQuery.eq("created_by_auth_user_id", user.id);
+      const { error } = await updateQuery;
+      if (error) throw new Error(error.message);
+      const existing = (await readLocalMirror<any>(tenantId, "consumos").catch(() => [])).find((row: any) => row.id === id);
+      if (existing) await writeLocalMirrorRow(tenantId, "consumos", { ...existing, ...payload });
+    } catch {
+      await enqueueLocalWrite({ tenantId, tableName: "consumos", rowId: id, op: "update", payload, authUserId: user?.id ?? null, deviceId: await getDeviceId() });
+    }
+    loadEntregas({ soft: true });
   }
 
   const mesasFiltradas = mesasConPedido.filter(m => {

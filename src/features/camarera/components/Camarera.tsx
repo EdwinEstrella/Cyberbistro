@@ -8,6 +8,7 @@ import { buildComandaReceiptHtml } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { normalizeTenantRol } from "../../../shared/lib/roleNav";
+import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 
 interface Plato {
   id: number;
@@ -167,6 +168,25 @@ export function Camarera() {
 
     let cancelled = false;
     setLoading(true);
+    const loadOpenConsumos = async () => {
+      try {
+        if (await shouldReadLocalFirst(tenantId, ["consumos"])) {
+          return {
+            data: (await readLocalMirror<MesaConsumoRow & { mesa_numero: number | null }>(tenantId, "consumos"))
+              .filter((row) => row.estado !== "pagado"),
+            error: null,
+          };
+        }
+      } catch {
+        // Si IndexedDB falla, seguimos con servidor.
+      }
+      return insforgeClient.database
+        .from("consumos")
+        .select("mesa_numero, subtotal, created_by_auth_user_id")
+        .eq("tenant_id", tenantId)
+        .neq("estado", "pagado");
+    };
+
     Promise.all([
       insforgeClient.database
         .from("platos")
@@ -174,11 +194,7 @@ export function Camarera() {
         .eq("tenant_id", tenantId)
         .eq("disponible", true)
         .order("categoria"),
-      insforgeClient.database
-        .from("consumos")
-        .select("mesa_numero, subtotal, created_by_auth_user_id")
-        .eq("tenant_id", tenantId)
-        .neq("estado", "pagado"),
+      loadOpenConsumos(),
       loadCantidadMesas(tenantId),
       insforgeClient.database
         .from("tenant_users")
@@ -234,6 +250,19 @@ export function Camarera() {
     if (!tenantId || !mesaNumero) {
       setMesaConsumos([]);
       return;
+    }
+    try {
+      if (await shouldReadLocalFirst(tenantId, ["consumos"])) {
+        const rows = await readLocalMirror<MesaConsumoRow & { mesa_numero: number | null }>(tenantId, "consumos");
+        setMesaConsumos(
+          rows
+            .filter((row) => Number(row.mesa_numero) === mesaNumero && row.estado !== "pagado")
+            .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+        );
+        return;
+      }
+    } catch {
+      // Si IndexedDB falla, seguimos con servidor.
     }
     const { data, error } = await insforgeClient.database
       .from("consumos")

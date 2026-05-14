@@ -52,7 +52,7 @@ import {
   type NcfBCode,
 } from "../../../shared/lib/ncf";
 import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
-import { getLocalFirstStatusSnapshot, readLocalMirror, enqueueLocalWrite, getDeviceId, writeLocalMirrorRow } from "../../../shared/lib/localFirst";
+import { getLocalFirstStatusSnapshot, readLocalMirror, readLocalOutbox, enqueueLocalWrite, getDeviceId, writeLocalMirrorRow, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { getNextFacturaNumber } from "../../../shared/lib/invoiceNumber";
 
 interface Plato {
@@ -102,6 +102,7 @@ interface Consumo {
   estado: 'pedido' | 'enviado_cocina' | 'listo' | 'entregado' | 'pagado';
   factura_id: string | null;
   created_at: string;
+  created_by_auth_user_id?: string | null;
 }
 
 const ITBIS = 0.18;
@@ -172,9 +173,16 @@ export function Dashboard() {
     const load = async () => {
       const snapshot = await getLocalFirstStatusSnapshot(tenantId);
       const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
+      const outbox = localMode ? await readLocalOutbox(tenantId).catch(() => []) : [];
+      const hasPendingConsumos = outbox.some((entry) =>
+        entry.table_name === "consumos" &&
+        (entry.status === "pending" || entry.status === "syncing" || entry.status === "error")
+      );
+      const useLocalRead = await shouldReadLocalFirst(tenantId, ["platos", "menu_categories", "mesas_estado"]);
+      const useLocalOpenConsumos = await shouldReadLocalFirst(tenantId, ["consumos"]) || hasPendingConsumos;
 
       const [platosData, categoriasData, estadosData, consumosData, cantidadMesas] = await Promise.all([
-        localMode
+        useLocalRead
           ? readLocalMirror<Plato>(tenantId, "platos")
           : insforgeClient.database
               .from("platos")
@@ -183,7 +191,7 @@ export function Dashboard() {
               .eq("disponible", true)
               .order("categoria")
               .then(r => r.data ?? []),
-        localMode
+        useLocalRead
           ? readLocalMirror<MenuCategoryRow>(tenantId, "menu_categories")
           : insforgeClient.database
               .from("menu_categories")
@@ -192,14 +200,14 @@ export function Dashboard() {
               .order("sort_order")
               .order("nombre")
               .then(r => r.data ?? []),
-        localMode
+        useLocalRead
           ? readLocalMirror<any>(tenantId, "mesas_estado")
           : insforgeClient.database
               .from("mesas_estado")
               .select("*")
               .eq("tenant_id", tenantId)
               .then(r => r.data ?? []),
-        localMode
+        useLocalOpenConsumos
           ? readLocalMirror<{ mesa_numero: number | null; subtotal: number; estado?: string }>(tenantId, "consumos")
               .then(rows => rows.filter(row => row.estado !== "pagado"))
           : insforgeClient.database
@@ -378,6 +386,19 @@ export function Dashboard() {
 
   async function syncMesaStateFromOpenAccount(mesaId: string, mesaNumero: number) {
     if (!tenantId) return;
+    if (!navigator.onLine) {
+      const rows = (await readLocalMirror<Consumo>(tenantId, "consumos"))
+        .filter((row) => Number(row.mesa_numero) === mesaNumero && row.estado !== "pagado");
+      const deuda_pendiente = rows.reduce((s, r) => s + Number(r.subtotal), 0);
+      const items_pendientes = rows.length;
+      const estado = items_pendientes > 0 ? "ocupada" : "libre";
+      setMesas((prev) =>
+        prev.map((m) =>
+          m.id === mesaId ? { ...m, estado, deuda_pendiente, items_pendientes } : m
+        )
+      );
+      return;
+    }
     const { data, error } = await insforgeClient.database
       .from("consumos")
       .select("subtotal")
@@ -409,6 +430,23 @@ export function Dashboard() {
   const loadTableConsumption = useCallback(
     async (mesaNumero: number): Promise<Consumo[]> => {
       if (!tenantId) return [];
+      try {
+        const outbox = await readLocalOutbox(tenantId);
+        const hasPendingMesaConsumos = outbox.some((entry) => {
+          if (entry.table_name !== "consumos") return false;
+          if (entry.status !== "pending" && entry.status !== "syncing" && entry.status !== "error") return false;
+          const payloadMesa = Number((entry.payload as { mesa_numero?: unknown } | null)?.mesa_numero);
+          return payloadMesa === mesaNumero;
+        });
+        if (!navigator.onLine || hasPendingMesaConsumos) {
+          const rows = await readLocalMirror<Consumo>(tenantId, "consumos");
+          return rows
+            .filter((row) => Number(row.mesa_numero) === mesaNumero && row.estado !== "pagado")
+            .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+        }
+      } catch {
+        // Si IndexedDB no está disponible, caemos al servidor.
+      }
       const { data, error } = await insforgeClient.database
         .from("consumos")
         .select("*")
@@ -435,6 +473,20 @@ export function Dashboard() {
     void loadTableConsumption(selectedMesa.numero).then((rows) => {
       if (!cancelled) {
         setMesaConsumos(rows);
+        const deuda_pendiente = rows.reduce((sum, row) => sum + Number(row.subtotal), 0);
+        const items_pendientes = rows.length;
+        setMesas((prev) =>
+          prev.map((mesa) =>
+            mesa.id === selectedMesa.id
+              ? {
+                  ...mesa,
+                  estado: items_pendientes > 0 ? "ocupada" : "libre",
+                  deuda_pendiente,
+                  items_pendientes,
+                }
+              : mesa
+          )
+        );
         setMesaAccountLoading(false);
       }
     });
@@ -513,6 +565,11 @@ export function Dashboard() {
 
   async function sendToKitchen() {
     if (!selectedMesa || cart.length === 0) return;
+    if (!tenantId) {
+      alert("No se pudo enviar: sesión sin negocio asignado.");
+      return;
+    }
+    const tid = tenantId;
     setSending(true);
     setKitchenClosed(false);
 
@@ -524,18 +581,25 @@ export function Dashboard() {
 
     // Crear comanda para items de cocina
     if (kitchenItems.length > 0) {
-      if (!tenantId) {
-        alert("No se pudo verificar cocina: sesión sin negocio asignado.");
-        setSending(false);
-        return;
+      let cocinaActiva = true;
+      try {
+        if (!navigator.onLine) {
+          const localCocina = await readLocalMirror<{ activa?: boolean }>(tid, "cocina_estado");
+          cocinaActiva = localCocina[0]?.activa !== false;
+        } else {
+          const { data: estadoData } = await insforgeClient.database
+            .from("cocina_estado")
+            .select("activa")
+            .eq("tenant_id", tid)
+            .limit(1);
+          cocinaActiva = estadoData?.[0]?.activa !== false;
+        }
+      } catch {
+        const localCocina = await readLocalMirror<{ activa?: boolean }>(tid, "cocina_estado").catch(() => []);
+        cocinaActiva = localCocina[0]?.activa !== false;
       }
-      const { data: estadoData } = await insforgeClient.database
-        .from("cocina_estado")
-        .select("activa")
-        .eq("tenant_id", tenantId)
-        .limit(1);
 
-      if (estadoData?.[0]?.activa === false) {
+      if (!cocinaActiva) {
         setKitchenClosed(true);
         setSending(false);
         return;
@@ -548,30 +612,45 @@ export function Dashboard() {
         precio: i.plato.precio,
       }));
 
-      const { data, error } = await insforgeClient.database.from("comandas").insert([
-        {
-          mesa_numero: selectedMesa.numero,
-          estado: "pendiente",
-          items,
-          notas: null,
-          tenant_id: tenantId,
-        },
-      ]).select().single();
-
-      if (error) {
-        console.error("Error al crear comanda:", error);
-        alert(`Error al crear comanda: ${error.message}`);
-        setSending(false);
-        return;
+      const localComandaId = crypto.randomUUID();
+      const comandaPayload = {
+        id: localComandaId,
+        mesa_numero: selectedMesa.numero,
+        estado: "pendiente",
+        items,
+        notas: null,
+        tenant_id: tid,
+        creado_por: user?.id ?? null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      let data: any = null;
+      try {
+        if (!navigator.onLine) throw new Error("offline");
+        const result = await insforgeClient.database.from("comandas").insert([comandaPayload]).select().single();
+        if (result.error) throw new Error(result.error.message);
+        data = result.data;
+        await writeLocalMirrorRow(tid, "comandas", data as Record<string, unknown>);
+      } catch (error) {
+        await enqueueLocalWrite({
+          tenantId: tid,
+          tableName: "comandas",
+          rowId: localComandaId,
+          op: "insert",
+          payload: comandaPayload,
+          authUserId: user?.id ?? null,
+          deviceId: await getDeviceId(),
+        });
+        data = comandaPayload;
       }
 
-      comandaId = data?.id || null;
+      comandaId = data?.id || localComandaId;
 
-      if (data && tenantId) {
+      if (data) {
         const { data: tenantRow } = await insforgeClient.database
           .from("tenants")
           .select("nombre_negocio, rnc, direccion, telefono, logo_url, moneda")
-          .eq("id", tenantId)
+          .eq("id", tid)
           .single();
         if (tenantRow) {
           const paperWidthMm = getThermalPrintSettings().paperWidthMm;
@@ -619,8 +698,9 @@ export function Dashboard() {
     // Crear consumos para TODOS los items (cocina + directo)
     const consumosToInsert = [
       ...kitchenItems.map((i) => ({
+        id: crypto.randomUUID(),
         mesa_numero: selectedMesa.numero,
-        tenant_id: tenantId,
+        tenant_id: tid,
         comanda_id: comandaId,
         plato_id: i.plato.id,
         nombre: i.plato.nombre,
@@ -629,10 +709,14 @@ export function Dashboard() {
         subtotal: i.plato.precio * i.cantidad,
         tipo: "cocina" as const,
         estado: "enviado_cocina" as const,
+        created_by_auth_user_id: user?.id ?? null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       })),
       ...directItems.map((i) => ({
+        id: crypto.randomUUID(),
         mesa_numero: selectedMesa.numero,
-        tenant_id: tenantId,
+        tenant_id: tid,
         comanda_id: null,
         plato_id: i.plato.id,
         nombre: i.plato.nombre,
@@ -641,18 +725,37 @@ export function Dashboard() {
         subtotal: i.plato.precio * i.cantidad,
         tipo: "directo" as const,
         estado: "entregado" as const,
+        created_by_auth_user_id: user?.id ?? null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       })),
     ];
 
-    const { error: consumosError } = await insforgeClient.database
-      .from("consumos")
-      .insert(consumosToInsert);
+    let insertedConsumos = consumosToInsert;
+    try {
+      if (!navigator.onLine) throw new Error("offline");
+      const { data, error: consumosError } = await insforgeClient.database
+        .from("consumos")
+        .insert(consumosToInsert)
+        .select();
 
-    if (consumosError) {
-      console.error("Error al crear consumos:", consumosError);
-      alert(`Error al registrar consumos: ${consumosError.message}`);
-      setSending(false);
-      return;
+      if (consumosError) throw new Error(consumosError.message);
+      insertedConsumos = (data as typeof consumosToInsert | null) ?? consumosToInsert;
+      for (const consumo of insertedConsumos) {
+        await writeLocalMirrorRow(tid, "consumos", consumo);
+      }
+    } catch (error) {
+      for (const consumo of consumosToInsert) {
+        await enqueueLocalWrite({
+          tenantId: tid,
+          tableName: "consumos",
+          rowId: consumo.id,
+          op: "insert",
+          payload: consumo,
+          authUserId: user?.id ?? null,
+          deviceId: await getDeviceId(),
+        });
+      }
     }
 
     // Limpiar SOLO el carrito (todo fue enviado)
@@ -662,9 +765,9 @@ export function Dashboard() {
     setSending(false);
 
     // Actualizar deuda de la mesa y refrescar cuenta en panel
-    await refreshMesaDebt(selectedMesa.id, selectedMesa.numero);
     const consumosActualizados = await loadTableConsumption(selectedMesa.numero);
     setMesaConsumos(consumosActualizados);
+    await refreshMesaDebt(selectedMesa.id, selectedMesa.numero);
   }
 
   async function openPaymentModal() {
@@ -1525,39 +1628,36 @@ export function Dashboard() {
             setChargeOk(true);
             setTimeout(() => setChargeOk(false), 3000);
             if (!tenantId || !selectedMesa) return;
-            // Verify mesa is clean before freeing it
-            const { data: pending, error: pendingErr } = await insforgeClient.database
-              .from('consumos')
-              .select('id')
-              .eq('tenant_id', tenantId)
-              .eq('mesa_numero', selectedMesa.numero)
-              .neq('estado', 'pagado');
-            if (pendingErr) {
-              console.warn('Error checking pending consumos for mesa:', pendingErr);
+            const freeMesaRow = {
+              id: parseInt(selectedMesa.id, 10),
+              estado: "libre",
+              tenant_id: tenantId,
+              updated_at: new Date().toISOString(),
+            };
+            await writeLocalMirrorRow(tenantId, "mesas_estado", freeMesaRow);
+            try {
+              const { error } = await insforgeClient.database
+                .from("mesas_estado")
+                .upsert(freeMesaRow, { onConflict: "tenant_id,id" });
+              if (error) throw new Error(error.message);
+            } catch {
+              await enqueueLocalWrite({
+                tenantId,
+                tableName: "mesas_estado",
+                rowId: String(freeMesaRow.id),
+                op: "upsert",
+                payload: freeMesaRow,
+                authUserId: user?.id ?? null,
+                deviceId: await getDeviceId(),
+              });
             }
-            if (pending && (pending as any[]).length > 0) {
-              alert('No se puede liberar la mesa porque todavía tiene consumos pendientes. Cierra la cuenta primero.');
-              return;
-            }
-
-            const { error } = await insforgeClient.database.from("mesas_estado").upsert(
-              {
-                id: parseInt(selectedMesa.id, 10),
-                estado: "libre",
-                tenant_id: tenantId,
-              },
-              { onConflict: "tenant_id,id" }
+            setMesas((prev) =>
+              prev.map((m) =>
+                m.id === selectedMesa.id
+                  ? { ...m, estado: "libre", deuda_pendiente: 0, items_pendientes: 0 }
+                  : m
+              )
             );
-            if (!error) {
-              setMesas((prev) =>
-                prev.map((m) =>
-                  m.id === selectedMesa.id
-                    ? { ...m, estado: "libre", deuda_pendiente: 0, items_pendientes: 0 }
-                    : m
-                )
-              );
-            }
-            await refreshMesaDebt(selectedMesa.id, selectedMesa.numero);
             setSelectedMesa(null);
             setMesaConsumos([]);
             setCart([]);
