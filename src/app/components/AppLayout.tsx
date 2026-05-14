@@ -528,6 +528,15 @@ export function AppLayout() {
           </div>
         </div>
       </div>
+      {isLocked ? (
+        <PinGateModal
+          title="POS bloqueado"
+          subtitle="Ingresá tu PIN offline para volver a operar"
+          onVerify={handleVerifyLockPin}
+          onUnlock={handleUnlock}
+          onCancel={() => undefined}
+        />
+      ) : null}
 </VentaCartSearchProvider>
       </RoleGuard>
     </div>

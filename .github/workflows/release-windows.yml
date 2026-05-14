@@ -1,8 +1,8 @@
-# Construye el instalador Windows y sube a GitHub Releases (latest.yml + .exe).
-# Así electron-updater detecta la nueva versión cuando los usuarios abren la app.
+﻿# Construye el instalador Windows y sube a GitHub Releases (latest.yml + .exe).
+# AsÃ­ electron-updater detecta la nueva versiÃ³n cuando los usuarios abren la app.
 #
-# Cómo publicar una versión nueva:
-# 1. Poné en package.json la misma versión que vas a etiquetar (ej. 1.0.8).
+# CÃ³mo publicar una versiÃ³n nueva:
+# 1. PonÃ© en package.json la misma versiÃ³n que vas a etiquetar (ej. 1.0.8).
 # 2. Commit + push a master (o tu rama principal).
 # 3. git tag v1.0.8 && git push origin v1.0.8
 # Este workflow se dispara solo, genera el NSIS y adjunta los assets a la Release.
@@ -28,7 +28,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
 
       - name: Install dependencies

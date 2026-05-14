@@ -283,7 +283,14 @@ async function loadUserDataShared(opts?: { silent?: boolean }): Promise<void> {
         if (!u) {
           const localSession = await getLocalDeviceSession();
           if (localSession) {
-            u = { id: localSession.user_id, email: localSession.email, app_metadata: {}, user_metadata: {}, aud: '', created_at: '' } as UserSchema;
+            u = {
+              id: localSession.user_id,
+              email: localSession.email,
+              app_metadata: {},
+              user_metadata: {},
+              aud: '',
+              created_at: '',
+            } as unknown as UserSchema;
             patchSharedState({ user: u, tenantUser: localSession.tenant_user_row as unknown as TenantUser, loading: false });
             logAuth('loadUserData:offline-session-ok', { userId: u.id, email: u.email });
             return;
