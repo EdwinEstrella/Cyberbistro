@@ -6,6 +6,7 @@ out/
 dist/
 dist-electron/
 release/
+.atl/
 
 # Debug logs
 *.log
