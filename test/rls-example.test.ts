@@ -1,10 +1,11 @@
 // test/rls-example.test.ts
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { Client } from 'pg';
+import type { Client as PgClient } from 'pg';
 
 describe('Pruebas de Row Level Security (RLS) en Cloudix', () => {
-  let db: Client;
+  let db: PgClient | null = null;
   let isConnected = false;
+  let skipReason = '';
 
   const TENANT_A_ID = '00000000-0000-0000-0000-000000000001';
   const TENANT_B_ID = '00000000-0000-0000-0000-000000000002';
@@ -12,13 +13,15 @@ describe('Pruebas de Row Level Security (RLS) en Cloudix', () => {
   const USER_A_ID = '11111111-1111-1111-1111-111111111111';
 
   beforeAll(async () => {
-    // Es necesario instalar 'pg' y '@types/pg' en devDependencies
-    db = new Client({
-      connectionString: process.env.DATABASE_URL || 'postgresql://cloudix_test:supersecret_test@localhost:5432/cloudix_testdb'
-    });
-    // Ignoramos el error en local si no está la BD levantada, 
-    // pero en GitHub Actions sí debe conectar
+    const databaseUrl = process.env.DATABASE_URL;
+    if (!databaseUrl) {
+      skipReason = 'DATABASE_URL no definido; se omiten pruebas RLS dependientes de PostgreSQL.';
+      return;
+    }
+
     try {
+      const { Client } = await import('pg');
+      db = new Client({ connectionString: databaseUrl });
       await db.connect();
       isConnected = true;
       
@@ -34,18 +37,21 @@ describe('Pruebas de Row Level Security (RLS) en Cloudix', () => {
       await db.query(`INSERT INTO comandas (id, tenant_id, mesa_numero, estado) VALUES (gen_random_uuid(), $1, 5, 'abierta')`, [TENANT_A_ID]);
       await db.query(`INSERT INTO comandas (id, tenant_id, mesa_numero, estado) VALUES (gen_random_uuid(), $1, 10, 'abierta')`, [TENANT_B_ID]);
     } catch (e) {
-      console.warn("Base de datos local no disponible para test RLS puro. Se saltará el test.");
+      skipReason = `Base de datos RLS no disponible (${e instanceof Error ? e.message : 'error desconocido'}).`;
+      console.warn(`${skipReason} Se saltará el test.`);
       isConnected = false;
     }
   });
 
   afterAll(async () => {
-    if (isConnected) await db.end();
+    if (isConnected && db) await db.end();
   });
 
-  it('El Usuario A SOLO puede ver las comandas del Restaurante A (Tenant A)', async () => {
-    // Si no conectó, saltamos el test
-    if (!isConnected) return;
+  it('El Usuario A SOLO puede ver las comandas del Restaurante A (Tenant A)', async (ctx) => {
+    if (!isConnected || !db) {
+      ctx.skip(skipReason || 'Pruebas RLS omitidas porque PostgreSQL no está disponible.');
+      return;
+    }
 
     // Empezamos transacción para poder usar SET LOCAL y no ensuciar el scope
     await db.query('BEGIN');

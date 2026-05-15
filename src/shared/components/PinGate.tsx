@@ -6,10 +6,25 @@ interface PinGateProps {
   onCancel: () => void;
   title?: string;
   subtitle?: string;
-  correctPin?: string;
 }
 
-export function PinGateModal({ onUnlock, onVerify, onCancel, title = "Clave Requerida", subtitle = "Ingresá la clave para continuar", correctPin }: PinGateProps) {
+type PinGateAuthorizationResult =
+  | { action: "unlock"; includePin: true }
+  | { action: "deny" }
+  | { action: "collect"; includePin: true };
+
+export function resolvePinGateAuthorization({
+  hasVerifier,
+  verificationResult,
+}: {
+  hasVerifier: boolean;
+  verificationResult?: boolean;
+}): PinGateAuthorizationResult {
+  if (!hasVerifier) return { action: "collect", includePin: true };
+  return verificationResult === true ? { action: "unlock", includePin: true } : { action: "deny" };
+}
+
+export function PinGateModal({ onUnlock, onVerify, onCancel, title = "Clave Requerida", subtitle = "Ingresá la clave para continuar" }: PinGateProps) {
   const [pin, setPin] = useState("");
   const [shaking, setShaking] = useState(false);
   const [verifying, setVerifying] = useState(false);
@@ -24,22 +39,16 @@ export function PinGateModal({ onUnlock, onVerify, onCancel, title = "Clave Requ
         setVerifying(true);
         const isValid = await onVerify(next);
         setVerifying(false);
-        if (isValid) {
-          onUnlock(next);
-        } else {
-          setShaking(true);
-          setTimeout(() => { setPin(""); setShaking(false); }, 600);
-        }
-      } else if (correctPin) {
-        if (next === correctPin) {
+        const result = resolvePinGateAuthorization({ hasVerifier: true, verificationResult: isValid });
+        if (result.action === "unlock") {
           onUnlock(next);
         } else {
           setShaking(true);
           setTimeout(() => { setPin(""); setShaking(false); }, 600);
         }
       } else {
-        // If no correctPin and no onVerify provided, just return the entered PIN
-        onUnlock(next);
+        const result = resolvePinGateAuthorization({ hasVerifier: false });
+        if (result.action === "collect") onUnlock(next);
       }
     }
   }
