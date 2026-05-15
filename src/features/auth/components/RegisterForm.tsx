@@ -6,8 +6,6 @@ import imgDecorativeScanlineEffect from "figma:asset/70a05c412757c6d4e1cffbb0780
 import { TitleBar } from "../../window";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { writeTenantSessionCache } from "../../../shared/lib/tenantSessionCache";
-import { PinGateModal } from "../../../shared/components/PinGate";
-import { APP_ACCESS_PIN } from "../../../shared/lib/accessPin";
 import { INSFORGE_REFRESH_TOKEN_STORAGE_KEY } from "../../../shared/lib/insforgeAuthStorage";
 
 function extractAccessTokenFromPayload(data: unknown): string | null {
@@ -41,8 +39,6 @@ export function Register() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
-  const [showPinGate, setShowPinGate] = useState(false);
-  const [registrationUnlocked, setRegistrationUnlocked] = useState(false);
   const [step, setStep] = useState<'account' | 'basic' | 'contact' | 'location'>('account');
 
   // Datos de la empresa
@@ -55,7 +51,7 @@ export function Register() {
 
   const navigate = useNavigate();
 
-  const startAccountRegistration = async (pinAlreadyUnlocked = registrationUnlocked) => {
+  const startAccountRegistration = async () => {
     if (!email || !password || !confirmPassword) {
       setError("Por favor completa todos los campos");
       return;
@@ -68,11 +64,6 @@ export function Register() {
 
     if (password.length < 6) {
       setError("La contrase?a debe tener al menos 6 caracteres");
-      return;
-    }
-
-    if (!pinAlreadyUnlocked) {
-      setShowPinGate(true);
       return;
     }
 
@@ -232,12 +223,6 @@ export function Register() {
       setError(err.message || "Error al completar registro");
       setLoading(false);
     }
-  };
-
-  const handlePinUnlock = () => {
-    setShowPinGate(false);
-    setRegistrationUnlocked(true);
-    startAccountRegistration(true);
   };
 
   return (
@@ -583,17 +568,6 @@ export function Register() {
         <div className="absolute bg-[rgba(255,106,160,0.1)] blur-[50px] bottom-[-96px] right-[-96px] rounded-[9999px] size-[256px]" />
       </div>
       </div>
-
-      {/* PIN Gate Modal */}
-      {showPinGate && (
-        <PinGateModal
-          onUnlock={handlePinUnlock}
-          onCancel={() => setShowPinGate(false)}
-          title="Completar Registro"
-          subtitle="Ingresá la clave maestra para completar"
-          correctPin={APP_ACCESS_PIN}
-        />
-      )}
     </div>
   );
 }

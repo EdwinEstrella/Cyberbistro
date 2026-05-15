@@ -18,6 +18,7 @@ import { hydrateAuthStateAfterLogin, syncAuthClientAfterLogin, useAuth } from ".
 import { defaultRouteForRol } from "../../../shared/lib/roleNav";
 import { PinGateModal } from "../../../shared/components/PinGate";
 import { hashPin, saveLocalDeviceSession } from "../../../shared/lib/localFirst";
+import { parseRememberedLogin, serializeRememberedLogin } from "../../../shared/lib/rememberLoginStorage";
 
 const LOGIN_NOTICE_KEY = "cloudix_login_notice";
 const REFRESH_TOKEN_KEY = INSFORGE_REFRESH_TOKEN_STORAGE_KEY;
@@ -61,7 +62,6 @@ export function Login() {
   const [notice, setNotice] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
-  const [showRegisterGate, setShowRegisterGate] = useState(false);
   const [showPinSetup, setShowPinSetup] = useState(false);
   const [pendingAuth, setPendingAuth] = useState<{ user: any; accessRow: any } | null>(null);
   const hasElectronUpdater = Boolean((window as any).electronAPI?.onUpdateEvents);
@@ -120,24 +120,15 @@ export function Login() {
   useEffect(() => {
     try {
       const raw = localStorage.getItem(REMEMBER_LOGIN_KEY);
-      if (!raw) return;
-
-      const parsed = JSON.parse(raw) as {
-        email?: unknown;
-        password?: unknown;
-        enabled?: unknown;
-      };
-
-      if (parsed.enabled !== true) return;
-
-      const rememberedEmail = typeof parsed.email === "string" ? parsed.email : "";
-      setEmail(rememberedEmail);
-      setRememberLogin(true);
-      
-      const rememberedPassword = typeof parsed.password === "string" ? parsed.password : "";
-      if (rememberedPassword) {
-        setPassword(rememberedPassword);
+      const remembered = parseRememberedLogin(raw);
+      if (!remembered.enabled) {
+        localStorage.removeItem(REMEMBER_LOGIN_KEY);
+        return;
       }
+
+      setEmail(remembered.email ?? "");
+      setRememberLogin(true);
+      localStorage.setItem(REMEMBER_LOGIN_KEY, serializeRememberedLogin(remembered.email ?? ""));
     } catch {
       localStorage.removeItem(REMEMBER_LOGIN_KEY);
     }
@@ -180,11 +171,7 @@ export function Login() {
       if (rememberLogin) {
         localStorage.setItem(
           REMEMBER_LOGIN_KEY,
-          JSON.stringify({
-            enabled: true,
-            email,
-            password,
-          })
+          serializeRememberedLogin(email)
         );
       } else {
         localStorage.removeItem(REMEMBER_LOGIN_KEY);
@@ -504,7 +491,7 @@ export function Login() {
               <div className="relative shrink-0 w-full flex flex-col gap-3 sm:gap-4 items-center">
                 <div
                   className="flex gap-2 sm:gap-2 items-center cursor-pointer transition-all duration-300 hover:gap-3 group"
-                  onClick={() => setShowRegisterGate(true)}
+                  onClick={() => navigate('/register')}
                 >
                   <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff6aa0] text-[11px] sm:text-[12px] tracking-[1.1px] sm:tracking-[1.2px] uppercase transition-colors duration-300 group-hover:text-[#ff906d]">
                     Registrar Nueva Unidad
@@ -551,19 +538,6 @@ export function Login() {
           />
         )}
 
-        {/* PIN Gate Modal for Registration */}
-        {showRegisterGate && (
-          <PinGateModal
-            onUnlock={() => {
-              setShowRegisterGate(false);
-              navigate('/register');
-            }}
-            onCancel={() => setShowRegisterGate(false)}
-            title="Registro de Nueva Unidad"
-            subtitle="Ingresá la clave maestra para continuar"
-            correctPin="1110"
-          />
-        )}
     </div>
     </div>
   );

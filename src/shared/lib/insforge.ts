@@ -96,6 +96,6 @@ const source = isInsforgeEnvConfigured ? 'env' : 'embedded';
 console.info('[InsForge] client initialized', {
   baseUrl: effectiveBaseUrl,
   source,
-  autoRefreshToken: true,
+  autoRefreshToken: false,
   isServerMode: true,
 });

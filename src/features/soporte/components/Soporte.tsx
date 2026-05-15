@@ -3,7 +3,7 @@ import { Navigate, useNavigate } from "react-router";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { useTenantCurrency } from "../../../shared/hooks/useTenantCurrency";
-import { APP_ACCESS_PIN } from "../../../shared/lib/accessPin";
+import { buildStaffProvisioningRecoveryMessage } from "./staffProvisioning";
 import {
   DEFAULT_MENU_CATEGORY_SUGGESTIONS,
   normalizeCategoryName,
@@ -36,73 +36,6 @@ interface TenantUserRow {
 interface TenantRow {
   id: string;
   [key: string]: unknown;
-}
-
-// ─────────────────────────────────────────────
-// PIN GATE
-// ─────────────────────────────────────────────
-function PinGate({ onUnlock }: { onUnlock: () => void }) {
-  const [pin, setPin] = useState("");
-  const [shaking, setShaking] = useState(false);
-
-  function handleDigit(digit: string) {
-    if (pin.length >= 4) return;
-    const next = pin + digit;
-    setPin(next);
-    if (next.length === 4) {
-      if (next === APP_ACCESS_PIN) {
-        onUnlock();
-      } else {
-        setShaking(true);
-        setTimeout(() => { setPin(""); setShaking(false); }, 600);
-      }
-    }
-  }
-
-  const keys = ["1","2","3","4","5","6","7","8","9","","0","⌫"];
-
-  return (
-    <div className="flex-1 flex items-center justify-center bg-background transition-colors duration-300">
-      <div className="flex flex-col items-center gap-[32px]">
-        <div className="flex flex-col items-center gap-[6px]">
-          <span className="font-['Space_Grotesk',sans-serif] font-bold text-foreground text-[24px]">Soporte</span>
-          <span className="font-['Inter',sans-serif] text-muted-foreground text-[13px]">Ingresá el PIN para continuar</span>
-        </div>
-        <div
-          className="flex gap-[14px]"
-          style={{ animation: shaking ? "shake 0.5s ease" : undefined }}
-        >
-          <style>{`@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-8px)}40%{transform:translateX(8px)}60%{transform:translateX(-6px)}80%{transform:translateX(6px)}}`}</style>
-          {[0,1,2,3].map((i) => (
-            <div
-              key={i}
-              className="size-[14px] rounded-full transition-all duration-150"
-              style={{
-                backgroundColor: i < pin.length ? (shaking ? "#ff716c" : "#ff906d") : "var(--muted)",
-                boxShadow: i < pin.length && !shaking ? "0 0 10px rgba(255,144,109,0.5)" : undefined,
-              }}
-            />
-          ))}
-        </div>
-        <div className="grid grid-cols-3 gap-[10px]">
-          {keys.map((key, i) => {
-            if (key === "") return <div key={i} />;
-            const isDel = key === "⌫";
-            return (
-              <button
-                key={i}
-                onClick={() => isDel ? setPin((p) => p.slice(0,-1)) : handleDigit(key)}
-                className="size-[72px] rounded-[16px] font-['Space_Grotesk',sans-serif] font-bold text-[20px] cursor-pointer transition-all active:scale-95 bg-muted text-foreground border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5"
-                style={{
-                  color: isDel ? "#ff716c" : "currentColor",
-                }}
-              >{key}</button>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
 }
 
 // ─────────────────────────────────────────────
@@ -814,7 +747,15 @@ function UsuariosPanel() {
     // Insertamos usando el cliente principal, el cual sigue autenticado como admin
     const { error: insertError } = await insforgeClient.database.from("tenant_users").insert([{ auth_user_id: newUserId, tenant_id: tenantId, email: staffEmail, password_hash: "MANAGED_BY_AUTH", rol, nombre: nombre.trim() || null, activo: true }]);
     
-    if (insertError) { setError(insertError.message); setCreating(false); return; }
+    if (insertError) {
+      setError(buildStaffProvisioningRecoveryMessage({
+        email: staffEmail,
+        authUserId: newUserId,
+        cause: insertError.message,
+      }));
+      setCreating(false);
+      return;
+    }
 
     setSuccess(`Usuario creado.`); setEmail(""); setPassword(""); setNombre(""); await loadUsers();
     setCreating(false);
@@ -962,7 +903,7 @@ function MesasPanel() {
 // ─────────────────────────────────────────────
 type Tab = "usuarios" | "carta" | "categorias" | "mesas";
 
-function SoportePanel({ onLock }: { onLock: () => void }) {
+function SoportePanel() {
   const [activeTab, setActiveTab] = useState<Tab>("carta");
 
   return (
@@ -982,7 +923,6 @@ function SoportePanel({ onLock }: { onLock: () => void }) {
             ))}
           </div>
         </div>
-        <button onClick={onLock} className="px-4 py-2 mb-4 bg-muted text-muted-foreground border border-border rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-black/5 dark:hover:bg-white/10 transition-all cursor-pointer">Cerrar Sesión</button>
       </div>
       <div className="flex-1 overflow-hidden flex flex-col min-h-0">
         {activeTab === "carta" ? <CartaPanel /> : activeTab === "usuarios" ? <UsuariosPanel /> : activeTab === "mesas" ? <MesasPanel /> : <CategoriasPanel />}
@@ -997,7 +937,6 @@ function SoportePanel({ onLock }: { onLock: () => void }) {
 export function Soporte() {
   const navigate = useNavigate();
   const { loading, isAuthenticated, rol } = useAuth();
-  const [unlocked, setUnlocked] = useState(false);
 
   if (loading) return <div className="flex-1 flex items-center justify-center font-['Space_Grotesk'] text-muted-foreground">Cargando...</div>;
   if (!isAuthenticated) return <Navigate to="/" replace />;
@@ -1012,6 +951,5 @@ export function Soporte() {
     );
   }
 
-  if (!unlocked) return <PinGate onUnlock={() => setUnlocked(true)} />;
-  return <SoportePanel onLock={() => setUnlocked(false)} />;
+  return <SoportePanel />;
 }

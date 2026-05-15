@@ -2,8 +2,6 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { ChevronDown, Eye, Printer, Trash2 } from "lucide-react";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
-import { APP_ACCESS_PIN } from "../../../shared/lib/accessPin";
-import { PinGateModal } from "../../../shared/components/PinGate";
 import { buildCierreDiaReceiptHtml, buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
@@ -220,7 +218,7 @@ function ymdToLongLabel(ymd: string): string {
 }
 
 export function Billing() {
-  const { tenantId, loading: authLoading } = useAuth();
+  const { tenantId, loading: authLoading, rol } = useAuth();
   // theme was declared but never read
   const [view, setView] = useState<BillingView>("facturas");
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -232,7 +230,6 @@ export function Billing() {
   const [statusFilter, setStatusFilter] = useState<string>("todos");
   const [methodFilter, setMethodFilter] = useState<string>("todos");
   const [invoiceModal, setInvoiceModal] = useState<Invoice | null>(null);
-  const [deletePinInvoice, setDeletePinInvoice] = useState<Invoice | null>(null);
   // deletingInvoiceId removed
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -494,6 +491,8 @@ const loadBillingData = useCallback(async () => {
     };
   }, [cycleSummaries, invoices, expenses]);
 
+  const canDeleteInvoices = rol === "admin";
+
   const itemsPerPage = 10;
   // totalPages removed
   const startIndex = (currentPage - 1) * itemsPerPage;
@@ -624,6 +623,7 @@ const loadBillingData = useCallback(async () => {
   const deleteInvoiceAndTraces = useCallback(
     async (inv: Invoice) => {
       if (!tenantId) return;
+      if (!canDeleteInvoices) return;
       if (inv.tenant_id != null && inv.tenant_id !== tenantId) return;
 
       try {
@@ -674,7 +674,7 @@ const loadBillingData = useCallback(async () => {
         alert(`No se pudo eliminar la factura offline: ${err.message}`);
       }
     },
-    [tenantId, loadBillingData]
+    [tenantId, canDeleteInvoices, loadBillingData]
   );
 
   if (authLoading) {
@@ -879,7 +879,7 @@ const loadBillingData = useCallback(async () => {
                     <div className="flex gap-2">
                       <button onClick={() => setInvoiceModal(inv)} className="size-9 rounded-lg bg-muted flex items-center justify-center text-muted-foreground border-none"><Eye size={16} /></button>
                       <button onClick={() => void printInvoice(inv)} className="size-9 rounded-lg bg-muted flex items-center justify-center text-muted-foreground border-none"><Printer size={16} /></button>
-                      <button onClick={() => setDeletePinInvoice(inv)} className="size-9 rounded-lg bg-muted flex items-center justify-center text-destructive/70 border-none"><Trash2 size={16} /></button>
+                      {canDeleteInvoices && <button onClick={() => void deleteInvoiceAndTraces(inv)} className="size-9 rounded-lg bg-muted flex items-center justify-center text-destructive/70 border-none"><Trash2 size={16} /></button>}
                     </div>
                   </div>
                 </div>
@@ -933,7 +933,7 @@ const loadBillingData = useCallback(async () => {
                       <div className="flex justify-end gap-2">
                         <button onClick={() => setInvoiceModal(inv)} className="size-8 rounded-lg bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/10 transition-all border-none cursor-pointer"><Eye size={16} /></button>
                         <button onClick={() => void printInvoice(inv)} className="size-8 rounded-lg bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/10 transition-all border-none cursor-pointer"><Printer size={16} /></button>
-                        <button onClick={() => setDeletePinInvoice(inv)} className="size-8 rounded-lg bg-muted flex items-center justify-center text-destructive/60 hover:text-destructive hover:bg-destructive/10 transition-all border-none cursor-pointer"><Trash2 size={16} /></button>
+                        {canDeleteInvoices && <button onClick={() => void deleteInvoiceAndTraces(inv)} className="size-8 rounded-lg bg-muted flex items-center justify-center text-destructive/60 hover:text-destructive hover:bg-destructive/10 transition-all border-none cursor-pointer"><Trash2 size={16} /></button>}
                       </div>
                     </div>
                   );
@@ -1117,20 +1117,6 @@ const loadBillingData = useCallback(async () => {
           )}
         </DialogContent>
       </Dialog>
-
-      {deletePinInvoice && (
-        <PinGateModal
-          correctPin={APP_ACCESS_PIN}
-          title="Eliminar factura"
-          subtitle={`Factura #${String(deletePinInvoice.numero_factura).padStart(4, "0")}. Requiere clave de soporte.`}
-          onUnlock={() => {
-            const target = deletePinInvoice;
-            setDeletePinInvoice(null);
-            void deleteInvoiceAndTraces(target);
-          }}
-          onCancel={() => setDeletePinInvoice(null)}
-        />
-      )}
     </div>
   );
 }
