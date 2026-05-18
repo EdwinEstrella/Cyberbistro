@@ -6,9 +6,24 @@ import {
   LOCAL_FIRST_IMMEDIATE_TABLES,
   isLocalFirstEnabled,
   pushOutboxToServer,
+  revalidateLicenseOnReconnect,
   syncIncremental,
   type LocalFirstStatus,
 } from "../lib/localFirst";
+
+export function resolveLicenseGateForOnlineSync(validation: {
+  valid: boolean;
+  reason?: string;
+}): { allowed: boolean; message: string | null } {
+  if (validation.valid) {
+    return { allowed: true, message: null };
+  }
+
+  return {
+    allowed: false,
+    message: validation.reason || "Licencia inválida. Reconectá para revalidar antes de sincronizar.",
+  };
+}
 
 interface LocalFirstBootstrapState {
   status: LocalFirstStatus;
@@ -52,6 +67,13 @@ export function useLocalFirstBootstrap(tenantId: string | null): LocalFirstBoots
       const snapshot = await getLocalFirstStatusSnapshot(tenantId);
       if (navigator.onLine) {
         if (snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing") {
+          const licenseValidation = await revalidateLicenseOnReconnect(tenantId);
+          const licenseGate = resolveLicenseGateForOnlineSync(licenseValidation);
+          if (!licenseGate.allowed) {
+            apply({ ...snapshot, message: licenseGate.message || "Licencia inválida." });
+            return;
+          }
+
           apply({ ...snapshot, status: "syncing", message: "Sincronizando cambios..." });
           try {
             const outboxResult = await pushOutboxToServer(tenantId);
@@ -93,6 +115,18 @@ export function useLocalFirstBootstrap(tenantId: string | null): LocalFirstBoots
       }
 
       try {
+        const licenseValidation = await revalidateLicenseOnReconnect(tenantId);
+        const licenseGate = resolveLicenseGateForOnlineSync(licenseValidation);
+        if (!licenseGate.allowed) {
+          apply({
+            status: "error",
+            message: licenseGate.message || "Licencia inválida.",
+            completedHistoryTables: 0,
+            totalHistoryTables: LOCAL_FIRST_HISTORY_TABLES.length,
+          });
+          return;
+        }
+
         const snapshot = await getLocalFirstStatusSnapshot(tenantId);
         if (snapshot.status === "history_complete") {
           apply({ ...snapshot, status: "syncing", message: "Sincronizando cambios..." });
