@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildServerWritePayload,
+  buildSyncErrorRow,
+  buildLocalMirrorWriteResult,
+  assertCanWriteOffline,
   buildSyncStateKey,
   createSyncOutboxEntry,
   createSyncStateRow,
@@ -10,9 +14,13 @@ import {
   LOCAL_FIRST_IMMEDIATE_TABLES,
   LOCAL_FIRST_MIRROR_TABLES,
   LOCAL_FIRST_METADATA_TABLES,
+  resolveUpsertConflictTarget,
+  resolveLocalWriteMode,
   resolveConflictForTable,
+  resolveOutboxConflictGuardrail,
   shouldReadLocalFirst,
   type LocalLicenseCache,
+  type LocalWriteMode,
   type SyncOutboxEntry,
 } from "./localFirst";
 
@@ -163,5 +171,173 @@ describe("localFirst", () => {
     });
     const result = resolveConflictForTable("tenant_users", entry, { id: "u1" });
     expect(result.resolution).toBe("server_wins");
+  });
+
+  it("aplica guardrails de conflicto antes de mutar servidor", () => {
+    const tenantUpdate = createSyncOutboxEntry({
+      tenantId: "tenant-1",
+      tableName: "tenant_users",
+      rowId: "u1",
+      op: "update",
+      payload: { activo: true },
+      deviceId: "dev1",
+    });
+
+    const tenantGuardrail = resolveOutboxConflictGuardrail("tenant-1", tenantUpdate, { id: "u1" });
+    expect(tenantGuardrail.action).toBe("mark_synced_server_wins");
+    expect(tenantGuardrail.shouldWriteServer).toBe(false);
+
+    const consumoInsert = createSyncOutboxEntry({
+      tenantId: "tenant-1",
+      tableName: "consumos",
+      rowId: "c-1",
+      op: "insert",
+      payload: { id: "c-1", total: 200 },
+      deviceId: "dev1",
+    });
+
+    const consumoGuardrail = resolveOutboxConflictGuardrail("tenant-1", consumoInsert, null);
+    expect(consumoGuardrail.action).toBe("apply_local_write");
+    expect(consumoGuardrail.shouldWriteServer).toBe(true);
+  });
+
+  it("bloquea delete de facturas y deja metadata de auditoría", () => {
+    const facturaDelete = createSyncOutboxEntry({
+      tenantId: "tenant-1",
+      tableName: "facturas",
+      rowId: "f-1",
+      op: "delete",
+      deviceId: "dev1",
+    });
+
+    const guardrail = resolveOutboxConflictGuardrail("tenant-1", facturaDelete, { id: "f-1" });
+    expect(guardrail.action).toBe("skip_with_audit_error");
+    expect(guardrail.shouldWriteServer).toBe(false);
+    expect(guardrail.reason).toContain("factura");
+  });
+
+  it("persiste metadata de error de sync con retry status", () => {
+    const outbox = createSyncOutboxEntry({
+      tenantId: "tenant-1",
+      tableName: "facturas",
+      rowId: "f-1",
+      op: "update",
+      payload: { id: "f-1" },
+      deviceId: "dev1",
+    });
+
+    const syncError = buildSyncErrorRow({
+      outboxEntry: outbox,
+      reason: "Version servidora mas reciente",
+      retryStatus: "not_retryable",
+      recoverable: true,
+    });
+
+    expect(syncError).toMatchObject({
+      outbox_id: outbox.id,
+      tenant_id: "tenant-1",
+      table_name: "facturas",
+      row_id: "f-1",
+      op: "update",
+      retry_status: "not_retryable",
+      recoverable: true,
+    });
+  });
+
+  it("resuelve modo desktop local-first online/offline", () => {
+    const desktopOnline: LocalWriteMode = resolveLocalWriteMode({ isDesktop: true, isOnline: true });
+    const desktopOffline: LocalWriteMode = resolveLocalWriteMode({ isDesktop: true, isOnline: false });
+
+    expect(desktopOnline).toBe("desktop-local-first");
+    expect(desktopOffline).toBe("desktop-local-first");
+  });
+
+  it("resuelve modo web server-first por defecto", () => {
+    const webOnline: LocalWriteMode = resolveLocalWriteMode({ isDesktop: false, isOnline: true });
+    const webOffline: LocalWriteMode = resolveLocalWriteMode({ isDesktop: false, isOnline: false });
+
+    expect(webOnline).toBe("web-server-first");
+    expect(webOffline).toBe("web-server-first");
+  });
+
+  it("permite write offline desktop con licencia válida en cache", async () => {
+    const validCache: LocalLicenseCache = {
+      tenant_id: "tenant-1",
+      tenant_activa: true,
+      tenant_users_activo: true,
+      validated_at: new Date().toISOString(),
+      window_valid_until: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+    };
+
+    await expect(assertCanWriteOffline("tenant-1", validCache)).resolves.toEqual({ valid: true });
+  });
+
+  it("rechaza write offline desktop con licencia expirada", async () => {
+    const expiredCache: LocalLicenseCache = {
+      tenant_id: "tenant-1",
+      tenant_activa: true,
+      tenant_users_activo: true,
+      validated_at: new Date().toISOString(),
+      window_valid_until: new Date(Date.now() - 1000).toISOString(),
+    };
+    await expect(assertCanWriteOffline("tenant-1", expiredCache)).resolves.toMatchObject({
+      valid: false,
+    });
+  });
+
+  it("aplica upsert al mirror local fusionando fila existente", () => {
+    const merged = buildLocalMirrorWriteResult({
+      op: "upsert",
+      rowId: "m-1",
+      existing: { id: "m-1", tenant_id: "tenant-1", estado: "libre", deuda_pendiente: 0 },
+      payload: { estado: "ocupada", deuda_pendiente: 120 },
+    });
+
+    expect(merged).toEqual({
+      id: "m-1",
+      tenant_id: "tenant-1",
+      estado: "ocupada",
+      deuda_pendiente: 120,
+    });
+  });
+
+  it("crea fila base al upsert cuando no existe registro local", () => {
+    const merged = buildLocalMirrorWriteResult({
+      op: "upsert",
+      rowId: "m-2",
+      existing: undefined,
+      payload: { tenant_id: "tenant-1", estado: "ocupada" },
+    });
+
+    expect(merged).toEqual({
+      id: "m-2",
+      tenant_id: "tenant-1",
+      estado: "ocupada",
+    });
+  });
+
+  it("usa conflicto compuesto solo para mesas_estado", () => {
+    expect(resolveUpsertConflictTarget("mesas_estado")).toBe("tenant_id,id");
+    expect(resolveUpsertConflictTarget("cocina_estado")).toBe("id");
+    expect(resolveUpsertConflictTarget("consumos")).toBe("id");
+  });
+
+  it("mantiene guardrail de tenant_id en payload para tablas tenant-scoped", () => {
+    expect(buildServerWritePayload("tenant-1", "cocina_estado", { id: "c1", activa: true })).toEqual({
+      id: "c1",
+      activa: true,
+      tenant_id: "tenant-1",
+    });
+
+    expect(() =>
+      buildServerWritePayload("tenant-1", "consumos", { id: "x1", tenant_id: "tenant-2", total: 50 })
+    ).toThrow(/tenant_id/i);
+  });
+
+  it("no inyecta tenant_id en tabla tenants", () => {
+    expect(buildServerWritePayload("tenant-1", "tenants", { id: "tenant-1", nombre: "Cyber Bistro" })).toEqual({
+      id: "tenant-1",
+      nombre: "Cyber Bistro",
+    });
   });
 });
