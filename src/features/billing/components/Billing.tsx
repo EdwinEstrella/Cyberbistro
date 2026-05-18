@@ -607,11 +607,14 @@ const loadBillingData = useCallback(async () => {
 
       const res = await printThermalHtml(html);
       if (res.ok) {
-        await insforgeClient.database
-          .from("cierres_operativos")
-          .update({ printed_at: new Date().toISOString() })
-          .eq("id", entry.cycle.id)
-          .eq("tenant_id", tenantId);
+        await enqueueLocalWrite({
+          tenantId,
+          tableName: "cierres_operativos",
+          rowId: entry.cycle.id,
+          op: "update",
+          payload: { printed_at: new Date().toISOString() },
+          deviceId: await getDeviceId(),
+        });
         await loadBillingData();
       } else if (res.error) {
         console.warn("Impresion cierre:", res.error);
