@@ -54,6 +54,7 @@ import {
 import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
 import { getLocalFirstStatusSnapshot, readLocalMirror, readLocalOutbox, enqueueLocalWrite, getDeviceId, writeLocalMirrorRow, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { getNextFacturaNumber } from "../../../shared/lib/invoiceNumber";
+import { writePosMutationLocalFirst } from "../../pos/lib/localFirstMutations";
 
 interface Plato {
   id: number;
@@ -412,12 +413,21 @@ export function Dashboard() {
     const items_pendientes = rows.length;
     const estado = items_pendientes > 0 ? "ocupada" : "libre";
 
-    await insforgeClient.database
-      .from("mesas_estado")
-      .upsert(
-        { id: parseInt(mesaId, 10), estado, tenant_id: tenantId },
-        { onConflict: "tenant_id,id" }
-      );
+    const mesaEstadoRow = {
+      id: parseInt(mesaId, 10),
+      estado,
+      tenant_id: tenantId,
+      updated_at: new Date().toISOString(),
+    };
+    await writePosMutationLocalFirst({
+      tenantId,
+      tableName: "mesas_estado",
+      rowId: String(mesaEstadoRow.id),
+      op: "upsert",
+      payload: mesaEstadoRow,
+      authUserId: user?.id ?? null,
+      deviceId: await getDeviceId(),
+    });
 
     setMesas((prev) =>
       prev.map((m) =>
@@ -511,15 +521,20 @@ export function Dashboard() {
 
     setDeletingConsumoId(consumoId);
 
-    const { error } = await insforgeClient.database
-      .from("consumos")
-      .delete()
-      .eq("id", consumoId)
-      .eq("tenant_id", tenantId);
-
-    if (error) {
+    try {
+      await writePosMutationLocalFirst({
+        tenantId,
+        tableName: "consumos",
+        rowId: consumoId,
+        op: "delete",
+        payload: { id: consumoId },
+        authUserId: user?.id ?? null,
+        deviceId: await getDeviceId(),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Error desconocido";
       console.error("Error al eliminar consumo:", error);
-      alert(`Error al eliminar: ${error.message}`);
+      alert(`Error al eliminar: ${message}`);
       setDeletingConsumoId(null);
       return;
     }
@@ -624,25 +639,16 @@ export function Dashboard() {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
-      let data: any = null;
-      try {
-        if (!navigator.onLine) throw new Error("offline");
-        const result = await insforgeClient.database.from("comandas").insert([comandaPayload]).select().single();
-        if (result.error) throw new Error(result.error.message);
-        data = result.data;
-        await writeLocalMirrorRow(tid, "comandas", data as Record<string, unknown>);
-      } catch (error) {
-        await enqueueLocalWrite({
-          tenantId: tid,
-          tableName: "comandas",
-          rowId: localComandaId,
-          op: "insert",
-          payload: comandaPayload,
-          authUserId: user?.id ?? null,
-          deviceId: await getDeviceId(),
-        });
-        data = comandaPayload;
-      }
+      await enqueueLocalWrite({
+        tenantId: tid,
+        tableName: "comandas",
+        rowId: localComandaId,
+        op: "insert",
+        payload: comandaPayload,
+        authUserId: user?.id ?? null,
+        deviceId: await getDeviceId(),
+      });
+      const data: any = comandaPayload;
 
       comandaId = data?.id || localComandaId;
 
@@ -731,31 +737,16 @@ export function Dashboard() {
       })),
     ];
 
-    let insertedConsumos = consumosToInsert;
-    try {
-      if (!navigator.onLine) throw new Error("offline");
-      const { data, error: consumosError } = await insforgeClient.database
-        .from("consumos")
-        .insert(consumosToInsert)
-        .select();
-
-      if (consumosError) throw new Error(consumosError.message);
-      insertedConsumos = (data as typeof consumosToInsert | null) ?? consumosToInsert;
-      for (const consumo of insertedConsumos) {
-        await writeLocalMirrorRow(tid, "consumos", consumo);
-      }
-    } catch (error) {
-      for (const consumo of consumosToInsert) {
-        await enqueueLocalWrite({
-          tenantId: tid,
-          tableName: "consumos",
-          rowId: consumo.id,
-          op: "insert",
-          payload: consumo,
-          authUserId: user?.id ?? null,
-          deviceId: await getDeviceId(),
-        });
-      }
+    for (const consumo of consumosToInsert) {
+      await enqueueLocalWrite({
+        tenantId: tid,
+        tableName: "consumos",
+        rowId: consumo.id,
+        op: "insert",
+        payload: consumo,
+        authUserId: user?.id ?? null,
+        deviceId: await getDeviceId(),
+      });
     }
 
     // Limpiar SOLO el carrito (todo fue enviado)
@@ -920,47 +911,14 @@ export function Dashboard() {
     }
 
     if (tenantId) {
-      const isOnline = navigator.onLine;
-      if (isOnline) {
-        try {
-          const { data: factura, error: facturaError } = await insforgeClient.database
-            .from("facturas")
-            .insert([facturaData])
-            .select()
-            .single();
-          if (!facturaError && factura) {
-            await writeLocalMirrorRow(tenantId, "facturas", factura as Record<string, unknown>);
-            Object.assign(facturaData, factura);
-          } else {
-            await enqueueLocalWrite({
-              tenantId,
-              tableName: "facturas",
-              rowId: localFacturaId,
-              op: "insert",
-              payload: facturaData,
-              deviceId: await getDeviceId(),
-            });
-          }
-        } catch {
-          await enqueueLocalWrite({
-            tenantId,
-            tableName: "facturas",
-            rowId: localFacturaId,
-            op: "insert",
-            payload: facturaData,
-            deviceId: await getDeviceId(),
-          });
-        }
-      } else {
-        await enqueueLocalWrite({
-          tenantId,
-          tableName: "facturas",
-          rowId: localFacturaId,
-          op: "insert",
-          payload: facturaData,
-          deviceId: await getDeviceId(),
-        });
-      }
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "facturas",
+        rowId: localFacturaId,
+        op: "insert",
+        payload: facturaData,
+        deviceId: await getDeviceId(),
+      });
     }
 
     if (tenantId && ncfPart && !ncfPart.sequenceReservedAtomically) {
@@ -1635,22 +1593,15 @@ export function Dashboard() {
               updated_at: new Date().toISOString(),
             };
             await writeLocalMirrorRow(tenantId, "mesas_estado", freeMesaRow);
-            try {
-              const { error } = await insforgeClient.database
-                .from("mesas_estado")
-                .upsert(freeMesaRow, { onConflict: "tenant_id,id" });
-              if (error) throw new Error(error.message);
-            } catch {
-              await enqueueLocalWrite({
-                tenantId,
-                tableName: "mesas_estado",
-                rowId: String(freeMesaRow.id),
-                op: "upsert",
-                payload: freeMesaRow,
-                authUserId: user?.id ?? null,
-                deviceId: await getDeviceId(),
-              });
-            }
+            await writePosMutationLocalFirst({
+              tenantId,
+              tableName: "mesas_estado",
+              rowId: String(freeMesaRow.id),
+              op: "upsert",
+              payload: freeMesaRow,
+              authUserId: user?.id ?? null,
+              deviceId: await getDeviceId(),
+            });
             setMesas((prev) =>
               prev.map((m) =>
                 m.id === selectedMesa.id

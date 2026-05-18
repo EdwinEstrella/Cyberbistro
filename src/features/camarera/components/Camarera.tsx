@@ -8,7 +8,8 @@ import { buildComandaReceiptHtml } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { normalizeTenantRol } from "../../../shared/lib/roleNav";
-import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
+import { enqueueLocalWrite, getDeviceId, readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
+import { writePosMutationLocalFirst } from "../../pos/lib/localFirstMutations";
 
 interface Plato {
   id: number;
@@ -363,19 +364,37 @@ export function Camarera() {
         precio: item.plato.precio,
       }));
 
-      const { data: comanda, error } = await insforgeClient.database
-        .from("comandas")
-        .insert([{ mesa_numero: selectedMesa.numero, estado: "pendiente", items, notas: null, tenant_id: tenantId, creado_por: user?.id ?? null }])
-        .select()
-        .single();
+      const localComandaId = crypto.randomUUID();
+      const comandaPayload = {
+        id: localComandaId,
+        mesa_numero: selectedMesa.numero,
+        estado: "pendiente",
+        items,
+        notas: null,
+        tenant_id: tenantId,
+        creado_por: user?.id ?? null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
 
-      if (error || !comanda) {
-        setMessage(error?.message || "No se pudo crear la comanda.");
+      try {
+        await writePosMutationLocalFirst({
+          tenantId,
+          tableName: "comandas",
+          rowId: localComandaId,
+          op: "insert",
+          payload: comandaPayload,
+          authUserId: user?.id ?? null,
+          deviceId: await getDeviceId(),
+        });
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "No se pudo crear la comanda.");
         setSending(false);
         return;
       }
 
-      comandaId = comanda.id as string;
+      const comanda = comandaPayload;
+      comandaId = localComandaId;
 
       const { data: tenantRow } = await insforgeClient.database
         .from("tenants")
@@ -430,9 +449,22 @@ export function Camarera() {
       })),
     ];
 
-    const { error } = await insforgeClient.database.from("consumos").insert(consumosToInsert);
-    if (error) {
-      setMessage(error.message);
+    try {
+      const deviceId = await getDeviceId();
+      for (const consumo of consumosToInsert) {
+        const rowId = (consumo as { id?: string }).id ?? crypto.randomUUID();
+        await enqueueLocalWrite({
+          tenantId,
+          tableName: "consumos",
+          rowId,
+          op: "insert",
+          payload: { ...consumo, id: rowId },
+          authUserId: user?.id ?? null,
+          deviceId,
+        });
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudo registrar consumos.");
       setSending(false);
       return;
     }
@@ -468,16 +500,17 @@ export function Camarera() {
     setDeletingConsumoId(group.key);
     setMessage("");
 
-    const { error } = await insforgeClient.database
-      .from("consumos")
-      .delete()
-      .in("id", group.ids)
-      .eq("tenant_id", tenantId);
-
-    if (error) {
-      setMessage(error.message || "No se pudo eliminar el consumo.");
-      setDeletingConsumoId(null);
-      return;
+    const deviceId = await getDeviceId();
+    for (const consumoId of group.ids) {
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "consumos",
+        rowId: consumoId,
+        op: "delete",
+        payload: { id: consumoId },
+        authUserId: user?.id ?? null,
+        deviceId,
+      });
     }
 
     for (const comandaId of group.comandaIds) {
@@ -489,11 +522,15 @@ export function Camarera() {
         .neq("estado", "pagado");
 
       if (!remaining || remaining.length === 0) {
-        await insforgeClient.database
-          .from("comandas")
-          .delete()
-          .eq("id", comandaId)
-          .eq("tenant_id", tenantId);
+          await enqueueLocalWrite({
+            tenantId,
+            tableName: "comandas",
+            rowId: comandaId,
+            op: "delete",
+            payload: { id: comandaId },
+            authUserId: user?.id ?? null,
+            deviceId,
+          });
       } else {
         const qtyToRemove = group.rows
           .filter((row) => row.comanda_id === comandaId)
@@ -512,11 +549,15 @@ export function Camarera() {
           const currentQty = Number(items[idx].cantidad || 0);
           if (currentQty <= qtyToRemove) items.splice(idx, 1);
           else items[idx] = { ...items[idx], cantidad: currentQty - qtyToRemove };
-          await insforgeClient.database
-            .from("comandas")
-            .update({ items })
-            .eq("id", comandaId)
-            .eq("tenant_id", tenantId);
+          await enqueueLocalWrite({
+            tenantId,
+            tableName: "comandas",
+            rowId: comandaId,
+            op: "update",
+            payload: { items },
+            authUserId: user?.id ?? null,
+            deviceId,
+          });
         }
       }
     }

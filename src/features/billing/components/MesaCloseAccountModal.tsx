@@ -18,6 +18,7 @@ import {
 import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
 import { enqueueLocalWrite, getDeviceId, getLocalFirstStatusSnapshot, readLocalMirror, readLocalOutbox } from "../../../shared/lib/localFirst";
 import { getNextFacturaNumber } from "../../../shared/lib/invoiceNumber";
+import { closeKitchenComandasForMesaLocalFirst } from "../../pos/lib/localFirstMutations";
 
 const ITBIS = 0.18;
 
@@ -192,16 +193,26 @@ async function groupConsumosForFactura(
 
 /** Cierra comandas de cocina abiertas para esta mesa (evita que la vista Mesas siga sumando su total). */
 async function cerrarComandasCocinaMesa(tenantId: string, mesaNumero: number): Promise<void> {
-  const { error } = await insforgeClient.database
+  const { data, error } = await insforgeClient.database
     .from("comandas")
-    .update({ estado: "entregado", updated_at: new Date().toISOString() })
+    .select("id")
     .eq("tenant_id", tenantId)
     .eq("mesa_numero", mesaNumero)
     .in("estado", ["pendiente", "en_preparacion", "listo"]);
 
   if (error) {
     console.warn("MesaCloseAccountModal: no se pudieron cerrar comandas de cocina:", error);
+    return;
   }
+
+  const deviceId = await getDeviceId();
+  await closeKitchenComandasForMesaLocalFirst({
+    tenantId,
+    mesaNumero,
+    deviceId,
+    listOpenComandas: async () =>
+      ((data as Array<{ id: string }> | null) ?? []).map((row) => ({ id: row.id })),
+  });
 }
 
 export function MesaCloseAccountModal({
