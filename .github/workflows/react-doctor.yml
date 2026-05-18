@@ -24,5 +24,4 @@ jobs:
         uses: millionco/react-doctor@main
         with:
           diff: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.ref || 'master' }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
           fail-on: none # Ponemos 'none' al principio para que no bloquee los deploys hasta que subamos el score

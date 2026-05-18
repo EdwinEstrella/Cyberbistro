@@ -57,6 +57,7 @@ export const LOCAL_FIRST_HISTORY_TABLES = [
 export type LocalFirstMirrorTable = (typeof LOCAL_FIRST_MIRROR_TABLES)[number];
 export type LocalFirstMetadataTable = (typeof LOCAL_FIRST_METADATA_TABLES)[number];
 export type LocalFirstPhase = "minimum" | "history" | "incremental";
+export type LocalWriteMode = "desktop-local-first" | "web-server-first";
 export type LocalFirstStatus =
   | "idle"
   | "bootstrapping_minimum"
@@ -92,6 +93,62 @@ export interface SyncOutboxEntry {
   error_message: string | null;
 }
 
+export type SyncRetryStatus = "retryable" | "not_retryable" | "max_retries_exceeded";
+
+const COMPOSITE_UPSERT_CONFLICT_TABLES = new Set<LocalFirstMirrorTable>(["mesas_estado"]);
+
+function isTenantScopedMirrorTable(tableName: LocalFirstMirrorTable): boolean {
+  return tableName !== "tenants";
+}
+
+export function resolveUpsertConflictTarget(tableName: LocalFirstMirrorTable): "id" | "tenant_id,id" {
+  return COMPOSITE_UPSERT_CONFLICT_TABLES.has(tableName) ? "tenant_id,id" : "id";
+}
+
+export function buildServerWritePayload(
+  tenantId: string,
+  tableName: LocalFirstMirrorTable,
+  payload: Record<string, unknown>
+): Record<string, unknown> {
+  if (!isTenantScopedMirrorTable(tableName)) {
+    return payload;
+  }
+
+  const payloadTenantId = payload["tenant_id"];
+  if (payloadTenantId !== undefined && payloadTenantId !== tenantId) {
+    throw new Error(`Payload tenant_id mismatch for ${tableName}.`);
+  }
+
+  return {
+    ...payload,
+    tenant_id: tenantId,
+  };
+}
+
+export interface SyncErrorRow {
+  id: string;
+  outbox_id: string;
+  tenant_id: string;
+  table_name: LocalFirstMirrorTable;
+  row_id: string;
+  op: SyncOutboxEntry["op"];
+  reason: string;
+  created_at: string;
+  recoverable: boolean;
+  retry_status: SyncRetryStatus;
+}
+
+export type OutboxConflictGuardrailAction =
+  | "apply_local_write"
+  | "mark_synced_server_wins"
+  | "skip_with_audit_error";
+
+export interface OutboxConflictGuardrail {
+  action: OutboxConflictGuardrailAction;
+  reason: string;
+  shouldWriteServer: boolean;
+}
+
 const PAGE_SIZE = 250;
 const DB_VERSION = 1;
 const FULL_REFRESH_ON_SYNC_TABLES = [
@@ -105,6 +162,16 @@ export function isLocalFirstEnabled(): boolean {
   if (typeof window === "undefined") return false;
   if (Boolean((window as Window & { electronAPI?: unknown }).electronAPI)) return true;
   return import.meta.env.VITE_ENABLE_WEB_LOCAL_FIRST === "true";
+}
+
+function isDesktopRuntime(): boolean {
+  if (typeof window === "undefined") return false;
+  return Boolean((window as Window & { electronAPI?: unknown }).electronAPI);
+}
+
+export function resolveLocalWriteMode(args: { isDesktop: boolean; isOnline: boolean }): LocalWriteMode {
+  void args.isOnline;
+  return args.isDesktop ? "desktop-local-first" : "web-server-first";
 }
 
 export function isLocalFirstMirrorTable(table: string): table is LocalFirstMirrorTable {
@@ -245,18 +312,22 @@ async function updateOutboxEntryStatus(
 }
 
 async function writeDirectlyToServer(args: {
+  tenantId: string;
   tableName: LocalFirstMirrorTable;
   rowId: string;
   op: SyncOutboxEntry["op"];
   payload?: Record<string, unknown> | null;
 }): Promise<void> {
   let result: { error?: { message?: string } | null } | null = null;
+  const serverPayload = args.payload
+    ? buildServerWritePayload(args.tenantId, args.tableName, args.payload)
+    : null;
   if (args.op === "insert") {
-    result = await (insforgeClient.database.from(args.tableName).insert([args.payload as Record<string, unknown>]) as any);
+    result = await (insforgeClient.database.from(args.tableName).insert([serverPayload as Record<string, unknown>]) as any);
   } else if (args.op === "update") {
-    result = await (insforgeClient.database.from(args.tableName).update(args.payload as Record<string, unknown>).eq("id", args.rowId) as any);
+    result = await (insforgeClient.database.from(args.tableName).update(serverPayload as Record<string, unknown>).eq("id", args.rowId) as any);
   } else if (args.op === "upsert") {
-    result = await (insforgeClient.database.from(args.tableName).upsert(args.payload as Record<string, unknown>, { onConflict: "tenant_id,id" }) as any);
+    result = await (insforgeClient.database.from(args.tableName).upsert(serverPayload as Record<string, unknown>, { onConflict: resolveUpsertConflictTarget(args.tableName) }) as any);
   } else if (args.op === "delete") {
     result = await (insforgeClient.database.from(args.tableName).delete().eq("id", args.rowId) as any);
   }
@@ -275,8 +346,16 @@ export async function enqueueLocalWrite(args: {
   deviceId: string;
 }): Promise<void> {
   const isOnline = typeof navigator === "undefined" || navigator.onLine;
+  const mode = resolveLocalWriteMode({
+    isDesktop: isDesktopRuntime(),
+    isOnline,
+  });
 
-  if (isOnline) {
+  if (mode === "web-server-first") {
+    if (!isOnline) {
+      throw new Error("La versión web requiere conexión para escribir datos. Usá la app de escritorio para operar offline.");
+    }
+
     await writeDirectlyToServer(args);
     if (isLocalFirstEnabled()) {
       await applyLocalMirrorWrite(args);
@@ -284,8 +363,11 @@ export async function enqueueLocalWrite(args: {
     return;
   }
 
-  if (!isLocalFirstEnabled()) {
-    throw new Error("La versión web requiere conexión para escribir datos. Usá la app de escritorio para operar offline.");
+  if (!isOnline) {
+    const licenseCheck = await assertCanWriteOffline(args.tenantId);
+    if (!licenseCheck.valid) {
+      throw new Error(licenseCheck.reason || "Licencia offline inválida para operar.");
+    }
   }
 
   const entry = createSyncOutboxEntry({
@@ -301,6 +383,27 @@ export async function enqueueLocalWrite(args: {
 
   // Apply change locally to mirror table so the UI can see it immediately offline
   await applyLocalMirrorWrite(args);
+
+  if (isOnline) {
+    void pushOutboxToServer(args.tenantId).catch((error) => {
+      console.error("Error pushing outbox after local enqueue:", error);
+    });
+  }
+}
+
+export function buildLocalMirrorWriteResult(args: {
+  op: SyncOutboxEntry["op"];
+  rowId: string;
+  existing: Record<string, unknown> | undefined;
+  payload?: Record<string, unknown> | null;
+}): Record<string, unknown> | null {
+  if (args.op === "delete") return null;
+  if (!args.payload) return args.existing ?? null;
+  if (args.op === "insert") return args.payload;
+  if (args.op === "update" || args.op === "upsert") {
+    return { ...(args.existing ?? { id: args.rowId }), ...args.payload };
+  }
+  return args.existing ?? null;
 }
 
 async function applyLocalMirrorWrite(args: {
@@ -321,12 +424,16 @@ async function applyLocalMirrorWrite(args: {
       } else if (args.payload) {
         if (args.op === "insert") {
           store.put(args.payload);
-        } else if (args.op === "update") {
+        } else if (args.op === "update" || args.op === "upsert") {
           const getReq = store.get(args.rowId);
           getReq.onsuccess = () => {
-            const existing = getReq.result || { id: args.rowId };
-            const merged = { ...existing, ...args.payload };
-            store.put(merged);
+            const merged = buildLocalMirrorWriteResult({
+              op: args.op,
+              rowId: args.rowId,
+              existing: (getReq.result as Record<string, unknown> | undefined) ?? undefined,
+              payload: args.payload,
+            });
+            if (merged) store.put(merged);
           };
           getReq.onerror = () => reject(getReq.error);
         }
@@ -401,6 +508,45 @@ export function resolveConflictForTable(
   }
 }
 
+export function resolveOutboxConflictGuardrail(
+  _tenantId: string,
+  entry: SyncOutboxEntry,
+  serverRow: Record<string, unknown> | null
+): OutboxConflictGuardrail {
+  const conflict = resolveConflictForTable(entry.table_name, entry, serverRow);
+  if (conflict.resolution === "server_wins") {
+    return { action: "mark_synced_server_wins", reason: conflict.reason, shouldWriteServer: false };
+  }
+  if (conflict.resolution === "skip" || conflict.resolution === "abort") {
+    return { action: "skip_with_audit_error", reason: conflict.reason, shouldWriteServer: false };
+  }
+  return { action: "apply_local_write", reason: conflict.reason, shouldWriteServer: true };
+}
+
+export function buildSyncErrorRow(args: {
+  outboxEntry: SyncOutboxEntry;
+  reason: string;
+  retryStatus: SyncRetryStatus;
+  recoverable: boolean;
+}): SyncErrorRow {
+  return {
+    id: `sync-error:${args.outboxEntry.id}:${Date.now()}`,
+    outbox_id: args.outboxEntry.id,
+    tenant_id: args.outboxEntry.tenant_id,
+    table_name: args.outboxEntry.table_name,
+    row_id: args.outboxEntry.row_id,
+    op: args.outboxEntry.op,
+    reason: args.reason,
+    created_at: new Date().toISOString(),
+    recoverable: args.recoverable,
+    retry_status: args.retryStatus,
+  };
+}
+
+async function persistSyncError(db: IDBDatabase, row: SyncErrorRow): Promise<void> {
+  await putOne(db, "sync_errors", row);
+}
+
 export async function checkServerRowExists(
   _tenantId: string,
   tableName: LocalFirstMirrorTable,
@@ -463,18 +609,22 @@ export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: nu
     for (const entry of pending) {
       await updateOutboxEntryStatus(db, entry.id, "syncing");
 
-      if (entry.table_name === "facturas" && entry.op === "update") {
-        const serverRow = await checkServerRowExists(tenantId, entry.table_name, entry.row_id);
-        const conflict = resolveConflictForTable(entry.table_name, entry, serverRow);
-        if (conflict.resolution === "skip") {
-          await updateOutboxEntryStatus(db, entry.id, "error", conflict.reason);
-          failed++;
-          continue;
-        }
-        if (conflict.resolution === "server_wins") {
-          await updateOutboxEntryStatus(db, entry.id, "synced");
-          continue;
-        }
+      const serverRow = await checkServerRowExists(tenantId, entry.table_name, entry.row_id);
+      const guardrail = resolveOutboxConflictGuardrail(tenantId, entry, serverRow);
+      if (guardrail.action === "mark_synced_server_wins") {
+        await updateOutboxEntryStatus(db, entry.id, "synced", guardrail.reason);
+        continue;
+      }
+      if (guardrail.action === "skip_with_audit_error") {
+        await persistSyncError(db, buildSyncErrorRow({
+          outboxEntry: entry,
+          reason: guardrail.reason,
+          retryStatus: "not_retryable",
+          recoverable: true,
+        }));
+        await updateOutboxEntryStatus(db, entry.id, "error", guardrail.reason);
+        failed++;
+        continue;
       }
 
       if (entry.table_name === "facturas" && entry.op === "insert") {
@@ -484,6 +634,12 @@ export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: nu
         if (ncf && ncfTipo) {
           const ncfValidation = await validateNcfSequence(tenantId, ncfTipo, ncf);
           if (!ncfValidation.valid) {
+            await persistSyncError(db, buildSyncErrorRow({
+              outboxEntry: entry,
+              reason: ncfValidation.reason || "NCF inválido",
+              retryStatus: "not_retryable",
+              recoverable: true,
+            }));
             await updateOutboxEntryStatus(db, entry.id, "error", ncfValidation.reason);
             failed++;
             continue;
@@ -497,6 +653,12 @@ export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: nu
         if (cycleNumber !== undefined) {
           const cycleValidation = await validateCierreCicleSequence(tenantId, cycleNumber);
           if (!cycleValidation.valid) {
+            await persistSyncError(db, buildSyncErrorRow({
+              outboxEntry: entry,
+              reason: cycleValidation.reason || "Ciclo inválido",
+              retryStatus: "not_retryable",
+              recoverable: true,
+            }));
             await updateOutboxEntryStatus(db, entry.id, "error", cycleValidation.reason);
             failed++;
             continue;
@@ -506,16 +668,25 @@ export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: nu
 
       try {
         let result: { data?: unknown; error?: { message?: string } } | null = null;
+        const serverPayload = entry.payload
+          ? buildServerWritePayload(tenantId, entry.table_name, entry.payload as Record<string, unknown>)
+          : null;
         if (entry.op === "insert") {
-          result = await (insforgeClient.database.from(entry.table_name).insert([entry.payload as Record<string, unknown>]) as any);
+          result = await (insforgeClient.database.from(entry.table_name).insert([serverPayload as Record<string, unknown>]) as any);
         } else if (entry.op === "update") {
-          result = await (insforgeClient.database.from(entry.table_name).update(entry.payload as Record<string, unknown>).eq("id", entry.row_id) as any);
+          result = await (insforgeClient.database.from(entry.table_name).update(serverPayload as Record<string, unknown>).eq("id", entry.row_id) as any);
         } else if (entry.op === "upsert") {
-          result = await (insforgeClient.database.from(entry.table_name).upsert(entry.payload as Record<string, unknown>, { onConflict: "tenant_id,id" }) as any);
+          result = await (insforgeClient.database.from(entry.table_name).upsert(serverPayload as Record<string, unknown>, { onConflict: resolveUpsertConflictTarget(entry.table_name) }) as any);
         } else if (entry.op === "delete") {
           result = await (insforgeClient.database.from(entry.table_name).delete().eq("id", entry.row_id) as any);
         }
         if (result?.error) {
+          await persistSyncError(db, buildSyncErrorRow({
+            outboxEntry: entry,
+            reason: result.error.message || "Error en sync.",
+            retryStatus: "retryable",
+            recoverable: true,
+          }));
           await updateOutboxEntryStatus(db, entry.id, "error", result.error.message || "Error en sync.");
           failed++;
         } else {
@@ -523,7 +694,14 @@ export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: nu
           pushed++;
         }
       } catch (err) {
-        await updateOutboxEntryStatus(db, entry.id, "error", err instanceof Error ? err.message : "Excepcion en sync.");
+        const reason = err instanceof Error ? err.message : "Excepcion en sync.";
+        await persistSyncError(db, buildSyncErrorRow({
+          outboxEntry: entry,
+          reason,
+          retryStatus: "retryable",
+          recoverable: true,
+        }));
+        await updateOutboxEntryStatus(db, entry.id, "error", reason);
         failed++;
       }
     }
@@ -655,6 +833,20 @@ export async function loadLicenseCache(tenantId: string): Promise<LocalLicenseCa
   } finally {
     db.close();
   }
+}
+
+export async function assertCanWriteOffline(
+  tenantId: string,
+  cacheOverride?: LocalLicenseCache | null
+): Promise<{ valid: boolean; reason?: string }> {
+  const cache = cacheOverride ?? await loadLicenseCache(tenantId);
+  if (isLicenseValidOffline(cache)) {
+    return { valid: true };
+  }
+  return {
+    valid: false,
+    reason: "Licencia offline expirada o ausente. Requiere reconexión para revalidar.",
+  };
 }
 
 export function isLicenseValidOffline(cache: LocalLicenseCache | null): boolean {
