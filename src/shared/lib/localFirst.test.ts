@@ -3,8 +3,13 @@ import {
   buildServerWritePayload,
   buildSyncErrorRow,
   buildLocalMirrorWriteResult,
+  buildMirrorStoreResetSyncStateKeys,
   assertCanWriteOffline,
   buildSyncStateKey,
+  compareRowsByUpdatedAtThenId,
+  decodeIncrementalCursor,
+  encodeIncrementalCursor,
+  isRowAfterCursor,
   createSyncOutboxEntry,
   createSyncStateRow,
   getHistoricalSyncIncompleteMessage,
@@ -18,6 +23,7 @@ import {
   resolveLocalWriteMode,
   resolveConflictForTable,
   resolveOutboxConflictGuardrail,
+  resolveMirrorStoreKeyPath,
   selectProcessableOutboxEntries,
   shouldReadLocalFirst,
   type LocalLicenseCache,
@@ -49,6 +55,44 @@ describe("localFirst", () => {
       completed: true,
       row_count: 7,
     });
+  });
+
+  it("codifica/decodifica cursor incremental compuesto y mantiene compatibilidad", () => {
+    const encoded = encodeIncrementalCursor({ updated_at: "2026-01-01T00:00:00.000Z", id: "row-9" });
+    expect(decodeIncrementalCursor(encoded)).toEqual({ updated_at: "2026-01-01T00:00:00.000Z", id: "row-9" });
+
+    // backward compatibility: old cursor was timestamp only
+    expect(decodeIncrementalCursor("2026-01-01T00:00:00.000Z")).toEqual({
+      updated_at: "2026-01-01T00:00:00.000Z",
+      id: "",
+    });
+  });
+
+  it("compara filas y filtra correctamente por cursor compuesto", () => {
+    const a = { id: "1", updated_at: "2026-01-01T00:00:00.000Z" };
+    const b = { id: "2", updated_at: "2026-01-01T00:00:00.000Z" };
+    const c = { id: "0", updated_at: "2026-01-01T00:00:01.000Z" };
+
+    expect(compareRowsByUpdatedAtThenId(a, b)).toBeLessThan(0);
+    expect(compareRowsByUpdatedAtThenId(c, b)).toBeGreaterThan(0);
+
+    const cursor = { updated_at: "2026-01-01T00:00:00.000Z", id: "1" };
+    expect(isRowAfterCursor(a, cursor)).toBe(false);
+    expect(isRowAfterCursor(b, cursor)).toBe(true);
+    expect(isRowAfterCursor(c, cursor)).toBe(true);
+  });
+
+  it("resuelve keyPath de IndexedDB: configuracion usa clave, resto id", () => {
+    expect(resolveMirrorStoreKeyPath("configuracion")).toBe("clave");
+    expect(resolveMirrorStoreKeyPath("facturas")).toBe("id");
+  });
+
+  it("calcula cursores a resetear cuando se recrea un store mirror", () => {
+    expect(buildMirrorStoreResetSyncStateKeys("tenant-1", "configuracion")).toEqual([
+      "tenant-1:minimum:configuracion",
+      "tenant-1:history:configuracion",
+      "tenant-1:incremental:configuracion",
+    ]);
   });
 
   it("registra deletes como eventos auditables en sync_outbox", () => {
