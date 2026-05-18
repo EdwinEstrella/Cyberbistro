@@ -1,4 +1,5 @@
 import { insforgeClient } from "./insforge";
+import { incrementTenantNcfSequence, resolveNcfForNewInvoice } from "./invoiceNcf";
 
 export const LOCAL_FIRST_MIRROR_TABLES = [
   "tenants",
@@ -208,6 +209,36 @@ export function buildServerWritePayload(
     ...payload,
     tenant_id: tenantId,
   };
+}
+
+export function buildCierrePayloadWithCycleNumber(
+  payload: Record<string, unknown>,
+  cycleNumber: number
+): Record<string, unknown> {
+  return { ...payload, cycle_number: cycleNumber };
+}
+
+function extractNcfSequence(ncf: string): number | null {
+  const match = ncf.match(/(\d{8})$/);
+  if (!match) return null;
+  const sequence = Number.parseInt(match[1], 10);
+  return Number.isNaN(sequence) ? null : sequence;
+}
+
+export function buildNcfWithSequence(ncf: string, sequence: number): string | null {
+  if (!/(\d{8})$/.test(ncf)) return null;
+  return ncf.replace(/\d{8}$/, String(sequence).padStart(8, "0"));
+}
+
+export function buildFacturaPayloadWithNcfSequence(
+  payload: Record<string, unknown>,
+  sequence: number
+): Record<string, unknown> | null {
+  const ncf = payload["ncf"];
+  if (typeof ncf !== "string") return null;
+  const nextNcf = buildNcfWithSequence(ncf, sequence);
+  if (!nextNcf) return null;
+  return { ...payload, ncf: nextNcf };
 }
 
 export interface SyncErrorRow {
@@ -599,13 +630,6 @@ export function resolveConflictForTable(
       if (localEntry.op === "delete") {
         return { resolution: "skip", reason: "Delete de factura no sincronizable automaticamente — requiere audit." };
       }
-      if (localEntry.op === "update" && serverRow) {
-        const localUpdatedAt = (localEntry.payload as Record<string, unknown>)?.["updated_at"] as string;
-        const serverUpdatedAt = serverRow["updated_at"] as string;
-        if (localUpdatedAt && serverUpdatedAt && new Date(localUpdatedAt) < new Date(serverUpdatedAt)) {
-          return { resolution: "server_wins", reason: "Version servidora mas reciente — factura no sobrescrita." };
-        }
-      }
       return { resolution: "local_wins", reason: "Sin conflicto en factura." };
     }
 
@@ -693,6 +717,110 @@ export async function checkServerRowExists(
   return data as Record<string, unknown>;
 }
 
+type PayloadAdjustmentResult =
+  | { payload: Record<string, unknown>; adjusted: boolean; afterSuccessfulPush?: () => Promise<void> }
+  | { reason: string; retryStatus: SyncRetryStatus };
+
+async function getNextAvailableCierreCycleNumber(tenantId: string, requestedCycleNumber: number): Promise<{
+  cycleNumber?: number;
+  reason?: string;
+}> {
+  const { data, error } = await (insforgeClient.database
+    .from("cierres_operativos")
+    .select("cycle_number")
+    .eq("tenant_id", tenantId)
+    .order("cycle_number", { ascending: false })
+    .limit(1)
+    .maybeSingle() as any);
+
+  if (error) return { reason: "No se pudo validar secuencia de ciclo." };
+  const maxServerCycle = typeof data?.cycle_number === "number" ? data.cycle_number : 0;
+  return { cycleNumber: Math.max(requestedCycleNumber, maxServerCycle + 1) };
+}
+
+async function adjustCierrePayloadForServer(
+  tenantId: string,
+  payload: Record<string, unknown>
+): Promise<PayloadAdjustmentResult> {
+  const cycleNumber = payload["cycle_number"];
+  if (typeof cycleNumber !== "number") return { payload, adjusted: false };
+
+  const validation = await validateCierreCicleSequence(tenantId, cycleNumber);
+  if (validation.valid) return { payload, adjusted: false };
+
+  const nextCycle = await getNextAvailableCierreCycleNumber(tenantId, cycleNumber + 1);
+  if (nextCycle.reason || nextCycle.cycleNumber === undefined) {
+    return { reason: nextCycle.reason || validation.reason || "Ciclo inválido", retryStatus: "retryable" };
+  }
+
+  return {
+    payload: buildCierrePayloadWithCycleNumber(payload, nextCycle.cycleNumber),
+    adjusted: nextCycle.cycleNumber !== cycleNumber,
+  };
+}
+
+async function isNcfAvailableForFactura(tenantId: string, facturaId: string, ncf: string): Promise<{
+  available?: boolean;
+  reason?: string;
+}> {
+  const { data, error } = await (insforgeClient.database
+    .from("facturas")
+    .select("id,ncf")
+    .eq("tenant_id", tenantId)
+    .eq("ncf", ncf)
+    .maybeSingle() as any);
+
+  if (error) return { reason: "No se pudo validar disponibilidad de NCF." };
+  return { available: !data || data.id === facturaId };
+}
+
+async function adjustFacturaPayloadForServer(
+  tenantId: string,
+  rowId: string,
+  payload: Record<string, unknown>
+): Promise<PayloadAdjustmentResult> {
+  const ncf = payload["ncf"];
+  if (typeof ncf !== "string") return { payload, adjusted: false };
+
+  const currentSequence = extractNcfSequence(ncf);
+  if (currentSequence === null) {
+    return { reason: "NCF inválido: no se pudo leer la secuencia.", retryStatus: "not_retryable" };
+  }
+
+  const requestedAvailability = await isNcfAvailableForFactura(tenantId, rowId, ncf);
+  if (requestedAvailability.reason) return { reason: requestedAvailability.reason, retryStatus: "retryable" };
+
+  if (requestedAvailability.available) {
+    return { payload, adjusted: false };
+  }
+
+  const preferredType = ncf.slice(0, 3).toUpperCase();
+  const resolved = await resolveNcfForNewInvoice(tenantId, preferredType);
+  if (!resolved) {
+    return { reason: "No se pudo reservar un NCF disponible para reintentar.", retryStatus: "retryable" };
+  }
+
+  const adjustedPayload = {
+    ...payload,
+    ncf: resolved.ncf,
+    ncf_tipo: resolved.ncf_tipo,
+  };
+
+  const adjustedAvailability = await isNcfAvailableForFactura(tenantId, rowId, resolved.ncf);
+  if (adjustedAvailability.reason) return { reason: adjustedAvailability.reason, retryStatus: "retryable" };
+  if (!adjustedAvailability.available) {
+    return { reason: "El NCF reservado ya existe en servidor; se reintentará.", retryStatus: "retryable" };
+  }
+
+  return {
+    payload: adjustedPayload,
+    adjusted: resolved.ncf !== ncf,
+    afterSuccessfulPush: resolved.sequenceReservedAtomically
+      ? undefined
+      : () => incrementTenantNcfSequence(tenantId, resolved.tipoCodigo, resolved.usedSequence),
+  };
+}
+
 export async function validateNcfSequence(
   tenantId: string,
   ncfTipo: string,
@@ -701,10 +829,12 @@ export async function validateNcfSequence(
   const { data: tenant, error } = await (insforgeClient.database.from("tenants").select("ncf_secuencias_por_tipo").eq("id", tenantId).single() as any);
   if (error || !tenant) return { valid: false, reason: "No se pudo leer secuencia NCF del tenant." };
 
-  const secuencias = tenant.ncf_secuencias_por_tipo as Record<string, { secuencia_actual: number }> | null;
+  const secuencias = tenant.ncf_secuencias_por_tipo as Record<string, number | { secuencia_actual?: number }> | null;
   if (!secuencias || !secuencias[ncfTipo]) return { valid: true, reason: "NCF tipo sin control de secuencia." };
 
-  const expectedSeq = secuencias[ncfTipo].secuencia_actual;
+  const rawSeq = secuencias[ncfTipo];
+  const expectedSeq = typeof rawSeq === "number" ? rawSeq : rawSeq.secuencia_actual;
+  if (typeof expectedSeq !== "number") return { valid: false, reason: `NCF tipo inválido: ${ncfTipo}.` };
   const ncfSeq = parseInt(ncfToUse.replace(/\D/g, "").slice(-8), 10);
   if (!isNaN(ncfSeq) && ncfSeq !== expectedSeq) {
     return { valid: false, reason: `NCF secuencia fuera de orden: esperado ${expectedSeq}, obtenido ${ncfSeq}.` };
@@ -764,49 +894,54 @@ export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: nu
         continue;
       }
 
-      if (entry.table_name === "facturas" && entry.op === "insert") {
-        const payload = entry.payload as Record<string, unknown>;
-        const ncfTipo = payload["ncf_tipo"] as string | undefined;
-        const ncf = payload["ncf"] as string | undefined;
-        if (ncf && ncfTipo) {
-          const ncfValidation = await validateNcfSequence(tenantId, ncfTipo, ncf);
-          if (!ncfValidation.valid) {
-            await persistSyncError(db, buildSyncErrorRow({
-              outboxEntry: entry,
-              reason: ncfValidation.reason || "NCF inválido",
-              retryStatus: "not_retryable",
-              recoverable: true,
-            }));
-            await updateOutboxEntryStatus(db, entry.id, "not_retryable", ncfValidation.reason);
-            failed++;
-            continue;
-          }
+      let outgoingPayload = entry.payload as Record<string, unknown> | null;
+      let adjustedOutgoingPayload = false;
+      let afterSuccessfulPush: (() => Promise<void>) | undefined;
+
+      if (outgoingPayload && entry.table_name === "facturas" && entry.op === "insert") {
+        const adjustment = await adjustFacturaPayloadForServer(tenantId, entry.row_id, outgoingPayload);
+        if ("retryStatus" in adjustment) {
+          await persistSyncError(db, buildSyncErrorRow({
+            outboxEntry: entry,
+            reason: adjustment.reason,
+            retryStatus: adjustment.retryStatus,
+            recoverable: true,
+          }));
+          await updateOutboxEntryStatus(
+            db,
+            entry.id,
+            adjustment.retryStatus === "not_retryable" ? "not_retryable" : "error",
+            adjustment.reason
+          );
+          failed++;
+          continue;
         }
+        outgoingPayload = adjustment.payload;
+        adjustedOutgoingPayload = adjustment.adjusted;
+        afterSuccessfulPush = adjustment.afterSuccessfulPush;
       }
 
-      if (entry.table_name === "cierres_operativos" && entry.op === "insert") {
-        const payload = entry.payload as Record<string, unknown>;
-        const cycleNumber = payload["cycle_number"] as number | undefined;
-        if (cycleNumber !== undefined) {
-          const cycleValidation = await validateCierreCicleSequence(tenantId, cycleNumber);
-          if (!cycleValidation.valid) {
-            await persistSyncError(db, buildSyncErrorRow({
-              outboxEntry: entry,
-              reason: cycleValidation.reason || "Ciclo inválido",
-              retryStatus: "not_retryable",
-              recoverable: true,
-            }));
-            await updateOutboxEntryStatus(db, entry.id, "not_retryable", cycleValidation.reason);
-            failed++;
-            continue;
-          }
+      if (outgoingPayload && entry.table_name === "cierres_operativos" && entry.op === "insert") {
+        const adjustment = await adjustCierrePayloadForServer(tenantId, outgoingPayload);
+        if ("retryStatus" in adjustment) {
+          await persistSyncError(db, buildSyncErrorRow({
+            outboxEntry: entry,
+            reason: adjustment.reason,
+            retryStatus: adjustment.retryStatus,
+            recoverable: true,
+          }));
+          await updateOutboxEntryStatus(db, entry.id, "error", adjustment.reason);
+          failed++;
+          continue;
         }
+        outgoingPayload = adjustment.payload;
+        adjustedOutgoingPayload = adjustment.adjusted;
       }
 
       try {
         let result: { data?: unknown; error?: { message?: string } } | null = null;
-        const serverPayload = entry.payload
-          ? buildServerWritePayload(tenantId, entry.table_name, entry.payload as Record<string, unknown>)
+        const serverPayload = outgoingPayload
+          ? buildServerWritePayload(tenantId, entry.table_name, outgoingPayload)
           : null;
         if (entry.op === "insert") {
           result = await (insforgeClient.database.from(entry.table_name).insert([serverPayload as Record<string, unknown>]) as any);
@@ -827,6 +962,22 @@ export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: nu
           await updateOutboxEntryStatus(db, entry.id, "error", result.error.message || "Error en sync.");
           failed++;
         } else {
+          if (adjustedOutgoingPayload && serverPayload) {
+            await applyLocalMirrorWrite({
+              tenantId,
+              tableName: entry.table_name,
+              rowId: entry.row_id,
+              op: entry.op,
+              payload: serverPayload,
+            });
+          }
+          if (afterSuccessfulPush) {
+            try {
+              await afterSuccessfulPush();
+            } catch (sequenceError) {
+              console.warn("Factura sincronizada, pero no se pudo avanzar la secuencia NCF legacy:", sequenceError);
+            }
+          }
           await updateOutboxEntryStatus(db, entry.id, "synced");
           pushed++;
         }
