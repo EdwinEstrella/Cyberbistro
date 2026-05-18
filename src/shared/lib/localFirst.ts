@@ -96,10 +96,94 @@ export interface SyncOutboxEntry {
 
 export type SyncRetryStatus = "retryable" | "not_retryable" | "max_retries_exceeded";
 
+export interface IncrementalCursor {
+  updated_at: string;
+  id: string;
+}
+
 const COMPOSITE_UPSERT_CONFLICT_TABLES = new Set<LocalFirstMirrorTable>(["mesas_estado"]);
+const LOCAL_FIRST_PHASES = ["minimum", "history", "incremental"] as const satisfies readonly LocalFirstPhase[];
 
 function isTenantScopedMirrorTable(tableName: LocalFirstMirrorTable): boolean {
   return tableName !== "tenants";
+}
+
+export function resolveMirrorStoreKeyPath(tableName: LocalFirstMirrorTable): "id" | "clave" {
+  return tableName === "configuracion" ? "clave" : "id";
+}
+
+function normalizeObjectStoreKeyPath(keyPath: IDBObjectStore["keyPath"]): string | null {
+  return typeof keyPath === "string" ? keyPath : null;
+}
+
+export function buildMirrorStoreResetSyncStateKeys(tenantId: string, tableName: LocalFirstMirrorTable): string[] {
+  return LOCAL_FIRST_PHASES.map((phase) => buildSyncStateKey(tenantId, tableName, phase));
+}
+
+function applyLocalFirstDbSchema(db: IDBDatabase, tx: IDBTransaction, tenantId: string): void {
+  const recreatedMirrorTables: LocalFirstMirrorTable[] = [];
+
+  for (const table of LOCAL_FIRST_MIRROR_TABLES) {
+    const expectedKeyPath = resolveMirrorStoreKeyPath(table);
+    if (!db.objectStoreNames.contains(table)) {
+      db.createObjectStore(table, { keyPath: expectedKeyPath });
+      continue;
+    }
+
+    const currentStore = tx.objectStore(table);
+    const currentKeyPath = normalizeObjectStoreKeyPath(currentStore.keyPath);
+    if (currentKeyPath !== expectedKeyPath) {
+      db.deleteObjectStore(table);
+      db.createObjectStore(table, { keyPath: expectedKeyPath });
+      recreatedMirrorTables.push(table);
+    }
+  }
+
+  if (!db.objectStoreNames.contains("sync_outbox")) db.createObjectStore("sync_outbox", { keyPath: "id" });
+  if (!db.objectStoreNames.contains("sync_state")) db.createObjectStore("sync_state", { keyPath: "key" });
+  if (!db.objectStoreNames.contains("sync_errors")) db.createObjectStore("sync_errors", { keyPath: "id" });
+  if (!db.objectStoreNames.contains("local_device_session")) db.createObjectStore("local_device_session", { keyPath: "tenant_id" });
+  if (!db.objectStoreNames.contains("local_license_cache")) db.createObjectStore("local_license_cache", { keyPath: "tenant_id" });
+
+  if (recreatedMirrorTables.length > 0 && db.objectStoreNames.contains("sync_state")) {
+    const syncStateStore = tx.objectStore("sync_state");
+    for (const table of recreatedMirrorTables) {
+      for (const key of buildMirrorStoreResetSyncStateKeys(tenantId, table)) {
+        syncStateStore.delete(key);
+      }
+    }
+  }
+}
+
+export function encodeIncrementalCursor(cursor: IncrementalCursor): string {
+  return JSON.stringify(cursor);
+}
+
+export function decodeIncrementalCursor(cursor: string | null): IncrementalCursor | null {
+  if (!cursor) return null;
+  try {
+    const parsed = JSON.parse(cursor) as Partial<IncrementalCursor>;
+    if (typeof parsed.updated_at === "string" && typeof parsed.id === "string") {
+      return { updated_at: parsed.updated_at, id: parsed.id };
+    }
+  } catch {
+    // old timestamp-only cursor format
+  }
+  return { updated_at: cursor, id: "" };
+}
+
+export function compareRowsByUpdatedAtThenId(a: Record<string, unknown>, b: Record<string, unknown>): number {
+  const aUpdatedAt = String(a["updated_at"] ?? "");
+  const bUpdatedAt = String(b["updated_at"] ?? "");
+  if (aUpdatedAt !== bUpdatedAt) return aUpdatedAt.localeCompare(bUpdatedAt);
+  return String(a["id"] ?? a["clave"] ?? "").localeCompare(String(b["id"] ?? b["clave"] ?? ""));
+}
+
+export function isRowAfterCursor(row: Record<string, unknown>, cursor: IncrementalCursor): boolean {
+  const rowUpdatedAt = String(row["updated_at"] ?? "");
+  if (rowUpdatedAt > cursor.updated_at) return true;
+  if (rowUpdatedAt < cursor.updated_at) return false;
+  return String(row["id"] ?? row["clave"] ?? "") > cursor.id;
 }
 
 export function resolveUpsertConflictTarget(tableName: LocalFirstMirrorTable): "id" | "tenant_id,id" {
@@ -151,7 +235,7 @@ export interface OutboxConflictGuardrail {
 }
 
 const PAGE_SIZE = 250;
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const SYNCING_STALE_MS = 5 * 60 * 1000;
 const FULL_REFRESH_ON_SYNC_TABLES = [
   "tenant_users",
@@ -250,14 +334,9 @@ function openLocalFirstDbForSync(tenantId: string): Promise<IDBDatabase> {
     request.onsuccess = () => resolve(request.result);
     request.onupgradeneeded = () => {
       const db = request.result;
-      for (const table of LOCAL_FIRST_MIRROR_TABLES) {
-        if (!db.objectStoreNames.contains(table)) db.createObjectStore(table, { keyPath: "id" });
-      }
-      if (!db.objectStoreNames.contains("sync_outbox")) db.createObjectStore("sync_outbox", { keyPath: "id" });
-      if (!db.objectStoreNames.contains("sync_state")) db.createObjectStore("sync_state", { keyPath: "key" });
-      if (!db.objectStoreNames.contains("sync_errors")) db.createObjectStore("sync_errors", { keyPath: "id" });
-      if (!db.objectStoreNames.contains("local_device_session")) db.createObjectStore("local_device_session", { keyPath: "tenant_id" });
-      if (!db.objectStoreNames.contains("local_license_cache")) db.createObjectStore("local_license_cache", { keyPath: "tenant_id" });
+      const tx = request.transaction;
+      if (!tx) throw new Error("No se pudo acceder a la transacción de upgrade IndexedDB.");
+      applyLocalFirstDbSchema(db, tx, tenantId);
     };
   });
 }
@@ -1045,64 +1124,92 @@ async function getIncrementalCursor(
   db: IDBDatabase,
   tenantId: string,
   tableName: LocalFirstMirrorTable
-): Promise<string | null> {
+): Promise<IncrementalCursor | null> {
   const row = await getSyncState(db, buildSyncStateKey(tenantId, tableName, "incremental"));
-  return row?.cursor ?? null;
+  return decodeIncrementalCursor(row?.cursor ?? null);
 }
 
 async function pullIncrementalChanges(
   tenantId: string,
   tableName: LocalFirstMirrorTable,
-  sinceCursor: string | null
-): Promise<{ rows: Record<string, unknown>[]; newCursor: string }> {
-  let query = insforgeClient.database
-    .from(tableName)
-    .select("*")
-    .order("updated_at", { ascending: true })
-    .limit(PAGE_SIZE) as any;
+  sinceCursor: IncrementalCursor | null
+): Promise<{ rows: Record<string, unknown>[]; newCursor: IncrementalCursor }> {
+  const selectedRows: Record<string, unknown>[] = [];
+  let offset = 0;
+  let latestSeenCursor = sinceCursor;
+  let reachedEnd = false;
 
-  if (shouldFilterByTenant(tableName)) {
-    query = query.eq("tenant_id", tenantId);
-  } else if (tableName === "configuracion") {
-  } else {
-    query = query.eq("id", tenantId);
+  while (selectedRows.length < PAGE_SIZE && !reachedEnd) {
+    let query = insforgeClient.database
+      .from(tableName)
+      .select("*")
+      .order("updated_at", { ascending: true })
+      .order(tableName === "configuracion" ? "clave" : "id", { ascending: true })
+      .range(offset, offset + PAGE_SIZE - 1) as any;
+
+    if (shouldFilterByTenant(tableName)) {
+      query = query.eq("tenant_id", tenantId);
+    } else if (tableName !== "configuracion") {
+      query = query.eq("id", tenantId);
+    }
+
+    if (sinceCursor?.updated_at) {
+      query = query.gte("updated_at", sinceCursor.updated_at);
+    }
+
+    const { data, error } = await query;
+    if (error) throw new Error(error.message || `Error pull incremental ${tableName}`);
+
+    const batchRows = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
+    if (batchRows.length === 0) {
+      reachedEnd = true;
+      break;
+    }
+
+    for (const row of batchRows) {
+      latestSeenCursor = {
+        updated_at: String(row["updated_at"] ?? sinceCursor?.updated_at ?? new Date(0).toISOString()),
+        id: String(row["id"] ?? row["clave"] ?? ""),
+      };
+
+      if (!sinceCursor || isRowAfterCursor(row, sinceCursor)) {
+        selectedRows.push(row);
+        if (selectedRows.length >= PAGE_SIZE) break;
+      }
+    }
+
+    reachedEnd = batchRows.length < PAGE_SIZE;
+    offset += PAGE_SIZE;
   }
 
-  if (sinceCursor) {
-    query = query.gt("updated_at", sinceCursor);
-  }
+  const newCursor = selectedRows.length > 0
+    ? {
+      updated_at: String(selectedRows[selectedRows.length - 1]["updated_at"] ?? sinceCursor?.updated_at ?? new Date(0).toISOString()),
+      id: String(selectedRows[selectedRows.length - 1]["id"] ?? selectedRows[selectedRows.length - 1]["clave"] ?? ""),
+    }
+    : (latestSeenCursor ?? sinceCursor ?? { updated_at: new Date(0).toISOString(), id: "" });
 
-  const { data, error } = await query;
-  if (error) throw new Error(error.message || `Error pull incremental ${tableName}`);
-
-  const rows = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
-  const newCursor = rows.length > 0
-    ? (rows[rows.length - 1]["updated_at"] as string)
-    : sinceCursor ?? new Date(0).toISOString();
-
-  return { rows, newCursor };
+  return { rows: selectedRows, newCursor };
 }
 
 async function pullFullTableRows(
   tenantId: string,
   tableName: LocalFirstMirrorTable
 ): Promise<Record<string, unknown>[]> {
-  let query = insforgeClient.database
-    .from(tableName)
-    .select("*")
-    .order(tableName === "configuracion" ? "clave" : "id", { ascending: true }) as any;
+  const rows: Record<string, unknown>[] = [];
+  let offset = 0;
+  let hasMore = true;
 
-  if (shouldFilterByTenant(tableName)) {
-    query = query.eq("tenant_id", tenantId);
-  } else if (tableName === "configuracion") {
-    // configuracion is global
-  } else {
-    query = query.eq("id", tenantId);
+  while (hasMore) {
+    const { data, error } = await pullTablePage(tableName, tenantId, offset);
+    if (error) throw new Error(error.message || `Error full refresh ${tableName}`);
+    const pageRows = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
+    rows.push(...pageRows);
+    hasMore = pageRows.length === PAGE_SIZE;
+    offset += PAGE_SIZE;
   }
 
-  const { data, error } = await query;
-  if (error) throw new Error(error.message || `Error full refresh ${tableName}`);
-  return Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
+  return rows;
 }
 
 function replaceStoreRows(db: IDBDatabase, storeName: string, rows: readonly object[]): Promise<void> {
@@ -1128,7 +1235,7 @@ export async function refreshFullTableMirror(
       tenantId,
       tableName,
       phase: "incremental",
-      cursor: new Date().toISOString(),
+      cursor: encodeIncrementalCursor({ updated_at: new Date().toISOString(), id: "" }),
       completed: true,
       rowCount: rows.length,
     }));
@@ -1161,7 +1268,7 @@ export async function pullIncrementalChangesForTable(
         tenantId,
         tableName,
         phase: "incremental",
-        cursor: newCursor,
+        cursor: encodeIncrementalCursor(newCursor),
         completed,
         rowCount: pulled,
       }));
@@ -1200,14 +1307,9 @@ function openLocalFirstDb(tenantId: string): Promise<IDBDatabase> {
     request.onsuccess = () => resolve(request.result);
     request.onupgradeneeded = () => {
       const db = request.result;
-      for (const table of LOCAL_FIRST_MIRROR_TABLES) {
-        if (!db.objectStoreNames.contains(table)) db.createObjectStore(table, { keyPath: "id" });
-      }
-      if (!db.objectStoreNames.contains("sync_outbox")) db.createObjectStore("sync_outbox", { keyPath: "id" });
-      if (!db.objectStoreNames.contains("sync_state")) db.createObjectStore("sync_state", { keyPath: "key" });
-      if (!db.objectStoreNames.contains("sync_errors")) db.createObjectStore("sync_errors", { keyPath: "id" });
-      if (!db.objectStoreNames.contains("local_device_session")) db.createObjectStore("local_device_session", { keyPath: "tenant_id" });
-      if (!db.objectStoreNames.contains("local_license_cache")) db.createObjectStore("local_license_cache", { keyPath: "tenant_id" });
+      const tx = request.transaction;
+      if (!tx) throw new Error("No se pudo acceder a la transacción de upgrade IndexedDB.");
+      applyLocalFirstDbSchema(db, tx, tenantId);
     };
   });
 }
