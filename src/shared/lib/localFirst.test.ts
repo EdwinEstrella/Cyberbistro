@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   buildServerWritePayload,
+  buildCierrePayloadWithCycleNumber,
+  buildFacturaPayloadWithNcfSequence,
+  buildNcfWithSequence,
   buildSyncErrorRow,
   buildLocalMirrorWriteResult,
   buildMirrorStoreResetSyncStateKeys,
@@ -153,7 +156,7 @@ describe("localFirst", () => {
     expect(isLicenseValidOffline(inactiveUserCache)).toBe(false);
   });
 
-  it("resuelve conflictos de facturas sin sobrescribir silenciosamente", () => {
+  it("resuelve updates de facturas como local_wins aunque el reloj servidor sea posterior", () => {
     const serverRowNewer = { id: "f1", updated_at: new Date().toISOString() };
 
     const entryUpdateOld: SyncOutboxEntry = createSyncOutboxEntry({
@@ -165,7 +168,7 @@ describe("localFirst", () => {
       deviceId: "dev1",
     });
     const result1 = resolveConflictForTable("facturas", entryUpdateOld, serverRowNewer);
-    expect(result1.resolution).toBe("server_wins");
+    expect(result1.resolution).toBe("local_wins");
 
     const entryUpdateNew = createSyncOutboxEntry({
       tenantId: "tenant-1",
@@ -188,6 +191,36 @@ describe("localFirst", () => {
     const result3 = resolveConflictForTable("facturas", entryDelete, serverRowNewer);
     expect(result3.resolution).toBe("skip");
     expect(result3.reason).toContain("audit");
+  });
+
+  it("ajusta payload de ciclo preservando id y cambiando solo cycle_number", () => {
+    const payload = {
+      id: "cierre-1",
+      tenant_id: "tenant-1",
+      cycle_number: 7,
+      closed_at: "2026-01-01T00:00:00.000Z",
+    };
+
+    expect(buildCierrePayloadWithCycleNumber(payload, 8)).toEqual({
+      ...payload,
+      cycle_number: 8,
+    });
+  });
+
+  it("ajusta payload de factura preservando id y reescribiendo NCF stale", () => {
+    const payload = {
+      id: "factura-1",
+      tenant_id: "tenant-1",
+      ncf_tipo: "B01",
+      ncf: "B0100000007",
+      total: 1200,
+    };
+
+    expect(buildNcfWithSequence("B0100000007", 8)).toBe("B0100000008");
+    expect(buildFacturaPayloadWithNcfSequence(payload, 8)).toEqual({
+      ...payload,
+      ncf: "B0100000008",
+    });
   });
 
   it("cierres operativos no se duplican en servidor", () => {
