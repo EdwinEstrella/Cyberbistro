@@ -1138,11 +1138,25 @@ export async function validateAndCacheLicense(
   tenantId: string
 ): Promise<{ valid: boolean; reason?: string }> {
   try {
-    const { data: tenant, error: tenantErr } = await insforgeClient.database
-      .from("tenants")
-      .select("activa")
-      .eq("id", tenantId)
-      .single();
+    let tenant: { activa?: boolean } | null = null;
+    let tenantErr: unknown = null;
+
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
+      }
+
+      const result = await insforgeClient.database
+        .from("tenants")
+        .select("activa")
+        .eq("id", tenantId)
+        .maybeSingle();
+
+      tenant = result.data;
+      tenantErr = result.error;
+
+      if (!tenantErr && tenant) break;
+    }
 
     if (tenantErr || !tenant?.activa) {
       await saveLicenseCache(tenantId, false, false);
