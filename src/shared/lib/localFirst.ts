@@ -89,7 +89,8 @@ export interface SyncOutboxEntry {
   created_at: string;
   created_by_auth_user_id: string | null;
   device_id: string;
-  status: "pending" | "syncing" | "synced" | "error";
+  status: "pending" | "syncing" | "synced" | "error" | "not_retryable";
+  syncing_started_at?: string | null;
   error_message: string | null;
 }
 
@@ -151,6 +152,7 @@ export interface OutboxConflictGuardrail {
 
 const PAGE_SIZE = 250;
 const DB_VERSION = 1;
+const SYNCING_STALE_MS = 5 * 60 * 1000;
 const FULL_REFRESH_ON_SYNC_TABLES = [
   "tenant_users",
   "platos",
@@ -228,6 +230,7 @@ export function createSyncOutboxEntry(args: {
     created_by_auth_user_id: args.authUserId ?? null,
     device_id: args.deviceId,
     status: "pending",
+    syncing_started_at: null,
     error_message: null,
   };
 }
@@ -278,14 +281,39 @@ async function getPendingOutboxEntries(db: IDBDatabase): Promise<SyncOutboxEntry
       const cursor = request.result;
       if (cursor) {
         const entry = cursor.value as SyncOutboxEntry;
-        if (entry.status === "pending" || entry.status === "error") entries.push(entry);
+        entries.push(entry);
         cursor.continue();
       } else {
-        resolve(entries);
+        resolve(selectProcessableOutboxEntries(entries));
       }
     };
     request.onerror = () => reject(request.error ?? new Error("No se pudo leer sync_outbox."));
   });
+}
+
+export function isOutboxEntryProcessable(entry: SyncOutboxEntry, nowMs = Date.now()): boolean {
+  if (entry.status === "pending" || entry.status === "error") return true;
+  if (entry.status !== "syncing") return false;
+  if (!entry.syncing_started_at) return true;
+
+  const syncingStartedAt = Date.parse(entry.syncing_started_at);
+  if (Number.isNaN(syncingStartedAt)) return true;
+  return nowMs - syncingStartedAt >= SYNCING_STALE_MS;
+}
+
+function compareOutboxEntriesByCreatedAtThenId(a: SyncOutboxEntry, b: SyncOutboxEntry): number {
+  const aTs = Date.parse(a.created_at);
+  const bTs = Date.parse(b.created_at);
+  const aTime = Number.isNaN(aTs) ? Number.MAX_SAFE_INTEGER : aTs;
+  const bTime = Number.isNaN(bTs) ? Number.MAX_SAFE_INTEGER : bTs;
+  if (aTime !== bTime) return aTime - bTime;
+  return a.id.localeCompare(b.id);
+}
+
+export function selectProcessableOutboxEntries(entries: readonly SyncOutboxEntry[], nowMs = Date.now()): SyncOutboxEntry[] {
+  return [...entries]
+    .filter((entry) => isOutboxEntryProcessable(entry, nowMs))
+    .sort(compareOutboxEntriesByCreatedAtThenId);
 }
 
 async function updateOutboxEntryStatus(
@@ -302,10 +330,36 @@ async function updateOutboxEntryStatus(
       const entry = getReq.result as SyncOutboxEntry | undefined;
       if (!entry) { resolve(); return; }
       entry.status = status;
+      entry.syncing_started_at = status === "syncing" ? new Date().toISOString() : null;
       if (errorMessage !== undefined) entry.error_message = errorMessage ?? null;
       const putReq = store.put(entry);
       putReq.onerror = () => reject(putReq.error ?? new Error("No se pudo actualizar outbox."));
       putReq.onsuccess = () => resolve();
+    };
+    getReq.onerror = () => reject(getReq.error ?? new Error("No se pudo leer outbox."));
+  });
+}
+
+async function tryAcquireOutboxEntryLease(db: IDBDatabase, snapshot: SyncOutboxEntry): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("sync_outbox", "readwrite");
+    const store = tx.objectStore("sync_outbox");
+    const getReq = store.get(snapshot.id);
+    const now = new Date();
+
+    getReq.onsuccess = () => {
+      const current = getReq.result as SyncOutboxEntry | undefined;
+      if (!current || !isOutboxEntryProcessable(current, now.getTime())) {
+        resolve(false);
+        return;
+      }
+
+      current.status = "syncing";
+      current.syncing_started_at = now.toISOString();
+      current.error_message = null;
+      const putReq = store.put(current);
+      putReq.onerror = () => reject(putReq.error ?? new Error("No se pudo reservar outbox."));
+      putReq.onsuccess = () => resolve(true);
     };
     getReq.onerror = () => reject(getReq.error ?? new Error("No se pudo leer outbox."));
   });
@@ -529,8 +583,11 @@ export function buildSyncErrorRow(args: {
   retryStatus: SyncRetryStatus;
   recoverable: boolean;
 }): SyncErrorRow {
+  const isTerminal = args.retryStatus === "not_retryable" || args.retryStatus === "max_retries_exceeded";
   return {
-    id: `sync-error:${args.outboxEntry.id}:${Date.now()}`,
+    id: isTerminal
+      ? `sync-error:terminal:${args.outboxEntry.id}:${args.retryStatus}`
+      : `sync-error:${args.outboxEntry.id}:${Date.now()}`,
     outbox_id: args.outboxEntry.id,
     tenant_id: args.outboxEntry.tenant_id,
     table_name: args.outboxEntry.table_name,
@@ -607,7 +664,8 @@ export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: nu
   try {
     const pending = await getPendingOutboxEntries(db);
     for (const entry of pending) {
-      await updateOutboxEntryStatus(db, entry.id, "syncing");
+      const leaseAcquired = await tryAcquireOutboxEntryLease(db, entry);
+      if (!leaseAcquired) continue;
 
       const serverRow = await checkServerRowExists(tenantId, entry.table_name, entry.row_id);
       const guardrail = resolveOutboxConflictGuardrail(tenantId, entry, serverRow);
@@ -622,7 +680,7 @@ export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: nu
           retryStatus: "not_retryable",
           recoverable: true,
         }));
-        await updateOutboxEntryStatus(db, entry.id, "error", guardrail.reason);
+        await updateOutboxEntryStatus(db, entry.id, "not_retryable", guardrail.reason);
         failed++;
         continue;
       }
@@ -640,7 +698,7 @@ export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: nu
               retryStatus: "not_retryable",
               recoverable: true,
             }));
-            await updateOutboxEntryStatus(db, entry.id, "error", ncfValidation.reason);
+            await updateOutboxEntryStatus(db, entry.id, "not_retryable", ncfValidation.reason);
             failed++;
             continue;
           }
@@ -659,7 +717,7 @@ export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: nu
               retryStatus: "not_retryable",
               recoverable: true,
             }));
-            await updateOutboxEntryStatus(db, entry.id, "error", cycleValidation.reason);
+            await updateOutboxEntryStatus(db, entry.id, "not_retryable", cycleValidation.reason);
             failed++;
             continue;
           }

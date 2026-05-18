@@ -18,6 +18,7 @@ import {
   resolveLocalWriteMode,
   resolveConflictForTable,
   resolveOutboxConflictGuardrail,
+  selectProcessableOutboxEntries,
   shouldReadLocalFirst,
   type LocalLicenseCache,
   type LocalWriteMode,
@@ -242,6 +243,86 @@ describe("localFirst", () => {
       retry_status: "not_retryable",
       recoverable: true,
     });
+
+    expect(syncError.id).toContain(`sync-error:terminal:${outbox.id}:not_retryable`);
+  });
+
+  it("procesa outbox por created_at asc con desempate estable por id", () => {
+    const base: SyncOutboxEntry = {
+      ...createSyncOutboxEntry({
+        tenantId: "tenant-1",
+        tableName: "consumos",
+        rowId: "r-1",
+        op: "insert",
+        payload: { id: "r-1" },
+        deviceId: "dev1",
+      }),
+      created_at: "2026-01-02T10:00:00.000Z",
+      status: "pending",
+    };
+
+    const entries: SyncOutboxEntry[] = [
+      { ...base, id: "b", created_at: "2026-01-02T10:00:00.000Z", status: "error" },
+      { ...base, id: "a", created_at: "2026-01-02T10:00:00.000Z", status: "pending" },
+      { ...base, id: "z", created_at: "2026-01-02T11:00:00.000Z", status: "pending" },
+      { ...base, id: "old", created_at: "2026-01-02T09:00:00.000Z", status: "syncing" },
+    ];
+
+    const ordered = selectProcessableOutboxEntries(entries);
+    expect(ordered.map((entry) => entry.id)).toEqual(["old", "a", "b", "z"]);
+  });
+
+  it("incluye syncing recuperable y excluye terminal not_retryable", () => {
+    const mk = (id: string, status: SyncOutboxEntry["status"]): SyncOutboxEntry => ({
+      ...createSyncOutboxEntry({
+        tenantId: "tenant-1",
+        tableName: "facturas",
+        rowId: id,
+        op: "update",
+        payload: { id },
+        deviceId: "dev1",
+      }),
+      id,
+      created_at: "2026-01-01T00:00:00.000Z",
+      status,
+    });
+
+    const entries: SyncOutboxEntry[] = [
+      mk("pending", "pending"),
+      mk("error", "error"),
+      mk("syncing", "syncing"),
+      mk("synced", "synced"),
+      mk("terminal", "not_retryable"),
+    ];
+
+    const selected = selectProcessableOutboxEntries(entries);
+    expect(selected.map((entry) => entry.id)).toEqual(["error", "pending", "syncing"]);
+  });
+
+  it("reintenta syncing stale pero no uno activo con lease reciente", () => {
+    const now = new Date("2026-01-01T00:10:00.000Z").getTime();
+    const mkSyncing = (id: string, syncingStartedAt: string | null): SyncOutboxEntry => ({
+      ...createSyncOutboxEntry({
+        tenantId: "tenant-1",
+        tableName: "facturas",
+        rowId: id,
+        op: "update",
+        payload: { id },
+        deviceId: "dev1",
+      }),
+      id,
+      created_at: "2026-01-01T00:00:00.000Z",
+      status: "syncing",
+      syncing_started_at: syncingStartedAt,
+    });
+
+    const selected = selectProcessableOutboxEntries([
+      mkSyncing("active", "2026-01-01T00:09:30.000Z"),
+      mkSyncing("stale", "2026-01-01T00:04:30.000Z"),
+      mkSyncing("legacy", null),
+    ], now);
+
+    expect(selected.map((entry) => entry.id)).toEqual(["legacy", "stale"]);
   });
 
   it("resuelve modo desktop local-first online/offline", () => {
