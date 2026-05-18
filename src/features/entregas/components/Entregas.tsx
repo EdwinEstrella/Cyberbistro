@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { normalizeTenantRol } from "../../../shared/lib/roleNav";
-import { enqueueLocalWrite, getDeviceId, readLocalMirror, shouldReadLocalFirst, writeLocalMirrorRow } from "../../../shared/lib/localFirst";
+import { enqueueLocalWrite, getDeviceId, readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 
 
 interface MesaConPedido {
@@ -105,17 +105,7 @@ export function Entregas() {
   async function marcarEntregado(id: string) {
     if (!tenantId) return;
     const payload = { estado: "entregado", updated_at: new Date().toISOString() };
-    try {
-      if (!navigator.onLine) throw new Error("offline");
-      let updateQuery = insforgeClient.database.from("consumos").update(payload).eq("id", id).eq("tenant_id", tenantId);
-      if (isCamarera && user?.id) updateQuery = updateQuery.eq("created_by_auth_user_id", user.id);
-      const { error } = await updateQuery;
-      if (error) throw new Error(error.message);
-      const existing = (await readLocalMirror<any>(tenantId, "consumos").catch(() => [])).find((row: any) => row.id === id);
-      if (existing) await writeLocalMirrorRow(tenantId, "consumos", { ...existing, ...payload });
-    } catch {
-      await enqueueLocalWrite({ tenantId, tableName: "consumos", rowId: id, op: "update", payload, authUserId: user?.id ?? null, deviceId: await getDeviceId() });
-    }
+    await enqueueLocalWrite({ tenantId, tableName: "consumos", rowId: id, op: "update", payload, authUserId: user?.id ?? null, deviceId: await getDeviceId() });
     loadEntregas({ soft: true });
   }
 
