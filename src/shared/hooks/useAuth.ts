@@ -173,6 +173,39 @@ function clearSessionShared(): void {
   patchSharedState({ user: null, tenantUser: null, tenantAccessDeniedReason: null, loading: false });
 }
 
+function userFromLocalDeviceSession(session: Awaited<ReturnType<typeof getLocalDeviceSession>>): UserSchema | null {
+  if (!session) return null;
+  return {
+    id: session.user_id,
+    email: session.email,
+    app_metadata: {},
+    user_metadata: {},
+    aud: '',
+    created_at: '',
+  } as unknown as UserSchema;
+}
+
+function hydrateAuthStateFromLocalDeviceSession(
+  session: NonNullable<Awaited<ReturnType<typeof getLocalDeviceSession>>>
+): UserSchema {
+  const localUser = userFromLocalDeviceSession(session)!;
+  const tenantRow = session.tenant_user_row as unknown as TenantSessionRow;
+  writeTenantSessionCache(localUser.id, tenantRow);
+  setLastTenantId(session.tenant_id);
+  patchSharedState({
+    user: localUser,
+    tenantUser: rowToTenantUser(tenantRow),
+    tenantAccessDeniedReason: null,
+    loading: false,
+  });
+  logAuth('loadUserData:local-session-fast-path', {
+    userId: localUser.id,
+    email: localUser.email,
+    tenantId: session.tenant_id,
+  });
+  return localUser;
+}
+
 export function hydrateAuthStateAfterLogin(user: UserSchema, tenantRow: TenantSessionRow): void {
   writeTenantSessionCache(user.id, tenantRow);
   setLastTenantId(tenantRow.tenant_id);
@@ -208,97 +241,106 @@ async function loadUserDataShared(opts?: { silent?: boolean }): Promise<void> {
 
     try {
       let u: UserSchema | null = null;
+      let hydratedFromLocalSession = false;
+      let validatedOnlineSession = false;
+      const storedToken = readRefreshToken();
 
-      for (let attempt = 0; attempt < AUTH_RETRIES; attempt++) {
-        logAuth('auth attempt', { attempt: attempt + 1, total: AUTH_RETRIES });
-        if (attempt > 0) await new Promise((r) => setTimeout(r, 280 * attempt));
-
-        const { data, error } = await insforgeClient.auth.getCurrentUser();
-        if (error) {
-          logAuth('getCurrentUser:error', error);
-          if (isUnauthorizedError(error)) break;
-          continue;
-        }
-        if (data?.user) {
-          u = data.user;
-          break;
+      if (Boolean((window as any).electronAPI)) {
+        const localSession = await getLocalDeviceSession();
+        if (localSession) {
+          u = hydrateAuthStateFromLocalDeviceSession(localSession);
+          hydratedFromLocalSession = true;
         }
       }
 
-      if (!u) {
-        const storedToken = readRefreshToken();
-        logAuth('loadUserData:no-user', { hasStoredRefreshToken: Boolean(storedToken) });
+      if (storedToken) {
+        try {
+          insforgeClient.getHttpClient().setRefreshToken(storedToken);
+        } catch {
+          /* ignore */
+        }
+        logAuth('bootstrap refresh:start', { tokenLength: storedToken.length });
+        const { data: refreshed, error: refreshError } = await insforgeClient.auth.refreshSession({
+          refreshToken: storedToken,
+        });
 
-        if (storedToken) {
-          try {
-            insforgeClient.getHttpClient().setRefreshToken(storedToken);
-          } catch {
-            /* ignore */
-          }
-          logAuth('bootstrap refresh:start', { tokenLength: storedToken.length });
-          const { data: refreshed, error: refreshError } = await insforgeClient.auth.refreshSession({
-            refreshToken: storedToken,
+        if (!refreshError) {
+          syncSdkSession(refreshed);
+          const rotated = extractRefreshTokenFromPayload(refreshed);
+          if (rotated) localStorage.setItem(REFRESH_TOKEN_KEY, rotated);
+          const refreshedUser = extractUserFromAuthPayload(refreshed);
+          logAuth('bootstrap refresh:ok', {
+            rotatedToken: Boolean(rotated),
+            hasUserInPayload: Boolean(refreshedUser),
           });
 
-          if (!refreshError) {
-            syncSdkSession(refreshed);
-            const rotated = extractRefreshTokenFromPayload(refreshed);
-            if (rotated) localStorage.setItem(REFRESH_TOKEN_KEY, rotated);
-            const refreshedUser = extractUserFromAuthPayload(refreshed);
-            logAuth('bootstrap refresh:ok', {
-              rotatedToken: Boolean(rotated),
-              hasUserInPayload: Boolean(refreshedUser),
+          if (refreshedUser) {
+            u = refreshedUser;
+            validatedOnlineSession = true;
+            patchSharedState({ user: u });
+            logAuth('loadUserData:user-ok-from-bootstrap-refresh-payload', {
+              userId: u.id,
+              email: u.email,
             });
-
-            if (refreshedUser) {
-              u = refreshedUser;
+          } else {
+            const { data: authDataAfterRefresh, error: authErrorAfterRefresh } =
+              await insforgeClient.auth.getCurrentUser();
+            if (!authErrorAfterRefresh && authDataAfterRefresh?.user) {
+              u = authDataAfterRefresh.user;
+              validatedOnlineSession = true;
               patchSharedState({ user: u });
-              logAuth('loadUserData:user-ok-from-bootstrap-refresh-payload', {
+              logAuth('loadUserData:user-ok-after-bootstrap-refresh', {
                 userId: u.id,
                 email: u.email,
               });
             } else {
-              const { data: authDataAfterRefresh, error: authErrorAfterRefresh } =
-                await insforgeClient.auth.getCurrentUser();
-              if (!authErrorAfterRefresh && authDataAfterRefresh?.user) {
-                u = authDataAfterRefresh.user;
-                patchSharedState({ user: u });
-                logAuth('loadUserData:user-ok-after-bootstrap-refresh', {
-                  userId: u.id,
-                  email: u.email,
-                });
-              } else {
-                logAuth('bootstrap refresh:no-user-after-refresh', {
-                  hasAuthError: Boolean(authErrorAfterRefresh),
-                });
-              }
+              logAuth('bootstrap refresh:no-user-after-refresh', {
+                hasAuthError: Boolean(authErrorAfterRefresh),
+              });
             }
-          } else if (isUnauthorizedError(refreshError)) {
-            refreshBlockedUntil = Date.now() + REFRESH_BLOCK_MS;
-            localStorage.removeItem(REFRESH_TOKEN_KEY);
-            logAuth('bootstrap refresh unauthorized -> token removed', refreshError);
-          } else {
-            logAuth('bootstrap refresh transient error', refreshError);
+          }
+        } else if (isUnauthorizedError(refreshError)) {
+          refreshBlockedUntil = Date.now() + REFRESH_BLOCK_MS;
+          localStorage.removeItem(REFRESH_TOKEN_KEY);
+          logAuth('bootstrap refresh unauthorized -> token removed', refreshError);
+          if (hydratedFromLocalSession) {
+            clearSessionShared();
+            return;
+          }
+        } else {
+          logAuth('bootstrap refresh transient error', refreshError);
+        }
+      }
+
+      if (!u) {
+        logAuth('loadUserData:no-user-after-refresh', { hasStoredRefreshToken: Boolean(storedToken) });
+
+        const attempts = hydratedFromLocalSession ? 1 : AUTH_RETRIES;
+        for (let attempt = 0; attempt < attempts; attempt++) {
+          logAuth('auth attempt', { attempt: attempt + 1, total: attempts });
+          if (attempt > 0) await new Promise((r) => setTimeout(r, 280 * attempt));
+
+          const { data, error } = await insforgeClient.auth.getCurrentUser();
+          if (error) {
+            logAuth('getCurrentUser:error', error);
+            if (isUnauthorizedError(error)) break;
+            continue;
+          }
+          if (data?.user) {
+            u = data.user;
+            validatedOnlineSession = true;
+            break;
           }
         }
 
         if (!u) {
-          const localSession = await getLocalDeviceSession();
-          if (localSession) {
-            u = {
-              id: localSession.user_id,
-              email: localSession.email,
-              app_metadata: {},
-              user_metadata: {},
-              aud: '',
-              created_at: '',
-            } as unknown as UserSchema;
-            patchSharedState({ user: u, tenantUser: localSession.tenant_user_row as unknown as TenantUser, loading: false });
-            logAuth('loadUserData:offline-session-ok', { userId: u.id, email: u.email });
-            return;
-          }
           return;
         }
+      }
+
+      if (hydratedFromLocalSession && !validatedOnlineSession) {
+        logAuth('loadUserData:local-session-kept-without-online-validation');
+        return;
       }
 
       patchSharedState({ user: u });
