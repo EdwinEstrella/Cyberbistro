@@ -16,8 +16,7 @@ import {
 } from "../../../shared/lib/resolveTenantUserFromAuth";
 import { hydrateAuthStateAfterLogin, syncAuthClientAfterLogin, useAuth } from "../../../shared/hooks/useAuth";
 import { defaultRouteForRol } from "../../../shared/lib/roleNav";
-import { PinGateModal } from "../../../shared/components/PinGate";
-import { hashPin, saveLocalDeviceSession } from "../../../shared/lib/localFirst";
+import { saveLocalDeviceSession } from "../../../shared/lib/localFirst";
 import { parseRememberedLogin, serializeRememberedLogin } from "../../../shared/lib/rememberLoginStorage";
 
 const LOGIN_NOTICE_KEY = "cloudix_login_notice";
@@ -62,17 +61,15 @@ export function Login() {
   const [notice, setNotice] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
-  const [showPinSetup, setShowPinSetup] = useState(false);
-  const [pendingAuth, setPendingAuth] = useState<{ user: any; accessRow: any } | null>(null);
   const hasElectronUpdater = Boolean((window as any).electronAPI?.onUpdateEvents);
 
   // Auto-redirect if already authenticated (e.g. offline fallback succeeded)
   useEffect(() => {
-    if (isAuthenticated && !authLoading && tenantUser && !showPinSetup) {
+    if (isAuthenticated && !authLoading && tenantUser) {
       const dest = defaultRouteForRol(tenantUser.rol);
       navigate(dest);
     }
-  }, [isAuthenticated, authLoading, tenantUser, navigate, showPinSetup]);
+  }, [isAuthenticated, authLoading, tenantUser, navigate]);
 
   // Updater states
   const [updatePhase, setUpdatePhase] = useState<'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error'>('idle');
@@ -205,14 +202,18 @@ export function Login() {
       }
       
       if (Boolean((window as any).electronAPI)) {
-        setPendingAuth({ user: data.user, accessRow: access.row });
-        setShowPinSetup(true);
-      } else {
-        hydrateAuthStateAfterLogin(data.user, access.row);
-        const dest = defaultRouteForRol(access.row.rol);
-        setIsVisible(false);
-        setTimeout(() => navigate(dest), 300);
+        await saveLocalDeviceSession(
+          access.row.tenant_id,
+          data.user.id,
+          data.user.email,
+          access.row
+        );
       }
+
+      hydrateAuthStateAfterLogin(data.user, access.row);
+      const dest = defaultRouteForRol(access.row.rol);
+      setIsVisible(false);
+      setTimeout(() => navigate(dest), 300);
     }
     setIsLoading(false);
   }, [email, isLoading, password, navigate, rememberLogin]);
@@ -509,35 +510,6 @@ export function Login() {
           <div aria-hidden="true" className="absolute border border-[rgba(72,72,71,0.2)] border-solid inset-0 pointer-events-none rounded-[8px] sm:rounded-[12px] shadow-[0px_0px_40px_-10px_rgba(255,144,109,0.3)] transition-opacity duration-300 hover:opacity-50" />
         </div>
       </div>
-
-        {/* PIN Gate Modal for Offline Setup */}
-        {showPinSetup && pendingAuth && (
-          <PinGateModal
-            title="Crear PIN Offline"
-            subtitle="Crea un PIN de 4 dígitos para acceder cuando no haya internet"
-            onUnlock={async (pin) => {
-              if (!pin) return;
-              const hashed = await hashPin(pin);
-              await saveLocalDeviceSession(
-                pendingAuth.accessRow.tenant_id,
-                pendingAuth.user.id,
-                pendingAuth.user.email,
-                hashed,
-                pendingAuth.accessRow
-              );
-              hydrateAuthStateAfterLogin(pendingAuth.user, pendingAuth.accessRow);
-              const dest = defaultRouteForRol(pendingAuth.accessRow.rol);
-              setIsVisible(false);
-              setTimeout(() => navigate(dest), 300);
-            }}
-            onCancel={() => {
-              insforgeClient.auth.signOut();
-              setShowPinSetup(false);
-              setPendingAuth(null);
-            }}
-          />
-        )}
-
     </div>
     </div>
   );

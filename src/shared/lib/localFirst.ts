@@ -869,24 +869,16 @@ export interface LocalDeviceSession {
   tenant_id: string;
   user_id: string;
   email: string;
-  pin_hash: string;
+  pin_hash?: string;
   created_at: string;
   tenant_user_row: Record<string, unknown>;
-}
-
-export async function hashPin(pin: string): Promise<string> {
-  const msgUint8 = new TextEncoder().encode(pin);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 export async function saveLocalDeviceSession(
   tenantId: string,
   userId: string,
   email: string,
-  pinHash: string,
-  tenantUserRow: Record<string, unknown>
+  tenantUserRow: Record<string, unknown> | object
 ): Promise<void> {
   const db = await openLocalFirstDbForSync(tenantId);
   try {
@@ -894,9 +886,8 @@ export async function saveLocalDeviceSession(
       tenant_id: tenantId,
       user_id: userId,
       email,
-      pin_hash: pinHash,
       created_at: new Date().toISOString(),
-      tenant_user_row: tenantUserRow,
+      tenant_user_row: tenantUserRow as Record<string, unknown>,
     };
     await putOne(db, "local_device_session", session);
   } finally {

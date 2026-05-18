@@ -16,8 +16,6 @@ import { RoleGuard } from "./RoleGuard";
 import { useAppUpdate } from "../../features/updates/AppUpdateContext";
 import { LocalFirstStatusBadge } from "../../shared/components/LocalFirstStatusBadge";
 import { useLocalFirstBootstrap } from "../../shared/hooks/useLocalFirstBootstrap";
-import { PinGateModal } from "../../shared/components/PinGate";
-import { getLocalDeviceSession, hashPin } from "../../shared/lib/localFirst";
 
 const mainNavItems = [
   { label: "Venta", customIcon: "venta", path: "/dashboard" },
@@ -158,23 +156,6 @@ export function AppLayout() {
   const [cocinaActiva, setCocinaActiva] = useState(true);
   const [ventaCartSearch, setVentaCartSearch] = useState("");
   const [sidebarHidden, setSidebarHidden] = useState(false);
-  const [isLocked, setIsLocked] = useState(() => localStorage.getItem("cloudix_pos_locked") === "true");
-
-  async function handleVerifyLockPin(pin: string) {
-    const session = await getLocalDeviceSession(tenantId || undefined);
-    if (!session) {
-      await signOut();
-      navigate("/");
-      return false;
-    }
-    const hashed = await hashPin(pin);
-    return hashed === session.pin_hash;
-  }
-
-  function handleUnlock() {
-    localStorage.removeItem("cloudix_pos_locked");
-    setIsLocked(false);
-  }
 
   const isVentaRoute = routerLocation.pathname === "/dashboard";
 
@@ -358,25 +339,6 @@ export function AppLayout() {
               </button>
             )}
 
-            {Boolean((window as any).electronAPI) && (
-              <button
-                type="button"
-                className="flex gap-[16px] items-center px-[16px] py-[12px] cursor-pointer border border-[rgba(72,72,71,0.2)] bg-transparent text-left w-full rounded-[8px] text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors mt-2"
-                onClick={() => {
-                  localStorage.setItem("cloudix_pos_locked", "true");
-                  setIsLocked(true);
-                }}
-              >
-                <svg className="shrink-0 size-[18px]" fill="none" viewBox="0 0 24 24" aria-hidden>
-                  <rect x="5" y="11" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                  <path d="M8 11V7a4 4 0 0 1 8 0v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-                <span className="font-['Space_Grotesk',sans-serif] text-[16px] tracking-[-0.4px]">
-                  Bloquear Caja
-                </span>
-              </button>
-            )}
-
             <button
               type="button"
               className="flex gap-[16px] items-center px-[16px] py-[12px] cursor-pointer border-none bg-transparent text-left w-full rounded-[8px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
@@ -530,15 +492,6 @@ export function AppLayout() {
           </div>
         </div>
       </div>
-      {isLocked ? (
-        <PinGateModal
-          title="POS bloqueado"
-          subtitle="Ingresá tu PIN offline para volver a operar"
-          onVerify={handleVerifyLockPin}
-          onUnlock={handleUnlock}
-          onCancel={() => undefined}
-        />
-      ) : null}
 </VentaCartSearchProvider>
       </RoleGuard>
     </div>
