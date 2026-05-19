@@ -878,8 +878,8 @@ function ChangePasswordCard() {
         return;
       }
 
-      const { error: updateError } = await insforgeClient.auth.updateUser({
-        password: newPassword,
+      const { error: updateError } = await insforgeClient.database.rpc("cloudix_update_my_password", {
+        p_new_password: newPassword,
       });
 
       if (updateError) {
