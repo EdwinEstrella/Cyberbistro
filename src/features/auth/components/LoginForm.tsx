@@ -124,8 +124,11 @@ export function Login() {
       }
 
       setEmail(remembered.email ?? "");
+      if (remembered.password) {
+        setPassword(remembered.password);
+      }
       setRememberLogin(true);
-      localStorage.setItem(REMEMBER_LOGIN_KEY, serializeRememberedLogin(remembered.email ?? ""));
+      localStorage.setItem(REMEMBER_LOGIN_KEY, serializeRememberedLogin(remembered.email ?? "", remembered.password));
     } catch {
       localStorage.removeItem(REMEMBER_LOGIN_KEY);
     }
@@ -168,7 +171,7 @@ export function Login() {
       if (rememberLogin) {
         localStorage.setItem(
           REMEMBER_LOGIN_KEY,
-          serializeRememberedLogin(email)
+          serializeRememberedLogin(email, password)
         );
       } else {
         localStorage.removeItem(REMEMBER_LOGIN_KEY);
