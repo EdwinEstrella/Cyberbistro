@@ -358,7 +358,7 @@ export function Cierre() {
       return;
     }
 
-    await enqueueLocalWrite({ tenantId, tableName: "cierres_operativos", rowId: currentCycle.id, op: "update", payload: { closed_at: now, closed_by_auth_user_id: user?.id }, deviceId });
+    await enqueueLocalWrite({ tenantId, tableName: "cierres_operativos", rowId: currentCycle.id, op: "update", payload: { closed_at: now, closed_by_auth_user_id: user?.id ?? null }, deviceId });
     setPrintMsg("Ciclo cerrado.");
 
     let tenantData: any = null;

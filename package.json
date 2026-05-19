@@ -1,6 +1,6 @@
 {
   "name": "cloudix",
-  "version": "12.0.23",
+  "version": "12.0.24",
   "description": "Cloudix Desktop App",
   "author": "Edwin",
   "main": "dist-electron/main.js",
@@ -9,7 +9,7 @@
   },
   "build": {
     "appId": "com.edwin.cloudix",
-    "productName": "Cloudix", 
+    "productName": "Cloudix",
     "directories": {
       "output": "release",
       "buildResources": "."

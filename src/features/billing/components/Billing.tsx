@@ -509,13 +509,27 @@ const loadBillingData = useCallback(async () => {
 
       const tid = inv.tenant_id ?? tenantId;
 
-      const { data: tenant, error: tenantError } = await insforgeClient.database
-        .from("tenants")
-        .select("nombre_negocio, rnc, direccion, telefono, logo_url, logo_size_px, logo_offset_x, logo_offset_y")
-        .eq("id", tid)
-        .single();
+      let tenant: any = null;
+      let tenantError: any = null;
+      try {
+        if (!navigator.onLine) {
+          const localTenants = await readLocalMirror<any>(tid, "tenants");
+          tenant = localTenants.find(t => t.id === tid) ?? null;
+        } else {
+          const { data, error } = await insforgeClient.database
+            .from("tenants")
+            .select("nombre_negocio, rnc, direccion, telefono, logo_url, logo_size_px, logo_offset_x, logo_offset_y")
+            .eq("id", tid)
+            .single();
+          tenant = data;
+          tenantError = error;
+        }
+      } catch (err) {
+        const localTenants = await readLocalMirror<any>(tid, "tenants").catch(() => []);
+        tenant = localTenants.find((t) => t.id === tid) ?? null;
+      }
 
-      if (tenantError || !tenant) {
+      if (!tenant) {
         console.error("Error al cargar datos del negocio para imprimir:", tenantError);
         return;
       }
@@ -566,13 +580,27 @@ const loadBillingData = useCallback(async () => {
     async (entry: CycleSummary) => {
       if (!tenantId || !entry.cycle.closed_at) return;
 
-      const { data: tenant, error: tenantError } = await insforgeClient.database
-        .from("tenants")
-        .select("nombre_negocio, rnc, direccion, telefono, logo_url, logo_size_px, logo_offset_x, logo_offset_y")
-        .eq("id", tenantId)
-        .single();
+      let tenant: any = null;
+      let tenantError: any = null;
+      try {
+        if (!navigator.onLine) {
+          const localTenants = await readLocalMirror<any>(tenantId, "tenants");
+          tenant = localTenants.find(t => t.id === tenantId) ?? null;
+        } else {
+          const { data, error } = await insforgeClient.database
+            .from("tenants")
+            .select("nombre_negocio, rnc, direccion, telefono, logo_url, logo_size_px, logo_offset_x, logo_offset_y")
+            .eq("id", tenantId)
+            .single();
+          tenant = data;
+          tenantError = error;
+        }
+      } catch (err) {
+        const localTenants = await readLocalMirror<any>(tenantId, "tenants").catch(() => []);
+        tenant = localTenants.find((t) => t.id === tenantId) ?? null;
+      }
 
-      if (tenantError || !tenant) {
+      if (!tenant) {
         console.error("Error al cargar datos del negocio para imprimir cierre:", tenantError);
         return;
       }

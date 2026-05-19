@@ -330,31 +330,37 @@ export function MesaCloseAccountModal({
       const snapshot = await getLocalFirstStatusSnapshot(tenantId);
       const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
 
-      if (localMode) {
-        const allFacturas = await readLocalMirror<any>(tenantId, "facturas");
-        factura = allFacturas.find(f => f.id === facturaId);
+      if (localMode || !navigator.onLine) {
+        const allFacturas = await readLocalMirror<any>(tenantId, "facturas").catch(() => []);
+        factura = allFacturas.find((f: any) => f.id === facturaId);
 
-        const allTenants = await readLocalMirror<any>(tenantId, "tenants");
-        tenant = allTenants.find(t => t.id === tenantId);
+        const allTenants = await readLocalMirror<any>(tenantId, "tenants").catch(() => []);
+        tenant = allTenants.find((t: any) => t.id === tenantId);
       } else {
-        const { data: factData, error: facturaError } = await insforgeClient.database
-          .from("facturas")
-          .select("*")
-          .eq("id", facturaId)
-          .eq("tenant_id", tenantId)
-          .single();
-        if (facturaError) {
-          console.error("Error al obtener factura:", facturaError);
-          return;
-        }
-        factura = factData;
+        try {
+          const { data: factData, error: facturaError } = await insforgeClient.database
+            .from("facturas")
+            .select("*")
+            .eq("id", facturaId)
+            .eq("tenant_id", tenantId)
+            .single();
+          if (facturaError) throw facturaError;
+          factura = factData;
 
-        const { data: tenantData } = await insforgeClient.database
-          .from("tenants")
-          .select("nombre_negocio, rnc, direccion, telefono, logo_url, logo_size_px, logo_offset_x, logo_offset_y")
-          .eq("id", tenantId)
-          .single();
-        tenant = tenantData;
+          const { data: tenantData, error: tenantError } = await insforgeClient.database
+            .from("tenants")
+            .select("nombre_negocio, rnc, direccion, telefono, logo_url, logo_size_px, logo_offset_x, logo_offset_y")
+            .eq("id", tenantId)
+            .single();
+          if (tenantError) throw tenantError;
+          tenant = tenantData;
+        } catch {
+          const allFacturas = await readLocalMirror<any>(tenantId, "facturas").catch(() => []);
+          factura = allFacturas.find((f: any) => f.id === facturaId);
+
+          const allTenants = await readLocalMirror<any>(tenantId, "tenants").catch(() => []);
+          tenant = allTenants.find((t: any) => t.id === tenantId);
+        }
       }
     } catch (err) {
       console.error("Error leyendo datos para factura:", err);

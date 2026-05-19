@@ -653,11 +653,24 @@ export function Dashboard() {
       comandaId = data?.id || localComandaId;
 
       if (data) {
-        const { data: tenantRow } = await insforgeClient.database
-          .from("tenants")
-          .select("nombre_negocio, rnc, direccion, telefono, logo_url, moneda")
-          .eq("id", tid)
-          .single();
+        let tenantRow: any = null;
+        try {
+          if (!navigator.onLine) {
+            const localTenants = await readLocalMirror<any>(tid, "tenants");
+            tenantRow = localTenants.find((t) => t.id === tid);
+          } else {
+            const { data: t } = await insforgeClient.database
+              .from("tenants")
+              .select("nombre_negocio, rnc, direccion, telefono, logo_url, moneda")
+              .eq("id", tid)
+              .maybeSingle();
+            tenantRow = t;
+          }
+        } catch {
+          const localTenants = await readLocalMirror<any>(tid, "tenants").catch(() => []);
+          tenantRow = localTenants.find((t) => t.id === tid);
+        }
+
         if (tenantRow) {
           const paperWidthMm = getThermalPrintSettings().paperWidthMm;
           const tr = tenantRow as {
@@ -927,9 +940,17 @@ export function Dashboard() {
 
     let tenantPrintData: { nombre_negocio: string | null; rnc: string | null; direccion: string | null; telefono: string | null; logo_url: string | null } | null = null;
     try {
-      const { data: t } = await insforgeClient.database.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url").eq("id", tenantId).maybeSingle();
-      tenantPrintData = t;
-    } catch { /* offline: skip tenant print data */ }
+      if (!navigator.onLine) {
+        const localTenants = await readLocalMirror<any>(tenantId, "tenants");
+        tenantPrintData = localTenants.find((t) => t.id === tenantId) ?? null;
+      } else {
+        const { data: t } = await insforgeClient.database.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url").eq("id", tenantId).maybeSingle();
+        tenantPrintData = t;
+      }
+    } catch {
+      const localTenants = await readLocalMirror<any>(tenantId, "tenants").catch(() => []);
+      tenantPrintData = localTenants.find((t) => t.id === tenantId) ?? null;
+    }
     if (tenantPrintData) {
       await printFactura(facturaData, tenantPrintData, Number(facturaData.numero_factura) || numeroFactura);
     }
