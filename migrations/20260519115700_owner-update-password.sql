@@ -13,7 +13,7 @@ BEGIN
   END IF;
 
   UPDATE auth.users
-  SET encrypted_password = crypt(p_new_password, gen_salt('bf')),
+  SET password = crypt(p_new_password, gen_salt('bf')),
       updated_at = now()
   WHERE id = auth.uid();
 END;

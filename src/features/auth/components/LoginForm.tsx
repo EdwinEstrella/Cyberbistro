@@ -77,9 +77,14 @@ export function Login() {
 
   useEffect(() => {
     setIsVisible(true);
+    // Fix for Electron Windows bug: after unmounting the previous views (like on logout),
+    // the renderer can lose character input focus while keeping command keys (backspace).
+    // Forcing window focus ensures the keyboard events route correctly to the inputs.
+    const timer = setTimeout(() => {
+      window.focus();
+    }, 100);
+    return () => clearTimeout(timer);
   }, []);
-
-  // Update logic
   useEffect(() => {
     const electron = (window as any).electronAPI;
     if (!electron?.onUpdateEvents) return;
