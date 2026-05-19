@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { ChevronDown, Eye, Printer, Trash2 } from "lucide-react";
 import { insforgeClient } from "../../../shared/lib/insforge";
-import { useAuth } from "../../../shared/hooks/useAuth";
+import { useAuth, ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
 import { buildCierreDiaReceiptHtml, buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
@@ -246,6 +246,8 @@ const loadBillingData = useCallback(async () => {
     }
 
     setLoading(true);
+
+    await ensureAuthSessionFresh();
 
     const [useLocalInvoices, useLocalCycles, useLocalExpenses, useLocalExpenseCategories] = await Promise.all([
       shouldReadLocalFirst(tenantId, ["facturas"]),

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { insforgeClient } from "../../../shared/lib/insforge";
-import { useAuth } from "../../../shared/hooks/useAuth";
+import { useAuth, ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
 import type { ThermalPrinterInfo } from "../../../shared/types/electron";
 import type { PaperWidthMm } from "../../../shared/lib/thermalStorage";
 
@@ -142,6 +142,7 @@ export function Ajustes() {
     if (authLoading || !tenantId) { if (!authLoading) setLoading(false); return; }
     let cancelled = false;
     void (async () => {
+      await ensureAuthSessionFresh();
       const res = await insforgeClient.database.from("tenants").select(`${TENANT_FIELDS_BASE}, ${TENANT_FIELDS_CURRENCY}, ${TENANT_FIELDS_NCF}`).eq("id", tenantId).maybeSingle();
       if (cancelled) return;
       if (res.error) { console.error(res.error.message); setLoading(false); return; }

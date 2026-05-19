@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { insforgeClient } from "../../../shared/lib/insforge";
-import { useAuth } from "../../../shared/hooks/useAuth";
+import { useAuth, ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
 import { useCocinaRealtimeSync } from "../useCocinaRealtimeSync";
 import { buildComandaReceiptHtml, type TenantReceiptInfo } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
@@ -59,6 +59,8 @@ export function Cocina() {
     const tid = tenantId;
     let cancelled = false;
     async function load() {
+      await ensureAuthSessionFresh();
+
       const [useLocalEstado, useLocalComandas, useLocalTenant] = await Promise.all([
         shouldReadLocalFirst(tid, ["cocina_estado"]),
         shouldReadLocalFirst(tid, ["comandas"]),

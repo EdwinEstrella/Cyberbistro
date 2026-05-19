@@ -166,12 +166,15 @@ export function Dashboard() {
     setMesas([]);
     setMenuCategories([]);
 
-    // Esperar a tener el tenant_id antes de cargar datos
-    if (!tenantId) return;
+    // Esperar a que auth termine y tengamos tenant_id antes de cargar datos
+    if (authLoading || !tenantId) return;
 
     let cancelled = false;
 
     const load = async () => {
+      // Garantizar que la sesión sea válida antes de consultar
+      await ensureAuthSessionFresh();
+
       const snapshot = await getLocalFirstStatusSnapshot(tenantId);
       const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
       const outbox = localMode ? await readLocalOutbox(tenantId).catch(() => []) : [];
@@ -291,7 +294,7 @@ export function Dashboard() {
 
     load().catch(console.error);
     return () => { cancelled = true; };
-  }, [tenantId]);
+  }, [authLoading, tenantId]);
 
   useEffect(() => {
     if (mesas.length > 0 && location.state && (location.state as any).selectMesaNumero) {
