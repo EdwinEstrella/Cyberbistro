@@ -521,6 +521,7 @@ const loadBillingData = useCallback(async () => {
             .select("nombre_negocio, rnc, direccion, telefono, logo_url, logo_size_px, logo_offset_x, logo_offset_y")
             .eq("id", tid)
             .single();
+          if (error) throw error;
           tenant = data;
           tenantError = error;
         }
@@ -592,8 +593,8 @@ const loadBillingData = useCallback(async () => {
             .select("nombre_negocio, rnc, direccion, telefono, logo_url, logo_size_px, logo_offset_x, logo_offset_y")
             .eq("id", tenantId)
             .single();
+          if (error) throw error;
           tenant = data;
-          tenantError = error;
         }
       } catch (err) {
         const localTenants = await readLocalMirror<any>(tenantId, "tenants").catch(() => []);

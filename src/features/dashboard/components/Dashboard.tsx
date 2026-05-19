@@ -659,11 +659,12 @@ export function Dashboard() {
             const localTenants = await readLocalMirror<any>(tid, "tenants");
             tenantRow = localTenants.find((t) => t.id === tid);
           } else {
-            const { data: t } = await insforgeClient.database
+            const { data: t, error } = await insforgeClient.database
               .from("tenants")
               .select("nombre_negocio, rnc, direccion, telefono, logo_url, moneda")
               .eq("id", tid)
               .maybeSingle();
+            if (error) throw error;
             tenantRow = t;
           }
         } catch {
@@ -944,7 +945,8 @@ export function Dashboard() {
         const localTenants = await readLocalMirror<any>(tenantId, "tenants");
         tenantPrintData = localTenants.find((t) => t.id === tenantId) ?? null;
       } else {
-        const { data: t } = await insforgeClient.database.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url").eq("id", tenantId).maybeSingle();
+        const { data: t, error } = await insforgeClient.database.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url").eq("id", tenantId).maybeSingle();
+        if (error) throw error;
         tenantPrintData = t;
       }
     } catch {
