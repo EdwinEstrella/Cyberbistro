@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router";
+import { Eye, EyeOff } from "lucide-react";
 import svgPaths from "../../../imports/svg-h2gjocs89h";
 import imgLoginRegistro from "figma:asset/47f7239cc7433af3270415eeec94f9bdbb11cd99.png";
 import imgDecorativeScanlineEffect from "figma:asset/70a05c412757c6d4e1cffbb0780858880dce7a5a.png";
@@ -56,6 +57,7 @@ export function Login() {
   const { isAuthenticated, loading: authLoading, tenantUser } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [rememberLogin, setRememberLogin] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -376,16 +378,24 @@ export function Login() {
                       </div>
                       <input
                         id="login-password"
-                        type="password"
+                        type={showPassword ? "text" : "password"}
                         autoComplete="current-password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         placeholder="•••••••••••••"
                         aria-invalid={Boolean(error)}
                         aria-describedby={error ? "login-auth-error" : undefined}
-                        className="w-full bg-transparent font-['Inter',sans-serif] text-[14px] sm:text-[16px] text-white placeholder:text-[rgba(72,72,71,0.5)] pl-10 sm:pl-12 pr-4 py-3 sm:py-4 outline-none transition-colors duration-300"
+                        className="w-full bg-transparent font-['Inter',sans-serif] text-[14px] sm:text-[16px] text-white placeholder:text-[rgba(72,72,71,0.5)] pl-10 sm:pl-12 pr-12 sm:pr-14 py-3 sm:py-4 outline-none transition-colors duration-300"
                         onKeyDown={handleKeyDown}
                       />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 sm:right-4 text-[rgba(72,72,71,0.8)] hover:text-[#ff906d] transition-colors duration-300 outline-none"
+                        tabIndex={-1}
+                      >
+                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
                     </div>
                     <div aria-hidden="true" className="absolute border-[#484847] border-b border-solid inset-0 pointer-events-none rounded-[inherit] transition-colors duration-300 group-hover:border-[rgba(255,144,109,0.3)]" />
                   </div>
