@@ -712,11 +712,20 @@ function UsuariosPanel() {
 
   async function handleDeleteUser(row: TenantUserRow) {
     if (!tenantId || (row.auth_user_id === user?.id)) return;
-    if (!confirm(`¿Eliminar el acceso de «${row.email}»?`)) return;
+    if (!confirm(`¿Eliminar completamente el acceso de «${row.email}» y todo lo relacionado?`)) return;
     setDeletingId(row.id);
-    const { error } = await insforgeClient.database.from("tenant_users").delete().eq("id", row.id).eq("tenant_id", tenantId);
+    
+    // Call the RPC to completely delete the user and unlink their records
+    const { error } = await insforgeClient.database.rpc("cloudix_owner_delete_staff_user", {
+      p_tenant_user_id: row.id,
+    });
+    
     setDeletingId(null);
-    if (error) alert(error.message); else await loadUsers();
+    if (error) {
+      alert(`Error al eliminar: ${error.message}`);
+    } else {
+      await loadUsers();
+    }
   }
 
   async function handleCreate() {
@@ -790,7 +799,8 @@ function UsuariosPanel() {
           )}
         </div>
 
-        <div className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 sm:p-8 shadow-sm h-fit flex flex-col gap-6">
+        <div className="flex flex-col gap-8">
+          <div className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 sm:p-8 shadow-sm h-fit flex flex-col gap-6">
            <h2 className="font-['Space_Grotesk'] text-xl font-bold text-foreground">Crear Acceso</h2>
            {success && <div className="bg-green-500/10 border border-green-500/20 rounded-xl px-4 py-3 text-green-600 dark:text-green-400 text-sm">{success}</div>}
            {error && <div className="bg-destructive/10 border border-destructive/20 rounded-xl px-4 py-3 text-destructive text-sm">{error}</div>}
@@ -812,6 +822,8 @@ function UsuariosPanel() {
               </div>
            </div>
            <button onClick={handleCreate} disabled={creating} className="bg-primary text-primary-foreground rounded-xl py-3.5 font-bold uppercase text-[12px] tracking-widest shadow-lg hover:opacity-90 disabled:opacity-50 transition-all border-none cursor-pointer mt-2">{creating ? "Creando..." : "Registrar Miembro"}</button>
+          </div>
+          <ChangePasswordCard />
         </div>
       </div>
       <style>{`
@@ -832,6 +844,107 @@ function UsuariosPanel() {
           background: transparent;
         }
       `}</style>
+    </div>
+  );
+}
+
+function ChangePasswordCard() {
+  const { user } = useAuth();
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<boolean>(false);
+
+  async function handleChangePassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (!user?.email || !currentPassword || !newPassword) {
+      setError("Completá ambos campos");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setSuccess(false);
+
+    try {
+      const { error: signInError } = await insforgeClient.auth.signInWithPassword({
+        email: user.email,
+        password: currentPassword,
+      });
+
+      if (signInError) {
+        setError("La contraseña actual es incorrecta");
+        setLoading(false);
+        return;
+      }
+
+      const { error: updateError } = await insforgeClient.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (updateError) {
+        setError(updateError.message || "Error al actualizar contraseña");
+      } else {
+        setSuccess(true);
+        setCurrentPassword("");
+        setNewPassword("");
+      }
+    } catch (err: any) {
+      setError("Error de conexión");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 sm:p-8 shadow-sm h-fit flex flex-col gap-6">
+      <h2 className="font-['Space_Grotesk'] text-xl font-bold text-foreground">Cambiar Contraseña</h2>
+      <p className="text-xs text-muted-foreground leading-relaxed mb-6">
+        Ingresá tu contraseña actual para verificar tu identidad y luego elegí la nueva.
+      </p>
+      
+      <form onSubmit={handleChangePassword} className="flex flex-col gap-4 max-w-md">
+        {error && (
+          <div className="bg-[rgba(255,115,70,0.1)] border border-[#ff7346] rounded-[6px] sm:rounded-[8px] p-2 sm:p-3 text-[#ff7346] text-xs font-medium text-center animate-shake">
+            {error}
+          </div>
+        )}
+        {success && (
+          <div className="bg-[rgba(89,238,80,0.08)] border border-[rgba(89,238,80,0.25)] rounded-[6px] sm:rounded-[8px] p-2 sm:p-3 text-[#59ee50] text-xs font-medium text-center">
+            Contraseña actualizada correctamente
+          </div>
+        )}
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">Contraseña Actual</label>
+          <input
+            type="password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            className="input-field"
+            placeholder="••••••••••••"
+          />
+        </div>
+        
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">Nueva Contraseña</label>
+          <input
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            className="input-field"
+            placeholder="••••••••••••"
+          />
+        </div>
+        
+        <button
+          type="submit"
+          disabled={loading || !currentPassword || !newPassword}
+          className="bg-primary text-primary-foreground rounded-xl py-3 font-bold uppercase text-[11px] tracking-[0.2em] shadow-sm hover:opacity-90 disabled:opacity-50 transition-all border-none cursor-pointer mt-2"
+        >
+          {loading ? "Actualizando..." : "Actualizar Contraseña"}
+        </button>
+      </form>
     </div>
   );
 }
@@ -925,7 +1038,11 @@ function SoportePanel() {
         </div>
       </div>
       <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-        {activeTab === "carta" ? <CartaPanel /> : activeTab === "usuarios" ? <UsuariosPanel /> : activeTab === "mesas" ? <MesasPanel /> : <CategoriasPanel />}
+        {activeTab === "carta" ? <CartaPanel /> : activeTab === "mesas" ? <MesasPanel /> : activeTab === "categorias" ? <CategoriasPanel /> : (
+          <>
+            <UsuariosPanel />
+          </>
+        )}
       </div>
     </div>
   );

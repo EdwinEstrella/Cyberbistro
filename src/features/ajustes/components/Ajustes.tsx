@@ -341,9 +341,6 @@ export function Ajustes() {
                         </div>
                       ))}
                     </div>
-                    <div className="mt-2 text-[13px] font-bold text-green-500/90 tracking-wide">
-                      Vista previa — próximo NCF: {construirCadenaNcf(config.ncf_tipo_default, config.ncf_secuencias_por_tipo[config.ncf_tipo_default] || 1) || "---"}
-                    </div>
                   </div>
                 </div>
               )}
