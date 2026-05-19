@@ -489,8 +489,14 @@ function ensureGlobalListeners(): void {
 /**
  * Renueva el access token cuando hay refresh en localStorage (flujo mobile / `isServerMode`).
  * Útil antes de operaciones PostgREST (p. ej. facturar): esas rutas no disparan el retry 401 del `HttpClient`.
+ *
+ * Espera primero a que el bootstrap (`loadUserDataShared`) termine —si está en curso—
+ * para evitar dos `refreshSession()` concurrentes que compitan por el mismo token.
  */
 export async function ensureAuthSessionFresh(): Promise<void> {
+  if (loadUserDataInFlight) {
+    await loadUserDataInFlight;
+  }
   await doRefreshShared();
 }
 
