@@ -410,7 +410,7 @@ export function Login() {
                         Recordar
                       </span>
                       <span className="font-['Inter',sans-serif] text-[#7c7c7c] text-[10px] sm:text-[11px] leading-relaxed">
-                        Guarda solo el correo; nunca la contraseña
+                        Guarda tus credenciales localmente
                       </span>
                     </div>
                   </div>

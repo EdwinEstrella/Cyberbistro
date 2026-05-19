@@ -6,20 +6,20 @@ import {
 } from "./rememberLoginStorage";
 
 describe("remember login storage", () => {
-  it("migrates legacy stored passwords by returning only the remembered email", () => {
+  it("parses stored email and password", () => {
     const result = parseRememberedLogin(
       JSON.stringify({ enabled: true, email: "owner@example.com", password: "secret-password" })
     );
 
-    expect(result).toEqual({ enabled: true, email: "owner@example.com", shouldPersist: true });
+    expect(result).toEqual({ enabled: true, email: "owner@example.com", password: "secret-password", shouldPersist: true });
   });
 
-  it("does not persist passwords when serializing remembered login data", () => {
-    const serialized = serializeRememberedLogin("staff@example.com", "ignored-secret");
+  it("persists email and password when serializing remembered login data", () => {
+    const serialized = serializeRememberedLogin("staff@example.com", "my-secret");
 
-    expect(JSON.parse(serialized)).toEqual({ enabled: true, email: "staff@example.com" });
-    expect(serialized).not.toContain("ignored-secret");
-    expect(serialized).not.toContain("password");
+    expect(JSON.parse(serialized)).toEqual({ enabled: true, email: "staff@example.com", password: "my-secret" });
+    expect(serialized).toContain("my-secret");
+    expect(serialized).toContain("password");
   });
 
   it("drops invalid or disabled remembered login payloads", () => {

@@ -530,6 +530,19 @@ export function useAuth() {
   const signOut = useCallback(async () => {
     isSigningOut = true;
     logAuth('signOut:start');
+    
+    // Clear localFirst session BEFORE doing network/storage clearing
+    const currentTenantId = sharedState.tenantUser?.tenant_id;
+    if (currentTenantId && Boolean((window as any).electronAPI)) {
+      try {
+        const m = await import('../lib/localFirst');
+        await m.clearLocalDeviceSession(currentTenantId);
+        logAuth('signOut:clearedLocalSession');
+      } catch (err) {
+        logAuth('signOut:localFirstClearError', err);
+      }
+    }
+
     try {
       const { error } = await insforgeClient.auth.signOut();
       if (error) console.error('Error signing out:', error);
