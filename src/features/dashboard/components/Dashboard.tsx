@@ -557,7 +557,7 @@ export function Dashboard() {
     return { subtotal, itbis, total };
   }
 
-  async function printFactura(facturaData: Record<string, unknown>, tenantData: { nombre_negocio: string | null; rnc: string | null; direccion: string | null; telefono: string | null; logo_url: string | null }, numeroFactura: number) {
+  async function printFactura(facturaData: Record<string, unknown>, tenantData: { nombre_negocio: string | null; rnc: string | null; direccion: string | null; telefono: string | null; logo_url: string | null; logo_size_px?: number; logo_offset_x?: number; logo_offset_y?: number }, numeroFactura: number) {
     const paperWidthMm = getThermalPrintSettings().paperWidthMm;
     const html = buildFacturaReceiptHtml(
       {
@@ -566,6 +566,9 @@ export function Dashboard() {
         direccion: tenantData.direccion,
         telefono: tenantData.telefono,
         logo_url: tenantData.logo_url,
+        logo_size_px: tenantData.logo_size_px,
+        logo_offset_x: tenantData.logo_offset_x,
+        logo_offset_y: tenantData.logo_offset_y,
       },
       facturaData as unknown as Parameters<typeof buildFacturaReceiptHtml>[1],
       numeroFactura,
@@ -664,7 +667,7 @@ export function Dashboard() {
           } else {
             const { data: t, error } = await insforgeClient.database
               .from("tenants")
-              .select("nombre_negocio, rnc, direccion, telefono, logo_url, moneda")
+              .select("nombre_negocio, rnc, direccion, telefono, logo_url, moneda, logo_size_px, logo_offset_x, logo_offset_y")
               .eq("id", tid)
               .maybeSingle();
             if (error) throw error;
@@ -684,6 +687,9 @@ export function Dashboard() {
             telefono: string | null;
             logo_url: string | null;
             moneda?: string | null;
+            logo_size_px?: number;
+            logo_offset_x?: number;
+            logo_offset_y?: number;
           };
           const comandaHtml = buildComandaReceiptHtml(
             {
@@ -693,6 +699,9 @@ export function Dashboard() {
               telefono: tr.telefono,
               logo_url: tr.logo_url,
               moneda: tr.moneda ?? null,
+              logo_size_px: tr.logo_size_px,
+              logo_offset_x: tr.logo_offset_x,
+              logo_offset_y: tr.logo_offset_y,
             },
             {
               id: data.id,
@@ -948,7 +957,7 @@ export function Dashboard() {
         const localTenants = await readLocalMirror<any>(tenantId, "tenants");
         tenantPrintData = localTenants.find((t) => t.id === tenantId) ?? null;
       } else {
-        const { data: t, error } = await insforgeClient.database.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url").eq("id", tenantId).maybeSingle();
+        const { data: t, error } = await insforgeClient.database.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url, logo_size_px, logo_offset_x, logo_offset_y").eq("id", tenantId).maybeSingle();
         if (error) throw error;
         tenantPrintData = t;
       }

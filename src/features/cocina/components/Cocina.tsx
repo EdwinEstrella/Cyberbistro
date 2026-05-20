@@ -69,14 +69,14 @@ export function Cocina() {
       const [estadoRes, comandasRes, tenantRes] = await Promise.all([
         useLocalEstado ? readLocalMirror<any>(tid, "cocina_estado").then(data => ({ data })) : insforgeClient.database.from("cocina_estado").select("*").eq("tenant_id", tid).limit(1),
         useLocalComandas ? readLocalMirror<Comanda & { tenant_id?: string }>(tid, "comandas").then(data => ({ data: data.filter(c => c.tenant_id === tid && ["pendiente", "en_preparacion", "listo"].includes(c.estado)).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()) })) : insforgeClient.database.from("comandas").select("*").eq("tenant_id", tid).in("estado", ["pendiente", "en_preparacion", "listo"]).order("created_at", { ascending: true }),
-        useLocalTenant ? readLocalMirror<any>(tid, "tenants").then(data => ({ data: data.find(t => t.id === tid) ?? null })) : insforgeClient.database.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url, moneda").eq("id", tid).maybeSingle(),
+        useLocalTenant ? readLocalMirror<any>(tid, "tenants").then(data => ({ data: data.find(t => t.id === tid) ?? null })) : insforgeClient.database.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url, moneda, logo_size_px, logo_offset_x, logo_offset_y").eq("id", tid).maybeSingle(),
       ]);
       if (cancelled) return;
       if (estadoRes.data?.[0]) setCocinaActiva(estadoRes.data[0].activa);
       if (comandasRes.data) setComandas(comandasRes.data as Comanda[]);
       if (tenantRes.data) {
         const t = tenantRes.data as any;
-        tenantReceiptRef.current = { nombre_negocio: t.nombre_negocio, rnc: t.rnc, direccion: t.direccion, telefono: t.telefono, logo_url: t.logo_url, moneda: t.moneda ?? null };
+        tenantReceiptRef.current = { nombre_negocio: t.nombre_negocio, rnc: t.rnc, direccion: t.direccion, telefono: t.telefono, logo_url: t.logo_url, moneda: t.moneda ?? null, logo_size_px: t.logo_size_px, logo_offset_x: t.logo_offset_x, logo_offset_y: t.logo_offset_y };
       }
       setLoading(false);
     }
