@@ -12,6 +12,12 @@ import {
 } from "../../../shared/lib/menuCategories";
 import { loadCantidadMesas, saveCantidadMesas } from "../../../shared/lib/tenantMesasSettings";
 import {
+  enqueueLocalWrite,
+  getDeviceId,
+  readLocalMirror,
+  shouldReadLocalFirst,
+} from "../../../shared/lib/localFirst";
+import {
   countActiveUsersByRole,
   extractTenantUserLimitConfig,
   getLimitForRole,
@@ -60,6 +66,58 @@ interface MenuCategoryRow {
 
 type FormMode = "add" | "edit" | null;
 
+function normalizeCartaData(tenantId: string, platos: Plato[], categories: MenuCategoryRow[]) {
+  return {
+    platos: platos
+      .filter((plato) => String((plato as any).tenant_id ?? tenantId) === tenantId)
+      .sort((a, b) => String(a.categoria ?? "").localeCompare(String(b.categoria ?? ""))),
+    categories: categories
+      .filter((category) => category.tenant_id === tenantId)
+      .sort((a, b) => (a.sort_order - b.sort_order) || a.nombre.localeCompare(b.nombre)),
+  };
+}
+
+async function loadCartaData(tenantId: string): Promise<{
+  platos: Plato[];
+  categories: MenuCategoryRow[];
+}> {
+  const useLocalRead = await shouldReadLocalFirst(tenantId, ["platos", "menu_categories"]);
+  if (useLocalRead) {
+    const [platos, categories] = await Promise.all([
+      readLocalMirror<Plato>(tenantId, "platos"),
+      readLocalMirror<MenuCategoryRow>(tenantId, "menu_categories"),
+    ]);
+    return normalizeCartaData(tenantId, platos, categories);
+  }
+
+  const [platosRes, categoriesRes] = await Promise.all([
+    insforgeClient.database
+      .from("platos")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .order("categoria"),
+    insforgeClient.database
+      .from("menu_categories")
+      .select("id, tenant_id, nombre, color, sort_order")
+      .eq("tenant_id", tenantId)
+      .order("sort_order")
+      .order("nombre"),
+  ]);
+
+  if (platosRes.error || categoriesRes.error) {
+    const [platos, categories] = await Promise.all([
+      readLocalMirror<Plato>(tenantId, "platos").catch(() => []),
+      readLocalMirror<MenuCategoryRow>(tenantId, "menu_categories").catch(() => []),
+    ]);
+    return normalizeCartaData(tenantId, platos, categories);
+  }
+
+  return {
+    platos: (platosRes.data ?? []) as Plato[],
+    categories: (categoriesRes.data ?? []) as MenuCategoryRow[],
+  };
+}
+
 function CartaPanel() {
   const { tenantId, loading: authLoading } = useAuth();
   const { formatMoney, currencySymbol } = useTenantCurrency();
@@ -82,23 +140,16 @@ function CartaPanel() {
       return;
     }
     setLoading(true);
-    Promise.all([
-      insforgeClient.database
-        .from("platos")
-        .select("*")
-        .eq("tenant_id", tenantId)
-        .order("categoria"),
-      insforgeClient.database
-        .from("menu_categories")
-        .select("id, tenant_id, nombre, color, sort_order")
-        .eq("tenant_id", tenantId)
-        .order("sort_order")
-        .order("nombre"),
-    ]).then(([platosRes, categoriesRes]) => {
-        if (!platosRes.error && platosRes.data) setPlatos(platosRes.data as Plato[]);
-        if (!categoriesRes.error && categoriesRes.data) {
-          setMenuCategories(categoriesRes.data as MenuCategoryRow[]);
-        }
+    loadCartaData(tenantId)
+      .then(({ platos, categories }) => {
+        setPlatos(platos);
+        setMenuCategories(categories);
+      })
+      .catch((err) => {
+        console.error("Error al cargar carta:", err);
+        setError(err?.message || "No se pudo cargar la carta.");
+      })
+      .finally(() => {
         setLoading(false);
       });
   }, [tenantId, authLoading]);
@@ -136,13 +187,21 @@ function CartaPanel() {
     const existing = menuCategories.find((category) => category.nombre.toLowerCase() === normalized.toLowerCase());
     if (existing) return existing;
 
-    const { data, error: insertError } = await insforgeClient.database
-      .from("menu_categories")
-      .insert([{ tenant_id: tenantId, nombre: normalized, color, sort_order: menuCategories.length }])
-      .select()
-      .single();
-    if (insertError || !data) return null;
-    const row = data as MenuCategoryRow;
+    const row: MenuCategoryRow = {
+      id: crypto.randomUUID(),
+      tenant_id: tenantId,
+      nombre: normalized,
+      color,
+      sort_order: menuCategories.length,
+    };
+    await enqueueLocalWrite({
+      tenantId,
+      tableName: "menu_categories",
+      rowId: row.id,
+      op: "insert",
+      payload: row,
+      deviceId: await getDeviceId(),
+    });
     setMenuCategories((prev) => [...prev, row]);
     return row;
   }
@@ -160,41 +219,52 @@ function CartaPanel() {
     await ensureCategoryExists(form.categoria, getCatColor(form.categoria));
 
     if (mode === "add") {
-      const { data, error: err } = await insforgeClient.database
-        .from("platos")
-        .insert([{
-          nombre: form.nombre.trim(),
-          precio,
-          categoria: form.categoria,
-          disponible: form.disponible,
-          va_a_cocina: form.va_a_cocina,
-          tenant_id: tenantId,
-        }])
-        .select();
-      if (err) {
+      const localId = -Date.now();
+      const payload = {
+        id: localId,
+        nombre: form.nombre.trim(),
+        precio,
+        categoria: form.categoria,
+        disponible: form.disponible,
+        va_a_cocina: form.va_a_cocina,
+        tenant_id: tenantId,
+      };
+      try {
+        await enqueueLocalWrite({
+          tenantId,
+          tableName: "platos",
+          rowId: String(localId),
+          op: "insert",
+          payload,
+          deviceId: await getDeviceId(),
+        });
+        setPlatos((prev) => [...prev, payload as Plato]);
+        setMode(null);
+        setSelectedId(null);
+      } catch (err: any) {
         console.error("Error al crear plato:", err);
         setError(`Error: ${err.message || "No se pudo crear el plato"}`);
         setSaving(false);
         return;
       }
-      if (data) {
-        setPlatos((prev) => [...prev, ...(data as Plato[])]);
-        setMode(null);
-        setSelectedId(null);
-      }
     } else if (mode === "edit" && selectedId) {
-      const { error: err } = await insforgeClient.database
-        .from("platos")
-        .update({
-          nombre: form.nombre.trim(),
-          precio,
-          categoria: form.categoria,
-          disponible: form.disponible,
-          va_a_cocina: form.va_a_cocina
-        })
-        .eq("id", selectedId)
-        .eq("tenant_id", tenantId);
-      if (err) {
+      const payload = {
+        nombre: form.nombre.trim(),
+        precio,
+        categoria: form.categoria,
+        disponible: form.disponible,
+        va_a_cocina: form.va_a_cocina
+      };
+      try {
+        await enqueueLocalWrite({
+          tenantId,
+          tableName: "platos",
+          rowId: String(selectedId),
+          op: "update",
+          payload,
+          deviceId: await getDeviceId(),
+        });
+      } catch (err: any) {
         console.error("Error al actualizar plato:", err);
         setError(`Error: ${err.message || "No se pudo actualizar el plato"}`);
         setSaving(false);
@@ -213,13 +283,15 @@ function CartaPanel() {
     if (!plato) return;
     if (!confirm(`¿Estás seguro de eliminar "${plato.nombre}"? Esta acción no se puede deshacer.`)) return;
 
-    const { error: deletePlatoError } = await insforgeClient.database
-      .from("platos")
-      .delete()
-      .eq("id", id)
-      .eq("tenant_id", tenantId);
-
-    if (deletePlatoError) {
+    try {
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "platos",
+        rowId: String(id),
+        op: "delete",
+        deviceId: await getDeviceId(),
+      });
+    } catch (deletePlatoError: any) {
       alert(`Error al eliminar el plato: ${deletePlatoError.message}`);
       return;
     }
@@ -388,14 +460,18 @@ function CategoriasPanel() {
       return;
     }
     setLoading(true);
-    Promise.all([
-      insforgeClient.database.from("platos").select("*").eq("tenant_id", tenantId).order("categoria"),
-      insforgeClient.database.from("menu_categories").select("id, tenant_id, nombre, color, sort_order").eq("tenant_id", tenantId).order("sort_order").order("nombre"),
-    ]).then(([platosRes, categoriesRes]) => {
-      if (!platosRes.error && platosRes.data) setPlatos(platosRes.data as Plato[]);
-      if (!categoriesRes.error && categoriesRes.data) setMenuCategories(categoriesRes.data as MenuCategoryRow[]);
-      setLoading(false);
-    });
+    loadCartaData(tenantId)
+      .then(({ platos, categories }) => {
+        setPlatos(platos);
+        setMenuCategories(categories);
+      })
+      .catch((err) => {
+        console.error("Error al cargar categorias:", err);
+        setError(err?.message || "No se pudieron cargar las categorias.");
+      })
+      .finally(() => {
+        setLoading(false);
+      });
   }, [tenantId, authLoading]);
 
   const categoryOrder = menuCategories.map((category) => category.nombre);
@@ -434,16 +510,26 @@ function CategoriasPanel() {
     const existing = menuCategories.find((category) => category.nombre.toLowerCase() === normalized.toLowerCase());
     if (existing) return existing;
 
-    const { data, error: insertError } = await insforgeClient.database
-      .from("menu_categories")
-      .insert([{ tenant_id: tenantId, nombre: normalized, color, sort_order: menuCategories.length }])
-      .select()
-      .single();
-    if (insertError || !data) {
-      setError(insertError?.message || "No se pudo crear la categoría.");
+    const row: MenuCategoryRow = {
+      id: crypto.randomUUID(),
+      tenant_id: tenantId,
+      nombre: normalized,
+      color,
+      sort_order: menuCategories.length,
+    };
+    try {
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "menu_categories",
+        rowId: row.id,
+        op: "insert",
+        payload: row,
+        deviceId: await getDeviceId(),
+      });
+    } catch (insertError: any) {
+      setError(insertError?.message || "No se pudo crear la categoria.");
       return null;
     }
-    const row = data as MenuCategoryRow;
     setMenuCategories((prev) => [...prev, row]);
     return row;
   }
@@ -468,32 +554,44 @@ function CategoriasPanel() {
 
     if (editingCategoryId) {
       const current = menuCategories.find((category) => category.id === editingCategoryId);
-      const { data, error: updateError } = await insforgeClient.database
-        .from("menu_categories")
-        .update({ nombre, color: categoryColorDraft })
-        .eq("id", editingCategoryId)
-        .eq("tenant_id", tenantId)
-        .select()
-        .single();
-      if (updateError || !data) {
-        setError(updateError?.message || "No se pudo actualizar la categoría.");
+      const updatedCategory = current
+        ? { ...current, nombre, color: categoryColorDraft }
+        : { id: editingCategoryId, tenant_id: tenantId, nombre, color: categoryColorDraft, sort_order: menuCategories.length };
+      try {
+        await enqueueLocalWrite({
+          tenantId,
+          tableName: "menu_categories",
+          rowId: editingCategoryId,
+          op: "update",
+          payload: { nombre, color: categoryColorDraft },
+          deviceId: await getDeviceId(),
+        });
+      } catch (updateError: any) {
+        setError(updateError?.message || "No se pudo actualizar la categoria.");
         setSaving(false);
         return;
       }
       if (current && current.nombre !== nombre) {
-        const { error: platosError } = await insforgeClient.database
-          .from("platos")
-          .update({ categoria: nombre })
-          .eq("tenant_id", tenantId)
-          .eq("categoria", current.nombre);
-        if (platosError) {
-          setError(`Categoría guardada, pero no se pudieron actualizar los platos: ${platosError.message}`);
+        try {
+          const deviceId = await getDeviceId();
+          await Promise.all(platos
+            .filter((plato) => plato.categoria === current.nombre)
+            .map((plato) => enqueueLocalWrite({
+              tenantId,
+              tableName: "platos",
+              rowId: String(plato.id),
+              op: "update",
+              payload: { categoria: nombre },
+              deviceId,
+            })));
+        } catch (platosError: any) {
+          setError(`Categoria guardada, pero no se pudieron actualizar los platos: ${platosError.message}`);
           setSaving(false);
           return;
         }
         setPlatos((prev) => prev.map((plato) => plato.categoria === current.nombre ? { ...plato, categoria: nombre } : plato));
       }
-      setMenuCategories((prev) => prev.map((category) => category.id === editingCategoryId ? (data as MenuCategoryRow) : category));
+      setMenuCategories((prev) => prev.map((category) => category.id === editingCategoryId ? updatedCategory : category));
       resetForm();
       setSaving(false);
       return;
@@ -514,12 +612,19 @@ function CategoriasPanel() {
       }
       if (!confirm(`Eliminar "${category.nombre}"?\n\n${assignedCount} plato(s) pasarán a General.`)) return;
       await ensureCategoryExists("General", "#a1a1aa");
-      const { error: platosError } = await insforgeClient.database
-        .from("platos")
-        .update({ categoria: "General" })
-        .eq("tenant_id", tenantId)
-        .eq("categoria", category.nombre);
-      if (platosError) {
+      try {
+        const deviceId = await getDeviceId();
+        await Promise.all(platos
+          .filter((plato) => plato.categoria === category.nombre)
+          .map((plato) => enqueueLocalWrite({
+            tenantId,
+            tableName: "platos",
+            rowId: String(plato.id),
+            op: "update",
+            payload: { categoria: "General" },
+            deviceId,
+          })));
+      } catch (platosError: any) {
         setError(platosError.message);
         return;
       }
@@ -528,12 +633,15 @@ function CategoriasPanel() {
       return;
     }
 
-    const { error: deleteError } = await insforgeClient.database
-      .from("menu_categories")
-      .delete()
-      .eq("id", category.id)
-      .eq("tenant_id", tenantId);
-    if (deleteError) {
+    try {
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "menu_categories",
+        rowId: category.id,
+        op: "delete",
+        deviceId: await getDeviceId(),
+      });
+    } catch (deleteError: any) {
       setError(deleteError.message);
       return;
     }

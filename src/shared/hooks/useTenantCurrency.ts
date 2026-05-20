@@ -6,6 +6,7 @@ import {
   tenantCurrencySymbol,
   type TenantCurrencyCode,
 } from "../lib/currency";
+import { readLocalMirror, shouldReadLocalFirst } from "../lib/localFirst";
 import { useAuth } from "./useAuth";
 
 export function useTenantCurrency() {
@@ -17,6 +18,18 @@ export function useTenantCurrency() {
     let cancelled = false;
 
     void (async () => {
+      const readLocalCurrency = async () => {
+        const tenants = await readLocalMirror<{ id: string; moneda?: string | null; currency_code?: string | null }>(tenantId, "tenants").catch(() => []);
+        const tenant = tenants.find((row) => row.id === tenantId);
+        return tenant ? normalizeTenantCurrencyCode(tenant.moneda || tenant.currency_code) : null;
+      };
+
+      if (await shouldReadLocalFirst(tenantId, ["tenants"]).catch(() => false)) {
+        const localCurrency = await readLocalCurrency();
+        if (!cancelled && localCurrency) setCurrencyCode(localCurrency);
+        return;
+      }
+
       let res = await insforgeClient.database
         .from("tenants")
         .select("moneda")
@@ -32,7 +45,12 @@ export function useTenantCurrency() {
           .maybeSingle();
       }
 
-      if (cancelled || res.error || !res.data) return;
+      if (cancelled) return;
+      if (res.error || !res.data) {
+        const localCurrency = await readLocalCurrency();
+        if (localCurrency) setCurrencyCode(localCurrency);
+        return;
+      }
       const data = res.data as { moneda?: string | null; currency_code?: string | null };
       setCurrencyCode(normalizeTenantCurrencyCode(data.moneda || data.currency_code));
     })();
