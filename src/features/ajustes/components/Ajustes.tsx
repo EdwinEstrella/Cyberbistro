@@ -21,6 +21,7 @@ import {
   saveTenantLogoUrl,
   uploadTenantLogoFile,
 } from "../../../shared/lib/tenantLogoStorage";
+import { cacheLogoFromUrl, refreshLogoCache } from "../../../shared/lib/logoCache";
 import { useAppUpdate } from "../../updates/AppUpdateContext";
 import {
   buildBSequenceMapFromRow,
@@ -167,6 +168,10 @@ export function Ajustes() {
           ncf_secuencias_por_tipo: ncfSequences,
         });
       }
+      // Proactively cache logo for offline printing
+      if (res.data && (res.data as any).logo_url) {
+        void cacheLogoFromUrl((res.data as any).logo_url);
+      }
       setLoading(false);
     })();
     return () => { cancelled = true; };
@@ -203,6 +208,8 @@ export function Ajustes() {
     const saved = await saveTenantLogoUrl(tenantId, uploaded.publicUrl);
     if (!saved.ok) { return; }
     setConfig(p => ({ ...p, logo_url: uploaded.publicUrl }));
+    // Cache the new logo for offline printing
+    void refreshLogoCache(uploaded.publicUrl);
   }
 
   const tenantPreview: TenantReceiptInfo = useMemo(() => ({

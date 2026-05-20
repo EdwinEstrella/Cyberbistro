@@ -1,4 +1,5 @@
 import { type PaperWidthMm } from "./thermalStorage";
+import { getLogoUrlForPrint } from "./logoCache";
 
 export interface TenantReceiptInfo {
   nombre_negocio: string | null;
@@ -73,8 +74,15 @@ function headerBlock(t: TenantReceiptInfo, opts?: { omitRnc?: boolean }): string
   const logoX = clampNumber(t.logo_offset_x, -28, 28, 0);
   const logoY = clampNumber(t.logo_offset_y, -12, 18, 0);
   const logoBoxHeight = logoSize + Math.max(logoY, 0) + 8;
-  const logo = t.logo_url
-    ? `<div class="logo-wrap" style="height:${logoBoxHeight}px;margin-bottom:${Math.max(2, 8 - logoY)}px"><img src="${escapeHtml(t.logo_url)}" alt="" crossorigin="anonymous" style="max-height:${logoSize}px;transform:translate(${logoX}px, ${logoY}px)" /></div>`
+
+  const resolvedLogoUrl = getLogoUrlForPrint(t.logo_url);
+  // Data URLs are safe (no user input) and must NOT be escaped (escapeHtml breaks base64)
+  const logoSrc = resolvedLogoUrl
+    ? (resolvedLogoUrl.startsWith("data:") ? resolvedLogoUrl : escapeHtml(resolvedLogoUrl))
+    : null;
+
+  const logo = logoSrc
+    ? `<div class="logo-wrap" style="height:${logoBoxHeight}px;margin-bottom:${Math.max(2, 8 - logoY)}px"><img src="${logoSrc}" alt="" style="max-height:${logoSize}px;transform:translate(${logoX}px, ${logoY}px)" /></div>`
     : "";
   const rncTrim = t.rnc?.trim() ?? "";
   const rnc =
@@ -232,7 +240,7 @@ export function buildFacturaReceiptHtml(
   </div>
   <div class="divider"></div>
   <div class="center" style="margin: 12px 0 8px">
-    <img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https://azokia.com" style="width: 120px; height: 120px;" />
+    <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAAB4CAYAAAA5ZDbSAAAAAklEQVR4AewaftIAAAN4SURBVO3BUW4bSRAFwZeFuf+Vc/XZaBhsDz2UtIWKwC8ZbVVGa5XRWmW0VhmtXfkDID9FzQrIiZonALlLzQ7IT1GzqozWKqO1ymjtyl9Q8ylAXlFzAuQJak6A3KXmU4C8UhmtVUZrldFaZbR25U1A7lLzBCArNSdAdmpWQHZqVmqeAOQuNXdVRmuV0VpltHbllwOyU7MCslNzl5oTICs1v1lltFYZrVVGa5XR2pUG1JyoOQHSTWW0VhmtVUZrV96k5jcDslJzouYEyBPUfIfKaK0yWquM1iqjtSt/AchvBmSnZgVkp2YFZKfmXwH5KZXRWmW0VhmtXfkDNf8nak7U7ICs1DxBzW9RGa1VRmuV0dqVPwCyUvMOICs1OyB3AVmpOQHyBDUrIJ+i5gTISs2qMlqrjNYqo7XKaO3Km4Cs1OzUrIDs1KyArNS8A8hdQJ6g5gTIXUB2al6pjNYqo7XKaA2/ZAPkRM0KyBPUnAC5S807gHyCmhWQEzV3VUZrldFaZbRWGa1d+UZqPkHNDsgKyE7NCshOzStATtScqNkBWQHZqXmlMlqrjNYqozX8kg2QlZonADlRcwLkRM0JkLvUrIC8Q80KyBPUrCqjtcporTJaq4zWrnwQkBM1KyArNSdqToDs1JwAeUXNO4Cs1JwA2al5pTJaq4zWKqO1K3+g5gTIE4Cs1DwByAmQTwByF5ATNXdVRmuV0VpltFYZrV15k5oTICdqXgGyU3OXmh2QlZodkBWQlZonqNkBWQHZqXmlMlqrjNYqozX8kg2QT1CzA/KKmhMgOzUrICdqToD8FDV3VUZrldFaZbSGX/KLAdmpeQKQEzUrICs17wCyUvMJldFaZbRWGa1VRmtX/gDIT1FzF5CdmhM1nwBkpeanVEZrldFaZbR25S+o+RQgr6h5ApCdmhWQnZq71NwF5AlqVpXRWmW0VhmtVUZrV94E5C41dwF5B5CVmh2QfwXku6jZAXmlMlqrjNYqo7Urv5yaHZATNSsgOzUnQFZqVkDeoeYEyArIXZXRWmW0VhmtVUZrV/6H1KyA7ICcAPkOak6A7NSsgOzUvFIZrVVGa5XR2pU3qfk/UbMDslKzA/KvgLwDyL+qjNYqo7XKaK0yWrvyF4D8FCDvULMC8l3UPAHICZCVmlVltFYZrVVGa/glo63KaK0yWquM1v4DLsR4DL+GyVUAAAAASUVORK5CYII=" style="width: 120px; height: 120px;" />
   </div>
   <div class="center" style="font-size:13px;font-weight:600">${escapeHtml(new Date().toLocaleString("es-DO", { timeZone: "America/Santo_Domingo", hour12: true }))}</div>
   `;

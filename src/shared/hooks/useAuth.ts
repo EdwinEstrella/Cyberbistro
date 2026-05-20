@@ -253,7 +253,7 @@ async function loadUserDataShared(opts?: { silent?: boolean }): Promise<void> {
         }
       }
 
-      if (storedToken) {
+      if (storedToken && navigator.onLine) {
         try {
           insforgeClient.getHttpClient().setRefreshToken(storedToken);
         } catch {
@@ -310,10 +310,21 @@ async function loadUserDataShared(opts?: { silent?: boolean }): Promise<void> {
         } else {
           logAuth('bootstrap refresh transient error', refreshError);
         }
+      } else if (storedToken && !navigator.onLine) {
+        logAuth('bootstrap refresh:skipped-offline');
+        // Still set the token on the client so it can be used if we come back online
+        try {
+          insforgeClient.getHttpClient().setRefreshToken(storedToken);
+        } catch { /* ignore */ }
       }
 
       if (!u) {
         logAuth('loadUserData:no-user-after-refresh', { hasStoredRefreshToken: Boolean(storedToken) });
+
+        if (!navigator.onLine) {
+          logAuth('loadUserData:offline-no-user -> skipping auth retries');
+          return;
+        }
 
         const attempts = hydratedFromLocalSession ? 1 : AUTH_RETRIES;
         for (let attempt = 0; attempt < attempts; attempt++) {
@@ -352,21 +363,25 @@ async function loadUserDataShared(opts?: { silent?: boolean }): Promise<void> {
         logAuth('tenant cache hit', { tenantId: cached.tenant_id, rol: cached.rol });
       }
 
-      const access = await resolveTenantAccessForSession(u);
-      if (access.status === 'active') {
-        patchSharedState({
-          tenantUser: rowToTenantUser(access.row),
-          tenantAccessDeniedReason: null,
-        });
-        writeTenantSessionCache(u.id, access.row);
-        logAuth('tenant resolved from backend', {
-          tenantId: access.row.tenant_id,
-          rol: access.row.rol,
-        });
+      if (navigator.onLine) {
+        const access = await resolveTenantAccessForSession(u);
+        if (access.status === 'active') {
+          patchSharedState({
+            tenantUser: rowToTenantUser(access.row),
+            tenantAccessDeniedReason: null,
+          });
+          writeTenantSessionCache(u.id, access.row);
+          logAuth('tenant resolved from backend', {
+            tenantId: access.row.tenant_id,
+            rol: access.row.rol,
+          });
+        } else {
+          clearTenantSessionCache();
+          patchSharedState({ tenantUser: null, tenantAccessDeniedReason: access.status });
+          logAuth('tenant not resolved from backend -> cache cleared', { reason: access.status });
+        }
       } else {
-        clearTenantSessionCache();
-        patchSharedState({ tenantUser: null, tenantAccessDeniedReason: access.status });
-        logAuth('tenant not resolved from backend -> cache cleared', { reason: access.status });
+        logAuth('tenant resolution:skipped-offline (using cache)');
       }
     } catch (err) {
       console.error('Error loading user data:', err);
@@ -386,6 +401,11 @@ async function loadUserDataShared(opts?: { silent?: boolean }): Promise<void> {
 async function doRefreshShared(): Promise<void> {
   if (isSigningOut) {
     logAuth('focus/visibility/interval refresh skipped (signing out)');
+    return;
+  }
+
+  if (!navigator.onLine) {
+    logAuth('focus/visibility/interval refresh skipped (offline)');
     return;
   }
 
@@ -494,6 +514,10 @@ function ensureGlobalListeners(): void {
  * para evitar dos `refreshSession()` concurrentes que compitan por el mismo token.
  */
 export async function ensureAuthSessionFresh(): Promise<void> {
+  if (!navigator.onLine) {
+    logAuth('ensureAuthSessionFresh:skipped-offline');
+    return;
+  }
   if (loadUserDataInFlight) {
     await loadUserDataInFlight;
   }

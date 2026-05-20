@@ -6,6 +6,7 @@ import { buildCierreDiaReceiptHtml, buildFacturaReceiptHtml } from "../../../sha
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
+import { cacheLogoFromUrl } from "../../../shared/lib/logoCache";
 // useTheme removed
 import {
   Dialog,
@@ -536,6 +537,8 @@ const loadBillingData = useCallback(async () => {
         console.error("Error al cargar datos del negocio para imprimir:", tenantError);
         return;
       }
+
+      void cacheLogoFromUrl(tenant.logo_url);
 
       const items = Array.isArray(inv.items) ? inv.items : [];
       const paperWidthMm = getThermalPrintSettings().paperWidthMm;

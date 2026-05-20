@@ -211,6 +211,47 @@ export function Gastos() {
     setSaving(false);
   }
 
+  async function eliminarCategoria(cat: CategoriaGasto) {
+    if (!tenantId) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      let hasExpenses = false;
+      const useLocalGastos = await shouldReadLocalFirst(tenantId, ["gastos"]);
+      if (useLocalGastos) {
+        const localGastos = await readLocalMirror<GastoRow>(tenantId, "gastos");
+        hasExpenses = localGastos.some(g => g.category_id === cat.id);
+      } else {
+        const { count, error } = await insforgeClient.database
+          .from("gastos")
+          .select("id", { count: "exact", head: true })
+          .eq("tenant_id", tenantId)
+          .eq("category_id", cat.id);
+        if (error) throw error;
+        hasExpenses = (count ?? 0) > 0;
+      }
+      if (hasExpenses) {
+        setMessage(`No se puede eliminar "${cat.nombre}" porque ya tiene gastos registrados.`);
+        setSaving(false);
+        return;
+      }
+      const ok = window.confirm(`¿Seguro que quieres eliminar la categoría "${cat.nombre}"?`);
+      if (!ok) { setSaving(false); return; }
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "gasto_categorias",
+        rowId: cat.id,
+        op: "delete",
+        deviceId: await getDeviceId(),
+      });
+      await cargar();
+      setMessage(`Categoría "${cat.nombre}" eliminada.`);
+    } catch (err: any) {
+      setMessage(`Error al eliminar: ${err.message}`);
+    }
+    setSaving(false);
+  }
+
   async function registrarGasto(e: FormEvent) {
     e.preventDefault();
     if (!tenantId) return;

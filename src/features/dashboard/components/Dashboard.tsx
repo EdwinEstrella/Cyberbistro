@@ -55,6 +55,7 @@ import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSett
 import { getLocalFirstStatusSnapshot, readLocalMirror, readLocalOutbox, enqueueLocalWrite, getDeviceId, writeLocalMirrorRow, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { getNextFacturaNumber } from "../../../shared/lib/invoiceNumber";
 import { writePosMutationLocalFirst } from "../../pos/lib/localFirstMutations";
+import { cacheLogoFromUrl } from "../../../shared/lib/logoCache";
 
 interface Plato {
   id: number;
@@ -155,6 +156,15 @@ export function Dashboard() {
       setTenantNcfFiscalActive(settings?.ncfFiscalActive ?? false);
       setSelectedNcfType(settings?.defaultNcfType ?? DEFAULT_NCF_B_CODE);
     });
+
+    // Proactively cache the tenant logo for offline printing
+    void (async () => {
+      try {
+        const localTenants = await readLocalMirror<any>(tenantId, "tenants").catch(() => []);
+        const t = localTenants.find((row: any) => row.id === tenantId);
+        if (t?.logo_url) void cacheLogoFromUrl(t.logo_url);
+      } catch { /* best effort */ }
+    })();
 
     return () => {
       cancelled = true;
@@ -966,6 +976,8 @@ export function Dashboard() {
       tenantPrintData = localTenants.find((t) => t.id === tenantId) ?? null;
     }
     if (tenantPrintData) {
+      // Ensure logo is cached for this and future prints
+      void cacheLogoFromUrl(tenantPrintData.logo_url);
       await printFactura(facturaData, tenantPrintData, Number(facturaData.numero_factura) || numeroFactura);
     }
 

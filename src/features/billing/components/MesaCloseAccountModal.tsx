@@ -19,6 +19,7 @@ import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSett
 import { enqueueLocalWrite, getDeviceId, getLocalFirstStatusSnapshot, isLocalFirstEnabled, readLocalMirror, readLocalOutbox } from "../../../shared/lib/localFirst";
 import { getNextFacturaNumber } from "../../../shared/lib/invoiceNumber";
 import { closeKitchenComandasForMesaLocalFirst } from "../../pos/lib/localFirstMutations";
+import { cacheLogoFromUrl } from "../../../shared/lib/logoCache";
 
 const ITBIS = 0.18;
 
@@ -378,6 +379,7 @@ export function MesaCloseAccountModal({
     }
 
     const paperWidthMm = getThermalPrintSettings().paperWidthMm;
+    void cacheLogoFromUrl(tenant.logo_url);
     const html = buildFacturaReceiptHtml(
       {
         nombre_negocio: tenant.nombre_negocio,
