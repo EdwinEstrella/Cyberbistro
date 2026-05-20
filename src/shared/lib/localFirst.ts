@@ -627,9 +627,6 @@ export function resolveConflictForTable(
 ): ConflictResult {
   switch (tableName) {
     case "facturas": {
-      if (localEntry.op === "delete") {
-        return { resolution: "skip", reason: "Delete de factura no sincronizable automaticamente — requiere audit." };
-      }
       return { resolution: "local_wins", reason: "Sin conflicto en factura." };
     }
 
@@ -712,7 +709,7 @@ export async function checkServerRowExists(
   tableName: LocalFirstMirrorTable,
   rowId: string
 ): Promise<Record<string, unknown> | null> {
-  const { data, error } = await (insforgeClient.database.from(tableName).select("*").eq("id", rowId).single() as any);
+  const { data, error } = await (insforgeClient.database.from(tableName).select("*").eq("id", rowId).maybeSingle() as any);
   if (error || !data) return null;
   return data as Record<string, unknown>;
 }
@@ -1244,10 +1241,9 @@ export async function shouldReadLocalFirst(
   tenantId: string,
   tableNames?: readonly LocalFirstMirrorTable[]
 ): Promise<boolean> {
-  void tenantId;
-  void tableNames;
   if (!isLocalFirstEnabled()) return false;
-  return typeof navigator !== "undefined" && !navigator.onLine;
+  if (typeof navigator !== "undefined" && !navigator.onLine) return true;
+  return await hasPendingLocalWrites(tenantId, tableNames);
 }
 
 export async function writeLocalMirrorRow<T extends Record<string, unknown>>(
