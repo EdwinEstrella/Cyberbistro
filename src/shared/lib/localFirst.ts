@@ -1079,7 +1079,7 @@ export async function clearLocalDeviceSession(tenantId: string): Promise<void> {
   }
 }
 
-const OFFLINE_WINDOW_MS = 6 * 60 * 60 * 1000;
+const OFFLINE_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
 
 export async function saveLicenseCache(
   tenantId: string,
