@@ -426,6 +426,25 @@ export function Gastos() {
                   </div>
                 </div>
               )}
+
+              {categorias.length > 0 && (
+                <div className="mt-6 pt-6 border-t border-border">
+                  <div className="mb-3 flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-muted-foreground">
+                    <Tag size={14} className="text-primary" />
+                    Creadas
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {categorias.map((cat) => (
+                      <div key={cat.id} className="group flex items-center gap-1 rounded-full border border-black/10 dark:border-white/10 bg-muted pl-3 pr-1 py-1 text-xs font-semibold text-foreground" style={{ boxShadow: `inset 0 -2px 0 ${cat.color}` }}>
+                        <span>{cat.nombre}</span>
+                        <button type="button" onClick={() => void eliminarCategoria(cat)} disabled={saving} className="flex size-5 items-center justify-center rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" title="Eliminar categoría">
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </form>
           </div>
 
