@@ -243,6 +243,7 @@ export function MesaCloseAccountModal({
   const [ncfFiscalActive, setNcfFiscalActive] = useState(false);
   const [selectedNcfType, setSelectedNcfType] = useState<NcfBCode>(DEFAULT_NCF_B_CODE);
   const [clientRnc, setClientRnc] = useState("");
+  const [cashReceivedInput, setCashReceivedInput] = useState("");
   const [splitMode, setSplitMode] = useState(false);
   /** En modo dividir: cada línea de consumo va a una persona 1..splitParts (ítem completo, no se parte el monto). */
   const [personByConsumoId, setPersonByConsumoId] = useState<Record<string, number>>({});
@@ -254,6 +255,7 @@ export function MesaCloseAccountModal({
       setPersonByConsumoId({});
       setPaymentMethod("efectivo");
       setClientRnc("");
+      setCashReceivedInput("");
       return;
     }
     if (!tenantId) return;
@@ -437,6 +439,23 @@ export function MesaCloseAccountModal({
     const itbis = subtotal * itbisRate;
     const total = subtotal + itbis;
     return { subtotal, itbis, total };
+  }
+
+  function parseOptionalCashReceived(total: number): { amount: number | null; change: number | null } | null {
+    const raw = cashReceivedInput.trim();
+    if (raw === "") return { amount: null, change: null };
+
+    const amount = Number(raw.replace(",", "."));
+    if (!Number.isFinite(amount) || amount < 0) {
+      alert("El dinero recibido debe ser un monto válido.");
+      return null;
+    }
+    if (amount < total) {
+      alert("El dinero recibido no puede ser menor al total.");
+      return null;
+    }
+
+    return { amount, change: amount - total };
   }
 
   /**
@@ -628,6 +647,14 @@ export function MesaCloseAccountModal({
       consumosToBill,
       itbisRate
     );
+    const cashReceived =
+      paymentMethod === "efectivo"
+        ? parseOptionalCashReceived(total)
+        : { amount: null, change: null };
+    if (!cashReceived) {
+      setCharging(false);
+      return;
+    }
 
     const ncfPart = await resolveNcfForNewInvoice(
       tenantId,
@@ -647,6 +674,8 @@ export function MesaCloseAccountModal({
       propina: 0,
       total,
       items: facturaItems,
+      monto_recibido: cashReceived.amount,
+      cambio_devuelto: cashReceived.change,
       pagada_at: now,
       created_at: now,
       updated_at: now,
@@ -704,6 +733,7 @@ export function MesaCloseAccountModal({
     setCharging(false);
     setSplitMode(false);
     setPersonByConsumoId({});
+    setCashReceivedInput("");
 
     if (restantes.length === 0) {
       onPaidFull?.();
@@ -1025,6 +1055,29 @@ export function MesaCloseAccountModal({
             ))}
           </div>
         </div>
+
+        {paymentMethod === "efectivo" && !splitMode ? (
+          <div className="flex flex-col gap-[8px]">
+            <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
+              Dinero recibido (opcional)
+            </span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              inputMode="decimal"
+              value={cashReceivedInput}
+              onChange={(e) => setCashReceivedInput(e.target.value)}
+              placeholder="Ej: 1000"
+              className="w-full rounded-[12px] border border-[rgba(72,72,71,0.3)] bg-[#262626] px-[14px] py-[12px] font-['Inter',sans-serif] text-white text-[13px] outline-none"
+            />
+            {cashReceivedInput.trim() !== "" ? (
+              <span className="font-['Inter',sans-serif] text-[#59ee50] text-[12px]">
+                Cambio: {RD(Math.max(0, Number(cashReceivedInput.replace(",", ".")) - calcTotal || 0))}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="flex flex-col gap-[10px]">
           <div className="flex gap-[10px]">

@@ -147,6 +147,8 @@ export function buildFacturaReceiptHtml(
     /** Cobro / facturación electrónica ticket (estilo FacturaDo). */
     estado?: "pagada" | "pendiente" | "cancelada" | string;
     propina?: number;
+    monto_recibido?: number | null;
+    cambio_devuelto?: number | null;
     cliente_nombre?: string | null;
     cliente_rnc?: string | null;
     ncf?: string | null;
@@ -169,6 +171,13 @@ export function buildFacturaReceiptHtml(
   const clienteRnc = (factura.cliente_rnc || "").trim();
   const ncf = (factura.ncf || "").trim();
   const propina = Number(factura.propina ?? 0);
+  const montoRecibido = Number(factura.monto_recibido);
+  const cambioDevuelto = Number(factura.cambio_devuelto);
+  const hasCashChange =
+    Number.isFinite(montoRecibido) &&
+    Number.isFinite(cambioDevuelto) &&
+    montoRecibido >= 0 &&
+    cambioDevuelto >= 0;
 
   const itemsRows = factura.items
     .map((item) => {
@@ -204,6 +213,11 @@ export function buildFacturaReceiptHtml(
     propina > 0
       ? `<tr><td>Propina</td><td style="text-align:right">${rdFixed(propina, tenant)}</td></tr>`
       : "";
+  const cashChangeRows = hasCashChange
+    ? `
+    <tr><td>Recibido</td><td style="text-align:right">${rdFixed(montoRecibido, tenant)}</td></tr>
+    <tr><td>Cambio</td><td style="text-align:right">${rdFixed(cambioDevuelto, tenant)}</td></tr>`
+    : "";
 
   const body = `
   ${headerBlock(tenant)}
@@ -228,6 +242,7 @@ export function buildFacturaReceiptHtml(
     <tr><td>ITBIS</td><td style="text-align:right">${rdFixed(factura.itbis, tenant)}</td></tr>
     ${propinaRow}
     <tr class="total-xl"><td>TOTAL</td><td style="text-align:right">${rdFixed(factura.total, tenant)}</td></tr>
+    ${cashChangeRows}
   </table>
   <div class="divider"></div>
   <table>
