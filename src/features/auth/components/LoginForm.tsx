@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "react-router";
 import { Eye, EyeOff } from "lucide-react";
 import svgPaths from "../../../imports/svg-h2gjocs89h";
@@ -63,6 +63,7 @@ export function Login() {
   const [notice, setNotice] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
+  const emailInputRef = useRef<HTMLInputElement>(null);
   const hasElectronUpdater = Boolean((window as any).electronAPI?.onUpdateEvents);
 
   // Auto-redirect if already authenticated (e.g. offline fallback succeeded)
@@ -81,9 +82,12 @@ export function Login() {
     setIsVisible(true);
     // Fix for Electron Windows bug: after unmounting the previous views (like on logout),
     // the renderer can lose character input focus while keeping command keys (backspace).
-    // Forcing window focus ensures the keyboard events route correctly to the inputs.
+    // Ask the main process to focus both the native window and its webContents.
     const timer = setTimeout(() => {
-      window.focus();
+      const focusRecovery = window.electronAPI?.ensureInputFocus?.();
+      void Promise.resolve(focusRecovery).finally(() => {
+        emailInputRef.current?.focus();
+      });
     }, 100);
     return () => clearTimeout(timer);
   }, []);
@@ -345,6 +349,7 @@ export function Login() {
                         </svg>
                       </div>
                       <input
+                        ref={emailInputRef}
                         id="login-email"
                         type="email"
                         autoComplete="email"
