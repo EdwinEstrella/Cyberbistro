@@ -50,6 +50,7 @@ export interface UpdateStatePayload {
 export interface ElectronAPI {
   minimize: () => void;
   maximize: () => void;
+  ensureInputFocus?: () => Promise<boolean>;
   close: () => void;
   getVersions: () => NodeJS.ProcessVersions;
   onWindowMaximized?: (callback: (isMaximized: boolean) => void) => void;
