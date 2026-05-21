@@ -199,7 +199,7 @@ function CartaPanel() {
       tableName: "menu_categories",
       rowId: row.id,
       op: "insert",
-      payload: row,
+      payload: { ...row },
       deviceId: await getDeviceId(),
     });
     setMenuCategories((prev) => [...prev, row]);
@@ -523,7 +523,7 @@ function CategoriasPanel() {
         tableName: "menu_categories",
         rowId: row.id,
         op: "insert",
-        payload: row,
+        payload: { ...row },
         deviceId: await getDeviceId(),
       });
     } catch (insertError: any) {

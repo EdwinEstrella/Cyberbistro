@@ -627,6 +627,9 @@ export function resolveConflictForTable(
 ): ConflictResult {
   switch (tableName) {
     case "facturas": {
+      if (localEntry.op === "delete") {
+        return { resolution: "skip", reason: "Delete de factura requiere auditoria; no se sincroniza automaticamente." };
+      }
       return { resolution: "local_wins", reason: "Sin conflicto en factura." };
     }
 
