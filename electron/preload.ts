@@ -21,6 +21,23 @@ function isPrintThermalPayload(v: unknown): v is {
   return true
 }
 
+function isOpenCashDrawerPayload(v: unknown): v is {
+  deviceName?: string
+  paperWidthMm?: number
+} {
+  if (v === undefined) return true
+  if (v === null || typeof v !== 'object') return false
+  const o = v as Record<string, unknown>
+  if (o.deviceName !== undefined && typeof o.deviceName !== 'string') return false
+  if (
+    o.paperWidthMm !== undefined &&
+    (typeof o.paperWidthMm !== 'number' || !Number.isFinite(o.paperWidthMm))
+  ) {
+    return false
+  }
+  return true
+}
+
 contextBridge.exposeInMainWorld('electronAPI', {
   minimize: () => {
     console.log('preload: minimize called')
@@ -48,6 +65,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return Promise.resolve({ ok: false, error: 'Payload de impresión inválido' })
     }
     return ipcRenderer.invoke('print:thermal', opts)
+  },
+  openCashDrawer: (opts?: unknown) => {
+    if (!isOpenCashDrawerPayload(opts)) {
+      return Promise.resolve({ ok: false, error: 'Payload de caja inv?lido' })
+    }
+    return ipcRenderer.invoke('cash-drawer:open', opts ?? {})
   },
   checkForUpdates: () => {
     ipcRenderer.send('check-for-updates')
