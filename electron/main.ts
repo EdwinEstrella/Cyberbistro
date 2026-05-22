@@ -69,16 +69,24 @@ function printHtmlToThermal(opts: PrintThermalOptions): Promise<PrintThermalResp
   })
 }
 
+function focusMainWindowForTextInput(): boolean {
+  const win = mainWindow
+  if (!win || win.isDestroyed()) return false
+
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+  win.webContents.focus()
+  return win.isFocused() || win.webContents.isFocused()
+}
+
 /** Una sola instancia: evita iconos duplicados en la barra de tareas (Windows) y re-enfoca la ventana. */
 const gotTheLock = app.requestSingleInstanceLock()
 if (!gotTheLock) {
   app.quit()
 } else {
   app.on('second-instance', () => {
-    if (!mainWindow) return
-    if (mainWindow.isMinimized()) mainWindow.restore()
-    mainWindow.show()
-    mainWindow.focus()
+    focusMainWindowForTextInput()
   })
 }
 
@@ -182,6 +190,7 @@ function createWindow() {
     applyWindowsTaskbarIdentity(mainWindow)
     const img = loadWindowIconImage()
     if (img) mainWindow.setIcon(img)
+    focusMainWindowForTextInput()
   })
 
   // Maximize window on startup
@@ -198,6 +207,8 @@ function createWindow() {
 }
 
 if (gotTheLock) {
+  ipcMain.handle('window:ensure-input-focus', () => focusMainWindowForTextInput())
+
   ipcMain.handle('printers:list', async () => {
     const w = mainWindow || BrowserWindow.getAllWindows()[0]
     if (!w) return []
@@ -288,6 +299,8 @@ if (gotTheLock) {
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
         createWindow()
+      } else {
+        focusMainWindowForTextInput()
       }
     })
   })

@@ -39,6 +39,8 @@ interface Invoice {
   itbis: number;
   propina: number;
   total: number;
+  monto_recibido?: number | null;
+  cambio_devuelto?: number | null;
   items: InvoiceItem[];
   created_at: string;
   pagada_at: string | null;
@@ -565,6 +567,8 @@ const loadBillingData = useCallback(async () => {
           created_at: inv.created_at,
           estado: inv.estado,
           propina: inv.propina,
+          monto_recibido: inv.monto_recibido ?? null,
+          cambio_devuelto: inv.cambio_devuelto ?? null,
           ncf: inv.ncf ?? null,
           ncf_tipo: inv.ncf_tipo ?? null,
           cliente_nombre: inv.cliente_nombre ?? null,
@@ -1145,6 +1149,12 @@ const loadBillingData = useCallback(async () => {
                  <div className="flex justify-between text-muted-foreground"><span>Subtotal</span><span>{RD(invoiceModal.subtotal)}</span></div>
                  <div className="flex justify-between text-muted-foreground"><span>ITBIS (18%)</span><span>{RD(invoiceModal.itbis)}</span></div>
                  <div className="flex justify-between text-foreground font-bold text-[18px] pt-2 border-t"><span>Total</span><span>{RD(invoiceModal.total)}</span></div>
+                 {invoiceModal.monto_recibido != null && invoiceModal.cambio_devuelto != null ? (
+                   <>
+                     <div className="flex justify-between text-muted-foreground"><span>Dinero recibido</span><span>{RD(Number(invoiceModal.monto_recibido))}</span></div>
+                     <div className="flex justify-between text-muted-foreground"><span>Cambio</span><span>{RD(Number(invoiceModal.cambio_devuelto))}</span></div>
+                   </>
+                 ) : null}
               </div>
               <div className="flex gap-3 pt-4">
                  <button onClick={() => void printInvoice(invoiceModal)} className="flex-1 bg-primary text-primary-foreground py-3 rounded-xl font-bold uppercase text-[12px] tracking-widest hover:opacity-90 border-none cursor-pointer">Reimprimir</button>

@@ -143,6 +143,7 @@ export function Dashboard() {
   const [tenantNcfFiscalActive, setTenantNcfFiscalActive] = useState(false);
   const [selectedNcfType, setSelectedNcfType] = useState<NcfBCode>(DEFAULT_NCF_B_CODE);
   const [takeoutClientRnc, setTakeoutClientRnc] = useState("");
+  const [cashReceivedInput, setCashReceivedInput] = useState("");
 
   useEffect(() => {
     if (authLoading || !tenantId) return;
@@ -567,6 +568,23 @@ export function Dashboard() {
     return { subtotal, itbis, total };
   }
 
+  function parseOptionalCashReceived(total: number): { amount: number | null; change: number | null } | null {
+    const raw = cashReceivedInput.trim();
+    if (raw === "") return { amount: null, change: null };
+
+    const amount = Number(raw.replace(",", "."));
+    if (!Number.isFinite(amount) || amount < 0) {
+      alert("El dinero recibido debe ser un monto válido.");
+      return null;
+    }
+    if (amount < total) {
+      alert("El dinero recibido no puede ser menor al total.");
+      return null;
+    }
+
+    return { amount, change: amount - total };
+  }
+
   async function printFactura(facturaData: Record<string, unknown>, tenantData: { nombre_negocio: string | null; rnc: string | null; direccion: string | null; telefono: string | null; logo_url: string | null; logo_size_px?: number; logo_offset_x?: number; logo_offset_y?: number }, numeroFactura: number) {
     const paperWidthMm = getThermalPrintSettings().paperWidthMm;
     const html = buildFacturaReceiptHtml(
@@ -820,6 +838,7 @@ export function Dashboard() {
         return;
       }
       setTakeoutClientRnc("");
+      setCashReceivedInput("");
       setMesaConsumos([]);
       setShowPaymentModal(true);
       return;
@@ -908,6 +927,14 @@ export function Dashboard() {
     const rate = cartItbisEnabled ? ITBIS : 0;
     const itbis = subtotal * rate;
     const total = subtotal + itbis;
+    const cashReceived =
+      paymentMethod === "efectivo"
+        ? parseOptionalCashReceived(total)
+        : { amount: null, change: null };
+    if (!cashReceived) {
+      setCharging(false);
+      return;
+    }
 
     let ncfPart: Awaited<ReturnType<typeof resolveNcfForNewInvoice>> = null;
     try {
@@ -933,6 +960,8 @@ export function Dashboard() {
       propina: 0,
       total,
       items: facturaItems,
+      monto_recibido: cashReceived.amount,
+      cambio_devuelto: cashReceived.change,
       created_at: nowIso,
       pagada_at: nowIso,
       mesa_numero: 0,
@@ -988,6 +1017,7 @@ export function Dashboard() {
 
     setCart([]);
     setTakeoutClientRnc("");
+    setCashReceivedInput("");
     setMesaConsumos([]);
     setChargeOk(true);
     setTimeout(() => setChargeOk(false), 3000);
@@ -1679,6 +1709,7 @@ export function Dashboard() {
             onClick={(e) => {
               if (e.target === e.currentTarget) {
                 setTakeoutClientRnc("");
+                setCashReceivedInput("");
                 setShowPaymentModal(false);
               }
             }}
@@ -1697,6 +1728,7 @@ export function Dashboard() {
                   type="button"
                   onClick={() => {
                     setTakeoutClientRnc("");
+                    setCashReceivedInput("");
                     setShowPaymentModal(false);
                   }}
                   className="text-[#6b7280] bg-transparent border-none cursor-pointer text-[20px] hover:text-white transition-colors leading-none"
@@ -1820,11 +1852,35 @@ export function Dashboard() {
                 </div>
               </div>
 
+              {paymentMethod === "efectivo" ? (
+                <div className="flex flex-col gap-[8px]">
+                  <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
+                    Dinero recibido (opcional)
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    inputMode="decimal"
+                    value={cashReceivedInput}
+                    onChange={(e) => setCashReceivedInput(e.target.value)}
+                    placeholder="Ej: 1000"
+                    className="w-full rounded-[12px] border border-[rgba(72,72,71,0.3)] bg-[#262626] px-[14px] py-[12px] font-['Inter',sans-serif] text-white text-[13px] outline-none"
+                  />
+                  {cashReceivedInput.trim() !== "" ? (
+                    <span className="font-['Inter',sans-serif] text-[#59ee50] text-[12px]">
+                      Cambio: {formatMoney(Math.max(0, Number(cashReceivedInput.replace(",", ".")) - calcTotal || 0))}
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
+
               <div className="flex gap-[10px]">
                 <button
                   type="button"
                   onClick={() => {
                     setTakeoutClientRnc("");
+                    setCashReceivedInput("");
                     setShowPaymentModal(false);
                   }}
                   className="flex-1 bg-[#262626] border border-[rgba(72,72,71,0.3)] rounded-[12px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#adaaaa] text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:border-[rgba(255,144,109,0.3)] hover:text-white transition-colors"

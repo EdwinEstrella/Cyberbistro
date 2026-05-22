@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     console.log('preload: maximize called')
     ipcRenderer.send('window-maximize')
   },
+  ensureInputFocus: () => ipcRenderer.invoke('window:ensure-input-focus'),
   close: () => {
     console.log('preload: close called')
     ipcRenderer.send('window-close')
