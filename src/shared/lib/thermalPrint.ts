@@ -86,3 +86,22 @@ export async function printThermalHtml(html: string): Promise<PrintThermalResult
   openBrowserPrint(html);
   return { ok: true };
 }
+
+export async function openCashDrawerForSale(): Promise<PrintThermalResult> {
+  const settings = getThermalPrintSettings();
+  const api = window.electronAPI;
+
+  if (!api?.openCashDrawer) {
+    return { ok: false, error: "La apertura de caja solo está disponible en la app de escritorio." };
+  }
+
+  try {
+    const res = await api.openCashDrawer({
+      deviceName: settings.printerName || undefined,
+      paperWidthMm: settings.paperWidthMm,
+    });
+    return res ?? { ok: false, error: "Sin respuesta del proceso principal" };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}

@@ -8,6 +8,67 @@ import { setupAutoUpdater } from './autoUpdater'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 let mainWindow: BrowserWindow | null = null
 
+type PrintThermalOptions = {
+  html: string
+  deviceName?: string
+  silent?: boolean
+  paperWidthMm?: number
+}
+
+type PrintThermalResponse = { ok: boolean; error?: string }
+
+function printHtmlToThermal(opts: PrintThermalOptions): Promise<PrintThermalResponse> {
+  return new Promise((resolve) => {
+    const printWin = new BrowserWindow({
+      width: 420,
+      height: 900,
+      show: false,
+      backgroundColor: '#ffffff',
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: false,
+      },
+    })
+
+    const fail = (msg: string) => {
+      if (!printWin.isDestroyed()) printWin.close()
+      resolve({ ok: false, error: msg })
+    }
+
+    const timer = setTimeout(() => fail('Tiempo de impresión agotado'), 45000)
+
+    printWin.webContents.once('did-fail-load', (_e, code, desc) => {
+      clearTimeout(timer)
+      fail(`Carga fallida: ${code} ${desc}`)
+    })
+
+    printWin.webContents.once('did-finish-load', () => {
+      setTimeout(() => {
+        printWin.webContents.print(
+          {
+            silent: Boolean(opts.silent),
+            printBackground: true,
+            deviceName: opts.deviceName || undefined,
+          },
+          (success, failureReason) => {
+            clearTimeout(timer)
+            if (!printWin.isDestroyed()) printWin.close()
+            if (success) resolve({ ok: true })
+            else resolve({ ok: false, error: String(failureReason || 'Error de impresión') })
+          }
+        )
+      }, 450)
+    })
+
+    const url = 'data:text/html;charset=utf-8,' + encodeURIComponent(opts.html)
+    printWin.loadURL(url).catch((err) => {
+      clearTimeout(timer)
+      fail(err instanceof Error ? err.message : String(err))
+    })
+  })
+}
+
 function focusMainWindowForTextInput(): boolean {
   const win = mainWindow
   if (!win || win.isDestroyed()) return false
@@ -167,62 +228,23 @@ if (gotTheLock) {
 
   ipcMain.handle(
     'print:thermal',
-    async (
-      _event,
-      opts: { html: string; deviceName?: string; silent?: boolean; paperWidthMm?: number }
-    ): Promise<{ ok: boolean; error?: string }> => {
-      return new Promise((resolve) => {
-        // Ventana oculta solo para cargar data: URL e invocar webContents.print().
-        // sandbox: false — requerido en algunos entornos para loadURL(data:) + impresión.
-        // webSecurity/contextIsolation activos (sin nodeIntegration) limitan riesgo frente a HTML arbitrario del renderer.
-        const printWin = new BrowserWindow({
-          width: 420,
-          height: 900,
-          show: false,
-          backgroundColor: '#ffffff',
-          webPreferences: {
-            nodeIntegration: false,
-            contextIsolation: true,
-            sandbox: false,
-          },
-        })
+    async (_event, opts: PrintThermalOptions): Promise<PrintThermalResponse> => {
+      return printHtmlToThermal(opts)
+    }
+  )
 
-        const fail = (msg: string) => {
-          if (!printWin.isDestroyed()) printWin.close()
-          resolve({ ok: false, error: msg })
-        }
-
-        const timer = setTimeout(() => fail('Tiempo de impresión agotado'), 45000)
-
-        printWin.webContents.once('did-fail-load', (_e, code, desc) => {
-          clearTimeout(timer)
-          fail(`Carga fallida: ${code} ${desc}`)
-        })
-
-        printWin.webContents.once('did-finish-load', () => {
-          setTimeout(() => {
-            // Siempre con diálogo de impresión (no silencioso), para elegir impresora y opciones en cada ticket.
-            printWin.webContents.print(
-              {
-                silent: false,
-                printBackground: true,
-                deviceName: opts.deviceName || undefined,
-              },
-              (success, failureReason) => {
-                clearTimeout(timer)
-                if (!printWin.isDestroyed()) printWin.close()
-                if (success) resolve({ ok: true })
-                else resolve({ ok: false, error: String(failureReason || 'Error de impresión') })
-              }
-            )
-          }, 450)
-        })
-
-        const url = 'data:text/html;charset=utf-8,' + encodeURIComponent(opts.html)
-        printWin.loadURL(url).catch((err) => {
-          clearTimeout(timer)
-          fail(err instanceof Error ? err.message : String(err))
-        })
+  ipcMain.handle(
+    'cash-drawer:open',
+    async (_event, opts: { deviceName?: string; paperWidthMm?: number } = {}): Promise<PrintThermalResponse> => {
+      const paperWidthMm = Number.isFinite(opts.paperWidthMm) ? opts.paperWidthMm : 58
+      return printHtmlToThermal({
+        deviceName: opts.deviceName || undefined,
+        silent: true,
+        paperWidthMm,
+        html: `<!doctype html><html><head><meta charset="utf-8"><style>
+          @page { size: ${paperWidthMm}mm 1mm; margin: 0; }
+          html, body { width: ${paperWidthMm}mm; height: 1mm; margin: 0; padding: 0; overflow: hidden; background: white; }
+        </style></head><body></body></html>`,
       })
     }
   )

@@ -34,7 +34,7 @@ import {
   buildComandaReceiptHtml,
 } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
-import { printThermalHtml } from "../../../shared/lib/thermalPrint";
+import { openCashDrawerForSale, printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { useTenantCurrency } from "../../../shared/hooks/useTenantCurrency";
 import { useTheme } from "../../../shared/context/ThemeContext";
 import { suggestCategoryColor, sortCategoriesForTabs } from "../../../shared/lib/menuCategories";
@@ -984,6 +984,11 @@ export function Dashboard() {
         payload: facturaData,
         deviceId: await getDeviceId(),
       });
+    }
+
+    const cashDrawerRes = await openCashDrawerForSale();
+    if (!cashDrawerRes.ok && cashDrawerRes.error) {
+      console.warn("Apertura de caja:", cashDrawerRes.error);
     }
 
     if (tenantId && ncfPart && !ncfPart.sequenceReservedAtomically) {

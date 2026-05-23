@@ -17,6 +17,11 @@ export interface PrintThermalResponse {
   error?: string;
 }
 
+export interface OpenCashDrawerOptions {
+  deviceName?: string;
+  paperWidthMm?: number;
+}
+
 export interface UpdateInfoPayload {
   version: string;
   releaseDate?: string;
@@ -56,6 +61,7 @@ export interface ElectronAPI {
   onWindowMaximized?: (callback: (isMaximized: boolean) => void) => void;
   listPrinters?: () => Promise<ThermalPrinterInfo[]>;
   printThermal?: (opts: PrintThermalOptions) => Promise<PrintThermalResponse>;
+  openCashDrawer?: (opts?: OpenCashDrawerOptions) => Promise<PrintThermalResponse>;
   checkForUpdates?: () => void;
   downloadUpdate?: () => void;
   installUpdate?: () => void;
