@@ -23,7 +23,7 @@ export function TitleBar({
   const [isMaximized, setIsMaximized] = useState(false);
   const { theme, toggleTheme } = useTheme();
   
-  const { plan } = useAuth();
+  const { plan, isAuthenticated } = useAuth();
   const { activeSucursalId, setActiveSucursalId, sucursales } = useSucursal();
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
@@ -147,7 +147,7 @@ export function TitleBar({
         ) : null}
 
         {/* Basic plan branch display with add button */}
-        {(!plan || (plan !== "profesional" && plan !== "empresarial")) && (
+        {isAuthenticated && (!plan || (plan !== "profesional" && plan !== "empresarial")) && (
           <div className="flex items-center gap-1 ml-2" style={{ WebkitAppRegion: "no-drag" as any }}>
             <button
               type="button"
@@ -174,7 +174,7 @@ export function TitleBar({
         )}
 
         {/* Professional/Empresarial plan branch dropdown + plus button */}
-        {(plan === "profesional" || plan === "empresarial") && sucursales.length > 0 && (
+        {isAuthenticated && (plan === "profesional" || plan === "empresarial") && sucursales.length > 0 && (
           <div className="flex items-center gap-1 ml-2" style={{ WebkitAppRegion: "no-drag" as any }}>
             <div className="relative">
               <button

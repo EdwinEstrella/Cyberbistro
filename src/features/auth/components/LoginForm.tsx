@@ -83,13 +83,27 @@ export function Login() {
     // Fix for Electron Windows bug: after unmounting the previous views (like on logout),
     // the renderer can lose character input focus while keeping command keys (backspace).
     // Ask the main process to focus both the native window and its webContents.
-    const timer = setTimeout(() => {
+    // Trigger twice to handle any slow DOM transitions or route animation delays.
+    const timer1 = setTimeout(() => {
+      window.focus();
       const focusRecovery = window.electronAPI?.ensureInputFocus?.();
       void Promise.resolve(focusRecovery).finally(() => {
         emailInputRef.current?.focus();
       });
-    }, 100);
-    return () => clearTimeout(timer);
+    }, 150);
+
+    const timer2 = setTimeout(() => {
+      window.focus();
+      const focusRecovery = window.electronAPI?.ensureInputFocus?.();
+      void Promise.resolve(focusRecovery).finally(() => {
+        emailInputRef.current?.focus();
+      });
+    }, 450);
+
+    return () => {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+    };
   }, []);
   useEffect(() => {
     const electron = (window as any).electronAPI;
@@ -292,10 +306,18 @@ export function Login() {
         }}
       >
         {/* Ambient glow effects */}
-        <div className="absolute bg-[rgba(255,144,109,0.1)] blur-[50px] left-[-96px] rounded-[9999px] size-[256px] top-[-96px] animate-pulse" />
-        <div className="absolute bg-[rgba(255,106,160,0.1)] blur-[50px] bottom-[-96px] right-[-96px] rounded-[9999px] size-[256px] animate-pulse delay-1000" />
+        <div className="absolute bg-[rgba(255,144,109,0.1)] blur-[50px] left-[-96px] rounded-[9999px] size-[256px] top-[-96px] animate-pulse pointer-events-none" />
+        <div className="absolute bg-[rgba(255,106,160,0.1)] blur-[50px] bottom-[-96px] right-[-96px] rounded-[9999px] size-[256px] animate-pulse delay-1000 pointer-events-none" />
 
-        <div className="backdrop-blur-[8px] bg-[rgba(38,38,38,0.6)] relative rounded-[8px] sm:rounded-[12px] shrink-0 w-full transition-all duration-300 hover:shadow-[0px_0px_40px_-10px_rgba(255,144,109,0.3)]">
+        <div 
+          onClick={() => {
+            const active = document.activeElement;
+            if (!active || active.tagName === "BODY" || active.tagName === "DIV") {
+              emailInputRef.current?.focus();
+            }
+          }}
+          className="backdrop-blur-[8px] bg-[rgba(38,38,38,0.6)] relative rounded-[8px] sm:rounded-[12px] shrink-0 w-full transition-all duration-300 hover:shadow-[0px_0px_40px_-10px_rgba(255,144,109,0.3)] cursor-pointer"
+        >
           <div className="overflow-clip rounded-[inherit] size-full">
             <div className="content-stretch flex flex-col gap-3 sm:gap-6 items-start p-3 sm:p-5 relative w-full">
               {/* Scanline overlay */}
