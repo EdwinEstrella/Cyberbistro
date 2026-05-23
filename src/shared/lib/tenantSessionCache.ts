@@ -5,6 +5,7 @@ export interface TenantSessionRow {
   email: string;
   rol: string;
   nombre: string | null;
+  plan?: string | null;
 }
 
 export interface TenantSessionCache extends TenantSessionRow {
@@ -30,6 +31,7 @@ export function readTenantSessionCache(): TenantSessionCache | null {
       email: o.email,
       rol: o.rol,
       nombre: o.nombre ?? null,
+      plan: o.plan ?? 'basico',
     };
   } catch {
     return null;
@@ -44,6 +46,7 @@ export function writeTenantSessionCache(authUserId: string, row: TenantSessionRo
       email: row.email,
       rol: row.rol,
       nombre: row.nombre ?? null,
+      plan: row.plan ?? 'basico',
     };
     localStorage.setItem(CACHE_KEY, JSON.stringify(payload));
   } catch {

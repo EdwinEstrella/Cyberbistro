@@ -30,6 +30,7 @@ interface TenantRow {
   telefono?: string | null;
   direccion?: string | null;
   activa?: boolean | null;
+  plan?: string | null;
   user_limit_enabled?: boolean | null;
   admin_user_limit?: number | null;
   cajera_user_limit?: number | null;
@@ -116,6 +117,7 @@ export function SuperAdmin() {
   const [drafts, setDrafts] = useState<Record<string, LimitDraft>>({});
   const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
   const [savingTenantId, setSavingTenantId] = useState<string | null>(null);
+  const [savingPlanId, setSavingPlanId] = useState<string | null>(null);
   const [rowActionId, setRowActionId] = useState<string | null>(null);
   const [columnsReady, setColumnsReady] = useState(true);
 
@@ -248,6 +250,43 @@ export function SuperAdmin() {
     }
   }
 
+  async function updateTenantPlan(tenantId: string, plan: 'basico' | 'profesional' | 'empresarial') {
+    let confirmMsg = `¿Cambiar el plan del restaurante a ${plan.toUpperCase()}?\n\n`;
+    if (plan === 'basico') {
+      confirmMsg += 'Si se degrada a Básico, se ocultarán los módulos de inventario y sucursales (límite de 1 sucursal y 5 usuarios).';
+    } else if (plan === 'profesional') {
+      confirmMsg += 'Se habilitará el inventario avanzado y el soporte de hasta 3 sucursales con usuarios ilimitados.';
+    } else {
+      confirmMsg += 'Se habilitará el soporte para sucursales ilimitadas, integraciones avanzadas y soporte corporativo 24/7.';
+    }
+    const confirmed = confirm(confirmMsg);
+    if (!confirmed) return;
+
+    try {
+      setSavingPlanId(tenantId);
+      setError("");
+      setInfo("");
+
+      const { error: updateError } = await insforgeClient.database
+        .from("tenants")
+        .update({ plan })
+        .eq("id", tenantId);
+
+      if (updateError) {
+        setError(`No se pudo actualizar el plan del restaurante. ${updateError.message}`);
+        setSavingPlanId(null);
+        return;
+      }
+
+      setInfo(`Plan del restaurante actualizado a ${plan.toUpperCase()} correctamente.`);
+      await loadData();
+      setSavingPlanId(null);
+    } catch (err) {
+      setSavingPlanId(null);
+      setError(err instanceof Error ? err.message : "No se pudo actualizar el plan.");
+    }
+  }
+
   async function deleteTenantUser(row: TenantUserRow) {
     if (row.rol === "admin") {
       setError("El admin dueno no se elimina individualmente. Bloquea o elimina el restaurante completo.");
@@ -371,6 +410,54 @@ Esto reactiva el restaurante y todos sus usuarios. Revis? despu?s si quer?s elim
 
     return (
       <div className="bg-[#111111] rounded-[16px] border border-[rgba(72,72,71,0.18)] p-5 flex flex-col gap-4">
+        {/* Plan de Suscripción */}
+        <div className="flex flex-col gap-2 pb-3 border-b border-[rgba(72,72,71,0.12)]">
+          <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[14px] uppercase tracking-[0.5px]">
+            Plan de Suscripción
+          </span>
+          <div className="flex gap-2 mt-1">
+            <button
+              type="button"
+              onClick={() => updateTenantPlan(tenant.id, 'basico')}
+              disabled={tenant.plan === 'basico' || savingPlanId === tenant.id}
+              className={`flex-1 py-2 px-3 rounded-[10px] font-['Space_Grotesk',sans-serif] font-bold text-[11px] uppercase tracking-[0.5px] border cursor-pointer transition-all duration-200 ${
+                (tenant.plan ?? 'basico') === 'basico'
+                  ? 'bg-[rgba(255,144,109,0.12)] border-[#ff906d] text-[#ff906d]'
+                  : 'bg-[#1a1a1a] border-[rgba(72,72,71,0.22)] text-[#adaaaa] hover:border-[rgba(255,144,109,0.2)] hover:text-white'
+              }`}
+            >
+              Básico
+            </button>
+            <button
+              type="button"
+              onClick={() => updateTenantPlan(tenant.id, 'profesional')}
+              disabled={tenant.plan === 'profesional' || savingPlanId === tenant.id}
+              className={`flex-1 py-2 px-3 rounded-[10px] font-['Space_Grotesk',sans-serif] font-bold text-[11px] uppercase tracking-[0.5px] border cursor-pointer transition-all duration-200 ${
+                tenant.plan === 'profesional'
+                  ? 'bg-[rgba(255,144,109,0.12)] border-[#ff906d] text-[#ff906d]'
+                  : 'bg-[#1a1a1a] border-[rgba(72,72,71,0.22)] text-[#adaaaa] hover:border-[rgba(255,144,109,0.2)] hover:text-white'
+              }`}
+            >
+              Profesional
+            </button>
+            <button
+              type="button"
+              onClick={() => updateTenantPlan(tenant.id, 'empresarial')}
+              disabled={tenant.plan === 'empresarial' || savingPlanId === tenant.id}
+              className={`flex-1 py-2 px-3 rounded-[10px] font-['Space_Grotesk',sans-serif] font-bold text-[11px] uppercase tracking-[0.5px] border cursor-pointer transition-all duration-200 ${
+                tenant.plan === 'empresarial'
+                  ? 'bg-[rgba(139,92,246,0.12)] border-[#8b5cf6] text-[#a78bfa]'
+                  : 'bg-[#1a1a1a] border-[rgba(72,72,71,0.22)] text-[#adaaaa] hover:border-[rgba(255,144,109,0.2)] hover:text-white'
+              }`}
+            >
+              Empresarial
+            </button>
+          </div>
+          {savingPlanId === tenant.id && (
+            <span className="font-['Inter',sans-serif] text-[10px] text-[#ff906d]">Actualizando plan...</span>
+          )}
+        </div>
+
         <div className="flex flex-col gap-1">
           <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[16px] uppercase">
             Limites por rol
@@ -453,6 +540,15 @@ Esto reactiva el restaurante y todos sus usuarios. Revis? despu?s si quer?s elim
                 {tenant.nombre_negocio || "Restaurante sin nombre"}
               </span>
               <StatusPill active={!isBlocked} />
+              <span className={`inline-flex rounded-full px-2.5 py-1 font-['Space_Grotesk',sans-serif] text-[10px] font-bold uppercase tracking-[0.8px] ${
+                tenant.plan === 'empresarial'
+                  ? 'bg-[rgba(139,92,246,0.15)] text-[#a78bfa] border border-[rgba(139,92,246,0.3)]'
+                  : tenant.plan === 'profesional' 
+                    ? 'bg-[rgba(255,144,109,0.15)] text-[#ff906d] border border-[rgba(255,144,109,0.3)]' 
+                    : 'bg-[#262626] text-[#adaaaa]'
+              }`}>
+                Plan: {tenant.plan ?? 'basico'}
+              </span>
             </div>
             <div className="flex flex-wrap gap-3 text-[12px] font-['Inter',sans-serif] text-[#6b7280]">
               <span className="break-all">Tenant: {tenant.id}</span>
@@ -683,8 +779,17 @@ Esto reactiva el restaurante y todos sus usuarios. Revis? despu?s si quer?s elim
                             <div className="truncate font-['Space_Grotesk',sans-serif] text-[14px] font-bold text-white">
                               {tenant.nombre_negocio || "Restaurante sin nombre"}
                             </div>
-                            <div className="mt-1 truncate font-['Inter',sans-serif] text-[11px] text-[#6b7280]">
-                              {tenant.rnc || tenant.telefono || tenant.id}
+                            <div className="mt-1 truncate font-['Inter',sans-serif] text-[11px] text-[#6b7280] flex items-center gap-1.5">
+                              <span>{tenant.rnc || tenant.telefono || tenant.id}</span>
+                              <span className={`px-1 py-0.2 text-[8px] rounded uppercase font-bold tracking-[0.4px] ${
+                                tenant.plan === 'empresarial'
+                                  ? 'bg-[rgba(139,92,246,0.15)] text-[#a78bfa]'
+                                  : tenant.plan === 'profesional' 
+                                    ? 'bg-[rgba(255,144,109,0.15)] text-[#ff906d]' 
+                                    : 'bg-[#262626] text-[#adaaaa]'
+                              }`}>
+                                {tenant.plan ?? 'basico'}
+                              </span>
                             </div>
                           </div>
                           <StatusPill active={tenant.activa !== false} />

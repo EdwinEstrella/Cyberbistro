@@ -39,7 +39,8 @@ export function Register() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
-  const [step, setStep] = useState<'account' | 'basic' | 'contact' | 'location'>('account');
+  const [step, setStep] = useState<'account' | 'plan' | 'basic' | 'contact' | 'location'>('account');
+  const [plan, setPlan] = useState<'basico' | 'profesional' | 'empresarial'>('basico');
 
   // Datos de la empresa
   const [nombreNegocio, setNombreNegocio] = useState("");
@@ -105,7 +106,7 @@ export function Register() {
       }
 
       setLoading(false);
-      setStep('basic');
+      setStep('plan');
     } catch (err: any) {
       setError(err.message || "Error al crear cuenta");
       setLoading(false);
@@ -120,6 +121,12 @@ export function Register() {
       await startAccountRegistration();
       return;
     }
+
+    if (step === 'plan') {
+      setStep('basic');
+      return;
+    }
+
     // Pasos de negocio: avanzar al siguiente
     if (step === 'basic') {
       if (!nombreNegocio.trim()) {
@@ -195,6 +202,7 @@ export function Register() {
           p_rnc: rnc.trim() || null,
           p_direccion: direccion.trim() || null,
           p_telefono: telefono.trim() || null,
+          p_plan: plan,
         }
       );
 
@@ -211,6 +219,7 @@ export function Register() {
         email: email.trim(),
         rol: "admin",
         nombre: nombreNegocio.trim() || null,
+        plan: plan,
       });
 
       setSuccess(true);
@@ -269,6 +278,7 @@ export function Register() {
                   </div>
                   <div className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] sm:text-[12px] text-center tracking-[1px] sm:tracking-[1.2px] uppercase">
                     {step === 'account' && 'Crea tu Cuenta'}
+                    {step === 'plan' && 'Selecciona tu Plan'}
                     {step === 'basic' && 'Información Básica'}
                     {step === 'contact' && 'Contacto'}
                     {step === 'location' && 'Ubicación'}
@@ -295,35 +305,43 @@ export function Register() {
               )}
 
               {/* Progress Indicator */}
-              <div className="flex items-center justify-center gap-2 my-4 w-full">
-                <div className={`flex items-center justify-center size-[28px] rounded-full font-['Space_Grotesk',sans-serif] font-bold text-[12px] transition-all duration-300 ${
+              <div className="flex items-center justify-center gap-1.5 my-3 w-full">
+                <div className={`flex items-center justify-center size-[24px] rounded-full font-['Space_Grotesk',sans-serif] font-bold text-[11px] transition-all duration-300 ${
                   step === 'account' ? 'bg-[#ff906d] text-black' : 'bg-[#262626] text-[#adaaaa]'
                 }`}>
                   1
                 </div>
-                <div className={`w-6 h-[2px] rounded-full transition-all duration-300 ${
-                  step === 'basic' || step === 'contact' || step === 'location' ? 'bg-[#ff906d]' : 'bg-[#262626]'
+                <div className={`w-4 h-[2px] rounded-full transition-all duration-300 ${
+                  step !== 'account' ? 'bg-[#ff906d]' : 'bg-[#262626]'
                 }`} />
-                <div className={`flex items-center justify-center size-[28px] rounded-full font-['Space_Grotesk',sans-serif] font-bold text-[12px] transition-all duration-300 ${
-                  step === 'basic' ? 'bg-[#ff906d] text-black' : 'bg-[#262626] text-[#adaaaa]'
+                <div className={`flex items-center justify-center size-[24px] rounded-full font-['Space_Grotesk',sans-serif] font-bold text-[11px] transition-all duration-300 ${
+                  step === 'plan' ? 'bg-[#ff906d] text-black' : 'bg-[#262626] text-[#adaaaa]'
                 }`}>
                   2
                 </div>
-                <div className={`w-6 h-[2px] rounded-full transition-all duration-300 ${
-                  step === 'contact' || step === 'location' ? 'bg-[#ff906d]' : 'bg-[#262626]'
+                <div className={`w-4 h-[2px] rounded-full transition-all duration-300 ${
+                  step !== 'account' && step !== 'plan' ? 'bg-[#ff906d]' : 'bg-[#262626]'
                 }`} />
-                <div className={`flex items-center justify-center size-[28px] rounded-full font-['Space_Grotesk',sans-serif] font-bold text-[12px] transition-all duration-300 ${
-                  step === 'contact' ? 'bg-[#ff906d] text-black' : 'bg-[#262626] text-[#adaaaa]'
+                <div className={`flex items-center justify-center size-[24px] rounded-full font-['Space_Grotesk',sans-serif] font-bold text-[11px] transition-all duration-300 ${
+                  step === 'basic' ? 'bg-[#ff906d] text-black' : 'bg-[#262626] text-[#adaaaa]'
                 }`}>
                   3
                 </div>
-                <div className={`w-6 h-[2px] rounded-full transition-all duration-300 ${
-                  step === 'location' ? 'bg-[#ff906d]' : 'bg-[#262626]'
+                <div className={`w-4 h-[2px] rounded-full transition-all duration-300 ${
+                  step === 'contact' || step === 'location' ? 'bg-[#ff906d]' : 'bg-[#262626]'
                 }`} />
-                <div className={`flex items-center justify-center size-[28px] rounded-full font-['Space_Grotesk',sans-serif] font-bold text-[12px] transition-all duration-300 ${
-                  step === 'location' ? 'bg-[#ff906d] text-black' : 'bg-[#262626] text-[#adaaaa]'
+                <div className={`flex items-center justify-center size-[24px] rounded-full font-['Space_Grotesk',sans-serif] font-bold text-[11px] transition-all duration-300 ${
+                  step === 'contact' ? 'bg-[#ff906d] text-black' : 'bg-[#262626] text-[#adaaaa]'
                 }`}>
                   4
+                </div>
+                <div className={`w-4 h-[2px] rounded-full transition-all duration-300 ${
+                  step === 'location' ? 'bg-[#ff906d]' : 'bg-[#262626]'
+                }`} />
+                <div className={`flex items-center justify-center size-[24px] rounded-full font-['Space_Grotesk',sans-serif] font-bold text-[11px] transition-all duration-300 ${
+                  step === 'location' ? 'bg-[#ff906d] text-black' : 'bg-[#262626] text-[#adaaaa]'
+                }`}>
+                  5
                 </div>
               </div>
 
@@ -413,7 +431,161 @@ export function Register() {
                 </div>
               )}
 
-              {/* Step 2: Basic Info */}
+              {/* Step 2: Plan Selection */}
+              {step === 'plan' && (
+                <div className="relative shrink-0 w-full flex flex-col gap-3">
+                  <div className="font-['Inter',sans-serif] text-center text-[#adaaaa] text-[11px] mb-1 sm:mb-2 leading-relaxed">
+                    Elegí el plan para tu bistro. Podés cambiarlo en cualquier momento desde el panel de Super Admin.
+                  </div>
+
+                  <div className="flex flex-col gap-2.5 w-full">
+                    {/* Plan Básico */}
+                    <div
+                      onClick={() => setPlan('basico')}
+                      className={`cursor-pointer rounded-[10px] border p-3.5 transition-all duration-300 relative overflow-clip ${
+                        plan === 'basico'
+                          ? 'bg-[rgba(132,204,22,0.06)] border-[#84cc16] shadow-[0px_0px_12px_rgba(132,204,22,0.12)]'
+                          : 'bg-[rgba(20,20,20,0.4)] border-[rgba(72,72,71,0.22)] hover:border-[rgba(255,144,109,0.25)]'
+                      }`}
+                    >
+                      <div className="flex justify-between items-start mb-1">
+                        <div>
+                          <h4 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] uppercase tracking-[0.5px]">
+                            Plan Básico
+                          </h4>
+                          <p className="font-['Inter',sans-serif] text-[10px] text-[#adaaaa] mt-0.5">
+                            Ideal para empezar sin rodeos
+                          </p>
+                        </div>
+                        <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#84cc16] text-[12px]">
+                          $40/Mes
+                        </div>
+                      </div>
+
+                      <ul className="flex flex-col gap-1 mt-2.5 pl-0 list-none text-left">
+                        <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-[#adaaaa]">
+                          <span className="text-[#84cc16] text-[11px]">✓</span> 1 Sucursal Única
+                        </li>
+                        <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-[#adaaaa]">
+                          <span className="text-[#84cc16] text-[11px]">✓</span> 5 Usuarios Máximo
+                        </li>
+                        <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-[#adaaaa]">
+                          <span className="text-[#84cc16] text-[11px]">✓</span> Reportes Básicos
+                        </li>
+                        <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-[#555] line-through">
+                          ✗ Múltiples Sucursales
+                        </li>
+                        <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-[#555] line-through">
+                          ✗ Control de Inventario y Recetas
+                        </li>
+                      </ul>
+                    </div>
+
+                    {/* Plan Profesional */}
+                    <div
+                      onClick={() => setPlan('profesional')}
+                      className={`cursor-pointer rounded-[10px] border p-3.5 transition-all duration-300 relative overflow-clip ${
+                        plan === 'profesional'
+                          ? 'bg-[rgba(59,130,246,0.1)] border-[#3b82f6] shadow-[0px_0px_16px_rgba(59,130,246,0.2)]'
+                          : 'bg-[rgba(20,20,20,0.4)] border-[rgba(72,72,71,0.22)] hover:border-[rgba(255,144,109,0.25)]'
+                      }`}
+                    >
+                      <div className="absolute top-0 right-0 bg-[#3b82f6] text-white font-['Space_Grotesk',sans-serif] font-bold text-[8px] uppercase tracking-[0.5px] px-1.5 py-0.5 rounded-bl-[6px]">
+                        Recomendado
+                      </div>
+
+                      <div className="flex justify-between items-start mb-1">
+                        <div>
+                          <h4 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] uppercase tracking-[0.5px] flex items-center gap-1">
+                            Plan Profesional
+                          </h4>
+                          <p className="font-['Inter',sans-serif] text-[10px] text-[#adaaaa] mt-0.5">
+                            Control total y expansión
+                          </p>
+                        </div>
+                        <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#3b82f6] text-[12px]">
+                          $80/Mes
+                        </div>
+                      </div>
+
+                      <ul className="flex flex-col gap-1 mt-2.5 pl-0 list-none text-left">
+                        <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
+                          <span className="text-[#3b82f6] text-[11px]">✓</span> <b>Hasta 3 Sucursales</b>
+                        </li>
+                        <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
+                          <span className="text-[#3b82f6] text-[11px]">✓</span> <b>Usuarios Ilimitados</b>
+                        </li>
+                        <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
+                          <span className="text-[#3b82f6] text-[11px]">✓</span> <b>Inventario Avanzado y Recetas</b>
+                        </li>
+                        <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-[#adaaaa]">
+                          <span className="text-[#3b82f6] text-[11px]">✓</span> Reportes Avanzados de Cocina
+                        </li>
+                      </ul>
+                    </div>
+
+                    {/* Plan Empresarial */}
+                    <div
+                      onClick={() => setPlan('empresarial')}
+                      className={`cursor-pointer rounded-[10px] border p-3.5 transition-all duration-300 relative overflow-clip ${
+                        plan === 'empresarial'
+                          ? 'bg-[rgba(139,92,246,0.1)] border-[#8b5cf6] shadow-[0px_0px_16px_rgba(139,92,246,0.2)]'
+                          : 'bg-[rgba(20,20,20,0.4)] border-[rgba(72,72,71,0.22)] hover:border-[rgba(255,144,109,0.25)]'
+                      }`}
+                    >
+                      <div className="flex justify-between items-start mb-1">
+                        <div>
+                          <h4 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] uppercase tracking-[0.5px] flex items-center gap-1">
+                            Plan Empresarial
+                          </h4>
+                          <p className="font-['Inter',sans-serif] text-[10px] text-[#adaaaa] mt-0.5">
+                            Locales ilimitados y soporte
+                          </p>
+                        </div>
+                        <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#a78bfa] text-[12px]">
+                          $150/Mes
+                        </div>
+                      </div>
+
+                      <ul className="flex flex-col gap-1 mt-2.5 pl-0 list-none text-left">
+                        <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
+                          <span className="text-[#a78bfa] text-[11px]">✓</span> <b>Sucursales Ilimitadas</b>
+                        </li>
+                        <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
+                          <span className="text-[#a78bfa] text-[11px]">✓</span> <b>Integraciones Avanzadas</b>
+                        </li>
+                        <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
+                          <span className="text-[#a78bfa] text-[11px]">✓</span> <b>Soporte 24/7 de Alta Prioridad</b>
+                        </li>
+                        <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
+                          <span className="text-[#a78bfa] text-[11px]">✓</span> Todo el sistema incluido al 100%
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleRegister}
+                    className="flex items-center justify-center py-3 sm:py-3.5 rounded-[8px] sm:rounded-[10px] shadow-[0px_0px_15px_0px_rgba(255,144,109,0.3)] shrink-0 w-full cursor-pointer border-none transition-all duration-300 hover:shadow-[0px_0px_25px_0px_rgba(255,144,109,0.5)] hover:scale-[1.01] active:scale-95 mt-1"
+                    style={{ backgroundImage: "linear-gradient(172.248deg, rgb(255, 144, 109) 0%, rgb(255, 120, 77) 100%)" }}
+                  >
+                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-[12px] text-black text-center tracking-[1.2px] uppercase">
+                      Continuar
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => setStep('account')}
+                    className="flex items-center justify-center py-2 sm:py-2.5 rounded-[8px] sm:rounded-[10px] shrink-0 w-full cursor-pointer border-none bg-[#262626] text-[#adaaaa] transition-all duration-300 hover:bg-[#333] active:scale-95"
+                  >
+                    <span className="font-['Inter',sans-serif] font-bold text-[11px] uppercase">
+                      Volver
+                    </span>
+                  </button>
+                </div>
+              )}
+
+              {/* Step 3: Basic Info */}
               {step === 'basic' && (
                 <div className="relative shrink-0 w-full flex flex-col gap-3 sm:gap-4">
                   <div className="relative shrink-0 w-full">
@@ -434,7 +606,7 @@ export function Register() {
                 </div>
               )}
 
-              {/* Step 2: Contact */}
+              {/* Step 4: Contact */}
               {step === 'contact' && (
                 <div className="relative shrink-0 w-full flex flex-col gap-3 sm:gap-4">
                   <div className="relative shrink-0 w-full">
@@ -471,7 +643,7 @@ export function Register() {
                 </div>
               )}
 
-              {/* Step 3: Location */}
+              {/* Step 5: Location */}
               {step === 'location' && (
                 <div className="relative shrink-0 w-full flex flex-col gap-3 sm:gap-4">
                   <div className="relative shrink-0 w-full">
@@ -515,9 +687,9 @@ export function Register() {
                 </div>
               )}
 
-              {/* Next/Back Buttons for Steps 2-3 */}
+              {/* Next/Back Buttons for Steps 3-4 */}
               {(step === 'basic' || step === 'contact') && (
-                <>
+                <div className="relative shrink-0 w-full flex flex-col gap-2">
                   <button
                     onClick={handleRegister}
                     disabled={loading}
@@ -529,19 +701,16 @@ export function Register() {
                     </span>
                   </button>
 
-                  {/* Back Button for Step 2 (Contact) */}
-                  {step === 'contact' && (
-                    <button
-                      onClick={() => setStep('basic')}
-                      disabled={loading}
-                      className="flex items-center justify-center py-2 sm:py-3 rounded-[8px] sm:rounded-[12px] shrink-0 w-full cursor-pointer border-none disabled:opacity-50 disabled:cursor-not-allowed bg-[#262626] text-[#adaaaa] transition-all duration-300 hover:bg-[#333] active:scale-95"
-                    >
-                      <span className="font-['Inter',sans-serif] font-bold text-[11px] sm:text-[12px] uppercase">
-                        Volver
-                      </span>
-                    </button>
-                  )}
-                </>
+                  <button
+                    onClick={() => setStep(step === 'basic' ? 'plan' : 'basic')}
+                    disabled={loading}
+                    className="flex items-center justify-center py-2 sm:py-3 rounded-[8px] sm:rounded-[12px] shrink-0 w-full cursor-pointer border-none disabled:opacity-50 disabled:cursor-not-allowed bg-[#262626] text-[#adaaaa] transition-all duration-300 hover:bg-[#333] active:scale-95"
+                  >
+                    <span className="font-['Inter',sans-serif] font-bold text-[11px] sm:text-[12px] uppercase">
+                      Volver
+                    </span>
+                  </button>
+                </div>
               )}
 
               {/* Footer */}

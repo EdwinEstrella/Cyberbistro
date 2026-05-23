@@ -15,6 +15,11 @@ export const LOCAL_FIRST_MIRROR_TABLES = [
   "cierres_operativos",
   "gastos",
   "gasto_categorias",
+  "sucursales",
+  "productos_inventario",
+  "inventario_movimientos",
+  "recetas",
+  "produccion_cocina",
 ] as const;
 
 export const LOCAL_FIRST_METADATA_TABLES = [
@@ -37,6 +42,9 @@ export const LOCAL_FIRST_IMMEDIATE_TABLES = [
   "comandas",
   "consumos",
   "facturas",
+  "sucursales",
+  "productos_inventario",
+  "recetas",
 ] as const;
 
 export const LOCAL_FIRST_HISTORY_TABLES = [
@@ -53,6 +61,11 @@ export const LOCAL_FIRST_HISTORY_TABLES = [
   "consumos",
   "gasto_categorias",
   "gastos",
+  "sucursales",
+  "productos_inventario",
+  "inventario_movimientos",
+  "recetas",
+  "produccion_cocina",
 ] as const;
 
 export type LocalFirstMirrorTable = (typeof LOCAL_FIRST_MIRROR_TABLES)[number];
@@ -547,6 +560,12 @@ export async function enqueueLocalWrite(args: {
 
   // Apply change locally to mirror table so the UI can see it immediately offline
   await applyLocalMirrorWrite(args);
+
+  if (args.tableName === "facturas" && args.op === "insert") {
+    void processInvoiceInventoryDeduction(args.tenantId, args.payload, args.authUserId, args.deviceId).catch((error) => {
+      console.error("Error calculating local inventory deduction:", error);
+    });
+  }
 
   if (isOnline) {
     void pushOutboxToServer(args.tenantId).catch((error) => {
@@ -1623,4 +1642,179 @@ export function getHistoricalSyncIncompleteMessage(status: LocalFirstStatus): st
     return "Sin internet: se muestra la última foto local conocida.";
   }
   return null;
+}
+
+async function processInvoiceInventoryDeduction(
+  tenantId: string,
+  payload: Record<string, unknown> | null | undefined,
+  authUserId: string | null | undefined,
+  deviceId: string
+): Promise<void> {
+  if (!payload || !payload.items || !Array.isArray(payload.items)) return;
+
+  const items = payload.items as Array<{
+    plato_id: number;
+    nombre: string;
+    cantidad: number;
+  }>;
+
+  const db = await openLocalFirstDb(tenantId);
+  try {
+    const recetasStore = await new Promise<any[]>((resolve, reject) => {
+      const tx = db.transaction("recetas", "readonly");
+      const store = tx.objectStore("recetas");
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+
+    const productosInventarioStore = await new Promise<any[]>((resolve, reject) => {
+      const tx = db.transaction("productos_inventario", "readonly");
+      const store = tx.objectStore("productos_inventario");
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+
+    const soldPlatoIds = new Set(items.map(i => i.plato_id));
+    const activeRecetas = recetasStore.filter(r => r.tenant_id === tenantId && soldPlatoIds.has(r.plato_id));
+
+    if (activeRecetas.length === 0) return;
+
+    const deductions = new Map<string, number>();
+
+    for (const item of items) {
+      const itemRecetas = activeRecetas.filter(r => r.plato_id === item.plato_id);
+      for (const r of itemRecetas) {
+        const currentVal = deductions.get(r.insumo_id) || 0;
+        deductions.set(r.insumo_id, currentVal + (Number(r.cantidad) * item.cantidad));
+      }
+    }
+
+    for (const [insumoId, qtyToDeduct] of deductions.entries()) {
+      const producto = productosInventarioStore.find(p => p.id === insumoId && p.tenant_id === tenantId);
+      if (!producto) continue;
+
+      const oldStock = Number(producto.stock_actual || 0);
+      const newStock = oldStock - qtyToDeduct;
+
+      const updatedProducto = {
+        ...producto,
+        stock_actual: newStock,
+        updated_at: new Date().toISOString()
+      };
+
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction("productos_inventario", "readwrite");
+        const store = tx.objectStore("productos_inventario");
+        const req = store.put(updatedProducto);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+
+      const prodEntry = createSyncOutboxEntry({
+        tenantId,
+        tableName: "productos_inventario",
+        rowId: insumoId,
+        op: "update",
+        payload: { stock_actual: newStock, updated_at: updatedProducto.updated_at },
+        authUserId: authUserId || null,
+        deviceId
+      });
+      await writeLocalOutboxEntry(tenantId, prodEntry);
+
+      const movId = crypto.randomUUID();
+      const nowIso = new Date().toISOString();
+      const movimientoPayload = {
+        id: movId,
+        tenant_id: tenantId,
+        sucursal_id: producto.sucursal_id || null,
+        producto_id: insumoId,
+        tipo: "salida",
+        cantidad: -qtyToDeduct,
+        stock_antes: oldStock,
+        stock_despues: newStock,
+        costo_unitario: producto.costo_promedio || 0,
+        motivo: "consumo_receta",
+        referencia: String(payload.id || ""),
+        fecha: nowIso,
+        usuario_id: authUserId || null,
+        created_at: nowIso
+      };
+
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction("inventario_movimientos", "readwrite");
+        const store = tx.objectStore("inventario_movimientos");
+        const req = store.put(movimientoPayload);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+
+      const movEntry = createSyncOutboxEntry({
+        tenantId,
+        tableName: "inventario_movimientos",
+        rowId: movId,
+        op: "insert",
+        payload: movimientoPayload,
+        authUserId: authUserId || null,
+        deviceId
+      });
+      await writeLocalOutboxEntry(tenantId, movEntry);
+    }
+  } finally {
+    db.close();
+  }
+}
+
+export async function ensureDefaultSucursal(tenantId: string): Promise<void> {
+  const db = await openLocalFirstDb(tenantId);
+  try {
+    const sucursales = await new Promise<any[]>((resolve, reject) => {
+      const tx = db.transaction("sucursales", "readonly");
+      const store = tx.objectStore("sucursales");
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+
+    if (sucursales.length === 0) {
+      console.info("No sucursales found for tenant. Creating default 'Principal' sucursal.");
+      const sucursalId = crypto.randomUUID();
+      const nowIso = new Date().toISOString();
+      const payload = {
+        id: sucursalId,
+        tenant_id: tenantId,
+        nombre: "Principal",
+        direccion: "Sede Central",
+        telefono: "",
+        activa: true,
+        created_at: nowIso,
+        updated_at: nowIso
+      };
+
+      // Save locally to mirror
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction("sucursales", "readwrite");
+        const store = tx.objectStore("sucursales");
+        const req = store.put(payload);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+
+      // Enqueue to sync outbox so it syncs to server
+      const entry = createSyncOutboxEntry({
+        tenantId,
+        tableName: "sucursales",
+        rowId: sucursalId,
+        op: "insert",
+        payload,
+        deviceId: "bootstrap"
+      });
+      await writeLocalOutboxEntry(tenantId, entry);
+    }
+  } catch (err) {
+    console.error("Error creating default sucursal during bootstrap:", err);
+  } finally {
+    db.close();
+  }
 }

@@ -9,6 +9,7 @@ import {
   revalidateLicenseOnReconnect,
   syncIncremental,
   type LocalFirstStatus,
+  ensureDefaultSucursal,
 } from "../lib/localFirst";
 
 export function resolveLicenseGateForOnlineSync(validation: {
@@ -128,6 +129,7 @@ export function useLocalFirstBootstrap(tenantId: string | null): LocalFirstBoots
         }
 
         const snapshot = await getLocalFirstStatusSnapshot(tenantId);
+        await ensureDefaultSucursal(tenantId);
         if (snapshot.status === "history_complete") {
           apply({ ...snapshot, status: "syncing", message: "Sincronizando cambios..." });
           await syncOnlineState();

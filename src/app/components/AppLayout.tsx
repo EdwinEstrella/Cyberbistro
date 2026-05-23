@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router";
 
 import { VentaCartSearchProvider } from "../context/VentaCartSearchContext";
+import { useSucursal } from "../context/SucursalContext";
 import svgPaths from "../../imports/svg-qgatbhef3k";
 import { TitleBar } from "../../features/window";
 import { insforgeClient } from "../../shared/lib/insforge";
@@ -26,6 +27,7 @@ const mainNavItems = [
   { label: "Analíticas", icon: svgPaths.p30837e80, viewBox: "0 0 18 18", path: "/billing" },
   { label: "Gastos", customIcon: "gastos", path: "/gastos" },
   { label: "Cierre", customIcon: "cierre", path: "/cierre" },
+  { label: "Inventario", customIcon: "inventario", path: "/inventario" },
 ] as const;
 
 const soporteNavItem = {
@@ -52,22 +54,32 @@ function prefetchRoute(path: string) {
   void routePrefetchers[path]?.();
 }
 
-function filterMainNavForRol(rol: string | null) {
+function filterMainNavForRol(rol: string | null, _plan: string | null) {
   const normalized = normalizeTenantRol(rol);
-  if (normalized === "admin") return [...mainNavItems];
-  if (normalized === "cocina") return mainNavItems.filter((i) => i.path === "/cocina");
+  let items = [...mainNavItems];
+
+  if (normalized === "admin") return items;
+  if (normalized === "cocina") return items.filter((i) => i.path === "/cocina");
   if (normalized === "cajera") {
     const allow = ["/dashboard", "/tables", "/gastos", "/cierre"] as const;
-    return mainNavItems.filter((i) => allow.includes(i.path as (typeof allow)[number]));
+    return items.filter((i) => allow.includes(i.path as (typeof allow)[number]));
   }
   if (normalized === "mesero") {
     const allow = ["/camarera", "/entregas"] as const;
-    return mainNavItems.filter((i) => allow.includes(i.path as (typeof allow)[number]));
+    return items.filter((i) => allow.includes(i.path as (typeof allow)[number]));
   }
-  return mainNavItems.filter((i) => i.path === "/dashboard");
+  return items.filter((i) => i.path === "/dashboard");
 }
 
-function SidebarCustomIcon({ name }: { name: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "camarera" }) {
+function SidebarCustomIcon({ name }: { name: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "camarera" | "inventario" }) {
+  if (name === "inventario") {
+    return (
+      <svg className="shrink-0 size-[20px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+      </svg>
+    );
+  }
+
   if (name === "camarera") {
     return (
       <svg className="shrink-0 size-[20px]" fill="none" viewBox="0 0 48 48" aria-hidden>
@@ -150,12 +162,40 @@ function SidebarCustomIcon({ name }: { name: "gastos" | "cocina" | "entregas" | 
 export function AppLayout() {
   const navigate = useNavigate();
   const routerLocation = useLocation();
-  const { rol, signOut, tenantId } = useAuth();
+  const { rol, signOut, tenantId, plan } = useAuth();
   const { hasUpdateBellAlert, showUpdateBellToast } = useAppUpdate();
   const localFirst = useLocalFirstBootstrap(tenantId);
   const [cocinaActiva, setCocinaActiva] = useState(true);
   const [ventaCartSearch, setVentaCartSearch] = useState("");
   const [sidebarHidden, setSidebarHidden] = useState(false);
+  const [upsellType, setUpsellType] = useState<"inventario" | "sucursales" | null>(null);
+
+  const { addSucursal, sucursales } = useSucursal();
+  const [showAddBranchModal, setShowAddBranchModal] = useState(false);
+  const [newBranchName, setNewBranchName] = useState("");
+  const [newBranchAddress, setNewBranchAddress] = useState("");
+  const [newBranchPhone, setNewBranchPhone] = useState("");
+  const [isCreatingBranch, setIsCreatingBranch] = useState(false);
+  const [branchError, setBranchError] = useState("");
+
+  async function handleCreateBranch(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newBranchName.trim()) {
+      setBranchError("El nombre de la sucursal es obligatorio.");
+      return;
+    }
+    setIsCreatingBranch(true);
+    setBranchError("");
+    try {
+      await addSucursal(newBranchName, newBranchAddress, newBranchPhone);
+      setShowAddBranchModal(false);
+    } catch (err) {
+      console.error(err);
+      setBranchError(err instanceof Error ? err.message : "Error al crear la sucursal.");
+    } finally {
+      setIsCreatingBranch(false);
+    }
+  }
 
   const isVentaRoute = routerLocation.pathname === "/dashboard";
 
@@ -175,12 +215,12 @@ export function AppLayout() {
   }, [routerLocation.pathname]);
 
   const sideNavItems = useMemo(() => {
-    const main = filterMainNavForRol(rol);
+    const main = filterMainNavForRol(rol, plan);
     if (showSoporteInSidebar(rol)) {
       return [...main, soporteNavItem];
     }
     return main;
-  }, [rol]);
+  }, [rol, plan]);
 
   useEffect(() => {
     const allowedPaths = new Set<string>(sideNavItems.map((item) => item.path));
@@ -244,6 +284,14 @@ export function AppLayout() {
         showSidebarToggle
         sidebarHidden={sidebarHidden}
         onToggleSidebar={() => setSidebarHidden((prev) => !prev)}
+        onShowBranchUpsell={() => setUpsellType("sucursales")}
+        onAddBranch={() => {
+          setBranchError("");
+          setNewBranchName("");
+          setNewBranchAddress("");
+          setNewBranchPhone("");
+          setShowAddBranchModal(true);
+        }}
       />
 
       <RoleGuard>
@@ -268,7 +316,13 @@ export function AppLayout() {
                   type="button"
                   onMouseEnter={() => prefetchRoute(item.path)}
                   onFocus={() => prefetchRoute(item.path)}
-                  onClick={() => navigate(item.path)}
+                  onClick={() => {
+                    if (item.path === "/inventario" && (!plan || plan === "basico")) {
+                      setUpsellType("inventario");
+                      return;
+                    }
+                    navigate(item.path);
+                  }}
                   aria-current={isActive ? "page" : undefined}
                   className={`flex gap-[16px] items-center px-[16px] py-[12px] rounded-[8px] cursor-pointer relative border-none text-left w-full transition-colors ${
                     isActive
@@ -296,6 +350,15 @@ export function AppLayout() {
                   >
                     {item.label}
                   </span>
+                  {item.path === "/inventario" && (!plan || plan === "basico") && (
+                    <span className="ml-auto flex items-center gap-1.5 text-[9px] text-[#ff906d] bg-[rgba(255,144,109,0.12)] border border-[rgba(255,144,109,0.3)] px-2 py-0.5 rounded font-['Space_Grotesk',sans-serif] font-bold uppercase tracking-[0.5px]">
+                      <svg className="size-[10px] text-[#ff906d] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                        <path d="M7 11V7a5 5 0 0110 0v4" />
+                      </svg>
+                      Subir Plan
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -492,6 +555,230 @@ export function AppLayout() {
           </div>
         </div>
       </div>
+      {upsellType !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md transition-all duration-300">
+          <div className="bg-[#131313] border border-[rgba(255,144,109,0.3)] rounded-[20px] shadow-[0px_0px_40px_rgba(255,144,109,0.2)] max-w-[420px] w-full p-6 relative overflow-hidden">
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,144,109,0.1),transparent)] pointer-events-none" />
+
+            <div className="flex flex-col items-center text-center gap-4 relative z-10">
+              {/* Crown/Building Icon SVG */}
+              <div className="bg-[rgba(255,144,109,0.12)] border border-[rgba(255,144,109,0.3)] rounded-full size-[64px] flex items-center justify-center shadow-[0_0_20px_rgba(255,144,109,0.2)]">
+                {upsellType === "inventario" ? (
+                  <svg className="size-[28px] text-[#ff906d]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7z" />
+                    <path d="M3 20h18" />
+                  </svg>
+                ) : (
+                  <svg className="size-[28px] text-[#ff906d]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                  </svg>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[20px] uppercase tracking-[0.5px]">
+                  {upsellType === "inventario" 
+                    ? "Módulo de Inventario" 
+                    : (plan === "profesional" ? "Sucursales Ilimitadas" : "Múltiples Sucursales")
+                  }
+                </span>
+                <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[12px] uppercase tracking-[1px]">
+                  {upsellType === "inventario" 
+                    ? "Plan Profesional" 
+                    : (plan === "profesional" ? "Plan Empresarial" : "Plan Profesional / Empresarial")
+                  }
+                </span>
+              </div>
+
+              <p className="font-['Inter',sans-serif] text-[#adaaaa] text-[13px] leading-relaxed">
+                {upsellType === "inventario" && (
+                  <>
+                    El control de inventario avanzado, recetas y materias primas (como aceite, carne y papas) está disponible exclusivamente en el <strong className="text-white font-semibold">Plan Profesional</strong>.
+                  </>
+                )}
+                {upsellType === "sucursales" && plan === "profesional" && (
+                  <>
+                    Llegaste al límite de 3 sucursales de tu Plan Profesional. La gestión de sucursales ilimitadas y soporte corporativo 24/7 está disponible exclusivamente en el <strong className="text-[#a78bfa] font-semibold">Plan Empresarial</strong>.
+                  </>
+                )}
+                {upsellType === "sucursales" && plan !== "profesional" && (
+                  <>
+                    La gestión de múltiples sucursales (hasta 3 en Profesional, ilimitadas en Empresarial), control de stock y transferencias está disponible en nuestros <strong className="text-white font-semibold">Planes Superiores</strong>.
+                  </>
+                )}
+              </p>
+
+              <div className="bg-[rgba(255,144,109,0.08)] border border-[rgba(255,144,109,0.2)] rounded-[12px] p-3 w-full">
+                <p className="font-['Space_Grotesk',sans-serif] text-[#ff906d] text-[13px] font-bold leading-normal flex items-center justify-center gap-2">
+                  <svg className="size-[16px] text-[#ff906d] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                    <line x1="12" y1="9" x2="12" y2="13" />
+                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                  </svg>
+                  {plan === "profesional" 
+                    ? "Debés subir al Plan Empresarial. Hablá con el administrador."
+                    : "Debés subir de plan. Hablá con el administrador del sistema."
+                  }
+                </p>
+              </div>
+
+              <div className="bg-[#1a1a1a] rounded-[12px] border border-[rgba(72,72,71,0.18)] p-3.5 w-full text-left">
+                <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[11px] uppercase tracking-[0.5px] block mb-2">
+                  {upsellType === "inventario" ? "¿Qué incluye el Plan Profesional?" : "¿Qué ventajas te ofrece?"}
+                </span>
+                <ul className="flex flex-col gap-1.5 pl-0 list-none text-[11px] text-[#adaaaa] font-['Inter',sans-serif]">
+                  {upsellType === "inventario" ? (
+                    <>
+                      <li className="flex items-center gap-2">
+                        <span className="text-[#ff906d]">✓</span> <b>Múltiples Sucursales</b> en un solo lugar
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <span className="text-[#ff906d]">✓</span> <b>Ingredientes y recetas</b> automáticos
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <span className="text-[#ff906d]">✓</span> <b>Cierres de Cocina</b> y reporte de mermas
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <span className="text-[#ff906d]">✓</span> Control de aceite útil de freidoras
+                      </li>
+                    </>
+                  ) : (
+                    <>
+                      <li className="flex items-center gap-2">
+                        <span className="text-[#ff906d]">✓</span> <b>Múltiples locales</b> sincronizados en tiempo real
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <span className="text-[#ff906d]">✓</span> <b>Consolidación de ventas</b> y caja unificada
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <span className="text-[#ff906d]">✓</span> <b>Transferencias de insumos</b> entre locales
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <span className="text-[#ff906d]">✓</span> Filtros rápidos de sucursal en todo el sistema
+                      </li>
+                    </>
+                  )}
+                </ul>
+              </div>
+
+              <div className="flex flex-col gap-2.5 w-full mt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUpsellType(null);
+                    navigate("/ajustes");
+                  }}
+                  className="w-full bg-[#ff906d] py-3 rounded-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[12px] uppercase tracking-[0.5px] cursor-pointer border-none transition-all duration-300 hover:shadow-[0_0_20px_rgba(255,144,109,0.4)] hover:scale-[1.01] active:scale-95"
+                  style={{ backgroundImage: "linear-gradient(172.248deg, rgb(255, 144, 109) 0%, rgb(255, 120, 77) 100%)" }}
+                >
+                  Mejorar Plan en Ajustes
+                </button>
+                
+                <button
+                  type="button"
+                  onClick={() => setUpsellType(null)}
+                  className="w-full bg-[#262626] text-[#adaaaa] py-2.5 rounded-[12px] font-['Inter',sans-serif] font-bold text-[11px] uppercase cursor-pointer border-none transition-all duration-300 hover:bg-[#333] active:scale-95"
+                >
+                  Entendido, volver
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAddBranchModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md transition-all duration-300">
+          <div className="bg-[#131313] border border-[rgba(255,144,109,0.3)] rounded-[20px] shadow-[0px_0px_40px_rgba(255,144,109,0.2)] max-w-[420px] w-full p-6 relative overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,144,109,0.1),transparent)] pointer-events-none" />
+
+            <form onSubmit={handleCreateBranch} className="flex flex-col gap-4 relative z-10" style={{ WebkitAppRegion: "no-drag" as any }}>
+              <div className="flex flex-col items-center text-center gap-2">
+                <div className="bg-[rgba(255,144,109,0.12)] border border-[rgba(255,144,109,0.3)] rounded-full size-[64px] flex items-center justify-center shadow-[0_0_20px_rgba(255,144,109,0.2)]">
+                  <svg className="size-[28px] text-[#ff906d]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                  </svg>
+                </div>
+                <h3 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[20px] uppercase tracking-[0.5px] mt-2">
+                  Agregar Sucursal
+                </h3>
+                <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[11px] uppercase tracking-[1px]">
+                  {plan === "profesional" ? `Plan Profesional (${sucursales.length}/3)` : "Plan Empresarial (Ilimitadas)"}
+                </span>
+              </div>
+
+              {branchError && (
+                <div className="bg-red-500/10 border border-red-500/30 rounded-[12px] p-3 text-center">
+                  <p className="font-['Inter',sans-serif] text-red-400 text-[12px] font-semibold">
+                    {branchError}
+                  </p>
+                </div>
+              )}
+
+              <div className="flex flex-col gap-3 my-2">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">
+                    Nombre de la Sucursal *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ej. Sucursal Bella Vista"
+                    value={newBranchName}
+                    onChange={(e) => setNewBranchName(e.target.value)}
+                    className="bg-[#1c1c1c] border border-white/10 rounded-xl px-4 py-2.5 font-['Inter',sans-serif] text-sm text-white placeholder-[#adaaaa]/50 outline-none focus:border-[#ff906d]/50 transition-all"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">
+                    Dirección (Opcional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ej. Av. Rómulo Betancourt #12"
+                    value={newBranchAddress}
+                    onChange={(e) => setNewBranchAddress(e.target.value)}
+                    className="bg-[#1c1c1c] border border-white/10 rounded-xl px-4 py-2.5 font-['Inter',sans-serif] text-sm text-white placeholder-[#adaaaa]/50 outline-none focus:border-[#ff906d]/50 transition-all"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">
+                    Teléfono (Opcional)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ej. 809-555-0199"
+                    value={newBranchPhone}
+                    onChange={(e) => setNewBranchPhone(e.target.value)}
+                    className="bg-[#1c1c1c] border border-white/10 rounded-xl px-4 py-2.5 font-['Inter',sans-serif] text-sm text-white placeholder-[#adaaaa]/50 outline-none focus:border-[#ff906d]/50 transition-all"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2.5 w-full mt-1">
+                <button
+                  type="submit"
+                  disabled={isCreatingBranch}
+                  className="w-full bg-[#ff906d] py-3 rounded-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[12px] uppercase tracking-[0.5px] cursor-pointer border-none transition-all duration-300 hover:shadow-[0_0_20px_rgba(255,144,109,0.4)] hover:scale-[1.01] active:scale-95 disabled:opacity-50"
+                  style={{ backgroundImage: "linear-gradient(172.248deg, rgb(255, 144, 109) 0%, rgb(255, 120, 77) 100%)" }}
+                >
+                  {isCreatingBranch ? "Creando..." : "Crear Sucursal"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowAddBranchModal(false)}
+                  className="w-full bg-[#262626] text-[#adaaaa] py-2.5 rounded-[12px] font-['Inter',sans-serif] font-bold text-[11px] uppercase cursor-pointer border-none transition-all duration-300 hover:bg-[#333] active:scale-95"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 </VentaCartSearchProvider>
       </RoleGuard>
     </div>

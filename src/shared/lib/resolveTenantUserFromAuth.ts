@@ -23,7 +23,7 @@ import {
 async function fetchTenantUserByAuthId(authUserId: string) {
   return insforgeClient.database
     .from('tenant_users')
-    .select('tenant_id, email, rol, nombre')
+    .select('tenant_id, email, rol, nombre, tenants(plan)')
     .eq('auth_user_id', authUserId)
     .eq('activo', true)
     .maybeSingle();
@@ -33,11 +33,11 @@ async function fetchTenantUserByAuthId(authUserId: string) {
 async function fetchTenantUserBySessionEmail(email: string) {
   const normalized = email.trim();
   if (!normalized) {
-    return { data: null as TenantSessionRow | null, error: null as null };
+    return { data: null as any, error: null as null };
   }
   return insforgeClient.database
     .from('tenant_users')
-    .select('tenant_id, email, rol, nombre')
+    .select('tenant_id, email, rol, nombre, tenants(plan)')
     .ilike('email', normalized)
     .eq('activo', true)
     .maybeSingle();
@@ -119,6 +119,7 @@ export async function resolveTenantAccessForSession(user: UserSchema): Promise<T
           typeof user.profile?.name === "string" && user.profile.name.trim()
             ? user.profile.name
             : "Super Admin",
+        plan: 'profesional',
       },
     };
   }
@@ -126,18 +127,54 @@ export async function resolveTenantAccessForSession(user: UserSchema): Promise<T
   const { data: byAuth } = await withRetry('tenant_users activo por auth_user_id', () =>
     fetchTenantUserByAuthId(user.id)
   );
-  if (byAuth) return { status: 'active', row: byAuth as TenantSessionRow };
+  if (byAuth) {
+    const rawRow = byAuth as any;
+    return {
+      status: 'active',
+      row: {
+        tenant_id: rawRow.tenant_id,
+        email: rawRow.email,
+        rol: rawRow.rol,
+        nombre: rawRow.nombre,
+        plan: rawRow.tenants?.plan ?? 'basico',
+      },
+    };
+  }
 
   const email = user.email;
   if (email) {
     const { data: byEmail } = await withRetry('tenant_users activo por email', () =>
       fetchTenantUserBySessionEmail(email)
     );
-    if (byEmail) return { status: 'active', row: byEmail as TenantSessionRow };
+    if (byEmail) {
+      const rawRow = byEmail as any;
+      return {
+        status: 'active',
+        row: {
+          tenant_id: rawRow.tenant_id,
+          email: rawRow.email,
+          rol: rawRow.rol,
+          nombre: rawRow.nombre,
+          plan: rawRow.tenants?.plan ?? 'basico',
+        },
+      };
+    }
   }
 
   const { data: byRpc } = await withRetry('tenant_users activo por rpc', fetchTenantUserByRpc);
-  if (byRpc) return { status: 'active', row: byRpc as TenantSessionRow };
+  if (byRpc) {
+    const rawRow = byRpc as any;
+    return {
+      status: 'active',
+      row: {
+        tenant_id: rawRow.tenant_id,
+        email: rawRow.email,
+        rol: rawRow.rol,
+        nombre: rawRow.nombre,
+        plan: rawRow.plan ?? 'basico',
+      },
+    };
+  }
 
   const { data: anyByAuth } = await withRetry('tenant_users cualquier estado por auth_user_id', () =>
     fetchAnyTenantUserByAuthId(user.id)

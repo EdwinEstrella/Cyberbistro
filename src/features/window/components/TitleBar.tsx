@@ -2,20 +2,32 @@ import { useEffect, useState } from "react";
 import type { ElectronAPI } from "../../../shared/types/electron";
 import svgPaths from "../../../imports/svg-h2gjocs89h";
 import { useTheme } from "../../../shared/context/ThemeContext";
+import { useAuth } from "../../../shared/hooks/useAuth";
+import { useSucursal } from "../../../app/context/SucursalContext";
 
 interface TitleBarProps {
   showSidebarToggle?: boolean;
   sidebarHidden?: boolean;
   onToggleSidebar?: () => void;
+  onShowBranchUpsell?: () => void;
+  onAddBranch?: () => void;
 }
 
 export function TitleBar({
   showSidebarToggle = false,
   sidebarHidden = false,
   onToggleSidebar,
+  onShowBranchUpsell,
+  onAddBranch,
 }: TitleBarProps) {
   const [isMaximized, setIsMaximized] = useState(false);
   const { theme, toggleTheme } = useTheme();
+  
+  const { plan } = useAuth();
+  const { activeSucursalId, setActiveSucursalId, sucursales } = useSucursal();
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  const activeSucursal = sucursales.find(s => s.id === activeSucursalId);
 
   useEffect(() => {
     // Listen for maximize/unmaximize events from main process
@@ -133,6 +145,107 @@ export function TitleBar({
             )}
           </button>
         ) : null}
+
+        {/* Basic plan branch display with add button */}
+        {(!plan || (plan !== "profesional" && plan !== "empresarial")) && (
+          <div className="flex items-center gap-1 ml-2" style={{ WebkitAppRegion: "no-drag" as any }}>
+            <button
+              type="button"
+              onClick={onShowBranchUpsell}
+              className="flex items-center gap-1.5 h-7 px-2.5 rounded-[6px] bg-white/5 hover:bg-white/10 dark:bg-white/5 dark:hover:bg-white/10 border border-black/10 dark:border-white/10 text-[11px] font-['Space_Grotesk',sans-serif] font-medium text-foreground/80 transition-all cursor-pointer select-none"
+            >
+              <svg className="size-[12px] text-muted-foreground shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+              </svg>
+              <span>Matriz (Única)</span>
+            </button>
+            <button
+              type="button"
+              onClick={onShowBranchUpsell}
+              className="flex items-center justify-center size-7 rounded-[6px] bg-white/5 hover:bg-[#ff906d]/20 dark:bg-white/5 dark:hover:bg-[#ff906d]/20 border border-black/10 dark:border-white/10 text-[#ff906d] transition-all cursor-pointer font-bold select-none"
+              title="Agregar Sucursal"
+            >
+              <svg className="size-[14px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
+          </div>
+        )}
+
+        {/* Professional/Empresarial plan branch dropdown + plus button */}
+        {(plan === "profesional" || plan === "empresarial") && sucursales.length > 0 && (
+          <div className="flex items-center gap-1 ml-2" style={{ WebkitAppRegion: "no-drag" as any }}>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setDropdownOpen(!dropdownOpen)}
+                className="flex items-center gap-1.5 h-7 px-2.5 rounded-[6px] bg-[#ff906d]/10 hover:bg-[#ff906d]/20 border border-[rgba(255,144,109,0.3)] text-[11px] font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] transition-all cursor-pointer select-none"
+              >
+                <svg className="size-[12px] text-[#ff906d] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                </svg>
+                <span>{activeSucursal?.nombre || "Cargando sucursal..."}</span>
+                <svg className={`size-[10px] text-[#ff906d] transition-transform duration-200 shrink-0 ${dropdownOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {dropdownOpen && (
+                <>
+                  <div className="fixed inset-0 z-40 cursor-default" onClick={() => setDropdownOpen(false)} />
+                  <div className="absolute left-0 top-full mt-1.5 w-[200px] z-50 bg-[#131313] border border-white/10 rounded-[10px] shadow-[0px_8px_24px_rgba(0,0,0,0.5)] p-1.5 flex flex-col gap-0.5 animate-in fade-in slide-in-from-top-1 duration-150">
+                    <span className="text-[9px] uppercase tracking-[0.5px] text-[#ff906d] font-bold px-2 py-1 font-['Space_Grotesk',sans-serif]">
+                      Cambiar Sucursal
+                    </span>
+                    <div className="h-px bg-white/5 my-0.5" />
+                    {sucursales.map((suc) => {
+                      const isSelected = suc.id === activeSucursalId;
+                      return (
+                        <button
+                          key={suc.id}
+                          type="button"
+                          onClick={() => {
+                            setActiveSucursalId(suc.id);
+                            setDropdownOpen(false);
+                          }}
+                          className={`flex items-center justify-between w-full text-left px-2.5 py-1.5 rounded-[6px] font-['Space_Grotesk',sans-serif] text-[11px] transition-colors cursor-pointer border-none ${
+                            isSelected
+                              ? "bg-[#ff906d]/10 text-[#ff906d] font-bold"
+                              : "bg-transparent text-[#adaaaa] hover:bg-white/5 hover:text-white"
+                          }`}
+                        >
+                          <span>{suc.nombre}</span>
+                          {isSelected && (
+                            <svg className="size-[12px] text-[#ff906d] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={
+                plan === "profesional" && sucursales.length >= 3
+                  ? onShowBranchUpsell
+                  : onAddBranch
+              }
+              className="flex items-center justify-center size-7 rounded-[6px] bg-white/5 hover:bg-[#ff906d]/20 dark:bg-white/5 dark:hover:bg-[#ff906d]/20 border border-black/10 dark:border-white/10 text-[#ff906d] transition-all cursor-pointer font-bold select-none"
+              title="Agregar Sucursal"
+            >
+              <svg className="size-[14px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Center - Empty drag area */}

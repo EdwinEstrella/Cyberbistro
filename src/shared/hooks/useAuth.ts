@@ -16,6 +16,7 @@ interface TenantUser {
   email: string;
   rol: string;
   nombre: string;
+  plan: string;
 }
 
 interface SharedAuthState {
@@ -31,6 +32,7 @@ function rowToTenantUser(data: TenantSessionRow): TenantUser {
     email: data.email,
     rol: data.rol,
     nombre: data.nombre ?? '',
+    plan: data.plan ?? 'basico',
   };
 }
 
@@ -602,6 +604,7 @@ export function useAuth() {
     tenantUser: tenantUserEffective,
     tenantId: tenantUserEffective?.tenant_id ?? null,
     rol: tenantUserEffective?.rol ?? null,
+    plan: tenantUserEffective?.plan ?? null,
     loading,
     signOut,
     isAuthenticated: !!user,
