@@ -9,6 +9,7 @@ import {
   prepareNcfForFacturaInsert,
   type TenantNcfRow,
 } from "./ncf";
+import { isCloudAvailabilityFailure, recordCloudFailure, recordCloudSuccess } from "./cloudAvailability";
 
 /** Resultado al emitir factura: si `sequenceReservedAtomically`, la BD ya incremento la secuencia (RPC). */
 export type ResolvedNcfForInvoice = {
@@ -17,6 +18,7 @@ export type ResolvedNcfForInvoice = {
   tipoCodigo: string;
   usedSequence: number;
   sequenceReservedAtomically: boolean;
+  reservationSource?: "remote_rpc" | "remote_legacy" | "local_mirror";
 };
 
 /** Solo la fila del tenant de la sesion (`tenants.id` = tenant del usuario). */
@@ -37,7 +39,11 @@ export async function loadTenantNcfRow(tenantId: string): Promise<TenantNcfRow |
       .maybeSingle();
   }
 
-  if (res.error || !res.data) return null;
+  if (res.error || !res.data) {
+    if (res.error && isCloudAvailabilityFailure(res.error)) recordCloudFailure();
+    return null;
+  }
+  recordCloudSuccess();
   return res.data as TenantNcfRow;
 }
 
@@ -86,7 +92,14 @@ export async function resolveNcfForNewInvoice(
 
   const { data, error } = await insforgeClient.database.rpc("cloudix_reserve_ncf", rpcArgs);
 
-  if (!error && data != null) {
+  if (error) {
+    if (isCloudAvailabilityFailure(error)) recordCloudFailure();
+    throw new Error(error.message || "No se pudo reservar NCF fiscal.");
+  }
+
+  recordCloudSuccess();
+
+  if (data != null) {
     const rows = Array.isArray(data) ? data : [data];
     const row = rows[0] as {
       ncf_fiscal_activo?: boolean;
@@ -100,7 +113,7 @@ export async function resolveNcfForNewInvoice(
         row.seq_reserved
       );
       if (payload) {
-        return { ...payload, sequenceReservedAtomically: true };
+          return { ...payload, sequenceReservedAtomically: true, reservationSource: "remote_rpc" };
       }
     }
   }
@@ -108,7 +121,7 @@ export async function resolveNcfForNewInvoice(
   const legacyRow = await loadTenantNcfRow(tenantId);
   const payload = ncfPayloadForInsert(legacyRow, preferredType);
   if (!payload) return null;
-  return { ...payload, sequenceReservedAtomically: false };
+  return { ...payload, sequenceReservedAtomically: false, reservationSource: "remote_legacy" };
 }
 
 /** Incrementa secuencia NCF solo cuando no se uso la RPC atomica. */
@@ -134,11 +147,16 @@ export async function incrementTenantNcfSequence(
     row?.ncf_secuencias_por_tipo
   );
 
-  await insforgeClient.database
+  const { error } = await insforgeClient.database
     .from("tenants")
     .update({
       ...updatePayload,
       updated_at: new Date().toISOString(),
     })
     .eq("id", tenantId);
+  if (error) {
+    if (isCloudAvailabilityFailure(error)) recordCloudFailure();
+    throw new Error(error.message || "No se pudo actualizar secuencia NCF.");
+  }
+  recordCloudSuccess();
 }

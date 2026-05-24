@@ -42,7 +42,6 @@ import { MesaCloseAccountModal } from "../../billing/components/MesaCloseAccount
 // DashboardTickerStrip removed
 import {
   incrementTenantNcfSequence,
-  resolveNcfForNewInvoice,
 } from "../../../shared/lib/invoiceNcf";
 import {
   DEFAULT_NCF_B_CODE,
@@ -52,10 +51,11 @@ import {
   type NcfBCode,
 } from "../../../shared/lib/ncf";
 import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
-import { getLocalFirstStatusSnapshot, readLocalMirror, readLocalOutbox, enqueueLocalWrite, getDeviceId, writeLocalMirrorRow, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
+import { getLocalFirstStatusSnapshot, readLocalMirror, readLocalOutbox, enqueueLocalWrite, getDeviceId, writeLocalMirrorRow, shouldReadLocalFirst, resolveNcfForNewInvoiceLocalFirst, LOCAL_NCF_RESERVED_PAYLOAD_FLAG } from "../../../shared/lib/localFirst";
 import { getNextFacturaNumber } from "../../../shared/lib/invoiceNumber";
 import { writePosMutationLocalFirst } from "../../pos/lib/localFirstMutations";
 import { cacheLogoFromUrl } from "../../../shared/lib/logoCache";
+import { isDesktopCloudUnavailable } from "../../../shared/lib/cloudAvailability";
 
 interface Plato {
   id: number;
@@ -401,7 +401,16 @@ export function Dashboard() {
 
   async function syncMesaStateFromOpenAccount(mesaId: string, mesaNumero: number) {
     if (!tenantId) return;
-    if (!navigator.onLine) {
+    let useLocalConsumos = !navigator.onLine;
+    if (!useLocalConsumos) {
+      const outbox = await readLocalOutbox(tenantId).catch(() => []);
+      useLocalConsumos = outbox.some((entry) =>
+        entry.table_name === "consumos" &&
+        (entry.status === "pending" || entry.status === "syncing" || entry.status === "error")
+      );
+    }
+
+    if (useLocalConsumos) {
       const rows = (await readLocalMirror<Consumo>(tenantId, "consumos"))
         .filter((row) => Number(row.mesa_numero) === mesaNumero && row.estado !== "pagado");
       const deuda_pendiente = rows.reduce((s, r) => s + Number(r.subtotal), 0);
@@ -541,7 +550,13 @@ export function Dashboard() {
         tableName: "consumos",
         rowId: consumoId,
         op: "delete",
-        payload: { id: consumoId },
+        payload: {
+          id: consumoId,
+          tenant_id: tenantId,
+          mesa_numero: consumo.mesa_numero,
+          comanda_id: consumo.comanda_id,
+          created_by_auth_user_id: consumo.created_by_auth_user_id ?? null,
+        },
         authUserId: user?.id ?? null,
         deviceId: await getDeviceId(),
       });
@@ -936,15 +951,21 @@ export function Dashboard() {
       return;
     }
 
-    let ncfPart: Awaited<ReturnType<typeof resolveNcfForNewInvoice>> = null;
-    try {
-      ncfPart = tenantId
-        ? await resolveNcfForNewInvoice(
-          tenantId,
-          tenantNcfFiscalActive ? selectedNcfType : null
-        )
-        : null;
-    } catch { /* offline: skip NCF */ }
+    let ncfPart: Awaited<ReturnType<typeof resolveNcfForNewInvoiceLocalFirst>> = null;
+    if (tenantId && tenantNcfFiscalActive) {
+      try {
+        ncfPart = await resolveNcfForNewInvoiceLocalFirst(tenantId, selectedNcfType);
+      } catch (err) {
+        alert(err instanceof Error ? err.message : "No se pudo reservar NCF fiscal. No se emitió la factura.");
+        setCharging(false);
+        return;
+      }
+      if (!ncfPart) {
+        alert("No se pudo reservar NCF fiscal. No se emitió la factura.");
+        setCharging(false);
+        return;
+      }
+    }
 
     const localFacturaId = crypto.randomUUID();
     const nowIso = new Date().toISOString();
@@ -970,6 +991,9 @@ export function Dashboard() {
     if (ncfPart) {
       facturaData.ncf = ncfPart.ncf;
       facturaData.ncf_tipo = ncfPart.ncf_tipo;
+      if (ncfPart.reservationSource === "local_mirror") {
+        facturaData[LOCAL_NCF_RESERVED_PAYLOAD_FLAG] = true;
+      }
     }
     if (normalizedClientRnc !== "") {
       facturaData.cliente_rnc = normalizedClientRnc;
@@ -997,7 +1021,7 @@ export function Dashboard() {
 
     let tenantPrintData: { nombre_negocio: string | null; rnc: string | null; direccion: string | null; telefono: string | null; logo_url: string | null } | null = null;
     try {
-      if (!navigator.onLine) {
+      if (!navigator.onLine || await isDesktopCloudUnavailable()) {
         const localTenants = await readLocalMirror<any>(tenantId, "tenants");
         tenantPrintData = localTenants.find((t) => t.id === tenantId) ?? null;
       } else {

@@ -3,6 +3,7 @@ import {
   buildServerWritePayload,
   buildCierrePayloadWithCycleNumber,
   buildFacturaPayloadWithNcfSequence,
+  buildLocalTenantNcfReservation,
   buildNcfWithSequence,
   buildSyncErrorRow,
   buildLocalMirrorWriteResult,
@@ -220,6 +221,39 @@ describe("localFirst", () => {
     expect(buildFacturaPayloadWithNcfSequence(payload, 8)).toEqual({
       ...payload,
       ncf: "B0100000008",
+    });
+  });
+
+  it("reserva NCF offline desde una secuencia local explícita y avanza el mirror", () => {
+    const reservation = buildLocalTenantNcfReservation({
+      ncf_fiscal_activo: true,
+      ncf_tipo_default: "B02",
+      ncf_b02_secuencia_siguiente: 141,
+    });
+
+    expect(reservation).toMatchObject({
+      reserved: {
+        ncf: "B0200000141",
+        tipoCodigo: "B02",
+        usedSequence: 141,
+        sequenceReservedAtomically: true,
+        reservationSource: "local_mirror",
+      },
+      nextTenantRow: {
+        ncf_b02_secuencia_siguiente: 142,
+        ncf_secuencia_siguiente: 142,
+      },
+    });
+  });
+
+  it("rechaza NCF offline si no hay secuencia local explícita", () => {
+    const reservation = buildLocalTenantNcfReservation({
+      ncf_fiscal_activo: true,
+      ncf_tipo_default: "B01",
+    });
+
+    expect(reservation).toEqual({
+      reason: "No hay una secuencia NCF local válida para garantizar unicidad fiscal.",
     });
   });
 

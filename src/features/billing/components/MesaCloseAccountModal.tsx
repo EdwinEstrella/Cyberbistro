@@ -6,7 +6,6 @@ import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { openCashDrawerForSale, printThermalHtml } from "../../../shared/lib/thermalPrint";
 import {
   incrementTenantNcfSequence,
-  resolveNcfForNewInvoice,
 } from "../../../shared/lib/invoiceNcf";
 import {
   DEFAULT_NCF_B_CODE,
@@ -16,10 +15,11 @@ import {
   type NcfBCode,
 } from "../../../shared/lib/ncf";
 import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
-import { enqueueLocalWrite, getDeviceId, getLocalFirstStatusSnapshot, isLocalFirstEnabled, readLocalMirror, readLocalOutbox } from "../../../shared/lib/localFirst";
+import { enqueueLocalWrite, getDeviceId, getLocalFirstStatusSnapshot, isLocalFirstEnabled, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, readLocalMirror, readLocalOutbox, resolveNcfForNewInvoiceLocalFirst } from "../../../shared/lib/localFirst";
 import { getNextFacturaNumber } from "../../../shared/lib/invoiceNumber";
 import { closeKitchenComandasForMesaLocalFirst } from "../../pos/lib/localFirstMutations";
 import { cacheLogoFromUrl } from "../../../shared/lib/logoCache";
+import { isDesktopCloudUnavailable } from "../../../shared/lib/cloudAvailability";
 
 const ITBIS = 0.18;
 
@@ -91,7 +91,8 @@ async function loadTableConsumption(
     const shouldTrustLocal =
       snapshot.status === "history_complete" ||
       snapshot.status === "ready_history_syncing" ||
-      (typeof navigator !== "undefined" && !navigator.onLine);
+      (typeof navigator !== "undefined" && !navigator.onLine) ||
+      (await isDesktopCloudUnavailable());
 
     if (shouldTrustLocal) {
       const localRows = await readLocalMirror<MesaConsumoRow>(tenantId, "consumos");
@@ -100,7 +101,7 @@ async function loadTableConsumption(
         .sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
       const localPendingRows = mesaRows.filter((row) => row.estado !== "pagado");
 
-      if (typeof navigator !== "undefined" && !navigator.onLine) {
+      if ((typeof navigator !== "undefined" && !navigator.onLine) || (await isDesktopCloudUnavailable())) {
         return localPendingRows;
       }
 
@@ -142,11 +143,16 @@ async function groupConsumosForFactura(
   const categoriaPorPlato = new Map<number, string>();
 
   if (plateIds.length > 0) {
-    const { data } = await insforgeClient.database
+    const localPlates = await (async () => {
+      if (!(await isDesktopCloudUnavailable())) return null;
+      return readLocalMirror<{ id: number; categoria?: string | null }>(tenantId, "platos").catch(() => []);
+    })();
+
+    const data = localPlates ?? (await insforgeClient.database
       .from("platos")
       .select("id, categoria")
       .eq("tenant_id", tenantId)
-      .in("id", plateIds);
+      .in("id", plateIds)).data;
 
     for (const plate of (data as Array<{ id: number; categoria?: string | null }>) ?? []) {
       categoriaPorPlato.set(plate.id, plate.categoria?.trim() || "General");
@@ -520,6 +526,24 @@ export function MesaCloseAccountModal({
       const deviceId = await getDeviceId();
       let nextFacturaNumber = await getNextFacturaNumber(tenantId);
       let cashDrawerOpened = false;
+      const reservedNcfByPerson = new Map<number, Awaited<ReturnType<typeof resolveNcfForNewInvoiceLocalFirst>>>();
+
+      if (ncfFiscalActive) {
+        for (const personIndex of order) {
+          let reservedNcf: Awaited<ReturnType<typeof resolveNcfForNewInvoiceLocalFirst>> = null;
+          try {
+            reservedNcf = await resolveNcfForNewInvoiceLocalFirst(tenantId, selectedNcfType);
+          } catch (err) {
+            alert(err instanceof Error ? err.message : "No se pudo reservar NCF fiscal. No se emitió la factura.");
+            return;
+          }
+          if (!reservedNcf) {
+            alert("No se pudo reservar NCF fiscal. No se emitió la factura.");
+            return;
+          }
+          reservedNcfByPerson.set(personIndex, reservedNcf);
+        }
+      }
 
       for (const personIndex of order) {
         const consumosToInvoice = groups.get(personIndex)!;
@@ -531,10 +555,7 @@ export function MesaCloseAccountModal({
           itbisRate
         );
 
-        const ncfPart = await resolveNcfForNewInvoice(
-          tenantId,
-          ncfFiscalActive ? selectedNcfType : null
-        );
+        const ncfPart = ncfFiscalActive ? reservedNcfByPerson.get(personIndex) ?? null : null;
 
         const localFacturaId = crypto.randomUUID();
         const now = new Date().toISOString();
@@ -558,6 +579,9 @@ export function MesaCloseAccountModal({
         if (ncfPart) {
           insertRow.ncf = ncfPart.ncf;
           insertRow.ncf_tipo = ncfPart.ncf_tipo;
+          if (ncfPart.reservationSource === "local_mirror") {
+            insertRow[LOCAL_NCF_RESERVED_PAYLOAD_FLAG] = true;
+          }
         }
         if (normalizedClientRnc !== "") {
           insertRow.cliente_rnc = normalizedClientRnc;
@@ -669,10 +693,21 @@ export function MesaCloseAccountModal({
       return;
     }
 
-    const ncfPart = await resolveNcfForNewInvoice(
-      tenantId,
-      ncfFiscalActive ? selectedNcfType : null
-    );
+    let ncfPart: Awaited<ReturnType<typeof resolveNcfForNewInvoiceLocalFirst>> = null;
+    if (ncfFiscalActive) {
+      try {
+        ncfPart = await resolveNcfForNewInvoiceLocalFirst(tenantId, selectedNcfType);
+      } catch (err) {
+        alert(err instanceof Error ? err.message : "No se pudo reservar NCF fiscal. No se emitió la factura.");
+        setCharging(false);
+        return;
+      }
+      if (!ncfPart) {
+        alert("No se pudo reservar NCF fiscal. No se emitió la factura.");
+        setCharging(false);
+        return;
+      }
+    }
 
     const localFacturaId = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -698,6 +733,9 @@ export function MesaCloseAccountModal({
     if (ncfPart) {
       facturaData.ncf = ncfPart.ncf;
       facturaData.ncf_tipo = ncfPart.ncf_tipo;
+      if (ncfPart.reservationSource === "local_mirror") {
+        facturaData[LOCAL_NCF_RESERVED_PAYLOAD_FLAG] = true;
+      }
     }
     if (normalizedClientRnc !== "") {
       facturaData.cliente_rnc = normalizedClientRnc;

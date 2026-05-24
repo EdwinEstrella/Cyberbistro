@@ -508,7 +508,13 @@ export function Camarera() {
         tableName: "consumos",
         rowId: consumoId,
         op: "delete",
-        payload: { id: consumoId },
+        payload: {
+          id: consumoId,
+          tenant_id: tenantId,
+          mesa_numero: selectedMesa.numero,
+          comanda_id: group.comandaIds[0] ?? null,
+          created_by_auth_user_id: group.ownerId,
+        },
         authUserId: user?.id ?? null,
         deviceId,
       });
@@ -570,14 +576,17 @@ export function Camarera() {
     }
 
     await loadSelectedMesaConsumos(selectedMesa.numero);
-    setMesas((prev) => prev.map((mesa) => mesa.numero === selectedMesa.numero
-      ? {
-          ...mesa,
-          deuda_pendiente: Math.max(0, mesa.deuda_pendiente - Number(group.subtotal)),
-          items_pendientes: Math.max(0, mesa.items_pendientes - group.ids.length),
-        }
-      : mesa
-    ));
+    setMesas((prev) => prev.map((mesa) => {
+      if (mesa.numero !== selectedMesa.numero) return mesa;
+      const nextItems = Math.max(0, mesa.items_pendientes - group.ids.length);
+      return {
+        ...mesa,
+        deuda_pendiente: Math.max(0, mesa.deuda_pendiente - Number(group.subtotal)),
+        items_pendientes: nextItems,
+        mine_pending: nextItems > 0 ? mesa.mine_pending : false,
+        owner_names: nextItems > 0 ? mesa.owner_names : [],
+      };
+    }));
     setMessage(`${group.nombre} eliminado de la mesa.`);
     setDeletingConsumoId(null);
   }
