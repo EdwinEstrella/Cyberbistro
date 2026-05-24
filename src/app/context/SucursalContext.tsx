@@ -25,6 +25,7 @@ export type SucursalContextValue = {
   loading: boolean;
   refreshSucursales: () => Promise<void>;
   addSucursal: (nombre: string, direccion?: string, telefono?: string) => Promise<Sucursal>;
+  deleteSucursal: (id: string) => Promise<{ success: boolean; error?: string }>;
 };
 
 const SucursalContext = createContext<SucursalContextValue | null>(null);
@@ -125,6 +126,75 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
     return payload;
   }
 
+  async function deleteSucursal(sucursalId: string): Promise<{ success: boolean; error?: string }> {
+    if (!tenantId || !isAuthenticated) {
+      throw new Error("Usuario no autenticado");
+    }
+
+    if (sucursalId === activeSucursalId) {
+      return { success: false, error: "No podés eliminar la sucursal activa. Cambiá a otra primero." };
+    }
+
+    if (sucursales.length <= 1) {
+      return { success: false, error: "No podés eliminar la única sucursal de tu negocio." };
+    }
+
+    try {
+      const useLocal = isLocalFirstEnabled();
+      let hasData = false;
+
+      if (useLocal) {
+        const { checkSucursalHasData } = await import("../../shared/lib/localFirst");
+        hasData = await checkSucursalHasData(tenantId, sucursalId);
+      } else {
+        const tables = ["productos_inventario", "inventario_movimientos", "produccion_cocina"];
+        for (const table of tables) {
+          const res = await insforgeClient.database
+            .from(table)
+            .select("id", { count: "exact", head: true })
+            .eq("sucursal_id", sucursalId);
+          if (res.count && res.count > 0) {
+            hasData = true;
+            break;
+          }
+        }
+      }
+
+      if (hasData) {
+        return {
+          success: false,
+          error: "Esta sucursal tiene datos asociados (inventario, movimientos de stock, etc.) y no se puede eliminar."
+        };
+      }
+
+      const deviceId = await getDeviceId();
+      const payload = {
+        id: sucursalId,
+        tenant_id: tenantId,
+        activa: false,
+        updated_at: new Date().toISOString()
+      };
+
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "sucursales",
+        rowId: sucursalId,
+        op: "update",
+        payload,
+        deviceId
+      });
+
+      await refreshSucursales();
+      return { success: true };
+    } catch (err) {
+      console.error("Error deleting sucursal:", err);
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : "Error al eliminar la sucursal."
+      };
+    }
+  }
+
   // Reload sucursales when tenant or authentication changes
   useEffect(() => {
     void refreshSucursales();
@@ -139,6 +209,7 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
         loading,
         refreshSucursales,
         addSucursal,
+        deleteSucursal,
       }}
     >
       {children}

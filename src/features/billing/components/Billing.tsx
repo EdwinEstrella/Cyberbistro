@@ -7,6 +7,7 @@ import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { cacheLogoFromUrl } from "../../../shared/lib/logoCache";
+import { useSucursal } from "../../../app/context/SucursalContext";
 // useTheme removed
 import {
   Dialog,
@@ -222,6 +223,7 @@ function ymdToLongLabel(ymd: string): string {
 
 export function Billing() {
   const { tenantId, loading: authLoading, rol } = useAuth();
+  const { activeSucursalId } = useSucursal();
   // theme was declared but never read
   const [view, setView] = useState<BillingView>("facturas");
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -261,32 +263,36 @@ const loadBillingData = useCallback(async () => {
 
     const [invoicesRes, cyclesRes, expensesRes, expenseCategoriesRes] = await Promise.all([
       useLocalInvoices
-        ? { data: await readLocalMirror<Invoice>(tenantId, "facturas").then(r => r.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())), error: null }
+        ? { data: await readLocalMirror<Invoice & { sucursal_id?: string | null }>(tenantId, "facturas").then(r => r.filter(f => f.sucursal_id === activeSucursalId).sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())), error: null }
         : insforgeClient.database
             .from("facturas")
             .select("*")
             .eq("tenant_id", tenantId)
+            .eq("sucursal_id", activeSucursalId)
             .order("created_at", { ascending: false }),
       useLocalCycles
-        ? { data: await readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos").then(r => r.sort((a, b) => (b.cycle_number || 0) - (a.cycle_number || 0))), error: null }
+        ? { data: await readLocalMirror<CierreOperativoRow & { sucursal_id?: string | null }>(tenantId, "cierres_operativos").then(r => r.filter(c => c.sucursal_id === activeSucursalId).sort((a, b) => (b.cycle_number || 0) - (a.cycle_number || 0))), error: null }
         : insforgeClient.database
             .from("cierres_operativos")
             .select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at")
             .eq("tenant_id", tenantId)
+            .eq("sucursal_id", activeSucursalId)
             .order("opened_at", { ascending: false }),
       useLocalExpenses
-        ? { data: await readLocalMirror<Expense>(tenantId, "gastos").then(r => r.sort((a, b) => new Date(b.fecha_gasto || 0).getTime() - new Date(a.fecha_gasto || 0).getTime())), error: null }
+        ? { data: await readLocalMirror<Expense & { sucursal_id?: string | null }>(tenantId, "gastos").then(r => r.filter(g => g.sucursal_id === activeSucursalId).sort((a, b) => new Date(b.fecha_gasto || 0).getTime() - new Date(a.fecha_gasto || 0).getTime())), error: null }
         : insforgeClient.database
             .from("gastos")
             .select("*")
             .eq("tenant_id", tenantId)
+            .eq("sucursal_id", activeSucursalId)
             .order("fecha_gasto", { ascending: false }),
       useLocalExpenseCategories
-        ? { data: await readLocalMirror<ExpenseCategory>(tenantId, "gasto_categorias"), error: null }
+        ? { data: await readLocalMirror<ExpenseCategory & { sucursal_id?: string | null }>(tenantId, "gasto_categorias").then(r => r.filter(c => !c.sucursal_id || c.sucursal_id === activeSucursalId)), error: null }
         : insforgeClient.database
             .from("gasto_categorias")
             .select("id, nombre, color")
-            .eq("tenant_id", tenantId),
+            .eq("tenant_id", tenantId)
+            .or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`),
     ]);
 
     if (!invoicesRes.error && invoicesRes.data) {
@@ -316,7 +322,7 @@ const loadBillingData = useCallback(async () => {
 
     setCurrentPage(1);
     setLoading(false);
-  }, [tenantId]);
+  }, [tenantId, activeSucursalId]);
 
   useEffect(() => {
     if (authLoading) return;

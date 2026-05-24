@@ -24,7 +24,7 @@ export function TitleBar({
   const { theme, toggleTheme } = useTheme();
   
   const { plan, isAuthenticated } = useAuth();
-  const { activeSucursalId, setActiveSucursalId, sucursales } = useSucursal();
+  const { activeSucursalId, setActiveSucursalId, sucursales, deleteSucursal } = useSucursal();
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const activeSucursal = sucursales.find(s => s.id === activeSucursalId);
@@ -202,26 +202,54 @@ export function TitleBar({
                     {sucursales.map((suc) => {
                       const isSelected = suc.id === activeSucursalId;
                       return (
-                        <button
+                        <div
                           key={suc.id}
-                          type="button"
-                          onClick={() => {
-                            setActiveSucursalId(suc.id);
-                            setDropdownOpen(false);
-                          }}
-                          className={`flex items-center justify-between w-full text-left px-2.5 py-1.5 rounded-[6px] font-['Space_Grotesk',sans-serif] text-[11px] transition-colors cursor-pointer border-none ${
-                            isSelected
-                              ? "bg-[#ff906d]/10 text-[#ff906d] font-bold"
-                              : "bg-transparent text-[#adaaaa] hover:bg-white/5 hover:text-white"
-                          }`}
+                          className="flex items-center justify-between w-full rounded-[6px] transition-colors hover:bg-white/5 group"
                         >
-                          <span>{suc.nombre}</span>
-                          {isSelected && (
-                            <svg className="size-[12px] text-[#ff906d] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                            </svg>
-                          )}
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveSucursalId(suc.id);
+                              setDropdownOpen(false);
+                            }}
+                            className={`flex-1 text-left px-2.5 py-1.5 font-['Space_Grotesk',sans-serif] text-[11px] transition-colors cursor-pointer border-none bg-transparent ${
+                              isSelected
+                                ? "text-[#ff906d] font-bold"
+                                : "text-[#adaaaa] group-hover:text-white"
+                            }`}
+                          >
+                            {suc.nombre}
+                          </button>
+                          
+                          <div className="flex items-center pr-2">
+                            {isSelected && (
+                              <svg className="size-[12px] text-[#ff906d] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                            
+                            {!isSelected && sucursales.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  if (confirm(`¿Estás seguro de que querés eliminar la sucursal "${suc.nombre}"?`)) {
+                                    const res = await deleteSucursal(suc.id);
+                                    if (!res.success) {
+                                      alert(res.error);
+                                    }
+                                  }
+                                }}
+                                className="opacity-0 group-hover:opacity-100 flex items-center justify-center size-5 rounded hover:bg-red-500/20 text-[#adaaaa] hover:text-red-400 transition-all border-none bg-transparent cursor-pointer"
+                                title="Eliminar Sucursal"
+                              >
+                                <svg className="size-[12px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       );
                     })}
                   </div>

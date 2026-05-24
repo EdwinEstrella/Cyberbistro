@@ -1986,3 +1986,48 @@ export async function ensureDefaultSucursal(tenantId: string): Promise<void> {
     db.close();
   }
 }
+
+export async function checkSucursalHasData(tenantId: string, sucursalId: string): Promise<boolean> {
+  const db = await openLocalFirstDb(tenantId);
+  try {
+    const tablesToCheck: LocalFirstMirrorTable[] = [
+      "productos_inventario",
+      "inventario_movimientos",
+      "produccion_cocina"
+    ];
+
+    for (const table of tablesToCheck) {
+      if (!db.objectStoreNames.contains(table)) continue;
+
+      const hasData = await new Promise<boolean>((resolve, reject) => {
+        const tx = db.transaction(table, "readonly");
+        const store = tx.objectStore(table);
+        const req = store.openCursor();
+        let found = false;
+
+        req.onsuccess = () => {
+          const cursor = req.result;
+          if (cursor) {
+            const row = cursor.value as Record<string, unknown>;
+            if (row.sucursal_id === sucursalId) {
+              found = true;
+              resolve(true);
+              return;
+            }
+            cursor.continue();
+          } else {
+            resolve(found);
+          }
+        };
+        req.onerror = () => reject(req.error);
+      });
+
+      if (hasData) {
+        return true;
+      }
+    }
+    return false;
+  } finally {
+    db.close();
+  }
+}

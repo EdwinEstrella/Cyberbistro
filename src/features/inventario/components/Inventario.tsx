@@ -4,6 +4,7 @@ import { Plus, RefreshCw, Layers, ClipboardList, Flame, Trash2, ArrowUpDown } fr
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
+import { useSucursal } from "../../../app/context/SucursalContext";
 
 interface InsumoRow {
   id: string;
@@ -83,6 +84,7 @@ function formatDateTime(iso: string): string {
 
 export function Inventario() {
   const { tenantId, user, plan, loading: authLoading } = useAuth();
+  const { activeSucursalId } = useSucursal();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -161,11 +163,11 @@ export function Inventario() {
 
       const [insumosData, movsData, recetasData, platosData, prodData] = await Promise.all([
         useLocalInsumos
-          ? readLocalMirror<InsumoRow>(tenantId, "productos_inventario")
-          : insforgeClient.database.from("productos_inventario").select("*").eq("tenant_id", tenantId).eq("activo", true).order("nombre", { ascending: true }).then(r => r.data ?? []),
+          ? readLocalMirror<InsumoRow>(tenantId, "productos_inventario").then(rows => rows.filter(r => r.sucursal_id === activeSucursalId))
+          : insforgeClient.database.from("productos_inventario").select("*").eq("tenant_id", tenantId).eq("sucursal_id", activeSucursalId).eq("activo", true).order("nombre", { ascending: true }).then(r => r.data ?? []),
         useLocalMovs
-          ? readLocalMirror<MovimientoRow>(tenantId, "inventario_movimientos")
-          : insforgeClient.database.from("inventario_movimientos").select("*").eq("tenant_id", tenantId).order("fecha", { ascending: false }).limit(60).then(r => r.data ?? []),
+          ? readLocalMirror<MovimientoRow>(tenantId, "inventario_movimientos").then(rows => rows.filter(r => r.sucursal_id === activeSucursalId))
+          : insforgeClient.database.from("inventario_movimientos").select("*").eq("tenant_id", tenantId).eq("sucursal_id", activeSucursalId).order("fecha", { ascending: false }).limit(60).then(r => r.data ?? []),
         useLocalRecetas
           ? readLocalMirror<RecetaRow>(tenantId, "recetas")
           : insforgeClient.database.from("recetas").select("*").eq("tenant_id", tenantId).then(r => r.data ?? []),
@@ -173,8 +175,8 @@ export function Inventario() {
           ? readLocalMirror<PlatoRow>(tenantId, "platos")
           : insforgeClient.database.from("platos").select("id, nombre, categoria, precio").eq("tenant_id", tenantId).then(r => r.data ?? []),
         useLocalProd
-          ? readLocalMirror<ProduccionRow>(tenantId, "produccion_cocina")
-          : insforgeClient.database.from("produccion_cocina").select("*").eq("tenant_id", tenantId).order("fecha", { ascending: false }).limit(40).then(r => r.data ?? []),
+          ? readLocalMirror<ProduccionRow>(tenantId, "produccion_cocina").then(rows => rows.filter(r => r.sucursal_id === activeSucursalId))
+          : insforgeClient.database.from("produccion_cocina").select("*").eq("tenant_id", tenantId).eq("sucursal_id", activeSucursalId).order("fecha", { ascending: false }).limit(40).then(r => r.data ?? []),
       ]);
 
       setInsumos(useLocalInsumos ? (insumosData as InsumoRow[]).filter(i => i.activo) : (insumosData as InsumoRow[]));
@@ -191,7 +193,7 @@ export function Inventario() {
     } finally {
       setLoading(false);
     }
-  }, [tenantId]);
+  }, [tenantId, activeSucursalId]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -227,7 +229,7 @@ export function Inventario() {
       const payload = {
         id,
         tenant_id: tenantId,
-        sucursal_id: null,
+        sucursal_id: activeSucursalId,
         nombre,
         categoria: insumoForm.categoria,
         unidad_base: insumoForm.unidad_base,
@@ -257,7 +259,7 @@ export function Inventario() {
           payload: {
             id: movId,
             tenant_id: tenantId,
-            sucursal_id: null,
+            sucursal_id: activeSucursalId,
             producto_id: id,
             tipo: "ajuste",
             cantidad: stock,
@@ -348,7 +350,7 @@ export function Inventario() {
         payload: {
           id: movId,
           tenant_id: tenantId,
-          sucursal_id: null,
+          sucursal_id: activeSucursalId,
           producto_id,
           tipo,
           cantidad: cantNum,
@@ -503,7 +505,7 @@ export function Inventario() {
         payload: {
           id: prodId,
           tenant_id: tenantId,
-          sucursal_id: null,
+          sucursal_id: activeSucursalId,
           fecha: new Date().toISOString(),
           area,
           producto_id,
@@ -523,7 +525,7 @@ export function Inventario() {
         payload: {
           id: movId,
           tenant_id: tenantId,
-          sucursal_id: null,
+          sucursal_id: activeSucursalId,
           producto_id,
           tipo: "consumo",
           cantidad: cantNum,

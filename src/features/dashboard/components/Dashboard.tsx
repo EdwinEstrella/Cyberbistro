@@ -2,21 +2,24 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useLocation } from "react-router";
 import svgPaths from "../../../imports/svg-qgatbhef3k";
 import { useVentaCartSearch } from "../../../app/context/VentaCartSearchContext";
+import { useSucursal } from "../../../app/context/SucursalContext";
 
-// Checks if there is an open operational cycle for the tenant (any business day)
-async function hasOpenCycle(tenantId: string): Promise<boolean> {
+// Checks if there is an open operational cycle for the tenant and sucursal
+async function hasOpenCycle(tenantId: string, sucursalId: string | null): Promise<boolean> {
+  if (!sucursalId) return false;
   try {
     const snapshot = await getLocalFirstStatusSnapshot(tenantId);
     const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
     if (localMode) {
-      const cycles = await readLocalMirror<{ id: string; closed_at: string | null }>(tenantId, "cierres_operativos");
-      return cycles.some(c => !c.closed_at);
+      const cycles = await readLocalMirror<{ id: string; closed_at: string | null; sucursal_id?: string | null }>(tenantId, "cierres_operativos");
+      return cycles.some(c => !c.closed_at && c.sucursal_id === sucursalId);
     }
   } catch { /* fall through to online */ }
   const { data, error } = await insforgeClient.database
     .from("cierres_operativos")
     .select("id")
     .eq("tenant_id", tenantId)
+    .eq("sucursal_id", sucursalId)
     .is("closed_at", null);
   if (error) {
     console.warn("Error checking open cycle:", error);
@@ -64,6 +67,7 @@ interface Plato {
   categoria: string;
   disponible: boolean;
   va_a_cocina: boolean;
+  sucursal_id?: string | null;
 }
 
 interface MenuCategoryRow {
@@ -72,6 +76,7 @@ interface MenuCategoryRow {
   nombre: string;
   color: string;
   sort_order: number;
+  sucursal_id?: string | null;
 }
 
 interface MesaBasic {
@@ -105,6 +110,7 @@ interface Consumo {
   factura_id: string | null;
   created_at: string;
   created_by_auth_user_id?: string | null;
+  sucursal_id?: string | null;
 }
 
 const ITBIS = 0.18;
@@ -112,6 +118,7 @@ const ITBIS = 0.18;
 export function Dashboard() {
   const { query: cartSearchQuery } = useVentaCartSearch();
   const { tenantId, user, loading: authLoading } = useAuth();
+  const { activeSucursalId } = useSucursal();
   const location = useLocation();
   const { theme } = useTheme();
   const { formatMoney, currencySymbol } = useTenantCurrency();
@@ -176,16 +183,16 @@ export function Dashboard() {
     // Set initial to empty since it depends on the database
     setMesas([]);
     setMenuCategories([]);
-
-    // Esperar a que auth termine y tengamos tenant_id antes de cargar datos
-    if (authLoading || !tenantId) return;
-
+ 
+    // Esperar a que auth termine, tengamos tenant_id y activeSucursalId antes de cargar datos
+    if (authLoading || !tenantId || !activeSucursalId) return;
+ 
     let cancelled = false;
-
+ 
     const load = async () => {
       // Garantizar que la sesión sea válida antes de consultar
       await ensureAuthSessionFresh();
-
+ 
       const snapshot = await getLocalFirstStatusSnapshot(tenantId);
       const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
       const outbox = localMode ? await readLocalOutbox(tenantId).catch(() => []) : [];
@@ -195,51 +202,55 @@ export function Dashboard() {
       );
       const useLocalRead = await shouldReadLocalFirst(tenantId, ["platos", "menu_categories", "mesas_estado"]);
       const useLocalOpenConsumos = await shouldReadLocalFirst(tenantId, ["consumos"]) || hasPendingConsumos;
-
+ 
       const [platosData, categoriasData, estadosData, consumosData, cantidadMesas] = await Promise.all([
         useLocalRead
-          ? readLocalMirror<Plato>(tenantId, "platos")
+          ? readLocalMirror<Plato>(tenantId, "platos").then(rows => rows.filter(r => r.sucursal_id === activeSucursalId))
           : insforgeClient.database
               .from("platos")
               .select("*")
               .eq("tenant_id", tenantId)
+              .eq("sucursal_id", activeSucursalId)
               .eq("disponible", true)
               .order("categoria")
               .then(r => r.data ?? []),
         useLocalRead
-          ? readLocalMirror<MenuCategoryRow>(tenantId, "menu_categories")
+          ? readLocalMirror<MenuCategoryRow>(tenantId, "menu_categories").then(rows => rows.filter(r => r.sucursal_id === activeSucursalId))
           : insforgeClient.database
               .from("menu_categories")
               .select("id, tenant_id, nombre, color, sort_order")
               .eq("tenant_id", tenantId)
+              .eq("sucursal_id", activeSucursalId)
               .order("sort_order")
               .order("nombre")
               .then(r => r.data ?? []),
         useLocalRead
-          ? readLocalMirror<any>(tenantId, "mesas_estado")
+          ? readLocalMirror<any>(tenantId, "mesas_estado").then(rows => rows.filter(r => r.sucursal_id === activeSucursalId))
           : insforgeClient.database
               .from("mesas_estado")
               .select("*")
               .eq("tenant_id", tenantId)
+              .eq("sucursal_id", activeSucursalId)
               .then(r => r.data ?? []),
         useLocalOpenConsumos
-          ? readLocalMirror<{ mesa_numero: number | null; subtotal: number; estado?: string }>(tenantId, "consumos")
-              .then(rows => rows.filter(row => row.estado !== "pagado"))
+          ? readLocalMirror<{ mesa_numero: number | null; subtotal: number; estado?: string; sucursal_id?: string | null }>(tenantId, "consumos")
+              .then(rows => rows.filter(row => row.estado !== "pagado" && row.sucursal_id === activeSucursalId))
           : insforgeClient.database
               .from("consumos")
               .select("mesa_numero, subtotal")
               .eq("tenant_id", tenantId)
+              .eq("sucursal_id", activeSucursalId)
               .neq("estado", "pagado")
               .then(r => r.data ?? []),
         loadCantidadMesas(tenantId),
       ]);
-
+ 
       if (cancelled) return;
-
+ 
       const availablePlatos = (platosData as Plato[]).filter(p => p.disponible);
       setPlatos(availablePlatos);
       setMenuCategories(categoriasData as MenuCategoryRow[]);
-
+ 
       const configArray = generateMesasConfig(cantidadMesas);
       let currentMesas: MesaBasic[] = configArray.map((config) => ({
         id: config.id.toString(),
@@ -305,7 +316,7 @@ export function Dashboard() {
 
     load().catch(console.error);
     return () => { cancelled = true; };
-  }, [authLoading, tenantId]);
+  }, [authLoading, tenantId, activeSucursalId]);
 
   useEffect(() => {
     if (mesas.length > 0 && location.state && (location.state as any).selectMesaNumero) {
@@ -400,7 +411,7 @@ export function Dashboard() {
   }
 
   async function syncMesaStateFromOpenAccount(mesaId: string, mesaNumero: number) {
-    if (!tenantId) return;
+    if (!tenantId || !activeSucursalId) return;
     let useLocalConsumos = !navigator.onLine;
     if (!useLocalConsumos) {
       const outbox = await readLocalOutbox(tenantId).catch(() => []);
@@ -412,7 +423,7 @@ export function Dashboard() {
 
     if (useLocalConsumos) {
       const rows = (await readLocalMirror<Consumo>(tenantId, "consumos"))
-        .filter((row) => Number(row.mesa_numero) === mesaNumero && row.estado !== "pagado");
+        .filter((row) => Number(row.mesa_numero) === mesaNumero && row.estado !== "pagado" && row.sucursal_id === activeSucursalId);
       const deuda_pendiente = rows.reduce((s, r) => s + Number(r.subtotal), 0);
       const items_pendientes = rows.length;
       const estado = items_pendientes > 0 ? "ocupada" : "libre";
@@ -427,6 +438,7 @@ export function Dashboard() {
       .from("consumos")
       .select("subtotal")
       .eq("tenant_id", tenantId)
+      .eq("sucursal_id", activeSucursalId)
       .eq("mesa_numero", mesaNumero)
       .neq("estado", "pagado");
 
@@ -440,6 +452,7 @@ export function Dashboard() {
       id: parseInt(mesaId, 10),
       estado,
       tenant_id: tenantId,
+      sucursal_id: activeSucursalId,
       updated_at: new Date().toISOString(),
     };
     await writePosMutationLocalFirst({
@@ -462,7 +475,7 @@ export function Dashboard() {
   // Cargar consumos de una mesa (cuenta abierta en POS)
   const loadTableConsumption = useCallback(
     async (mesaNumero: number): Promise<Consumo[]> => {
-      if (!tenantId) return [];
+      if (!tenantId || !activeSucursalId) return [];
       try {
         const outbox = await readLocalOutbox(tenantId);
         const hasPendingMesaConsumos = outbox.some((entry) => {
@@ -474,24 +487,25 @@ export function Dashboard() {
         if (!navigator.onLine || hasPendingMesaConsumos) {
           const rows = await readLocalMirror<Consumo>(tenantId, "consumos");
           return rows
-            .filter((row) => Number(row.mesa_numero) === mesaNumero && row.estado !== "pagado")
+            .filter((row) => Number(row.mesa_numero) === mesaNumero && row.estado !== "pagado" && row.sucursal_id === activeSucursalId)
             .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
         }
       } catch {
         // Si IndexedDB no está disponible, caemos al servidor.
       }
       const { data, error } = await insforgeClient.database
-        .from("consumos")
-        .select("*")
-        .eq("tenant_id", tenantId)
-        .eq("mesa_numero", mesaNumero)
-        .neq("estado", "pagado")
-        .order("created_at", { ascending: true });
+         .from("consumos")
+         .select("*")
+         .eq("tenant_id", tenantId)
+         .eq("sucursal_id", activeSucursalId)
+         .eq("mesa_numero", mesaNumero)
+         .neq("estado", "pagado")
+         .order("created_at", { ascending: true });
 
       if (error || !data) return [];
       return data as Consumo[];
     },
-    [tenantId]
+    [tenantId, activeSucursalId]
   );
 
   useEffect(() => {
@@ -533,7 +547,7 @@ export function Dashboard() {
   }
 
   async function deleteConsumo(consumoId: string) {
-    if (!tenantId || !selectedMesa) return;
+    if (!tenantId || !selectedMesa || !activeSucursalId) return;
     const consumo = mesaConsumos.find((c) => c.id === consumoId);
     if (!consumo) return;
 
@@ -553,6 +567,7 @@ export function Dashboard() {
         payload: {
           id: consumoId,
           tenant_id: tenantId,
+          sucursal_id: activeSucursalId,
           mesa_numero: consumo.mesa_numero,
           comanda_id: consumo.comanda_id,
           created_by_auth_user_id: consumo.created_by_auth_user_id ?? null,
@@ -628,7 +643,7 @@ export function Dashboard() {
 
 
   async function sendToKitchen() {
-    if (!selectedMesa || cart.length === 0) return;
+    if (!selectedMesa || cart.length === 0 || !activeSucursalId) return;
     if (!tenantId) {
       alert("No se pudo enviar: sesión sin negocio asignado.");
       return;
@@ -648,19 +663,20 @@ export function Dashboard() {
       let cocinaActiva = true;
       try {
         if (!navigator.onLine) {
-          const localCocina = await readLocalMirror<{ activa?: boolean }>(tid, "cocina_estado");
-          cocinaActiva = localCocina[0]?.activa !== false;
+          const localCocina = await readLocalMirror<{ activa?: boolean; sucursal_id?: string | null }>(tid, "cocina_estado");
+          cocinaActiva = localCocina.find(r => r.sucursal_id === activeSucursalId)?.activa !== false;
         } else {
           const { data: estadoData } = await insforgeClient.database
             .from("cocina_estado")
             .select("activa")
             .eq("tenant_id", tid)
+            .eq("sucursal_id", activeSucursalId)
             .limit(1);
           cocinaActiva = estadoData?.[0]?.activa !== false;
         }
       } catch {
-        const localCocina = await readLocalMirror<{ activa?: boolean }>(tid, "cocina_estado").catch(() => []);
-        cocinaActiva = localCocina[0]?.activa !== false;
+        const localCocina = await readLocalMirror<{ activa?: boolean; sucursal_id?: string | null }>(tid, "cocina_estado").catch(() => []);
+        cocinaActiva = localCocina.find(r => r.sucursal_id === activeSucursalId)?.activa !== false;
       }
 
       if (!cocinaActiva) {
@@ -684,6 +700,7 @@ export function Dashboard() {
         items,
         notas: null,
         tenant_id: tid,
+        sucursal_id: activeSucursalId,
         creado_por: user?.id ?? null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -757,9 +774,9 @@ export function Dashboard() {
                   precio?: number;
                   categoria?: string;
                 }>) || [],
-              notas: data.notas,
+              notes: (data as any).notas || null,
               created_at: data.created_at,
-            },
+            } as any,
             paperWidthMm
           );
           const printRes = await printThermalHtml(comandaHtml);
@@ -776,6 +793,7 @@ export function Dashboard() {
         id: crypto.randomUUID(),
         mesa_numero: selectedMesa.numero,
         tenant_id: tid,
+        sucursal_id: activeSucursalId,
         comanda_id: comandaId,
         plato_id: i.plato.id,
         nombre: i.plato.nombre,
@@ -792,6 +810,7 @@ export function Dashboard() {
         id: crypto.randomUUID(),
         mesa_numero: selectedMesa.numero,
         tenant_id: tid,
+        sucursal_id: activeSucursalId,
         comanda_id: null,
         plato_id: i.plato.id,
         nombre: i.plato.nombre,
@@ -836,7 +855,7 @@ export function Dashboard() {
       alert("No hay negocio activo.");
       return;
     }
-    const cycleOpen = await hasOpenCycle(tenantId);
+    const cycleOpen = await hasOpenCycle(tenantId, activeSucursalId);
     if (!cycleOpen) {
       alert("No hay un ciclo operativo abierto. Inicie un ciclo antes de cobrar.");
       return;
@@ -880,7 +899,7 @@ export function Dashboard() {
       alert("Debes indicar el RNC del cliente para emitir una factura B01.");
       return;
     }
-    const cycleOpen = await hasOpenCycle(tenantId);
+    const cycleOpen = await hasOpenCycle(tenantId, activeSucursalId);
     if (!cycleOpen) {
       alert("No hay un ciclo operativo abierto. Inicie un ciclo antes de cobrar.");
       return;
@@ -899,6 +918,8 @@ export function Dashboard() {
       tipo: item.plato.va_a_cocina !== false ? "cocina" : "directo",
       estado: "pagado" as const,
       factura_id: null,
+      tenant_id: tenantId,
+      sucursal_id: activeSucursalId,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }));
@@ -973,6 +994,7 @@ export function Dashboard() {
     const facturaData: Record<string, unknown> = {
       id: localFacturaId,
       tenant_id: tenantId,
+      sucursal_id: activeSucursalId,
       numero_factura: numeroFactura,
       metodo_pago: paymentMethod,
       estado: "pagada" as const,
