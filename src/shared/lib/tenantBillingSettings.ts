@@ -1,4 +1,6 @@
 import { insforgeClient } from "./insforge";
+import { isCloudAvailabilityFailure, isDesktopCloudUnavailable, recordCloudFailure, recordCloudSuccess } from "./cloudAvailability";
+import { readLocalMirror } from "./localFirst";
 import { DEFAULT_NCF_B_CODE, isNcfBCode, type NcfBCode } from "./ncf";
 
 export interface TenantBillingSettingsRow {
@@ -28,9 +30,23 @@ export function normalizeTenantBillingSettings(
   };
 }
 
+async function loadLocalTenantBillingSettings(tenantId: string): Promise<TenantBillingSettings | null> {
+  try {
+    const tenants = await readLocalMirror<TenantBillingSettingsRow & { id?: string }>(tenantId, "tenants");
+    const tenant = tenants.find((row) => row.id === tenantId);
+    return tenant ? normalizeTenantBillingSettings(tenant) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function loadTenantBillingSettings(
   tenantId: string
 ): Promise<TenantBillingSettings | null> {
+  if (await isDesktopCloudUnavailable()) {
+    return loadLocalTenantBillingSettings(tenantId);
+  }
+
   let res = await insforgeClient.database
     .from("tenants")
     .select(TENANT_BILLING_SETTINGS_SELECT)
@@ -45,6 +61,12 @@ export async function loadTenantBillingSettings(
       .maybeSingle();
   }
 
-  if (res.error || !res.data) return null;
+  if (res.error || !res.data) {
+    if (res.error && isCloudAvailabilityFailure(res.error)) recordCloudFailure();
+    return await isDesktopCloudUnavailable()
+      ? loadLocalTenantBillingSettings(tenantId)
+      : null;
+  }
+  recordCloudSuccess();
   return normalizeTenantBillingSettings(res.data as TenantBillingSettingsRow);
 }

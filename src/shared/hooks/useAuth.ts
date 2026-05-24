@@ -10,6 +10,7 @@ import {
 } from '../lib/tenantSessionCache';
 import { resolveTenantAccessForSession } from '../lib/resolveTenantUserFromAuth';
 import { getLocalDeviceSession, setLastTenantId } from '../lib/localFirst';
+import { isDesktopCloudUnavailable } from '../lib/cloudAvailability';
 
 interface TenantUser {
   tenant_id: string;
@@ -518,6 +519,10 @@ function ensureGlobalListeners(): void {
 export async function ensureAuthSessionFresh(): Promise<void> {
   if (!navigator.onLine) {
     logAuth('ensureAuthSessionFresh:skipped-offline');
+    return;
+  }
+  if (await isDesktopCloudUnavailable()) {
+    logAuth('ensureAuthSessionFresh:skipped-cloud-unavailable');
     return;
   }
   if (loadUserDataInFlight) {
