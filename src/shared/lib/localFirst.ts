@@ -337,7 +337,7 @@ export interface OutboxConflictGuardrail {
 }
 
 const PAGE_SIZE = 250;
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const SYNCING_STALE_MS = 5 * 60 * 1000;
 const FULL_REFRESH_ON_SYNC_TABLES = [
   "tenant_users",
@@ -1920,6 +1920,21 @@ async function processInvoiceInventoryDeduction(
 }
 
 export async function ensureDefaultSucursal(tenantId: string): Promise<void> {
+  if (navigator.onLine) {
+    try {
+      const res = await insforgeClient.database
+        .from("sucursales")
+        .select("id")
+        .eq("tenant_id", tenantId);
+      if (res.data && res.data.length > 0) {
+        console.info("Server already has sucursales. Skipping default sucursal creation.");
+        return;
+      }
+    } catch (err) {
+      console.warn("Failed to check sucursales on server:", err);
+    }
+  }
+
   const db = await openLocalFirstDb(tenantId);
   try {
     const sucursales = await new Promise<any[]>((resolve, reject) => {

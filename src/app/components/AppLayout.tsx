@@ -162,7 +162,7 @@ function SidebarCustomIcon({ name }: { name: "gastos" | "cocina" | "entregas" | 
 export function AppLayout() {
   const navigate = useNavigate();
   const routerLocation = useLocation();
-  const { rol, signOut, tenantId, plan } = useAuth();
+  const { rol, signOut, tenantId, plan, loading } = useAuth();
   const { hasUpdateBellAlert, showUpdateBellToast } = useAppUpdate();
   const localFirst = useLocalFirstBootstrap(tenantId);
   const [cocinaActiva, setCocinaActiva] = useState(true);
@@ -317,7 +317,7 @@ export function AppLayout() {
                   onMouseEnter={() => prefetchRoute(item.path)}
                   onFocus={() => prefetchRoute(item.path)}
                   onClick={() => {
-                    if (item.path === "/inventario" && (!plan || plan === "basico")) {
+                    if (item.path === "/inventario" && !loading && (!plan || plan === "basico")) {
                       setUpsellType("inventario");
                       return;
                     }
@@ -350,7 +350,7 @@ export function AppLayout() {
                   >
                     {item.label}
                   </span>
-                  {item.path === "/inventario" && (!plan || plan === "basico") && (
+                  {item.path === "/inventario" && !loading && (!plan || plan === "basico") && (
                     <span className="ml-auto flex items-center gap-1.5 text-[9px] text-[#ff906d] bg-[rgba(255,144,109,0.12)] border border-[rgba(255,144,109,0.3)] px-2 py-0.5 rounded font-['Space_Grotesk',sans-serif] font-bold uppercase tracking-[0.5px]">
                       <svg className="size-[10px] text-[#ff906d] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                         <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
