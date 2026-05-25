@@ -66,14 +66,34 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
       const useLocal = await shouldReadLocalFirst(tenantId, ["sucursales"]);
 
       if (useLocal) {
-        data = await readLocalMirror<any>(tenantId, "sucursales");
+        data = await readLocalMirror<any>(tenantId, "sucursales").catch(() => []);
+        if (data.length === 0 && navigator.onLine) {
+          try {
+            const res = await insforgeClient.database
+              .from("sucursales")
+              .select("*")
+              .eq("tenant_id", tenantId)
+              .eq("activa", true);
+            if (res.error) console.warn("Fallback to online sucursales error:", res.error);
+            if (res.data && res.data.length > 0) {
+              data = res.data;
+            }
+          } catch (e) {
+            console.warn("Fallback to online sucursales failed", e);
+          }
+        }
       } else {
         const res = await insforgeClient.database
           .from("sucursales")
           .select("*")
           .eq("tenant_id", tenantId)
           .eq("activa", true);
+        if (res.error) console.warn("Online sucursales error:", res.error);
         data = res.data || [];
+        
+        if (data.length === 0) {
+           data = await readLocalMirror<any>(tenantId, "sucursales").catch(() => []);
+        }
       }
 
       const activeList = data.filter((s) => s.activa !== false) as Sucursal[];
