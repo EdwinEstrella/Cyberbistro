@@ -37,6 +37,9 @@ const soporteNavItem = {
   path: "/soporte",
 } as const;
 
+const PLAN_UPGRADE_WHATSAPP_URL =
+  "https://wa.me/18095968986?text=quiero%20subir%20de%20plan%20por%20favor";
+
 const routePrefetchers: Record<string, () => Promise<unknown>> = {
   "/dashboard": () => import("../../features/dashboard"),
   "/tables": () => import("../../features/tables"),
@@ -195,6 +198,10 @@ export function AppLayout() {
     } finally {
       setIsCreatingBranch(false);
     }
+  }
+
+  function requestPlanUpgrade() {
+    window.open(PLAN_UPGRADE_WHATSAPP_URL, "_blank", "noopener,noreferrer");
   }
 
   const isVentaRoute = routerLocation.pathname === "/dashboard";
@@ -356,7 +363,7 @@ export function AppLayout() {
                         <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                         <path d="M7 11V7a5 5 0 0110 0v4" />
                       </svg>
-                      Subir Plan
+                      Solicitar aumento
                     </span>
                   )}
                 </button>
@@ -608,16 +615,11 @@ export function AppLayout() {
                 )}
               </p>
 
-              <div className="bg-[rgba(255,144,109,0.08)] border border-[rgba(255,144,109,0.2)] rounded-[12px] p-3 w-full">
-                <p className="font-['Space_Grotesk',sans-serif] text-[#ff906d] text-[13px] font-bold leading-normal flex items-center justify-center gap-2">
-                  <svg className="size-[16px] text-[#ff906d] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-                    <line x1="12" y1="9" x2="12" y2="13" />
-                    <line x1="12" y1="17" x2="12.01" y2="17" />
-                  </svg>
-                  {plan === "profesional" 
-                    ? "Debés subir al Plan Empresarial. Hablá con el administrador."
-                    : "Debés subir de plan. Hablá con el administrador del sistema."
+              <div className="bg-[rgba(37,211,102,0.08)] border border-[rgba(37,211,102,0.22)] rounded-[12px] p-3 w-full">
+                <p className="font-['Space_Grotesk',sans-serif] text-[#25d366] text-[13px] font-bold leading-normal text-center">
+                  {plan === "profesional"
+                    ? "Solicita el aumento al Plan Empresarial por WhatsApp."
+                    : "Solicita tu aumento de plan por WhatsApp."
                   }
                 </p>
               </div>
@@ -664,14 +666,11 @@ export function AppLayout() {
               <div className="flex flex-col gap-2.5 w-full mt-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setUpsellType(null);
-                    navigate("/ajustes");
-                  }}
-                  className="w-full bg-[#ff906d] py-3 rounded-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[12px] uppercase tracking-[0.5px] cursor-pointer border-none transition-all duration-300 hover:shadow-[0_0_20px_rgba(255,144,109,0.4)] hover:scale-[1.01] active:scale-95"
-                  style={{ backgroundImage: "linear-gradient(172.248deg, rgb(255, 144, 109) 0%, rgb(255, 120, 77) 100%)" }}
+                  onClick={requestPlanUpgrade}
+                  className="w-full bg-[#25d366] py-3 rounded-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#062d1b] text-[12px] uppercase tracking-[0.5px] cursor-pointer border-none transition-all duration-300 hover:shadow-[0_0_20px_rgba(37,211,102,0.35)] hover:scale-[1.01] active:scale-95"
+                  style={{ backgroundImage: "linear-gradient(172.248deg, rgb(37, 211, 102) 0%, rgb(18, 140, 126) 100%)" }}
                 >
-                  Mejorar Plan en Ajustes
+                  Solicitar aumento por WhatsApp
                 </button>
                 
                 <button

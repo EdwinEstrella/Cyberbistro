@@ -6,7 +6,7 @@ import {
   type ReactNode,
 } from "react";
 import { useAuth } from "../../shared/hooks/useAuth";
-import { readLocalMirror, isLocalFirstEnabled, enqueueLocalWrite, getDeviceId } from "../../shared/lib/localFirst";
+import { readLocalMirror, shouldReadLocalFirst, enqueueLocalWrite, getDeviceId } from "../../shared/lib/localFirst";
 import { insforgeClient } from "../../shared/lib/insforge";
 
 export interface Sucursal {
@@ -31,6 +31,7 @@ export type SucursalContextValue = {
 const SucursalContext = createContext<SucursalContextValue | null>(null);
 
 const STORAGE_KEY = "cloudix_active_sucursal_id";
+const scopedStorageKey = (tenantId: string) => `${STORAGE_KEY}:${tenantId}`;
 
 export function SucursalProvider({ children }: { children: ReactNode }) {
   const { tenantId, isAuthenticated } = useAuth();
@@ -41,9 +42,13 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
   // Custom setter that saves to localStorage
   function setActiveSucursalId(id: string | null) {
     setActiveSucursalIdState(id);
+    if (!tenantId) return;
+    const key = scopedStorageKey(tenantId);
     if (id) {
+      localStorage.setItem(key, id);
       localStorage.setItem(STORAGE_KEY, id);
     } else {
+      localStorage.removeItem(key);
       localStorage.removeItem(STORAGE_KEY);
     }
   }
@@ -58,7 +63,7 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
 
     try {
       let data: any[] = [];
-      const useLocal = isLocalFirstEnabled();
+      const useLocal = await shouldReadLocalFirst(tenantId, ["sucursales"]);
 
       if (useLocal) {
         data = await readLocalMirror<any>(tenantId, "sucursales");
@@ -75,7 +80,7 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
       setSucursales(activeList);
 
       // Resolve active sucursal ID
-      const savedId = localStorage.getItem(STORAGE_KEY);
+      const savedId = localStorage.getItem(scopedStorageKey(tenantId));
       const isSavedValid = savedId && activeList.some((s) => s.id === savedId);
 
       if (isSavedValid) {
@@ -84,6 +89,7 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
         // Default to the first sucursal
         const defaultId = activeList[0].id;
         setActiveSucursalIdState(defaultId);
+        localStorage.setItem(scopedStorageKey(tenantId), defaultId);
         localStorage.setItem(STORAGE_KEY, defaultId);
       } else {
         setActiveSucursalIdState(null);
@@ -140,7 +146,12 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const useLocal = isLocalFirstEnabled();
+      const useLocal = await shouldReadLocalFirst(tenantId, [
+        "sucursales",
+        "productos_inventario",
+        "inventario_movimientos",
+        "produccion_cocina",
+      ]);
       let hasData = false;
 
       if (useLocal) {

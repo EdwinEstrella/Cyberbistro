@@ -10,7 +10,6 @@ import {
   formatRoleLabel,
   tenantUserLimitColumnsPresent,
   type ManagedUserRole,
-  type TenantUserLimitConfig,
 } from "../../../shared/lib/tenantUserLimits";
 
 interface TenantUserRow {
@@ -36,6 +35,8 @@ interface TenantRow {
   cajera_user_limit?: number | null;
   cocina_user_limit?: number | null;
   mesero_user_limit?: number | null;
+  sucursal_limit_enabled?: boolean | null;
+  sucursal_limit?: number | null;
   [key: string]: unknown;
 }
 
@@ -45,9 +46,11 @@ type LimitDraft = {
   cajeraUserLimit: string;
   cocinaUserLimit: string;
   meseroUserLimit: string;
+  sucursalLimitEnabled: boolean;
+  sucursalLimit: string;
 };
 
-type LimitDraftNumberField = Exclude<keyof LimitDraft, "userLimitEnabled">;
+type LimitDraftNumberField = Exclude<keyof LimitDraft, "userLimitEnabled" | "sucursalLimitEnabled">;
 
 type TenantCard = {
   tenant: TenantRow;
@@ -58,13 +61,17 @@ type TenantCard = {
 
 const MANAGED_ROLES: ManagedUserRole[] = ["admin", "cajera", "cocina", "mesero"];
 
-function toDraft(config: TenantUserLimitConfig): LimitDraft {
+function toDraft(tenant: TenantRow): LimitDraft {
+  const config = extractTenantUserLimitConfig(tenant);
+
   return {
     userLimitEnabled: config.userLimitEnabled,
     adminUserLimit: "1",
     cajeraUserLimit: config.cajeraUserLimit?.toString() ?? "",
     cocinaUserLimit: config.cocinaUserLimit?.toString() ?? "",
     meseroUserLimit: config.meseroUserLimit?.toString() ?? "",
+    sucursalLimitEnabled: tenant.sucursal_limit_enabled !== false,
+    sucursalLimit: tenant.sucursal_limit?.toString() ?? "",
   };
 }
 
@@ -74,6 +81,14 @@ function parseNullableLimit(value: string): number | null {
   const parsed = Number(trimmed);
   if (!Number.isInteger(parsed) || parsed < 0) {
     throw new Error("Los limites deben ser enteros mayores o iguales a 0.");
+  }
+  return parsed;
+}
+
+function parseNullablePositiveLimit(value: string): number | null {
+  const parsed = parseNullableLimit(value);
+  if (parsed !== null && parsed < 1) {
+    throw new Error("El limite de sucursales debe ser 1 o mayor.");
   }
   return parsed;
 }
@@ -156,7 +171,7 @@ export function SuperAdmin() {
 
     const nextDrafts: Record<string, LimitDraft> = {};
     tenantRows.forEach((tenant) => {
-      nextDrafts[tenant.id] = toDraft(extractTenantUserLimitConfig(tenant));
+      nextDrafts[tenant.id] = toDraft(tenant);
     });
 
     setColumnsReady(tenantRows.length === 0 || tenantRows.some((row) => tenantUserLimitColumnsPresent(row)));
@@ -228,6 +243,8 @@ export function SuperAdmin() {
         cajera_user_limit: parseNullableLimit(draft.cajeraUserLimit),
         cocina_user_limit: parseNullableLimit(draft.cocinaUserLimit),
         mesero_user_limit: parseNullableLimit(draft.meseroUserLimit),
+        sucursal_limit_enabled: draft.sucursalLimitEnabled,
+        sucursal_limit: parseNullablePositiveLimit(draft.sucursalLimit),
       };
 
       const { error: updateError } = await insforgeClient.database
@@ -406,7 +423,7 @@ Esto reactiva el restaurante y todos sus usuarios. Revis? despu?s si quer?s elim
 
   function renderLimitsPanel(card: TenantCard) {
     const { tenant } = card;
-    const draft = drafts[tenant.id] ?? toDraft(extractTenantUserLimitConfig(tenant));
+    const draft = drafts[tenant.id] ?? toDraft(tenant);
 
     return (
       <div className="bg-[#111111] rounded-[16px] border border-[rgba(72,72,71,0.18)] p-5 flex flex-col gap-4">
@@ -456,6 +473,51 @@ Esto reactiva el restaurante y todos sus usuarios. Revis? despu?s si quer?s elim
           {savingPlanId === tenant.id && (
             <span className="font-['Inter',sans-serif] text-[10px] text-[#ff906d]">Actualizando plan...</span>
           )}
+        </div>
+
+        <div className="flex flex-col gap-3 pb-3 border-b border-[rgba(72,72,71,0.12)]">
+          <div className="flex flex-col gap-1">
+            <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[14px] uppercase tracking-[0.5px]">
+              Limite de sucursales
+            </span>
+            <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px] leading-relaxed">
+              Usa el limite del plan por defecto, o ajustalo si el cliente paga sucursales extra.
+            </span>
+          </div>
+
+          <label className="flex items-center justify-between gap-3 bg-[#1a1a1a] rounded-[12px] px-4 py-3 border border-[rgba(72,72,71,0.18)]">
+            <span className="font-['Inter',sans-serif] text-white text-[13px]">Activar control de sucursales</span>
+            <input
+              type="checkbox"
+              checked={draft.sucursalLimitEnabled}
+              onChange={(e) =>
+                setDrafts((prev) => ({
+                  ...prev,
+                  [tenant.id]: {
+                    ...draft,
+                    sucursalLimitEnabled: e.target.checked,
+                  },
+                }))
+              }
+            />
+          </label>
+
+          <input
+            type="number"
+            min="1"
+            value={draft.sucursalLimit}
+            onChange={(e) =>
+              setDrafts((prev) => ({
+                ...prev,
+                [tenant.id]: {
+                  ...draft,
+                  sucursalLimit: e.target.value,
+                },
+              }))
+            }
+            placeholder="Ilimitado"
+            className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-3 py-2 font-['Inter',sans-serif] text-white text-[13px] outline-none"
+          />
         </div>
 
         <div className="flex flex-col gap-1">
@@ -528,7 +590,7 @@ Esto reactiva el restaurante y todos sus usuarios. Revis? despu?s si quer?s elim
 
   function renderTenantDetail(card: TenantCard) {
     const { tenant, users, admins, counts } = card;
-    const draft = drafts[tenant.id] ?? toDraft(extractTenantUserLimitConfig(tenant));
+    const draft = drafts[tenant.id] ?? toDraft(tenant);
     const isBlocked = tenant.activa === false;
 
     return (

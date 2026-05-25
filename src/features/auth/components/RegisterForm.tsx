@@ -249,7 +249,9 @@ export function Register() {
       </div>
 
       {/* Main Card */}
-      <div className="content-stretch flex flex-col gap-3 sm:gap-4 items-start w-full max-w-full sm:max-w-[400px] relative shrink-0 mx-auto">
+      <div className={`content-stretch flex flex-col gap-3 sm:gap-4 items-start w-full max-w-full relative shrink-0 mx-auto transition-all duration-500 ease-in-out ${
+        step === 'plan' ? 'sm:max-w-[850px] md:max-w-[900px]' : 'sm:max-w-[400px]'
+      }`}>
         <div className="absolute bg-[rgba(255,144,109,0.1)] blur-[50px] left-[-96px] rounded-[9999px] size-[256px] top-[-96px]" />
 
         <div className="backdrop-blur-[8px] bg-[rgba(38,38,38,0.6)] relative rounded-[8px] sm:rounded-[12px] shrink-0 w-full">
@@ -438,53 +440,55 @@ export function Register() {
                     Elegí el plan para tu bistro. Podés cambiarlo en cualquier momento desde el panel de Super Admin.
                   </div>
 
-                  <div className="flex flex-col gap-2.5 w-full">
+                  <div className="flex flex-col sm:flex-row gap-3.5 sm:gap-4 w-full items-stretch">
                     {/* Plan Básico */}
                     <div
                       onClick={() => setPlan('basico')}
-                      className={`cursor-pointer rounded-[10px] border p-3.5 transition-all duration-300 relative overflow-clip ${
+                      className={`cursor-pointer rounded-[10px] border p-3.5 transition-all duration-300 relative overflow-clip flex-1 flex flex-col justify-between ${
                         plan === 'basico'
                           ? 'bg-[rgba(132,204,22,0.06)] border-[#84cc16] shadow-[0px_0px_12px_rgba(132,204,22,0.12)]'
                           : 'bg-[rgba(20,20,20,0.4)] border-[rgba(72,72,71,0.22)] hover:border-[rgba(255,144,109,0.25)]'
                       }`}
                     >
-                      <div className="flex justify-between items-start mb-1">
-                        <div>
-                          <h4 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] uppercase tracking-[0.5px]">
-                            Plan Básico
-                          </h4>
-                          <p className="font-['Inter',sans-serif] text-[10px] text-[#adaaaa] mt-0.5">
-                            Ideal para empezar sin rodeos
-                          </p>
+                      <div>
+                        <div className="flex justify-between items-start mb-1 gap-2">
+                          <div>
+                            <h4 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] uppercase tracking-[0.5px]">
+                              Plan Básico
+                            </h4>
+                            <p className="font-['Inter',sans-serif] text-[10px] text-[#adaaaa] mt-0.5">
+                              Ideal para empezar sin rodeos
+                            </p>
+                          </div>
+                          <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#84cc16] text-[12px] whitespace-nowrap">
+                            $40/Mes
+                          </div>
                         </div>
-                        <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#84cc16] text-[12px]">
-                          $40/Mes
-                        </div>
-                      </div>
 
-                      <ul className="flex flex-col gap-1 mt-2.5 pl-0 list-none text-left">
-                        <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-[#adaaaa]">
-                          <span className="text-[#84cc16] text-[11px]">✓</span> 1 Sucursal Única
-                        </li>
-                        <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-[#adaaaa]">
-                          <span className="text-[#84cc16] text-[11px]">✓</span> 5 Usuarios Máximo
-                        </li>
-                        <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-[#adaaaa]">
-                          <span className="text-[#84cc16] text-[11px]">✓</span> Reportes Básicos
-                        </li>
-                        <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-[#555] line-through">
-                          ✗ Múltiples Sucursales
-                        </li>
-                        <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-[#555] line-through">
-                          ✗ Control de Inventario y Recetas
-                        </li>
-                      </ul>
+                        <ul className="flex flex-col gap-1 mt-2.5 pl-0 list-none text-left">
+                          <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-[#adaaaa]">
+                            <span className="text-[#84cc16] text-[11px]">✓</span> 1 Sucursal Única
+                          </li>
+                          <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-[#adaaaa]">
+                            <span className="text-[#84cc16] text-[11px]">✓</span> 5 Usuarios Máximo
+                          </li>
+                          <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-[#adaaaa]">
+                            <span className="text-[#84cc16] text-[11px]">✓</span> Reportes Básicos
+                          </li>
+                          <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-[#555] line-through">
+                            ✗ Múltiples Sucursales
+                          </li>
+                          <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-[#555] line-through">
+                            ✗ Control de Inventario y Recetas
+                          </li>
+                        </ul>
+                      </div>
                     </div>
 
                     {/* Plan Profesional */}
                     <div
                       onClick={() => setPlan('profesional')}
-                      className={`cursor-pointer rounded-[10px] border p-3.5 transition-all duration-300 relative overflow-clip ${
+                      className={`cursor-pointer rounded-[10px] border p-3.5 transition-all duration-300 relative overflow-clip flex-1 flex flex-col justify-between ${
                         plan === 'profesional'
                           ? 'bg-[rgba(59,130,246,0.1)] border-[#3b82f6] shadow-[0px_0px_16px_rgba(59,130,246,0.2)]'
                           : 'bg-[rgba(20,20,20,0.4)] border-[rgba(72,72,71,0.22)] hover:border-[rgba(255,144,109,0.25)]'
@@ -494,94 +498,99 @@ export function Register() {
                         Recomendado
                       </div>
 
-                      <div className="flex justify-between items-start mb-1">
-                        <div>
-                          <h4 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] uppercase tracking-[0.5px] flex items-center gap-1">
-                            Plan Profesional
-                          </h4>
-                          <p className="font-['Inter',sans-serif] text-[10px] text-[#adaaaa] mt-0.5">
-                            Control total y expansión
-                          </p>
+                      <div>
+                        <div className="flex justify-between items-start mb-1 gap-2 pt-2.5 sm:pt-0">
+                          <div>
+                            <h4 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] uppercase tracking-[0.5px] flex items-center gap-1">
+                              Plan Profesional
+                            </h4>
+                            <p className="font-['Inter',sans-serif] text-[10px] text-[#adaaaa] mt-0.5">
+                              Control total y expansión
+                            </p>
+                          </div>
+                          <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#3b82f6] text-[12px] whitespace-nowrap">
+                            $80/Mes
+                          </div>
                         </div>
-                        <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#3b82f6] text-[12px]">
-                          $80/Mes
-                        </div>
-                      </div>
 
-                      <ul className="flex flex-col gap-1 mt-2.5 pl-0 list-none text-left">
-                        <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
-                          <span className="text-[#3b82f6] text-[11px]">✓</span> <b>Hasta 3 Sucursales</b>
-                        </li>
-                        <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
-                          <span className="text-[#3b82f6] text-[11px]">✓</span> <b>Usuarios Ilimitados</b>
-                        </li>
-                        <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
-                          <span className="text-[#3b82f6] text-[11px]">✓</span> <b>Inventario Avanzado y Recetas</b>
-                        </li>
-                        <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-[#adaaaa]">
-                          <span className="text-[#3b82f6] text-[11px]">✓</span> Reportes Avanzados de Cocina
-                        </li>
-                      </ul>
+                        <ul className="flex flex-col gap-1 mt-2.5 pl-0 list-none text-left">
+                          <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
+                            <span className="text-[#3b82f6] text-[11px]">✓</span> <b>Hasta 3 Sucursales</b>
+                          </li>
+                          <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
+                            <span className="text-[#3b82f6] text-[11px]">✓</span> <b>Usuarios Ilimitados</b>
+                          </li>
+                          <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
+                            <span className="text-[#3b82f6] text-[11px]">✓</span> <b>Inventario y Recetas</b>
+                          </li>
+                          <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-[#adaaaa]">
+                            <span className="text-[#3b82f6] text-[11px]">✓</span> Reportes de Cocina
+                          </li>
+                        </ul>
+                      </div>
                     </div>
 
                     {/* Plan Empresarial */}
                     <div
                       onClick={() => setPlan('empresarial')}
-                      className={`cursor-pointer rounded-[10px] border p-3.5 transition-all duration-300 relative overflow-clip ${
+                      className={`cursor-pointer rounded-[10px] border p-3.5 transition-all duration-300 relative overflow-clip flex-1 flex flex-col justify-between ${
                         plan === 'empresarial'
                           ? 'bg-[rgba(139,92,246,0.1)] border-[#8b5cf6] shadow-[0px_0px_16px_rgba(139,92,246,0.2)]'
                           : 'bg-[rgba(20,20,20,0.4)] border-[rgba(72,72,71,0.22)] hover:border-[rgba(255,144,109,0.25)]'
                       }`}
                     >
-                      <div className="flex justify-between items-start mb-1">
-                        <div>
-                          <h4 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] uppercase tracking-[0.5px] flex items-center gap-1">
-                            Plan Empresarial
-                          </h4>
-                          <p className="font-['Inter',sans-serif] text-[10px] text-[#adaaaa] mt-0.5">
-                            Locales ilimitados y soporte
-                          </p>
+                      <div>
+                        <div className="flex justify-between items-start mb-1 gap-2">
+                          <div>
+                            <h4 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] uppercase tracking-[0.5px] flex items-center gap-1">
+                              Plan Empresarial
+                            </h4>
+                            <p className="font-['Inter',sans-serif] text-[10px] text-[#adaaaa] mt-0.5">
+                              Locales ilimitados y soporte
+                            </p>
+                          </div>
+                          <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#a78bfa] text-[12px] whitespace-nowrap">
+                            $150/Mes
+                          </div>
                         </div>
-                        <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#a78bfa] text-[12px]">
-                          $150/Mes
-                        </div>
-                      </div>
 
-                      <ul className="flex flex-col gap-1 mt-2.5 pl-0 list-none text-left">
-                        <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
-                          <span className="text-[#a78bfa] text-[11px]">✓</span> <b>Sucursales Ilimitadas</b>
-                        </li>
-                        <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
-                          <span className="text-[#a78bfa] text-[11px]">✓</span> <b>Integraciones Avanzadas</b>
-                        </li>
-                        <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
-                          <span className="text-[#a78bfa] text-[11px]">✓</span> <b>Soporte 24/7 de Alta Prioridad</b>
-                        </li>
-                        <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
-                          <span className="text-[#a78bfa] text-[11px]">✓</span> Todo el sistema incluido al 100%
-                        </li>
-                      </ul>
+                        <ul className="flex flex-col gap-1 mt-2.5 pl-0 list-none text-left">
+                          <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
+                            <span className="text-[#a78bfa] text-[11px]">✓</span> <b>Sucursales Ilimitadas</b>
+                          </li>
+                          <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
+                            <span className="text-[#a78bfa] text-[11px]">✓</span> <b>Integraciones Avanzadas</b>
+                          </li>
+                          <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
+                            <span className="text-[#a78bfa] text-[11px]">✓</span> <b>Soporte 24/7 Corporativo</b>
+                          </li>
+                          <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
+                            <span className="text-[#a78bfa] text-[11px]">✓</span> Todo al 100% incluido
+                          </li>
+                        </ul>
+                      </div>
                     </div>
                   </div>
 
-                  <button
-                    onClick={handleRegister}
-                    className="flex items-center justify-center py-3 sm:py-3.5 rounded-[8px] sm:rounded-[10px] shadow-[0px_0px_15px_0px_rgba(255,144,109,0.3)] shrink-0 w-full cursor-pointer border-none transition-all duration-300 hover:shadow-[0px_0px_25px_0px_rgba(255,144,109,0.5)] hover:scale-[1.01] active:scale-95 mt-1"
-                    style={{ backgroundImage: "linear-gradient(172.248deg, rgb(255, 144, 109) 0%, rgb(255, 120, 77) 100%)" }}
-                  >
-                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-[12px] text-black text-center tracking-[1.2px] uppercase">
-                      Continuar
-                    </span>
-                  </button>
-
-                  <button
-                    onClick={() => setStep('account')}
-                    className="flex items-center justify-center py-2 sm:py-2.5 rounded-[8px] sm:rounded-[10px] shrink-0 w-full cursor-pointer border-none bg-[#262626] text-[#adaaaa] transition-all duration-300 hover:bg-[#333] active:scale-95"
-                  >
-                    <span className="font-['Inter',sans-serif] font-bold text-[11px] uppercase">
-                      Volver
-                    </span>
-                  </button>
+                  <div className="flex flex-col sm:flex-row gap-3 w-full justify-center mt-3">
+                    <button
+                      onClick={() => setStep('account')}
+                      className="flex items-center justify-center py-3 px-6 rounded-[8px] sm:rounded-[10px] shrink-0 cursor-pointer border-none bg-[#262626] text-[#adaaaa] transition-all duration-300 hover:bg-[#333] active:scale-95 order-2 sm:order-1 sm:w-[150px]"
+                    >
+                      <span className="font-['Inter',sans-serif] font-bold text-[11px] uppercase">
+                        Volver
+                      </span>
+                    </button>
+                    <button
+                      onClick={handleRegister}
+                      className="flex items-center justify-center py-3 px-8 rounded-[8px] sm:rounded-[10px] shadow-[0px_0px_15px_0px_rgba(255,144,109,0.3)] shrink-0 cursor-pointer border-none transition-all duration-300 hover:shadow-[0px_0px_25px_0px_rgba(255,144,109,0.5)] hover:scale-[1.01] active:scale-95 order-1 sm:order-2 sm:flex-1"
+                      style={{ backgroundImage: "linear-gradient(172.248deg, rgb(255, 144, 109) 0%, rgb(255, 120, 77) 100%)" }}
+                    >
+                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-[12px] text-black text-center tracking-[1.2px] uppercase">
+                        Continuar
+                      </span>
+                    </button>
+                  </div>
                 </div>
               )}
 

@@ -118,13 +118,15 @@ const ITBIS = 0.18;
 export function Dashboard() {
   const { query: cartSearchQuery } = useVentaCartSearch();
   const { tenantId, user, loading: authLoading } = useAuth();
-  const { activeSucursalId } = useSucursal();
+  const { activeSucursalId, loading: sucursalLoading } = useSucursal();
   const location = useLocation();
   const { theme } = useTheme();
   const { formatMoney, currencySymbol } = useTenantCurrency();
   const isDark = theme === "dark";
   const [platos, setPlatos] = useState<Plato[]>([]);
   const [menuCategories, setMenuCategories] = useState<MenuCategoryRow[]>([]);
+  const [menuLoading, setMenuLoading] = useState(true);
+  const [menuLoadError, setMenuLoadError] = useState(false);
   const [mesas, setMesas] = useState<MesaBasic[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [activeCategory, setActiveCategory] = useState("Todos");
@@ -182,10 +184,18 @@ export function Dashboard() {
   useEffect(() => {
     // Set initial to empty since it depends on the database
     setMesas([]);
+    setPlatos([]);
     setMenuCategories([]);
+    setMenuLoading(true);
+    setMenuLoadError(false);
  
-    // Esperar a que auth termine, tengamos tenant_id y activeSucursalId antes de cargar datos
-    if (authLoading || !tenantId || !activeSucursalId) return;
+    // Esperar a que auth y sucursales terminen antes de decidir si cargar o mostrar estado vacío.
+    if (authLoading || !tenantId || sucursalLoading) return;
+
+    if (!activeSucursalId) {
+      setMenuLoading(false);
+      return;
+    }
  
     let cancelled = false;
  
@@ -203,7 +213,7 @@ export function Dashboard() {
       const useLocalRead = await shouldReadLocalFirst(tenantId, ["platos", "menu_categories", "mesas_estado"]);
       const useLocalOpenConsumos = await shouldReadLocalFirst(tenantId, ["consumos"]) || hasPendingConsumos;
  
-      const [platosData, categoriasData, estadosData, consumosData, cantidadMesas] = await Promise.all([
+      let [platosData, categoriasData, estadosData, consumosData, cantidadMesas] = await Promise.all([
         useLocalRead
           ? readLocalMirror<Plato>(tenantId, "platos").then(rows => rows.filter(r => r.sucursal_id === activeSucursalId))
           : insforgeClient.database
@@ -244,6 +254,30 @@ export function Dashboard() {
               .then(r => r.data ?? []),
         loadCantidadMesas(tenantId),
       ]);
+
+      if (useLocalRead && (platosData as Plato[]).filter(p => p.disponible).length === 0 && navigator.onLine) {
+        const [serverPlatosRes, serverCategoriesRes] = await Promise.all([
+          insforgeClient.database
+            .from("platos")
+            .select("*")
+            .eq("tenant_id", tenantId)
+            .eq("sucursal_id", activeSucursalId)
+            .eq("disponible", true)
+            .order("categoria"),
+          insforgeClient.database
+            .from("menu_categories")
+            .select("id, tenant_id, nombre, color, sort_order, sucursal_id")
+            .eq("tenant_id", tenantId)
+            .eq("sucursal_id", activeSucursalId)
+            .order("sort_order")
+            .order("nombre"),
+        ]);
+
+        if (!serverPlatosRes.error && (serverPlatosRes.data?.length ?? 0) > 0) {
+          platosData = serverPlatosRes.data ?? [];
+          categoriasData = serverCategoriesRes.data ?? [];
+        }
+      }
  
       if (cancelled) return;
  
@@ -312,11 +346,18 @@ export function Dashboard() {
       }
       
       setMesas(currentMesas);
+      setMenuLoading(false);
     };
 
-    load().catch(console.error);
+    load().catch((error) => {
+      console.error(error);
+      if (!cancelled) {
+        setMenuLoadError(true);
+        setMenuLoading(false);
+      }
+    });
     return () => { cancelled = true; };
-  }, [authLoading, tenantId, activeSucursalId]);
+  }, [authLoading, tenantId, activeSucursalId, sucursalLoading]);
 
   useEffect(() => {
     if (mesas.length > 0 && location.state && (location.state as any).selectMesaNumero) {
@@ -1143,10 +1184,28 @@ export function Dashboard() {
         </div>
 
         {/* Items grid */}
-        {platos.length === 0 ? (
+        {menuLoading ? (
           <div className="flex items-center justify-center py-[40px]">
             <span className="font-['Space_Grotesk',sans-serif] text-[#6b7280] text-[14px]">
               Cargando carta...
+            </span>
+          </div>
+        ) : menuLoadError ? (
+          <div className="flex items-center justify-center py-[40px] px-4">
+            <span className="font-['Space_Grotesk',sans-serif] text-[#6b7280] text-[14px] text-center">
+              No se pudo cargar la carta. Intentá nuevamente.
+            </span>
+          </div>
+        ) : !activeSucursalId ? (
+          <div className="flex items-center justify-center py-[40px] px-4">
+            <span className="font-['Space_Grotesk',sans-serif] text-[#6b7280] text-[14px] text-center">
+              No tenés sucursal configurada todavía.
+            </span>
+          </div>
+        ) : platos.length === 0 ? (
+          <div className="flex items-center justify-center py-[40px] px-4">
+            <span className="font-['Space_Grotesk',sans-serif] text-[#6b7280] text-[14px] text-center">
+              No tenés menú agregado todavía.
             </span>
           </div>
         ) : filteredPlatosForGrid.length === 0 ? (

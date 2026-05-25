@@ -1,17 +1,4 @@
 ﻿-- Update registration RPC so every new tenant starts with its first active branch.
-CREATE OR REPLACE FUNCTION public.cyberbistro_default_sucursal_limit(p_plan text)
-RETURNS integer
-LANGUAGE sql
-IMMUTABLE
-AS $$
-  SELECT CASE lower(trim(COALESCE(p_plan, 'basico')))
-    WHEN 'basico' THEN 1
-    WHEN 'profesional' THEN 3
-    WHEN 'empresarial' THEN NULL::integer
-    ELSE 1
-  END;
-$$;
-
 DROP FUNCTION IF EXISTS public.cyberbistro_register_tenant(uuid, text, text, text, text, text, text);
 
 CREATE OR REPLACE FUNCTION public.cyberbistro_register_tenant(
@@ -37,7 +24,6 @@ DECLARE
   v_claim_auth_user_id uuid := public.cyberbistro_auth_user_id();
   v_claim_email text := public.cyberbistro_auth_email();
   v_tenant_id uuid;
-  v_plan text := lower(trim(COALESCE(p_plan, 'basico')));
 BEGIN
   IF p_auth_user_id IS NULL THEN
     RAISE EXCEPTION 'auth_user_id requerido';
@@ -49,10 +35,6 @@ BEGIN
 
   IF NULLIF(trim(p_nombre_negocio), '') IS NULL THEN
     RAISE EXCEPTION 'nombre del negocio requerido';
-  END IF;
-
-  IF v_plan NOT IN ('basico', 'profesional', 'empresarial') THEN
-    RAISE EXCEPTION 'plan inválido: %', p_plan;
   END IF;
 
   IF v_claim_auth_user_id IS NULL THEN
@@ -73,9 +55,7 @@ BEGIN
     direccion,
     telefono,
     activa,
-    plan,
-    sucursal_limit_enabled,
-    sucursal_limit
+    plan
   )
   VALUES (
     trim(p_nombre_negocio),
@@ -83,9 +63,7 @@ BEGIN
     NULLIF(trim(COALESCE(p_direccion, '')), ''),
     NULLIF(trim(COALESCE(p_telefono, '')), ''),
     true,
-    v_plan,
-    true,
-    public.cyberbistro_default_sucursal_limit(v_plan)
+    trim(COALESCE(p_plan, 'basico'))
   )
   RETURNING id INTO v_tenant_id;
 

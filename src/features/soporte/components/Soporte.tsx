@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Navigate, useNavigate } from "react-router";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
+import { useSucursal } from "../../../app/context/SucursalContext";
 import { useTenantCurrency } from "../../../shared/hooks/useTenantCurrency";
 import { buildStaffProvisioningRecoveryMessage } from "./staffProvisioning";
 import {
@@ -54,6 +55,7 @@ interface Plato {
   categoria: string;
   disponible: boolean;
   va_a_cocina: boolean;
+  sucursal_id?: string | null;
 }
 
 interface MenuCategoryRow {
@@ -62,14 +64,28 @@ interface MenuCategoryRow {
   nombre: string;
   color: string;
   sort_order: number;
+  sucursal_id?: string | null;
 }
 
 type FormMode = "add" | "edit" | null;
 
-function normalizeCartaData(tenantId: string, platos: Plato[], categories: MenuCategoryRow[]) {
+function createTemporaryIntegerId(existingIds: Iterable<number>): number {
+  const usedIds = new Set(existingIds);
+  const maxPostgresInteger = 2_147_483_647;
+  let candidate = -Math.max(1, Date.now() % maxPostgresInteger);
+
+  while (usedIds.has(candidate)) {
+    candidate = candidate <= -maxPostgresInteger ? -1 : candidate - 1;
+  }
+
+  return candidate;
+}
+
+function normalizeCartaData(tenantId: string, sucursalId: string, platos: Plato[], categories: MenuCategoryRow[]) {
   return {
     platos: platos
       .filter((plato) => String((plato as any).tenant_id ?? tenantId) === tenantId)
+      .filter((plato) => (plato.sucursal_id ?? sucursalId) === sucursalId)
       .sort((a, b) => String(a.categoria ?? "").localeCompare(String(b.categoria ?? ""))),
     categories: categories
       .filter((category) => category.tenant_id === tenantId)
@@ -77,7 +93,7 @@ function normalizeCartaData(tenantId: string, platos: Plato[], categories: MenuC
   };
 }
 
-async function loadCartaData(tenantId: string): Promise<{
+async function loadCartaData(tenantId: string, sucursalId: string): Promise<{
   platos: Plato[];
   categories: MenuCategoryRow[];
 }> {
@@ -87,7 +103,10 @@ async function loadCartaData(tenantId: string): Promise<{
       readLocalMirror<Plato>(tenantId, "platos"),
       readLocalMirror<MenuCategoryRow>(tenantId, "menu_categories"),
     ]);
-    return normalizeCartaData(tenantId, platos, categories);
+    const localData = normalizeCartaData(tenantId, sucursalId, platos, categories);
+    if (localData.platos.length > 0 || !navigator.onLine) {
+      return localData;
+    }
   }
 
   const [platosRes, categoriesRes] = await Promise.all([
@@ -95,11 +114,13 @@ async function loadCartaData(tenantId: string): Promise<{
       .from("platos")
       .select("*")
       .eq("tenant_id", tenantId)
+      .eq("sucursal_id", sucursalId)
       .order("categoria"),
     insforgeClient.database
       .from("menu_categories")
-      .select("id, tenant_id, nombre, color, sort_order")
+      .select("id, tenant_id, nombre, color, sort_order, sucursal_id")
       .eq("tenant_id", tenantId)
+      .eq("sucursal_id", sucursalId)
       .order("sort_order")
       .order("nombre"),
   ]);
@@ -109,7 +130,7 @@ async function loadCartaData(tenantId: string): Promise<{
       readLocalMirror<Plato>(tenantId, "platos").catch(() => []),
       readLocalMirror<MenuCategoryRow>(tenantId, "menu_categories").catch(() => []),
     ]);
-    return normalizeCartaData(tenantId, platos, categories);
+    return normalizeCartaData(tenantId, sucursalId, platos, categories);
   }
 
   return {
@@ -120,6 +141,7 @@ async function loadCartaData(tenantId: string): Promise<{
 
 function CartaPanel() {
   const { tenantId, loading: authLoading } = useAuth();
+  const { activeSucursalId, loading: sucursalLoading } = useSucursal();
   const { formatMoney, currencySymbol } = useTenantCurrency();
   const [platos, setPlatos] = useState<Plato[]>([]);
   const [menuCategories, setMenuCategories] = useState<MenuCategoryRow[]>([]);
@@ -132,15 +154,15 @@ function CartaPanel() {
   const [activeFilter, setActiveFilter] = useState("Todos");
 
   useEffect(() => {
-    if (authLoading) return;
-    if (!tenantId) {
+    if (authLoading || sucursalLoading) return;
+    if (!tenantId || !activeSucursalId) {
       setPlatos([]);
       setMenuCategories([]);
       setLoading(false);
       return;
     }
     setLoading(true);
-    loadCartaData(tenantId)
+    loadCartaData(tenantId, activeSucursalId)
       .then(({ platos, categories }) => {
         setPlatos(platos);
         setMenuCategories(categories);
@@ -152,7 +174,7 @@ function CartaPanel() {
       .finally(() => {
         setLoading(false);
       });
-  }, [tenantId, authLoading]);
+  }, [tenantId, activeSucursalId, authLoading, sucursalLoading]);
 
   const selected = platos.find((p) => p.id === selectedId) ?? null;
   const categoryOrder = menuCategories.map((category) => category.nombre);
@@ -182,7 +204,7 @@ function CartaPanel() {
   }
 
   async function ensureCategoryExists(nombre: string, color = suggestCategoryColor(nombre)) {
-    if (!tenantId) return null;
+    if (!tenantId || !activeSucursalId) return null;
     const normalized = normalizeCategoryName(nombre);
     const existing = menuCategories.find((category) => category.nombre.toLowerCase() === normalized.toLowerCase());
     if (existing) return existing;
@@ -193,6 +215,7 @@ function CartaPanel() {
       nombre: normalized,
       color,
       sort_order: menuCategories.length,
+      sucursal_id: activeSucursalId,
     };
     await enqueueLocalWrite({
       tenantId,
@@ -214,12 +237,23 @@ function CartaPanel() {
       setError("No hay restaurante asociado a la sesión.");
       return;
     }
+    if (!activeSucursalId) {
+      setError("No hay sucursal activa para guardar este plato.");
+      return;
+    }
     setSaving(true);
     setError("");
-    await ensureCategoryExists(form.categoria, getCatColor(form.categoria));
+    try {
+      await ensureCategoryExists(form.categoria, getCatColor(form.categoria));
+    } catch (err: any) {
+      console.error("Error al asegurar categoria:", err);
+      setError(`Error: ${err.message || "No se pudo preparar la categoría"}`);
+      setSaving(false);
+      return;
+    }
 
     if (mode === "add") {
-      const localId = -Date.now();
+      const localId = createTemporaryIntegerId(platos.map((plato) => plato.id));
       const payload = {
         id: localId,
         nombre: form.nombre.trim(),
@@ -228,6 +262,7 @@ function CartaPanel() {
         disponible: form.disponible,
         va_a_cocina: form.va_a_cocina,
         tenant_id: tenantId,
+        sucursal_id: activeSucursalId,
       };
       try {
         await enqueueLocalWrite({
@@ -442,6 +477,7 @@ function CartaPanel() {
 // ─────────────────────────────────────────────
 function CategoriasPanel() {
   const { tenantId, loading: authLoading } = useAuth();
+  const { activeSucursalId, loading: sucursalLoading } = useSucursal();
   const [platos, setPlatos] = useState<Plato[]>([]);
   const [menuCategories, setMenuCategories] = useState<MenuCategoryRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -452,15 +488,15 @@ function CategoriasPanel() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (authLoading) return;
-    if (!tenantId) {
+    if (authLoading || sucursalLoading) return;
+    if (!tenantId || !activeSucursalId) {
       setPlatos([]);
       setMenuCategories([]);
       setLoading(false);
       return;
     }
     setLoading(true);
-    loadCartaData(tenantId)
+    loadCartaData(tenantId, activeSucursalId)
       .then(({ platos, categories }) => {
         setPlatos(platos);
         setMenuCategories(categories);
@@ -472,7 +508,7 @@ function CategoriasPanel() {
       .finally(() => {
         setLoading(false);
       });
-  }, [tenantId, authLoading]);
+  }, [tenantId, activeSucursalId, authLoading, sucursalLoading]);
 
   const categoryOrder = menuCategories.map((category) => category.nombre);
   const categoryOptions = categoryOrder.length > 0
@@ -505,7 +541,7 @@ function CategoriasPanel() {
   }
 
   async function ensureCategoryExists(nombre: string, color = suggestCategoryColor(nombre)) {
-    if (!tenantId) return null;
+    if (!tenantId || !activeSucursalId) return null;
     const normalized = normalizeCategoryName(nombre);
     const existing = menuCategories.find((category) => category.nombre.toLowerCase() === normalized.toLowerCase());
     if (existing) return existing;
@@ -516,6 +552,7 @@ function CategoriasPanel() {
       nombre: normalized,
       color,
       sort_order: menuCategories.length,
+      sucursal_id: activeSucursalId,
     };
     try {
       await enqueueLocalWrite({

@@ -4,6 +4,7 @@ import svgPaths from "../../../imports/svg-h2gjocs89h";
 import { useTheme } from "../../../shared/context/ThemeContext";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { useSucursal } from "../../../app/context/SucursalContext";
+import { SUPER_ADMIN_ROLE } from "../../../shared/lib/superAdmin";
 
 interface TitleBarProps {
   showSidebarToggle?: boolean;
@@ -23,11 +24,18 @@ export function TitleBar({
   const [isMaximized, setIsMaximized] = useState(false);
   const { theme, toggleTheme } = useTheme();
   
-  const { plan, isAuthenticated } = useAuth();
-  const { activeSucursalId, setActiveSucursalId, sucursales, deleteSucursal } = useSucursal();
+  const { plan, isAuthenticated, rol } = useAuth();
+  const {
+    activeSucursalId,
+    setActiveSucursalId,
+    sucursales,
+    deleteSucursal,
+    loading: sucursalesLoading,
+  } = useSucursal();
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const activeSucursal = sucursales.find(s => s.id === activeSucursalId);
+  const shouldShowBranchControls = isAuthenticated && rol !== SUPER_ADMIN_ROLE;
 
   useEffect(() => {
     // Listen for maximize/unmaximize events from main process
@@ -147,7 +155,7 @@ export function TitleBar({
         ) : null}
 
         {/* Basic plan branch display with add button */}
-        {isAuthenticated && (!plan || (plan !== "profesional" && plan !== "empresarial")) && (
+        {shouldShowBranchControls && (!plan || (plan !== "profesional" && plan !== "empresarial")) && (
           <div className="flex items-center gap-1 ml-2" style={{ WebkitAppRegion: "no-drag" as any }}>
             <button
               type="button"
@@ -174,7 +182,23 @@ export function TitleBar({
         )}
 
         {/* Professional/Empresarial plan branch dropdown + plus button */}
-        {isAuthenticated && (plan === "profesional" || plan === "empresarial") && sucursales.length > 0 && (
+        {shouldShowBranchControls && (plan === "profesional" || plan === "empresarial") && !sucursalesLoading && sucursales.length === 0 && (
+          <div className="flex items-center gap-1 ml-2" style={{ WebkitAppRegion: "no-drag" as any }}>
+            <button
+              type="button"
+              onClick={onAddBranch}
+              className="flex items-center gap-1.5 h-7 px-2.5 rounded-[6px] bg-[#ff906d]/10 hover:bg-[#ff906d]/20 border border-[rgba(255,144,109,0.3)] text-[11px] font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] transition-all cursor-pointer select-none"
+              title="Crear primera sucursal"
+            >
+              <svg className="size-[12px] text-[#ff906d] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+              </svg>
+              <span>Crear sucursal</span>
+            </button>
+          </div>
+        )}
+
+        {shouldShowBranchControls && (plan === "profesional" || plan === "empresarial") && sucursales.length > 0 && (
           <div className="flex items-center gap-1 ml-2" style={{ WebkitAppRegion: "no-drag" as any }}>
             <div className="relative">
               <button
