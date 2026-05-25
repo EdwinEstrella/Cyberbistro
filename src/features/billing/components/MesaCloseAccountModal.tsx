@@ -6,7 +6,6 @@ import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { openCashDrawerForSale, printThermalHtml } from "../../../shared/lib/thermalPrint";
 import {
   incrementTenantNcfSequence,
-  resolveNcfForNewInvoice,
 } from "../../../shared/lib/invoiceNcf";
 import {
   DEFAULT_NCF_B_CODE,
@@ -16,27 +15,31 @@ import {
   type NcfBCode,
 } from "../../../shared/lib/ncf";
 import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
-import { enqueueLocalWrite, getDeviceId, getLocalFirstStatusSnapshot, isLocalFirstEnabled, readLocalMirror, readLocalOutbox } from "../../../shared/lib/localFirst";
+import { enqueueLocalWrite, getDeviceId, getLocalFirstStatusSnapshot, isLocalFirstEnabled, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, readLocalMirror, readLocalOutbox, resolveNcfForNewInvoiceLocalFirst } from "../../../shared/lib/localFirst";
 import { getNextFacturaNumber } from "../../../shared/lib/invoiceNumber";
 import { closeKitchenComandasForMesaLocalFirst } from "../../pos/lib/localFirstMutations";
 import { cacheLogoFromUrl } from "../../../shared/lib/logoCache";
+import { isDesktopCloudUnavailable } from "../../../shared/lib/cloudAvailability";
+import { useSucursal } from "../../../app/context/SucursalContext";
 
 const ITBIS = 0.18;
 
-// Checks if there is an open operational cycle for the tenant (any business day)
-async function hasOpenCycle(tenantId: string): Promise<boolean> {
+// Checks if there is an open operational cycle for the tenant and sucursal
+async function hasOpenCycle(tenantId: string, sucursalId: string | null): Promise<boolean> {
+  if (!sucursalId) return false;
   try {
     const snapshot = await getLocalFirstStatusSnapshot(tenantId);
     const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
     if (localMode) {
-      const cycles = await readLocalMirror<{ id: string; closed_at: string | null }>(tenantId, "cierres_operativos");
-      return cycles.some(c => !c.closed_at);
+      const cycles = await readLocalMirror<{ id: string; closed_at: string | null; sucursal_id?: string | null }>(tenantId, "cierres_operativos");
+      return cycles.some(c => !c.closed_at && c.sucursal_id === sucursalId);
     }
   } catch { /* fall through to online */ }
   const { data, error } = await insforgeClient.database
     .from("cierres_operativos")
     .select("id")
     .eq("tenant_id", tenantId)
+    .eq("sucursal_id", sucursalId)
     .is("closed_at", null);
   if (error) {
     console.warn("Error checking open cycle:", error);
@@ -67,6 +70,7 @@ export interface MesaConsumoRow {
   factura_id: string | null;
   created_at: string;
   updated_at?: string;
+  sucursal_id?: string | null;
 }
 
 export interface MesaCloseAccountModalProps {
@@ -84,23 +88,26 @@ export interface MesaCloseAccountModalProps {
 
 async function loadTableConsumption(
   tenantId: string,
-  mesaNumero: number
+  mesaNumero: number,
+  sucursalId: string | null
 ): Promise<MesaConsumoRow[]> {
+  if (!sucursalId) return [];
   try {
     const snapshot = await getLocalFirstStatusSnapshot(tenantId);
     const shouldTrustLocal =
       snapshot.status === "history_complete" ||
       snapshot.status === "ready_history_syncing" ||
-      (typeof navigator !== "undefined" && !navigator.onLine);
+      (typeof navigator !== "undefined" && !navigator.onLine) ||
+      (await isDesktopCloudUnavailable());
 
     if (shouldTrustLocal) {
       const localRows = await readLocalMirror<MesaConsumoRow>(tenantId, "consumos");
       const mesaRows = localRows
-        .filter((row) => row.mesa_numero === mesaNumero)
+        .filter((row) => row.mesa_numero === mesaNumero && row.sucursal_id === sucursalId)
         .sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
       const localPendingRows = mesaRows.filter((row) => row.estado !== "pagado");
 
-      if (typeof navigator !== "undefined" && !navigator.onLine) {
+      if ((typeof navigator !== "undefined" && !navigator.onLine) || (await isDesktopCloudUnavailable())) {
         return localPendingRows;
       }
 
@@ -110,7 +117,7 @@ async function loadTableConsumption(
         if (entry.status !== "pending" && entry.status !== "syncing" && entry.status !== "error") return false;
         if (entry.table_name !== "consumos") return false;
         if (mesaRowIds.has(entry.row_id)) return true;
-        return Number(entry.payload?.mesa_numero) === mesaNumero;
+        return Number(entry.payload?.mesa_numero) === mesaNumero && entry.payload?.sucursal_id === sucursalId;
       });
 
       if (hasPendingMesaWrites) {
@@ -125,6 +132,7 @@ async function loadTableConsumption(
     .from("consumos")
     .select("*")
     .eq("tenant_id", tenantId)
+    .eq("sucursal_id", sucursalId)
     .eq("mesa_numero", mesaNumero)
     .neq("estado", "pagado")
     .order("created_at", { ascending: true });
@@ -136,17 +144,26 @@ async function loadTableConsumption(
 async function groupConsumosForFactura(
   tenantId: string,
   consumos: MesaConsumoRow[],
-  itbisRate: number
+  itbisRate: number,
+  sucursalId: string | null
 ) {
   const plateIds = [...new Set(consumos.map((consumo) => consumo.plato_id))];
   const categoriaPorPlato = new Map<number, string>();
 
   if (plateIds.length > 0) {
-    const { data } = await insforgeClient.database
+    const localPlates = await (async () => {
+      if (!(await isDesktopCloudUnavailable())) return null;
+      return readLocalMirror<{ id: number; categoria?: string | null; sucursal_id?: string | null }>(tenantId, "platos")
+        .then(rows => rows.filter(r => r.sucursal_id === sucursalId))
+        .catch(() => []);
+    })();
+
+    const data = localPlates ?? (await insforgeClient.database
       .from("platos")
       .select("id, categoria")
       .eq("tenant_id", tenantId)
-      .in("id", plateIds);
+      .eq("sucursal_id", sucursalId)
+      .in("id", plateIds)).data;
 
     for (const plate of (data as Array<{ id: number; categoria?: string | null }>) ?? []) {
       categoriaPorPlato.set(plate.id, plate.categoria?.trim() || "General");
@@ -193,16 +210,18 @@ async function groupConsumosForFactura(
 }
 
 /** Cierra comandas de cocina abiertas para esta mesa (evita que la vista Mesas siga sumando su total). */
-async function cerrarComandasCocinaMesa(tenantId: string, mesaNumero: number): Promise<void> {
+async function cerrarComandasCocinaMesa(tenantId: string, mesaNumero: number, sucursalId: string | null): Promise<void> {
+  if (!sucursalId) return;
   const openComandas = isLocalFirstEnabled()
     ? (await readLocalMirror<any>(tenantId, "comandas"))
-        .filter((row: any) => row.tenant_id === tenantId && row.mesa_numero === mesaNumero && ["pendiente", "en_preparacion", "listo"].includes(row.estado))
+        .filter((row: any) => row.tenant_id === tenantId && row.mesa_numero === mesaNumero && row.sucursal_id === sucursalId && ["pendiente", "en_preparacion", "listo"].includes(row.estado))
         .map((row: any) => ({ id: row.id }))
     : await (async () => {
         const { data, error } = await insforgeClient.database
           .from("comandas")
           .select("id")
           .eq("tenant_id", tenantId)
+          .eq("sucursal_id", sucursalId)
           .eq("mesa_numero", mesaNumero)
           .in("estado", ["pendiente", "en_preparacion", "listo"]);
 
@@ -232,6 +251,7 @@ export function MesaCloseAccountModal({
   onSettled,
   onPaidFull,
 }: MesaCloseAccountModalProps) {
+  const { activeSucursalId } = useSucursal();
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
   const [mesaConsumos, setMesaConsumos] = useState<MesaConsumoRow[]>([]);
@@ -261,7 +281,7 @@ export function MesaCloseAccountModal({
     if (!tenantId) return;
     let cancelled = false;
     setLoading(true);
-    void loadTableConsumption(tenantId, mesaNumero).then((rows) => {
+    void loadTableConsumption(tenantId, mesaNumero, activeSucursalId).then((rows) => {
       if (!cancelled) {
         setMesaConsumos(rows);
         setLoading(false);
@@ -270,7 +290,7 @@ export function MesaCloseAccountModal({
     return () => {
       cancelled = true;
     };
-  }, [open, tenantId, mesaNumero]);
+  }, [open, tenantId, mesaNumero, activeSucursalId]);
 
   useEffect(() => {
     if (!open) return;
@@ -472,7 +492,7 @@ export function MesaCloseAccountModal({
   async function createSplitInvoices(mode: "all" | number) {
   if (!tenantId) return;
   // Ensure there is an open operational cycle before creating invoices
-  const cycleOpen = await hasOpenCycle(tenantId);
+  const cycleOpen = await hasOpenCycle(tenantId, activeSucursalId);
   if (!cycleOpen) {
     alert("No hay un ciclo operativo abierto. Inicie un ciclo antes de cobrar.");
     return;
@@ -520,6 +540,24 @@ export function MesaCloseAccountModal({
       const deviceId = await getDeviceId();
       let nextFacturaNumber = await getNextFacturaNumber(tenantId);
       let cashDrawerOpened = false;
+      const reservedNcfByPerson = new Map<number, Awaited<ReturnType<typeof resolveNcfForNewInvoiceLocalFirst>>>();
+
+      if (ncfFiscalActive) {
+        for (const personIndex of order) {
+          let reservedNcf: Awaited<ReturnType<typeof resolveNcfForNewInvoiceLocalFirst>> = null;
+          try {
+            reservedNcf = await resolveNcfForNewInvoiceLocalFirst(tenantId, selectedNcfType);
+          } catch (err) {
+            alert(err instanceof Error ? err.message : "No se pudo reservar NCF fiscal. No se emitió la factura.");
+            return;
+          }
+          if (!reservedNcf) {
+            alert("No se pudo reservar NCF fiscal. No se emitió la factura.");
+            return;
+          }
+          reservedNcfByPerson.set(personIndex, reservedNcf);
+        }
+      }
 
       for (const personIndex of order) {
         const consumosToInvoice = groups.get(personIndex)!;
@@ -528,19 +566,18 @@ export function MesaCloseAccountModal({
         const { facturaItems, subtotal, itbis, total } = await groupConsumosForFactura(
           tenantId,
           consumosToInvoice,
-          itbisRate
+          itbisRate,
+          activeSucursalId
         );
 
-        const ncfPart = await resolveNcfForNewInvoice(
-          tenantId,
-          ncfFiscalActive ? selectedNcfType : null
-        );
+        const ncfPart = ncfFiscalActive ? reservedNcfByPerson.get(personIndex) ?? null : null;
 
         const localFacturaId = crypto.randomUUID();
         const now = new Date().toISOString();
         const insertRow: Record<string, unknown> = {
           id: localFacturaId,
           tenant_id: tenantId,
+          sucursal_id: activeSucursalId,
           numero_factura: nextFacturaNumber++,
           mesa_numero: mesaNumero,
           metodo_pago: paymentMethod,
@@ -558,6 +595,9 @@ export function MesaCloseAccountModal({
         if (ncfPart) {
           insertRow.ncf = ncfPart.ncf;
           insertRow.ncf_tipo = ncfPart.ncf_tipo;
+          if (ncfPart.reservationSource === "local_mirror") {
+            insertRow[LOCAL_NCF_RESERVED_PAYLOAD_FLAG] = true;
+          }
         }
         if (normalizedClientRnc !== "") {
           insertRow.cliente_rnc = normalizedClientRnc;
@@ -609,7 +649,7 @@ export function MesaCloseAccountModal({
     await onSettled?.(updatedConsumos);
 
     if (updatedConsumos.length === 0) {
-      await cerrarComandasCocinaMesa(tenantId, mesaNumero);
+      await cerrarComandasCocinaMesa(tenantId, mesaNumero, activeSucursalId);
       if (mode === "all" && order.length > 1) {
         alert(`✅ Se emitieron ${order.length} facturas (cada una con su NCF si está activo).`);
       }
@@ -627,7 +667,7 @@ export function MesaCloseAccountModal({
 
   async function createInvoice() {
     if (!tenantId) return;
-    const cycleOpen = await hasOpenCycle(tenantId);
+    const cycleOpen = await hasOpenCycle(tenantId, activeSucursalId);
     if (!cycleOpen) {
       alert("No hay un ciclo operativo abierto. Inicie un ciclo antes de cobrar.");
       return;
@@ -658,7 +698,8 @@ export function MesaCloseAccountModal({
     const { facturaItems, subtotal, itbis, total } = await groupConsumosForFactura(
       tenantId,
       consumosToBill,
-      itbisRate
+      itbisRate,
+      activeSucursalId
     );
     const cashReceived =
       paymentMethod === "efectivo"
@@ -669,16 +710,28 @@ export function MesaCloseAccountModal({
       return;
     }
 
-    const ncfPart = await resolveNcfForNewInvoice(
-      tenantId,
-      ncfFiscalActive ? selectedNcfType : null
-    );
+    let ncfPart: Awaited<ReturnType<typeof resolveNcfForNewInvoiceLocalFirst>> = null;
+    if (ncfFiscalActive) {
+      try {
+        ncfPart = await resolveNcfForNewInvoiceLocalFirst(tenantId, selectedNcfType);
+      } catch (err) {
+        alert(err instanceof Error ? err.message : "No se pudo reservar NCF fiscal. No se emitió la factura.");
+        setCharging(false);
+        return;
+      }
+      if (!ncfPart) {
+        alert("No se pudo reservar NCF fiscal. No se emitió la factura.");
+        setCharging(false);
+        return;
+      }
+    }
 
     const localFacturaId = crypto.randomUUID();
     const now = new Date().toISOString();
     const facturaData: Record<string, unknown> = {
       id: localFacturaId,
       tenant_id: tenantId,
+      sucursal_id: activeSucursalId,
       numero_factura: nextFacturaNumber,
       metodo_pago: paymentMethod,
       estado: "pagada",
@@ -698,6 +751,9 @@ export function MesaCloseAccountModal({
     if (ncfPart) {
       facturaData.ncf = ncfPart.ncf;
       facturaData.ncf_tipo = ncfPart.ncf_tipo;
+      if (ncfPart.reservationSource === "local_mirror") {
+        facturaData[LOCAL_NCF_RESERVED_PAYLOAD_FLAG] = true;
+      }
     }
     if (normalizedClientRnc !== "") {
       facturaData.cliente_rnc = normalizedClientRnc;
@@ -742,7 +798,7 @@ export function MesaCloseAccountModal({
     await onSettled?.(restantes);
 
     if (restantes.length === 0) {
-      await cerrarComandasCocinaMesa(tenantId, mesaNumero);
+      await cerrarComandasCocinaMesa(tenantId, mesaNumero, activeSucursalId);
     }
 
     setCharging(false);

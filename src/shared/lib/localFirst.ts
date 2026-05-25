@@ -1,5 +1,7 @@
 import { insforgeClient } from "./insforge";
-import { incrementTenantNcfSequence, resolveNcfForNewInvoice } from "./invoiceNcf";
+import { incrementTenantNcfSequence, resolveNcfForNewInvoice, type ResolvedNcfForInvoice } from "./invoiceNcf";
+import { isCloudAvailabilityFailure, isCloudAvailableForDesktop, isDesktopRuntime, recordCloudFailure, recordCloudSuccess } from "./cloudAvailability";
+import { buildBSequenceMapFromRow, buildTenantNcfUpdatePayload, DEFAULT_NCF_B_CODE, getNcfSequenceColumnName, isNcfBCode, prepareNcfForFacturaInsert, type TenantNcfRow } from "./ncf";
 
 export const LOCAL_FIRST_MIRROR_TABLES = [
   "tenants",
@@ -15,6 +17,11 @@ export const LOCAL_FIRST_MIRROR_TABLES = [
   "cierres_operativos",
   "gastos",
   "gasto_categorias",
+  "sucursales",
+  "productos_inventario",
+  "inventario_movimientos",
+  "recetas",
+  "produccion_cocina",
 ] as const;
 
 export const LOCAL_FIRST_METADATA_TABLES = [
@@ -37,6 +44,9 @@ export const LOCAL_FIRST_IMMEDIATE_TABLES = [
   "comandas",
   "consumos",
   "facturas",
+  "sucursales",
+  "productos_inventario",
+  "recetas",
 ] as const;
 
 export const LOCAL_FIRST_HISTORY_TABLES = [
@@ -53,6 +63,11 @@ export const LOCAL_FIRST_HISTORY_TABLES = [
   "consumos",
   "gasto_categorias",
   "gastos",
+  "sucursales",
+  "productos_inventario",
+  "inventario_movimientos",
+  "recetas",
+  "produccion_cocina",
 ] as const;
 
 export type LocalFirstMirrorTable = (typeof LOCAL_FIRST_MIRROR_TABLES)[number];
@@ -104,6 +119,7 @@ export interface IncrementalCursor {
 
 const COMPOSITE_UPSERT_CONFLICT_TABLES = new Set<LocalFirstMirrorTable>(["mesas_estado"]);
 const LOCAL_FIRST_PHASES = ["minimum", "history", "incremental"] as const satisfies readonly LocalFirstPhase[];
+export const LOCAL_NCF_RESERVED_PAYLOAD_FLAG = "__local_ncf_reserved";
 
 function isTenantScopedMirrorTable(tableName: LocalFirstMirrorTable): boolean {
   return tableName !== "tenants";
@@ -196,18 +212,73 @@ export function buildServerWritePayload(
   tableName: LocalFirstMirrorTable,
   payload: Record<string, unknown>
 ): Record<string, unknown> {
+  const serverPayload = Object.fromEntries(
+    Object.entries(payload).filter(([key]) => !key.startsWith("__local_"))
+  );
+
   if (!isTenantScopedMirrorTable(tableName)) {
-    return payload;
+    return serverPayload;
   }
 
-  const payloadTenantId = payload["tenant_id"];
+  const payloadTenantId = serverPayload["tenant_id"];
   if (payloadTenantId !== undefined && payloadTenantId !== tenantId) {
     throw new Error(`Payload tenant_id mismatch for ${tableName}.`);
   }
 
   return {
-    ...payload,
+    ...serverPayload,
     tenant_id: tenantId,
+  };
+}
+
+export function buildLocalTenantNcfReservation(
+  row: TenantNcfRow | null | undefined,
+  preferredType?: string | null
+): { reserved: ResolvedNcfForInvoice; nextTenantRow: TenantNcfRow } | { reason: string } {
+  if (!row) {
+    return { reason: "No hay datos locales de secuencia NCF para garantizar unicidad fiscal." };
+  }
+
+  const payload = prepareNcfForFacturaInsert(row, preferredType);
+  if (!payload) {
+    return { reason: "No hay una secuencia NCF local válida para garantizar unicidad fiscal." };
+  }
+
+  const tipoCodigo = payload.tipoCodigo;
+  if (!isNcfBCode(tipoCodigo)) {
+    return { reason: "Solo las secuencias NCF tipo B pueden reservarse offline desde el mirror local." };
+  }
+
+  const sequenceColumn = getNcfSequenceColumnName(tipoCodigo);
+  const hasExplicitSequence =
+    typeof row[sequenceColumn] === "number" ||
+    typeof row.ncf_secuencia_siguiente === "number" ||
+    typeof row.ncf_secuencias_por_tipo?.[tipoCodigo] === "number";
+  if (!hasExplicitSequence) {
+    return { reason: "No hay secuencia NCF local explícita para garantizar unicidad fiscal." };
+  }
+
+  const nextMap = buildBSequenceMapFromRow(row);
+  nextMap[tipoCodigo] = payload.usedSequence + 1;
+  const defaultType = isNcfBCode(row.ncf_tipo_default) ? row.ncf_tipo_default : DEFAULT_NCF_B_CODE;
+  const updatePayload = buildTenantNcfUpdatePayload(
+    Boolean(row.ncf_fiscal_activo),
+    defaultType,
+    nextMap,
+    row.ncf_secuencias_por_tipo
+  );
+
+  return {
+    reserved: {
+      ...payload,
+      sequenceReservedAtomically: true,
+      reservationSource: "local_mirror",
+    },
+    nextTenantRow: {
+      ...row,
+      ...updatePayload,
+      updated_at: new Date().toISOString(),
+    } as TenantNcfRow,
   };
 }
 
@@ -266,7 +337,7 @@ export interface OutboxConflictGuardrail {
 }
 
 const PAGE_SIZE = 250;
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const SYNCING_STALE_MS = 5 * 60 * 1000;
 const FULL_REFRESH_ON_SYNC_TABLES = [
   "tenant_users",
@@ -279,11 +350,6 @@ export function isLocalFirstEnabled(): boolean {
   if (typeof window === "undefined") return false;
   if (Boolean((window as Window & { electronAPI?: unknown }).electronAPI)) return true;
   return import.meta.env.VITE_ENABLE_WEB_LOCAL_FIRST === "true";
-}
-
-function isDesktopRuntime(): boolean {
-  if (typeof window === "undefined") return false;
-  return Boolean((window as Window & { electronAPI?: unknown }).electronAPI);
 }
 
 export function resolveLocalWriteMode(args: { isDesktop: boolean; isOnline: boolean }): LocalWriteMode {
@@ -370,6 +436,56 @@ function openLocalFirstDbForSync(tenantId: string): Promise<IDBDatabase> {
       applyLocalFirstDbSchema(db, tx, tenantId);
     };
   });
+}
+
+async function reserveLocalNcfForNewInvoice(
+  tenantId: string,
+  preferredType?: string | null
+): Promise<ResolvedNcfForInvoice> {
+  const db = await openLocalFirstDbForSync(tenantId);
+  try {
+    return await new Promise<ResolvedNcfForInvoice>((resolve, reject) => {
+      const tx = db.transaction("tenants", "readwrite");
+      const store = tx.objectStore("tenants");
+      const getReq = store.get(tenantId);
+      let reserved: ResolvedNcfForInvoice | null = null;
+
+      getReq.onsuccess = () => {
+        const reservation = buildLocalTenantNcfReservation(getReq.result as TenantNcfRow | null, preferredType);
+        if ("reason" in reservation) {
+          reject(new Error(reservation.reason));
+          tx.abort();
+          return;
+        }
+
+        reserved = reservation.reserved;
+        store.put(reservation.nextTenantRow);
+      };
+      getReq.onerror = () => reject(getReq.error ?? new Error("No se pudo leer la secuencia NCF local."));
+      tx.oncomplete = () => {
+        if (!reserved) {
+          reject(new Error("No se pudo reservar NCF local."));
+          return;
+        }
+        resolve(reserved);
+      };
+      tx.onerror = () => reject(tx.error ?? new Error("No se pudo avanzar la secuencia NCF local."));
+      tx.onabort = () => reject(tx.error ?? new Error("No se pudo reservar NCF local."));
+    });
+  } finally {
+    db.close();
+  }
+}
+
+export async function resolveNcfForNewInvoiceLocalFirst(
+  tenantId: string,
+  preferredType?: string | null
+): Promise<ResolvedNcfForInvoice | null> {
+  if (isDesktopRuntime() && !(await isCloudAvailableForDesktop())) {
+    return reserveLocalNcfForNewInvoice(tenantId, preferredType);
+  }
+
+  return resolveNcfForNewInvoice(tenantId, preferredType);
 }
 
 async function writeLocalOutboxEntry(tenantId: string, entry: SyncOutboxEntry): Promise<void> {
@@ -487,13 +603,13 @@ async function writeDirectlyToServer(args: {
     ? buildServerWritePayload(args.tenantId, args.tableName, args.payload)
     : null;
   if (args.op === "insert") {
-    result = await (insforgeClient.database.from(args.tableName).insert([serverPayload as Record<string, unknown>]) as any);
+    result = await runTrackedCloudOperation(() => insforgeClient.database.from(args.tableName).insert([serverPayload as Record<string, unknown>]) as any);
   } else if (args.op === "update") {
-    result = await (insforgeClient.database.from(args.tableName).update(serverPayload as Record<string, unknown>).eq("id", args.rowId) as any);
+    result = await runTrackedCloudOperation(() => insforgeClient.database.from(args.tableName).update(serverPayload as Record<string, unknown>).eq("id", args.rowId) as any);
   } else if (args.op === "upsert") {
-    result = await (insforgeClient.database.from(args.tableName).upsert(serverPayload as Record<string, unknown>, { onConflict: resolveUpsertConflictTarget(args.tableName) }) as any);
+    result = await runTrackedCloudOperation(() => insforgeClient.database.from(args.tableName).upsert(serverPayload as Record<string, unknown>, { onConflict: resolveUpsertConflictTarget(args.tableName) }) as any);
   } else if (args.op === "delete") {
-    result = await (insforgeClient.database.from(args.tableName).delete().eq("id", args.rowId) as any);
+    result = await runTrackedCloudOperation(() => insforgeClient.database.from(args.tableName).delete().eq("id", args.rowId) as any);
   }
   if (result?.error) {
     throw new Error(result.error.message || `No se pudo sincronizar ${args.tableName}.`);
@@ -510,8 +626,9 @@ export async function enqueueLocalWrite(args: {
   deviceId: string;
 }): Promise<void> {
   const isOnline = typeof navigator === "undefined" || navigator.onLine;
+  const isDesktop = isDesktopRuntime();
   const mode = resolveLocalWriteMode({
-    isDesktop: isDesktopRuntime(),
+    isDesktop,
     isOnline,
   });
 
@@ -527,7 +644,8 @@ export async function enqueueLocalWrite(args: {
     return;
   }
 
-  if (!isOnline) {
+  const cloudAvailable = isDesktop ? await isCloudAvailableForDesktop() : isOnline;
+  if (!cloudAvailable) {
     const licenseCheck = await assertCanWriteOffline(args.tenantId);
     if (!licenseCheck.valid) {
       throw new Error(licenseCheck.reason || "Licencia offline inválida para operar.");
@@ -548,7 +666,13 @@ export async function enqueueLocalWrite(args: {
   // Apply change locally to mirror table so the UI can see it immediately offline
   await applyLocalMirrorWrite(args);
 
-  if (isOnline) {
+  if (args.tableName === "facturas" && args.op === "insert") {
+    void processInvoiceInventoryDeduction(args.tenantId, args.payload, args.authUserId, args.deviceId).catch((error) => {
+      console.error("Error calculating local inventory deduction:", error);
+    });
+  }
+
+  if (cloudAvailable) {
     void pushOutboxToServer(args.tenantId).catch((error) => {
       console.error("Error pushing outbox after local enqueue:", error);
     });
@@ -712,7 +836,7 @@ export async function checkServerRowExists(
   tableName: LocalFirstMirrorTable,
   rowId: string
 ): Promise<Record<string, unknown> | null> {
-  const { data, error } = await (insforgeClient.database.from(tableName).select("*").eq("id", rowId).maybeSingle() as any);
+  const { data, error } = await runTrackedCloudOperation(() => insforgeClient.database.from(tableName).select("*").eq("id", rowId).maybeSingle() as any);
   if (error || !data) return null;
   return data as Record<string, unknown>;
 }
@@ -725,7 +849,7 @@ async function getNextAvailableCierreCycleNumber(tenantId: string, requestedCycl
   cycleNumber?: number;
   reason?: string;
 }> {
-  const { data, error } = await (insforgeClient.database
+  const { data, error } = await runTrackedCloudOperation(() => insforgeClient.database
     .from("cierres_operativos")
     .select("cycle_number")
     .eq("tenant_id", tenantId)
@@ -763,7 +887,7 @@ async function isNcfAvailableForFactura(tenantId: string, facturaId: string, ncf
   available?: boolean;
   reason?: string;
 }> {
-  const { data, error } = await (insforgeClient.database
+  const { data, error } = await runTrackedCloudOperation(() => insforgeClient.database
     .from("facturas")
     .select("id,ncf")
     .eq("tenant_id", tenantId)
@@ -787,15 +911,30 @@ async function adjustFacturaPayloadForServer(
     return { reason: "NCF inválido: no se pudo leer la secuencia.", retryStatus: "not_retryable" };
   }
 
+  const preferredType = ncf.slice(0, 3).toUpperCase();
+
   const requestedAvailability = await isNcfAvailableForFactura(tenantId, rowId, ncf);
   if (requestedAvailability.reason) return { reason: requestedAvailability.reason, retryStatus: "retryable" };
 
   if (requestedAvailability.available) {
-    return { payload, adjusted: false };
+    return {
+      payload,
+      adjusted: false,
+      afterSuccessfulPush: payload[LOCAL_NCF_RESERVED_PAYLOAD_FLAG] === true
+        ? () => incrementTenantNcfSequence(tenantId, preferredType, currentSequence)
+        : undefined,
+    };
   }
 
-  const preferredType = ncf.slice(0, 3).toUpperCase();
-  const resolved = await resolveNcfForNewInvoice(tenantId, preferredType);
+  let resolved: Awaited<ReturnType<typeof resolveNcfForNewInvoice>> = null;
+  try {
+    resolved = await resolveNcfForNewInvoice(tenantId, preferredType);
+  } catch (err) {
+    return {
+      reason: err instanceof Error ? err.message : "No se pudo reservar un NCF disponible para reintentar.",
+      retryStatus: "retryable",
+    };
+  }
   if (!resolved) {
     return { reason: "No se pudo reservar un NCF disponible para reintentar.", retryStatus: "retryable" };
   }
@@ -826,7 +965,7 @@ export async function validateNcfSequence(
   ncfTipo: string,
   ncfToUse: string
 ): Promise<{ valid: boolean; reason?: string }> {
-  const { data: tenant, error } = await (insforgeClient.database.from("tenants").select("ncf_secuencias_por_tipo").eq("id", tenantId).single() as any);
+  const { data: tenant, error } = await runTrackedCloudOperation(() => insforgeClient.database.from("tenants").select("ncf_secuencias_por_tipo").eq("id", tenantId).single() as any);
   if (error || !tenant) return { valid: false, reason: "No se pudo leer secuencia NCF del tenant." };
 
   const secuencias = tenant.ncf_secuencias_por_tipo as Record<string, number | { secuencia_actual?: number }> | null;
@@ -846,7 +985,7 @@ export async function validateCierreCicleSequence(
   tenantId: string,
   cycleNumber: number
 ): Promise<{ valid: boolean; reason?: string }> {
-  const { data, error } = await (insforgeClient.database
+  const { data, error } = await runTrackedCloudOperation(() => insforgeClient.database
     .from("cierres_operativos")
     .select("cycle_number")
     .eq("tenant_id", tenantId)
@@ -865,6 +1004,7 @@ export async function validateCierreCicleSequence(
 const pushOutboxLocks = new Set<string>();
 
 export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: number; failed: number }> {
+  if (isDesktopRuntime() && !(await isCloudAvailableForDesktop())) return { pushed: 0, failed: 0 };
   if (pushOutboxLocks.has(tenantId)) return { pushed: 0, failed: 0 };
   pushOutboxLocks.add(tenantId);
   const db = await openLocalFirstDbForSync(tenantId);
@@ -944,13 +1084,13 @@ export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: nu
           ? buildServerWritePayload(tenantId, entry.table_name, outgoingPayload)
           : null;
         if (entry.op === "insert") {
-          result = await (insforgeClient.database.from(entry.table_name).insert([serverPayload as Record<string, unknown>]) as any);
+          result = await runTrackedCloudOperation(() => insforgeClient.database.from(entry.table_name).insert([serverPayload as Record<string, unknown>]) as any);
         } else if (entry.op === "update") {
-          result = await (insforgeClient.database.from(entry.table_name).update(serverPayload as Record<string, unknown>).eq("id", entry.row_id) as any);
+          result = await runTrackedCloudOperation(() => insforgeClient.database.from(entry.table_name).update(serverPayload as Record<string, unknown>).eq("id", entry.row_id) as any);
         } else if (entry.op === "upsert") {
-          result = await (insforgeClient.database.from(entry.table_name).upsert(serverPayload as Record<string, unknown>, { onConflict: resolveUpsertConflictTarget(entry.table_name) }) as any);
+          result = await runTrackedCloudOperation(() => insforgeClient.database.from(entry.table_name).upsert(serverPayload as Record<string, unknown>, { onConflict: resolveUpsertConflictTarget(entry.table_name) }) as any);
         } else if (entry.op === "delete") {
-          result = await (insforgeClient.database.from(entry.table_name).delete().eq("id", entry.row_id) as any);
+          result = await runTrackedCloudOperation(() => insforgeClient.database.from(entry.table_name).delete().eq("id", entry.row_id) as any);
         }
         if (result?.error) {
           await persistSyncError(db, buildSyncErrorRow({
@@ -1146,11 +1286,11 @@ export async function validateAndCacheLicense(
         await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
       }
 
-      const result = await insforgeClient.database
+      const result = await runTrackedCloudOperation(() => insforgeClient.database
         .from("tenants")
         .select("activa")
         .eq("id", tenantId)
-        .maybeSingle();
+        .maybeSingle());
 
       tenant = result.data;
       tenantErr = result.error;
@@ -1163,12 +1303,12 @@ export async function validateAndCacheLicense(
       return { valid: false, reason: "Tenant bloqueado o inactivo." };
     }
 
-    const { data: tu, error: tuErr } = await insforgeClient.database
+    const { data: tu, error: tuErr } = await runTrackedCloudOperation(() => insforgeClient.database
       .from("tenant_users")
       .select("activo")
       .eq("tenant_id", tenantId)
       .eq("activo", true)
-      .limit(1);
+      .limit(1));
 
     if (tuErr || !tu || tu.length === 0) {
       await saveLicenseCache(tenantId, true, false);
@@ -1186,7 +1326,32 @@ export async function revalidateLicenseOnReconnect(
   tenantId: string
 ): Promise<{ valid: boolean; reason?: string }> {
   if (!navigator.onLine) return { valid: false, reason: "Sin conexion." };
+  if (isDesktopRuntime() && !(await isCloudAvailableForDesktop())) {
+    return { valid: false, reason: "Backend no disponible." };
+  }
   return validateAndCacheLicense(tenantId);
+}
+
+function recordCloudResult(result: unknown): void {
+  const maybeResult = result as { error?: unknown } | null | undefined;
+  if (maybeResult?.error) {
+    if (isCloudAvailabilityFailure(maybeResult.error)) recordCloudFailure();
+    return;
+  }
+  recordCloudSuccess();
+}
+
+async function runTrackedCloudOperation(
+  operation: () => PromiseLike<any>
+): Promise<any> {
+  try {
+    const result = await operation();
+    recordCloudResult(result);
+    return result;
+  } catch (err) {
+    if (isCloudAvailabilityFailure(err)) recordCloudFailure();
+    throw err;
+  }
 }
 
 function getAllFromStore<T>(db: IDBDatabase, storeName: string): Promise<T[]> {
@@ -1246,6 +1411,7 @@ export async function shouldReadLocalFirst(
 ): Promise<boolean> {
   if (!isLocalFirstEnabled()) return false;
   if (typeof navigator !== "undefined" && !navigator.onLine) return true;
+  if (isDesktopRuntime() && !(await isCloudAvailableForDesktop())) return true;
   return await hasPendingLocalWrites(tenantId, tableNames);
 }
 
@@ -1312,7 +1478,7 @@ async function pullIncrementalChanges(
       query = query.gte("updated_at", sinceCursor.updated_at);
     }
 
-    const { data, error } = await query;
+    const { data, error } = await runTrackedCloudOperation(() => query);
     if (error) throw new Error(error.message || `Error pull incremental ${tableName}`);
 
     const batchRows = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
@@ -1356,7 +1522,7 @@ async function pullFullTableRows(
   let hasMore = true;
 
   while (hasMore) {
-    const { data, error } = await pullTablePage(tableName, tenantId, offset);
+    const { data, error } = await runTrackedCloudOperation(() => pullTablePage(tableName, tenantId, offset));
     if (error) throw new Error(error.message || `Error full refresh ${tableName}`);
     const pageRows = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
     rows.push(...pageRows);
@@ -1435,6 +1601,9 @@ export async function pullIncrementalChangesForTable(
 }
 
 export async function syncIncremental(tenantId: string): Promise<{ tablesUpdated: number; rowsPulled: number }> {
+  if (isDesktopRuntime() && !(await isCloudAvailableForDesktop())) {
+    return { tablesUpdated: 0, rowsPulled: 0 };
+  }
   let tablesUpdated = 0;
   let rowsPulled = 0;
   for (const tableName of LOCAL_FIRST_MIRROR_TABLES) {
@@ -1529,6 +1698,9 @@ export async function bootstrapLocalFirstPhase(args: {
   tables: readonly LocalFirstMirrorTable[];
   onTableDone?: (tableName: LocalFirstMirrorTable, rows: number) => void;
 }): Promise<void> {
+  if (isDesktopRuntime() && !(await isCloudAvailableForDesktop())) {
+    throw new Error("Backend no disponible para preparar datos locales.");
+  }
   const db = await openLocalFirstDb(args.tenantId);
   try {
     for (const tableName of args.tables) {
@@ -1543,7 +1715,7 @@ export async function bootstrapLocalFirstPhase(args: {
       let completed = false;
 
       while (!completed) {
-        const { data, error } = await pullTablePage(tableName, args.tenantId, offset);
+        const { data, error } = await runTrackedCloudOperation(() => pullTablePage(tableName, args.tenantId, offset));
         if (error) {
           await putOne(
             db,
@@ -1623,4 +1795,239 @@ export function getHistoricalSyncIncompleteMessage(status: LocalFirstStatus): st
     return "Sin internet: se muestra la última foto local conocida.";
   }
   return null;
+}
+
+async function processInvoiceInventoryDeduction(
+  tenantId: string,
+  payload: Record<string, unknown> | null | undefined,
+  authUserId: string | null | undefined,
+  deviceId: string
+): Promise<void> {
+  if (!payload || !payload.items || !Array.isArray(payload.items)) return;
+
+  const items = payload.items as Array<{
+    plato_id: number;
+    nombre: string;
+    cantidad: number;
+  }>;
+
+  const db = await openLocalFirstDb(tenantId);
+  try {
+    const recetasStore = await new Promise<any[]>((resolve, reject) => {
+      const tx = db.transaction("recetas", "readonly");
+      const store = tx.objectStore("recetas");
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+
+    const productosInventarioStore = await new Promise<any[]>((resolve, reject) => {
+      const tx = db.transaction("productos_inventario", "readonly");
+      const store = tx.objectStore("productos_inventario");
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+
+    const soldPlatoIds = new Set(items.map(i => i.plato_id));
+    const activeRecetas = recetasStore.filter(r => r.tenant_id === tenantId && soldPlatoIds.has(r.plato_id));
+
+    if (activeRecetas.length === 0) return;
+
+    const deductions = new Map<string, number>();
+
+    for (const item of items) {
+      const itemRecetas = activeRecetas.filter(r => r.plato_id === item.plato_id);
+      for (const r of itemRecetas) {
+        const currentVal = deductions.get(r.insumo_id) || 0;
+        deductions.set(r.insumo_id, currentVal + (Number(r.cantidad) * item.cantidad));
+      }
+    }
+
+    for (const [insumoId, qtyToDeduct] of deductions.entries()) {
+      const producto = productosInventarioStore.find(p => p.id === insumoId && p.tenant_id === tenantId);
+      if (!producto) continue;
+
+      const oldStock = Number(producto.stock_actual || 0);
+      const newStock = oldStock - qtyToDeduct;
+
+      const updatedProducto = {
+        ...producto,
+        stock_actual: newStock,
+        updated_at: new Date().toISOString()
+      };
+
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction("productos_inventario", "readwrite");
+        const store = tx.objectStore("productos_inventario");
+        const req = store.put(updatedProducto);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+
+      const prodEntry = createSyncOutboxEntry({
+        tenantId,
+        tableName: "productos_inventario",
+        rowId: insumoId,
+        op: "update",
+        payload: { stock_actual: newStock, updated_at: updatedProducto.updated_at },
+        authUserId: authUserId || null,
+        deviceId
+      });
+      await writeLocalOutboxEntry(tenantId, prodEntry);
+
+      const movId = crypto.randomUUID();
+      const nowIso = new Date().toISOString();
+      const movimientoPayload = {
+        id: movId,
+        tenant_id: tenantId,
+        sucursal_id: producto.sucursal_id || null,
+        producto_id: insumoId,
+        tipo: "salida",
+        cantidad: -qtyToDeduct,
+        stock_antes: oldStock,
+        stock_despues: newStock,
+        costo_unitario: producto.costo_promedio || 0,
+        motivo: "consumo_receta",
+        referencia: String(payload.id || ""),
+        fecha: nowIso,
+        usuario_id: authUserId || null,
+        created_at: nowIso
+      };
+
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction("inventario_movimientos", "readwrite");
+        const store = tx.objectStore("inventario_movimientos");
+        const req = store.put(movimientoPayload);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+
+      const movEntry = createSyncOutboxEntry({
+        tenantId,
+        tableName: "inventario_movimientos",
+        rowId: movId,
+        op: "insert",
+        payload: movimientoPayload,
+        authUserId: authUserId || null,
+        deviceId
+      });
+      await writeLocalOutboxEntry(tenantId, movEntry);
+    }
+  } finally {
+    db.close();
+  }
+}
+
+export async function ensureDefaultSucursal(tenantId: string): Promise<void> {
+  if (navigator.onLine) {
+    try {
+      const res = await insforgeClient.database
+        .from("sucursales")
+        .select("id")
+        .eq("tenant_id", tenantId);
+      if (res.data && res.data.length > 0) {
+        console.info("Server already has sucursales. Skipping default sucursal creation.");
+        return;
+      }
+    } catch (err) {
+      console.warn("Failed to check sucursales on server:", err);
+    }
+  }
+
+  const db = await openLocalFirstDb(tenantId);
+  try {
+    const sucursales = await new Promise<any[]>((resolve, reject) => {
+      const tx = db.transaction("sucursales", "readonly");
+      const store = tx.objectStore("sucursales");
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+
+    if (sucursales.length === 0) {
+      console.info("No sucursales found for tenant. Creating default 'Principal' sucursal.");
+      const sucursalId = crypto.randomUUID();
+      const nowIso = new Date().toISOString();
+      const payload = {
+        id: sucursalId,
+        tenant_id: tenantId,
+        nombre: "Principal",
+        direccion: "Sede Central",
+        telefono: "",
+        activa: true,
+        created_at: nowIso,
+        updated_at: nowIso
+      };
+
+      // Save locally to mirror
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction("sucursales", "readwrite");
+        const store = tx.objectStore("sucursales");
+        const req = store.put(payload);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+
+      // Enqueue to sync outbox so it syncs to server
+      const entry = createSyncOutboxEntry({
+        tenantId,
+        tableName: "sucursales",
+        rowId: sucursalId,
+        op: "insert",
+        payload,
+        deviceId: "bootstrap"
+      });
+      await writeLocalOutboxEntry(tenantId, entry);
+    }
+  } catch (err) {
+    console.error("Error creating default sucursal during bootstrap:", err);
+  } finally {
+    db.close();
+  }
+}
+
+export async function checkSucursalHasData(tenantId: string, sucursalId: string): Promise<boolean> {
+  const db = await openLocalFirstDb(tenantId);
+  try {
+    const tablesToCheck: LocalFirstMirrorTable[] = [
+      "productos_inventario",
+      "inventario_movimientos",
+      "produccion_cocina"
+    ];
+
+    for (const table of tablesToCheck) {
+      if (!db.objectStoreNames.contains(table)) continue;
+
+      const hasData = await new Promise<boolean>((resolve, reject) => {
+        const tx = db.transaction(table, "readonly");
+        const store = tx.objectStore(table);
+        const req = store.openCursor();
+        let found = false;
+
+        req.onsuccess = () => {
+          const cursor = req.result;
+          if (cursor) {
+            const row = cursor.value as Record<string, unknown>;
+            if (row.sucursal_id === sucursalId) {
+              found = true;
+              resolve(true);
+              return;
+            }
+            cursor.continue();
+          } else {
+            resolve(found);
+          }
+        };
+        req.onerror = () => reject(req.error);
+      });
+
+      if (hasData) {
+        return true;
+      }
+    }
+    return false;
+  } finally {
+    db.close();
+  }
 }

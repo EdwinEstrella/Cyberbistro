@@ -9,13 +9,15 @@ import {
   type TenantSessionRow,
 } from '../lib/tenantSessionCache';
 import { resolveTenantAccessForSession } from '../lib/resolveTenantUserFromAuth';
-import { getLocalDeviceSession, setLastTenantId } from '../lib/localFirst';
+import { getLocalDeviceSession, setLastTenantId, saveLocalDeviceSession } from '../lib/localFirst';
+import { isDesktopCloudUnavailable } from '../lib/cloudAvailability';
 
 interface TenantUser {
   tenant_id: string;
   email: string;
   rol: string;
   nombre: string;
+  plan: string;
 }
 
 interface SharedAuthState {
@@ -31,6 +33,7 @@ function rowToTenantUser(data: TenantSessionRow): TenantUser {
     email: data.email,
     rol: data.rol,
     nombre: data.nombre ?? '',
+    plan: data.plan ?? 'basico',
   };
 }
 
@@ -375,6 +378,16 @@ async function loadUserDataShared(opts?: { silent?: boolean }): Promise<void> {
             tenantId: access.row.tenant_id,
             rol: access.row.rol,
           });
+
+          // Update local device session in IndexedDB for desktop offline support
+          if (Boolean((window as any).electronAPI)) {
+            try {
+              await saveLocalDeviceSession(access.row.tenant_id, u.id, u.email, access.row);
+              logAuth('loadUserData:updated-local-session-with-fresh-plan');
+            } catch (err) {
+              logAuth('loadUserData:saveLocalDeviceSessionError', err);
+            }
+          }
         } else {
           clearTenantSessionCache();
           patchSharedState({ tenantUser: null, tenantAccessDeniedReason: access.status });
@@ -518,6 +531,10 @@ export async function ensureAuthSessionFresh(): Promise<void> {
     logAuth('ensureAuthSessionFresh:skipped-offline');
     return;
   }
+  if (await isDesktopCloudUnavailable()) {
+    logAuth('ensureAuthSessionFresh:skipped-cloud-unavailable');
+    return;
+  }
   if (loadUserDataInFlight) {
     await loadUserDataInFlight;
   }
@@ -602,6 +619,7 @@ export function useAuth() {
     tenantUser: tenantUserEffective,
     tenantId: tenantUserEffective?.tenant_id ?? null,
     rol: tenantUserEffective?.rol ?? null,
+    plan: tenantUserEffective?.plan ?? null,
     loading,
     signOut,
     isAuthenticated: !!user,

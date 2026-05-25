@@ -9,7 +9,10 @@ import {
   revalidateLicenseOnReconnect,
   syncIncremental,
   type LocalFirstStatus,
+  ensureDefaultSucursal,
+  assertCanWriteOffline,
 } from "../lib/localFirst";
+import { isDesktopRuntime, probeCloudAvailability } from "../lib/cloudAvailability";
 
 export function resolveLicenseGateForOnlineSync(validation: {
   valid: boolean;
@@ -65,7 +68,8 @@ export function useLocalFirstBootstrap(tenantId: string | null): LocalFirstBoots
     const syncOnlineState = async () => {
       if (cancelled) return;
       const snapshot = await getLocalFirstStatusSnapshot(tenantId);
-      if (navigator.onLine) {
+      const cloudAvailable = await probeCloudAvailability(false);
+      if (navigator.onLine && cloudAvailable) {
         if (snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing") {
           const licenseValidation = await revalidateLicenseOnReconnect(tenantId);
           const licenseGate = resolveLicenseGateForOnlineSync(licenseValidation);
@@ -98,7 +102,9 @@ export function useLocalFirstBootstrap(tenantId: string | null): LocalFirstBoots
       } else {
         apply({
           status: "offline",
-          message: "Offline: operando con la última foto local disponible.",
+          message: navigator.onLine
+            ? "Servidor no disponible: operando con la última foto local disponible."
+            : "Offline: operando con la última foto local disponible.",
           completedHistoryTables: snapshot.completedHistoryTables,
           totalHistoryTables: snapshot.totalHistoryTables,
         });
@@ -112,6 +118,20 @@ export function useLocalFirstBootstrap(tenantId: string | null): LocalFirstBoots
       if (!navigator.onLine) {
         syncOnlineState();
         return;
+      }
+
+      if (isDesktopRuntime() && !(await probeCloudAvailability(false))) {
+        const snapshot = await getLocalFirstStatusSnapshot(tenantId);
+        const localReady = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
+        const license = await assertCanWriteOffline(tenantId);
+        if (localReady && license.valid) {
+          apply({
+            ...snapshot,
+            status: "offline",
+            message: "Servidor no disponible: iniciando con datos locales.",
+          });
+          return;
+        }
       }
 
       try {
@@ -128,6 +148,7 @@ export function useLocalFirstBootstrap(tenantId: string | null): LocalFirstBoots
         }
 
         const snapshot = await getLocalFirstStatusSnapshot(tenantId);
+        await ensureDefaultSucursal(tenantId);
         if (snapshot.status === "history_complete") {
           apply({ ...snapshot, status: "syncing", message: "Sincronizando cambios..." });
           await syncOnlineState();
@@ -166,8 +187,17 @@ export function useLocalFirstBootstrap(tenantId: string | null): LocalFirstBoots
                   : "Listo para operar. Historial completo sincronizando en background.",
             });
           },
-        }).catch((err: unknown) => {
+        }).catch(async (err: unknown) => {
           if (!cancelled) {
+            if (isDesktopRuntime() && !(await probeCloudAvailability(false))) {
+              const next = await getLocalFirstStatusSnapshot(tenantId);
+              apply({
+                ...next,
+                status: "offline",
+                message: "Servidor no disponible: historial local pendiente de sincronizar.",
+              });
+              return;
+            }
             apply({
               status: "error",
               message: err instanceof Error ? err.message : "No se pudo completar el historial local.",

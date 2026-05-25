@@ -10,7 +10,6 @@ import {
   formatRoleLabel,
   tenantUserLimitColumnsPresent,
   type ManagedUserRole,
-  type TenantUserLimitConfig,
 } from "../../../shared/lib/tenantUserLimits";
 
 interface TenantUserRow {
@@ -30,11 +29,14 @@ interface TenantRow {
   telefono?: string | null;
   direccion?: string | null;
   activa?: boolean | null;
+  plan?: string | null;
   user_limit_enabled?: boolean | null;
   admin_user_limit?: number | null;
   cajera_user_limit?: number | null;
   cocina_user_limit?: number | null;
   mesero_user_limit?: number | null;
+  sucursal_limit_enabled?: boolean | null;
+  sucursal_limit?: number | null;
   [key: string]: unknown;
 }
 
@@ -44,9 +46,11 @@ type LimitDraft = {
   cajeraUserLimit: string;
   cocinaUserLimit: string;
   meseroUserLimit: string;
+  sucursalLimitEnabled: boolean;
+  sucursalLimit: string;
 };
 
-type LimitDraftNumberField = Exclude<keyof LimitDraft, "userLimitEnabled">;
+type LimitDraftNumberField = Exclude<keyof LimitDraft, "userLimitEnabled" | "sucursalLimitEnabled">;
 
 type TenantCard = {
   tenant: TenantRow;
@@ -57,13 +61,17 @@ type TenantCard = {
 
 const MANAGED_ROLES: ManagedUserRole[] = ["admin", "cajera", "cocina", "mesero"];
 
-function toDraft(config: TenantUserLimitConfig): LimitDraft {
+function toDraft(tenant: TenantRow): LimitDraft {
+  const config = extractTenantUserLimitConfig(tenant);
+
   return {
     userLimitEnabled: config.userLimitEnabled,
     adminUserLimit: "1",
     cajeraUserLimit: config.cajeraUserLimit?.toString() ?? "",
     cocinaUserLimit: config.cocinaUserLimit?.toString() ?? "",
     meseroUserLimit: config.meseroUserLimit?.toString() ?? "",
+    sucursalLimitEnabled: tenant.sucursal_limit_enabled !== false,
+    sucursalLimit: tenant.sucursal_limit?.toString() ?? "",
   };
 }
 
@@ -73,6 +81,14 @@ function parseNullableLimit(value: string): number | null {
   const parsed = Number(trimmed);
   if (!Number.isInteger(parsed) || parsed < 0) {
     throw new Error("Los limites deben ser enteros mayores o iguales a 0.");
+  }
+  return parsed;
+}
+
+function parseNullablePositiveLimit(value: string): number | null {
+  const parsed = parseNullableLimit(value);
+  if (parsed !== null && parsed < 1) {
+    throw new Error("El limite de sucursales debe ser 1 o mayor.");
   }
   return parsed;
 }
@@ -116,6 +132,7 @@ export function SuperAdmin() {
   const [drafts, setDrafts] = useState<Record<string, LimitDraft>>({});
   const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
   const [savingTenantId, setSavingTenantId] = useState<string | null>(null);
+  const [savingPlanId, setSavingPlanId] = useState<string | null>(null);
   const [rowActionId, setRowActionId] = useState<string | null>(null);
   const [columnsReady, setColumnsReady] = useState(true);
 
@@ -154,7 +171,7 @@ export function SuperAdmin() {
 
     const nextDrafts: Record<string, LimitDraft> = {};
     tenantRows.forEach((tenant) => {
-      nextDrafts[tenant.id] = toDraft(extractTenantUserLimitConfig(tenant));
+      nextDrafts[tenant.id] = toDraft(tenant);
     });
 
     setColumnsReady(tenantRows.length === 0 || tenantRows.some((row) => tenantUserLimitColumnsPresent(row)));
@@ -226,6 +243,8 @@ export function SuperAdmin() {
         cajera_user_limit: parseNullableLimit(draft.cajeraUserLimit),
         cocina_user_limit: parseNullableLimit(draft.cocinaUserLimit),
         mesero_user_limit: parseNullableLimit(draft.meseroUserLimit),
+        sucursal_limit_enabled: draft.sucursalLimitEnabled,
+        sucursal_limit: parseNullablePositiveLimit(draft.sucursalLimit),
       };
 
       const { error: updateError } = await insforgeClient.database
@@ -245,6 +264,43 @@ export function SuperAdmin() {
     } catch (err) {
       setSavingTenantId(null);
       setError(err instanceof Error ? err.message : "No se pudieron guardar los limites.");
+    }
+  }
+
+  async function updateTenantPlan(tenantId: string, plan: 'basico' | 'profesional' | 'empresarial') {
+    let confirmMsg = `¿Cambiar el plan del restaurante a ${plan.toUpperCase()}?\n\n`;
+    if (plan === 'basico') {
+      confirmMsg += 'Si se degrada a Básico, se ocultarán los módulos de inventario y sucursales (límite de 1 sucursal y 5 usuarios).';
+    } else if (plan === 'profesional') {
+      confirmMsg += 'Se habilitará el inventario avanzado y el soporte de hasta 3 sucursales con usuarios ilimitados.';
+    } else {
+      confirmMsg += 'Se habilitará el soporte para sucursales ilimitadas, integraciones avanzadas y soporte corporativo 24/7.';
+    }
+    const confirmed = confirm(confirmMsg);
+    if (!confirmed) return;
+
+    try {
+      setSavingPlanId(tenantId);
+      setError("");
+      setInfo("");
+
+      const { error: updateError } = await insforgeClient.database
+        .from("tenants")
+        .update({ plan })
+        .eq("id", tenantId);
+
+      if (updateError) {
+        setError(`No se pudo actualizar el plan del restaurante. ${updateError.message}`);
+        setSavingPlanId(null);
+        return;
+      }
+
+      setInfo(`Plan del restaurante actualizado a ${plan.toUpperCase()} correctamente.`);
+      await loadData();
+      setSavingPlanId(null);
+    } catch (err) {
+      setSavingPlanId(null);
+      setError(err instanceof Error ? err.message : "No se pudo actualizar el plan.");
     }
   }
 
@@ -367,10 +423,103 @@ Esto reactiva el restaurante y todos sus usuarios. Revis? despu?s si quer?s elim
 
   function renderLimitsPanel(card: TenantCard) {
     const { tenant } = card;
-    const draft = drafts[tenant.id] ?? toDraft(extractTenantUserLimitConfig(tenant));
+    const draft = drafts[tenant.id] ?? toDraft(tenant);
 
     return (
       <div className="bg-[#111111] rounded-[16px] border border-[rgba(72,72,71,0.18)] p-5 flex flex-col gap-4">
+        {/* Plan de Suscripción */}
+        <div className="flex flex-col gap-2 pb-3 border-b border-[rgba(72,72,71,0.12)]">
+          <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[14px] uppercase tracking-[0.5px]">
+            Plan de Suscripción
+          </span>
+          <div className="flex gap-2 mt-1">
+            <button
+              type="button"
+              onClick={() => updateTenantPlan(tenant.id, 'basico')}
+              disabled={tenant.plan === 'basico' || savingPlanId === tenant.id}
+              className={`flex-1 py-2 px-3 rounded-[10px] font-['Space_Grotesk',sans-serif] font-bold text-[11px] uppercase tracking-[0.5px] border cursor-pointer transition-all duration-200 ${
+                (tenant.plan ?? 'basico') === 'basico'
+                  ? 'bg-[rgba(255,144,109,0.12)] border-[#ff906d] text-[#ff906d]'
+                  : 'bg-[#1a1a1a] border-[rgba(72,72,71,0.22)] text-[#adaaaa] hover:border-[rgba(255,144,109,0.2)] hover:text-white'
+              }`}
+            >
+              Básico
+            </button>
+            <button
+              type="button"
+              onClick={() => updateTenantPlan(tenant.id, 'profesional')}
+              disabled={tenant.plan === 'profesional' || savingPlanId === tenant.id}
+              className={`flex-1 py-2 px-3 rounded-[10px] font-['Space_Grotesk',sans-serif] font-bold text-[11px] uppercase tracking-[0.5px] border cursor-pointer transition-all duration-200 ${
+                tenant.plan === 'profesional'
+                  ? 'bg-[rgba(255,144,109,0.12)] border-[#ff906d] text-[#ff906d]'
+                  : 'bg-[#1a1a1a] border-[rgba(72,72,71,0.22)] text-[#adaaaa] hover:border-[rgba(255,144,109,0.2)] hover:text-white'
+              }`}
+            >
+              Profesional
+            </button>
+            <button
+              type="button"
+              onClick={() => updateTenantPlan(tenant.id, 'empresarial')}
+              disabled={tenant.plan === 'empresarial' || savingPlanId === tenant.id}
+              className={`flex-1 py-2 px-3 rounded-[10px] font-['Space_Grotesk',sans-serif] font-bold text-[11px] uppercase tracking-[0.5px] border cursor-pointer transition-all duration-200 ${
+                tenant.plan === 'empresarial'
+                  ? 'bg-[rgba(139,92,246,0.12)] border-[#8b5cf6] text-[#a78bfa]'
+                  : 'bg-[#1a1a1a] border-[rgba(72,72,71,0.22)] text-[#adaaaa] hover:border-[rgba(255,144,109,0.2)] hover:text-white'
+              }`}
+            >
+              Empresarial
+            </button>
+          </div>
+          {savingPlanId === tenant.id && (
+            <span className="font-['Inter',sans-serif] text-[10px] text-[#ff906d]">Actualizando plan...</span>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-3 pb-3 border-b border-[rgba(72,72,71,0.12)]">
+          <div className="flex flex-col gap-1">
+            <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[14px] uppercase tracking-[0.5px]">
+              Limite de sucursales
+            </span>
+            <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px] leading-relaxed">
+              Usa el limite del plan por defecto, o ajustalo si el cliente paga sucursales extra.
+            </span>
+          </div>
+
+          <label className="flex items-center justify-between gap-3 bg-[#1a1a1a] rounded-[12px] px-4 py-3 border border-[rgba(72,72,71,0.18)]">
+            <span className="font-['Inter',sans-serif] text-white text-[13px]">Activar control de sucursales</span>
+            <input
+              type="checkbox"
+              checked={draft.sucursalLimitEnabled}
+              onChange={(e) =>
+                setDrafts((prev) => ({
+                  ...prev,
+                  [tenant.id]: {
+                    ...draft,
+                    sucursalLimitEnabled: e.target.checked,
+                  },
+                }))
+              }
+            />
+          </label>
+
+          <input
+            type="number"
+            min="1"
+            value={draft.sucursalLimit}
+            onChange={(e) =>
+              setDrafts((prev) => ({
+                ...prev,
+                [tenant.id]: {
+                  ...draft,
+                  sucursalLimit: e.target.value,
+                },
+              }))
+            }
+            placeholder="Ilimitado"
+            className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-3 py-2 font-['Inter',sans-serif] text-white text-[13px] outline-none"
+          />
+        </div>
+
         <div className="flex flex-col gap-1">
           <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[16px] uppercase">
             Limites por rol
@@ -441,7 +590,7 @@ Esto reactiva el restaurante y todos sus usuarios. Revis? despu?s si quer?s elim
 
   function renderTenantDetail(card: TenantCard) {
     const { tenant, users, admins, counts } = card;
-    const draft = drafts[tenant.id] ?? toDraft(extractTenantUserLimitConfig(tenant));
+    const draft = drafts[tenant.id] ?? toDraft(tenant);
     const isBlocked = tenant.activa === false;
 
     return (
@@ -453,6 +602,15 @@ Esto reactiva el restaurante y todos sus usuarios. Revis? despu?s si quer?s elim
                 {tenant.nombre_negocio || "Restaurante sin nombre"}
               </span>
               <StatusPill active={!isBlocked} />
+              <span className={`inline-flex rounded-full px-2.5 py-1 font-['Space_Grotesk',sans-serif] text-[10px] font-bold uppercase tracking-[0.8px] ${
+                tenant.plan === 'empresarial'
+                  ? 'bg-[rgba(139,92,246,0.15)] text-[#a78bfa] border border-[rgba(139,92,246,0.3)]'
+                  : tenant.plan === 'profesional' 
+                    ? 'bg-[rgba(255,144,109,0.15)] text-[#ff906d] border border-[rgba(255,144,109,0.3)]' 
+                    : 'bg-[#262626] text-[#adaaaa]'
+              }`}>
+                Plan: {tenant.plan ?? 'basico'}
+              </span>
             </div>
             <div className="flex flex-wrap gap-3 text-[12px] font-['Inter',sans-serif] text-[#6b7280]">
               <span className="break-all">Tenant: {tenant.id}</span>
@@ -683,8 +841,17 @@ Esto reactiva el restaurante y todos sus usuarios. Revis? despu?s si quer?s elim
                             <div className="truncate font-['Space_Grotesk',sans-serif] text-[14px] font-bold text-white">
                               {tenant.nombre_negocio || "Restaurante sin nombre"}
                             </div>
-                            <div className="mt-1 truncate font-['Inter',sans-serif] text-[11px] text-[#6b7280]">
-                              {tenant.rnc || tenant.telefono || tenant.id}
+                            <div className="mt-1 truncate font-['Inter',sans-serif] text-[11px] text-[#6b7280] flex items-center gap-1.5">
+                              <span>{tenant.rnc || tenant.telefono || tenant.id}</span>
+                              <span className={`px-1 py-0.2 text-[8px] rounded uppercase font-bold tracking-[0.4px] ${
+                                tenant.plan === 'empresarial'
+                                  ? 'bg-[rgba(139,92,246,0.15)] text-[#a78bfa]'
+                                  : tenant.plan === 'profesional' 
+                                    ? 'bg-[rgba(255,144,109,0.15)] text-[#ff906d]' 
+                                    : 'bg-[#262626] text-[#adaaaa]'
+                              }`}>
+                                {tenant.plan ?? 'basico'}
+                              </span>
                             </div>
                           </div>
                           <StatusPill active={tenant.activa !== false} />

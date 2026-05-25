@@ -1,4 +1,5 @@
 import { insforgeClient } from "./insforge";
+import { isDesktopCloudUnavailable } from "./cloudAvailability";
 import { readLocalMirror } from "./localFirst";
 
 function toValidInvoiceNumber(value: unknown): number | null {
@@ -38,7 +39,8 @@ async function getMaxServerInvoiceNumber(tenantId: string): Promise<number> {
 
 export async function getNextFacturaNumber(tenantId: string): Promise<number> {
   const localMax = await getMaxLocalInvoiceNumber(tenantId);
-  const serverMax = typeof navigator !== "undefined" && navigator.onLine
+  const shouldQueryServer = typeof navigator !== "undefined" && navigator.onLine && !(await isDesktopCloudUnavailable());
+  const serverMax = shouldQueryServer
     ? await getMaxServerInvoiceNumber(tenantId)
     : 0;
 

@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { useTenantCurrency } from "../../../shared/hooks/useTenantCurrency";
@@ -10,6 +10,7 @@ import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { normalizeTenantRol } from "../../../shared/lib/roleNav";
 import { enqueueLocalWrite, getDeviceId, isLocalFirstEnabled, readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { writePosMutationLocalFirst } from "../../pos/lib/localFirstMutations";
+import { useSucursal } from "../../../app/context/SucursalContext";
 
 interface Plato {
   id: number;
@@ -144,6 +145,7 @@ function groupMesaConsumos(rows: MesaConsumoRow[], ownerNameByAuthId: Map<string
 
 export function Camarera() {
   const { tenantId, user, rol, loading: authLoading } = useAuth();
+  const { activeSucursalId } = useSucursal();
   const { formatMoney } = useTenantCurrency();
   const [platos, setPlatos] = useState<Plato[]>([]);
   const [mesas, setMesas] = useState<MesaOption[]>([]);
@@ -173,8 +175,8 @@ export function Camarera() {
       try {
         if (await shouldReadLocalFirst(tenantId, ["consumos"])) {
           return {
-            data: (await readLocalMirror<MesaConsumoRow & { mesa_numero: number | null }>(tenantId, "consumos"))
-              .filter((row) => row.estado !== "pagado"),
+            data: (await readLocalMirror<MesaConsumoRow & { mesa_numero: number | null; sucursal_id?: string | null }>(tenantId, "consumos"))
+              .filter((row) => row.estado !== "pagado" && row.sucursal_id === activeSucursalId),
             error: null,
           };
         }
@@ -185,14 +187,16 @@ export function Camarera() {
         .from("consumos")
         .select("mesa_numero, subtotal, created_by_auth_user_id")
         .eq("tenant_id", tenantId)
+        .eq("sucursal_id", activeSucursalId)
         .neq("estado", "pagado");
-    };
+     };
 
     Promise.all([
       insforgeClient.database
         .from("platos")
         .select("*")
         .eq("tenant_id", tenantId)
+        .eq("sucursal_id", activeSucursalId)
         .eq("disponible", true)
         .order("categoria"),
       loadOpenConsumos(),
@@ -245,7 +249,7 @@ export function Camarera() {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, tenantId, user?.id]);
+  }, [authLoading, tenantId, user?.id, activeSucursalId]);
 
   const loadSelectedMesaConsumos = useCallback(async (mesaNumero: number | null) => {
     if (!tenantId || !mesaNumero) {
@@ -254,10 +258,10 @@ export function Camarera() {
     }
     try {
       if (await shouldReadLocalFirst(tenantId, ["consumos"])) {
-        const rows = await readLocalMirror<MesaConsumoRow & { mesa_numero: number | null }>(tenantId, "consumos");
+        const rows = await readLocalMirror<MesaConsumoRow & { mesa_numero: number | null; sucursal_id?: string | null }>(tenantId, "consumos");
         setMesaConsumos(
           rows
-            .filter((row) => Number(row.mesa_numero) === mesaNumero && row.estado !== "pagado")
+            .filter((row) => Number(row.mesa_numero) === mesaNumero && row.estado !== "pagado" && row.sucursal_id === activeSucursalId)
             .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
         );
         return;
@@ -269,6 +273,7 @@ export function Camarera() {
       .from("consumos")
       .select("id, comanda_id, plato_id, nombre, cantidad, precio_unitario, subtotal, tipo, estado, created_at, created_by_auth_user_id")
       .eq("tenant_id", tenantId)
+      .eq("sucursal_id", activeSucursalId)
       .eq("mesa_numero", mesaNumero)
       .neq("estado", "pagado")
       .order("created_at", { ascending: false });
@@ -278,7 +283,7 @@ export function Camarera() {
       return;
     }
     setMesaConsumos(data as MesaConsumoRow[]);
-  }, [tenantId]);
+  }, [tenantId, activeSucursalId]);
 
   useEffect(() => {
     void loadSelectedMesaConsumos(selectedMesaNumero);
@@ -349,6 +354,7 @@ export function Camarera() {
         .from("cocina_estado")
         .select("activa")
         .eq("tenant_id", tenantId)
+        .eq("sucursal_id", activeSucursalId)
         .limit(1);
 
       if (cocinaEstado?.[0]?.activa === false) {
@@ -368,6 +374,7 @@ export function Camarera() {
       const comandaPayload = {
         id: localComandaId,
         mesa_numero: selectedMesa.numero,
+        sucursal_id: activeSucursalId,
         estado: "pendiente",
         items,
         notas: null,
@@ -424,6 +431,7 @@ export function Camarera() {
       ...kitchenItems.map((item) => ({
         mesa_numero: selectedMesa.numero,
         tenant_id: tenantId,
+        sucursal_id: activeSucursalId,
         comanda_id: comandaId,
         plato_id: item.plato.id,
         nombre: item.plato.nombre,
@@ -437,6 +445,7 @@ export function Camarera() {
       ...directItems.map((item) => ({
         mesa_numero: selectedMesa.numero,
         tenant_id: tenantId,
+        sucursal_id: activeSucursalId,
         comanda_id: null,
         plato_id: item.plato.id,
         nombre: item.plato.nombre,
@@ -508,7 +517,13 @@ export function Camarera() {
         tableName: "consumos",
         rowId: consumoId,
         op: "delete",
-        payload: { id: consumoId },
+        payload: {
+          id: consumoId,
+          tenant_id: tenantId,
+          mesa_numero: selectedMesa.numero,
+          comanda_id: group.comandaIds[0] ?? null,
+          created_by_auth_user_id: group.ownerId,
+        },
         authUserId: user?.id ?? null,
         deviceId,
       });
@@ -570,14 +585,17 @@ export function Camarera() {
     }
 
     await loadSelectedMesaConsumos(selectedMesa.numero);
-    setMesas((prev) => prev.map((mesa) => mesa.numero === selectedMesa.numero
-      ? {
-          ...mesa,
-          deuda_pendiente: Math.max(0, mesa.deuda_pendiente - Number(group.subtotal)),
-          items_pendientes: Math.max(0, mesa.items_pendientes - group.ids.length),
-        }
-      : mesa
-    ));
+    setMesas((prev) => prev.map((mesa) => {
+      if (mesa.numero !== selectedMesa.numero) return mesa;
+      const nextItems = Math.max(0, mesa.items_pendientes - group.ids.length);
+      return {
+        ...mesa,
+        deuda_pendiente: Math.max(0, mesa.deuda_pendiente - Number(group.subtotal)),
+        items_pendientes: nextItems,
+        mine_pending: nextItems > 0 ? mesa.mine_pending : false,
+        owner_names: nextItems > 0 ? mesa.owner_names : [],
+      };
+    }));
     setMessage(`${group.nombre} eliminado de la mesa.`);
     setDeletingConsumoId(null);
   }
