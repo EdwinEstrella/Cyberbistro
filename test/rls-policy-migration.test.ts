@@ -10,6 +10,7 @@ const migration = readFileSync(
 describe("consumos and facturas destructive RLS policies", () => {
   it("replaces broad FOR ALL tenant policies with action-specific policies", () => {
     expect(migration).toContain("DROP POLICY IF EXISTS cb_consumos_tenant_isolation");
+    expect(migration).toContain("DROP POLICY IF EXISTS cb_consumos_delete");
     expect(migration).toContain("DROP POLICY IF EXISTS cb_facturas_tenant_isolation");
     expect(migration).not.toMatch(/CREATE POLICY cb_(consumos|facturas)_tenant_isolation[\s\S]*FOR ALL/);
   });

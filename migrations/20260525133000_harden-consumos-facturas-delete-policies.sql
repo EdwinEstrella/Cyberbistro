@@ -34,6 +34,7 @@ DROP POLICY IF EXISTS cb_consumos_tenant_isolation ON public.consumos;
 DROP POLICY IF EXISTS cb_consumos_tenant_select ON public.consumos;
 DROP POLICY IF EXISTS cb_consumos_tenant_insert ON public.consumos;
 DROP POLICY IF EXISTS cb_consumos_tenant_update ON public.consumos;
+DROP POLICY IF EXISTS cb_consumos_delete ON public.consumos;
 DROP POLICY IF EXISTS cb_consumos_staff_delete_open ON public.consumos;
 
 CREATE POLICY cb_consumos_tenant_select
