@@ -9,6 +9,12 @@ import {
   saveThermalPrintSettings,
 } from "../../../shared/lib/thermalStorage";
 import {
+  shouldReadLocalFirst,
+  readLocalMirror,
+  enqueueLocalWrite,
+  getDeviceId,
+} from "../../../shared/lib/localFirst";
+import {
   buildFacturaReceiptHtml,
   buildComandaReceiptHtml,
   buildSplitTicketHtml,
@@ -144,11 +150,25 @@ export function Ajustes() {
     let cancelled = false;
     void (async () => {
       await ensureAuthSessionFresh();
-      const res = await insforgeClient.database.from("tenants").select(`${TENANT_FIELDS_BASE}, ${TENANT_FIELDS_CURRENCY}, ${TENANT_FIELDS_NCF}`).eq("id", tenantId).maybeSingle();
+      
+      const useLocal = await shouldReadLocalFirst(tenantId, ["tenants"]);
+      let data: any = null;
+
+      if (useLocal) {
+        const localTenants = await readLocalMirror<any>(tenantId, "tenants").catch(() => []);
+        data = localTenants.find((t) => t.id === tenantId);
+        if (!data && navigator.onLine) {
+          const res = await insforgeClient.database.from("tenants").select(`${TENANT_FIELDS_BASE}, ${TENANT_FIELDS_CURRENCY}, ${TENANT_FIELDS_NCF}`).eq("id", tenantId).maybeSingle();
+          data = res.data;
+        }
+      } else {
+        const res = await insforgeClient.database.from("tenants").select(`${TENANT_FIELDS_BASE}, ${TENANT_FIELDS_CURRENCY}, ${TENANT_FIELDS_NCF}`).eq("id", tenantId).maybeSingle();
+        if (res.error) console.error(res.error.message);
+        data = res.data;
+      }
+
       if (cancelled) return;
-      if (res.error) { console.error(res.error.message); setLoading(false); return; }
-      if (res.data) {
-        const data = res.data as any;
+      if (data) {
         const defaultType: NcfBCode = isNcfBCode(data.ncf_tipo_default) ? data.ncf_tipo_default : DEFAULT_NCF_B_CODE;
         const ncfSequences = buildBSequenceMapFromRow(data);
         setConfig({
@@ -169,8 +189,8 @@ export function Ajustes() {
         });
       }
       // Proactively cache logo for offline printing
-      if (res.data && (res.data as any).logo_url) {
-        void cacheLogoFromUrl((res.data as any).logo_url);
+      if (data && data.logo_url) {
+        void cacheLogoFromUrl(data.logo_url);
       }
       setLoading(false);
     })();
@@ -183,6 +203,7 @@ export function Ajustes() {
     const nextBSequences = Object.fromEntries(NCF_B_TIPO_OPCIONES.map(o => [o.codigo, Math.floor(Number(config.ncf_secuencias_por_tipo[o.codigo] || 1))])) as Record<NcfBCode, number>;
     const ncfUpdate = buildTenantNcfUpdatePayload(config.ncf_fiscal_activo, config.ncf_tipo_default, nextBSequences, config.ncf_secuencias_por_tipo);
     const payload = {
+      id: tenantId,
       nombre_negocio: config.nombre_empresa.trim(),
       rnc: config.rnc.trim() || null,
       logo_url: config.logo_url.trim() || null,
@@ -196,8 +217,19 @@ export function Ajustes() {
       ...ncfUpdate,
       updated_at: new Date().toISOString()
     };
-    const { error } = await insforgeClient.database.from("tenants").update(payload).eq("id", tenantId);
-    if (error) { console.error(error.message); }
+    
+    try {
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "tenants",
+        rowId: tenantId,
+        op: "update",
+        payload,
+        deviceId: await getDeviceId(),
+      });
+    } catch (error) {
+      console.error(error);
+    }
     setSaving(false);
   }
 

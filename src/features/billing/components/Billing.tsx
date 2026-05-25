@@ -138,13 +138,25 @@ async function hydrateInvoiceItemCategories(tenantId: string, rawInvoices: Invoi
   const categoriaPorPlato = new Map<number, string>();
 
   if (plateIds.length > 0) {
-    const { data } = await insforgeClient.database
-      .from("platos")
-      .select("id, categoria")
-      .eq("tenant_id", tenantId)
-      .in("id", plateIds);
+    let platesData: Array<{ id: number; categoria?: string | null }> = [];
+    const useLocal = await shouldReadLocalFirst(tenantId, ["platos"]);
+    if (useLocal) {
+      try {
+        const allLocal = await readLocalMirror<{ id: number; categoria?: string | null }>(tenantId, "platos");
+        platesData = allLocal.filter(p => plateIds.includes(p.id));
+      } catch {
+        platesData = [];
+      }
+    } else {
+      const { data } = await insforgeClient.database
+        .from("platos")
+        .select("id, categoria")
+        .eq("tenant_id", tenantId)
+        .in("id", plateIds);
+      platesData = (data as Array<{ id: number; categoria?: string | null }>) ?? [];
+    }
 
-    for (const plate of (data as Array<{ id: number; categoria?: string | null }>) ?? []) {
+    for (const plate of platesData) {
       categoriaPorPlato.set(plate.id, plate.categoria?.trim() || "General");
     }
   }
@@ -344,14 +356,13 @@ const loadBillingData = useCallback(async () => {
 
     return cycles.map((cycle) => {
       const cycleStartIso = getCycleStartIso(cycle);
-      const cycleEndIso = cycle.closed_at ?? new Date().toISOString();
+      const cycleEndIso = cycle.closed_at;
       const cycleInvoices = invoices
         .filter((inv) => {
           const invoiceCycleAt = new Date(getInvoiceCycleIso(inv)).getTime();
-          return (
-            invoiceCycleAt >= new Date(cycleStartIso).getTime() &&
-            invoiceCycleAt <= new Date(cycleEndIso).getTime()
-          );
+          if (invoiceCycleAt < new Date(cycleStartIso).getTime()) return false;
+          if (cycleEndIso && invoiceCycleAt > new Date(cycleEndIso).getTime()) return false;
+          return true;
         })
         .sort((a, b) => new Date(getInvoiceCycleIso(a)).getTime() - new Date(getInvoiceCycleIso(b)).getTime());
       const cycleExpenses = expenses

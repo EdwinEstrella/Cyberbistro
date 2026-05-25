@@ -98,12 +98,14 @@ function getInvoiceCycleIso(invoice: Pick<FacturaRow, "estado" | "created_at" | 
   return invoice.estado === "pagada" && invoice.pagada_at ? invoice.pagada_at : invoice.created_at;
 }
 
-function invoiceBelongsToCycle(invoice: FacturaRow, cycle: Pick<CierreOperativoRow, "opened_at" | "created_at" | "closed_at">, endIso = cycle.closed_at ?? new Date().toISOString()): boolean {
+function invoiceBelongsToCycle(invoice: FacturaRow, cycle: Pick<CierreOperativoRow, "opened_at" | "created_at" | "closed_at">, endIso = cycle.closed_at): boolean {
   const invoiceCycleAt = new Date(getInvoiceCycleIso(invoice)).getTime();
-  return (
-    invoiceCycleAt >= new Date(getCycleStartIso(cycle)).getTime() &&
-    invoiceCycleAt <= new Date(endIso).getTime()
-  );
+  const startMs = new Date(getCycleStartIso(cycle)).getTime();
+  if (invoiceCycleAt < startMs) return false;
+  if (endIso) {
+    if (invoiceCycleAt > new Date(endIso).getTime()) return false;
+  }
+  return true;
 }
 
 export function Cierre() {
@@ -215,11 +217,15 @@ export function Cierre() {
       if (sel) {
         const [factData, gastosData] = await Promise.all([
           shouldReadLocalFirst(tenantId, ["facturas"]).then(useLocal => useLocal
-            ? readLocalMirror<FacturaRow & { sucursal_id?: string | null }>(tenantId, "facturas").then(fs => fs.filter(f => f.sucursal_id === activeSucursalId))
-            : insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).eq("sucursal_id", activeSucursalId).order("created_at", { ascending: false }).then(r => r.data ?? [])),
+            ? readLocalMirror<FacturaRow & { sucursal_id?: string | null }>(tenantId, "facturas").then(fs => fs.filter(f => f.sucursal_id === activeSucursalId || !f.sucursal_id))
+            : activeSucursalId 
+              ? insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("created_at", { ascending: false }).then(r => r.data ?? [])
+              : insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).is("sucursal_id", null).order("created_at", { ascending: false }).then(r => r.data ?? [])),
           shouldReadLocalFirst(tenantId, ["gastos"]).then(useLocal => useLocal
-            ? readLocalMirror<GastoRow>(tenantId, "gastos").then(gs => gs.filter(g => g.cycle_id === sel.id))
-            : insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, fecha_gasto").eq("tenant_id", tenantId).eq("cycle_id", sel.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? [])),
+            ? readLocalMirror<GastoRow & { sucursal_id?: string | null }>(tenantId, "gastos").then(gs => gs.filter(g => g.cycle_id === sel.id && (g.sucursal_id === activeSucursalId || !g.sucursal_id)))
+            : activeSucursalId 
+              ? insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, fecha_gasto").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).eq("cycle_id", sel.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? [])
+              : insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, fecha_gasto").eq("tenant_id", tenantId).is("sucursal_id", null).eq("cycle_id", sel.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? [])),
         ]);
 
         const allFacturas = (factData as FacturaRow[] | null) ?? [];
