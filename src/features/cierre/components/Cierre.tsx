@@ -6,6 +6,7 @@ import { buildCierreDiaReceiptHtml } from "../../../shared/lib/receiptTemplates"
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
+import { useSucursal } from "../../../app/context/SucursalContext";
 
 type FacturaEstado = "pagada" | "pendiente" | "cancelada";
 
@@ -49,6 +50,7 @@ interface CierreOperativoRow {
   closed_at: string | null;
   printed_at: string | null;
   created_at: string;
+  sucursal_id?: string | null;
 }
 
 function todayYmd(): string {
@@ -106,6 +108,7 @@ function invoiceBelongsToCycle(invoice: FacturaRow, cycle: Pick<CierreOperativoR
 
 export function Cierre() {
   const { tenantId, user, loading: authLoading } = useAuth();
+  const { activeSucursalId } = useSucursal();
   const [fecha, setFecha] = useState(todayYmd);
   const [cycles, setCycles] = useState<CierreOperativoRow[]>([]);
   const [facturas, setFacturas] = useState<FacturaRow[]>([]);
@@ -164,7 +167,7 @@ export function Cierre() {
   }, [gastos, categoriaGastoPorId, resumen.totalPagado]);
 
   const cargar = useCallback(async () => {
-    if (!tenantId) { setCycles([]); setFacturas([]); setGastos([]); setGastoCategorias([]); setConsumosAbiertos([]); setLoading(false); return; }
+    if (!tenantId || !activeSucursalId) { setCycles([]); setFacturas([]); setGastos([]); setGastoCategorias([]); setConsumosAbiertos([]); setLoading(false); return; }
     setLoading(true); setLoadError("");
     try {
       const [useLocalCiclos, useLocalConsumos, useLocalCategorias] = await Promise.all([
@@ -175,17 +178,17 @@ export function Cierre() {
 
       const [cyclesAll, consAll, openGlobal, categoriasData] = await Promise.all([
         useLocalCiclos
-          ? readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos")
-          : insforgeClient.database.from("cierres_operativos").select("*").eq("tenant_id", tenantId).eq("business_day", toYmd(fecha)).order("cycle_number", { ascending: false }).then(r => ({ data: r.data, error: r.error })),
+          ? readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos").then(rows => rows.filter(c => c.sucursal_id === activeSucursalId || !c.sucursal_id))
+          : insforgeClient.database.from("cierres_operativos").select("*").eq("tenant_id", tenantId).or(activeSucursalId ? `sucursal_id.eq.${activeSucursalId},sucursal_id.is.null` : `sucursal_id.is.null`).eq("business_day", toYmd(fecha)).order("cycle_number", { ascending: false }).then(r => ({ data: r.data, error: r.error })),
         useLocalConsumos
-          ? readLocalMirror<ConsumoAbiertoRow>(tenantId, "consumos")
-          : insforgeClient.database.from("consumos").select("mesa_numero, subtotal, estado").eq("tenant_id", tenantId).neq("estado", "pagado").then(r => ({ data: r.data, error: r.error })),
+          ? readLocalMirror<ConsumoAbiertoRow & { sucursal_id?: string | null }>(tenantId, "consumos").then(rows => rows.filter(c => c.sucursal_id === activeSucursalId || !c.sucursal_id))
+          : insforgeClient.database.from("consumos").select("mesa_numero, subtotal, estado").eq("tenant_id", tenantId).or(activeSucursalId ? `sucursal_id.eq.${activeSucursalId},sucursal_id.is.null` : `sucursal_id.is.null`).neq("estado", "pagado").then(r => ({ data: r.data, error: r.error })),
         useLocalCiclos
-          ? readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos")
-          : insforgeClient.database.from("cierres_operativos").select("*").eq("tenant_id", tenantId).is("closed_at", null).order("opened_at", { ascending: false }).limit(1).then(r => ({ data: r.data, error: r.error })),
+          ? readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos").then(rows => rows.filter(c => c.sucursal_id === activeSucursalId || !c.sucursal_id))
+          : insforgeClient.database.from("cierres_operativos").select("*").eq("tenant_id", tenantId).or(activeSucursalId ? `sucursal_id.eq.${activeSucursalId},sucursal_id.is.null` : `sucursal_id.is.null`).is("closed_at", null).order("opened_at", { ascending: false }).limit(1).then(r => ({ data: r.data, error: r.error })),
         useLocalCategorias
-          ? readLocalMirror<GastoCategoriaRow>(tenantId, "gasto_categorias")
-          : insforgeClient.database.from("gasto_categorias").select("id, nombre").eq("tenant_id", tenantId).then(r => ({ data: r.data, error: r.error })),
+          ? readLocalMirror<GastoCategoriaRow & { sucursal_id?: string | null }>(tenantId, "gasto_categorias").then(rows => rows.filter(c => c.sucursal_id === activeSucursalId || !c.sucursal_id))
+          : insforgeClient.database.from("gasto_categorias").select("id, nombre").eq("tenant_id", tenantId).or(activeSucursalId ? `sucursal_id.eq.${activeSucursalId},sucursal_id.is.null` : `sucursal_id.is.null`).then(r => ({ data: r.data, error: r.error })),
       ]);
 
       if (!useLocalCiclos && (cyclesAll as any).error) { setLoadError((cyclesAll as any).error.message); setLoading(false); return; }
@@ -212,8 +215,8 @@ export function Cierre() {
       if (sel) {
         const [factData, gastosData] = await Promise.all([
           shouldReadLocalFirst(tenantId, ["facturas"]).then(useLocal => useLocal
-            ? readLocalMirror<FacturaRow>(tenantId, "facturas")
-            : insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: false }).then(r => r.data ?? [])),
+            ? readLocalMirror<FacturaRow & { sucursal_id?: string | null }>(tenantId, "facturas").then(fs => fs.filter(f => f.sucursal_id === activeSucursalId))
+            : insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).eq("sucursal_id", activeSucursalId).order("created_at", { ascending: false }).then(r => r.data ?? [])),
           shouldReadLocalFirst(tenantId, ["gastos"]).then(useLocal => useLocal
             ? readLocalMirror<GastoRow>(tenantId, "gastos").then(gs => gs.filter(g => g.cycle_id === sel.id))
             : insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, fecha_gasto").eq("tenant_id", tenantId).eq("cycle_id", sel.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? [])),
@@ -234,31 +237,31 @@ export function Cierre() {
       setLoadError(err instanceof Error ? err.message : "Error cargando datos");
     }
     setLoading(false);
-  }, [tenantId, fecha]);
+  }, [tenantId, fecha, activeSucursalId]);
 
   useEffect(() => {
-    if (authLoading || !tenantId) return;
+    if (authLoading || !tenantId || !activeSucursalId) return;
     shouldReadLocalFirst(tenantId, ["cierres_operativos"]).then(useLocal => {
       if (useLocal) {
-        return readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos");
+        return readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos").then(rows => rows.filter(c => c.sucursal_id === activeSucursalId));
       }
-      return insforgeClient.database.from("cierres_operativos").select("business_day").eq("tenant_id", tenantId).is("closed_at", null).order("opened_at", { ascending: false }).limit(1).maybeSingle().then(r => r.data ? [r.data] : []);
+      return insforgeClient.database.from("cierres_operativos").select("business_day").eq("tenant_id", tenantId).eq("sucursal_id", activeSucursalId).is("closed_at", null).order("opened_at", { ascending: false }).limit(1).maybeSingle().then(r => r.data ? [r.data] : []);
     }).then((rows: any) => {
       if (rows?.[0]?.business_day) setFecha(toYmd(rows[0].business_day));
     }).catch(() => {});
-  }, [authLoading, tenantId]);
+  }, [authLoading, tenantId, activeSucursalId]);
 
   useEffect(() => { if (!authLoading) void cargar(); }, [authLoading, cargar]);
 
   async function handleStartCycle() {
-    if (!tenantId || globalHasOpenCycle) return;
+    if (!tenantId || !activeSucursalId || globalHasOpenCycle) return;
     setStartingCycle(true); setPrintMsg("");
     try {
       const useLocalCiclos = await shouldReadLocalFirst(tenantId, ["cierres_operativos"]);
 
       if (useLocalCiclos) {
         const allCycles = await readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos");
-        const openCycle = sortByOpenedAtDesc(allCycles.filter(c => !c.closed_at))[0] ?? null;
+        const openCycle = sortByOpenedAtDesc(allCycles.filter(c => !c.closed_at && c.sucursal_id === activeSucursalId))[0] ?? null;
         if (openCycle) {
           setFecha(toYmd(openCycle.business_day));
           setPrintMsg(`Ya existe un ciclo abierto (#${openCycle.cycle_number}). No voy a crear otro.`);
@@ -271,6 +274,7 @@ export function Cierre() {
           .from("cierres_operativos")
           .select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at")
           .eq("tenant_id", tenantId)
+          .eq("sucursal_id", activeSucursalId)
           .is("closed_at", null)
           .order("opened_at", { ascending: false })
           .limit(1);
@@ -301,7 +305,7 @@ export function Cierre() {
         tableName: "cierres_operativos",
         rowId: localCycleId,
         op: "insert",
-        payload: { id: localCycleId, tenant_id: tenantId, business_day: toYmd(fecha), cycle_number: num, opened_by_auth_user_id: user?.id, opened_at: new Date().toISOString(), created_at: new Date().toISOString(), closed_at: null },
+        payload: { id: localCycleId, tenant_id: tenantId, sucursal_id: activeSucursalId, business_day: toYmd(fecha), cycle_number: num, opened_by_auth_user_id: user?.id, opened_at: new Date().toISOString(), created_at: new Date().toISOString(), closed_at: null },
         deviceId: await getDeviceId(),
       });
 
@@ -336,11 +340,11 @@ export function Cierre() {
 
       const [facturasAll, gastosAll] = await Promise.all([
       useLocalFacturas
-        ? readLocalMirror<FacturaRow>(tenantId, "facturas")
-        : insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: false }).then(r => r.data ?? []),
+        ? readLocalMirror<FacturaRow & { sucursal_id?: string | null }>(tenantId, "facturas").then(fs => fs.filter(f => f.sucursal_id === activeSucursalId || !f.sucursal_id))
+        : insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("created_at", { ascending: false }).then(r => r.data ?? []),
       useLocalGastos
-        ? readLocalMirror<GastoRow>(tenantId, "gastos").then(gs => gs.filter(g => g.cycle_id === currentCycle.id))
-        : insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, fecha_gasto").eq("tenant_id", tenantId).eq("cycle_id", currentCycle.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? []),
+        ? readLocalMirror<GastoRow & { sucursal_id?: string | null }>(tenantId, "gastos").then(gs => gs.filter(g => g.cycle_id === currentCycle.id && (g.sucursal_id === activeSucursalId || !g.sucursal_id)))
+        : insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, fecha_gasto").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).eq("cycle_id", currentCycle.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? []),
     ]);
 
     const facturasCiclo = ((facturasAll as FacturaRow[]) ?? []).filter((invoice) => invoiceBelongsToCycle(invoice, currentCycle, now));
