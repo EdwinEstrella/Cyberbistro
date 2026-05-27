@@ -65,16 +65,20 @@ export interface PrintThermalResult {
  * Siempre abre el diálogo de impresión del sistema (no silencioso).
  * Si no hay `electronAPI` (p. ej. `vite` solo en el navegador para desarrollo), se usa un fallback con `window.print()`.
  */
-export async function printThermalHtml(html: string): Promise<PrintThermalResult> {
+export async function printThermalHtml(
+  html: string,
+  options?: { silent?: boolean }
+): Promise<PrintThermalResult> {
   const settings = getThermalPrintSettings();
   const api = window.electronAPI;
+  const shouldBeSilent = options?.silent ?? Boolean(settings.printerName);
 
   if (api?.printThermal) {
     try {
       const res = await api.printThermal({
         html,
         deviceName: settings.printerName || undefined,
-        silent: false,
+        silent: shouldBeSilent,
         paperWidthMm: settings.paperWidthMm,
       });
       return res ?? { ok: false, error: "Sin respuesta del proceso principal" };

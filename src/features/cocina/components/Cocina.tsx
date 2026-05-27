@@ -27,6 +27,7 @@ interface Comanda {
   notas: string | null;
   creado_por: string | null;
   created_at: string;
+  updated_at?: string;
 }
 
 export function Cocina() {
@@ -37,6 +38,7 @@ export function Cocina() {
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(false);
   const tenantReceiptRef = useRef<TenantReceiptInfo | null>(null);
+  const printedRef = useRef<Set<string>>(new Set());
 
   const reloadComandas = useCallback(async () => {
     if (!tenantId) return;
@@ -55,7 +57,61 @@ export function Cocina() {
     if (!error && data) setComandas(data as Comanda[]);
   }, [tenantId, activeSucursalId]);
 
-  useCocinaRealtimeSync(tenantId, reloadComandas, setCocinaActiva);
+  const handleNewComanda = useCallback(
+    async (
+      payload: { id: string; tenant_id: string; estado?: string },
+      eventType: "INSERT" | "UPDATE"
+    ) => {
+      if (eventType === "UPDATE" && payload.estado !== "pendiente") {
+        return;
+      }
+      if (!tenantId) return;
+
+      try {
+        let comanda: Comanda | null = null;
+        if (await shouldReadLocalFirst(tenantId, ["comandas"])) {
+          const rows = await readLocalMirror<Comanda & { tenant_id?: string; sucursal_id?: string | null }>(tenantId, "comandas");
+          comanda = rows.find(c => c.id === payload.id && c.tenant_id === tenantId) ?? null;
+        } else {
+          const { data, error } = await insforgeClient.database
+            .from("comandas")
+            .select("*")
+            .eq("tenant_id", tenantId)
+            .eq("id", payload.id)
+            .maybeSingle();
+          if (!error && data) {
+            comanda = data as Comanda;
+          }
+        }
+
+        if (!comanda) return;
+
+        const cSucursalId = (comanda as any).sucursal_id;
+        if (cSucursalId && cSucursalId !== activeSucursalId) {
+          return;
+        }
+
+        const updatedAtTime = new Date(comanda.updated_at || comanda.created_at || new Date()).getTime();
+        const dedupKey = `${comanda.id}_${updatedAtTime}`;
+
+        if (printedRef.current.has(dedupKey)) {
+          return;
+        }
+        printedRef.current.add(dedupKey);
+
+        if (tenantReceiptRef.current) {
+          const { paperWidthMm } = getThermalPrintSettings();
+          const html = buildComandaReceiptHtml(tenantReceiptRef.current, comanda as any, paperWidthMm);
+          await printThermalHtml(html);
+        }
+      } catch (err) {
+        console.error("[Cocina] Error in auto-print:", err);
+      }
+    },
+    [tenantId, activeSucursalId]
+  );
+
+  useCocinaRealtimeSync(tenantId, reloadComandas, setCocinaActiva, handleNewComanda);
 
   useEffect(() => {
     if (authLoading || !tenantId) { if (!authLoading) setLoading(false); return; }

@@ -43,7 +43,11 @@ function isPayloadForTenant(payload: unknown, tenantId: string): boolean {
 export function useCocinaRealtimeSync(
   tenantId: string | null,
   onComandasDirty: () => void | Promise<void>,
-  onCocinaActivaFromPayload?: (activa: boolean) => void
+  onCocinaActivaFromPayload?: (activa: boolean) => void,
+  onNewComandaReceived?: (
+    payload: { id: string; tenant_id: string; estado?: string },
+    eventType: "INSERT" | "UPDATE"
+  ) => void
 ) {
   useEffect(() => {
     if (!tenantId) return;
@@ -63,7 +67,31 @@ export function useCocinaRealtimeSync(
       }, 200);
     };
 
-    const onComandaEvent = (payload: unknown) => {
+    const handleInsertEvent = (payload: unknown) => {
+      if (!isPayloadForTenant(payload, tenantId)) return;
+      scheduleComandasRefetch();
+
+      if (onNewComandaReceived) {
+        const p = payload as { id?: string; tenant_id?: string; estado?: string };
+        if (p.id && p.tenant_id) {
+          onNewComandaReceived({ id: p.id, tenant_id: p.tenant_id, estado: p.estado }, "INSERT");
+        }
+      }
+    };
+
+    const handleUpdateEvent = (payload: unknown) => {
+      if (!isPayloadForTenant(payload, tenantId)) return;
+      scheduleComandasRefetch();
+
+      if (onNewComandaReceived) {
+        const p = payload as { id?: string; tenant_id?: string; estado?: string };
+        if (p.id && p.tenant_id) {
+          onNewComandaReceived({ id: p.id, tenant_id: p.tenant_id, estado: p.estado }, "UPDATE");
+        }
+      }
+    };
+
+    const handleDeleteEvent = (payload: unknown) => {
       if (!isPayloadForTenant(payload, tenantId)) return;
       scheduleComandasRefetch();
     };
@@ -89,9 +117,9 @@ export function useCocinaRealtimeSync(
         }
         if (cancelled) return;
 
-        rt.on("INSERT_comanda", onComandaEvent);
-        rt.on("UPDATE_comanda", onComandaEvent);
-        rt.on("DELETE_comanda", onComandaEvent);
+        rt.on("INSERT_comanda", handleInsertEvent);
+        rt.on("UPDATE_comanda", handleUpdateEvent);
+        rt.on("DELETE_comanda", handleDeleteEvent);
         rt.on("UPDATE_cocina_estado", onCocinaEstadoEvent);
       } catch (e) {
         console.warn("[Cocina] Realtime connect failed:", e);
@@ -101,9 +129,9 @@ export function useCocinaRealtimeSync(
     return () => {
       cancelled = true;
       if (debounceTimer) clearTimeout(debounceTimer);
-      rt.off("INSERT_comanda", onComandaEvent);
-      rt.off("UPDATE_comanda", onComandaEvent);
-      rt.off("DELETE_comanda", onComandaEvent);
+      rt.off("INSERT_comanda", handleInsertEvent);
+      rt.off("UPDATE_comanda", handleUpdateEvent);
+      rt.off("DELETE_comanda", handleDeleteEvent);
       rt.off("UPDATE_cocina_estado", onCocinaEstadoEvent);
       rt.unsubscribe(channel);
     };
