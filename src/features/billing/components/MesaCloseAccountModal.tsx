@@ -32,20 +32,19 @@ async function hasOpenCycle(tenantId: string, sucursalId: string | null): Promis
     const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
     if (localMode) {
       const cycles = await readLocalMirror<{ id: string; closed_at: string | null; sucursal_id?: string | null }>(tenantId, "cierres_operativos");
-      return cycles.some(c => !c.closed_at && c.sucursal_id === sucursalId);
+      return cycles.some(c => !c.closed_at && (c.sucursal_id === sucursalId || !c.sucursal_id));
     }
   } catch { /* fall through to online */ }
   const { data, error } = await insforgeClient.database
     .from("cierres_operativos")
-    .select("id")
+    .select("id, sucursal_id")
     .eq("tenant_id", tenantId)
-    .eq("sucursal_id", sucursalId)
     .is("closed_at", null);
   if (error) {
     console.warn("Error checking open cycle:", error);
     return false;
   }
-  return (data && (data as any[]).length > 0);
+  return (data && (data as any[]).some(c => c.sucursal_id === sucursalId || !c.sucursal_id));
 }
 
 

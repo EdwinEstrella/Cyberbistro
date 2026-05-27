@@ -12,20 +12,19 @@ async function hasOpenCycle(tenantId: string, sucursalId: string | null): Promis
     const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
     if (localMode) {
       const cycles = await readLocalMirror<{ id: string; closed_at: string | null; sucursal_id?: string | null }>(tenantId, "cierres_operativos");
-      return cycles.some(c => !c.closed_at && c.sucursal_id === sucursalId);
+      return cycles.some(c => !c.closed_at && (c.sucursal_id === sucursalId || !c.sucursal_id));
     }
   } catch { /* fall through to online */ }
   const { data, error } = await insforgeClient.database
     .from("cierres_operativos")
-    .select("id")
+    .select("id, sucursal_id")
     .eq("tenant_id", tenantId)
-    .eq("sucursal_id", sucursalId)
     .is("closed_at", null);
   if (error) {
     console.warn("Error checking open cycle:", error);
     return false;
   }
-  return (data && (data as any[]).length > 0);
+  return (data && (data as any[]).some(c => c.sucursal_id === sucursalId || !c.sucursal_id));
 }
 
 import { insforgeClient } from "../../../shared/lib/insforge";
@@ -58,6 +57,7 @@ import { getLocalFirstStatusSnapshot, readLocalMirror, readLocalOutbox, enqueueL
 import { getNextFacturaNumber } from "../../../shared/lib/invoiceNumber";
 import { writePosMutationLocalFirst } from "../../pos/lib/localFirstMutations";
 import { cacheLogoFromUrl } from "../../../shared/lib/logoCache";
+import { normalizeTenantRol } from "../../../shared/lib/roleNav";
 import { isDesktopCloudUnavailable } from "../../../shared/lib/cloudAvailability";
 
 interface Plato {
@@ -114,10 +114,24 @@ interface Consumo {
 }
 
 const ITBIS = 0.18;
+const CONSUMO_DELETE_STAFF_ROLES = new Set(["cajera", "mesero"]);
+
+function canDeleteOpenConsumo(rol: string | null | undefined, userId: string | null | undefined, consumo: Consumo) {
+  const normalizedRole = normalizeTenantRol(rol ?? null);
+  const isOpenUnbilled = consumo.factura_id == null && consumo.estado !== "pagado";
+  if (!isOpenUnbilled) return false;
+  if (normalizedRole === "admin") return true;
+  return Boolean(
+    userId &&
+    normalizedRole &&
+    CONSUMO_DELETE_STAFF_ROLES.has(normalizedRole) &&
+    consumo.created_by_auth_user_id === userId
+  );
+}
 
 export function Dashboard() {
   const { query: cartSearchQuery } = useVentaCartSearch();
-  const { tenantId, user, loading: authLoading } = useAuth();
+  const { tenantId, user, rol, loading: authLoading } = useAuth();
   const { activeSucursalId, loading: sucursalLoading } = useSucursal();
   const location = useLocation();
   const { theme } = useTheme();
@@ -591,6 +605,11 @@ export function Dashboard() {
     if (!tenantId || !selectedMesa || !activeSucursalId) return;
     const consumo = mesaConsumos.find((c) => c.id === consumoId);
     if (!consumo) return;
+
+    if (!canDeleteOpenConsumo(rol, user?.id, consumo)) {
+      alert("No tienes permiso para eliminar este consumo o ya fue facturado.");
+      return;
+    }
 
     const confirmed = window.confirm(
       `¿Eliminar "${consumo.cantidad}× ${consumo.nombre}" de la cuenta?\n\nEsta acción no se puede deshacer.`
@@ -1184,7 +1203,7 @@ export function Dashboard() {
         </div>
 
         {/* Items grid */}
-        {menuLoading ? (
+        {menuLoading || sucursalLoading ? (
           <div className="flex items-center justify-center py-[40px]">
             <span className="font-['Space_Grotesk',sans-serif] text-[#6b7280] text-[14px]">
               Cargando carta...
@@ -1495,17 +1514,19 @@ export function Dashboard() {
                         <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[13px] tabular-nums">
                           {formatMoney(Number(c.subtotal))}
                         </span>
-                        <button
-                          onClick={() => void deleteConsumo(c.id)}
-                          disabled={deletingConsumoId === c.id}
-                          title="Eliminar de la cuenta"
-                          className="bg-transparent border-none cursor-pointer p-[2px] transition-opacity hover:opacity-100 disabled:cursor-wait"
-                          style={{ opacity: 0.5 }}
-                        >
-                          <svg fill="none" viewBox="0 0 8.16667 8.16667" className="size-[10px]">
-                            <path d={svgPaths.p2317cf00} fill="#FF716C" />
-                          </svg>
-                        </button>
+                        {canDeleteOpenConsumo(rol, user?.id, c) && (
+                          <button
+                            onClick={() => void deleteConsumo(c.id)}
+                            disabled={deletingConsumoId === c.id}
+                            title="Eliminar de la cuenta"
+                            className="bg-transparent border-none cursor-pointer p-[2px] transition-opacity hover:opacity-100 disabled:cursor-wait"
+                            style={{ opacity: 0.5 }}
+                          >
+                            <svg fill="none" viewBox="0 0 8.16667 8.16667" className="size-[10px]">
+                              <path d={svgPaths.p2317cf00} fill="#FF716C" />
+                            </svg>
+                          </button>
+                        )}
                       </div>
                     </div>
                     <span className="font-['Inter',sans-serif] text-[#6b7280] text-[9px] uppercase tracking-wide">

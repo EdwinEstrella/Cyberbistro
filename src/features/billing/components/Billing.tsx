@@ -138,13 +138,25 @@ async function hydrateInvoiceItemCategories(tenantId: string, rawInvoices: Invoi
   const categoriaPorPlato = new Map<number, string>();
 
   if (plateIds.length > 0) {
-    const { data } = await insforgeClient.database
-      .from("platos")
-      .select("id, categoria")
-      .eq("tenant_id", tenantId)
-      .in("id", plateIds);
+    let platesData: Array<{ id: number; categoria?: string | null }> = [];
+    const useLocal = await shouldReadLocalFirst(tenantId, ["platos"]);
+    if (useLocal) {
+      try {
+        const allLocal = await readLocalMirror<{ id: number; categoria?: string | null }>(tenantId, "platos");
+        platesData = allLocal.filter(p => plateIds.includes(p.id));
+      } catch {
+        platesData = [];
+      }
+    } else {
+      const { data } = await insforgeClient.database
+        .from("platos")
+        .select("id, categoria")
+        .eq("tenant_id", tenantId)
+        .in("id", plateIds);
+      platesData = (data as Array<{ id: number; categoria?: string | null }>) ?? [];
+    }
 
-    for (const plate of (data as Array<{ id: number; categoria?: string | null }>) ?? []) {
+    for (const plate of platesData) {
       categoriaPorPlato.set(plate.id, plate.categoria?.trim() || "General");
     }
   }
@@ -263,36 +275,25 @@ const loadBillingData = useCallback(async () => {
 
     const [invoicesRes, cyclesRes, expensesRes, expenseCategoriesRes] = await Promise.all([
       useLocalInvoices
-        ? { data: await readLocalMirror<Invoice & { sucursal_id?: string | null }>(tenantId, "facturas").then(r => r.filter(f => f.sucursal_id === activeSucursalId).sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())), error: null }
-        : insforgeClient.database
-            .from("facturas")
-            .select("*")
-            .eq("tenant_id", tenantId)
-            .eq("sucursal_id", activeSucursalId)
-            .order("created_at", { ascending: false }),
+        ? { data: await readLocalMirror<Invoice & { sucursal_id?: string | null }>(tenantId, "facturas").then(r => r.filter(f => !f.sucursal_id || f.sucursal_id === activeSucursalId).sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())), error: null }
+        : activeSucursalId
+          ? insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("created_at", { ascending: false })
+          : insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).is("sucursal_id", null).order("created_at", { ascending: false }),
       useLocalCycles
-        ? { data: await readLocalMirror<CierreOperativoRow & { sucursal_id?: string | null }>(tenantId, "cierres_operativos").then(r => r.filter(c => c.sucursal_id === activeSucursalId).sort((a, b) => (b.cycle_number || 0) - (a.cycle_number || 0))), error: null }
-        : insforgeClient.database
-            .from("cierres_operativos")
-            .select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at")
-            .eq("tenant_id", tenantId)
-            .eq("sucursal_id", activeSucursalId)
-            .order("opened_at", { ascending: false }),
+        ? { data: await readLocalMirror<CierreOperativoRow & { sucursal_id?: string | null }>(tenantId, "cierres_operativos").then(r => r.filter(c => !c.sucursal_id || c.sucursal_id === activeSucursalId).sort((a, b) => (b.cycle_number || 0) - (a.cycle_number || 0))), error: null }
+        : activeSucursalId
+          ? insforgeClient.database.from("cierres_operativos").select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("opened_at", { ascending: false })
+          : insforgeClient.database.from("cierres_operativos").select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at").eq("tenant_id", tenantId).is("sucursal_id", null).order("opened_at", { ascending: false }),
       useLocalExpenses
-        ? { data: await readLocalMirror<Expense & { sucursal_id?: string | null }>(tenantId, "gastos").then(r => r.filter(g => g.sucursal_id === activeSucursalId).sort((a, b) => new Date(b.fecha_gasto || 0).getTime() - new Date(a.fecha_gasto || 0).getTime())), error: null }
-        : insforgeClient.database
-            .from("gastos")
-            .select("*")
-            .eq("tenant_id", tenantId)
-            .eq("sucursal_id", activeSucursalId)
-            .order("fecha_gasto", { ascending: false }),
+        ? { data: await readLocalMirror<Expense & { sucursal_id?: string | null }>(tenantId, "gastos").then(r => r.filter(g => !g.sucursal_id || g.sucursal_id === activeSucursalId).sort((a, b) => new Date(b.fecha_gasto || 0).getTime() - new Date(a.fecha_gasto || 0).getTime())), error: null }
+        : activeSucursalId
+          ? insforgeClient.database.from("gastos").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("fecha_gasto", { ascending: false })
+          : insforgeClient.database.from("gastos").select("*").eq("tenant_id", tenantId).is("sucursal_id", null).order("fecha_gasto", { ascending: false }),
       useLocalExpenseCategories
         ? { data: await readLocalMirror<ExpenseCategory & { sucursal_id?: string | null }>(tenantId, "gasto_categorias").then(r => r.filter(c => !c.sucursal_id || c.sucursal_id === activeSucursalId)), error: null }
-        : insforgeClient.database
-            .from("gasto_categorias")
-            .select("id, nombre, color")
-            .eq("tenant_id", tenantId)
-            .or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`),
+        : activeSucursalId
+          ? insforgeClient.database.from("gasto_categorias").select("id, nombre, color").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
+          : insforgeClient.database.from("gasto_categorias").select("id, nombre, color").eq("tenant_id", tenantId).is("sucursal_id", null),
     ]);
 
     if (!invoicesRes.error && invoicesRes.data) {
@@ -355,14 +356,13 @@ const loadBillingData = useCallback(async () => {
 
     return cycles.map((cycle) => {
       const cycleStartIso = getCycleStartIso(cycle);
-      const cycleEndIso = cycle.closed_at ?? new Date().toISOString();
+      const cycleEndIso = cycle.closed_at;
       const cycleInvoices = invoices
         .filter((inv) => {
           const invoiceCycleAt = new Date(getInvoiceCycleIso(inv)).getTime();
-          return (
-            invoiceCycleAt >= new Date(cycleStartIso).getTime() &&
-            invoiceCycleAt <= new Date(cycleEndIso).getTime()
-          );
+          if (invoiceCycleAt < new Date(cycleStartIso).getTime()) return false;
+          if (cycleEndIso && invoiceCycleAt > new Date(cycleEndIso).getTime()) return false;
+          return true;
         })
         .sort((a, b) => new Date(getInvoiceCycleIso(a)).getTime() - new Date(getInvoiceCycleIso(b)).getTime());
       const cycleExpenses = expenses

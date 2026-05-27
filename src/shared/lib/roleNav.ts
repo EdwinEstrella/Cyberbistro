@@ -18,7 +18,7 @@ export const GASTOS_PATH = "/gastos";
  * Canonicaliza roles legacy para evitar duplicados operativos:
  * - "vender", "vendedor", "ventas" => "cajera"  (acceso a ventas + cierre)
  * - "cajero"                       => "cajera"
- * - "mesero"                       => "mesero"  (camarera + sus entregas)
+ * - "mesero", "mesera"             => "mesero"  (camarera + sus entregas)
  * - "cocinero"                     => "cocina"
  */
 export function normalizeTenantRol(rol: string | null): TenantRol | null {
@@ -33,6 +33,7 @@ export function normalizeTenantRol(rol: string | null): TenantRol | null {
   if (rol === "vender" || rol === "vendedor" || rol === "ventas" || rol === "cajero") {
     return "cajera";
   }
+  if (rol === "mesera") return "mesero";
   if (rol === "cocinero") return "cocina";
   return null;
 }
