@@ -6,6 +6,7 @@ import { buildCierreDiaReceiptHtml } from "../../../shared/lib/receiptTemplates"
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
+import { isDesktopRuntime, isCloudAvailableForDesktop } from "../../../shared/lib/cloudAvailability";
 import { useSucursal } from "../../../app/context/SucursalContext";
 
 type FacturaEstado = "pagada" | "pendiente" | "cancelada";
@@ -183,8 +184,8 @@ export function Cierre() {
           ? readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos").then(rows => rows.filter(c => c.sucursal_id === activeSucursalId || !c.sucursal_id))
           : insforgeClient.database.from("cierres_operativos").select("*").eq("tenant_id", tenantId).or(activeSucursalId ? `sucursal_id.eq.${activeSucursalId},sucursal_id.is.null` : `sucursal_id.is.null`).eq("business_day", toYmd(fecha)).order("cycle_number", { ascending: false }).then(r => ({ data: r.data, error: r.error })),
         useLocalConsumos
-          ? readLocalMirror<ConsumoAbiertoRow & { sucursal_id?: string | null }>(tenantId, "consumos").then(rows => rows.filter(c => c.sucursal_id === activeSucursalId || !c.sucursal_id))
-          : insforgeClient.database.from("consumos").select("mesa_numero, subtotal, estado").eq("tenant_id", tenantId).or(activeSucursalId ? `sucursal_id.eq.${activeSucursalId},sucursal_id.is.null` : `sucursal_id.is.null`).neq("estado", "pagado").then(r => ({ data: r.data, error: r.error })),
+          ? readLocalMirror<ConsumoAbiertoRow & { sucursal_id?: string | null; created_at?: string }>(tenantId, "consumos").then(rows => rows.filter(c => c.sucursal_id === activeSucursalId || !c.sucursal_id))
+          : insforgeClient.database.from("consumos").select("mesa_numero, subtotal, estado, created_at").eq("tenant_id", tenantId).or(activeSucursalId ? `sucursal_id.eq.${activeSucursalId},sucursal_id.is.null` : `sucursal_id.is.null`).neq("estado", "pagado").then(r => ({ data: r.data, error: r.error })),
         useLocalCiclos
           ? readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos").then(rows => rows.filter(c => c.sucursal_id === activeSucursalId || !c.sucursal_id))
           : insforgeClient.database.from("cierres_operativos").select("*").eq("tenant_id", tenantId).or(activeSucursalId ? `sucursal_id.eq.${activeSucursalId},sucursal_id.is.null` : `sucursal_id.is.null`).is("closed_at", null).order("opened_at", { ascending: false }).limit(1).then(r => ({ data: r.data, error: r.error })),
@@ -236,8 +237,26 @@ export function Cierre() {
         setGastos([]);
       }
 
-      const consumosAbiertosData = consAllArray;
-      setConsumosAbiertos(sel?.closed_at == null ? consumosAbiertosData.filter(c => c.estado !== "pagado") : []);
+      const consumosAbiertosData = consAllArray.filter(c => c.estado !== "pagado");
+      if (sel) {
+        if (sel.closed_at == null) {
+          // Ciclo abierto: mostramos todos los consumos pendientes activos de la sucursal
+          setConsumosAbiertos(consumosAbiertosData);
+        } else {
+          // Ciclo cerrado: filtramos retroactivamente los consumos pendientes cuya fecha de creación caiga dentro del rango del ciclo cerrado
+          const startMs = new Date(getCycleStartIso(sel)).getTime();
+          const endMs = new Date(sel.closed_at).getTime();
+          const consumosDelCiclo = consumosAbiertosData.filter(c => {
+            const createdIso = (c as any).created_at;
+            if (!createdIso) return false;
+            const cAt = new Date(createdIso).getTime();
+            return cAt >= startMs && cAt <= endMs;
+          });
+          setConsumosAbiertos(consumosDelCiclo);
+        }
+      } else {
+        setConsumosAbiertos([]);
+      }
       setGlobalHasOpenCycle(!!openCycle);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : "Error cargando datos");
@@ -327,21 +346,50 @@ export function Cierre() {
     if (!tenantId || !currentCycle || currentCycle.closed_at) return;
     setPrinting(true); setPrintMsg("");
 
-    const useLocalConsumos = await shouldReadLocalFirst(tenantId, ["consumos"]);
+    // Validación inteligente de mesas/consumos pendientes de cobro antes de cerrar el ciclo
+    const isOnline = navigator.onLine;
+    const cloudAvailable = isDesktopRuntime() ? await isCloudAvailableForDesktop() : isOnline;
+
+    let pend: any[] = [];
+    try {
+      if (cloudAvailable) {
+        // VPS ONLINE: Consultamos de manera obligatoria y en tiempo real directamente al servidor
+        // para enterarnos instantáneamente de cualquier comanda agregada por los meseros desde la versión web.
+        const res = await insforgeClient.database
+          .from("consumos")
+          .select("id, sucursal_id, estado")
+          .eq("tenant_id", tenantId)
+          .neq("estado", "pagado");
+        
+        if (res.error) throw new Error(res.error.message);
+        
+        // Filtramos para la sucursal de esta caja (o si sucursal_id es nulo)
+        pend = (res.data ?? []).filter((c: any) => c.sucursal_id === activeSucursalId || !c.sucursal_id);
+      } else {
+        // VPS OFFLINE: Nos fiamos de la IndexedDB local del espejo local, filtrando por la sucursal activa
+        const allConsumos = await readLocalMirror<ConsumoAbiertoRow & { sucursal_id?: string | null }>(tenantId, "consumos");
+        pend = allConsumos.filter(
+          c => c.estado !== "pagado" && (c.sucursal_id === activeSucursalId || !c.sucursal_id)
+        );
+      }
+    } catch (err) {
+      console.error("Error validando consumos pendientes:", err);
+      // Fallback seguro a local mirror en caso de fallo de red
+      const allConsumos = await readLocalMirror<ConsumoAbiertoRow & { sucursal_id?: string | null }>(tenantId, "consumos");
+      pend = allConsumos.filter(
+        c => c.estado !== "pagado" && (c.sucursal_id === activeSucursalId || !c.sucursal_id)
+      );
+    }
+
+    if (pend.length) {
+      setPrintMsg(`No se puede cerrar el ciclo: tenés ${pend.length} consumo(s) pendiente(s) por cobrar en las mesas.`);
+      setPrinting(false);
+      return;
+    }
+
     const useLocalFacturas = await shouldReadLocalFirst(tenantId, ["facturas"]);
     const useLocalGastos = await shouldReadLocalFirst(tenantId, ["gastos"]);
     const useLocalTenants = await shouldReadLocalFirst(tenantId, ["tenants"]);
-
-    let pend: any[] = [];
-    if (useLocalConsumos) {
-      const allConsumos = await readLocalMirror<ConsumoAbiertoRow>(tenantId, "consumos");
-      pend = allConsumos.filter(c => c.estado !== "pagado");
-    } else {
-      const res = await insforgeClient.database.from("consumos").select("id").eq("tenant_id", tenantId).neq("estado", "pagado");
-      pend = res.data ?? [];
-    }
-
-    if (pend.length) { setPrintMsg("No se puede cerrar con mesas pendientes."); setPrinting(false); return; }
     const now = new Date().toISOString();
 
       const [facturasAll, gastosAll] = await Promise.all([
@@ -489,9 +537,21 @@ export function Cierre() {
         </div>
 
         <div className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 sm:p-8 shadow-sm">
-           <h2 className="font-['Space_Grotesk'] text-xl font-bold text-foreground mb-4">Cuentas con saldo abierto</h2>
+           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+              <h2 className="font-['Space_Grotesk'] text-xl font-bold text-foreground">Cuentas con saldo abierto</h2>
+              {currentCycle?.closed_at && resumenCuentasAbiertas.lineas > 0 && (
+                <span className="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-destructive/10 text-destructive border border-destructive/20 animate-pulse">
+                  ¡Ciclo cerrado con deuda!
+                </span>
+              )}
+           </div>
            {resumenCuentasAbiertas.lineas ? (
               <div className="space-y-6">
+                 {currentCycle?.closed_at && (
+                    <div className="p-4 rounded-xl bg-destructive/5 border border-destructive/20 text-destructive text-xs font-semibold leading-relaxed mb-2">
+                      ⚠️ ATENCIÓN: Este ciclo operativo se cerró dejando cuentas pendientes de cobro en las mesas por un valor acumulado estimado de {RD(resumenCuentasAbiertas.totalEst)}.
+                    </div>
+                 )}
                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div className="bg-primary/5 border border-primary/20 p-4 rounded-xl"><div className="text-[10px] font-bold text-primary uppercase mb-1">Mesas con deuda</div><div className="text-primary font-bold text-lg">{resumenCuentasAbiertas.mesasDistintas} mesas</div></div>
                     <div className="bg-muted/50 p-4 rounded-xl border border-border"><div className="text-[10px] font-bold text-muted-foreground uppercase mb-1">Subtotal</div><div className="text-foreground font-bold text-lg">{RD(resumenCuentasAbiertas.subtotal)}</div></div>
@@ -503,10 +563,14 @@ export function Cierre() {
                        {resumenCuentasAbiertas.porMesa.map(m => (
                          <div key={m.mesa} className="p-3 rounded-xl border border-black/5 dark:border-white/5 bg-muted/20 flex justify-between items-center"><span className="text-xs font-bold text-foreground">{m.mesa ? `Mesa ${m.mesa}` : "PL"}</span><span className="text-xs text-primary font-bold tabular-nums">{RD(m.subtotal)}</span></div>
                        ))}
-                    </div>
+                     </div>
                  </div>
               </div>
-           ) : <p className="text-green-600 dark:text-green-400 font-medium py-4">No hay consumos pendientes. Caja lista para cerrar.</p>}
+           ) : (
+              <p className={currentCycle?.closed_at ? "text-muted-foreground text-xs italic py-4" : "text-green-600 dark:text-green-400 font-medium py-4"}>
+                {currentCycle?.closed_at ? "Este ciclo se cerró sin deudas pendientes de cobro." : "No hay consumos pendientes. Caja lista para cerrar."}
+              </p>
+           )}
         </div>
       </div>
     </div>

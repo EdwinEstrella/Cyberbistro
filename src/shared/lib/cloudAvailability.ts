@@ -1,5 +1,12 @@
 import { getInsforgeResolvedBaseUrl } from "./insforge";
 
+let registeredAnonKey: string | null = null;
+
+/** Registers the anon key so the cloud probe can authenticate against PostgREST. */
+export function registerCloudAnonKey(key: string): void {
+  registeredAnonKey = key;
+}
+
 export type CloudCircuitState = "closed" | "open" | "half-open";
 
 export interface CloudAvailabilitySnapshot {
@@ -117,11 +124,19 @@ async function runCloudProbe(): Promise<boolean> {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
   try {
-    const response = await fetch(getInsforgeResolvedBaseUrl(), {
+    const url = `${getInsforgeResolvedBaseUrl()}/rest/v1/`;
+    const headers: Record<string, string> = {};
+    if (registeredAnonKey) {
+      headers["apikey"] = registeredAnonKey;
+      headers["Authorization"] = `Bearer ${registeredAnonKey}`;
+    }
+    const response = await fetch(url, {
       method: "GET",
+      headers,
       cache: "no-store",
       signal: controller.signal,
     });
+    // PostgREST returns >= 500 when the database is down
     return response.status >= 200 && response.status < 500;
   } catch {
     return false;

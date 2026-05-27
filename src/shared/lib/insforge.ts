@@ -1,6 +1,12 @@
 import { createClient } from '@insforge/sdk';
 import type { InsForgeConfig, InsForgeClient } from '@insforge/sdk';
 import { INSFORGE_REFRESH_TOKEN_STORAGE_KEY } from './insforgeAuthStorage';
+import {
+  registerCloudAnonKey,
+  recordCloudSuccess,
+  recordCloudFailure,
+  isCloudAvailabilityFailure,
+} from "./cloudAvailability";
 
 const FALLBACK_BASE_URL = 'https://restaurante.azokia.com';
 const FALLBACK_ANON_KEY =
@@ -20,6 +26,9 @@ const effectiveBaseUrl = isInsforgeEnvConfigured
 const effectiveAnonKey = isInsforgeEnvConfigured
   ? (ENV_ANON_KEY as string)
   : FALLBACK_ANON_KEY;
+
+// Registramos la anon key para el probe de disponibilidad
+registerCloudAnonKey(effectiveAnonKey);
 
 /** Para mensajes de error (login) y logs; coincide con la URL del cliente InsForge. */
 export function getInsforgeResolvedBaseUrl(): string {
@@ -88,12 +97,85 @@ function primeHttpClientRefreshFromStorage(client: InsForgeClient): void {
  * Si aparece "Invalid token" de inmediato tras deploy, revisá anon key / URL del proyecto.
  * Si aparece tras mucho tiempo de uso, suele ser access token caducado: ver `useAuth` y refresh en localStorage.
  */
+// Interceptor transparente de consultas
+function recordCloudResult(result: unknown): void {
+  const maybeResult = result as { error?: unknown } | null | undefined;
+  if (maybeResult?.error) {
+    if (isCloudAvailabilityFailure(maybeResult.error)) recordCloudFailure();
+    return;
+  }
+  recordCloudSuccess();
+}
+
+function wrapQueryBuilder(builder: any): any {
+  return new Proxy(builder, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver);
+
+      if (prop === "then") {
+        return function (onfulfilled?: any, onrejected?: any) {
+          const promise = Promise.resolve(target);
+          return promise.then(
+            (result) => {
+              recordCloudResult(result);
+              if (onfulfilled) return onfulfilled(result);
+              return result;
+            },
+            (error) => {
+              if (isCloudAvailabilityFailure(error)) recordCloudFailure();
+              if (onrejected) return onrejected(error);
+              throw error;
+            }
+          );
+        };
+      }
+
+      if (typeof value === "function") {
+        return function (...args: any[]) {
+          const nextBuilder = value.apply(target, args);
+          if (nextBuilder && typeof nextBuilder.then === "function") {
+            return wrapQueryBuilder(nextBuilder);
+          }
+          return nextBuilder;
+        };
+      }
+
+      return value;
+    }
+  });
+}
+
+function wrapDatabaseClient(db: any) {
+  return new Proxy(db, {
+    get(target, prop, receiver) {
+      if (prop === "from") {
+        const originalFrom = Reflect.get(target, prop, receiver);
+        return function (...args: any[]) {
+          const builder = originalFrom.apply(target, args);
+          return wrapQueryBuilder(builder);
+        };
+      }
+      return Reflect.get(target, prop, receiver);
+    }
+  });
+}
+
 const _insforgeClient = createClient(readInsforgeConfig());
 primeHttpClientRefreshFromStorage(_insforgeClient);
-export const insforgeClient = _insforgeClient;
+
+// Exportamos el cliente original envuelto en el proxy de base de datos
+export const insforgeClient = new Proxy(_insforgeClient as any, {
+  get(target, prop, receiver) {
+    if (prop === "database") {
+      const originalDb = Reflect.get(target, prop, receiver);
+      return wrapDatabaseClient(originalDb);
+    }
+    return Reflect.get(target, prop, receiver);
+  }
+}) as unknown as InsForgeClient;
 
 const source = isInsforgeEnvConfigured ? 'env' : 'embedded';
-console.info('[InsForge] client initialized', {
+console.info('[InsForge] client initialized with circuit-breaker proxy', {
   baseUrl: effectiveBaseUrl,
   source,
   autoRefreshToken: false,
