@@ -34,7 +34,7 @@ function getTargetWindow(getMain: () => BrowserWindow | null) {
 export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null) {
   autoUpdater.logger = log
   autoUpdater.logger.transports.file.level = 'info'
-  autoUpdater.autoDownload = false
+  autoUpdater.autoDownload = true
   if (process.platform === 'win32' && !process.env.CSC_LINK && !process.env.WIN_CSC_LINK) {
     autoUpdater.verifyUpdateCodeSignature = false
   }

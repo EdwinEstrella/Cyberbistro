@@ -147,7 +147,6 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
           version: info?.version ?? remoteVersion,
           percent: 0,
         });
-        setIsUpdateCardVisible(true);
       },
       onUpdateNotAvailable: () => {
         if (phase !== "ready" && phase !== "downloading") {
@@ -158,7 +157,6 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
         setPhaseState("downloading", {
           percent: Number(p.percent) || 0,
         });
-        setIsUpdateCardVisible(true);
       },
       onUpdateDownloaded: (info) => {
         setPhaseState("ready", {
@@ -182,7 +180,6 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
         });
         if (phase !== "ready") {
           setErrorDetail(detail);
-          setIsUpdateCardVisible(true);
         }
       },
     });
