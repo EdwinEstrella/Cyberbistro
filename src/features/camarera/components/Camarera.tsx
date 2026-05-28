@@ -410,20 +410,23 @@ export function Camarera() {
         .single();
 
       if (tenantRow) {
-        const paperWidthMm = getThermalPrintSettings().paperWidthMm;
-        const html = buildComandaReceiptHtml(
-          tenantRow as TenantPrintRow,
-          {
-            id: comanda.id,
-            numero_comanda: (comanda as { numero_comanda?: number }).numero_comanda,
-            mesa_numero: comanda.mesa_numero,
-            items,
-            notas: comanda.notas,
-            created_at: comanda.created_at,
-          },
-          paperWidthMm
-        );
-        void printThermalHtml(html);
+        const printSettings = getThermalPrintSettings();
+        if (printSettings.printComandas !== false) {
+          const paperWidthMm = printSettings.paperWidthMm;
+          const html = buildComandaReceiptHtml(
+            tenantRow as TenantPrintRow,
+            {
+              id: comanda.id,
+              numero_comanda: (comanda as { numero_comanda?: number }).numero_comanda,
+              mesa_numero: comanda.mesa_numero,
+              items,
+              notas: comanda.notas,
+              created_at: comanda.created_at,
+            },
+            paperWidthMm
+          );
+          void printThermalHtml(html);
+        }
       }
     }
 

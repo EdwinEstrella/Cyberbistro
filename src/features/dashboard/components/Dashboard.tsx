@@ -839,9 +839,12 @@ export function Dashboard() {
             } as any,
             paperWidthMm
           );
-          const printRes = await printThermalHtml(comandaHtml);
-          if (!printRes.ok && printRes.error) {
-            console.warn("Impresión comanda:", printRes.error);
+          const printSettings = getThermalPrintSettings();
+          if (printSettings.printComandas !== false) {
+            const printRes = await printThermalHtml(comandaHtml);
+            if (!printRes.ok && printRes.error) {
+              console.warn("Impresión comanda:", printRes.error);
+            }
           }
         }
       }

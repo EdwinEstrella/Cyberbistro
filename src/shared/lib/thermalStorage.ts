@@ -6,11 +6,13 @@ export interface ThermalPrintSettings {
   paperWidthMm: PaperWidthMm;
   /** Nombre exacto de impresora en el sistema (Electron). Vacío = diálogo de impresión o predeterminada. */
   printerName: string;
+  printComandas: boolean;
 }
 
 const defaultSettings: ThermalPrintSettings = {
   paperWidthMm: 80,
   printerName: "",
+  printComandas: true,
 };
 
 export function getThermalPrintSettings(): ThermalPrintSettings {
@@ -21,6 +23,7 @@ export function getThermalPrintSettings(): ThermalPrintSettings {
     return {
       paperWidthMm: p.paperWidthMm === 88 ? 88 : 80,
       printerName: typeof p.printerName === "string" ? p.printerName : "",
+      printComandas: p.printComandas !== false,
     };
   } catch {
     return { ...defaultSettings };
@@ -33,6 +36,7 @@ export function saveThermalPrintSettings(s: ThermalPrintSettings): void {
     JSON.stringify({
       paperWidthMm: s.paperWidthMm === 88 ? 88 : 80,
       printerName: s.printerName.trim(),
+      printComandas: s.printComandas !== false,
     })
   );
 }

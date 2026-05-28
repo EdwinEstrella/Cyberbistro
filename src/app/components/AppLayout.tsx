@@ -17,6 +17,7 @@ import { RoleGuard } from "./RoleGuard";
 import { useAppUpdate } from "../../features/updates/AppUpdateContext";
 import { LocalFirstStatusBadge } from "../../shared/components/LocalFirstStatusBadge";
 import { useLocalFirstBootstrap } from "../../shared/hooks/useLocalFirstBootstrap";
+import { getThermalPrintSettings, saveThermalPrintSettings } from "../../shared/lib/thermalStorage";
 
 const mainNavItems = [
   { label: "Venta", customIcon: "venta", path: "/dashboard" },
@@ -171,6 +172,18 @@ export function AppLayout() {
   const [cocinaActiva, setCocinaActiva] = useState(true);
   const [ventaCartSearch, setVentaCartSearch] = useState("");
   const [sidebarHidden, setSidebarHidden] = useState(false);
+  const [printComandasEnabled, setPrintComandasEnabled] = useState(true);
+
+  useEffect(() => {
+    setPrintComandasEnabled(getThermalPrintSettings().printComandas !== false);
+  }, []);
+
+  const handleTogglePrintComandas = () => {
+    const settings = getThermalPrintSettings();
+    const nextVal = !settings.printComandas;
+    saveThermalPrintSettings({ ...settings, printComandas: nextVal });
+    setPrintComandasEnabled(nextVal);
+  };
   const [upsellType, setUpsellType] = useState<"inventario" | "sucursales" | null>(null);
 
   const { addSucursal, sucursales } = useSucursal();
@@ -515,9 +528,32 @@ export function AppLayout() {
                 <svg className="w-[18px] h-[21px] text-muted-foreground" fill="none" viewBox="0 0 18 21">
                   <path d={svgPaths.pe40b59c} fill="currentColor" />
                 </svg>
-                <svg className="w-[20px] h-[14.15px] text-muted-foreground" fill="none" viewBox="0 0 20 14.15">
-                  <path d={svgPaths.p793b600} fill="currentColor" />
-                </svg>
+                <button
+                  type="button"
+                  onClick={handleTogglePrintComandas}
+                  className={`transition-all duration-300 p-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 ${
+                    printComandasEnabled ? "text-[#ff906d]" : "text-muted-foreground/30 hover:text-muted-foreground/50"
+                  }`}
+                  title={
+                    printComandasEnabled
+                      ? "Impresión de comandas activa"
+                      : "Impresión de comandas desactivada"
+                  }
+                  aria-label={
+                    printComandasEnabled
+                      ? "Desactivar impresión de comandas"
+                      : "Activar impresión de comandas"
+                  }
+                >
+                  <svg className="w-[20px] h-[20px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                    {/* Fork */}
+                    <path d="M4 3v7a3 3 0 0 0 3 3h0a3 3 0 0 0 3-3V3" />
+                    <path d="M7 3v18" />
+                    {/* Spoon */}
+                    <path d="M17 3a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z" />
+                    <path d="M17 11v10" />
+                  </svg>
+                </button>
                 <button
                   type="button"
                   onClick={showUpdateBellToast}
