@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import type { ElectronAPI } from "../../../shared/types/electron";
+import type { ElectronAPI, ThermalPrinterInfo } from "../../../shared/types/electron";
 import svgPaths from "../../../imports/svg-h2gjocs89h";
 import { useTheme } from "../../../shared/context/ThemeContext";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { SUPER_ADMIN_ROLE } from "../../../shared/lib/superAdmin";
+import { Printer } from "lucide-react";
+import { getThermalPrintSettings, saveThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 
 interface TitleBarProps {
   showSidebarToggle?: boolean;
@@ -33,6 +35,30 @@ export function TitleBar({
     loading: sucursalesLoading,
   } = useSucursal();
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [printerDropdownOpen, setPrinterDropdownOpen] = useState(false);
+  const [printers, setPrinters] = useState<ThermalPrinterInfo[]>([]);
+  const [selectedPrinterName, setSelectedPrinterName] = useState("");
+
+  useEffect(() => {
+    setSelectedPrinterName(getThermalPrintSettings().printerName);
+  }, []);
+
+  useEffect(() => {
+    if (printerDropdownOpen && window.electronAPI?.listPrinters) {
+      window.electronAPI.listPrinters()
+        .then((list) => {
+          setPrinters(list);
+        })
+        .catch((err) => console.error("Error listing printers:", err));
+    }
+  }, [printerDropdownOpen]);
+
+  const handleSelectPrinter = (name: string) => {
+    const settings = getThermalPrintSettings();
+    saveThermalPrintSettings({ ...settings, printerName: name });
+    setSelectedPrinterName(name);
+    setPrinterDropdownOpen(false);
+  };
 
   const activeSucursal = sucursales.find(s => s.id === activeSucursalId);
   const shouldShowBranchControls = isAuthenticated && rol !== SUPER_ADMIN_ROLE;
@@ -305,9 +331,77 @@ export function TitleBar({
 
       {/* Right side - Window controls */}
       <div
-        className="flex items-center h-full"
+        className="flex items-center h-full gap-1"
         style={{ WebkitAppRegion: 'no-drag' as any }}
       >
+        {/* Printer Selection Dropdown */}
+        {Boolean(window.electronAPI) && isAuthenticated && (
+          <div className="relative h-full flex items-center">
+            <button
+              type="button"
+              onClick={() => setPrinterDropdownOpen(!printerDropdownOpen)}
+              className="h-full px-3 flex items-center justify-center hover:bg-sidebar-accent border-none bg-transparent cursor-pointer text-foreground transition-all gap-1.5"
+              title="Seleccionar Impresora"
+            >
+              <Printer size={13} className="text-[#ADAAAA] hover:text-[#ff906d] transition-colors" />
+              <span className="hidden sm:inline font-['Space_Grotesk',sans-serif] text-[10px] text-[#ADAAAA] truncate max-w-[90px] font-bold uppercase tracking-[-0.2px]">
+                {selectedPrinterName || "Predeterminada"}
+              </span>
+            </button>
+
+            {printerDropdownOpen && (
+              <>
+                <div className="fixed inset-0 z-40 cursor-default" onClick={() => setPrinterDropdownOpen(false)} />
+                <div className="absolute right-0 top-full mt-1.5 w-[220px] z-50 bg-[#131313] border border-white/10 rounded-[10px] shadow-[0px_8px_24px_rgba(0,0,0,0.5)] p-1.5 flex flex-col gap-0.5 animate-in fade-in slide-in-from-top-1 duration-150">
+                  <span className="text-[9px] uppercase tracking-[0.5px] text-[#ff906d] font-bold px-2 py-1 font-['Space_Grotesk',sans-serif]">
+                    Seleccionar Impresora
+                  </span>
+                  <div className="h-px bg-white/5 my-0.5" />
+                  
+                  {/* Default System Printer Option */}
+                  <button
+                    type="button"
+                    onClick={() => handleSelectPrinter("")}
+                    className={`w-full rounded-[6px] transition-colors hover:bg-white/5 text-left px-2.5 py-1.5 font-['Space_Grotesk',sans-serif] text-[11px] cursor-pointer border-none bg-transparent flex items-center justify-between ${
+                      selectedPrinterName === "" ? "text-[#ff906d] font-bold" : "text-[#adaaaa] hover:text-white"
+                    }`}
+                  >
+                    <span>Predeterminada del sistema</span>
+                    {selectedPrinterName === "" && (
+                      <svg className="size-[12px] text-[#ff906d] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </button>
+
+                  {printers.map((p) => {
+                    const isSelected = p.name === selectedPrinterName;
+                    return (
+                      <button
+                        key={p.name}
+                        type="button"
+                        onClick={() => handleSelectPrinter(p.name)}
+                        className={`w-full rounded-[6px] transition-colors hover:bg-white/5 text-left px-2.5 py-1.5 font-['Space_Grotesk',sans-serif] text-[11px] cursor-pointer border-none bg-transparent flex items-center justify-between ${
+                          isSelected ? "text-[#ff906d] font-bold" : "text-[#adaaaa] hover:text-white"
+                        }`}
+                      >
+                        <span className="truncate max-w-[170px]" title={p.displayName || p.name}>
+                          {p.displayName || p.name}
+                        </span>
+                        {isSelected && (
+                          <svg className="size-[12px] text-[#ff906d] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         {/* Theme Toggle */}
         <button
           type="button"
