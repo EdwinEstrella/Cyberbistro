@@ -50,6 +50,8 @@ function printHtmlToThermal(opts: PrintThermalOptions): Promise<PrintThermalResp
             silent: Boolean(opts.silent),
             printBackground: true,
             deviceName: opts.deviceName || undefined,
+            usePrinterDefaultPageSize: true,
+            margins: { marginType: 1 },
           },
           (success, failureReason) => {
             clearTimeout(timer)
