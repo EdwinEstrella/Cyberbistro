@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { ChevronDown, Eye, Printer, Trash2 } from "lucide-react";
+import { ChevronDown, Eye, Printer, Trash2, TrendingUp, DollarSign, RefreshCw, FileText, Activity, Calendar } from "lucide-react";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth, ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
 import { buildCierreDiaReceiptHtml, buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
@@ -505,13 +505,41 @@ const loadBillingData = useCallback(async () => {
   const canDeleteInvoices = rol === "admin";
 
   const itemsPerPage = 10;
-  // totalPages removed
+  const totalPages = Math.ceil(filteredInvoices.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
   const pageData = useMemo(
     () => filteredInvoices.slice(startIndex, endIndex),
     [filteredInvoices, startIndex, endIndex]
   );
+
+  const filteredStats = useMemo(() => {
+    const total = filteredInvoices
+      .filter((inv) => inv.estado === "pagada")
+      .reduce((sum, inv) => sum + inv.total, 0);
+    const count = filteredInvoices.length;
+    const avg = count > 0 ? total / count : 0;
+    
+    const methodCounts: Record<string, number> = {};
+    for (const inv of filteredInvoices) {
+      if (inv.estado === "pagada") {
+        methodCounts[inv.metodo_pago] = (methodCounts[inv.metodo_pago] || 0) + inv.total;
+      }
+    }
+    
+    let mainMethod = "Ninguno";
+    let maxTotal = 0;
+    for (const [m, totalVal] of Object.entries(methodCounts)) {
+      if (totalVal > maxTotal) {
+        maxTotal = totalVal;
+        mainMethod = m;
+      }
+    }
+    
+    const mainMethodLabel = mainMethod !== "Ninguno" ? getMethodDisplay(mainMethod).label : "Ninguno";
+    
+    return { total, count, avg, mainMethodLabel };
+  }, [filteredInvoices]);
 
   const printInvoice = useCallback(
     async (inv: Invoice) => {
@@ -756,28 +784,19 @@ const loadBillingData = useCallback(async () => {
 
   // Define grid columns once to avoid duplication and syntax issues
   const gridColsClass = "grid grid-cols-[80px_100px_1fr_100px_120px_120px_120px]";
-
   return (
-    <div className="flex-1 p-3 sm:p-6 lg:p-10 flex flex-col gap-4 sm:gap-6 lg:gap-10 overflow-auto max-w-[1600px] w-full mx-auto bg-background transition-colors duration-300">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div className="space-y-2">
-          <div className="font-['Inter',sans-serif] text-[10px] sm:text-[12px] uppercase tracking-[0.22em] sm:tracking-[0.28em] text-primary">
-            Analiticas operativas
-          </div>
-          <h1 className="font-['Space_Grotesk',sans-serif] text-foreground text-[24px] sm:text-[38px] font-bold leading-none">
-            Facturas y ciclos
-          </h1>
-          <p className="font-['Inter',sans-serif] text-muted-foreground text-[12px] sm:text-[14px] max-w-3xl leading-relaxed">
-            Revisión de cobros y ciclos operativos cerrados.
-          </p>
-        </div>
-
-        <div className="bg-muted rounded-2xl border border-black/5 dark:border-white/5 p-1.5 flex items-center gap-1 w-full sm:w-auto">
+    <div className="flex-1 p-4 sm:p-6 lg:p-8 flex flex-col gap-6 w-full max-w-[1600px] mx-auto bg-background transition-colors duration-300">
+      {/* Header Section */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-black/5 dark:border-white/5 pb-5">
+        <h1 className="font-['Space_Grotesk',sans-serif] text-foreground text-[26px] sm:text-[34px] font-bold leading-none tracking-tight">
+          Facturas y ciclos
+        </h1>
+        <div className="bg-muted p-1 rounded-xl border border-black/5 dark:border-white/5 flex items-center gap-1 w-full sm:w-auto shrink-0">
           <button
             type="button"
             onClick={() => setView("facturas")}
-            className={`flex-1 sm:flex-none rounded-xl px-5 py-3 font-['Inter',sans-serif] text-[14px] font-semibold transition-colors ${
-              view === "facturas" ? "bg-green-600 text-white" : "text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
+            className={`flex-1 sm:flex-none rounded-lg px-5 py-2.5 font-['Inter',sans-serif] text-[13px] font-bold transition-all cursor-pointer ${
+              view === "facturas" ? "bg-green-600 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"
             }`}
           >
             Facturas
@@ -785,8 +804,8 @@ const loadBillingData = useCallback(async () => {
           <button
             type="button"
             onClick={() => setView("ciclos")}
-            className={`flex-1 sm:flex-none rounded-xl px-5 py-3 font-['Inter',sans-serif] text-[14px] font-semibold transition-colors ${
-              view === "ciclos" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/5"
+            className={`flex-1 sm:flex-none rounded-lg px-5 py-2.5 font-['Inter',sans-serif] text-[13px] font-bold transition-all cursor-pointer ${
+              view === "ciclos" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
             }`}
           >
             Ciclos
@@ -794,338 +813,511 @@ const loadBillingData = useCallback(async () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-2.5 sm:gap-4">
+      {/* KPI Cards Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {[
           {
             label: view === "facturas" ? "Ingreso Total (24h)" : "Ventas Total",
             value: (view === "facturas" ? totalRevenue : cycleKpis.latestCycleSales),
             isMoney: true,
             sub: view === "facturas" ? "Facturas recientes" : cycleKpis.latestCycleLabel,
-            color: "text-green-600 dark:text-green-400"
+            color: "text-green-600 dark:text-green-400",
+            icon: <DollarSign size={18} className="text-green-600 dark:text-green-400" />,
+            bgColor: "bg-green-500/10 dark:bg-green-500/20"
           },
           {
             label: view === "facturas" ? "Ticket Promedio" : "Últimas 24 horas",
             value: view === "facturas" ? (invoices.length > 0 ? invoices.reduce((s, i) => s + i.total, 0) / invoices.length : 0) : cycleKpis.netLast24h,
             isMoney: true,
             sub: view === "facturas" ? `${invoices.length} totales` : "Últimas 24 horas",
-            color: "text-foreground"
+            color: "text-foreground",
+            icon: <Activity size={18} className="text-primary" />,
+            bgColor: "bg-primary/10 dark:bg-primary/20"
           },
           {
             label: view === "facturas" ? "Facturas Pagadas" : "Semana actual",
             value: view === "facturas" ? paidCount : cycleKpis.weekSales,
             isMoney: view !== "facturas",
             sub: view === "facturas" ? `${cancelledCount} canceladas` : "Semana actual",
-            color: "text-pink-600 dark:text-pink-400"
+            color: "text-foreground",
+            icon: <TrendingUp size={18} className="text-pink-600 dark:text-pink-400" />,
+            bgColor: "bg-pink-500/10 dark:bg-pink-500/20"
           },
           {
             label: view === "facturas" ? "Total Facturas" : "Mes actual",
             value: view === "facturas" ? invoices.length : cycleKpis.monthSales,
             isMoney: view !== "facturas",
             sub: view === "facturas" ? "En el sistema" : "Mes actual",
-            color: "text-primary"
+            color: "text-foreground",
+            icon: <FileText size={18} className="text-blue-500" />,
+            bgColor: "bg-blue-500/10 dark:bg-blue-500/20"
           }
         ].map((kpi, i) => (
-          <div key={i} className="bg-card rounded-[16px] sm:rounded-[18px] border border-black/10 dark:border-white/5 p-3 sm:p-5 flex flex-col gap-2 sm:gap-3 min-h-[112px] sm:min-h-[140px] shadow-sm">
-            <div className="font-['Inter',sans-serif] text-muted-foreground text-[9px] sm:text-[11px] tracking-wide uppercase font-bold leading-tight">{kpi.label}</div>
-            <div className={`font-['Space_Grotesk',sans-serif] font-bold text-[18px] sm:text-[28px] tabular-nums leading-tight break-words ${kpi.color}`}>
-              {kpi.isMoney ? RD(kpi.value as number) : kpi.value}
+          <div key={i} className="bg-card rounded-[20px] border border-black/10 dark:border-white/5 p-5 flex justify-between items-start shadow-sm transition-all hover:shadow-md hover:border-black/15 dark:hover:border-white/10">
+            <div className="flex flex-col gap-2 flex-1 min-w-0 pr-2">
+              <span className="font-['Inter',sans-serif] text-muted-foreground text-[10px] sm:text-[11px] tracking-wider uppercase font-semibold leading-tight">{kpi.label}</span>
+              <div className={`font-['Space_Grotesk',sans-serif] font-bold text-[20px] sm:text-[26px] tabular-nums leading-none break-words ${kpi.color}`}>
+                {kpi.isMoney ? RD(kpi.value as number) : kpi.value}
+              </div>
+              <span className="font-['Inter',sans-serif] text-muted-foreground text-[10px] sm:text-[11px] font-medium">{kpi.sub}</span>
             </div>
-            <div className="font-['Inter',sans-serif] text-muted-foreground text-[10px] sm:text-[12px]">{kpi.sub}</div>
+            <div className={`size-10 rounded-xl flex items-center justify-center shrink-0 shadow-inner ${kpi.bgColor}`}>
+              {kpi.icon}
+            </div>
           </div>
         ))}
       </div>
 
-      <div className="bg-card/50 backdrop-blur-[6px] rounded-2xl border border-black/10 dark:border-white/5 p-3 sm:p-5 flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-3 sm:gap-5 justify-between">
-        <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3 sm:gap-4 sm:items-center w-full lg:w-auto">
-          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 w-full sm:w-auto">
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="min-w-0 bg-muted rounded-xl border border-black/10 dark:border-white/10 px-3 sm:px-4 py-2.5 font-['Inter',sans-serif] text-foreground text-[13px] sm:text-[14px] outline-none focus:border-primary transition-colors"
-            />
-            <span className="text-muted-foreground">a</span>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="min-w-0 bg-muted rounded-xl border border-black/10 dark:border-white/10 px-3 sm:px-4 py-2.5 font-['Inter',sans-serif] text-foreground text-[13px] sm:text-[14px] outline-none focus:border-primary transition-colors"
-            />
+      {/* Main Two-Column Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Left Column: Filters Bar + List/Table */}
+        <div className="lg:col-span-8 xl:col-span-9 flex flex-col gap-6">
+          {/* Horizontal Filter Bar Card */}
+          <div className="bg-card rounded-[20px] border border-black/10 dark:border-white/5 p-4 sm:p-5 shadow-sm">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div className={`flex-1 grid grid-cols-1 sm:grid-cols-2 ${view === "facturas" ? "lg:grid-cols-4" : "lg:grid-cols-2"} gap-4`}>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider font-['Inter']">Desde</span>
+                  <input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="w-full bg-muted/60 rounded-xl border border-black/5 dark:border-white/5 px-3 py-2 font-['Inter',sans-serif] text-foreground text-[13px] outline-none focus:border-primary transition-colors cursor-pointer h-[38px]"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider font-['Inter']">Hasta</span>
+                  <input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="w-full bg-muted/60 rounded-xl border border-black/5 dark:border-white/5 px-3 py-2 font-['Inter',sans-serif] text-foreground text-[13px] outline-none focus:border-primary transition-colors cursor-pointer h-[38px]"
+                  />
+                </div>
+
+                {view === "facturas" && (
+                  <>
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider font-['Inter']">Estado</span>
+                      <select
+                        value={statusFilter}
+                        onChange={(e) => setStatusFilter(e.target.value)}
+                        className="w-full bg-muted/60 rounded-xl border border-black/5 dark:border-white/5 px-3 py-2 font-['Inter',sans-serif] text-foreground text-[13px] outline-none cursor-pointer h-[38px]"
+                      >
+                        <option value="todos">Todos los Estados</option>
+                        <option value="pagada">Pagadas</option>
+                        <option value="cancelada">Canceladas</option>
+                      </select>
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider font-['Inter']">Método</span>
+                      <select
+                        value={methodFilter}
+                        onChange={(e) => setMethodFilter(e.target.value)}
+                        className="w-full bg-muted/60 rounded-xl border border-black/5 dark:border-white/5 px-3 py-2 font-['Inter',sans-serif] text-foreground text-[13px] outline-none cursor-pointer h-[38px]"
+                      >
+                        <option value="todos">Todos los Métodos</option>
+                        <option value="efectivo">Efectivo</option>
+                        <option value="tarjeta">Tarjeta</option>
+                        <option value="digital">Digital</option>
+                        <option value="transferencia">Transferencia</option>
+                      </select>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <button
+                onClick={() => void loadBillingData()}
+                className="bg-primary text-primary-foreground rounded-xl px-6 py-2.5 font-bold uppercase text-[11px] tracking-widest hover:opacity-90 transition-all border-none cursor-pointer shadow-sm flex items-center justify-center gap-2 h-[38px] w-full lg:w-auto shrink-0"
+              >
+                <RefreshCw size={12} className="shrink-0" />
+                Filtrar
+              </button>
+            </div>
           </div>
 
-          {view === "facturas" && (
+          {view === "facturas" ? (
             <>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="w-full sm:w-auto bg-muted rounded-xl border border-black/10 dark:border-white/10 px-4 py-2.5 font-['Inter',sans-serif] text-foreground text-[13px] sm:text-[14px] outline-none cursor-pointer"
-              >
-                <option value="todos">Todos los Estados</option>
-                <option value="pagada">Pagadas</option>
-                <option value="cancelada">Canceladas</option>
-              </select>
-              <select
-                value={methodFilter}
-                onChange={(e) => setMethodFilter(e.target.value)}
-                className="w-full sm:w-auto bg-muted rounded-xl border border-black/10 dark:border-white/10 px-4 py-2.5 font-['Inter',sans-serif] text-foreground text-[13px] sm:text-[14px] outline-none cursor-pointer"
-              >
-                <option value="todos">Todos los Metodos</option>
-                <option value="efectivo">Efectivo</option>
-                <option value="tarjeta">Tarjeta</option>
-                <option value="digital">Digital</option>
-                <option value="transferencia">Transferencia</option>
-              </select>
-            </>
-          )}
-        </div>
-        <button onClick={() => void loadBillingData()} className="w-full lg:w-auto bg-primary text-primary-foreground rounded-xl px-6 py-2.5 font-bold uppercase text-[12px] tracking-widest hover:opacity-90 transition-all">Actualizar</button>
-      </div>
-
-      {view === "facturas" ? (
-        <>
-        <div className="md:hidden flex flex-col gap-3">
-          {pageData.length === 0 ? (
-            <div className="rounded-[20px] border border-black/10 bg-card p-8 text-center text-sm text-muted-foreground dark:border-white/5">
-              No se encontraron facturas.
-            </div>
-          ) : (
-            pageData.map((inv) => {
-              const status = statusConfig[inv.estado];
-              const method = getMethodDisplay(inv.metodo_pago);
-              const date = new Date(inv.created_at);
-              return (
-                <div key={inv.id} className="rounded-[20px] border border-black/10 bg-card p-4 shadow-sm dark:border-white/5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="font-['Space_Grotesk',sans-serif] text-lg font-bold text-foreground">
-                        #{String(inv.numero_factura).padStart(4, "0")}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {date.toLocaleDateString()} · {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
-                      </div>
-                    </div>
-                    <div className="text-right font-['Space_Grotesk',sans-serif] text-lg font-bold text-primary tabular-nums">
-                      {RD(inv.total)}
-                    </div>
+              {/* Mobile View */}
+              <div className="md:hidden flex flex-col gap-3">
+                {pageData.length === 0 ? (
+                  <div className="rounded-[20px] border border-black/10 bg-card p-8 text-center text-sm text-muted-foreground dark:border-white/5">
+                    No se encontraron facturas.
                   </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                    <div className="rounded-xl bg-muted/50 p-3">
-                      <div className="text-[10px] font-bold uppercase text-muted-foreground">Origen</div>
-                      <div className="mt-1 font-semibold text-foreground">{inv.mesa_numero ? `Mesa ${inv.mesa_numero}` : "Para llevar"}</div>
-                    </div>
-                    <div className="rounded-xl bg-muted/50 p-3">
-                      <div className="text-[10px] font-bold uppercase text-muted-foreground">Método</div>
-                      <div className="mt-1 font-semibold text-foreground">{method.label}</div>
-                    </div>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 rounded-full border border-black/5 bg-muted/50 px-3 py-1 dark:border-white/5">
-                      <div className="size-1.5 rounded-full" style={{ backgroundColor: status.color }} />
-                      <span className="text-[10px] font-bold uppercase" style={{ color: status.color }}>{status.label}</span>
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => setInvoiceModal(inv)} className="size-9 rounded-lg bg-muted flex items-center justify-center text-muted-foreground border-none"><Eye size={16} /></button>
-                      <button onClick={() => void printInvoice(inv)} className="size-9 rounded-lg bg-muted flex items-center justify-center text-muted-foreground border-none"><Printer size={16} /></button>
-                      {canDeleteInvoices && <button onClick={() => void deleteInvoiceAndTraces(inv)} className="size-9 rounded-lg bg-muted flex items-center justify-center text-destructive/70 border-none"><Trash2 size={16} /></button>}
-                    </div>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-
-        <div className="hidden md:block overflow-x-auto rounded-[24px] border border-black/10 dark:border-white/5 bg-card">
-          <div className="min-w-[1000px]">
-            <div className={`${gridColsClass} bg-muted/50 border-b border-black/10 dark:border-white/10 px-6 py-4`}>
-              {["ID", "Fecha", "Mesa / Origen", "Metodo", "Estado", "Monto", "Acciones"].map((h, i) => (
-                <div key={i} className={`font-['Inter',sans-serif] font-bold text-muted-foreground text-[11px] uppercase tracking-widest ${i >= 5 ? "text-right" : ""}`}>
-                  {h}
-                </div>
-              ))}
-            </div>
-
-            <div className="divide-y divide-black/5 dark:divide-white/5">
-              {pageData.length === 0 ? (
-                <div className="py-20 text-center text-muted-foreground font-['Inter']">No se encontraron facturas.</div>
-              ) : (
-                pageData.map((inv) => {
-                  const status = statusConfig[inv.estado];
-                  const method = getMethodDisplay(inv.metodo_pago);
-                  const date = new Date(inv.created_at);
-                  return (
-                    <div key={inv.id} className={`${gridColsClass} px-6 py-5 items-center hover:bg-muted/30 transition-colors group`}>
-                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-foreground">#{String(inv.numero_factura).padStart(4, "0")}</span>
-                      <div className="flex flex-col text-[13px]">
-                        <span className="text-foreground font-medium">{date.toLocaleDateString()}</span>
-                        <span className="text-muted-foreground text-[11px]">{date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className={`size-8 rounded-full flex items-center justify-center font-bold text-[11px] ${inv.mesa_numero ? "bg-primary/10 text-primary" : "bg-green-500/10 text-green-600 dark:text-green-400"}`}>
-                          {inv.mesa_numero ? String(inv.mesa_numero).padStart(2, "0") : "PL"}
-                        </div>
-                        <div className="flex flex-col">
-                          <span className="text-foreground text-[14px] font-medium">{inv.mesa_numero ? `Mesa ${inv.mesa_numero}` : "Para llevar"}</span>
-                          <span className="text-muted-foreground text-[11px]">{itemCount(inv)} productos</span>
-                        </div>
-                      </div>
-                      <div><span className={`text-[10px] font-bold uppercase px-2 py-1 rounded ${method.pillClass}`}>{method.label}</span></div>
-                      <div>
-                        <div className="flex items-center gap-2 px-3 py-1 rounded-full border border-black/5 dark:border-white/5 w-fit bg-muted/50">
-                           <div className="size-1.5 rounded-full" style={{ backgroundColor: status.color }} />
-                           <span className="text-[10px] font-bold uppercase" style={{ color: status.color }}>{status.label}</span>
-                        </div>
-                      </div>
-                      <div className="text-right font-['Space_Grotesk',sans-serif] font-bold text-foreground text-[16px] tabular-nums">{RD(inv.total)}</div>
-                      <div className="flex justify-end gap-2">
-                        <button onClick={() => setInvoiceModal(inv)} className="size-8 rounded-lg bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/10 transition-all border-none cursor-pointer"><Eye size={16} /></button>
-                        <button onClick={() => void printInvoice(inv)} className="size-8 rounded-lg bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/10 transition-all border-none cursor-pointer"><Printer size={16} /></button>
-                        {canDeleteInvoices && <button onClick={() => void deleteInvoiceAndTraces(inv)} className="size-8 rounded-lg bg-muted flex items-center justify-center text-destructive/60 hover:text-destructive hover:bg-destructive/10 transition-all border-none cursor-pointer"><Trash2 size={16} /></button>}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </div>
-        </>
-      ) : (
-        <div className="flex flex-col gap-6">
-          {filteredCycleSummaries.map((entry) => (
-             <div key={entry.cycle.id} className="bg-card rounded-[24px] border border-black/10 dark:border-white/5 overflow-hidden shadow-sm">
-                <div className="p-4 sm:p-8 flex flex-col gap-4 sm:gap-6">
-                   <div className="flex flex-col lg:flex-row justify-between gap-6">
-                      <div className="space-y-2">
-                         <div className="flex items-center gap-3">
-                            <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Ciclo #{entry.cycle.cycle_number}</span>
-                            <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${entry.cycle.closed_at ? "bg-green-500/10 text-green-600 dark:text-green-400" : "bg-primary/10 text-primary"}`}>
-                               {entry.cycle.closed_at ? "Cerrado" : "Abierto"}
-                            </span>
-                         </div>
-                         <h2 className="font-['Space_Grotesk',sans-serif] text-[21px] sm:text-[28px] font-bold text-foreground">Día {entry.cycle.business_day}</h2>
-                         <p className="text-muted-foreground text-[12px] sm:text-[14px]">Operación: {formatDateTime(entry.cycle.opened_at)} - {formatDateTime(entry.cycle.closed_at)}</p>
-                      </div>
-                      <div className="flex flex-col gap-3 lg:items-end">
-                      <div className="grid grid-cols-3 gap-2 sm:flex sm:gap-4">
-                         {[
-                           { label: "Vendido", val: RD(entry.totalSold), color: "text-foreground" },
-                           { label: "Gastos", val: RD(entry.totalExpenses), color: "text-primary" },
-                           { label: "Neto", val: RD(entry.netTotal), color: entry.netTotal >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive" }
-                         ].map((st, j) => (
-                           <div key={j} className="bg-muted/50 rounded-2xl px-3 sm:px-6 py-3 sm:py-4 border border-black/5 dark:border-white/5 min-w-0">
-                              <div className="text-[10px] font-bold uppercase text-muted-foreground mb-1">{st.label}</div>
-                              <div className={`font-['Space_Grotesk',sans-serif] text-[13px] sm:text-[20px] font-bold tabular-nums break-words ${st.color}`}>{st.val}</div>
-                           </div>
-                         ))}
-                      </div>
-                      {entry.cycle.closed_at && (
-                        <button
-                          type="button"
-                          onClick={() => void printCycleReport(entry)}
-                          className="inline-flex items-center gap-2 rounded-xl bg-muted px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest text-foreground hover:bg-black/5 dark:hover:bg-white/10 border border-border"
-                        >
-                          <Printer size={15} />
-                          Reimprimir cierre
-                        </button>
-                      )}
-                      </div>
-                   </div>
-
-                   <button onClick={() => setExpandedCycleId(expandedCycleId === entry.cycle.id ? null : entry.cycle.id)} className="flex items-center gap-2 text-primary font-bold text-[13px] uppercase tracking-wider hover:opacity-80 transition-all border-none bg-transparent cursor-pointer">
-                      {expandedCycleId === entry.cycle.id ? "Ocultar detalle" : "Ver detalle de ciclo"}
-                      <ChevronDown size={16} className={`transition-transform ${expandedCycleId === entry.cycle.id ? "rotate-180" : ""}`} />
-                   </button>
-                   
-                   {expandedCycleId === entry.cycle.id && (
-                     <div className="pt-4 sm:pt-6 mt-2 border-t border-black/10 dark:border-white/5 animate-in fade-in slide-in-from-top-2 grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-8">
-                        <div>
-                          <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-4">Por Categoria</div>
-                          <div className="space-y-3">
-                             {entry.categoryBreakdown.length > 0 ? entry.categoryBreakdown.map((cat, idx) => (
-                               <div key={idx} className="flex justify-between items-center p-3 rounded-xl border border-black/5 dark:border-white/5 bg-muted/20">
-                                 <div className="flex flex-col">
-                                    <span className="text-foreground font-medium text-[14px]">{cat.category}</span>
-                                    <span className="text-muted-foreground text-[11px]">{cat.count} productos</span>
-                                 </div>
-                                 <span className="font-bold text-[14px]">{RD(cat.total)}</span>
-                               </div>
-                             )) : (
-                               <div className="text-muted-foreground text-[13px] italic">No hay productos vendidos en este ciclo.</div>
-                             )}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-4">Por Metodo de Pago</div>
-                          <div className="space-y-3">
-                             {entry.methodBreakdown.length > 0 ? entry.methodBreakdown.map((met, idx) => (
-                               <div key={idx} className="flex justify-between items-center p-3 rounded-xl border border-black/5 dark:border-white/5 bg-muted/20">
-                                 <div className="flex flex-col">
-                                    <span className="text-foreground font-medium text-[14px]">{met.label}</span>
-                                    <span className="text-muted-foreground text-[11px]">{met.count} facturas</span>
-                                 </div>
-                                 <span className="font-bold text-[14px]">{RD(met.total)}</span>
-                               </div>
-                             )) : (
-                               <div className="text-muted-foreground text-[13px] italic">No hay cobros en este ciclo.</div>
-                             )}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-4">Gastos del Ciclo</div>
-                          <div className="space-y-3">
-                            <div className="rounded-xl border border-black/5 dark:border-white/5 bg-muted/20 p-3">
-                              <div className="flex items-center justify-between">
-                                <span className="text-foreground font-medium text-[14px]">Total gastos</span>
-                                <span className="font-bold text-[14px]">{RD(entry.totalExpenses)}</span>
-                              </div>
-                              <div className="mt-1 text-[11px] text-muted-foreground">{entry.expenses.length} registros</div>
+                ) : (
+                  pageData.map((inv) => {
+                    const status = statusConfig[inv.estado];
+                    const method = getMethodDisplay(inv.metodo_pago);
+                    const date = new Date(inv.created_at);
+                    return (
+                      <div key={inv.id} className="rounded-[20px] border border-black/10 bg-card p-4 shadow-sm dark:border-white/5">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="font-['Space_Grotesk',sans-serif] text-lg font-bold text-foreground">
+                              #{String(inv.numero_factura).padStart(4, "0")}
                             </div>
+                            <div className="text-xs text-muted-foreground font-medium">
+                              {date.toLocaleDateString()} · {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
+                            </div>
+                          </div>
+                          <div className="text-right font-['Space_Grotesk',sans-serif] text-lg font-bold text-primary tabular-nums">
+                            {RD(inv.total)}
+                          </div>
+                        </div>
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                          <div className="rounded-xl bg-muted/50 p-3">
+                            <div className="text-[10px] font-bold uppercase text-muted-foreground">Origen</div>
+                            <div className="mt-1 font-semibold text-foreground">{inv.mesa_numero ? `Mesa ${inv.mesa_numero}` : "Para llevar"}</div>
+                          </div>
+                          <div className="rounded-xl bg-muted/50 p-3">
+                            <div className="text-[10px] font-bold uppercase text-muted-foreground">Método</div>
+                            <div className="mt-1 font-semibold text-foreground">{method.label}</div>
+                          </div>
+                        </div>
+                        <div className="mt-3 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2 rounded-full border border-black/5 bg-muted/50 px-3 py-1 dark:border-white/5">
+                            <div className="size-1.5 rounded-full" style={{ backgroundColor: status.color }} />
+                            <span className="text-[10px] font-bold uppercase" style={{ color: status.color }}>{status.label}</span>
+                          </div>
+                          <div className="flex gap-2">
+                            <button onClick={() => setInvoiceModal(inv)} className="size-9 rounded-lg bg-muted flex items-center justify-center text-muted-foreground border-none cursor-pointer"><Eye size={16} /></button>
+                            <button onClick={() => void printInvoice(inv)} className="size-9 rounded-lg bg-muted flex items-center justify-center text-muted-foreground border-none cursor-pointer"><Printer size={16} /></button>
+                            {canDeleteInvoices && <button onClick={() => void deleteInvoiceAndTraces(inv)} className="size-9 rounded-lg bg-muted flex items-center justify-center text-destructive/70 border-none cursor-pointer"><Trash2 size={16} /></button>}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
 
-                            {entry.expenseCategoryBreakdown.length > 0 ? entry.expenseCategoryBreakdown.map((cat, idx) => (
-                              <div key={idx} className="flex justify-between items-center p-3 rounded-xl border border-black/5 dark:border-white/5 bg-muted/20">
-                                <div className="flex items-center gap-2">
-                                  <span className="size-2.5 rounded-full" style={{ backgroundColor: cat.color || "#ff906d" }} />
-                                  <div className="flex flex-col">
-                                    <span className="text-foreground font-medium text-[14px]">{cat.category}</span>
-                                    <span className="text-muted-foreground text-[11px]">{cat.count} gastos</span>
-                                  </div>
-                                </div>
-                                <span className="font-bold text-[14px]">{RD(cat.total)}</span>
+              {/* Desktop View */}
+              <div className="hidden md:block overflow-x-auto rounded-[20px] border border-black/10 dark:border-white/5 bg-card shadow-sm">
+                <div className="min-w-[1000px]">
+                  <div className={`${gridColsClass} bg-muted/50 border-b border-black/10 dark:border-white/10 px-6 py-4`}>
+                    {["ID", "Fecha", "Mesa / Origen", "Método", "Estado", "Monto", "Acciones"].map((h, i) => (
+                      <div key={i} className={`font-['Inter',sans-serif] font-bold text-muted-foreground text-[11px] uppercase tracking-widest ${i >= 5 ? "text-right" : ""}`}>
+                        {h}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="divide-y divide-black/5 dark:divide-white/5">
+                    {pageData.length === 0 ? (
+                      <div className="py-20 text-center text-muted-foreground font-['Inter']">No se encontraron facturas.</div>
+                    ) : (
+                      pageData.map((inv) => {
+                        const status = statusConfig[inv.estado];
+                        const method = getMethodDisplay(inv.metodo_pago);
+                        const date = new Date(inv.created_at);
+                        return (
+                          <div key={inv.id} className={`${gridColsClass} px-6 py-5 items-center hover:bg-muted/30 transition-colors group`}>
+                            <span className="font-['Space_Grotesk',sans-serif] font-bold text-foreground">#{String(inv.numero_factura).padStart(4, "0")}</span>
+                            <div className="flex flex-col text-[13px]">
+                              <span className="text-foreground font-medium">{date.toLocaleDateString()}</span>
+                              <span className="text-muted-foreground text-[11px]">{date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <div className={`size-8 rounded-full flex items-center justify-center font-bold text-[11px] ${inv.mesa_numero ? "bg-primary/10 text-primary" : "bg-green-500/10 text-green-600 dark:text-green-400"}`}>
+                                {inv.mesa_numero ? String(inv.mesa_numero).padStart(2, "0") : "PL"}
                               </div>
-                            )) : (
-                              <div className="text-muted-foreground text-[13px] italic">No hay gastos en este ciclo.</div>
-                            )}
+                              <div className="flex flex-col">
+                                <span className="text-foreground text-[14px] font-medium">{inv.mesa_numero ? `Mesa ${inv.mesa_numero}` : "Para llevar"}</span>
+                                <span className="text-muted-foreground text-[11px]">{itemCount(inv)} productos</span>
+                              </div>
+                            </div>
+                            <div><span className={`text-[10px] font-bold uppercase px-2 py-1 rounded ${method.pillClass}`}>{method.label}</span></div>
+                            <div>
+                              <div className="flex items-center gap-2 px-3 py-1 rounded-full border border-black/5 dark:border-white/5 w-fit bg-muted/50">
+                                 <div className="size-1.5 rounded-full" style={{ backgroundColor: status.color }} />
+                                 <span className="text-[10px] font-bold uppercase" style={{ color: status.color }}>{status.label}</span>
+                              </div>
+                            </div>
+                            <div className="text-right font-['Space_Grotesk',sans-serif] font-bold text-foreground text-[16px] tabular-nums">{RD(inv.total)}</div>
+                            <div className="flex justify-end gap-2">
+                              <button onClick={() => setInvoiceModal(inv)} className="size-8 rounded-lg bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/10 transition-all border-none cursor-pointer"><Eye size={16} /></button>
+                              <button onClick={() => void printInvoice(inv)} className="size-8 rounded-lg bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/10 transition-all border-none cursor-pointer"><Printer size={16} /></button>
+                              {canDeleteInvoices && <button onClick={() => void deleteInvoiceAndTraces(inv)} className="size-8 rounded-lg bg-muted flex items-center justify-center text-destructive/60 hover:text-destructive hover:bg-destructive/10 transition-all border-none cursor-pointer"><Trash2 size={16} /></button>}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
 
-                            {entry.expenses.length > 0 && (
-                              <div className="max-h-[240px] overflow-y-auto pr-1 space-y-2">
-                                {entry.expenses.map((expense) => (
-                                  <div key={expense.id} className="rounded-xl border border-black/5 dark:border-white/5 bg-card/60 p-3">
-                                    <div className="flex items-start justify-between gap-3">
-                                      <div className="min-w-0">
-                                        <div className="text-[13px] font-semibold text-foreground truncate">{expense.descripcion}</div>
-                                        <div className="text-[11px] text-muted-foreground">
-                                          {formatDateTime(expense.fecha_gasto)}
-                                          {expense.proveedor ? ` · ${expense.proveedor}` : ""}
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between px-2 py-4 mt-2">
+                  <button
+                    type="button"
+                    disabled={currentPage === 1}
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    className="px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest bg-muted hover:bg-muted/85 text-foreground rounded-xl disabled:opacity-40 transition-colors border border-black/5 dark:border-white/5 cursor-pointer"
+                  >
+                    Anterior
+                  </button>
+                  <span className="text-[13px] text-muted-foreground font-medium">
+                    Página <span className="font-bold text-foreground">{currentPage}</span> de <span className="font-bold text-foreground">{totalPages}</span>
+                  </span>
+                  <button
+                    type="button"
+                    disabled={currentPage === totalPages}
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    className="px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest bg-muted hover:bg-muted/85 text-foreground rounded-xl disabled:opacity-40 transition-colors border border-black/5 dark:border-white/5 cursor-pointer"
+                  >
+                    Siguiente
+                  </button>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="flex flex-col gap-6">
+              {filteredCycleSummaries.map((entry) => (
+                 <div key={entry.cycle.id} className="bg-card rounded-[20px] border border-black/10 dark:border-white/5 overflow-hidden shadow-sm">
+                    <div className="p-4 sm:p-5 flex flex-col gap-3.5">
+                       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                          <div className="space-y-1">
+                             <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Ciclo #{entry.cycle.cycle_number}</span>
+                                <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded text-[9px] ${entry.cycle.closed_at ? "bg-green-500/10 text-green-600 dark:text-green-400" : "bg-primary/10 text-primary"}`}>
+                                   {entry.cycle.closed_at ? "Cerrado" : "Abierto"}
+                                </span>
+                                <span className="text-muted-foreground/30">•</span>
+                                <span className="font-['Space_Grotesk',sans-serif] text-[15px] sm:text-[18px] font-bold text-foreground">Día {entry.cycle.business_day}</span>
+                             </div>
+                             <p className="text-muted-foreground text-[11px] sm:text-[12px] font-medium flex items-center gap-1.5 flex-wrap">
+                                <Calendar size={13} className="text-muted-foreground/80 shrink-0" />
+                                <span>Operación: {formatDateTime(entry.cycle.opened_at)} - {formatDateTime(entry.cycle.closed_at)}</span>
+                             </p>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                             <div className="flex items-center gap-4 sm:gap-5 bg-muted/45 dark:bg-white/[0.02] rounded-xl px-4 py-2 border border-black/5 dark:border-white/5 min-w-0">
+                                <div className="flex flex-col">
+                                   <span className="text-[9px] uppercase font-bold text-muted-foreground/80 tracking-wider">Vendido</span>
+                                   <span className="font-['Space_Grotesk',sans-serif] font-bold text-[13px] sm:text-[15px] text-foreground tabular-nums">{RD(entry.totalSold)}</span>
+                                </div>
+                                <div className="w-[1px] h-6 bg-black/10 dark:bg-white/10" />
+                                <div className="flex flex-col">
+                                   <span className="text-[9px] uppercase font-bold text-muted-foreground/80 tracking-wider">Gastos</span>
+                                   <span className="font-['Space_Grotesk',sans-serif] font-bold text-[13px] sm:text-[15px] text-primary tabular-nums">{RD(entry.totalExpenses)}</span>
+                                </div>
+                                <div className="w-[1px] h-6 bg-black/10 dark:bg-white/10" />
+                                <div className="flex flex-col">
+                                   <span className="text-[9px] uppercase font-bold text-muted-foreground/80 tracking-wider">Neto</span>
+                                   <span className={`font-['Space_Grotesk',sans-serif] font-bold text-[13px] sm:text-[15px] tabular-nums ${entry.netTotal >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>
+                                      {RD(entry.netTotal)}
+                                   </span>
+                                </div>
+                             </div>
+
+                             {entry.cycle.closed_at && (
+                                <button
+                                   type="button"
+                                   onClick={() => void printCycleReport(entry)}
+                                   className="inline-flex items-center gap-1.5 rounded-xl bg-muted hover:bg-black/5 dark:hover:bg-white/10 px-3.5 py-2 text-[10px] font-bold uppercase tracking-wider text-foreground border border-border cursor-pointer transition-colors"
+                                >
+                                   <Printer size={13} />
+                                   Reimprimir
+                                </button>
+                             )}
+                          </div>
+                       </div>
+
+                       <button onClick={() => setExpandedCycleId(expandedCycleId === entry.cycle.id ? null : entry.cycle.id)} className="flex items-center gap-1.5 text-primary font-bold text-[11px] sm:text-[12px] uppercase tracking-wider hover:opacity-80 transition-all border-none bg-transparent cursor-pointer self-start">
+                          {expandedCycleId === entry.cycle.id ? "Ocultar detalle" : "Ver detalle de ciclo"}
+                          <ChevronDown size={14} className={`transition-transform ${expandedCycleId === entry.cycle.id ? "rotate-180" : ""}`} />
+                       </button>
+                       
+                       {expandedCycleId === entry.cycle.id && (
+                          <div className="pt-3.5 border-t border-black/10 dark:border-white/5 animate-in fade-in slide-in-from-top-2 grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-6">
+                             <div>
+                               <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-4">Por Categoría</div>
+                               <div className="space-y-3">
+                                  {entry.categoryBreakdown.length > 0 ? entry.categoryBreakdown.map((cat, idx) => {
+                                    const percent = entry.totalSold > 0 ? (cat.total / entry.totalSold) * 100 : 0;
+                                    return (
+                                      <div key={idx} className="p-3.5 rounded-xl border border-black/5 dark:border-white/5 bg-muted/20 flex flex-col gap-2">
+                                        <div className="flex justify-between items-start">
+                                          <div className="flex flex-col">
+                                            <span className="text-foreground font-semibold text-[14px]">{cat.category}</span>
+                                            <span className="text-muted-foreground text-[11px]">{cat.count} productos</span>
+                                          </div>
+                                          <div className="text-right flex flex-col items-end">
+                                            <span className="font-bold text-[14px] text-foreground">{RD(cat.total)}</span>
+                                            <span className="text-[11px] text-muted-foreground font-semibold">{percent.toFixed(0)}%</span>
+                                          </div>
+                                        </div>
+                                        <div className="w-full bg-black/5 dark:bg-white/5 h-2 rounded-full overflow-hidden">
+                                          <div className="bg-primary h-full rounded-full transition-all duration-500" style={{ width: `${percent}%` }} />
                                         </div>
                                       </div>
-                                      <div className="shrink-0 text-[13px] font-bold text-primary">{RD(expense.monto)}</div>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                     </div>
-                   )}
-                </div>
-             </div>
-          ))}
-        </div>
-      )}
+                                    );
+                                  }) : (
+                                    <div className="text-muted-foreground text-[13px] italic">No hay productos vendidos en este ciclo.</div>
+                                  )}
+                               </div>
+                             </div>
+                             <div>
+                               <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-4">Por Método de Pago</div>
+                               <div className="space-y-3">
+                                  {entry.methodBreakdown.length > 0 ? entry.methodBreakdown.map((met, idx) => {
+                                    const percent = entry.totalSold > 0 ? (met.total / entry.totalSold) * 100 : 0;
+                                    return (
+                                      <div key={idx} className="p-3.5 rounded-xl border border-black/5 dark:border-white/5 bg-muted/20 flex flex-col gap-2">
+                                        <div className="flex justify-between items-start">
+                                          <div className="flex flex-col">
+                                            <span className="text-foreground font-semibold text-[14px]">{met.label}</span>
+                                            <span className="text-muted-foreground text-[11px]">{met.count} facturas</span>
+                                          </div>
+                                          <div className="text-right flex flex-col items-end">
+                                            <span className="font-bold text-[14px] text-foreground">{RD(met.total)}</span>
+                                            <span className="text-[11px] text-muted-foreground font-semibold">{percent.toFixed(0)}%</span>
+                                          </div>
+                                        </div>
+                                        <div className="w-full bg-black/5 dark:bg-white/5 h-2 rounded-full overflow-hidden">
+                                          <div className="bg-green-600 dark:bg-green-500 h-full rounded-full transition-all duration-500" style={{ width: `${percent}%` }} />
+                                        </div>
+                                      </div>
+                                    );
+                                  }) : (
+                                    <div className="text-muted-foreground text-[13px] italic">No hay cobros en este ciclo.</div>
+                                  )}
+                               </div>
+                             </div>
+                             <div>
+                               <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-4">Gastos del Ciclo</div>
+                               <div className="space-y-3">
+                                 <div className="rounded-xl border border-black/5 dark:border-white/5 bg-muted/20 p-3">
+                                   <div className="flex items-center justify-between">
+                                     <span className="text-foreground font-medium text-[14px]">Total gastos</span>
+                                     <span className="font-bold text-[14px]">{RD(entry.totalExpenses)}</span>
+                                   </div>
+                                   <div className="mt-1 text-[11px] text-muted-foreground">{entry.expenses.length} registros</div>
+                                 </div>
 
-      {/* MODALS maintained exactly with same logic but theme classes */}
+                                 {entry.expenseCategoryBreakdown.length > 0 ? entry.expenseCategoryBreakdown.map((cat, idx) => {
+                                   const percent = entry.totalExpenses > 0 ? (cat.total / entry.totalExpenses) * 100 : 0;
+                                   return (
+                                     <div key={idx} className="p-3.5 rounded-xl border border-black/5 dark:border-white/5 bg-muted/20 flex flex-col gap-2">
+                                       <div className="flex justify-between items-start">
+                                         <div className="flex items-center gap-2">
+                                           <span className="size-2.5 rounded-full shrink-0" style={{ backgroundColor: cat.color || "#ff906d" }} />
+                                           <div className="flex flex-col">
+                                             <span className="text-foreground font-semibold text-[14px]">{cat.category}</span>
+                                             <span className="text-muted-foreground text-[11px]">{cat.count} gastos</span>
+                                           </div>
+                                         </div>
+                                         <div className="text-right flex flex-col items-end">
+                                           <span className="font-bold text-[14px] text-foreground">{RD(cat.total)}</span>
+                                           <span className="text-[11px] text-muted-foreground font-semibold">{percent.toFixed(0)}%</span>
+                                         </div>
+                                       </div>
+                                       <div className="w-full bg-black/5 dark:bg-white/5 h-2 rounded-full overflow-hidden">
+                                         <div className="h-full rounded-full transition-all duration-500" style={{ width: `${percent}%`, backgroundColor: cat.color || "#ff906d" }} />
+                                       </div>
+                                     </div>
+                                   );
+                                 }) : (
+                                   <div className="text-muted-foreground text-[13px] italic">No hay gastos en este ciclo.</div>
+                                 )}
+
+                                 {entry.expenses.length > 0 && (
+                                   <div className="max-h-[240px] overflow-y-auto pr-1 space-y-2">
+                                     {entry.expenses.map((expense) => (
+                                       <div key={expense.id} className="rounded-xl border border-black/5 dark:border-white/5 bg-card/60 p-3">
+                                         <div className="flex items-start justify-between gap-3">
+                                           <div className="min-w-0">
+                                             <div className="text-[13px] font-semibold text-foreground truncate">{expense.descripcion}</div>
+                                             <div className="text-[11px] text-muted-foreground">
+                                               {formatDateTime(expense.fecha_gasto)}
+                                               {expense.proveedor ? ` · ${expense.proveedor}` : ""}
+                                             </div>
+                                           </div>
+                                           <div className="shrink-0 text-[13px] font-bold text-primary">{RD(expense.monto)}</div>
+                                         </div>
+                                       </div>
+                                     ))}
+                                   </div>
+                                 )}
+                               </div>
+                             </div>
+                          </div>
+                       )}
+                    </div>
+                 </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Right Column: Live Summary Counter */}
+        <div className="lg:col-span-4 xl:col-span-3">
+          <div className="bg-card rounded-[20px] border border-black/10 dark:border-white/5 p-5 flex flex-col gap-4 shadow-sm">
+            <div className="flex items-center gap-2 pb-2 border-b border-black/5 dark:border-white/5">
+              <TrendingUp size={16} className="text-green-600 dark:text-green-400" />
+              <span className="font-['Space_Grotesk',sans-serif] font-bold text-[13px] uppercase tracking-wider text-foreground">
+                {view === "facturas" ? "Resumen Filtrado" : "Resumen de Ciclos"}
+              </span>
+            </div>
+
+            {view === "facturas" ? (
+              <div className="flex flex-col gap-3.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-[12px] text-muted-foreground font-['Inter'] font-medium">Monto Pagado:</span>
+                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-[15px] text-green-600 dark:text-green-400">{RD(filteredStats.total)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[12px] text-muted-foreground font-['Inter'] font-medium">Cantidad:</span>
+                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-[15px] text-foreground">{filteredStats.count} facturas</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[12px] text-muted-foreground font-['Inter'] font-medium">Ticket Promedio:</span>
+                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-[15px] text-foreground">{RD(filteredStats.avg)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[12px] text-muted-foreground font-['Inter'] font-medium">Método Principal:</span>
+                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-[14px] text-primary">{filteredStats.mainMethodLabel}</span>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-[12px] text-muted-foreground font-['Inter'] font-medium">Ciclos Filtrados:</span>
+                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-[15px] text-foreground">{filteredCycleSummaries.length} ciclos</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[12px] text-muted-foreground font-['Inter'] font-medium">Vendido Total:</span>
+                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-[15px] text-foreground">
+                    {RD(filteredCycleSummaries.reduce((sum, c) => sum + c.totalSold, 0))}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[12px] text-muted-foreground font-['Inter'] font-medium">Gastos Total:</span>
+                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-[15px] text-primary">
+                    {RD(filteredCycleSummaries.reduce((sum, c) => sum + c.totalExpenses, 0))}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center border-t border-black/5 dark:border-white/5 pt-3.5">
+                  <span className="text-[12px] text-muted-foreground font-['Inter'] font-bold">Balance Neto:</span>
+                  {(() => {
+                    const net = filteredCycleSummaries.reduce((sum, c) => sum + c.netTotal, 0);
+                    return (
+                      <span className={`font-['Space_Grotesk',sans-serif] font-bold text-[16px] ${net >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>
+                        {RD(net)}
+                      </span>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
       <Dialog open={invoiceModal !== null} onOpenChange={(open) => !open && setInvoiceModal(null)}>
         <DialogContent className="max-h-[85vh] overflow-y-auto border-black/10 dark:border-white/10 bg-card text-foreground sm:max-w-lg">
           {invoiceModal && (
@@ -1134,19 +1326,18 @@ const loadBillingData = useCallback(async () => {
                 <DialogTitle className="font-['Space_Grotesk',sans-serif] text-xl">Factura #{String(invoiceModal.numero_factura).padStart(4, "0")}</DialogTitle>
                 <DialogDescription className="text-muted-foreground">{formatDateTime(invoiceModal.created_at)} · {invoiceModal.mesa_numero ? `Mesa ${invoiceModal.mesa_numero}` : "Para llevar"}</DialogDescription>
               </DialogHeader>
-              {/* Detailed view logic remains identical */}
               <div className="flex gap-4 py-4 border-y border-border">
                  <div className="flex-1">
                     <div className="text-[11px] font-bold text-muted-foreground uppercase mb-1">Items</div>
                     <div className="space-y-2">
                        {invoiceModal.items.map((it, i) => (
-                         <div key={i} className="flex justify-between text-[14px]">
-                            <div className="flex flex-col">
-                               <span>{it.cantidad}× {it.nombre}</span>
-                               <span className="text-[10px] text-muted-foreground uppercase">{it.categoria || "General"}</span>
-                            </div>
-                            <span className="font-bold">{RD(it.subtotal)}</span>
-                         </div>
+                          <div key={i} className="flex justify-between text-[14px]">
+                             <div className="flex flex-col">
+                                <span>{it.cantidad}× {it.nombre}</span>
+                                <span className="text-[10px] text-muted-foreground uppercase">{it.categoria || "General"}</span>
+                             </div>
+                             <span className="font-bold">{RD(it.subtotal)}</span>
+                          </div>
                        ))}
                     </div>
                  </div>

@@ -564,9 +564,6 @@ export function Inventario() {
           <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[24px] uppercase tracking-[0.5px] flex items-center gap-2">
             Modulo de Inventario <Layers className="size-[20px] text-[#ff906d]" />
           </span>
-          <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[13px]">
-            Plan Profesional ⭐ Control de insumos, materias primas de cocina y recetas automatizadas.
-          </span>
         </div>
         <button
           onClick={() => void cargarDatos()}
