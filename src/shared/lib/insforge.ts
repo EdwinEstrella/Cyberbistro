@@ -3,6 +3,7 @@ import type { InsForgeConfig, InsForgeClient } from '@insforge/sdk';
 import { INSFORGE_REFRESH_TOKEN_STORAGE_KEY } from './insforgeAuthStorage';
 import {
   registerCloudAnonKey,
+  registerCloudBaseUrl,
   recordCloudSuccess,
   recordCloudFailure,
   isCloudAvailabilityFailure,
@@ -29,6 +30,7 @@ const effectiveAnonKey = isInsforgeEnvConfigured
 
 // Registramos la anon key para el probe de disponibilidad
 registerCloudAnonKey(effectiveAnonKey);
+registerCloudBaseUrl(effectiveBaseUrl);
 
 /** Para mensajes de error (login) y logs; coincide con la URL del cliente InsForge. */
 export function getInsforgeResolvedBaseUrl(): string {

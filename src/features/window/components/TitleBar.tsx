@@ -3,7 +3,7 @@ import type { ElectronAPI, ThermalPrinterInfo } from "../../../shared/types/elec
 import svgPaths from "../../../imports/svg-h2gjocs89h";
 import { useTheme } from "../../../shared/context/ThemeContext";
 import { useAuth } from "../../../shared/hooks/useAuth";
-import { useSucursal } from "../../../app/context/SucursalContext";
+import type { Sucursal } from "../../../app/context/SucursalContext";
 import { SUPER_ADMIN_ROLE } from "../../../shared/lib/superAdmin";
 import { Printer } from "lucide-react";
 import { getThermalPrintSettings, saveThermalPrintSettings } from "../../../shared/lib/thermalStorage";
@@ -14,6 +14,13 @@ interface TitleBarProps {
   onToggleSidebar?: () => void;
   onShowBranchUpsell?: () => void;
   onAddBranch?: () => void;
+  branchContext?: {
+    activeSucursalId: string | null;
+    setActiveSucursalId: (id: string | null) => void;
+    sucursales: Sucursal[];
+    deleteSucursal: (id: string) => Promise<{ success: boolean; error?: string }>;
+    loading: boolean;
+  };
 }
 
 export function TitleBar({
@@ -22,18 +29,17 @@ export function TitleBar({
   onToggleSidebar,
   onShowBranchUpsell,
   onAddBranch,
+  branchContext,
 }: TitleBarProps) {
   const [isMaximized, setIsMaximized] = useState(false);
   const { theme, toggleTheme } = useTheme();
   
   const { plan, isAuthenticated, rol } = useAuth();
-  const {
-    activeSucursalId,
-    setActiveSucursalId,
-    sucursales,
-    deleteSucursal,
-    loading: sucursalesLoading,
-  } = useSucursal();
+  const activeSucursalId = branchContext?.activeSucursalId ?? null;
+  const setActiveSucursalId = branchContext?.setActiveSucursalId;
+  const sucursales = branchContext?.sucursales ?? [];
+  const deleteSucursal = branchContext?.deleteSucursal;
+  const sucursalesLoading = branchContext?.loading ?? true;
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [printerDropdownOpen, setPrinterDropdownOpen] = useState(false);
   const [printers, setPrinters] = useState<ThermalPrinterInfo[]>([]);
@@ -61,7 +67,7 @@ export function TitleBar({
   };
 
   const activeSucursal = sucursales.find(s => s.id === activeSucursalId);
-  const shouldShowBranchControls = isAuthenticated && rol !== SUPER_ADMIN_ROLE;
+  const shouldShowBranchControls = Boolean(branchContext) && isAuthenticated && rol !== SUPER_ADMIN_ROLE;
 
   useEffect(() => {
     // Listen for maximize/unmaximize events from main process
@@ -259,7 +265,7 @@ export function TitleBar({
                           <button
                             type="button"
                             onClick={() => {
-                              setActiveSucursalId(suc.id);
+                              setActiveSucursalId?.(suc.id);
                               setDropdownOpen(false);
                             }}
                             className={`flex-1 text-left px-2.5 py-1.5 font-['Space_Grotesk',sans-serif] text-[11px] transition-colors cursor-pointer border-none bg-transparent ${
@@ -284,7 +290,9 @@ export function TitleBar({
                                 onClick={async (e) => {
                                   e.stopPropagation();
                                   if (confirm(`¿Estás seguro de que querés eliminar la sucursal "${suc.nombre}"?`)) {
-                                    const res = await deleteSucursal(suc.id);
+                                    const res = deleteSucursal
+                                      ? await deleteSucursal(suc.id)
+                                      : { success: false, error: "No hay contexto de sucursal disponible." };
                                     if (!res.success) {
                                       alert(res.error);
                                     }

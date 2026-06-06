@@ -21,6 +21,8 @@ import { closeKitchenComandasForMesaLocalFirst } from "../../pos/lib/localFirstM
 import { cacheLogoFromUrl } from "../../../shared/lib/logoCache";
 import { isDesktopCloudUnavailable } from "../../../shared/lib/cloudAvailability";
 import { useSucursal } from "../../../app/context/SucursalContext";
+import { CustomerSelect } from "../../clientes/components/CustomerSelect";
+import type { Customer } from "../../clientes/lib/customers";
 
 const ITBIS = 0.18;
 
@@ -262,6 +264,7 @@ export function MesaCloseAccountModal({
   const [ncfFiscalActive, setNcfFiscalActive] = useState(false);
   const [selectedNcfType, setSelectedNcfType] = useState<NcfBCode>(DEFAULT_NCF_B_CODE);
   const [clientRnc, setClientRnc] = useState("");
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [cashReceivedInput, setCashReceivedInput] = useState("");
   const [splitMode, setSplitMode] = useState(false);
   /** En modo dividir: cada línea de consumo va a una persona 1..splitParts (ítem completo, no se parte el monto). */
@@ -274,6 +277,7 @@ export function MesaCloseAccountModal({
       setPersonByConsumoId({});
       setPaymentMethod("efectivo");
       setClientRnc("");
+      setSelectedCustomer(null);
       setCashReceivedInput("");
       return;
     }
@@ -521,7 +525,7 @@ export function MesaCloseAccountModal({
       return;
     }
 
-    const normalizedClientRnc = clientRnc.trim();
+    const normalizedClientRnc = clientRnc.trim() || selectedCustomer?.document_id?.trim() || "";
     if (
       ncfFiscalActive &&
       ncfTypeRequiresClientRnc(selectedNcfType) &&
@@ -601,6 +605,13 @@ export function MesaCloseAccountModal({
         if (normalizedClientRnc !== "") {
           insertRow.cliente_rnc = normalizedClientRnc;
         }
+        if (selectedCustomer) {
+          insertRow.customer_id = selectedCustomer.id;
+          insertRow.cliente_nombre = selectedCustomer.name;
+          if (selectedCustomer.document_id?.trim()) {
+            insertRow.cliente_rnc = selectedCustomer.document_id.trim();
+          }
+        }
 
         await enqueueLocalWrite({
           tenantId,
@@ -677,7 +688,7 @@ export function MesaCloseAccountModal({
       return;
     }
 
-    const normalizedClientRnc = clientRnc.trim();
+    const normalizedClientRnc = clientRnc.trim() || selectedCustomer?.document_id?.trim() || "";
     if (
       ncfFiscalActive &&
       ncfTypeRequiresClientRnc(selectedNcfType) &&
@@ -756,6 +767,13 @@ export function MesaCloseAccountModal({
     }
     if (normalizedClientRnc !== "") {
       facturaData.cliente_rnc = normalizedClientRnc;
+    }
+    if (selectedCustomer) {
+      facturaData.customer_id = selectedCustomer.id;
+      facturaData.cliente_nombre = selectedCustomer.name;
+      if (selectedCustomer.document_id?.trim()) {
+        facturaData.cliente_rnc = selectedCustomer.document_id.trim();
+      }
     }
 
     await enqueueLocalWrite({
@@ -1052,6 +1070,16 @@ export function MesaCloseAccountModal({
             </span>
           </div>
         </div>
+
+        <CustomerSelect
+          tenantId={tenantId}
+          value={selectedCustomer}
+          onChange={(customer) => {
+            setSelectedCustomer(customer);
+            if (customer?.document_id) setClientRnc(customer.document_id);
+          }}
+          compact
+        />
 
         {ncfFiscalActive ? (
           <div className="flex flex-col gap-[10px]">

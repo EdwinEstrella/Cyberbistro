@@ -59,6 +59,8 @@ import { writePosMutationLocalFirst } from "../../pos/lib/localFirstMutations";
 import { cacheLogoFromUrl } from "../../../shared/lib/logoCache";
 import { normalizeTenantRol } from "../../../shared/lib/roleNav";
 import { isDesktopCloudUnavailable } from "../../../shared/lib/cloudAvailability";
+import { CustomerSelect } from "../../clientes/components/CustomerSelect";
+import type { Customer } from "../../clientes/lib/customers";
 
 interface Plato {
   id: number;
@@ -166,6 +168,7 @@ export function Dashboard() {
   const [tenantNcfFiscalActive, setTenantNcfFiscalActive] = useState(false);
   const [selectedNcfType, setSelectedNcfType] = useState<NcfBCode>(DEFAULT_NCF_B_CODE);
   const [takeoutClientRnc, setTakeoutClientRnc] = useState("");
+  const [takeoutCustomer, setTakeoutCustomer] = useState<Customer | null>(null);
   const [cashReceivedInput, setCashReceivedInput] = useState("");
 
   useEffect(() => {
@@ -935,6 +938,7 @@ export function Dashboard() {
         return;
       }
       setTakeoutClientRnc("");
+      setTakeoutCustomer(null);
       setCashReceivedInput("");
       setMesaConsumos([]);
       setShowPaymentModal(true);
@@ -953,7 +957,7 @@ export function Dashboard() {
       alert("No hay negocio activo.");
       return;
     }
-    const normalizedClientRnc = takeoutClientRnc.trim();
+    const normalizedClientRnc = takeoutClientRnc.trim() || takeoutCustomer?.document_id?.trim() || "";
     if (
       tenantNcfFiscalActive &&
       ncfTypeRequiresClientRnc(selectedNcfType) &&
@@ -1083,6 +1087,13 @@ export function Dashboard() {
     if (normalizedClientRnc !== "") {
       facturaData.cliente_rnc = normalizedClientRnc;
     }
+    if (takeoutCustomer) {
+      facturaData.customer_id = takeoutCustomer.id;
+      facturaData.cliente_nombre = takeoutCustomer.name;
+      if (takeoutCustomer.document_id?.trim()) {
+        facturaData.cliente_rnc = takeoutCustomer.document_id.trim();
+      }
+    }
 
     if (tenantId) {
       await enqueueLocalWrite({
@@ -1126,6 +1137,7 @@ export function Dashboard() {
 
     setCart([]);
     setTakeoutClientRnc("");
+    setTakeoutCustomer(null);
     setCashReceivedInput("");
     setMesaConsumos([]);
     setChargeOk(true);
@@ -1838,6 +1850,7 @@ export function Dashboard() {
             onClick={(e) => {
               if (e.target === e.currentTarget) {
                 setTakeoutClientRnc("");
+                setTakeoutCustomer(null);
                 setCashReceivedInput("");
                 setShowPaymentModal(false);
               }
@@ -1857,6 +1870,7 @@ export function Dashboard() {
                   type="button"
                   onClick={() => {
                     setTakeoutClientRnc("");
+                    setTakeoutCustomer(null);
                     setCashReceivedInput("");
                     setShowPaymentModal(false);
                   }}
@@ -1913,6 +1927,16 @@ export function Dashboard() {
                   </span>
                 </div>
               </div>
+
+              <CustomerSelect
+                tenantId={tenantId}
+                value={takeoutCustomer}
+                onChange={(customer) => {
+                  setTakeoutCustomer(customer);
+                  if (customer?.document_id) setTakeoutClientRnc(customer.document_id);
+                }}
+                compact
+              />
 
               {tenantNcfFiscalActive ? (
                 <div className="flex flex-col gap-[12px]">
@@ -2009,6 +2033,7 @@ export function Dashboard() {
                   type="button"
                   onClick={() => {
                     setTakeoutClientRnc("");
+                    setTakeoutCustomer(null);
                     setCashReceivedInput("");
                     setShowPaymentModal(false);
                   }}

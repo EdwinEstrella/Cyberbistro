@@ -14,6 +14,7 @@ export const LOCAL_FIRST_MIRROR_TABLES = [
   "comandas",
   "consumos",
   "facturas",
+  "customers",
   "cierres_operativos",
   "gastos",
   "gasto_categorias",
@@ -44,6 +45,7 @@ export const LOCAL_FIRST_IMMEDIATE_TABLES = [
   "comandas",
   "consumos",
   "facturas",
+  "customers",
   "sucursales",
   "productos_inventario",
   "recetas",
@@ -60,6 +62,7 @@ export const LOCAL_FIRST_HISTORY_TABLES = [
   "cierres_operativos",
   "comandas",
   "facturas",
+  "customers",
   "consumos",
   "gasto_categorias",
   "gastos",
@@ -119,7 +122,25 @@ export interface IncrementalCursor {
 
 const COMPOSITE_UPSERT_CONFLICT_TABLES = new Set<LocalFirstMirrorTable>(["mesas_estado"]);
 const LOCAL_FIRST_PHASES = ["minimum", "history", "incremental"] as const satisfies readonly LocalFirstPhase[];
+const OPTIONAL_BACKEND_TABLES = new Set<LocalFirstMirrorTable>(["customers"]);
 export const LOCAL_NCF_RESERVED_PAYLOAD_FLAG = "__local_ncf_reserved";
+
+function isMissingBackendTableError(tableName: LocalFirstMirrorTable, error: unknown): boolean {
+  if (!OPTIONAL_BACKEND_TABLES.has(tableName)) return false;
+  const message =
+    typeof error === "object" && error != null && "message" in error
+      ? String((error as { message?: unknown }).message ?? "")
+      : String(error ?? "");
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes(tableName.toLowerCase()) &&
+    (normalized.includes("could not find the table") ||
+      normalized.includes("schema cache") ||
+      normalized.includes("does not exist") ||
+      normalized.includes("relation") ||
+      normalized.includes("404"))
+  );
+}
 
 function isTenantScopedMirrorTable(tableName: LocalFirstMirrorTable): boolean {
   return tableName !== "tenants";
@@ -1717,6 +1738,24 @@ export async function bootstrapLocalFirstPhase(args: {
       while (!completed) {
         const { data, error } = await runTrackedCloudOperation(() => pullTablePage(tableName, args.tenantId, offset));
         if (error) {
+          if (isMissingBackendTableError(tableName, error)) {
+            await putOne(
+              db,
+              "sync_state",
+              createSyncStateRow({
+                tenantId: args.tenantId,
+                tableName,
+                phase: args.phase,
+                cursor: String(offset),
+                completed: true,
+                rowCount,
+                lastError: `Tabla opcional ${tableName} no existe todavia en backend; se opera localmente hasta aplicar migracion.`,
+              })
+            );
+            args.onTableDone?.(tableName, rowCount);
+            break;
+          }
+
           await putOne(
             db,
             "sync_state",

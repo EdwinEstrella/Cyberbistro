@@ -1,10 +1,14 @@
-import { getInsforgeResolvedBaseUrl } from "./insforge";
-
 let registeredAnonKey: string | null = null;
+let registeredBaseUrl: string | null = null;
 
 /** Registers the anon key so the cloud probe can authenticate against PostgREST. */
 export function registerCloudAnonKey(key: string): void {
   registeredAnonKey = key;
+}
+
+/** Registers the base URL without importing the InsForge client and creating a module cycle. */
+export function registerCloudBaseUrl(baseUrl: string): void {
+  registeredBaseUrl = baseUrl;
 }
 
 export type CloudCircuitState = "closed" | "open" | "half-open";
@@ -124,7 +128,7 @@ async function runCloudProbe(): Promise<boolean> {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
   try {
-    const url = `${getInsforgeResolvedBaseUrl()}/rest/v1/`;
+    const url = `${registeredBaseUrl ?? ""}/rest/v1/`;
     const headers: Record<string, string> = {};
     if (registeredAnonKey) {
       headers["apikey"] = registeredAnonKey;

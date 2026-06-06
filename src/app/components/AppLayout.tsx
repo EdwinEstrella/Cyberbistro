@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router";
 
 import { VentaCartSearchProvider } from "../context/VentaCartSearchContext";
-import { useSucursal } from "../context/SucursalContext";
+import { SucursalProvider, useSucursal } from "../context/SucursalContext";
 import svgPaths from "../../imports/svg-qgatbhef3k";
 import { TitleBar } from "../../features/window";
 import { insforgeClient } from "../../shared/lib/insforge";
@@ -21,6 +21,7 @@ import { getThermalPrintSettings, saveThermalPrintSettings } from "../../shared/
 
 const mainNavItems = [
   { label: "Venta", customIcon: "venta", path: "/dashboard" },
+  { label: "Clientes", customIcon: "clientes", path: "/clientes" },
   { label: "Camarera", customIcon: "camarera", path: "/camarera" },
   { label: "Mesas", customIcon: "mesas", path: "/tables" },
   { label: "Cocina", customIcon: "cocina", path: "/cocina" },
@@ -43,6 +44,7 @@ const PLAN_UPGRADE_WHATSAPP_URL =
 
 const routePrefetchers: Record<string, () => Promise<unknown>> = {
   "/dashboard": () => import("../../features/dashboard"),
+  "/clientes": () => import("../../features/clientes"),
   "/tables": () => import("../../features/tables"),
   "/billing": () => import("../../features/billing"),
   "/gastos": () => import("../../features/gastos"),
@@ -65,7 +67,7 @@ function filterMainNavForRol(rol: string | null, _plan: string | null) {
   if (normalized === "admin") return items;
   if (normalized === "cocina") return items.filter((i) => i.path === "/cocina");
   if (normalized === "cajera") {
-    const allow = ["/dashboard", "/tables", "/gastos", "/cierre"] as const;
+    const allow = ["/dashboard", "/clientes", "/tables", "/gastos", "/cierre"] as const;
     return items.filter((i) => allow.includes(i.path as (typeof allow)[number]));
   }
   if (normalized === "mesero") {
@@ -75,7 +77,16 @@ function filterMainNavForRol(rol: string | null, _plan: string | null) {
   return items.filter((i) => i.path === "/dashboard");
 }
 
-function SidebarCustomIcon({ name }: { name: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "camarera" | "inventario" }) {
+function SidebarCustomIcon({ name }: { name: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" }) {
+  if (name === "clientes") {
+    return (
+      <svg className="shrink-0 size-[20px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M16 11a4 4 0 1 0-8 0 4 4 0 0 0 8 0Z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 21a8 8 0 0 1 16 0" />
+      </svg>
+    );
+  }
+
   if (name === "inventario") {
     return (
       <svg className="shrink-0 size-[20px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden>
@@ -164,6 +175,14 @@ function SidebarCustomIcon({ name }: { name: "gastos" | "cocina" | "entregas" | 
 }
 
 export function AppLayout() {
+  return (
+    <SucursalProvider>
+      <AppLayoutContent />
+    </SucursalProvider>
+  );
+}
+
+function AppLayoutContent() {
   const navigate = useNavigate();
   const routerLocation = useLocation();
   const { rol, signOut, tenantId, plan, loading } = useAuth();
@@ -186,7 +205,14 @@ export function AppLayout() {
   };
   const [upsellType, setUpsellType] = useState<"inventario" | "sucursales" | null>(null);
 
-  const { addSucursal, sucursales } = useSucursal();
+  const {
+    activeSucursalId,
+    setActiveSucursalId,
+    addSucursal,
+    deleteSucursal,
+    loading: sucursalesLoading,
+    sucursales,
+  } = useSucursal();
   const [showAddBranchModal, setShowAddBranchModal] = useState(false);
   const [newBranchName, setNewBranchName] = useState("");
   const [newBranchAddress, setNewBranchAddress] = useState("");
@@ -311,6 +337,13 @@ export function AppLayout() {
           setNewBranchAddress("");
           setNewBranchPhone("");
           setShowAddBranchModal(true);
+        }}
+        branchContext={{
+          activeSucursalId,
+          setActiveSucursalId,
+          sucursales,
+          deleteSucursal,
+          loading: sucursalesLoading,
         }}
       />
 

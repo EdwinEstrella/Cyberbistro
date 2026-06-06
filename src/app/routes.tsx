@@ -11,6 +11,7 @@ export const router = createHashRouter([
     HydrateFallback: () => null,
     children: [
       { path: "/dashboard", lazy: () => import("../features/dashboard").then(({ Dashboard }) => ({ Component: Dashboard })) },
+      { path: "/clientes", lazy: () => import("../features/clientes").then(({ Clientes }) => ({ Component: Clientes })) },
       { path: "/tables", lazy: () => import("../features/tables").then(({ Tables }) => ({ Component: Tables })) },
       { path: "/billing", lazy: () => import("../features/billing").then(({ Billing }) => ({ Component: Billing })) },
       { path: "/gastos", lazy: () => import("../features/gastos").then(({ Gastos }) => ({ Component: Gastos })) },
