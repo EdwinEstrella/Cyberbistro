@@ -12,7 +12,7 @@ import {
   ensureDefaultSucursal,
   assertCanWriteOffline,
 } from "../lib/localFirst";
-import { isDesktopRuntime, probeCloudAvailability } from "../lib/cloudAvailability";
+import { isDesktopRuntime, probeCloudAvailability, recordCloudFailure } from "../lib/cloudAvailability";
 
 export function resolveLicenseGateForOnlineSync(validation: {
   valid: boolean;
@@ -65,10 +65,10 @@ export function useLocalFirstBootstrap(tenantId: string | null): LocalFirstBoots
       if (!cancelled) setState(next);
     };
 
-    const syncOnlineState = async () => {
+    const syncOnlineState = async (force = false) => {
       if (cancelled) return;
       const snapshot = await getLocalFirstStatusSnapshot(tenantId);
-      const cloudAvailable = await probeCloudAvailability(false);
+      const cloudAvailable = await probeCloudAvailability(force);
       if (navigator.onLine && cloudAvailable) {
         if (snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing") {
           const licenseValidation = await revalidateLicenseOnReconnect(tenantId);
@@ -78,7 +78,9 @@ export function useLocalFirstBootstrap(tenantId: string | null): LocalFirstBoots
             return;
           }
 
-          apply({ ...snapshot, status: "syncing", message: "Sincronizando cambios..." });
+          if (snapshot.status !== "history_complete") {
+            apply({ ...snapshot, status: "syncing", message: "Sincronizando cambios..." });
+          }
           try {
             const outboxResult = await pushOutboxToServer(tenantId);
             const pullResult = await syncIncremental(tenantId);
@@ -93,8 +95,14 @@ export function useLocalFirstBootstrap(tenantId: string | null): LocalFirstBoots
             });
           } catch {
             if (cancelled) return;
+            recordCloudFailure();
             const next = await getLocalFirstStatusSnapshot(tenantId);
-            apply({ ...next, message: "Sincronizacion en background." });
+            apply({
+              status: "offline",
+              message: "Servidor no disponible: operando offline con datos locales.",
+              completedHistoryTables: next.completedHistoryTables,
+              totalHistoryTables: next.totalHistoryTables,
+            });
           }
         } else {
           apply({ ...snapshot, message: "Conectado." });
@@ -111,12 +119,19 @@ export function useLocalFirstBootstrap(tenantId: string | null): LocalFirstBoots
       }
     };
 
-    window.addEventListener("online", syncOnlineState);
-    window.addEventListener("offline", syncOnlineState);
+    const handleOnline = () => { void syncOnlineState(true); };
+    const handleOffline = () => { void syncOnlineState(true); };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    const intervalId = window.setInterval(() => {
+      void syncOnlineState(false);
+    }, 15000);
 
     const run = async () => {
       if (!navigator.onLine) {
-        syncOnlineState();
+        void syncOnlineState(true);
         return;
       }
 
@@ -220,8 +235,9 @@ export function useLocalFirstBootstrap(tenantId: string | null): LocalFirstBoots
 
     return () => {
       cancelled = true;
-      window.removeEventListener("online", syncOnlineState);
-      window.removeEventListener("offline", syncOnlineState);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+      window.clearInterval(intervalId);
     };
   }, [tenantId]);
 
