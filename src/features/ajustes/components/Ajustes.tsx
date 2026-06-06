@@ -75,7 +75,10 @@ const SAMPLE_FACTURA_THERMAL_PREVIEW: Parameters<typeof buildFacturaReceiptHtml>
   mesa_numero: 4,
   notas: null,
   estado: "pagada",
-  propina: 0
+  propina: 0,
+  cliente_nombre: "Juan Pérez (Ejemplo)",
+  cliente_rnc: "101-00123-4",
+  ncf: "B0100000005"
 };
 
 const SAMPLE_COMANDA_THERMAL: Parameters<typeof buildComandaReceiptHtml>[1] = {
@@ -458,7 +461,7 @@ function ThermalPrintSettingsCard({ onThermalSaved }: { onThermalSaved?: () => v
     <div className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 flex flex-col gap-6 shadow-sm">
       <h3 className="font-['Space_Grotesk'] text-lg font-bold text-foreground">Impresora Térmica</h3>
       <div className="flex gap-2">
-        {([80, 88] as const).map(w => (
+        {([80, 58] as const).map(w => (
           <button key={w} onClick={() => setPaperWidthMm(w)} className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all cursor-pointer ${paperWidthMm === w ? "bg-primary/10 border-primary text-primary" : "bg-muted border-border text-muted-foreground"}`}>{w}mm</button>
         ))}
       </div>

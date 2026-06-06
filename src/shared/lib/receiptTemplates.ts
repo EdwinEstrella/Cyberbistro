@@ -28,7 +28,7 @@ function escapeHtml(s: string): string {
 }
 
 function thermalStyles(paperWidthMm: PaperWidthMm): string {
-  const bodyMax = paperWidthMm === 88 ? "80mm" : "72mm";
+  const bodyMax = paperWidthMm === 58 ? "48mm" : "72mm";
   return `
     @page { size: ${paperWidthMm}mm auto; margin: 2mm; }
     * { box-sizing: border-box; }
@@ -174,9 +174,10 @@ export function buildFacturaReceiptHtml(
   const montoRecibido = Number(factura.monto_recibido);
   const cambioDevuelto = Number(factura.cambio_devuelto);
   const hasCashChange =
+    factura.metodo_pago.toLowerCase() === "efectivo" &&
     Number.isFinite(montoRecibido) &&
+    montoRecibido > 0 &&
     Number.isFinite(cambioDevuelto) &&
-    montoRecibido >= 0 &&
     cambioDevuelto >= 0;
 
   const itemsRows = factura.items
@@ -200,10 +201,14 @@ export function buildFacturaReceiptHtml(
     })
     .join("");
 
-  const metaCliente =
-    clienteRnc !== ""
-      ? `<tr class="header-row"><td>RNC/Céd.</td><td style="text-align:right">${escapeHtml(clienteRnc)}</td></tr>`
-      : "";
+  const clienteNombre = (factura.cliente_nombre || "").trim();
+  let metaCliente = "";
+  if (clienteNombre !== "") {
+    metaCliente += `<tr class="header-row"><td>Cliente</td><td style="text-align:right">${escapeHtml(clienteNombre)}</td></tr>`;
+  }
+  if (clienteRnc !== "") {
+    metaCliente += `<tr class="header-row"><td>RNC/Céd.</td><td style="text-align:right">${escapeHtml(clienteRnc)}</td></tr>`;
+  }
   const metaNcf =
     ncf !== ""
       ? `<tr class="header-row"><td>NCF</td><td style="text-align:right;font-weight:bold;font-size:14px">${escapeHtml(ncf)}</td></tr>`

@@ -1,6 +1,6 @@
 const STORAGE_KEY = "cloudix_thermal_print_v1";
 
-export type PaperWidthMm = 80 | 88;
+export type PaperWidthMm = 80 | 58;
 
 export interface ThermalPrintSettings {
   paperWidthMm: PaperWidthMm;
@@ -21,7 +21,7 @@ export function getThermalPrintSettings(): ThermalPrintSettings {
     if (!raw) return { ...defaultSettings };
     const p = JSON.parse(raw) as Partial<ThermalPrintSettings>;
     return {
-      paperWidthMm: p.paperWidthMm === 88 ? 88 : 80,
+      paperWidthMm: p.paperWidthMm === 58 ? 58 : 80,
       printerName: typeof p.printerName === "string" ? p.printerName : "",
       printComandas: p.printComandas !== false,
     };
@@ -34,7 +34,7 @@ export function saveThermalPrintSettings(s: ThermalPrintSettings): void {
   localStorage.setItem(
     STORAGE_KEY,
     JSON.stringify({
-      paperWidthMm: s.paperWidthMm === 88 ? 88 : 80,
+      paperWidthMm: s.paperWidthMm === 58 ? 58 : 80,
       printerName: s.printerName.trim(),
       printComandas: s.printComandas !== false,
     })

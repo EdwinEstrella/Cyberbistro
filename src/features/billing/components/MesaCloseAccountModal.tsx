@@ -855,8 +855,7 @@ export function MesaCloseAccountModal({
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ backgroundColor: "rgba(0,0,0,0.7)" }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm transition-all duration-300"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -866,378 +865,447 @@ export function MesaCloseAccountModal({
         aria-modal="true"
         aria-labelledby="mesa-close-title"
         aria-describedby="mesa-close-description"
-        className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[20px] p-[28px] w-[700px] max-h-[90vh] overflow-y-auto flex flex-col gap-[20px] shadow-xl"
+        className="bg-[#121212] border border-zinc-800 rounded-[24px] shadow-[0px_0px_50px_rgba(255,144,109,0.15)] w-full max-w-5xl max-h-[95vh] md:max-h-[85vh] flex flex-col overflow-hidden relative"
       >
-        <div className="flex items-center justify-between">
+        {/* Ambient Top Glow */}
+        <div className="absolute top-0 right-0 w-80 h-40 bg-[radial-gradient(ellipse_at_top_right,rgba(255,144,109,0.08),transparent)] pointer-events-none rounded-[24px]" />
+
+        {/* Modal Header */}
+        <div className="flex items-center justify-between px-6 py-5 border-b border-zinc-900 shrink-0 relative z-10">
           <div>
-            <span id="mesa-close-title" className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[20px]">
-              Cobrar Mesa {mesaNumero}
-            </span>
+            <h2 id="mesa-close-title" className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[22px] tracking-[0.5px] flex items-center gap-2">
+              <span className="text-[#ff906d]">●</span> Cobrar Mesa {mesaNumero}
+            </h2>
             {loading ? (
-              <div id="mesa-close-description" className="text-[#adaaaa] text-[12px] mt-1">Cargando cuenta…</div>
+              <p id="mesa-close-description" className="text-zinc-500 text-[13px] mt-0.5 font-['Inter',sans-serif]">Cargando cuenta…</p>
             ) : mesaConsumos.length > 0 ? (
-              <div id="mesa-close-description" className="text-[#adaaaa] text-[12px] mt-1">
-                {mesaConsumos.length} items pendientes
-              </div>
+              <p id="mesa-close-description" className="text-zinc-400 text-[13px] mt-0.5 font-['Inter',sans-serif] flex items-center gap-1.5">
+                <span className="px-2 py-0.5 text-[11px] font-bold bg-zinc-800 text-zinc-300 rounded-full">{mesaConsumos.length}</span>
+                items pendientes
+              </p>
             ) : (
-              <div id="mesa-close-description" className="text-[#adaaaa] text-[12px] mt-1">Sin líneas pendientes</div>
+              <p id="mesa-close-description" className="text-zinc-500 text-[13px] mt-0.5 font-['Inter',sans-serif]">Sin líneas pendientes</p>
             )}
           </div>
           <button
             ref={closeBtnRef}
             type="button"
-            onClick={() => {
-              onClose();
-            }}
+            onClick={onClose}
             aria-label="Cerrar modal de cobro de mesa"
-            className="text-[#6b7280] bg-transparent border-none cursor-pointer text-[20px] hover:text-white transition-colors leading-none"
+            className="text-zinc-400 bg-transparent border-none cursor-pointer text-[26px] hover:text-white transition-colors leading-none w-10 h-10 flex items-center justify-center rounded-full hover:bg-zinc-900"
           >
             ×
           </button>
         </div>
 
-        {mesaConsumos.length > 1 && (
-          <div className="flex items-center justify-between bg-[#262626] rounded-[12px] p-[12px]">
-            <div className="flex items-center gap-[8px]">
-              <span className="text-white text-[14px]">🔄</span>
-              <span className="font-['Inter',sans-serif] text-white text-[13px]">Dividir cuenta</span>
-              <span className="text-[#adaaaa] text-[11px]">(solo si el cliente lo solicita)</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setSplitMode(!splitMode);
-                if (!splitMode) setPersonByConsumoId({});
-              }}
-              className={`px-4 py-2 rounded-[8px] font-['Inter',sans-serif] font-bold text-[12px] transition-all ${
-                splitMode ? "bg-[#ff906d] text-[#5b1600]" : "bg-[#383838] text-[#adaaaa]"
-              }`}
-            >
-              {splitMode ? "Activado" : "Activar"}
-            </button>
-          </div>
-        )}
-
-        {splitMode && mesaConsumos.length > 0 && (
-          <div className="bg-[#262626] rounded-[12px] p-[12px] flex flex-col gap-[12px]">
-            <div className="flex flex-col gap-[6px]">
-              <span className="font-['Inter',sans-serif] text-white text-[13px]">
-                Asigná cada línea a una persona. Cada persona recibe su propia factura (y su NCF si está activo).
-              </span>
-              <span className="text-[#adaaaa] text-[11px]">
-                Los ítems no se parten por monto: va el artículo completo a la persona que elijas.
-              </span>
-            </div>
-
-            <div className="flex items-center gap-[12px] flex-wrap">
-              <span className="text-[#adaaaa] text-[12px]">Personas:</span>
-              <div className="flex items-center gap-[8px]">
+        {/* Modal Body */}
+        <div className="flex-1 overflow-y-auto md:overflow-hidden p-6 relative z-10 grid grid-cols-1 md:grid-cols-12 gap-6 min-h-0">
+          
+          {/* Left Column: Items, Split breakdown, and Totals */}
+          <div className="md:col-span-7 flex flex-col gap-4 md:overflow-hidden h-full">
+            {/* Split Account Switcher */}
+            {mesaConsumos.length > 1 && (
+              <div className="flex items-center justify-between bg-zinc-900/60 border border-zinc-800 rounded-2xl p-4 transition-all hover:border-zinc-800 shrink-0">
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">🔄</span>
+                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[15px]">Dividir cuenta</span>
+                  </div>
+                  <span className="text-zinc-500 text-[11px] font-['Inter',sans-serif]">
+                    Asigná consumos a diferentes personas (facturas independientes)
+                  </span>
+                </div>
                 <button
                   type="button"
-                  onClick={() => setSplitParts((p) => Math.max(2, p - 1))}
-                  aria-label="Reducir número de personas"
-                  className="w-[32px] h-[32px] bg-[#383838] hover:bg-[#444] text-white rounded-[8px] flex items-center justify-center font-bold text-[14px] transition-colors"
+                  onClick={() => {
+                    setSplitMode(!splitMode);
+                    if (!splitMode) setPersonByConsumoId({});
+                  }}
+                  className={`px-5 py-2.5 rounded-xl font-['Space_Grotesk',sans-serif] font-bold text-[13px] tracking-wide transition-all shadow-md active:scale-95 ${
+                    splitMode 
+                      ? "bg-[#ff906d] text-[#5b1600] hover:bg-[#ff8059]" 
+                      : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-white"
+                  }`}
                 >
-                  −
-                </button>
-                <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[16px] min-w-[40px] text-center">
-                  {splitParts}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setSplitParts((p) => Math.min(12, p + 1))}
-                  aria-label="Aumentar número de personas"
-                  className="w-[32px] h-[32px] bg-[#383838] hover:bg-[#444] text-white rounded-[8px] flex items-center justify-center font-bold text-[14px] transition-colors"
-                >
-                  +
+                  {splitMode ? "Activado" : "Activar"}
                 </button>
               </div>
-              <button
-                type="button"
-                onClick={assignRoundRobinByItems}
-                className="px-4 py-2 bg-[#59ee50] hover:bg-[#4cd444] text-[#0e0e0e] text-[12px] font-bold rounded-[8px] transition-colors"
-              >
-                Repartir ítems en ronda
-              </button>
-              <button
-                type="button"
-                onClick={() => assignAllToPerson(1)}
-                className="px-3 py-2 bg-[#383838] hover:bg-[#444] text-white text-[11px] font-bold rounded-[8px] transition-colors"
-              >
-                Todo a persona 1
-              </button>
-            </div>
-          </div>
-        )}
+            )}
 
-        {splitMode && mesaConsumos.length > 0 && (
-          <div className="max-h-[220px] overflow-y-auto flex flex-col gap-[8px]">
-            {mesaConsumos.map((consumo) => {
-              const activePerson = personIndexForConsumo(consumo);
-              return (
-                <div
-                  key={consumo.id}
-                  className="rounded-[8px] p-[10px] bg-[#262626] border border-[rgba(72,72,71,0.35)] flex flex-col gap-[8px] sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div>
-                    <div className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px]">
-                      {consumo.cantidad}× {consumo.nombre}
-                    </div>
-                    <div className="text-[#adaaaa] text-[11px]">
-                      RD$ {Number(consumo.precio_unitario).toFixed(2)} c/u · línea{" "}
-                      <span className="text-[#ff906d]">RD$ {Number(consumo.subtotal).toFixed(2)}</span>
+            {/* Split controls if splitMode is active */}
+            {splitMode && mesaConsumos.length > 0 && (
+              <div className="bg-zinc-900/40 border border-zinc-800/50 rounded-2xl p-4 flex flex-col gap-4 shrink-0">
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-zinc-400 text-[13px] font-medium font-['Inter',sans-serif]">Personas:</span>
+                    <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-xl p-1">
+                      <button
+                        type="button"
+                        onClick={() => setSplitParts((p) => Math.max(2, p - 1))}
+                        aria-label="Reducir número de personas"
+                        className="w-[30px] h-[30px] bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg flex items-center justify-center font-bold text-[16px] transition-colors active:scale-90"
+                      >
+                        −
+                      </button>
+                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[16px] min-w-[36px] text-center">
+                        {splitParts}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setSplitParts((p) => Math.min(12, p + 1))}
+                        aria-label="Aumentar número de personas"
+                        className="w-[30px] h-[30px] bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg flex items-center justify-center font-bold text-[16px] transition-colors active:scale-90"
+                      >
+                        +
+                      </button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-[6px] flex-wrap shrink-0">
-                    <span className="text-[#6b7280] text-[10px] uppercase tracking-wide mr-[4px]">Persona</span>
-                    {Array.from({ length: splitParts }, (_, i) => {
-                      const pn = i + 1;
-                      const on = pn === activePerson;
-                      return (
-                        <button
-                          key={pn}
-                          type="button"
-                          onClick={() =>
-                            setPersonByConsumoId((prev) => ({
-                              ...prev,
-                              [consumo.id]: pn,
-                            }))
-                          }
-                          className={`min-w-[32px] h-[32px] px-[8px] rounded-[8px] font-['Space_Grotesk',sans-serif] font-bold text-[12px] border-none cursor-pointer transition-colors ${
-                            on
-                              ? "bg-[#ff906d] text-[#5b1600]"
-                              : "bg-[#383838] text-[#adaaaa] hover:bg-[#444] hover:text-white"
-                          }`}
-                        >
-                          {pn}
-                        </button>
-                      );
-                    })}
+
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={assignRoundRobinByItems}
+                      className="px-3.5 py-2 bg-[#59ee50]/10 border border-[#59ee50]/30 hover:bg-[#59ee50]/20 text-[#59ee50] text-[12px] font-bold rounded-xl transition-all active:scale-95"
+                    >
+                      Repartir en ronda
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => assignAllToPerson(1)}
+                      className="px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[12px] font-bold rounded-xl transition-all active:scale-95"
+                    >
+                      Todo a P1
+                    </button>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        )}
-
-        <div className="bg-[#131313] rounded-[12px] p-[14px] flex flex-col gap-[8px]">
-          {splitMode && splitGroups != null && (
-            <>
-              {Array.from({ length: splitParts }, (_, i) => i + 1).map((p) => {
-                const rows = splitGroups.get(p) ?? [];
-                if (rows.length === 0) return null;
-                const st = rows.reduce((s, c) => s + Number(c.subtotal), 0);
-                const itb = st * itbisRate;
-                return (
-                  <div key={p} className="flex justify-between gap-[8px]">
-                    <span className="font-['Inter',sans-serif] text-[#59ee50] text-[11px]">
-                      Persona {p} · {rows.length} línea{rows.length !== 1 ? "s" : ""}
-                    </span>
-                    <span className="font-['Inter',sans-serif] text-[#59ee50] text-[11px] text-right">
-                      {RD(st)}
-                      {itbisRate > 0 ? (
-                        <>
-                          {" "}
-                          + ITBIS {RD(itb)} = {RD(st + itb)}
-                        </>
-                      ) : (
-                        <> = {RD(st)}</>
-                      )}
-                    </span>
-                  </div>
-                );
-              })}
-              <div className="border-t border-[rgba(72,72,71,0.3)] my-[4px]" />
-            </>
-          )}
-
-          <div className="flex justify-between">
-            <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">Subtotal</span>
-            <span className="font-['Inter',sans-serif] text-white text-[11px]">{RD(calcSubtotal)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">
-              {itbisRate > 0 ? "ITBIS (18%)" : "ITBIS (no incluido)"}
-            </span>
-            <span className="font-['Inter',sans-serif] text-white text-[11px]">{RD(calcItbis)}</span>
-          </div>
-          <div className="border-t border-[rgba(72,72,71,0.15)] pt-[6px] flex justify-between">
-            <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[12px]">
-              {splitMode ? "TOTAL MESA" : "TOTAL"}
-            </span>
-            <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[14px]">
-              {RD(calcTotal)}
-            </span>
-          </div>
-        </div>
-
-        <CustomerSelect
-          tenantId={tenantId}
-          value={selectedCustomer}
-          onChange={(customer) => {
-            setSelectedCustomer(customer);
-            if (customer?.document_id) setClientRnc(customer.document_id);
-          }}
-          compact
-        />
-
-        {ncfFiscalActive ? (
-          <div className="flex flex-col gap-[10px]">
-            <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
-              Tipo NCF
-            </span>
-            <select
-              value={selectedNcfType}
-              onChange={(e) =>
-                setSelectedNcfType(
-                  isNcfBCode(e.target.value) ? e.target.value : DEFAULT_NCF_B_CODE
-                )
-              }
-              className="w-full rounded-[12px] border border-[rgba(72,72,71,0.3)] bg-[#262626] px-[14px] py-[12px] font-['Inter',sans-serif] text-white text-[13px] outline-none"
-            >
-              {NCF_B_TIPO_OPCIONES.map((opcion) => (
-                <option key={opcion.codigo} value={opcion.codigo}>
-                  {opcion.codigo} - {opcion.descripcion.replace(`${opcion.codigo} - `, "")}
-                </option>
-              ))}
-            </select>
-            <span className="font-['Inter',sans-serif] text-[#6b7280] text-[11px] leading-relaxed">
-              Este cobro emitira el tipo seleccionado. Si divides la cuenta, todas las facturas de esta ronda usan el mismo NCF.
-            </span>
-          </div>
-        ) : null}
-
-        {ncfFiscalActive && ncfTypeRequiresClientRnc(selectedNcfType) ? (
-          <div className="flex flex-col gap-[8px]">
-            <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
-              RNC del cliente
-            </span>
-            <input
-              type="text"
-              value={clientRnc}
-              onChange={(e) => setClientRnc(e.target.value)}
-              placeholder="RNC del cliente"
-              className="w-full rounded-[12px] border border-[rgba(72,72,71,0.3)] bg-[#262626] px-[14px] py-[12px] font-['Inter',sans-serif] text-white text-[13px] outline-none"
-            />
-          </div>
-        ) : null}
-
-        <div className="flex flex-col gap-[12px]">
-          <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
-            Método de pago
-          </span>
-          <div className="grid grid-cols-2 gap-[8px]">
-            {(
-              [
-                { value: "efectivo" as const, label: "Efectivo", icon: "💵" },
-                { value: "tarjeta" as const, label: "Tarjeta", icon: "💳" },
-                { value: "digital" as const, label: "Digital", icon: "📱" },
-                { value: "transferencia" as const, label: "Transferencia", icon: "🏦" },
-              ] as const
-            ).map((method) => (
-              <button
-                type="button"
-                key={method.value}
-                onClick={() => setPaymentMethod(method.value)}
-                className={`flex flex-col items-center gap-[8px] py-[12px] rounded-[12px] cursor-pointer border-none transition-all ${
-                  paymentMethod === method.value
-                    ? "bg-[#ff906d] text-[#5b1600]"
-                    : "bg-[#262626] text-white hover:bg-[#333]"
-                }`}
-              >
-                <span className="text-[20px]">{method.icon}</span>
-                <span className="font-['Inter',sans-serif] font-bold text-[10px] uppercase">
-                  {method.label}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {paymentMethod === "efectivo" && !splitMode ? (
-          <div className="flex flex-col gap-[8px]">
-            <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
-              Dinero recibido (opcional)
-            </span>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              inputMode="decimal"
-              value={cashReceivedInput}
-              onChange={(e) => setCashReceivedInput(e.target.value)}
-              placeholder="Ej: 1000"
-              className="w-full rounded-[12px] border border-[rgba(72,72,71,0.3)] bg-[#262626] px-[14px] py-[12px] font-['Inter',sans-serif] text-white text-[13px] outline-none"
-            />
-            {cashReceivedInput.trim() !== "" ? (
-              <span className="font-['Inter',sans-serif] text-[#59ee50] text-[12px]">
-                Cambio: {RD(Math.max(0, Number(cashReceivedInput.replace(",", ".")) - calcTotal || 0))}
-              </span>
-            ) : null}
-          </div>
-        ) : null}
-
-        <div className="flex flex-col gap-[10px]">
-          <div className="flex gap-[10px]">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 bg-[#262626] border border-[rgba(72,72,71,0.3)] rounded-[12px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#adaaaa] text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:border-[rgba(255,144,109,0.3)] hover:text-white transition-colors"
-            >
-              Cancelar
-            </button>
-
-            {splitMode ? (
-              <button
-                type="button"
-                onClick={() => void createSplitInvoices("all")}
-                disabled={charging || loading || personsWithItems.length === 0}
-                className="flex-1 bg-[#ff906d] rounded-[12px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#5b1600] text-[12px] tracking-[0.5px] uppercase cursor-pointer border-none disabled:opacity-50 hover:bg-[#ff784d] transition-opacity"
-              >
-                {charging
-                  ? "Procesando..."
-                  : personsWithItems.length <= 1
-                    ? "Emitir factura(s)"
-                    : `Emitir ${personsWithItems.length} facturas`}
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void createInvoice()}
-                disabled={charging || loading || mesaConsumos.length === 0}
-                className="flex-1 bg-[#59ee50] rounded-[12px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#0e0e0e] text-[12px] tracking-[0.5px] uppercase cursor-pointer border-none disabled:opacity-50 transition-opacity"
-              >
-                {charging ? "Procesando..." : "Confirmar Pago"}
-              </button>
+              </div>
             )}
+
+            {/* Items List Wrapper */}
+            <div className="flex-1 flex flex-col min-h-0">
+              <span className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px] mb-2 px-1">
+                Detalle del Consumo
+              </span>
+              <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-2.5 custom-scrollbar">
+                {mesaConsumos.map((consumo) => {
+                  const activePerson = personIndexForConsumo(consumo);
+                  return (
+                    <div
+                      key={consumo.id}
+                      className={`rounded-xl p-3 bg-zinc-900/40 border transition-all hover:bg-zinc-900/60 ${
+                        splitMode 
+                          ? "border-zinc-800/80 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between" 
+                          : "border-zinc-800/40 flex items-center justify-between"
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="min-w-[28px] h-[28px] rounded-lg bg-zinc-800 border border-zinc-800 flex items-center justify-center font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] mt-0.5">
+                          {consumo.cantidad}
+                        </div>
+                        <div>
+                          <div className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[14px]">
+                            {consumo.nombre}
+                          </div>
+                          <div className="text-zinc-500 text-[12px] font-['Inter',sans-serif] mt-0.5">
+                            RD$ {Number(consumo.precio_unitario).toFixed(2)} c/u
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between lg:justify-end gap-4">
+                        <div className="text-right shrink-0">
+                          <span className="text-[#ff906d] font-['Space_Grotesk',sans-serif] font-bold text-[14px]">
+                            RD$ {Number(consumo.subtotal).toFixed(2)}
+                          </span>
+                        </div>
+
+                        {splitMode && (
+                          <div className="flex items-center gap-1.5 shrink-0 bg-zinc-950 p-1 rounded-xl border border-zinc-800/60">
+                            {Array.from({ length: splitParts }, (_, i) => {
+                              const pn = i + 1;
+                              const on = pn === activePerson;
+                              return (
+                                <button
+                                  key={pn}
+                                  type="button"
+                                  onClick={() =>
+                                    setPersonByConsumoId((prev) => ({
+                                      ...prev,
+                                      [consumo.id]: pn,
+                                    }))
+                                  }
+                                  className={`w-[28px] h-[28px] rounded-lg font-['Space_Grotesk',sans-serif] font-bold text-[12px] border-none cursor-pointer transition-all active:scale-90 ${
+                                    on
+                                      ? "bg-[#ff906d] text-[#5b1600] shadow-[0_0_8px_rgba(255,144,109,0.3)]"
+                                      : "bg-zinc-800/60 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+                                  }`}
+                                >
+                                  P{pn}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Split billing summary per person */}
+            {splitMode && splitGroups != null && (
+              <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-4 flex flex-col gap-2 shrink-0">
+                <span className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[11px] uppercase tracking-[1px] mb-1">
+                  Resumen de División
+                </span>
+                <div className="flex flex-col gap-2 max-h-[120px] overflow-y-auto pr-0.5 custom-scrollbar">
+                  {Array.from({ length: splitParts }, (_, i) => i + 1).map((p) => {
+                    const rows = splitGroups.get(p) ?? [];
+                    if (rows.length === 0) return null;
+                    const st = rows.reduce((s, c) => s + Number(c.subtotal), 0);
+                    const itb = st * itbisRate;
+                    return (
+                      <div key={p} className="flex justify-between items-center gap-4 bg-zinc-900/30 rounded-lg p-2 border border-zinc-900/50">
+                        <span className="font-['Space_Grotesk',sans-serif] font-bold text-zinc-300 text-[12px]">
+                          Persona {p} <span className="text-zinc-500 font-normal">({rows.length} items)</span>
+                        </span>
+                        <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#59ee50] text-[13px] text-right">
+                          {RD(st + itb)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Main Totals Card */}
+            <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-5 flex flex-col gap-3 shrink-0 relative overflow-hidden">
+              <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_left,rgba(255,144,109,0.03),transparent)] pointer-events-none" />
+              <div className="flex justify-between items-center relative z-10">
+                <span className="font-['Inter',sans-serif] text-zinc-500 text-[13px]">Subtotal</span>
+                <span className="font-['Space_Grotesk',sans-serif] font-bold text-zinc-300 text-[14px]">{RD(calcSubtotal)}</span>
+              </div>
+              <div className="flex justify-between items-center relative z-10">
+                <span className="font-['Inter',sans-serif] text-zinc-500 text-[13px]">
+                  {itbisRate > 0 ? "ITBIS (18%)" : "ITBIS (no incluido)"}
+                </span>
+                <span className="font-['Space_Grotesk',sans-serif] font-bold text-zinc-300 text-[14px]">{RD(calcItbis)}</span>
+              </div>
+              <div className="h-[1px] bg-zinc-900 my-1 relative z-10" />
+              <div className="flex justify-between items-end relative z-10">
+                <span className="font-['Space_Grotesk',sans-serif] font-bold text-zinc-400 text-[14px]">
+                  {splitMode ? "TOTAL MESA" : "TOTAL COBRAR"}
+                </span>
+                <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[24px] leading-none tracking-tight">
+                  {RD(calcTotal)}
+                </span>
+              </div>
+            </div>
           </div>
 
-          {splitMode && mesaConsumos.length > 0 && (
-            <div className="flex flex-col gap-[6px]">
-              <span className="text-[#6b7280] text-[10px] uppercase tracking-wide text-center">
-                Cobrar solo una persona (una factura)
+          {/* Right Column: Customer, NCF, Payment Methods, Received and Actions */}
+          <div className="md:col-span-5 flex flex-col gap-5 md:overflow-y-auto pr-1 h-full custom-scrollbar md:border-l md:border-zinc-900 md:pl-6">
+            
+            {/* Customer Selector Card */}
+            <div className="flex flex-col gap-2 shrink-0">
+              <span className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px] px-1">
+                Cliente
               </span>
-              <div className="flex flex-wrap gap-[6px] justify-center">
-                {Array.from({ length: splitParts }, (_, i) => i + 1).map((p) => {
-                  const n = (splitGroups?.get(p) ?? []).length;
+              <div className="bg-zinc-900/30 border border-zinc-800/40 rounded-2xl p-3">
+                <CustomerSelect
+                  tenantId={tenantId}
+                  value={selectedCustomer}
+                  onChange={(customer) => {
+                    setSelectedCustomer(customer);
+                    if (customer?.document_id) setClientRnc(customer.document_id);
+                  }}
+                  compact
+                />
+              </div>
+            </div>
+
+            {/* NCF Selection Cards */}
+            {ncfFiscalActive && (
+              <div className="flex flex-col gap-3 shrink-0 bg-zinc-900/20 border border-zinc-800/30 rounded-2xl p-4">
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="ncf-select" className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px]">
+                    Tipo NCF
+                  </label>
+                  <select
+                    id="ncf-select"
+                    value={selectedNcfType}
+                    onChange={(e) =>
+                      setSelectedNcfType(
+                        isNcfBCode(e.target.value) ? e.target.value : DEFAULT_NCF_B_CODE
+                      )
+                    }
+                    className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors cursor-pointer"
+                  >
+                    {NCF_B_TIPO_OPCIONES.map((opcion) => (
+                      <option key={opcion.codigo} value={opcion.codigo}>
+                        {opcion.codigo} - {opcion.descripcion.replace(`${opcion.codigo} - `, "")}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {ncfTypeRequiresClientRnc(selectedNcfType) && (
+                  <div className="flex flex-col gap-1.5">
+                    <label htmlFor="client-rnc-input" className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px]">
+                      RNC del cliente
+                    </label>
+                    <input
+                      id="client-rnc-input"
+                      type="text"
+                      value={clientRnc}
+                      onChange={(e) => setClientRnc(e.target.value)}
+                      placeholder="RNC del cliente (obligatorio)"
+                      className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors"
+                    />
+                  </div>
+                )}
+                <span className="font-['Inter',sans-serif] text-zinc-500 text-[11px] leading-relaxed">
+                  ※ Si divides la cuenta, todas las facturas de esta ronda usarán este tipo de NCF.
+                </span>
+              </div>
+            )}
+
+            {/* Payment Method Section */}
+            <div className="flex flex-col gap-2 shrink-0">
+              <span className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px] px-1">
+                Método de pago
+              </span>
+              <div className="grid grid-cols-2 gap-2">
+                {(
+                  [
+                    { value: "efectivo" as const, label: "Efectivo", icon: "💵" },
+                    { value: "tarjeta" as const, label: "Tarjeta", icon: "💳" },
+                    { value: "digital" as const, label: "Digital", icon: "📱" },
+                    { value: "transferencia" as const, label: "Transf.", icon: "🏦" },
+                  ] as const
+                ).map((method) => {
+                  const active = paymentMethod === method.value;
                   return (
                     <button
-                      key={p}
                       type="button"
-                      onClick={() => void createSplitInvoices(p)}
-                      disabled={charging || loading || n === 0}
-                      className="px-3 py-2 bg-[#383838] hover:bg-[#444] disabled:opacity-40 text-white text-[11px] font-bold rounded-[8px] border-none cursor-pointer transition-colors"
+                      key={method.value}
+                      onClick={() => setPaymentMethod(method.value)}
+                      className={`flex items-center gap-3 px-4 py-3.5 rounded-xl cursor-pointer border transition-all active:scale-95 justify-start ${
+                        active
+                          ? "bg-[#ff906d] border-[#ff906d] text-[#5b1600] shadow-[0_4px_12px_rgba(255,144,109,0.2)] font-bold"
+                          : "bg-zinc-900/50 border-zinc-800/80 text-zinc-300 hover:bg-zinc-800 hover:border-zinc-700"
+                      }`}
                     >
-                      Solo P{p}
-                      {n > 0 ? ` (${n})` : ""}
+                      <span className="text-[18px]">{method.icon}</span>
+                      <span className="font-['Space_Grotesk',sans-serif] text-[12px] uppercase tracking-[0.5px]">
+                        {method.label}
+                      </span>
                     </button>
                   );
                 })}
               </div>
             </div>
-          )}
+
+            {/* Cash Calculator Section */}
+            {paymentMethod === "efectivo" && !splitMode && (
+              <div className="flex flex-col gap-2 shrink-0 bg-zinc-900/20 border border-zinc-800/30 rounded-2xl p-4">
+                <label htmlFor="cash-received-input" className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px]">
+                  Dinero recibido (opcional)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[14px]">RD$</span>
+                  <input
+                    id="cash-received-input"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    inputMode="decimal"
+                    value={cashReceivedInput}
+                    onChange={(e) => setCashReceivedInput(e.target.value)}
+                    placeholder="Ej: 1000"
+                    className="w-full rounded-xl border border-zinc-800 bg-zinc-950 pl-12 pr-4 py-3 font-['Space_Grotesk',sans-serif] font-bold text-white text-[15px] outline-none focus:border-[#ff906d]/50 transition-colors"
+                  />
+                </div>
+                {cashReceivedInput.trim() !== "" && (
+                  <div className="flex justify-between items-center px-1 py-0.5">
+                    <span className="text-zinc-500 text-[12px] font-['Inter',sans-serif]">Cambio devuelto:</span>
+                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#59ee50] text-[14px]">
+                      {RD(Math.max(0, Number(cashReceivedInput.replace(",", ".")) - calcTotal || 0))}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Action Buttons Section */}
+            <div className="flex flex-col gap-3 mt-2 pb-2 shrink-0">
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-zinc-400 text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:border-zinc-700 hover:text-white transition-all active:scale-95"
+                >
+                  Cancelar
+                </button>
+
+                {splitMode ? (
+                  <button
+                    type="button"
+                    onClick={() => void createSplitInvoices("all")}
+                    disabled={charging || loading || personsWithItems.length === 0}
+                    className="flex-1 bg-[#ff906d] rounded-xl py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-[#5b1600] text-[12px] tracking-[0.5px] uppercase cursor-pointer border-none disabled:opacity-50 hover:bg-[#ff8059] transition-all shadow-md active:scale-95"
+                  >
+                    {charging
+                      ? "Procesando..."
+                      : personsWithItems.length <= 1
+                        ? "Emitir factura"
+                        : `Emitir ${personsWithItems.length} facturas`}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void createInvoice()}
+                    disabled={charging || loading || mesaConsumos.length === 0}
+                    className="flex-1 bg-[#59ee50] rounded-xl py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-[#0e0e0e] text-[12px] tracking-[0.5px] uppercase cursor-pointer border-none disabled:opacity-50 hover:bg-[#4cd444] transition-all shadow-[0_4px_12px_rgba(89,238,80,0.2)] active:scale-95"
+                  >
+                    {charging ? "Procesando..." : "Confirmar Pago"}
+                  </button>
+                )}
+              </div>
+
+              {/* Individual Person Billing in Split Mode */}
+              {splitMode && mesaConsumos.length > 0 && (
+                <div className="flex flex-col gap-2 bg-zinc-900/10 border border-zinc-800/30 rounded-xl p-3 mt-1">
+                  <span className="text-zinc-500 text-[10px] font-['Space_Grotesk',sans-serif] font-bold uppercase tracking-[1.5px] text-center block mb-1">
+                    Cobrar solo una persona (factura individual)
+                  </span>
+                  <div className="flex flex-wrap gap-1.5 justify-center">
+                    {Array.from({ length: splitParts }, (_, i) => i + 1).map((p) => {
+                      const n = (splitGroups?.get(p) ?? []).length;
+                      return (
+                        <button
+                          key={p}
+                          type="button"
+                          onClick={() => void createSplitInvoices(p)}
+                          disabled={charging || loading || n === 0}
+                          className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-zinc-200 text-[11px] font-bold font-['Space_Grotesk',sans-serif] rounded-lg border border-zinc-700/40 cursor-pointer transition-all active:scale-90"
+                        >
+                          Solo P{p}
+                          {n > 0 ? ` (${n})` : ""}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
   );
+
+
 }

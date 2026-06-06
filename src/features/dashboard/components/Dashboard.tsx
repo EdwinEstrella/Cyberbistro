@@ -1845,8 +1845,7 @@ export function Dashboard() {
           calculateTakeoutTotals();
         return (
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center"
-            style={{ backgroundColor: "rgba(0,0,0,0.7)" }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm transition-all duration-300"
             onClick={(e) => {
               if (e.target === e.currentTarget) {
                 setTakeoutClientRnc("");
@@ -1856,15 +1855,26 @@ export function Dashboard() {
               }
             }}
           >
-            <div className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[20px] p-[28px] w-[700px] max-h-[90vh] overflow-y-auto flex flex-col gap-[20px] shadow-xl">
-              <div className="flex items-center justify-between">
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="takeout-close-title"
+              aria-describedby="takeout-close-description"
+              className="bg-[#121212] border border-zinc-800 rounded-[24px] shadow-[0px_0px_50px_rgba(255,144,109,0.15)] w-full max-w-5xl max-h-[95vh] md:max-h-[85vh] flex flex-col overflow-hidden relative"
+            >
+              {/* Ambient Top Glow */}
+              <div className="absolute top-0 right-0 w-80 h-40 bg-[radial-gradient(ellipse_at_top_right,rgba(255,144,109,0.08),transparent)] pointer-events-none rounded-[24px]" />
+
+              {/* Modal Header */}
+              <div className="flex items-center justify-between px-6 py-5 border-b border-zinc-900 shrink-0 relative z-10">
                 <div>
-                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[20px]">
-                    Cobrar para llevar
-                  </span>
-                  <div className="text-[#adaaaa] text-[12px] mt-1">
-                    {cart.length} ítem{cart.length !== 1 ? "s" : ""} en el carrito
-                  </div>
+                  <h2 id="takeout-close-title" className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[22px] tracking-[0.5px] flex items-center gap-2">
+                    <span className="text-[#ff906d]">●</span> Cobrar para llevar
+                  </h2>
+                  <p id="takeout-close-description" className="text-zinc-400 text-[13px] mt-0.5 font-['Inter',sans-serif] flex items-center gap-1.5">
+                    <span className="px-2 py-0.5 text-[11px] font-bold bg-zinc-800 text-zinc-300 rounded-full">{cart.length}</span>
+                    ítem{cart.length !== 1 ? "s" : ""} en el carrito
+                  </p>
                 </div>
                 <button
                   type="button"
@@ -1874,186 +1884,239 @@ export function Dashboard() {
                     setCashReceivedInput("");
                     setShowPaymentModal(false);
                   }}
-                  className="text-[#6b7280] bg-transparent border-none cursor-pointer text-[20px] hover:text-white transition-colors leading-none"
+                  aria-label="Cerrar modal de cobro para llevar"
+                  className="text-zinc-400 bg-transparent border-none cursor-pointer text-[26px] hover:text-white transition-colors leading-none w-10 h-10 flex items-center justify-center rounded-full hover:bg-zinc-900"
                 >
                   ×
                 </button>
               </div>
 
-              <div className="max-h-[220px] overflow-y-auto flex flex-col gap-[8px] rounded-[12px] bg-[#131313] p-[12px]">
-                {cart.map((line) => (
-                  <div
-                    key={line.plato.id}
-                    className="flex items-center justify-between rounded-[8px] bg-[#262626] px-[12px] py-[10px]"
-                  >
-                    <div>
-                      <div className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px]">
-                        {line.cantidad}× {line.plato.nombre}
-                      </div>
-                      <div className="text-[#adaaaa] text-[11px]">
-                        {`${currencySymbol} ${Number(line.plato.precio).toFixed(2)} c/u`}
-                      </div>
-                    </div>
-                    <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[14px]">
-                      {`${currencySymbol} ${(line.plato.precio * line.cantidad).toFixed(2)}`}
+              {/* Modal Body */}
+              <div className="flex-1 overflow-y-auto md:overflow-hidden p-6 relative z-10 grid grid-cols-1 md:grid-cols-12 gap-6 min-h-0">
+                
+                {/* Left Column: Items and Totals */}
+                <div className="md:col-span-7 flex flex-col gap-4 md:overflow-hidden h-full">
+                  <div className="flex-1 flex flex-col min-h-0">
+                    <span className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px] mb-2 px-1">
+                      Detalle de la Orden
+                    </span>
+                    <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-2.5 custom-scrollbar">
+                      {cart.map((line) => (
+                        <div
+                          key={line.plato.id}
+                          className="rounded-xl p-3 bg-zinc-900/40 border border-zinc-800/40 flex items-center justify-between transition-all hover:bg-zinc-900/60"
+                        >
+                          <div className="flex items-start gap-3">
+                            <div className="min-w-[28px] h-[28px] rounded-lg bg-zinc-800 border border-zinc-800 flex items-center justify-center font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] mt-0.5">
+                              {line.cantidad}
+                            </div>
+                            <div>
+                              <div className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[14px]">
+                                {line.plato.nombre}
+                              </div>
+                              <div className="text-zinc-500 text-[12px] font-['Inter',sans-serif] mt-0.5">
+                                {`${currencySymbol} ${Number(line.plato.precio).toFixed(2)} c/u`}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="text-right shrink-0">
+                            <span className="text-[#ff906d] font-['Space_Grotesk',sans-serif] font-bold text-[14px]">
+                              {`${currencySymbol} ${(line.plato.precio * line.cantidad).toFixed(2)}`}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                ))}
-              </div>
 
-              <div className="bg-[#131313] rounded-[12px] p-[14px] flex flex-col gap-[8px]">
-                <div className="flex justify-between">
-                  <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">
-                    Subtotal
-                  </span>
-                  <span className="font-['Inter',sans-serif] text-white text-[11px]">
-                    {formatMoney(calcSubtotal)}
-                  </span>
+                  {/* Main Totals Card */}
+                  <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-5 flex flex-col gap-3 shrink-0 relative overflow-hidden">
+                    <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_left,rgba(255,144,109,0.03),transparent)] pointer-events-none" />
+                    <div className="flex justify-between items-center relative z-10">
+                      <span className="font-['Inter',sans-serif] text-zinc-500 text-[13px]">Subtotal</span>
+                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-zinc-300 text-[14px]">{formatMoney(calcSubtotal)}</span>
+                    </div>
+                    <div className="flex justify-between items-center relative z-10">
+                      <span className="font-['Inter',sans-serif] text-zinc-500 text-[13px]">
+                        {cartItbisEnabled ? "ITBIS (18%)" : "ITBIS (no incluido)"}
+                      </span>
+                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-zinc-300 text-[14px]">{formatMoney(calcItbis)}</span>
+                    </div>
+                    <div className="h-[1px] bg-zinc-900 my-1 relative z-10" />
+                    <div className="flex justify-between items-end relative z-10">
+                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-zinc-400 text-[14px]">
+                        TOTAL COBRAR
+                      </span>
+                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[24px] leading-none tracking-tight">
+                        {formatMoney(calcTotal)}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">
-                    {cartItbisEnabled ? "ITBIS (18%)" : "ITBIS (no incluido)"}
-                  </span>
-                  <span className="font-['Inter',sans-serif] text-white text-[11px]">
-                    {formatMoney(calcItbis)}
-                  </span>
-                </div>
-                <div className="border-t border-[rgba(72,72,71,0.15)] pt-[6px] flex justify-between">
-                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[12px]">
-                    TOTAL
-                  </span>
-                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[14px]">
-                    {formatMoney(calcTotal)}
-                  </span>
-                </div>
-              </div>
 
-              <CustomerSelect
-                tenantId={tenantId}
-                value={takeoutCustomer}
-                onChange={(customer) => {
-                  setTakeoutCustomer(customer);
-                  if (customer?.document_id) setTakeoutClientRnc(customer.document_id);
-                }}
-                compact
-              />
+                {/* Right Column: customer, NCF, payment, confirm */}
+                <div className="md:col-span-5 flex flex-col gap-5 md:overflow-y-auto pr-1 h-full custom-scrollbar md:border-l md:border-zinc-900 md:pl-6">
+                  
+                  {/* Customer Selector Card */}
+                  <div className="flex flex-col gap-2 shrink-0">
+                    <span className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px] px-1">
+                      Cliente
+                    </span>
+                    <div className="bg-zinc-900/30 border border-zinc-800/40 rounded-2xl p-3">
+                      <CustomerSelect
+                        tenantId={tenantId}
+                        value={takeoutCustomer}
+                        onChange={(customer) => {
+                          setTakeoutCustomer(customer);
+                          if (customer?.document_id) setTakeoutClientRnc(customer.document_id);
+                        }}
+                        compact
+                      />
+                    </div>
+                  </div>
 
-              {tenantNcfFiscalActive ? (
-                <div className="flex flex-col gap-[12px]">
-                  <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
-                    Tipo NCF
-                  </span>
-                  <select
-                    value={selectedNcfType}
-                    onChange={(e) =>
-                      setSelectedNcfType(
-                        isNcfBCode(e.target.value) ? e.target.value : DEFAULT_NCF_B_CODE
-                      )
-                    }
-                    className="w-full rounded-[12px] border border-[rgba(72,72,71,0.3)] bg-[#262626] px-[14px] py-[12px] font-['Inter',sans-serif] text-white text-[13px] outline-none"
-                  >
-                    {NCF_B_TIPO_OPCIONES.map((opcion) => (
-                      <option key={opcion.codigo} value={opcion.codigo}>
-                        {opcion.codigo} - {opcion.descripcion.replace(`${opcion.codigo} - `, "")}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ) : null}
+                  {/* NCF Selection Cards */}
+                  {tenantNcfFiscalActive && (
+                    <div className="flex flex-col gap-3 shrink-0 bg-zinc-900/20 border border-zinc-800/30 rounded-2xl p-4">
+                      <div className="flex flex-col gap-1.5">
+                        <label htmlFor="ncf-select" className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px]">
+                          Tipo NCF
+                        </label>
+                        <select
+                          id="ncf-select"
+                          value={selectedNcfType}
+                          onChange={(e) =>
+                            setSelectedNcfType(
+                              isNcfBCode(e.target.value) ? e.target.value : DEFAULT_NCF_B_CODE
+                            )
+                          }
+                          className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors cursor-pointer"
+                        >
+                          {NCF_B_TIPO_OPCIONES.map((opcion) => (
+                            <option key={opcion.codigo} value={opcion.codigo}>
+                              {opcion.codigo} - {opcion.descripcion.replace(`${opcion.codigo} - `, "")}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
 
-              {tenantNcfFiscalActive && ncfTypeRequiresClientRnc(selectedNcfType) ? (
-                <div className="flex flex-col gap-[8px]">
-                  <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
-                    RNC del cliente
-                  </span>
-                  <input
-                    type="text"
-                    value={takeoutClientRnc}
-                    onChange={(e) => setTakeoutClientRnc(e.target.value)}
-                    placeholder="RNC del cliente"
-                    className="w-full rounded-[12px] border border-[rgba(72,72,71,0.3)] bg-[#262626] px-[14px] py-[12px] font-['Inter',sans-serif] text-white text-[13px] outline-none"
-                  />
-                </div>
-              ) : null}
+                      {ncfTypeRequiresClientRnc(selectedNcfType) && (
+                        <div className="flex flex-col gap-1.5">
+                          <label htmlFor="client-rnc-input" className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px]">
+                            RNC del cliente
+                          </label>
+                          <input
+                            id="client-rnc-input"
+                            type="text"
+                            value={takeoutClientRnc}
+                            onChange={(e) => setTakeoutClientRnc(e.target.value)}
+                            placeholder="RNC del cliente (obligatorio)"
+                            className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
 
-              <div className="flex flex-col gap-[12px]">
-                <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
-                  Método de pago
-                </span>
-                <div className="grid grid-cols-2 gap-[8px]">
-                  {[
-                    { value: "efectivo" as const, label: "Efectivo", icon: "💵" },
-                    { value: "tarjeta" as const, label: "Tarjeta", icon: "💳" },
-                    { value: "digital" as const, label: "Digital", icon: "📱" },
-                    { value: "transferencia" as const, label: "Transferencia", icon: "🏦" },
-                  ].map((method) => (
+                  {/* Payment Method Section */}
+                  <div className="flex flex-col gap-2 shrink-0">
+                    <span className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px] px-1">
+                      Método de pago
+                    </span>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(
+                        [
+                          { value: "efectivo" as const, label: "Efectivo", icon: "💵" },
+                          { value: "tarjeta" as const, label: "Tarjeta", icon: "💳" },
+                          { value: "digital" as const, label: "Digital", icon: "📱" },
+                          { value: "transferencia" as const, label: "Transf.", icon: "🏦" },
+                        ] as const
+                      ).map((method) => {
+                        const active = paymentMethod === method.value;
+                        return (
+                          <button
+                            type="button"
+                            key={method.value}
+                            onClick={() => setPaymentMethod(method.value)}
+                            className={`flex items-center gap-3 px-4 py-3.5 rounded-xl cursor-pointer border transition-all active:scale-95 justify-start ${
+                              active
+                                  ? "bg-[#ff906d] border-[#ff906d] text-[#5b1600] shadow-[0_4px_12px_rgba(255,144,109,0.2)] font-bold"
+                                  : "bg-zinc-900/50 border-zinc-800/80 text-zinc-300 hover:bg-zinc-800 hover:border-zinc-700"
+                            }`}
+                          >
+                            <span className="text-[18px]">{method.icon}</span>
+                            <span className="font-['Space_Grotesk',sans-serif] text-[12px] uppercase tracking-[0.5px]">
+                              {method.label}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Cash Calculator Section */}
+                  {paymentMethod === "efectivo" && (
+                    <div className="flex flex-col gap-2 shrink-0 bg-zinc-900/20 border border-zinc-800/30 rounded-2xl p-4">
+                      <label htmlFor="cash-received-input" className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px]">
+                        Dinero recibido (opcional)
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[14px]">RD$</span>
+                        <input
+                          id="cash-received-input"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          inputMode="decimal"
+                          value={cashReceivedInput}
+                          onChange={(e) => setCashReceivedInput(e.target.value)}
+                          placeholder="Ej: 1000"
+                          className="w-full rounded-xl border border-zinc-800 bg-zinc-950 pl-12 pr-4 py-3 font-['Space_Grotesk',sans-serif] font-bold text-white text-[15px] outline-none focus:border-[#ff906d]/50 transition-colors"
+                        />
+                      </div>
+                      {cashReceivedInput.trim() !== "" && (
+                        <div className="flex justify-between items-center px-1 py-0.5">
+                          <span className="text-zinc-500 text-[12px] font-['Inter',sans-serif]">Cambio devuelto:</span>
+                          <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#59ee50] text-[14px]">
+                            {formatMoney(Math.max(0, Number(cashReceivedInput.replace(",", ".")) - calcTotal || 0))}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Action Buttons Section */}
+                  <div className="flex gap-3 mt-2 pb-2 shrink-0">
                     <button
                       type="button"
-                      key={method.value}
-                      onClick={() => setPaymentMethod(method.value)}
-                      className={`flex flex-col items-center gap-[8px] py-[12px] rounded-[12px] cursor-pointer border-none transition-all ${paymentMethod === method.value
-                        ? "bg-[#ff906d] text-[#5b1600]"
-                        : "bg-[#262626] text-white hover:bg-[#333]"
-                        }`}
+                      onClick={() => {
+                        setTakeoutClientRnc("");
+                        setTakeoutCustomer(null);
+                        setCashReceivedInput("");
+                        setShowPaymentModal(false);
+                      }}
+                      className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-zinc-400 text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:border-zinc-700 hover:text-white transition-all active:scale-95"
                     >
-                      <span className="text-[20px]">{method.icon}</span>
-                      <span className="font-['Inter',sans-serif] font-bold text-[10px] uppercase">
-                        {method.label}
-                      </span>
+                      Cancelar
                     </button>
-                  ))}
+                    <button
+                      type="button"
+                      onClick={() => void createInvoice()}
+                      disabled={charging}
+                      className="flex-1 bg-[#59ee50] rounded-xl py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-[#0e0e0e] text-[12px] tracking-[0.5px] uppercase cursor-pointer border-none disabled:opacity-50 hover:bg-[#4cd444] transition-all shadow-[0_4px_12px_rgba(89,238,80,0.2)] active:scale-95"
+                    >
+                      {charging ? "Procesando..." : "Confirmar Pago"}
+                    </button>
+                  </div>
                 </div>
-              </div>
-
-              {paymentMethod === "efectivo" ? (
-                <div className="flex flex-col gap-[8px]">
-                  <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] tracking-[0.8px] uppercase">
-                    Dinero recibido (opcional)
-                  </span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    inputMode="decimal"
-                    value={cashReceivedInput}
-                    onChange={(e) => setCashReceivedInput(e.target.value)}
-                    placeholder="Ej: 1000"
-                    className="w-full rounded-[12px] border border-[rgba(72,72,71,0.3)] bg-[#262626] px-[14px] py-[12px] font-['Inter',sans-serif] text-white text-[13px] outline-none"
-                  />
-                  {cashReceivedInput.trim() !== "" ? (
-                    <span className="font-['Inter',sans-serif] text-[#59ee50] text-[12px]">
-                      Cambio: {formatMoney(Math.max(0, Number(cashReceivedInput.replace(",", ".")) - calcTotal || 0))}
-                    </span>
-                  ) : null}
-                </div>
-              ) : null}
-
-              <div className="flex gap-[10px]">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTakeoutClientRnc("");
-                    setTakeoutCustomer(null);
-                    setCashReceivedInput("");
-                    setShowPaymentModal(false);
-                  }}
-                  className="flex-1 bg-[#262626] border border-[rgba(72,72,71,0.3)] rounded-[12px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#adaaaa] text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:border-[rgba(255,144,109,0.3)] hover:text-white transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void createInvoice()}
-                  disabled={charging}
-                  className="flex-1 bg-[#59ee50] rounded-[12px] py-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#0e0e0e] text-[12px] tracking-[0.5px] uppercase cursor-pointer border-none disabled:opacity-50 transition-opacity"
-                >
-                  {charging ? "Procesando..." : "Confirmar Pago"}
-                </button>
               </div>
             </div>
           </div>
         );
       })()}
+
+
 
       {/* CONSUMOS MODAL */}
       {showConsumosModal && selectedMesa && (
