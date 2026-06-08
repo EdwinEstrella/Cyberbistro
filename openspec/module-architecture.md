@@ -71,3 +71,4 @@
 | PR 8 | Cuentas por pagar | PR 5 |
 | PR 9 | Cuentas por cobrar + fiado en POS | PR 1 |
 | PR 10 | Analíticas financieras ampliadas | PR 7, PR 8, PR 9 |
+| PR 11 | Menú Digital Administrable y Pedidos en Tiempo Real | PR 1, PR 9 |
