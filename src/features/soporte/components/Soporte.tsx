@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { Navigate, useNavigate } from "react-router";
+import QRCode from "qrcode";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { useSucursal } from "../../../app/context/SucursalContext";
@@ -1157,9 +1158,541 @@ function MesasPanel() {
 }
 
 // ─────────────────────────────────────────────
+// DIGITAL MENU PANEL
+// ─────────────────────────────────────────────
+function DigitalMenuPanel() {
+  const { tenantId, plan } = useAuth();
+  const { activeSucursalId } = useSucursal();
+  const [settings, setSettings] = useState<any>(null);
+  const [platos, setPlatos] = useState<Plato[]>([]);
+  const [menuItems, setMenuItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState("");
+  const [dishSearch, setDishSearch] = useState("");
+
+  // Form states
+  const [enabled, setEnabled] = useState(false);
+  const [slug, setSlug] = useState("");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [logoUrl, setLogoUrl] = useState("");
+  const [bannerUrl, setBannerUrl] = useState("");
+  const [accentColor, setAccentColor] = useState("#f97316");
+
+  // Edit Dish Modal
+  const [editingPlato, setEditingPlato] = useState<any | null>(null);
+  const [editDisplayName, setEditDisplayName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editImageUrl, setEditImageUrl] = useState("");
+
+  useEffect(() => {
+    if (!tenantId) return;
+
+    async function loadData() {
+      try {
+        setLoading(true);
+        // Load plates locally
+        const platosLocal = await readLocalMirror<Plato>(tenantId, "platos");
+        const filteredPlatos = platosLocal.filter(p => !p.sucursal_id || p.sucursal_id === activeSucursalId);
+        setPlatos(filteredPlatos);
+
+        // Load digital menu settings
+        const settingsLocal = await readLocalMirror<any>(tenantId, "digital_menu_settings");
+        const tenantSettings = settingsLocal.find((s: any) => s.tenant_id === tenantId && (!s.sucursal_id || s.sucursal_id === activeSucursalId));
+
+        if (tenantSettings) {
+          setSettings(tenantSettings);
+          setEnabled(tenantSettings.enabled || false);
+          setSlug(tenantSettings.public_slug || "");
+          setTitle(tenantSettings.title || "");
+          setDescription(tenantSettings.description || "");
+          setLogoUrl(tenantSettings.logo_url || "");
+          setBannerUrl(tenantSettings.banner_url || "");
+          setAccentColor(tenantSettings.theme?.accentColor || "#f97316");
+        } else {
+          setSlug(`restaurante-${tenantId.slice(0, 8)}`);
+        }
+
+        // Load digital menu items
+        const itemsLocal = await readLocalMirror<any>(tenantId, "digital_menu_items");
+        setMenuItems(itemsLocal.filter((mi: any) => mi.tenant_id === tenantId));
+      } catch (err: any) {
+        console.error("Error loading digital menu settings:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    void loadData();
+  }, [tenantId, activeSucursalId]);
+
+  const resolvedSlug = slug.trim().toLowerCase().replace(/[^a-z0-9-_]/g, "");
+  
+  // URL Format: https://restaurante.azokia.com/nombre-del-restaurante
+  const qrUrl = plan === "profesional" || plan === "empresarial"
+    ? `https://restaurante.azokia.com/${resolvedSlug}`
+    : `https://restaurante.azokia.com`;
+
+  useEffect(() => {
+    if (!qrUrl) return;
+    QRCode.toDataURL(qrUrl, { width: 256, margin: 2 })
+      .then(url => setQrCodeDataUrl(url))
+      .catch(err => console.error(err));
+  }, [qrUrl]);
+
+  const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tenantId) return;
+    if (plan === "basico") return;
+
+    if (!resolvedSlug) {
+      setError("El slug público es obligatorio.");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setError("");
+      setSuccess("");
+
+      const isEdit = !!settings;
+      const settingsId = settings?.id || crypto.randomUUID();
+
+      const payload = {
+        id: settingsId,
+        tenant_id: tenantId,
+        sucursal_id: activeSucursalId || null,
+        enabled,
+        public_slug: resolvedSlug,
+        title: title.trim() || null,
+        description: description.trim() || null,
+        logo_url: logoUrl.trim() || null,
+        banner_url: bannerUrl.trim() || null,
+        theme: { accentColor },
+        updated_at: new Date().toISOString()
+      };
+
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "digital_menu_settings",
+        rowId: settingsId,
+        op: isEdit ? "update" : "insert",
+        payload,
+        deviceId: await getDeviceId(),
+      });
+
+      setSettings(payload);
+      setSuccess("Configuración del menú digital guardada.");
+    } catch (err: any) {
+      console.error("Error saving settings:", err);
+      setError(`Error: ${err.message || "No se pudo guardar la configuración"}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggleDishVisibility = async (platoId: number, visible: boolean) => {
+    if (!tenantId || plan === "basico") return;
+
+    try {
+      setError("");
+      const existingItem = menuItems.find((mi: any) => mi.plato_id === platoId);
+      const itemId = existingItem?.id || crypto.randomUUID();
+
+      const payload = {
+        id: itemId,
+        tenant_id: tenantId,
+        plato_id: platoId,
+        visible,
+        display_name: existingItem?.display_name || null,
+        description: existingItem?.description || null,
+        image_url: existingItem?.image_url || null,
+        sort_order: existingItem?.sort_order || 0,
+        updated_at: new Date().toISOString()
+      };
+
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "digital_menu_items",
+        rowId: itemId,
+        op: existingItem ? "update" : "insert",
+        payload,
+        deviceId: await getDeviceId(),
+      });
+
+      setMenuItems(prev => {
+        const other = prev.filter(mi => mi.plato_id !== platoId);
+        return [...other, payload];
+      });
+    } catch (err: any) {
+      console.error("Error updating visibility:", err);
+      setError(`Error: ${err.message || "No se pudo actualizar visibilidad"}`);
+    }
+  };
+
+  const handleUpdateDishCustomFields = async () => {
+    if (!tenantId || !editingPlato || plan === "basico") return;
+
+    try {
+      setError("");
+      setSuccess("");
+
+      const platoId = editingPlato.id;
+      const existingItem = menuItems.find((mi: any) => mi.plato_id === platoId);
+      const itemId = existingItem?.id || crypto.randomUUID();
+
+      const payload = {
+        id: itemId,
+        tenant_id: tenantId,
+        plato_id: platoId,
+        visible: existingItem ? existingItem.visible : true,
+        display_name: editDisplayName.trim() || null,
+        description: editDescription.trim() || null,
+        image_url: editImageUrl.trim() || null,
+        sort_order: existingItem?.sort_order || 0,
+        updated_at: new Date().toISOString()
+      };
+
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "digital_menu_items",
+        rowId: itemId,
+        op: existingItem ? "update" : "insert",
+        payload,
+        deviceId: await getDeviceId(),
+      });
+
+      setMenuItems(prev => {
+        const other = prev.filter(mi => mi.plato_id !== platoId);
+        return [...other, payload];
+      });
+      setSuccess(`Plato "${editingPlato.nombre}" personalizado con éxito.`);
+      setEditingPlato(null);
+    } catch (err: any) {
+      console.error("Error updating plate custom fields:", err);
+      setError(`Error: ${err.message || "No se pudo guardar la personalización"}`);
+    }
+  };
+
+  const handleOpenEditPlato = (plato: any) => {
+    const custom = menuItems.find((mi: any) => mi.plato_id === plato.id);
+    setEditingPlato(plato);
+    setEditDisplayName(custom?.display_name || plato.nombre);
+    setEditDescription(custom?.description || "");
+    setEditImageUrl(custom?.image_url || "");
+  };
+
+  const filteredPlatosList = useMemo(() => {
+    return platos.filter((p: any) => 
+      p.nombre.toLowerCase().includes(dishSearch.toLowerCase()) || 
+      p.categoria.toLowerCase().includes(dishSearch.toLowerCase())
+    );
+  }, [platos, dishSearch]);
+
+  const handleDownloadQR = () => {
+    if (!qrCodeDataUrl) return;
+    const link = document.createElement("a");
+    link.href = qrCodeDataUrl;
+    link.download = `qr-menu-${resolvedSlug || "azokia"}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(qrUrl)
+      .then(() => alert("¡Enlace copiado al portapapeles!"))
+      .catch(err => console.error(err));
+  };
+
+  if (loading) return <div className="p-10 text-muted-foreground font-['Space_Grotesk'] text-center">Cargando configuración...</div>;
+
+  const isBasic = plan === "basico";
+
+  return (
+    <div className="flex-1 p-4 sm:p-8 bg-background overflow-y-auto relative">
+      {isBasic && (
+        <div className="bg-amber-500/10 border border-amber-500/20 text-amber-500 rounded-2xl p-4 mb-6 flex flex-col gap-2">
+          <h3 className="font-bold text-sm">🔒 Módulo Exclusivo Plan Profesional</h3>
+          <p className="text-xs leading-relaxed">Estás usando el plan Básico de Azokia. En este plan, tu código QR apunta al sitio general de Azokia. Actualiza a Profesional para configurar tu menú digital administrable con tu propio link y recibir pedidos de clientes finales en tiempo real.</p>
+        </div>
+      )}
+
+      {error && <div className="bg-destructive/10 border border-destructive/20 text-destructive rounded-xl p-4 mb-6 text-sm">{error}</div>}
+      {success && <div className="bg-green-500/10 border border-green-500/20 text-green-500 rounded-xl p-4 mb-6 text-sm">{success}</div>}
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        {/* Left Column: Settings & QR */}
+        <div className="lg:col-span-5 flex flex-col gap-6 relative">
+          {isBasic && <div className="absolute inset-0 bg-background/40 backdrop-blur-[2px] z-10 rounded-[24px] pointer-events-none" />}
+          
+          {/* General Settings Card */}
+          <div className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 shadow-sm">
+            <h3 className="font-['Space_Grotesk'] text-lg font-bold text-foreground mb-4">Configuración del Menú</h3>
+            <form onSubmit={handleSaveSettings} className="flex flex-col gap-4">
+              <div className="flex items-center justify-between border-b border-border/40 pb-3">
+                <label className="text-sm font-semibold">Activar Menú Digital</label>
+                <input 
+                  type="checkbox" 
+                  checked={enabled} 
+                  disabled={isBasic}
+                  onChange={e => setEnabled(e.target.checked)}
+                  className="w-5 h-5 rounded accent-primary cursor-pointer disabled:opacity-50"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Link del Restaurante (Slug)</label>
+                <div className="flex items-center bg-muted border border-border rounded-xl px-3 py-2 text-sm text-muted-foreground">
+                  <span className="select-none opacity-60 shrink-0">azokia.com/</span>
+                  <input 
+                    type="text" 
+                    placeholder="mi-restaurante"
+                    disabled={isBasic}
+                    value={slug}
+                    onChange={e => setSlug(e.target.value)}
+                    className="bg-transparent border-none text-foreground w-full focus:outline-none ml-0.5"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Título Público</label>
+                <input 
+                  type="text" 
+                  placeholder="Ej. Cyberbistro Bella Vista"
+                  disabled={isBasic}
+                  value={title}
+                  onChange={e => setTitle(e.target.value)}
+                  className="input-field"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Descripción del Negocio</label>
+                <textarea 
+                  placeholder="Ej. Las mejores hamburguesas artesanales de Santo Domingo..."
+                  disabled={isBasic}
+                  value={description}
+                  onChange={e => setDescription(e.target.value)}
+                  rows={3}
+                  className="input-field resize-none"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">URL del Logo (Opcional)</label>
+                <input 
+                  type="text" 
+                  placeholder="Ej. https://images.com/mi-logo.png"
+                  disabled={isBasic}
+                  value={logoUrl}
+                  onChange={e => setLogoUrl(e.target.value)}
+                  className="input-field"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">URL del Banner/Portada (Opcional)</label>
+                <input 
+                  type="text" 
+                  placeholder="Ej. https://images.com/banner.png"
+                  disabled={isBasic}
+                  value={bannerUrl}
+                  onChange={e => setBannerUrl(e.target.value)}
+                  className="input-field"
+                />
+              </div>
+
+              <button 
+                type="submit" 
+                disabled={saving || isBasic}
+                className="bg-primary text-primary-foreground rounded-xl py-3 font-bold uppercase text-[11px] tracking-widest shadow-lg hover:opacity-90 disabled:opacity-50 transition-all border-none cursor-pointer mt-2"
+              >
+                {saving ? "Guardando..." : "Guardar Configuración"}
+              </button>
+            </form>
+          </div>
+
+          {/* QR Code Display Card */}
+          <div className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 shadow-sm flex flex-col items-center text-center gap-4">
+            <h3 className="font-['Space_Grotesk'] text-sm font-bold text-foreground self-start mb-1">
+              {isBasic ? "Código QR General Azokia" : "Código QR del Menú Digital"}
+            </h3>
+            {qrCodeDataUrl ? (
+              <div className="bg-white p-3 rounded-2xl border border-black/5 flex items-center justify-center shadow-inner">
+                <img src={qrCodeDataUrl} alt="QR Code" className="w-48 h-48 object-contain" />
+              </div>
+            ) : (
+              <div className="w-48 h-48 rounded-2xl bg-muted animate-pulse flex items-center justify-center text-xs text-muted-foreground">Generando QR...</div>
+            )}
+            <div className="flex flex-col gap-1.5 w-full">
+              <span className="text-xs font-semibold text-primary break-all">{qrUrl}</span>
+              <p className="text-[11px] text-muted-foreground">Escaneá o compartí este enlace para acceder al menú.</p>
+            </div>
+            <div className="flex gap-3 w-full mt-2">
+              <button 
+                onClick={handleCopyLink} 
+                className="flex-1 bg-muted hover:bg-muted/80 text-foreground py-2.5 rounded-xl font-bold text-xs border border-border cursor-pointer transition-colors"
+              >
+                Copiar Enlace
+              </button>
+              <button 
+                onClick={handleDownloadQR} 
+                className="flex-1 bg-primary text-primary-foreground py-2.5 rounded-xl font-bold text-xs border-none cursor-pointer hover:opacity-90 transition-all"
+              >
+                Descargar QR
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Column: Plates list & Customization */}
+        <div className="lg:col-span-7 flex flex-col gap-6 relative">
+          {isBasic && <div className="absolute inset-0 bg-background/40 backdrop-blur-[2px] z-10 rounded-[24px] pointer-events-none" />}
+
+          <div className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 shadow-sm flex flex-col gap-4 min-h-[500px]">
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+              <div>
+                <h3 className="font-['Space_Grotesk'] text-lg font-bold text-foreground">Carta de Platos en Web</h3>
+                <p className="text-xs text-muted-foreground">Controlá qué platos son visibles en internet y personalizá sus fotos y descripciones.</p>
+              </div>
+              <input 
+                type="text" 
+                placeholder="Buscar plato o categoría..."
+                value={dishSearch}
+                onChange={e => setDishSearch(e.target.value)}
+                className="input-field py-2 px-4 text-xs max-w-[200px]"
+              />
+            </div>
+
+            <div className="flex-1 overflow-x-auto animate-[fadeIn_0.2s_ease-out]">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-border/60 text-muted-foreground uppercase font-bold tracking-wider">
+                    <th className="pb-3 pl-2">Plato</th>
+                    <th className="pb-3">Categoría</th>
+                    <th className="pb-3 text-right">Precio</th>
+                    <th className="pb-3 text-center">Visible</th>
+                    <th className="pb-3 text-center pr-2">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/30">
+                  {filteredPlatosList.map((plato) => {
+                    const custom = menuItems.find((mi: any) => mi.plato_id === plato.id);
+                    const isVisible = custom ? custom.visible : plato.disponible;
+                    const isCustomized = custom && (custom.display_name || custom.description || custom.image_url);
+
+                    return (
+                      <tr key={plato.id} className="hover:bg-muted/10 transition-colors">
+                        <td className="py-3.5 pl-2 font-semibold">
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-foreground truncate max-w-[180px]">{custom?.display_name || plato.nombre}</span>
+                            {isCustomized && <span className="text-[10px] text-primary font-medium">Personalizado</span>}
+                          </div>
+                        </td>
+                        <td className="py-3.5 text-muted-foreground">{plato.categoria}</td>
+                        <td className="py-3.5 text-right font-bold">{new Intl.NumberFormat("es-DO", { style: "currency", currency: "DOP" }).format(plato.precio)}</td>
+                        <td className="py-3.5 text-center">
+                          <input 
+                            type="checkbox" 
+                            checked={isVisible}
+                            disabled={isBasic}
+                            onChange={e => handleToggleDishVisibility(plato.id, e.target.checked)}
+                            className="w-4 h-4 rounded accent-primary cursor-pointer disabled:opacity-50"
+                          />
+                        </td>
+                        <td className="py-3.5 text-center pr-2">
+                          <button
+                            onClick={() => handleOpenEditPlato(plato)}
+                            disabled={isBasic}
+                            className="bg-muted hover:bg-muted-foreground/15 text-foreground px-3 py-1.5 rounded-lg border border-border text-[10px] font-bold cursor-pointer transition-colors disabled:opacity-50"
+                          >
+                            Personalizar
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Edit Plato Custom Fields Dialog */}
+      {editingPlato && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm transition-all duration-300">
+          <div className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 sm:p-8 max-w-[500px] w-full shadow-xl flex flex-col gap-6">
+            <div>
+              <h3 className="font-['Space_Grotesk'] text-lg font-bold text-foreground">Personalizar Plato en Web</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">Editá los detalles públicos para tu menú digital. El plato original en el POS no cambiará.</p>
+            </div>
+
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Nombre Público</label>
+                <input 
+                  type="text" 
+                  value={editDisplayName}
+                  onChange={e => setEditDisplayName(e.target.value)}
+                  className="input-field"
+                  placeholder={editingPlato.nombre}
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Descripción del Plato</label>
+                <textarea 
+                  value={editDescription}
+                  onChange={e => setEditDescription(e.target.value)}
+                  className="input-field resize-none"
+                  placeholder="Detallá los ingredientes o preparación..."
+                  rows={3}
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Foto del Plato (URL)</label>
+                <input 
+                  type="text" 
+                  value={editImageUrl}
+                  onChange={e => setEditImageUrl(e.target.value)}
+                  className="input-field"
+                  placeholder="https://images.com/foto.png"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-2">
+              <button 
+                onClick={() => setEditingPlato(null)}
+                className="flex-1 bg-muted hover:bg-muted/80 text-foreground py-3 rounded-xl font-bold text-xs border border-border cursor-pointer transition-colors"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={handleUpdateDishCustomFields}
+                className="flex-1 bg-primary text-primary-foreground py-3 rounded-xl font-bold text-xs border-none cursor-pointer hover:opacity-90 transition-all"
+              >
+                Guardar Personalización
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // MAIN PANEL (tabs after unlock)
 // ─────────────────────────────────────────────
-type Tab = "usuarios" | "carta" | "categorias" | "mesas";
+type Tab = "usuarios" | "carta" | "categorias" | "mesas" | "digitalMenu";
 
 function SoportePanel() {
   const [activeTab, setActiveTab] = useState<Tab>("carta");
@@ -1170,20 +1703,20 @@ function SoportePanel() {
         <div className="flex items-end gap-6">
           <h1 className="font-['Space_Grotesk'] font-bold text-foreground text-2xl pb-4">Panel Soporte</h1>
           <div className="flex gap-1">
-            {(["carta", "usuarios", "mesas", "categorias"] as Tab[]).map((tab) => (
+            {(["carta", "usuarios", "mesas", "categorias", "digitalMenu"] as Tab[]).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
                 className={`px-5 py-4 font-['Space_Grotesk'] font-bold text-[13px] tracking-widest uppercase border-b-2 transition-all bg-transparent cursor-pointer ${activeTab === tab ? "text-primary border-primary" : "text-muted-foreground border-transparent hover:text-foreground"}`}
               >
-                {tab === "carta" ? "Carta" : tab === "usuarios" ? "Usuarios" : tab === "mesas" ? "Mesas" : "Categorías"}
+                {tab === "carta" ? "Carta" : tab === "usuarios" ? "Usuarios" : tab === "mesas" ? "Mesas" : tab === "categorias" ? "Categorías" : "Menú Digital"}
               </button>
             ))}
           </div>
         </div>
       </div>
       <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-        {activeTab === "carta" ? <CartaPanel /> : activeTab === "mesas" ? <MesasPanel /> : activeTab === "categorias" ? <CategoriasPanel /> : (
+        {activeTab === "carta" ? <CartaPanel /> : activeTab === "mesas" ? <MesasPanel /> : activeTab === "categorias" ? <CategoriasPanel /> : activeTab === "digitalMenu" ? <DigitalMenuPanel /> : (
           <>
             <UsuariosPanel />
           </>

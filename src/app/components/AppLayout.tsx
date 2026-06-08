@@ -24,7 +24,7 @@ import { canUseFeature, type Feature } from "../../shared/lib/planFeatures";
 type SidebarItem = {
   readonly label: string;
   readonly path: string;
-  readonly customIcon?: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras" | "cxp" | "cxc";
+  readonly customIcon?: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras" | "cxp" | "cxc" | "pedidos";
   readonly icon?: string;
   readonly viewBox?: string;
   readonly feature?: Feature;
@@ -42,6 +42,7 @@ const sidebarSections: readonly SidebarSection[] = [
     label: "Operación",
     items: [
       { label: "Venta", customIcon: "venta", path: "/dashboard" },
+      { label: "Pedidos", customIcon: "pedidos", path: "/pedidos", feature: "digital_menu" },
       { label: "Camarera", customIcon: "camarera", path: "/camarera" },
       { label: "Mesas", customIcon: "mesas", path: "/tables" },
       { label: "Cocina", customIcon: "cocina", path: "/cocina" },
@@ -115,7 +116,7 @@ function filterMainNavForRol(rol: string | null): readonly SidebarSection[] {
   } else if (normalized === "cocina") {
     filtered = sidebarSections.map((s) => filterSectionItems(s, ["/cocina"]));
   } else if (normalized === "cajera") {
-    const allow = ["/dashboard", "/clientes", "/tables", "/gastos", "/cierre", "/cuentas-pagar", "/cuentas-cobrar"];
+    const allow = ["/dashboard", "/clientes", "/tables", "/gastos", "/cierre", "/cuentas-pagar", "/cuentas-cobrar", "/pedidos"];
     filtered = sidebarSections.map((s) => filterSectionItems(s, allow));
   } else if (normalized === "mesero") {
     const allow = ["/camarera", "/entregas"];
@@ -145,7 +146,15 @@ function filterMainNavForRol(rol: string | null): readonly SidebarSection[] {
   return filtered.filter((section) => section.items.length > 0);
 }
 
-function SidebarCustomIcon({ name }: { name: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras" | "cxp" | "cxc" }) {
+function SidebarCustomIcon({ name }: { name: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras" | "cxp" | "cxc" | "pedidos" }) {
+  if (name === "pedidos") {
+    return (
+      <svg className="shrink-0 size-[20px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+      </svg>
+    );
+  }
+
   if (name === "cxc") {
     return (
       <svg className="shrink-0 size-[20px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden>
@@ -283,6 +292,73 @@ function AppLayoutContent() {
   const routerLocation = useLocation();
   const { rol, signOut, tenantId, plan, loading } = useAuth();
   const { hasUpdateBellAlert, showUpdateBellToast } = useAppUpdate();
+  const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
+
+  // Load initial pending orders count and subscribe to updates
+  useEffect(() => {
+    if (!tenantId) return;
+
+    let cancelled = false;
+    async function loadPendingCount() {
+      try {
+        const { data, error } = await insforgeClient.database
+          .from("digital_orders")
+          .select("id")
+          .eq("tenant_id", tenantId)
+          .eq("status", "pending");
+
+        if (!error && data && !cancelled) {
+          setPendingOrdersCount(data.length);
+        }
+      } catch (err) {
+        console.error("Error loading pending orders count:", err);
+      }
+    }
+
+    void loadPendingCount();
+
+    // Subscribe to digital_orders table updates via custom realtime client
+    const rt = (insforgeClient as any).realtime;
+    if (!rt) return;
+
+    const rtChannel = `cocina:${tenantId}`;
+
+    const handleDigitalOrderEvent = (payload: any) => {
+      if (payload?.tenant_id !== tenantId) return;
+      void loadPendingCount();
+    };
+
+    const handleDigitalOrderInsert = (payload: any) => {
+      if (payload?.tenant_id !== tenantId) return;
+      void loadPendingCount();
+      
+      if (payload?.status === 'pending') {
+        const audio = new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-84.wav");
+        audio.volume = 0.5;
+        void audio.play().catch(() => {});
+      }
+    };
+
+    void (async () => {
+      try {
+        await rt.connect();
+        await rt.subscribe(rtChannel);
+        if (cancelled) return;
+        rt.on("INSERT_digital_order", handleDigitalOrderInsert);
+        rt.on("UPDATE_digital_order", handleDigitalOrderEvent);
+        rt.on("DELETE_digital_order", handleDigitalOrderEvent);
+      } catch (e) {
+        console.warn("[AppLayout] Realtime connect failed:", e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      rt.off("INSERT_digital_order", handleDigitalOrderInsert);
+      rt.off("UPDATE_digital_order", handleDigitalOrderEvent);
+      rt.off("DELETE_digital_order", handleDigitalOrderEvent);
+    };
+  }, [tenantId]);
   const localFirst = useLocalFirstBootstrap(tenantId);
   const [cocinaActiva, setCocinaActiva] = useState(true);
   const [ventaCartSearch, setVentaCartSearch] = useState("");
@@ -507,6 +583,11 @@ function AppLayoutContent() {
                       >
                         {item.label}
                       </span>
+                      {item.path === "/pedidos" && pendingOrdersCount > 0 && (
+                        <span className="ml-auto flex items-center justify-center h-[18px] min-w-[18px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full">
+                          {pendingOrdersCount}
+                        </span>
+                      )}
                       {isLocked && !loading && (
                         <span className="ml-auto flex items-center justify-center p-1 bg-[rgba(255,144,109,0.12)] border border-[rgba(255,144,109,0.3)] rounded animate-pulse" aria-label="Locked feature">
                           <svg className="size-[10px] text-[#ff906d] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
@@ -694,14 +775,24 @@ function AppLayoutContent() {
                 </button>
                 <button
                   type="button"
-                  onClick={showUpdateBellToast}
+                  onClick={() => {
+                    if (pendingOrdersCount > 0) {
+                      navigate("/pedidos");
+                    } else {
+                      showUpdateBellToast();
+                    }
+                  }}
                   title={
-                    hasUpdateBellAlert
+                    pendingOrdersCount > 0
+                      ? `Tenés ${pendingOrdersCount} pedido(s) pendiente(s)`
+                      : hasUpdateBellAlert
                       ? "Hay una actualización de la app"
                       : "Notificaciones"
                   }
                   aria-label={
-                    hasUpdateBellAlert
+                    pendingOrdersCount > 0
+                      ? `Tenés ${pendingOrdersCount} pedido(s) pendiente(s). Tocá para ver detalles.`
+                      : hasUpdateBellAlert
                       ? "Hay una actualización disponible. Tocá para ver detalles."
                       : "Notificaciones"
                   }
@@ -715,10 +806,16 @@ function AppLayoutContent() {
                   >
                     <path
                       d={svgPaths.p28252700}
-                      fill={hasUpdateBellAlert ? "#ff906d" : "#ADAAAA"}
+                      fill={pendingOrdersCount > 0 ? "#ef4444" : hasUpdateBellAlert ? "#ff906d" : "#ADAAAA"}
                     />
                   </svg>
-                  {hasUpdateBellAlert ? (
+                  {pendingOrdersCount > 0 ? (
+                    <span
+                      className="absolute top-[-6px] right-[-8px] min-w-[15px] h-[15px] px-1 rounded-full bg-red-500 text-white text-[8px] font-bold flex items-center justify-center shadow-[0_0_10px_rgba(239,68,68,0.85)] pointer-events-none"
+                    >
+                      {pendingOrdersCount}
+                    </span>
+                  ) : hasUpdateBellAlert ? (
                     <span
                       className="absolute top-[-4px] right-[-6px] size-[9px] rounded-full bg-[#ffb020] shadow-[0_0_10px_rgba(255,176,32,0.85)] pointer-events-none motion-safe:animate-pulse"
                       aria-hidden

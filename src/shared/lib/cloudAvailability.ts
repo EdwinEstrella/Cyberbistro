@@ -128,7 +128,7 @@ async function runCloudProbe(): Promise<boolean> {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
   try {
-    const url = `${registeredBaseUrl ?? ""}/rest/v1/`;
+    const url = `${registeredBaseUrl ?? ""}/api/database/records/tenants?limit=1`;
     const headers: Record<string, string> = {};
     if (registeredAnonKey) {
       headers["apikey"] = registeredAnonKey;
@@ -139,9 +139,15 @@ async function runCloudProbe(): Promise<boolean> {
       headers,
       cache: "no-store",
       signal: controller.signal,
+    }).catch(async () => {
+      // Fallback probe
+      return await fetch(`${registeredBaseUrl ?? ""}/`, {
+        method: "HEAD",
+        cache: "no-store",
+        signal: controller.signal,
+      });
     });
-    // PostgREST returns >= 500 when the database is down
-    return response.status >= 200 && response.status < 500;
+    return response.status < 500 && response.status !== 404;
   } catch {
     return false;
   } finally {

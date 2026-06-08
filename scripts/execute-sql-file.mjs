@@ -17,7 +17,7 @@ if (!fs.existsSync(absoluteSqlPath)) {
 
 const query = fs.readFileSync(absoluteSqlPath, "utf8");
 
-const projectJsonPath = "C:\\Users\\Edwin\\Desktop\\Trabajos\\Cyberbistro\\.insforge\\project.json";
+const projectJsonPath = path.resolve(process.cwd(), ".insforge", "project.json");
 if (!fs.existsSync(projectJsonPath)) {
   console.error(`Project JSON not found at: ${projectJsonPath}`);
   process.exit(1);

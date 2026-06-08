@@ -25,6 +25,7 @@ export const router = createHashRouter([
       { path: "/compras", lazy: () => import("../features/compras").then(({ Compras }) => ({ Component: Compras })) },
       { path: "/cuentas-pagar", lazy: () => import("../features/cuentas-pagar").then(({ CuentasPagar }) => ({ Component: CuentasPagar })) },
       { path: "/cuentas-cobrar", lazy: () => import("../features/cuentas-cobrar").then(({ CuentasCobrar }) => ({ Component: CuentasCobrar })) },
+      { path: "/pedidos", lazy: () => import("../features/pedidos").then(({ Pedidos }) => ({ Component: Pedidos })) },
     ],
   },
 ], {
