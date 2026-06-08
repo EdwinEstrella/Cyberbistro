@@ -339,19 +339,9 @@ export function TitleBar({
             <span 
               className="text-[10px] font-['Space_Grotesk',sans-serif] font-bold uppercase px-2 py-0.5 rounded-[4px] tracking-[0.5px] whitespace-nowrap"
               style={{ 
-                backgroundColor: 
-                  plan === 'empresarial' ? 'rgba(167, 139, 250, 0.15)' : 
-                  plan === 'profesional' ? 'rgba(255, 144, 109, 0.15)' : 
-                  'rgba(89, 238, 80, 0.15)',
-                color: 
-                  plan === 'empresarial' ? '#a78bfa' : 
-                  plan === 'profesional' ? '#ff906d' : 
-                  '#59ee50',
-                border: `1px solid ${
-                  plan === 'empresarial' ? 'rgba(167, 139, 250, 0.3)' : 
-                  plan === 'profesional' ? 'rgba(255, 144, 109, 0.3)' : 
-                  'rgba(89, 238, 80, 0.3)'
-                }`
+                backgroundColor: 'rgba(89, 238, 80, 0.12)',
+                color: '#59ee50',
+                border: '1px solid rgba(89, 238, 80, 0.25)'
               }}
             >
               Plan {plan}
