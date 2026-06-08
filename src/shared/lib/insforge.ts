@@ -78,7 +78,7 @@ function readInsforgeConfig(): InsForgeConfig {
     autoRefreshToken: false,
     /** Flujo `client_type=mobile` + refresh en body; adecuado para Electron (InsForge SDK). */
     isServerMode: true,
-  };
+  } as any;
 }
 
 /** Tras reiniciar la app, el `HttpClient` pierde el refresh en RAM; lo rehidratamos desde localStorage. */
