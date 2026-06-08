@@ -3,7 +3,7 @@
 Este documento registra el progreso de cada una de las tareas y hitos de la PR 11.
 
 ## Estado General
-- **Estado**: Tarea 1 completada. Listo para comenzar Tarea 2.
+- **Estado**: Tarea 2 completada. Listo para comenzar Tarea 3.
 - **Riesgos**:
   - Asegurar la propagación de RLS para el canal público de Next.js.
   - Asegurar que la inserción de comandas al aceptar pedidos digitales se haga bajo el contexto de sincronización local-first.
@@ -17,10 +17,10 @@ Este documento registra el progreso de cada una de las tareas y hitos de la PR 1
 - [x] Aplicar migraciones en base de datos.
 
 ### Tarea 2: Web Pública de Menú (Next.js - website/claudix)
-- [ ] Configurar variables de entorno y cliente de InsForge en Next.js.
-- [ ] Crear la ruta dinámica `website/claudix/app/[slug]/page.tsx`.
-- [ ] Implementar listado, carrito y checkout.
-- [ ] Enviar pedido y persistir en la base de datos central.
+- [x] Configurar variables de entorno y cliente de InsForge en Next.js.
+- [x] Crear la ruta dinámica `website/claudix/app/[slug]/page.tsx`.
+- [x] Implementar listado, carrito y checkout.
+- [x] Enviar pedido y persistir en la base de datos central.
 
 ### Tarea 3: Panel de Administración (Soporte > Menú Digital)
 - [ ] Agregar la pestaña "Menú Digital" en `/soporte`.
