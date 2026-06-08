@@ -365,7 +365,7 @@ export interface OutboxConflictGuardrail {
 }
 
 const PAGE_SIZE = 250;
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const SYNCING_STALE_MS = 5 * 60 * 1000;
 const FULL_REFRESH_ON_SYNC_TABLES = [
   "tenant_users",
