@@ -24,6 +24,73 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
     throw new Error("La compra debe contener al menos un ítem.");
   }
 
+  const deviceId = await getDeviceId();
+
+  // Validate active operational cycle and purchase category for cash (contado) purchases
+  let activeCycleId = "";
+  let comprasCategoryId = "";
+  let providerName = "Proveedor";
+
+  if (tipoPago === "contado") {
+    const activeCycleRows = await readLocalMirror<{
+      id: string;
+      closed_at: string | null;
+      sucursal_id: string | null;
+      opened_at: string;
+    }>(tenantId, "cierres_operativos");
+    
+    const activeCycle = activeCycleRows
+      .filter(c => !c.closed_at && (c.sucursal_id === sucursalId || !c.sucursal_id))
+      .sort((a, b) => b.opened_at.localeCompare(a.opened_at))[0];
+
+    if (!activeCycle) {
+      throw new Error("No hay un ciclo operativo abierto para registrar una compra al contado.");
+    }
+    activeCycleId = activeCycle.id;
+
+    // Resolve compras category
+    const categories = await readLocalMirror<{
+      id: string;
+      nombre: string;
+      activa: boolean;
+    }>(tenantId, "gasto_categorias");
+    const foundCat = categories.find(c => c.activa && c.nombre.trim().toLowerCase() === "compras");
+    if (foundCat) {
+      comprasCategoryId = foundCat.id;
+    } else {
+      comprasCategoryId = crypto.randomUUID();
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "gasto_categorias",
+        rowId: comprasCategoryId,
+        op: "insert",
+        payload: {
+          id: comprasCategoryId,
+          tenant_id: tenantId,
+          nombre: "Compras",
+          descripcion: "Categoría automática para registrar compras de insumos",
+          color: "#ff906d",
+          activa: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        deviceId,
+      });
+    }
+
+    // Resolve provider name
+    if (proveedorId) {
+      const providers = await readLocalMirror<{
+        id: string;
+        nombre: string;
+      }>(tenantId, "proveedores");
+      const foundProv = providers.find(p => p.id === proveedorId);
+      if (foundProv) {
+        providerName = foundProv.nombre;
+      }
+    }
+  }
+
   // 1. Fetch products catalog details
   const inventarioRows = await readLocalMirror<{
     id: string;
@@ -35,7 +102,6 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
   }>(tenantId, "productos_inventario");
 
   const inventarioMap = new Map(inventarioRows.map(r => [r.id, r]));
-  const deviceId = await getDeviceId();
   const compraId = crypto.randomUUID();
   const fechaCompra = new Date().toISOString();
 
@@ -159,6 +225,33 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
         referencia: `Compra: ${compraId}`,
         fecha: fechaCompra,
         usuario_id: usuarioId,
+      },
+      deviceId,
+    });
+  }
+
+  // 4. Enqueue Local Write for Gasto if contado
+  if (tipoPago === "contado") {
+    const gastoId = crypto.randomUUID();
+    await enqueueLocalWrite({
+      tenantId,
+      tableName: "gastos",
+      rowId: gastoId,
+      op: "insert",
+      payload: {
+        id: gastoId,
+        tenant_id: tenantId,
+        category_id: comprasCategoryId || null,
+        cycle_id: activeCycleId || null,
+        descripcion: `Compra - Factura ${numeroFactura || "S/N"}`,
+        proveedor: providerName,
+        monto: totalCompra,
+        metodo_pago: "efectivo",
+        fecha_gasto: fechaCompra,
+        notas: observacion || `Registrado automáticamente desde Módulo de Compras (ID: ${compraId})`,
+        created_by_auth_user_id: usuarioId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       },
       deviceId,
     });

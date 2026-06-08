@@ -59,6 +59,7 @@ export function Compras() {
   const [compras, setCompras] = useState<CompraRow[]>([]);
   const [proveedores, setProveedores] = useState<ProveedorRow[]>([]);
   const [productos, setProductos] = useState<ProductoRow[]>([]);
+  const [cicloAbierto, setCicloAbierto] = useState<{ id: string; closed_at: string | null; opened_at: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -98,37 +99,46 @@ export function Compras() {
     setLoading(true);
     setMessage("");
     try {
-      const useLocal = await shouldReadLocalFirst(tenantId, ["compras", "proveedores", "productos_inventario"]);
+      const useLocal = await shouldReadLocalFirst(tenantId, ["compras", "proveedores", "productos_inventario", "cierres_operativos"]);
       
       let comprasData: CompraRow[] = [];
       let proveedoresData: ProveedorRow[] = [];
       let productosData: ProductoRow[] = [];
+      let ciclosData: any[] = [];
 
       if (useLocal) {
         comprasData = await readLocalMirror<CompraRow>(tenantId, "compras");
         proveedoresData = await readLocalMirror<ProveedorRow>(tenantId, "proveedores");
         productosData = await readLocalMirror<ProductoRow>(tenantId, "productos_inventario");
+        ciclosData = await readLocalMirror<any>(tenantId, "cierres_operativos");
       } else {
-        const [cRes, pRes, iRes] = await Promise.all([
+        const [cRes, pRes, iRes, cyRes] = await Promise.all([
           insforgeClient.database.from("compras").select("*").eq("tenant_id", tenantId),
           insforgeClient.database.from("proveedores").select("*").eq("tenant_id", tenantId),
           insforgeClient.database.from("productos_inventario").select("*").eq("tenant_id", tenantId),
+          insforgeClient.database.from("cierres_operativos").select("id, cycle_number, opened_at, closed_at, sucursal_id").eq("tenant_id", tenantId).is("closed_at", null).order("opened_at", { ascending: false }).limit(1),
         ]);
         comprasData = cRes.data || [];
         proveedoresData = pRes.data || [];
         productosData = iRes.data || [];
+        ciclosData = cyRes.data || [];
       }
 
       // Filter and Sort
       setCompras(comprasData.sort((a, b) => b.fecha_compra.localeCompare(a.fecha_compra)));
       setProveedores(proveedoresData.filter(p => p.activo).sort((a, b) => a.nombre.localeCompare(b.nombre)));
       setProductos(productosData.filter(i => i.activo).sort((a, b) => a.nombre.localeCompare(b.nombre)));
+
+      const activeCycle = useLocal
+        ? ciclosData.filter(c => !c.closed_at && (c.sucursal_id === activeSucursalId || !c.sucursal_id)).sort((a, b) => b.opened_at.localeCompare(a.opened_at))[0] ?? null
+        : ciclosData[0] ?? null;
+      setCicloAbierto(activeCycle);
     } catch (err: any) {
       setMessage("Error al cargar datos: " + err.message);
     } finally {
       setLoading(false);
     }
-  }, [tenantId]);
+  }, [tenantId, activeSucursalId]);
 
   useEffect(() => {
     void cargarDatos();
@@ -542,6 +552,12 @@ export function Compras() {
                   />
                 </div>
               </div>
+              
+              {compraForm.tipo_pago === "contado" && !cicloAbierto && (
+                <div className="bg-[rgba(255,113,108,0.08)] border border-[rgba(255,113,108,0.25)] rounded-[10px] p-3 text-[12px] text-[#ff716c] font-['Inter',sans-serif] shrink-0">
+                  ⚠️ <strong>Caja Cerrada:</strong> No hay un ciclo operativo abierto. Debes abrir uno en la sección de Cierre antes de registrar compras al contado.
+                </div>
+              )}
 
               {/* Items Section */}
               <div className="flex flex-col gap-2 flex-1 min-h-0">
@@ -657,7 +673,7 @@ export function Compras() {
                   </button>
                   <button
                     type="submit"
-                    disabled={saving}
+                    disabled={saving || (compraForm.tipo_pago === "contado" && !cicloAbierto)}
                     className="bg-[#ff906d] rounded-[8px] px-4 py-2 font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[10.5px] uppercase cursor-pointer border-none disabled:opacity-50"
                   >
                     {saving ? "Registrando..." : "Guardar Compra"}
