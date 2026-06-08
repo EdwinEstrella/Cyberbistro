@@ -26,6 +26,8 @@ export const LOCAL_FIRST_MIRROR_TABLES = [
   "proveedores",
   "compras",
   "compra_detalles",
+  "cuentas_pagar",
+  "cxp_pagos",
 ] as const;
 
 export const LOCAL_FIRST_METADATA_TABLES = [
@@ -78,6 +80,8 @@ export const LOCAL_FIRST_HISTORY_TABLES = [
   "proveedores",
   "compras",
   "compra_detalles",
+  "cuentas_pagar",
+  "cxp_pagos",
 ] as const;
 
 export type LocalFirstMirrorTable = (typeof LOCAL_FIRST_MIRROR_TABLES)[number];
@@ -365,7 +369,7 @@ export interface OutboxConflictGuardrail {
 }
 
 const PAGE_SIZE = 250;
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 const SYNCING_STALE_MS = 5 * 60 * 1000;
 const FULL_REFRESH_ON_SYNC_TABLES = [
   "tenant_users",

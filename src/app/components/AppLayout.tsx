@@ -24,7 +24,7 @@ import { canUseFeature, type Feature } from "../../shared/lib/planFeatures";
 type SidebarItem = {
   readonly label: string;
   readonly path: string;
-  readonly customIcon?: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras";
+  readonly customIcon?: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras" | "cxp";
   readonly icon?: string;
   readonly viewBox?: string;
   readonly feature?: Feature;
@@ -70,6 +70,7 @@ const sidebarSections: readonly SidebarSection[] = [
       { label: "Analíticas", icon: svgPaths.p30837e80, viewBox: "0 0 18 18", path: "/billing" },
       { label: "Gastos", customIcon: "gastos", path: "/gastos" },
       { label: "Cierre", customIcon: "cierre", path: "/cierre" },
+      { label: "Cuentas por Pagar", customIcon: "cxp", path: "/cuentas-pagar", feature: "accounts_payable" },
     ],
   },
 ];
@@ -112,7 +113,7 @@ function filterMainNavForRol(rol: string | null): readonly SidebarSection[] {
   } else if (normalized === "cocina") {
     filtered = sidebarSections.map((s) => filterSectionItems(s, ["/cocina"]));
   } else if (normalized === "cajera") {
-    const allow = ["/dashboard", "/clientes", "/tables", "/gastos", "/cierre"];
+    const allow = ["/dashboard", "/clientes", "/tables", "/gastos", "/cierre", "/cuentas-pagar"];
     filtered = sidebarSections.map((s) => filterSectionItems(s, allow));
   } else if (normalized === "mesero") {
     const allow = ["/camarera", "/entregas"];
@@ -142,7 +143,17 @@ function filterMainNavForRol(rol: string | null): readonly SidebarSection[] {
   return filtered.filter((section) => section.items.length > 0);
 }
 
-function SidebarCustomIcon({ name }: { name: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras" }) {
+function SidebarCustomIcon({ name }: { name: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras" | "cxp" }) {
+  if (name === "cxp") {
+    return (
+      <svg className="shrink-0 size-[20px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <rect x="3" y="4" width="18" height="16" rx="2" strokeLinecap="round" strokeLinejoin="round" />
+        <line x1="3" y1="10" x2="21" y2="10" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M7 15h2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+
   if (name === "compras") {
     return (
       <svg className="shrink-0 size-[20px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden>

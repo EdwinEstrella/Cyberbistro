@@ -227,6 +227,13 @@ describe("purchaseService", () => {
       call => call[0].tableName === "gastos"
     );
     expect(gastoCall).toBeUndefined();
+
+    // Verify that a cuentas_pagar write is enqueued
+    const cxpCall = vi.mocked(enqueueLocalWrite).mock.calls.find(
+      call => call[0].tableName === "cuentas_pagar" && call[0].op === "insert"
+    );
+    expect(cxpCall).toBeDefined();
+    expect((cxpCall?.[0] as any)?.payload?.monto_total).toBe(40.00);
   });
 
   it("creates Compras category if it does not exist when registering contado purchase", async () => {
