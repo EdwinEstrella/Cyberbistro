@@ -42,7 +42,7 @@ export function canUseFeature(plan: string | null | undefined, feature: Feature)
   return PLAN_FEATURES[normalized].has(feature);
 }
 
-export function getRequiredPlan(feature: Feature): Plan {
+export function getRequiredPlan(_feature: Feature): Plan {
   // Currently, all features are enabled on 'profesional' and 'empresarial'.
   // Thus, the minimum plan required is 'profesional'.
   return "profesional";
