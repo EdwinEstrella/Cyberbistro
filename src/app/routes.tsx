@@ -22,6 +22,7 @@ export const router = createHashRouter([
       { path: "/soporte", lazy: () => import("../features/soporte").then(({ Soporte }) => ({ Component: Soporte })) },
       { path: "/ajustes", lazy: () => import("../features/ajustes").then(({ Ajustes }) => ({ Component: Ajustes })) },
       { path: "/inventario", lazy: () => import("../features/inventario").then(({ Inventario }) => ({ Component: Inventario })) },
+      { path: "/compras", lazy: () => import("../features/compras").then(({ Compras }) => ({ Component: Compras })) },
     ],
   },
 ], {
