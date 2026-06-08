@@ -19,25 +19,59 @@ import { LocalFirstStatusBadge } from "../../shared/components/LocalFirstStatusB
 import { useLocalFirstBootstrap } from "../../shared/hooks/useLocalFirstBootstrap";
 import { getThermalPrintSettings, saveThermalPrintSettings } from "../../shared/lib/thermalStorage";
 
-const mainNavItems = [
-  { label: "Venta", customIcon: "venta", path: "/dashboard" },
-  { label: "Clientes", customIcon: "clientes", path: "/clientes" },
-  { label: "Camarera", customIcon: "camarera", path: "/camarera" },
-  { label: "Mesas", customIcon: "mesas", path: "/tables" },
-  { label: "Cocina", customIcon: "cocina", path: "/cocina" },
-  { label: "Entregas", customIcon: "entregas", path: "/entregas" },
-  { label: "Analíticas", icon: svgPaths.p30837e80, viewBox: "0 0 18 18", path: "/billing" },
-  { label: "Gastos", customIcon: "gastos", path: "/gastos" },
-  { label: "Cierre", customIcon: "cierre", path: "/cierre" },
-  { label: "Inventario", customIcon: "inventario", path: "/inventario" },
-] as const;
+import { canUseFeature, type Feature } from "../../shared/lib/planFeatures";
 
-const soporteNavItem = {
-  label: "Soporte",
-  icon: svgPaths.p18c14180,
-  viewBox: "0 0 20 16",
-  path: "/soporte",
-} as const;
+type SidebarItem = {
+  readonly label: string;
+  readonly path: string;
+  readonly customIcon?: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario";
+  readonly icon?: string;
+  readonly viewBox?: string;
+  readonly feature?: Feature;
+};
+
+type SidebarSection = {
+  readonly key: string;
+  readonly label: string;
+  readonly items: readonly SidebarItem[];
+};
+
+const sidebarSections: readonly SidebarSection[] = [
+  {
+    key: "operacion",
+    label: "Operación",
+    items: [
+      { label: "Venta", customIcon: "venta", path: "/dashboard" },
+      { label: "Camarera", customIcon: "camarera", path: "/camarera" },
+      { label: "Mesas", customIcon: "mesas", path: "/tables" },
+      { label: "Cocina", customIcon: "cocina", path: "/cocina" },
+      { label: "Entregas", customIcon: "entregas", path: "/entregas" },
+    ],
+  },
+  {
+    key: "clientes",
+    label: "Clientes",
+    items: [
+      { label: "Clientes", customIcon: "clientes", path: "/clientes" },
+    ],
+  },
+  {
+    key: "inventario",
+    label: "Inventario",
+    items: [
+      { label: "Productos", customIcon: "inventario", path: "/inventario", feature: "advanced_inventory" },
+    ],
+  },
+  {
+    key: "finanzas",
+    label: "Finanzas",
+    items: [
+      { label: "Analíticas", icon: svgPaths.p30837e80, viewBox: "0 0 18 18", path: "/billing" },
+      { label: "Gastos", customIcon: "gastos", path: "/gastos" },
+      { label: "Cierre", customIcon: "cierre", path: "/cierre" },
+    ],
+  },
+];
 
 const PLAN_UPGRADE_WHATSAPP_URL =
   "https://wa.me/18095968986?text=quiero%20subir%20de%20plan%20por%20favor";
@@ -60,21 +94,51 @@ function prefetchRoute(path: string) {
   void routePrefetchers[path]?.();
 }
 
-function filterMainNavForRol(rol: string | null, _plan: string | null) {
+function filterMainNavForRol(rol: string | null): readonly SidebarSection[] {
   const normalized = normalizeTenantRol(rol);
-  let items = [...mainNavItems];
 
-  if (normalized === "admin") return items;
-  if (normalized === "cocina") return items.filter((i) => i.path === "/cocina");
-  if (normalized === "cajera") {
-    const allow = ["/dashboard", "/clientes", "/tables", "/gastos", "/cierre"] as const;
-    return items.filter((i) => allow.includes(i.path as (typeof allow)[number]));
+  const filterSectionItems = (section: SidebarSection, allowedPaths: readonly string[]): SidebarSection => {
+    return {
+      ...section,
+      items: section.items.filter((item) => allowedPaths.includes(item.path)),
+    };
+  };
+
+  let filtered: SidebarSection[] = [];
+
+  if (normalized === "admin") {
+    filtered = [...sidebarSections];
+  } else if (normalized === "cocina") {
+    filtered = sidebarSections.map((s) => filterSectionItems(s, ["/cocina"]));
+  } else if (normalized === "cajera") {
+    const allow = ["/dashboard", "/clientes", "/tables", "/gastos", "/cierre"];
+    filtered = sidebarSections.map((s) => filterSectionItems(s, allow));
+  } else if (normalized === "mesero") {
+    const allow = ["/camarera", "/entregas"];
+    filtered = sidebarSections.map((s) => filterSectionItems(s, allow));
+  } else {
+    filtered = sidebarSections.map((s) => filterSectionItems(s, ["/dashboard"]));
   }
-  if (normalized === "mesero") {
-    const allow = ["/camarera", "/entregas"] as const;
-    return items.filter((i) => allow.includes(i.path as (typeof allow)[number]));
+
+  // Add soporte dynamically if allowed
+  if (showSoporteInSidebar(rol)) {
+    filtered.push({
+      key: "soporte",
+      label: "Ayuda",
+      items: [
+        {
+          key: "soporte",
+          label: "Soporte",
+          icon: svgPaths.p18c14180,
+          viewBox: "0 0 20 16",
+          path: "/soporte",
+        } as any,
+      ],
+    });
   }
-  return items.filter((i) => i.path === "/dashboard");
+
+  // Exclude sections with no items
+  return filtered.filter((section) => section.items.length > 0);
 }
 
 function SidebarCustomIcon({ name }: { name: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" }) {
@@ -260,13 +324,13 @@ function AppLayoutContent() {
     return () => mobileQuery.removeEventListener("change", syncMobileSidebar);
   }, [routerLocation.pathname]);
 
+  const sideNavSections = useMemo(() => {
+    return filterMainNavForRol(rol);
+  }, [rol]);
+
   const sideNavItems = useMemo(() => {
-    const main = filterMainNavForRol(rol, plan);
-    if (showSoporteInSidebar(rol)) {
-      return [...main, soporteNavItem];
-    }
-    return main;
-  }, [rol, plan]);
+    return sideNavSections.flatMap((section) => section.items);
+  }, [sideNavSections]);
 
   useEffect(() => {
     const allowedPaths = new Set<string>(sideNavItems.map((item) => item.path));
@@ -360,61 +424,70 @@ function AppLayoutContent() {
           aria-label="Navegación principal"
           aria-hidden={sidebarHidden}
         >
-          <nav className="flex-1 flex flex-col gap-[8px] px-[16px] pt-[16px]">
-            {sideNavItems.map((item) => {
-              const isActive = location.pathname === item.path;
-              return (
-                <button
-                  key={item.label}
-                  type="button"
-                  onMouseEnter={() => prefetchRoute(item.path)}
-                  onFocus={() => prefetchRoute(item.path)}
-                  onClick={() => {
-                    if (item.path === "/inventario" && !loading && (!plan || plan === "basico")) {
-                      setUpsellType("inventario");
-                      return;
-                    }
-                    navigate(item.path);
-                  }}
-                  aria-current={isActive ? "page" : undefined}
-                  className={`flex gap-[16px] items-center px-[16px] py-[12px] rounded-[8px] cursor-pointer relative border-none text-left w-full transition-colors ${
-                    isActive
-                      ? "bg-primary/10 text-primary dark:bg-[#262626] dark:text-[#ff906d]"
-                      : "bg-transparent text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                  }`}
-                >
-                  {isActive && (
-                    <div className="absolute left-0 top-[8px] bottom-[8px] w-[4px] bg-primary dark:bg-[#ff906d]" aria-hidden />
-                  )}
-                  {"customIcon" in item ? (
-                    <SidebarCustomIcon name={item.customIcon} />
-                  ) : (
-                    <svg className="shrink-0 size-[18px]" fill="none" viewBox={item.viewBox} aria-hidden>
-                      <path
-                        d={item.icon}
-                        fill="currentColor"
-                      />
-                    </svg>
-                  )}
-                  <span
-                    className={`font-['Space_Grotesk',sans-serif] text-[16px] tracking-[-0.4px] ${
-                      isActive ? "font-bold" : ""
-                    }`}
-                  >
-                    {item.label}
+          <nav className="flex-1 flex flex-col gap-[8px] px-[16px] pt-[16px] overflow-y-auto">
+            {sideNavSections.map((section) => (
+              <div key={section.key} className="flex flex-col gap-[6px] mb-[12px] last:mb-0">
+                {section.key !== "soporte" && (
+                  <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-[1px] px-[16px] mb-[4px] font-['Space_Grotesk',sans-serif]">
+                    {section.label}
                   </span>
-                  {item.path === "/inventario" && !loading && (!plan || plan === "basico") && (
-                    <span className="ml-auto flex items-center gap-1.5 text-[9px] text-[#ff906d] bg-[rgba(255,144,109,0.12)] border border-[rgba(255,144,109,0.3)] px-2 py-0.5 rounded font-['Space_Grotesk',sans-serif] font-bold uppercase tracking-[0.5px]">
-                      <svg className="size-[10px] text-[#ff906d] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                        <path d="M7 11V7a5 5 0 0110 0v4" />
-                      </svg>
-                      Solicitar aumento
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+                )}
+                {section.items.map((item) => {
+                  const isActive = location.pathname === item.path;
+                  const isLocked = item.feature ? !canUseFeature(plan, item.feature) : false;
+                  return (
+                    <button
+                      key={item.label}
+                      type="button"
+                      onMouseEnter={() => prefetchRoute(item.path)}
+                      onFocus={() => prefetchRoute(item.path)}
+                      onClick={() => {
+                        if (isLocked && !loading) {
+                          setUpsellType("inventario");
+                          return;
+                        }
+                        navigate(item.path);
+                      }}
+                      aria-current={isActive ? "page" : undefined}
+                      className={`flex gap-[16px] items-center px-[16px] py-[10px] rounded-[8px] cursor-pointer relative border-none text-left w-full transition-colors ${
+                        isActive
+                          ? "bg-primary/10 text-primary dark:bg-[#262626] dark:text-[#ff906d]"
+                          : "bg-transparent text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                      }`}
+                    >
+                      {isActive && (
+                        <div className="absolute left-0 top-[8px] bottom-[8px] w-[4px] bg-primary dark:bg-[#ff906d]" aria-hidden />
+                      )}
+                      {"customIcon" in item && item.customIcon ? (
+                        <SidebarCustomIcon name={item.customIcon} />
+                      ) : (
+                        <svg className="shrink-0 size-[18px]" fill="none" viewBox={item.viewBox} aria-hidden>
+                          <path
+                            d={item.icon}
+                            fill="currentColor"
+                          />
+                        </svg>
+                      )}
+                      <span
+                        className={`font-['Space_Grotesk',sans-serif] text-[15px] tracking-[-0.4px] ${
+                          isActive ? "font-bold" : ""
+                        }`}
+                      >
+                        {item.label}
+                      </span>
+                      {isLocked && !loading && (
+                        <span className="ml-auto flex items-center justify-center p-1 bg-[rgba(255,144,109,0.12)] border border-[rgba(255,144,109,0.3)] rounded animate-pulse" aria-label="Locked feature">
+                          <svg className="size-[10px] text-[#ff906d] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                            <path d="M7 11V7a5 5 0 0110 0v4" />
+                          </svg>
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
           </nav>
 
           <div className="border-t border-sidebar-border px-[16px] py-[16px] flex flex-col gap-[8px]">
