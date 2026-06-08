@@ -23,6 +23,9 @@ export const LOCAL_FIRST_MIRROR_TABLES = [
   "inventario_movimientos",
   "recetas",
   "produccion_cocina",
+  "proveedores",
+  "compras",
+  "compra_detalles",
 ] as const;
 
 export const LOCAL_FIRST_METADATA_TABLES = [
@@ -49,6 +52,7 @@ export const LOCAL_FIRST_IMMEDIATE_TABLES = [
   "sucursales",
   "productos_inventario",
   "recetas",
+  "proveedores",
 ] as const;
 
 export const LOCAL_FIRST_HISTORY_TABLES = [
@@ -71,6 +75,9 @@ export const LOCAL_FIRST_HISTORY_TABLES = [
   "inventario_movimientos",
   "recetas",
   "produccion_cocina",
+  "proveedores",
+  "compras",
+  "compra_detalles",
 ] as const;
 
 export type LocalFirstMirrorTable = (typeof LOCAL_FIRST_MIRROR_TABLES)[number];

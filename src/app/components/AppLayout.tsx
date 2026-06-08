@@ -24,7 +24,7 @@ import { canUseFeature, type Feature } from "../../shared/lib/planFeatures";
 type SidebarItem = {
   readonly label: string;
   readonly path: string;
-  readonly customIcon?: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario";
+  readonly customIcon?: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras";
   readonly icon?: string;
   readonly viewBox?: string;
   readonly feature?: Feature;
@@ -60,6 +60,7 @@ const sidebarSections: readonly SidebarSection[] = [
     label: "Inventario",
     items: [
       { label: "Productos", customIcon: "inventario", path: "/inventario", feature: "advanced_inventory" },
+      { label: "Compras", customIcon: "compras", path: "/compras", feature: "inventory_purchases" },
     ],
   },
   {
@@ -141,7 +142,15 @@ function filterMainNavForRol(rol: string | null): readonly SidebarSection[] {
   return filtered.filter((section) => section.items.length > 0);
 }
 
-function SidebarCustomIcon({ name }: { name: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" }) {
+function SidebarCustomIcon({ name }: { name: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras" }) {
+  if (name === "compras") {
+    return (
+      <svg className="shrink-0 size-[20px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm-8 2a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z" />
+      </svg>
+    );
+  }
+
   if (name === "clientes") {
     return (
       <svg className="shrink-0 size-[20px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden>
