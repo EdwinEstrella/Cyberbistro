@@ -118,6 +118,7 @@ export function Cierre() {
   const [gastos, setGastos] = useState<GastoRow[]>([]);
   const [gastoCategorias, setGastoCategorias] = useState<GastoCategoriaRow[]>([]);
   const [consumosAbiertos, setConsumosAbiertos] = useState<ConsumoAbiertoRow[]>([]);
+  const [cxcPagos, setCxcPagos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [startingCycle, setStartingCycle] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -130,17 +131,25 @@ export function Cierre() {
 
   const resumen = useMemo(() => {
     const pagadas = facturas.filter(f => f.estado === "pagada");
-    const totalPagado = pagadas.reduce((s, f) => s + Number(f.total), 0);
+    const totalPagadoInvoices = pagadas.reduce((s, f) => s + Number(f.total), 0);
     const subtotalPagado = pagadas.reduce((s, f) => s + Number(f.subtotal), 0);
     const itbisPagado = pagadas.reduce((s, f) => s + Number(f.itbis), 0);
+    const totalCxc = cxcPagos.reduce((s, p) => s + Number(p.monto), 0);
+    const totalPagado = totalPagadoInvoices + totalCxc;
+
     const porMetodoMap = new Map<string, { cantidad: number; total: number }>();
     for (const f of pagadas) {
       const k = f.metodo_pago || "otro";
       const cur = porMetodoMap.get(k) ?? { cantidad: 0, total: 0 };
       cur.cantidad += 1; cur.total += Number(f.total); porMetodoMap.set(k, cur);
     }
-    return { pagadas, pendientes: facturas.filter(f => f.estado === "pendiente"), totalPagado, subtotalPagado, itbisPagado, totalPendiente: facturas.filter(f => f.estado === "pendiente").reduce((s, f) => s + Number(f.total), 0), porMetodo: [...porMetodoMap.entries()].map(([etiqueta, v]) => ({ etiqueta: etiquetaMetodo(etiqueta), ...v })).sort((a, b) => b.total - a.total), ticketPromedioPagado: pagadas.length > 0 ? totalPagado / pagadas.length : 0 };
-  }, [facturas]);
+    for (const p of cxcPagos) {
+      const k = p.metodo_pago || "otro";
+      const cur = porMetodoMap.get(k) ?? { cantidad: 0, total: 0 };
+      cur.cantidad += 1; cur.total += Number(p.monto); porMetodoMap.set(k, cur);
+    }
+    return { pagadas, pendientes: facturas.filter(f => f.estado === "pendiente"), totalPagado, subtotalPagado, itbisPagado, totalPendiente: facturas.filter(f => f.estado === "pendiente").reduce((s, f) => s + Number(f.total), 0), porMetodo: [...porMetodoMap.entries()].map(([etiqueta, v]) => ({ etiqueta: etiquetaMetodo(etiqueta), ...v })).sort((a, b) => b.total - a.total), ticketPromedioPagado: pagadas.length > 0 ? totalPagadoInvoices / pagadas.length : 0 };
+  }, [facturas, cxcPagos]);
 
   const resumenCuentasAbiertas = useMemo(() => {
     const subtotal = consumosAbiertos.reduce((s, r) => s + Number(r.subtotal), 0);
@@ -216,7 +225,7 @@ export function Cierre() {
       const sel = openCycle ?? cycleRows[0] ?? null;
 
       if (sel) {
-        const [factData, gastosData] = await Promise.all([
+        const [factData, gastosData, cxcData] = await Promise.all([
           shouldReadLocalFirst(tenantId, ["facturas"]).then(useLocal => useLocal
             ? readLocalMirror<FacturaRow & { sucursal_id?: string | null }>(tenantId, "facturas").then(fs => fs.filter(f => f.sucursal_id === activeSucursalId || !f.sucursal_id))
             : activeSucursalId 
@@ -227,14 +236,21 @@ export function Cierre() {
             : activeSucursalId 
               ? insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, fecha_gasto").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).eq("cycle_id", sel.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? [])
               : insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, fecha_gasto").eq("tenant_id", tenantId).is("sucursal_id", null).eq("cycle_id", sel.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? [])),
+          shouldReadLocalFirst(tenantId, ["cxc_pagos"]).then(useLocal => useLocal
+            ? readLocalMirror<any>(tenantId, "cxc_pagos").then(ps => ps.filter(p => p.cycle_id === sel.id && (p.sucursal_id === activeSucursalId || !p.sucursal_id)))
+            : activeSucursalId
+              ? insforgeClient.database.from("cxc_pagos").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).eq("cycle_id", sel.id).then(r => r.data ?? [])
+              : insforgeClient.database.from("cxc_pagos").select("*").eq("tenant_id", tenantId).is("sucursal_id", null).eq("cycle_id", sel.id).then(r => r.data ?? [])),
         ]);
 
         const allFacturas = (factData as FacturaRow[] | null) ?? [];
         setFacturas(allFacturas.filter((invoice) => invoiceBelongsToCycle(invoice, sel)));
         setGastos((gastosData as GastoRow[]) ?? []);
+        setCxcPagos((cxcData as any[]) ?? []);
       } else {
         setFacturas([]);
         setGastos([]);
+        setCxcPagos([]);
       }
 
       const consumosAbiertosData = consAllArray.filter(c => c.estado !== "pagado");
@@ -390,25 +406,30 @@ export function Cierre() {
     const useLocalFacturas = await shouldReadLocalFirst(tenantId, ["facturas"]);
     const useLocalGastos = await shouldReadLocalFirst(tenantId, ["gastos"]);
     const useLocalTenants = await shouldReadLocalFirst(tenantId, ["tenants"]);
+    const useLocalCxc = await shouldReadLocalFirst(tenantId, ["cxc_pagos"]);
     const now = new Date().toISOString();
 
-      const [facturasAll, gastosAll] = await Promise.all([
+    const [facturasAll, gastosAll, cxcAll] = await Promise.all([
       useLocalFacturas
         ? readLocalMirror<FacturaRow & { sucursal_id?: string | null }>(tenantId, "facturas").then(fs => fs.filter(f => f.sucursal_id === activeSucursalId || !f.sucursal_id))
         : insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("created_at", { ascending: false }).then(r => r.data ?? []),
       useLocalGastos
         ? readLocalMirror<GastoRow & { sucursal_id?: string | null }>(tenantId, "gastos").then(gs => gs.filter(g => g.cycle_id === currentCycle.id && (g.sucursal_id === activeSucursalId || !g.sucursal_id)))
         : insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, fecha_gasto").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).eq("cycle_id", currentCycle.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? []),
+      useLocalCxc
+        ? readLocalMirror<any>(tenantId, "cxc_pagos").then(ps => ps.filter(p => p.cycle_id === currentCycle.id && (p.sucursal_id === activeSucursalId || !p.sucursal_id)))
+        : insforgeClient.database.from("cxc_pagos").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).eq("cycle_id", currentCycle.id).then(r => r.data ?? []),
     ]);
 
     const facturasCiclo = ((facturasAll as FacturaRow[]) ?? []).filter((invoice) => invoiceBelongsToCycle(invoice, currentCycle, now));
     const gastosCiclo = (gastosAll as GastoRow[]) ?? [];
+    const cxcCiclo = (cxcAll as any[]) ?? [];
     const totalGastosCiclo = gastosCiclo.reduce((s, gasto) => s + Number(gasto.monto), 0);
     const pag = facturasCiclo.filter((f: any) => f.estado === "pagada");
 
     const deviceId = await getDeviceId();
 
-    if (pag.length === 0) {
+    if (pag.length === 0 && cxcCiclo.length === 0) {
       await enqueueLocalWrite({ tenantId, tableName: "cierres_operativos", rowId: currentCycle.id, op: "delete", deviceId });
       setPrintMsg(`Ciclo #${currentCycle.cycle_number} descartado porque no tuvo ventas. Puedes iniciarlo de nuevo.`);
       setPrinting(false);
@@ -429,15 +450,20 @@ export function Cierre() {
     }
 
     if (tenantData) {
+      const cxcCiclo = (cxcAll as any[]) ?? [];
+      const totalCxcCiclo = cxcCiclo.reduce((s, p) => s + Number(p.monto), 0);
+      const totalPag = pag.reduce((s: number, f: any) => s + Number(f.total), 0) + totalCxcCiclo;
+
       const metMap = new Map<string, any>();
       for (const f of pag) { const k = f.metodo_pago || "otro"; const cur = metMap.get(k) ?? { etiqueta: etiquetaMetodo(k), cantidad: 0, total: 0 }; cur.cantidad++; cur.total += Number(f.total); metMap.set(k, cur); }
-      const totalPag = pag.reduce((s: number, f: any) => s + Number(f.total), 0);
+      for (const p of cxcCiclo) { const k = p.metodo_pago || "otro"; const cur = metMap.get(k) ?? { etiqueta: etiquetaMetodo(k), cantidad: 0, total: 0 }; cur.cantidad++; cur.total += Number(p.monto); metMap.set(k, cur); }
+
       const { paperWidthMm } = getThermalPrintSettings();
       const html = buildCierreDiaReceiptHtml(tenantData as any, {
         fechaOperacion: ymdToLongLabel(fecha), cicloNumero: currentCycle.cycle_number, generadoEn: formatCycleDateTime(now), generadoAtIso: now, abiertoAtIso: getCycleStartIso(currentCycle), cerradoAtIso: now,
         facturasPagadas: pag.length, facturasPendientes: facturasCiclo.filter((f: any) => f.estado === "pendiente").length,
         totalPagado: totalPag, subtotalPagado: pag.reduce((s: number, f: any) => s + Number(f.subtotal), 0), itbisPagado: pag.reduce((s: number, f: any) => s + Number(f.itbis), 0),
-        porMetodo: [...metMap.values()].sort((a, b) => b.total - a.total), ticketPromedioPagado: pag.length ? totalPag / pag.length : 0,
+        porMetodo: [...metMap.values()].sort((a, b) => b.total - a.total), ticketPromedioPagado: pag.length ? pag.reduce((s: number, f: any) => s + Number(f.total), 0) / pag.length : 0,
         gastosTotal: totalGastosCiclo, gastosCantidad: gastosCiclo.length, netoOperativo: totalPag - totalGastosCiclo,
       }, paperWidthMm);
       const res = await printThermalHtml(html);

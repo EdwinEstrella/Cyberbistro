@@ -259,7 +259,7 @@ export function MesaCloseAccountModal({
   const [loading, setLoading] = useState(false);
   const [charging, setCharging] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<
-    "efectivo" | "tarjeta" | "digital" | "transferencia"
+    "efectivo" | "tarjeta" | "digital" | "transferencia" | "fiado"
   >("efectivo");
   const [ncfFiscalActive, setNcfFiscalActive] = useState(false);
   const [selectedNcfType, setSelectedNcfType] = useState<NcfBCode>(DEFAULT_NCF_B_CODE);
@@ -493,14 +493,17 @@ export function MesaCloseAccountModal({
    * `mode === "all"`: todas las personas con ítems. `mode === n`: solo persona n.
    */
   async function createSplitInvoices(mode: "all" | number) {
-  if (!tenantId) return;
-  // Ensure there is an open operational cycle before creating invoices
-  const cycleOpen = await hasOpenCycle(tenantId, activeSucursalId);
-  if (!cycleOpen) {
-    alert("No hay un ciclo operativo abierto. Inicie un ciclo antes de cobrar.");
-    return;
-  }
     if (!tenantId) return;
+    if (paymentMethod === "fiado" && !selectedCustomer) {
+      alert("Para registrar una venta al fiado, es obligatorio seleccionar un cliente.");
+      return;
+    }
+    // Ensure there is an open operational cycle before creating invoices
+    const cycleOpen = await hasOpenCycle(tenantId, activeSucursalId);
+    if (!cycleOpen) {
+      alert("No hay un ciclo operativo abierto. Inicie un ciclo antes de cobrar.");
+      return;
+    }
 
     const groups = collectPersonGroups();
     const personsWithItems = Array.from({ length: splitParts }, (_, i) => i + 1).filter(
@@ -584,14 +587,14 @@ export function MesaCloseAccountModal({
           numero_factura: nextFacturaNumber++,
           mesa_numero: mesaNumero,
           metodo_pago: paymentMethod,
-          estado: "pagada",
+          estado: paymentMethod === "fiado" ? "pendiente" : "pagada",
           subtotal,
           itbis,
           propina: 0,
           total,
           items: facturaItems,
           notas: `Mesa ${mesaNumero} — Persona ${personIndex} de ${splitParts} (${consumosToInvoice.length} líneas)`,
-          pagada_at: now,
+          pagada_at: paymentMethod === "fiado" ? null : now,
           created_at: now,
           updated_at: now,
         };
@@ -621,6 +624,34 @@ export function MesaCloseAccountModal({
           payload: insertRow,
           deviceId,
         });
+
+        if (paymentMethod === "fiado" && selectedCustomer) {
+          const cxcId = crypto.randomUUID();
+          const dueDate = new Date();
+          dueDate.setDate(dueDate.getDate() + 30);
+          await enqueueLocalWrite({
+            tenantId,
+            tableName: "cuentas_cobrar",
+            rowId: cxcId,
+            op: "insert",
+            payload: {
+              id: cxcId,
+              tenant_id: tenantId,
+              sucursal_id: activeSucursalId,
+              factura_id: localFacturaId,
+              customer_id: selectedCustomer.id,
+              monto_total: total,
+              monto_pagado: 0.00,
+              fecha_emision: now,
+              fecha_vencimiento: dueDate.toISOString(),
+              estado: "pendiente",
+              observacion: `Venta fiada parcial POS (Mesa ${mesaNumero}, Persona ${personIndex})`,
+              created_at: now,
+              updated_at: now,
+            },
+            deviceId,
+          });
+        }
 
         if (!cashDrawerOpened) {
           await openCashDrawerSafely();
@@ -677,12 +708,15 @@ export function MesaCloseAccountModal({
 
   async function createInvoice() {
     if (!tenantId) return;
+    if (paymentMethod === "fiado" && !selectedCustomer) {
+      alert("Para registrar una venta al fiado, es obligatorio seleccionar un cliente.");
+      return;
+    }
     const cycleOpen = await hasOpenCycle(tenantId, activeSucursalId);
     if (!cycleOpen) {
       alert("No hay un ciclo operativo abierto. Inicie un ciclo antes de cobrar.");
       return;
     }
-    if (!tenantId) return;
     if (mesaConsumos.length === 0) {
       alert("No hay consumos pendientes para cobrar");
       return;
@@ -744,7 +778,7 @@ export function MesaCloseAccountModal({
       sucursal_id: activeSucursalId,
       numero_factura: nextFacturaNumber,
       metodo_pago: paymentMethod,
-      estado: "pagada",
+      estado: paymentMethod === "fiado" ? "pendiente" : "pagada",
       subtotal,
       itbis,
       propina: 0,
@@ -752,7 +786,7 @@ export function MesaCloseAccountModal({
       items: facturaItems,
       monto_recibido: cashReceived.amount,
       cambio_devuelto: cashReceived.change,
-      pagada_at: now,
+      pagada_at: paymentMethod === "fiado" ? null : now,
       created_at: now,
       updated_at: now,
       mesa_numero: mesaNumero,
@@ -784,6 +818,34 @@ export function MesaCloseAccountModal({
       payload: facturaData,
       deviceId,
     });
+
+    if (paymentMethod === "fiado" && selectedCustomer) {
+      const cxcId = crypto.randomUUID();
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + 30); // 30 days default
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "cuentas_cobrar",
+        rowId: cxcId,
+        op: "insert",
+        payload: {
+          id: cxcId,
+          tenant_id: tenantId,
+          sucursal_id: activeSucursalId,
+          factura_id: localFacturaId,
+          customer_id: selectedCustomer.id,
+          monto_total: total,
+          monto_pagado: 0.00,
+          fecha_emision: now,
+          fecha_vencimiento: dueDate.toISOString(),
+          estado: "pendiente",
+          observacion: `Registrada automáticamente desde POS (Mesa ${mesaNumero}, Factura #${nextFacturaNumber})`,
+          created_at: now,
+          updated_at: now,
+        },
+        deviceId,
+      });
+    }
 
     await openCashDrawerSafely();
 
@@ -1184,6 +1246,7 @@ export function MesaCloseAccountModal({
                     { value: "tarjeta" as const, label: "Tarjeta", icon: "💳" },
                     { value: "digital" as const, label: "Digital", icon: "📱" },
                     { value: "transferencia" as const, label: "Transf.", icon: "🏦" },
+                    { value: "fiado" as const, label: "Fiado", icon: "🤝" },
                   ] as const
                 ).map((method) => {
                   const active = paymentMethod === method.value;
