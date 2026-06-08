@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { Plus, RefreshCw, Layers, ClipboardList, Flame, Trash2, ArrowUpDown } from "lucide-react";
 import { insforgeClient } from "../../../shared/lib/insforge";
+import { formatPresentationStock, calculateCostPerMl } from "../../../shared/lib/presentationUnits";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { useSucursal } from "../../../app/context/SucursalContext";
@@ -17,6 +18,8 @@ interface InsumoRow {
   stock_minimo: number;
   costo_promedio: number;
   activo: boolean;
+  ml_por_botella: number | null;
+  costo_compra: number | null;
 }
 
 interface MovimientoRow {
@@ -119,6 +122,8 @@ export function Inventario() {
     stock_minimo: "",
     stock_actual: "", // Only set on creation
     costo_promedio: "",
+    ml_por_botella: "",
+    costo_compra: "",
   });
 
   const [recetaForm, setRecetaForm] = useState({
@@ -209,6 +214,14 @@ export function Inventario() {
     return recetas.filter(r => r.plato_id === selectedPlatoId);
   }, [selectedPlatoId, recetas]);
 
+  const costoTotalReceta = useMemo(() => {
+    return activeRecipes.reduce((acc, item) => {
+      const insumo = insumosMap.get(item.insumo_id);
+      const costoInsumo = insumo ? (Number(insumo.costo_promedio) || 0) : 0;
+      return acc + (Number(item.cantidad) || 0) * costoInsumo;
+    }, 0);
+  }, [activeRecipes, insumosMap]);
+
   // Actions
   async function crearInsumo(e: FormEvent) {
     e.preventDefault();
@@ -224,7 +237,13 @@ export function Inventario() {
       const id = crypto.randomUUID();
       const stock = Number(insumoForm.stock_actual) || 0;
       const min = Number(insumoForm.stock_minimo) || 0;
-      const costo = Number(insumoForm.costo_promedio) || 0;
+      
+      const mlBotella = insumoForm.unidad_base === "ml" ? (Number(insumoForm.ml_por_botella) || 0) : 0;
+      const costoCompra = insumoForm.unidad_base === "ml" ? (Number(insumoForm.costo_compra) || 0) : 0;
+      
+      const costo = (insumoForm.unidad_base === "ml" && mlBotella > 0 && costoCompra > 0)
+        ? calculateCostPerMl(costoCompra, mlBotella)
+        : (Number(insumoForm.costo_promedio) || 0);
 
       const payload = {
         id,
@@ -236,6 +255,8 @@ export function Inventario() {
         stock_actual: stock,
         stock_minimo: min,
         costo_promedio: costo,
+        ml_por_botella: mlBotella > 0 ? mlBotella : null,
+        costo_compra: costoCompra > 0 ? costoCompra : null,
         activo: true,
       };
 
@@ -282,6 +303,8 @@ export function Inventario() {
         stock_minimo: "",
         stock_actual: "",
         costo_promedio: "",
+        ml_por_botella: "",
+        costo_compra: "",
       });
       setShowInsumoModal(false);
       setSuccessMsg("Insumo creado correctamente.");
@@ -693,21 +716,45 @@ export function Inventario() {
                           <div className="flex flex-col">
                             <span className="font-['Inter',sans-serif] text-[#6b7280] text-[9px] uppercase">Stock Actual</span>
                             <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] mt-0.5">
-                              {insumo.stock_actual} {insumo.unidad_base}
+                              {insumo.unidad_base === "ml" && insumo.ml_por_botella && insumo.ml_por_botella > 0
+                                ? formatPresentationStock(insumo.stock_actual, insumo.ml_por_botella)
+                                : `${insumo.stock_actual} ${insumo.unidad_base}`}
                             </span>
+                            {insumo.unidad_base === "ml" && insumo.ml_por_botella && insumo.ml_por_botella > 0 && (
+                              <span className="font-['Inter',sans-serif] text-[9px] text-[#6b7280] mt-0.5">
+                                ({insumo.stock_actual} ml)
+                              </span>
+                            )}
                           </div>
                           <div className="flex flex-col">
                             <span className="font-['Inter',sans-serif] text-[#6b7280] text-[9px] uppercase">Mínimo</span>
                             <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#adaaaa] text-[13px] mt-0.5">
-                              {insumo.stock_minimo} {insumo.unidad_base}
+                              {insumo.unidad_base === "ml" && insumo.ml_por_botella && insumo.ml_por_botella > 0
+                                ? formatPresentationStock(insumo.stock_minimo, insumo.ml_por_botella)
+                                : `${insumo.stock_minimo} ${insumo.unidad_base}`}
                             </span>
                           </div>
                         </div>
 
-                        <div className="flex justify-between items-center text-[11px] font-['Inter',sans-serif] text-[#adaaaa] pt-1">
-                          <span>Costo Promedio:</span>
-                          <span className="font-bold text-white">{RD(insumo.costo_promedio)}</span>
-                        </div>
+                        {insumo.unidad_base === "ml" && insumo.ml_por_botella && insumo.ml_por_botella > 0 ? (
+                          <div className="flex flex-col gap-1 pt-1 border-t border-[rgba(72,72,71,0.1)] text-[11px] font-['Inter',sans-serif] text-[#adaaaa]">
+                            {insumo.costo_compra !== null && insumo.costo_compra > 0 && (
+                              <div className="flex justify-between items-center">
+                                <span>Costo Botella:</span>
+                                <span className="font-bold text-white">{RD(insumo.costo_compra)}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between items-center">
+                              <span>Costo Promedio (ml):</span>
+                              <span className="font-bold text-white">RD$ {insumo.costo_promedio.toFixed(4)}</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex justify-between items-center text-[11px] font-['Inter',sans-serif] text-[#adaaaa] pt-1 border-t border-[rgba(72,72,71,0.1)]">
+                            <span>Costo Promedio:</span>
+                            <span className="font-bold text-white">{RD(insumo.costo_promedio)}</span>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -791,39 +838,84 @@ export function Inventario() {
                           Este plato no tiene insumos ni recetas asociadas. El stock no se descontará en ventas hasta que asocies materias primas.
                         </div>
                       ) : (
-                        <div className="overflow-hidden rounded-[12px] border border-[rgba(72,72,71,0.18)]">
-                          <table className="w-full border-collapse">
-                            <thead>
-                              <tr className="bg-[#1a1a1a] text-left font-['Inter',sans-serif] text-[10px] uppercase tracking-[0.8px] text-[#adaaaa]">
-                                <th className="px-4 py-3">Insumo / Ingrediente</th>
-                                <th className="px-4 py-3">Cantidad por venta</th>
-                                <th className="px-4 py-3">Unidad</th>
-                                <th className="px-4 py-3 w-[70px]"></th>
-                              </tr>
-                            </thead>
-                            <tbody className="font-['Inter',sans-serif] text-[13px] text-white">
-                              {activeRecipes.map((item) => {
-                                const insumo = insumosMap.get(item.insumo_id);
-                                return (
-                                  <tr key={item.id} className="border-t border-[rgba(72,72,71,0.14)]">
-                                    <td className="px-4 py-2.5 font-bold">{insumo?.nombre || "Cargando..."}</td>
-                                    <td className="px-4 py-2.5">{item.cantidad}</td>
-                                    <td className="px-4 py-2.5 font-['Space_Grotesk',sans-serif] text-[12px] text-[#ff906d] font-bold uppercase">{item.unidad}</td>
-                                    <td className="px-4 py-2.5 text-right">
-                                      <button
-                                        type="button"
-                                        disabled={saving}
-                                        onClick={() => void eliminarIngrediente(item.id)}
-                                        className="bg-[rgba(255,113,108,0.1)] border border-[rgba(255,113,108,0.25)] hover:bg-[#ff716c] hover:text-black rounded-[8px] p-2 text-[#ff716c] cursor-pointer transition-colors"
-                                      >
-                                        <Trash2 className="size-[14px]" />
-                                      </button>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
+                        <div className="flex flex-col gap-4">
+                          <div className="overflow-hidden rounded-[12px] border border-[rgba(72,72,71,0.18)]">
+                            <table className="w-full border-collapse">
+                              <thead>
+                                <tr className="bg-[#1a1a1a] text-left font-['Inter',sans-serif] text-[10px] uppercase tracking-[0.8px] text-[#adaaaa]">
+                                  <th className="px-4 py-3">Insumo / Ingrediente</th>
+                                  <th className="px-4 py-3">Cantidad por venta</th>
+                                  <th className="px-4 py-3">Unidad</th>
+                                  <th className="px-4 py-3 text-right">Costo Insumo</th>
+                                  <th className="px-4 py-3 w-[70px]"></th>
+                                </tr>
+                              </thead>
+                              <tbody className="font-['Inter',sans-serif] text-[13px] text-white">
+                                {activeRecipes.map((item) => {
+                                  const insumo = insumosMap.get(item.insumo_id);
+                                  return (
+                                    <tr key={item.id} className="border-t border-[rgba(72,72,71,0.14)]">
+                                      <td className="px-4 py-2.5 font-bold">{insumo?.nombre || "Cargando..."}</td>
+                                      <td className="px-4 py-2.5">{item.cantidad}</td>
+                                      <td className="px-4 py-2.5 font-['Space_Grotesk',sans-serif] text-[12px] text-[#ff906d] font-bold uppercase">{item.unidad}</td>
+                                      <td className="px-4 py-2.5 text-right font-['Space_Grotesk',sans-serif] font-bold text-white">
+                                        {insumo ? RD(item.cantidad * insumo.costo_promedio) : "-"}
+                                      </td>
+                                      <td className="px-4 py-2.5 text-right">
+                                        <button
+                                          type="button"
+                                          disabled={saving}
+                                          onClick={() => void eliminarIngrediente(item.id)}
+                                          className="bg-[rgba(255,113,108,0.1)] border border-[rgba(255,113,108,0.25)] hover:bg-[#ff716c] hover:text-black rounded-[8px] p-2 text-[#ff716c] cursor-pointer transition-colors"
+                                        >
+                                          <Trash2 className="size-[14px]" />
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {(() => {
+                            const precioPlato = platos.find(p => p.id === selectedPlatoId)?.precio || 0;
+                            const margenBruto = precioPlato - costoTotalReceta;
+                            const margenPorcentual = precioPlato > 0 ? (margenBruto / precioPlato) * 100 : 0;
+                            return (
+                              <div className="bg-[#181818] border border-[rgba(255,144,109,0.15)] rounded-[16px] p-4 flex flex-col gap-3">
+                                <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[12px] uppercase tracking-[0.5px]">
+                                  Resumen Financiero del Plato
+                                </span>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                                  <div className="bg-[#111] border border-[rgba(72,72,71,0.15)] rounded-[10px] p-2.5 flex flex-col">
+                                    <span className="font-['Inter',sans-serif] text-[#6b7280] text-[8.5px] uppercase tracking-[0.5px]">Costo Receta</span>
+                                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] mt-0.5">
+                                      {RD(costoTotalReceta)}
+                                    </span>
+                                  </div>
+                                  <div className="bg-[#111] border border-[rgba(72,72,71,0.15)] rounded-[10px] p-2.5 flex flex-col">
+                                    <span className="font-['Inter',sans-serif] text-[#6b7280] text-[8.5px] uppercase tracking-[0.5px]">Precio Venta</span>
+                                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] mt-0.5">
+                                      {RD(precioPlato)}
+                                    </span>
+                                  </div>
+                                  <div className="bg-[#111] border border-[rgba(72,72,71,0.15)] rounded-[10px] p-2.5 flex flex-col">
+                                    <span className="font-['Inter',sans-serif] text-[#6b7280] text-[8.5px] uppercase tracking-[0.5px]">Margen Bruto</span>
+                                    <span className={`font-['Space_Grotesk',sans-serif] font-bold text-[13px] mt-0.5 ${margenBruto >= 0 ? "text-[#59ee50]" : "text-[#ff716c]"}`}>
+                                      {RD(margenBruto)}
+                                    </span>
+                                  </div>
+                                  <div className="bg-[#111] border border-[rgba(72,72,71,0.15)] rounded-[10px] p-2.5 flex flex-col">
+                                    <span className="font-['Inter',sans-serif] text-[#6b7280] text-[8.5px] uppercase tracking-[0.5px]">Margen (%)</span>
+                                    <span className={`font-['Space_Grotesk',sans-serif] font-bold text-[13px] mt-0.5 ${margenPorcentual >= 30 ? "text-[#59ee50]" : margenPorcentual >= 15 ? "text-[#ff906d]" : "text-[#ff716c]"}`}>
+                                      {margenPorcentual.toFixed(1)}%
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </div>
                       )}
                     </div>
@@ -1302,6 +1394,38 @@ export function Inventario() {
                   />
                 </div>
               </div>
+
+              {insumoForm.unidad_base === "ml" && (
+                <div className="grid grid-cols-2 gap-3 border border-[rgba(255,144,109,0.18)] bg-[rgba(255,144,109,0.03)] p-3.5 rounded-[12px] flex flex-col gap-2">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="font-['Inter',sans-serif] text-[#ff906d] text-[10px] uppercase tracking-[0.5px]">Contenido Botella (ml)</label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="1"
+                      placeholder="Ej: 750"
+                      value={insumoForm.ml_por_botella}
+                      onChange={(e) => setInsumoForm(prev => ({ ...prev, ml_por_botella: e.target.value }))}
+                      className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="font-['Inter',sans-serif] text-[#ff906d] text-[10px] uppercase tracking-[0.5px]">Costo Botella (RD$)</label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      placeholder="Ej: 15.00"
+                      value={insumoForm.costo_compra}
+                      onChange={(e) => setInsumoForm(prev => ({ ...prev, costo_compra: e.target.value }))}
+                      className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none"
+                    />
+                  </div>
+                  <div className="col-span-2 text-[10.5px] text-[#adaaaa] font-['Inter',sans-serif] leading-tight">
+                    * Al configurar la botella, el costo inicial por mililitro se calculará automáticamente y no será necesario calcularlo manualmente.
+                  </div>
+                </div>
+              )}
 
               <div className="flex gap-3 justify-end mt-4">
                 <button
