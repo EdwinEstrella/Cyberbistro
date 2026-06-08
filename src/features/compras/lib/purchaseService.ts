@@ -23,6 +23,9 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
   if (!items || items.length === 0) {
     throw new Error("La compra debe contener al menos un ítem.");
   }
+  if (tipoPago === "credito" && !proveedorId) {
+    throw new Error("Se requiere un proveedor para registrar una compra a crédito.");
+  }
 
   const deviceId = await getDeviceId();
 
@@ -250,6 +253,38 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
         fecha_gasto: fechaCompra,
         notas: observacion || `Registrado automáticamente desde Módulo de Compras (ID: ${compraId})`,
         created_by_auth_user_id: usuarioId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      deviceId,
+    });
+  }
+
+  // 5. Enqueue Local Write for Cuenta por Pagar if credito
+  if (tipoPago === "credito") {
+    if (!proveedorId) {
+      throw new Error("Se requiere un proveedor para registrar una compra a crédito.");
+    }
+    const cxpId = crypto.randomUUID();
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + 30); // 30 days default
+    await enqueueLocalWrite({
+      tenantId,
+      tableName: "cuentas_pagar",
+      rowId: cxpId,
+      op: "insert",
+      payload: {
+        id: cxpId,
+        tenant_id: tenantId,
+        sucursal_id: sucursalId,
+        compra_id: compraId,
+        proveedor_id: proveedorId,
+        monto_total: totalCompra,
+        monto_pagado: 0.00,
+        fecha_emision: fechaCompra,
+        fecha_vencimiento: dueDate.toISOString(),
+        estado: "pendiente",
+        observacion: observacion || `Registrada automáticamente desde Módulo de Compras (ID: ${compraId})`,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       },
