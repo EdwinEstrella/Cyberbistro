@@ -40,7 +40,39 @@ describe("purchaseService", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(readLocalMirror).mockResolvedValue(mockProducts as any);
+    vi.mocked(readLocalMirror).mockImplementation(async (_tenantId, tableName) => {
+      if (tableName === "productos_inventario") {
+        return mockProducts as any;
+      }
+      if (tableName === "cierres_operativos") {
+        return [
+          {
+            id: "cycle-active-123",
+            closed_at: null,
+            sucursal_id: "suc-1",
+            opened_at: "2026-06-08T10:00:00Z",
+          }
+        ] as any;
+      }
+      if (tableName === "gasto_categorias") {
+        return [
+          {
+            id: "cat-compras-uuid",
+            nombre: "Compras",
+            activa: true,
+          }
+        ] as any;
+      }
+      if (tableName === "proveedores") {
+        return [
+          {
+            id: "prov-1",
+            nombre: "Distribuidora Brugal",
+          }
+        ] as any;
+      }
+      return [] as any;
+    });
   });
 
   it("calculates weighted average cost correctly for simple items", async () => {
@@ -136,5 +168,114 @@ describe("purchaseService", () => {
     expect(payload).toBeDefined();
     expect(payload.stock_actual).toBe(10);
     expect(payload.costo_promedio).toBe(15.00); // equals purchase cost
+  });
+
+  it("throws error if contado purchase has no active cycle", async () => {
+    // Mock readLocalMirror to return no cycles
+    vi.mocked(readLocalMirror).mockImplementation(async (_tenantId, tableName) => {
+      if (tableName === "productos_inventario") return mockProducts as any;
+      if (tableName === "cierres_operativos") return [] as any;
+      return [] as any;
+    });
+
+    await expect(
+      registrarCompra({
+        tenantId: mockTenantId,
+        sucursalId: "suc-1",
+        usuarioId: "user-1",
+        proveedorId: "prov-1",
+        numeroFactura: "FAC-ERR",
+        tipoPago: "contado",
+        items: [
+          {
+            producto_id: "prod-simple",
+            cantidad: 5,
+            costo_unitario: 8.00,
+          },
+        ],
+      })
+    ).rejects.toThrow("No hay un ciclo operativo abierto para registrar una compra al contado.");
+  });
+
+  it("allows credito purchase even with no active cycle and does not register a gasto", async () => {
+    // Mock readLocalMirror to return no cycles
+    vi.mocked(readLocalMirror).mockImplementation(async (_tenantId, tableName) => {
+      if (tableName === "productos_inventario") return mockProducts as any;
+      if (tableName === "cierres_operativos") return [] as any;
+      return [] as any;
+    });
+
+    const result = await registrarCompra({
+      tenantId: mockTenantId,
+      sucursalId: "suc-1",
+      usuarioId: "user-1",
+      proveedorId: "prov-1",
+      numeroFactura: "FAC-CRED",
+      tipoPago: "credito",
+      items: [
+        {
+          producto_id: "prod-simple",
+          cantidad: 5,
+          costo_unitario: 8.00,
+        },
+      ],
+    });
+
+    expect(result.compraId).toBeDefined();
+    // Verify that NO gastos table write is enqueued
+    const gastoCall = vi.mocked(enqueueLocalWrite).mock.calls.find(
+      call => call[0].tableName === "gastos"
+    );
+    expect(gastoCall).toBeUndefined();
+  });
+
+  it("creates Compras category if it does not exist when registering contado purchase", async () => {
+    vi.mocked(readLocalMirror).mockImplementation(async (_tenantId, tableName) => {
+      if (tableName === "productos_inventario") return mockProducts as any;
+      if (tableName === "cierres_operativos") {
+        return [
+          {
+            id: "cycle-active-123",
+            closed_at: null,
+            sucursal_id: "suc-1",
+            opened_at: "2026-06-08T10:00:00Z",
+          }
+        ] as any;
+      }
+      if (tableName === "gasto_categorias") return [] as any; // No categories
+      return [] as any;
+    });
+
+    await registrarCompra({
+      tenantId: mockTenantId,
+      sucursalId: "suc-1",
+      usuarioId: "user-1",
+      proveedorId: "prov-1",
+      numeroFactura: "FAC-CAT",
+      tipoPago: "contado",
+      items: [
+        {
+          producto_id: "prod-simple",
+          cantidad: 5,
+          costo_unitario: 8.00,
+        },
+      ],
+    });
+
+    // Check that category insert is enqueued
+    const catCall = vi.mocked(enqueueLocalWrite).mock.calls.find(
+      call => call[0].tableName === "gasto_categorias" && call[0].op === "insert"
+    );
+    expect(catCall).toBeDefined();
+    expect((catCall?.[0] as any)?.payload?.nombre).toBe("Compras");
+
+    // Check that gasto is enqueued
+    const gastoCall = vi.mocked(enqueueLocalWrite).mock.calls.find(
+      call => call[0].tableName === "gastos" && call[0].op === "insert"
+    );
+    expect(gastoCall).toBeDefined();
+    const gastoPayload = gastoCall?.[0].payload as any;
+    expect(gastoPayload.monto).toBe(40.00); // 5 * 8.00 = 40.00
+    expect(gastoPayload.cycle_id).toBe("cycle-active-123");
   });
 });
