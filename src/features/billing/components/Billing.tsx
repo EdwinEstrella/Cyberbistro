@@ -8,6 +8,7 @@ import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { cacheLogoFromUrl } from "../../../shared/lib/logoCache";
 import { useSucursal } from "../../../app/context/SucursalContext";
+import { canUseFeature } from "../../../shared/lib/planFeatures";
 // useTheme removed
 import {
   Dialog,
@@ -18,7 +19,7 @@ import {
 } from "../../../shared/ui/dialog";
 
 type InvoiceStatus = "pagada" | "pendiente" | "cancelada";
-type BillingView = "facturas" | "ciclos";
+type BillingView = "facturas" | "ciclos" | "finanzas";
 
 interface InvoiceItem {
   plato_id: number;
@@ -234,7 +235,7 @@ function ymdToLongLabel(ymd: string): string {
 }
 
 export function Billing() {
-  const { tenantId, loading: authLoading, rol } = useAuth();
+  const { tenantId, loading: authLoading, rol, plan } = useAuth();
   const { activeSucursalId } = useSucursal();
   // theme was declared but never read
   const [view, setView] = useState<BillingView>("facturas");
@@ -252,12 +253,26 @@ export function Billing() {
   const [dateTo, setDateTo] = useState("");
   const [expandedCycleId, setExpandedCycleId] = useState<string | null>(null);
 
-const loadBillingData = useCallback(async () => {
+  // Cuentas por Cobrar & Pagar Pro States
+  const [cuentasCobrar, setCuentasCobrar] = useState<any[]>([]);
+  const [cxcPagos, setCxcPagos] = useState<any[]>([]);
+  const [cuentasPagar, setCuentasPagar] = useState<any[]>([]);
+  const [cxpPagos, setCxpPagos] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [proveedores, setProveedores] = useState<any[]>([]);
+
+  const loadBillingData = useCallback(async () => {
     if (!tenantId) {
       setInvoices([]);
       setCycles([]);
       setExpenses([]);
       setExpenseCategories([]);
+      setCuentasCobrar([]);
+      setCxcPagos([]);
+      setCuentasPagar([]);
+      setCxpPagos([]);
+      setCustomers([]);
+      setProveedores([]);
       setLoading(false);
       return;
     }
@@ -266,14 +281,38 @@ const loadBillingData = useCallback(async () => {
 
     await ensureAuthSessionFresh();
 
-    const [useLocalInvoices, useLocalCycles, useLocalExpenses, useLocalExpenseCategories] = await Promise.all([
+    const [
+      useLocalInvoices,
+      useLocalCycles,
+      useLocalExpenses,
+      useLocalExpenseCategories,
+      useLocalCxc,
+      useLocalCxp,
+      useLocalCustomers,
+      useLocalProveedores
+    ] = await Promise.all([
       shouldReadLocalFirst(tenantId, ["facturas"]),
       shouldReadLocalFirst(tenantId, ["cierres_operativos"]),
       shouldReadLocalFirst(tenantId, ["gastos"]),
       shouldReadLocalFirst(tenantId, ["gasto_categorias"]),
+      shouldReadLocalFirst(tenantId, ["cuentas_cobrar", "cxc_pagos"]),
+      shouldReadLocalFirst(tenantId, ["cuentas_pagar", "cxp_pagos"]),
+      shouldReadLocalFirst(tenantId, ["customers"]),
+      shouldReadLocalFirst(tenantId, ["proveedores"]),
     ]);
 
-    const [invoicesRes, cyclesRes, expensesRes, expenseCategoriesRes] = await Promise.all([
+    const [
+      invoicesRes,
+      cyclesRes,
+      expensesRes,
+      expenseCategoriesRes,
+      cxcRes,
+      cxcPagosRes,
+      cxpRes,
+      cxpPagosRes,
+      customersRes,
+      proveedoresRes
+    ] = await Promise.all([
       useLocalInvoices
         ? { data: await readLocalMirror<Invoice & { sucursal_id?: string | null }>(tenantId, "facturas").then(r => r.filter(f => !f.sucursal_id || f.sucursal_id === activeSucursalId).sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())), error: null }
         : activeSucursalId
@@ -294,6 +333,32 @@ const loadBillingData = useCallback(async () => {
         : activeSucursalId
           ? insforgeClient.database.from("gasto_categorias").select("id, nombre, color").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
           : insforgeClient.database.from("gasto_categorias").select("id, nombre, color").eq("tenant_id", tenantId).is("sucursal_id", null),
+      useLocalCxc
+        ? { data: await readLocalMirror<any>(tenantId, "cuentas_cobrar").then(r => r.filter(c => !c.sucursal_id || c.sucursal_id === activeSucursalId)), error: null }
+        : activeSucursalId
+          ? insforgeClient.database.from("cuentas_cobrar").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
+          : insforgeClient.database.from("cuentas_cobrar").select("*").eq("tenant_id", tenantId).is("sucursal_id", null),
+      useLocalCxc
+        ? { data: await readLocalMirror<any>(tenantId, "cxc_pagos").then(r => r.filter(p => !p.sucursal_id || p.sucursal_id === activeSucursalId)), error: null }
+        : activeSucursalId
+          ? insforgeClient.database.from("cxc_pagos").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
+          : insforgeClient.database.from("cxc_pagos").select("*").eq("tenant_id", tenantId).is("sucursal_id", null),
+      useLocalCxp
+        ? { data: await readLocalMirror<any>(tenantId, "cuentas_pagar").then(r => r.filter(c => !c.sucursal_id || c.sucursal_id === activeSucursalId)), error: null }
+        : activeSucursalId
+          ? insforgeClient.database.from("cuentas_pagar").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
+          : insforgeClient.database.from("cuentas_pagar").select("*").eq("tenant_id", tenantId).is("sucursal_id", null),
+      useLocalCxp
+        ? { data: await readLocalMirror<any>(tenantId, "cxp_pagos").then(r => r.filter(p => !p.sucursal_id || p.sucursal_id === activeSucursalId)), error: null }
+        : activeSucursalId
+          ? insforgeClient.database.from("cxp_pagos").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
+          : insforgeClient.database.from("cxp_pagos").select("*").eq("tenant_id", tenantId).is("sucursal_id", null),
+      useLocalCustomers
+        ? { data: await readLocalMirror<any>(tenantId, "customers"), error: null }
+        : insforgeClient.database.from("customers").select("id, name").eq("tenant_id", tenantId),
+      useLocalProveedores
+        ? { data: await readLocalMirror<any>(tenantId, "proveedores"), error: null }
+        : insforgeClient.database.from("proveedores").select("id, nombre").eq("tenant_id", tenantId),
     ]);
 
     if (!invoicesRes.error && invoicesRes.data) {
@@ -320,6 +385,13 @@ const loadBillingData = useCallback(async () => {
     } else {
       setExpenseCategories([]);
     }
+
+    setCuentasCobrar(cxcRes.data || []);
+    setCxcPagos(cxcPagosRes.data || []);
+    setCuentasPagar(cxpRes.data || []);
+    setCxpPagos(cxpPagosRes.data || []);
+    setCustomers(customersRes.data || []);
+    setProveedores(proveedoresRes.data || []);
 
     setCurrentPage(1);
     setLoading(false);
@@ -350,6 +422,114 @@ const loadBillingData = useCallback(async () => {
     }
     return filtered;
   }, [invoices, statusFilter, methodFilter, dateFrom, dateTo]);
+
+  const finanzasData = useMemo(() => {
+    const cxcActivas = cuentasCobrar.filter((c) => c.estado !== "pagada");
+    const totalDeudaClientes = cxcActivas.reduce((sum, c) => sum + (Number(c.monto_total) - Number(c.monto_pagado)), 0);
+
+    const cxpActivas = cuentasPagar.filter((c) => c.estado !== "pagada");
+    const totalDeudaProveedores = cxpActivas.reduce((sum, c) => sum + (Number(c.monto_total) - Number(c.monto_pagado)), 0);
+
+    let cobrosFiltrados = cxcPagos;
+    if (dateFrom) {
+      cobrosFiltrados = cobrosFiltrados.filter((p) => new Date(p.fecha_pago).getTime() >= new Date(dateFrom + "T00:00:00").getTime());
+    }
+    if (dateTo) {
+      cobrosFiltrados = cobrosFiltrados.filter((p) => new Date(p.fecha_pago).getTime() <= new Date(dateTo + "T23:59:59").getTime());
+    }
+    const totalCobros = cobrosFiltrados.reduce((sum, p) => sum + Number(p.monto), 0);
+
+    let abonosFiltrados = cxpPagos;
+    if (dateFrom) {
+      abonosFiltrados = abonosFiltrados.filter((p) => new Date(p.fecha_pago).getTime() >= new Date(dateFrom + "T00:00:00").getTime());
+    }
+    if (dateTo) {
+      abonosFiltrados = abonosFiltrados.filter((p) => new Date(p.fecha_pago).getTime() <= new Date(dateTo + "T23:59:59").getTime());
+    }
+    const totalAbonos = abonosFiltrados.reduce((sum, p) => sum + Number(p.monto), 0);
+
+    const customerMap = new Map<string, { id: string; name: string; deuda: number }>();
+    cxcActivas.forEach((c) => {
+      const cust = customers.find((cust) => cust.id === c.customer_id);
+      const name = cust ? cust.name : `Cliente #${c.customer_id.substring(0, 5)}`;
+      const saldo = Number(c.monto_total) - Number(c.monto_pagado);
+      if (saldo > 0) {
+        const exist = customerMap.get(c.customer_id) ?? { id: c.customer_id, name, deuda: 0 };
+        exist.deuda += saldo;
+        customerMap.set(c.customer_id, exist);
+      }
+    });
+    const topDebtors = [...customerMap.values()]
+      .sort((a, b) => b.deuda - a.deuda)
+      .slice(0, 5);
+
+    const providerMap = new Map<string, { id: string; name: string; deuda: number }>();
+    cxpActivas.forEach((c) => {
+      const prov = proveedores.find((p) => p.id === c.proveedor_id);
+      const name = prov ? prov.nombre : `Proveedor #${c.proveedor_id.substring(0, 5)}`;
+      const saldo = Number(c.monto_total) - Number(c.monto_pagado);
+      if (saldo > 0) {
+        const exist = providerMap.get(c.proveedor_id) ?? { id: c.proveedor_id, name, deuda: 0 };
+        exist.deuda += saldo;
+        providerMap.set(c.proveedor_id, exist);
+      }
+    });
+    const topCreditors = [...providerMap.values()]
+      .sort((a, b) => b.deuda - a.deuda)
+      .slice(0, 5);
+
+    const txCobros = cobrosFiltrados.map((p) => {
+      const cc = cuentasCobrar.find((c) => c.id === p.cuenta_cobrar_id);
+      const cust = cc ? customers.find((cust) => cust.id === cc.customer_id) : null;
+      const desc = cust ? `Cobro CxC - ${cust.name}` : "Cobro CxC";
+      return {
+        id: p.id,
+        tipo: "ingreso" as const,
+        monto: Number(p.monto),
+        fecha: p.fecha_pago,
+        metodo: p.metodo_pago,
+        descripcion: desc,
+        referencia: cc?.factura_id ? `Factura #${cc.factura_id.substring(0, 5)}` : "S/F"
+      };
+    });
+
+    const txAbonos = abonosFiltrados.map((p) => {
+      const cp = cuentasPagar.find((c) => c.id === p.cuenta_pagar_id);
+      const prov = cp ? proveedores.find((pr) => pr.id === cp.proveedor_id) : null;
+      const desc = prov ? `Abono CxP - ${prov.nombre}` : "Abono CxP";
+      return {
+        id: p.id,
+        tipo: "egreso" as const,
+        monto: Number(p.monto),
+        fecha: p.fecha_pago,
+        metodo: p.metodo_pago,
+        descripcion: desc,
+        referencia: cp?.compra_id ? `Compra #${cp.compra_id.substring(0, 5)}` : "S/C"
+      };
+    });
+
+    const transacciones = [...txCobros, ...txAbonos]
+      .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+
+    return {
+      totalDeudaClientes,
+      totalDeudaProveedores,
+      totalCobros,
+      totalAbonos,
+      topDebtors,
+      topCreditors,
+      transacciones
+    };
+  }, [cuentasCobrar, cxcPagos, cuentasPagar, cxpPagos, customers, proveedores, dateFrom, dateTo]);
+
+  const filteredTransacciones = useMemo(() => {
+    let txs = finanzasData.transacciones;
+    if (methodFilter !== "todos") {
+      txs = txs.filter((t) => t.metodo === methodFilter);
+    }
+    return txs;
+  }, [finanzasData.transacciones, methodFilter]);
+
 
   const cycleSummaries = useMemo<CycleSummary[]>(() => {
     const expenseCategoryById = new Map(expenseCategories.map((cat) => [cat.id, cat]));
@@ -505,13 +685,107 @@ const loadBillingData = useCallback(async () => {
   const canDeleteInvoices = rol === "admin";
 
   const itemsPerPage = 10;
-  const totalPages = Math.ceil(filteredInvoices.length / itemsPerPage);
+  const totalPages = useMemo(() => {
+    if (view === "facturas") {
+      return Math.ceil(filteredInvoices.length / itemsPerPage);
+    } else if (view === "finanzas") {
+      return Math.ceil(filteredTransacciones.length / itemsPerPage);
+    }
+    return 1;
+  }, [view, filteredInvoices.length, filteredTransacciones.length]);
+
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
   const pageData = useMemo(
-    () => filteredInvoices.slice(startIndex, endIndex),
-    [filteredInvoices, startIndex, endIndex]
+    () => (view === "facturas" ? filteredInvoices.slice(startIndex, endIndex) : []),
+    [view, filteredInvoices, startIndex, endIndex]
   );
+
+  const transaccionesPageData = useMemo(
+    () => (view === "finanzas" ? filteredTransacciones.slice(startIndex, endIndex) : []),
+    [view, filteredTransacciones, startIndex, endIndex]
+  );
+
+  const kpiCards = useMemo(() => {
+    if (view === "finanzas") {
+      return [
+        {
+          label: "Deuda Clientes",
+          value: finanzasData.totalDeudaClientes,
+          isMoney: true,
+          sub: "Cartera total activa",
+          color: "text-amber-600 dark:text-amber-400",
+          icon: <Activity size={18} className="text-amber-600 dark:text-amber-400" />,
+          bgColor: "bg-amber-500/10 dark:bg-amber-500/20"
+        },
+        {
+          label: "Deuda Proveedores",
+          value: finanzasData.totalDeudaProveedores,
+          isMoney: true,
+          sub: "Cuentas por pagar",
+          color: "text-rose-600 dark:text-rose-400",
+          icon: <TrendingUp size={18} className="text-rose-600 dark:text-rose-400" />,
+          bgColor: "bg-rose-500/10 dark:bg-rose-500/20"
+        },
+        {
+          label: "Cobros",
+          value: finanzasData.totalCobros,
+          isMoney: true,
+          sub: "Cobros en período",
+          color: "text-green-600 dark:text-green-400",
+          icon: <DollarSign size={18} className="text-green-600 dark:text-green-400" />,
+          bgColor: "bg-green-500/10 dark:bg-green-500/20"
+        },
+        {
+          label: "Abonos",
+          value: finanzasData.totalAbonos,
+          isMoney: true,
+          sub: "Abonos en período",
+          color: "text-blue-600 dark:text-blue-400",
+          icon: <FileText size={18} className="text-blue-500" />,
+          bgColor: "bg-blue-500/10 dark:bg-blue-500/20"
+        }
+      ];
+    }
+    return [
+      {
+        label: view === "facturas" ? "Ingreso Total (24h)" : "Ventas Total",
+        value: (view === "facturas" ? totalRevenue : cycleKpis.latestCycleSales),
+        isMoney: true,
+        sub: view === "facturas" ? "Facturas recientes" : cycleKpis.latestCycleLabel,
+        color: "text-green-600 dark:text-green-400",
+        icon: <DollarSign size={18} className="text-green-600 dark:text-green-400" />,
+        bgColor: "bg-green-500/10 dark:bg-green-500/20"
+      },
+      {
+        label: view === "facturas" ? "Ticket Promedio" : "Últimas 24 horas",
+        value: view === "facturas" ? (invoices.length > 0 ? invoices.reduce((s, i) => s + i.total, 0) / invoices.length : 0) : cycleKpis.netLast24h,
+        isMoney: true,
+        sub: view === "facturas" ? `${invoices.length} totales` : "Últimas 24 horas",
+        color: "text-foreground",
+        icon: <Activity size={18} className="text-primary" />,
+        bgColor: "bg-primary/10 dark:bg-primary/20"
+      },
+      {
+        label: view === "facturas" ? "Facturas Pagadas" : "Semana actual",
+        value: view === "facturas" ? paidCount : cycleKpis.weekSales,
+        isMoney: view !== "facturas",
+        sub: view === "facturas" ? `${cancelledCount} canceladas` : "Semana actual",
+        color: "text-foreground",
+        icon: <TrendingUp size={18} className="text-pink-600 dark:text-pink-400" />,
+        bgColor: "bg-pink-500/10 dark:bg-pink-500/20"
+      },
+      {
+        label: view === "facturas" ? "Total Facturas" : "Mes actual",
+        value: view === "facturas" ? invoices.length : cycleKpis.monthSales,
+        isMoney: view !== "facturas",
+        sub: view === "facturas" ? "En el sistema" : "Mes actual",
+        color: "text-foreground",
+        icon: <FileText size={18} className="text-blue-500" />,
+        bgColor: "bg-blue-500/10 dark:bg-blue-500/20"
+      }
+    ];
+  }, [view, finanzasData, totalRevenue, cycleKpis, invoices, paidCount, cancelledCount]);
 
   const filteredStats = useMemo(() => {
     const total = filteredInvoices
@@ -810,49 +1084,23 @@ const loadBillingData = useCallback(async () => {
           >
             Ciclos
           </button>
+          {canUseFeature(plan, "finance_reports") && (
+            <button
+              type="button"
+              onClick={() => setView("finanzas")}
+              className={`flex-1 sm:flex-none rounded-lg px-5 py-2.5 font-['Inter',sans-serif] text-[13px] font-bold transition-all cursor-pointer ${
+                view === "finanzas" ? "bg-blue-600 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Finanzas Pro
+            </button>
+          )}
         </div>
       </div>
 
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {[
-          {
-            label: view === "facturas" ? "Ingreso Total (24h)" : "Ventas Total",
-            value: (view === "facturas" ? totalRevenue : cycleKpis.latestCycleSales),
-            isMoney: true,
-            sub: view === "facturas" ? "Facturas recientes" : cycleKpis.latestCycleLabel,
-            color: "text-green-600 dark:text-green-400",
-            icon: <DollarSign size={18} className="text-green-600 dark:text-green-400" />,
-            bgColor: "bg-green-500/10 dark:bg-green-500/20"
-          },
-          {
-            label: view === "facturas" ? "Ticket Promedio" : "Últimas 24 horas",
-            value: view === "facturas" ? (invoices.length > 0 ? invoices.reduce((s, i) => s + i.total, 0) / invoices.length : 0) : cycleKpis.netLast24h,
-            isMoney: true,
-            sub: view === "facturas" ? `${invoices.length} totales` : "Últimas 24 horas",
-            color: "text-foreground",
-            icon: <Activity size={18} className="text-primary" />,
-            bgColor: "bg-primary/10 dark:bg-primary/20"
-          },
-          {
-            label: view === "facturas" ? "Facturas Pagadas" : "Semana actual",
-            value: view === "facturas" ? paidCount : cycleKpis.weekSales,
-            isMoney: view !== "facturas",
-            sub: view === "facturas" ? `${cancelledCount} canceladas` : "Semana actual",
-            color: "text-foreground",
-            icon: <TrendingUp size={18} className="text-pink-600 dark:text-pink-400" />,
-            bgColor: "bg-pink-500/10 dark:bg-pink-500/20"
-          },
-          {
-            label: view === "facturas" ? "Total Facturas" : "Mes actual",
-            value: view === "facturas" ? invoices.length : cycleKpis.monthSales,
-            isMoney: view !== "facturas",
-            sub: view === "facturas" ? "En el sistema" : "Mes actual",
-            color: "text-foreground",
-            icon: <FileText size={18} className="text-blue-500" />,
-            bgColor: "bg-blue-500/10 dark:bg-blue-500/20"
-          }
-        ].map((kpi, i) => (
+        {kpiCards.map((kpi, i) => (
           <div key={i} className="bg-card rounded-[20px] border border-black/10 dark:border-white/5 p-5 flex justify-between items-start shadow-sm transition-all hover:shadow-md hover:border-black/15 dark:hover:border-white/10">
             <div className="flex flex-col gap-2 flex-1 min-w-0 pr-2">
               <span className="font-['Inter',sans-serif] text-muted-foreground text-[10px] sm:text-[11px] tracking-wider uppercase font-semibold leading-tight">{kpi.label}</span>
@@ -875,7 +1123,7 @@ const loadBillingData = useCallback(async () => {
           {/* Horizontal Filter Bar Card */}
           <div className="bg-card rounded-[20px] border border-black/10 dark:border-white/5 p-4 sm:p-5 shadow-sm">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div className={`flex-1 grid grid-cols-1 sm:grid-cols-2 ${view === "facturas" ? "lg:grid-cols-4" : "lg:grid-cols-2"} gap-4`}>
+              <div className={`flex-1 grid grid-cols-1 sm:grid-cols-2 ${view === "facturas" ? "lg:grid-cols-4" : view === "finanzas" ? "lg:grid-cols-3" : "lg:grid-cols-2"} gap-4`}>
                 <div className="flex flex-col gap-1.5">
                   <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider font-['Inter']">Desde</span>
                   <input
@@ -895,20 +1143,22 @@ const loadBillingData = useCallback(async () => {
                   />
                 </div>
 
-                {view === "facturas" && (
+                {(view === "facturas" || view === "finanzas") && (
                   <>
-                    <div className="flex flex-col gap-1.5">
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider font-['Inter']">Estado</span>
-                      <select
-                        value={statusFilter}
-                        onChange={(e) => setStatusFilter(e.target.value)}
-                        className="w-full bg-muted/60 rounded-xl border border-black/5 dark:border-white/5 px-3 py-2 font-['Inter',sans-serif] text-foreground text-[13px] outline-none cursor-pointer h-[38px]"
-                      >
-                        <option value="todos">Todos los Estados</option>
-                        <option value="pagada">Pagadas</option>
-                        <option value="cancelada">Canceladas</option>
-                      </select>
-                    </div>
+                    {view === "facturas" && (
+                      <div className="flex flex-col gap-1.5">
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider font-['Inter']">Estado</span>
+                        <select
+                          value={statusFilter}
+                          onChange={(e) => setStatusFilter(e.target.value)}
+                          className="w-full bg-muted/60 rounded-xl border border-black/5 dark:border-white/5 px-3 py-2 font-['Inter',sans-serif] text-foreground text-[13px] outline-none cursor-pointer h-[38px]"
+                        >
+                          <option value="todos">Todos los Estados</option>
+                          <option value="pagada">Pagadas</option>
+                          <option value="cancelada">Canceladas</option>
+                        </select>
+                      </div>
+                    )}
                     <div className="flex flex-col gap-1.5">
                       <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider font-['Inter']">Método</span>
                       <select
@@ -937,7 +1187,7 @@ const loadBillingData = useCallback(async () => {
             </div>
           </div>
 
-          {view === "facturas" ? (
+          {view === "facturas" && (
             <>
               {/* Mobile View */}
               <div className="md:hidden flex flex-col gap-3">
@@ -1073,7 +1323,9 @@ const loadBillingData = useCallback(async () => {
                 </div>
               )}
             </>
-          ) : (
+          )}
+
+          {view === "ciclos" && (
             <div className="flex flex-col gap-6">
               {filteredCycleSummaries.map((entry) => (
                  <div key={entry.cycle.id} className="bg-card rounded-[20px] border border-black/10 dark:border-white/5 overflow-hidden shadow-sm">
@@ -1252,6 +1504,209 @@ const loadBillingData = useCallback(async () => {
               ))}
             </div>
           )}
+
+          {view === "finanzas" && (
+            <div className="flex flex-col gap-6">
+              {/* Top 5 Debtor & Creditor Lists */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Top 5 Debtors */}
+                <div className="bg-card rounded-[20px] border border-black/10 dark:border-white/5 p-5 flex flex-col gap-4 shadow-sm">
+                  <h3 className="font-['Space_Grotesk',sans-serif] text-foreground text-[16px] font-bold pb-2 border-b border-black/5 dark:border-white/5 flex items-center justify-between">
+                    <span>Top 5 Clientes Deudores</span>
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold font-['Inter']">Por saldo</span>
+                  </h3>
+                  <div className="flex flex-col gap-3">
+                    {finanzasData.topDebtors.length === 0 ? (
+                      <div className="text-center text-xs text-muted-foreground py-4">
+                        No hay deudas de clientes activas.
+                      </div>
+                    ) : (
+                      finanzasData.topDebtors.map((debtor) => (
+                        <div key={debtor.id} className="flex justify-between items-center py-1">
+                          <span className="text-sm font-medium text-foreground truncate max-w-[180px]">{debtor.name}</span>
+                          <span className="font-['Space_Grotesk',sans-serif] font-bold text-[14px] text-amber-600 dark:text-amber-400 tabular-nums">
+                            {RD(debtor.deuda)}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Top 5 Creditors */}
+                <div className="bg-card rounded-[20px] border border-black/10 dark:border-white/5 p-5 flex flex-col gap-4 shadow-sm">
+                  <h3 className="font-['Space_Grotesk',sans-serif] text-foreground text-[16px] font-bold pb-2 border-b border-black/5 dark:border-white/5 flex items-center justify-between">
+                    <span>Top 5 Proveedores Acreedores</span>
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold font-['Inter']">Por saldo</span>
+                  </h3>
+                  <div className="flex flex-col gap-3">
+                    {finanzasData.topCreditors.length === 0 ? (
+                      <div className="text-center text-xs text-muted-foreground py-4">
+                        No hay deudas con proveedores activas.
+                      </div>
+                    ) : (
+                      finanzasData.topCreditors.map((creditor) => (
+                        <div key={creditor.id} className="flex justify-between items-center py-1">
+                          <span className="text-sm font-medium text-foreground truncate max-w-[180px]">{creditor.name}</span>
+                          <span className="font-['Space_Grotesk',sans-serif] font-bold text-[14px] text-rose-600 dark:text-rose-400 tabular-nums">
+                            {RD(creditor.deuda)}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Consolidated Transaction Log */}
+              <div className="bg-card rounded-[20px] border border-black/10 dark:border-white/5 overflow-hidden shadow-sm">
+                <div className="p-4 sm:p-5 border-b border-black/5 dark:border-white/5 flex justify-between items-center">
+                  <h3 className="font-['Space_Grotesk',sans-serif] text-foreground text-[18px] font-bold">Registro de Transacciones</h3>
+                  <span className="text-[11px] font-medium text-muted-foreground">
+                    {filteredTransacciones.length} transacciones encontradas
+                  </span>
+                </div>
+
+                {/* Desktop view */}
+                <div className="hidden md:block overflow-x-auto">
+                  <div className="min-w-[700px] p-5 flex flex-col gap-3">
+                    {/* Header Row */}
+                    <div className="grid grid-cols-[100px_130px_1fr_120px_110px_130px] text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-4 pb-2 border-b border-black/5 dark:border-white/5">
+                      <div>Tipo</div>
+                      <div>Fecha</div>
+                      <div>Detalle</div>
+                      <div>Referencia</div>
+                      <div>Método</div>
+                      <div className="text-right">Monto</div>
+                    </div>
+                    {/* Data Rows */}
+                    {transaccionesPageData.length === 0 ? (
+                      <div className="text-center text-sm text-muted-foreground py-8">
+                        No se encontraron transacciones en este período.
+                      </div>
+                    ) : (
+                      transaccionesPageData.map((tx) => {
+                        const method = getMethodDisplay(tx.metodo);
+                        return (
+                          <div
+                            key={tx.id}
+                            className="grid grid-cols-[100px_130px_1fr_120px_110px_130px] items-center px-4 py-3 bg-muted/20 dark:bg-white/[0.01] hover:bg-muted/40 dark:hover:bg-white/[0.03] transition-all rounded-xl"
+                          >
+                            <div>
+                              <span
+                                className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
+                                  tx.tipo === "ingreso"
+                                    ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                                    : "bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                                }`}
+                              >
+                                {tx.tipo === "ingreso" ? "Cobro" : "Abono"}
+                              </span>
+                            </div>
+                            <div className="text-xs text-muted-foreground font-medium">{formatDateTime(tx.fecha)}</div>
+                            <div className="text-sm font-semibold text-foreground truncate pr-4">{tx.descripcion}</div>
+                            <div className="text-xs font-semibold text-muted-foreground">{tx.referencia}</div>
+                            <div>
+                              <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded ${method.pillClass}`}>
+                                {method.label}
+                              </span>
+                            </div>
+                            <div
+                              className={`text-right font-['Space_Grotesk',sans-serif] font-bold text-[15px] tabular-nums ${
+                                tx.tipo === "ingreso" ? "text-green-600 dark:text-green-400" : "text-rose-600 dark:text-rose-400"
+                              }`}
+                            >
+                              {tx.tipo === "ingreso" ? "+" : "-"}{RD(tx.monto)}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                {/* Mobile view */}
+                <div className="md:hidden flex flex-col gap-3 p-4">
+                  {transaccionesPageData.length === 0 ? (
+                    <div className="text-center text-sm text-muted-foreground py-6">
+                      No se encontraron transacciones.
+                    </div>
+                  ) : (
+                    transaccionesPageData.map((tx) => {
+                      const method = getMethodDisplay(tx.metodo);
+                      return (
+                        <div
+                          key={tx.id}
+                          className="rounded-[20px] border border-black/10 bg-card p-4 shadow-sm dark:border-white/5 bg-muted/10"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <span
+                                className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded ${
+                                  tx.tipo === "ingreso"
+                                    ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                                    : "bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                                }`}
+                              >
+                                {tx.tipo === "ingreso" ? "Cobro" : "Abono"}
+                              </span>
+                              <div className="mt-1 font-semibold text-foreground text-sm">{tx.descripcion}</div>
+                              <div className="text-[11px] text-muted-foreground font-medium mt-0.5">
+                                {formatDateTime(tx.fecha)}
+                              </div>
+                            </div>
+                            <div
+                              className={`text-right font-['Space_Grotesk',sans-serif] text-md font-bold tabular-nums ${
+                                tx.tipo === "ingreso" ? "text-green-600 dark:text-green-400" : "text-rose-600 dark:text-rose-400"
+                              }`}
+                            >
+                              {tx.tipo === "ingreso" ? "+" : "-"}{RD(tx.monto)}
+                            </div>
+                          </div>
+                          <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                            <div className="rounded-xl bg-muted/50 p-2">
+                              <div className="text-[9px] font-bold uppercase text-muted-foreground">Referencia</div>
+                              <div className="mt-0.5 font-semibold text-foreground">{tx.referencia}</div>
+                            </div>
+                            <div className="rounded-xl bg-muted/50 p-2">
+                              <div className="text-[9px] font-bold uppercase text-muted-foreground">Método</div>
+                              <div className="mt-0.5 font-semibold text-foreground">{method.label}</div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between px-5 py-4 border-t border-black/5 dark:border-white/5">
+                    <button
+                      type="button"
+                      disabled={currentPage === 1}
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      className="px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest bg-muted hover:bg-muted/85 text-foreground rounded-xl disabled:opacity-40 transition-colors border border-black/5 dark:border-white/5 cursor-pointer"
+                    >
+                      Anterior
+                    </button>
+                    <span className="text-[13px] text-muted-foreground font-medium">
+                      Página <span className="font-bold text-foreground">{currentPage}</span> de{" "}
+                      <span className="font-bold text-foreground">{totalPages}</span>
+                    </span>
+                    <button
+                      type="button"
+                      disabled={currentPage === totalPages}
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      className="px-4 py-2.5 text-[11px] font-bold uppercase tracking-widest bg-muted hover:bg-muted/85 text-foreground rounded-xl disabled:opacity-40 transition-colors border border-black/5 dark:border-white/5 cursor-pointer"
+                    >
+                      Siguiente
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Right Column: Live Summary Counter */}
@@ -1260,11 +1715,11 @@ const loadBillingData = useCallback(async () => {
             <div className="flex items-center gap-2 pb-2 border-b border-black/5 dark:border-white/5">
               <TrendingUp size={16} className="text-green-600 dark:text-green-400" />
               <span className="font-['Space_Grotesk',sans-serif] font-bold text-[13px] uppercase tracking-wider text-foreground">
-                {view === "facturas" ? "Resumen Filtrado" : "Resumen de Ciclos"}
+                {view === "facturas" ? "Resumen Filtrado" : view === "finanzas" ? "Resumen Financiero" : "Resumen de Ciclos"}
               </span>
             </div>
 
-            {view === "facturas" ? (
+            {view === "facturas" && (
               <div className="flex flex-col gap-3.5">
                 <div className="flex justify-between items-center">
                   <span className="text-[12px] text-muted-foreground font-['Inter'] font-medium">Monto Pagado:</span>
@@ -1283,7 +1738,41 @@ const loadBillingData = useCallback(async () => {
                   <span className="font-['Space_Grotesk',sans-serif] font-bold text-[14px] text-primary">{filteredStats.mainMethodLabel}</span>
                 </div>
               </div>
-            ) : (
+            )}
+
+            {view === "finanzas" && (
+              <div className="flex flex-col gap-3.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-[12px] text-muted-foreground font-['Inter'] font-medium">Total Cobros:</span>
+                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-[15px] text-green-600 dark:text-green-400">
+                    {RD(finanzasData.totalCobros)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[12px] text-muted-foreground font-['Inter'] font-medium">Total Abonos:</span>
+                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-[15px] text-rose-600 dark:text-rose-400">
+                    {RD(finanzasData.totalAbonos)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center border-t border-black/5 dark:border-white/5 pt-3.5">
+                  <span className="text-[12px] text-muted-foreground font-['Inter'] font-bold">Balance Neto:</span>
+                  {(() => {
+                    const net = finanzasData.totalCobros - finanzasData.totalAbonos;
+                    return (
+                      <span
+                        className={`font-['Space_Grotesk',sans-serif] font-bold text-[16px] ${
+                          net >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"
+                        }`}
+                      >
+                        {net >= 0 ? "+" : ""}{RD(net)}
+                      </span>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
+
+            {view === "ciclos" && (
               <div className="flex flex-col gap-3.5">
                 <div className="flex justify-between items-center">
                   <span className="text-[12px] text-muted-foreground font-['Inter'] font-medium">Ciclos Filtrados:</span>
