@@ -332,6 +332,32 @@ export function TitleBar({
             </button>
           </div>
         )}
+
+        {/* Plan Badge */}
+        {isAuthenticated && plan && (
+          <div className="flex items-center ml-2" style={{ WebkitAppRegion: "no-drag" as any }}>
+            <span 
+              className="text-[10px] font-['Space_Grotesk',sans-serif] font-bold uppercase px-2 py-0.5 rounded-[4px] tracking-[0.5px] whitespace-nowrap"
+              style={{ 
+                backgroundColor: 
+                  plan === 'empresarial' ? 'rgba(167, 139, 250, 0.15)' : 
+                  plan === 'profesional' ? 'rgba(255, 144, 109, 0.15)' : 
+                  'rgba(89, 238, 80, 0.15)',
+                color: 
+                  plan === 'empresarial' ? '#a78bfa' : 
+                  plan === 'profesional' ? '#ff906d' : 
+                  '#59ee50',
+                border: `1px solid ${
+                  plan === 'empresarial' ? 'rgba(167, 139, 250, 0.3)' : 
+                  plan === 'profesional' ? 'rgba(255, 144, 109, 0.3)' : 
+                  'rgba(89, 238, 80, 0.3)'
+                }`
+              }}
+            >
+              Plan {plan}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Center - Empty drag area */}
