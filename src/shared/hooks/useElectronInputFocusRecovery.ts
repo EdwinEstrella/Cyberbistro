@@ -25,6 +25,7 @@ export function useElectronInputFocusRecovery() {
 
     const handleEditableInteraction = (event: Event) => {
       if (!isEditableTarget(event.target)) return;
+      if (document.activeElement === event.target) return;
       requestFocusRecovery();
 
       const target = event.target;

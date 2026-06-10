@@ -88,7 +88,11 @@ export function Login() {
       window.focus();
       const focusRecovery = window.electronAPI?.ensureInputFocus?.();
       void Promise.resolve(focusRecovery).finally(() => {
-        emailInputRef.current?.focus();
+        const active = document.activeElement;
+        const isTyping = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement;
+        if (!isTyping) {
+          emailInputRef.current?.focus();
+        }
       });
     }, 150);
 
@@ -96,7 +100,11 @@ export function Login() {
       window.focus();
       const focusRecovery = window.electronAPI?.ensureInputFocus?.();
       void Promise.resolve(focusRecovery).finally(() => {
-        emailInputRef.current?.focus();
+        const active = document.activeElement;
+        const isTyping = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement;
+        if (!isTyping) {
+          emailInputRef.current?.focus();
+        }
       });
     }, 450);
 

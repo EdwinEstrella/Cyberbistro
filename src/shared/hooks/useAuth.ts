@@ -321,6 +321,12 @@ async function loadUserDataShared(opts?: { silent?: boolean }): Promise<void> {
         } catch { /* ignore */ }
       }
 
+      if (!u && !storedToken && !hydratedFromLocalSession) {
+        logAuth('loadUserData:no-token-no-local-session -> anonymous');
+        patchSharedState({ user: null, tenantUser: null, loading: false });
+        return;
+      }
+
       if (!u) {
         logAuth('loadUserData:no-user-after-refresh', { hasStoredRefreshToken: Boolean(storedToken) });
 
@@ -423,9 +429,16 @@ async function doRefreshShared(): Promise<void> {
   }
 
   const currentUser = sharedState.user;
+  const storedToken = readRefreshToken();
+
+  if (!currentUser && !storedToken) {
+    logAuth('focus/visibility/interval refresh skipped (anonymous)');
+    return;
+  }
+
   logAuth('focus/visibility/interval refresh triggered', {
     hasUser: Boolean(currentUser),
-    hasStoredRefresh: Boolean(readRefreshToken()),
+    hasStoredRefresh: Boolean(storedToken),
   });
 
   if (Date.now() < refreshBlockedUntil) {
