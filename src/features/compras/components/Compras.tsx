@@ -82,7 +82,9 @@ export function Compras() {
   // Purchase Form state
   const [compraForm, setCompraForm] = useState({
     proveedor_id: "",
-    tipo_pago: "contado" as "contado" | "credito",
+    tipo_pago: "contado" as "contado" | "credito" | "parcial",
+    metodo_pago: "efectivo" as "efectivo" | "tarjeta" | "transferencia" | "digital" | "",
+    monto_pagado: "",
     numero_factura: "",
     observacion: "",
   });
@@ -213,7 +215,7 @@ export function Compras() {
     e.preventDefault();
     if (!tenantId) return;
     if (!compraForm.proveedor_id) {
-      setMessage("Debes seleccionar un proveedor.");
+      setMessage("Debes seleccionar un proveedor antes de registrar una compra.");
       return;
     }
     if (purchaseItems.length === 0) {
@@ -226,7 +228,7 @@ export function Compras() {
       const cant = Number(item.producto_id ? item.cantidad : 0);
       const cost = Number(item.producto_id ? item.costo_unitario : 0);
       if (!item.producto_id || cant <= 0 || cost <= 0) {
-        throw new Error("Verifica que todos los ítems tengan insumo, cantidad > 0 y costo > 0.");
+        throw new Error("La cantidad y costo unitario de cada producto deben ser mayores a cero.");
       }
       return {
         producto_id: item.producto_id,
@@ -234,6 +236,29 @@ export function Compras() {
         costo_unitario: cost,
       };
     });
+
+    // Validations for payment type
+    const isContado = compraForm.tipo_pago === "contado";
+    const isParcial = compraForm.tipo_pago === "parcial";
+    
+    if ((isContado || isParcial) && !compraForm.metodo_pago) {
+      setMessage("Selecciona un método de pago.");
+      return;
+    }
+
+    let resolvedMontoPagado: number | undefined;
+    if (isParcial) {
+      const pAmount = Number(compraForm.monto_pagado);
+      if (isNaN(pAmount) || pAmount <= 0) {
+        setMessage("El abono no puede ser menor o igual a cero.");
+        return;
+      }
+      if (pAmount >= runningTotal) {
+        setMessage("El abono no puede ser mayor o igual al total de la deuda.");
+        return;
+      }
+      resolvedMontoPagado = pAmount;
+    }
 
     setSaving(true);
     setMessage("");
@@ -247,12 +272,14 @@ export function Compras() {
         proveedorId: compraForm.proveedor_id,
         numeroFactura: compraForm.numero_factura.trim(),
         tipoPago: compraForm.tipo_pago,
+        metodoPago: (isContado || isParcial) ? (compraForm.metodo_pago as any) : null,
+        montoPagado: resolvedMontoPagado,
         items: itemsPayload,
         observacion: compraForm.observacion.trim(),
       });
 
       setSuccessMsg("Compra registrada y stock actualizado correctamente.");
-      setCompraForm({ proveedor_id: "", tipo_pago: "contado", numero_factura: "", observacion: "" });
+      setCompraForm({ proveedor_id: "", tipo_pago: "contado", metodo_pago: "efectivo", monto_pagado: "", numero_factura: "", observacion: "" });
       setPurchaseItems([]);
       setShowCompraModal(false);
       await cargarDatos();
@@ -515,7 +542,7 @@ export function Compras() {
 
             <form onSubmit={handleRegistrarCompra} className="flex flex-col gap-4 overflow-y-auto pr-1 flex-1 min-h-0">
               {/* Header Info */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 shrink-0">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 shrink-0 text-left">
                 <div className="flex flex-col gap-1.5">
                   <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[9.5px] uppercase tracking-[0.5px]">Proveedor *</label>
                   <select
@@ -534,11 +561,12 @@ export function Compras() {
                   <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[9.5px] uppercase tracking-[0.5px]">Tipo de Pago *</label>
                   <select
                     value={compraForm.tipo_pago}
-                    onChange={(e) => setCompraForm(prev => ({ ...prev, tipo_pago: e.target.value as any }))}
+                    onChange={(e) => setCompraForm(prev => ({ ...prev, tipo_pago: e.target.value as any, metodo_pago: e.target.value === "credito" ? "" : "efectivo", monto_pagado: "" }))}
                     className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[8px] px-3 py-2 font-['Inter',sans-serif] text-white text-[12px] outline-none"
                   >
                     <option value="contado">Contado</option>
-                    <option value="credito">Crédito</option>
+                    <option value="parcial">Pago Parcial / Crédito</option>
+                    <option value="credito">Crédito Puro</option>
                   </select>
                 </div>
                 <div className="flex flex-col gap-1.5">
@@ -552,10 +580,45 @@ export function Compras() {
                   />
                 </div>
               </div>
+
+              {/* Conditional payment details (method and initial pay) */}
+              {(compraForm.tipo_pago === "contado" || compraForm.tipo_pago === "parcial") && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 shrink-0 border border-zinc-800 bg-zinc-950/20 p-3 rounded-[12px] text-left">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[9.5px] uppercase tracking-[0.5px]">Método de Pago *</label>
+                    <select
+                      required
+                      value={compraForm.metodo_pago}
+                      onChange={(e) => setCompraForm(prev => ({ ...prev, metodo_pago: e.target.value as any }))}
+                      className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[8px] px-3 py-2 font-['Inter',sans-serif] text-white text-[12px] outline-none focus:border-[#ff906d]/50"
+                    >
+                      <option value="efectivo">Efectivo</option>
+                      <option value="tarjeta">Tarjeta</option>
+                      <option value="transferencia">Transferencia</option>
+                      <option value="digital">Digital</option>
+                    </select>
+                  </div>
+                  {compraForm.tipo_pago === "parcial" && (
+                    <div className="flex flex-col gap-1.5">
+                      <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[9.5px] uppercase tracking-[0.5px]">Monto Inicial Pagado (RD$) *</label>
+                      <input
+                        type="number"
+                        required
+                        step="any"
+                        min="0.01"
+                        placeholder="Ej: 5000"
+                        value={compraForm.monto_pagado}
+                        onChange={(e) => setCompraForm(prev => ({ ...prev, monto_pagado: e.target.value }))}
+                        className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[8px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[12.5px] outline-none focus:border-[#ff906d]/50"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
               
-              {compraForm.tipo_pago === "contado" && !cicloAbierto && (
-                <div className="bg-[rgba(255,113,108,0.08)] border border-[rgba(255,113,108,0.25)] rounded-[10px] p-3 text-[12px] text-[#ff716c] font-['Inter',sans-serif] shrink-0">
-                  ⚠️ <strong>Caja Cerrada:</strong> No hay un ciclo operativo abierto. Debes abrir uno en la sección de Cierre antes de registrar compras al contado.
+              {(compraForm.tipo_pago === "contado" || compraForm.tipo_pago === "parcial") && !cicloAbierto && (
+                <div className="bg-[rgba(255,113,108,0.08)] border border-[rgba(255,113,108,0.25)] rounded-[10px] p-3 text-[12px] text-[#ff716c] font-['Inter',sans-serif] shrink-0 text-left">
+                  ⚠️ <strong>Caja Cerrada:</strong> No hay un ciclo operativo abierto. Debes abrir uno en la sección de Cierre antes de registrar compras con cobro inmediato.
                 </div>
               )}
 
@@ -585,66 +648,95 @@ export function Compras() {
                       </tr>
                     </thead>
                     <tbody className="font-['Inter',sans-serif] text-[12px] text-white">
-                      {purchaseItems.map((item, idx) => (
-                        <tr key={idx} className="border-t border-[rgba(72,72,71,0.1)]">
-                          <td className="px-2.5 py-2">
-                            <select
-                              required
-                              value={item.producto_id}
-                              onChange={(e) => updateRow(idx, "producto_id", e.target.value)}
-                              className="w-full bg-[#151515] border border-[rgba(72,72,71,0.3)] rounded-[6px] px-2 py-1.5 text-white outline-none"
-                            >
-                              <option value="">Selecciona insumo</option>
-                              {productos.map(p => (
-                                <option key={p.id} value={p.id}>
-                                  {p.nombre} {p.ml_por_botella ? `(Bot. ${p.ml_por_botella} ml)` : `(${p.unidad_base})`}
-                                </option>
-                              ))}
-                            </select>
-                          </td>
-                          <td className="px-2.5 py-2">
-                            <input
-                              type="number"
-                              required
-                              step="any"
-                              min="0.01"
-                              placeholder="0"
-                              value={item.cantidad}
-                              onChange={(e) => updateRow(idx, "cantidad", e.target.value)}
-                              className="w-full bg-[#151515] border border-[rgba(72,72,71,0.3)] rounded-[6px] px-2 py-1.5 text-white outline-none"
-                            />
-                          </td>
-                          <td className="px-2.5 py-2">
-                            <input
-                              type="number"
-                              required
-                              step="any"
-                              min="0"
-                              placeholder="0.00"
-                              value={item.costo_unitario}
-                              onChange={(e) => updateRow(idx, "costo_unitario", e.target.value)}
-                              className="w-full bg-[#151515] border border-[rgba(72,72,71,0.3)] rounded-[6px] px-2 py-1.5 text-white outline-none"
-                            />
-                          </td>
-                          <td className="px-2.5 py-2 text-center">
-                            <button
-                              type="button"
-                              onClick={() => removeRow(idx)}
-                              className="bg-transparent border-none text-[#ff716c] hover:text-[#ff3831] cursor-pointer"
-                              title="Remover"
-                            >
-                              <Trash2 className="size-[14px]" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                      {purchaseItems.map((item, idx) => {
+                        const selectedProd = productos.find(p => p.id === item.producto_id);
+                        const isLiquid = selectedProd?.ml_por_botella && selectedProd.ml_por_botella > 0;
+                        return (
+                          <tr key={idx} className="border-t border-[rgba(72,72,71,0.1)]">
+                            <td className="px-2.5 py-2 text-left">
+                              <select
+                                required
+                                value={item.producto_id}
+                                onChange={(e) => updateRow(idx, "producto_id", e.target.value)}
+                                className="w-full bg-[#151515] border border-[rgba(72,72,71,0.3)] rounded-[6px] px-2 py-1.5 text-white outline-none"
+                              >
+                                <option value="">Selecciona insumo</option>
+                                {productos.map(p => (
+                                  <option key={p.id} value={p.id}>
+                                    {p.nombre} {p.ml_por_botella ? `(Bot. ${p.ml_por_botella} ml)` : `(${p.unidad_base})`}
+                                  </option>
+                                ))}
+                              </select>
+                              {selectedProd && isLiquid && item.cantidad && Number(item.cantidad) > 0 && (
+                                <span className="text-[10px] text-[#ff906d] block mt-1 px-1">
+                                  Equivale a {(Number(item.cantidad) * (selectedProd.ml_por_botella || 0)).toLocaleString()} ml de stock base
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-2.5 py-2">
+                              <input
+                                type="number"
+                                required
+                                step="any"
+                                min="0.01"
+                                placeholder={isLiquid ? "Botellas" : (selectedProd?.unidad_base || "Cantidad")}
+                                value={item.cantidad}
+                                onChange={(e) => updateRow(idx, "cantidad", e.target.value)}
+                                className="w-full bg-[#151515] border border-[rgba(72,72,71,0.3)] rounded-[6px] px-2 py-1.5 text-white outline-none"
+                              />
+                            </td>
+                            <td className="px-2.5 py-2">
+                              <input
+                                type="number"
+                                required
+                                step="any"
+                                min="0"
+                                placeholder={isLiquid ? "Costo Botella" : "Costo Unit."}
+                                value={item.costo_unitario}
+                                onChange={(e) => updateRow(idx, "costo_unitario", e.target.value)}
+                                className="w-full bg-[#151515] border border-[rgba(72,72,71,0.3)] rounded-[6px] px-2 py-1.5 text-white outline-none"
+                              />
+                            </td>
+                            <td className="px-2.5 py-2 text-center">
+                              <button
+                                type="button"
+                                onClick={() => removeRow(idx)}
+                                className="bg-transparent border-none text-[#ff716c] hover:text-[#ff3831] cursor-pointer"
+                                title="Remover"
+                              >
+                                <Trash2 className="size-[14px]" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
+
+                {purchaseItems.some(i => i.producto_id) && (
+                  <div className="bg-[#181818] border border-zinc-800 rounded-xl p-3 text-[11px] text-[#adaaaa] font-['Inter',sans-serif] shrink-0 mt-1.5 text-left">
+                    <span className="font-bold text-white uppercase block mb-1">Resumen de Incremento de Inventario</span>
+                    <ul className="list-disc pl-4 flex flex-col gap-1">
+                      {purchaseItems.map((item, idx) => {
+                        const prod = productos.find(p => p.id === item.producto_id);
+                        const q = Number(item.cantidad) || 0;
+                        if (!prod || q <= 0) return null;
+                        const isLiquid = prod.ml_por_botella && prod.ml_por_botella > 0;
+                        const addedBase = isLiquid ? (q * (prod.ml_por_botella || 0)) : q;
+                        return (
+                          <li key={idx}>
+                            <b>{prod.nombre}:</b> +{q.toLocaleString()} {isLiquid ? `botellas (${addedBase.toLocaleString()} ml)` : `${prod.unidad_base}`} agregados al stock.
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
               </div>
 
               {/* Extra notes */}
-              <div className="flex flex-col gap-1.5 shrink-0">
+              <div className="flex flex-col gap-1.5 shrink-0 text-left">
                 <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[9.5px] uppercase tracking-[0.5px]">Observaciones</label>
                 <textarea
                   placeholder="Detalles extra de la compra, condiciones de recepción, etc."
@@ -656,11 +748,16 @@ export function Compras() {
 
               {/* Summary and Buttons */}
               <div className="flex justify-between items-center pt-3 border-t border-[rgba(72,72,71,0.15)] mt-1 shrink-0">
-                <div className="flex flex-col">
+                <div className="flex flex-col text-left">
                   <span className="text-[10px] text-[#adaaaa] uppercase tracking-[0.5px] font-['Inter',sans-serif]">Monto Total Factura:</span>
                   <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[16px]">
                     {RD(runningTotal)}
                   </span>
+                  {compraForm.tipo_pago === "parcial" && compraForm.monto_pagado && (
+                    <span className="text-[11px] text-[#ff906d]">
+                      Paga hoy: {RD(Number(compraForm.monto_pagado) || 0)} · Pendiente: {RD(Math.max(0, runningTotal - (Number(compraForm.monto_pagado) || 0)))}
+                    </span>
+                  )}
                 </div>
 
                 <div className="flex gap-2.5">
@@ -673,7 +770,7 @@ export function Compras() {
                   </button>
                   <button
                     type="submit"
-                    disabled={saving || (compraForm.tipo_pago === "contado" && !cicloAbierto)}
+                    disabled={saving || ((compraForm.tipo_pago === "contado" || compraForm.tipo_pago === "parcial") && !cicloAbierto)}
                     className="bg-[#ff906d] rounded-[8px] px-4 py-2 font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[10.5px] uppercase cursor-pointer border-none disabled:opacity-50"
                   >
                     {saving ? "Registrando..." : "Guardar Compra"}

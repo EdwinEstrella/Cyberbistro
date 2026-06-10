@@ -13,28 +13,33 @@ export interface PurchaseInput {
   usuarioId: string | null;
   proveedorId: string | null;
   numeroFactura: string;
-  tipoPago: "contado" | "credito";
+  tipoPago: "contado" | "credito" | "parcial";
+  metodoPago?: "efectivo" | "tarjeta" | "transferencia" | "digital" | null;
+  montoPagado?: number;
   items: PurchaseItemInput[];
   observacion?: string;
 }
 
 export async function registrarCompra(input: PurchaseInput): Promise<{ compraId: string }> {
-  const { tenantId, sucursalId, usuarioId, proveedorId, numeroFactura, tipoPago, items, observacion } = input;
+  const { tenantId, sucursalId, usuarioId, proveedorId, numeroFactura, tipoPago, metodoPago, montoPagado, items, observacion } = input;
   if (!items || items.length === 0) {
     throw new Error("La compra debe contener al menos un ítem.");
   }
-  if (tipoPago === "credito" && !proveedorId) {
-    throw new Error("Se requiere un proveedor para registrar una compra a crédito.");
+  if ((tipoPago === "credito" || tipoPago === "parcial") && !proveedorId) {
+    throw new Error("Se requiere un proveedor para registrar una compra a crédito o parcial.");
   }
 
   const deviceId = await getDeviceId();
 
-  // Validate active operational cycle and purchase category for cash (contado) purchases
+  // Validate active operational cycle and purchase category for cash (contado/parcial) purchases
   let activeCycleId = "";
   let comprasCategoryId = "";
   let providerName = "Proveedor";
 
-  if (tipoPago === "contado") {
+  if (tipoPago === "contado" || tipoPago === "parcial") {
+    if (!metodoPago) {
+      throw new Error("Selecciona un método de pago.");
+    }
     const activeCycleRows = await readLocalMirror<{
       id: string;
       closed_at: string | null;
@@ -47,7 +52,7 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
       .sort((a, b) => b.opened_at.localeCompare(a.opened_at))[0];
 
     if (!activeCycle) {
-      throw new Error("No hay un ciclo operativo abierto para registrar una compra al contado.");
+      throw new Error("No hay un ciclo operativo abierto para registrar una compra al contado o pago parcial.");
     }
     activeCycleId = activeCycle.id;
 
@@ -80,17 +85,17 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
         deviceId,
       });
     }
+  }
 
-    // Resolve provider name
-    if (proveedorId) {
-      const providers = await readLocalMirror<{
-        id: string;
-        nombre: string;
-      }>(tenantId, "proveedores");
-      const foundProv = providers.find(p => p.id === proveedorId);
-      if (foundProv) {
-        providerName = foundProv.nombre;
-      }
+  // Resolve provider name
+  if (proveedorId) {
+    const providers = await readLocalMirror<{
+      id: string;
+      nombre: string;
+    }>(tenantId, "proveedores");
+    const foundProv = providers.find(p => p.id === proveedorId);
+    if (foundProv) {
+      providerName = foundProv.nombre;
     }
   }
 
@@ -116,7 +121,7 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
       throw new Error(`El producto con ID ${item.producto_id} no existe en el catálogo.`);
     }
 
-    const mlBotella = product.unidad_base === "ml" ? (product.ml_por_botella || 0) : 0;
+    const mlBotella = product.ml_por_botella || 0;
     const isLiquid = mlBotella > 0;
 
     // Converted stock quantities & costs
@@ -149,6 +154,20 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
     };
   });
 
+  // Additional validations for parcial payment
+  let resolvedMontoPagado = 0;
+  if (tipoPago === "contado") {
+    resolvedMontoPagado = totalCompra;
+  } else if (tipoPago === "parcial") {
+    if (typeof montoPagado !== "number" || montoPagado <= 0) {
+      throw new Error("El monto pagado inicial debe ser mayor a cero.");
+    }
+    if (montoPagado >= totalCompra) {
+      throw new Error("El monto pagado no puede ser mayor o igual al total de la compra.");
+    }
+    resolvedMontoPagado = montoPagado;
+  }
+
   // 2. Enqueue Local Write for Cabecera de Compra
   await enqueueLocalWrite({
     tenantId,
@@ -162,6 +181,8 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
       proveedor_id: proveedorId,
       numero_factura: numeroFactura,
       tipo_pago: tipoPago,
+      metodo_pago: metodoPago || null,
+      monto_pagado: resolvedMontoPagado,
       fecha_compra: fechaCompra,
       total: totalCompra,
       estado: "completada",
@@ -233,8 +254,8 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
     });
   }
 
-  // 4. Enqueue Local Write for Gasto if contado
-  if (tipoPago === "contado") {
+  // 4. Enqueue Local Write for Gasto if contado or parcial
+  if ((tipoPago === "contado" || tipoPago === "parcial") && resolvedMontoPagado > 0) {
     const gastoId = crypto.randomUUID();
     await enqueueLocalWrite({
       tenantId,
@@ -248,8 +269,8 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
         cycle_id: activeCycleId || null,
         descripcion: `Compra - Factura ${numeroFactura || "S/N"}`,
         proveedor: providerName,
-        monto: totalCompra,
-        metodo_pago: "efectivo",
+        monto: resolvedMontoPagado,
+        metodo_pago: metodoPago,
         fecha_gasto: fechaCompra,
         notas: observacion || `Registrado automáticamente desde Módulo de Compras (ID: ${compraId})`,
         created_by_auth_user_id: usuarioId,
@@ -260,36 +281,40 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
     });
   }
 
-  // 5. Enqueue Local Write for Cuenta por Pagar if credito
-  if (tipoPago === "credito") {
+  // 5. Enqueue Local Write for Cuenta por Pagar if credito or parcial
+  if (tipoPago === "credito" || tipoPago === "parcial") {
     if (!proveedorId) {
-      throw new Error("Se requiere un proveedor para registrar una compra a crédito.");
+      throw new Error("Se requiere un proveedor para registrar una compra a crédito o parcial.");
     }
-    const cxpId = crypto.randomUUID();
-    const dueDate = new Date();
-    dueDate.setDate(dueDate.getDate() + 30); // 30 days default
-    await enqueueLocalWrite({
-      tenantId,
-      tableName: "cuentas_pagar",
-      rowId: cxpId,
-      op: "insert",
-      payload: {
-        id: cxpId,
-        tenant_id: tenantId,
-        sucursal_id: sucursalId,
-        compra_id: compraId,
-        proveedor_id: proveedorId,
-        monto_total: totalCompra,
-        monto_pagado: 0.00,
-        fecha_emision: fechaCompra,
-        fecha_vencimiento: dueDate.toISOString(),
-        estado: "pendiente",
-        observacion: observacion || `Registrada automáticamente desde Módulo de Compras (ID: ${compraId})`,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      deviceId,
-    });
+    const balancePendiente = tipoPago === "credito" ? totalCompra : (totalCompra - resolvedMontoPagado);
+    
+    if (balancePendiente > 0) {
+      const cxpId = crypto.randomUUID();
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + 30); // 30 days default
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "cuentas_pagar",
+        rowId: cxpId,
+        op: "insert",
+        payload: {
+          id: cxpId,
+          tenant_id: tenantId,
+          sucursal_id: sucursalId,
+          compra_id: compraId,
+          proveedor_id: proveedorId,
+          monto_total: balancePendiente,
+          monto_pagado: 0.00,
+          fecha_emision: fechaCompra,
+          fecha_vencimiento: dueDate.toISOString(),
+          estado: "pendiente",
+          observacion: observacion || `Registrada automáticamente desde Módulo de Compras (ID: ${compraId})`,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        deviceId,
+      });
+    }
   }
 
   return { compraId };

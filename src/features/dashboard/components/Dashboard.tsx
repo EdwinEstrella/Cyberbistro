@@ -41,6 +41,7 @@ import { useTenantCurrency } from "../../../shared/hooks/useTenantCurrency";
 import { useTheme } from "../../../shared/context/ThemeContext";
 import { suggestCategoryColor, sortCategoriesForTabs } from "../../../shared/lib/menuCategories";
 import { MesaCloseAccountModal } from "../../billing/components/MesaCloseAccountModal";
+import { canUseFeature } from "../../../shared/lib/planFeatures";
 // DashboardTickerStrip removed
 import {
   incrementTenantNcfSequence,
@@ -133,7 +134,7 @@ function canDeleteOpenConsumo(rol: string | null | undefined, userId: string | n
 
 export function Dashboard() {
   const { query: cartSearchQuery } = useVentaCartSearch();
-  const { tenantId, user, rol, loading: authLoading } = useAuth();
+  const { tenantId, user, rol, plan, loading: authLoading } = useAuth();
   const { activeSucursalId, loading: sucursalLoading } = useSucursal();
   const location = useLocation();
   const { theme } = useTheme();
@@ -153,7 +154,7 @@ export function Dashboard() {
   const [charging, setCharging] = useState(false);
   const [chargeOk, setChargeOk] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<
-    "efectivo" | "tarjeta" | "digital" | "transferencia"
+    "efectivo" | "tarjeta" | "digital" | "transferencia" | "fiado"
   >("efectivo");
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showConsumosModal, setShowConsumosModal] = useState(false);
@@ -966,6 +967,10 @@ export function Dashboard() {
       alert("Debes indicar el RNC del cliente para emitir una factura B01.");
       return;
     }
+    if (paymentMethod === "fiado" && !takeoutCustomer) {
+      alert("Debes seleccionar un cliente para registrar una venta al fiado.");
+      return;
+    }
     const cycleOpen = await hasOpenCycle(tenantId, activeSucursalId);
     if (!cycleOpen) {
       alert("No hay un ciclo operativo abierto. Inicie un ciclo antes de cobrar.");
@@ -1058,22 +1063,23 @@ export function Dashboard() {
     const localFacturaId = crypto.randomUUID();
     const nowIso = new Date().toISOString();
     const numeroFactura = await getNextFacturaNumber(tenantId);
+    const isFiado = paymentMethod === "fiado";
     const facturaData: Record<string, unknown> = {
       id: localFacturaId,
       tenant_id: tenantId,
       sucursal_id: activeSucursalId,
       numero_factura: numeroFactura,
       metodo_pago: paymentMethod,
-      estado: "pagada" as const,
+      estado: isFiado ? ("pendiente" as const) : ("pagada" as const),
       subtotal,
       itbis,
       propina: 0,
       total,
       items: facturaItems,
-      monto_recibido: cashReceived.amount,
-      cambio_devuelto: cashReceived.change,
+      monto_recibido: isFiado ? null : cashReceived.amount,
+      cambio_devuelto: isFiado ? null : cashReceived.change,
       created_at: nowIso,
-      pagada_at: nowIso,
+      pagada_at: isFiado ? null : nowIso,
       mesa_numero: 0,
       notas: "Para llevar",
     };
@@ -1104,11 +1110,41 @@ export function Dashboard() {
         payload: facturaData,
         deviceId: await getDeviceId(),
       });
+
+      if (isFiado && takeoutCustomer) {
+        const cxcId = crypto.randomUUID();
+        const dueDate = new Date();
+        dueDate.setDate(dueDate.getDate() + 30);
+        await enqueueLocalWrite({
+          tenantId,
+          tableName: "cuentas_cobrar",
+          rowId: cxcId,
+          op: "insert",
+          payload: {
+            id: cxcId,
+            tenant_id: tenantId,
+            sucursal_id: activeSucursalId,
+            factura_id: localFacturaId,
+            customer_id: takeoutCustomer.id,
+            monto_total: total,
+            monto_pagado: 0.00,
+            fecha_emision: nowIso,
+            fecha_vencimiento: dueDate.toISOString(),
+            estado: "pendiente",
+            observacion: `Registrada automáticamente desde POS (Para llevar, Factura #${numeroFactura})`,
+            created_at: nowIso,
+            updated_at: nowIso,
+          },
+          deviceId: await getDeviceId(),
+        });
+      }
     }
 
-    const cashDrawerRes = await openCashDrawerForSale();
-    if (!cashDrawerRes.ok && cashDrawerRes.error) {
-      console.warn("Apertura de caja:", cashDrawerRes.error);
+    if (!isFiado) {
+      const cashDrawerRes = await openCashDrawerForSale();
+      if (!cashDrawerRes.ok && cashDrawerRes.error) {
+        console.warn("Apertura de caja:", cashDrawerRes.error);
+      }
     }
 
     if (tenantId && ncfPart && !ncfPart.sequenceReservedAtomically) {
@@ -2031,23 +2067,33 @@ export function Dashboard() {
                           { value: "tarjeta" as const, label: "Tarjeta", icon: "💳" },
                           { value: "digital" as const, label: "Digital", icon: "📱" },
                           { value: "transferencia" as const, label: "Transf.", icon: "🏦" },
+                          { value: "fiado" as const, label: "Crédito / Fiado", icon: "🤝" },
                         ] as const
                       ).map((method) => {
                         const active = paymentMethod === method.value;
+                        const isFiadoLocked = method.value === "fiado" && !canUseFeature(plan, "accounts_receivable");
                         return (
                           <button
                             type="button"
                             key={method.value}
-                            onClick={() => setPaymentMethod(method.value)}
+                            onClick={() => {
+                              if (isFiadoLocked) {
+                                if (confirm("🔒 El pago 'Al Fiado' (Cuentas por Cobrar) es una función del Plan Profesional.\n\n¿Deseas solicitar la actualización de tu plan por WhatsApp?")) {
+                                  window.open("https://wa.me/18096041078?text=Hola%20Cyberbistro%2C%20quiero%20actualizar%20mi%20plan%20para%20usar%20Cuentas%20por%20Cobrar", "_blank", "noopener,noreferrer");
+                                }
+                                return;
+                              }
+                              setPaymentMethod(method.value);
+                            }}
                             className={`flex items-center gap-3 px-4 py-3.5 rounded-xl cursor-pointer border transition-all active:scale-95 justify-start ${
                               active
                                   ? "bg-[#ff906d] border-[#ff906d] text-[#5b1600] shadow-[0_4px_12px_rgba(255,144,109,0.2)] font-bold"
                                   : "bg-zinc-900/50 border-zinc-800/80 text-zinc-300 hover:bg-zinc-800 hover:border-zinc-700"
-                            }`}
+                            } ${isFiadoLocked ? "opacity-60" : ""}`}
                           >
                             <span className="text-[18px]">{method.icon}</span>
-                            <span className="font-['Space_Grotesk',sans-serif] text-[12px] uppercase tracking-[0.5px]">
-                              {method.label}
+                            <span className="font-['Space_Grotesk',sans-serif] text-[12px] uppercase tracking-[0.5px] flex items-center gap-1.5">
+                              {method.label} {isFiadoLocked && <span>🔒</span>}
                             </span>
                           </button>
                         );

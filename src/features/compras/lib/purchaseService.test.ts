@@ -83,6 +83,7 @@ describe("purchaseService", () => {
       proveedorId: "prov-1",
       numeroFactura: "FAC-001",
       tipoPago: "contado",
+      metodoPago: "efectivo",
       items: [
         {
           producto_id: "prod-simple",
@@ -114,6 +115,7 @@ describe("purchaseService", () => {
       proveedorId: "prov-1",
       numeroFactura: "FAC-002",
       tipoPago: "contado",
+      metodoPago: "efectivo",
       items: [
         {
           producto_id: "prod-liquid",
@@ -152,6 +154,7 @@ describe("purchaseService", () => {
       proveedorId: "prov-1",
       numeroFactura: "FAC-003",
       tipoPago: "contado",
+      metodoPago: "efectivo",
       items: [
         {
           producto_id: "prod-empty",
@@ -186,6 +189,7 @@ describe("purchaseService", () => {
         proveedorId: "prov-1",
         numeroFactura: "FAC-ERR",
         tipoPago: "contado",
+        metodoPago: "efectivo",
         items: [
           {
             producto_id: "prod-simple",
@@ -194,7 +198,7 @@ describe("purchaseService", () => {
           },
         ],
       })
-    ).rejects.toThrow("No hay un ciclo operativo abierto para registrar una compra al contado.");
+    ).rejects.toThrow("No hay un ciclo operativo abierto para registrar una compra al contado o pago parcial.");
   });
 
   it("allows credito purchase even with no active cycle and does not register a gasto", async () => {
@@ -260,6 +264,7 @@ describe("purchaseService", () => {
       proveedorId: "prov-1",
       numeroFactura: "FAC-CAT",
       tipoPago: "contado",
+      metodoPago: "efectivo",
       items: [
         {
           producto_id: "prod-simple",
@@ -284,5 +289,142 @@ describe("purchaseService", () => {
     const gastoPayload = gastoCall?.[0].payload as any;
     expect(gastoPayload.monto).toBe(40.00); // 5 * 8.00 = 40.00
     expect(gastoPayload.cycle_id).toBe("cycle-active-123");
+  });
+
+  it("throws error if contado or parcial purchase has no payment method", async () => {
+    await expect(
+      registrarCompra({
+        tenantId: mockTenantId,
+        sucursalId: "suc-1",
+        usuarioId: "user-1",
+        proveedorId: "prov-1",
+        numeroFactura: "FAC-NOMETHOD",
+        tipoPago: "contado",
+        items: [
+          {
+            producto_id: "prod-simple",
+            cantidad: 5,
+            costo_unitario: 8.00,
+          },
+        ],
+      })
+    ).rejects.toThrow("Selecciona un método de pago.");
+
+    await expect(
+      registrarCompra({
+        tenantId: mockTenantId,
+        sucursalId: "suc-1",
+        usuarioId: "user-1",
+        proveedorId: "prov-1",
+        numeroFactura: "FAC-NOMETHOD2",
+        tipoPago: "parcial",
+        montoPagado: 10,
+        items: [
+          {
+            producto_id: "prod-simple",
+            cantidad: 5,
+            costo_unitario: 8.00,
+          },
+        ],
+      })
+    ).rejects.toThrow("Selecciona un método de pago.");
+  });
+
+  it("throws error if parcial purchase has invalid or excessive montoPagado", async () => {
+    // Total is 40.00 (5 * 8.00)
+    await expect(
+      registrarCompra({
+        tenantId: mockTenantId,
+        sucursalId: "suc-1",
+        usuarioId: "user-1",
+        proveedorId: "prov-1",
+        numeroFactura: "FAC-INVALID-M1",
+        tipoPago: "parcial",
+        metodoPago: "tarjeta",
+        montoPagado: -5,
+        items: [{ producto_id: "prod-simple", cantidad: 5, costo_unitario: 8.00 }],
+      })
+    ).rejects.toThrow("El monto pagado inicial debe ser mayor a cero.");
+
+    await expect(
+      registrarCompra({
+        tenantId: mockTenantId,
+        sucursalId: "suc-1",
+        usuarioId: "user-1",
+        proveedorId: "prov-1",
+        numeroFactura: "FAC-INVALID-M2",
+        tipoPago: "parcial",
+        metodoPago: "tarjeta",
+        montoPagado: 40,
+        items: [{ producto_id: "prod-simple", cantidad: 5, costo_unitario: 8.00 }],
+      })
+    ).rejects.toThrow("El monto pagado no puede ser mayor o igual al total de la compra.");
+
+    await expect(
+      registrarCompra({
+        tenantId: mockTenantId,
+        sucursalId: "suc-1",
+        usuarioId: "user-1",
+        proveedorId: "prov-1",
+        numeroFactura: "FAC-INVALID-M3",
+        tipoPago: "parcial",
+        metodoPago: "tarjeta",
+        montoPagado: 45,
+        items: [{ producto_id: "prod-simple", cantidad: 5, costo_unitario: 8.00 }],
+      })
+    ).rejects.toThrow("El monto pagado no puede ser mayor o igual al total de la compra.");
+  });
+
+  it("correctly registers partial purchase with gasto and cuentas_pagar", async () => {
+    // Total is 40.00 (5 * 8.00), paying 15.00, remaining 25.00
+    const result = await registrarCompra({
+      tenantId: mockTenantId,
+      sucursalId: "suc-1",
+      usuarioId: "user-1",
+      proveedorId: "prov-1",
+      numeroFactura: "FAC-PARTIAL-OK",
+      tipoPago: "parcial",
+      metodoPago: "transferencia",
+      montoPagado: 15.00,
+      items: [
+        {
+          producto_id: "prod-simple",
+          cantidad: 5,
+          costo_unitario: 8.00,
+        },
+      ],
+    });
+
+    expect(result.compraId).toBeDefined();
+
+    // Check purchase table payload has correct total, tipo_pago, metodo_pago, and monto_pagado
+    const purchaseCall = vi.mocked(enqueueLocalWrite).mock.calls.find(
+      call => call[0].tableName === "compras" && call[0].op === "insert"
+    );
+    expect(purchaseCall).toBeDefined();
+    const purchasePayload = purchaseCall?.[0].payload as any;
+    expect(purchasePayload.total).toBe(40.00);
+    expect(purchasePayload.tipo_pago).toBe("parcial");
+    expect(purchasePayload.metodo_pago).toBe("transferencia");
+    expect(purchasePayload.monto_pagado).toBe(15.00);
+
+    // Verify gasto is enqueued for 15.00
+    const gastoCall = vi.mocked(enqueueLocalWrite).mock.calls.find(
+      call => call[0].tableName === "gastos" && call[0].op === "insert"
+    );
+    expect(gastoCall).toBeDefined();
+    const gastoPayload = gastoCall?.[0].payload as any;
+    expect(gastoPayload.monto).toBe(15.00);
+    expect(gastoPayload.metodo_pago).toBe("transferencia");
+
+    // Verify cuentas_pagar is enqueued for remaining 25.00
+    const cxpCall = vi.mocked(enqueueLocalWrite).mock.calls.find(
+      call => call[0].tableName === "cuentas_pagar" && call[0].op === "insert"
+    );
+    expect(cxpCall).toBeDefined();
+    const cxpPayload = cxpCall?.[0].payload as any;
+    expect(cxpPayload.monto_total).toBe(25.00);
+    expect(cxpPayload.monto_pagado).toBe(0.00);
+    expect(cxpPayload.estado).toBe("pendiente");
   });
 });
