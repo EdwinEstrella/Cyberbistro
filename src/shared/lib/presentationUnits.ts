@@ -1,68 +1,70 @@
-export function bottlesAndMlToTotalMl(
-  bottles: number,
-  mlPerBottle: number,
-  extraMl: number
+export function parentAndFractionsToTotal(
+  parentUnits: number,
+  fractionsPerParent: number,
+  extraFractions: number
 ): number {
-  if (mlPerBottle <= 0) return 0;
-  return bottles * mlPerBottle + extraMl;
+  if (fractionsPerParent <= 0) return 0;
+  return parentUnits * fractionsPerParent + extraFractions;
 }
 
-export interface BottlesAndMl {
-  bottles: number;
-  remainingMl: number;
+export interface ParentAndFractions {
+  parentUnits: number;
+  remainingFractions: number;
 }
 
-export function totalMlToBottlesAndMl(
-  totalMl: number,
-  mlPerBottle: number
-): BottlesAndMl {
-  if (mlPerBottle <= 0) {
-    return { bottles: 0, remainingMl: 0 };
+export function totalToParentAndFractions(
+  totalFractions: number,
+  fractionsPerParent: number
+): ParentAndFractions {
+  if (fractionsPerParent <= 0) {
+    return { parentUnits: 0, remainingFractions: 0 };
   }
-  const bottles = Math.floor(totalMl / mlPerBottle);
-  const remainingMl = Math.round(totalMl % mlPerBottle);
-  return { bottles, remainingMl };
+  const parentUnits = Math.floor(totalFractions / fractionsPerParent);
+  const remainingFractions = Math.round(totalFractions % fractionsPerParent);
+  return { parentUnits, remainingFractions };
 }
 
-export function totalMlToFractionalBottles(
-  totalMl: number,
-  mlPerBottle: number
+export function totalToFractionalParents(
+  totalFractions: number,
+  fractionsPerParent: number
 ): number {
-  if (mlPerBottle <= 0) return 0;
-  return Number((totalMl / mlPerBottle).toFixed(4));
+  if (fractionsPerParent <= 0) return 0;
+  return Number((totalFractions / fractionsPerParent).toFixed(4));
 }
 
-export function formatPresentationStock(
-  totalMl: number,
-  mlPerBottle: number
+export function formatFractionalStock(
+  totalFractions: number,
+  fractionsPerParent: number,
+  parentUnitName: string = "unidades",
+  fractionUnitName: string = "fracciones"
 ): string {
-  if (mlPerBottle <= 0 || totalMl <= 0) {
-    return "0 bot.";
+  if (fractionsPerParent <= 0 || totalFractions <= 0) {
+    return `0 ${parentUnitName}`;
   }
-  const { bottles, remainingMl } = totalMlToBottlesAndMl(totalMl, mlPerBottle);
-  if (bottles === 0) {
-    return `${remainingMl} ml`;
+  const { parentUnits, remainingFractions } = totalToParentAndFractions(totalFractions, fractionsPerParent);
+  if (parentUnits === 0) {
+    return `${remainingFractions} ${fractionUnitName}`;
   }
-  if (remainingMl === 0) {
-    return `${bottles} bot.`;
+  if (remainingFractions === 0) {
+    return `${parentUnits} ${parentUnitName}`;
   }
-  return `${bottles} bot. y ${remainingMl} ml`;
+  return `${parentUnits} ${parentUnitName} y ${remainingFractions} ${fractionUnitName}`;
 }
 
-export function calculateCostPerMl(
-  bottleCost: number,
-  mlPerBottle: number
+export function calculateCostPerFraction(
+  parentUnitCost: number,
+  fractionsPerParent: number
 ): number {
-  if (mlPerBottle <= 0) return 0;
-  return Number((bottleCost / mlPerBottle).toFixed(4));
+  if (fractionsPerParent <= 0) return 0;
+  return Number((parentUnitCost / fractionsPerParent).toFixed(4));
 }
 
 export function calculateStockValue(
-  totalMl: number,
-  mlPerBottle: number,
-  bottleCost: number
+  totalFractions: number,
+  fractionsPerParent: number,
+  parentUnitCost: number
 ): number {
-  if (mlPerBottle <= 0) return 0;
-  const costPerMl = bottleCost / mlPerBottle;
-  return Number((totalMl * costPerMl).toFixed(2));
+  if (fractionsPerParent <= 0) return 0;
+  const costPerFraction = parentUnitCost / fractionsPerParent;
+  return Number((totalFractions * costPerFraction).toFixed(2));
 }

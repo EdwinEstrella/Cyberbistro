@@ -9,7 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 let mainWindow: BrowserWindow | null = null
 
 // Deshabilitar la aceleración de hardware para evitar bugs de focus/puntero en Windows
-app.disableHardwareAcceleration()
+// app.disableHardwareAcceleration()
 
 type PrintThermalOptions = {
   html: string

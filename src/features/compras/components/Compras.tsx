@@ -35,7 +35,9 @@ interface ProductoRow {
   id: string;
   nombre: string;
   unidad_base: string;
-  ml_por_botella: number | null;
+  unidad_compra: string | null;
+  contenido_por_unidad_compra: number | null;
+  mostrar_en_fracciones: boolean;
   activo: boolean;
 }
 

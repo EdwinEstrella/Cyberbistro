@@ -3,7 +3,7 @@ import { useNavigate } from "react-router";
 import { Plus, RefreshCw, Layers, ClipboardList, Flame, Trash2, ArrowUpDown } from "lucide-react";
 import { NewInsumoModal } from "./NewInsumoModal";
 import { insforgeClient } from "../../../shared/lib/insforge";
-import { formatPresentationStock } from "../../../shared/lib/presentationUnits";
+import { formatFractionalStock } from "../../../shared/lib/presentationUnits";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { useSucursal } from "../../../app/context/SucursalContext";
@@ -20,8 +20,10 @@ interface InsumoRow {
   stock_minimo: number;
   costo_promedio: number;
   activo: boolean;
-  ml_por_botella: number | null;
-  costo_compra: number | null;
+  contenido_por_unidad_compra: number | null;
+  costo_unidad_compra: number | null;
+  unidad_compra: string | null;
+  mostrar_en_fracciones: boolean;
 }
 
 interface MovimientoRow {
@@ -618,36 +620,36 @@ export function Inventario() {
                           <div className="flex flex-col">
                             <span className="font-['Inter',sans-serif] text-[#6b7280] text-[9px] uppercase">Stock Actual</span>
                             <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] mt-0.5">
-                              {insumo.unidad_base === "ml" && insumo.ml_por_botella && insumo.ml_por_botella > 0
-                                ? formatPresentationStock(insumo.stock_actual, insumo.ml_por_botella)
+                              {insumo.mostrar_en_fracciones && insumo.contenido_por_unidad_compra && insumo.contenido_por_unidad_compra > 0
+                                ? formatFractionalStock(insumo.stock_actual, insumo.contenido_por_unidad_compra, insumo.unidad_compra || "unidades", insumo.unidad_base)
                                 : `${insumo.stock_actual} ${insumo.unidad_base}`}
                             </span>
-                            {insumo.unidad_base === "ml" && insumo.ml_por_botella && insumo.ml_por_botella > 0 && (
+                            {insumo.mostrar_en_fracciones && insumo.contenido_por_unidad_compra && insumo.contenido_por_unidad_compra > 0 && (
                               <span className="font-['Inter',sans-serif] text-[9px] text-[#6b7280] mt-0.5">
-                                ({insumo.stock_actual} ml)
+                                ({insumo.stock_actual} {insumo.unidad_base})
                               </span>
                             )}
                           </div>
                           <div className="flex flex-col">
                             <span className="font-['Inter',sans-serif] text-[#6b7280] text-[9px] uppercase">Mínimo</span>
                             <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#adaaaa] text-[13px] mt-0.5">
-                              {insumo.unidad_base === "ml" && insumo.ml_por_botella && insumo.ml_por_botella > 0
-                                ? formatPresentationStock(insumo.stock_minimo, insumo.ml_por_botella)
+                              {insumo.mostrar_en_fracciones && insumo.contenido_por_unidad_compra && insumo.contenido_por_unidad_compra > 0
+                                ? formatFractionalStock(insumo.stock_minimo, insumo.contenido_por_unidad_compra, insumo.unidad_compra || "unidades", insumo.unidad_base)
                                 : `${insumo.stock_minimo} ${insumo.unidad_base}`}
                             </span>
                           </div>
                         </div>
 
-                        {insumo.unidad_base === "ml" && insumo.ml_por_botella && insumo.ml_por_botella > 0 ? (
+                        {insumo.mostrar_en_fracciones && insumo.contenido_por_unidad_compra && insumo.contenido_por_unidad_compra > 0 ? (
                           <div className="flex flex-col gap-1 pt-1 border-t border-[rgba(72,72,71,0.1)] text-[11px] font-['Inter',sans-serif] text-[#adaaaa]">
-                            {insumo.costo_compra !== null && insumo.costo_compra > 0 && (
+                            {insumo.costo_unidad_compra !== null && insumo.costo_unidad_compra > 0 && (
                               <div className="flex justify-between items-center">
-                                <span>Costo Botella:</span>
-                                <span className="font-bold text-white">{RD(insumo.costo_compra)}</span>
+                                <span>Costo {insumo.unidad_compra || 'Caja'}:</span>
+                                <span className="font-bold text-white">{RD(insumo.costo_unidad_compra)}</span>
                               </div>
                             )}
                             <div className="flex justify-between items-center">
-                              <span>Costo Promedio (ml):</span>
+                              <span>Costo Promedio ({insumo.unidad_base}):</span>
                               <span className="font-bold text-white">RD$ {insumo.costo_promedio.toFixed(4)}</span>
                             </div>
                           </div>

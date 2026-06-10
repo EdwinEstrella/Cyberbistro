@@ -471,7 +471,7 @@ export function MesaCloseAccountModal({
     return { subtotal, itbis, total };
   }
 
-  function parseOptionalCashReceived(total: number): { amount: number | null; change: number | null } | null {
+  function parseOptionalCashReceived(total: number, isFiado: boolean = false): { amount: number | null; change: number | null } | null {
     const raw = cashReceivedInput.trim();
     if (raw === "") return { amount: null, change: null };
 
@@ -480,12 +480,16 @@ export function MesaCloseAccountModal({
       alert("El dinero recibido debe ser un monto válido.");
       return null;
     }
-    if (amount < total) {
+    if (!isFiado && amount < total) {
       alert("El dinero recibido no puede ser menor al total.");
       return null;
     }
+    if (isFiado && amount >= total) {
+      alert("Si el monto cubre o supera el total, por favor seleccioná Efectivo u otro medio de pago.");
+      return null;
+    }
 
-    return { amount, change: amount - total };
+    return { amount, change: Math.max(0, amount - total) };
   }
 
   /**
@@ -586,8 +590,8 @@ export function MesaCloseAccountModal({
           sucursal_id: activeSucursalId,
           numero_factura: nextFacturaNumber++,
           mesa_numero: mesaNumero,
-          metodo_pago: paymentMethod,
           estado: paymentMethod === "fiado" ? "pendiente" : "pagada",
+          metodo_pago: paymentMethod,
           subtotal,
           itbis,
           propina: 0,
@@ -595,6 +599,8 @@ export function MesaCloseAccountModal({
           items: facturaItems,
           notas: `Mesa ${mesaNumero} — Persona ${personIndex} de ${splitParts} (${consumosToInvoice.length} líneas)`,
           pagada_at: paymentMethod === "fiado" ? null : now,
+          monto_recibido: null,
+          cambio_devuelto: null,
           created_at: now,
           updated_at: now,
         };
@@ -745,9 +751,10 @@ export function MesaCloseAccountModal({
       itbisRate,
       activeSucursalId
     );
+    const isFiado = paymentMethod === "fiado";
     const cashReceived =
-      paymentMethod === "efectivo"
-        ? parseOptionalCashReceived(total)
+      paymentMethod === "efectivo" || isFiado
+        ? parseOptionalCashReceived(total, isFiado)
         : { amount: null, change: null };
     if (!cashReceived) {
       setCharging(false);
@@ -835,7 +842,7 @@ export function MesaCloseAccountModal({
           factura_id: localFacturaId,
           customer_id: selectedCustomer.id,
           monto_total: total,
-          monto_pagado: 0.00,
+          monto_pagado: cashReceived.amount ?? 0.00,
           fecha_emision: now,
           fecha_vencimiento: dueDate.toISOString(),
           estado: "pendiente",
@@ -1272,10 +1279,10 @@ export function MesaCloseAccountModal({
             </div>
 
             {/* Cash Calculator Section */}
-            {paymentMethod === "efectivo" && !splitMode && (
+            {(paymentMethod === "efectivo" || paymentMethod === "fiado") && !splitMode && (
               <div className="flex flex-col gap-2 shrink-0 bg-zinc-900/20 border border-zinc-800/30 rounded-2xl p-4">
                 <label htmlFor="cash-received-input" className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px]">
-                  Dinero recibido (opcional)
+                  {paymentMethod === "fiado" ? "Abono inicial (opcional)" : "Dinero recibido (opcional)"}
                 </label>
                 <div className="relative">
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[14px]">RD$</span>
@@ -1293,9 +1300,15 @@ export function MesaCloseAccountModal({
                 </div>
                 {cashReceivedInput.trim() !== "" && (
                   <div className="flex justify-between items-center px-1 py-0.5">
-                    <span className="text-zinc-500 text-[12px] font-['Inter',sans-serif]">Cambio devuelto:</span>
-                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#59ee50] text-[14px]">
-                      {RD(Math.max(0, Number(cashReceivedInput.replace(",", ".")) - calcTotal || 0))}
+                    <span className="text-zinc-500 text-[12px] font-['Inter',sans-serif]">
+                      {paymentMethod === "fiado" ? "Balance pendiente:" : "Cambio devuelto:"}
+                    </span>
+                    <span className={`font-['Space_Grotesk',sans-serif] font-bold ${paymentMethod === "fiado" ? "text-[#ff906d]" : "text-[#59ee50]"} text-[14px]`}>
+                      {RD(
+                        paymentMethod === "fiado"
+                          ? Math.max(0, calcTotal - Number(cashReceivedInput.replace(",", ".")))
+                          : Math.max(0, Number(cashReceivedInput.replace(",", ".")) - calcTotal || 0)
+                      )}
                     </span>
                   </div>
                 )}

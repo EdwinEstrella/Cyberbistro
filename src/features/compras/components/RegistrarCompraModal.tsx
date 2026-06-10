@@ -15,7 +15,9 @@ interface ProductoRow {
   id: string;
   nombre: string;
   unidad_base: string;
-  ml_por_botella: number | null;
+  unidad_compra: string | null;
+  contenido_por_unidad_compra: number | null;
+  mostrar_en_fracciones: boolean;
 }
 
 interface RegistrarCompraModalProps {
@@ -256,56 +258,66 @@ export function RegistrarCompraModal({
                 <thead className="bg-[#181818]">
                   <tr className="text-left font-['Inter',sans-serif] text-[9px] uppercase tracking-[0.5px] text-[#adaaaa] border-b border-[rgba(72,72,71,0.18)]">
                     <th className="px-3 py-2">Insumo / Materia Prima</th>
-                    <th className="px-3 py-2 w-[110px]">Cantidad</th>
-                    <th className="px-3 py-2 w-[140px]">Costo Unit. (RD$)</th>
+                    <th className="px-3 py-2 w-[120px]">Cant.</th>
+                    <th className="px-3 py-2 w-[150px]">Costo (RD$)</th>
                     <th className="px-3 py-2 w-[45px]"></th>
                   </tr>
                 </thead>
                 <tbody className="font-['Inter',sans-serif] text-[12px] text-white">
                   {purchaseItems.map((item, idx) => {
                     const selectedProd = productos.find(p => p.id === item.producto_id);
-                    const isLiquid = selectedProd?.ml_por_botella && selectedProd.ml_por_botella > 0;
+                    const isFractional = selectedProd?.mostrar_en_fracciones && selectedProd.contenido_por_unidad_compra && selectedProd.contenido_por_unidad_compra > 0;
                     return (
                       <tr key={item.id} className="border-t border-[rgba(72,72,71,0.1)]">
-                        <td className="px-2.5 py-2 text-left">
+                        <td className="px-2.5 py-2 text-left align-top">
                           <select
                             required
                             value={item.producto_id}
                             onChange={(e) => updateRow(idx, "producto_id", e.target.value)}
-                            className="w-full bg-[#151515] border border-[rgba(72,72,71,0.3)] rounded-[6px] px-2 py-1.5 text-white outline-none focus:border-[#ff906d]/50 transition-colors"
+                            className="w-full bg-[#151515] border border-[rgba(72,72,71,0.3)] rounded-[6px] px-2 py-1.5 text-white outline-none focus:border-[#ff906d]/50 transition-colors mt-4"
                           >
                             <option value="">Selecciona insumo</option>
                             {productos.map(p => (
                               <option key={p.id} value={p.id}>
-                                {p.nombre} {p.ml_por_botella ? `(Bot. ${p.ml_por_botella} ml)` : `(${p.unidad_base})`}
+                                {p.nombre} {p.mostrar_en_fracciones && p.contenido_por_unidad_compra ? `(${p.unidad_compra || 'Fracc.'} de ${p.contenido_por_unidad_compra} ${p.unidad_base})` : `(${p.unidad_base})`}
                               </option>
                             ))}
                           </select>
-                          {selectedProd && isLiquid && item.cantidad && Number(item.cantidad) > 0 && (
-                            <span className="text-[10px] text-[#ff906d] block mt-1 px-1">
-                              Equivale a {(Number(item.cantidad) * (selectedProd.ml_por_botella || 0)).toLocaleString()} ml de stock base
+                          {selectedProd && isFractional && item.cantidad && Number(item.cantidad) > 0 && (
+                            <span className="text-[10px] text-[#ff906d] block mt-1.5 px-1 font-medium">
+                              + {(Number(item.cantidad) * (selectedProd.contenido_por_unidad_compra || 0)).toLocaleString()} {selectedProd.unidad_base} agregados al stock
                             </span>
                           )}
                         </td>
-                        <td className="px-2.5 py-2">
+                        <td className="px-2.5 py-2 align-top">
+                          {selectedProd && (
+                            <span className="block text-[9px] text-zinc-500 uppercase tracking-wide mb-1 px-1">
+                              {isFractional ? `${selectedProd.unidad_compra || "Cajas"} comprad.` : `${selectedProd.unidad_base || "Cant."} comprad.`}
+                            </span>
+                          )}
                           <input
                             type="number"
                             required
                             step="any"
                             min="0.01"
-                            placeholder={isLiquid ? "Botellas" : (selectedProd?.unidad_base || "Cantidad")}
+                            placeholder={isFractional ? (selectedProd.unidad_compra || "Cant.") : (selectedProd?.unidad_base || "Cantidad")}
                             value={item.cantidad}
                             onChange={(e) => updateRow(idx, "cantidad", e.target.value)}
                             className="w-full bg-[#151515] border border-[rgba(72,72,71,0.3)] rounded-[6px] px-2 py-1.5 text-white outline-none focus:border-[#ff906d]/50 transition-colors"
                           />
                         </td>
-                        <td className="px-2.5 py-2">
+                        <td className="px-2.5 py-2 align-top">
+                          {selectedProd && (
+                            <span className="block text-[9px] text-zinc-500 uppercase tracking-wide mb-1 px-1">
+                              Costo por {isFractional ? (selectedProd.unidad_compra || "caja") : (selectedProd.unidad_base || "unidad")}
+                            </span>
+                          )}
                           <input
                             type="number"
                             required
                             step="any"
                             min="0"
-                            placeholder={isLiquid ? "Costo Botella" : "Costo Unit."}
+                            placeholder={isFractional ? `Costo ${selectedProd.unidad_compra || "unidad"}` : "Costo Unit."}
                             value={item.costo_unitario}
                             onChange={(e) => updateRow(idx, "costo_unitario", e.target.value)}
                             className="w-full bg-[#151515] border border-[rgba(72,72,71,0.3)] rounded-[6px] px-2 py-1.5 text-white outline-none focus:border-[#ff906d]/50 transition-colors"
@@ -336,11 +348,11 @@ export function RegistrarCompraModal({
                     const prod = productos.find(p => p.id === item.producto_id);
                     const q = Number(item.cantidad) || 0;
                     if (!prod || q <= 0) return null;
-                    const isLiquid = prod.ml_por_botella && prod.ml_por_botella > 0;
-                    const addedBase = isLiquid ? (q * (prod.ml_por_botella || 0)) : q;
+                    const isFractional = prod.mostrar_en_fracciones && prod.contenido_por_unidad_compra && prod.contenido_por_unidad_compra > 0;
+                    const addedBase = isFractional ? (q * (prod.contenido_por_unidad_compra || 0)) : q;
                     return (
                       <li key={item.id}>
-                        <b>{prod.nombre}:</b> +{q.toLocaleString()} {isLiquid ? `botellas (${addedBase.toLocaleString()} ml)` : `${prod.unidad_base}`} agregados al stock.
+                        <b>{prod.nombre}:</b> +{q.toLocaleString()} {isFractional ? `${prod.unidad_compra || 'Cajas'} (${addedBase.toLocaleString()} ${prod.unidad_base})` : `${prod.unidad_base}`} agregados al stock.
                       </li>
                     );
                   })}

@@ -1,5 +1,5 @@
 import { enqueueLocalWrite, readLocalMirror, getDeviceId } from "../../../shared/lib/localFirst";
-import { calculateCostPerMl } from "../../../shared/lib/presentationUnits";
+import { calculateCostPerFraction } from "../../../shared/lib/presentationUnits";
 
 export interface PurchaseItemInput {
   producto_id: string;
@@ -104,7 +104,8 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
     id: string;
     nombre: string;
     unidad_base: string;
-    ml_por_botella: number | null;
+    contenido_por_unidad_compra: number | null;
+    mostrar_en_fracciones: boolean;
     stock_actual: number;
     costo_promedio: number;
   }>(tenantId, "productos_inventario");
@@ -121,12 +122,12 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
       throw new Error(`El producto con ID ${item.producto_id} no existe en el catálogo.`);
     }
 
-    const mlBotella = product.ml_por_botella || 0;
-    const isLiquid = mlBotella > 0;
+    const contenidoFraccion = product.contenido_por_unidad_compra || 0;
+    const isFractional = product.mostrar_en_fracciones && contenidoFraccion > 0;
 
     // Converted stock quantities & costs
-    const cantidadBase = isLiquid ? (item.cantidad * mlBotella) : item.cantidad;
-    const costoBase = isLiquid ? calculateCostPerMl(item.costo_unitario, mlBotella) : item.costo_unitario;
+    const cantidadBase = isFractional ? (item.cantidad * contenidoFraccion) : item.cantidad;
+    const costoBase = isFractional ? calculateCostPerFraction(item.costo_unitario, contenidoFraccion) : item.costo_unitario;
     const itemTotal = item.cantidad * item.costo_unitario;
     totalCompra += itemTotal;
 

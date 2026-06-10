@@ -1,6 +1,6 @@
 import { FormEvent, useState } from "react";
 import { enqueueLocalWrite, getDeviceId } from "../../../shared/lib/localFirst";
-import { calculateCostPerMl, bottlesAndMlToTotalMl } from "../../../shared/lib/presentationUnits";
+import { calculateCostPerFraction, parentAndFractionsToTotal } from "../../../shared/lib/presentationUnits";
 
 export const CATEGORIAS_INSUMO = ["Cocina / Cocina", "Insumo / Materia Prima", "Bebidas / Bar", "Desechables", "Otros"];
 export const UNIDADES_MEDIDA = ["ml", "g", "unidad", "oz", "libra", "litro", "galón"];
@@ -29,16 +29,17 @@ export function NewInsumoModal({
     nombre: "",
     categoria: "Insumo / Materia Prima",
     unidad_base: "unidad",
-    tipo_control: "simple" as "simple" | "botella",
+    tipo_control: "simple" as "simple" | "fraccionado",
     stock_minimo: "",
-    stock_minimo_botellas: "",
-    stock_minimo_ml: "",
+    stock_minimo_parent: "",
+    stock_minimo_fraction: "",
     stock_actual: "",
-    stock_actual_botellas: "",
-    stock_actual_ml: "",
+    stock_actual_parent: "",
+    stock_actual_fraction: "",
     costo_promedio: "",
-    ml_por_botella: "",
-    costo_compra: "",
+    contenido_por_unidad_compra: "",
+    costo_unidad_compra: "",
+    unidad_compra: "Caja",
   });
 
   if (!isOpen) return null;
@@ -52,31 +53,31 @@ export function NewInsumoModal({
     setSaving(true);
     try {
       const id = crypto.randomUUID();
-      const isBotella = insumoForm.tipo_control === "botella";
-      const mlBotella = isBotella ? (Number(insumoForm.ml_por_botella) || 0) : 0;
-      const costoCompra = isBotella ? (Number(insumoForm.costo_compra) || 0) : 0;
+      const isFraccionado = insumoForm.tipo_control === "fraccionado";
+      const contenidoPorUnidad = isFraccionado ? (Number(insumoForm.contenido_por_unidad_compra) || 0) : 0;
+      const costoCompra = isFraccionado ? (Number(insumoForm.costo_unidad_compra) || 0) : 0;
 
-      if (isBotella && mlBotella <= 0) {
-        throw new Error("El contenido de la botella debe ser mayor a cero.");
+      if (isFraccionado && contenidoPorUnidad <= 0) {
+        throw new Error("El contenido por unidad de compra debe ser mayor a cero.");
       }
 
       let stock = 0;
       let min = 0;
 
-      if (isBotella) {
-        const stockB = Number(insumoForm.stock_actual_botellas) || 0;
-        const stockMl = Number(insumoForm.stock_actual_ml) || 0;
-        if (stockB < 0 || stockMl < 0) {
+      if (isFraccionado) {
+        const stockParent = Number(insumoForm.stock_actual_parent) || 0;
+        const stockFraction = Number(insumoForm.stock_actual_fraction) || 0;
+        if (stockParent < 0 || stockFraction < 0) {
           throw new Error("El stock inicial no puede ser negativo.");
         }
-        stock = bottlesAndMlToTotalMl(stockB, mlBotella, stockMl);
+        stock = parentAndFractionsToTotal(stockParent, contenidoPorUnidad, stockFraction);
 
-        const minB = Number(insumoForm.stock_minimo_botellas) || 0;
-        const minMl = Number(insumoForm.stock_minimo_ml) || 0;
-        if (minB < 0 || minMl < 0) {
+        const minParent = Number(insumoForm.stock_minimo_parent) || 0;
+        const minFraction = Number(insumoForm.stock_minimo_fraction) || 0;
+        if (minParent < 0 || minFraction < 0) {
           throw new Error("El stock mínimo de alerta no puede ser negativo.");
         }
-        min = bottlesAndMlToTotalMl(minB, mlBotella, minMl);
+        min = parentAndFractionsToTotal(minParent, contenidoPorUnidad, minFraction);
       } else {
         stock = Number(insumoForm.stock_actual) || 0;
         min = Number(insumoForm.stock_minimo) || 0;
@@ -85,8 +86,8 @@ export function NewInsumoModal({
         }
       }
 
-      const costo = (isBotella && mlBotella > 0 && costoCompra > 0)
-        ? calculateCostPerMl(costoCompra, mlBotella)
+      const costo = (isFraccionado && contenidoPorUnidad > 0 && costoCompra > 0)
+        ? calculateCostPerFraction(costoCompra, contenidoPorUnidad)
         : (Number(insumoForm.costo_promedio) || 0);
 
       const payload = {
@@ -95,12 +96,14 @@ export function NewInsumoModal({
         sucursal_id: activeSucursalId,
         nombre,
         categoria: insumoForm.categoria,
-        unidad_base: isBotella ? "ml" : insumoForm.unidad_base,
+        unidad_base: insumoForm.unidad_base,
         stock_actual: stock,
         stock_minimo: min,
         costo_promedio: costo,
-        ml_por_botella: mlBotella > 0 ? mlBotella : null,
-        costo_compra: costoCompra > 0 ? costoCompra : null,
+        contenido_por_unidad_compra: contenidoPorUnidad > 0 ? contenidoPorUnidad : null,
+        costo_unidad_compra: costoCompra > 0 ? costoCompra : null,
+        unidad_compra: isFraccionado ? insumoForm.unidad_compra : null,
+        mostrar_en_fracciones: isFraccionado,
         activo: true,
       };
 
@@ -131,7 +134,7 @@ export function NewInsumoModal({
             cantidad: stock,
             stock_antes: 0,
             stock_despues: stock,
-            costo_unitario: isBotella ? calculateCostPerMl(costoCompra, mlBotella) : costo,
+            costo_unitario: isFraccionado ? calculateCostPerFraction(costoCompra, contenidoPorUnidad) : costo,
             motivo: "Carga inicial de inventario",
             referencia: "Carga Inicial",
             fecha: new Date().toISOString(),
@@ -192,36 +195,62 @@ export function NewInsumoModal({
                 className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors"
               >
                 <option value="simple">Simple (Unidad, gramos, etc.)</option>
-                <option value="botella">Botella / Líquidos (Fraccionable)</option>
+                <option value="fraccionado">Fraccionado (Caja, Galón, Saco)</option>
               </select>
             </div>
           </div>
 
-          {insumoForm.tipo_control === "botella" ? (
+          {insumoForm.tipo_control === "fraccionado" ? (
             <>
+              <div className="grid grid-cols-2 gap-3 text-left">
+                <div className="flex flex-col gap-1.5">
+                  <label className="font-['Inter',sans-serif] text-[#ff906d] text-[10px] uppercase tracking-[0.5px]">Se compra en: (Ej. Caja, Saco) *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ej: Caja, Galón, Saco"
+                    value={insumoForm.unidad_compra}
+                    onChange={(e) => setInsumoForm(prev => ({ ...prev, unidad_compra: e.target.value }))}
+                    className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="font-['Inter',sans-serif] text-[#ff906d] text-[10px] uppercase tracking-[0.5px]">Se fracciona en: *</label>
+                  <select
+                    value={insumoForm.unidad_base}
+                    onChange={(e) => setInsumoForm(prev => ({ ...prev, unidad_base: e.target.value }))}
+                    className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors"
+                  >
+                    {UNIDADES_MEDIDA.map(unit => (
+                      <option key={unit} value={unit}>{unit}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-3 border border-[rgba(255,144,109,0.22)] bg-[rgba(255,144,109,0.04)] p-3.5 rounded-[12px] flex flex-col gap-2 text-left">
                 <div className="flex flex-col gap-1.5">
-                  <label className="font-['Inter',sans-serif] text-[#ff906d] text-[10px] uppercase tracking-[0.5px]">Contenido Botella (ml) *</label>
+                  <label className="font-['Inter',sans-serif] text-[#ff906d] text-[10px] uppercase tracking-[0.5px]">Cant. de {insumoForm.unidad_base || 'fracciones'} por {insumoForm.unidad_compra || 'unidad'} *</label>
                   <input
                     type="number"
                     required
                     step="any"
                     min="1"
-                    placeholder="Ej: 750"
-                    value={insumoForm.ml_por_botella}
-                    onChange={(e) => setInsumoForm(prev => ({ ...prev, ml_por_botella: e.target.value }))}
+                    placeholder="Ej: 24"
+                    value={insumoForm.contenido_por_unidad_compra}
+                    onChange={(e) => setInsumoForm(prev => ({ ...prev, contenido_por_unidad_compra: e.target.value }))}
                     className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors"
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">
-                  <label className="font-['Inter',sans-serif] text-[#ff906d] text-[10px] uppercase tracking-[0.5px]">Costo Botella (RD$)</label>
+                  <label className="font-['Inter',sans-serif] text-[#ff906d] text-[10px] uppercase tracking-[0.5px]">Costo por {insumoForm.unidad_compra || 'Caja'} (RD$)</label>
                   <input
                     type="number"
                     step="any"
                     min="0"
                     placeholder="Ej: 850.00"
-                    value={insumoForm.costo_compra}
-                    onChange={(e) => setInsumoForm(prev => ({ ...prev, costo_compra: e.target.value }))}
+                    value={insumoForm.costo_unidad_compra}
+                    onChange={(e) => setInsumoForm(prev => ({ ...prev, costo_unidad_compra: e.target.value }))}
                     className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors"
                   />
                 </div>
@@ -234,17 +263,17 @@ export function NewInsumoModal({
                     <input
                       type="number"
                       min="0"
-                      placeholder="Botellas"
-                      value={insumoForm.stock_actual_botellas}
-                      onChange={(e) => setInsumoForm(prev => ({ ...prev, stock_actual_botellas: e.target.value }))}
+                      placeholder={insumoForm.unidad_compra || "Cajas"}
+                      value={insumoForm.stock_actual_parent}
+                      onChange={(e) => setInsumoForm(prev => ({ ...prev, stock_actual_parent: e.target.value }))}
                       className="bg-[#111] border border-[rgba(72,72,71,0.25)] rounded-[8px] px-2 py-1.5 font-['Inter',sans-serif] text-white text-[12px] outline-none text-center focus:border-[#ff906d]/50 transition-colors"
                     />
                     <input
                       type="number"
                       min="0"
-                      placeholder="ml extra"
-                      value={insumoForm.stock_actual_ml}
-                      onChange={(e) => setInsumoForm(prev => ({ ...prev, stock_actual_ml: e.target.value }))}
+                      placeholder={`${insumoForm.unidad_base || "unidades"} extra`}
+                      value={insumoForm.stock_actual_fraction}
+                      onChange={(e) => setInsumoForm(prev => ({ ...prev, stock_actual_fraction: e.target.value }))}
                       className="bg-[#111] border border-[rgba(72,72,71,0.25)] rounded-[8px] px-2 py-1.5 font-['Inter',sans-serif] text-white text-[12px] outline-none text-center focus:border-[#ff906d]/50 transition-colors"
                     />
                   </div>
@@ -256,17 +285,17 @@ export function NewInsumoModal({
                     <input
                       type="number"
                       min="0"
-                      placeholder="Botellas"
-                      value={insumoForm.stock_minimo_botellas}
-                      onChange={(e) => setInsumoForm(prev => ({ ...prev, stock_minimo_botellas: e.target.value }))}
+                      placeholder={insumoForm.unidad_compra || "Cajas"}
+                      value={insumoForm.stock_minimo_parent}
+                      onChange={(e) => setInsumoForm(prev => ({ ...prev, stock_minimo_parent: e.target.value }))}
                       className="bg-[#111] border border-[rgba(72,72,71,0.25)] rounded-[8px] px-2 py-1.5 font-['Inter',sans-serif] text-white text-[12px] outline-none text-center focus:border-[#ff906d]/50 transition-colors"
                     />
                     <input
                       type="number"
                       min="0"
-                      placeholder="ml extra"
-                      value={insumoForm.stock_minimo_ml}
-                      onChange={(e) => setInsumoForm(prev => ({ ...prev, stock_minimo_ml: e.target.value }))}
+                      placeholder={`${insumoForm.unidad_base || "unidades"} extra`}
+                      value={insumoForm.stock_minimo_fraction}
+                      onChange={(e) => setInsumoForm(prev => ({ ...prev, stock_minimo_fraction: e.target.value }))}
                       className="bg-[#111] border border-[rgba(72,72,71,0.25)] rounded-[8px] px-2 py-1.5 font-['Inter',sans-serif] text-white text-[12px] outline-none text-center focus:border-[#ff906d]/50 transition-colors"
                     />
                   </div>
@@ -283,7 +312,7 @@ export function NewInsumoModal({
                     onChange={(e) => setInsumoForm(prev => ({ ...prev, unidad_base: e.target.value }))}
                     className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors"
                   >
-                    {UNIDADES_MEDIDA.filter(u => u !== "ml").map(unit => (
+                    {UNIDADES_MEDIDA.map(unit => (
                       <option key={unit} value={unit}>{unit}</option>
                     ))}
                   </select>
