@@ -310,13 +310,7 @@ export function Login() {
         <div className="absolute bg-[rgba(255,106,160,0.1)] blur-[50px] bottom-[-96px] right-[-96px] rounded-[9999px] size-[256px] animate-pulse delay-1000 pointer-events-none" />
 
         <div 
-          onClick={() => {
-            const active = document.activeElement;
-            if (!active || active.tagName === "BODY" || active.tagName === "DIV") {
-              emailInputRef.current?.focus();
-            }
-          }}
-          className="backdrop-blur-[8px] bg-[rgba(38,38,38,0.6)] relative rounded-[8px] sm:rounded-[12px] shrink-0 w-full transition-all duration-300 hover:shadow-[0px_0px_40px_-10px_rgba(255,144,109,0.3)] cursor-pointer"
+          className="backdrop-blur-[8px] bg-[rgba(38,38,38,0.6)] relative rounded-[8px] sm:rounded-[12px] shrink-0 w-full transition-all duration-300 hover:shadow-[0px_0px_40px_-10px_rgba(255,144,109,0.3)]"
         >
           <div className="overflow-clip rounded-[inherit] size-full">
             <div className="content-stretch flex flex-col gap-3 sm:gap-6 items-start p-3 sm:p-5 relative w-full">
@@ -365,7 +359,7 @@ export function Login() {
                   </label>
                   <div className="bg-[#131313] relative w-full rounded-[6px] sm:rounded-[8px] transition-all duration-300 group-hover:shadow-[0px_0px_20px_-5px_rgba(255,144,109,0.2)] focus-within:shadow-[0px_0px_20px_-5px_rgba(255,144,109,0.3)]">
                     <div className="flex items-center relative">
-                      <div className="absolute left-3 sm:left-[18px] w-3 sm:w-[15px] transition-colors duration-300 group-hover:scale-110">
+                      <div className="absolute left-3 sm:left-[18px] w-3 sm:w-[15px] transition-colors duration-300 group-hover:scale-110 pointer-events-none">
                         <svg className="block w-full" fill="none" viewBox="0 0 15.0408 16.6369">
                           <path d={ICONS.email} fill="#484847" />
                         </svg>
@@ -398,7 +392,7 @@ export function Login() {
                   </label>
                   <div className="bg-[#131313] relative w-full rounded-[6px] sm:rounded-[8px] transition-all duration-300 group-hover:shadow-[0px_0px_20px_-5px_rgba(255,144,109,0.2)] focus-within:shadow-[0px_0px_20px_-5px_rgba(255,144,109,0.3)]">
                     <div className="flex items-center relative">
-                      <div className="absolute left-3 sm:left-[17px] w-4 sm:w-[19px] transition-colors duration-300 group-hover:scale-110">
+                      <div className="absolute left-3 sm:left-[17px] w-4 sm:w-[19px] transition-colors duration-300 group-hover:scale-110 pointer-events-none">
                         <svg className="block w-full" fill="none" viewBox="0 0 19.1667 10">
                           <path d={ICONS.password} fill="#484847" />
                         </svg>

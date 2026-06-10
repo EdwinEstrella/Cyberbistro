@@ -1,10 +1,10 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw, DollarSign, FileText, CheckCircle, Clock } from "lucide-react";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { insforgeClient } from "../../../shared/lib/insforge";
-import { registrarPagoCxP } from "../lib/accountsPayableService";
+import { RegistrarPagoCxPModal } from "./RegistrarPagoCxPModal";
 
 interface ProveedorRow {
   id: string;
@@ -71,18 +71,12 @@ export function CuentasPagar() {
   const [compras, setCompras] = useState<CompraRow[]>([]);
   const [cicloAbierto, setCicloAbierto] = useState<{ id: string; closed_at: string | null; opened_at: string } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
 
   // Payment Modal state
   const [showPayModal, setShowPayModal] = useState(false);
   const [selectedCuenta, setSelectedCuenta] = useState<CuentaPagarRow | null>(null);
-  const [paymentForm, setPaymentForm] = useState({
-    monto: "",
-    metodoPago: "transferencia" as "efectivo" | "tarjeta" | "transferencia" | "digital",
-    notas: "",
-  });
 
   const cargarDatos = useCallback(async () => {
     if (!tenantId) return;
@@ -178,50 +172,8 @@ export function CuentasPagar() {
     }).sort((a, b) => a.fecha_vencimiento.localeCompare(b.fecha_vencimiento));
   }, [cuentas, activeTab]);
 
-  async function handleRegistrarAbono(e: FormEvent) {
-    e.preventDefault();
-    if (!tenantId || !selectedCuenta) return;
-    const amountVal = Number(paymentForm.monto);
-    if (amountVal <= 0) {
-      setMessage("El monto debe ser mayor a cero.");
-      return;
-    }
-
-    setSaving(true);
-    setMessage("");
-    setSuccessMsg("");
-
-    try {
-      await registrarPagoCxP({
-        tenantId,
-        sucursalId: activeSucursalId,
-        usuarioId: user?.id || null,
-        cuentaPagarId: selectedCuenta.id,
-        monto: amountVal,
-        metodoPago: paymentForm.metodoPago,
-        notas: paymentForm.notas.trim(),
-      });
-
-      setSuccessMsg("Abono registrado correctamente.");
-      setShowPayModal(false);
-      setPaymentForm({ monto: "", metodoPago: "transferencia", notas: "" });
-      setSelectedCuenta(null);
-      await cargarDatos();
-    } catch (err: any) {
-      setMessage(err.message || "Error al registrar abono.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
   function openAbonarModal(cuenta: CuentaPagarRow) {
     setSelectedCuenta(cuenta);
-    const balance = Number((cuenta.monto_total - cuenta.monto_pagado).toFixed(2));
-    setPaymentForm({
-      monto: balance.toString(),
-      metodoPago: "transferencia",
-      notas: "",
-    });
     setShowPayModal(true);
   }
 
@@ -464,93 +416,27 @@ export function CuentasPagar() {
       )}
 
       {/* REGISTRAR ABONO MODAL */}
-      {showPayModal && selectedCuenta && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
-          <div className="bg-[#131313] border border-[rgba(255,144,109,0.3)] rounded-[20px] shadow-[0px_0px_30px_rgba(255,144,109,0.15)] max-w-[440px] w-full p-6 relative">
-            <h3 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px] uppercase tracking-[0.5px] mb-4">
-              Registrar Abono a Proveedor
-            </h3>
-            
-            <div className="bg-[#171717] border border-[rgba(72,72,71,0.18)] rounded-[12px] p-3 mb-4 font-['Inter',sans-serif] text-[13px] text-white">
-              <div className="flex justify-between">
-                <span className="text-[#adaaaa]">Proveedor:</span>
-                <span className="font-bold">{proveedoresMap.get(selectedCuenta.proveedor_id) || "Desconocido"}</span>
-              </div>
-              <div className="flex justify-between mt-1.5">
-                <span className="text-[#adaaaa]">Total Deuda:</span>
-                <span>{RD(selectedCuenta.monto_total)}</span>
-              </div>
-              <div className="flex justify-between mt-1">
-                <span className="text-[#adaaaa]">Saldo Pendiente:</span>
-                <span className="text-[#ff716c] font-bold">{RD(selectedCuenta.monto_total - selectedCuenta.monto_pagado)}</span>
-              </div>
-            </div>
-
-            <form onSubmit={handleRegistrarAbono} className="flex flex-col gap-4">
-              <div className="flex flex-col gap-1.5">
-                <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.5px]">Monto del Abono *</label>
-                <input
-                  type="number"
-                  required
-                  step="0.01"
-                  min="0.01"
-                  max={Number((selectedCuenta.monto_total - selectedCuenta.monto_pagado).toFixed(2))}
-                  value={paymentForm.monto}
-                  onChange={(e) => setPaymentForm(prev => ({ ...prev, monto: e.target.value }))}
-                  className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none"
-                />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.5px]">Método de Pago *</label>
-                <select
-                  required
-                  value={paymentForm.metodoPago}
-                  onChange={(e) => setPaymentForm(prev => ({ ...prev, metodoPago: e.target.value as any }))}
-                  className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none"
-                >
-                  <option value="transferencia">Transferencia bancaria</option>
-                  <option value="efectivo">Efectivo (Salida de Caja)</option>
-                  <option value="tarjeta">Tarjeta de crédito</option>
-                  <option value="digital">Pago digital / Otro</option>
-                </select>
-              </div>
-
-              {paymentForm.metodoPago === "efectivo" && !cicloAbierto && (
-                <div className="bg-[rgba(255,113,108,0.08)] border border-[rgba(255,113,108,0.25)] rounded-[10px] p-3 text-[12px] text-[#ff716c] font-['Inter',sans-serif]">
-                  ⚠️ <strong>Caja Cerrada:</strong> No hay un ciclo operativo abierto. Debes abrir uno en la sección de Cierre para poder registrar egresos en efectivo.
-                </div>
-              )}
-
-              <div className="flex flex-col gap-1.5">
-                <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.5px]">Notas / Comentarios</label>
-                <textarea
-                  placeholder="Ej: Transferencia del Banco Popular, recibo #12345"
-                  value={paymentForm.notas}
-                  onChange={(e) => setPaymentForm(prev => ({ ...prev, notas: e.target.value }))}
-                  className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-3 py-2 font-['Inter',sans-serif] text-white text-[13px] outline-none h-[60px] resize-none"
-                />
-              </div>
-
-              <div className="flex gap-3 justify-end mt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowPayModal(false)}
-                  className="bg-[#262626] text-[#adaaaa] rounded-[10px] px-4 py-2.5 font-['Space_Grotesk',sans-serif] font-bold text-[11px] uppercase cursor-pointer border-none"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving || (paymentForm.metodoPago === "efectivo" && !cicloAbierto)}
-                  className="bg-[#ff906d] rounded-[10px] px-4 py-2.5 font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[11px] uppercase cursor-pointer border-none disabled:opacity-50"
-                >
-                  {saving ? "Registrando..." : "Guardar Pago"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {selectedCuenta && (
+        <RegistrarPagoCxPModal
+          isOpen={showPayModal}
+          onClose={() => {
+            setShowPayModal(false);
+            setSelectedCuenta(null);
+          }}
+          tenantId={tenantId}
+          activeSucursalId={activeSucursalId}
+          userId={user?.id || null}
+          selectedCuenta={selectedCuenta}
+          proveedorNombre={proveedoresMap.get(selectedCuenta.proveedor_id) || "Desconocido"}
+          cicloAbierto={!!cicloAbierto}
+          onSuccess={(msg) => {
+            setSuccessMsg(msg);
+            void cargarDatos();
+          }}
+          onError={(msg) => {
+            setMessage(msg);
+          }}
+        />
       )}
     </div>
   );
