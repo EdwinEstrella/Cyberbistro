@@ -7,6 +7,7 @@ import { formatPresentationStock } from "../../../shared/lib/presentationUnits";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { useSucursal } from "../../../app/context/SucursalContext";
+import { ConfirmModal } from "../../../shared/components/ConfirmModal";
 
 interface InsumoRow {
   id: string;
@@ -115,6 +116,8 @@ export function Inventario() {
   const [showInsumoModal, setShowInsumoModal] = useState(false);
   const [selectedPlatoId, setSelectedPlatoId] = useState<number | "">("");
 
+  const [confirmState, setConfirmState] = useState<{ open: boolean; message: string; onConfirm: () => void, title?: string, variant?: "danger" | "primary" }>({ open: false, message: "", onConfirm: () => {} });
+  const showConfirm = (message: string, onConfirm: () => void, title = "Confirmar", variant: "danger" | "primary" = "danger") => setConfirmState({ open: true, message, onConfirm, title, variant });
 
 
   const [recetaForm, setRecetaForm] = useState({
@@ -350,31 +353,31 @@ export function Inventario() {
     }
   }
 
-  async function eliminarIngrediente(id: string) {
+  function eliminarIngrediente(id: string) {
     if (!tenantId) return;
-    const confirmed = confirm("¿Estás seguro de que deseas eliminar este ingrediente de la receta?");
-    if (!confirmed) return;
+    
+    showConfirm("¿Estás seguro de que deseas eliminar este ingrediente de la receta?", async () => {
+      setSaving(true);
+      setMessage("");
 
-    setSaving(true);
-    setMessage("");
+      try {
+        await enqueueLocalWrite({
+          tenantId,
+          tableName: "recetas",
+          rowId: id,
+          op: "delete",
+          payload: { id },
+          deviceId: await getDeviceId(),
+        });
 
-    try {
-      await enqueueLocalWrite({
-        tenantId,
-        tableName: "recetas",
-        rowId: id,
-        op: "delete",
-        payload: { id },
-        deviceId: await getDeviceId(),
-      });
-
-      setSuccessMsg("Ingrediente eliminado de la receta.");
-      await cargarDatos();
-    } catch (err: any) {
-      setMessage(err.message || "Error al eliminar ingrediente");
-    } finally {
-      setSaving(false);
-    }
+        setSuccessMsg("Ingrediente eliminado.");
+        await cargarDatos();
+      } catch (err: any) {
+        setMessage(err.message || "Error al eliminar ingrediente");
+      } finally {
+        setSaving(false);
+      }
+    }, "Eliminar Ingrediente");
   }
 
   async function registrarCierreCocina(e: FormEvent) {
@@ -764,7 +767,7 @@ export function Inventario() {
                                         <button
                                           type="button"
                                           disabled={saving}
-                                          onClick={() => void eliminarIngrediente(item.id)}
+                                          onClick={() => eliminarIngrediente(item.id)}
                                           className="bg-[rgba(255,113,108,0.1)] border border-[rgba(255,113,108,0.25)] hover:bg-[#ff716c] hover:text-black rounded-[8px] p-2 text-[#ff716c] cursor-pointer transition-colors"
                                         >
                                           <Trash2 className="size-[14px]" />
@@ -1218,6 +1221,18 @@ export function Inventario() {
         onError={(msg) => {
           setMessage(msg);
         }}
+      />
+      
+      <ConfirmModal
+        open={confirmState.open}
+        title={confirmState.title ?? "Confirmar"}
+        message={confirmState.message}
+        onConfirm={() => {
+          confirmState.onConfirm();
+          setConfirmState(s => ({ ...s, open: false }));
+        }}
+        onCancel={() => setConfirmState(s => ({ ...s, open: false }))}
+        variant={confirmState.variant}
       />
     </div>
   );

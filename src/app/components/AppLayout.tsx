@@ -13,6 +13,11 @@ import {
   showAjustesInSidebar,
   showSoporteInSidebar,
 } from "../../shared/lib/roleNav";
+import { AlertModal } from "../../shared/components/AlertModal";
+import { ConfirmModal } from "../../shared/components/ConfirmModal";
+
+// Exported for other components that might need direct access, though window.alert works too
+export let globalShowAlert: (msg: string, title?: string, variant?: "info" | "danger" | "primary") => void = () => {};
 import { RoleGuard } from "./RoleGuard";
 import { useAppUpdate } from "../../features/updates/AppUpdateContext";
 import { LocalFirstStatusBadge } from "../../shared/components/LocalFirstStatusBadge";
@@ -387,6 +392,17 @@ function AppLayoutContent() {
     sucursales,
   } = useSucursal();
   const [showAddBranchModal, setShowAddBranchModal] = useState(false);
+
+  // Global Alert State
+  const [globalAlert, setGlobalAlert] = useState<{ open: boolean; message: string; title?: string; variant?: "info" | "danger" | "primary" }>({ open: false, message: "" });
+
+  useEffect(() => {
+    // Override window.alert
+    globalShowAlert = (message: string, title = "Aviso", variant = "info") => {
+      setGlobalAlert({ open: true, message, title, variant });
+    };
+    window.alert = globalShowAlert;
+  }, []);
   const [newBranchName, setNewBranchName] = useState("");
   const [newBranchAddress, setNewBranchAddress] = useState("");
   const [newBranchPhone, setNewBranchPhone] = useState("");
@@ -1043,44 +1059,34 @@ function AppLayoutContent() {
       )}
 
       {showLogoutConfirm && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-[#1e1e1e] border border-white/10 rounded-2xl p-6 w-[90%] max-w-[420px] shadow-2xl text-center transform scale-100 transition-all duration-300">
-            <h3 className="font-['Space_Grotesk',sans-serif] text-lg font-bold text-white mb-2 uppercase tracking-wide">
-              Cerrar Sesión
-            </h3>
-            <p className="font-['Inter',sans-serif] text-sm text-gray-400 mb-6 leading-relaxed">
-              ¿Seguro que querés cerrar sesión completamente y borrar la memoria de este dispositivo?
-            </p>
-            <div className="flex gap-4">
-              <button
-                type="button"
-                className="flex-1 py-3 px-4 rounded-xl bg-white/5 border border-white/10 text-white font-semibold text-sm hover:bg-white/10 active:scale-95 transition-all cursor-pointer"
-                onClick={() => setShowLogoutConfirm(false)}
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                className="flex-1 py-3 px-4 rounded-xl text-black font-bold text-sm active:scale-95 transition-all cursor-pointer"
-                style={{ backgroundImage: "linear-gradient(172.248deg, rgb(255, 144, 109) 0%, rgb(255, 120, 77) 100%)" }}
-                onClick={async () => {
-                  setShowLogoutConfirm(false);
-                  try {
-                    await signOut();
-                  } catch {
-                    /* sesión ya inválida */
-                  }
-                  navigate("/");
-                }}
-              >
-                Cerrar Sesión
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmModal
+          open={showLogoutConfirm}
+          title="Cerrar Sesión"
+          message="¿Seguro que querés cerrar sesión completamente y borrar la memoria de este dispositivo?"
+          confirmLabel="Cerrar Sesión"
+          variant="primary"
+          onConfirm={async () => {
+            setShowLogoutConfirm(false);
+            try {
+              await signOut();
+            } catch {
+              /* sesión ya inválida */
+            }
+            navigate("/");
+          }}
+          onCancel={() => setShowLogoutConfirm(false)}
+        />
       )}
-</VentaCartSearchProvider>
-      </RoleGuard>
+      
+      <AlertModal
+        open={globalAlert.open}
+        title={globalAlert.title ?? "Aviso"}
+        message={globalAlert.message}
+        onClose={() => setGlobalAlert(s => ({ ...s, open: false }))}
+        variant={globalAlert.variant}
+      />
+    </VentaCartSearchProvider>
+    </RoleGuard>
     </div>
   );
 }

@@ -23,6 +23,8 @@ import {
   type Customer,
   type CustomerFormInput,
 } from "../lib/customers";
+import { AlertModal } from "../../../shared/components/AlertModal";
+import { ConfirmModal } from "../../../shared/components/ConfirmModal";
 
 const emptyForm: CustomerFormInput = {
   name: "",
@@ -49,6 +51,12 @@ export function Clientes() {
   const [viewingCustomer, setViewingCustomer] = useState<Customer | null>(null);
   const [viewingInvoices, setViewingInvoices] = useState<any[]>([]);
   const [viewingLoading, setViewingLoading] = useState(false);
+
+  const [alertInfo, setAlertInfo] = useState<{ open: boolean; message: string; title?: string }>({ open: false, message: "" });
+  const [confirmInfo, setConfirmInfo] = useState<{ open: boolean; message: string; title?: string; onConfirm: () => void }>({ open: false, message: "", onConfirm: () => {} });
+  
+  const showAlert = (message: string, title = "Aviso") => setAlertInfo({ open: true, message, title });
+  const showConfirm = (message: string, onConfirm: () => void, title = "Confirmar") => setConfirmInfo({ open: true, message, title, onConfirm });
 
   const savingRef = useRef(false);
 
@@ -103,23 +111,24 @@ export function Clientes() {
       // Optional: auto-open the saved customer details
       void handleViewCustomer(saved);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "No se pudo guardar el cliente.");
+      showAlert(err instanceof Error ? err.message : "No se pudo guardar el cliente.", "Error al Guardar");
     } finally {
       savingRef.current = false;
       setSaving(false);
     }
   }
 
-  async function deleteCustomer(customer: Customer) {
-    if (!confirm(`¿Eliminar cliente "${customer.name}"?`)) return;
-    if (!tenantId) return;
-    try {
-      await softDeleteCustomer(tenantId, customer.id);
-      if (viewingCustomer?.id === customer.id) setViewingCustomer(null);
-      await refreshCustomers();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "No se pudo eliminar el cliente.");
-    }
+  function deleteCustomer(customer: Customer) {
+    showConfirm(`¿Eliminar cliente "${customer.name}"?`, async () => {
+      if (!tenantId) return;
+      try {
+        await softDeleteCustomer(tenantId, customer.id);
+        if (viewingCustomer?.id === customer.id) setViewingCustomer(null);
+        await refreshCustomers();
+      } catch (err) {
+        showAlert(err instanceof Error ? err.message : "No se pudo eliminar el cliente.", "Error al Eliminar");
+      }
+    }, "Eliminar Cliente");
   }
 
   async function handleViewCustomer(customer: Customer) {
@@ -401,10 +410,10 @@ export function Clientes() {
 
       </div>
 
-      {/* Customer Details Modal ("Ojito") */}
+      {/* Customer Details Modal */}
       {viewingCustomer && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm transition-all duration-300"
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 lg:p-8 bg-black/60 backdrop-blur-md transition-all duration-300"
           onClick={(e) => {
             if (e.target === e.currentTarget) setViewingCustomer(null);
           }}
@@ -582,6 +591,24 @@ export function Clientes() {
           </div>
         </div>
       )}
+
+      <AlertModal
+        open={alertInfo.open}
+        title={alertInfo.title ?? "Aviso"}
+        message={alertInfo.message}
+        onClose={() => setAlertInfo(s => ({ ...s, open: false }))}
+      />
+      
+      <ConfirmModal
+        open={confirmInfo.open}
+        title={confirmInfo.title ?? "Confirmar"}
+        message={confirmInfo.message}
+        onConfirm={() => {
+          confirmInfo.onConfirm();
+          setConfirmInfo(s => ({ ...s, open: false }));
+        }}
+        onCancel={() => setConfirmInfo(s => ({ ...s, open: false }))}
+      />
     </div>
   );
 }

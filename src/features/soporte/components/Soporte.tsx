@@ -25,6 +25,7 @@ import {
   getLimitForRole,
   type TenantUserLimitConfig,
 } from "../../../shared/lib/tenantUserLimits";
+import { ConfirmModal } from "../../../shared/components/ConfirmModal";
 
 const STAFF_ROLES = [
   { value: "cajera", label: "Cajera / Venta" },
@@ -153,6 +154,9 @@ function CartaPanel() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [activeFilter, setActiveFilter] = useState("Todos");
+
+  const [confirmState, setConfirmState] = useState<{ open: boolean; message: string; onConfirm: () => void, title?: string, variant?: "danger" | "primary" }>({ open: false, message: "", onConfirm: () => {} });
+  const showConfirm = (message: string, onConfirm: () => void, title = "Confirmar", variant: "danger" | "primary" = "danger") => setConfirmState({ open: true, message, onConfirm, title, variant });
 
   useEffect(() => {
     if (authLoading || sucursalLoading) return;
@@ -313,27 +317,28 @@ function CartaPanel() {
     setSaving(false);
   }
 
-  async function handleDelete(id: number) {
+  function handleDelete(id: number) {
     if (!tenantId) return;
     const plato = platos.find((p) => p.id === id);
     if (!plato) return;
-    if (!confirm(`¿Estás seguro de eliminar "${plato.nombre}"? Esta acción no se puede deshacer.`)) return;
+    
+    showConfirm(`¿Estás seguro de eliminar "${plato.nombre}"? Esta acción no se puede deshacer.`, async () => {
+      try {
+        await enqueueLocalWrite({
+          tenantId: tenantId!,
+          tableName: "platos",
+          rowId: String(id),
+          op: "delete",
+          deviceId: await getDeviceId(),
+        });
+      } catch (deletePlatoError: any) {
+        alert(`Error al eliminar el plato: ${deletePlatoError.message}`);
+        return;
+      }
 
-    try {
-      await enqueueLocalWrite({
-        tenantId,
-        tableName: "platos",
-        rowId: String(id),
-        op: "delete",
-        deviceId: await getDeviceId(),
-      });
-    } catch (deletePlatoError: any) {
-      alert(`Error al eliminar el plato: ${deletePlatoError.message}`);
-      return;
-    }
-
-    setPlatos((prev) => prev.filter((p) => p.id !== id));
-    if (selectedId === id) { setSelectedId(null); setMode(null); }
+      setPlatos((prev) => prev.filter((p) => p.id !== id));
+      if (selectedId === id) { setSelectedId(null); setMode(null); }
+    }, "Eliminar Plato");
   }
 
   if (loading) return <div className="flex-1 flex items-center justify-center font-['Space_Grotesk'] text-muted-foreground">Cargando carta...</div>;
@@ -451,6 +456,17 @@ function CartaPanel() {
           </div>
         </div>
       )}
+      <ConfirmModal
+        open={confirmState.open}
+        title={confirmState.title ?? "Confirmar"}
+        message={confirmState.message}
+        onConfirm={() => {
+          confirmState.onConfirm();
+          setConfirmState(s => ({ ...s, open: false }));
+        }}
+        onCancel={() => setConfirmState(s => ({ ...s, open: false }))}
+        variant={confirmState.variant}
+      />
       <style>{`
         .input-field {
           width: 100%;
@@ -487,6 +503,8 @@ function CategoriasPanel() {
   const [categoryColorDraft, setCategoryColorDraft] = useState("#ff906d");
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [confirmState, setConfirmState] = useState<{ open: boolean; message: string; onConfirm: () => void, title?: string, variant?: "danger" | "primary" }>({ open: false, message: "", onConfirm: () => {} });
+  const showConfirm = (message: string, onConfirm: () => void, title = "Confirmar", variant: "danger" | "primary" = "danger") => setConfirmState({ open: true, message, onConfirm, title, variant });
 
   useEffect(() => {
     if (authLoading || sucursalLoading) return;
@@ -643,48 +661,51 @@ function CategoriasPanel() {
   async function handleDeleteCategory(category: MenuCategoryRow) {
     if (!tenantId) return;
     const assignedCount = assignedCountFor(category.nombre);
+    
+    const executeDelete = async () => {
+      try {
+        await enqueueLocalWrite({
+          tenantId: tenantId!,
+          tableName: "menu_categories",
+          rowId: category.id,
+          op: "delete",
+          deviceId: await getDeviceId(),
+        });
+        setMenuCategories((prev) => prev.filter((c) => c.id !== category.id));
+      } catch (err: any) {
+        setError(err.message);
+      }
+    };
+
     if (assignedCount > 0) {
       if (category.nombre === "General") {
         setError("No puedes eliminar General mientras tenga platos asignados.");
         return;
       }
-      if (!confirm(`Eliminar "${category.nombre}"?\n\n${assignedCount} plato(s) pasarán a General.`)) return;
-      await ensureCategoryExists("General", "#a1a1aa");
-      try {
-        const deviceId = await getDeviceId();
-        await Promise.all(platos
-          .filter((plato) => plato.categoria === category.nombre)
-          .map((plato) => enqueueLocalWrite({
-            tenantId,
-            tableName: "platos",
-            rowId: String(plato.id),
-            op: "update",
-            payload: { categoria: "General" },
-            deviceId,
-          })));
-      } catch (platosError: any) {
-        setError(platosError.message);
-        return;
-      }
-      setPlatos((prev) => prev.map((plato) => plato.categoria === category.nombre ? { ...plato, categoria: "General" } : plato));
-    } else if (!confirm(`Eliminar categoría "${category.nombre}"?`)) {
-      return;
+      showConfirm(`Eliminar "${category.nombre}"?\n\n${assignedCount} plato(s) pasarán a General.`, async () => {
+        await ensureCategoryExists("General", "#a1a1aa");
+        try {
+          const deviceId = await getDeviceId();
+          await Promise.all(platos
+            .filter((plato) => plato.categoria === category.nombre)
+            .map((plato) => enqueueLocalWrite({
+              tenantId: tenantId!,
+              tableName: "platos",
+              rowId: String(plato.id),
+              op: "update",
+              payload: { categoria: "General" },
+              deviceId,
+            })));
+        } catch (platosError: any) {
+          setError(platosError.message);
+          return;
+        }
+        setPlatos((prev) => prev.map((plato) => plato.categoria === category.nombre ? { ...plato, categoria: "General" } : plato));
+        await executeDelete();
+      }, "Eliminar Categoría");
+    } else {
+      showConfirm(`Eliminar categoría "${category.nombre}"?`, executeDelete, "Eliminar Categoría");
     }
-
-    try {
-      await enqueueLocalWrite({
-        tenantId,
-        tableName: "menu_categories",
-        rowId: category.id,
-        op: "delete",
-        deviceId: await getDeviceId(),
-      });
-    } catch (deleteError: any) {
-      setError(deleteError.message);
-      return;
-    }
-    setMenuCategories((prev) => prev.filter((item) => item.id !== category.id));
-    if (editingCategoryId === category.id) resetForm();
   }
 
   async function handleUseSuggestion(name: string) {
@@ -800,6 +821,17 @@ function CategoriasPanel() {
           </div>
         </div>
       </div>
+      <ConfirmModal
+        open={confirmState.open}
+        title={confirmState.title ?? "Confirmar"}
+        message={confirmState.message}
+        onConfirm={() => {
+          confirmState.onConfirm();
+          setConfirmState(s => ({ ...s, open: false }));
+        }}
+        onCancel={() => setConfirmState(s => ({ ...s, open: false }))}
+        variant={confirmState.variant}
+      />
       <style>{`
         .input-field {
           width: 100%;
@@ -842,6 +874,9 @@ function UsuariosPanel() {
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
 
+  const [confirmState, setConfirmState] = useState<{ open: boolean; message: string; onConfirm: () => void, title?: string, variant?: "danger" | "primary" }>({ open: false, message: "", onConfirm: () => {} });
+  const showConfirm = (message: string, onConfirm: () => void, title = "Confirmar", variant: "danger" | "primary" = "danger") => setConfirmState({ open: true, message, onConfirm, title, variant });
+
   async function loadUsers() {
     if (!tenantId) return;
     setListLoading(true);
@@ -856,22 +891,23 @@ function UsuariosPanel() {
 
   useEffect(() => { void loadUsers(); }, [tenantId]);
 
-  async function handleDeleteUser(row: TenantUserRow) {
+  function handleDeleteUser(row: TenantUserRow) {
     if (!tenantId || (row.auth_user_id === user?.id)) return;
-    if (!confirm(`¿Eliminar completamente el acceso de «${row.email}» y todo lo relacionado?`)) return;
-    setDeletingId(row.id);
     
-    // Call the RPC to completely delete the user and unlink their records
-    const { error } = await insforgeClient.database.rpc("cloudix_owner_delete_staff_user", {
-      p_tenant_user_id: row.id,
-    });
-    
-    setDeletingId(null);
-    if (error) {
-      alert(`Error al eliminar: ${error.message}`);
-    } else {
-      await loadUsers();
-    }
+    showConfirm(`¿Eliminar completamente el acceso de «${row.email}» y todo lo relacionado?`, async () => {
+      setDeletingId(row.id);
+      
+      const { error } = await insforgeClient.database.rpc("cloudix_owner_delete_staff_user", {
+        p_tenant_user_id: row.id,
+      });
+      
+      setDeletingId(null);
+      if (error) {
+        alert(`Error al eliminar: ${error.message}`);
+      } else {
+        await loadUsers();
+      }
+    }, "Eliminar Usuario");
   }
 
   async function handleCreate() {
@@ -887,7 +923,6 @@ function UsuariosPanel() {
       setCreating(false); return;
     }
 
-    // Usamos un cliente temporal para evitar modificar la sesión actual de useAuth
     const tempClient = (await import("@insforge/sdk")).createClient({
       baseUrl: import.meta.env.VITE_INSFORGE_BASE_URL || "https://restaurante.azokia.com",
       anonKey: import.meta.env.VITE_INSFORGE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3OC0xMjM0LTU2NzgtOTBhYi1jZGVmMTIzNDU2NzgiLCJlbWFpbCI6ImFub25AaW5zZm9yZ2UuY29tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU5NDAxMzF9.OQwbEoWPtw-inbXdU3D7c39RZn3c87FJ-HvMBF_jrn4",
@@ -899,7 +934,6 @@ function UsuariosPanel() {
 
     const newUserId = (signData as any)?.user?.id;
 
-    // Insertamos usando el cliente principal, el cual sigue autenticado como admin
     const { error: insertError } = await insforgeClient.database.from("tenant_users").insert([{ auth_user_id: newUserId, tenant_id: tenantId, email: staffEmail, password_hash: "MANAGED_BY_AUTH", rol, nombre: nombre.trim() || null, activo: true }]);
     
     if (insertError) {
@@ -972,6 +1006,17 @@ function UsuariosPanel() {
           <ChangePasswordCard />
         </div>
       </div>
+      <ConfirmModal
+        open={confirmState.open}
+        title={confirmState.title ?? "Confirmar"}
+        message={confirmState.message}
+        onConfirm={() => {
+          confirmState.onConfirm();
+          setConfirmState(s => ({ ...s, open: false }));
+        }}
+        onCancel={() => setConfirmState(s => ({ ...s, open: false }))}
+        variant={confirmState.variant}
+      />
       <style>{`
         .input-field {
           width: 100%;
@@ -1173,7 +1218,6 @@ function DigitalMenuPanel() {
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState("");
   const [dishSearch, setDishSearch] = useState("");
 
-  // Form states
   const [enabled, setEnabled] = useState(false);
   const [slug, setSlug] = useState("");
   const [title, setTitle] = useState("");
@@ -1182,11 +1226,12 @@ function DigitalMenuPanel() {
   const [bannerUrl, setBannerUrl] = useState("");
   const [accentColor, setAccentColor] = useState("#f97316");
 
-  // Edit Dish Modal
   const [editingPlato, setEditingPlato] = useState<any | null>(null);
   const [editDisplayName, setEditDisplayName] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editImageUrl, setEditImageUrl] = useState("");
+
+  const [confirmState, setConfirmState] = useState<{ open: boolean; message: string; onConfirm: () => void, title?: string, variant?: "danger" | "primary" }>({ open: false, message: "", onConfirm: () => {} });
 
   useEffect(() => {
     if (!tenantId) return;
@@ -1195,12 +1240,10 @@ function DigitalMenuPanel() {
     async function loadData() {
       try {
         setLoading(true);
-        // Load plates locally
         const platosLocal = await readLocalMirror<Plato>(currentTenantId, "platos");
         const filteredPlatos = platosLocal.filter(p => !p.sucursal_id || p.sucursal_id === activeSucursalId);
         setPlatos(filteredPlatos);
 
-        // Load digital menu settings
         const settingsLocal = await readLocalMirror<any>(currentTenantId, "digital_menu_settings");
         const tenantSettings = settingsLocal.find((s: any) => s.tenant_id === currentTenantId && (!s.sucursal_id || s.sucursal_id === activeSucursalId));
 
@@ -1217,7 +1260,6 @@ function DigitalMenuPanel() {
           setSlug(`restaurante-${currentTenantId.slice(0, 8)}`);
         }
 
-        // Load digital menu items
         const itemsLocal = await readLocalMirror<any>(currentTenantId, "digital_menu_items");
         setMenuItems(itemsLocal.filter((mi: any) => mi.tenant_id === currentTenantId));
       } catch (err: any) {
@@ -1232,7 +1274,6 @@ function DigitalMenuPanel() {
 
   const resolvedSlug = slug.trim().toLowerCase().replace(/[^a-z0-9-_]/g, "");
   
-  // URL Format: https://restaurante.azokia.com/nombre-del-restaurante
   const qrUrl = plan === "profesional" || plan === "empresarial"
     ? `https://restaurante.azokia.com/${resolvedSlug}`
     : `https://restaurante.azokia.com`;
@@ -1426,11 +1467,9 @@ function DigitalMenuPanel() {
       {success && <div className="bg-green-500/10 border border-green-500/20 text-green-500 rounded-xl p-4 mb-6 text-sm">{success}</div>}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Left Column: Settings & QR */}
         <div className="lg:col-span-5 flex flex-col gap-6 relative">
           {isBasic && <div className="absolute inset-0 bg-background/40 backdrop-blur-[2px] z-10 rounded-[24px] pointer-events-none" />}
           
-          {/* General Settings Card */}
           <div className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 shadow-sm">
             <h3 className="font-['Space_Grotesk'] text-lg font-bold text-foreground mb-4">Configuración del Menú</h3>
             <form onSubmit={handleSaveSettings} className="flex flex-col gap-4">
@@ -1518,7 +1557,6 @@ function DigitalMenuPanel() {
             </form>
           </div>
 
-          {/* QR Code Display Card */}
           <div className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 shadow-sm flex flex-col items-center text-center gap-4">
             <h3 className="font-['Space_Grotesk'] text-sm font-bold text-foreground self-start mb-1">
               {isBasic ? "Código QR General Azokia" : "Código QR del Menú Digital"}
@@ -1551,7 +1589,6 @@ function DigitalMenuPanel() {
           </div>
         </div>
 
-        {/* Right Column: Plates list & Customization */}
         <div className="lg:col-span-7 flex flex-col gap-6 relative">
           {isBasic && <div className="absolute inset-0 bg-background/40 backdrop-blur-[2px] z-10 rounded-[24px] pointer-events-none" />}
 
@@ -1625,7 +1662,6 @@ function DigitalMenuPanel() {
         </div>
       </div>
 
-      {/* Edit Plato Custom Fields Dialog */}
       {editingPlato && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm transition-all duration-300">
           <div className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 sm:p-8 max-w-[500px] w-full shadow-xl flex flex-col gap-6">
@@ -1686,6 +1722,18 @@ function DigitalMenuPanel() {
           </div>
         </div>
       )}
+      
+      <ConfirmModal
+        open={confirmState.open}
+        title={confirmState.title ?? "Confirmar"}
+        message={confirmState.message}
+        onConfirm={() => {
+          confirmState.onConfirm();
+          setConfirmState(s => ({ ...s, open: false }));
+        }}
+        onCancel={() => setConfirmState(s => ({ ...s, open: false }))}
+        variant={confirmState.variant}
+      />
     </div>
   );
 }

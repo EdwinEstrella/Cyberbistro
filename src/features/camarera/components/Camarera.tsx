@@ -9,6 +9,7 @@ import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { normalizeTenantRol } from "../../../shared/lib/roleNav";
 import { enqueueLocalWrite, getDeviceId, isLocalFirstEnabled, readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
+import { ConfirmModal } from "../../../shared/components/ConfirmModal";
 import { writePosMutationLocalFirst } from "../../pos/lib/localFirstMutations";
 import { useSucursal } from "../../../app/context/SucursalContext";
 
@@ -159,6 +160,9 @@ export function Camarera() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState("");
+
+  const [confirmState, setConfirmState] = useState<{ open: boolean; message: string; onConfirm: () => void, title?: string, variant?: "danger" | "primary" }>({ open: false, message: "", onConfirm: () => {} });
+  const showConfirm = (message: string, onConfirm: () => void, title = "Confirmar", variant: "danger" | "primary" = "danger") => setConfirmState({ open: true, message, onConfirm, title, variant });
 
   useEffect(() => {
     if (authLoading) return;
@@ -506,11 +510,9 @@ export function Camarera() {
       setMessage("Solo podés editar los consumos de tus propias mesas.");
       return;
     }
-    const confirmed = confirm(`Eliminar ${group.cantidad}× ${group.nombre} de la Mesa ${selectedMesa.numero}?`);
-    if (!confirmed) return;
-
-    setDeletingConsumoId(group.key);
-    setMessage("");
+    showConfirm(`Eliminar ${group.cantidad}× ${group.nombre} de la Mesa ${selectedMesa.numero}?`, async () => {
+      setDeletingConsumoId(group.key);
+      setMessage("");
 
     const deviceId = await getDeviceId();
     const useLocalState = isLocalFirstEnabled();
@@ -599,8 +601,9 @@ export function Camarera() {
         owner_names: nextItems > 0 ? mesa.owner_names : [],
       };
     }));
-    setMessage(`${group.nombre} eliminado de la mesa.`);
-    setDeletingConsumoId(null);
+      setMessage(`${group.nombre} eliminado de la mesa.`);
+      setDeletingConsumoId(null);
+    }, "Eliminar Consumo");
   }
 
   if (authLoading || loading) {
@@ -806,6 +809,18 @@ export function Camarera() {
           </div>
         </div>
       </div>
+      
+      <ConfirmModal
+        open={confirmState.open}
+        title={confirmState.title ?? "Confirmar"}
+        message={confirmState.message}
+        onConfirm={() => {
+          confirmState.onConfirm();
+          setConfirmState(s => ({ ...s, open: false }));
+        }}
+        onCancel={() => setConfirmState(s => ({ ...s, open: false }))}
+        variant={confirmState.variant}
+      />
     </div>
   );
 }

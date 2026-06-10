@@ -2103,9 +2103,16 @@ export function Dashboard() {
                             key={method.value}
                             onClick={() => {
                               if (isFiadoLocked) {
-                                if (confirm("🔒 El pago 'Al Fiado' (Cuentas por Cobrar) es una función del Plan Profesional.\n\n¿Deseas solicitar la actualización de tu plan por WhatsApp?")) {
-                                  window.open("https://wa.me/18096041078?text=Hola%20Cyberbistro%2C%20quiero%20actualizar%20mi%20plan%20para%20usar%20Cuentas%20por%20Cobrar", "_blank", "noopener,noreferrer");
-                                }
+                                setDeleteConfirm({
+                                  open: true,
+                                  title: "Función Premium",
+                                  message: "🔒 El pago 'Al Fiado' (Cuentas por Cobrar) es una función del Plan Profesional.\n\n¿Deseas solicitar la actualización de tu plan por WhatsApp?",
+                                  variant: "primary",
+                                  onConfirm: () => {
+                                    setDeleteConfirm(s => ({ ...s, open: false }));
+                                    window.open("https://wa.me/18096041078?text=Hola%20Cyberbistro%2C%20quiero%20actualizar%20mi%20plan%20para%20usar%20Cuentas%20por%20Cobrar", "_blank", "noopener,noreferrer");
+                                  }
+                                });
                                 return;
                               }
                               setPaymentMethod(method.value);

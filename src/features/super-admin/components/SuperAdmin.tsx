@@ -11,6 +11,7 @@ import {
   tenantUserLimitColumnsPresent,
   type ManagedUserRole,
 } from "../../../shared/lib/tenantUserLimits";
+import { ConfirmModal } from "../../../shared/components/ConfirmModal";
 
 interface TenantUserRow {
   id: string;
@@ -135,6 +136,11 @@ export function SuperAdmin() {
   const [savingPlanId, setSavingPlanId] = useState<string | null>(null);
   const [rowActionId, setRowActionId] = useState<string | null>(null);
   const [columnsReady, setColumnsReady] = useState(true);
+
+  const [confirmState, setConfirmState] = useState<{ open: boolean; message: string; onConfirm: () => void, title?: string, variant?: "danger" | "primary" }>({ open: false, message: "", onConfirm: () => {} });
+  const showConfirm = (message: string, onConfirm: () => void, title = "Confirmar", variant: "danger" | "primary" = "danger") => {
+    setConfirmState({ open: true, message, onConfirm, title, variant });
+  };
 
   const isAllowed = isSuperAdminUser(user);
 
@@ -267,7 +273,7 @@ export function SuperAdmin() {
     }
   }
 
-  async function updateTenantPlan(tenantId: string, plan: 'basico' | 'profesional' | 'empresarial') {
+  function updateTenantPlan(tenantId: string, plan: 'basico' | 'profesional' | 'empresarial') {
     let confirmMsg = `¿Cambiar el plan del restaurante a ${plan.toUpperCase()}?\n\n`;
     if (plan === 'basico') {
       confirmMsg += 'Si se degrada a Básico, se ocultarán los módulos de inventario y sucursales (límite de 1 sucursal y 5 usuarios).';
@@ -276,149 +282,135 @@ export function SuperAdmin() {
     } else {
       confirmMsg += 'Se habilitará el soporte para sucursales ilimitadas, integraciones avanzadas y soporte corporativo 24/7.';
     }
-    const confirmed = confirm(confirmMsg);
-    if (!confirmed) return;
+    
+    showConfirm(confirmMsg, async () => {
+      try {
+        setSavingPlanId(tenantId);
+        setError("");
+        setInfo("");
 
-    try {
-      setSavingPlanId(tenantId);
-      setError("");
-      setInfo("");
+        const { error: updateError } = await insforgeClient.database
+          .from("tenants")
+          .update({ plan })
+          .eq("id", tenantId);
 
-      const { error: updateError } = await insforgeClient.database
-        .from("tenants")
-        .update({ plan })
-        .eq("id", tenantId);
+        if (updateError) {
+          setError(`No se pudo actualizar el plan del restaurante. ${updateError.message}`);
+          setSavingPlanId(null);
+          return;
+        }
 
-      if (updateError) {
-        setError(`No se pudo actualizar el plan del restaurante. ${updateError.message}`);
+        setInfo(`Plan del restaurante actualizado a ${plan.toUpperCase()} correctamente.`);
+        await loadData();
         setSavingPlanId(null);
-        return;
+      } catch (err) {
+        setSavingPlanId(null);
+        setError(err instanceof Error ? err.message : "No se pudo actualizar el plan.");
       }
-
-      setInfo(`Plan del restaurante actualizado a ${plan.toUpperCase()} correctamente.`);
-      await loadData();
-      setSavingPlanId(null);
-    } catch (err) {
-      setSavingPlanId(null);
-      setError(err instanceof Error ? err.message : "No se pudo actualizar el plan.");
-    }
+    }, "Actualizar Plan", "primary");
   }
 
-  async function deleteTenantUser(row: TenantUserRow) {
+  function deleteTenantUser(row: TenantUserRow) {
     if (row.rol === "admin") {
       setError("El admin dueno no se elimina individualmente. Bloquea o elimina el restaurante completo.");
       return;
     }
 
-    const confirmed = confirm(
-      `Eliminar usuario ${row.email}?\n\nEsto elimina su acceso al restaurante, borra su cuenta de Auth si esta vinculada y limpia referencias operativas asociadas a ese usuario.`
-    );
-    if (!confirmed) return;
+    showConfirm(`Eliminar usuario ${row.email}?\n\nEsto elimina su acceso al restaurante, borra su cuenta de Auth si esta vinculada y limpia referencias operativas asociadas a ese usuario.`, async () => {
+      setRowActionId(row.id);
+      setError("");
+      setInfo("");
 
-    setRowActionId(row.id);
-    setError("");
-    setInfo("");
+      const { error: rpcError } = await insforgeClient.database.rpc(
+        "cloudix_super_admin_delete_tenant_user",
+        { p_tenant_user_id: row.id }
+      );
 
-    const { error: rpcError } = await insforgeClient.database.rpc(
-      "cloudix_super_admin_delete_tenant_user",
-      { p_tenant_user_id: row.id }
-    );
+      setRowActionId(null);
 
-    setRowActionId(null);
+      if (rpcError) {
+        setError(`No se pudo eliminar el usuario. ${rpcError.message}`);
+        return;
+      }
 
-    if (rpcError) {
-      setError(`No se pudo eliminar el usuario. ${rpcError.message}`);
-      return;
-    }
-
-    setInfo(`Usuario ${row.email} eliminado.`);
-    await loadData();
+      setInfo(`Usuario ${row.email} eliminado.`);
+      await loadData();
+    }, "Eliminar Usuario");
   }
 
-  async function blockTenant(tenant: TenantRow) {
-    const confirmed = confirm(
-      `Bloquear restaurante "${tenant.nombre_negocio || tenant.id}"?\n\nEsto desactiva el restaurante, desactiva todos sus usuarios y cierra la cocina. No borra facturas ni historial.`
-    );
-    if (!confirmed) return;
+  function blockTenant(tenant: TenantRow) {
+    showConfirm(`Bloquear restaurante "${tenant.nombre_negocio || tenant.id}"?\n\nEsto desactiva el restaurante, desactiva todos sus usuarios y cierra la cocina. No borra facturas ni historial.`, async () => {
+      setRowActionId(`tenant:${tenant.id}`);
+      setError("");
+      setInfo("");
 
-    setRowActionId(`tenant:${tenant.id}`);
-    setError("");
-    setInfo("");
+      const { error: rpcError } = await insforgeClient.database.rpc(
+        "cloudix_super_admin_block_tenant",
+        { p_tenant_id: tenant.id }
+      );
 
-    const { error: rpcError } = await insforgeClient.database.rpc(
-      "cloudix_super_admin_block_tenant",
-      { p_tenant_id: tenant.id }
-    );
+      setRowActionId(null);
 
-    setRowActionId(null);
+      if (rpcError) {
+        setError(`No se pudo bloquear el restaurante. ${rpcError.message}`);
+        return;
+      }
 
-    if (rpcError) {
-      setError(`No se pudo bloquear el restaurante. ${rpcError.message}`);
-      return;
-    }
-
-    setInfo(`Restaurante ${tenant.nombre_negocio || tenant.id} bloqueado.`);
-    await loadData();
+      setInfo(`Restaurante ${tenant.nombre_negocio || tenant.id} bloqueado.`);
+      await loadData();
+    }, "Bloquear Restaurante");
   }
 
-  async function unblockTenant(tenant: TenantRow) {
-    const confirmed = confirm(
-      `Desbloquear restaurante "${tenant.nombre_negocio || tenant.id}"?
+  function unblockTenant(tenant: TenantRow) {
+    showConfirm(`Desbloquear restaurante "${tenant.nombre_negocio || tenant.id}"?\n\nEsto reactiva el restaurante y todos sus usuarios. Revisá después si querés eliminar o limitar algún usuario puntual.`, async () => {
+      setRowActionId(`tenant:${tenant.id}`);
+      setError("");
+      setInfo("");
 
-Esto reactiva el restaurante y todos sus usuarios. Revis? despu?s si quer?s eliminar o limitar alg?n usuario puntual.`
-    );
-    if (!confirmed) return;
+      const { error: rpcError } = await insforgeClient.database.rpc(
+        "cloudix_super_admin_unblock_tenant",
+        { p_tenant_id: tenant.id }
+      );
 
-    setRowActionId(`tenant:${tenant.id}`);
-    setError("");
-    setInfo("");
+      setRowActionId(null);
 
-    const { error: rpcError } = await insforgeClient.database.rpc(
-      "cloudix_super_admin_unblock_tenant",
-      { p_tenant_id: tenant.id }
-    );
+      if (rpcError) {
+        setError(`No se pudo desbloquear el restaurante. ${rpcError.message}`);
+        return;
+      }
 
-    setRowActionId(null);
-
-    if (rpcError) {
-      setError(`No se pudo desbloquear el restaurante. ${rpcError.message}`);
-      return;
-    }
-
-    setInfo(`Restaurante ${tenant.nombre_negocio || tenant.id} desbloqueado.`);
-    await loadData();
+      setInfo(`Restaurante ${tenant.nombre_negocio || tenant.id} desbloqueado.`);
+      await loadData();
+    }, "Desbloquear Restaurante", "primary");
   }
 
-  async function deleteTenant(tenant: TenantRow) {
-    const confirmed = confirm(
-      `Eliminar definitivamente restaurante "${tenant.nombre_negocio || tenant.id}"?\n\nEsto elimina el restaurante, todos sus usuarios, cuentas Auth vinculadas, carta, comandas, consumos, facturas, mesas, cocina y cierres. Esta accion no se puede deshacer.`
-    );
-    if (!confirmed) return;
+  function deleteTenant(tenant: TenantRow) {
+    showConfirm(`Eliminar definitivamente restaurante "${tenant.nombre_negocio || tenant.id}"?\n\nEsto elimina el restaurante, todos sus usuarios, cuentas Auth vinculadas, carta, comandas, consumos, facturas, mesas, cocina y cierres. Esta acción no se puede deshacer.`, () => {
+      // Show second confirm via state recursion
+      setTimeout(() => {
+        showConfirm(`Confirmación final: eliminar TODO lo relacionado con "${tenant.nombre_negocio || tenant.id}".`, async () => {
+          setRowActionId(`delete-tenant:${tenant.id}`);
+          setError("");
+          setInfo("");
 
-    const secondConfirm = confirm(
-      `Confirmacion final: eliminar TODO lo relacionado con "${tenant.nombre_negocio || tenant.id}".`
-    );
-    if (!secondConfirm) return;
+          const { error: rpcError } = await insforgeClient.database.rpc(
+            "cloudix_super_admin_delete_tenant",
+            { p_tenant_id: tenant.id }
+          );
 
-    setRowActionId(`delete-tenant:${tenant.id}`);
-    setError("");
-    setInfo("");
+          setRowActionId(null);
 
-    const { error: rpcError } = await insforgeClient.database.rpc(
-      "cloudix_super_admin_delete_tenant",
-      { p_tenant_id: tenant.id }
-    );
+          if (rpcError) {
+            setError(`No se pudo eliminar el restaurante. ${rpcError.message}`);
+            return;
+          }
 
-    setRowActionId(null);
-
-    if (rpcError) {
-      setError(`No se pudo eliminar el restaurante. ${rpcError.message}`);
-      return;
-    }
-
-    setInfo(`Restaurante ${tenant.nombre_negocio || tenant.id} eliminado.`);
-    setSelectedTenantId(null);
-    await loadData();
+          setInfo(`Restaurante ${tenant.nombre_negocio || tenant.id} eliminado.`);
+          setSelectedTenantId(null);
+          await loadData();
+        }, "Confirmación Final", "danger");
+      }, 350); // slight delay to allow first modal to unmount before rendering second
+    }, "Eliminar Restaurante");
   }
 
   function renderLimitsPanel(card: TenantCard) {
@@ -874,6 +866,18 @@ Esto reactiva el restaurante y todos sus usuarios. Revis? despu?s si quer?s elim
           )}
         </div>
       </div>
+      
+      <ConfirmModal
+        open={confirmState.open}
+        title={confirmState.title ?? "Confirmar"}
+        message={confirmState.message}
+        onConfirm={() => {
+          confirmState.onConfirm();
+          setConfirmState(s => ({ ...s, open: false }));
+        }}
+        onCancel={() => setConfirmState(s => ({ ...s, open: false }))}
+        variant={confirmState.variant}
+      />
     </div>
   );
 }

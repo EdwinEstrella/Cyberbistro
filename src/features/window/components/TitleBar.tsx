@@ -7,6 +7,7 @@ import type { Sucursal } from "../../../app/context/SucursalContext";
 import { SUPER_ADMIN_ROLE } from "../../../shared/lib/superAdmin";
 import { Printer } from "lucide-react";
 import { getThermalPrintSettings, saveThermalPrintSettings } from "../../../shared/lib/thermalStorage";
+import { ConfirmModal } from "../../../shared/components/ConfirmModal";
 
 interface TitleBarProps {
   showSidebarToggle?: boolean;
@@ -44,6 +45,9 @@ export function TitleBar({
   const [printerDropdownOpen, setPrinterDropdownOpen] = useState(false);
   const [printers, setPrinters] = useState<ThermalPrinterInfo[]>([]);
   const [selectedPrinterName, setSelectedPrinterName] = useState("");
+
+  const [confirmState, setConfirmState] = useState<{ open: boolean; message: string; onConfirm: () => void, title?: string, variant?: "danger" | "primary" }>({ open: false, message: "", onConfirm: () => {} });
+  const showConfirm = (message: string, onConfirm: () => void, title = "Confirmar", variant: "danger" | "primary" = "danger") => setConfirmState({ open: true, message, onConfirm, title, variant });
 
   useEffect(() => {
     setSelectedPrinterName(getThermalPrintSettings().printerName);
@@ -287,18 +291,19 @@ export function TitleBar({
                             {!isSelected && sucursales.length > 1 && (
                               <button
                                 type="button"
-                                onClick={async (e) => {
+                                onClick={(e) => {
                                   e.stopPropagation();
-                                  if (confirm(`¿Estás seguro de que querés eliminar la sucursal "${suc.nombre}"?`)) {
+                                  setDropdownOpen(false);
+                                  showConfirm(`¿Estás seguro de que querés eliminar la sucursal "${suc.nombre}"?`, async () => {
                                     const res = deleteSucursal
                                       ? await deleteSucursal(suc.id)
                                       : { success: false, error: "No hay contexto de sucursal disponible." };
                                     if (!res.success) {
                                       alert(res.error);
                                     }
-                                  }
+                                  }, "Eliminar Sucursal");
                                 }}
-                                className="opacity-0 group-hover:opacity-100 flex items-center justify-center size-5 rounded hover:bg-red-500/20 text-[#adaaaa] hover:text-red-400 transition-all border-none bg-transparent cursor-pointer"
+                                className="size-5 rounded-[4px] bg-transparent hover:bg-white/10 text-[#666] hover:text-[#ff716c] transition-colors flex items-center justify-center cursor-pointer ml-2 opacity-0 group-hover:opacity-100"
                                 title="Eliminar Sucursal"
                               >
                                 <svg className="size-[12px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
@@ -509,6 +514,18 @@ export function TitleBar({
           </>
         )}
       </div>
+
+      <ConfirmModal
+        open={confirmState.open}
+        title={confirmState.title ?? "Confirmar"}
+        message={confirmState.message}
+        onConfirm={() => {
+          confirmState.onConfirm();
+          setConfirmState(s => ({ ...s, open: false }));
+        }}
+        onCancel={() => setConfirmState(s => ({ ...s, open: false }))}
+        variant={confirmState.variant}
+      />
     </div>
   );
 }
