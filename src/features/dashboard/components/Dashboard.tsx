@@ -62,6 +62,7 @@ import { normalizeTenantRol } from "../../../shared/lib/roleNav";
 import { isDesktopCloudUnavailable } from "../../../shared/lib/cloudAvailability";
 import { CustomerSelect } from "../../clientes/components/CustomerSelect";
 import type { Customer } from "../../clientes/lib/customers";
+import { ConfirmModal } from "../../../shared/components/ConfirmModal";
 
 interface Plato {
   id: number;
@@ -171,6 +172,13 @@ export function Dashboard() {
   const [takeoutClientRnc, setTakeoutClientRnc] = useState("");
   const [takeoutCustomer, setTakeoutCustomer] = useState<Customer | null>(null);
   const [cashReceivedInput, setCashReceivedInput] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    variant?: "danger" | "primary";
+  }>({ open: false, title: "", message: "", onConfirm: () => {} });
 
   useEffect(() => {
     if (authLoading || !tenantId) return;
@@ -611,46 +619,63 @@ export function Dashboard() {
     if (!consumo) return;
 
     if (!canDeleteOpenConsumo(rol, user?.id, consumo)) {
-      alert("No tienes permiso para eliminar este consumo o ya fue facturado.");
-      return;
-    }
-
-    const confirmed = window.confirm(
-      `¿Eliminar "${consumo.cantidad}× ${consumo.nombre}" de la cuenta?\n\nEsta acción no se puede deshacer.`
-    );
-    if (!confirmed) return;
-
-    setDeletingConsumoId(consumoId);
-
-    try {
-      await writePosMutationLocalFirst({
-        tenantId,
-        tableName: "consumos",
-        rowId: consumoId,
-        op: "delete",
-        payload: {
-          id: consumoId,
-          tenant_id: tenantId,
-          sucursal_id: activeSucursalId,
-          mesa_numero: consumo.mesa_numero,
-          comanda_id: consumo.comanda_id,
-          created_by_auth_user_id: consumo.created_by_auth_user_id ?? null,
-        },
-        authUserId: user?.id ?? null,
-        deviceId: await getDeviceId(),
+      setDeleteConfirm({
+        open: true,
+        title: "Sin Permiso",
+        message: "No tienes permiso para eliminar este consumo o ya fue facturado.",
+        variant: "primary",
+        onConfirm: () => setDeleteConfirm(s => ({ ...s, open: false })),
       });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Error desconocido";
-      console.error("Error al eliminar consumo:", error);
-      alert(`Error al eliminar: ${message}`);
-      setDeletingConsumoId(null);
       return;
     }
 
-    // Update local state
-    setMesaConsumos((prev) => prev.filter((c) => c.id !== consumoId));
-    await refreshMesaDebt(selectedMesa.id, selectedMesa.numero);
-    setDeletingConsumoId(null);
+    setDeleteConfirm({
+      open: true,
+      title: "Eliminar Consumo",
+      message: `¿Eliminar "${consumo.cantidad}× ${consumo.nombre}" de la cuenta?\n\nEsta acción no se puede deshacer.`,
+      onConfirm: async () => {
+        setDeleteConfirm(s => ({ ...s, open: false }));
+        setDeletingConsumoId(consumoId);
+
+        try {
+          await writePosMutationLocalFirst({
+            tenantId: tenantId!,
+            tableName: "consumos",
+            rowId: consumoId,
+            op: "delete",
+            payload: {
+              id: consumoId,
+              tenant_id: tenantId!,
+              sucursal_id: activeSucursalId!,
+              mesa_numero: consumo.mesa_numero,
+              comanda_id: consumo.comanda_id,
+              created_by_auth_user_id: consumo.created_by_auth_user_id ?? null,
+            },
+            authUserId: user?.id ?? null,
+            deviceId: await getDeviceId(),
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Error desconocido";
+          console.error("Error al eliminar consumo:", error);
+          setDeleteConfirm({
+            open: true,
+            title: "Error",
+            message: `Error al eliminar: ${message}`,
+            variant: "primary",
+            onConfirm: () => setDeleteConfirm(s => ({ ...s, open: false })),
+          });
+          setDeletingConsumoId(null);
+          return;
+        }
+
+        // Update local state
+        setMesaConsumos((prev) => prev.filter((c) => c.id !== consumoId));
+        if (selectedMesa) {
+          await refreshMesaDebt(selectedMesa.id, selectedMesa.numero);
+        }
+        setDeletingConsumoId(null);
+      },
+    });
   }
 
   /** Totales del modal "para llevar" (sin mesa). */
@@ -2270,6 +2295,15 @@ export function Dashboard() {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={deleteConfirm.open}
+        title={deleteConfirm.title}
+        message={deleteConfirm.message}
+        onConfirm={deleteConfirm.onConfirm}
+        onCancel={() => setDeleteConfirm(s => ({ ...s, open: false }))}
+        variant={deleteConfirm.variant}
+      />
     </div>
   );
 }

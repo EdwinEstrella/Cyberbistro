@@ -3,6 +3,7 @@ import { Plus, ReceiptText, RefreshCw, Sparkles, Tag, Trash2, WalletCards } from
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
+import { ConfirmModal } from "../../../shared/components/ConfirmModal";
 
 interface CategoriaGasto {
   id: string;
@@ -87,6 +88,14 @@ export function Gastos() {
     fecha_gasto: todayInputValue(),
     notas: "",
   });
+  const [confirmState, setConfirmState] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({ open: false, title: "", message: "", onConfirm: () => {} });
+
+  const closeConfirm = useCallback(() => setConfirmState(s => ({ ...s, open: false })), []);
 
   const cargar = useCallback(async () => {
     if (!tenantId) {
@@ -235,21 +244,33 @@ export function Gastos() {
         setSaving(false);
         return;
       }
-      const ok = window.confirm(`¿Seguro que quieres eliminar la categoría "${cat.nombre}"?`);
-      if (!ok) { setSaving(false); return; }
-      await enqueueLocalWrite({
-        tenantId,
-        tableName: "gasto_categorias",
-        rowId: cat.id,
-        op: "delete",
-        deviceId: await getDeviceId(),
+      setConfirmState({
+        open: true,
+        title: "Eliminar Categoría",
+        message: `¿Seguro que quieres eliminar la categoría "${cat.nombre}"?`,
+        onConfirm: async () => {
+          setConfirmState(s => ({ ...s, open: false }));
+          try {
+            await enqueueLocalWrite({
+              tenantId,
+              tableName: "gasto_categorias",
+              rowId: cat.id,
+              op: "delete",
+              deviceId: await getDeviceId(),
+            });
+            await cargar();
+            setMessage(`Categoría "${cat.nombre}" eliminada.`);
+          } catch (err: any) {
+            setMessage(`Error al eliminar: ${err.message}`);
+          }
+          setSaving(false);
+        },
       });
-      await cargar();
-      setMessage(`Categoría "${cat.nombre}" eliminada.`);
+      return;
     } catch (err: any) {
       setMessage(`Error al eliminar: ${err.message}`);
+      setSaving(false);
     }
-    setSaving(false);
   }
 
   async function registrarGasto(e: FormEvent) {
@@ -307,25 +328,31 @@ export function Gastos() {
     setSaving(false);
   }
 
-  async function eliminarGasto(gasto: GastoRow) {
+  function eliminarGasto(gasto: GastoRow) {
     if (!tenantId) return;
-    const ok = window.confirm(`Eliminar gasto "${gasto.descripcion}" por ${RD(gasto.monto)}?`);
-    if (!ok) return;
-    setSaving(true);
-    setMessage("");
-    try {
-      await enqueueLocalWrite({
-        tenantId,
-        tableName: "gastos",
-        rowId: gasto.id,
-        op: "delete",
-        deviceId: await getDeviceId(),
-      });
-      await cargar();
-    } catch (err: any) {
-      setMessage(err.message);
-    }
-    setSaving(false);
+    setConfirmState({
+      open: true,
+      title: "Eliminar Gasto",
+      message: `Eliminar gasto "${gasto.descripcion}" por ${RD(gasto.monto)}?`,
+      onConfirm: async () => {
+        setConfirmState(s => ({ ...s, open: false }));
+        setSaving(true);
+        setMessage("");
+        try {
+          await enqueueLocalWrite({
+            tenantId: tenantId!,
+            tableName: "gastos",
+            rowId: gasto.id,
+            op: "delete",
+            deviceId: await getDeviceId(),
+          });
+          await cargar();
+        } catch (err: any) {
+          setMessage(err.message);
+        }
+        setSaving(false);
+      },
+    });
   }
 
   if (authLoading || loading) {
@@ -537,6 +564,15 @@ export function Gastos() {
           </div>
         </section>
       </div>
+
+      <ConfirmModal
+        open={confirmState.open}
+        title={confirmState.title}
+        message={confirmState.message}
+        confirmLabel="Eliminar"
+        onConfirm={confirmState.onConfirm}
+        onCancel={closeConfirm}
+      />
     </div>
   );
 }
