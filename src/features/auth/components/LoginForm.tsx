@@ -55,8 +55,8 @@ function extractRefreshTokenFromSignInPayload(data: unknown): string | null {
 export function Login() {
   const navigate = useNavigate();
   const { isAuthenticated, loading: authLoading, tenantUser } = useAuth();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState(!import.meta.env.PROD ? "test@test.com" : "");
+  const [password, setPassword] = useState(!import.meta.env.PROD ? "lia2026" : "");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberLogin, setRememberLogin] = useState(false);
   const [error, setError] = useState("");
@@ -84,26 +84,72 @@ export function Login() {
     // the renderer can lose character input focus while keeping command keys (backspace).
     // Ask the main process to focus both the native window and its webContents.
     // Trigger twice to handle any slow DOM transitions or route animation delays.
+    const handleGlobalFocusIn = (e: FocusEvent) => {
+      const target = e.target as HTMLElement;
+      console.log(`[LoginForm] GLOBAL focusin: targetId="${target?.id || ''}" tagName="${target?.tagName || ''}"`);
+    };
+    const handleGlobalFocusOut = (e: FocusEvent) => {
+      const target = e.target as HTMLElement;
+      const related = (e as any).relatedTarget as HTMLElement;
+      console.log(`[LoginForm] GLOBAL focusout: targetId="${target?.id || ''}" tagName="${target?.tagName || ''}" relatedTargetId="${related?.id || ''}" relatedTargetTagName="${related?.tagName || ''}"`);
+    };
+    document.addEventListener("focusin", handleGlobalFocusIn, true);
+    document.addEventListener("focusout", handleGlobalFocusOut, true);
+
     const timer1 = setTimeout(() => {
+      console.log("[LoginForm] timer1 fired");
+      const active = document.activeElement;
+      const isTyping = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement;
+      const hasFocus = document.hasFocus();
+      console.log(`[LoginForm] timer1 check: isTyping=${isTyping}, hasFocus=${hasFocus}, activeElementId=${active?.id || ""}`);
+      if (isTyping && hasFocus) {
+        console.log("[LoginForm] timer1 skipped: user is already typing and window has focus");
+        return;
+      }
       window.focus();
       const focusRecovery = window.electronAPI?.ensureInputFocus?.();
       void Promise.resolve(focusRecovery).finally(() => {
-        const active = document.activeElement;
-        const isTyping = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement;
-        if (!isTyping) {
-          emailInputRef.current?.focus();
+        const activeNow = document.activeElement;
+        const targetEl = (activeNow instanceof HTMLInputElement || activeNow instanceof HTMLTextAreaElement)
+          ? activeNow
+          : emailInputRef.current;
+        if (targetEl) {
+          console.log("[LoginForm] timer1 forcing caret repaint cycle on:", targetEl.id || "login-email");
+          targetEl.blur();
+          targetEl.style.transform = "translateZ(0)";
+          requestAnimationFrame(() => {
+            targetEl.style.transform = "";
+            targetEl.focus();
+          });
         }
       });
     }, 150);
 
     const timer2 = setTimeout(() => {
+      console.log("[LoginForm] timer2 fired");
+      const active = document.activeElement;
+      const isTyping = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement;
+      const hasFocus = document.hasFocus();
+      console.log(`[LoginForm] timer2 check: isTyping=${isTyping}, hasFocus=${hasFocus}, activeElementId=${active?.id || ""}`);
+      if (isTyping && hasFocus) {
+        console.log("[LoginForm] timer2 skipped: user is already typing and window has focus");
+        return;
+      }
       window.focus();
       const focusRecovery = window.electronAPI?.ensureInputFocus?.();
       void Promise.resolve(focusRecovery).finally(() => {
-        const active = document.activeElement;
-        const isTyping = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement;
-        if (!isTyping) {
-          emailInputRef.current?.focus();
+        const activeNow = document.activeElement;
+        const targetEl = (activeNow instanceof HTMLInputElement || activeNow instanceof HTMLTextAreaElement)
+          ? activeNow
+          : emailInputRef.current;
+        if (targetEl) {
+          console.log("[LoginForm] timer2 forcing caret repaint cycle on:", targetEl.id || "login-email");
+          targetEl.blur();
+          targetEl.style.transform = "translateZ(0)";
+          requestAnimationFrame(() => {
+            targetEl.style.transform = "";
+            targetEl.focus();
+          });
         }
       });
     }, 450);
@@ -111,6 +157,8 @@ export function Login() {
     return () => {
       clearTimeout(timer1);
       clearTimeout(timer2);
+      document.removeEventListener("focusin", handleGlobalFocusIn, true);
+      document.removeEventListener("focusout", handleGlobalFocusOut, true);
     };
   }, []);
   useEffect(() => {
@@ -378,7 +426,12 @@ export function Login() {
                         type="email"
                         autoComplete="email"
                         value={email}
-                        onChange={(e) => setEmail(e.target.value)}
+                        onChange={(e) => {
+                          console.log("[LoginForm] email onChange:", e.target.value);
+                          setEmail(e.target.value);
+                        }}
+                        onFocus={() => console.log("[LoginForm] email onFocus. Active element:", document.activeElement?.id)}
+                        onBlur={(e) => console.log("[LoginForm] email onBlur. Related target:", e.relatedTarget?.id, "Active element:", document.activeElement?.id)}
                         placeholder="usuario@correo.com"
                         aria-invalid={Boolean(error)}
                         aria-describedby={error ? "login-auth-error" : undefined}
@@ -410,7 +463,12 @@ export function Login() {
                         type={showPassword ? "text" : "password"}
                         autoComplete="current-password"
                         value={password}
-                        onChange={(e) => setPassword(e.target.value)}
+                        onChange={(e) => {
+                          console.log("[LoginForm] password onChange");
+                          setPassword(e.target.value);
+                        }}
+                        onFocus={() => console.log("[LoginForm] password onFocus. Active element:", document.activeElement?.id)}
+                        onBlur={(e) => console.log("[LoginForm] password onBlur. Related target:", e.relatedTarget?.id, "Active element:", document.activeElement?.id)}
                         placeholder="•••••••••••••"
                         aria-invalid={Boolean(error)}
                         aria-describedby={error ? "login-auth-error" : undefined}

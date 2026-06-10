@@ -13,6 +13,7 @@ export function useElectronInputFocusRecovery() {
     if (!ensureInputFocus) return;
 
     let lastRequest = 0;
+    let lastActiveInput: HTMLElement | null = null;
 
     const requestFocusRecovery = () => {
       const now = Date.now();
@@ -25,7 +26,13 @@ export function useElectronInputFocusRecovery() {
 
     const handleEditableInteraction = (event: Event) => {
       if (!isEditableTarget(event.target)) return;
-      if (document.activeElement === event.target) return;
+      
+      lastActiveInput = event.target;
+      
+      const hasFocus = document.hasFocus();
+      const isActiveEditable = isEditableTarget(document.activeElement);
+      if (isActiveEditable && hasFocus) return;
+
       requestFocusRecovery();
 
       const target = event.target;
@@ -36,17 +43,29 @@ export function useElectronInputFocusRecovery() {
       }, 0);
     };
 
+    const handleWindowFocus = () => {
+      requestFocusRecovery();
+      if (lastActiveInput && document.body.contains(lastActiveInput) && document.activeElement !== lastActiveInput) {
+        window.setTimeout(() => {
+          if (lastActiveInput && document.body.contains(lastActiveInput) && isEditableTarget(lastActiveInput)) {
+            console.log("[useElectronInputFocusRecovery] restoring focus to last active input:", lastActiveInput.id);
+            lastActiveInput.focus();
+          }
+        }, 50);
+      }
+    };
+
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") requestFocusRecovery();
     };
 
-    window.addEventListener("focus", requestFocusRecovery);
+    window.addEventListener("focus", handleWindowFocus);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     document.addEventListener("focusin", handleEditableInteraction, true);
     document.addEventListener("pointerdown", handleEditableInteraction, true);
 
     return () => {
-      window.removeEventListener("focus", requestFocusRecovery);
+      window.removeEventListener("focus", handleWindowFocus);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       document.removeEventListener("focusin", handleEditableInteraction, true);
       document.removeEventListener("pointerdown", handleEditableInteraction, true);

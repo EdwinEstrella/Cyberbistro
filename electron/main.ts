@@ -8,6 +8,9 @@ import { setupAutoUpdater } from './autoUpdater'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 let mainWindow: BrowserWindow | null = null
 
+// Deshabilitar la aceleración de hardware para evitar bugs de focus/puntero en Windows
+app.disableHardwareAcceleration()
+
 type PrintThermalOptions = {
   html: string
   deviceName?: string
@@ -51,7 +54,7 @@ function printHtmlToThermal(opts: PrintThermalOptions): Promise<PrintThermalResp
             printBackground: true,
             deviceName: opts.deviceName || undefined,
             usePrinterDefaultPageSize: true,
-            margins: { marginType: 1 },
+            margins: { marginType: 'none' },
           },
           (success, failureReason) => {
             clearTimeout(timer)
@@ -76,9 +79,11 @@ function focusMainWindowForTextInput(): boolean {
   if (!win || win.isDestroyed()) return false
 
   if (win.isMinimized()) win.restore()
+  win.setAlwaysOnTop(true)
   win.show()
   win.focus()
   win.webContents.focus()
+  win.setAlwaysOnTop(false)
   return win.isFocused() || win.webContents.isFocused()
 }
 
@@ -172,6 +177,15 @@ function createWindow() {
   })
 
   applyWindowsTaskbarIdentity(mainWindow)
+
+  // Forzar foco en webContents y forzar que Windows redibuje el contexto del caret
+  mainWindow.on('focus', () => {
+    mainWindow?.setAlwaysOnTop(true);
+    setTimeout(() => {
+      mainWindow?.setAlwaysOnTop(false);
+      mainWindow?.webContents.focus();
+    }, 50);
+  });
 
   // Load from Vite dev server in development, or from files in production
   // VITE_DEV_SERVER_URL is set by vite-plugin-electron during development

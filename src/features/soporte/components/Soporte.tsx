@@ -1190,18 +1190,19 @@ function DigitalMenuPanel() {
 
   useEffect(() => {
     if (!tenantId) return;
+    const currentTenantId: string = tenantId;
 
     async function loadData() {
       try {
         setLoading(true);
         // Load plates locally
-        const platosLocal = await readLocalMirror<Plato>(tenantId, "platos");
+        const platosLocal = await readLocalMirror<Plato>(currentTenantId, "platos");
         const filteredPlatos = platosLocal.filter(p => !p.sucursal_id || p.sucursal_id === activeSucursalId);
         setPlatos(filteredPlatos);
 
         // Load digital menu settings
-        const settingsLocal = await readLocalMirror<any>(tenantId, "digital_menu_settings");
-        const tenantSettings = settingsLocal.find((s: any) => s.tenant_id === tenantId && (!s.sucursal_id || s.sucursal_id === activeSucursalId));
+        const settingsLocal = await readLocalMirror<any>(currentTenantId, "digital_menu_settings");
+        const tenantSettings = settingsLocal.find((s: any) => s.tenant_id === currentTenantId && (!s.sucursal_id || s.sucursal_id === activeSucursalId));
 
         if (tenantSettings) {
           setSettings(tenantSettings);
@@ -1213,12 +1214,12 @@ function DigitalMenuPanel() {
           setBannerUrl(tenantSettings.banner_url || "");
           setAccentColor(tenantSettings.theme?.accentColor || "#f97316");
         } else {
-          setSlug(`restaurante-${tenantId.slice(0, 8)}`);
+          setSlug(`restaurante-${currentTenantId.slice(0, 8)}`);
         }
 
         // Load digital menu items
-        const itemsLocal = await readLocalMirror<any>(tenantId, "digital_menu_items");
-        setMenuItems(itemsLocal.filter((mi: any) => mi.tenant_id === tenantId));
+        const itemsLocal = await readLocalMirror<any>(currentTenantId, "digital_menu_items");
+        setMenuItems(itemsLocal.filter((mi: any) => mi.tenant_id === currentTenantId));
       } catch (err: any) {
         console.error("Error loading digital menu settings:", err);
       } finally {
@@ -1239,8 +1240,8 @@ function DigitalMenuPanel() {
   useEffect(() => {
     if (!qrUrl) return;
     QRCode.toDataURL(qrUrl, { width: 256, margin: 2 })
-      .then(url => setQrCodeDataUrl(url))
-      .catch(err => console.error(err));
+      .then((url: string) => setQrCodeDataUrl(url))
+      .catch((err: Error | unknown) => console.error(err));
   }, [qrUrl]);
 
   const handleSaveSettings = async (e: React.FormEvent) => {
