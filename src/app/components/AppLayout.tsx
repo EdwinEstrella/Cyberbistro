@@ -391,7 +391,7 @@ function AppLayoutContent() {
     saveThermalPrintSettings({ ...settings, printComandas: nextVal });
     setPrintComandasEnabled(nextVal);
   };
-  const [upsellType, setUpsellType] = useState<"inventario" | "sucursales" | null>(null);
+  const [upsellType, setUpsellType] = useState<"inventario" | "sucursales" | "plan_superior" | null>(null);
 
   const {
     activeSucursalId,
@@ -581,7 +581,7 @@ function AppLayoutContent() {
                       onFocus={() => prefetchRoute(item.path)}
                       onClick={() => {
                         if (isLocked && !loading) {
-                          setUpsellType("inventario");
+                          setUpsellType("plan_superior");
                           return;
                         }
                         navigate(item.path);
@@ -859,13 +859,13 @@ function AppLayoutContent() {
       </div>
       {upsellType !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md transition-all duration-300">
-          <div className="bg-[#131313] border border-[rgba(255,144,109,0.3)] rounded-[20px] shadow-[0px_0px_40px_rgba(255,144,109,0.2)] max-w-[420px] w-full p-6 relative overflow-hidden">
+          <div className="bg-[#131313] border border-[rgba(255,144,109,0.3)] rounded-[20px] shadow-[0px_0px_40px_rgba(255,144,109,0.25)] max-w-[400px] w-full p-7 relative overflow-hidden">
             <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,144,109,0.1),transparent)] pointer-events-none" />
 
-            <div className="flex flex-col items-center text-center gap-4 relative z-10">
+            <div className="flex flex-col items-center text-center gap-5 relative z-10">
               {/* Crown/Building Icon SVG */}
               <div className="bg-[rgba(255,144,109,0.12)] border border-[rgba(255,144,109,0.3)] rounded-full size-[64px] flex items-center justify-center shadow-[0_0_20px_rgba(255,144,109,0.2)]">
-                {upsellType === "inventario" ? (
+                {upsellType === "inventario" || upsellType === "plan_superior" ? (
                   <svg className="size-[28px] text-[#ff906d]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7z" />
                     <path d="M3 20h18" />
@@ -879,20 +879,29 @@ function AppLayoutContent() {
 
               <div className="flex flex-col gap-1">
                 <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[20px] uppercase tracking-[0.5px]">
-                  {upsellType === "inventario" 
+                  {upsellType === "plan_superior"
+                    ? "Opción Premium"
+                    : upsellType === "inventario" 
                     ? "Módulo de Inventario" 
                     : (plan === "profesional" ? "Sucursales Ilimitadas" : "Múltiples Sucursales")
                   }
                 </span>
-                <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[12px] uppercase tracking-[1px]">
-                  {upsellType === "inventario" 
+                <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[12px] uppercase tracking-[1.5px]">
+                  {upsellType === "plan_superior"
+                    ? "Plan Superior Requerido"
+                    : upsellType === "inventario" 
                     ? "Plan Profesional" 
                     : (plan === "profesional" ? "Plan Empresarial" : "Plan Profesional / Empresarial")
                   }
                 </span>
               </div>
 
-              <p className="font-['Inter',sans-serif] text-[#adaaaa] text-[13px] leading-relaxed">
+              <p className="font-['Inter',sans-serif] text-[#adaaaa] text-[13.5px] leading-relaxed">
+                {upsellType === "plan_superior" && (
+                  <>
+                    Para acceder a esta funcionalidad necesitás subir a un plan superior al actual. Subí de nivel y desbloqueá herramientas de gestión avanzadas.
+                  </>
+                )}
                 {upsellType === "inventario" && (
                   <>
                     El control de inventario avanzado, recetas y materias primas (como aceite, carne y papas) está disponible exclusivamente en el <strong className="text-white font-semibold">Plan Profesional</strong>.
@@ -910,62 +919,66 @@ function AppLayoutContent() {
                 )}
               </p>
 
-              <div className="bg-[rgba(37,211,102,0.08)] border border-[rgba(37,211,102,0.22)] rounded-[12px] p-3 w-full">
-                <p className="font-['Space_Grotesk',sans-serif] text-[#25d366] text-[13px] font-bold leading-normal text-center">
-                  {plan === "profesional"
-                    ? "Solicita el aumento al Plan Empresarial por WhatsApp."
-                    : "Solicita tu aumento de plan por WhatsApp."
-                  }
-                </p>
-              </div>
+              {upsellType !== "plan_superior" && (
+                <>
+                  <div className="bg-[rgba(37,211,102,0.08)] border border-[rgba(37,211,102,0.22)] rounded-[12px] p-3 w-full">
+                    <p className="font-['Space_Grotesk',sans-serif] text-[#25d366] text-[13px] font-bold leading-normal text-center">
+                      {plan === "profesional"
+                        ? "Solicita el aumento al Plan Empresarial por WhatsApp."
+                        : "Solicita tu aumento de plan por WhatsApp."
+                      }
+                    </p>
+                  </div>
 
-              <div className="bg-[#1a1a1a] rounded-[12px] border border-[rgba(72,72,71,0.18)] p-3.5 w-full text-left">
-                <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[11px] uppercase tracking-[0.5px] block mb-2">
-                  {upsellType === "inventario" ? "¿Qué incluye el Plan Profesional?" : "¿Qué ventajas te ofrece?"}
-                </span>
-                <ul className="flex flex-col gap-1.5 pl-0 list-none text-[11px] text-[#adaaaa] font-['Inter',sans-serif]">
-                  {upsellType === "inventario" ? (
-                    <>
-                      <li className="flex items-center gap-2">
-                        <span className="text-[#ff906d]">✓</span> <b>Múltiples Sucursales</b> en un solo lugar
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <span className="text-[#ff906d]">✓</span> <b>Ingredientes y recetas</b> automáticos
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <span className="text-[#ff906d]">✓</span> <b>Cierres de Cocina</b> y reporte de mermas
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <span className="text-[#ff906d]">✓</span> Control de aceite útil de freidoras
-                      </li>
-                    </>
-                  ) : (
-                    <>
-                      <li className="flex items-center gap-2">
-                        <span className="text-[#ff906d]">✓</span> <b>Múltiples locales</b> sincronizados en tiempo real
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <span className="text-[#ff906d]">✓</span> <b>Consolidación de ventas</b> y caja unificada
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <span className="text-[#ff906d]">✓</span> <b>Transferencias de insumos</b> entre locales
-                      </li>
-                      <li className="flex items-center gap-2">
-                        <span className="text-[#ff906d]">✓</span> Filtros rápidos de sucursal en todo el sistema
-                      </li>
-                    </>
-                  )}
-                </ul>
-              </div>
+                  <div className="bg-[#1a1a1a] rounded-[12px] border border-[rgba(72,72,71,0.18)] p-3.5 w-full text-left">
+                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[11px] uppercase tracking-[0.5px] block mb-2">
+                      {upsellType === "inventario" ? "¿Qué incluye el Plan Profesional?" : "¿Qué ventajas te ofrece?"}
+                    </span>
+                    <ul className="flex flex-col gap-1.5 pl-0 list-none text-[11px] text-[#adaaaa] font-['Inter',sans-serif]">
+                      {upsellType === "inventario" ? (
+                        <>
+                          <li className="flex items-center gap-2">
+                            <span className="text-[#ff906d]">✓</span> <b>Múltiples Sucursales</b> en un solo lugar
+                          </li>
+                          <li className="flex items-center gap-2">
+                            <span className="text-[#ff906d]">✓</span> <b>Ingredientes y recetas</b> automáticos
+                          </li>
+                          <li className="flex items-center gap-2">
+                            <span className="text-[#ff906d]">✓</span> <b>Cierres de Cocina</b> y reporte de mermas
+                          </li>
+                          <li className="flex items-center gap-2">
+                            <span className="text-[#ff906d]">✓</span> Control de aceite útil de freidoras
+                          </li>
+                        </>
+                      ) : (
+                        <>
+                          <li className="flex items-center gap-2">
+                            <span className="text-[#ff906d]">✓</span> <b>Múltiples locales</b> sincronizados en tiempo real
+                          </li>
+                          <li className="flex items-center gap-2">
+                            <span className="text-[#ff906d]">✓</span> <b>Consolidación de ventas</b> y caja unificada
+                          </li>
+                          <li className="flex items-center gap-2">
+                            <span className="text-[#ff906d]">✓</span> <b>Transferencias de insumos</b> entre locales
+                          </li>
+                          <li className="flex items-center gap-2">
+                            <span className="text-[#ff906d]">✓</span> Filtros rápidos de sucursal en todo el sistema
+                          </li>
+                        </>
+                      )}
+                    </ul>
+                  </div>
+                </>
+              )}
 
               <div className="flex flex-col gap-2.5 w-full mt-2">
                 <button
                   type="button"
                   onClick={requestPlanUpgrade}
-                  className="w-full bg-[#25d366] py-3 rounded-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#062d1b] text-[12px] uppercase tracking-[0.5px] cursor-pointer border-none transition-all duration-300 hover:shadow-[0_0_20px_rgba(37,211,102,0.35)] hover:scale-[1.01] active:scale-95"
+                  className="w-full bg-[#25d366] py-3.5 rounded-[12px] font-['Space_Grotesk',sans-serif] font-bold text-[#062d1b] text-[12.5px] uppercase tracking-[0.5px] cursor-pointer border-none transition-all duration-300 hover:shadow-[0_0_20px_rgba(37,211,102,0.35)] hover:scale-[1.01] active:scale-95"
                   style={{ backgroundImage: "linear-gradient(172.248deg, rgb(37, 211, 102) 0%, rgb(18, 140, 126) 100%)" }}
                 >
-                  Solicitar aumento por WhatsApp
+                  Subir de Plan por WhatsApp
                 </button>
                 
                 <button
@@ -973,7 +986,7 @@ function AppLayoutContent() {
                   onClick={() => setUpsellType(null)}
                   className="w-full bg-[#262626] text-[#adaaaa] py-2.5 rounded-[12px] font-['Inter',sans-serif] font-bold text-[11px] uppercase cursor-pointer border-none transition-all duration-300 hover:bg-[#333] active:scale-95"
                 >
-                  Entendido, volver
+                  Volver
                 </button>
               </div>
             </div>
