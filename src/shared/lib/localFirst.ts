@@ -36,6 +36,7 @@ export const LOCAL_FIRST_MIRROR_TABLES = [
   "digital_menu_items",
   "digital_orders",
   "digital_order_items",
+  "ecf_sequence_allocations",
 ] as const;
 
 export const LOCAL_FIRST_METADATA_TABLES = [
@@ -66,6 +67,7 @@ export const LOCAL_FIRST_IMMEDIATE_TABLES = [
   "productos_inventario",
   "recetas",
   "proveedores",
+  "ecf_sequence_allocations",
 ] as const;
 
 export const LOCAL_FIRST_HISTORY_TABLES = [
@@ -101,6 +103,7 @@ export const LOCAL_FIRST_HISTORY_TABLES = [
   "digital_menu_items",
   "digital_orders",
   "digital_order_items",
+  "ecf_sequence_allocations",
 ] as const;
 
 export type LocalFirstMirrorTable = (typeof LOCAL_FIRST_MIRROR_TABLES)[number];
