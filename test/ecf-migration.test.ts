@@ -41,7 +41,7 @@ describe("e-CF infrastructure migration", () => {
     expect(migration).not.toMatch(/CREATE POLICY cb_ecf_documents_tenant_update/);
     expect(migration).toContain("CREATE POLICY cb_ecf_documents_tenant_insert ON public.ecf_documents");
     expect(migration).toContain("CREATE POLICY cb_ecf_documents_no_app_update ON public.ecf_documents");
-    expect(migration).toContain("FOR UPDATE TO public\n  USING (false) WITH CHECK (false);");
+    expect(migration).toMatch(/FOR UPDATE TO public\s*USING \(false\) WITH CHECK \(false\);/);
     expect(migration).toContain("CREATE POLICY cb_ecf_documents_project_admin_all ON public.ecf_documents");
   });
 });

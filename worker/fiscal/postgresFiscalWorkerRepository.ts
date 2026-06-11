@@ -174,7 +174,21 @@ export const CLAIM_JOB_SQL = `
       cm.environment AS certificate_environment,
       cm.is_ready AS certificate_is_ready,
       cm.valid_until AS certificate_valid_until,
-      to_jsonb(f.*) AS invoice_payload
+      (
+        SELECT jsonb_build_object(
+          'factura', to_jsonb(f.*),
+          'items', COALESCE((
+            SELECT jsonb_agg(to_jsonb(fi.*))
+            FROM public.factura_items fi
+            WHERE fi.factura_id = f.id
+          ), '[]'::jsonb),
+          'payments', COALESCE((
+            SELECT jsonb_agg(to_jsonb(fp.*))
+            FROM public.factura_payments fp
+            WHERE fp.factura_id = f.id
+          ), '[]'::jsonb)
+        )
+      ) AS invoice_payload
     FROM public.fiscal_outbox fo
     JOIN public.ecf_documents ed ON ed.id = fo.ecf_document_id
     LEFT JOIN public.ecf_certificate_metadata cm ON cm.id = ed.certificate_metadata_id

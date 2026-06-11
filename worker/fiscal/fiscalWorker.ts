@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { fiscalWorkerError, unknownToWorkerError } from "./errors";
+import { createUnsignedEcfXml } from "./mapper";
 import type {
   CertificateCustody,
   DgiiClientAdapter,
@@ -71,7 +72,7 @@ export class FiscalWorker {
     });
     if (!signingMaterial.ok) throw signingMaterial.error;
 
-    const unsignedXml = createUnsignedEcfXml(snapshot);
+    const unsignedXml = createUnsignedEcfXml(snapshot, this.now());
     const signed = await this.deps.signer.signXml({
       unsignedXml,
       certificate: signingMaterial.value,
@@ -94,6 +95,7 @@ export class FiscalWorker {
       signedXml: signed.signedXml,
       environment: snapshot.certificate.environment,
       idempotencyKey: snapshot.job.idempotencyKey,
+      certificate: signingMaterial.value,
     });
     return this.persistSubmissionResult(snapshot, dgiiResult);
   }
@@ -106,10 +108,22 @@ export class FiscalWorker {
       throw fiscalWorkerError("DGII_TRACK_ID_REQUIRED", "DGII polling requires a track id.", false);
     }
 
+    if (!snapshot.document.certificateMetadataId) {
+      throw fiscalWorkerError("CERTIFICATE_NOT_READY", "Fiscal document has no ready certificate metadata.", false);
+    }
+
+    const signingMaterial = await this.deps.custody.getSigningMaterial({
+      tenantId: snapshot.job.tenantId,
+      certificateId: snapshot.document.certificateMetadataId,
+      environment: snapshot.certificate.environment,
+    });
+    if (!signingMaterial.ok) throw signingMaterial.error;
+
     const result = await this.deps.dgii.pollStatus({
       trackId: snapshot.document.dgiiTrackId,
       environment: snapshot.certificate.environment,
       idempotencyKey: snapshot.job.idempotencyKey,
+      certificate: signingMaterial.value,
     });
     await this.auditForSnapshot("dgii_polled", snapshot, { kind: result.kind, statusCode: result.statusCode });
     return this.persistPollResult(snapshot, result);
@@ -225,21 +239,4 @@ export class FiscalWorker {
   }
 }
 
-export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot): string {
-  const payload = escapeXml(JSON.stringify(snapshot.invoicePayload));
-  return [
-    `<ECF tenantId="${escapeXml(snapshot.job.tenantId)}" documentId="${escapeXml(snapshot.document.id)}">`,
-    `<FacturaId>${escapeXml(snapshot.job.facturaId)}</FacturaId>`,
-    `<Payload>${payload}</Payload>`,
-    `</ECF>`,
-  ].join("");
-}
 
-function escapeXml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-}

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { FiscalWorker } from "../worker/fiscal/fiscalWorker";
+import { createUnsignedEcfXml } from "../worker/fiscal/mapper";
 import type {
   CertificateCustody,
   DgiiClientAdapter,
@@ -40,7 +41,18 @@ function baseSnapshot(overrides: Partial<FiscalWorkerSnapshot> = {}): FiscalWork
       isReady: true,
       validUntil: "2027-01-01T00:00:00.000Z",
     },
-    invoicePayload: { subtotal: 100, tax: 18, total: 118 },
+    invoicePayload: {
+      factura: {
+        total: 118,
+        itbis: 18,
+        subtotal: 100,
+        created_at: "2026-06-10T12:00:00.000Z",
+        client_rnc: "123456789",
+        ncf: "E3100000001",
+      },
+      items: [],
+      payments: [],
+    },
     ...overrides,
   };
 }
@@ -99,7 +111,7 @@ describe("FiscalWorker", () => {
     const result = await worker.processJob("job-1");
 
     expect(result).toEqual({ kind: "processed", jobId: "job-1", operation: "submit", status: "submitted" });
-    expect(signer.signXml).toHaveBeenCalledWith(expect.objectContaining({ environment: "certification" }));
+    expect(signer.signXml).toHaveBeenCalledWith(expect.objectContaining({ unsignedXml: createUnsignedEcfXml(baseSnapshot(), now) }));
     expect(dgii.submitSignedXml).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: "tenant-1:invoice-1:submit" }));
     expect(repository.documentUpdates).toContainEqual(expect.objectContaining({ status: "signed" }));
     expect(repository.documentUpdates).toContainEqual(expect.objectContaining({ status: "submitted", dgiiTrackId: "TRK-123" }));

@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { resolveActiveFiscalMode, runFiscalEngine } from "../src/shared/lib/fiscalEngine";
 import { enqueueLocalWrite } from "../src/shared/lib/localFirst";
-import { FiscalWorker, createUnsignedEcfXml } from "../worker/fiscal/fiscalWorker";
+import { FiscalWorker } from "../worker/fiscal/fiscalWorker";
+import { createUnsignedEcfXml } from "../worker/fiscal/mapper";
 import type {
   CertificateCustody,
   DgiiClientAdapter,
@@ -176,7 +177,18 @@ describe("Offline e-CF Sales and Reconnect Sync Integration", () => {
         isReady: true,
         validUntil: "2028-01-01T00:00:00.000Z",
       },
-      invoicePayload: { subtotal: 100, tax: 18, total: 118 },
+      invoicePayload: {
+        factura: {
+          total: 118,
+          itbis: 18,
+          subtotal: 100,
+          created_at: "2026-06-10T12:00:00.000Z",
+          client_rnc: "123456789",
+          ncf: "E3100000001",
+        },
+        items: [],
+        payments: [],
+      },
     };
 
     // Keep track of document and job updates
@@ -257,7 +269,7 @@ describe("Offline e-CF Sales and Reconnect Sync Integration", () => {
 
     // Verify signer was called and XML signed
     expect(signer.signXml).toHaveBeenCalled();
-    const expectedUnsigned = createUnsignedEcfXml(repositoryState as any);
+    const expectedUnsigned = createUnsignedEcfXml(repositoryState as any, now);
     const expectedSigned = `<Signed>${expectedUnsigned}</Signed>`;
     const expectedHash = createHash("sha256").update(expectedSigned).digest("hex");
 

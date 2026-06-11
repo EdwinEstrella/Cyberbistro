@@ -2,6 +2,21 @@ import { fiscalWorkerError } from "./errors";
 import type { DgiiClientAdapter, XmlSignerAdapter } from "./types";
 import ECF, { Signature, ENVIRONMENT, P12Reader } from "dgii-ecf";
 
+export class FailClosedXmlSigner implements XmlSignerAdapter {
+  async signXml(): Promise<any> {
+    throw fiscalWorkerError("XML_SIGNER_NOT_CONFIGURED", "No valid XML Signer configuration found.", false);
+  }
+}
+
+export class FailClosedDgiiClient implements DgiiClientAdapter {
+  async submitSignedXml(): Promise<any> {
+    throw fiscalWorkerError("DGII_CLIENT_NOT_CONFIGURED", "No valid DGII client configuration found.", true);
+  }
+  async pollStatus(): Promise<any> {
+    throw fiscalWorkerError("DGII_CLIENT_NOT_CONFIGURED", "No valid DGII client configuration found.", true);
+  }
+}
+
 export class RealXmlSigner implements XmlSignerAdapter {
   async signXml(input: Parameters<XmlSignerAdapter["signXml"]>[0]) {
     try {
