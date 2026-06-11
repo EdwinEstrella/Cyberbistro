@@ -78,7 +78,7 @@ const sidebarSections: readonly SidebarSection[] = [
       { label: "Cierre", customIcon: "cierre", path: "/cierre" },
       { label: "Cuentas por Pagar", customIcon: "cxp", path: "/cuentas-pagar", feature: "accounts_payable" },
       { label: "Cuentas por Cobrar", customIcon: "cxc", path: "/cuentas-cobrar", feature: "accounts_receivable" },
-      { label: "Documentos Fiscales", customIcon: "fiscal", path: "/fiscal" },
+      { label: "Documentos Fiscales", customIcon: "fiscal", path: "/fiscal", feature: "dgii_ecf" },
     ],
   },
 ];

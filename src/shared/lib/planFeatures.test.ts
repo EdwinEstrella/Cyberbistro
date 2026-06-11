@@ -14,6 +14,8 @@ describe("planFeatures", () => {
     "accounts_payable",
     "suppliers",
     "finance_reports",
+    "digital_menu",
+    "dgii_ecf",
   ];
 
   it("basico no tiene features", () => {

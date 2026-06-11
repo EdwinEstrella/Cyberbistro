@@ -7,7 +7,8 @@ export type Feature =
   | "accounts_payable"
   | "suppliers"
   | "finance_reports"
-  | "digital_menu";
+  | "digital_menu"
+  | "dgii_ecf";
 
 export const PLAN_FEATURES: Record<Plan, ReadonlySet<Feature>> = {
   basico: new Set<Feature>(),
@@ -19,6 +20,7 @@ export const PLAN_FEATURES: Record<Plan, ReadonlySet<Feature>> = {
     "suppliers",
     "finance_reports",
     "digital_menu",
+    "dgii_ecf",
   ]),
   empresarial: new Set<Feature>([
     "advanced_inventory",
@@ -28,6 +30,7 @@ export const PLAN_FEATURES: Record<Plan, ReadonlySet<Feature>> = {
     "suppliers",
     "finance_reports",
     "digital_menu",
+    "dgii_ecf",
   ]),
 };
 
