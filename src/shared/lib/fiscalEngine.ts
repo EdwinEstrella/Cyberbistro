@@ -7,16 +7,24 @@ import { type TenantBillingSettings } from "./tenantBillingSettings";
 const CERT_CACHE_KEY = (tenantId: string) => `ecf_cert_id_${tenantId}`;
 
 export function getCachedCertificateId(tenantId: string): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(CERT_CACHE_KEY(tenantId));
+  if (typeof localStorage === "undefined") return null;
+  try {
+    return localStorage.getItem(CERT_CACHE_KEY(tenantId));
+  } catch {
+    return null;
+  }
 }
 
 export function setCachedCertificateId(tenantId: string, id: string | null): void {
-  if (typeof window === "undefined") return;
-  if (id) {
-    localStorage.setItem(CERT_CACHE_KEY(tenantId), id);
-  } else {
-    localStorage.removeItem(CERT_CACHE_KEY(tenantId));
+  if (typeof localStorage === "undefined") return;
+  try {
+    if (id) {
+      localStorage.setItem(CERT_CACHE_KEY(tenantId), id);
+    } else {
+      localStorage.removeItem(CERT_CACHE_KEY(tenantId));
+    }
+  } catch {
+    // Ignore storage errors in restricted contexts
   }
 }
 

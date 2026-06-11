@@ -53,10 +53,10 @@ import {
   ncfTypeRequiresClientRnc,
   type NcfBCode,
 } from "../../../shared/lib/ncf";
-import { loadTenantBillingSettings, type TenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
+import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
 import { type FiscalMode } from "../../../shared/lib/fiscalTypes";
 import { resolveActiveFiscalMode, runFiscalEngine } from "../../../shared/lib/fiscalEngine";
-import { getLocalFirstStatusSnapshot, readLocalMirror, readLocalOutbox, enqueueLocalWrite, getDeviceId, writeLocalMirrorRow, shouldReadLocalFirst, resolveNcfForNewInvoiceLocalFirst, LOCAL_NCF_RESERVED_PAYLOAD_FLAG } from "../../../shared/lib/localFirst";
+import { getLocalFirstStatusSnapshot, readLocalMirror, readLocalOutbox, enqueueLocalWrite, getDeviceId, writeLocalMirrorRow, shouldReadLocalFirst, LOCAL_NCF_RESERVED_PAYLOAD_FLAG } from "../../../shared/lib/localFirst";
 import { getNextFacturaNumber } from "../../../shared/lib/invoiceNumber";
 import { writePosMutationLocalFirst } from "../../pos/lib/localFirstMutations";
 import { cacheLogoFromUrl } from "../../../shared/lib/logoCache";
@@ -173,7 +173,7 @@ export function Dashboard() {
   const [selectedNcfType, setSelectedNcfType] = useState<NcfBCode>(DEFAULT_NCF_B_CODE);
   const [fiscalMode, setFiscalMode] = useState<FiscalMode>("internal_receipt");
   const [certificateId, setCertificateId] = useState<string | null>(null);
-  const [tenantBillingSettings, setTenantBillingSettings] = useState<TenantBillingSettings | null>(null);
+
   const [takeoutClientRnc, setTakeoutClientRnc] = useState("");
   const [takeoutCustomer, setTakeoutCustomer] = useState<Customer | null>(null);
   const [cashReceivedInput, setCashReceivedInput] = useState("");
@@ -195,7 +195,7 @@ export function Dashboard() {
 
       setCartItbisEnabled(settings?.defaultItbisEnabled ?? false);
       setSelectedNcfType(settings?.defaultNcfType ?? DEFAULT_NCF_B_CODE);
-      setTenantBillingSettings(settings);
+
 
       const isOnline = navigator.onLine;
       const { mode, certificateId: certId } = await resolveActiveFiscalMode(tenantId, settings, isOnline);
@@ -1197,7 +1197,7 @@ export function Dashboard() {
       }
     }
 
-    if (tenantId && ncfPart && !ncfPart.sequenceReservedAtomically) {
+    if (tenantId && ncfPart && ncfPart.tipoCodigo && ncfPart.usedSequence !== null && !ncfPart.sequenceReservedAtomically) {
       await incrementTenantNcfSequence(tenantId, ncfPart.tipoCodigo, ncfPart.usedSequence);
     }
 

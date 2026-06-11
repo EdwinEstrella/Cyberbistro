@@ -14,10 +14,10 @@ import {
   ncfTypeRequiresClientRnc,
   type NcfBCode,
 } from "../../../shared/lib/ncf";
-import { loadTenantBillingSettings, type TenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
+import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
 import { type FiscalMode } from "../../../shared/lib/fiscalTypes";
 import { resolveActiveFiscalMode, runFiscalEngine } from "../../../shared/lib/fiscalEngine";
-import { enqueueLocalWrite, getDeviceId, getLocalFirstStatusSnapshot, isLocalFirstEnabled, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, readLocalMirror, readLocalOutbox, resolveNcfForNewInvoiceLocalFirst } from "../../../shared/lib/localFirst";
+import { enqueueLocalWrite, getDeviceId, getLocalFirstStatusSnapshot, isLocalFirstEnabled, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, readLocalMirror, readLocalOutbox } from "../../../shared/lib/localFirst";
 import { getNextFacturaNumber } from "../../../shared/lib/invoiceNumber";
 import { closeKitchenComandasForMesaLocalFirst } from "../../pos/lib/localFirstMutations";
 import { cacheLogoFromUrl } from "../../../shared/lib/logoCache";
@@ -267,7 +267,7 @@ export function MesaCloseAccountModal({
   const [selectedNcfType, setSelectedNcfType] = useState<NcfBCode>(DEFAULT_NCF_B_CODE);
   const [fiscalMode, setFiscalMode] = useState<FiscalMode>("internal_receipt");
   const [certificateId, setCertificateId] = useState<string | null>(null);
-  const [tenantBillingSettings, setTenantBillingSettings] = useState<TenantBillingSettings | null>(null);
+
   const [clientRnc, setClientRnc] = useState("");
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [cashReceivedInput, setCashReceivedInput] = useState("");
@@ -338,7 +338,7 @@ export function MesaCloseAccountModal({
     void loadTenantBillingSettings(tenantId).then(async (settings) => {
       if (cancelled) return;
 
-      setTenantBillingSettings(settings);
+
       setSelectedNcfType(
         initialNcfType && isNcfBCode(initialNcfType)
           ? initialNcfType
@@ -718,7 +718,7 @@ export function MesaCloseAccountModal({
           cashDrawerOpened = true;
         }
 
-        if (ncfPart && !ncfPart.sequenceReservedAtomically) {
+        if (ncfPart && ncfPart.tipoCodigo && ncfPart.usedSequence !== null && !ncfPart.sequenceReservedAtomically) {
           await incrementTenantNcfSequence(tenantId, ncfPart.tipoCodigo, ncfPart.usedSequence);
         }
 
@@ -920,7 +920,7 @@ export function MesaCloseAccountModal({
 
     await openCashDrawerSafely();
 
-    if (ncfPart && !ncfPart.sequenceReservedAtomically) {
+    if (ncfPart && ncfPart.tipoCodigo && ncfPart.usedSequence !== null && !ncfPart.sequenceReservedAtomically) {
       await incrementTenantNcfSequence(tenantId, ncfPart.tipoCodigo, ncfPart.usedSequence);
     }
 
