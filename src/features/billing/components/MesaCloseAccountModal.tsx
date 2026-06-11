@@ -639,6 +639,7 @@ export function MesaCloseAccountModal({
         const localFacturaId = localFacturaIds.get(personIndex)!;
         const numFactura = numeroFacturas.get(personIndex)!;
 
+        const ecfDocumentId = ncfPart?.ecfType ? crypto.randomUUID() : null;
         const now = new Date().toISOString();
         const insertRow: Record<string, unknown> = {
           id: localFacturaId,
@@ -657,6 +658,9 @@ export function MesaCloseAccountModal({
           pagada_at: paymentMethod === "fiado" ? null : now,
           monto_recibido: null,
           cambio_devuelto: null,
+          fiscal_mode: fiscalMode,
+          fiscal_status: ncfPart?.ecfType ? "pending_sync" : null,
+          fiscal_document_id: ecfDocumentId,
           created_at: now,
           updated_at: now,
         };
@@ -722,6 +726,7 @@ export function MesaCloseAccountModal({
             certificateId: ncfPart.certificateId ?? null,
             ecfType: ncfPart.ecfType,
             deviceId,
+            ecfDocumentId: ecfDocumentId!,
           });
         }
         if (!cashDrawerOpened) {
@@ -854,6 +859,7 @@ export function MesaCloseAccountModal({
       }
     }
 
+    const ecfDocumentId = ncfPart?.ecfType ? crypto.randomUUID() : null;
     const facturaData: Record<string, unknown> = {
       id: localFacturaId,
       tenant_id: tenantId,
@@ -869,6 +875,9 @@ export function MesaCloseAccountModal({
       monto_recibido: cashReceived.amount,
       cambio_devuelto: cashReceived.change,
       pagada_at: paymentMethod === "fiado" ? null : now,
+      fiscal_mode: fiscalMode,
+      fiscal_status: ncfPart?.ecfType ? "pending_sync" : null,
+      fiscal_document_id: ecfDocumentId,
       created_at: now,
       updated_at: now,
       mesa_numero: mesaNumero,
@@ -936,6 +945,7 @@ export function MesaCloseAccountModal({
         certificateId: ncfPart.certificateId ?? null,
         ecfType: ncfPart.ecfType,
         deviceId,
+        ecfDocumentId: ecfDocumentId!,
       });
     }
 

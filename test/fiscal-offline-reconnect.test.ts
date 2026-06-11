@@ -80,6 +80,17 @@ describe("Offline e-CF Sales and Reconnect Sync Integration", () => {
     const activeFiscal = await resolveActiveFiscalMode("tenant-1", settings, false);
     expect(activeFiscal).toEqual({ mode: "dgii_ecf", certificateId: "cert-offline-123" });
 
+    // Mock sequence resolution for the test
+    const { resolveNcfForNewInvoiceLocalFirst } = await import("../src/shared/lib/localFirst");
+    vi.mocked(resolveNcfForNewInvoiceLocalFirst).mockResolvedValueOnce({
+      ncf: "E3100000101",
+      ncf_tipo: "E31 - Factura de credito fiscal electronica",
+      tipoCodigo: "E31",
+      usedSequence: 101,
+      sequenceReservedAtomically: true,
+      reservationSource: "local_mirror",
+    });
+
     // Run the fiscal engine to simulate checkout
     const engineResult = await runFiscalEngine({
       tenantId: "tenant-1",
@@ -91,14 +102,26 @@ describe("Offline e-CF Sales and Reconnect Sync Integration", () => {
       deviceId: "device-offline-999",
     });
 
-    // Verify correct local-first e-NCF generation
     expect(engineResult).toEqual({
       ncf: "E3100000101",
       ncf_tipo: "E31 - Factura de credito fiscal electronica",
       tipoCodigo: "E31",
       usedSequence: 101,
       sequenceReservedAtomically: true,
-      reservationSource: "dgii_ecf_engine",
+      reservationSource: "local_mirror",
+      certificateId: "cert-offline-123",
+      ecfType: "31",
+    });
+
+    // POS explicitly enqueues e-CF documents after invoice is created locally
+    const { enqueueEcfDocuments } = await import("../src/shared/lib/fiscalEngine");
+    await enqueueEcfDocuments({
+      tenantId: "tenant-1",
+      facturaId: "invoice-offline-456",
+      certificateId: activeFiscal.certificateId,
+      ecfType: engineResult!.ecfType!,
+      deviceId: "device-offline-999",
+      ecfDocumentId: "ecf-doc-123",
     });
 
     // Check that two local-first entries are queued: ecf_documents and fiscal_outbox

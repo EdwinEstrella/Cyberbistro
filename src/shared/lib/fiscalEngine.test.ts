@@ -135,7 +135,7 @@ describe("fiscalEngine", () => {
     });
 
     it("calls resolveNcfForNewInvoiceLocalFirst for ncf_legacy mode", async () => {
-      vi.mocked(resolveNcfForNewInvoiceLocalFirst).mockResolvedValue({
+      vi.mocked(resolveNcfForNewInvoiceLocalFirst).mockResolvedValueOnce({
         ncf: "B0100000001",
         ncf_tipo: "B01",
         tipoCodigo: "B01",
@@ -165,7 +165,16 @@ describe("fiscalEngine", () => {
       expect(resolveNcfForNewInvoiceLocalFirst).toHaveBeenCalledWith("tenant-1", "B01");
     });
 
-    it("creates local fiscal intent and outbox writes for dgii_ecf mode with E31 (RNC present)", async () => {
+    it("resolves sequence for dgii_ecf mode with E31 (RNC present)", async () => {
+      vi.mocked(resolveNcfForNewInvoiceLocalFirst).mockResolvedValueOnce({
+        ncf: "E3100000045",
+        ncf_tipo: "E31 - Factura de credito fiscal electronica",
+        tipoCodigo: "E31",
+        usedSequence: 45,
+        sequenceReservedAtomically: true,
+        reservationSource: "dgii_ecf_engine",
+      });
+
       const result = await runFiscalEngine({
         tenantId: "tenant-1",
         activeMode: "dgii_ecf",
@@ -183,32 +192,22 @@ describe("fiscalEngine", () => {
         usedSequence: 45,
         sequenceReservedAtomically: true,
         reservationSource: "dgii_ecf_engine",
+        certificateId: "cert-uuid",
+        ecfType: "31",
       });
-
-      expect(enqueueLocalWrite).toHaveBeenCalledTimes(2);
-      expect(enqueueLocalWrite).toHaveBeenNthCalledWith(1, expect.objectContaining({
-        tableName: "ecf_documents",
-        op: "insert",
-        payload: expect.objectContaining({
-          factura_id: "invoice-1",
-          certificate_metadata_id: "cert-uuid",
-          ecf_type: "31",
-          status: "pending_sync",
-        }),
-      }));
-      expect(enqueueLocalWrite).toHaveBeenNthCalledWith(2, expect.objectContaining({
-        tableName: "fiscal_outbox",
-        op: "insert",
-        payload: expect.objectContaining({
-          factura_id: "invoice-1",
-          operation: "submit",
-          status: "queued",
-          idempotency_key: "tenant-1:invoice-1:submit",
-        }),
-      }));
+      expect(resolveNcfForNewInvoiceLocalFirst).toHaveBeenCalledWith("tenant-1", "E31");
     });
 
-    it("creates local fiscal intent and outbox writes for dgii_ecf mode with E32 (RNC empty)", async () => {
+    it("resolves sequence for dgii_ecf mode with E32 (RNC empty)", async () => {
+      vi.mocked(resolveNcfForNewInvoiceLocalFirst).mockResolvedValueOnce({
+        ncf: "E3200000046",
+        ncf_tipo: "E32 - Factura de consumo electronica",
+        tipoCodigo: "E32",
+        usedSequence: 46,
+        sequenceReservedAtomically: true,
+        reservationSource: "dgii_ecf_engine",
+      });
+
       const result = await runFiscalEngine({
         tenantId: "tenant-1",
         activeMode: "dgii_ecf",
@@ -226,15 +225,10 @@ describe("fiscalEngine", () => {
         usedSequence: 46,
         sequenceReservedAtomically: true,
         reservationSource: "dgii_ecf_engine",
+        certificateId: "cert-uuid",
+        ecfType: "32",
       });
-
-      expect(enqueueLocalWrite).toHaveBeenCalledTimes(2);
-      expect(enqueueLocalWrite).toHaveBeenNthCalledWith(1, expect.objectContaining({
-        tableName: "ecf_documents",
-        payload: expect.objectContaining({
-          ecf_type: "32",
-        }),
-      }));
+      expect(resolveNcfForNewInvoiceLocalFirst).toHaveBeenCalledWith("tenant-1", "E32");
     });
 
     it("handles resolveActiveFiscalMode online query error and falls back to cached certificate ID", async () => {
@@ -303,6 +297,15 @@ describe("fiscalEngine", () => {
     });
 
     it("trims whitespace from RNC when determining dgii_ecf type E31 or E32", async () => {
+      vi.mocked(resolveNcfForNewInvoiceLocalFirst).mockResolvedValueOnce({
+        ncf: "E3100000047",
+        ncf_tipo: "E31 - Factura de credito fiscal electronica",
+        tipoCodigo: "E31",
+        usedSequence: 47,
+        sequenceReservedAtomically: true,
+        reservationSource: "dgii_ecf_engine",
+      });
+
       const result = await runFiscalEngine({
         tenantId: "tenant-1",
         activeMode: "dgii_ecf",
@@ -313,11 +316,20 @@ describe("fiscalEngine", () => {
         deviceId: "device-1",
       });
 
-      expect(result?.ncf).toBe("E3100000047");
-      expect(result?.tipoCodigo).toBe("E31");
+      expect(resolveNcfForNewInvoiceLocalFirst).toHaveBeenCalledWith("tenant-1", "E31");
+      expect(result?.ecfType).toBe("31");
     });
 
     it("treats null or undefined RNC as empty and uses E32 in runFiscalEngine", async () => {
+      vi.mocked(resolveNcfForNewInvoiceLocalFirst).mockResolvedValueOnce({
+        ncf: "E3200000048",
+        ncf_tipo: "E32 - Factura de consumo electronica",
+        tipoCodigo: "E32",
+        usedSequence: 48,
+        sequenceReservedAtomically: true,
+        reservationSource: "dgii_ecf_engine",
+      });
+
       const result = await runFiscalEngine({
         tenantId: "tenant-1",
         activeMode: "dgii_ecf",

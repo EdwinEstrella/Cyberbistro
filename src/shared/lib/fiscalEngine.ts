@@ -143,8 +143,9 @@ export async function enqueueEcfDocuments(args: {
   certificateId: string | null;
   ecfType: string;
   deviceId: string;
+  ecfDocumentId?: string;
 }) {
-  const ecfDocumentId = crypto.randomUUID();
+  const ecfDocumentId = args.ecfDocumentId || crypto.randomUUID();
   const now = new Date().toISOString();
 
   await enqueueLocalWrite({
@@ -186,4 +187,6 @@ export async function enqueueEcfDocuments(args: {
     },
     deviceId: args.deviceId,
   });
+
+  return { ecfDocumentId };
 }

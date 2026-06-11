@@ -1116,6 +1116,7 @@ export function Dashboard() {
       }
     }
 
+    const ecfDocumentId = ncfPart?.ecfType ? crypto.randomUUID() : null;
     const facturaData: Record<string, unknown> = {
       id: localFacturaId,
       tenant_id: tenantId,
@@ -1132,6 +1133,9 @@ export function Dashboard() {
       cambio_devuelto: isFiado ? null : cashReceived.change,
       created_at: nowIso,
       pagada_at: isFiado ? null : nowIso,
+      fiscal_mode: fiscalMode,
+      fiscal_status: ncfPart?.ecfType ? "pending_sync" : null,
+      fiscal_document_id: ecfDocumentId,
       mesa_numero: 0,
       notas: "Para llevar",
     };
@@ -1198,6 +1202,7 @@ export function Dashboard() {
           certificateId: ncfPart.certificateId ?? null,
           ecfType: ncfPart.ecfType,
           deviceId: await getDeviceId(),
+          ecfDocumentId: ecfDocumentId!,
         });
       }
     }
