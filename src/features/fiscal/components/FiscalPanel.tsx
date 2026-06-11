@@ -169,7 +169,7 @@ export function FiscalPanel() {
                               try {
                                 const rnc = doc.tenants?.rnc || "";
                                 const ncf = doc.facturas?.ncf || "";
-                                const url = \`https://fc.dgii.gov.do/ecf/consultas?trackId=\${doc.dgii_track_id}&rnc=\${rnc}&ncf=\${ncf}\`;
+                                const url = `https://fc.dgii.gov.do/ecf/consultas?trackId=${doc.dgii_track_id}&rnc=${rnc}&ncf=${ncf}`;
                                 const src = await QRCode.toDataURL(url, { margin: 2, width: 300 });
                                 setSelectedQr({ src, link: url, trackId: doc.dgii_track_id });
                               } catch (err) {
@@ -222,23 +222,11 @@ export function FiscalPanel() {
             <div className="flex flex-col gap-3">
               <a 
                 href={selectedQr.src} 
-                download={\`QR-eCF-\${selectedQr.trackId}.png\`}
+                download={`QR-eCF-${selectedQr.trackId}.png`}
                 className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground font-bold py-2.5 rounded-xl hover:bg-primary/90 transition-colors"
               >
                 <Download className="w-4 h-4" />
                 Descargar Imagen QR
-              </a>
-              <div className="relative">
-                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border" /></div>
-                <div className="relative flex justify-center text-xs uppercase"><span className="bg-card px-2 text-muted-foreground">o compartir link</span></div>
-              </div>
-              <a 
-                href={\`https://api.whatsapp.com/send?text=\${encodeURIComponent(\`Acá tenés el link para verificar tu factura de la DGII:\\n\${selectedQr.link}\`)}\`}
-                target="_blank" rel="noopener noreferrer"
-                className="w-full flex items-center justify-center gap-2 bg-[#25D366]/10 text-[#25D366] font-bold py-2.5 rounded-xl hover:bg-[#25D366]/20 transition-colors"
-              >
-                <ExternalLink className="w-4 h-4" />
-                Compartir por WhatsApp
               </a>
             </div>
           </div>

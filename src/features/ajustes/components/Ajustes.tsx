@@ -330,7 +330,6 @@ export function Ajustes() {
               <div className="space-y-4">
                 <Field label="Nombre Comercial"><input type="text" value={config.nombre_empresa} onChange={e => setConfig(p => ({ ...p, nombre_empresa: e.target.value }))} className="input-field" /></Field>
                 <Field label="RNC / Identificación"><input type="text" value={config.rnc} onChange={e => setConfig(p => ({ ...p, rnc: e.target.value }))} className="input-field" /></Field>
-                <Field label="URL del Menú Digital"><input type="url" placeholder="https://..." value={config.menu_url} onChange={e => setConfig(p => ({ ...p, menu_url: e.target.value }))} className="input-field" /></Field>
                 <Field label="Dirección"><input type="text" value={config.direccion} onChange={e => setConfig(p => ({ ...p, direccion: e.target.value }))} className="input-field" /></Field>
                 <div className="grid grid-cols-2 gap-4">
                    <Field label="Teléfono"><input type="text" value={config.telefono} onChange={e => setConfig(p => ({ ...p, telefono: e.target.value }))} className="input-field" /></Field>

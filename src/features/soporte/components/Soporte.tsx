@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { Navigate, useNavigate } from "react-router";
 import QRCode from "qrcode";
+import { ExternalLink } from "lucide-react";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { useSucursal } from "../../../app/context/SucursalContext";
@@ -1323,6 +1324,16 @@ function DigitalMenuPanel() {
         rowId: settingsId,
         op: isEdit ? "update" : "insert",
         payload,
+        deviceId: await getDeviceId(),
+      });
+
+      // Also sync the menu_url to the tenants table for receipt printing
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "tenants",
+        rowId: tenantId,
+        op: "update",
+        payload: { id: tenantId, menu_url: enabled ? `https://restaurante.azokia.com/${resolvedSlug}` : null, updated_at: new Date().toISOString() },
         deviceId: await getDeviceId(),
       });
 
