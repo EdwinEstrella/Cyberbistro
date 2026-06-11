@@ -1,0 +1,2 @@
+# Force Nixpacks to use the Node.js provider instead of Deno auto-detection
+providers = ["node"]
