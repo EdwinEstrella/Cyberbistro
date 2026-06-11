@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   buildServerWritePayload,
+  buildEcfDocumentPayloadForServer,
   buildCierrePayloadWithCycleNumber,
+  buildFiscalOutboxPayloadForServer,
   buildFacturaPayloadWithNcfSequence,
   buildLocalTenantNcfReservation,
   buildNcfWithSequence,
@@ -21,6 +23,7 @@ import {
   isLicenseValidOffline,
   isLocalFirstMirrorTable,
   LOCAL_FIRST_DB_VERSION,
+  LOCAL_FIRST_HISTORY_TABLES,
   LOCAL_FIRST_IMMEDIATE_TABLES,
   LOCAL_FIRST_MIRROR_TABLES,
   LOCAL_FIRST_METADATA_TABLES,
@@ -42,6 +45,9 @@ describe("localFirst", () => {
     expect(LOCAL_FIRST_MIRROR_TABLES).toContain("facturas");
     expect(LOCAL_FIRST_MIRROR_TABLES).toContain("ecf_documents");
     expect(LOCAL_FIRST_MIRROR_TABLES).toContain("fiscal_outbox");
+    expect(LOCAL_FIRST_MIRROR_TABLES).not.toContain("ecf_certificate_metadata");
+    expect(LOCAL_FIRST_IMMEDIATE_TABLES).not.toContain("ecf_certificate_metadata");
+    expect(LOCAL_FIRST_HISTORY_TABLES).not.toContain("ecf_certificate_metadata");
     expect(LOCAL_FIRST_MIRROR_TABLES).not.toContain("orders");
     expect(LOCAL_FIRST_MIRROR_TABLES).not.toContain("invoices");
     expect(LOCAL_FIRST_METADATA_TABLES).toContain("sync_outbox");
@@ -294,6 +300,37 @@ describe("localFirst", () => {
     const result = resolveConflictForTable("cierres_operativos", entry, existingCycle);
     expect(result.resolution).toBe("server_wins");
     expect(result.reason).toContain("ya existe");
+  });
+
+  it("convierte estados fiscales offline a estados procesables antes de subir", () => {
+    expect(buildEcfDocumentPayloadForServer({ id: "doc-1", status: "pending_offline" })).toEqual({
+      payload: { id: "doc-1", status: "queued" },
+      adjusted: true,
+    });
+    expect(buildFiscalOutboxPayloadForServer({ id: "job-1", status: "pending_sync" })).toEqual({
+      payload: { id: "job-1", status: "queued" },
+      adjusted: true,
+    });
+  });
+
+  it("no duplica documentos e-CF ni outbox si ya existen en servidor", () => {
+    const docEntry = createSyncOutboxEntry({
+      tenantId: "tenant-1",
+      tableName: "ecf_documents",
+      rowId: "doc-1",
+      op: "insert",
+      deviceId: "dev1",
+    });
+    const jobEntry = createSyncOutboxEntry({
+      tenantId: "tenant-1",
+      tableName: "fiscal_outbox",
+      rowId: "job-1",
+      op: "insert",
+      deviceId: "dev1",
+    });
+
+    expect(resolveConflictForTable("ecf_documents", docEntry, { id: "doc-1" }).resolution).toBe("server_wins");
+    expect(resolveConflictForTable("fiscal_outbox", jobEntry, { id: "job-1" }).resolution).toBe("server_wins");
   });
 
   it("identidades siempre ganan del servidor", () => {

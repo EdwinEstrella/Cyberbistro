@@ -236,22 +236,21 @@ function ymdToLongLabel(ymd: string): string {
 
 function getEcfStatusDisplay(status: string) {
   switch (status) {
+    case "pending_offline":
+    case "pending_sync":
+      return { label: "e-CF: Pendiente de envío DGII", color: "#6b7280", bg: "rgba(107, 114, 128, 0.1)" };
+    case "queued":
+    case "signed":
+      return { label: "e-CF: Sincronizado, pendiente de firma", color: "#f59e0b", bg: "rgba(245, 158, 11, 0.1)" };
+    case "submitted":
+      return { label: "e-CF: Enviado a DGII", color: "#3b82f6", bg: "rgba(59, 130, 246, 0.1)" };
     case "accepted":
       return { label: "e-CF: Aceptado", color: "#10b981", bg: "rgba(16, 185, 129, 0.1)" };
     case "rejected":
       return { label: "e-CF: Rechazado", color: "#ef4444", bg: "rgba(239, 68, 68, 0.1)" };
-    case "submitted":
-      return { label: "e-CF: Enviado", color: "#3b82f6", bg: "rgba(59, 130, 246, 0.1)" };
-    case "signed":
-      return { label: "e-CF: Firmado", color: "#8b5cf6", bg: "rgba(139, 92, 246, 0.1)" };
-    case "queued":
-      return { label: "e-CF: En Cola", color: "#f59e0b", bg: "rgba(245, 158, 11, 0.1)" };
-    case "pending_sync":
-      return { label: "e-CF: Pendiente", color: "#6b7280", bg: "rgba(107, 114, 128, 0.1)" };
     case "retryable_error":
-      return { label: "e-CF: Error (Reintento)", color: "#f97316", bg: "rgba(249, 115, 22, 0.1)" };
     case "terminal_error":
-      return { label: "e-CF: Error Terminal", color: "#7f1d1d", bg: "rgba(127, 29, 29, 0.1)" };
+      return { label: "e-CF: Error fiscal", color: "#f97316", bg: "rgba(249, 115, 22, 0.1)" };
     default:
       return { label: `e-CF: ${status}`, color: "#6b7280", bg: "rgba(107, 114, 128, 0.1)" };
   }
@@ -871,7 +870,7 @@ export function Billing() {
         } else {
           const { data, error } = await insforgeClient.database
             .from("tenants")
-            .select("nombre_negocio, rnc, direccion, telefono, logo_url, logo_size_px, logo_offset_x, logo_offset_y")
+            .select("nombre_negocio, rnc, direccion, telefono, logo_url, ecf_environment, logo_size_px, logo_offset_x, logo_offset_y")
             .eq("id", tid)
             .single();
           if (error) throw error;
@@ -899,6 +898,7 @@ export function Billing() {
           direccion: tenant.direccion,
           telefono: tenant.telefono,
           logo_url: tenant.logo_url,
+          ecf_environment: (tenant as any).ecf_environment ?? "certification",
           logo_size_px: (tenant as any).logo_size_px,
           logo_offset_x: (tenant as any).logo_offset_x,
           logo_offset_y: (tenant as any).logo_offset_y,
@@ -925,6 +925,8 @@ export function Billing() {
           cliente_rnc: inv.cliente_rnc ?? null,
           ecf_status: ecfDocuments.get(inv.id)?.status ?? null,
           ecf_track_id: ecfDocuments.get(inv.id)?.dgii_track_id ?? null,
+          ecf_security_code: ecfDocuments.get(inv.id)?.dgii_security_code ?? null,
+          ecf_submitted_at: ecfDocuments.get(inv.id)?.submitted_at ?? null,
         },
         inv.numero_factura,
         paperWidthMm

@@ -386,7 +386,7 @@ export function MesaCloseAccountModal({
 
           const { data: tenantData, error: tenantError } = await insforgeClient.database
             .from("tenants")
-            .select("nombre_negocio, rnc, direccion, telefono, logo_url, logo_size_px, logo_offset_x, logo_offset_y")
+            .select("nombre_negocio, rnc, direccion, telefono, logo_url, ecf_environment, logo_size_px, logo_offset_x, logo_offset_y")
             .eq("id", tenantId)
             .single();
           if (tenantError) throw tenantError;
@@ -442,17 +442,20 @@ export function MesaCloseAccountModal({
         direccion: tenant.direccion,
         telefono: tenant.telefono,
         logo_url: tenant.logo_url,
+        ecf_environment: (tenant as any).ecf_environment ?? "certification",
         menu_url: (tenant as any).menu_url,
         moneda: (tenant as any).moneda || "DOP",
         logo_size_px: (tenant as any).logo_size_px,
         logo_offset_x: (tenant as any).logo_offset_x,
         logo_offset_y: (tenant as any).logo_offset_y,
       },
-      {
-        ...factura,
-        ecf_status: ecfDoc?.status ?? null,
-        ecf_track_id: ecfDoc?.dgii_track_id ?? null,
-      } as unknown as Parameters<typeof buildFacturaReceiptHtml>[1],
+        {
+          ...factura,
+          ecf_status: ecfDoc?.status ?? null,
+          ecf_track_id: ecfDoc?.dgii_track_id ?? null,
+          ecf_security_code: ecfDoc?.dgii_security_code ?? null,
+          ecf_submitted_at: ecfDoc?.submitted_at ?? null,
+        } as unknown as Parameters<typeof buildFacturaReceiptHtml>[1],
       numeroFactura,
       paperWidthMm
     );
@@ -659,7 +662,7 @@ export function MesaCloseAccountModal({
           monto_recibido: null,
           cambio_devuelto: null,
           fiscal_mode: fiscalMode,
-          fiscal_status: ncfPart?.ecfType ? "pending_sync" : null,
+          fiscal_status: ncfPart?.ecfType ? "pending_offline" : null,
           fiscal_document_id: ecfDocumentId,
           created_at: now,
           updated_at: now,
@@ -876,7 +879,7 @@ export function MesaCloseAccountModal({
       cambio_devuelto: cashReceived.change,
       pagada_at: paymentMethod === "fiado" ? null : now,
       fiscal_mode: fiscalMode,
-      fiscal_status: ncfPart?.ecfType ? "pending_sync" : null,
+      fiscal_status: ncfPart?.ecfType ? "pending_offline" : null,
       fiscal_document_id: ecfDocumentId,
       created_at: now,
       updated_at: now,

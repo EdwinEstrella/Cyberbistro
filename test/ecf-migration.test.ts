@@ -16,6 +16,7 @@ describe("e-CF infrastructure migration", () => {
 
   it("creates e-CF documents, certificate metadata, fiscal events, and fiscal outbox tables", () => {
     expect(migration).toContain("CREATE TABLE IF NOT EXISTS public.ecf_documents");
+    expect(migration).toContain("dgii_security_code text");
     expect(migration).toContain("CREATE TABLE IF NOT EXISTS public.ecf_certificate_metadata");
     expect(migration).toContain("CREATE TABLE IF NOT EXISTS public.ecf_document_events");
     expect(migration).toContain("CREATE TABLE IF NOT EXISTS public.fiscal_outbox");
@@ -24,6 +25,7 @@ describe("e-CF infrastructure migration", () => {
 
   it("keeps payment, client sync, and DGII lifecycle states separate", () => {
     expect(migration).toContain("status text NOT NULL DEFAULT 'pending_sync'");
+    expect(migration).toContain("'pending_offline'");
     expect(migration).toContain("CREATE INDEX IF NOT EXISTS ecf_documents_tenant_status_idx");
     expect(migration).toContain("CREATE INDEX IF NOT EXISTS fiscal_outbox_tenant_status_idx");
     expect(migration).not.toContain("ALTER TABLE public.facturas ADD COLUMN IF NOT EXISTS estado_fiscal");

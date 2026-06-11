@@ -105,9 +105,11 @@ export class PostgresFiscalWorkerRepository implements FiscalWorkerRepository {
   async updateDocument(documentId: string, update: Parameters<FiscalWorkerRepository["updateDocument"]>[1]): Promise<void> {
     await updateByWhitelist(this.options.db, "public.ecf_documents", documentId, update, {
       status: "status",
+      certificateMetadataId: "certificate_metadata_id",
       xmlHash: "xml_hash",
       signedXmlStorageKey: "signed_xml_storage_key",
       dgiiTrackId: "dgii_track_id",
+      dgiiSecurityCode: "dgii_security_code",
       dgiiStatusCode: "dgii_status_code",
       dgiiStatusMessage: "dgii_status_message",
       submittedAt: "submitted_at",
@@ -177,21 +179,35 @@ export const CLAIM_JOB_SQL = `
       (
         SELECT jsonb_build_object(
           'factura', to_jsonb(f.*),
-          'items', COALESCE((
-            SELECT jsonb_agg(to_jsonb(fi.*))
-            FROM public.factura_items fi
-            WHERE fi.factura_id = f.id
-          ), '[]'::jsonb),
-          'payments', COALESCE((
-            SELECT jsonb_agg(to_jsonb(fp.*))
-            FROM public.factura_payments fp
-            WHERE fp.factura_id = f.id
-          ), '[]'::jsonb)
+          'tenant', to_jsonb(t.*),
+          'items', COALESCE(f.items, '[]'::jsonb),
+          'payments', COALESCE(
+            CASE 
+              WHEN f.metodo_pago IS NOT NULL THEN
+                jsonb_build_array(
+                  jsonb_build_object(
+                    'payment_method', f.metodo_pago,
+                    'amount', f.total
+                  )
+                )
+              ELSE '[]'::jsonb
+            END,
+            '[]'::jsonb
+          )
         )
       ) AS invoice_payload
     FROM public.fiscal_outbox fo
     JOIN public.ecf_documents ed ON ed.id = fo.ecf_document_id
-    LEFT JOIN public.ecf_certificate_metadata cm ON cm.id = ed.certificate_metadata_id
+    JOIN public.tenants t ON t.id = fo.tenant_id
+    LEFT JOIN LATERAL (
+      SELECT cm.*
+      FROM public.ecf_certificate_metadata cm
+      WHERE cm.tenant_id = ed.tenant_id
+        AND cm.is_ready IS TRUE
+        AND (ed.certificate_metadata_id IS NULL OR cm.id = ed.certificate_metadata_id)
+      ORDER BY cm.valid_until DESC NULLS LAST, cm.created_at DESC
+      LIMIT 1
+    ) cm ON true
     JOIN public.facturas f ON f.id = fo.factura_id
     WHERE fo.id = $1
       AND fo.status IN ('queued', 'retryable_error', 'processing')

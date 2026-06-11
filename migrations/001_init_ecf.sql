@@ -85,6 +85,7 @@ CREATE TABLE IF NOT EXISTS public.ecf_documents (
   ecf_type text,
   status text NOT NULL DEFAULT 'pending_sync',
   dgii_track_id text,
+  dgii_security_code text,
   dgii_status_code text,
   dgii_status_message text,
   xml_hash text,
@@ -96,7 +97,7 @@ CREATE TABLE IF NOT EXISTS public.ecf_documents (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT ecf_documents_status_check
-    CHECK (status IN ('pending_sync', 'queued', 'signed', 'submitted', 'accepted', 'rejected', 'retryable_error', 'terminal_error')),
+    CHECK (status IN ('pending_offline', 'pending_sync', 'queued', 'signed', 'submitted', 'accepted', 'rejected', 'retryable_error', 'terminal_error')),
   CONSTRAINT ecf_documents_tenant_factura_unique UNIQUE (tenant_id, factura_id)
 );
 
@@ -111,9 +112,9 @@ CREATE TABLE IF NOT EXISTS public.ecf_document_events (
   created_by text NOT NULL DEFAULT 'system',
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT ecf_document_events_to_status_check
-    CHECK (to_status IN ('pending_sync', 'queued', 'signed', 'submitted', 'accepted', 'rejected', 'retryable_error', 'terminal_error')),
+    CHECK (to_status IN ('pending_offline', 'pending_sync', 'queued', 'signed', 'submitted', 'accepted', 'rejected', 'retryable_error', 'terminal_error')),
   CONSTRAINT ecf_document_events_from_status_check
-    CHECK (from_status IS NULL OR from_status IN ('pending_sync', 'queued', 'signed', 'submitted', 'accepted', 'rejected', 'retryable_error', 'terminal_error'))
+    CHECK (from_status IS NULL OR from_status IN ('pending_offline', 'pending_sync', 'queued', 'signed', 'submitted', 'accepted', 'rejected', 'retryable_error', 'terminal_error'))
 );
 
 CREATE TABLE IF NOT EXISTS public.fiscal_outbox (

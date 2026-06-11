@@ -734,7 +734,11 @@ export function Dashboard() {
         logo_offset_x: tenantData.logo_offset_x,
         logo_offset_y: tenantData.logo_offset_y,
       },
-      facturaData as unknown as Parameters<typeof buildFacturaReceiptHtml>[1],
+      {
+        ...(facturaData as unknown as Parameters<typeof buildFacturaReceiptHtml>[1]),
+        ecf_status: (facturaData.fiscal_status as string | null | undefined) ?? null,
+        ecf_security_code: null,
+      },
       facturaData.numero_factura as number,
       paperWidthMm
     );
@@ -1134,7 +1138,7 @@ export function Dashboard() {
       created_at: nowIso,
       pagada_at: isFiado ? null : nowIso,
       fiscal_mode: fiscalMode,
-      fiscal_status: ncfPart?.ecfType ? "pending_sync" : null,
+      fiscal_status: ncfPart?.ecfType ? "pending_offline" : null,
       fiscal_document_id: ecfDocumentId,
       mesa_numero: 0,
       notas: "Para llevar",
@@ -1218,13 +1222,13 @@ export function Dashboard() {
       await incrementTenantNcfSequence(tenantId, ncfPart.tipoCodigo, ncfPart.usedSequence);
     }
 
-    let tenantPrintData: { nombre_negocio: string | null; rnc: string | null; direccion: string | null; telefono: string | null; logo_url: string | null } | null = null;
+    let tenantPrintData: { nombre_negocio: string | null; rnc: string | null; direccion: string | null; telefono: string | null; logo_url: string | null; ecf_environment?: "test" | "certification" | "production" | null } | null = null;
     try {
       if (!navigator.onLine || await isDesktopCloudUnavailable()) {
         const localTenants = await readLocalMirror<any>(tenantId, "tenants");
         tenantPrintData = localTenants.find((t) => t.id === tenantId) ?? null;
       } else {
-        const { data: t, error } = await insforgeClient.database.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url, logo_size_px, logo_offset_x, logo_offset_y").eq("id", tenantId).maybeSingle();
+        const { data: t, error } = await insforgeClient.database.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url, ecf_environment, logo_size_px, logo_offset_x, logo_offset_y").eq("id", tenantId).maybeSingle();
         if (error) throw error;
         tenantPrintData = t;
       }

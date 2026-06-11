@@ -3,6 +3,7 @@ export const FISCAL_MODES = ["internal_receipt", "ncf_legacy", "dgii_ecf"] as co
 export type FiscalMode = (typeof FISCAL_MODES)[number];
 
 export const ECF_FISCAL_STATUSES = [
+  "pending_offline",
   "pending_sync",
   "queued",
   "signed",

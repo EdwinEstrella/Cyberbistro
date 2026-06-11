@@ -1,6 +1,7 @@
 export type EcfEnvironment = "test" | "certification" | "production";
 
 export type EcfFiscalStatus =
+  | "pending_offline"
   | "pending_sync"
   | "queued"
   | "signed"
@@ -117,9 +118,11 @@ export interface FiscalWorkerRepository {
   claimJob(jobId: string, claim: { workerId: string; claimedAt: string }): Promise<ClaimJobResult>;
   updateDocument(documentId: string, update: Partial<{
     status: EcfFiscalStatus;
+    certificateMetadataId: string;
     xmlHash: string;
     signedXmlStorageKey: string;
     dgiiTrackId: string;
+    dgiiSecurityCode: string;
     dgiiStatusCode: string;
     dgiiStatusMessage: string;
     submittedAt: string;

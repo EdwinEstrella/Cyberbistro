@@ -8,6 +8,31 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+async function encryptPassphrase(passphrase: string, secretKeyStr: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const keyBytes = encoder.encode(secretKeyStr.padEnd(32, '0').slice(0, 32));
+  const key = await crypto.subtle.importKey(
+    "raw",
+    keyBytes,
+    { name: "AES-GCM" },
+    false,
+    ["encrypt"]
+  );
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    key,
+    encoder.encode(passphrase)
+  );
+  const encryptedBytes = new Uint8Array(encrypted);
+  const tag = encryptedBytes.slice(-16);
+  const ciphertext = encryptedBytes.slice(0, -16);
+
+  const toHex = (buf: Uint8Array) => Array.from(buf).map(b => b.toString(16).padStart(2, '0')).join('');
+  return `aes256gcm:${toHex(iv)}:${toHex(tag)}:${toHex(ciphertext)}`;
+}
+
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -50,6 +75,10 @@ serve(async (req) => {
       throw new Error("Invalid certificate or passphrase")
     }
 
+    // Encrypt the passphrase before saving to metadata table
+    const encryptionKey = Deno.env.get('ECF_ENCRYPTION_KEY') || 'cyberbistro-default-dev-key-32chars';
+    const encryptedPassphrase = await encryptPassphrase(passphrase, encryptionKey);
+
     // Insert metadata into ecf_certificate_metadata
     const { error: insertError } = await supabase
       .from('ecf_certificate_metadata')
@@ -62,7 +91,7 @@ serve(async (req) => {
         valid_from: certInfo.validFrom,
         valid_until: certInfo.validTo,
         storage_ref: storage_path,
-        password_encrypted: passphrase, // Note: In a real app this should be encrypted via pgsodium/vault
+        password_encrypted: encryptedPassphrase,
         is_ready: true
       }, { onConflict: 'tenant_id,environment' })
 

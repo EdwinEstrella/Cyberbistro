@@ -65,9 +65,6 @@ describe("Offline e-CF Sales and Reconnect Sync Integration", () => {
 
   it("simulates full lifecycle: offline e-CF generation, local queueing, reconnect sync, and idempotent worker processing", async () => {
     // 1. OFFLINE SALE INITIATION
-    // Preset cached certificate in localStorage for offline usage
-    localStorage.setItem("ecf_cert_id_tenant-1", "cert-offline-123");
-
     const settings = {
       fiscalMode: "dgii_ecf" as const,
       ncfFiscalActive: false,
@@ -79,7 +76,8 @@ describe("Offline e-CF Sales and Reconnect Sync Integration", () => {
 
     // Resolve active fiscal mode while offline (isOnline = false)
     const activeFiscal = await resolveActiveFiscalMode("tenant-1", settings, false);
-    expect(activeFiscal).toEqual({ mode: "dgii_ecf", certificateId: "cert-offline-123" });
+    expect(activeFiscal).toEqual({ mode: "dgii_ecf", certificateId: null });
+    expect(localStorage.getItem("ecf_cert_id_tenant-1")).toBeNull();
 
     // Mock sequence resolution for the test
     const { resolveNcfForNewInvoiceLocalFirst } = await import("../src/shared/lib/localFirst");
@@ -110,7 +108,7 @@ describe("Offline e-CF Sales and Reconnect Sync Integration", () => {
       usedSequence: 101,
       sequenceReservedAtomically: true,
       reservationSource: "local_mirror",
-      certificateId: "cert-offline-123",
+      certificateId: null,
       ecfType: "31",
     });
 
@@ -134,19 +132,25 @@ describe("Offline e-CF Sales and Reconnect Sync Integration", () => {
     expect(docWrite.payload).toMatchObject({
       tenant_id: "tenant-1",
       factura_id: "invoice-offline-456",
-      certificate_metadata_id: "cert-offline-123",
+      certificate_metadata_id: null,
       ecf_type: "31",
-      status: "pending_sync",
+      status: "pending_offline",
     });
+    expect(docWrite.payload).not.toHaveProperty("passphrase");
+    expect(docWrite.payload).not.toHaveProperty("password");
+    expect(docWrite.payload).not.toHaveProperty("p12Bytes");
 
     expect(outboxWrite).toBeDefined();
     expect(outboxWrite.payload).toMatchObject({
       tenant_id: "tenant-1",
       factura_id: "invoice-offline-456",
       operation: "submit",
-      status: "queued",
+      status: "pending_sync",
       idempotency_key: "tenant-1:invoice-offline-456:submit",
     });
+    expect(outboxWrite.payload).not.toHaveProperty("passphrase");
+    expect(outboxWrite.payload).not.toHaveProperty("password");
+    expect(outboxWrite.payload).not.toHaveProperty("p12Bytes");
 
     // 2. RECONNECT & WORKER EXECUTION
     // Simulate that the client has reconnected and sync'ed these records to the server.
@@ -167,7 +171,7 @@ describe("Offline e-CF Sales and Reconnect Sync Integration", () => {
         tenantId: "tenant-1",
         facturaId: "invoice-offline-456",
         status: "queued" as const,
-        certificateMetadataId: "cert-offline-123",
+        certificateMetadataId: null,
         dgiiTrackId: null,
       },
       certificate: {
@@ -256,6 +260,8 @@ describe("Offline e-CF Sales and Reconnect Sync Integration", () => {
       now: () => now,
     });
 
+    expect(custody.getSigningMaterial).not.toHaveBeenCalled();
+
     // Run the worker processing for the job
     const runResult = await worker.processJob(outboxWrite.rowId);
 
@@ -277,6 +283,8 @@ describe("Offline e-CF Sales and Reconnect Sync Integration", () => {
     expect(documentUpdates).toContainEqual(
       expect.objectContaining({
         status: "signed",
+        certificateMetadataId: "cert-offline-123",
+        dgiiSecurityCode: expect.any(String),
         xmlHash: expectedHash,
       })
     );

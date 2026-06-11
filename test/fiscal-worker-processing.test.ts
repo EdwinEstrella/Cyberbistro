@@ -114,6 +114,7 @@ describe("FiscalWorker", () => {
     expect(signer.signXml).toHaveBeenCalledWith(expect.objectContaining({ unsignedXml: createUnsignedEcfXml(baseSnapshot(), now) }));
     expect(dgii.submitSignedXml).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: "tenant-1:invoice-1:submit" }));
     expect(repository.documentUpdates).toContainEqual(expect.objectContaining({ status: "signed" }));
+    expect(repository.documentUpdates).toContainEqual(expect.objectContaining({ status: "signed", dgiiSecurityCode: expect.any(String) }));
     expect(repository.documentUpdates).toContainEqual(expect.objectContaining({ status: "submitted", dgiiTrackId: "TRK-123" }));
     expect(repository.jobUpdates).toContainEqual(expect.objectContaining({ status: "done" }));
     expect(repository.auditEvents.map((event) => event.eventType)).toEqual(["job_started", "xml_signed", "dgii_submitted", "job_completed"]);
@@ -144,6 +145,40 @@ describe("FiscalWorker", () => {
     expect(result).toEqual({ kind: "processed", jobId: "job-1", operation: "poll_status", status: "accepted" });
     expect(repository.documentUpdates).toContainEqual(
       expect.objectContaining({ status: "accepted", dgiiStatusCode: "ACE", acceptedAt: now.toISOString() })
+    );
+  });
+
+  it("records DGII rejections as visible rejected fiscal state", async () => {
+    const base = baseSnapshot();
+    const repository = createRepository(
+      baseSnapshot({
+        job: { ...base.job, operation: "poll_status", idempotencyKey: "tenant-1:doc-1:poll" },
+        document: { ...base.document, status: "submitted", dgiiTrackId: "TRK-REJECTED" },
+      })
+    );
+    const worker = new FiscalWorker({
+      repository,
+      custody,
+      signer: { signXml: vi.fn() },
+      dgii: {
+        submitSignedXml: vi.fn(),
+        pollStatus: vi.fn(async () => ({ kind: "rejected", statusCode: "RCH", message: "RNC mismatch" }) as const),
+      },
+      workerId: "worker-a",
+      now: () => now,
+    });
+
+    const result = await worker.processJob("job-1");
+
+    expect(result).toEqual({ kind: "processed", jobId: "job-1", operation: "poll_status", status: "rejected" });
+    expect(repository.documentUpdates).toContainEqual(
+      expect.objectContaining({
+        status: "rejected",
+        dgiiStatusCode: "RCH",
+        dgiiStatusMessage: "RNC mismatch",
+        rejectedAt: now.toISOString(),
+        lastError: "RNC mismatch",
+      })
     );
   });
 

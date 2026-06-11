@@ -664,8 +664,15 @@ async function writeDirectlyToServer(args: {
   payload?: Record<string, unknown> | null;
 }): Promise<void> {
   let result: { error?: { message?: string } | null } | null = null;
-  const serverPayload = args.payload
-    ? buildServerWritePayload(args.tenantId, args.tableName, args.payload)
+  let outgoingPayload = args.payload ?? null;
+  if (outgoingPayload && args.tableName === "ecf_documents" && args.op === "insert") {
+    outgoingPayload = buildEcfDocumentPayloadForServer(outgoingPayload).payload;
+  }
+  if (outgoingPayload && args.tableName === "fiscal_outbox" && args.op === "insert") {
+    outgoingPayload = buildFiscalOutboxPayloadForServer(outgoingPayload).payload;
+  }
+  const serverPayload = outgoingPayload
+    ? buildServerWritePayload(args.tenantId, args.tableName, outgoingPayload)
     : null;
   if (args.op === "insert") {
     result = await runTrackedCloudOperation(() => insforgeClient.database.from(args.tableName).insert([serverPayload as Record<string, unknown>]) as any);
@@ -844,6 +851,14 @@ export function resolveConflictForTable(
       return { resolution: "local_wins", reason: "Sin conflicto en operacion viva." };
     }
 
+    case "ecf_documents":
+    case "fiscal_outbox": {
+      if (localEntry.op === "insert" && serverRow) {
+        return { resolution: "server_wins", reason: "Registro fiscal ya existe en servidor; no se duplica." };
+      }
+      return { resolution: "local_wins", reason: "Sin conflicto fiscal." };
+    }
+
     case "tenants":
     case "tenant_users": {
       return { resolution: "server_wins", reason: "Identidades/permisos siempre ganan del servidor." };
@@ -946,6 +961,16 @@ async function adjustCierrePayloadForServer(
     payload: buildCierrePayloadWithCycleNumber(payload, nextCycle.cycleNumber),
     adjusted: nextCycle.cycleNumber !== cycleNumber,
   };
+}
+
+export function buildEcfDocumentPayloadForServer(payload: Record<string, unknown>): { payload: Record<string, unknown>; adjusted: boolean } {
+  if (payload["status"] !== "pending_offline") return { payload, adjusted: false };
+  return { payload: { ...payload, status: "queued" }, adjusted: true };
+}
+
+export function buildFiscalOutboxPayloadForServer(payload: Record<string, unknown>): { payload: Record<string, unknown>; adjusted: boolean } {
+  if (payload["status"] !== "pending_sync") return { payload, adjusted: false };
+  return { payload: { ...payload, status: "queued" }, adjusted: true };
 }
 
 async function isNcfAvailableForFactura(tenantId: string, facturaId: string, ncf: string): Promise<{
@@ -1139,6 +1164,18 @@ export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: nu
           failed++;
           continue;
         }
+        outgoingPayload = adjustment.payload;
+        adjustedOutgoingPayload = adjustment.adjusted;
+      }
+
+      if (outgoingPayload && entry.table_name === "ecf_documents" && entry.op === "insert") {
+        const adjustment = buildEcfDocumentPayloadForServer(outgoingPayload);
+        outgoingPayload = adjustment.payload;
+        adjustedOutgoingPayload = adjustment.adjusted;
+      }
+
+      if (outgoingPayload && entry.table_name === "fiscal_outbox" && entry.op === "insert") {
+        const adjustment = buildFiscalOutboxPayloadForServer(outgoingPayload);
         outgoingPayload = adjustment.payload;
         adjustedOutgoingPayload = adjustment.adjusted;
       }

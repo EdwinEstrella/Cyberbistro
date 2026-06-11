@@ -2,14 +2,32 @@ import { useState, useEffect, useCallback } from "react";
 import QRCode from "qrcode";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
-import { Clock, CheckCircle2, AlertTriangle, RefreshCcw, FileText, QrCode, Download, X } from "lucide-react";
+import { 
+  Clock, 
+  CheckCircle2, 
+  AlertTriangle, 
+  RefreshCcw, 
+  FileText, 
+  QrCode, 
+  Download, 
+  X, 
+  Search, 
+  Filter, 
+  Printer, 
+  Eye, 
+  DollarSign, 
+  Activity 
+} from "lucide-react";
 
 export function FiscalPanel() {
   const { tenantId } = useAuth();
   const [resubmitting, setResubmitting] = useState<string | null>(null);
   const [selectedQr, setSelectedQr] = useState<{ src: string, link: string, trackId: string } | null>(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<any | null>(null);
   const [documents, setDocuments] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
 
   const fetchDocuments = useCallback(async () => {
     if (!tenantId) return;
@@ -18,8 +36,8 @@ export function FiscalPanel() {
         .from("ecf_documents")
         .select(`
           *,
-          facturas ( numero_factura, ncf, cliente_nombre, cliente_rnc, total ),
-          tenants ( rnc )
+          facturas ( id, numero_factura, ncf, cliente_nombre, cliente_rnc, total, subtotal, itbis, metodo_pago, items, created_at ),
+          tenants ( rnc, nombre_negocio )
         `)
         .eq("tenant_id", tenantId)
         .order("created_at", { ascending: false })
@@ -44,16 +62,15 @@ export function FiscalPanel() {
     if (!tenantId) return;
     setResubmitting(invoiceId);
     try {
-      // Create a resubmit outbox operation
       await insforgeClient.database.from("fiscal_outbox").insert({
         tenant_id: tenantId,
         factura_id: invoiceId,
         ecf_document_id: documentId,
-        operation: "submit", // trigger a new submission flow
+        operation: "submit",
         status: "queued",
         idempotency_key: `manual_resubmit_${invoiceId}_${Date.now()}`
       });
-      // Optimistically update document status to pending
+      
       await insforgeClient.database.from("ecf_documents")
         .update({ status: "pending_sync", dgii_status_message: "Reencolado manualmente" })
         .eq("factura_id", invoiceId);
@@ -67,6 +84,29 @@ export function FiscalPanel() {
     }
   }
 
+  function handleReprint(doc: any) {
+    alert(`Reimprimiendo factura #${doc.facturas?.numero_factura || doc.id} fiscalmente con NCF ${doc.facturas?.ncf}...`);
+    // En un entorno de Electron real, aquí se llamaría al canal IPC para lanzar la cola de impresión térmica física
+  }
+
+  // KPIs
+  const totalCount = documents.length;
+  const acceptedCount = documents.filter(d => d.status === "accepted").length;
+  const rejectedCount = documents.filter(d => d.status === "rejected" || d.status === "terminal_error").length;
+  const pendingCount = documents.filter(d => ["pending_sync", "pending_offline", "queued", "signed", "submitted"].includes(d.status)).length;
+  const totalAmount = documents.reduce((sum, d) => sum + Number(d.facturas?.total || 0), 0);
+
+  // Filtrado
+  const filteredDocs = documents.filter(doc => {
+    const matchesStatus = statusFilter === "all" || doc.status === statusFilter;
+    const matchesSearch = 
+      (doc.facturas?.ncf || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (doc.facturas?.cliente_nombre || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (doc.facturas?.numero_factura || "").toString().includes(searchTerm) ||
+      (doc.dgii_track_id || "").toLowerCase().includes(searchTerm.toLowerCase());
+    return matchesStatus && matchesSearch;
+  });
+
   if (isLoading) {
     return <div className="p-8 text-center text-muted-foreground font-['Space_Grotesk']">Cargando documentos fiscales...</div>;
   }
@@ -74,22 +114,99 @@ export function FiscalPanel() {
   return (
     <div className="flex-1 p-4 sm:p-8 bg-background min-h-0 overflow-y-auto">
       <div className="max-w-[1400px] mx-auto">
-        <div className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 sm:p-10 mb-8 shadow-sm">
+        
+        {/* Cabecera Principal */}
+        <div className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 sm:p-8 mb-8 shadow-sm">
           <div className="flex justify-between items-start gap-4">
             <div>
-              <span className="text-primary text-[11px] font-bold uppercase tracking-[0.2em] mb-2 block">Auditoría</span>
-              <h1 className="font-['Space_Grotesk'] text-3xl sm:text-4xl font-bold text-foreground mb-4">Documentos e-CF</h1>
+              <span className="text-primary text-[11px] font-bold uppercase tracking-[0.2em] mb-2 block">Administración Fiscal</span>
+              <h1 className="font-['Space_Grotesk'] text-3xl sm:text-4xl font-bold text-foreground mb-4">Panel e-CF</h1>
               <p className="text-muted-foreground text-sm max-w-2xl leading-relaxed">
-                Monitorea el estado de todas las facturas electrónicas emitidas a la DGII. 
-                Los documentos con errores de red pueden ser reencolados.
+                Monitorea y gestiona todos los comprobantes fiscales electrónicos (e-CF) emitidos a la DGII.
+                Reencola envíos fallidos y audita de forma segura en tiempo real.
               </p>
             </div>
-            <div className="bg-primary/10 p-4 rounded-full">
+            <div className="bg-primary/10 p-4 rounded-full hidden sm:block">
               <FileText className="w-8 h-8 text-primary" />
             </div>
           </div>
         </div>
 
+        {/* KPIs Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+          <div className="bg-card border border-black/5 dark:border-white/5 rounded-2xl p-5 shadow-sm">
+            <span className="text-muted-foreground text-xs font-bold uppercase tracking-wider block mb-1">Total Emitidos</span>
+            <div className="flex justify-between items-center">
+              <span className="text-2xl font-bold text-foreground">{totalCount}</span>
+              <FileText className="w-5 h-5 text-muted-foreground" />
+            </div>
+          </div>
+          <div className="bg-card border border-black/5 dark:border-white/5 rounded-2xl p-5 shadow-sm">
+            <span className="text-green-600 dark:text-green-400 text-xs font-bold uppercase tracking-wider block mb-1">Aceptados</span>
+            <div className="flex justify-between items-center">
+              <span className="text-2xl font-bold text-foreground">{acceptedCount}</span>
+              <CheckCircle2 className="w-5 h-5 text-green-500" />
+            </div>
+          </div>
+          <div className="bg-card border border-black/5 dark:border-white/5 rounded-2xl p-5 shadow-sm">
+            <span className="text-red-600 dark:text-red-400 text-xs font-bold uppercase tracking-wider block mb-1">Rechazados</span>
+            <div className="flex justify-between items-center">
+              <span className="text-2xl font-bold text-foreground">{rejectedCount}</span>
+              <AlertTriangle className="w-5 h-5 text-red-500" />
+            </div>
+          </div>
+          <div className="bg-card border border-black/5 dark:border-white/5 rounded-2xl p-5 shadow-sm">
+            <span className="text-yellow-600 dark:text-yellow-400 text-xs font-bold uppercase tracking-wider block mb-1">Pendientes</span>
+            <div className="flex justify-between items-center">
+              <span className="text-2xl font-bold text-foreground">{pendingCount}</span>
+              <Clock className="w-5 h-5 text-yellow-500" />
+            </div>
+          </div>
+          <div className="bg-card border border-black/5 dark:border-white/5 rounded-2xl p-5 shadow-sm">
+            <span className="text-muted-foreground text-xs font-bold uppercase tracking-wider block mb-1">Volumen Total</span>
+            <div className="flex justify-between items-center">
+              <span className="text-xl font-bold text-foreground">${totalAmount.toLocaleString("es-DO", { minimumFractionDigits: 2 })}</span>
+              <DollarSign className="w-5 h-5 text-muted-foreground" />
+            </div>
+          </div>
+        </div>
+
+        {/* Barra de Filtros y Búsqueda */}
+        <div className="bg-card rounded-[20px] border border-black/5 dark:border-white/5 p-4 mb-6 flex flex-col md:flex-row gap-4 items-center justify-between shadow-sm">
+          <div className="relative w-full md:w-96">
+            <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-3.5" />
+            <input
+              type="text"
+              placeholder="Buscar por NCF, Factura o Cliente..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-background border border-border rounded-xl pl-10 pr-4 py-2.5 text-xs text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary transition-all"
+            />
+          </div>
+
+          <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
+            {[
+              { id: "all", label: "Todos" },
+              { id: "accepted", label: "Aceptados" },
+              { id: "rejected", label: "Rechazados" },
+              { id: "pending_sync", label: "Pendientes" },
+              { id: "retryable_error", label: "Error de Red" }
+            ].map((filter) => (
+              <button
+                key={filter.id}
+                onClick={() => setStatusFilter(filter.id)}
+                className={`px-4 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-colors cursor-pointer border border-border
+                  ${statusFilter === filter.id 
+                    ? "bg-primary text-primary-foreground border-primary" 
+                    : "bg-background text-muted-foreground hover:bg-muted/50"}`}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Tabla de Resultados */}
         <div className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
@@ -100,19 +217,19 @@ export function FiscalPanel() {
                   <th className="p-4 text-[11px] font-bold text-muted-foreground uppercase tracking-widest text-right">Monto</th>
                   <th className="p-4 text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Estado DGII</th>
                   <th className="p-4 text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Fecha</th>
-                  <th className="p-4 text-[11px] font-bold text-muted-foreground uppercase tracking-widest text-right">Acciones</th>
+                  <th className="p-4 text-[11px] font-bold text-muted-foreground uppercase tracking-widest text-center">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {documents?.length === 0 && (
+                {filteredDocs.length === 0 && (
                   <tr>
                     <td colSpan={6} className="p-8 text-center text-muted-foreground text-sm">
-                      No hay documentos electrónicos emitidos todavía.
+                      No se encontraron comprobantes con los filtros seleccionados.
                     </td>
                   </tr>
                 )}
-                {documents?.map((doc: any) => {
-                  const isError = doc.status === "rejected" || doc.status === "terminal_error" || doc.status === "retryable_error";
+                {filteredDocs.map((doc: any) => {
+                  const isError = ["rejected", "terminal_error", "retryable_error"].includes(doc.status);
                   const isAccepted = doc.status === "accepted";
                   const isPending = !isError && !isAccepted;
 
@@ -162,7 +279,14 @@ export function FiscalPanel() {
                       <td className="p-4 text-sm text-muted-foreground">
                         {new Date(doc.created_at).toLocaleString()}
                       </td>
-                      <td className="p-4 text-right flex justify-end gap-2">
+                      <td className="p-4 flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => setSelectedInvoice(doc)}
+                          className="p-2 hover:bg-muted rounded-lg text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                          title="Ver Factura"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
                         {doc.dgii_track_id && (
                           <button
                             onClick={async () => {
@@ -176,20 +300,27 @@ export function FiscalPanel() {
                                 console.error(err);
                               }
                             }}
-                            className="inline-flex items-center gap-2 bg-primary/10 hover:bg-primary/20 text-primary px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
+                            className="p-2 hover:bg-muted rounded-lg text-primary hover:text-primary-foreground transition-colors cursor-pointer"
+                            title="Ver QR DGII"
                           >
-                            <QrCode className="w-3.5 h-3.5" />
-                            Ver QR
+                            <QrCode className="w-4 h-4" />
                           </button>
                         )}
+                        <button
+                          onClick={() => handleReprint(doc)}
+                          className="p-2 hover:bg-muted rounded-lg text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                          title="Reimprimir Comprobante"
+                        >
+                          <Printer className="w-4 h-4" />
+                        </button>
                         {isError && (
                           <button
                             onClick={() => handleResubmit(doc.factura_id, doc.id)}
                             disabled={resubmitting === doc.factura_id}
-                            className="inline-flex items-center gap-2 bg-muted hover:bg-muted/80 text-foreground px-3 py-1.5 rounded-lg text-xs font-bold transition-colors disabled:opacity-50"
+                            className="p-2 hover:bg-red-500/10 rounded-lg text-red-500 hover:text-red-600 transition-colors disabled:opacity-50 cursor-pointer"
+                            title="Reencolar / Reenviar"
                           >
-                            <RefreshCcw className={`w-3.5 h-3.5 ${resubmitting === doc.factura_id ? "animate-spin" : ""}`} />
-                            Reenviar
+                            <RefreshCcw className={`w-4 h-4 ${resubmitting === doc.factura_id ? "animate-spin" : ""}`} />
                           </button>
                         )}
                       </td>
@@ -228,6 +359,103 @@ export function FiscalPanel() {
                 <Download className="w-4 h-4" />
                 Descargar Imagen QR
               </a>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Ver Detalle de Factura */}
+      {selectedInvoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-card border border-border shadow-2xl rounded-2xl p-6 max-w-xl w-full relative max-h-[85vh] overflow-y-auto animate-in zoom-in-95 duration-200">
+            <button 
+              onClick={() => setSelectedInvoice(null)}
+              className="absolute top-4 right-4 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            
+            <div className="text-center border-b border-border pb-4 mb-4">
+              <span className="text-primary text-[10px] font-bold uppercase tracking-widest block mb-1">
+                {selectedInvoice.tenants?.nombre_negocio || "Bistro"}
+              </span>
+              <h3 className="font-['Space_Grotesk'] text-xl font-bold text-foreground">
+                Factura #{selectedInvoice.facturas?.numero_factura || "S/N"}
+              </h3>
+              <p className="text-xs text-muted-foreground font-mono mt-1">NCF: {selectedInvoice.facturas?.ncf || "N/A"}</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 text-xs mb-6 bg-muted/20 p-4 rounded-xl border border-border/5">
+              <div>
+                <p className="text-muted-foreground font-semibold uppercase tracking-wider text-[9px] mb-1">Cliente</p>
+                <p className="font-bold text-foreground">{selectedInvoice.facturas?.cliente_nombre || "Consumidor Final"}</p>
+                {selectedInvoice.facturas?.cliente_rnc && (
+                  <p className="text-muted-foreground font-mono mt-0.5">{selectedInvoice.facturas.cliente_rnc}</p>
+                )}
+              </div>
+              <div>
+                <p className="text-muted-foreground font-semibold uppercase tracking-wider text-[9px] mb-1">Fecha de Emisión</p>
+                <p className="font-medium text-foreground">
+                  {selectedInvoice.facturas?.created_at ? new Date(selectedInvoice.facturas.created_at).toLocaleString() : "N/A"}
+                </p>
+              </div>
+              <div>
+                <p className="text-muted-foreground font-semibold uppercase tracking-wider text-[9px] mb-1">Método de Pago</p>
+                <p className="font-bold uppercase text-primary">{selectedInvoice.facturas?.metodo_pago || "efectivo"}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground font-semibold uppercase tracking-wider text-[9px] mb-1">Estado Fiscal</p>
+                <p className="font-bold uppercase text-foreground">{selectedInvoice.status}</p>
+              </div>
+            </div>
+
+            <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-3">Ítems de Venta</h4>
+            <div className="divide-y divide-border border-y border-border mb-6">
+              {(selectedInvoice.facturas?.items || []).map((item: any, idx: number) => (
+                <div key={idx} className="flex justify-between py-2 text-xs">
+                  <div className="flex-1">
+                    <span className="font-bold text-foreground">{item.nombre}</span>
+                    <span className="text-muted-foreground text-[10px] block mt-0.5">
+                      {item.cantidad} x ${Number(item.precio_unitario).toFixed(2)}
+                    </span>
+                  </div>
+                  <span className="font-semibold text-foreground text-right">${Number(item.subtotal).toFixed(2)}</span>
+                </div>
+              ))}
+              {(selectedInvoice.facturas?.items || []).length === 0 && (
+                <p className="text-center py-4 text-xs text-muted-foreground">No hay ítems registrados en esta factura.</p>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-1.5 text-xs max-w-[280px] ml-auto mb-6">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Subtotal:</span>
+                <span className="font-semibold text-foreground">${Number(selectedInvoice.facturas?.subtotal || 0).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">ITBIS (18%):</span>
+                <span className="font-semibold text-foreground">${Number(selectedInvoice.facturas?.itbis || 0).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between border-t border-border pt-2 text-sm font-bold">
+                <span className="text-foreground">Total:</span>
+                <span className="text-primary">${Number(selectedInvoice.facturas?.total || 0).toFixed(2)}</span>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-4">
+              <button 
+                onClick={() => handleReprint(selectedInvoice)}
+                className="flex-1 flex items-center justify-center gap-2 bg-muted hover:bg-muted/80 text-foreground font-bold py-2.5 rounded-xl text-xs transition-colors cursor-pointer border border-border"
+              >
+                <Printer className="w-4 h-4" />
+                Reimprimir ticket
+              </button>
+              <button 
+                onClick={() => setSelectedInvoice(null)}
+                className="flex-1 bg-primary text-primary-foreground font-bold py-2.5 rounded-xl text-xs hover:opacity-90 transition-opacity cursor-pointer border-none"
+              >
+                Cerrar vista
+              </button>
             </div>
           </div>
         </div>

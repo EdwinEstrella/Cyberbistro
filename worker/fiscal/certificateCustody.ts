@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { fiscalWorkerError, unknownToWorkerError } from "./errors";
+import { decryptPassphrase } from "./crypto";
 import type {
   CertificateCustody,
   CertificateCustodyStore,
@@ -44,6 +45,9 @@ export class InsforgeStorageCertificateCustody implements CertificateCustody {
       const arrayBuffer = await response.arrayBuffer();
       const p12Bytes = new Uint8Array(arrayBuffer);
 
+      const encryptionKey = process.env.ECF_ENCRYPTION_KEY || "cyberbistro-default-dev-key-32chars";
+      const decryptedPassphrase = decryptPassphrase(row.password_encrypted, encryptionKey);
+
       return {
         ok: true,
         value: {
@@ -51,7 +55,7 @@ export class InsforgeStorageCertificateCustody implements CertificateCustody {
           tenantId: request.tenantId,
           environment: request.environment,
           p12Bytes,
-          passphrase: row.password_encrypted,
+          passphrase: decryptedPassphrase,
         }
       };
     } catch (err: any) {

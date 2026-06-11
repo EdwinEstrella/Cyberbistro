@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { resolveActiveFiscalMode, runFiscalEngine } from "./fiscalEngine";
-import { resolveNcfForNewInvoiceLocalFirst, enqueueLocalWrite } from "./localFirst";
+import { resolveNcfForNewInvoiceLocalFirst } from "./localFirst";
 import { insforgeClient } from "./insforge";
 
 class LocalStorageMock {
@@ -78,7 +78,7 @@ describe("fiscalEngine", () => {
 
       const result = await resolveActiveFiscalMode("tenant-1", settings, true);
       expect(result).toEqual({ mode: "dgii_ecf", certificateId: "cert-uuid" });
-      expect(localStorage.getItem("ecf_cert_id_tenant-1")).toBe("cert-uuid");
+      expect(localStorage.getItem("ecf_cert_id_tenant-1")).toBeNull();
     });
 
     it("falls back to settings.fiscalModeFallback if certificate is not ready online", async () => {
@@ -105,7 +105,7 @@ describe("fiscalEngine", () => {
       expect(result).toEqual({ mode: "ncf_legacy", certificateId: null });
     });
 
-    it("reads certificate from cache when offline", async () => {
+    it("keeps dgii_ecf active offline without reading certificate data from local storage", async () => {
       const settings = {
         fiscalMode: "dgii_ecf" as const,
         ncfFiscalActive: false,
@@ -113,10 +113,10 @@ describe("fiscalEngine", () => {
         defaultItbisEnabled: true,
       };
 
-      localStorage.setItem("ecf_cert_id_tenant-1", "cached-cert-uuid");
+      localStorage.setItem("ecf_cert_id_tenant-1", "stale-cert-uuid");
 
       const result = await resolveActiveFiscalMode("tenant-1", settings, false);
-      expect(result).toEqual({ mode: "dgii_ecf", certificateId: "cached-cert-uuid" });
+      expect(result).toEqual({ mode: "dgii_ecf", certificateId: null });
       expect(insforgeClient.database.from).not.toHaveBeenCalled();
     });
   });
@@ -172,7 +172,7 @@ describe("fiscalEngine", () => {
         tipoCodigo: "E31",
         usedSequence: 45,
         sequenceReservedAtomically: true,
-        reservationSource: "dgii_ecf_engine",
+        reservationSource: "remote_rpc",
       });
 
       const result = await runFiscalEngine({
@@ -191,7 +191,7 @@ describe("fiscalEngine", () => {
         tipoCodigo: "E31",
         usedSequence: 45,
         sequenceReservedAtomically: true,
-        reservationSource: "dgii_ecf_engine",
+        reservationSource: "remote_rpc",
         certificateId: "cert-uuid",
         ecfType: "31",
       });
@@ -205,7 +205,7 @@ describe("fiscalEngine", () => {
         tipoCodigo: "E32",
         usedSequence: 46,
         sequenceReservedAtomically: true,
-        reservationSource: "dgii_ecf_engine",
+        reservationSource: "remote_rpc",
       });
 
       const result = await runFiscalEngine({
@@ -224,14 +224,14 @@ describe("fiscalEngine", () => {
         tipoCodigo: "E32",
         usedSequence: 46,
         sequenceReservedAtomically: true,
-        reservationSource: "dgii_ecf_engine",
+        reservationSource: "remote_rpc",
         certificateId: "cert-uuid",
         ecfType: "32",
       });
       expect(resolveNcfForNewInvoiceLocalFirst).toHaveBeenCalledWith("tenant-1", "E32");
     });
 
-    it("handles resolveActiveFiscalMode online query error and falls back to cached certificate ID", async () => {
+    it("handles resolveActiveFiscalMode online query error without blocking pending e-CF sales", async () => {
       const settings = {
         fiscalMode: "dgii_ecf" as const,
         ncfFiscalActive: false,
@@ -239,8 +239,6 @@ describe("fiscalEngine", () => {
         defaultItbisEnabled: true,
         fiscalModeFallback: "ncf_legacy" as const,
       };
-
-      localStorage.setItem("ecf_cert_id_tenant-1", "cached-cert-id");
 
       // Mock database call to throw an error
       vi.mocked(insforgeClient.database.from).mockReturnValue({
@@ -254,7 +252,7 @@ describe("fiscalEngine", () => {
       } as any);
 
       const result = await resolveActiveFiscalMode("tenant-1", settings, true);
-      expect(result).toEqual({ mode: "dgii_ecf", certificateId: "cached-cert-id" });
+      expect(result).toEqual({ mode: "dgii_ecf", certificateId: null });
     });
 
     it("falls back to internal_receipt in resolveActiveFiscalMode if certificate not ready online and no fallback mode configured", async () => {
@@ -303,7 +301,7 @@ describe("fiscalEngine", () => {
         tipoCodigo: "E31",
         usedSequence: 47,
         sequenceReservedAtomically: true,
-        reservationSource: "dgii_ecf_engine",
+        reservationSource: "remote_rpc",
       });
 
       const result = await runFiscalEngine({
@@ -327,7 +325,7 @@ describe("fiscalEngine", () => {
         tipoCodigo: "E32",
         usedSequence: 48,
         sequenceReservedAtomically: true,
-        reservationSource: "dgii_ecf_engine",
+        reservationSource: "remote_rpc",
       });
 
       const result = await runFiscalEngine({

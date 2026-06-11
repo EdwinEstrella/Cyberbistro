@@ -5,17 +5,24 @@ const transformer = new Transformer();
 
 export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date): string {
   const payload: any = snapshot.invoicePayload;
-  const factura = payload.factura;
+  const factura = payload.factura || {};
+  const tenant = payload.tenant || {};
   const items = payload.items || [];
   const payments = payload.payments || [];
 
-  const ecfType = Number(snapshot.document.status === "pending_sync" ? 32 : 32); // Todo: get actual type
+  // Determine dynamic e-CF type (31 = Factura de Crédito Fiscal, 32 = Factura de Consumo, etc.)
+  const ecfType = factura.ncf ? Number(factura.ncf.substring(1, 3)) : 32;
+
+  // Calculate effective ITBIS rate (usually 18% / 0.18)
+  const subtotal = Number(factura.subtotal || 0);
+  const itbis = Number(factura.itbis || 0);
+  const itbisRate = subtotal > 0 ? (itbis / subtotal) : 0.18;
 
   // 1. Encabezado
   const encabezado = {
     Version: 1,
     IdDoc: {
-      TipoeCF: Number(factura.fiscal_document_id ? 31 : 32), // we need the actual e-CF type from the db
+      TipoeCF: ecfType,
       eNCF: factura.ncf,
       IndicadorMontoGravado: 0,
       TipoIngresos: "01",
@@ -26,32 +33,32 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
           MontoPago: p.amount,
         })),
       },
-      FechaLimitePago: factura.created_at.substring(0, 10),
+      FechaLimitePago: (factura.created_at || now.toISOString()).substring(0, 10),
       TerminoPago: "Al contado",
     },
     Emisor: {
-      RNCEmisor: "130862346", // TODO: Tenant setting
-      RazonSocialEmisor: "CYBERBISTRO SRL", // TODO: Tenant setting
-      NombreComercial: "CyberBistro",
+      RNCEmisor: tenant.rnc || "130862346",
+      RazonSocialEmisor: tenant.nombre_negocio || "CYBERBISTRO SRL",
+      NombreComercial: tenant.nombre_negocio || "CyberBistro",
       Sucursal: "Casa Matriz",
-      DireccionEmisor: "Av. Winston Churchill",
+      DireccionEmisor: tenant.direccion || "Av. Winston Churchill",
       Municipio: "Santo Domingo",
       Provincia: "Distrito Nacional",
       TablaTelefonoEmisor: {
-        TelefonoEmisor: ["8095555555"],
+        TelefonoEmisor: [tenant.telefono || "8095555555"],
       },
       CorreoEmisor: "info@cyberbistro.app",
       ActividadEconomica: "5610", // Restaurants
-      FechaEmision: factura.created_at.substring(0, 10),
+      FechaEmision: (factura.created_at || now.toISOString()).substring(0, 10),
     },
     Comprador: {
-      RNCComprador: factura.client_rnc || "000000000",
-      RazonSocialComprador: factura.client_name || "Consumidor Final",
+      RNCComprador: factura.cliente_rnc || "000000000",
+      RazonSocialComprador: factura.cliente_nombre || "Consumidor Final",
     },
     Totales: {
       MontoTotal: factura.total,
       TotalITBIS: factura.itbis,
-      TotalITBIS18: factura.itbis, // Simplified for now
+      TotalITBIS18: factura.itbis,
       MontoGravadoTotal: factura.subtotal,
       MontoGravadoI18: factura.subtotal,
     },
@@ -59,32 +66,37 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
 
   // 2. DetallesItems
   const detallesItems = {
-    Item: items.map((item: any, index: number) => ({
-      NumeroLinea: index + 1,
-      TablaCodigosItem: {
-        CodigosItem: {
-          TipoCodigo: "INT",
-          CodigoItem: item.product_id?.substring(0, 8) || "N/A",
+    Item: items.map((item: any, index: number) => {
+      const itemSubtotal = Number(item.subtotal || 0);
+      const itemItbis = itemSubtotal * itbisRate;
+      const itemTotal = itemSubtotal + itemItbis;
+
+      return {
+        NumeroLinea: index + 1,
+        TablaCodigosItem: {
+          CodigosItem: {
+            TipoCodigo: "INT",
+            CodigoItem: String(item.plato_id || "N/A"),
+          },
         },
-      },
-      IndicadorFacturacion: item.itbis > 0 ? 1 : 0, // 1: Gravado
-      NombreItem: item.product_name,
-      CantidadItem: item.quantity,
-      PrecioUnitarioItem: item.unit_price,
-      DescuentoMonto: item.discount,
-      TablaImpuestos: {
-        Impuesto: {
-          TipoImpuesto: 1, // ITBIS
-          TasaImpuesto: 18,
-          MontoImpuesto: item.itbis,
+        IndicadorFacturacion: itemItbis > 0 ? 1 : 0, // 1: Gravado
+        NombreItem: item.nombre,
+        CantidadItem: item.cantidad,
+        PrecioUnitarioItem: item.precio_unitario,
+        DescuentoMonto: 0,
+        TablaImpuestos: {
+          Impuesto: {
+            TipoImpuesto: 1, // ITBIS
+            TasaImpuesto: Math.round(itbisRate * 100),
+            MontoImpuesto: Number(itemItbis.toFixed(2)),
+          },
         },
-      },
-      MontoItem: item.total,
-    })),
+        MontoItem: Number(itemTotal.toFixed(2)),
+      };
+    }),
   };
 
   // Construct standard JSON structure for dgii-ecf Transformer
-  // ECF root element with namespaces is typically expected.
   const ecfObject = {
     ECF: {
       "@_xmlns": "http://dgii.gov.do/empresa/facturaElectronica",

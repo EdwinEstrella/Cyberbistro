@@ -4,30 +4,6 @@ import { type FiscalMode } from "./fiscalTypes";
 import { insforgeClient } from "./insforge";
 import { type TenantBillingSettings } from "./tenantBillingSettings";
 
-const CERT_CACHE_KEY = (tenantId: string) => `ecf_cert_id_${tenantId}`;
-
-export function getCachedCertificateId(tenantId: string): string | null {
-  if (typeof localStorage === "undefined") return null;
-  try {
-    return localStorage.getItem(CERT_CACHE_KEY(tenantId));
-  } catch {
-    return null;
-  }
-}
-
-export function setCachedCertificateId(tenantId: string, id: string | null): void {
-  if (typeof localStorage === "undefined") return;
-  try {
-    if (id) {
-      localStorage.setItem(CERT_CACHE_KEY(tenantId), id);
-    } else {
-      localStorage.removeItem(CERT_CACHE_KEY(tenantId));
-    }
-  } catch {
-    // Ignore storage errors in restricted contexts
-  }
-}
-
 export async function resolveActiveFiscalMode(
   tenantId: string,
   settings: TenantBillingSettings | null,
@@ -41,8 +17,6 @@ export async function resolveActiveFiscalMode(
     return { mode: settings.fiscalMode, certificateId: null };
   }
 
-  let certificateId = getCachedCertificateId(tenantId);
-
   if (isOnline) {
     try {
       const { data: cert } = await insforgeClient.database
@@ -53,23 +27,18 @@ export async function resolveActiveFiscalMode(
         .maybeSingle();
 
       if (cert?.id) {
-        certificateId = cert.id;
-        setCachedCertificateId(tenantId, certificateId);
-      } else {
-        certificateId = null;
-        setCachedCertificateId(tenantId, null);
+        return { mode: "dgii_ecf", certificateId: cert.id };
       }
     } catch (err) {
-      console.warn("Failed to check certificate readiness online, using cache:", err);
+      console.warn("Failed to check certificate readiness online, keeping e-CF pending for backend validation:", err);
+      return { mode: "dgii_ecf", certificateId: null };
     }
-  }
 
-  if (!certificateId) {
     const fallbackMode = settings.fiscalModeFallback || "internal_receipt";
     return { mode: fallbackMode, certificateId: null };
   }
 
-  return { mode: "dgii_ecf", certificateId };
+  return { mode: "dgii_ecf", certificateId: null };
 }
 
 export interface FiscalEngineResult {
@@ -159,7 +128,7 @@ export async function enqueueEcfDocuments(args: {
       factura_id: args.facturaId,
       certificate_metadata_id: args.certificateId,
       ecf_type: args.ecfType,
-      status: "pending_sync",
+      status: "pending_offline",
       created_at: now,
       updated_at: now,
     },
@@ -178,7 +147,7 @@ export async function enqueueEcfDocuments(args: {
       ecf_document_id: ecfDocumentId,
       factura_id: args.facturaId,
       operation: "submit",
-      status: "queued",
+      status: "pending_sync",
       attempts: 0,
       next_attempt_at: now,
       idempotency_key: `${args.tenantId}:${args.facturaId}:submit`,

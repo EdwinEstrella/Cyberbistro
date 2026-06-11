@@ -8,6 +8,7 @@ export interface TenantReceiptInfo {
   direccion: string | null;
   telefono: string | null;
   logo_url: string | null;
+  ecf_environment?: "test" | "certification" | "production" | null;
   moneda?: string | null;
   logo_size_px?: number | null;
   logo_offset_x?: number | null;
@@ -118,6 +119,62 @@ function formatFacturaDateParts(iso: string | undefined | null): { date: string;
   return { date, time };
 }
 
+function formatDgiiDate(iso: string | undefined | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "America/Santo_Domingo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  return `${get("day")}-${get("month")}-${get("year")}`;
+}
+
+function formatDgiiDateTime(iso: string | undefined | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "America/Santo_Domingo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(d);
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  return `${get("day")}-${get("month")}-${get("year")} ${get("hour")}:${get("minute")}:${get("second")}`;
+}
+
+function resolveDgiiEnvironment(environment: TenantReceiptInfo["ecf_environment"]): "testecf" | "certecf" | "ecf" {
+  if (environment === "production") return "ecf";
+  if (environment === "certification") return "certecf";
+  return "testecf";
+}
+
+function buildDgiiEcfQrUrl(args: {
+  issuerRnc: string;
+  buyerRnc: string;
+  encf: string;
+  total: number;
+  issuedAt: string;
+  signedAt: string;
+  securityCode: string;
+  environment: TenantReceiptInfo["ecf_environment"];
+}): string {
+  const envSegment = resolveDgiiEnvironment(args.environment);
+  const buyerParam = args.buyerRnc && !/E43/i.test(args.encf) && !/E47/i.test(args.encf)
+    ? `RncComprador=${encodeURIComponent(args.buyerRnc)}&`
+    : "";
+
+  return `https://ecf.dgii.gov.do/${envSegment}/consultatimbre?rncemisor=${encodeURIComponent(args.issuerRnc)}&${buyerParam}encf=${encodeURIComponent(args.encf)}&fechaemision=${encodeURIComponent(args.issuedAt)}&montototal=${encodeURIComponent(args.total.toFixed(2))}&fechafirma=${encodeURIComponent(args.signedAt)}&codigoseguridad=${encodeURIComponent(args.securityCode)}`;
+}
+
 function tenantCurrencyCode(tenant: TenantReceiptInfo): "DOP" | "ARS" {
   return String(tenant.moneda || "").trim().toUpperCase() === "ARS" ? "ARS" : "DOP";
 }
@@ -157,6 +214,8 @@ export async function buildFacturaReceiptHtml(
     ncf_tipo?: string | null;
     ecf_status?: string | null;
     ecf_track_id?: string | null;
+    ecf_security_code?: string | null;
+    ecf_submitted_at?: string | null;
   },
   numeroFactura: number,
   paperWidthMm: PaperWidthMm
@@ -174,6 +233,8 @@ export async function buildFacturaReceiptHtml(
 
   const clienteRnc = (factura.cliente_rnc || "").trim();
   const ncf = (factura.ncf || "").trim();
+  const ecfSecurityCode = (factura.ecf_security_code || "").trim();
+  const ecfType = ncf.toUpperCase().startsWith("E") ? ncf.slice(0, 3).toUpperCase() : "";
   const propina = Number(factura.propina ?? 0);
   const montoRecibido = Number(factura.monto_recibido);
   const cambioDevuelto = Number(factura.cambio_devuelto);
@@ -223,13 +284,36 @@ export async function buildFacturaReceiptHtml(
     const statusLabel =
       factura.ecf_status === "accepted"
         ? "ACEPTADO POR DGII"
+        : factura.ecf_status === "rejected"
+        ? "RECHAZADO POR DGII"
         : factura.ecf_status === "submitted"
-        ? "ENVIADO (PENDIENTE)"
-        : "PENDIENTE";
+        ? "ENVIADO A DGII"
+        : factura.ecf_status === "queued" || factura.ecf_status === "signed"
+        ? "SINCRONIZADO, PENDIENTE DE FIRMA"
+        : factura.ecf_status === "retryable_error" || factura.ecf_status === "terminal_error"
+        ? "ERROR FISCAL"
+        : "PENDIENTE DE ENVIO DGII";
+    const rejectionAction =
+      factura.ecf_status === "rejected"
+        ? `<tr class="header-row"><td colspan="2" style="text-align:center;font-weight:bold;font-size:12px;padding:6px 0;border:1px dashed #000">Accion recomendada: revisar datos fiscales y reenviar el comprobante.</td></tr>`
+        : "";
+    const pendingWarning =
+      factura.ecf_status !== "accepted" && factura.ecf_status !== "rejected"
+        ? `<tr class="header-row"><td colspan="2" style="text-align:center;font-weight:bold;font-size:12px;padding:6px 0;border:1px dashed #000">Documento pendiente de envio a DGII. La validez fiscal se confirmara al sincronizar.</td></tr>`
+        : "";
+    const typeLabel = factura.ncf_tipo?.trim() || ecfType;
+    if (typeLabel) {
+      metaEcf += `<tr class="header-row"><td>Tipo e-CF</td><td style="text-align:right;font-weight:bold;font-size:12px">${escapeHtml(typeLabel)}</td></tr>`;
+    }
     metaEcf += `<tr class="header-row"><td>Estado e-CF</td><td style="text-align:right;font-weight:bold;font-size:13px">${statusLabel}</td></tr>`;
+    if (ecfSecurityCode) {
+      metaEcf += `<tr class="header-row"><td>Codigo seg.</td><td style="text-align:right;font-family:monospace;font-size:12px">${escapeHtml(ecfSecurityCode)}</td></tr>`;
+    }
     if (factura.ecf_track_id) {
       metaEcf += `<tr class="header-row"><td>Track ID</td><td style="text-align:right;font-family:monospace;font-size:12px">${escapeHtml(factura.ecf_track_id)}</td></tr>`;
     }
+    metaEcf += pendingWarning;
+    metaEcf += rejectionAction;
   }
 
   const propinaRow =
@@ -243,10 +327,22 @@ export async function buildFacturaReceiptHtml(
     : "";
 
   let qrSection = "";
-  if (factura.ncf_tipo?.toLowerCase().includes("elect")) {
-    const trackId = factura.ecf_track_id || "PENDIENTE";
-    // Construct the verification URL as required by DGII
-    const verificationUrl = `https://fc.dgii.gov.do/ecf/consultas?trackId=${trackId}&rnc=${tenant.rnc || ""}&ncf=${ncf}`;
+  const issuerRnc = (tenant.rnc || "").trim();
+  const dgiiIssuedAt = formatDgiiDate(factura.created_at ?? when);
+  const dgiiSignedAt = formatDgiiDateTime(factura.ecf_submitted_at ?? null);
+  const canRenderDgiiQr = ncf.toUpperCase().startsWith("E") && issuerRnc !== "" && ncf !== "" && ecfSecurityCode !== "" && !!dgiiIssuedAt && !!dgiiSignedAt;
+  if (canRenderDgiiQr) {
+    const trackId = factura.ecf_track_id || "";
+    const verificationUrl = buildDgiiEcfQrUrl({
+      issuerRnc,
+      buyerRnc: clienteRnc,
+      encf: ncf,
+      total: Number(factura.total),
+      issuedAt: dgiiIssuedAt!,
+      signedAt: dgiiSignedAt!,
+      securityCode: ecfSecurityCode,
+      environment: tenant.ecf_environment,
+    });
     try {
       const qrDataUrl = await QRCode.toDataURL(verificationUrl, { margin: 1, width: 150 });
       qrSection = `
@@ -256,6 +352,7 @@ export async function buildFacturaReceiptHtml(
           <div style="font-size:10px;margin-top:4px;word-wrap:break-word;padding:0 10px;">
             <a href="${verificationUrl}" style="color:inherit;text-decoration:none">Verificar comprobante</a>
           </div>
+          <div style="font-size:10px;margin-top:2px;">Codigo de seguridad: ${escapeHtml(ecfSecurityCode)}</div>
           <div style="font-size:10px;margin-top:2px;">Track ID: ${trackId}</div>
         </div>
       `;

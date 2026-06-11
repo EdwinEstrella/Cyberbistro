@@ -22,6 +22,7 @@ describe("fiscalTypes", () => {
 
   it("keeps e-CF lifecycle statuses separate from payment and generic sync states", () => {
     expect(ECF_FISCAL_STATUSES).toEqual([
+      "pending_offline",
       "pending_sync",
       "queued",
       "signed",
