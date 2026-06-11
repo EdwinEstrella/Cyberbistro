@@ -12,11 +12,9 @@ import {
   Download, 
   X, 
   Search, 
-  Filter, 
   Printer, 
   Eye, 
-  DollarSign, 
-  Activity 
+  DollarSign 
 } from "lucide-react";
 
 export function FiscalPanel() {
