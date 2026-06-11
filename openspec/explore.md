@@ -1,72 +1,44 @@
-# Exploración: Feature Gates y Estructura de Planes
+# SDD Explore: Epic e-CF (Issue #39)
 
-Este documento explora la base de código de Cyberbistro para diseñar el helper central de permisos (`canUseFeature`) y su integración con el sistema de navegación y pantallas, cumpliendo con los requisitos del PR 1.
+## 1. Objetivo del Cambio
+Integrar facturación electrónica de la DGII (e-CF) en CyberBistro de forma transparente para el usuario, manteniendo la operación offline (local-first) intacta, y sin romper el flujo de recibos internos o NCF tradicional.
 
-## Puntos de integración identificados
+## 2. Estado Actual (Descubrimientos)
+Tras analizar el repositorio, se detectó un avance significativo en la infraestructura base:
+1. **Base de Datos (Completado - Issue #40)**: 
+   - La migración `001_init_ecf.sql` ya introdujo la columna `fiscal_mode` en `tenants` (`internal_receipt`, `ncf_legacy`, `dgii_ecf`).
+   - Existen las tablas `ecf_certificate_metadata` y `ecf_documents` con sus estados (`pending_sync`, `queued`, `signed`, `submitted`, `accepted`, `rejected`).
+   - Existe la tabla `fiscal_outbox` para encolar los trabajos del worker.
 
-1. **Recuperación del Plan**:
-   - `src/shared/hooks/useAuth.ts` expone el plan del usuario actual (`plan`), mapeando los valores `'basico' | 'profesional' | 'empresarial'` (por defecto `'basico'`).
-   - El plan se obtiene de la tabla `tenants` y se almacena en la sesión del usuario.
+2. **Worker Fiscal Node.js (Avanzado - Issue #41)**:
+   - En la carpeta `worker/fiscal/` ya existe la arquitectura core del worker (`fiscalWorker.ts`, `postgresFiscalWorkerRepository.ts`, `certificateCustody.ts`).
+   - El worker implementa el patrón *Transactional Outbox* para procesar asincrónicamente el firmado de XML, envío a DGII y polling de estados.
 
-2. **Navegación y Vistas Existentes**:
-   - `src/app/components/AppLayout.tsx` maneja los enlaces del menú de navegación.
-   - Actualmente, el acceso a `/inventario` está restringido con la condición `!plan || plan === "basico"`, disparando `setUpsellType("inventario")`.
+## 3. Brechas e Implementación Restante
+Para terminar el Epic "sin dejar nada suelto", faltan los flujos de frontend (POS), la lógica de negocio en la generación de facturas, y la integración de certificados:
 
-3. **Planes y Características (Features)**:
-   - Necesitamos mapear las siguientes características indicadas en el issue:
-     - `advanced_inventory` (Inventario avanzado)
-     - `inventory_purchases` (Compras de inventario)
-     - `accounts_receivable` (Cuentas por cobrar / fiado)
-     - `accounts_payable` (Cuentas por pagar)
-     - `suppliers` (Gestión de proveedores)
-     - `finance_reports` (Analíticas y reportes avanzados)
+### A. UI Configuración Fiscal (#39)
+- Agregar en la pantalla de Ajustes del Tenant un selector de `fiscal_mode`.
+- Permitir configurar el entorno (`ecf_environment`: test, certification, production) y el modo de fallback (ej: si falla DGII, usar recibo interno).
 
-## Alternativas de Diseño para `canUseFeature`
+### B. Gestión de Certificado .p12 (#42)
+- Formulario seguro en Ajustes para subir el `.p12` y su clave.
+- **Riesgo**: El frontend no debe guardar la clave ni el p12 en localStorage. Se debe enviar directamente por HTTPS a un endpoint seguro (probablemente el Worker o una Edge Function) que extraiga la metadata, guarde el material en custodia y registre la fila en `ecf_certificate_metadata`.
 
-### Opción 1: Mapeo estático simple (Recomendado)
-Definir un objeto de mapeo plano donde cada plan tiene una lista o conjunto de features permitidas.
-```typescript
-type Plan = 'basico' | 'profesional' | 'empresarial';
-type Feature = 
-  | 'advanced_inventory'
-  | 'inventory_purchases'
-  | 'accounts_receivable'
-  | 'accounts_payable'
-  | 'suppliers'
-  | 'finance_reports';
+### C. Motor Fiscal Unificado (#43 y #45 Offline)
+- Al "Cobrar" y cerrar una mesa, la lógica de `facturacion` debe evaluar el `fiscal_mode`.
+- Si es `dgii_ecf`, crear la `factura`, generar una fila inicial en `ecf_documents` y encolar el trabajo en `fiscal_outbox`.
+- En modo offline (local-first), esto se guarda en PouchDB/IndexedDB. Cuando vuelva el internet y sincronice con Insforge, la DB central recibirá el `ecf_document` y el `fiscal_outbox` disparará el Worker Node.js automáticamente. ¡El POS nunca se bloquea!
 
-const PLAN_FEATURES: Record<Plan, Feature[]> = {
-  basico: [],
-  profesional: [
-    'advanced_inventory',
-    'inventory_purchases',
-    'accounts_receivable',
-    'accounts_payable',
-    'suppliers',
-    'finance_reports',
-  ],
-  empresarial: [
-    'advanced_inventory',
-    'inventory_purchases',
-    'accounts_receivable',
-    'accounts_payable',
-    'suppliers',
-    'finance_reports',
-  ],
-};
-```
+### D. Representación Impresa (#46)
+- El recibo térmico debe leer la info de `ecf_documents` y, si existe la firma (o código de seguridad), imprimir el QR generado según los estándares de DGII.
 
-**Ventajas**: Extremadamente simple de mantener, robusto ante tipos y fácil de extender si luego agregamos features exclusivas de `empresarial` (como sucursales ilimitadas).
+### E. Panel Fiscal (#47)
+- Una vista en el dashboard (ej: `/dashboard/fiscal`) para ver la cola de e-CF, su estado actual (Accepted, Rejected), y los mensajes de error de la DGII.
 
-### Opción 2: Jerarquía de planes
-Dado que los planes son lineales (empresarial > profesional > basico), podemos definir un nivel para cada feature y un nivel para cada plan, evaluando con un operador mayor o igual.
+## 4. Riesgos Identificados
+- **Fuga de secretos**: Debemos garantizar que el `.p12` viaja directo al backend y nunca queda en el estado de React.
+- **Sincronización Offline**: Si se genera offline, el `e-NCF` debe consumirse correctamente sin colisiones al sincronizar. Esto implica que la asignación del e-NCF (secuencia) debe ser resiliente (probablemente reservado en el backend o con bloques pre-asignados al cliente).
 
-**Desventajas**: Menos flexible si en el futuro un plan más económico incluye una feature que uno intermedio no (por ejemplo, add-ons).
-
-## Estrategia de Pruebas
-- Escribir tests unitarios en `src/shared/lib/planFeatures.test.ts`.
-- Validar comportamiento ante planes no definidos, nulos o indefinidos (deben tratarse como `'basico'`).
-- Probar todas las combinaciones de planes y características.
-
-## Próximo Paso
-Avanzar a la fase de **Propuesta (sdd-propose)** donde formalizaremos la arquitectura del helper y los archivos a modificar.
+## Siguiente Fase Sugerida
+Pasar a `sdd-propose` para definir la arquitectura final del Motor Fiscal Unificado y el flujo de subida del certificado.
