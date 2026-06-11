@@ -146,6 +146,30 @@ export class PostgresFiscalWorkerRepository implements FiscalWorkerRepository {
       ]
     );
   }
+
+  async enqueueJob(job: {
+    tenantId: string;
+    ecfDocumentId: string;
+    facturaId: string;
+    operation: FiscalOutboxOperation;
+    idempotencyKey: string;
+  }): Promise<void> {
+    await this.options.db.query(
+      `
+        INSERT INTO public.fiscal_outbox
+          (tenant_id, ecf_document_id, factura_id, operation, status, idempotency_key, attempts, next_attempt_at)
+        VALUES ($1, $2, $3, $4, 'queued', $5, 0, now())
+        ON CONFLICT (idempotency_key) DO NOTHING
+      `,
+      [
+        job.tenantId,
+        job.ecfDocumentId,
+        job.facturaId,
+        job.operation,
+        job.idempotencyKey,
+      ]
+    );
+  }
 }
 
 export function createProjectAdminPgPoolFromEnv(env: NodeJS.ProcessEnv = process.env): Queryable {

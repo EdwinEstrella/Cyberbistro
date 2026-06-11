@@ -300,7 +300,7 @@ export function prepareNcfForFacturaInsert(
   if (!row.ncf_fiscal_activo) return null;
 
   const requestedCode = normalizeCode(preferredType);
-  const codigo = isNcfBCode(requestedCode) ? requestedCode : normalizeCode(row.ncf_tipo_default);
+  const codigo = isNcfTypeCode(requestedCode) ? requestedCode : normalizeCode(row.ncf_tipo_default);
   if (!esCodigoNcfValido(codigo)) return null;
 
   const seq = getNcfSequenceForType(row, codigo);

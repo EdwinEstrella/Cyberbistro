@@ -10,6 +10,21 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
   const items = payload.items || [];
   const payments = payload.payments || [];
 
+  const tenantRnc = tenant.rnc?.trim();
+  if (!tenantRnc) {
+    throw new Error("Fiscal configuration error: Tenant RNC is missing or not configured.");
+  }
+
+  const tenantName = tenant.nombre_negocio?.trim();
+  if (!tenantName) {
+    throw new Error("Fiscal configuration error: Tenant Business Name (nombre_negocio) is missing or not configured.");
+  }
+
+  const tenantAddress = tenant.direccion?.trim();
+  if (!tenantAddress) {
+    throw new Error("Fiscal configuration error: Tenant Address (direccion) is missing or not configured.");
+  }
+
   // Determine dynamic e-CF type (31 = Factura de Crédito Fiscal, 32 = Factura de Consumo, etc.)
   const ecfType = factura.ncf ? Number(factura.ncf.substring(1, 3)) : 32;
 
@@ -37,17 +52,17 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
       TerminoPago: "Al contado",
     },
     Emisor: {
-      RNCEmisor: tenant.rnc || "130862346",
-      RazonSocialEmisor: tenant.nombre_negocio || "CYBERBISTRO SRL",
-      NombreComercial: tenant.nombre_negocio || "CyberBistro",
+      RNCEmisor: tenantRnc,
+      RazonSocialEmisor: tenantName,
+      NombreComercial: tenantName,
       Sucursal: "Casa Matriz",
-      DireccionEmisor: tenant.direccion || "Av. Winston Churchill",
+      DireccionEmisor: tenantAddress,
       Municipio: "Santo Domingo",
       Provincia: "Distrito Nacional",
       TablaTelefonoEmisor: {
-        TelefonoEmisor: [tenant.telefono || "8095555555"],
+        TelefonoEmisor: [tenant.telefono || ""],
       },
-      CorreoEmisor: "info@cyberbistro.app",
+      CorreoEmisor: tenant.email || "",
       ActividadEconomica: "5610", // Restaurants
       FechaEmision: (factura.created_at || now.toISOString()).substring(0, 10),
     },

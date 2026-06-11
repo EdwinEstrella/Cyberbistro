@@ -30,7 +30,7 @@ import { canUseFeature, type Feature } from "../../shared/lib/planFeatures";
 type SidebarItem = {
   readonly label: string;
   readonly path: string;
-  readonly customIcon?: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras" | "cxp" | "cxc" | "pedidos";
+  readonly customIcon?: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras" | "cxp" | "cxc" | "pedidos" | "fiscal";
   readonly icon?: string;
   readonly viewBox?: string;
   readonly feature?: Feature;
@@ -79,6 +79,7 @@ const sidebarSections: readonly SidebarSection[] = [
       { label: "Cierre", customIcon: "cierre", path: "/cierre" },
       { label: "Cuentas por Pagar", customIcon: "cxp", path: "/cuentas-pagar", feature: "accounts_payable" },
       { label: "Cuentas por Cobrar", customIcon: "cxc", path: "/cuentas-cobrar", feature: "accounts_receivable" },
+      { label: "Documentos Fiscales", customIcon: "fiscal", path: "/fiscal" },
     ],
   },
 ];
@@ -123,7 +124,7 @@ function filterMainNavForRol(rol: string | null): readonly SidebarSection[] {
   } else if (normalized === "cocina") {
     filtered = sidebarSections.map((s) => filterSectionItems(s, ["/cocina"]));
   } else if (normalized === "cajera") {
-    const allow = ["/dashboard", "/clientes", "/tables", "/gastos", "/cierre", "/cuentas-pagar", "/cuentas-cobrar", "/pedidos"];
+    const allow = ["/dashboard", "/clientes", "/tables", "/gastos", "/cierre", "/cuentas-pagar", "/cuentas-cobrar", "/pedidos", "/fiscal"];
     filtered = sidebarSections.map((s) => filterSectionItems(s, allow));
   } else if (normalized === "mesero") {
     const allow = ["/camarera", "/entregas"];
@@ -153,7 +154,15 @@ function filterMainNavForRol(rol: string | null): readonly SidebarSection[] {
   return filtered.filter((section) => section.items.length > 0);
 }
 
-function SidebarCustomIcon({ name }: { name: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras" | "cxp" | "cxc" | "pedidos" }) {
+function SidebarCustomIcon({ name }: { name: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras" | "cxp" | "cxc" | "pedidos" | "fiscal" }) {
+  if (name === "fiscal") {
+    return (
+      <svg className="shrink-0 size-[20px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+      </svg>
+    );
+  }
+
   if (name === "pedidos") {
     return (
       <svg className="shrink-0 size-[20px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden>

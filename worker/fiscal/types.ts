@@ -138,6 +138,13 @@ export interface FiscalWorkerRepository {
   }>): Promise<void>;
   recordAudit(event: FiscalAuditEvent): Promise<void>;
   findNextRunnableJob?(now: string): Promise<string | null>;
+  enqueueJob?(job: {
+    tenantId: string;
+    ecfDocumentId: string;
+    facturaId: string;
+    operation: FiscalOutboxOperation;
+    idempotencyKey: string;
+  }): Promise<void>;
 }
 
 export interface FiscalAuditEvent {

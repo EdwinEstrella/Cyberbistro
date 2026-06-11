@@ -50,6 +50,13 @@ function baseSnapshot(overrides: Partial<FiscalWorkerSnapshot> = {}): FiscalWork
         client_rnc: "123456789",
         ncf: "E3100000001",
       },
+      tenant: {
+        rnc: "130862346",
+        nombre_negocio: "CYBERBISTRO SRL",
+        direccion: "Av. Winston Churchill",
+        telefono: "8095555555",
+        email: "info@cyberbistro.app",
+      },
       items: [],
       payments: [],
     },

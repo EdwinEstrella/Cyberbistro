@@ -1,7 +1,7 @@
 import { insforgeClient } from "./insforge";
 import { incrementTenantNcfSequence, resolveNcfForNewInvoice, type ResolvedNcfForInvoice } from "./invoiceNcf";
 import { isCloudAvailabilityFailure, isCloudAvailableForDesktop, isDesktopRuntime, recordCloudFailure, recordCloudSuccess } from "./cloudAvailability";
-import { buildBSequenceMapFromRow, buildTenantNcfUpdatePayload, DEFAULT_NCF_B_CODE, getNcfSequenceColumnName, isNcfBCode, prepareNcfForFacturaInsert, type TenantNcfRow } from "./ncf";
+import { buildTenantNcfUpdatePayload, DEFAULT_NCF_B_CODE, getNcfSequenceColumnName, isNcfBCode, prepareNcfForFacturaInsert, normalizeNcfSequenceMap, type TenantNcfRow } from "./ncf";
 
 export const LOCAL_FIRST_MIRROR_TABLES = [
   "tenants",
@@ -310,22 +310,26 @@ export function buildLocalTenantNcfReservation(
   }
 
   const tipoCodigo = payload.tipoCodigo;
-  if (!isNcfBCode(tipoCodigo)) {
-    return { reason: "Solo las secuencias NCF tipo B pueden reservarse offline desde el mirror local." };
+  const isB = isNcfBCode(tipoCodigo);
+  const isE = tipoCodigo.startsWith("E");
+  if (!isB && !isE) {
+    return { reason: "Solo las secuencias NCF tipo B y e-CF tipo E pueden reservarse offline desde el mirror local." };
   }
 
-  const sequenceColumn = getNcfSequenceColumnName(tipoCodigo);
+  const sequenceColumn = isB ? getNcfSequenceColumnName(tipoCodigo) : null;
   const hasExplicitSequence =
-    typeof row[sequenceColumn] === "number" ||
-    typeof row.ncf_secuencia_siguiente === "number" ||
-    typeof row.ncf_secuencias_por_tipo?.[tipoCodigo] === "number";
+    (sequenceColumn && typeof row[sequenceColumn as keyof TenantNcfRow] === "number") ||
+    typeof row.ncf_secuencias_por_tipo?.[tipoCodigo] === "number" ||
+    (row.ncf_tipo_default === tipoCodigo && typeof row.ncf_secuencia_siguiente === "number");
   if (!hasExplicitSequence) {
     return { reason: "No hay secuencia NCF local explícita para garantizar unicidad fiscal." };
   }
 
-  const nextMap = buildBSequenceMapFromRow(row);
+  // Obtener mapa completo de secuencias e incrementarlo
+  const nextMap = { ...normalizeNcfSequenceMap(row.ncf_secuencias_por_tipo) };
   nextMap[tipoCodigo] = payload.usedSequence + 1;
-  const defaultType = isNcfBCode(row.ncf_tipo_default) ? row.ncf_tipo_default : DEFAULT_NCF_B_CODE;
+
+  const defaultType = row.ncf_tipo_default || DEFAULT_NCF_B_CODE;
   const updatePayload = buildTenantNcfUpdatePayload(
     Boolean(row.ncf_fiscal_activo),
     defaultType,

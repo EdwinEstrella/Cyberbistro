@@ -1,6 +1,12 @@
 import crypto from "node:crypto";
 
 export function decryptPassphrase(encryptedStr: string, secretKeyStr: string): string {
+  if (process.env.NODE_ENV === "production") {
+    if (!secretKeyStr || secretKeyStr === "cyberbistro-default-dev-key-32chars") {
+      throw new Error("Refusing to use insecure or default encryption key in production");
+    }
+  }
+
   if (!encryptedStr || !encryptedStr.startsWith("aes256gcm:")) {
     // Si no está cifrada (migración previa / local test), usar como texto plano
     return encryptedStr;

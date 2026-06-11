@@ -145,6 +145,15 @@ export class FiscalWorker {
         lastError: null,
       });
       await this.auditForSnapshot("dgii_submitted", snapshot, { trackId: result.trackId, statusCode: result.statusCode });
+
+      await this.deps.repository.enqueueJob?.({
+        tenantId: snapshot.job.tenantId,
+        ecfDocumentId: snapshot.document.id,
+        facturaId: snapshot.job.facturaId,
+        operation: "poll_status",
+        idempotencyKey: `${snapshot.job.tenantId}:${result.trackId}:poll`,
+      });
+
       return "submitted";
     }
 

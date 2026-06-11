@@ -83,14 +83,19 @@ export async function resolveNcfForNewInvoice(
   tenantId: string,
   preferredType?: string | null
 ): Promise<ResolvedNcfForInvoice | null> {
+  const isEcf = preferredType && preferredType.trim().toUpperCase().startsWith("E");
+  const rpcName = isEcf ? "cloudix_reserve_ecf" : "cloudix_reserve_ncf";
+
   const rpcArgs: Record<string, unknown> = {
     p_tenant_id: tenantId,
   };
   if (preferredType && preferredType.trim()) {
     rpcArgs.p_ncf_tipo = preferredType.trim().toUpperCase();
+  } else if (isEcf) {
+    rpcArgs.p_ncf_tipo = "E32";
   }
 
-  const { data, error } = await insforgeClient.database.rpc("cloudix_reserve_ncf", rpcArgs);
+  const { data, error } = await insforgeClient.database.rpc(rpcName, rpcArgs);
 
   if (error) {
     if (isCloudAvailabilityFailure(error)) recordCloudFailure();
