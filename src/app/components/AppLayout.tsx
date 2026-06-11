@@ -930,6 +930,9 @@ function AppLayoutContent() {
                         <span className="text-[#ff906d]">✓</span> <b>Múltiples Sucursales</b> en un solo lugar
                       </li>
                       <li className="flex items-center gap-2">
+                        <span className="text-[#ff906d]">✓</span> <b>Facturación Electrónica (e-CF)</b> DGII
+                      </li>
+                      <li className="flex items-center gap-2">
                         <span className="text-[#ff906d]">✓</span> <b>Ingredientes y recetas</b> automáticos
                       </li>
                       <li className="flex items-center gap-2">

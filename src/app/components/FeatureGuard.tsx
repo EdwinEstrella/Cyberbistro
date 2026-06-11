@@ -53,6 +53,11 @@ export function FeatureGuard({ feature, children }: FeatureGuardProps) {
             title: "Pedidos / Menú Digital",
             desc: "La recepción de comandas digitales directamente de mesas o clientes está disponible en el Plan Profesional.",
           };
+        case "dgii_ecf":
+          return {
+            title: "Facturación Electrónica (e-CF)",
+            desc: "El módulo de Facturación Electrónica homologado por la DGII está disponible en el Plan Profesional.",
+          };
         default:
           return {
             title: "Módulo Premium",

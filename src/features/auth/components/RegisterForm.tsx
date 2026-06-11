@@ -523,6 +523,9 @@ export function Register() {
                           <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
                             <span className="text-[#3b82f6] text-[11px]">✓</span> <b>Inventario y Recetas</b>
                           </li>
+                          <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
+                            <span className="text-[#3b82f6] text-[11px]">✓</span> <b>Facturación Electrónica (e-CF)</b>
+                          </li>
                           <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-[#adaaaa]">
                             <span className="text-[#3b82f6] text-[11px]">✓</span> Reportes de Cocina
                           </li>
