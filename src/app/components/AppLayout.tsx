@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router";
-import { FileText } from "lucide-react";
 
 import { VentaCartSearchProvider } from "../context/VentaCartSearchContext";
 import { SucursalProvider, useSucursal } from "../context/SucursalContext";
@@ -525,7 +524,6 @@ function AppLayoutContent() {
   }, [routerLocation.pathname, tenantId]);
 
   const isAjustesActive = location.pathname === "/ajustes";
-  const isFiscalActive = location.pathname === "/fiscal";
 
   return (
     <div className="bg-background text-foreground flex flex-col h-full min-h-0 w-full overflow-hidden transition-colors duration-300">
@@ -673,33 +671,6 @@ function AppLayoutContent() {
               </button>
             )}
 
-            {/* Fiscal — solo administrador del negocio */}
-            {showAjustesInSidebar(rol) && (
-              <button
-                type="button"
-                onMouseEnter={() => prefetchRoute("/fiscal")}
-                onFocus={() => prefetchRoute("/fiscal")}
-                onClick={() => navigate("/fiscal")}
-                aria-current={isFiscalActive ? "page" : undefined}
-                className={`flex gap-[16px] items-center px-[16px] py-[12px] cursor-pointer relative border-none text-left w-full rounded-[8px] transition-colors ${
-                  isFiscalActive
-                    ? "bg-primary/10 text-primary dark:bg-[#262626] dark:text-[#ff906d]"
-                    : "bg-transparent text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                }`}
-              >
-                {isFiscalActive && (
-                  <div className="absolute left-0 top-[8px] bottom-[8px] w-[4px] bg-primary dark:bg-[#ff906d]" aria-hidden />
-                )}
-                <FileText className="shrink-0 w-[20px] h-[20px]" />
-                <span
-                  className={`font-['Space_Grotesk',sans-serif] text-[16px] tracking-[-0.4px] ${
-                    isFiscalActive ? "font-bold" : ""
-                  }`}
-                >
-                  Fiscal (e-CF)
-                </span>
-              </button>
-            )}
 
             <button
               type="button"
