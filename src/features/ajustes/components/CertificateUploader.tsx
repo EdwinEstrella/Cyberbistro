@@ -11,6 +11,9 @@ export function CertificateUploader({ environment }: { environment: string }) {
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [metadata, setMetadata] = useState<any>(null);
 
+  const isExpired = metadata ? new Date() > new Date(metadata.valid_until) : false;
+  const isExpiringSoon = metadata && !isExpired ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) > new Date(metadata.valid_until) : false;
+
   useEffect(() => {
     if (tenantId) loadMetadata();
   }, [tenantId, environment]);
@@ -69,8 +72,10 @@ export function CertificateUploader({ environment }: { environment: string }) {
       <h4 className="text-sm font-bold text-foreground mb-4">Certificado Digital (.p12)</h4>
       
       {metadata?.is_ready ? (
-        <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4 mb-4">
-          <p className="text-sm text-green-600 dark:text-green-400 font-bold mb-1">✅ Certificado Configurado y Listo</p>
+        <div className={`border rounded-xl p-4 mb-4 ${isExpired ? "bg-red-500/10 border-red-500/20" : isExpiringSoon ? "bg-yellow-500/10 border-yellow-500/20" : "bg-green-500/10 border-green-500/20"}`}>
+          <p className={`text-sm font-bold mb-1 ${isExpired ? "text-red-600 dark:text-red-400" : isExpiringSoon ? "text-yellow-600 dark:text-yellow-400" : "text-green-600 dark:text-green-400"}`}>
+            {isExpired ? "❌ Certificado Vencido" : isExpiringSoon ? "⚠️ Certificado por Vencer" : "✅ Certificado Configurado y Listo"}
+          </p>
           <ul className="text-xs text-muted-foreground space-y-1">
             <li><strong>Titular:</strong> {metadata.subject}</li>
             <li><strong>Emisor:</strong> {metadata.issuer}</li>

@@ -75,6 +75,10 @@ serve(async (req) => {
       throw new Error("Invalid certificate or passphrase")
     }
 
+    if (new Date() > new Date(certInfo.validTo)) {
+      throw new Error("El certificado digital se encuentra vencido.")
+    }
+
     // Encrypt the passphrase before saving to metadata table
     const encryptionKey = Deno.env.get('ECF_ENCRYPTION_KEY') || 'cyberbistro-default-dev-key-32chars';
     const encryptedPassphrase = await encryptPassphrase(passphrase, encryptionKey);
