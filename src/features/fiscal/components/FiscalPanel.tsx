@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import QRCode from "qrcode";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
-import { Clock, CheckCircle2, AlertTriangle, RefreshCcw, FileText, QrCode, Download, ExternalLink, X } from "lucide-react";
+import { Clock, CheckCircle2, AlertTriangle, RefreshCcw, FileText, QrCode, Download, X } from "lucide-react";
 
 export function FiscalPanel() {
   const { tenantId } = useAuth();

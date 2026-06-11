@@ -35,9 +35,9 @@ export function CertificateUploader({ environment }: { environment: string }) {
     try {
       // 1. Upload to fiscal_certificates bucket
       const filePath = `${tenantId}/${environment}_${Date.now()}.p12`;
-      const { error: uploadError } = await insforgeClient.storage
+      const { error: uploadError } = await (insforgeClient.storage
         .from("fiscal_certificates")
-        .upload(filePath, file, { contentType: "application/pkcs12", upsert: true });
+        .upload as any)(filePath, file, { contentType: "application/pkcs12", upsert: true });
 
       if (uploadError) throw new Error("Error al subir archivo: " + uploadError.message);
 

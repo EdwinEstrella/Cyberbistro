@@ -1597,6 +1597,16 @@ function DigitalMenuPanel() {
                 Descargar QR
               </button>
             </div>
+            <div className="w-full mt-1">
+              <a 
+                href={`https://api.whatsapp.com/send?text=${encodeURIComponent(`¡Hola! Acá te comparto nuestro menú digital:\n${qrUrl}`)}`}
+                target="_blank" rel="noopener noreferrer"
+                className="w-full flex items-center justify-center gap-2 bg-[#25D366]/10 text-[#25D366] font-bold py-2.5 rounded-xl hover:bg-[#25D366]/20 transition-colors cursor-pointer"
+              >
+                <ExternalLink className="w-4 h-4" />
+                Compartir Menú por WhatsApp
+              </a>
+            </div>
           </div>
         </div>
 

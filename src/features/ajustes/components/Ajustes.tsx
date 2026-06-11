@@ -190,6 +190,7 @@ export function Ajustes() {
           logo_size_px: Math.min(90, Math.max(32, Number(data.logo_size_px ?? 52))),
           logo_offset_x: Math.min(28, Math.max(-28, Number(data.logo_offset_x ?? 0))),
           logo_offset_y: Math.min(18, Math.max(-12, Number(data.logo_offset_y ?? 0))),
+          menu_url: data.menu_url || "",
           direccion: data.direccion ?? "",
           telefono: data.telefono ?? "",
           currency_code: (data.moneda || "DOP") as any,
@@ -233,7 +234,6 @@ export function Ajustes() {
       fiscal_mode: config.fiscal_mode,
       fiscal_mode_fallback: config.fiscal_mode_fallback,
       ecf_environment: config.ecf_environment,
-      ncf_fiscal_activo: config.fiscal_mode === "ncf_legacy" || config.fiscal_mode === "dgii_ecf",
       ...ncfUpdate,
       updated_at: new Date().toISOString()
     };
