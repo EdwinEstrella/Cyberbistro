@@ -1,5 +1,13 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { insforgeClient } from "../../../shared/lib/insforge";
+import { canUseFeature } from "../../../shared/lib/planFeatures";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../../shared/ui/select";
 import { useAuth, ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
 import type { ThermalPrinterInfo } from "../../../shared/types/electron";
 import type { PaperWidthMm } from "../../../shared/lib/thermalStorage";
@@ -127,7 +135,7 @@ const THERMAL_PREVIEW_TABS: { id: ThermalPreviewKind; label: string }[] = [
 ];
 
 export function Ajustes() {
-  const { tenantId, loading: authLoading } = useAuth();
+  const { tenantId, loading: authLoading, plan } = useAuth();
   const [config, setConfig] = useState<Config>({
     nombre_empresa: "",
     rnc: "",
@@ -333,11 +341,16 @@ export function Ajustes() {
                 <Field label="Dirección"><input type="text" value={config.direccion} onChange={e => setConfig(p => ({ ...p, direccion: e.target.value }))} className="input-field" /></Field>
                 <div className="grid grid-cols-2 gap-4">
                    <Field label="Teléfono"><input type="text" value={config.telefono} onChange={e => setConfig(p => ({ ...p, telefono: e.target.value }))} className="input-field" /></Field>
-                   <Field label="Divisa">
-                     <select value={config.currency_code} onChange={e => setConfig(p => ({ ...p, currency_code: e.target.value as any }))} className="input-field cursor-pointer">
-                       {CURRENCY_OPTIONS.map(o => <option key={o.code} value={o.code}>{o.label}</option>)}
-                     </select>
-                   </Field>
+                    <Field label="Divisa">
+                      <Select value={config.currency_code} onValueChange={val => setConfig(p => ({ ...p, currency_code: val as any }))}>
+                        <SelectTrigger className="w-full rounded-xl">
+                          <SelectValue placeholder="Seleccionar divisa" />
+                        </SelectTrigger>
+                        <SelectContent className="rounded-xl">
+                          {CURRENCY_OPTIONS.map(o => <SelectItem key={o.code} value={o.code}>{o.label}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </Field>
                 </div>
               </div>
             </section>
@@ -394,28 +407,54 @@ export function Ajustes() {
               
               <div className="border-t border-border pt-4">
                 <Field label="Modo Fiscal">
-                  <select value={config.fiscal_mode} onChange={e => setConfig(p => ({ ...p, fiscal_mode: e.target.value as any }))} className="input-field cursor-pointer">
-                    <option value="internal_receipt">Recibo Interno (Sin NCF)</option>
-                    <option value="ncf_legacy">NCF Tradicional</option>
-                    <option value="dgii_ecf">Facturación Electrónica (e-CF)</option>
-                  </select>
+                  <Select
+                    value={config.fiscal_mode}
+                    onValueChange={val => {
+                      const mode = val as any;
+                      if (mode === "dgii_ecf" && !canUseFeature(plan, "dgii_ecf")) {
+                        return;
+                      }
+                      setConfig(p => ({ ...p, fiscal_mode: mode }));
+                    }}
+                  >
+                    <SelectTrigger className="w-full rounded-xl">
+                      <SelectValue placeholder="Seleccionar modo fiscal" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      <SelectItem value="internal_receipt">Recibo Interno (Sin NCF)</SelectItem>
+                      <SelectItem value="ncf_legacy">NCF Tradicional</SelectItem>
+                      <SelectItem value="dgii_ecf" disabled={!canUseFeature(plan, "dgii_ecf")}>
+                        Facturación Electrónica (e-CF) {!canUseFeature(plan, "dgii_ecf") ? "🔒 (Plan Profesional)" : ""}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                 </Field>
               </div>
 
               {config.fiscal_mode === "dgii_ecf" && (
                 <div className="animate-in fade-in flex flex-col gap-4 border-t border-border pt-4">
                   <Field label="Entorno de Conexión DGII">
-                    <select value={config.ecf_environment} onChange={e => setConfig(p => ({ ...p, ecf_environment: e.target.value as any }))} className="input-field cursor-pointer">
-                      <option value="test">Test</option>
-                      <option value="certification">Certificación</option>
-                      <option value="production">Producción</option>
-                    </select>
+                    <Select value={config.ecf_environment} onValueChange={val => setConfig(p => ({ ...p, ecf_environment: val as any }))}>
+                      <SelectTrigger className="w-full rounded-xl">
+                        <SelectValue placeholder="Seleccionar entorno" />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl">
+                        <SelectItem value="test">Test</SelectItem>
+                        <SelectItem value="certification">Certificación</SelectItem>
+                        <SelectItem value="production">Producción</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </Field>
                   <Field label="Modo de Respaldo (Fallback offline prolongado)">
-                    <select value={config.fiscal_mode_fallback} onChange={e => setConfig(p => ({ ...p, fiscal_mode_fallback: e.target.value as any }))} className="input-field cursor-pointer">
-                      <option value="internal_receipt">Recibo Interno</option>
-                      <option value="ncf_legacy">NCF Tradicional</option>
-                    </select>
+                    <Select value={config.fiscal_mode_fallback} onValueChange={val => setConfig(p => ({ ...p, fiscal_mode_fallback: val as any }))}>
+                      <SelectTrigger className="w-full rounded-xl">
+                        <SelectValue placeholder="Seleccionar modo de respaldo" />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl">
+                        <SelectItem value="internal_receipt">Recibo Interno</SelectItem>
+                        <SelectItem value="ncf_legacy">NCF Tradicional</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </Field>
                   
                   <CertificateUploader environment={config.ecf_environment} />
@@ -425,9 +464,16 @@ export function Ajustes() {
               {(config.fiscal_mode === "ncf_legacy" || config.fiscal_mode === "dgii_ecf") && (
                 <div className="animate-in fade-in slide-in-from-top-2 duration-300 flex flex-col gap-4 border-t border-border pt-4">
                   <Field label="Tipo Predeterminado">
-                    <select value={config.ncf_tipo_default} onChange={e => setConfig(p => ({ ...p, ncf_tipo_default: e.target.value as any }))} className="input-field cursor-pointer">
-                      {(config.fiscal_mode === "dgii_ecf" ? NCF_E_TIPO_OPCIONES : NCF_B_TIPO_OPCIONES).map(o => <option key={o.codigo} value={o.codigo}>{o.descripcion}</option>)}
-                    </select>
+                    <Select value={config.ncf_tipo_default} onValueChange={val => setConfig(p => ({ ...p, ncf_tipo_default: val as any }))}>
+                      <SelectTrigger className="w-full rounded-xl">
+                        <SelectValue placeholder="Seleccionar tipo" />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl">
+                        {(config.fiscal_mode === "dgii_ecf" ? NCF_E_TIPO_OPCIONES : NCF_B_TIPO_OPCIONES).map(o => (
+                          <SelectItem key={o.codigo} value={o.codigo}>{o.descripcion}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </Field>
                   <div className="mt-4 pt-4 border-t border-border flex flex-col gap-4">
                     <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">
@@ -464,7 +510,7 @@ export function Ajustes() {
       <style>{`
         .input-field {
           width: 100%;
-          background: var(--muted);
+          background-color: var(--muted);
           border: 1px solid var(--border);
           border-radius: 12px;
           padding: 10px 14px;
@@ -476,7 +522,7 @@ export function Ajustes() {
         }
         .input-field:focus {
           border-color: var(--primary);
-          background: transparent;
+          background-color: transparent;
         }
       `}</style>
     </div>
@@ -527,10 +573,15 @@ function ThermalPrintSettingsCard({ onThermalSaved }: { onThermalSaved?: () => v
         ))}
       </div>
       <Field label="Seleccionar Impresora">
-        <select value={printerName} onChange={e => setPrinterName(e.target.value)} className="input-field cursor-pointer">
-          <option value="">Predeterminada</option>
-          {printers.map(p => <option key={p.name} value={p.name}>{p.displayName || p.name}</option>)}
-        </select>
+        <Select value={printerName || "default_printer"} onValueChange={val => setPrinterName(val === "default_printer" ? "" : val)}>
+          <SelectTrigger className="w-full rounded-xl">
+            <SelectValue placeholder="Seleccionar impresora" />
+          </SelectTrigger>
+          <SelectContent className="rounded-xl">
+            <SelectItem value="default_printer">Predeterminada</SelectItem>
+            {printers.map(p => <SelectItem key={p.name} value={p.name}>{p.displayName || p.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
       </Field>
       <button onClick={handleSave} className="bg-muted text-foreground border border-border rounded-lg py-3 text-[11px] font-bold uppercase tracking-widest hover:bg-black/5 dark:hover:bg-white/10 transition-all cursor-pointer">Guardar Local</button>
     </div>

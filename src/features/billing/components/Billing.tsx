@@ -17,6 +17,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../../shared/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../../shared/ui/select";
 
 type InvoiceStatus = "pagada" | "pendiente" | "cancelada";
 type BillingView = "facturas" | "ciclos" | "finanzas";
@@ -1194,30 +1201,32 @@ export function Billing() {
                     {view === "facturas" && (
                       <div className="flex flex-col gap-1.5">
                         <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider font-['Inter']">Estado</span>
-                        <select
-                          value={statusFilter}
-                          onChange={(e) => setStatusFilter(e.target.value)}
-                          className="w-full bg-muted/60 rounded-xl border border-black/5 dark:border-white/5 px-3 py-2 font-['Inter',sans-serif] text-foreground text-[13px] outline-none cursor-pointer h-[38px]"
-                        >
-                          <option value="todos">Todos los Estados</option>
-                          <option value="pagada">Pagadas</option>
-                          <option value="cancelada">Canceladas</option>
-                        </select>
+                        <Select value={statusFilter} onValueChange={setStatusFilter}>
+                          <SelectTrigger className="w-full rounded-xl bg-muted/60 border border-black/5 dark:border-white/5 h-[38px]">
+                            <SelectValue placeholder="Estado" />
+                          </SelectTrigger>
+                          <SelectContent className="rounded-xl">
+                            <SelectItem value="todos">Todos los Estados</SelectItem>
+                            <SelectItem value="pagada">Pagadas</SelectItem>
+                            <SelectItem value="cancelada">Canceladas</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                     )}
                     <div className="flex flex-col gap-1.5">
                       <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider font-['Inter']">Método</span>
-                      <select
-                        value={methodFilter}
-                        onChange={(e) => setMethodFilter(e.target.value)}
-                        className="w-full bg-muted/60 rounded-xl border border-black/5 dark:border-white/5 px-3 py-2 font-['Inter',sans-serif] text-foreground text-[13px] outline-none cursor-pointer h-[38px]"
-                      >
-                        <option value="todos">Todos los Métodos</option>
-                        <option value="efectivo">Efectivo</option>
-                        <option value="tarjeta">Tarjeta</option>
-                        <option value="digital">Digital</option>
-                        <option value="transferencia">Transferencia</option>
-                      </select>
+                      <Select value={methodFilter} onValueChange={setMethodFilter}>
+                        <SelectTrigger className="w-full rounded-xl bg-muted/60 border border-black/5 dark:border-white/5 h-[38px]">
+                          <SelectValue placeholder="Método" />
+                        </SelectTrigger>
+                        <SelectContent className="rounded-xl">
+                          <SelectItem value="todos">Todos los Métodos</SelectItem>
+                          <SelectItem value="efectivo">Efectivo</SelectItem>
+                          <SelectItem value="tarjeta">Tarjeta</SelectItem>
+                          <SelectItem value="digital">Digital</SelectItem>
+                          <SelectItem value="transferencia">Transferencia</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   </>
                 )}

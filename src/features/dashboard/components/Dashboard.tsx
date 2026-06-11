@@ -65,6 +65,13 @@ import { isDesktopCloudUnavailable } from "../../../shared/lib/cloudAvailability
 import { CustomerSelect } from "../../clientes/components/CustomerSelect";
 import type { Customer } from "../../clientes/lib/customers";
 import { ConfirmModal } from "../../../shared/components/ConfirmModal";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../../shared/ui/select";
 
 interface Plato {
   id: number;
@@ -1793,21 +1800,25 @@ export function Dashboard() {
                         Cambialo solo para este cobro si necesitas emitir otro comprobante.
                       </span>
                     </div>
-                    <select
+                    <Select
                       value={selectedNcfType}
-                      onChange={(e) =>
+                      onValueChange={(val) =>
                         setSelectedNcfType(
-                          isNcfTypeCode(e.target.value) ? e.target.value : DEFAULT_NCF_B_CODE
+                          isNcfTypeCode(val) ? val : DEFAULT_NCF_B_CODE
                         )
                       }
-                      className="min-w-[168px] rounded-[10px] border border-black/10 bg-card px-[12px] py-[9px] font-['Inter',sans-serif] text-[12px] text-foreground outline-none dark:border-[rgba(72,72,71,0.3)] dark:bg-[#1a1a1a]"
                     >
-                      {NCF_TIPO_OPCIONES.filter(o => tenantNcfFiscalActive ? o.codigo.startsWith("E") : o.codigo.startsWith("B")).map((opcion) => (
-                        <option key={opcion.codigo} value={opcion.codigo}>
-                          {opcion.codigo} - {opcion.descripcion.replace(`${opcion.codigo} - `, "")}
-                        </option>
-                      ))}
-                    </select>
+                      <SelectTrigger className="min-w-[168px] rounded-xl border border-black/10 bg-card px-[12px] py-[9px] font-['Inter',sans-serif] text-[12px] text-foreground outline-none dark:border-[rgba(72,72,71,0.3)] dark:bg-[#1a1a1a] h-auto">
+                        <SelectValue placeholder="Tipo NCF" />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl">
+                        {NCF_TIPO_OPCIONES.filter(o => tenantNcfFiscalActive ? o.codigo.startsWith("E") : o.codigo.startsWith("B")).map((opcion) => (
+                          <SelectItem key={opcion.codigo} value={opcion.codigo}>
+                            {opcion.codigo} - {opcion.descripcion.replace(`${opcion.codigo} - `, "")}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   {ncfTypeRequiresClientRnc(selectedNcfType) ? (
                     <div className="flex flex-col gap-[6px]">
@@ -2090,22 +2101,25 @@ export function Dashboard() {
                         <label htmlFor="ncf-select" className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px]">
                           Tipo NCF
                         </label>
-                        <select
-                          id="ncf-select"
+                        <Select
                           value={selectedNcfType}
-                          onChange={(e) =>
+                          onValueChange={(val) =>
                             setSelectedNcfType(
-                              isNcfTypeCode(e.target.value) ? e.target.value : DEFAULT_NCF_B_CODE
+                              isNcfTypeCode(val) ? val : DEFAULT_NCF_B_CODE
                             )
                           }
-                          className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors cursor-pointer"
                         >
-                          {NCF_TIPO_OPCIONES.filter(o => tenantNcfFiscalActive ? o.codigo.startsWith("E") : o.codigo.startsWith("B")).map((opcion) => (
-                            <option key={opcion.codigo} value={opcion.codigo}>
-                              {opcion.codigo} - {opcion.descripcion.replace(`${opcion.codigo} - `, "")}
-                            </option>
-                          ))}
-                        </select>
+                          <SelectTrigger className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors cursor-pointer h-auto">
+                            <SelectValue placeholder="Tipo NCF" />
+                          </SelectTrigger>
+                          <SelectContent className="rounded-xl">
+                            {NCF_TIPO_OPCIONES.filter(o => tenantNcfFiscalActive ? o.codigo.startsWith("E") : o.codigo.startsWith("B")).map((opcion) => (
+                              <SelectItem key={opcion.codigo} value={opcion.codigo}>
+                                {opcion.codigo} - {opcion.descripcion.replace(`${opcion.codigo} - `, "")}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
 
                       {ncfTypeRequiresClientRnc(selectedNcfType) && (

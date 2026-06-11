@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, RefreshCw, FileText, Users, Edit } from "lucide-react";
+import { Plus, RefreshCw, FileText, Users, Edit, Eye } from "lucide-react";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { RegistrarCompraModal } from "./RegistrarCompraModal";
 import { ProveedorModal } from "./ProveedorModal";
+import { DetalleCompraModal } from "./DetalleCompraModal";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { insforgeClient } from "../../../shared/lib/insforge";
 
-interface ProveedorRow {
+export interface ProveedorRow {
   id: string;
   tenant_id: string;
   nombre: string;
@@ -18,20 +19,22 @@ interface ProveedorRow {
   activo: boolean;
 }
 
-interface CompraRow {
+export interface CompraRow {
   id: string;
   tenant_id: string;
   sucursal_id: string | null;
   proveedor_id: string | null;
   numero_factura: string | null;
-  tipo_pago: "contado" | "credito";
+  tipo_pago: "contado" | "credito" | string;
+  metodo_pago?: string | null;
+  monto_pagado?: number;
   fecha_compra: string;
   total: number;
   estado: string;
   observacion: string | null;
 }
 
-interface ProductoRow {
+export interface ProductoRow {
   id: string;
   nombre: string;
   unidad_base: string;
@@ -71,6 +74,7 @@ export function Compras() {
   const [showCompraModal, setShowCompraModal] = useState(false);
   const [showProveedorModal, setShowProveedorModal] = useState(false);
   const [editingProveedor, setEditingProveedor] = useState<ProveedorRow | null>(null);
+  const [selectedCompraForDetail, setSelectedCompraForDetail] = useState<CompraRow | null>(null);
 
 
 
@@ -234,6 +238,7 @@ export function Compras() {
                         <th className="px-4 py-3.5">Proveedor</th>
                         <th className="px-4 py-3.5">Tipo Pago</th>
                         <th className="px-4 py-3.5 text-right">Monto Total</th>
+                        <th className="px-4 py-3.5 text-center">Acciones</th>
                       </tr>
                     </thead>
                     <tbody className="font-['Inter',sans-serif] text-[13px] text-white">
@@ -259,6 +264,16 @@ export function Compras() {
                             </td>
                             <td className="px-4 py-3 text-right font-['Space_Grotesk',sans-serif] font-bold text-white">
                               {RD(row.total)}
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedCompraForDetail(row)}
+                                className="bg-transparent border-none text-[#adaaaa] hover:text-[#ff906d] cursor-pointer p-1 transition-colors"
+                                title="Ver Detalles"
+                              >
+                                <Eye className="size-[15px]" />
+                              </button>
                             </td>
                           </tr>
                         );
@@ -383,6 +398,16 @@ export function Compras() {
         onError={(msg) => {
           setMessage(msg);
         }}
+      />
+
+      {/* DETALLE COMPRA MODAL */}
+      <DetalleCompraModal
+        isOpen={selectedCompraForDetail !== null}
+        onClose={() => setSelectedCompraForDetail(null)}
+        tenantId={tenantId}
+        compra={selectedCompraForDetail}
+        proveedor={selectedCompraForDetail ? proveedoresMap.get(selectedCompraForDetail.proveedor_id || "") || null : null}
+        productos={productos}
       />
     </div>
   );

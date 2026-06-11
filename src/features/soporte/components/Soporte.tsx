@@ -27,6 +27,13 @@ import {
   type TenantUserLimitConfig,
 } from "../../../shared/lib/tenantUserLimits";
 import { ConfirmModal } from "../../../shared/components/ConfirmModal";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../../shared/ui/select";
 
 const STAFF_ROLES = [
   { value: "cajera", label: "Cajera / Venta" },
@@ -434,9 +441,14 @@ function CartaPanel() {
             </div>
             <div className="flex flex-col gap-[6px]">
               <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">Categoría</label>
-              <select value={form.categoria} onChange={e => setForm(f => ({ ...f, categoria: e.target.value }))} className="input-field cursor-pointer">
-                {categoryOptions.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+              <Select value={form.categoria} onValueChange={val => setForm(f => ({ ...f, categoria: val }))}>
+                <SelectTrigger className="w-full rounded-xl">
+                  <SelectValue placeholder="Seleccionar categoría" />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl">
+                  {categoryOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
             
             <div className="flex items-center justify-between pt-2">
@@ -471,7 +483,7 @@ function CartaPanel() {
       <style>{`
         .input-field {
           width: 100%;
-          background: var(--muted);
+          background-color: var(--muted);
           border: 1px solid var(--border);
           border-radius: 10px;
           padding: 10px 14px;
@@ -483,7 +495,7 @@ function CartaPanel() {
         }
         .input-field:focus {
           border-color: var(--primary);
-          background: transparent;
+          background-color: transparent;
         }
       `}</style>
     </div>
@@ -836,7 +848,7 @@ function CategoriasPanel() {
       <style>{`
         .input-field {
           width: 100%;
-          background: var(--muted);
+          background-color: var(--muted);
           border: 1px solid var(--border);
           border-radius: 12px;
           padding: 12px 14px;
@@ -848,7 +860,7 @@ function CategoriasPanel() {
         }
         .input-field:focus {
           border-color: var(--primary);
-          background: transparent;
+          background-color: transparent;
         }
       `}</style>
     </div>
@@ -988,9 +1000,14 @@ function UsuariosPanel() {
            
            <div className="space-y-4">
               <div className="flex flex-col gap-1.5"><label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">Rol</label>
-                <select value={rol} onChange={e => setRol(e.target.value as any)} className="input-field cursor-pointer">
-                  {STAFF_ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-                </select>
+                <Select value={rol} onValueChange={val => setRol(val as any)}>
+                   <SelectTrigger className="rounded-xl">
+                     <SelectValue placeholder="Seleccionar rol" />
+                   </SelectTrigger>
+                   <SelectContent className="rounded-xl">
+                     {STAFF_ROLES.map(r => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
+                   </SelectContent>
+                </Select>
               </div>
               <div className="flex flex-col gap-1.5"><label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">Nombre</label>
                 <input type="text" value={nombre} onChange={e => setNombre(e.target.value)} className="input-field" placeholder="Ej. Juan - Caja" />
@@ -1021,7 +1038,7 @@ function UsuariosPanel() {
       <style>{`
         .input-field {
           width: 100%;
-          background: var(--muted);
+          background-color: var(--muted);
           border: 1px solid var(--border);
           border-radius: 10px;
           padding: 10px 14px;
@@ -1033,7 +1050,7 @@ function UsuariosPanel() {
         }
         .input-field:focus {
           border-color: var(--primary);
-          background: transparent;
+          background-color: transparent;
         }
       `}</style>
     </div>
@@ -1184,7 +1201,7 @@ function MesasPanel() {
       <style>{`
         .input-field {
           width: 100%;
-          background: var(--muted);
+          background-color: var(--muted);
           border: 1px solid var(--border);
           border-radius: 12px;
           padding: 12px 16px;
@@ -1196,7 +1213,7 @@ function MesasPanel() {
         }
         .input-field:focus {
           border-color: var(--primary);
-          background: transparent;
+          background-color: transparent;
         }
       `}</style>
     </div>

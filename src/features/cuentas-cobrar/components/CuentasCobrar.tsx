@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw, DollarSign, FileText, CheckCircle, Clock } from "lucide-react";
+import { RefreshCw, DollarSign, FileText, CheckCircle, Clock, Eye } from "lucide-react";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { RegistrarPagoCxCModal } from "./RegistrarPagoCxCModal";
+import { DetalleCuentaCobrarModal } from "./DetalleCuentaCobrarModal";
 
 interface CustomerRow {
   id: string;
@@ -77,6 +78,15 @@ export function CuentasCobrar() {
   // Payment Modal state
   const [showPayModal, setShowPayModal] = useState(false);
   const [selectedCuenta, setSelectedCuenta] = useState<CuentaCobrarRow | null>(null);
+
+  // Details Modal state
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [detailCuenta, setDetailCuenta] = useState<CuentaCobrarRow | null>(null);
+
+  function openDetailModal(cuenta: CuentaCobrarRow) {
+    setDetailCuenta(cuenta);
+    setShowDetailModal(true);
+  }
 
   const cargarDatos = useCallback(async () => {
     if (!tenantId) return;
@@ -313,7 +323,7 @@ export function CuentasCobrar() {
                         <th className="px-4 py-3.5 text-right">Cobrado</th>
                         <th className="px-4 py-3.5 text-right">Pendiente</th>
                         <th className="px-4 py-3.5 text-center">Estado</th>
-                        {activeTab === 'pendientes' && <th className="px-4 py-3.5 text-center">Acción</th>}
+                        <th className="px-4 py-3.5 text-center">Acciones</th>
                       </tr>
                     </thead>
                     <tbody className="font-['Inter',sans-serif] text-[13px] text-white">
@@ -342,17 +352,27 @@ export function CuentasCobrar() {
                                 {row.estado}
                               </span>
                             </td>
-                            {activeTab === 'pendientes' && (
-                              <td className="px-4 py-3 text-center">
+                            <td className="px-4 py-3 text-center">
+                              <div className="flex items-center justify-center gap-2">
                                 <button
                                   type="button"
-                                  onClick={() => openAbonarModal(row)}
-                                  className="bg-[#ff906d] rounded-[8px] px-3 py-1 font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[10px] uppercase cursor-pointer border-none transition-transform hover:scale-[1.03]"
+                                  onClick={() => openDetailModal(row)}
+                                  className="bg-[#222] border border-[rgba(72,72,71,0.4)] hover:border-white text-[#adaaaa] hover:text-white rounded-[8px] p-1.5 transition-all cursor-pointer"
+                                  title="Ver detalle e historial"
                                 >
-                                  Cobrar
+                                  <Eye className="size-[14px]" />
                                 </button>
-                              </td>
-                            )}
+                                {activeTab === 'pendientes' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openAbonarModal(row)}
+                                    className="bg-[#ff906d] rounded-[8px] px-3 py-1 font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[10px] uppercase cursor-pointer border-none transition-transform hover:scale-[1.03]"
+                                  >
+                                    Cobrar
+                                  </button>
+                                )}
+                              </div>
+                            </td>
                           </tr>
                         );
                       })}
@@ -436,6 +456,21 @@ export function CuentasCobrar() {
           onError={(msg) => {
             setMessage(msg);
           }}
+        />
+      )}
+
+      {/* DETALLE CUENTA MODAL */}
+      {detailCuenta && (
+        <DetalleCuentaCobrarModal
+          isOpen={showDetailModal}
+          onClose={() => {
+            setShowDetailModal(false);
+            setDetailCuenta(null);
+          }}
+          tenantId={tenantId}
+          cuenta={detailCuenta}
+          clienteNombre={customersMap.get(detailCuenta.customer_id) || "Desconocido"}
+          facturaNumero={detailCuenta.factura_id ? facturasMap.get(detailCuenta.factura_id) ? `#${facturasMap.get(detailCuenta.factura_id)}` : "Factura" : "Manual"}
         />
       )}
     </div>
