@@ -12,6 +12,7 @@ export interface TenantReceiptInfo {
   logo_size_px?: number | null;
   logo_offset_x?: number | null;
   logo_offset_y?: number | null;
+  menu_url?: string | null;
 }
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
@@ -259,7 +260,23 @@ export async function buildFacturaReceiptHtml(
         </div>
       `;
     } catch (err) {
-      console.error("Failed to generate QR code", err);
+      console.error("Failed to generate DGII QR code", err);
+    }
+  } else if (tenant.menu_url && tenant.menu_url.trim() !== "") {
+    // Non-electronic invoice -> show Menu QR if available
+    try {
+      const qrDataUrl = await QRCode.toDataURL(tenant.menu_url, { margin: 1, width: 150 });
+      qrSection = `
+        <div class="divider"></div>
+        <div class="center" style="margin: 12px 0 8px">
+          <img src="${qrDataUrl}" style="width: 120px; height: 120px;" />
+          <div style="font-size:11px;margin-top:4px;word-wrap:break-word;padding:0 10px;">
+            ¡Escaneá para ver nuestro Menú!
+          </div>
+        </div>
+      `;
+    } catch (err) {
+      console.error("Failed to generate Menu QR code", err);
     }
   }
 

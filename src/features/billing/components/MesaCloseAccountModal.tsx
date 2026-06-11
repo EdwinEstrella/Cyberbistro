@@ -442,6 +442,7 @@ export function MesaCloseAccountModal({
         direccion: tenant.direccion,
         telefono: tenant.telefono,
         logo_url: tenant.logo_url,
+        menu_url: (tenant as any).menu_url,
         moneda: (tenant as any).moneda || "DOP",
         logo_size_px: (tenant as any).logo_size_px,
         logo_offset_x: (tenant as any).logo_offset_x,

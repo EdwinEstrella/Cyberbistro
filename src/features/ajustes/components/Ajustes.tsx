@@ -49,6 +49,7 @@ interface Config {
   logo_size_px: number;
   logo_offset_x: number;
   logo_offset_y: number;
+  menu_url: string;
   direccion: string;
   telefono: string;
   currency_code: "DOP" | "ARS";
@@ -133,6 +134,7 @@ export function Ajustes() {
     logo_size_px: 52,
     logo_offset_x: 0,
     logo_offset_y: 0,
+    menu_url: "",
     direccion: "",
     telefono: "",
     currency_code: "DOP",
@@ -223,6 +225,7 @@ export function Ajustes() {
       logo_size_px: Math.min(90, Math.max(32, Math.round(Number(config.logo_size_px) || 52))),
       logo_offset_x: Math.min(28, Math.max(-28, Math.round(Number(config.logo_offset_x) || 0))),
       logo_offset_y: Math.min(18, Math.max(-12, Math.round(Number(config.logo_offset_y) || 0))),
+      menu_url: config.menu_url.trim() || null,
       direccion: config.direccion.trim() || null,
       telefono: config.telefono.trim() || null,
       moneda: config.currency_code,
@@ -270,6 +273,7 @@ export function Ajustes() {
     logo_size_px: config.logo_size_px,
     logo_offset_x: config.logo_offset_x,
     logo_offset_y: config.logo_offset_y,
+    menu_url: config.menu_url.trim() || null,
     moneda: config.currency_code,
   }), [config]);
 
@@ -326,6 +330,7 @@ export function Ajustes() {
               <div className="space-y-4">
                 <Field label="Nombre Comercial"><input type="text" value={config.nombre_empresa} onChange={e => setConfig(p => ({ ...p, nombre_empresa: e.target.value }))} className="input-field" /></Field>
                 <Field label="RNC / Identificación"><input type="text" value={config.rnc} onChange={e => setConfig(p => ({ ...p, rnc: e.target.value }))} className="input-field" /></Field>
+                <Field label="URL del Menú Digital"><input type="url" placeholder="https://..." value={config.menu_url} onChange={e => setConfig(p => ({ ...p, menu_url: e.target.value }))} className="input-field" /></Field>
                 <Field label="Dirección"><input type="text" value={config.direccion} onChange={e => setConfig(p => ({ ...p, direccion: e.target.value }))} className="input-field" /></Field>
                 <div className="grid grid-cols-2 gap-4">
                    <Field label="Teléfono"><input type="text" value={config.telefono} onChange={e => setConfig(p => ({ ...p, telefono: e.target.value }))} className="input-field" /></Field>

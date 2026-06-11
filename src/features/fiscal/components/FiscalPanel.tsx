@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
+import QRCode from "qrcode";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
-import { Clock, CheckCircle2, AlertTriangle, RefreshCcw, FileText } from "lucide-react";
+import { Clock, CheckCircle2, AlertTriangle, RefreshCcw, FileText, QrCode, Download, ExternalLink, X } from "lucide-react";
 
 export function FiscalPanel() {
   const { tenantId } = useAuth();
   const [resubmitting, setResubmitting] = useState<string | null>(null);
+  const [selectedQr, setSelectedQr] = useState<{ src: string, link: string, trackId: string } | null>(null);
   const [documents, setDocuments] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -16,7 +18,8 @@ export function FiscalPanel() {
         .from("ecf_documents")
         .select(`
           *,
-          facturas ( numero_factura, ncf, cliente_nombre, cliente_rnc, total )
+          facturas ( numero_factura, ncf, cliente_nombre, cliente_rnc, total ),
+          tenants ( rnc )
         `)
         .eq("tenant_id", tenantId)
         .order("created_at", { ascending: false })
@@ -159,14 +162,33 @@ export function FiscalPanel() {
                       <td className="p-4 text-sm text-muted-foreground">
                         {new Date(doc.created_at).toLocaleString()}
                       </td>
-                      <td className="p-4 text-right">
+                      <td className="p-4 text-right flex justify-end gap-2">
+                        {doc.dgii_track_id && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                const rnc = doc.tenants?.rnc || "";
+                                const ncf = doc.facturas?.ncf || "";
+                                const url = \`https://fc.dgii.gov.do/ecf/consultas?trackId=\${doc.dgii_track_id}&rnc=\${rnc}&ncf=\${ncf}\`;
+                                const src = await QRCode.toDataURL(url, { margin: 2, width: 300 });
+                                setSelectedQr({ src, link: url, trackId: doc.dgii_track_id });
+                              } catch (err) {
+                                console.error(err);
+                              }
+                            }}
+                            className="inline-flex items-center gap-2 bg-primary/10 hover:bg-primary/20 text-primary px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
+                          >
+                            <QrCode className="w-3.5 h-3.5" />
+                            Ver QR
+                          </button>
+                        )}
                         {isError && (
                           <button
                             onClick={() => handleResubmit(doc.factura_id, doc.id)}
                             disabled={resubmitting === doc.factura_id}
                             className="inline-flex items-center gap-2 bg-muted hover:bg-muted/80 text-foreground px-3 py-1.5 rounded-lg text-xs font-bold transition-colors disabled:opacity-50"
                           >
-                            <RefreshCcw className={`w-3.5 h-3.5 ${resubmitting === doc.factura_id ? "animate-spin" : ""}`} />
+                            <RefreshCcw className={\`w-3.5 h-3.5 \${resubmitting === doc.factura_id ? "animate-spin" : ""}\`} />
                             Reenviar
                           </button>
                         )}
@@ -179,6 +201,49 @@ export function FiscalPanel() {
           </div>
         </div>
       </div>
+      
+      {/* Modal Ver QR */}
+      {selectedQr && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-card border border-border shadow-2xl rounded-2xl p-6 max-w-sm w-full relative animate-in zoom-in-95 duration-200">
+            <button 
+              onClick={() => setSelectedQr(null)}
+              className="absolute top-4 right-4 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <h3 className="font-['Space_Grotesk'] text-xl font-bold text-foreground mb-1 text-center">Código QR e-CF</h3>
+            <p className="text-center text-xs text-muted-foreground mb-6 font-mono">Track ID: {selectedQr.trackId}</p>
+            
+            <div className="bg-white p-4 rounded-xl border border-border flex justify-center mb-6">
+              <img src={selectedQr.src} alt="DGII QR Code" className="w-full max-w-[250px] aspect-square" />
+            </div>
+            
+            <div className="flex flex-col gap-3">
+              <a 
+                href={selectedQr.src} 
+                download={\`QR-eCF-\${selectedQr.trackId}.png\`}
+                className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground font-bold py-2.5 rounded-xl hover:bg-primary/90 transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                Descargar Imagen QR
+              </a>
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border" /></div>
+                <div className="relative flex justify-center text-xs uppercase"><span className="bg-card px-2 text-muted-foreground">o compartir link</span></div>
+              </div>
+              <a 
+                href={\`https://api.whatsapp.com/send?text=\${encodeURIComponent(\`Acá tenés el link para verificar tu factura de la DGII:\\n\${selectedQr.link}\`)}\`}
+                target="_blank" rel="noopener noreferrer"
+                className="w-full flex items-center justify-center gap-2 bg-[#25D366]/10 text-[#25D366] font-bold py-2.5 rounded-xl hover:bg-[#25D366]/20 transition-colors"
+              >
+                <ExternalLink className="w-4 h-4" />
+                Compartir por WhatsApp
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

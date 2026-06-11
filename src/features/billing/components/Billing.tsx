@@ -902,6 +902,8 @@ export function Billing() {
           logo_size_px: (tenant as any).logo_size_px,
           logo_offset_x: (tenant as any).logo_offset_x,
           logo_offset_y: (tenant as any).logo_offset_y,
+          menu_url: (tenant as any).menu_url,
+          moneda: (tenant as any).currency_code,
         },
         {
           items,
