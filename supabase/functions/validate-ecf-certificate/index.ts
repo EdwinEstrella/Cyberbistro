@@ -50,6 +50,10 @@ serve(async (req) => {
       throw new Error("Invalid certificate or passphrase")
     }
 
+    if (new Date() > new Date(certInfo.validTo)) {
+      throw new Error("El certificado digital se encuentra vencido.")
+    }
+
     // Insert metadata into ecf_certificate_metadata
     const { error: insertError } = await supabase
       .from('ecf_certificate_metadata')
