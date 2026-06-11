@@ -2,7 +2,7 @@ import { insforgeClient } from "./insforge";
 import { isCloudAvailabilityFailure, isDesktopCloudUnavailable, recordCloudFailure, recordCloudSuccess } from "./cloudAvailability";
 import { readLocalMirror } from "./localFirst";
 import { normalizeFiscalMode, type FiscalMode } from "./fiscalTypes";
-import { DEFAULT_NCF_B_CODE, isNcfBCode, type NcfBCode } from "./ncf";
+import { DEFAULT_NCF_B_CODE, esCodigoNcfValido, type NcfTypeCode } from "./ncf";
 
 export interface TenantBillingSettingsRow {
   fiscal_mode?: string | null;
@@ -16,7 +16,7 @@ export interface TenantBillingSettingsRow {
 export interface TenantBillingSettings {
   fiscalMode: FiscalMode;
   ncfFiscalActive: boolean;
-  defaultNcfType: NcfBCode;
+  defaultNcfType: NcfTypeCode;
   defaultItbisEnabled: boolean;
   fiscalModeFallback?: FiscalMode | null;
   ecfEnvironment?: string | null;
@@ -33,8 +33,8 @@ export function normalizeTenantBillingSettings(
   return {
     fiscalMode,
     ncfFiscalActive: fiscalMode === "ncf_legacy",
-    defaultNcfType: isNcfBCode(row?.ncf_tipo_default)
-      ? row.ncf_tipo_default
+    defaultNcfType: row?.ncf_tipo_default && esCodigoNcfValido(row.ncf_tipo_default)
+      ? (row.ncf_tipo_default as NcfTypeCode)
       : DEFAULT_NCF_B_CODE,
     defaultItbisEnabled: Boolean(row?.itbis_cobro_por_defecto),
     fiscalModeFallback: normalizeFiscalMode(row?.fiscal_mode_fallback, false),
