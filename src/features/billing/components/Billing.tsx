@@ -892,7 +892,7 @@ export function Billing() {
 
       const items = Array.isArray(inv.items) ? inv.items : [];
       const paperWidthMm = getThermalPrintSettings().paperWidthMm;
-      const html = buildFacturaReceiptHtml(
+      const html = await buildFacturaReceiptHtml(
         {
           nombre_negocio: tenant.nombre_negocio,
           rnc: tenant.rnc,

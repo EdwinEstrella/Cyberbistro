@@ -273,25 +273,39 @@ export function Ajustes() {
     moneda: config.currency_code,
   }), [config]);
 
-  const thermalPreviewHtml = useMemo(() => {
-    const { paperWidthMm } = getThermalPrintSettings();
-    const nowIso = new Date().toISOString();
-    switch (thermalPreviewKind) {
-      case "factura":
-        let sample = { ...SAMPLE_FACTURA_THERMAL_PREVIEW, pagada_at: nowIso };
-        if (config.ncf_fiscal_activo) {
-          const ncf = construirCadenaNcf(config.ncf_tipo_default, config.ncf_secuencia_siguiente);
-          if (ncf) sample = { ...sample, ncf, ncf_tipo: etiquetaTipoNcf(config.ncf_tipo_default) };
-        }
-        return buildFacturaReceiptHtml(tenantPreview, sample, 1, paperWidthMm);
-      case "comanda": return buildComandaReceiptHtml(tenantPreview, { ...SAMPLE_COMANDA_THERMAL, created_at: nowIso }, paperWidthMm);
-      case "cierre": return buildCierreDiaReceiptHtml(tenantPreview, { ...SAMPLE_CIERRE_THERMAL_BASE, generadoAtIso: nowIso, generadoEn: new Date().toLocaleString() }, paperWidthMm);
-      case "split":
-        const splitSymbol = config.currency_code === "ARS" ? "AR$" : "RD$";
-        const rows = buildThermalSplitLineHtml("Plato ejemplo", 1, 350, config.currency_code);
-        return buildSplitTicketHtml(tenantPreview, [{ personIndex: 1, splitParts: 1, rowsHtml: rows, totalLine: `${splitSymbol} 350.00` }], 4, paperWidthMm);
-      default: return "";
-    }
+  const [thermalPreviewHtml, setThermalPreviewHtml] = useState<string>("");
+
+  useEffect(() => {
+    let active = true;
+    const generatePreview = async () => {
+      const { paperWidthMm } = getThermalPrintSettings();
+      const nowIso = new Date().toISOString();
+      let html = "";
+      switch (thermalPreviewKind) {
+        case "factura":
+          let sample = { ...SAMPLE_FACTURA_THERMAL_PREVIEW, pagada_at: nowIso };
+          if (config.ncf_fiscal_activo) {
+            const ncf = construirCadenaNcf(config.ncf_tipo_default, config.ncf_secuencia_siguiente);
+            if (ncf) sample = { ...sample, ncf, ncf_tipo: etiquetaTipoNcf(config.ncf_tipo_default) };
+          }
+          html = await buildFacturaReceiptHtml(tenantPreview, sample, 1, paperWidthMm);
+          break;
+        case "comanda": 
+          html = buildComandaReceiptHtml(tenantPreview, { ...SAMPLE_COMANDA_THERMAL, created_at: nowIso }, paperWidthMm);
+          break;
+        case "cierre": 
+          html = buildCierreDiaReceiptHtml(tenantPreview, { ...SAMPLE_CIERRE_THERMAL_BASE, generadoAtIso: nowIso, generadoEn: new Date().toLocaleString() }, paperWidthMm);
+          break;
+        case "split":
+          const splitSymbol = config.currency_code === "ARS" ? "AR$" : "RD$";
+          const rows = buildThermalSplitLineHtml("Plato ejemplo", 1, 350, config.currency_code);
+          html = buildSplitTicketHtml(tenantPreview, [{ personIndex: 1, splitParts: 1, rowsHtml: rows, totalLine: `${splitSymbol} 350.00` }], 4, paperWidthMm);
+          break;
+      }
+      if (active) setThermalPreviewHtml(html);
+    };
+    generatePreview();
+    return () => { active = false; };
   }, [tenantPreview, thermalPreviewNonce, thermalPreviewKind, config]);
 
   if (authLoading || loading) return <div className="flex-1 flex items-center justify-center font-['Space_Grotesk'] text-muted-foreground">Cargando...</div>;

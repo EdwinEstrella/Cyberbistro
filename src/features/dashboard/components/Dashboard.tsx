@@ -721,19 +721,20 @@ export function Dashboard() {
 
   async function printFactura(facturaData: Record<string, unknown>, tenantData: { nombre_negocio: string | null; rnc: string | null; direccion: string | null; telefono: string | null; logo_url: string | null; logo_size_px?: number; logo_offset_x?: number; logo_offset_y?: number }, numeroFactura: number) {
     const paperWidthMm = getThermalPrintSettings().paperWidthMm;
-    const html = buildFacturaReceiptHtml(
+    const html = await buildFacturaReceiptHtml(
       {
         nombre_negocio: tenantData.nombre_negocio,
         rnc: tenantData.rnc,
         direccion: tenantData.direccion,
         telefono: tenantData.telefono,
         logo_url: tenantData.logo_url,
+        moneda: "DOP", // fallback
         logo_size_px: tenantData.logo_size_px,
         logo_offset_x: tenantData.logo_offset_x,
         logo_offset_y: tenantData.logo_offset_y,
       },
       facturaData as unknown as Parameters<typeof buildFacturaReceiptHtml>[1],
-      numeroFactura,
+      facturaData.numero_factura as number,
       paperWidthMm
     );
 

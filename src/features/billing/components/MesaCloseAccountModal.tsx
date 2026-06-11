@@ -435,13 +435,14 @@ export function MesaCloseAccountModal({
 
     const paperWidthMm = getThermalPrintSettings().paperWidthMm;
     void cacheLogoFromUrl(tenant.logo_url);
-    const html = buildFacturaReceiptHtml(
+    const html = await buildFacturaReceiptHtml(
       {
         nombre_negocio: tenant.nombre_negocio,
         rnc: tenant.rnc,
         direccion: tenant.direccion,
         telefono: tenant.telefono,
         logo_url: tenant.logo_url,
+        moneda: (tenant as any).moneda || "DOP",
         logo_size_px: (tenant as any).logo_size_px,
         logo_offset_x: (tenant as any).logo_offset_x,
         logo_offset_y: (tenant as any).logo_offset_y,

@@ -1,5 +1,6 @@
 import { type PaperWidthMm } from "./thermalStorage";
 import { getLogoUrlForPrint } from "./logoCache";
+import QRCode from "qrcode";
 
 export interface TenantReceiptInfo {
   nombre_negocio: string | null;
@@ -132,7 +133,7 @@ function rdFixed(n: number, tenant: TenantReceiptInfo): string {
   return `${currencySymbol(tenant)} ${Number(n).toFixed(2)}`;
 }
 
-export function buildFacturaReceiptHtml(
+export async function buildFacturaReceiptHtml(
   tenant: TenantReceiptInfo,
   factura: {
     items: Array<{ cantidad: number; nombre: string; categoria?: string; precio_unitario?: number; subtotal?: number }>;
@@ -158,7 +159,7 @@ export function buildFacturaReceiptHtml(
   },
   numeroFactura: number,
   paperWidthMm: PaperWidthMm
-): string {
+): Promise<string> {
   const when = factura.pagada_at || factura.created_at || new Date().toISOString();
   const { date: fechaStr, time: horaStr } = formatFacturaDateParts(when);
   const mesaLabel =
@@ -240,6 +241,28 @@ export function buildFacturaReceiptHtml(
     <tr><td>Cambio</td><td style="text-align:right">${rdFixed(cambioDevuelto, tenant)}</td></tr>`
     : "";
 
+  let qrSection = "";
+  if (factura.ncf_tipo?.toLowerCase().includes("elect")) {
+    const trackId = factura.ecf_track_id || "PENDIENTE";
+    // Construct the verification URL as required by DGII
+    const verificationUrl = `https://fc.dgii.gov.do/ecf/consultas?trackId=${trackId}&rnc=${tenant.rnc || ""}&ncf=${ncf}`;
+    try {
+      const qrDataUrl = await QRCode.toDataURL(verificationUrl, { margin: 1, width: 150 });
+      qrSection = `
+        <div class="divider"></div>
+        <div class="center" style="margin: 12px 0 8px">
+          <img src="${qrDataUrl}" style="width: 120px; height: 120px;" />
+          <div style="font-size:10px;margin-top:4px;word-wrap:break-word;padding:0 10px;">
+            <a href="${verificationUrl}" style="color:inherit;text-decoration:none">Verificar comprobante</a>
+          </div>
+          <div style="font-size:10px;margin-top:2px;">Track ID: ${trackId}</div>
+        </div>
+      `;
+    } catch (err) {
+      console.error("Failed to generate QR code", err);
+    }
+  }
+
   const body = `
   ${headerBlock(tenant)}
   <div class="divider"></div>
@@ -271,13 +294,10 @@ export function buildFacturaReceiptHtml(
     <tr class="fdo-pay-row"><td>Estado</td><td style="text-align:right;font-weight:bold">${escapeHtml(estadoEtiqueta)}</td></tr>
   </table>
   ${factura.notas ? `<div class="divider"></div><div style="font-size:14px;font-weight:600"><b>Notas:</b> ${escapeHtml(factura.notas)}</div>` : ""}
+  ${qrSection}
   <div class="double-divider"></div>
   <div class="footer">
     <p style="margin:0 0 4px">¡Gracias por su compra!</p>
-  </div>
-  <div class="divider"></div>
-  <div class="center" style="margin: 12px 0 8px">
-    <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAAB4CAYAAAA5ZDbSAAAAAklEQVR4AewaftIAAAN4SURBVO3BUW4bSRAFwZeFuf+Vc/XZaBhsDz2UtIWKwC8ZbVVGa5XRWmW0VhmtXfkDID9FzQrIiZonALlLzQ7IT1GzqozWKqO1ymjtyl9Q8ylAXlFzAuQJak6A3KXmU4C8UhmtVUZrldFaZbR25U1A7lLzBCArNSdAdmpWQHZqVmqeAOQuNXdVRmuV0VpltHbllwOyU7MCslNzl5oTICs1v1lltFYZrVVGa5XR2pUG1JyoOQHSTWW0VhmtVUZrV96k5jcDslJzouYEyBPUfIfKaK0yWquM1iqjtSt/AchvBmSnZgVkp2YFZKfmXwH5KZXRWmW0VhmtXfkDNf8nak7U7ICs1DxBzW9RGa1VRmuV0dqVPwCyUvMOICs1OyB3AVmpOQHyBDUrIJ+i5gTISs2qMlqrjNYqo7XKaO3Km4Cs1OzUrIDs1KyArNS8A8hdQJ6g5gTIXUB2al6pjNYqo7XKaA2/ZAPkRM0KyBPUnAC5S807gHyCmhWQEzV3VUZrldFaZbRWGa1d+UZqPkHNDsgKyE7NCshOzStATtScqNkBWQHZqXmlMlqrjNYqozX8kg2QlZonADlRcwLkRM0JkLvUrIC8Q80KyBPUrCqjtcporTJaq4zWrnwQkBM1KyArNSdqToDs1JwAeUXNO4Cs1JwA2al5pTJaq4zWKqO1K3+g5gTIE4Cs1DwByAmQTwByF5ATNXdVRmuV0VpltFYZrV15k5oTICdqXgGyU3OXmh2QlZodkBWQlZonqNkBWQHZqXmlMlqrjNYqozX8kg2QT1CzA/KKmhMgOzUrICdqToD8FDV3VUZrldFaZbSGX/KLAdmpeQKQEzUrICs17wCyUvMJldFaZbRWGa1VRmtX/gDIT1FzF5CdmhM1nwBkpeanVEZrldFaZbR25S+o+RQgr6h5ApCdmhWQnZq71NwF5AlqVpXRWmW0VhmtVUZrV94E5C41dwF5B5CVmh2QfwXku6jZAXmlMlqrjNYqo7Urv5yaHZATNSsgOzUnQFZqVkDeoeYEyArIXZXRWmW0VhmtVUZrV/6H1KyA7ICcAPkOak6A7NSsgOzUvFIZrVVGa5XR2pU3qfk/UbMDslKzA/KvgLwDyL+qjNYqo7XKaK0yWrvyF4D8FCDvULMC8l3UPAHICZCVmlVltFYZrVVGa/glo63KaK0yWquM1v4DLsR4DL+GyVUAAAAASUVORK5CYII=" style="width: 120px; height: 120px;" />
   </div>
   <div class="center" style="font-size:13px;font-weight:600">${escapeHtml(new Date().toLocaleString("es-DO", { timeZone: "America/Santo_Domingo", hour12: true }))}</div>
   `;
