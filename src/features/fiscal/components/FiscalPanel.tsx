@@ -1,18 +1,17 @@
-import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect, useCallback } from "react";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { Clock, CheckCircle2, AlertTriangle, RefreshCcw, FileText } from "lucide-react";
 
 export function FiscalPanel() {
   const { tenantId } = useAuth();
-  const queryClient = useQueryClient();
   const [resubmitting, setResubmitting] = useState<string | null>(null);
+  const [documents, setDocuments] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const { data: documents, isLoading } = useQuery({
-    queryKey: ["fiscal-documents", tenantId],
-    queryFn: async () => {
-      if (!tenantId) return [];
+  const fetchDocuments = useCallback(async () => {
+    if (!tenantId) return;
+    try {
       const { data, error } = await insforgeClient.database
         .from("ecf_documents")
         .select(`
@@ -24,11 +23,19 @@ export function FiscalPanel() {
         .limit(100);
 
       if (error) throw error;
-      return data || [];
-    },
-    enabled: !!tenantId,
-    refetchInterval: 10000 // poll every 10 seconds for track status changes
-  });
+      setDocuments(data || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [tenantId]);
+
+  useEffect(() => {
+    fetchDocuments();
+    const intervalId = setInterval(fetchDocuments, 10000);
+    return () => clearInterval(intervalId);
+  }, [fetchDocuments]);
 
   async function handleResubmit(invoiceId: string, documentId: string) {
     if (!tenantId) return;
@@ -48,7 +55,7 @@ export function FiscalPanel() {
         .update({ status: "pending_sync", dgii_status_message: "Reencolado manualmente" })
         .eq("factura_id", invoiceId);
       
-      await queryClient.invalidateQueries({ queryKey: ["fiscal-documents", tenantId] });
+      await fetchDocuments();
     } catch (err) {
       console.error(err);
       alert("Error al reencolar el documento.");
