@@ -67,6 +67,8 @@ CREATE TABLE IF NOT EXISTS public.ecf_certificate_metadata (
   serial_number text,
   valid_from timestamptz,
   valid_until timestamptz,
+  storage_ref text,
+  password_encrypted text,
   is_ready boolean NOT NULL DEFAULT false,
   last_validation_error text,
   created_at timestamptz NOT NULL DEFAULT now(),

@@ -11,7 +11,7 @@ export const NCF_B_TIPO_OPCIONES = [
   { codigo: "B17", descripcion: "B17 - Comprobante para pagos al exterior" },
 ] as const;
 
-const NCF_E_TIPO_OPCIONES = [
+export const NCF_E_TIPO_OPCIONES = [
   { codigo: "E31", descripcion: "E31 - Factura de credito fiscal electronica" },
   { codigo: "E32", descripcion: "E32 - Factura de consumo electronica" },
   { codigo: "E33", descripcion: "E33 - Nota de debito electronica" },
@@ -186,9 +186,13 @@ export function buildNcfSequenceMapForSave(
   const existing = normalizeNcfSequenceMap(existingRawMap);
   const nextMap: NcfSequenceMap = { ...existing };
 
-  for (const opcion of NCF_B_TIPO_OPCIONES) {
-    const seq = parseValidNcfSequence(bSequences[opcion.codigo]) ?? DEFAULT_NCF_SEQUENCE;
-    nextMap[opcion.codigo] = seq;
+  for (const opcion of NCF_TIPO_OPCIONES) {
+    if (bSequences[opcion.codigo] !== undefined) {
+      const seq = parseValidNcfSequence(bSequences[opcion.codigo]);
+      if (seq != null) {
+        nextMap[opcion.codigo] = seq;
+      }
+    }
   }
 
   return nextMap;
@@ -216,12 +220,12 @@ export function buildNcfSequenceColumnsForSave(
 
 export function buildTenantNcfUpdatePayload(
   ncfFiscalActivo: boolean,
-  ncfTipoDefault: NcfBCode,
+  ncfTipoDefault: string,
   bSequences: Partial<Record<string, number>>,
   existingRawMap?: unknown
 ): {
   ncf_fiscal_activo: boolean;
-  ncf_tipo_default: NcfBCode;
+  ncf_tipo_default: string;
   ncf_secuencia_siguiente: number;
   ncf_secuencias_por_tipo: NcfSequenceMap;
 } & Record<NcfBSequenceColumn, number> {

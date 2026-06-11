@@ -172,10 +172,12 @@ export interface DgiiClientAdapter {
     signedXml: string;
     environment: EcfEnvironment;
     idempotencyKey: string;
+    certificate: SigningMaterial;
   }): Promise<DgiiSubmitResult>;
   pollStatus(input: {
     trackId: string;
     environment: EcfEnvironment;
     idempotencyKey: string;
+    certificate: SigningMaterial;
   }): Promise<DgiiPollResult>;
 }

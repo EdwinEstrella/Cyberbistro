@@ -709,8 +709,9 @@ function AppLayoutContent() {
 
         {/* Main area — min-h-0 + scroll en <main> para que el contenido no quede cortado (Electron) */}
         <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
-          {/* Shared Header */}
-          <header className="backdrop-blur-[6px] bg-background/80 dark:bg-[rgba(14,14,14,0.6)] flex items-center justify-between h-[64px] px-4 sm:px-6 lg:px-[32px] border-b border-black/10 dark:border-[rgba(72,72,71,0.2)] sticky top-0 z-10 shadow-[0px_4px_24px_0px_rgba(255,144,109,0.08)]">
+          {/* Shared Header (POS Only) */}
+          {isVentaRoute && (
+            <header className="backdrop-blur-[6px] bg-background/80 dark:bg-[rgba(14,14,14,0.6)] flex items-center justify-between h-[64px] px-4 sm:px-6 lg:px-[32px] border-b border-black/10 dark:border-[rgba(72,72,71,0.2)] sticky top-0 z-10 shadow-[0px_4px_24px_0px_rgba(255,144,109,0.08)]">
             <div className="flex gap-[8px] sm:gap-[24px] items-center min-w-0">
               <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[14px] sm:text-[18px] uppercase">
                 Cloudix OS
@@ -866,7 +867,8 @@ function AppLayoutContent() {
                 </button>
               </div>
             </div>
-          </header>
+            </header>
+          )}
 
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
             <main className="flex-1 flex flex-col min-h-0 overflow-y-auto overflow-x-hidden">

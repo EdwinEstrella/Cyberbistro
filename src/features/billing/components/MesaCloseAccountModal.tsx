@@ -16,7 +16,7 @@ import {
 } from "../../../shared/lib/ncf";
 import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
 import { type FiscalMode } from "../../../shared/lib/fiscalTypes";
-import { resolveActiveFiscalMode, runFiscalEngine } from "../../../shared/lib/fiscalEngine";
+import { resolveActiveFiscalMode, runFiscalEngine, enqueueEcfDocuments } from "../../../shared/lib/fiscalEngine";
 import { enqueueLocalWrite, getDeviceId, getLocalFirstStatusSnapshot, isLocalFirstEnabled, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, readLocalMirror, readLocalOutbox } from "../../../shared/lib/localFirst";
 import { getNextFacturaNumber } from "../../../shared/lib/invoiceNumber";
 import { closeKitchenComandasForMesaLocalFirst } from "../../pos/lib/localFirstMutations";
@@ -715,6 +715,15 @@ export function MesaCloseAccountModal({
           });
         }
 
+        if (ncfPart?.ecfType) {
+          await enqueueEcfDocuments({
+            tenantId,
+            facturaId: localFacturaId,
+            certificateId: ncfPart.certificateId ?? null,
+            ecfType: ncfPart.ecfType,
+            deviceId,
+          });
+        }
         if (!cashDrawerOpened) {
           await openCashDrawerSafely();
           cashDrawerOpened = true;
@@ -916,6 +925,16 @@ export function MesaCloseAccountModal({
           created_at: now,
           updated_at: now,
         },
+        deviceId,
+      });
+    }
+
+    if (ncfPart?.ecfType) {
+      await enqueueEcfDocuments({
+        tenantId,
+        facturaId: localFacturaId,
+        certificateId: ncfPart.certificateId ?? null,
+        ecfType: ncfPart.ecfType,
         deviceId,
       });
     }

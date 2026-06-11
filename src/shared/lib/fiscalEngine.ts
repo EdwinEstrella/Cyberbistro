@@ -1,5 +1,5 @@
 import { resolveNcfForNewInvoiceLocalFirst, enqueueLocalWrite } from "./localFirst";
-import { construirCadenaNcf, etiquetaTipoNcf } from "./ncf";
+
 import { type FiscalMode } from "./fiscalTypes";
 import { insforgeClient } from "./insforge";
 import { type TenantBillingSettings } from "./tenantBillingSettings";
@@ -79,6 +79,8 @@ export interface FiscalEngineResult {
   usedSequence: number | null;
   sequenceReservedAtomically?: boolean;
   reservationSource?: string;
+  certificateId?: string | null;
+  ecfType?: string;
 }
 
 export async function runFiscalEngine(args: {
@@ -114,64 +116,74 @@ export async function runFiscalEngine(args: {
     const clientRncTrimmed = args.clientRnc?.trim() || "";
     const ecfType = clientRncTrimmed !== "" ? "31" : "32";
     const typeCode = `E${ecfType}`;
-    const ncf = construirCadenaNcf(typeCode, args.numeroFactura);
-    if (!ncf) {
-      throw new Error("No se pudo construir el e-NCF.");
+
+    const ncfPart = await resolveNcfForNewInvoiceLocalFirst(args.tenantId, typeCode);
+    if (!ncfPart) {
+      throw new Error(`No se pudo reservar la secuencia para e-NCF tipo ${typeCode}.`);
     }
-    const ncf_tipo = etiquetaTipoNcf(typeCode);
-
-    const ecfDocumentId = crypto.randomUUID();
-    const now = new Date().toISOString();
-
-    await enqueueLocalWrite({
-      tenantId: args.tenantId,
-      tableName: "ecf_documents",
-      rowId: ecfDocumentId,
-      op: "insert",
-      payload: {
-        id: ecfDocumentId,
-        tenant_id: args.tenantId,
-        factura_id: args.facturaId,
-        certificate_metadata_id: args.certificateId,
-        ecf_type: ecfType,
-        status: "pending_sync",
-        created_at: now,
-        updated_at: now,
-      },
-      deviceId: args.deviceId,
-    });
-
-    const jobId = crypto.randomUUID();
-    await enqueueLocalWrite({
-      tenantId: args.tenantId,
-      tableName: "fiscal_outbox",
-      rowId: jobId,
-      op: "insert",
-      payload: {
-        id: jobId,
-        tenant_id: args.tenantId,
-        ecf_document_id: ecfDocumentId,
-        factura_id: args.facturaId,
-        operation: "submit",
-        status: "queued",
-        attempts: 0,
-        next_attempt_at: now,
-        idempotency_key: `${args.tenantId}:${args.facturaId}:submit`,
-        created_at: now,
-        updated_at: now,
-      },
-      deviceId: args.deviceId,
-    });
 
     return {
-      ncf,
-      ncf_tipo,
-      tipoCodigo: typeCode,
-      usedSequence: args.numeroFactura,
-      sequenceReservedAtomically: true,
-      reservationSource: "dgii_ecf_engine",
+      ncf: ncfPart.ncf,
+      ncf_tipo: ncfPart.ncf_tipo,
+      tipoCodigo: ncfPart.tipoCodigo,
+      usedSequence: ncfPart.usedSequence,
+      sequenceReservedAtomically: ncfPart.sequenceReservedAtomically,
+      reservationSource: ncfPart.reservationSource,
+      certificateId: args.certificateId,
+      ecfType,
     };
   }
 
   return null;
+}
+
+export async function enqueueEcfDocuments(args: {
+  tenantId: string;
+  facturaId: string;
+  certificateId: string | null;
+  ecfType: string;
+  deviceId: string;
+}) {
+  const ecfDocumentId = crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  await enqueueLocalWrite({
+    tenantId: args.tenantId,
+    tableName: "ecf_documents",
+    rowId: ecfDocumentId,
+    op: "insert",
+    payload: {
+      id: ecfDocumentId,
+      tenant_id: args.tenantId,
+      factura_id: args.facturaId,
+      certificate_metadata_id: args.certificateId,
+      ecf_type: args.ecfType,
+      status: "pending_sync",
+      created_at: now,
+      updated_at: now,
+    },
+    deviceId: args.deviceId,
+  });
+
+  const jobId = crypto.randomUUID();
+  await enqueueLocalWrite({
+    tenantId: args.tenantId,
+    tableName: "fiscal_outbox",
+    rowId: jobId,
+    op: "insert",
+    payload: {
+      id: jobId,
+      tenant_id: args.tenantId,
+      ecf_document_id: ecfDocumentId,
+      factura_id: args.facturaId,
+      operation: "submit",
+      status: "queued",
+      attempts: 0,
+      next_attempt_at: now,
+      idempotency_key: `${args.tenantId}:${args.facturaId}:submit`,
+      created_at: now,
+      updated_at: now,
+    },
+    deviceId: args.deviceId,
+  });
 }

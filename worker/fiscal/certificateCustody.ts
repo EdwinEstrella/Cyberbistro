@@ -12,6 +12,55 @@ import type {
   WorkerResult,
 } from "./types";
 
+export class SupabaseStorageCertificateCustody implements CertificateCustody {
+  constructor(private readonly supabaseUrl: string, private readonly supabaseKey: string, private readonly db: any) {}
+
+  async getSigningMaterial(request: import("./types").GetSigningMaterialRequest): Promise<WorkerResult<SigningMaterial>> {
+    try {
+      // 1. Fetch metadata from DB
+      const result = await this.db.query(
+        `SELECT storage_ref, password_encrypted FROM public.ecf_certificate_metadata WHERE id = $1 AND tenant_id = $2`,
+        [request.certificateId, request.tenantId]
+      );
+
+      const row = result.rows[0] as any;
+      if (!row || !row.storage_ref) {
+        return { ok: false, error: fiscalWorkerError("CERTIFICATE_NOT_FOUND", "Certificate metadata not found or storage_ref missing.", false) };
+      }
+
+      // 2. Download from Supabase Storage REST API
+      const storageUrl = `${this.supabaseUrl}/storage/v1/object/public/fiscal_certificates/${row.storage_ref}`;
+      // Note: if private bucket, we must use authenticated request
+      const response = await fetch(`${this.supabaseUrl}/storage/v1/object/fiscal_certificates/${row.storage_ref}`, {
+        headers: {
+          'Authorization': `Bearer ${this.supabaseKey}`,
+          'apikey': this.supabaseKey,
+        }
+      });
+
+      if (!response.ok) {
+        return { ok: false, error: fiscalWorkerError("STORAGE_DOWNLOAD_FAILED", `Failed to download cert from storage: ${response.statusText}`, true) };
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const p12Bytes = new Uint8Array(arrayBuffer);
+
+      return {
+        ok: true,
+        value: {
+          certificateId: request.certificateId,
+          tenantId: request.tenantId,
+          environment: request.environment,
+          p12Bytes,
+          passphrase: row.password_encrypted,
+        }
+      };
+    } catch (err: any) {
+      return { ok: false, error: unknownToWorkerError(err, "CERTIFICATE_FETCH_ERROR", true) };
+    }
+  }
+}
+
 export class FailClosedCertificateCustody implements CertificateCustody {
   async getSigningMaterial(_request: import("./types").GetSigningMaterialRequest): Promise<WorkerResult<SigningMaterial>> {
     return {

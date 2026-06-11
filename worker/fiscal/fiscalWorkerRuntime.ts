@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
-import { FailClosedCertificateCustody } from "./certificateCustody";
-import { FailClosedDgiiClient, FailClosedXmlSigner } from "./dgiiAdapters";
+import { SupabaseStorageCertificateCustody } from "./certificateCustody";
+import { RealDgiiClient, RealXmlSigner } from "./dgiiAdapters";
 import { FiscalWorker } from "./fiscalWorker";
 import { PostgresFiscalWorkerRepository, createProjectAdminPgPoolFromEnv } from "./postgresFiscalWorkerRepository";
 import type { FiscalWorkerRepository } from "./types";
@@ -46,11 +46,14 @@ export function createFiscalWorkerRuntimeFromEnv(env: NodeJS.ProcessEnv = proces
   const pool = createProjectAdminPgPoolFromEnv(env);
   const repository = new PostgresFiscalWorkerRepository({ db: pool });
   const workerId = env.FISCAL_WORKER_ID?.trim() || `fiscal-worker-${randomUUID()}`;
+  const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL || "";
+  const supabaseKey = env.SUPABASE_SERVICE_ROLE_KEY || env.VITE_SUPABASE_ANON_KEY || "";
+
   const worker = new FiscalWorker({
     repository,
-    custody: new FailClosedCertificateCustody(),
-    signer: new FailClosedXmlSigner(),
-    dgii: new FailClosedDgiiClient(),
+    custody: new SupabaseStorageCertificateCustody(supabaseUrl, supabaseKey, pool),
+    signer: new RealXmlSigner(),
+    dgii: new RealDgiiClient(),
     workerId,
   });
   return new FiscalWorkerRuntime({ repository, worker });

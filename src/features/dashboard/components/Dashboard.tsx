@@ -55,7 +55,7 @@ import {
 } from "../../../shared/lib/ncf";
 import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
 import { type FiscalMode } from "../../../shared/lib/fiscalTypes";
-import { resolveActiveFiscalMode, runFiscalEngine } from "../../../shared/lib/fiscalEngine";
+import { resolveActiveFiscalMode, runFiscalEngine, enqueueEcfDocuments } from "../../../shared/lib/fiscalEngine";
 import { getLocalFirstStatusSnapshot, readLocalMirror, readLocalOutbox, enqueueLocalWrite, getDeviceId, writeLocalMirrorRow, shouldReadLocalFirst, LOCAL_NCF_RESERVED_PAYLOAD_FLAG } from "../../../shared/lib/localFirst";
 import { getNextFacturaNumber } from "../../../shared/lib/invoiceNumber";
 import { writePosMutationLocalFirst } from "../../pos/lib/localFirstMutations";
@@ -1187,6 +1187,16 @@ export function Dashboard() {
             created_at: nowIso,
             updated_at: nowIso,
           },
+          deviceId: await getDeviceId(),
+        });
+      }
+
+      if (ncfPart?.ecfType) {
+        await enqueueEcfDocuments({
+          tenantId,
+          facturaId: localFacturaId,
+          certificateId: ncfPart.certificateId ?? null,
+          ecfType: ncfPart.ecfType,
           deviceId: await getDeviceId(),
         });
       }

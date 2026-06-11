@@ -39,6 +39,7 @@ import {
   etiquetaTipoNcf,
   isNcfBCode,
   NCF_B_TIPO_OPCIONES,
+  NCF_E_TIPO_OPCIONES,
   type NcfBCode,
 } from "../../../shared/lib/ncf";
 
@@ -58,9 +59,9 @@ interface Config {
   fiscal_mode: "internal_receipt" | "ncf_legacy" | "dgii_ecf";
   fiscal_mode_fallback: "internal_receipt" | "ncf_legacy";
   ecf_environment: "test" | "certification" | "production";
-  ncf_tipo_default: NcfBCode;
+  ncf_tipo_default: string;
   ncf_secuencia_siguiente: number;
-  ncf_secuencias_por_tipo: Record<NcfBCode, number>;
+  ncf_secuencias_por_tipo: Record<string, number>;
 }
 
 const CURRENCY_OPTIONS: Array<{ code: Config["currency_code"]; label: string }> = [
@@ -216,8 +217,7 @@ export function Ajustes() {
   async function handleSave() {
     if (!tenantId) return;
     setSaving(true);
-    const nextBSequences = Object.fromEntries(NCF_B_TIPO_OPCIONES.map(o => [o.codigo, Math.floor(Number(config.ncf_secuencias_por_tipo[o.codigo] || 1))])) as Record<NcfBCode, number>;
-    const ncfUpdate = buildTenantNcfUpdatePayload(config.ncf_fiscal_activo, config.ncf_tipo_default, nextBSequences, config.ncf_secuencias_por_tipo);
+    const ncfUpdate = buildTenantNcfUpdatePayload(config.ncf_fiscal_activo, config.ncf_tipo_default, config.ncf_secuencias_por_tipo, config.ncf_secuencias_por_tipo);
     const payload = {
       id: tenantId,
       nombre_negocio: config.nombre_empresa?.trim() || "",
@@ -426,13 +426,15 @@ export function Ajustes() {
                 <div className="animate-in fade-in slide-in-from-top-2 duration-300 flex flex-col gap-4 border-t border-border pt-4">
                   <Field label="Tipo Predeterminado">
                     <select value={config.ncf_tipo_default} onChange={e => setConfig(p => ({ ...p, ncf_tipo_default: e.target.value as any }))} className="input-field cursor-pointer">
-                      {NCF_B_TIPO_OPCIONES.map(o => <option key={o.codigo} value={o.codigo}>{o.descripcion}</option>)}
+                      {(config.fiscal_mode === "dgii_ecf" ? NCF_E_TIPO_OPCIONES : NCF_B_TIPO_OPCIONES).map(o => <option key={o.codigo} value={o.codigo}>{o.descripcion}</option>)}
                     </select>
                   </Field>
                   <div className="mt-4 pt-4 border-t border-border flex flex-col gap-4">
-                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Secuencias Configuradas por Tipo B</span>
+                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">
+                      Secuencias Configuradas por Tipo {config.fiscal_mode === "dgii_ecf" ? "E" : "B"}
+                    </span>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {NCF_B_TIPO_OPCIONES.map(o => (
+                      {(config.fiscal_mode === "dgii_ecf" ? NCF_E_TIPO_OPCIONES : NCF_B_TIPO_OPCIONES).map(o => (
                         <div key={o.codigo} className="bg-background rounded-[16px] border border-black/5 dark:border-white/5 p-4 flex flex-col gap-3 hover:border-primary/20 transition-colors">
                            <div className="flex justify-between items-center">
                              <span className="font-bold font-['Space_Grotesk'] text-foreground text-lg">{o.codigo}</span>
