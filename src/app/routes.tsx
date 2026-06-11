@@ -22,6 +22,7 @@ export const router = createHashRouter([
       { path: "/camarera", lazy: () => import("../features/camarera").then(({ Camarera }) => ({ Component: Camarera })) },
       { path: "/soporte", lazy: () => import("../features/soporte").then(({ Soporte }) => ({ Component: Soporte })) },
       { path: "/ajustes", lazy: () => import("../features/ajustes").then(({ Ajustes }) => ({ Component: Ajustes })) },
+      { path: "/fiscal", lazy: () => import("../features/fiscal").then(({ FiscalPanel }) => ({ Component: FiscalPanel })) },
       { path: "/inventario", lazy: () => import("../features/inventario").then(({ Inventario }) => ({ Component: () => <FeatureGuard feature="advanced_inventory"><Inventario /></FeatureGuard> })) },
       { path: "/compras", lazy: () => import("../features/compras").then(({ Compras }) => ({ Component: () => <FeatureGuard feature="inventory_purchases"><Compras /></FeatureGuard> })) },
       { path: "/cuentas-pagar", lazy: () => import("../features/cuentas-pagar").then(({ CuentasPagar }) => ({ Component: () => <FeatureGuard feature="accounts_payable"><CuentasPagar /></FeatureGuard> })) },

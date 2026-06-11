@@ -1,0 +1,177 @@
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { insforgeClient } from "../../../shared/lib/insforge";
+import { useAuth } from "../../../shared/hooks/useAuth";
+import { Clock, CheckCircle2, AlertTriangle, RefreshCcw, FileText } from "lucide-react";
+
+export function FiscalPanel() {
+  const { tenantId } = useAuth();
+  const queryClient = useQueryClient();
+  const [resubmitting, setResubmitting] = useState<string | null>(null);
+
+  const { data: documents, isLoading } = useQuery({
+    queryKey: ["fiscal-documents", tenantId],
+    queryFn: async () => {
+      if (!tenantId) return [];
+      const { data, error } = await insforgeClient.database
+        .from("ecf_documents")
+        .select(`
+          *,
+          facturas ( numero_factura, ncf, cliente_nombre, cliente_rnc, total )
+        `)
+        .eq("tenant_id", tenantId)
+        .order("created_at", { ascending: false })
+        .limit(100);
+
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!tenantId,
+    refetchInterval: 10000 // poll every 10 seconds for track status changes
+  });
+
+  async function handleResubmit(invoiceId: string, documentId: string) {
+    if (!tenantId) return;
+    setResubmitting(invoiceId);
+    try {
+      // Create a resubmit outbox operation
+      await insforgeClient.database.from("fiscal_outbox").insert({
+        tenant_id: tenantId,
+        factura_id: invoiceId,
+        ecf_document_id: documentId,
+        operation: "submit", // trigger a new submission flow
+        status: "queued",
+        idempotency_key: `manual_resubmit_${invoiceId}_${Date.now()}`
+      });
+      // Optimistically update document status to pending
+      await insforgeClient.database.from("ecf_documents")
+        .update({ status: "pending_sync", dgii_status_message: "Reencolado manualmente" })
+        .eq("factura_id", invoiceId);
+      
+      await queryClient.invalidateQueries({ queryKey: ["fiscal-documents", tenantId] });
+    } catch (err) {
+      console.error(err);
+      alert("Error al reencolar el documento.");
+    } finally {
+      setResubmitting(null);
+    }
+  }
+
+  if (isLoading) {
+    return <div className="p-8 text-center text-muted-foreground font-['Space_Grotesk']">Cargando documentos fiscales...</div>;
+  }
+
+  return (
+    <div className="flex-1 p-4 sm:p-8 bg-background min-h-0 overflow-y-auto">
+      <div className="max-w-[1400px] mx-auto">
+        <div className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 sm:p-10 mb-8 shadow-sm">
+          <div className="flex justify-between items-start gap-4">
+            <div>
+              <span className="text-primary text-[11px] font-bold uppercase tracking-[0.2em] mb-2 block">Auditoría</span>
+              <h1 className="font-['Space_Grotesk'] text-3xl sm:text-4xl font-bold text-foreground mb-4">Documentos e-CF</h1>
+              <p className="text-muted-foreground text-sm max-w-2xl leading-relaxed">
+                Monitorea el estado de todas las facturas electrónicas emitidas a la DGII. 
+                Los documentos con errores de red pueden ser reencolados.
+              </p>
+            </div>
+            <div className="bg-primary/10 p-4 rounded-full">
+              <FileText className="w-8 h-8 text-primary" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 overflow-hidden shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-border bg-muted/30">
+                  <th className="p-4 text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Factura / e-NCF</th>
+                  <th className="p-4 text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Cliente</th>
+                  <th className="p-4 text-[11px] font-bold text-muted-foreground uppercase tracking-widest text-right">Monto</th>
+                  <th className="p-4 text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Estado DGII</th>
+                  <th className="p-4 text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Fecha</th>
+                  <th className="p-4 text-[11px] font-bold text-muted-foreground uppercase tracking-widest text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {documents?.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="p-8 text-center text-muted-foreground text-sm">
+                      No hay documentos electrónicos emitidos todavía.
+                    </td>
+                  </tr>
+                )}
+                {documents?.map((doc: any) => {
+                  const isError = doc.status === "rejected" || doc.status === "terminal_error" || doc.status === "retryable_error";
+                  const isAccepted = doc.status === "accepted";
+                  const isPending = !isError && !isAccepted;
+
+                  return (
+                    <tr key={doc.id} className="hover:bg-muted/10 transition-colors">
+                      <td className="p-4">
+                        <div className="font-bold text-sm text-foreground">
+                          {doc.facturas?.numero_factura ? `#${doc.facturas.numero_factura}` : "S/N"}
+                        </div>
+                        <div className="text-xs text-muted-foreground font-mono mt-1">
+                          {doc.facturas?.ncf || "S/NCF"}
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <div className="text-sm font-medium text-foreground">{doc.facturas?.cliente_nombre || "Consumidor Final"}</div>
+                        {doc.facturas?.cliente_rnc && <div className="text-xs text-muted-foreground mt-0.5">{doc.facturas?.cliente_rnc}</div>}
+                      </td>
+                      <td className="p-4 text-right">
+                        <span className="text-sm font-bold text-foreground">
+                          ${Number(doc.facturas?.total || 0).toLocaleString("es-DO", { minimumFractionDigits: 2 })}
+                        </span>
+                      </td>
+                      <td className="p-4">
+                        <div className="flex flex-col gap-1.5 max-w-[250px]">
+                          <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider w-fit
+                            ${isAccepted ? "bg-green-500/10 text-green-600 dark:text-green-400" : 
+                              isError ? "bg-red-500/10 text-red-600 dark:text-red-400" : 
+                              "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400"}`}
+                          >
+                            {isAccepted && <CheckCircle2 className="w-3.5 h-3.5" />}
+                            {isError && <AlertTriangle className="w-3.5 h-3.5" />}
+                            {isPending && <Clock className="w-3.5 h-3.5" />}
+                            {doc.status}
+                          </div>
+                          {doc.dgii_status_message && (
+                            <span className="text-xs text-muted-foreground line-clamp-2" title={doc.dgii_status_message}>
+                              {doc.dgii_status_message}
+                            </span>
+                          )}
+                          {doc.dgii_track_id && (
+                            <span className="text-[10px] text-muted-foreground font-mono">
+                              Track: {doc.dgii_track_id}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-4 text-sm text-muted-foreground">
+                        {new Date(doc.created_at).toLocaleString()}
+                      </td>
+                      <td className="p-4 text-right">
+                        {isError && (
+                          <button
+                            onClick={() => handleResubmit(doc.factura_id, doc.id)}
+                            disabled={resubmitting === doc.factura_id}
+                            className="inline-flex items-center gap-2 bg-muted hover:bg-muted/80 text-foreground px-3 py-1.5 rounded-lg text-xs font-bold transition-colors disabled:opacity-50"
+                          >
+                            <RefreshCcw className={`w-3.5 h-3.5 ${resubmitting === doc.factura_id ? "animate-spin" : ""}`} />
+                            Reenviar
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
