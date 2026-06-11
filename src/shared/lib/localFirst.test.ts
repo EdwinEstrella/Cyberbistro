@@ -20,6 +20,7 @@ import {
   isLocalFirstEnabled,
   isLicenseValidOffline,
   isLocalFirstMirrorTable,
+  LOCAL_FIRST_DB_VERSION,
   LOCAL_FIRST_IMMEDIATE_TABLES,
   LOCAL_FIRST_MIRROR_TABLES,
   LOCAL_FIRST_METADATA_TABLES,
@@ -39,14 +40,37 @@ describe("localFirst", () => {
   it("mantiene tablas mirror y metadata sin inventar entidades de negocio", () => {
     expect(LOCAL_FIRST_MIRROR_TABLES).toContain("comandas");
     expect(LOCAL_FIRST_MIRROR_TABLES).toContain("facturas");
+    expect(LOCAL_FIRST_MIRROR_TABLES).toContain("ecf_documents");
+    expect(LOCAL_FIRST_MIRROR_TABLES).toContain("fiscal_outbox");
     expect(LOCAL_FIRST_MIRROR_TABLES).not.toContain("orders");
     expect(LOCAL_FIRST_MIRROR_TABLES).not.toContain("invoices");
     expect(LOCAL_FIRST_METADATA_TABLES).toContain("sync_outbox");
+    expect(LOCAL_FIRST_METADATA_TABLES).toContain("local_fiscal_outbox");
+  });
+
+  it("bumps IndexedDB version for fiscal stores added after version 8", () => {
+    expect(LOCAL_FIRST_DB_VERSION).toBeGreaterThan(8);
+  });
+
+  it("registers fiscal stores so existing tenant databases receive them during upgrade", () => {
+    expect(LOCAL_FIRST_MIRROR_TABLES).toEqual(expect.arrayContaining(["ecf_documents", "fiscal_outbox"]));
+    expect(LOCAL_FIRST_METADATA_TABLES).toEqual(expect.arrayContaining(["local_fiscal_outbox"]));
+    expect(resolveMirrorStoreKeyPath("ecf_documents")).toBe("id");
+    expect(resolveMirrorStoreKeyPath("fiscal_outbox")).toBe("id");
   });
 
   it("incluye el dataset mínimo operativo antes del historial background", () => {
     expect(LOCAL_FIRST_IMMEDIATE_TABLES).toEqual(
-      expect.arrayContaining(["tenants", "tenant_users", "configuracion", "platos", "mesas_estado", "cocina_estado"])
+      expect.arrayContaining([
+        "tenants",
+        "tenant_users",
+        "configuracion",
+        "platos",
+        "mesas_estado",
+        "cocina_estado",
+        "ecf_documents",
+        "fiscal_outbox",
+      ])
     );
   });
 

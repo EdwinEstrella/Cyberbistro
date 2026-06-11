@@ -1,28 +1,34 @@
 import { insforgeClient } from "./insforge";
 import { isCloudAvailabilityFailure, isDesktopCloudUnavailable, recordCloudFailure, recordCloudSuccess } from "./cloudAvailability";
 import { readLocalMirror } from "./localFirst";
+import { normalizeFiscalMode, type FiscalMode } from "./fiscalTypes";
 import { DEFAULT_NCF_B_CODE, isNcfBCode, type NcfBCode } from "./ncf";
 
 export interface TenantBillingSettingsRow {
+  fiscal_mode?: string | null;
   ncf_fiscal_activo?: boolean | null;
   ncf_tipo_default?: string | null;
   itbis_cobro_por_defecto?: boolean | null;
 }
 
 export interface TenantBillingSettings {
+  fiscalMode: FiscalMode;
   ncfFiscalActive: boolean;
   defaultNcfType: NcfBCode;
   defaultItbisEnabled: boolean;
 }
 
 const TENANT_BILLING_SETTINGS_SELECT =
-  "ncf_fiscal_activo, ncf_tipo_default, itbis_cobro_por_defecto";
+  "fiscal_mode, ncf_fiscal_activo, ncf_tipo_default, itbis_cobro_por_defecto";
 
 export function normalizeTenantBillingSettings(
   row: TenantBillingSettingsRow | null | undefined
 ): TenantBillingSettings {
+  const fiscalMode = normalizeFiscalMode(row?.fiscal_mode, row?.ncf_fiscal_activo);
+
   return {
-    ncfFiscalActive: Boolean(row?.ncf_fiscal_activo),
+    fiscalMode,
+    ncfFiscalActive: fiscalMode === "ncf_legacy",
     defaultNcfType: isNcfBCode(row?.ncf_tipo_default)
       ? row.ncf_tipo_default
       : DEFAULT_NCF_B_CODE,

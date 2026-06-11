@@ -14,6 +14,8 @@ export const LOCAL_FIRST_MIRROR_TABLES = [
   "comandas",
   "consumos",
   "facturas",
+  "ecf_documents",
+  "fiscal_outbox",
   "customers",
   "cierres_operativos",
   "gastos",
@@ -42,6 +44,7 @@ export const LOCAL_FIRST_METADATA_TABLES = [
   "sync_errors",
   "local_device_session",
   "local_license_cache",
+  "local_fiscal_outbox",
 ] as const;
 
 export const LOCAL_FIRST_IMMEDIATE_TABLES = [
@@ -56,6 +59,8 @@ export const LOCAL_FIRST_IMMEDIATE_TABLES = [
   "comandas",
   "consumos",
   "facturas",
+  "ecf_documents",
+  "fiscal_outbox",
   "customers",
   "sucursales",
   "productos_inventario",
@@ -74,6 +79,8 @@ export const LOCAL_FIRST_HISTORY_TABLES = [
   "cierres_operativos",
   "comandas",
   "facturas",
+  "ecf_documents",
+  "fiscal_outbox",
   "customers",
   "consumos",
   "gasto_categorias",
@@ -133,6 +140,18 @@ export interface SyncOutboxEntry {
   device_id: string;
   status: "pending" | "syncing" | "synced" | "error" | "not_retryable";
   syncing_started_at?: string | null;
+  error_message: string | null;
+}
+
+export interface LocalFiscalOutboxEntry {
+  id: string;
+  tenant_id: string;
+  factura_id: string;
+  ecf_document_id?: string | null;
+  fiscal_status: "pending_sync";
+  payload: Record<string, unknown>;
+  created_at: string;
+  device_id: string;
   error_message: string | null;
 }
 
@@ -200,11 +219,10 @@ function applyLocalFirstDbSchema(db: IDBDatabase, tx: IDBTransaction, tenantId: 
     }
   }
 
-  if (!db.objectStoreNames.contains("sync_outbox")) db.createObjectStore("sync_outbox", { keyPath: "id" });
-  if (!db.objectStoreNames.contains("sync_state")) db.createObjectStore("sync_state", { keyPath: "key" });
-  if (!db.objectStoreNames.contains("sync_errors")) db.createObjectStore("sync_errors", { keyPath: "id" });
-  if (!db.objectStoreNames.contains("local_device_session")) db.createObjectStore("local_device_session", { keyPath: "tenant_id" });
-  if (!db.objectStoreNames.contains("local_license_cache")) db.createObjectStore("local_license_cache", { keyPath: "tenant_id" });
+  for (const table of LOCAL_FIRST_METADATA_TABLES) {
+    const keyPath = table === "sync_state" ? "key" : table.startsWith("local_") && table !== "local_fiscal_outbox" ? "tenant_id" : "id";
+    if (!db.objectStoreNames.contains(table)) db.createObjectStore(table, { keyPath });
+  }
 
   if (recreatedMirrorTables.length > 0 && db.objectStoreNames.contains("sync_state")) {
     const syncStateStore = tx.objectStore("sync_state");
@@ -381,7 +399,7 @@ export interface OutboxConflictGuardrail {
 }
 
 const PAGE_SIZE = 250;
-const DB_VERSION = 8;
+export const LOCAL_FIRST_DB_VERSION = 9;
 const SYNCING_STALE_MS = 5 * 60 * 1000;
 const FULL_REFRESH_ON_SYNC_TABLES = [
   "tenant_users",
@@ -470,7 +488,7 @@ function openLocalFirstDbForSync(tenantId: string): Promise<IDBDatabase> {
       reject(new Error("IndexedDB no está disponible en este entorno."));
       return;
     }
-    const request = indexedDB.open(getLocalFirstDatabaseName(tenantId), DB_VERSION);
+    const request = indexedDB.open(getLocalFirstDatabaseName(tenantId), LOCAL_FIRST_DB_VERSION);
     request.onerror = () => reject(request.error ?? new Error("No se pudo abrir la DB local."));
     request.onsuccess = () => resolve(request.result);
     request.onupgradeneeded = () => {
@@ -1670,7 +1688,7 @@ function openLocalFirstDb(tenantId: string): Promise<IDBDatabase> {
       return;
     }
 
-    const request = indexedDB.open(getLocalFirstDatabaseName(tenantId), DB_VERSION);
+    const request = indexedDB.open(getLocalFirstDatabaseName(tenantId), LOCAL_FIRST_DB_VERSION);
     request.onerror = () => reject(request.error ?? new Error("No se pudo abrir la DB local."));
     request.onsuccess = () => resolve(request.result);
     request.onupgradeneeded = () => {
