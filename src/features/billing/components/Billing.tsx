@@ -234,12 +234,36 @@ function ymdToLongLabel(ymd: string): string {
   return new Intl.DateTimeFormat("es-DO", { weekday: "long", year: "numeric", month: "long", day: "numeric" }).format(date);
 }
 
+function getEcfStatusDisplay(status: string) {
+  switch (status) {
+    case "accepted":
+      return { label: "e-CF: Aceptado", color: "#10b981", bg: "rgba(16, 185, 129, 0.1)" };
+    case "rejected":
+      return { label: "e-CF: Rechazado", color: "#ef4444", bg: "rgba(239, 68, 68, 0.1)" };
+    case "submitted":
+      return { label: "e-CF: Enviado", color: "#3b82f6", bg: "rgba(59, 130, 246, 0.1)" };
+    case "signed":
+      return { label: "e-CF: Firmado", color: "#8b5cf6", bg: "rgba(139, 92, 246, 0.1)" };
+    case "queued":
+      return { label: "e-CF: En Cola", color: "#f59e0b", bg: "rgba(245, 158, 11, 0.1)" };
+    case "pending_sync":
+      return { label: "e-CF: Pendiente", color: "#6b7280", bg: "rgba(107, 114, 128, 0.1)" };
+    case "retryable_error":
+      return { label: "e-CF: Error (Reintento)", color: "#f97316", bg: "rgba(249, 115, 22, 0.1)" };
+    case "terminal_error":
+      return { label: "e-CF: Error Terminal", color: "#7f1d1d", bg: "rgba(127, 29, 29, 0.1)" };
+    default:
+      return { label: `e-CF: ${status}`, color: "#6b7280", bg: "rgba(107, 114, 128, 0.1)" };
+  }
+}
+
 export function Billing() {
   const { tenantId, loading: authLoading, rol, plan } = useAuth();
   const { activeSucursalId } = useSucursal();
   // theme was declared but never read
   const [view, setView] = useState<BillingView>("facturas");
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [ecfDocuments, setEcfDocuments] = useState<Map<string, any>>(new Map());
   const [cycles, setCycles] = useState<CierreOperativoRow[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>([]);
@@ -289,7 +313,8 @@ export function Billing() {
       useLocalCxc,
       useLocalCxp,
       useLocalCustomers,
-      useLocalProveedores
+      useLocalProveedores,
+      useLocalEcf
     ] = await Promise.all([
       shouldReadLocalFirst(tenantId, ["facturas"]),
       shouldReadLocalFirst(tenantId, ["cierres_operativos"]),
@@ -299,6 +324,7 @@ export function Billing() {
       shouldReadLocalFirst(tenantId, ["cuentas_pagar", "cxp_pagos"]),
       shouldReadLocalFirst(tenantId, ["customers"]),
       shouldReadLocalFirst(tenantId, ["proveedores"]),
+      shouldReadLocalFirst(tenantId, ["ecf_documents"]),
     ]);
 
     const [
@@ -311,7 +337,8 @@ export function Billing() {
       cxpRes,
       cxpPagosRes,
       customersRes,
-      proveedoresRes
+      proveedoresRes,
+      ecfRes
     ] = await Promise.all([
       useLocalInvoices
         ? { data: await readLocalMirror<Invoice & { sucursal_id?: string | null }>(tenantId, "facturas").then(r => r.filter(f => !f.sucursal_id || f.sucursal_id === activeSucursalId).sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())), error: null }
@@ -359,6 +386,9 @@ export function Billing() {
       useLocalProveedores
         ? { data: await readLocalMirror<any>(tenantId, "proveedores"), error: null }
         : insforgeClient.database.from("proveedores").select("id, nombre").eq("tenant_id", tenantId),
+      useLocalEcf
+        ? { data: await readLocalMirror<any>(tenantId, "ecf_documents"), error: null }
+        : insforgeClient.database.from("ecf_documents").select("*").eq("tenant_id", tenantId),
     ]);
 
     if (!invoicesRes.error && invoicesRes.data) {
@@ -366,6 +396,16 @@ export function Billing() {
       setInvoices(hydratedInvoices);
     } else {
       setInvoices([]);
+    }
+
+    if (!ecfRes.error && ecfRes.data) {
+      const ecfMap = new Map<string, any>();
+      for (const doc of ecfRes.data as any[]) {
+        ecfMap.set(doc.factura_id, doc);
+      }
+      setEcfDocuments(ecfMap);
+    } else {
+      setEcfDocuments(new Map());
     }
 
     if (!cyclesRes.error && cyclesRes.data) {
@@ -881,6 +921,8 @@ export function Billing() {
           ncf_tipo: inv.ncf_tipo ?? null,
           cliente_nombre: inv.cliente_nombre ?? null,
           cliente_rnc: inv.cliente_rnc ?? null,
+          ecf_status: ecfDocuments.get(inv.id)?.status ?? null,
+          ecf_track_id: ecfDocuments.get(inv.id)?.dgii_track_id ?? null,
         },
         inv.numero_factura,
         paperWidthMm
@@ -1226,9 +1268,22 @@ export function Billing() {
                           </div>
                         </div>
                         <div className="mt-3 flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-2 rounded-full border border-black/5 bg-muted/50 px-3 py-1 dark:border-white/5">
-                            <div className="size-1.5 rounded-full" style={{ backgroundColor: status.color }} />
-                            <span className="text-[10px] font-bold uppercase" style={{ color: status.color }}>{status.label}</span>
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-2 rounded-full border border-black/5 bg-muted/50 px-3 py-1 dark:border-white/5 w-fit">
+                              <div className="size-1.5 rounded-full" style={{ backgroundColor: status.color }} />
+                              <span className="text-[10px] font-bold uppercase" style={{ color: status.color }}>{status.label}</span>
+                            </div>
+                            {(() => {
+                              const ecfDoc = ecfDocuments.get(inv.id);
+                              if (!ecfDoc) return null;
+                              const ecfDisplay = getEcfStatusDisplay(ecfDoc.status);
+                              return (
+                                <div className="flex items-center gap-2 rounded-full border border-black/5 px-3 py-1 dark:border-white/5 w-fit" style={{ borderColor: ecfDisplay.color + "22", backgroundColor: ecfDisplay.bg }}>
+                                  <div className="size-1.5 rounded-full" style={{ backgroundColor: ecfDisplay.color }} />
+                                  <span className="text-[10px] font-bold uppercase" style={{ color: ecfDisplay.color }}>{ecfDisplay.label}</span>
+                                </div>
+                              );
+                            })()}
                           </div>
                           <div className="flex gap-2">
                             <button onClick={() => setInvoiceModal(inv)} className="size-9 rounded-lg bg-muted flex items-center justify-center text-muted-foreground border-none cursor-pointer"><Eye size={16} /></button>
@@ -1279,10 +1334,21 @@ export function Billing() {
                             </div>
                             <div><span className={`text-[10px] font-bold uppercase px-2 py-1 rounded ${method.pillClass}`}>{method.label}</span></div>
                             <div>
-                              <div className="flex items-center gap-2 px-3 py-1 rounded-full border border-black/5 dark:border-white/5 w-fit bg-muted/50">
-                                 <div className="size-1.5 rounded-full" style={{ backgroundColor: status.color }} />
-                                 <span className="text-[10px] font-bold uppercase" style={{ color: status.color }}>{status.label}</span>
-                              </div>
+                               <div className="flex items-center gap-2 px-3 py-1 rounded-full border border-black/5 dark:border-white/5 w-fit bg-muted/50">
+                                  <div className="size-1.5 rounded-full" style={{ backgroundColor: status.color }} />
+                                  <span className="text-[10px] font-bold uppercase" style={{ color: status.color }}>{status.label}</span>
+                               </div>
+                               {(() => {
+                                 const ecfDoc = ecfDocuments.get(inv.id);
+                                 if (!ecfDoc) return null;
+                                 const ecfDisplay = getEcfStatusDisplay(ecfDoc.status);
+                                 return (
+                                   <div className="flex items-center gap-2 px-3 py-1 rounded-full border border-black/5 dark:border-white/5 w-fit mt-1.5" style={{ borderColor: ecfDisplay.color + "22", backgroundColor: ecfDisplay.bg }}>
+                                     <div className="size-1.5 rounded-full" style={{ backgroundColor: ecfDisplay.color }} />
+                                     <span className="text-[10px] font-bold uppercase" style={{ color: ecfDisplay.color }}>{ecfDisplay.label}</span>
+                                   </div>
+                                 );
+                               })()}
                             </div>
                             <div className="text-right font-['Space_Grotesk',sans-serif] font-bold text-foreground text-[16px] tabular-nums">{RD(inv.total)}</div>
                             <div className="flex justify-end gap-2">
@@ -1841,6 +1907,34 @@ export function Billing() {
                      <div className="flex justify-between text-muted-foreground"><span>Cambio</span><span>{RD(Number(invoiceModal.cambio_devuelto))}</span></div>
                    </>
                  ) : null}
+                 {(() => {
+                    const ecfDoc = ecfDocuments.get(invoiceModal.id);
+                    if (!ecfDoc) return null;
+                    const ecfDisplay = getEcfStatusDisplay(ecfDoc.status);
+                    return (
+                      <div className="mt-4 p-4 rounded-2xl bg-muted/30 border border-border space-y-2 text-xs">
+                        <div className="text-[11px] font-bold text-muted-foreground uppercase">Facturación Electrónica (e-CF)</div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-muted-foreground">Estado Fiscal</span>
+                          <span className="font-bold px-2.5 py-0.5 rounded-full text-[10px] uppercase border" style={{ borderColor: ecfDisplay.color + "44", color: ecfDisplay.color, backgroundColor: ecfDisplay.bg }}>
+                            {ecfDisplay.label.replace("e-CF: ", "")}
+                          </span>
+                        </div>
+                        {ecfDoc.dgii_track_id && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Track ID (DGII)</span>
+                            <span className="font-mono text-foreground font-semibold">{ecfDoc.dgii_track_id}</span>
+                          </div>
+                        )}
+                        {ecfDoc.last_error && (
+                          <div className="pt-2 mt-2 border-t border-dashed border-border text-destructive">
+                            <div className="font-bold uppercase text-[9px]">Detalle Error:</div>
+                            <div className="font-medium mt-0.5 leading-relaxed">{ecfDoc.last_error}</div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
               </div>
               <div className="flex gap-3 pt-4">
                  <button onClick={() => void printInvoice(invoiceModal)} className="flex-1 bg-primary text-primary-foreground py-3 rounded-xl font-bold uppercase text-[12px] tracking-widest hover:opacity-90 border-none cursor-pointer">Reimprimir</button>

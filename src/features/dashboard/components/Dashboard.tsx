@@ -53,7 +53,9 @@ import {
   ncfTypeRequiresClientRnc,
   type NcfBCode,
 } from "../../../shared/lib/ncf";
-import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
+import { loadTenantBillingSettings, type TenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
+import { type FiscalMode } from "../../../shared/lib/fiscalTypes";
+import { resolveActiveFiscalMode, runFiscalEngine } from "../../../shared/lib/fiscalEngine";
 import { getLocalFirstStatusSnapshot, readLocalMirror, readLocalOutbox, enqueueLocalWrite, getDeviceId, writeLocalMirrorRow, shouldReadLocalFirst, resolveNcfForNewInvoiceLocalFirst, LOCAL_NCF_RESERVED_PAYLOAD_FLAG } from "../../../shared/lib/localFirst";
 import { getNextFacturaNumber } from "../../../shared/lib/invoiceNumber";
 import { writePosMutationLocalFirst } from "../../pos/lib/localFirstMutations";
@@ -169,6 +171,9 @@ export function Dashboard() {
   const [cartItbisEnabled, setCartItbisEnabled] = useState(false);
   const [tenantNcfFiscalActive, setTenantNcfFiscalActive] = useState(false);
   const [selectedNcfType, setSelectedNcfType] = useState<NcfBCode>(DEFAULT_NCF_B_CODE);
+  const [fiscalMode, setFiscalMode] = useState<FiscalMode>("internal_receipt");
+  const [certificateId, setCertificateId] = useState<string | null>(null);
+  const [tenantBillingSettings, setTenantBillingSettings] = useState<TenantBillingSettings | null>(null);
   const [takeoutClientRnc, setTakeoutClientRnc] = useState("");
   const [takeoutCustomer, setTakeoutCustomer] = useState<Customer | null>(null);
   const [cashReceivedInput, setCashReceivedInput] = useState("");
@@ -185,12 +190,18 @@ export function Dashboard() {
 
     let cancelled = false;
 
-    void loadTenantBillingSettings(tenantId).then((settings) => {
+    void loadTenantBillingSettings(tenantId).then(async (settings) => {
       if (cancelled) return;
 
       setCartItbisEnabled(settings?.defaultItbisEnabled ?? false);
-      setTenantNcfFiscalActive(settings?.ncfFiscalActive ?? false);
       setSelectedNcfType(settings?.defaultNcfType ?? DEFAULT_NCF_B_CODE);
+      setTenantBillingSettings(settings);
+
+      const isOnline = navigator.onLine;
+      const { mode, certificateId: certId } = await resolveActiveFiscalMode(tenantId, settings, isOnline);
+      setFiscalMode(mode);
+      setCertificateId(certId);
+      setTenantNcfFiscalActive(mode !== "internal_receipt");
     });
 
     // Proactively cache the tenant logo for offline printing
@@ -1074,25 +1085,35 @@ export function Dashboard() {
       return;
     }
 
-    let ncfPart: Awaited<ReturnType<typeof resolveNcfForNewInvoiceLocalFirst>> = null;
-    if (tenantId && tenantNcfFiscalActive) {
+    const localFacturaId = crypto.randomUUID();
+    const nowIso = new Date().toISOString();
+    const numeroFactura = await getNextFacturaNumber(tenantId);
+
+    let ncfPart: Awaited<ReturnType<typeof runFiscalEngine>> = null;
+    if (tenantId && fiscalMode !== "internal_receipt") {
       try {
-        ncfPart = await resolveNcfForNewInvoiceLocalFirst(tenantId, selectedNcfType);
+        ncfPart = await runFiscalEngine({
+          tenantId,
+          activeMode: fiscalMode,
+          certificateId,
+          facturaId: localFacturaId,
+          numeroFactura,
+          clientRnc: takeoutClientRnc || (takeoutCustomer?.document_id || ""),
+          preferredNcfType: selectedNcfType,
+          deviceId: await getDeviceId(),
+        });
       } catch (err) {
-        alert(err instanceof Error ? err.message : "No se pudo reservar NCF fiscal. No se emitió la factura.");
+        alert(err instanceof Error ? err.message : "No se pudo procesar la facturación fiscal. No se emitió la factura.");
         setCharging(false);
         return;
       }
       if (!ncfPart) {
-        alert("No se pudo reservar NCF fiscal. No se emitió la factura.");
+        alert("No se pudo procesar la facturación fiscal. No se emitió la factura.");
         setCharging(false);
         return;
       }
     }
 
-    const localFacturaId = crypto.randomUUID();
-    const nowIso = new Date().toISOString();
-    const numeroFactura = await getNextFacturaNumber(tenantId);
     const facturaData: Record<string, unknown> = {
       id: localFacturaId,
       tenant_id: tenantId,

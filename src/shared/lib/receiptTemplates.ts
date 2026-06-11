@@ -153,6 +153,8 @@ export function buildFacturaReceiptHtml(
     cliente_rnc?: string | null;
     ncf?: string | null;
     ncf_tipo?: string | null;
+    ecf_status?: string | null;
+    ecf_track_id?: string | null;
   },
   numeroFactura: number,
   paperWidthMm: PaperWidthMm
@@ -214,6 +216,20 @@ export function buildFacturaReceiptHtml(
       ? `<tr class="header-row"><td>NCF</td><td style="text-align:right;font-weight:bold;font-size:14px">${escapeHtml(ncf)}</td></tr>`
       : "";
 
+  let metaEcf = "";
+  if (ncf.toUpperCase().startsWith("E")) {
+    const statusLabel =
+      factura.ecf_status === "accepted"
+        ? "ACEPTADO POR DGII"
+        : factura.ecf_status === "submitted"
+        ? "ENVIADO (PENDIENTE)"
+        : "PENDIENTE";
+    metaEcf += `<tr class="header-row"><td>Estado e-CF</td><td style="text-align:right;font-weight:bold;font-size:13px">${statusLabel}</td></tr>`;
+    if (factura.ecf_track_id) {
+      metaEcf += `<tr class="header-row"><td>Track ID</td><td style="text-align:right;font-family:monospace;font-size:12px">${escapeHtml(factura.ecf_track_id)}</td></tr>`;
+    }
+  }
+
   const propinaRow =
     propina > 0
       ? `<tr><td>Propina</td><td style="text-align:right">${rdFixed(propina, tenant)}</td></tr>`
@@ -233,6 +249,7 @@ export function buildFacturaReceiptHtml(
     <tr class="header-row"><td>Hora</td><td style="text-align:right">${escapeHtml(horaStr)}</td></tr>
     ${metaCliente}
     ${metaNcf}
+    ${metaEcf}
     <tr class="header-row"><td>Mesa</td><td style="text-align:right">${escapeHtml(mesaLabel)}</td></tr>
     <tr class="header-row"><td>Método</td><td style="text-align:right">${escapeHtml(factura.metodo_pago.toUpperCase())}</td></tr>
   </table>

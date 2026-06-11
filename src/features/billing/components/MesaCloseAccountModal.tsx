@@ -14,7 +14,9 @@ import {
   ncfTypeRequiresClientRnc,
   type NcfBCode,
 } from "../../../shared/lib/ncf";
-import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
+import { loadTenantBillingSettings, type TenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
+import { type FiscalMode } from "../../../shared/lib/fiscalTypes";
+import { resolveActiveFiscalMode, runFiscalEngine } from "../../../shared/lib/fiscalEngine";
 import { enqueueLocalWrite, getDeviceId, getLocalFirstStatusSnapshot, isLocalFirstEnabled, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, readLocalMirror, readLocalOutbox, resolveNcfForNewInvoiceLocalFirst } from "../../../shared/lib/localFirst";
 import { getNextFacturaNumber } from "../../../shared/lib/invoiceNumber";
 import { closeKitchenComandasForMesaLocalFirst } from "../../pos/lib/localFirstMutations";
@@ -263,6 +265,9 @@ export function MesaCloseAccountModal({
   >("efectivo");
   const [ncfFiscalActive, setNcfFiscalActive] = useState(false);
   const [selectedNcfType, setSelectedNcfType] = useState<NcfBCode>(DEFAULT_NCF_B_CODE);
+  const [fiscalMode, setFiscalMode] = useState<FiscalMode>("internal_receipt");
+  const [certificateId, setCertificateId] = useState<string | null>(null);
+  const [tenantBillingSettings, setTenantBillingSettings] = useState<TenantBillingSettings | null>(null);
   const [clientRnc, setClientRnc] = useState("");
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [cashReceivedInput, setCashReceivedInput] = useState("");
@@ -330,15 +335,21 @@ export function MesaCloseAccountModal({
 
     let cancelled = false;
 
-    void loadTenantBillingSettings(tenantId).then((settings) => {
+    void loadTenantBillingSettings(tenantId).then(async (settings) => {
       if (cancelled) return;
 
-      setNcfFiscalActive(settings?.ncfFiscalActive ?? false);
+      setTenantBillingSettings(settings);
       setSelectedNcfType(
         initialNcfType && isNcfBCode(initialNcfType)
           ? initialNcfType
           : settings?.defaultNcfType ?? DEFAULT_NCF_B_CODE
       );
+
+      const isOnline = navigator.onLine;
+      const { mode, certificateId: certId } = await resolveActiveFiscalMode(tenantId, settings, isOnline);
+      setFiscalMode(mode);
+      setCertificateId(certId);
+      setNcfFiscalActive(mode !== "internal_receipt");
     });
 
     return () => {
@@ -403,6 +414,25 @@ export function MesaCloseAccountModal({
       return;
     }
 
+    let ecfDoc: any = null;
+    try {
+      const snapshot = await getLocalFirstStatusSnapshot(tenantId);
+      const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
+      if (localMode || !navigator.onLine) {
+        const allEcf = await readLocalMirror<any>(tenantId, "ecf_documents").catch(() => []);
+        ecfDoc = allEcf.find((e: any) => e.factura_id === facturaId) ?? null;
+      } else {
+        const { data: ecfData } = await insforgeClient.database
+          .from("ecf_documents")
+          .select("*")
+          .eq("factura_id", facturaId)
+          .maybeSingle();
+        ecfDoc = ecfData;
+      }
+    } catch (err) {
+      console.warn("Error leyendo datos de e-CF para imprimir:", err);
+    }
+
     const paperWidthMm = getThermalPrintSettings().paperWidthMm;
     void cacheLogoFromUrl(tenant.logo_url);
     const html = buildFacturaReceiptHtml(
@@ -416,7 +446,11 @@ export function MesaCloseAccountModal({
         logo_offset_x: (tenant as any).logo_offset_x,
         logo_offset_y: (tenant as any).logo_offset_y,
       },
-      factura as unknown as Parameters<typeof buildFacturaReceiptHtml>[1],
+      {
+        ...factura,
+        ecf_status: ecfDoc?.status ?? null,
+        ecf_track_id: ecfDoc?.dgii_track_id ?? null,
+      } as unknown as Parameters<typeof buildFacturaReceiptHtml>[1],
       numeroFactura,
       paperWidthMm
     );
@@ -550,22 +584,41 @@ export function MesaCloseAccountModal({
       const deviceId = await getDeviceId();
       let nextFacturaNumber = await getNextFacturaNumber(tenantId);
       let cashDrawerOpened = false;
-      const reservedNcfByPerson = new Map<number, Awaited<ReturnType<typeof resolveNcfForNewInvoiceLocalFirst>>>();
 
-      if (ncfFiscalActive) {
+      const localFacturaIds = new Map<number, string>();
+      const numeroFacturas = new Map<number, number>();
+      for (const personIndex of order) {
+        localFacturaIds.set(personIndex, crypto.randomUUID());
+        numeroFacturas.set(personIndex, nextFacturaNumber++);
+      }
+
+      const reservedFiscalByPerson = new Map<number, Awaited<ReturnType<typeof runFiscalEngine>>>();
+
+      if (fiscalMode !== "internal_receipt") {
         for (const personIndex of order) {
-          let reservedNcf: Awaited<ReturnType<typeof resolveNcfForNewInvoiceLocalFirst>> = null;
+          const facturaId = localFacturaIds.get(personIndex)!;
+          const numFactura = numeroFacturas.get(personIndex)!;
+          let ncfPart: Awaited<ReturnType<typeof runFiscalEngine>> = null;
           try {
-            reservedNcf = await resolveNcfForNewInvoiceLocalFirst(tenantId, selectedNcfType);
+            ncfPart = await runFiscalEngine({
+              tenantId,
+              activeMode: fiscalMode,
+              certificateId,
+              facturaId,
+              numeroFactura: numFactura,
+              clientRnc: normalizedClientRnc || (selectedCustomer?.document_id || ""),
+              preferredNcfType: selectedNcfType,
+              deviceId,
+            });
           } catch (err) {
-            alert(err instanceof Error ? err.message : "No se pudo reservar NCF fiscal. No se emitió la factura.");
+            alert(err instanceof Error ? err.message : "No se pudo procesar la facturación fiscal. No se emitió la factura.");
             return;
           }
-          if (!reservedNcf) {
-            alert("No se pudo reservar NCF fiscal. No se emitió la factura.");
+          if (!ncfPart) {
+            alert("No se pudo procesar la facturación fiscal. No se emitió la factura.");
             return;
           }
-          reservedNcfByPerson.set(personIndex, reservedNcf);
+          reservedFiscalByPerson.set(personIndex, ncfPart);
         }
       }
 
@@ -580,15 +633,16 @@ export function MesaCloseAccountModal({
           activeSucursalId
         );
 
-        const ncfPart = ncfFiscalActive ? reservedNcfByPerson.get(personIndex) ?? null : null;
+        const ncfPart = reservedFiscalByPerson.get(personIndex) ?? null;
+        const localFacturaId = localFacturaIds.get(personIndex)!;
+        const numFactura = numeroFacturas.get(personIndex)!;
 
-        const localFacturaId = crypto.randomUUID();
         const now = new Date().toISOString();
         const insertRow: Record<string, unknown> = {
           id: localFacturaId,
           tenant_id: tenantId,
           sucursal_id: activeSucursalId,
-          numero_factura: nextFacturaNumber++,
+          numero_factura: numFactura,
           mesa_numero: mesaNumero,
           estado: paymentMethod === "fiado" ? "pendiente" : "pagada",
           metodo_pago: paymentMethod,
@@ -761,24 +815,34 @@ export function MesaCloseAccountModal({
       return;
     }
 
-    let ncfPart: Awaited<ReturnType<typeof resolveNcfForNewInvoiceLocalFirst>> = null;
-    if (ncfFiscalActive) {
+    const localFacturaId = crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    let ncfPart: Awaited<ReturnType<typeof runFiscalEngine>> = null;
+    if (fiscalMode !== "internal_receipt") {
       try {
-        ncfPart = await resolveNcfForNewInvoiceLocalFirst(tenantId, selectedNcfType);
+        ncfPart = await runFiscalEngine({
+          tenantId,
+          activeMode: fiscalMode,
+          certificateId,
+          facturaId: localFacturaId,
+          numeroFactura: nextFacturaNumber,
+          clientRnc: normalizedClientRnc,
+          preferredNcfType: selectedNcfType,
+          deviceId,
+        });
       } catch (err) {
-        alert(err instanceof Error ? err.message : "No se pudo reservar NCF fiscal. No se emitió la factura.");
+        alert(err instanceof Error ? err.message : "No se pudo procesar la facturación fiscal. No se emitió la factura.");
         setCharging(false);
         return;
       }
       if (!ncfPart) {
-        alert("No se pudo reservar NCF fiscal. No se emitió la factura.");
+        alert("No se pudo procesar la facturación fiscal. No se emitió la factura.");
         setCharging(false);
         return;
       }
     }
 
-    const localFacturaId = crypto.randomUUID();
-    const now = new Date().toISOString();
     const facturaData: Record<string, unknown> = {
       id: localFacturaId,
       tenant_id: tenantId,

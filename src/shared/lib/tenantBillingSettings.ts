@@ -9,6 +9,8 @@ export interface TenantBillingSettingsRow {
   ncf_fiscal_activo?: boolean | null;
   ncf_tipo_default?: string | null;
   itbis_cobro_por_defecto?: boolean | null;
+  fiscal_mode_fallback?: string | null;
+  ecf_environment?: string | null;
 }
 
 export interface TenantBillingSettings {
@@ -16,10 +18,12 @@ export interface TenantBillingSettings {
   ncfFiscalActive: boolean;
   defaultNcfType: NcfBCode;
   defaultItbisEnabled: boolean;
+  fiscalModeFallback?: FiscalMode | null;
+  ecfEnvironment?: string | null;
 }
 
 const TENANT_BILLING_SETTINGS_SELECT =
-  "fiscal_mode, ncf_fiscal_activo, ncf_tipo_default, itbis_cobro_por_defecto";
+  "fiscal_mode, ncf_fiscal_activo, ncf_tipo_default, itbis_cobro_por_defecto, fiscal_mode_fallback, ecf_environment";
 
 export function normalizeTenantBillingSettings(
   row: TenantBillingSettingsRow | null | undefined
@@ -33,6 +37,8 @@ export function normalizeTenantBillingSettings(
       ? row.ncf_tipo_default
       : DEFAULT_NCF_B_CODE,
     defaultItbisEnabled: Boolean(row?.itbis_cobro_por_defecto),
+    fiscalModeFallback: normalizeFiscalMode(row?.fiscal_mode_fallback, false),
+    ecfEnvironment: row?.ecf_environment || "certification",
   };
 }
 

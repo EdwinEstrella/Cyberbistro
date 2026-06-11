@@ -41,14 +41,14 @@ Chain strategy: feature-branch-chain
 
 ## Phase 3: Lifecycle and Engine
 
-- [ ] 3.1 Create unified fiscal engine (`src/shared/lib/fiscalEngine.ts`) for checkout orchestration.
-- [ ] 3.2 Integrate fiscal engine into `Dashboard.tsx` and `MesaCloseAccountModal.tsx`.
-- [ ] 3.3 Implement e-CF status mapping and acceptance state persistence.
-- [ ] 3.4 Update print templates for pending/accepted e-CF states.
+- [x] 3.1 Create unified fiscal engine (`src/shared/lib/fiscalEngine.ts`) for checkout orchestration.
+- [x] 3.2 Integrate fiscal engine into `Dashboard.tsx` and `MesaCloseAccountModal.tsx`.
+- [x] 3.3 Implement e-CF status mapping and acceptance state persistence.
+- [x] 3.4 Update print templates for pending/accepted e-CF states.
 
 ## Phase 4: Testing and Verification
 
-- [ ] 4.1 Write unit tests for fiscal engine and mode normalization.
-- [ ] 4.2 Add integration tests for offline e-CF sales and worker idempotency.
-- [ ] 4.3 Verify checkout regressions for legacy NCF and internal receipts.
-- [ ] 4.4 Update technical docs and verify fiscal status truths.
+- [x] 4.1 Write unit tests for fiscal engine and mode normalization.
+- [x] 4.2 Add integration tests for offline e-CF sales and worker idempotency.
+- [x] 4.3 Verify checkout regressions for legacy NCF and internal receipts.
+- [x] 4.4 Update technical docs and verify fiscal status truths.
