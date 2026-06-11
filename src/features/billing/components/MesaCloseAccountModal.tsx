@@ -9,10 +9,10 @@ import {
 } from "../../../shared/lib/invoiceNcf";
 import {
   DEFAULT_NCF_B_CODE,
-  isNcfBCode,
-  NCF_B_TIPO_OPCIONES,
   ncfTypeRequiresClientRnc,
-  type NcfBCode,
+  isNcfTypeCode,
+  type NcfTypeCode,
+  NCF_TIPO_OPCIONES,
 } from "../../../shared/lib/ncf";
 import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
 import { type FiscalMode } from "../../../shared/lib/fiscalTypes";
@@ -83,7 +83,7 @@ export interface MesaCloseAccountModalProps {
   mesaNumero: number;
   /** Por defecto 18% (`ITBIS`). Pasá `0` para facturar sin ITBIS (p. ej. desde Venta con ITBIS apagado). */
   itbisRate?: number;
-  initialNcfType?: NcfBCode | null;
+  initialNcfType?: NcfTypeCode | null;
   onSettled?: (remaining: MesaConsumoRow[]) => void | Promise<void>;
   /** Solo cuando la mesa queda sin consumos pendientes tras un cobro completo. */
   onPaidFull?: () => void;
@@ -264,7 +264,7 @@ export function MesaCloseAccountModal({
     "efectivo" | "tarjeta" | "digital" | "transferencia" | "fiado"
   >("efectivo");
   const [ncfFiscalActive, setNcfFiscalActive] = useState(false);
-  const [selectedNcfType, setSelectedNcfType] = useState<NcfBCode>(DEFAULT_NCF_B_CODE);
+  const [selectedNcfType, setSelectedNcfType] = useState<NcfTypeCode>(DEFAULT_NCF_B_CODE);
   const [fiscalMode, setFiscalMode] = useState<FiscalMode>("internal_receipt");
   const [certificateId, setCertificateId] = useState<string | null>(null);
 
@@ -340,7 +340,7 @@ export function MesaCloseAccountModal({
 
 
       setSelectedNcfType(
-        initialNcfType && isNcfBCode(initialNcfType)
+        initialNcfType && isNcfTypeCode(initialNcfType)
           ? initialNcfType
           : settings?.defaultNcfType ?? DEFAULT_NCF_B_CODE
       );
@@ -1292,12 +1292,12 @@ export function MesaCloseAccountModal({
                     value={selectedNcfType}
                     onChange={(e) =>
                       setSelectedNcfType(
-                        isNcfBCode(e.target.value) ? e.target.value : DEFAULT_NCF_B_CODE
+                        isNcfTypeCode(e.target.value) ? e.target.value : DEFAULT_NCF_B_CODE
                       )
                     }
                     className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors cursor-pointer"
                   >
-                    {NCF_B_TIPO_OPCIONES.map((opcion) => (
+                    {NCF_TIPO_OPCIONES.filter(o => ncfFiscalActive ? o.codigo.startsWith("E") : o.codigo.startsWith("B")).map((opcion) => (
                       <option key={opcion.codigo} value={opcion.codigo}>
                         {opcion.codigo} - {opcion.descripcion.replace(`${opcion.codigo} - `, "")}
                       </option>

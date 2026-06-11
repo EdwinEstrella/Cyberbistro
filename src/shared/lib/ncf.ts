@@ -80,7 +80,13 @@ function getExplicitBSequenceForType(
 }
 
 export function isNcfBCode(tipoCodigo: string | null | undefined): tipoCodigo is NcfBCode {
-  return NCF_B_TIPO_OPCIONES.some((opcion) => opcion.codigo === normalizeCode(tipoCodigo));
+  if (!tipoCodigo) return false;
+  return NCF_B_TIPO_OPCIONES.some((opcion) => opcion.codigo === tipoCodigo);
+}
+
+export function isNcfTypeCode(tipoCodigo: string | null | undefined): tipoCodigo is NcfTypeCode {
+  if (!tipoCodigo) return false;
+  return NCF_TIPO_OPCIONES.some((opcion) => opcion.codigo === tipoCodigo);
 }
 
 export function ncfTypeRequiresClientRnc(tipoCodigo: string | null | undefined): boolean {

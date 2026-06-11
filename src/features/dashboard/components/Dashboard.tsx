@@ -48,10 +48,10 @@ import {
 } from "../../../shared/lib/invoiceNcf";
 import {
   DEFAULT_NCF_B_CODE,
-  isNcfBCode,
-  NCF_B_TIPO_OPCIONES,
+  isNcfTypeCode,
+  NCF_TIPO_OPCIONES,
   ncfTypeRequiresClientRnc,
-  type NcfBCode,
+  type NcfTypeCode,
 } from "../../../shared/lib/ncf";
 import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
 import { type FiscalMode } from "../../../shared/lib/fiscalTypes";
@@ -170,7 +170,7 @@ export function Dashboard() {
   /** Por defecto sin ITBIS en totales y factura; se activa desde el carrito. */
   const [cartItbisEnabled, setCartItbisEnabled] = useState(false);
   const [tenantNcfFiscalActive, setTenantNcfFiscalActive] = useState(false);
-  const [selectedNcfType, setSelectedNcfType] = useState<NcfBCode>(DEFAULT_NCF_B_CODE);
+  const [selectedNcfType, setSelectedNcfType] = useState<NcfTypeCode>(DEFAULT_NCF_B_CODE);
   const [fiscalMode, setFiscalMode] = useState<FiscalMode>("internal_receipt");
   const [certificateId, setCertificateId] = useState<string | null>(null);
 
@@ -1788,12 +1788,12 @@ export function Dashboard() {
                       value={selectedNcfType}
                       onChange={(e) =>
                         setSelectedNcfType(
-                          isNcfBCode(e.target.value) ? e.target.value : DEFAULT_NCF_B_CODE
+                          isNcfTypeCode(e.target.value) ? e.target.value : DEFAULT_NCF_B_CODE
                         )
                       }
                       className="min-w-[168px] rounded-[10px] border border-black/10 bg-card px-[12px] py-[9px] font-['Inter',sans-serif] text-[12px] text-foreground outline-none dark:border-[rgba(72,72,71,0.3)] dark:bg-[#1a1a1a]"
                     >
-                      {NCF_B_TIPO_OPCIONES.map((opcion) => (
+                      {NCF_TIPO_OPCIONES.filter(o => tenantNcfFiscalActive ? o.codigo.startsWith("E") : o.codigo.startsWith("B")).map((opcion) => (
                         <option key={opcion.codigo} value={opcion.codigo}>
                           {opcion.codigo} - {opcion.descripcion.replace(`${opcion.codigo} - `, "")}
                         </option>
@@ -2086,12 +2086,12 @@ export function Dashboard() {
                           value={selectedNcfType}
                           onChange={(e) =>
                             setSelectedNcfType(
-                              isNcfBCode(e.target.value) ? e.target.value : DEFAULT_NCF_B_CODE
+                              isNcfTypeCode(e.target.value) ? e.target.value : DEFAULT_NCF_B_CODE
                             )
                           }
                           className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors cursor-pointer"
                         >
-                          {NCF_B_TIPO_OPCIONES.map((opcion) => (
+                          {NCF_TIPO_OPCIONES.filter(o => tenantNcfFiscalActive ? o.codigo.startsWith("E") : o.codigo.startsWith("B")).map((opcion) => (
                             <option key={opcion.codigo} value={opcion.codigo}>
                               {opcion.codigo} - {opcion.descripcion.replace(`${opcion.codigo} - `, "")}
                             </option>
