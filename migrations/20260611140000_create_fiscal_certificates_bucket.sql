@@ -1,13 +1,12 @@
 -- Create fiscal_certificates bucket
-INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+INSERT INTO storage.buckets (name, public, file_size_limit, allowed_mime_types)
 VALUES (
-  'fiscal_certificates', 
   'fiscal_certificates', 
   false, 
   5242880, 
   ARRAY['application/x-pkcs12', 'application/pkcs12', 'application/octet-stream']
 )
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (name) DO NOTHING;
 
 -- RLS para objetos en fiscal_certificates
 ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
