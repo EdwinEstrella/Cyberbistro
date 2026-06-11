@@ -29,6 +29,7 @@ import {
 } from "../../../shared/lib/tenantLogoStorage";
 import { cacheLogoFromUrl, refreshLogoCache } from "../../../shared/lib/logoCache";
 import { useAppUpdate } from "../../updates/AppUpdateContext";
+import { CertificateUploader } from "./CertificateUploader";
 import {
   buildBSequenceMapFromRow,
   buildTenantNcfUpdatePayload,
@@ -53,6 +54,9 @@ interface Config {
   currency_code: "DOP" | "ARS";
   itbis_cobro_por_defecto: boolean;
   ncf_fiscal_activo: boolean;
+  fiscal_mode: "internal_receipt" | "ncf_legacy" | "dgii_ecf";
+  fiscal_mode_fallback: "internal_receipt" | "ncf_legacy";
+  ecf_environment: "test" | "certification" | "production";
   ncf_tipo_default: NcfBCode;
   ncf_secuencia_siguiente: number;
   ncf_secuencias_por_tipo: Record<NcfBCode, number>;
@@ -134,6 +138,9 @@ export function Ajustes() {
     currency_code: "DOP",
     itbis_cobro_por_defecto: false,
     ncf_fiscal_activo: false,
+    fiscal_mode: "internal_receipt",
+    fiscal_mode_fallback: "internal_receipt",
+    ecf_environment: "certification",
     ncf_tipo_default: DEFAULT_NCF_B_CODE,
     ncf_secuencia_siguiente: 1,
     ncf_secuencias_por_tipo: buildBSequenceMapFromRow(null),
@@ -146,7 +153,7 @@ export function Ajustes() {
 
   const TENANT_FIELDS_BASE = "nombre_negocio, rnc, logo_url, logo_size_px, logo_offset_x, logo_offset_y, direccion, telefono";
   const TENANT_FIELDS_CURRENCY = "moneda";
-  const TENANT_FIELDS_NCF = `itbis_cobro_por_defecto, ncf_fiscal_activo, ncf_tipo_default, ncf_secuencia_siguiente, ncf_secuencias_por_tipo, ${NCF_B_SEQUENCE_FIELDS_SELECT}`;
+  const TENANT_FIELDS_NCF = `itbis_cobro_por_defecto, ncf_fiscal_activo, fiscal_mode, fiscal_mode_fallback, ecf_environment, ncf_tipo_default, ncf_secuencia_siguiente, ncf_secuencias_por_tipo, ${NCF_B_SEQUENCE_FIELDS_SELECT}`;
 
   useEffect(() => {
     if (authLoading || !tenantId) { if (!authLoading) setLoading(false); return; }
@@ -185,7 +192,10 @@ export function Ajustes() {
           telefono: data.telefono ?? "",
           currency_code: (data.moneda || "DOP") as any,
           itbis_cobro_por_defecto: Boolean(data.itbis_cobro_por_defecto),
-          ncf_fiscal_activo: Boolean(data.ncf_fiscal_activo),
+          ncf_fiscal_activo: Boolean(data.ncf_fiscal_activo) || data.fiscal_mode === "ncf_legacy" || data.fiscal_mode === "dgii_ecf",
+          fiscal_mode: data.fiscal_mode || "internal_receipt",
+          fiscal_mode_fallback: data.fiscal_mode_fallback || "internal_receipt",
+          ecf_environment: data.ecf_environment || "certification",
           ncf_tipo_default: defaultType,
           ncf_secuencia_siguiente: ncfSequences[defaultType] ?? 1,
           ncf_secuencias_por_tipo: ncfSequences,
@@ -217,6 +227,10 @@ export function Ajustes() {
       telefono: config.telefono.trim() || null,
       moneda: config.currency_code,
       itbis_cobro_por_defecto: config.itbis_cobro_por_defecto,
+      fiscal_mode: config.fiscal_mode,
+      fiscal_mode_fallback: config.fiscal_mode_fallback,
+      ecf_environment: config.ecf_environment,
+      ncf_fiscal_activo: config.fiscal_mode === "ncf_legacy" || config.fiscal_mode === "dgii_ecf",
       ...ncfUpdate,
       updated_at: new Date().toISOString()
     };
@@ -359,12 +373,39 @@ export function Ajustes() {
                 <input type="checkbox" checked={config.itbis_cobro_por_defecto} onChange={e => setConfig(p => ({ ...p, itbis_cobro_por_defecto: e.target.checked }))} className="size-4 rounded accent-primary" />
                 <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">Cobrar ITBIS por defecto</span>
               </label>
-              <label className="flex items-center gap-3 cursor-pointer group border-t border-border pt-4">
-                <input type="checkbox" checked={config.ncf_fiscal_activo} onChange={e => setConfig(p => ({ ...p, ncf_fiscal_activo: e.target.checked }))} className="size-4 rounded accent-primary" />
-                <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">Activar emisión de NCF</span>
-              </label>
-              {config.ncf_fiscal_activo && (
-                <div className="animate-in fade-in slide-in-from-top-2 duration-300 flex flex-col gap-4">
+              
+              <div className="border-t border-border pt-4">
+                <Field label="Modo Fiscal">
+                  <select value={config.fiscal_mode} onChange={e => setConfig(p => ({ ...p, fiscal_mode: e.target.value as any }))} className="input-field cursor-pointer">
+                    <option value="internal_receipt">Recibo Interno (Sin NCF)</option>
+                    <option value="ncf_legacy">NCF Tradicional</option>
+                    <option value="dgii_ecf">Facturación Electrónica (e-CF)</option>
+                  </select>
+                </Field>
+              </div>
+
+              {config.fiscal_mode === "dgii_ecf" && (
+                <div className="animate-in fade-in flex flex-col gap-4 border-t border-border pt-4">
+                  <Field label="Entorno de Conexión DGII">
+                    <select value={config.ecf_environment} onChange={e => setConfig(p => ({ ...p, ecf_environment: e.target.value as any }))} className="input-field cursor-pointer">
+                      <option value="test">Test</option>
+                      <option value="certification">Certificación</option>
+                      <option value="production">Producción</option>
+                    </select>
+                  </Field>
+                  <Field label="Modo de Respaldo (Fallback offline prolongado)">
+                    <select value={config.fiscal_mode_fallback} onChange={e => setConfig(p => ({ ...p, fiscal_mode_fallback: e.target.value as any }))} className="input-field cursor-pointer">
+                      <option value="internal_receipt">Recibo Interno</option>
+                      <option value="ncf_legacy">NCF Tradicional</option>
+                    </select>
+                  </Field>
+                  
+                  <CertificateUploader environment={config.ecf_environment} />
+                </div>
+              )}
+
+              {(config.fiscal_mode === "ncf_legacy" || config.fiscal_mode === "dgii_ecf") && (
+                <div className="animate-in fade-in slide-in-from-top-2 duration-300 flex flex-col gap-4 border-t border-border pt-4">
                   <Field label="Tipo Predeterminado">
                     <select value={config.ncf_tipo_default} onChange={e => setConfig(p => ({ ...p, ncf_tipo_default: e.target.value as any }))} className="input-field cursor-pointer">
                       {NCF_B_TIPO_OPCIONES.map(o => <option key={o.codigo} value={o.codigo}>{o.descripcion}</option>)}
