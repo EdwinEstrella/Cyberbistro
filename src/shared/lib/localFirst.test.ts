@@ -70,7 +70,6 @@ describe("localFirst", () => {
       expect.arrayContaining([
         "tenants",
         "tenant_users",
-        "configuracion",
         "platos",
         "mesas_estado",
         "cocina_estado",
@@ -116,16 +115,15 @@ describe("localFirst", () => {
     expect(isRowAfterCursor(c, cursor)).toBe(true);
   });
 
-  it("resuelve keyPath de IndexedDB: configuracion usa clave, resto id", () => {
-    expect(resolveMirrorStoreKeyPath("configuracion")).toBe("clave");
+  it("resuelve keyPath de IndexedDB: id", () => {
     expect(resolveMirrorStoreKeyPath("facturas")).toBe("id");
   });
 
   it("calcula cursores a resetear cuando se recrea un store mirror", () => {
-    expect(buildMirrorStoreResetSyncStateKeys("tenant-1", "configuracion")).toEqual([
-      "tenant-1:minimum:configuracion",
-      "tenant-1:history:configuracion",
-      "tenant-1:incremental:configuracion",
+    expect(buildMirrorStoreResetSyncStateKeys("tenant-1", "facturas")).toEqual([
+      "tenant-1:minimum:facturas",
+      "tenant-1:history:facturas",
+      "tenant-1:incremental:facturas",
     ]);
   });
 

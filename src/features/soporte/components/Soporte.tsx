@@ -1478,7 +1478,7 @@ function DigitalMenuPanel() {
         .from('configuracion')
         .getPublicUrl(fileName);
 
-      setEditImageUrl(publicUrl);
+      setEditImageUrl(publicUrl as unknown as string);
     } catch (err) {
       console.error("Upload error:", err);
       window.alert("Error inesperado al subir la imagen");

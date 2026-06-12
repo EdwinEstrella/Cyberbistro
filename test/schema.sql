@@ -73,8 +73,8 @@ CREATE TRIGGER comandas_realtime AFTER INSERT ON comandas FOR EACH ROW EXECUTE F
 CREATE TRIGGER comandas_realtime AFTER DELETE ON comandas FOR EACH ROW EXECUTE FUNCTION realtime_notify_comandas();
 CREATE TRIGGER comandas_realtime AFTER UPDATE ON comandas FOR EACH ROW EXECUTE FUNCTION realtime_notify_comandas();
 
--- Table: configuracion
-CREATE TABLE IF NOT EXISTS configuracion (clave varchar(100) NOT NULL, valor text, updated_at timestamptz DEFAULT now());
+
+
 
 -- Table: consumos
 CREATE TABLE IF NOT EXISTS consumos (id uuid NOT NULL DEFAULT gen_random_uuid(), comanda_id uuid, plato_id integer NOT NULL, nombre text NOT NULL, cantidad integer NOT NULL DEFAULT 1, precio_unitario numeric NOT NULL, subtotal numeric NOT NULL, tipo varchar(20) NOT NULL DEFAULT 'directo'::character varying, estado varchar(20) NOT NULL DEFAULT 'pedido'::character varying, factura_id uuid, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(), tenant_id uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'::uuid, mesa_numero integer, created_by_auth_user_id uuid);

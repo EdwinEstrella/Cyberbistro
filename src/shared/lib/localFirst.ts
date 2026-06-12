@@ -6,7 +6,6 @@ import { buildTenantNcfUpdatePayload, DEFAULT_NCF_B_CODE, getNcfSequenceColumnNa
 export const LOCAL_FIRST_MIRROR_TABLES = [
   "tenants",
   "tenant_users",
-  "configuracion",
   "platos",
   "menu_categories",
   "mesas_estado",
@@ -51,7 +50,6 @@ export const LOCAL_FIRST_METADATA_TABLES = [
 export const LOCAL_FIRST_IMMEDIATE_TABLES = [
   "tenants",
   "tenant_users",
-  "configuracion",
   "menu_categories",
   "platos",
   "mesas_estado",
@@ -73,7 +71,6 @@ export const LOCAL_FIRST_IMMEDIATE_TABLES = [
 export const LOCAL_FIRST_HISTORY_TABLES = [
   "tenants",
   "tenant_users",
-  "configuracion",
   "menu_categories",
   "platos",
   "mesas_estado",
@@ -187,12 +184,10 @@ function isMissingBackendTableError(tableName: LocalFirstMirrorTable, error: unk
   );
 }
 
-function isTenantScopedMirrorTable(tableName: LocalFirstMirrorTable): boolean {
-  return tableName !== "tenants";
-}
 
-export function resolveMirrorStoreKeyPath(tableName: LocalFirstMirrorTable): "id" | "clave" {
-  return tableName === "configuracion" ? "clave" : "id";
+
+export function resolveMirrorStoreKeyPath(_tableName?: LocalFirstMirrorTable): "id" | "clave" {
+  return "id";
 }
 
 function normalizeObjectStoreKeyPath(keyPath: IDBObjectStore["keyPath"]): string | null {
@@ -281,7 +276,7 @@ export function buildServerWritePayload(
     Object.entries(payload).filter(([key]) => !key.startsWith("__local_"))
   );
 
-  if (!isTenantScopedMirrorTable(tableName)) {
+  if (tableName === "tenants") {
     return serverPayload;
   }
 
@@ -1571,12 +1566,12 @@ async function pullIncrementalChanges(
       .from(tableName)
       .select("*")
       .order("updated_at", { ascending: true })
-      .order(tableName === "configuracion" ? "clave" : "id", { ascending: true })
+      .order("id", { ascending: true })
       .range(offset, offset + PAGE_SIZE - 1) as any;
 
     if (shouldFilterByTenant(tableName)) {
       query = query.eq("tenant_id", tenantId);
-    } else if (tableName !== "configuracion") {
+    } else {
       query = query.eq("id", tenantId);
     }
 
@@ -1596,7 +1591,7 @@ async function pullIncrementalChanges(
     for (const row of batchRows) {
       latestSeenCursor = {
         updated_at: String(row["updated_at"] ?? sinceCursor?.updated_at ?? new Date(0).toISOString()),
-        id: String(row["id"] ?? row["clave"] ?? ""),
+        id: String(row["id"] ?? ""),
       };
 
       if (!sinceCursor || isRowAfterCursor(row, sinceCursor)) {
@@ -1778,20 +1773,18 @@ function getSyncState(db: IDBDatabase, key: string): Promise<SyncStateRow | null
 }
 
 function shouldFilterByTenant(tableName: LocalFirstMirrorTable): boolean {
-  return tableName !== "tenants" && tableName !== "configuracion";
+  return tableName !== "tenants";
 }
 
 async function pullTablePage(tableName: LocalFirstMirrorTable, tenantId: string, offset: number) {
   let query = insforgeClient.database
     .from(tableName)
     .select("*")
-    .order(tableName === "configuracion" ? "clave" : "id", { ascending: true })
+    .order("id", { ascending: true })
     .range(offset, offset + PAGE_SIZE - 1) as any;
 
   if (shouldFilterByTenant(tableName)) {
     query = query.eq("tenant_id", tenantId);
-  } else if (tableName === "configuracion") {
-    // configuracion is global
   } else {
     query = query.eq("id", tenantId);
   }
