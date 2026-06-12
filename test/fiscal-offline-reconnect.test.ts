@@ -30,22 +30,20 @@ vi.mock("../src/shared/lib/localFirst", () => ({
 }));
 
 // Mock insforgeClient
-vi.mock("../src/shared/lib/insforge", () => ({
-  insforgeClient: {
-    database: {
-      from: vi.fn(() => ({
-        select: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              maybeSingle: vi.fn(),
-            })),
-            maybeSingle: vi.fn(),
-          })),
-        })),
-      })),
+vi.mock("../src/shared/lib/insforge", () => {
+  const queryChain = {
+    select: vi.fn(() => queryChain),
+    eq: vi.fn(() => queryChain),
+    maybeSingle: vi.fn(() => ({ data: null, error: null })),
+  };
+  return {
+    insforgeClient: {
+      database: {
+        from: vi.fn(() => queryChain),
+      },
     },
-  },
-}));
+  };
+});
 
 describe("Offline e-CF Sales and Reconnect Sync Integration", () => {
   const now = new Date("2026-06-10T12:00:00.000Z");
@@ -72,6 +70,14 @@ describe("Offline e-CF Sales and Reconnect Sync Integration", () => {
       defaultItbisEnabled: true,
       fiscalModeFallback: "internal_receipt" as const,
       ecfEnvironment: "certification",
+      rnc: "130862346",
+      nombre: "CYBERBISTRO SRL",
+      direccion: "Av. Winston Churchill",
+      ecfIssuerSucursal: "Principal",
+      ecfIssuerMunicipio: "Santo Domingo Centro",
+      ecfIssuerProvincia: "Distrito Nacional",
+      ecfIssuerActividadEconomica: "6201",
+      ecfIssuerCorreoEmisor: "factura@cyberbistro.app",
     };
 
     // Resolve active fiscal mode while offline (isOnline = false)
@@ -134,7 +140,7 @@ describe("Offline e-CF Sales and Reconnect Sync Integration", () => {
       factura_id: "invoice-offline-456",
       certificate_metadata_id: null,
       ecf_type: "31",
-      status: "pending_offline",
+      status: "pending_configuration",
     });
     expect(docWrite.payload).not.toHaveProperty("passphrase");
     expect(docWrite.payload).not.toHaveProperty("password");
@@ -145,7 +151,7 @@ describe("Offline e-CF Sales and Reconnect Sync Integration", () => {
       tenant_id: "tenant-1",
       factura_id: "invoice-offline-456",
       operation: "submit",
-      status: "pending_sync",
+      status: "blocked_configuration",
       idempotency_key: "tenant-1:invoice-offline-456:submit",
     });
     expect(outboxWrite.payload).not.toHaveProperty("passphrase");
@@ -196,6 +202,11 @@ describe("Offline e-CF Sales and Reconnect Sync Integration", () => {
           direccion: "Av. Winston Churchill",
           telefono: "8095555555",
           email: "info@cyberbistro.app",
+          ecf_issuer_sucursal: "Principal",
+          ecf_issuer_municipio: "Santo Domingo Centro",
+          ecf_issuer_provincia: "Distrito Nacional",
+          ecf_issuer_actividad_economica: "6201",
+          ecf_issuer_correo_emisor: "factura@cyberbistro.app",
         },
         items: [],
         payments: [],
