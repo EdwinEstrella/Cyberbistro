@@ -116,14 +116,27 @@ export function PublicDigitalMenu() {
     };
   }, [menu.settings?.tenant_id, slug]);
 
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredItems = useMemo(() => {
+    if (!searchQuery.trim()) return menu.items;
+    const lowerQuery = searchQuery.toLowerCase();
+    return menu.items.filter(
+      (item) =>
+        item.name.toLowerCase().includes(lowerQuery) ||
+        item.description?.toLowerCase().includes(lowerQuery) ||
+        item.category.toLowerCase().includes(lowerQuery)
+    );
+  }, [menu.items, searchQuery]);
+
   const groupedItems = useMemo(() => {
     const groups = new Map<string, PublicMenuItem[]>();
-    for (const item of menu.items) {
+    for (const item of filteredItems) {
       const key = item.category || "General";
       groups.set(key, [...(groups.get(key) ?? []), item]);
     }
     return Array.from(groups.entries());
-  }, [menu.items]);
+  }, [filteredItems]);
 
   const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -218,8 +231,43 @@ export function PublicDigitalMenu() {
 
       <main className="mx-auto grid max-w-6xl gap-6 px-4 pb-28 lg:grid-cols-[1fr_360px] lg:px-8">
         <section className="space-y-8">
-          {groupedItems.map(([category, items]) => (
-            <div key={category}>
+          {/* Search bar */}
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Buscar platos, categorías o ingredientes..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full rounded-2xl border border-white/10 bg-white/5 px-5 py-4 pl-12 text-sm outline-none transition focus:border-orange-300/50 focus:bg-white/10 placeholder:text-orange-50/40"
+            />
+            <svg
+              className="absolute left-4 top-1/2 -translate-y-1/2 text-orange-50/40 size-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-orange-50/40 hover:text-orange-200 transition cursor-pointer"
+              >
+                <svg className="size-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+
+          {groupedItems.length === 0 && searchQuery ? (
+            <div className="text-center py-10">
+              <p className="text-orange-50/60">No se encontraron resultados para "{searchQuery}".</p>
+            </div>
+          ) : (
+            groupedItems.map(([category, items]) => (
+              <div key={category}>
               <h2 className="mb-4 text-xl font-black uppercase tracking-[0.16em] text-orange-200">{category}</h2>
               <div className="grid gap-4 sm:grid-cols-2">
                 {items.map((item) => (
@@ -237,7 +285,7 @@ export function PublicDigitalMenu() {
                 ))}
               </div>
             </div>
-          ))}
+          )))}
         </section>
 
         <aside className="lg:sticky lg:top-6 lg:self-start">
