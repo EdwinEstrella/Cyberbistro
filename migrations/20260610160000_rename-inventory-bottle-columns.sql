@@ -1,20 +1,47 @@
 -- Add generic inventory presentation columns and rename bottle ones.
--- Updates catalog guard trigger function to protect them.
+-- Idempotent so it can run safely on databases that already advanced the schema.
 
--- 1. Añadir nuevas columnas (unidad_compra, mostrar_en_fracciones) y renombrar las anteriores
-ALTER TABLE public.productos_inventario 
-RENAME COLUMN ml_por_botella TO contenido_por_unidad_compra;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'productos_inventario'
+      AND column_name = 'ml_por_botella'
+  ) AND NOT EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'productos_inventario'
+      AND column_name = 'contenido_por_unidad_compra'
+  ) THEN
+    ALTER TABLE public.productos_inventario
+      RENAME COLUMN ml_por_botella TO contenido_por_unidad_compra;
+  END IF;
 
-ALTER TABLE public.productos_inventario 
-RENAME COLUMN costo_compra TO costo_unidad_compra;
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'productos_inventario'
+      AND column_name = 'costo_compra'
+  ) AND NOT EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'productos_inventario'
+      AND column_name = 'costo_unidad_compra'
+  ) THEN
+    ALTER TABLE public.productos_inventario
+      RENAME COLUMN costo_compra TO costo_unidad_compra;
+  END IF;
+END $$;
 
-ALTER TABLE public.productos_inventario 
-ADD COLUMN IF NOT EXISTS unidad_compra text;
+ALTER TABLE public.productos_inventario
+  ADD COLUMN IF NOT EXISTS unidad_compra text,
+  ADD COLUMN IF NOT EXISTS mostrar_en_fracciones boolean DEFAULT false;
 
-ALTER TABLE public.productos_inventario 
-ADD COLUMN IF NOT EXISTS mostrar_en_fracciones boolean DEFAULT false;
-
--- 2. Actualizar el trigger para proteger las nuevas columnas y nombres
 CREATE OR REPLACE FUNCTION public.cyberbistro_guard_productos_inventario_update()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -26,7 +53,10 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  IF NOT public.cyberbistro_has_tenant_role(OLD.tenant_id, ARRAY['cajera', 'cajero', 'ventas', 'vender', 'vendedor', 'mesero', 'mesera', 'cocina', 'cocinero']) THEN
+  IF NOT public.cyberbistro_has_tenant_role(
+    OLD.tenant_id,
+    ARRAY['cajera', 'cajero', 'ventas', 'vender', 'vendedor', 'mesero', 'mesera', 'cocina', 'cocinero']
+  ) THEN
     RAISE EXCEPTION 'No tienes permiso para actualizar inventario.';
   END IF;
 

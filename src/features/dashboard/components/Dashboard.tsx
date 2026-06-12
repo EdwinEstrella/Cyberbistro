@@ -844,7 +844,7 @@ export function Dashboard() {
           } else {
             const { data: t, error } = await insforgeClient.database
               .from("tenants")
-              .select("nombre_negocio, rnc, direccion, telefono, logo_url, moneda, logo_size_px, logo_offset_x, logo_offset_y")
+              .select("nombre_negocio, rnc, direccion, telefono, logo_url, menu_url, moneda, logo_size_px, logo_offset_x, logo_offset_y")
               .eq("id", tid)
               .maybeSingle();
             if (error) throw error;
@@ -1229,13 +1229,13 @@ export function Dashboard() {
       await incrementTenantNcfSequence(tenantId, ncfPart.tipoCodigo, ncfPart.usedSequence);
     }
 
-    let tenantPrintData: { nombre_negocio: string | null; rnc: string | null; direccion: string | null; telefono: string | null; logo_url: string | null; ecf_environment?: "test" | "certification" | "production" | null } | null = null;
+    let tenantPrintData: { nombre_negocio: string | null; rnc: string | null; direccion: string | null; telefono: string | null; logo_url: string | null; menu_url?: string | null; ecf_environment?: "test" | "certification" | "production" | null } | null = null;
     try {
       if (!navigator.onLine || await isDesktopCloudUnavailable()) {
         const localTenants = await readLocalMirror<any>(tenantId, "tenants");
         tenantPrintData = localTenants.find((t) => t.id === tenantId) ?? null;
       } else {
-        const { data: t, error } = await insforgeClient.database.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url, ecf_environment, logo_size_px, logo_offset_x, logo_offset_y").eq("id", tenantId).maybeSingle();
+        const { data: t, error } = await insforgeClient.database.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url, menu_url, ecf_environment, logo_size_px, logo_offset_x, logo_offset_y").eq("id", tenantId).maybeSingle();
         if (error) throw error;
         tenantPrintData = t;
       }

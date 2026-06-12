@@ -125,6 +125,7 @@ SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
   v_settings public.digital_menu_settings%ROWTYPE;
+  v_tenant_active boolean;
   v_order_id uuid;
   v_total numeric := 0;
   v_item jsonb;
@@ -134,11 +135,19 @@ DECLARE
   v_row record;
   v_subtotal numeric;
 BEGIN
-  IF length(trim(COALESCE(p_customer_name, ''))) < 2 THEN
+  IF length(trim(COALESCE(p_customer_name, ''))) < 2 OR length(trim(COALESCE(p_customer_name, ''))) > 120 THEN
     RAISE EXCEPTION 'El nombre es obligatorio';
   END IF;
 
-  IF jsonb_typeof(p_items) <> 'array' OR jsonb_array_length(p_items) = 0 THEN
+  IF length(trim(COALESCE(p_customer_phone, ''))) > 40 THEN
+    RAISE EXCEPTION 'El teléfono es demasiado largo';
+  END IF;
+
+  IF length(trim(COALESCE(p_notes, ''))) > 500 THEN
+    RAISE EXCEPTION 'La nota es demasiado larga';
+  END IF;
+
+  IF jsonb_typeof(p_items) <> 'array' OR jsonb_array_length(p_items) = 0 OR jsonb_array_length(p_items) > 50 THEN
     RAISE EXCEPTION 'El pedido debe incluir al menos un producto';
   END IF;
 
@@ -149,6 +158,15 @@ BEGIN
   LIMIT 1;
 
   IF NOT FOUND THEN
+    RAISE EXCEPTION 'El menú no está disponible';
+  END IF;
+
+  SELECT COALESCE(t.activa, true) INTO v_tenant_active
+  FROM public.tenants t
+  WHERE t.id = v_settings.tenant_id
+  LIMIT 1;
+
+  IF COALESCE(v_tenant_active, false) IS NOT TRUE THEN
     RAISE EXCEPTION 'El menú no está disponible';
   END IF;
 
@@ -168,7 +186,7 @@ BEGIN
   LOOP
     v_plato_id := NULLIF(v_item->>'plato_id', '')::integer;
     v_quantity := GREATEST(1, LEAST(99, COALESCE(NULLIF(v_item->>'quantity', '')::integer, 1)));
-    v_notes := NULLIF(trim(COALESCE(v_item->>'notes', '')), '');
+    v_notes := NULLIF(left(trim(COALESCE(v_item->>'notes', '')), 300), '');
 
     SELECT p.id, COALESCE(NULLIF(trim(dmi.display_name), ''), p.nombre) AS item_name, p.precio
     INTO v_row

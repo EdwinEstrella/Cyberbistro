@@ -877,7 +877,7 @@ export function Billing() {
         } else {
           const { data, error } = await insforgeClient.database
             .from("tenants")
-            .select("nombre_negocio, rnc, direccion, telefono, logo_url, ecf_environment, logo_size_px, logo_offset_x, logo_offset_y")
+            .select("nombre_negocio, rnc, direccion, telefono, logo_url, menu_url, ecf_environment, logo_size_px, logo_offset_x, logo_offset_y")
             .eq("id", tid)
             .single();
           if (error) throw error;

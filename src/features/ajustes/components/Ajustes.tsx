@@ -162,7 +162,7 @@ export function Ajustes() {
   const [saving, setSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const TENANT_FIELDS_BASE = "nombre_negocio, rnc, logo_url, logo_size_px, logo_offset_x, logo_offset_y, direccion, telefono";
+  const TENANT_FIELDS_BASE = "nombre_negocio, rnc, logo_url, logo_size_px, logo_offset_x, logo_offset_y, menu_url, direccion, telefono";
   const TENANT_FIELDS_CURRENCY = "moneda";
   const TENANT_FIELDS_NCF = `itbis_cobro_por_defecto, ncf_fiscal_activo, fiscal_mode, fiscal_mode_fallback, ecf_environment, ncf_tipo_default, ncf_secuencia_siguiente, ncf_secuencias_por_tipo, ${NCF_B_SEQUENCE_FIELDS_SELECT}`;
 
@@ -341,6 +341,15 @@ export function Ajustes() {
                 <Field label="Dirección"><input type="text" value={config.direccion} onChange={e => setConfig(p => ({ ...p, direccion: e.target.value }))} className="input-field" /></Field>
                 <div className="grid grid-cols-2 gap-4">
                    <Field label="Teléfono"><input type="text" value={config.telefono} onChange={e => setConfig(p => ({ ...p, telefono: e.target.value }))} className="input-field" /></Field>
+                    <div className="col-span-2 rounded-2xl border border-border bg-muted/30 p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Link del menú digital</div>
+                          <p className="break-all text-xs text-muted-foreground">{config.menu_url.trim() || "Activá el menú desde Pedidos para generar el enlace público."}</p>
+                        </div>
+                        <button type="button" disabled={!config.menu_url.trim()} onClick={() => void navigator.clipboard?.writeText(config.menu_url.trim())} className="rounded-lg bg-muted px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-foreground border border-border disabled:opacity-40 cursor-pointer">Copiar</button>
+                      </div>
+                    </div>
                     <Field label="Divisa">
                       <Select value={config.currency_code} onValueChange={val => setConfig(p => ({ ...p, currency_code: val as any }))}>
                         <SelectTrigger className="w-full rounded-xl">
