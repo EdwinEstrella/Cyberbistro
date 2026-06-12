@@ -9,7 +9,7 @@ import {
   isCloudAvailabilityFailure,
 } from "./cloudAvailability";
 
-const FALLBACK_BASE_URL = 'https://claudix-app.azokia.com';
+const FALLBACK_BASE_URL = 'https://restaurante.azokia.com';
 const FALLBACK_ANON_KEY =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3OC0xMjM0LTU2NzgtOTBhYi1jZGVmMTIzNDU2NzgiLCJlbWFpbCI6ImFub25AaW5zZm9yZ2UuY29tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU5NDAxMzF9.OQwbEoWPtw-inbXdU3D7c39RZn3c87FJ-HvMBF_jrn4';
 const ENV_BASE_URL = import.meta.env.VITE_INSFORGE_BASE_URL?.trim();

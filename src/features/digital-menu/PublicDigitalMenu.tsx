@@ -83,30 +83,35 @@ export function PublicDigitalMenu() {
     let active = true;
 
     const setupRealtime = async () => {
-      // Create a temporary client with just the anon key to avoid using the auth token
-      // in case the user is logged in (to prevent RLS issues if we strictly rely on anon for public)
-      // Actually insforgeClient already handles this correctly.
       await insforgeClient.realtime.connect();
       const sub = await insforgeClient.realtime.subscribe(channelName);
-      if (!sub.ok) return;
+      if (!sub.ok) { console.error("Realtime sub error:", sub.error); return; }
+      console.log("Realtime: successfully subscribed to", channelName);
+    };
 
-      insforgeClient.realtime.on("menu_changed", () => {
-        if (!active) return;
-        // Refetch menu quietly
-        void insforgeClient.database.rpc("get_public_digital_menu", {
-          p_public_slug: slug,
-        }).then(({ data, error }) => {
-          if (!error && active) {
-            setMenu(asMenuPayload(data));
-          }
-        });
+    const handleMenuChanged = (msg: any) => {
+      console.log("Realtime event received:", msg);
+      if (!active) return;
+      if (msg?.meta?.channel && !msg.meta.channel.includes(channelName)) return; // filter to our channel
+      
+      console.log("Realtime: Refetching menu...");
+      void insforgeClient.database.rpc("get_public_digital_menu", {
+        p_public_slug: slug,
+      }).then(({ data, error }) => {
+        if (!error && active) {
+          setMenu(asMenuPayload(data));
+        } else {
+          console.error("Realtime: error refetching menu", error);
+        }
       });
     };
 
+    insforgeClient.realtime.on("menu_changed", handleMenuChanged);
     void setupRealtime();
 
     return () => {
       active = false;
+      insforgeClient.realtime.off("menu_changed", handleMenuChanged);
       insforgeClient.realtime.unsubscribe(channelName);
     };
   }, [menu.settings?.tenant_id, slug]);

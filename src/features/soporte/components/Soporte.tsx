@@ -937,7 +937,7 @@ function UsuariosPanel() {
     }
 
     const tempClient = (await import("@insforge/sdk")).createClient({
-      baseUrl: import.meta.env.VITE_INSFORGE_BASE_URL || "https://claudix-app.azokia.com",
+      baseUrl: import.meta.env.VITE_INSFORGE_BASE_URL || "https://restaurante.azokia.com",
       anonKey: import.meta.env.VITE_INSFORGE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3OC0xMjM0LTU2NzgtOTBhYi1jZGVmMTIzNDU2NzgiLCJlbWFpbCI6ImFub25AaW5zZm9yZ2UuY29tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU5NDAxMzF9.OQwbEoWPtw-inbXdU3D7c39RZn3c87FJ-HvMBF_jrn4",
       isServerMode: true
     });
