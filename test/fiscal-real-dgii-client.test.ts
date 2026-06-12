@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { RealDgiiClient } from "./dgiiAdapters";
+import { RealDgiiClient } from "../worker/fiscal/dgiiAdapters";
 
 const mockAuthenticate = vi.fn();
 const mockSendElectronicDocument = vi.fn();
@@ -68,14 +68,14 @@ describe("RealDgiiClient", () => {
 
     const client = new RealDgiiClient();
     const result = await client.submitSignedXml({
-      signedXml: "<ECF><TipoeCF>32</TipoeCF><MontoTotal>150000</MontoTotal></ECF>",
+      signedXml: "<ECF><RNCEmisor>131880738</RNCEmisor><eNCF>E3200000001</eNCF><TipoeCF>32</TipoeCF><MontoTotal>150000</MontoTotal></ECF>",
       environment: "certification",
       idempotencyKey: "test-key-summary",
       certificate: mockCertificate,
     });
 
     expect(mockAuthenticate).toHaveBeenCalled();
-    expect(mockSendSummary).toHaveBeenCalled();
+    expect(mockSendSummary).toHaveBeenCalledWith(expect.any(String), "131880738E3200000001.xml");
     expect(mockSendElectronicDocument).not.toHaveBeenCalled();
     expect(result).toEqual({
       kind: "submitted",
@@ -94,14 +94,14 @@ describe("RealDgiiClient", () => {
 
     const client = new RealDgiiClient();
     const result = await client.submitSignedXml({
-      signedXml: "<ECF><TipoeCF>32</TipoeCF><MontoTotal>250000</MontoTotal></ECF>",
+      signedXml: "<ECF><RNCEmisor>131880738</RNCEmisor><eNCF>E3200000002</eNCF><TipoeCF>32</TipoeCF><MontoTotal>250000</MontoTotal></ECF>",
       environment: "certification",
       idempotencyKey: "test-key-above",
       certificate: mockCertificate,
     });
 
     expect(mockAuthenticate).toHaveBeenCalled();
-    expect(mockSendElectronicDocument).toHaveBeenCalled();
+    expect(mockSendElectronicDocument).toHaveBeenCalledWith(expect.any(String), "131880738E3200000002.xml");
     expect(mockSendSummary).not.toHaveBeenCalled();
     expect(result).toEqual({
       kind: "submitted",
@@ -121,13 +121,13 @@ describe("RealDgiiClient", () => {
 
     const client = new RealDgiiClient();
     const result = await client.submitSignedXml({
-      signedXml: "<ECF><TipoeCF>32</TipoeCF><MontoTotal>60000</MontoTotal></ECF>",
+      signedXml: "<ECF><RNCEmisor>131880738</RNCEmisor><eNCF>E3200000003</eNCF><TipoeCF>32</TipoeCF><MontoTotal>60000</MontoTotal></ECF>",
       environment: "certification",
       idempotencyKey: "test-key-env",
       certificate: mockCertificate,
     });
 
-    expect(mockSendElectronicDocument).toHaveBeenCalled();
+    expect(mockSendElectronicDocument).toHaveBeenCalledWith(expect.any(String), "131880738E3200000003.xml");
     expect(mockSendSummary).not.toHaveBeenCalled();
     expect(result.rfceThresholdUsed).toBe(50000);
   });
@@ -140,14 +140,33 @@ describe("RealDgiiClient", () => {
 
     const client = new RealDgiiClient();
     const result = await client.submitSignedXml({
-      signedXml: "<ECF><TipoeCF>31</TipoeCF><MontoTotal>1000</MontoTotal></ECF>",
+      signedXml: "<ECF><RNCEmisor>131880738</RNCEmisor><eNCF>E3100000001</eNCF><TipoeCF>31</TipoeCF><MontoTotal>1000</MontoTotal></ECF>",
       environment: "certification",
       idempotencyKey: "test-key-e31",
       certificate: mockCertificate,
     });
 
-    expect(mockSendElectronicDocument).toHaveBeenCalled();
+    expect(mockSendElectronicDocument).toHaveBeenCalledWith(expect.any(String), "131880738E3100000001.xml");
     expect(mockSendSummary).not.toHaveBeenCalled();
     expect(result.rfceThresholdUsed).toBeNull();
+  });
+
+  it("fails closed when signed XML cannot provide the DGII file name data", async () => {
+    mockAuthenticate.mockResolvedValue({ token: "token" });
+
+    const client = new RealDgiiClient();
+    const result = await client.submitSignedXml({
+      signedXml: "<ECF><TipoeCF>31</TipoeCF><MontoTotal>1000</MontoTotal></ECF>",
+      environment: "certification",
+      idempotencyKey: "test-key-missing-file-data",
+      certificate: mockCertificate,
+    });
+
+    expect(mockSendElectronicDocument).not.toHaveBeenCalled();
+    expect(mockSendSummary).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      kind: "terminal_error",
+      message: expect.stringContaining("RNCEmisor and eNCF"),
+    });
   });
 });

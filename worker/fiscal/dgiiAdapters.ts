@@ -52,9 +52,30 @@ function getDgiiEnvironment(env: string) {
   }
 }
 
+function getXmlTagValue(xml: string, tagName: string): string | null {
+  const match = new RegExp(`<${tagName}>([^<]+)</${tagName}>`).exec(xml);
+  return match?.[1]?.trim() || null;
+}
+
+function createDgiiFileName(signedXml: string): string {
+  const rnc = getXmlTagValue(signedXml, "RNCEmisor");
+  const encf = getXmlTagValue(signedXml, "eNCF");
+
+  if (!rnc || !encf) {
+    throw fiscalWorkerError(
+      "DGII_FILENAME_DATA_MISSING",
+      "Signed XML must include RNCEmisor and eNCF to build the DGII file name.",
+      false
+    );
+  }
+
+  return `${rnc}${encf}.xml`;
+}
+
 export class RealDgiiClient implements DgiiClientAdapter {
   async submitSignedXml(input: Parameters<DgiiClientAdapter["submitSignedXml"]>[0]): Promise<DgiiSubmitResult> {
     try {
+      const fileName = createDgiiFileName(input.signedXml);
       const p12Base64 = Buffer.from(input.certificate.p12Bytes).toString("base64");
       const reader = new P12Reader(input.certificate.passphrase);
       const certs = reader.getKeyFromStringBase64(p12Base64);
@@ -78,8 +99,6 @@ export class RealDgiiClient implements DgiiClientAdapter {
 
       let rfceThresholdUsed: number | null = null;
       let response: any;
-
-      const fileName = `ECF_${input.idempotencyKey}.xml`;
 
       if (isE32) {
         rfceThresholdUsed = threshold;
@@ -124,6 +143,9 @@ export class RealDgiiClient implements DgiiClientAdapter {
 
       return { kind: "terminal_error", message: `No trackId returned: ${JSON.stringify(response)}` };
     } catch (err: any) {
+      if (err?.retryable === false) {
+        return { kind: "terminal_error", message: err.message };
+      }
       return { kind: "retryable_error", message: err.message };
     }
   }

@@ -51,12 +51,22 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
     throw fiscalWorkerError("FISCAL_CONFIGURATION_INCOMPLETE", "ecf_issuer_correo_emisor is missing or not configured.", false);
   }
 
-  // Determine dynamic e-CF type (31 = Factura de Crédito Fiscal, 32 = Factura de Consumo, etc.)
-  const ecfType = factura.ncf ? Number(factura.ncf.substring(1, 3)) : 32;
+  const ncf = String(factura.ncf || "").trim();
+  if (!/^E(31|32|33|34|41|43|44|45|46|47)/.test(ncf)) {
+    throw fiscalWorkerError("FISCAL_XML_INVALID", "Factura e-CF requires a valid eNCF starting with an allowed E-series type.", false);
+  }
+
+  // Determine dynamic e-CF type (31 = Factura de Credito Fiscal, 32 = Factura de Consumo, etc.)
+  const ecfType = Number(ncf.substring(1, 3));
 
   // Calculate effective ITBIS rate (usually 18% / 0.18)
   const subtotal = Number(factura.subtotal || 0);
   const itbis = Number(factura.itbis || 0);
+  const total = Number(factura.total || 0);
+  assertValidMoney("subtotal", subtotal);
+  assertValidMoney("itbis", itbis);
+  assertValidMoney("total", total);
+  assertTotalsBalance({ subtotal, itbis, total });
   const itbisRate = subtotal > 0 ? (itbis / subtotal) : 0.18;
 
   // Comprador Strict Validation for E31 (Crédito Fiscal)
@@ -77,7 +87,7 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
     Version: 1,
     IdDoc: {
       TipoeCF: ecfType,
-      eNCF: factura.ncf,
+      eNCF: ncf,
       IndicadorMontoGravado: 0,
       TipoIngresos: "01",
       TipoPago: payments.length > 0 ? 1 : 2,
@@ -87,7 +97,7 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
           MontoPago: p.amount,
         })),
       },
-      FechaLimitePago: (factura.created_at || now.toISOString()).substring(0, 10),
+      FechaLimitePago: formatDgiiDate(factura.created_at, now),
       TerminoPago: "Al contado",
     },
     Emisor: {
@@ -103,18 +113,18 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
       },
       CorreoEmisor: correoEmisor,
       ActividadEconomica: actividadEconomica,
-      FechaEmision: (factura.created_at || now.toISOString()).substring(0, 10),
+      FechaEmision: formatDgiiDate(factura.created_at, now),
     },
     Comprador: {
       RNCComprador: compradorRnc,
       RazonSocialComprador: compradorNombre,
     },
     Totales: {
-      MontoTotal: factura.total,
-      TotalITBIS: factura.itbis,
-      TotalITBIS18: factura.itbis,
-      MontoGravadoTotal: factura.subtotal,
-      MontoGravadoI18: factura.subtotal,
+      MontoTotal: total,
+      TotalITBIS: itbis,
+      TotalITBIS18: itbis,
+      MontoGravadoTotal: subtotal,
+      MontoGravadoI18: subtotal,
     },
   };
 
@@ -153,14 +163,18 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
   // Construct standard JSON structure for dgii-ecf Transformer
   const ecfObject = {
     ECF: {
-      "@_xmlns": "http://dgii.gov.do/empresa/facturaElectronica",
+      _attributes: {
+        xmlns: "http://dgii.gov.do/empresa/facturaElectronica",
+      },
       Encabezado: encabezado,
       DetallesItems: detallesItems,
-      FechaHoraFirma: now.toISOString(),
+      FechaHoraFirma: formatDgiiDateTime(now),
     },
   };
 
-  return transformer.json2xml(ecfObject);
+  const xml = transformer.json2xml(ecfObject);
+  assertMinimumEcfXml(xml);
+  return xml;
 }
 
 function mapPaymentMethod(method: string): number {
@@ -171,3 +185,91 @@ function mapPaymentMethod(method: string): number {
     default: return 1;
   }
 }
+
+function assertValidMoney(fieldName: string, value: number): void {
+  if (!Number.isFinite(value) || value < 0) {
+    throw fiscalWorkerError("FISCAL_XML_INVALID", `Factura e-CF requires a valid non-negative ${fieldName}.`, false);
+  }
+}
+
+function assertTotalsBalance(input: { subtotal: number; itbis: number; total: number }): void {
+  const expectedTotal = roundCurrency(input.subtotal + input.itbis);
+  const actualTotal = roundCurrency(input.total);
+
+  if (Math.abs(expectedTotal - actualTotal) > 0.01) {
+    throw fiscalWorkerError(
+      "FISCAL_XML_INVALID",
+      `Factura e-CF total mismatch: subtotal + itbis must equal total (${expectedTotal} != ${actualTotal}).`,
+      false
+    );
+  }
+}
+
+function roundCurrency(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function formatDgiiDate(value: unknown, fallback: Date): string {
+  const date = parseDateOrFallback(value, fallback);
+  const parts = getSantoDomingoDateParts(date);
+  return `${parts.day}-${parts.month}-${parts.year}`;
+}
+
+function formatDgiiDateTime(date: Date): string {
+  const parts = getSantoDomingoDateParts(date);
+  return `${parts.day}-${parts.month}-${parts.year} ${parts.hour}:${parts.minute}:${parts.second}`;
+}
+
+function parseDateOrFallback(value: unknown, fallback: Date): Date {
+  if (typeof value !== "string" || !value.trim()) return fallback;
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) ? parsed : fallback;
+}
+
+function getSantoDomingoDateParts(date: Date): Record<"day" | "month" | "year" | "hour" | "minute" | "second", string> {
+  const formatter = new Intl.DateTimeFormat("es-DO", {
+    timeZone: "America/Santo_Domingo",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(date).reduce<Record<string, string>>((acc, part) => {
+    acc[part.type] = part.value;
+    return acc;
+  }, {});
+
+  return {
+    day: parts.day,
+    month: parts.month,
+    year: parts.year,
+    hour: parts.hour,
+    minute: parts.minute,
+    second: parts.second,
+  };
+}
+
+function assertMinimumEcfXml(xml: string): void {
+  const requiredTags = ["ECF", "TipoeCF", "eNCF", "RNCEmisor", "MontoTotal"];
+  const missingTags = requiredTags.filter((tagName) => !hasXmlTagWithValue(xml, tagName));
+
+  if (missingTags.length > 0) {
+    throw fiscalWorkerError(
+      "FISCAL_XML_INVALID",
+      `Generated e-CF XML is missing required tags: ${missingTags.join(", ")}.`,
+      false
+    );
+  }
+}
+
+function hasXmlTagWithValue(xml: string, tagName: string): boolean {
+  if (tagName === "ECF") return /<ECF(?:\s[^>]*)?>[\s\S]*<\/ECF>/.test(xml);
+  const match = new RegExp(`<${tagName}>([^<]+)</${tagName}>`).exec(xml);
+  return Boolean(match?.[1]?.trim());
+}
+
+
