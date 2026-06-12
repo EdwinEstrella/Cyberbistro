@@ -937,7 +937,7 @@ function UsuariosPanel() {
     }
 
     const tempClient = (await import("@insforge/sdk")).createClient({
-      baseUrl: import.meta.env.VITE_INSFORGE_BASE_URL || "https://restaurante.azokia.com",
+      baseUrl: import.meta.env.VITE_INSFORGE_BASE_URL || "https://claudix-app.azokia.com",
       anonKey: import.meta.env.VITE_INSFORGE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3OC0xMjM0LTU2NzgtOTBhYi1jZGVmMTIzNDU2NzgiLCJlbWFpbCI6ImFub25AaW5zZm9yZ2UuY29tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU5NDAxMzF9.OQwbEoWPtw-inbXdU3D7c39RZn3c87FJ-HvMBF_jrn4",
       isServerMode: true
     });
@@ -1293,8 +1293,8 @@ function DigitalMenuPanel() {
   const resolvedSlug = slug.trim().toLowerCase().replace(/[^a-z0-9-_]/g, "");
   
   const qrUrl = plan === "profesional" || plan === "empresarial"
-    ? `https://restaurante.azokia.com/${resolvedSlug}`
-    : `https://restaurante.azokia.com`;
+    ? `https://claudix-app.azokia.com/#/menu/${resolvedSlug}`
+    : `https://claudix-app.azokia.com`;
 
   useEffect(() => {
     if (!qrUrl) return;
@@ -1350,7 +1350,7 @@ function DigitalMenuPanel() {
         tableName: "tenants",
         rowId: tenantId,
         op: "update",
-        payload: { id: tenantId, menu_url: enabled ? `https://restaurante.azokia.com/#/menu/${resolvedSlug}` : null, updated_at: new Date().toISOString() },
+        payload: { id: tenantId, menu_url: enabled ? `https://claudix-app.azokia.com/#/menu/${resolvedSlug}` : null, updated_at: new Date().toISOString() },
         deviceId: await getDeviceId(),
       });
 
@@ -1551,29 +1551,6 @@ function DigitalMenuPanel() {
                 />
               </div>
 
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">URL del Logo (Opcional)</label>
-                <input 
-                  type="text" 
-                  placeholder="Ej. https://images.com/mi-logo.png"
-                  disabled={isBasic}
-                  value={logoUrl}
-                  onChange={e => setLogoUrl(e.target.value)}
-                  className="input-field"
-                />
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">URL del Banner/Portada (Opcional)</label>
-                <input 
-                  type="text" 
-                  placeholder="Ej. https://images.com/banner.png"
-                  disabled={isBasic}
-                  value={bannerUrl}
-                  onChange={e => setBannerUrl(e.target.value)}
-                  className="input-field"
-                />
-              </div>
 
               <button 
                 type="submit" 

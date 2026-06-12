@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSucursal } from "../../app/context/SucursalContext";
 import { useAuth, ensureAuthSessionFresh } from "../../shared/hooks/useAuth";
 import { insforgeClient } from "../../shared/lib/insforge";
@@ -69,7 +69,7 @@ function slugify(value: string) {
 }
 
 function buildMenuUrl(slug: string) {
-  const origin = window.location.origin === "file://" ? "https://restaurante.azokia.com" : window.location.origin;
+  const origin = window.location.origin === "file://" ? "https://claudix-app.azokia.com" : window.location.origin;
   return `${origin}/#/menu/${encodeURIComponent(slug)}`;
 }
 

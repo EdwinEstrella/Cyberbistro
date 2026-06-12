@@ -1,8 +1,9 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router";
 import { insforgeClient } from "../../shared/lib/insforge";
 
 type PublicMenuSettings = {
+  tenant_id: string;
   public_slug: string;
   title: string;
   description: string | null;
@@ -75,6 +76,41 @@ export function PublicDigitalMenu() {
     return () => { active = false; };
   }, [slug]);
 
+  useEffect(() => {
+    if (!menu.settings?.tenant_id) return;
+    
+    const channelName = `digital_menu:${menu.settings.tenant_id}`;
+    let active = true;
+
+    const setupRealtime = async () => {
+      // Create a temporary client with just the anon key to avoid using the auth token
+      // in case the user is logged in (to prevent RLS issues if we strictly rely on anon for public)
+      // Actually insforgeClient already handles this correctly.
+      await insforgeClient.realtime.connect();
+      const sub = await insforgeClient.realtime.subscribe(channelName);
+      if (!sub.ok) return;
+
+      insforgeClient.realtime.on("menu_changed", () => {
+        if (!active) return;
+        // Refetch menu quietly
+        void insforgeClient.database.rpc("get_public_digital_menu", {
+          p_public_slug: slug,
+        }).then(({ data, error }) => {
+          if (!error && active) {
+            setMenu(asMenuPayload(data));
+          }
+        });
+      });
+    };
+
+    void setupRealtime();
+
+    return () => {
+      active = false;
+      insforgeClient.realtime.unsubscribe(channelName);
+    };
+  }, [menu.settings?.tenant_id, slug]);
+
   const groupedItems = useMemo(() => {
     const groups = new Map<string, PublicMenuItem[]>();
     for (const item of menu.items) {
@@ -145,7 +181,7 @@ export function PublicDigitalMenu() {
         <div className="max-w-md rounded-[28px] border border-white/10 bg-white/5 p-8">
           <p className="text-xs uppercase tracking-[0.3em] text-orange-200/70">Menú no disponible</p>
           <h1 className="mt-3 text-3xl font-black">Este enlace no está activo.</h1>
-          <p className="mt-3 text-sm text-orange-100/70">Verificá el código QR o pedí un enlace actualizado al restaurante.</p>
+          <p className="mt-3 text-sm text-orange-100/70">Verifica el código QR o pide un enlace actualizado al restaurante.</p>
         </div>
       </div>
     );
