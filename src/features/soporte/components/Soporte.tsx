@@ -1350,7 +1350,7 @@ function DigitalMenuPanel() {
         tableName: "tenants",
         rowId: tenantId,
         op: "update",
-        payload: { id: tenantId, menu_url: enabled ? `https://restaurante.azokia.com/${resolvedSlug}` : null, updated_at: new Date().toISOString() },
+        payload: { id: tenantId, menu_url: enabled ? `https://restaurante.azokia.com/#/menu/${resolvedSlug}` : null, updated_at: new Date().toISOString() },
         deviceId: await getDeviceId(),
       });
 
