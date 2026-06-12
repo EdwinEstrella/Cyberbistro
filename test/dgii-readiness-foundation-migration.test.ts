@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const migrationPath = join(process.cwd(), "migrations", "20260611210000_finish_dgii_ecf_readiness.sql");
+const migrationPath = join(process.cwd(), "migrations", "20260611210000_finish-dgii-ecf-readiness.sql");
 
 describe("DGII e-CF readiness foundation migration", () => {
   it("adds tenant issuer configuration fields required by XML generation", () => {

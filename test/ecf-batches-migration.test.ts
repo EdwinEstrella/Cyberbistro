@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const migrationPath = join(process.cwd(), "migrations", "20260611220000_create_ecf_batches.sql");
+const migrationPath = join(process.cwd(), "migrations", "20260611220000_create-ecf-batches.sql");
 
 describe("e-CF batches and document extensions migration", () => {
   it("creates public.ecf_batches table with status and track id fields", () => {
