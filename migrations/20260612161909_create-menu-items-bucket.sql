@@ -1,3 +1,7 @@
-INSERT INTO storage.buckets (name, public) 
-VALUES ('menu_items', true)
-ON CONFLICT (name) DO NOTHING;
+-- No-op placeholder.
+-- Use npx @insforge/cli storage create-bucket instead of SQL for storage buckets.
+DO $$
+BEGIN
+  NULL;
+END;
+$$;
