@@ -1,9 +1,22 @@
 import { createHashRouter } from "react-router";
+import type React from "react";
 import { Login, Register } from "../features/auth";
 import { AppLayout } from "./components/AppLayout";
 import { FeatureGuard } from "./components/FeatureGuard";
 
-export const router = createHashRouter([
+type RouteComponent = () => React.ReactElement;
+
+export function createFiscalRouteComponent(FiscalPanel: RouteComponent): RouteComponent {
+  return function FiscalRoute() {
+    return (
+      <FeatureGuard feature="dgii_ecf">
+        <FiscalPanel />
+      </FeatureGuard>
+    );
+  };
+}
+
+export const appRoutes = [
   { path: "/", Component: Login },
   { path: "/register", Component: Register },
   { path: "/super-admin", lazy: () => import("../features/super-admin").then(({ SuperAdmin }) => ({ Component: SuperAdmin })) },
@@ -22,7 +35,7 @@ export const router = createHashRouter([
       { path: "/camarera", lazy: () => import("../features/camarera").then(({ Camarera }) => ({ Component: Camarera })) },
       { path: "/soporte", lazy: () => import("../features/soporte").then(({ Soporte }) => ({ Component: Soporte })) },
       { path: "/ajustes", lazy: () => import("../features/ajustes").then(({ Ajustes }) => ({ Component: Ajustes })) },
-      { path: "/fiscal", lazy: () => import("../features/fiscal").then(({ FiscalPanel }) => ({ Component: FiscalPanel })) },
+      { path: "/fiscal", lazy: () => import("../features/fiscal").then(({ FiscalPanel }) => ({ Component: createFiscalRouteComponent(FiscalPanel) })) },
       { path: "/inventario", lazy: () => import("../features/inventario").then(({ Inventario }) => ({ Component: () => <FeatureGuard feature="advanced_inventory"><Inventario /></FeatureGuard> })) },
       { path: "/compras", lazy: () => import("../features/compras").then(({ Compras }) => ({ Component: () => <FeatureGuard feature="inventory_purchases"><Compras /></FeatureGuard> })) },
       { path: "/cuentas-pagar", lazy: () => import("../features/cuentas-pagar").then(({ CuentasPagar }) => ({ Component: () => <FeatureGuard feature="accounts_payable"><CuentasPagar /></FeatureGuard> })) },
@@ -30,6 +43,8 @@ export const router = createHashRouter([
       { path: "/pedidos", lazy: () => import("../features/pedidos").then(({ Pedidos }) => ({ Component: () => <FeatureGuard feature="digital_menu"><Pedidos /></FeatureGuard> })) },
     ],
   },
-], {
+];
+
+export const router = createHashRouter(appRoutes, {
   hydrationData: undefined,
 });

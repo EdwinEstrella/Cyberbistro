@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import QRCode from "qrcode";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
+import { reenqueueEcfDocument, type FiscalRpcClient } from "../lib/reenqueueEcfDocument";
 import { 
   Clock, 
   CheckCircle2, 
@@ -56,23 +57,15 @@ export function FiscalPanel() {
     return () => clearInterval(intervalId);
   }, [fetchDocuments]);
 
-  async function handleResubmit(invoiceId: string, documentId: string) {
+  async function handleResubmit(documentId: string) {
     if (!tenantId) return;
-    setResubmitting(invoiceId);
+    setResubmitting(documentId);
     try {
-      await insforgeClient.database.from("fiscal_outbox").insert({
-        tenant_id: tenantId,
-        factura_id: invoiceId,
-        ecf_document_id: documentId,
-        operation: "submit",
-        status: "queued",
-        idempotency_key: `manual_resubmit_${invoiceId}_${Date.now()}`
+      await reenqueueEcfDocument({
+        client: insforgeClient as unknown as FiscalRpcClient,
+        tenantId,
+        ecfDocumentId: documentId,
       });
-      
-      await insforgeClient.database.from("ecf_documents")
-        .update({ status: "pending_sync", dgii_status_message: "Reencolado manualmente" })
-        .eq("factura_id", invoiceId);
-      
       await fetchDocuments();
     } catch (err) {
       console.error(err);
@@ -313,12 +306,12 @@ export function FiscalPanel() {
                         </button>
                         {isError && (
                           <button
-                            onClick={() => handleResubmit(doc.factura_id, doc.id)}
-                            disabled={resubmitting === doc.factura_id}
+                            onClick={() => handleResubmit(doc.id)}
+                            disabled={resubmitting === doc.id}
                             className="p-2 hover:bg-red-500/10 rounded-lg text-red-500 hover:text-red-600 transition-colors disabled:opacity-50 cursor-pointer"
                             title="Reencolar / Reenviar"
                           >
-                            <RefreshCcw className={`w-4 h-4 ${resubmitting === doc.factura_id ? "animate-spin" : ""}`} />
+                            <RefreshCcw className={`w-4 h-4 ${resubmitting === doc.id ? "animate-spin" : ""}`} />
                           </button>
                         )}
                       </td>

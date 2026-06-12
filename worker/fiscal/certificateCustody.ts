@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { fiscalWorkerError, unknownToWorkerError } from "./errors";
-import { decryptPassphrase } from "./crypto";
+import { decryptPassphrase, resolveRequiredEcfEncryptionKey } from "./crypto";
 import type {
   CertificateCustody,
   CertificateCustodyStore,
@@ -45,7 +45,7 @@ export class InsforgeStorageCertificateCustody implements CertificateCustody {
       const arrayBuffer = await response.arrayBuffer();
       const p12Bytes = new Uint8Array(arrayBuffer);
 
-      const encryptionKey = process.env.ECF_ENCRYPTION_KEY || "cyberbistro-default-dev-key-32chars";
+      const encryptionKey = resolveRequiredEcfEncryptionKey();
       const decryptedPassphrase = decryptPassphrase(row.password_encrypted, encryptionKey);
 
       return {

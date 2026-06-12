@@ -8,6 +8,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+const DEFAULT_ECF_ENCRYPTION_KEY = "cyberbistro-default-dev-key-32chars";
+
 async function encryptPassphrase(passphrase: string, secretKeyStr: string): Promise<string> {
   const encoder = new TextEncoder();
   const keyBytes = encoder.encode(secretKeyStr.padEnd(32, '0').slice(0, 32));
@@ -80,7 +82,13 @@ serve(async (req) => {
     }
 
     // Encrypt the passphrase before saving to metadata table
-    const encryptionKey = Deno.env.get('ECF_ENCRYPTION_KEY') || 'cyberbistro-default-dev-key-32chars';
+    const encryptionKey = Deno.env.get('ECF_ENCRYPTION_KEY')?.trim();
+    if (!encryptionKey) {
+      throw new Error("ECF_ENCRYPTION_KEY is required before storing certificate metadata.")
+    }
+    if (encryptionKey === DEFAULT_ECF_ENCRYPTION_KEY) {
+      throw new Error("ECF_ENCRYPTION_KEY must not use the default encryption key.")
+    }
     const encryptedPassphrase = await encryptPassphrase(passphrase, encryptionKey);
 
     // Insert metadata into ecf_certificate_metadata
