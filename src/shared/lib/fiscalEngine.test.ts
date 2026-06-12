@@ -1,7 +1,8 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { resolveActiveFiscalMode, runFiscalEngine } from "./fiscalEngine";
-import { resolveNcfForNewInvoiceLocalFirst } from "./localFirst";
+import { resolveActiveFiscalMode, runFiscalEngine, enqueueEcfDocuments } from "./fiscalEngine";
+import { resolveNcfForNewInvoiceLocalFirst, enqueueLocalWrite } from "./localFirst";
 import { insforgeClient } from "./insforge";
+import { loadTenantBillingSettings } from "./tenantBillingSettings";
 
 class LocalStorageMock {
   private store: Record<string, string> = {};
@@ -15,6 +16,10 @@ vi.stubGlobal("localStorage", new LocalStorageMock());
 vi.mock("./localFirst", () => ({
   resolveNcfForNewInvoiceLocalFirst: vi.fn(),
   enqueueLocalWrite: vi.fn(),
+}));
+
+vi.mock("./tenantBillingSettings", () => ({
+  loadTenantBillingSettings: vi.fn(),
 }));
 
 vi.mock("./insforge", () => ({
@@ -40,6 +45,21 @@ describe("fiscalEngine", () => {
     localStorage.clear();
   });
 
+  const validEcfSettings = {
+    fiscalMode: "dgii_ecf" as const,
+    ncfFiscalActive: false,
+    defaultNcfType: "B01" as const,
+    defaultItbisEnabled: true,
+    rnc: "130862346",
+    nombre: "Cyberbistro SRL",
+    direccion: "Av. Winston Churchill",
+    ecfIssuerSucursal: "Casa Matriz",
+    ecfIssuerMunicipio: "Distrito Nacional",
+    ecfIssuerProvincia: "Santo Domingo",
+    ecfIssuerActividadEconomica: "5610",
+    ecfIssuerCorreoEmisor: "billing@cyberbistro.com",
+  };
+
   describe("resolveActiveFiscalMode", () => {
     it("returns internal_receipt if settings is null", async () => {
       const result = await resolveActiveFiscalMode("tenant-1", null, true);
@@ -58,12 +78,7 @@ describe("fiscalEngine", () => {
     });
 
     it("resolves dgii_ecf when certificate is ready online", async () => {
-      const settings = {
-        fiscalMode: "dgii_ecf" as const,
-        ncfFiscalActive: false,
-        defaultNcfType: "B01" as const,
-        defaultItbisEnabled: true,
-      };
+      const settings = { ...validEcfSettings };
 
       const mockMaybeSingle = vi.fn().mockResolvedValue({ data: { id: "cert-uuid" }, error: null });
       vi.mocked(insforgeClient.database.from).mockReturnValue({
@@ -83,10 +98,7 @@ describe("fiscalEngine", () => {
 
     it("falls back to settings.fiscalModeFallback if certificate is not ready online", async () => {
       const settings = {
-        fiscalMode: "dgii_ecf" as const,
-        ncfFiscalActive: false,
-        defaultNcfType: "B01" as const,
-        defaultItbisEnabled: true,
+        ...validEcfSettings,
         fiscalModeFallback: "ncf_legacy" as const,
       };
 
@@ -106,18 +118,24 @@ describe("fiscalEngine", () => {
     });
 
     it("keeps dgii_ecf active offline without reading certificate data from local storage", async () => {
-      const settings = {
-        fiscalMode: "dgii_ecf" as const,
-        ncfFiscalActive: false,
-        defaultNcfType: "B01" as const,
-        defaultItbisEnabled: true,
-      };
+      const settings = { ...validEcfSettings };
 
       localStorage.setItem("ecf_cert_id_tenant-1", "stale-cert-uuid");
 
       const result = await resolveActiveFiscalMode("tenant-1", settings, false);
       expect(result).toEqual({ mode: "dgii_ecf", certificateId: null });
       expect(insforgeClient.database.from).not.toHaveBeenCalled();
+    });
+
+    it("falls back if any required configuration field is missing when online", async () => {
+      const settings = {
+        ...validEcfSettings,
+        rnc: "", // missing
+        fiscalModeFallback: "ncf_legacy" as const,
+      };
+
+      const result = await resolveActiveFiscalMode("tenant-1", settings, true);
+      expect(result).toEqual({ mode: "ncf_legacy", certificateId: null });
     });
   });
 
@@ -233,10 +251,7 @@ describe("fiscalEngine", () => {
 
     it("handles resolveActiveFiscalMode online query error without blocking pending e-CF sales", async () => {
       const settings = {
-        fiscalMode: "dgii_ecf" as const,
-        ncfFiscalActive: false,
-        defaultNcfType: "B01" as const,
-        defaultItbisEnabled: true,
+        ...validEcfSettings,
         fiscalModeFallback: "ncf_legacy" as const,
       };
 
@@ -256,12 +271,7 @@ describe("fiscalEngine", () => {
     });
 
     it("falls back to internal_receipt in resolveActiveFiscalMode if certificate not ready online and no fallback mode configured", async () => {
-      const settings = {
-        fiscalMode: "dgii_ecf" as const,
-        ncfFiscalActive: false,
-        defaultNcfType: "B01" as const,
-        defaultItbisEnabled: true,
-      };
+      const settings = { ...validEcfSettings };
 
       const mockMaybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
       vi.mocked(insforgeClient.database.from).mockReturnValue({
@@ -276,6 +286,127 @@ describe("fiscalEngine", () => {
 
       const result = await resolveActiveFiscalMode("tenant-1", settings, true);
       expect(result).toEqual({ mode: "internal_receipt", certificateId: null });
+    });
+  });
+
+  describe("enqueueEcfDocuments", () => {
+    it("enqueues as pending_offline/pending_sync if configuration is complete", async () => {
+      vi.mocked(loadTenantBillingSettings).mockResolvedValueOnce({
+        fiscalMode: "dgii_ecf" as const,
+        ncfFiscalActive: false,
+        defaultNcfType: "B01" as const,
+        defaultItbisEnabled: true,
+        rnc: "130862346",
+        nombre: "Cyberbistro SRL",
+        direccion: "Av. Winston Churchill",
+        ecfIssuerSucursal: "Casa Matriz",
+        ecfIssuerMunicipio: "Distrito Nacional",
+        ecfIssuerProvincia: "Santo Domingo",
+        ecfIssuerActividadEconomica: "5610",
+        ecfIssuerCorreoEmisor: "billing@cyberbistro.com",
+      });
+
+      await enqueueEcfDocuments({
+        tenantId: "tenant-1",
+        facturaId: "invoice-1",
+        certificateId: "cert-uuid",
+        ecfType: "32",
+        deviceId: "device-1",
+      });
+
+      expect(enqueueLocalWrite).toHaveBeenCalledWith(expect.objectContaining({
+        tableName: "ecf_documents",
+        payload: expect.objectContaining({
+          status: "pending_offline",
+          certificate_metadata_id: "cert-uuid",
+        }),
+      }));
+
+      expect(enqueueLocalWrite).toHaveBeenCalledWith(expect.objectContaining({
+        tableName: "fiscal_outbox",
+        payload: expect.objectContaining({
+          status: "pending_sync",
+        }),
+      }));
+    });
+
+    it("enqueues as pending_configuration/blocked_configuration if configuration is incomplete", async () => {
+      vi.mocked(loadTenantBillingSettings).mockResolvedValueOnce({
+        fiscalMode: "dgii_ecf" as const,
+        ncfFiscalActive: false,
+        defaultNcfType: "B01" as const,
+        defaultItbisEnabled: true,
+        rnc: "", // missing
+        nombre: "Cyberbistro SRL",
+        direccion: "Av. Winston Churchill",
+        ecfIssuerSucursal: "Casa Matriz",
+        ecfIssuerMunicipio: "Distrito Nacional",
+        ecfIssuerProvincia: "Santo Domingo",
+        ecfIssuerActividadEconomica: "5610",
+        ecfIssuerCorreoEmisor: "billing@cyberbistro.com",
+      });
+
+      await enqueueEcfDocuments({
+        tenantId: "tenant-1",
+        facturaId: "invoice-1",
+        certificateId: "cert-uuid",
+        ecfType: "32",
+        deviceId: "device-1",
+      });
+
+      expect(enqueueLocalWrite).toHaveBeenCalledWith(expect.objectContaining({
+        tableName: "ecf_documents",
+        payload: expect.objectContaining({
+          status: "pending_configuration",
+        }),
+      }));
+
+      expect(enqueueLocalWrite).toHaveBeenCalledWith(expect.objectContaining({
+        tableName: "fiscal_outbox",
+        payload: expect.objectContaining({
+          status: "blocked_configuration",
+        }),
+      }));
+    });
+
+    it("enqueues as pending_configuration/blocked_configuration if certificateId is missing", async () => {
+      vi.mocked(loadTenantBillingSettings).mockResolvedValueOnce({
+        fiscalMode: "dgii_ecf" as const,
+        ncfFiscalActive: false,
+        defaultNcfType: "B01" as const,
+        defaultItbisEnabled: true,
+        rnc: "130862346",
+        nombre: "Cyberbistro SRL",
+        direccion: "Av. Winston Churchill",
+        ecfIssuerSucursal: "Casa Matriz",
+        ecfIssuerMunicipio: "Distrito Nacional",
+        ecfIssuerProvincia: "Santo Domingo",
+        ecfIssuerActividadEconomica: "5610",
+        ecfIssuerCorreoEmisor: "billing@cyberbistro.com",
+      });
+
+      await enqueueEcfDocuments({
+        tenantId: "tenant-1",
+        facturaId: "invoice-1",
+        certificateId: null, // missing cert
+        ecfType: "32",
+        deviceId: "device-1",
+      });
+
+      expect(enqueueLocalWrite).toHaveBeenCalledWith(expect.objectContaining({
+        tableName: "ecf_documents",
+        payload: expect.objectContaining({
+          status: "pending_configuration",
+          certificate_metadata_id: null,
+        }),
+      }));
+
+      expect(enqueueLocalWrite).toHaveBeenCalledWith(expect.objectContaining({
+        tableName: "fiscal_outbox",
+        payload: expect.objectContaining({
+          status: "blocked_configuration",
+        }),
+      }));
     });
 
     it("throws an error in runFiscalEngine if legacy NCF sequence resolution returns null", async () => {

@@ -143,6 +143,7 @@ export class FiscalWorker {
         dgiiStatusMessage: result.message,
         submittedAt: this.nowIso(),
         lastError: null,
+        rfceThresholdUsed: result.rfceThresholdUsed ?? null,
       });
       await this.auditForSnapshot("dgii_submitted", snapshot, { trackId: result.trackId, statusCode: result.statusCode });
 

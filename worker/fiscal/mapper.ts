@@ -15,14 +15,39 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
     throw new Error("Fiscal configuration error: Tenant RNC is missing or not configured.");
   }
 
-  const tenantName = tenant.nombre_negocio?.trim();
+  const tenantName = (tenant.nombre_negocio || tenant.nombre)?.trim();
   if (!tenantName) {
-    throw new Error("Fiscal configuration error: Tenant Business Name (nombre_negocio) is missing or not configured.");
+    throw new Error("Fiscal configuration error: Tenant Business Name (nombre_negocio or nombre) is missing or not configured.");
   }
 
   const tenantAddress = tenant.direccion?.trim();
   if (!tenantAddress) {
     throw new Error("Fiscal configuration error: Tenant Address (direccion) is missing or not configured.");
+  }
+
+  const sucursal = tenant.ecf_issuer_sucursal?.trim();
+  if (!sucursal) {
+    throw new Error("Fiscal configuration error: ecf_issuer_sucursal is missing or not configured.");
+  }
+
+  const municipio = tenant.ecf_issuer_municipio?.trim();
+  if (!municipio) {
+    throw new Error("Fiscal configuration error: ecf_issuer_municipio is missing or not configured.");
+  }
+
+  const provincia = tenant.ecf_issuer_provincia?.trim();
+  if (!provincia) {
+    throw new Error("Fiscal configuration error: ecf_issuer_provincia is missing or not configured.");
+  }
+
+  const actividadEconomica = tenant.ecf_issuer_actividad_economica?.trim();
+  if (!actividadEconomica) {
+    throw new Error("Fiscal configuration error: ecf_issuer_actividad_economica is missing or not configured.");
+  }
+
+  const correoEmisor = tenant.ecf_issuer_correo_emisor?.trim();
+  if (!correoEmisor) {
+    throw new Error("Fiscal configuration error: ecf_issuer_correo_emisor is missing or not configured.");
   }
 
   // Determine dynamic e-CF type (31 = Factura de Crédito Fiscal, 32 = Factura de Consumo, etc.)
@@ -55,15 +80,15 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
       RNCEmisor: tenantRnc,
       RazonSocialEmisor: tenantName,
       NombreComercial: tenantName,
-      Sucursal: "Casa Matriz",
+      Sucursal: sucursal,
       DireccionEmisor: tenantAddress,
-      Municipio: "Santo Domingo",
-      Provincia: "Distrito Nacional",
+      Municipio: municipio,
+      Provincia: provincia,
       TablaTelefonoEmisor: {
         TelefonoEmisor: [tenant.telefono || ""],
       },
-      CorreoEmisor: tenant.email || "",
-      ActividadEconomica: "5610", // Restaurants
+      CorreoEmisor: correoEmisor,
+      ActividadEconomica: actividadEconomica,
       FechaEmision: (factura.created_at || now.toISOString()).substring(0, 10),
     },
     Comprador: {

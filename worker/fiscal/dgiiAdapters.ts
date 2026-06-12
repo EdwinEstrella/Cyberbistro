@@ -1,6 +1,10 @@
 import { fiscalWorkerError } from "./errors";
-import type { DgiiClientAdapter, XmlSignerAdapter } from "./types";
-import ECF, { Signature, ENVIRONMENT, P12Reader } from "dgii-ecf";
+import type { DgiiClientAdapter, XmlSignerAdapter, DgiiSubmitResult } from "./types";
+import ECF, { Signature, ENVIRONMENT, P12Reader, convertECF32ToRFCE as libConvertECF32ToRFCE } from "dgii-ecf";
+
+export function convertECF32ToRFCE(ecf32Xml: string): { xml: string; securityCode: string } {
+  return libConvertECF32ToRFCE(ecf32Xml);
+}
 
 export class FailClosedXmlSigner implements XmlSignerAdapter {
   async signXml(): Promise<any> {
@@ -49,7 +53,7 @@ function getDgiiEnvironment(env: string) {
 }
 
 export class RealDgiiClient implements DgiiClientAdapter {
-  async submitSignedXml(input: Parameters<DgiiClientAdapter["submitSignedXml"]>[0]): Promise<any> {
+  async submitSignedXml(input: Parameters<DgiiClientAdapter["submitSignedXml"]>[0]): Promise<DgiiSubmitResult> {
     try {
       const p12Base64 = Buffer.from(input.certificate.p12Bytes).toString("base64");
       const reader = new P12Reader(input.certificate.passphrase);
@@ -63,17 +67,63 @@ export class RealDgiiClient implements DgiiClientAdapter {
       const ecf = new ECF(certs, env);
       await ecf.authenticate();
 
-      // We need a proper filename, but it is not strictly required to be exact if the DGII accepts it,
-      // but let's use a dummy name like 'invoice.xml' since dgii-ecf uses it for the multipart form.
-      const response = await ecf.sendElectronicDocument(input.signedXml, `ECF_${input.idempotencyKey}.xml`);
+      const typeMatch = /<TipoeCF>(\d+)<\/TipoeCF>/.exec(input.signedXml);
+      const isE32 = typeMatch && typeMatch[1] === "32";
+
+      const totalMatch = /<MontoTotal>([^<]+)<\/MontoTotal>/.exec(input.signedXml);
+      const total = totalMatch ? parseFloat(totalMatch[1]) : 0;
+
+      const thresholdEnv = process.env.ECF_E32_RFCE_THRESHOLD_DOP;
+      const threshold = thresholdEnv ? parseFloat(thresholdEnv) : 250000;
+
+      let rfceThresholdUsed: number | null = null;
+      let response: any;
+
+      const fileName = `ECF_${input.idempotencyKey}.xml`;
+
+      if (isE32) {
+        rfceThresholdUsed = threshold;
+        if (total < threshold) {
+          const { xml: rfceXml } = convertECF32ToRFCE(input.signedXml);
+          const signature = new Signature(certs.key, certs.cert);
+          const signedRFCEXml = signature.signXml(rfceXml, "RFCE");
+          
+          response = await ecf.sendSummary(signedRFCEXml, fileName);
+
+          if (response && (response.codigo === 1 || response.estado?.toLowerCase().includes("aceptado") || response.estado?.toLowerCase().includes("aceptada"))) {
+            return {
+              kind: "submitted",
+              trackId: response.encf || `summary-${input.idempotencyKey}`,
+              statusCode: String(response.codigo),
+              message: response.estado,
+              rfceThresholdUsed,
+            };
+          }
+
+          return {
+            kind: "terminal_error",
+            statusCode: String(response?.codigo ?? ""),
+            message: response?.estado || `DGII summary submission failed: ${JSON.stringify(response)}`,
+          };
+        } else {
+          response = await ecf.sendElectronicDocument(input.signedXml, fileName);
+        }
+      } else {
+        response = await ecf.sendElectronicDocument(input.signedXml, fileName);
+      }
 
       if (response && response.trackId) {
-        return { kind: "submitted", trackId: response.trackId, statusCode: "200", message: "Sent to DGII" };
+        return {
+          kind: "submitted",
+          trackId: response.trackId,
+          statusCode: "200",
+          message: "Sent to DGII",
+          rfceThresholdUsed,
+        };
       }
 
       return { kind: "terminal_error", message: `No trackId returned: ${JSON.stringify(response)}` };
     } catch (err: any) {
-      // Analyze error if it's retryable
       return { kind: "retryable_error", message: err.message };
     }
   }

@@ -37,6 +37,9 @@ type ClaimRow = {
   document_status: EcfFiscalStatus;
   certificate_metadata_id: string | null;
   dgii_track_id: string | null;
+  rfce_threshold_used: number | string | null;
+  rejection_scope: "individual" | "batch" | null;
+  batch_id: string | null;
   certificate_id: string | null;
   certificate_tenant_id: string | null;
   certificate_environment: CertificateMetadataSnapshot["environment"] | null;
@@ -116,6 +119,9 @@ export class PostgresFiscalWorkerRepository implements FiscalWorkerRepository {
       acceptedAt: "accepted_at",
       rejectedAt: "rejected_at",
       lastError: "last_error",
+      rfceThresholdUsed: "rfce_threshold_used",
+      rejectionScope: "rejection_scope",
+      batchId: "batch_id",
     });
   }
 
@@ -195,6 +201,9 @@ export const CLAIM_JOB_SQL = `
       ed.status AS document_status,
       ed.certificate_metadata_id,
       ed.dgii_track_id,
+      ed.rfce_threshold_used,
+      ed.rejection_scope,
+      ed.batch_id,
       cm.id AS certificate_id,
       cm.tenant_id AS certificate_tenant_id,
       cm.environment AS certificate_environment,
@@ -260,6 +269,9 @@ export const CLAIM_JOB_SQL = `
     candidate.document_status,
     candidate.certificate_metadata_id,
     candidate.dgii_track_id,
+    candidate.rfce_threshold_used,
+    candidate.rejection_scope,
+    candidate.batch_id,
     candidate.certificate_id,
     candidate.certificate_tenant_id,
     candidate.certificate_environment,
@@ -288,6 +300,9 @@ function rowToSnapshot(row: ClaimRow): FiscalWorkerSnapshot {
       status: row.document_status,
       certificateMetadataId: row.certificate_metadata_id,
       dgiiTrackId: row.dgii_track_id,
+      rfce_threshold_used: row.rfce_threshold_used !== null && row.rfce_threshold_used !== undefined ? Number(row.rfce_threshold_used) : null,
+      rejection_scope: row.rejection_scope,
+      batchId: row.batch_id,
     },
     certificate: row.certificate_id
       ? {

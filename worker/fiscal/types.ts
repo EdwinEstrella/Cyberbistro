@@ -13,7 +13,7 @@ export type EcfFiscalStatus =
   | "pending_configuration";
 
 export type FiscalOutboxOperation = "submit" | "poll_status" | "resubmit";
-export type FiscalOutboxStatus = "queued" | "processing" | "retryable_error" | "terminal_error" | "done";
+export type FiscalOutboxStatus = "queued" | "processing" | "retryable_error" | "terminal_error" | "done" | "blocked_configuration";
 
 export type WorkerResult<T> =
   | { ok: true; value: T }
@@ -133,6 +133,9 @@ export interface FiscalWorkerRepository {
     acceptedAt: string;
     rejectedAt: string;
     lastError: string | null;
+    rfceThresholdUsed: number | null;
+    rejectionScope: "individual" | "batch" | null;
+    batchId: string | null;
   }>): Promise<void>;
   updateJob(jobId: string, update: Partial<{
     status: FiscalOutboxStatus;
@@ -170,7 +173,7 @@ export interface XmlSignerAdapter {
 }
 
 export type DgiiSubmitResult =
-  | { kind: "submitted"; trackId: string; statusCode?: string; message?: string }
+  | { kind: "submitted"; trackId: string; statusCode?: string; message?: string; rfceThresholdUsed?: number | null }
   | { kind: "retryable_error"; statusCode?: string; message: string }
   | { kind: "terminal_error"; statusCode?: string; message: string };
 

@@ -11,6 +11,14 @@ export interface TenantBillingSettingsRow {
   itbis_cobro_por_defecto?: boolean | null;
   fiscal_mode_fallback?: string | null;
   ecf_environment?: string | null;
+  rnc?: string | null;
+  nombre?: string | null;
+  direccion?: string | null;
+  ecf_issuer_sucursal?: string | null;
+  ecf_issuer_municipio?: string | null;
+  ecf_issuer_provincia?: string | null;
+  ecf_issuer_actividad_economica?: string | null;
+  ecf_issuer_correo_emisor?: string | null;
 }
 
 export interface TenantBillingSettings {
@@ -20,10 +28,18 @@ export interface TenantBillingSettings {
   defaultItbisEnabled: boolean;
   fiscalModeFallback?: FiscalMode | null;
   ecfEnvironment?: string | null;
+  rnc?: string | null;
+  nombre?: string | null;
+  direccion?: string | null;
+  ecfIssuerSucursal?: string | null;
+  ecfIssuerMunicipio?: string | null;
+  ecfIssuerProvincia?: string | null;
+  ecfIssuerActividadEconomica?: string | null;
+  ecfIssuerCorreoEmisor?: string | null;
 }
 
 const TENANT_BILLING_SETTINGS_SELECT =
-  "fiscal_mode, ncf_fiscal_activo, ncf_tipo_default, itbis_cobro_por_defecto, fiscal_mode_fallback, ecf_environment";
+  "fiscal_mode, ncf_fiscal_activo, ncf_tipo_default, itbis_cobro_por_defecto, fiscal_mode_fallback, ecf_environment, rnc, nombre, direccion, ecf_issuer_sucursal, ecf_issuer_municipio, ecf_issuer_provincia, ecf_issuer_actividad_economica, ecf_issuer_correo_emisor";
 
 export function normalizeTenantBillingSettings(
   row: TenantBillingSettingsRow | null | undefined
@@ -39,6 +55,14 @@ export function normalizeTenantBillingSettings(
     defaultItbisEnabled: Boolean(row?.itbis_cobro_por_defecto),
     fiscalModeFallback: normalizeFiscalMode(row?.fiscal_mode_fallback, false),
     ecfEnvironment: row?.ecf_environment || "certification",
+    rnc: row?.rnc,
+    nombre: row?.nombre,
+    direccion: row?.direccion,
+    ecfIssuerSucursal: row?.ecf_issuer_sucursal,
+    ecfIssuerMunicipio: row?.ecf_issuer_municipio,
+    ecfIssuerProvincia: row?.ecf_issuer_provincia,
+    ecfIssuerActividadEconomica: row?.ecf_issuer_actividad_economica,
+    ecfIssuerCorreoEmisor: row?.ecf_issuer_correo_emisor,
   };
 }
 

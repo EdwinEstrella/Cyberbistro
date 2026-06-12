@@ -2,7 +2,7 @@ import { resolveNcfForNewInvoiceLocalFirst, enqueueLocalWrite } from "./localFir
 
 import { type FiscalMode } from "./fiscalTypes";
 import { insforgeClient } from "./insforge";
-import { type TenantBillingSettings } from "./tenantBillingSettings";
+import { type TenantBillingSettings, loadTenantBillingSettings } from "./tenantBillingSettings";
 
 export async function resolveActiveFiscalMode(
   tenantId: string,
@@ -17,7 +17,23 @@ export async function resolveActiveFiscalMode(
     return { mode: settings.fiscalMode, certificateId: null };
   }
 
+  const isConfigComplete = Boolean(
+    settings.rnc?.trim() &&
+    settings.nombre?.trim() &&
+    settings.direccion?.trim() &&
+    settings.ecfIssuerSucursal?.trim() &&
+    settings.ecfIssuerMunicipio?.trim() &&
+    settings.ecfIssuerProvincia?.trim() &&
+    settings.ecfIssuerActividadEconomica?.trim() &&
+    settings.ecfIssuerCorreoEmisor?.trim()
+  );
+
   if (isOnline) {
+    if (!isConfigComplete) {
+      const fallbackMode = settings.fiscalModeFallback || "internal_receipt";
+      return { mode: fallbackMode, certificateId: null };
+    }
+
     try {
       const { data: cert } = await insforgeClient.database
         .from("ecf_certificate_metadata")
@@ -117,6 +133,23 @@ export async function enqueueEcfDocuments(args: {
   const ecfDocumentId = args.ecfDocumentId || crypto.randomUUID();
   const now = new Date().toISOString();
 
+  const settings = await loadTenantBillingSettings(args.tenantId);
+  const isConfigComplete = Boolean(
+    settings &&
+    settings.rnc?.trim() &&
+    settings.nombre?.trim() &&
+    settings.direccion?.trim() &&
+    settings.ecfIssuerSucursal?.trim() &&
+    settings.ecfIssuerMunicipio?.trim() &&
+    settings.ecfIssuerProvincia?.trim() &&
+    settings.ecfIssuerActividadEconomica?.trim() &&
+    settings.ecfIssuerCorreoEmisor?.trim() &&
+    args.certificateId
+  );
+
+  const documentStatus = isConfigComplete ? "pending_offline" : "pending_configuration";
+  const jobStatus = isConfigComplete ? "pending_sync" : "blocked_configuration";
+
   await enqueueLocalWrite({
     tenantId: args.tenantId,
     tableName: "ecf_documents",
@@ -128,7 +161,7 @@ export async function enqueueEcfDocuments(args: {
       factura_id: args.facturaId,
       certificate_metadata_id: args.certificateId,
       ecf_type: args.ecfType,
-      status: "pending_offline",
+      status: documentStatus,
       created_at: now,
       updated_at: now,
     },
@@ -147,7 +180,7 @@ export async function enqueueEcfDocuments(args: {
       ecf_document_id: ecfDocumentId,
       factura_id: args.facturaId,
       operation: "submit",
-      status: "pending_sync",
+      status: jobStatus,
       attempts: 0,
       next_attempt_at: now,
       idempotency_key: `${args.tenantId}:${args.facturaId}:submit`,
