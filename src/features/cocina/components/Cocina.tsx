@@ -159,8 +159,14 @@ export function Cocina() {
     if (!tenantId) return;
     const now = new Date().toISOString();
     const deviceId = await getDeviceId();
-    const updateComanda = { estado: nextEstado, updated_at: now };
-    await enqueueLocalWrite({ tenantId, tableName: "comandas", rowId: id, op: "update", payload: updateComanda, deviceId });
+    
+    if (nextEstado === "entregado") {
+      await enqueueLocalWrite({ tenantId, tableName: "comandas", rowId: id, op: "delete", payload: {}, deviceId });
+    } else {
+      const updateComanda = { estado: nextEstado, updated_at: now };
+      await enqueueLocalWrite({ tenantId, tableName: "comandas", rowId: id, op: "update", payload: updateComanda, deviceId });
+    }
+
     if (nextEstado === "listo") {
       const consumos = isLocalFirstEnabled()
         ? await readLocalMirror<any>(tenantId, "consumos")

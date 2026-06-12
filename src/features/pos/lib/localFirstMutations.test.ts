@@ -51,11 +51,11 @@ describe("localFirstMutations", () => {
     expect(enqueueLocalWriteMock).toHaveBeenCalledTimes(2);
     expect(enqueueLocalWriteMock).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({ tableName: "comandas", rowId: "c-1", op: "update" })
+      expect.objectContaining({ tableName: "comandas", rowId: "c-1", op: "delete" })
     );
     expect(enqueueLocalWriteMock).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ tableName: "comandas", rowId: "c-2", op: "update" })
+      expect.objectContaining({ tableName: "comandas", rowId: "c-2", op: "delete" })
     );
   });
 });

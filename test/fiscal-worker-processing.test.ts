@@ -47,7 +47,8 @@ function baseSnapshot(overrides: Partial<FiscalWorkerSnapshot> = {}): FiscalWork
         itbis: 18,
         subtotal: 100,
         created_at: "2026-06-10T12:00:00.000Z",
-        client_rnc: "123456789",
+        cliente_rnc: "123456789",
+        cliente_nombre: "Test Client",
         ncf: "E3100000001",
       },
       tenant: {

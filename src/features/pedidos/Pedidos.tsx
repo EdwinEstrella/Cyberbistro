@@ -43,9 +43,9 @@ export function Pedidos() {
   const [message, setMessage] = useState<string | null>(null);
   const menuUrl = settings ? buildMenuUrl(settings.public_slug) : "";
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (background = false) => {
     if (!tenantId) return;
-    setLoading(true);
+    if (!background) setLoading(true);
     await ensureAuthSessionFresh();
 
     const settingsQuery = insforgeClient.database
@@ -98,7 +98,7 @@ export function Pedidos() {
     const handleDigitalOrderChanged = (msg: any) => {
       if (!active) return;
       if (msg?.meta?.channel && !msg.meta.channel.includes(channelName)) return;
-      void loadData();
+      void loadData(true);
     };
 
     insforgeClient.realtime.on("INSERT_digital_order", handleDigitalOrderChanged);
@@ -119,9 +119,17 @@ export function Pedidos() {
 
 
   async function updateOrderStatus(order: DigitalOrder, status: "accepted" | "rejected") {
-    const patch = status === "accepted"
-      ? { status, accepted_at: new Date().toISOString(), rejection_reason: null }
-      : { status, rejected_at: new Date().toISOString(), rejection_reason: "Rechazado desde pedidos" };
+    if (status === "rejected") {
+      const { error } = await insforgeClient.database.from("digital_orders").delete().eq("id", order.id);
+      if (error) {
+        setMessage(error.message || "No se pudo rechazar el pedido.");
+        return;
+      }
+      setOrders((current) => current.filter((row) => row.id !== order.id));
+      return;
+    }
+
+    const patch = { status, accepted_at: new Date().toISOString(), rejection_reason: null };
 
     if (status === "accepted") {
       const orderLines = orderItems.filter((item) => item.order_id === order.id);

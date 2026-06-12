@@ -193,7 +193,8 @@ describe("Offline e-CF Sales and Reconnect Sync Integration", () => {
           itbis: 18,
           subtotal: 100,
           created_at: "2026-06-10T12:00:00.000Z",
-          client_rnc: "123456789",
+          cliente_rnc: "123456789",
+          cliente_nombre: "Cliente de Prueba",
           ncf: "E3100000001",
         },
         tenant: {
