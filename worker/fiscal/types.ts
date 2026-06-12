@@ -9,7 +9,8 @@ export type EcfFiscalStatus =
   | "accepted"
   | "rejected"
   | "retryable_error"
-  | "terminal_error";
+  | "terminal_error"
+  | "pending_configuration";
 
 export type FiscalOutboxOperation = "submit" | "poll_status" | "resubmit";
 export type FiscalOutboxStatus = "queued" | "processing" | "retryable_error" | "terminal_error" | "done";
@@ -92,6 +93,9 @@ export interface EcfDocumentSnapshot {
   status: EcfFiscalStatus;
   certificateMetadataId: string | null;
   dgiiTrackId: string | null;
+  rfce_threshold_used: number | null;
+  rejection_scope: "individual" | "batch" | null;
+  batchId?: string | null;
 }
 
 export interface CertificateMetadataSnapshot {

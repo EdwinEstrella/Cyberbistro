@@ -31,6 +31,7 @@ describe("fiscalTypes", () => {
       "rejected",
       "retryable_error",
       "terminal_error",
+      "pending_configuration",
     ]);
     expect(isEcfFiscalStatus("accepted")).toBe(true);
     expect(isEcfFiscalStatus("pagada")).toBe(false);

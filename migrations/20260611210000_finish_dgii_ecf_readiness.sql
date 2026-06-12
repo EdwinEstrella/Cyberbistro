@@ -77,14 +77,27 @@ BEGIN
       USING ERRCODE = 'P0002';
   END IF;
 
-  v_idempotency_key := format('manual_reenqueue:%s:%s', p_tenant_id, p_ecf_document_id);
-
   SELECT *
   INTO v_outbox
   FROM public.fiscal_outbox
-  WHERE idempotency_key = v_idempotency_key;
+  WHERE tenant_id = p_tenant_id
+    AND ecf_document_id = p_ecf_document_id
+    AND operation = 'resubmit'
+    AND status IN ('queued', 'processing', 'retryable_error')
+    AND (
+      status <> 'processing'
+      OR locked_at IS NULL
+      OR locked_at >= now() - interval '15 minutes'
+    )
+  ORDER BY created_at DESC
+  LIMIT 1;
 
   IF FOUND THEN
+    IF v_document.status NOT IN ('pending_sync', 'rejected', 'retryable_error', 'terminal_error') THEN
+      RAISE EXCEPTION 'e-CF document % is not eligible for reenqueue from status %', p_ecf_document_id, v_document.status
+        USING ERRCODE = 'P0001';
+    END IF;
+
     RETURN jsonb_build_object(
       'ok', true,
       'idempotent', true,
@@ -98,6 +111,8 @@ BEGIN
     RAISE EXCEPTION 'e-CF document % is not eligible for reenqueue from status %', p_ecf_document_id, v_document.status
       USING ERRCODE = 'P0001';
   END IF;
+
+  v_idempotency_key := format('manual_reenqueue:%s:%s:%s', p_tenant_id, p_ecf_document_id, txid_current());
 
   INSERT INTO public.fiscal_outbox (
     tenant_id,
@@ -119,8 +134,6 @@ BEGIN
     now(),
     v_idempotency_key
   )
-  ON CONFLICT (idempotency_key) DO UPDATE
-    SET updated_at = public.fiscal_outbox.updated_at
   RETURNING * INTO v_outbox;
 
   UPDATE public.ecf_documents

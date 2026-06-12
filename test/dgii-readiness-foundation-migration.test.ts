@@ -51,13 +51,25 @@ describe("DGII e-CF readiness foundation migration", () => {
     expect(migration).toContain("'trusted_rpc'");
   });
 
-  it("uses a deterministic idempotency key and returns the existing queued outbox on duplicate reenqueue", () => {
+  it("suppresses only active manual reenqueue outbox rows and validates status before idempotent success", () => {
     const migration = readFileSync(migrationPath, "utf8");
 
-    expect(migration).toContain("v_idempotency_key := format('manual_reenqueue:%s:%s', p_tenant_id, p_ecf_document_id)");
-    expect(migration).toContain("ON CONFLICT (idempotency_key) DO UPDATE");
+    expect(migration).toContain("v_idempotency_key := format('manual_reenqueue:%s:%s:%s', p_tenant_id, p_ecf_document_id, txid_current())");
+    expect(migration).toContain("AND operation = 'resubmit'");
+    expect(migration).toContain("AND status IN ('queued', 'processing', 'retryable_error')");
+    expect(migration).toContain("locked_at >= now() - interval '15 minutes'");
+    expect(migration).not.toContain("WHERE idempotency_key = v_idempotency_key;");
+    expect(migration).not.toContain("ON CONFLICT (idempotency_key) DO UPDATE");
     expect(migration).toContain("RETURNING * INTO v_outbox");
     expect(migration).toContain("'idempotent', true");
     expect(migration).toContain("'outbox_id', v_outbox.id");
+
+    const activeLookupIndex = migration.indexOf("AND operation = 'resubmit'");
+    const idempotentReturnIndex = migration.indexOf("'idempotent', true");
+    const statusValidationIndex = migration.indexOf("v_document.status NOT IN ('pending_sync', 'rejected', 'retryable_error', 'terminal_error')");
+
+    expect(activeLookupIndex).toBeGreaterThan(0);
+    expect(statusValidationIndex).toBeGreaterThan(activeLookupIndex);
+    expect(idempotentReturnIndex).toBeGreaterThan(statusValidationIndex);
   });
 });

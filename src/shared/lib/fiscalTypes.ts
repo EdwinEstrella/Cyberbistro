@@ -12,9 +12,22 @@ export const ECF_FISCAL_STATUSES = [
   "rejected",
   "retryable_error",
   "terminal_error",
+  "pending_configuration",
 ] as const;
 
 export type EcfFiscalStatus = (typeof ECF_FISCAL_STATUSES)[number];
+
+export interface EcfDocumentSnapshot {
+  id: string;
+  tenantId: string;
+  facturaId: string;
+  status: EcfFiscalStatus;
+  certificateMetadataId: string | null;
+  dgiiTrackId: string | null;
+  rfce_threshold_used: number | null;
+  rejection_scope: "individual" | "batch" | null;
+  batchId?: string | null;
+}
 
 export function isFiscalMode(value: unknown): value is FiscalMode {
   return typeof value === "string" && (FISCAL_MODES as readonly string[]).includes(value);
