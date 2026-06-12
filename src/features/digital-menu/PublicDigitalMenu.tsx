@@ -195,7 +195,7 @@ export function PublicDigitalMenu() {
   const settings = menu.settings;
 
   return (
-    <div className="min-h-screen bg-[#15100c] text-[#fff7ed]">
+    <div className="h-full overflow-y-auto bg-[#15100c] text-[#fff7ed]">
       <header className="relative overflow-hidden px-4 py-8 sm:px-8">
         <div className="absolute inset-0 opacity-50" style={{ background: "radial-gradient(circle at 20% 10%, #ff906d 0, transparent 28%), radial-gradient(circle at 90% 5%, #facc15 0, transparent 22%)" }} />
         <div className="relative mx-auto max-w-6xl rounded-[36px] border border-white/10 bg-black/35 p-6 shadow-2xl backdrop-blur">

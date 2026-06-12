@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useSucursal } from "../../app/context/SucursalContext";
 import { useAuth, ensureAuthSessionFresh } from "../../shared/hooks/useAuth";
 import { insforgeClient } from "../../shared/lib/insforge";
@@ -35,15 +35,12 @@ function buildMenuUrl(slug: string) {
 
 export function Pedidos() {
   const { tenantId, loading: authLoading } = useAuth();
-  const { activeSucursalId, sucursales } = useSucursal();
+  const { activeSucursalId } = useSucursal();
   const [settings, setSettings] = useState<MenuSettings | null>(null);
   const [orders, setOrders] = useState<DigitalOrder[]>([]);
   const [orderItems, setOrderItems] = useState<DigitalOrderItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-
-  const activeSucursal = sucursales.find((s) => s.id === activeSucursalId);
   const menuUrl = settings ? buildMenuUrl(settings.public_slug) : "";
 
   const loadData = useCallback(async () => {
@@ -86,12 +83,71 @@ export function Pedidos() {
     if (!authLoading && !tenantId) setLoading(false);
   }, [authLoading, loadData, tenantId]);
 
+  useEffect(() => {
+    if (!tenantId) return;
+
+    const channelName = `cocina:${tenantId}`;
+    let active = true;
+
+    const setupRealtime = async () => {
+      await insforgeClient.realtime.connect();
+      const sub = await insforgeClient.realtime.subscribe(channelName);
+      if (!sub.ok) { console.error("Realtime sub error in Pedidos:", sub.error); return; }
+    };
+
+    const handleDigitalOrderChanged = (msg: any) => {
+      if (!active) return;
+      if (msg?.meta?.channel && !msg.meta.channel.includes(channelName)) return;
+      void loadData();
+    };
+
+    insforgeClient.realtime.on("INSERT_digital_order", handleDigitalOrderChanged);
+    insforgeClient.realtime.on("UPDATE_digital_order", handleDigitalOrderChanged);
+    insforgeClient.realtime.on("DELETE_digital_order", handleDigitalOrderChanged);
+    
+    void setupRealtime();
+
+    return () => {
+      active = false;
+      insforgeClient.realtime.off("INSERT_digital_order", handleDigitalOrderChanged);
+      insforgeClient.realtime.off("UPDATE_digital_order", handleDigitalOrderChanged);
+      insforgeClient.realtime.off("DELETE_digital_order", handleDigitalOrderChanged);
+      insforgeClient.realtime.unsubscribe(channelName);
+    };
+  }, [tenantId, loadData]);
+
 
 
   async function updateOrderStatus(order: DigitalOrder, status: "accepted" | "rejected") {
     const patch = status === "accepted"
       ? { status, accepted_at: new Date().toISOString(), rejection_reason: null }
       : { status, rejected_at: new Date().toISOString(), rejection_reason: "Rechazado desde pedidos" };
+
+    if (status === "accepted") {
+      const orderLines = orderItems.filter((item) => item.order_id === order.id);
+      const comandaItems = orderLines.map((line) => ({
+        nombre: line.name_snapshot,
+        precio: line.quantity > 0 ? line.subtotal / line.quantity : 0,
+        cantidad: line.quantity,
+        notas: ""
+      }));
+
+      const comandaPayload = {
+        tenant_id: tenantId,
+        sucursal_id: activeSucursalId || null,
+        estado: "pendiente",
+        creado_por: "digital",
+        notas: `[DIGITAL] ${order.customer_name}${order.notes ? ' - ' + order.notes : ''}`,
+        items: comandaItems
+      };
+
+      const { error: comandaError } = await insforgeClient.database.from("comandas").insert(comandaPayload);
+      if (comandaError) {
+         setMessage(comandaError.message || "No se pudo crear la comanda para cocina.");
+         return;
+      }
+    }
+
     const { error } = await insforgeClient.database.from("digital_orders").update(patch).eq("id", order.id);
     if (error) {
       setMessage(error.message || "No se pudo actualizar el pedido.");

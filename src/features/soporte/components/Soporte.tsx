@@ -1248,6 +1248,7 @@ function DigitalMenuPanel() {
   const [editDisplayName, setEditDisplayName] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editImageUrl, setEditImageUrl] = useState("");
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   const [confirmState, setConfirmState] = useState<{ open: boolean; message: string; onConfirm: () => void, title?: string, variant?: "danger" | "primary" }>({ open: false, message: "", onConfirm: () => {} });
 
@@ -1455,6 +1456,37 @@ function DigitalMenuPanel() {
     setEditImageUrl(custom?.image_url || "");
   };
 
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    
+    setUploadingImage(true);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${tenantId}/platos/${editingPlato.id}-${Date.now()}.${fileExt}`;
+
+      const { error } = await insforgeClient.storage
+        .from('configuracion')
+        .upload(fileName, file);
+
+      if (error) {
+        window.alert("Error al subir la imagen: " + error.message);
+        console.error(error);
+        return;
+      }
+      const publicUrl = insforgeClient.storage
+        .from('configuracion')
+        .getPublicUrl(fileName);
+
+      setEditImageUrl(publicUrl);
+    } catch (err) {
+      console.error("Upload error:", err);
+      window.alert("Error inesperado al subir la imagen");
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
   const filteredPlatosList = useMemo(() => {
     return platos.filter((p: any) => 
       p.nombre.toLowerCase().includes(dishSearch.toLowerCase()) || 
@@ -1515,7 +1547,7 @@ function DigitalMenuPanel() {
               <div className="flex flex-col gap-1.5">
                 <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Link del Restaurante (Slug)</label>
                 <div className="flex items-center bg-muted border border-border rounded-xl px-3 py-2 text-sm text-muted-foreground">
-                  <span className="select-none opacity-60 shrink-0">azokia.com/</span>
+                  <span className="select-none opacity-60 shrink-0">https://claudix-app.azokia.com/#/menu/</span>
                   <input 
                     type="text" 
                     placeholder="mi-restaurante"
@@ -1709,14 +1741,20 @@ function DigitalMenuPanel() {
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Foto del Plato (URL)</label>
-                <input 
-                  type="text" 
-                  value={editImageUrl}
-                  onChange={e => setEditImageUrl(e.target.value)}
-                  className="input-field"
-                  placeholder="https://images.com/foto.png"
-                />
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Foto del Plato</label>
+                <div className="flex items-center gap-4">
+                  {editImageUrl && (
+                    <img src={editImageUrl} alt="Plato" className="w-16 h-16 object-cover rounded shadow-sm border border-border" />
+                  )}
+                  <input 
+                    type="file" 
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    disabled={uploadingImage}
+                    className="input-field cursor-pointer file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
+                  />
+                  {uploadingImage && <span className="text-sm text-muted-foreground animate-pulse">Subiendo...</span>}
+                </div>
               </div>
             </div>
 
