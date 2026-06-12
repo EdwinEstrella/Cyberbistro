@@ -1744,7 +1744,7 @@ function DigitalMenuPanel() {
                 <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Foto del Plato</label>
                 <div className="flex items-center gap-4">
                   {editImageUrl && (
-                    <img src={editImageUrl} alt="Plato" className="w-16 h-16 object-cover rounded shadow-sm border border-border" />
+                    <img src={editImageUrl} alt="Plato" className="w-16 h-16 object-contain rounded shadow-sm border border-border bg-black/5" />
                   )}
                   <input 
                     type="file" 

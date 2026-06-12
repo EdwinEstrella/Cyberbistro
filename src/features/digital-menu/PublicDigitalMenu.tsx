@@ -224,7 +224,7 @@ export function PublicDigitalMenu() {
               <div className="grid gap-4 sm:grid-cols-2">
                 {items.map((item) => (
                   <article key={item.id} className="rounded-[28px] border border-white/10 bg-white/[0.06] p-4 shadow-xl">
-                    {item.image_url && <img src={item.image_url} alt="" className="mb-4 h-36 w-full rounded-[20px] object-cover" />}
+                    {item.image_url && <img src={item.image_url} alt="" className="mb-4 h-36 w-full rounded-[20px] object-contain bg-black/10" />}
                     <div className="flex items-start justify-between gap-4">
                       <div>
                         <h3 className="text-lg font-black">{item.name}</h3>
