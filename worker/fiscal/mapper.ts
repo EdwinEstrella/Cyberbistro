@@ -1,4 +1,5 @@
 import { Transformer } from "dgii-ecf";
+import { fiscalWorkerError } from "./errors";
 import type { FiscalWorkerSnapshot } from "./types";
 
 const transformer = new Transformer();
@@ -12,42 +13,42 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
 
   const tenantRnc = tenant.rnc?.trim();
   if (!tenantRnc) {
-    throw new Error("Fiscal configuration error: Tenant RNC is missing or not configured.");
+    throw fiscalWorkerError("FISCAL_CONFIGURATION_INCOMPLETE", "Tenant RNC is missing or not configured.", false);
   }
 
   const tenantName = (tenant.nombre_negocio || tenant.nombre)?.trim();
   if (!tenantName) {
-    throw new Error("Fiscal configuration error: Tenant Business Name (nombre_negocio or nombre) is missing or not configured.");
+    throw fiscalWorkerError("FISCAL_CONFIGURATION_INCOMPLETE", "Tenant Business Name (nombre_negocio or nombre) is missing or not configured.", false);
   }
 
   const tenantAddress = tenant.direccion?.trim();
   if (!tenantAddress) {
-    throw new Error("Fiscal configuration error: Tenant Address (direccion) is missing or not configured.");
+    throw fiscalWorkerError("FISCAL_CONFIGURATION_INCOMPLETE", "Tenant Address (direccion) is missing or not configured.", false);
   }
 
   const sucursal = tenant.ecf_issuer_sucursal?.trim();
   if (!sucursal) {
-    throw new Error("Fiscal configuration error: ecf_issuer_sucursal is missing or not configured.");
+    throw fiscalWorkerError("FISCAL_CONFIGURATION_INCOMPLETE", "ecf_issuer_sucursal is missing or not configured.", false);
   }
 
   const municipio = tenant.ecf_issuer_municipio?.trim();
   if (!municipio) {
-    throw new Error("Fiscal configuration error: ecf_issuer_municipio is missing or not configured.");
+    throw fiscalWorkerError("FISCAL_CONFIGURATION_INCOMPLETE", "ecf_issuer_municipio is missing or not configured.", false);
   }
 
   const provincia = tenant.ecf_issuer_provincia?.trim();
   if (!provincia) {
-    throw new Error("Fiscal configuration error: ecf_issuer_provincia is missing or not configured.");
+    throw fiscalWorkerError("FISCAL_CONFIGURATION_INCOMPLETE", "ecf_issuer_provincia is missing or not configured.", false);
   }
 
   const actividadEconomica = tenant.ecf_issuer_actividad_economica?.trim();
   if (!actividadEconomica) {
-    throw new Error("Fiscal configuration error: ecf_issuer_actividad_economica is missing or not configured.");
+    throw fiscalWorkerError("FISCAL_CONFIGURATION_INCOMPLETE", "ecf_issuer_actividad_economica is missing or not configured.", false);
   }
 
   const correoEmisor = tenant.ecf_issuer_correo_emisor?.trim();
   if (!correoEmisor) {
-    throw new Error("Fiscal configuration error: ecf_issuer_correo_emisor is missing or not configured.");
+    throw fiscalWorkerError("FISCAL_CONFIGURATION_INCOMPLETE", "ecf_issuer_correo_emisor is missing or not configured.", false);
   }
 
   // Determine dynamic e-CF type (31 = Factura de Crédito Fiscal, 32 = Factura de Consumo, etc.)
@@ -57,6 +58,19 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
   const subtotal = Number(factura.subtotal || 0);
   const itbis = Number(factura.itbis || 0);
   const itbisRate = subtotal > 0 ? (itbis / subtotal) : 0.18;
+
+  // Comprador Strict Validation for E31 (Crédito Fiscal)
+  let compradorRnc = factura.cliente_rnc?.trim();
+  let compradorNombre = factura.cliente_nombre?.trim();
+
+  if (ecfType === 31) {
+    if (!compradorRnc || !compradorNombre) {
+      throw fiscalWorkerError("FISCAL_CONFIGURATION_INCOMPLETE", "Factura de Crédito Fiscal (E31) requires both cliente_rnc and cliente_nombre.", false);
+    }
+  } else {
+    compradorRnc = compradorRnc || "000000000";
+    compradorNombre = compradorNombre || "Consumidor Final";
+  }
 
   // 1. Encabezado
   const encabezado = {
@@ -92,8 +106,8 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
       FechaEmision: (factura.created_at || now.toISOString()).substring(0, 10),
     },
     Comprador: {
-      RNCComprador: factura.cliente_rnc || "000000000",
-      RazonSocialComprador: factura.cliente_nombre || "Consumidor Final",
+      RNCComprador: compradorRnc,
+      RazonSocialComprador: compradorNombre,
     },
     Totales: {
       MontoTotal: factura.total,

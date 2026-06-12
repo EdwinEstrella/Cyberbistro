@@ -3,6 +3,8 @@ export type EcfEnvironment = "test" | "certification" | "production";
 export type EcfFiscalStatus =
   | "pending_offline"
   | "pending_sync"
+  | "pending_configuration"
+  | "pending_rfce_batch"
   | "queued"
   | "signed"
   | "submitted"
@@ -13,7 +15,7 @@ export type EcfFiscalStatus =
   | "pending_configuration";
 
 export type FiscalOutboxOperation = "submit" | "poll_status" | "resubmit";
-export type FiscalOutboxStatus = "queued" | "processing" | "retryable_error" | "terminal_error" | "done" | "blocked_configuration";
+export type FiscalOutboxStatus = "queued" | "blocked_configuration" | "processing" | "retryable_error" | "terminal_error" | "done";
 
 export type WorkerResult<T> =
   | { ok: true; value: T }
@@ -197,4 +199,10 @@ export interface DgiiClientAdapter {
     idempotencyKey: string;
     certificate: SigningMaterial;
   }): Promise<DgiiPollResult>;
+  sendSummary(input: {
+    signedXml: string;
+    fileName: string;
+    environment: EcfEnvironment;
+    certificate: SigningMaterial;
+  }): Promise<DgiiSubmitResult>;
 }

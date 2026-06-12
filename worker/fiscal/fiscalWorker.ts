@@ -207,15 +207,18 @@ export class FiscalWorker {
   }
 
   private async failJob(snapshot: FiscalWorkerSnapshot, error: FiscalWorkerError): Promise<void> {
-    const status: FiscalOutboxStatus = error.retryable ? "retryable_error" : "terminal_error";
+    const isConfigError = error.code === "FISCAL_CONFIGURATION_INCOMPLETE";
+    const outboxStatus: FiscalOutboxStatus = isConfigError ? "blocked_configuration" : (error.retryable ? "retryable_error" : "terminal_error");
+    const documentStatus: EcfFiscalStatus = isConfigError ? "pending_configuration" : (error.retryable ? "retryable_error" : "terminal_error");
+
     await this.deps.repository.updateJob(snapshot.job.id, {
-      status,
+      status: outboxStatus,
       attempts: snapshot.job.attempts + 1,
-      nextAttemptAt: error.retryable ? this.nextAttemptIso(snapshot.job.attempts + 1) : undefined,
+      nextAttemptAt: error.retryable && !isConfigError ? this.nextAttemptIso(snapshot.job.attempts + 1) : undefined,
       errorMessage: error.message,
     });
     await this.deps.repository.updateDocument(snapshot.document.id, {
-      status: error.retryable ? "retryable_error" : "terminal_error",
+      status: documentStatus,
       lastError: error.message,
     });
     await this.auditForSnapshot("job_failed", snapshot, { code: error.code, retryable: error.retryable });
@@ -258,7 +261,11 @@ export class FiscalWorker {
       const resolved = getCodeSixDigitfromSignature(signedXml);
       if (typeof resolved === "string" && resolved.trim() !== "") return resolved.trim();
     } catch {
-      // Fallback for tests or malformed third-party signatures; production should resolve from the real XML signature.
+      // Fallback only allowed in non-production environments
+    }
+
+    if (process.env.NODE_ENV === "production") {
+      throw fiscalWorkerError("SECURITY_CODE_ERROR", "Failed to extract DGII Security Code from XML signature. Fallback is disabled in production.", false);
     }
 
     const digits = xmlHash.replace(/\D/g, "");

@@ -160,4 +160,30 @@ export class RealDgiiClient implements DgiiClientAdapter {
       return { kind: "retryable_error", message: err.message };
     }
   }
+
+  async sendSummary(input: Parameters<DgiiClientAdapter["sendSummary"]>[0]): Promise<DgiiSubmitResult> {
+    try {
+      const p12Base64 = Buffer.from(input.certificate.p12Bytes).toString("base64");
+      const reader = new P12Reader(input.certificate.passphrase);
+      const certs = reader.getKeyFromStringBase64(p12Base64);
+
+      if (!certs.key || !certs.cert) {
+        throw fiscalWorkerError("SIGN_ERROR", "Invalid certificate extracting keys for sendSummary", false);
+      }
+
+      const env = getDgiiEnvironment(input.environment);
+      const ecf = new ECF(certs, env);
+      await ecf.authenticate();
+
+      const response = await ecf.sendSummary(input.signedXml, input.fileName);
+
+      if (response && response.trackId) {
+        return { kind: "submitted", trackId: response.trackId, statusCode: "200", message: "Sent RFCE summary to DGII" };
+      }
+
+      return { kind: "terminal_error", message: `No trackId returned for summary: ${JSON.stringify(response)}` };
+    } catch (err: any) {
+      return { kind: "retryable_error", message: err.message };
+    }
+  }
 }
