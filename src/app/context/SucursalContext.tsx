@@ -18,6 +18,13 @@ export interface Sucursal {
   activa: boolean;
 }
 
+interface TenantSucursalLimitRow {
+  id?: string;
+  plan?: string | null;
+  sucursal_limit_enabled?: boolean | null;
+  sucursal_limit?: number | null;
+}
+
 export type SucursalContextValue = {
   activeSucursalId: string | null;
   setActiveSucursalId: (id: string | null) => void;
@@ -33,8 +40,32 @@ const SucursalContext = createContext<SucursalContextValue | null>(null);
 const STORAGE_KEY = "cloudix_active_sucursal_id";
 const scopedStorageKey = (tenantId: string) => `${STORAGE_KEY}:${tenantId}`;
 
+function defaultSucursalLimitForPlan(plan?: string | null): number | null {
+  switch ((plan || "basico").trim().toLowerCase()) {
+    case "basico":
+      return 1;
+    case "profesional":
+      return 3;
+    case "empresarial":
+      return null;
+    default:
+      return 1;
+  }
+}
+
+function resolveEffectiveSucursalLimit(
+  tenant: TenantSucursalLimitRow | null | undefined,
+  fallbackPlan?: string | null
+): number | null {
+  if (tenant?.sucursal_limit_enabled === false) return null;
+  if (typeof tenant?.sucursal_limit === "number" && Number.isFinite(tenant.sucursal_limit)) {
+    return tenant.sucursal_limit;
+  }
+  return defaultSucursalLimitForPlan(tenant?.plan ?? fallbackPlan);
+}
+
 export function SucursalProvider({ children }: { children: ReactNode }) {
-  const { tenantId, isAuthenticated } = useAuth();
+  const { tenantId, isAuthenticated, plan } = useAuth();
   const [sucursales, setSucursales] = useState<Sucursal[]>([]);
   const [activeSucursalId, setActiveSucursalIdState] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -121,9 +152,57 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  async function loadTenantSucursalLimit(): Promise<TenantSucursalLimitRow | null> {
+    if (!tenantId) return null;
+
+    if (navigator.onLine) {
+      try {
+        const res = await insforgeClient.database
+          .from("tenants")
+          .select("id, plan, sucursal_limit_enabled, sucursal_limit")
+          .eq("id", tenantId)
+          .maybeSingle();
+        if (!res.error && res.data) return res.data as TenantSucursalLimitRow;
+      } catch {
+        // Fallback to local mirror below.
+      }
+    }
+
+    const tenants = await readLocalMirror<TenantSucursalLimitRow>(tenantId, "tenants").catch(() => []);
+    return tenants.find((tenant) => tenant.id === tenantId) ?? null;
+  }
+
+  async function loadActiveSucursalCount(): Promise<number> {
+    if (!tenantId) return sucursales.filter((s) => s.activa !== false).length;
+
+    if (navigator.onLine) {
+      try {
+        const res = await insforgeClient.database
+          .from("sucursales")
+          .select("id", { count: "exact", head: true })
+          .eq("tenant_id", tenantId)
+          .eq("activa", true);
+        if (!res.error && typeof res.count === "number") return res.count;
+      } catch {
+        // Fallback to local state below.
+      }
+    }
+
+    return sucursales.filter((s) => s.activa !== false).length;
+  }
+
   async function addSucursal(nombre: string, direccion?: string, telefono?: string): Promise<Sucursal> {
     if (!tenantId || !isAuthenticated) {
       throw new Error("Usuario no autenticado");
+    }
+
+    const tenantLimitRow = await loadTenantSucursalLimit();
+    const effectiveLimit = resolveEffectiveSucursalLimit(tenantLimitRow, plan);
+    if (effectiveLimit !== null) {
+      const activeCount = await loadActiveSucursalCount();
+      if (activeCount >= effectiveLimit) {
+        throw new Error(`Límite de sucursales alcanzado para este plan (${effectiveLimit}).`);
+      }
     }
 
     const newId = crypto.randomUUID();

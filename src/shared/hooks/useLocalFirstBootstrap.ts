@@ -12,7 +12,12 @@ import {
   ensureDefaultSucursal,
   assertCanWriteOffline,
 } from "../lib/localFirst";
-import { isDesktopRuntime, probeCloudAvailability, recordCloudFailure } from "../lib/cloudAvailability";
+import {
+  isCloudAvailabilityFailure,
+  isDesktopRuntime,
+  probeCloudAvailability,
+  recordCloudFailure,
+} from "../lib/cloudAvailability";
 
 export function resolveLicenseGateForOnlineSync(validation: {
   valid: boolean;
@@ -93,10 +98,20 @@ export function useLocalFirstBootstrap(tenantId: string | null): LocalFirstBoots
                   ? "Historial completo disponible offline."
                   : `Subidas ${outboxResult.pushed}, descargadas ${pullResult.rowsPulled} filas.`,
             });
-          } catch {
+          } catch (err) {
             if (cancelled) return;
-            recordCloudFailure();
             const next = await getLocalFirstStatusSnapshot(tenantId);
+            if (!isCloudAvailabilityFailure(err)) {
+              apply({
+                status: "error",
+                message: err instanceof Error ? err.message : "No se pudo sincronizar con el servidor.",
+                completedHistoryTables: next.completedHistoryTables,
+                totalHistoryTables: next.totalHistoryTables,
+              });
+              return;
+            }
+
+            recordCloudFailure();
             apply({
               status: "offline",
               message: "Servidor no disponible: operando offline con datos locales.",
