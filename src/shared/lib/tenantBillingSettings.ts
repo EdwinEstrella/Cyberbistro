@@ -13,6 +13,7 @@ export interface TenantBillingSettingsRow {
   ecf_environment?: string | null;
   rnc?: string | null;
   nombre?: string | null;
+  nombre_negocio?: string | null;
   direccion?: string | null;
   ecf_issuer_sucursal?: string | null;
   ecf_issuer_municipio?: string | null;
@@ -39,7 +40,7 @@ export interface TenantBillingSettings {
 }
 
 const TENANT_BILLING_SETTINGS_SELECT =
-  "fiscal_mode, ncf_fiscal_activo, ncf_tipo_default, itbis_cobro_por_defecto, fiscal_mode_fallback, ecf_environment, rnc, nombre, direccion, ecf_issuer_sucursal, ecf_issuer_municipio, ecf_issuer_provincia, ecf_issuer_actividad_economica, ecf_issuer_correo_emisor";
+  "fiscal_mode, ncf_fiscal_activo, ncf_tipo_default, itbis_cobro_por_defecto, fiscal_mode_fallback, ecf_environment, rnc, nombre_negocio, direccion, ecf_issuer_sucursal, ecf_issuer_municipio, ecf_issuer_provincia, ecf_issuer_actividad_economica, ecf_issuer_correo_emisor";
 
 export function normalizeTenantBillingSettings(
   row: TenantBillingSettingsRow | null | undefined
@@ -56,7 +57,7 @@ export function normalizeTenantBillingSettings(
     fiscalModeFallback: normalizeFiscalMode(row?.fiscal_mode_fallback, false),
     ecfEnvironment: row?.ecf_environment || "certification",
     rnc: row?.rnc,
-    nombre: row?.nombre,
+    nombre: row?.nombre ?? row?.nombre_negocio,
     direccion: row?.direccion,
     ecfIssuerSucursal: row?.ecf_issuer_sucursal,
     ecfIssuerMunicipio: row?.ecf_issuer_municipio,
