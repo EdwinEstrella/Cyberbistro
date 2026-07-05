@@ -859,6 +859,15 @@ export function resolveConflictForTable(
     }
 
     case "tenants":
+      if (
+        localEntry.op === "update" &&
+        localEntry.payload &&
+        Object.keys(localEntry.payload).every((key) => key === "cantidad_mesas")
+      ) {
+        return { resolution: "local_wins", reason: "Configuración de mesas debe sincronizarse al servidor." };
+      }
+      return { resolution: "server_wins", reason: "Identidades/permisos siempre ganan del servidor." };
+
     case "tenant_users": {
       return { resolution: "server_wins", reason: "Identidades/permisos siempre ganan del servidor." };
     }

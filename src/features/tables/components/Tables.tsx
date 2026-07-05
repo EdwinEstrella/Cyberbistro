@@ -2,12 +2,13 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
-import { generateMesasConfig, type MesaConfig } from "../config/mesas";
+import type { MesaConfig } from "../config/mesas";
 import { loadCantidadMesas } from "../../../shared/lib/tenantMesasSettings";
 import { estadoLabels, type MesaEstadoVisual } from "../config/estadoTheme";
 import { TableMesaCard } from "./TableMesaCard";
 import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { useSucursal } from "../../../app/context/SucursalContext";
+import { buildMesaEstadoUpsertPayload, buildTablesForConfiguredCount } from "../lib/tableState";
 
 type Estado = MesaEstadoVisual;
 
@@ -106,25 +107,7 @@ export function Tables() {
         useLocalConsumos ? readLocalMirror<any>(tenantId, "consumos").then(r => ({ data: r.filter((c: any) => c.estado !== "pagado" && c.sucursal_id === activeSucursalId) })) : insforgeClient.database.from("consumos").select("mesa_numero, subtotal").eq("tenant_id", tenantId).eq("sucursal_id", activeSucursalId).neq("estado", "pagado"),
         loadCantidadMesas(tenantId)
       ]).then(([estadosRes, consumosPendRes, cantidadMesas]) => {
-        const configArray = generateMesasConfig(cantidadMesas);
-        const mesasIniciales = configArray.map((config) => ({ ...config, estado: "libre" as Estado, fusionada: false, fusion_padre_id: null, fusion_hijos: [], span_filas: 1, span_columnas: 1 }));
-        const deudaPorNumero = new Map<number, number>();
-        if (consumosPendRes.data) {
-          for (const row of consumosPendRes.data as any[]) {
-            const mn = Number(row.mesa_numero);
-            if (mn > 0) deudaPorNumero.set(mn, (deudaPorNumero.get(mn) ?? 0) + Number(row.subtotal));
-          }
-        }
-        if (estadosRes.data && estadosRes.data.length > 0) {
-          const estadosMap = new Map<number, any>();
-          for (const e of estadosRes.data) estadosMap.set(e.id, e);
-          setMesas(mesasIniciales.map((m) => {
-            const e = estadosMap.get(m.id);
-            return { ...m, estado: deudaPorNumero.has(m.numero) ? "ocupada" : "libre", fusionada: !!e?.fusionada, fusion_padre_id: e?.fusion_padre_id ?? null, fusion_hijos: e?.fusion_hijos ?? [], span_filas: e?.span_filas ?? 1, span_columnas: e?.span_columnas ?? 1 };
-          }));
-        } else {
-          setMesas(mesasIniciales.map((m) => ({ ...m, estado: deudaPorNumero.has(m.numero) ? "ocupada" : "libre" })));
-        }
+        setMesas(buildTablesForConfiguredCount({ cantidadMesas, estadosRows: estadosRes.data as any[] | null, pendingConsumptionRows: consumosPendRes.data as any[] | null }));
         setLoading(false); refreshDeudaPorMesa();
       });
     });
@@ -174,8 +157,8 @@ export function Tables() {
     
     const deviceId = await getDeviceId();
     await Promise.all([
-      enqueueLocalWrite({ tenantId, tableName: "mesas_estado", op: "upsert", rowId: parentId.toString(), payload: { id: parentId, tenant_id: tenantId, sucursal_id: activeSucursalId, span_columnas: newSpanCols, span_filas: newSpanFilas, fusion_hijos: newHijos }, deviceId }),
-      enqueueLocalWrite({ tenantId, tableName: "mesas_estado", op: "upsert", rowId: childId.toString(), payload: { id: childId, tenant_id: tenantId, sucursal_id: activeSucursalId, fusionada: true, fusion_padre_id: parentId }, deviceId })
+      enqueueLocalWrite({ tenantId, tableName: "mesas_estado", op: "upsert", rowId: parentId.toString(), payload: buildMesaEstadoUpsertPayload({ id: parentId, tenantId, sucursalId: activeSucursalId, state: { span_columnas: newSpanCols, span_filas: newSpanFilas, fusion_hijos: newHijos } }), deviceId }),
+      enqueueLocalWrite({ tenantId, tableName: "mesas_estado", op: "upsert", rowId: childId.toString(), payload: buildMesaEstadoUpsertPayload({ id: childId, tenantId, sucursalId: activeSucursalId, state: { fusionada: true, fusion_padre_id: parentId } }), deviceId })
     ]);
     
     setMesas(prev => prev.map(m => m.id === parentId ? { ...m, span_columnas: newSpanCols, span_filas: newSpanFilas, fusion_hijos: newHijos } : (m.id === childId ? { ...m, fusionada: true, fusion_padre_id: parentId } : m)));
@@ -189,10 +172,10 @@ export function Tables() {
     
     const deviceId = await getDeviceId();
     const writes = [
-      enqueueLocalWrite({ tenantId, tableName: "mesas_estado", op: "upsert", rowId: parentId.toString(), payload: { id: parentId, tenant_id: tenantId, sucursal_id: activeSucursalId, span_columnas: 1, span_filas: 1, fusion_hijos: [] }, deviceId })
+      enqueueLocalWrite({ tenantId, tableName: "mesas_estado", op: "upsert", rowId: parentId.toString(), payload: buildMesaEstadoUpsertPayload({ id: parentId, tenantId, sucursalId: activeSucursalId, state: { span_columnas: 1, span_filas: 1, fusion_hijos: [] } }), deviceId })
     ];
     for (const cid of childIds) {
-      writes.push(enqueueLocalWrite({ tenantId, tableName: "mesas_estado", op: "upsert", rowId: cid.toString(), payload: { id: cid, tenant_id: tenantId, sucursal_id: activeSucursalId, fusionada: false, fusion_padre_id: null }, deviceId }));
+      writes.push(enqueueLocalWrite({ tenantId, tableName: "mesas_estado", op: "upsert", rowId: cid.toString(), payload: buildMesaEstadoUpsertPayload({ id: cid, tenantId, sucursalId: activeSucursalId, state: { fusionada: false, fusion_padre_id: null } }), deviceId }));
     }
     await Promise.all(writes);
     

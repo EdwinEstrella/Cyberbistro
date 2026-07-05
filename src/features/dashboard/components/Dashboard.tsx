@@ -39,7 +39,7 @@ import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { openCashDrawerForSale, printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { useTenantCurrency } from "../../../shared/hooks/useTenantCurrency";
 import { useTheme } from "../../../shared/context/ThemeContext";
-import { suggestCategoryColor, sortCategoriesForTabs } from "../../../shared/lib/menuCategories";
+import { buildPosCategoryTabs, suggestCategoryColor } from "../../../shared/lib/menuCategories";
 import { MesaCloseAccountModal } from "../../billing/components/MesaCloseAccountModal";
 import { canUseFeature } from "../../../shared/lib/planFeatures";
 // DashboardTickerStrip removed
@@ -54,6 +54,7 @@ import {
   type NcfTypeCode,
 } from "../../../shared/lib/ncf";
 import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
+import { calculateInvoiceTotals } from "../../../shared/lib/billingTotals";
 import { type FiscalMode } from "../../../shared/lib/fiscalTypes";
 import { resolveActiveFiscalMode, runFiscalEngine, enqueueEcfDocuments } from "../../../shared/lib/fiscalEngine";
 import { getLocalFirstStatusSnapshot, readLocalMirror, readLocalOutbox, enqueueLocalWrite, getDeviceId, writeLocalMirrorRow, shouldReadLocalFirst, LOCAL_NCF_RESERVED_PAYLOAD_FLAG } from "../../../shared/lib/localFirst";
@@ -176,6 +177,8 @@ export function Dashboard() {
   const [deletingConsumoId, setDeletingConsumoId] = useState<string | null>(null);
   /** Por defecto sin ITBIS en totales y factura; se activa desde el carrito. */
   const [cartItbisEnabled, setCartItbisEnabled] = useState(false);
+  /** Por defecto sin propina legal; se activa desde Ajustes o por cobro. */
+  const [cartPropinaEnabled, setCartPropinaEnabled] = useState(false);
   const [tenantNcfFiscalActive, setTenantNcfFiscalActive] = useState(false);
   const [selectedNcfType, setSelectedNcfType] = useState<NcfTypeCode>(DEFAULT_NCF_B_CODE);
   const [fiscalMode, setFiscalMode] = useState<FiscalMode>("internal_receipt");
@@ -201,6 +204,7 @@ export function Dashboard() {
       if (cancelled) return;
 
       setCartItbisEnabled(settings?.defaultItbisEnabled ?? false);
+      setCartPropinaEnabled(settings?.defaultPropinaEnabled ?? false);
       setSelectedNcfType(settings?.defaultNcfType ?? DEFAULT_NCF_B_CODE);
 
 
@@ -421,12 +425,7 @@ export function Dashboard() {
     () => new Map(menuCategories.map((category) => [category.nombre, category.color])),
     [menuCategories]
   );
-  const categories = [
-    "Todos",
-    ...(categoryOrder.length > 0
-      ? sortCategoriesForTabs(categoryOrder, categoryOrder)
-      : sortCategoriesForTabs(platos.map((p) => p.categoria))),
-  ];
+  const categories = buildPosCategoryTabs(categoryOrder, platos.map((p) => p.categoria));
 
   const getCatColor = useCallback(
     (cat: string) => categoryColorMap.get(cat) ?? suggestCategoryColor(cat),
@@ -451,14 +450,20 @@ export function Dashboard() {
 
   const cartSubtotal = cart.reduce((s, i) => s + i.plato.precio * i.cantidad, 0);
   const billItbisRate = cartItbisEnabled ? ITBIS : 0;
-  const cartItbis = cartSubtotal * billItbisRate;
-  const cartTotal = cartSubtotal + cartItbis;
+  const { total: cartTotal } = calculateInvoiceTotals({
+    subtotal: cartSubtotal,
+    itbisRate: billItbisRate,
+    propinaEnabled: cartPropinaEnabled,
+  });
 
   const cuentaSubtotal = mesaConsumos.reduce((s, c) => s + Number(c.subtotal), 0);
   const hasCuentaEnMesa = Boolean(selectedMesa && mesaConsumos.length > 0);
   const panelBillSubtotal = hasCuentaEnMesa ? cuentaSubtotal : cartSubtotal;
-  const panelBillItbis = panelBillSubtotal * billItbisRate;
-  const panelBillTotal = panelBillSubtotal + panelBillItbis;
+  const { itbis: panelBillItbis, propina: panelBillPropina, total: panelBillTotal } = calculateInvoiceTotals({
+    subtotal: panelBillSubtotal,
+    itbisRate: billItbisRate,
+    propinaEnabled: cartPropinaEnabled,
+  });
 
   const hasCartItems = cart.length > 0;
   const canSendCartToMesa = Boolean(selectedMesa && hasCartItems);
@@ -700,9 +705,7 @@ export function Dashboard() {
   function calculateTakeoutTotals() {
     const subtotal = cart.reduce((sum, i) => sum + i.plato.precio * i.cantidad, 0);
     const rate = cartItbisEnabled ? ITBIS : 0;
-    const itbis = subtotal * rate;
-    const total = subtotal + itbis;
-    return { subtotal, itbis, total };
+    return calculateInvoiceTotals({ subtotal, itbisRate: rate, propinaEnabled: cartPropinaEnabled });
   }
 
   function parseOptionalCashReceived(total: number, isFiado: boolean = false): { amount: number | null; change: number | null } | null {
@@ -1086,8 +1089,7 @@ export function Dashboard() {
 
     const subtotal = consumosToBill.reduce((sum, c) => sum + Number(c.subtotal), 0);
     const rate = cartItbisEnabled ? ITBIS : 0;
-    const itbis = subtotal * rate;
-    const total = subtotal + itbis;
+    const { itbis, propina, total } = calculateInvoiceTotals({ subtotal, itbisRate: rate, propinaEnabled: cartPropinaEnabled });
     const isFiado = paymentMethod === "fiado";
     const cashReceived =
       paymentMethod === "efectivo" || isFiado
@@ -1137,7 +1139,7 @@ export function Dashboard() {
       estado: isFiado ? ("pendiente" as const) : ("pagada" as const),
       subtotal,
       itbis,
-      propina: 0,
+      propina,
       total,
       items: facturaItems,
       monto_recibido: isFiado ? null : cashReceived.amount,
@@ -1789,6 +1791,30 @@ export function Dashboard() {
                   />
                 </button>
               </div>
+              <div className="flex items-center justify-between gap-[10px] rounded-[10px] border border-black/10 bg-background px-[12px] py-[10px] mb-[2px] dark:border-[rgba(72,72,71,0.28)] dark:bg-[#131313]">
+                <div className="flex flex-col min-w-0">
+                  <span className="font-['Inter',sans-serif] text-foreground text-[12px] font-semibold leading-tight">
+                    Propina legal 10%
+                  </span>
+                  <span className="font-['Inter',sans-serif] text-[#6b7280] text-[10px] leading-snug">
+                    Usa la preferencia de Ajustes al abrir y puedes cambiarla para este cobro
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={cartPropinaEnabled}
+                  onClick={() => setCartPropinaEnabled((v) => !v)}
+                  aria-label={cartPropinaEnabled ? "Desactivar propina legal 10%" : "Activar propina legal 10%"}
+                  className={`relative h-[30px] w-[54px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${cartPropinaEnabled ? "bg-[#59ee50]" : "bg-black/20 dark:bg-[#383838]"
+                    }`}
+                >
+                  <span
+                    className={`absolute top-[5px] left-[5px] block size-[20px] rounded-full bg-white shadow transition-transform duration-200 ease-out ${cartPropinaEnabled ? "translate-x-[24px]" : "translate-x-0"
+                      }`}
+                  />
+                </button>
+              </div>
               {tenantNcfFiscalActive ? (
                 <div className="flex flex-col gap-[10px] rounded-[10px] border border-black/10 bg-background px-[12px] py-[10px] dark:border-[rgba(72,72,71,0.28)] dark:bg-[#131313]">
                   <div className="flex items-center justify-between gap-[12px]">
@@ -1850,6 +1876,14 @@ export function Dashboard() {
                 </span>
                 <span className="font-['Inter',sans-serif] text-muted-foreground text-[11px] tracking-[1px] uppercase">
                   {formatMoney(panelBillItbis)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="font-['Inter',sans-serif] text-muted-foreground text-[11px] tracking-[1px] uppercase">
+                  {cartPropinaEnabled ? "Propina legal (10%)" : "Propina legal (no incluida)"}
+                </span>
+                <span className="font-['Inter',sans-serif] text-muted-foreground text-[11px] tracking-[1px] uppercase">
+                  {formatMoney(panelBillPropina)}
                 </span>
               </div>
               <div className="border-t border-black/10 dark:border-[rgba(72,72,71,0.15)] pt-[8px] flex items-center justify-between">
@@ -1917,6 +1951,7 @@ export function Dashboard() {
           tenantId={tenantId}
           mesaNumero={selectedMesa.numero}
           itbisRate={billItbisRate}
+          propinaEnabled={cartPropinaEnabled}
           initialNcfType={tenantNcfFiscalActive ? selectedNcfType : null}
           onClose={() => setShowPaymentModal(false)}
           onSettled={async (remaining) => {
@@ -1959,7 +1994,7 @@ export function Dashboard() {
 
       {/* Cobro para llevar (carrito) */}
       {showPaymentModal && !selectedMesa && isTakeout && cart.length > 0 && (() => {
-        const { subtotal: calcSubtotal, itbis: calcItbis, total: calcTotal } =
+        const { subtotal: calcSubtotal, itbis: calcItbis, propina: calcPropina, total: calcTotal } =
           calculateTakeoutTotals();
         return (
           <div
@@ -2060,6 +2095,12 @@ export function Dashboard() {
                         {cartItbisEnabled ? "ITBIS (18%)" : "ITBIS (no incluido)"}
                       </span>
                       <span className="font-['Space_Grotesk',sans-serif] font-bold text-zinc-300 text-[14px]">{formatMoney(calcItbis)}</span>
+                    </div>
+                    <div className="flex justify-between items-center relative z-10">
+                      <span className="font-['Inter',sans-serif] text-zinc-500 text-[13px]">
+                        {cartPropinaEnabled ? "Propina legal (10%)" : "Propina legal (no incluida)"}
+                      </span>
+                      <span className="font-['Space_Grotesk',sans-serif] font-bold text-zinc-300 text-[14px]">{formatMoney(calcPropina)}</span>
                     </div>
                     <div className="h-[1px] bg-zinc-900 my-1 relative z-10" />
                     <div className="flex justify-between items-end relative z-10">

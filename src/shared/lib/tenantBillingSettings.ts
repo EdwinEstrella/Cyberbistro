@@ -9,6 +9,7 @@ export interface TenantBillingSettingsRow {
   ncf_fiscal_activo?: boolean | null;
   ncf_tipo_default?: string | null;
   itbis_cobro_por_defecto?: boolean | null;
+  propina_cobro_por_defecto?: boolean | null;
   fiscal_mode_fallback?: string | null;
   ecf_environment?: string | null;
   rnc?: string | null;
@@ -27,6 +28,7 @@ export interface TenantBillingSettings {
   ncfFiscalActive: boolean;
   defaultNcfType: NcfTypeCode;
   defaultItbisEnabled: boolean;
+  defaultPropinaEnabled?: boolean;
   fiscalModeFallback?: FiscalMode | null;
   ecfEnvironment?: string | null;
   rnc?: string | null;
@@ -40,7 +42,7 @@ export interface TenantBillingSettings {
 }
 
 const TENANT_BILLING_SETTINGS_SELECT =
-  "fiscal_mode, ncf_fiscal_activo, ncf_tipo_default, itbis_cobro_por_defecto, fiscal_mode_fallback, ecf_environment, rnc, nombre_negocio, direccion, ecf_issuer_sucursal, ecf_issuer_municipio, ecf_issuer_provincia, ecf_issuer_actividad_economica, ecf_issuer_correo_emisor";
+  "fiscal_mode, ncf_fiscal_activo, ncf_tipo_default, itbis_cobro_por_defecto, propina_cobro_por_defecto, fiscal_mode_fallback, ecf_environment, rnc, nombre_negocio, direccion, ecf_issuer_sucursal, ecf_issuer_municipio, ecf_issuer_provincia, ecf_issuer_actividad_economica, ecf_issuer_correo_emisor";
 
 export function normalizeTenantBillingSettings(
   row: TenantBillingSettingsRow | null | undefined
@@ -54,6 +56,7 @@ export function normalizeTenantBillingSettings(
       ? (row.ncf_tipo_default as NcfTypeCode)
       : DEFAULT_NCF_B_CODE,
     defaultItbisEnabled: Boolean(row?.itbis_cobro_por_defecto),
+    defaultPropinaEnabled: Boolean(row?.propina_cobro_por_defecto),
     fiscalModeFallback: normalizeFiscalMode(row?.fiscal_mode_fallback, false),
     ecfEnvironment: row?.ecf_environment || "certification",
     rnc: row?.rnc,

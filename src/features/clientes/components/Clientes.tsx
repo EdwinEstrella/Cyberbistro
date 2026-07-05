@@ -78,6 +78,13 @@ export function Clientes() {
     return customers.filter((customer) => customerMatchesSearch(customer, query));
   }, [customers, query]);
 
+  const suggestedCustomers = useMemo(() => {
+    if (editing || !form.name.trim() || activeSubTab !== "form") return [];
+    return customers
+      .filter((customer) => customerMatchesSearch(customer, form.name))
+      .slice(0, 5);
+  }, [customers, form.name, editing, activeSubTab]);
+
   function startCreate() {
     setEditing(null);
     setForm(emptyForm);
@@ -305,7 +312,7 @@ export function Clientes() {
             </h2>
 
             <div className="flex flex-col gap-4.5">
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-1.5 relative">
                 <label className="text-zinc-500 font-['Space_Grotesk'] font-bold text-[11px] uppercase tracking-[1px] px-1">
                   Nombre Completo *
                 </label>
@@ -316,6 +323,36 @@ export function Clientes() {
                   placeholder="Ej: Juan Pérez"
                   className="rounded-xl border border-zinc-800 bg-zinc-900/30 px-4 py-3.5 text-sm text-white outline-none focus:border-[#ff906d]/50 transition-colors"
                 />
+
+                {suggestedCustomers.length > 0 && (
+                  <div className="absolute top-[100%] left-0 right-0 mt-2 z-10 bg-zinc-900 border border-zinc-800 rounded-xl shadow-xl overflow-hidden">
+                    <div className="px-4 py-2 bg-zinc-800/50 border-b border-zinc-800">
+                      <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
+                        Clientes similares encontrados
+                      </span>
+                    </div>
+                    {suggestedCustomers.map((customer) => (
+                      <button
+                        key={customer.id}
+                        type="button"
+                        onClick={() => startEdit(customer)}
+                        className="w-full text-left px-4 py-3 border-b border-zinc-800/50 hover:bg-zinc-800 transition-colors flex items-center justify-between group cursor-pointer"
+                      >
+                        <div className="flex flex-col">
+                          <span className="font-['Space_Grotesk'] font-bold text-[13px] text-white">
+                            {customer.name}
+                          </span>
+                          <span className="font-['Inter'] text-[11px] text-zinc-500">
+                            {[customer.document_id, customer.phone, customer.email].filter(Boolean).join(" · ") || "Sin datos extra"}
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-bold text-[#ff906d] opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-wider">
+                          Editar
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

@@ -8,6 +8,7 @@ import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { isDesktopRuntime, isCloudAvailableForDesktop } from "../../../shared/lib/cloudAvailability";
 import { useSucursal } from "../../../app/context/SucursalContext";
+import { calculateExpectedCashDrawer, sumCashExpenses } from "../../../shared/lib/cycleCash";
 
 type FacturaEstado = "pagada" | "pendiente" | "cancelada";
 
@@ -17,6 +18,7 @@ interface FacturaRow {
   metodo_pago: string;
   subtotal: number;
   itbis: number;
+  propina?: number | null;
   total: number;
   created_at: string;
   pagada_at: string | null;
@@ -35,6 +37,7 @@ interface GastoRow {
   descripcion: string;
   proveedor: string | null;
   monto: number;
+  metodo_pago: string | null;
   fecha_gasto: string;
 }
 
@@ -52,6 +55,7 @@ interface CierreOperativoRow {
   printed_at: string | null;
   created_at: string;
   sucursal_id?: string | null;
+  efectivo_inicial?: number | null;
 }
 
 function todayYmd(): string {
@@ -87,6 +91,7 @@ function etiquetaMetodo(m: string): string { return METODO_ETIQUETA[m] ?? m.char
 const RD = (n: number) => "RD$ " + n.toLocaleString("es-DO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const ITBIS_RATE = 0.18;
+const MAX_EFECTIVO_INICIAL = 9999999999.99;
 
 
 function getCycleStartIso(cycle: Pick<CierreOperativoRow, "opened_at" | "created_at">): string {
@@ -125,6 +130,8 @@ export function Cierre() {
   const [printing, setPrinting] = useState(false);
   const [printMsg, setPrintMsg] = useState("");
   const [globalHasOpenCycle, setGlobalHasOpenCycle] = useState(false);
+  const [showInitialCashModal, setShowInitialCashModal] = useState(false);
+  const [initialCashInput, setInitialCashInput] = useState("0");
 
   const currentCycle = useMemo(() => cycles.find(c => !c.closed_at) ?? cycles[0] ?? null, [cycles]);
   const hasOpenCycle = currentCycle != null && currentCycle.closed_at == null;
@@ -134,6 +141,7 @@ export function Cierre() {
     const totalPagadoInvoices = pagadas.reduce((s, f) => s + Number(f.total), 0);
     const subtotalPagado = pagadas.reduce((s, f) => s + Number(f.subtotal), 0);
     const itbisPagado = pagadas.reduce((s, f) => s + Number(f.itbis), 0);
+    const propinaPagado = pagadas.reduce((s, f) => s + Number(f.propina ?? 0), 0);
     const totalCxc = cxcPagos.reduce((s, p) => s + Number(p.monto), 0);
     const totalPagado = totalPagadoInvoices + totalCxc;
 
@@ -148,7 +156,7 @@ export function Cierre() {
       const cur = porMetodoMap.get(k) ?? { cantidad: 0, total: 0 };
       cur.cantidad += 1; cur.total += Number(p.monto); porMetodoMap.set(k, cur);
     }
-    return { pagadas, pendientes: facturas.filter(f => f.estado === "pendiente"), totalPagado, subtotalPagado, itbisPagado, totalPendiente: facturas.filter(f => f.estado === "pendiente").reduce((s, f) => s + Number(f.total), 0), porMetodo: [...porMetodoMap.entries()].map(([etiqueta, v]) => ({ etiqueta: etiquetaMetodo(etiqueta), ...v })).sort((a, b) => b.total - a.total), ticketPromedioPagado: pagadas.length > 0 ? totalPagadoInvoices / pagadas.length : 0 };
+    return { pagadas, pendientes: facturas.filter(f => f.estado === "pendiente"), totalPagado, subtotalPagado, itbisPagado, propinaPagado, totalPendiente: facturas.filter(f => f.estado === "pendiente").reduce((s, f) => s + Number(f.total), 0), porMetodo: [...porMetodoMap.entries()].map(([etiqueta, v]) => ({ etiqueta: etiquetaMetodo(etiqueta), ...v })).sort((a, b) => b.total - a.total), ticketPromedioPagado: pagadas.length > 0 ? totalPagadoInvoices / pagadas.length : 0 };
   }, [facturas, cxcPagos]);
 
   const resumenCuentasAbiertas = useMemo(() => {
@@ -162,6 +170,7 @@ export function Cierre() {
 
   const resumenGastos = useMemo(() => {
     const total = gastos.reduce((s, gasto) => s + Number(gasto.monto), 0);
+    const efectivo = sumCashExpenses(gastos);
     const porCategoriaMap = new Map<string, { etiqueta: string; cantidad: number; total: number }>();
     for (const gasto of gastos) {
       const etiqueta = gasto.category_id ? categoriaGastoPorId.get(gasto.category_id) ?? "Sin categoría" : "Sin categoría";
@@ -172,11 +181,20 @@ export function Cierre() {
     }
     return {
       total,
+      efectivo,
       cantidad: gastos.length,
       neto: resumen.totalPagado - total,
       porCategoria: [...porCategoriaMap.values()].sort((a, b) => b.total - a.total),
     };
   }, [gastos, categoriaGastoPorId, resumen.totalPagado]);
+
+  const efectivoInicial = Number(currentCycle?.efectivo_inicial ?? 0);
+  const efectivoVentas = resumen.porMetodo.find((m) => m.etiqueta === "Efectivo")?.total ?? 0;
+  const cajaEsperada = calculateExpectedCashDrawer({
+    efectivoInicial,
+    efectivoVentas,
+    efectivoGastos: resumenGastos.efectivo,
+  });
 
   const cargar = useCallback(async () => {
     if (!tenantId || !activeSucursalId) { setCycles([]); setFacturas([]); setGastos([]); setGastoCategorias([]); setConsumosAbiertos([]); setLoading(false); return; }
@@ -234,8 +252,8 @@ export function Cierre() {
           shouldReadLocalFirst(tenantId, ["gastos"]).then(useLocal => useLocal
             ? readLocalMirror<GastoRow & { sucursal_id?: string | null }>(tenantId, "gastos").then(gs => gs.filter(g => g.cycle_id === sel.id && (g.sucursal_id === activeSucursalId || !g.sucursal_id)))
             : activeSucursalId 
-              ? insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, fecha_gasto").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).eq("cycle_id", sel.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? [])
-              : insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, fecha_gasto").eq("tenant_id", tenantId).is("sucursal_id", null).eq("cycle_id", sel.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? [])),
+              ? insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, metodo_pago, fecha_gasto").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).eq("cycle_id", sel.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? [])
+              : insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, metodo_pago, fecha_gasto").eq("tenant_id", tenantId).is("sucursal_id", null).eq("cycle_id", sel.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? [])),
           shouldReadLocalFirst(tenantId, ["cxc_pagos"]).then(useLocal => useLocal
             ? readLocalMirror<any>(tenantId, "cxc_pagos").then(ps => ps.filter(p => p.cycle_id === sel.id && (p.sucursal_id === activeSucursalId || !p.sucursal_id)))
             : activeSucursalId
@@ -294,7 +312,7 @@ export function Cierre() {
 
   useEffect(() => { if (!authLoading) void cargar(); }, [authLoading, cargar]);
 
-  async function handleStartCycle() {
+  async function handleStartCycle(efectivoInicial: number) {
     if (!tenantId || !activeSucursalId || globalHasOpenCycle) return;
     setStartingCycle(true); setPrintMsg("");
     try {
@@ -346,7 +364,7 @@ export function Cierre() {
         tableName: "cierres_operativos",
         rowId: localCycleId,
         op: "insert",
-        payload: { id: localCycleId, tenant_id: tenantId, sucursal_id: activeSucursalId, business_day: toYmd(fecha), cycle_number: num, opened_by_auth_user_id: user?.id, opened_at: new Date().toISOString(), created_at: new Date().toISOString(), closed_at: null },
+        payload: { id: localCycleId, tenant_id: tenantId, sucursal_id: activeSucursalId, business_day: toYmd(fecha), cycle_number: num, efectivo_inicial: efectivoInicial, opened_by_auth_user_id: user?.id, opened_at: new Date().toISOString(), created_at: new Date().toISOString(), closed_at: null },
         deviceId: await getDeviceId(),
       });
 
@@ -356,6 +374,22 @@ export function Cierre() {
       setPrintMsg(error instanceof Error ? error.message : "No se pudo iniciar el ciclo.");
     }
     setStartingCycle(false);
+  }
+
+  function requestStartCycle() {
+    if (startingCycle || globalHasOpenCycle) return;
+    setInitialCashInput("0");
+    setShowInitialCashModal(true);
+  }
+
+  function confirmStartCycle() {
+    const amount = Number(initialCashInput.replace(",", "."));
+    if (!Number.isFinite(amount) || amount < 0 || amount > MAX_EFECTIVO_INICIAL) {
+      setPrintMsg(`El efectivo inicial debe ser un monto válido entre ${RD(0)} y ${RD(MAX_EFECTIVO_INICIAL)}.`);
+      return;
+    }
+    setShowInitialCashModal(false);
+    void handleStartCycle(amount);
   }
 
   async function handleCerrarCiclo() {
@@ -415,7 +449,7 @@ export function Cierre() {
         : insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("created_at", { ascending: false }).then(r => r.data ?? []),
       useLocalGastos
         ? readLocalMirror<GastoRow & { sucursal_id?: string | null }>(tenantId, "gastos").then(gs => gs.filter(g => g.cycle_id === currentCycle.id && (g.sucursal_id === activeSucursalId || !g.sucursal_id)))
-        : insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, fecha_gasto").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).eq("cycle_id", currentCycle.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? []),
+        : insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, metodo_pago, fecha_gasto").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).eq("cycle_id", currentCycle.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? []),
       useLocalCxc
         ? readLocalMirror<any>(tenantId, "cxc_pagos").then(ps => ps.filter(p => p.cycle_id === currentCycle.id && (p.sucursal_id === activeSucursalId || !p.sucursal_id)))
         : insforgeClient.database.from("cxc_pagos").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).eq("cycle_id", currentCycle.id).then(r => r.data ?? []),
@@ -425,6 +459,7 @@ export function Cierre() {
     const gastosCiclo = (gastosAll as GastoRow[]) ?? [];
     const cxcCiclo = (cxcAll as any[]) ?? [];
     const totalGastosCiclo = gastosCiclo.reduce((s, gasto) => s + Number(gasto.monto), 0);
+    const totalGastosEfectivoCiclo = sumCashExpenses(gastosCiclo);
     const pag = facturasCiclo.filter((f: any) => f.estado === "pagada");
 
     const deviceId = await getDeviceId();
@@ -462,9 +497,15 @@ export function Cierre() {
       const html = buildCierreDiaReceiptHtml(tenantData as any, {
         fechaOperacion: ymdToLongLabel(fecha), cicloNumero: currentCycle.cycle_number, generadoEn: formatCycleDateTime(now), generadoAtIso: now, abiertoAtIso: getCycleStartIso(currentCycle), cerradoAtIso: now,
         facturasPagadas: pag.length, facturasPendientes: facturasCiclo.filter((f: any) => f.estado === "pendiente").length,
-        totalPagado: totalPag, subtotalPagado: pag.reduce((s: number, f: any) => s + Number(f.subtotal), 0), itbisPagado: pag.reduce((s: number, f: any) => s + Number(f.itbis), 0),
+        totalPagado: totalPag, subtotalPagado: pag.reduce((s: number, f: any) => s + Number(f.subtotal), 0), itbisPagado: pag.reduce((s: number, f: any) => s + Number(f.itbis), 0), propinaPagado: pag.reduce((s: number, f: any) => s + Number(f.propina ?? 0), 0),
         porMetodo: [...metMap.values()].sort((a, b) => b.total - a.total), ticketPromedioPagado: pag.length ? pag.reduce((s: number, f: any) => s + Number(f.total), 0) / pag.length : 0,
         gastosTotal: totalGastosCiclo, gastosCantidad: gastosCiclo.length, netoOperativo: totalPag - totalGastosCiclo,
+        efectivoInicial: Number(currentCycle.efectivo_inicial ?? 0),
+        cajaEsperada: calculateExpectedCashDrawer({
+          efectivoInicial: Number(currentCycle.efectivo_inicial ?? 0),
+          efectivoVentas: [...metMap.values()].find((m: any) => m.etiqueta === "Efectivo")?.total ?? 0,
+          efectivoGastos: totalGastosEfectivoCiclo,
+        }),
       }, paperWidthMm);
       const res = await printThermalHtml(html);
       if (res.ok) await enqueueLocalWrite({ tenantId, tableName: "cierres_operativos", rowId: currentCycle.id, op: "update", payload: { printed_at: now }, deviceId });
@@ -491,7 +532,7 @@ export function Cierre() {
               <button onClick={() => void cargar()} className="bg-muted text-foreground px-6 py-2.5 rounded-xl font-bold uppercase text-[11px] tracking-widest border border-border hover:bg-black/5 dark:hover:bg-white/10 transition-all cursor-pointer">Actualizar</button>
            </div>
            <div className="flex gap-3">
-              <button onClick={handleStartCycle} disabled={startingCycle || globalHasOpenCycle} className="bg-muted text-white border border-primary/20 rounded-xl px-6 py-2.5 font-bold uppercase text-[11px] tracking-widest hover:bg-primary/5 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer">Iniciar Ciclo</button>
+               <button onClick={requestStartCycle} disabled={startingCycle || globalHasOpenCycle} className="bg-muted text-white border border-primary/20 rounded-xl px-6 py-2.5 font-bold uppercase text-[11px] tracking-widest hover:bg-primary/5 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer">Iniciar Ciclo</button>
               <button onClick={handleCerrarCiclo} disabled={printing || !hasOpenCycle} className="bg-primary text-primary-foreground shadow-lg rounded-xl px-8 py-2.5 font-bold uppercase text-[11px] tracking-widest hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer border-none">Cerrar & Imprimir</button>
            </div>
         </div>
@@ -527,19 +568,37 @@ export function Cierre() {
            </div>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-           {[
-             { label: "Total Cobrado", val: RD(resumen.totalPagado), color: "text-green-600 dark:text-green-400" },
-             { label: "Facturas", val: resumen.pagadas.length, color: "text-foreground" },
-             { label: "Gastos", val: RD(resumenGastos.total), color: "text-primary" },
-             { label: "Neto", val: RD(resumenGastos.neto), color: resumenGastos.neto >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive" }
-           ].map((st, i) => (
+        <div className="grid grid-cols-2 lg:grid-cols-7 gap-4">
+            {[
+              { label: "Total Cobrado", val: RD(resumen.totalPagado), color: "text-green-600 dark:text-green-400" },
+              { label: "Facturas", val: resumen.pagadas.length, color: "text-foreground" },
+               { label: "Gastos", val: RD(resumenGastos.total), color: "text-primary" },
+              { label: "Propina legal", val: RD(resumen.propinaPagado), color: "text-foreground" },
+              { label: "Neto", val: RD(resumenGastos.neto), color: resumenGastos.neto >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive" },
+              { label: "Efectivo inicial", val: RD(efectivoInicial), color: "text-foreground" },
+              { label: "Caja esperada", val: RD(cajaEsperada), color: cajaEsperada >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive" }
+            ].map((st, i) => (
              <div key={i} className="bg-card rounded-[20px] border border-black/10 dark:border-white/5 p-5 shadow-sm">
                 <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2">{st.label}</div>
                 <div className={`font-['Space_Grotesk'] text-xl font-bold ${st.color}`}>{st.val}</div>
              </div>
            ))}
         </div>
+
+        {showInitialCashModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+            <div role="dialog" aria-modal="true" aria-labelledby="initial-cash-title" className="w-full max-w-lg rounded-[28px] border border-white/10 bg-card p-8 shadow-2xl">
+              <h2 id="initial-cash-title" className="font-['Space_Grotesk'] text-3xl font-bold text-foreground mb-3">Efectivo inicial en caja</h2>
+              <p className="text-sm text-muted-foreground mb-6">Indica con cuánto efectivo físico inicia la caja chica. Puedes dejarlo en 0.</p>
+              <label className="block text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">Monto inicial</label>
+              <input autoFocus type="number" min="0" max={MAX_EFECTIVO_INICIAL} step="0.01" inputMode="decimal" value={initialCashInput} onChange={(e) => setInitialCashInput(e.target.value)} className="w-full rounded-2xl border border-border bg-background px-5 py-4 text-2xl font-bold text-foreground outline-none focus:border-primary" />
+              <div className="mt-8 flex gap-3 justify-end">
+                <button type="button" onClick={() => setShowInitialCashModal(false)} className="rounded-xl border border-border bg-muted px-5 py-3 text-xs font-bold uppercase tracking-widest text-foreground cursor-pointer">Cancelar</button>
+                <button type="button" onClick={confirmStartCycle} disabled={startingCycle} className="rounded-xl border-none bg-primary px-6 py-3 text-xs font-bold uppercase tracking-widest text-primary-foreground cursor-pointer disabled:opacity-50">Iniciar ciclo</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 sm:p-8 shadow-sm">
            <h2 className="font-['Space_Grotesk'] text-xl font-bold text-foreground mb-4">Gastos del ciclo</h2>

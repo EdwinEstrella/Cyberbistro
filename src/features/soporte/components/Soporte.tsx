@@ -1166,19 +1166,41 @@ function MesasPanel() {
   const [cantidad, setCantidad] = useState<number>(20);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   useEffect(() => {
     if (!tenantId) return;
-    loadCantidadMesas(tenantId).then(val => { setCantidad(val); setLoading(false); });
+    setLoading(true);
+    setStatus(null);
+    loadCantidadMesas(tenantId)
+      .then(val => {
+        console.info("[MesasPanel] Loaded cantidad_mesas", { tenantId, cantidad: val });
+        setCantidad(val);
+      })
+      .catch((error: any) => {
+        console.error("[MesasPanel] Failed to load cantidad_mesas", error);
+        setStatus({ type: "error", message: error?.message || "No se pudo cargar la cantidad de mesas." });
+      })
+      .finally(() => setLoading(false));
   }, [tenantId]);
 
   async function handleSave() {
     if (!tenantId) return;
     if (cantidad < 1 || cantidad > 100) { alert("Máximo 100 mesas."); return; }
     setSaving(true);
+    setStatus(null);
     const { error } = await saveCantidadMesas(tenantId, cantidad);
     setSaving(false);
-    if (error) alert(error.message); else alert("Configuración guardada.");
+    if (error) {
+      console.error("[MesasPanel] Failed to save cantidad_mesas", error);
+      const message = error.message || "No se pudo guardar la configuración.";
+      setStatus({ type: "error", message });
+      alert(message);
+    } else {
+      console.info("[MesasPanel] Saved cantidad_mesas", { tenantId, cantidad });
+      setStatus({ type: "success", message: "Configuración guardada." });
+      alert("Configuración guardada.");
+    }
   }
 
   if (loading) return <div className="p-10 text-muted-foreground font-['Space_Grotesk'] text-center">Cargando...</div>;
@@ -1194,9 +1216,14 @@ function MesasPanel() {
            <div className="flex flex-col gap-2">
               <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">Cantidad de Mesas</label>
               <input type="number" value={cantidad} onChange={e => setCantidad(parseInt(e.target.value) || 1)} className="input-field text-lg font-bold" />
-           </div>
-           <button onClick={handleSave} disabled={saving} className="bg-primary text-primary-foreground rounded-xl py-4 font-bold uppercase text-[12px] tracking-widest shadow-lg hover:opacity-90 disabled:opacity-50 transition-all border-none cursor-pointer">{saving ? "Guardando..." : "Guardar Distribución"}</button>
-        </div>
+            </div>
+            {status && (
+              <div className={`rounded-xl border px-4 py-3 text-sm ${status.type === "success" ? "border-green-500/20 bg-green-500/10 text-green-600 dark:text-green-400" : "border-destructive/20 bg-destructive/10 text-destructive"}`} role="status">
+                {status.message}
+              </div>
+            )}
+            <button onClick={handleSave} disabled={saving} className="bg-primary text-primary-foreground rounded-xl py-4 font-bold uppercase text-[12px] tracking-widest shadow-lg hover:opacity-90 disabled:opacity-50 transition-all border-none cursor-pointer">{saving ? "Guardando..." : "Guardar Distribución"}</button>
+         </div>
       </div>
       <style>{`
         .input-field {

@@ -94,3 +94,13 @@ export function sortCategoriesForTabs(
       a.localeCompare(b)
   );
 }
+
+export function buildPosCategoryTabs(categoryOrder: string[], platoCategories: string[]): string[] {
+  return [
+    "Todos",
+    ...sortCategoriesForTabs(
+      [...categoryOrder, ...platoCategories],
+      categoryOrder.length > 0 ? categoryOrder : undefined
+    ),
+  ];
+}

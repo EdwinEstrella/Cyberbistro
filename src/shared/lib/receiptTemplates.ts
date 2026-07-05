@@ -578,9 +578,12 @@ export interface CierreDiaThermalData {
   totalPagado: number;
   subtotalPagado: number;
   itbisPagado: number;
+  propinaPagado?: number;
   gastosTotal?: number;
   gastosCantidad?: number;
   netoOperativo?: number;
+  efectivoInicial?: number;
+  cajaEsperada?: number;
   /** Filas ordenadas para el ticket. */
   porMetodo: Array<{ etiqueta: string; cantidad: number; total: number }>;
   ticketPromedioPagado: number;
@@ -653,6 +656,9 @@ export function buildCierreDiaReceiptHtml(
     <tr class="total-xl"><td>TOTAL COBRADO</td><td style="text-align:right">${rd(data.totalPagado, tenant)}</td></tr>
     <tr class="header-row"><td>Subtotal (pagadas)</td><td style="text-align:right">${rd(data.subtotalPagado, tenant)}</td></tr>
     <tr class="header-row"><td>ITBIS (pagadas)</td><td style="text-align:right">${rd(data.itbisPagado, tenant)}</td></tr>
+    <tr class="header-row"><td>Propina legal</td><td style="text-align:right">${rd(data.propinaPagado ?? 0, tenant)}</td></tr>
+    <tr class="header-row"><td>Efectivo inicial</td><td style="text-align:right">${rd(data.efectivoInicial ?? 0, tenant)}</td></tr>
+    <tr class="header-row"><td>Caja esperada</td><td style="text-align:right;font-weight:bold">${rd(data.cajaEsperada ?? data.totalPagado - (data.gastosTotal ?? 0), tenant)}</td></tr>
     <tr class="header-row"><td>Ticket prom.</td><td style="text-align:right">${data.facturasPagadas > 0 ? rd(data.ticketPromedioPagado, tenant) : "—"}</td></tr>
   </table>
   ${

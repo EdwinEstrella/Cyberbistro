@@ -15,6 +15,7 @@ import {
   NCF_TIPO_OPCIONES,
 } from "../../../shared/lib/ncf";
 import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
+import { calculateInvoiceTotals } from "../../../shared/lib/billingTotals";
 import { type FiscalMode } from "../../../shared/lib/fiscalTypes";
 import { resolveActiveFiscalMode, runFiscalEngine, enqueueEcfDocuments } from "../../../shared/lib/fiscalEngine";
 import { enqueueLocalWrite, getDeviceId, getLocalFirstStatusSnapshot, isLocalFirstEnabled, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, readLocalMirror, readLocalOutbox } from "../../../shared/lib/localFirst";
@@ -83,6 +84,8 @@ export interface MesaCloseAccountModalProps {
   mesaNumero: number;
   /** Por defecto 18% (`ITBIS`). Pasá `0` para facturar sin ITBIS (p. ej. desde Venta con ITBIS apagado). */
   itbisRate?: number;
+  /** Cobra 10% de propina legal sobre el subtotal para este cobro. */
+  propinaEnabled?: boolean;
   initialNcfType?: NcfTypeCode | null;
   onSettled?: (remaining: MesaConsumoRow[]) => void | Promise<void>;
   /** Solo cuando la mesa queda sin consumos pendientes tras un cobro completo. */
@@ -148,6 +151,7 @@ async function groupConsumosForFactura(
   tenantId: string,
   consumos: MesaConsumoRow[],
   itbisRate: number,
+  propinaEnabled: boolean,
   sucursalId: string | null
 ) {
   const plateIds = [...new Set(consumos.map((consumo) => consumo.plato_id))];
@@ -207,9 +211,8 @@ async function groupConsumosForFactura(
   );
   const facturaItems = Object.values(groupedItems);
   const subtotal = consumos.reduce((sum, c) => sum + Number(c.subtotal), 0);
-  const itbis = subtotal * itbisRate;
-  const total = subtotal + itbis;
-  return { facturaItems, subtotal, itbis, total };
+  const { itbis, propina, total } = calculateInvoiceTotals({ subtotal, itbisRate, propinaEnabled });
+  return { facturaItems, subtotal, itbis, propina, total };
 }
 
 /** Cierra comandas de cocina abiertas para esta mesa (evita que la vista Mesas siga sumando su total). */
@@ -250,6 +253,7 @@ export function MesaCloseAccountModal({
   tenantId,
   mesaNumero,
   itbisRate = ITBIS,
+  propinaEnabled = false,
   initialNcfType = null,
   onSettled,
   onPaidFull,
@@ -505,9 +509,7 @@ export function MesaCloseAccountModal({
 
   function calculateTotals() {
     const subtotal = mesaConsumos.reduce((sum, c) => sum + Number(c.subtotal), 0);
-    const itbis = subtotal * itbisRate;
-    const total = subtotal + itbis;
-    return { subtotal, itbis, total };
+    return calculateInvoiceTotals({ subtotal, itbisRate, propinaEnabled });
   }
 
   function parseOptionalCashReceived(total: number, isFiado: boolean = false): { amount: number | null; change: number | null } | null {
@@ -631,10 +633,11 @@ export function MesaCloseAccountModal({
         const consumosToInvoice = groups.get(personIndex)!;
         if (consumosToInvoice.length === 0) continue;
 
-        const { facturaItems, subtotal, itbis, total } = await groupConsumosForFactura(
+        const { facturaItems, subtotal, itbis, propina, total } = await groupConsumosForFactura(
           tenantId,
           consumosToInvoice,
           itbisRate,
+          propinaEnabled,
           activeSucursalId
         );
 
@@ -654,7 +657,7 @@ export function MesaCloseAccountModal({
           metodo_pago: paymentMethod,
           subtotal,
           itbis,
-          propina: 0,
+          propina,
           total,
           items: facturaItems,
           notas: `Mesa ${mesaNumero} — Persona ${personIndex} de ${splitParts} (${consumosToInvoice.length} líneas)`,
@@ -818,10 +821,11 @@ export function MesaCloseAccountModal({
     const nextFacturaNumber = await getNextFacturaNumber(tenantId);
 
     const consumosToBill = mesaConsumos;
-    const { facturaItems, subtotal, itbis, total } = await groupConsumosForFactura(
+    const { facturaItems, subtotal, itbis, propina, total } = await groupConsumosForFactura(
       tenantId,
       consumosToBill,
       itbisRate,
+      propinaEnabled,
       activeSucursalId
     );
     const isFiado = paymentMethod === "fiado";
@@ -872,7 +876,7 @@ export function MesaCloseAccountModal({
       estado: paymentMethod === "fiado" ? "pendiente" : "pagada",
       subtotal,
       itbis,
-      propina: 0,
+      propina,
       total,
       items: facturaItems,
       monto_recibido: cashReceived.amount,
@@ -1002,7 +1006,7 @@ export function MesaCloseAccountModal({
 
   if (!open) return null;
 
-  const { subtotal: calcSubtotal, itbis: calcItbis, total: calcTotal } = calculateTotals();
+  const { subtotal: calcSubtotal, itbis: calcItbis, propina: calcPropina, total: calcTotal } = calculateTotals();
   const splitGroups = splitMode && mesaConsumos.length > 0 ? collectPersonGroups() : null;
   const personsWithItems =
     splitGroups != null
@@ -1231,14 +1235,14 @@ export function MesaCloseAccountModal({
                     const rows = splitGroups.get(p) ?? [];
                     if (rows.length === 0) return null;
                     const st = rows.reduce((s, c) => s + Number(c.subtotal), 0);
-                    const itb = st * itbisRate;
+                    const { total } = calculateInvoiceTotals({ subtotal: st, itbisRate, propinaEnabled });
                     return (
                       <div key={p} className="flex justify-between items-center gap-4 bg-zinc-900/30 rounded-lg p-2 border border-zinc-900/50">
                         <span className="font-['Space_Grotesk',sans-serif] font-bold text-zinc-300 text-[12px]">
                           Persona {p} <span className="text-zinc-500 font-normal">({rows.length} items)</span>
                         </span>
                         <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#59ee50] text-[13px] text-right">
-                          {RD(st + itb)}
+                          {RD(total)}
                         </span>
                       </div>
                     );
@@ -1259,6 +1263,12 @@ export function MesaCloseAccountModal({
                   {itbisRate > 0 ? "ITBIS (18%)" : "ITBIS (no incluido)"}
                 </span>
                 <span className="font-['Space_Grotesk',sans-serif] font-bold text-zinc-300 text-[14px]">{RD(calcItbis)}</span>
+              </div>
+              <div className="flex justify-between items-center relative z-10">
+                <span className="font-['Inter',sans-serif] text-zinc-500 text-[13px]">
+                  {propinaEnabled ? "Propina legal (10%)" : "Propina legal (no incluida)"}
+                </span>
+                <span className="font-['Space_Grotesk',sans-serif] font-bold text-zinc-300 text-[14px]">{RD(calcPropina)}</span>
               </div>
               <div className="h-[1px] bg-zinc-900 my-1 relative z-10" />
               <div className="flex justify-between items-end relative z-10">

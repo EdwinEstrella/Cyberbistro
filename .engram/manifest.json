@@ -40,6 +40,14 @@
       "sessions": 1,
       "memories": 24,
       "prompts": 30
+    },
+    {
+      "id": "d6bcdfdc",
+      "created_by": "Edwin",
+      "created_at": "2026-06-13T03:40:25Z",
+      "sessions": 28,
+      "memories": 274,
+      "prompts": 89
     }
   ]
 }

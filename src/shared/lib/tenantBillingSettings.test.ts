@@ -29,4 +29,9 @@ describe("normalizeTenantBillingSettings", () => {
       defaultNcfType: "B02",
     });
   });
+
+  it("defaults legal gratuity to off and maps the tenant default when present", () => {
+    expect(normalizeTenantBillingSettings(null).defaultPropinaEnabled).toBe(false);
+    expect(normalizeTenantBillingSettings({ propina_cobro_por_defecto: true }).defaultPropinaEnabled).toBe(true);
+  });
 });

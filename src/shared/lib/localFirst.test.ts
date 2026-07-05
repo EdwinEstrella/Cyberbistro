@@ -344,6 +344,24 @@ describe("localFirst", () => {
     expect(result.resolution).toBe("server_wins");
   });
 
+  it("permite sincronizar la configuración de cantidad de mesas del tenant", () => {
+    const entry = createSyncOutboxEntry({
+      tenantId: "tenant-1",
+      tableName: "tenants",
+      rowId: "tenant-1",
+      op: "update",
+      payload: { cantidad_mesas: 24 },
+      deviceId: "dev1",
+    });
+
+    const result = resolveConflictForTable("tenants", entry, { id: "tenant-1", cantidad_mesas: 20 });
+    expect(result.resolution).toBe("local_wins");
+
+    const guardrail = resolveOutboxConflictGuardrail("tenant-1", entry, { id: "tenant-1", cantidad_mesas: 20 });
+    expect(guardrail.action).toBe("apply_local_write");
+    expect(guardrail.shouldWriteServer).toBe(true);
+  });
+
   it("aplica guardrails de conflicto antes de mutar servidor", () => {
     const tenantUpdate = createSyncOutboxEntry({
       tenantId: "tenant-1",

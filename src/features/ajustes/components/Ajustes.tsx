@@ -63,6 +63,7 @@ interface Config {
   telefono: string;
   currency_code: "DOP" | "ARS";
   itbis_cobro_por_defecto: boolean;
+  propina_cobro_por_defecto: boolean;
   ncf_fiscal_activo: boolean;
   fiscal_mode: "internal_receipt" | "ncf_legacy" | "dgii_ecf";
   fiscal_mode_fallback: "internal_receipt" | "ncf_legacy";
@@ -114,9 +115,12 @@ const SAMPLE_CIERRE_THERMAL_BASE: Omit<CierreDiaThermalData, "generadoEn" | "gen
   totalPagado: 12450.75,
   subtotalPagado: 10551.48,
   itbisPagado: 1899.27,
+  propinaPagado: 0,
   gastosTotal: 2750,
   gastosCantidad: 3,
   netoOperativo: 9700.75,
+  efectivoInicial: 1500,
+  cajaEsperada: 4950,
   porMetodo: [
     { etiqueta: "Efectivo", cantidad: 8, total: 6200 },
     { etiqueta: "Tarjeta", cantidad: 5, total: 5250.75 },
@@ -148,6 +152,7 @@ export function Ajustes() {
     telefono: "",
     currency_code: "DOP",
     itbis_cobro_por_defecto: false,
+    propina_cobro_por_defecto: false,
     ncf_fiscal_activo: false,
     fiscal_mode: "internal_receipt",
     fiscal_mode_fallback: "internal_receipt",
@@ -160,11 +165,12 @@ export function Ajustes() {
   const [thermalPreviewKind, setThermalPreviewKind] = useState<ThermalPreviewKind>("factura");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const TENANT_FIELDS_BASE = "nombre_negocio, rnc, logo_url, logo_size_px, logo_offset_x, logo_offset_y, menu_url, direccion, telefono";
   const TENANT_FIELDS_CURRENCY = "moneda";
-  const TENANT_FIELDS_NCF = `itbis_cobro_por_defecto, ncf_fiscal_activo, fiscal_mode, fiscal_mode_fallback, ecf_environment, ncf_tipo_default, ncf_secuencia_siguiente, ncf_secuencias_por_tipo, ${NCF_B_SEQUENCE_FIELDS_SELECT}`;
+  const TENANT_FIELDS_NCF = `itbis_cobro_por_defecto, propina_cobro_por_defecto, ncf_fiscal_activo, fiscal_mode, fiscal_mode_fallback, ecf_environment, ncf_tipo_default, ncf_secuencia_siguiente, ncf_secuencias_por_tipo, ${NCF_B_SEQUENCE_FIELDS_SELECT}`;
 
   useEffect(() => {
     if (authLoading || !tenantId) { if (!authLoading) setLoading(false); return; }
@@ -204,6 +210,7 @@ export function Ajustes() {
           telefono: data.telefono ?? "",
           currency_code: (data.moneda || "DOP") as any,
           itbis_cobro_por_defecto: Boolean(data.itbis_cobro_por_defecto),
+          propina_cobro_por_defecto: Boolean(data.propina_cobro_por_defecto),
           ncf_fiscal_activo: Boolean(data.ncf_fiscal_activo) || data.fiscal_mode === "ncf_legacy" || data.fiscal_mode === "dgii_ecf",
           fiscal_mode: data.fiscal_mode || "internal_receipt",
           fiscal_mode_fallback: data.fiscal_mode_fallback || "internal_receipt",
@@ -225,6 +232,7 @@ export function Ajustes() {
   async function handleSave() {
     if (!tenantId) return;
     setSaving(true);
+    setSaveMessage(null);
     const ncfUpdate = buildTenantNcfUpdatePayload(config.ncf_fiscal_activo, config.ncf_tipo_default, config.ncf_secuencias_por_tipo, config.ncf_secuencias_por_tipo);
     const payload = {
       id: tenantId,
@@ -239,6 +247,7 @@ export function Ajustes() {
       telefono: config.telefono?.trim() || null,
       moneda: config.currency_code,
       itbis_cobro_por_defecto: config.itbis_cobro_por_defecto,
+      propina_cobro_por_defecto: config.propina_cobro_por_defecto,
       fiscal_mode: config.fiscal_mode,
       fiscal_mode_fallback: config.fiscal_mode_fallback,
       ecf_environment: config.ecf_environment,
@@ -255,8 +264,10 @@ export function Ajustes() {
         payload,
         deviceId: await getDeviceId(),
       });
+      setSaveMessage({ type: "success", text: "Configuración guardada." });
     } catch (error) {
       console.error(error);
+      setSaveMessage({ type: "error", text: error instanceof Error ? error.message : "No se pudo guardar la configuración." });
     }
     setSaving(false);
   }
@@ -413,6 +424,10 @@ export function Ajustes() {
                 <input type="checkbox" checked={config.itbis_cobro_por_defecto} onChange={e => setConfig(p => ({ ...p, itbis_cobro_por_defecto: e.target.checked }))} className="size-4 rounded accent-primary" />
                 <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">Cobrar ITBIS por defecto</span>
               </label>
+              <label className="flex items-center gap-3 cursor-pointer group">
+                <input type="checkbox" checked={config.propina_cobro_por_defecto} onChange={e => setConfig(p => ({ ...p, propina_cobro_por_defecto: e.target.checked }))} className="size-4 rounded accent-primary" />
+                <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">Cobrar propina legal 10% por defecto</span>
+              </label>
               
               <div className="border-t border-border pt-4">
                 <Field label="Modo Fiscal">
@@ -505,6 +520,12 @@ export function Ajustes() {
               )}
             </div>
           </section>
+
+          {saveMessage && (
+            <div className={`rounded-xl border p-4 text-sm font-medium ${saveMessage.type === "error" ? "border-destructive/20 bg-destructive/10 text-destructive" : "border-green-500/20 bg-green-500/10 text-green-600 dark:text-green-400"}`}>
+              {saveMessage.text}
+            </div>
+          )}
 
           <button onClick={handleSave} disabled={saving} className="bg-primary text-primary-foreground rounded-xl py-4 font-bold uppercase text-sm tracking-[0.2em] shadow-lg hover:opacity-90 disabled:opacity-50 transition-all border-none cursor-pointer w-full md:w-fit md:px-12 self-end">
             {saving ? "Guardando..." : "Guardar Cambios"}
