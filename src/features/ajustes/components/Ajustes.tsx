@@ -307,6 +307,11 @@ export function Ajustes() {
       switch (thermalPreviewKind) {
         case "factura":
           let sample = { ...SAMPLE_FACTURA_THERMAL_PREVIEW, pagada_at: nowIso };
+          
+          sample.itbis = sample.subtotal * 0.18;
+          sample.propina = sample.subtotal * 0.10;
+          sample.total = sample.subtotal + sample.itbis + sample.propina;
+          
           if (config.ncf_fiscal_activo) {
             const ncf = construirCadenaNcf(config.ncf_tipo_default, config.ncf_secuencia_siguiente);
             if (ncf) sample = { ...sample, ncf, ncf_tipo: etiquetaTipoNcf(config.ncf_tipo_default) };
