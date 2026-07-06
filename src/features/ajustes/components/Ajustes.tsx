@@ -22,6 +22,7 @@ import {
   enqueueLocalWrite,
   getDeviceId,
 } from "../../../shared/lib/localFirst";
+import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import {
   buildFacturaReceiptHtml,
   buildComandaReceiptHtml,
@@ -165,6 +166,7 @@ export function Ajustes() {
   const [thermalPreviewKind, setThermalPreviewKind] = useState<ThermalPreviewKind>("factura");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [printingTest, setPrintingTest] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -281,6 +283,22 @@ export function Ajustes() {
     setConfig(p => ({ ...p, logo_url: uploaded.publicUrl }));
     // Cache the new logo for offline printing
     void refreshLogoCache(uploaded.publicUrl);
+  }
+
+  async function handlePrintTest() {
+    setPrintingTest(true);
+    setSaveMessage(null);
+    try {
+      const res = await printThermalHtml(thermalPreviewHtml);
+      if (!res.ok) {
+        setSaveMessage({ type: "error", text: "Error al imprimir la prueba: " + (res.error || "Desconocido") });
+      } else {
+        setSaveMessage({ type: "success", text: "Prueba de impresión enviada exitosamente." });
+      }
+    } catch (e: any) {
+      setSaveMessage({ type: "error", text: "Error de conexión al intentar imprimir: " + e.message });
+    }
+    setPrintingTest(false);
   }
 
   const tenantPreview: TenantReceiptInfo = useMemo(() => ({
@@ -412,10 +430,19 @@ export function Ajustes() {
 
           <section className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6">
             <h2 className="font-['Space_Grotesk'] text-xl font-bold text-foreground mb-6">Vista Previa Impresión</h2>
-            <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
-              {THERMAL_PREVIEW_TABS.map(t => (
-                <button key={t.id} onClick={() => setThermalPreviewKind(t.id)} className={`px-4 py-2 rounded-lg text-[12px] font-bold uppercase tracking-widest transition-all cursor-pointer border-none ${thermalPreviewKind === t.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5"}`}>{t.label}</button>
-              ))}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+              <div className="flex gap-2 overflow-x-auto pb-2 sm:pb-0">
+                {THERMAL_PREVIEW_TABS.map(t => (
+                  <button key={t.id} onClick={() => setThermalPreviewKind(t.id)} className={`px-4 py-2 rounded-lg text-[12px] font-bold uppercase tracking-widest transition-all cursor-pointer border-none shrink-0 ${thermalPreviewKind === t.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5"}`}>{t.label}</button>
+                ))}
+              </div>
+              <button 
+                onClick={handlePrintTest} 
+                disabled={printingTest || !thermalPreviewHtml}
+                className="shrink-0 px-4 py-2 bg-foreground text-background rounded-lg text-[12px] font-bold uppercase tracking-widest transition-all cursor-pointer disabled:opacity-50 border-none"
+              >
+                {printingTest ? "Imprimiendo..." : "Imprimir Prueba"}
+              </button>
             </div>
             <div className="bg-muted/30 rounded-2xl p-8 flex justify-center border border-dashed border-border min-h-[400px]">
                <iframe srcDoc={thermalPreviewHtml} className="bg-white rounded shadow-2xl border-none w-[80mm] min-h-[500px] scale-95 origin-top" title="Thermal Preview" />
