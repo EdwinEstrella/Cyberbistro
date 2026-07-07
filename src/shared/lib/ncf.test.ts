@@ -5,6 +5,7 @@ import {
   construirCadenaNcf,
   esCodigoNcfValido,
   ncfTypeRequiresClientRnc,
+  normalizeNcfTypeForFiscalMode,
   prepareNcfForFacturaInsert,
 } from "./ncf";
 
@@ -15,9 +16,29 @@ describe("ncf", () => {
     expect(esCodigoNcfValido("X01")).toBe(false);
   });
 
-  it("ncfTypeRequiresClientRnc solo exige RNC para B01", () => {
+  it("ncfTypeRequiresClientRnc exige RNC para B01 y E31", () => {
     expect(ncfTypeRequiresClientRnc("B01")).toBe(true);
+    expect(ncfTypeRequiresClientRnc("E31")).toBe(true);
     expect(ncfTypeRequiresClientRnc("B02")).toBe(false);
+    expect(ncfTypeRequiresClientRnc("E32")).toBe(false);
+  });
+
+  it("normalizeNcfTypeForFiscalMode mapea correctamente familias", () => {
+    // B a E en ecf
+    expect(normalizeNcfTypeForFiscalMode("B01", "dgii_ecf")).toBe("E31");
+    expect(normalizeNcfTypeForFiscalMode("B02", "dgii_ecf")).toBe("E32");
+    expect(normalizeNcfTypeForFiscalMode("B14", "dgii_ecf")).toBe("E41");
+    expect(normalizeNcfTypeForFiscalMode("E31", "dgii_ecf")).toBe("E31"); // ya es E
+    
+    // E a B en legacy
+    expect(normalizeNcfTypeForFiscalMode("E31", "ncf_legacy")).toBe("B01");
+    expect(normalizeNcfTypeForFiscalMode("E32", "ncf_legacy")).toBe("B02");
+    expect(normalizeNcfTypeForFiscalMode("E47", "ncf_legacy")).toBe("B17");
+    expect(normalizeNcfTypeForFiscalMode("B01", "ncf_legacy")).toBe("B01"); // ya es B
+
+    // Fallbacks
+    expect(normalizeNcfTypeForFiscalMode("B99" as any, "dgii_ecf")).toBe("B01"); // defaults to B01 early because B99 is invalid
+    expect(normalizeNcfTypeForFiscalMode("E99" as any, "ncf_legacy")).toBe("B01"); // early validation
   });
 
   it("construirCadenaNcf arma 11 caracteres", () => {

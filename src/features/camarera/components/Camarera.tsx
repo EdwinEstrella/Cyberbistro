@@ -160,6 +160,7 @@ export function Camarera() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState("");
+  const [orderNotes, setOrderNotes] = useState("");
 
   const [confirmState, setConfirmState] = useState<{ open: boolean; message: string; onConfirm: () => void, title?: string, variant?: "danger" | "primary" }>({ open: false, message: "", onConfirm: () => {} });
   const showConfirm = (message: string, onConfirm: () => void, title = "Confirmar", variant: "danger" | "primary" = "danger") => setConfirmState({ open: true, message, onConfirm, title, variant });
@@ -381,7 +382,7 @@ export function Camarera() {
         sucursal_id: activeSucursalId,
         estado: "pendiente",
         items,
-        notas: null,
+        notas: orderNotes.trim() || null,
         tenant_id: tenantId,
         creado_por: user?.id ?? null,
         created_at: new Date().toISOString(),
@@ -499,6 +500,7 @@ export function Camarera() {
       )
     );
     setCart([]);
+    setOrderNotes("");
     await loadSelectedMesaConsumos(selectedMesa.numero);
     setMessage(`Orden enviada a Mesa ${String(selectedMesa.numero).padStart(2, "0")}.`);
     setSending(false);
@@ -622,11 +624,17 @@ export function Camarera() {
               {mesas.map((mesa) => {
                 const selected = selectedMesaNumero === mesa.numero;
                 return (
-                  <button
-                    key={mesa.id}
-                    type="button"
-                    onClick={() => setSelectedMesaNumero(mesa.numero)}
-                    className={`min-h-[46px] sm:min-h-[58px] rounded-xl sm:rounded-2xl border px-1.5 py-1.5 sm:p-2 text-center sm:text-left transition-all active:scale-[0.98] ${
+                    <button
+                      key={mesa.id}
+                      type="button"
+                      onClick={() => {
+                        if (selectedMesaNumero !== mesa.numero) {
+                          setSelectedMesaNumero(mesa.numero);
+                          setCart([]);
+                          setOrderNotes("");
+                        }
+                      }}
+                      className={`min-h-[46px] sm:min-h-[58px] rounded-xl sm:rounded-2xl border px-1.5 py-1.5 sm:p-2 text-center sm:text-left transition-all active:scale-[0.98] ${
                       selected
                         ? "border-primary bg-primary text-primary-foreground shadow-lg"
                         : mesa.items_pendientes > 0
@@ -705,7 +713,7 @@ export function Camarera() {
                 <p className="text-xs text-muted-foreground">{selectedMesa ? `Mesa ${String(selectedMesa.numero).padStart(2, "0")} - ${selectedMesaOwnerLabel}` : "Selecciona una mesa"}</p>
               </div>
               {cart.length > 0 ? (
-                <button type="button" onClick={() => setCart([])} className="text-[10px] font-bold uppercase tracking-widest text-destructive bg-transparent border-none">Vaciar</button>
+                <button type="button" onClick={() => { setCart([]); setOrderNotes(""); }} className="text-[10px] font-bold uppercase tracking-widest text-destructive bg-transparent border-none">Vaciar</button>
               ) : null}
             </div>
 
@@ -772,6 +780,19 @@ export function Camarera() {
                 </div>
               ))}
             </div>
+            
+            {cart.length > 0 ? (
+              <div className="mt-4">
+                <label htmlFor="camarera-notes" className="sr-only">Notas de la orden</label>
+                <textarea
+                  id="camarera-notes"
+                  value={orderNotes}
+                  onChange={(e) => setOrderNotes(e.target.value)}
+                  placeholder="Notas para la cocina (opcional)..."
+                  className="w-full rounded-[14px] border border-black/10 bg-background px-4 py-3 font-['Inter'] text-sm text-foreground outline-none resize-none h-[72px] dark:border-white/10 focus:border-primary/50 transition-colors"
+                />
+              </div>
+            ) : null}
 
             <div className="mt-5 border-t border-black/10 dark:border-white/10 pt-4 space-y-3">
               <div className="flex items-center justify-between font-bold text-foreground">

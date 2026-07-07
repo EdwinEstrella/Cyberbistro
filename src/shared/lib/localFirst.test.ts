@@ -344,22 +344,133 @@ describe("localFirst", () => {
     expect(result.resolution).toBe("server_wins");
   });
 
-  it("permite sincronizar la configuración de cantidad de mesas del tenant", () => {
+  it("permite sincronizar configuración segura del tenant incluyendo fiscal y UI", () => {
+    const safePayload = {
+      cantidad_mesas: 24,
+      ncf_secuencias_por_tipo: { B01: 5 },
+      ncf_b01_secuencia_siguiente: 5,
+      fiscal_mode: "traditional",
+      updated_at: "2026-01-01T00:00:00.000Z"
+    };
+
     const entry = createSyncOutboxEntry({
       tenantId: "tenant-1",
       tableName: "tenants",
       rowId: "tenant-1",
       op: "update",
-      payload: { cantidad_mesas: 24 },
+      payload: safePayload,
       deviceId: "dev1",
     });
 
-    const result = resolveConflictForTable("tenants", entry, { id: "tenant-1", cantidad_mesas: 20 });
+    const result = resolveConflictForTable("tenants", entry, { id: "tenant-1", ncf_b01_secuencia_siguiente: 4, ncf_secuencias_por_tipo: { B01: 4 } });
     expect(result.resolution).toBe("local_wins");
 
-    const guardrail = resolveOutboxConflictGuardrail("tenant-1", entry, { id: "tenant-1", cantidad_mesas: 20 });
+    const guardrail = resolveOutboxConflictGuardrail("tenant-1", entry, { id: "tenant-1" });
     expect(guardrail.action).toBe("apply_local_write");
     expect(guardrail.shouldWriteServer).toBe(true);
+  });
+
+  it("bloquea actualización fiscal si intentan retroceder una secuencia respecto al servidor", () => {
+    const backwardPayload = {
+      ncf_b01_secuencia_siguiente: 5,
+      updated_at: "2026-01-01T00:00:00.000Z"
+    };
+    const entry = createSyncOutboxEntry({
+      tenantId: "tenant-1",
+      tableName: "tenants",
+      rowId: "tenant-1",
+      op: "update",
+      payload: backwardPayload,
+      deviceId: "dev1",
+    });
+    
+    // server has sequence 10
+    const result = resolveConflictForTable("tenants", entry, { id: "tenant-1", ncf_b01_secuencia_siguiente: 10 });
+    expect(result.resolution).toBe("server_wins");
+    expect(result.reason).toContain("no puede retroceder");
+  });
+
+  it("bloquea actualización fiscal por tipo si intentan retroceder una secuencia respecto al servidor", () => {
+    const backwardPayload = {
+      ncf_secuencias_por_tipo: { B01: 5 },
+      updated_at: "2026-01-01T00:00:00.000Z"
+    };
+    const entry = createSyncOutboxEntry({
+      tenantId: "tenant-1",
+      tableName: "tenants",
+      rowId: "tenant-1",
+      op: "update",
+      payload: backwardPayload,
+      deviceId: "dev1",
+    });
+    
+    // server has sequence 10 for B01
+    const result = resolveConflictForTable("tenants", entry, { id: "tenant-1", ncf_secuencias_por_tipo: { B01: 10 } });
+    expect(result.resolution).toBe("server_wins");
+    expect(result.reason).toContain("no puede retroceder");
+  });
+
+  it("bloquea payloads que solo contienen updated_at", () => {
+    const timeOnlyPayload = {
+      updated_at: "2026-01-01T00:00:00.000Z"
+    };
+    const entry = createSyncOutboxEntry({
+      tenantId: "tenant-1",
+      tableName: "tenants",
+      rowId: "tenant-1",
+      op: "update",
+      payload: timeOnlyPayload,
+      deviceId: "dev1",
+    });
+    
+    const result = resolveConflictForTable("tenants", entry, { id: "tenant-1" });
+    expect(result.resolution).toBe("server_wins");
+    expect(result.reason).toContain("solo timestamp");
+  });
+
+  it("bloquea payload con campos sensibles o identidades en el tenant", () => {
+    const sensitivePayload = { plan: "pro", activa: false };
+    const entry = createSyncOutboxEntry({
+      tenantId: "tenant-1",
+      tableName: "tenants",
+      rowId: "tenant-1",
+      op: "update",
+      payload: sensitivePayload,
+      deviceId: "dev1",
+    });
+
+    const result = resolveConflictForTable("tenants", entry, { id: "tenant-1" });
+    expect(result.resolution).toBe("server_wins");
+  });
+
+  it("bloquea payload mixto que contiene al menos un campo sensible en el tenant", () => {
+    const mixedPayload = { cantidad_mesas: 30, activa: false };
+    const entry = createSyncOutboxEntry({
+      tenantId: "tenant-1",
+      tableName: "tenants",
+      rowId: "tenant-1",
+      op: "update",
+      payload: mixedPayload,
+      deviceId: "dev1",
+    });
+
+    const result = resolveConflictForTable("tenants", entry, { id: "tenant-1" });
+    expect(result.resolution).toBe("server_wins");
+  });
+
+  it("bloquea payload que contiene el id del tenant", () => {
+    const payloadWithId = { id: "tenant-1", cantidad_mesas: 30 };
+    const entry = createSyncOutboxEntry({
+      tenantId: "tenant-1",
+      tableName: "tenants",
+      rowId: "tenant-1",
+      op: "update",
+      payload: payloadWithId,
+      deviceId: "dev1",
+    });
+
+    const result = resolveConflictForTable("tenants", entry, { id: "tenant-1" });
+    expect(result.resolution).toBe("server_wins");
   });
 
   it("aplica guardrails de conflicto antes de mutar servidor", () => {

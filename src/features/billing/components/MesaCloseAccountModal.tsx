@@ -11,6 +11,7 @@ import {
   DEFAULT_NCF_B_CODE,
   ncfTypeRequiresClientRnc,
   isNcfTypeCode,
+  normalizeNcfTypeForFiscalMode,
   type NcfTypeCode,
   NCF_TIPO_OPCIONES,
 } from "../../../shared/lib/ncf";
@@ -343,17 +344,17 @@ export function MesaCloseAccountModal({
       if (cancelled) return;
 
 
-      setSelectedNcfType(
-        initialNcfType && isNcfTypeCode(initialNcfType)
-          ? initialNcfType
-          : settings?.defaultNcfType ?? DEFAULT_NCF_B_CODE
-      );
-
       const isOnline = navigator.onLine;
       const { mode, certificateId: certId } = await resolveActiveFiscalMode(tenantId, settings, isOnline);
       setFiscalMode(mode);
       setCertificateId(certId);
       setNcfFiscalActive(mode !== "internal_receipt");
+
+      const baseType = initialNcfType && isNcfTypeCode(initialNcfType)
+        ? initialNcfType
+        : settings?.defaultNcfType ?? DEFAULT_NCF_B_CODE;
+      
+      setSelectedNcfType(normalizeNcfTypeForFiscalMode(baseType as NcfTypeCode, mode));
     });
 
     return () => {
@@ -1320,7 +1321,11 @@ export function MesaCloseAccountModal({
                     }
                     className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors cursor-pointer"
                   >
-                    {NCF_TIPO_OPCIONES.filter(o => ncfFiscalActive ? o.codigo.startsWith("E") : o.codigo.startsWith("B")).map((opcion) => (
+                    {NCF_TIPO_OPCIONES.filter(o => {
+                      if (fiscalMode === "dgii_ecf") return o.codigo.startsWith("E");
+                      if (fiscalMode === "ncf_legacy") return o.codigo.startsWith("B");
+                      return false;
+                    }).map((opcion) => (
                       <option key={opcion.codigo} value={opcion.codigo}>
                         {opcion.codigo} - {opcion.descripcion.replace(`${opcion.codigo} - `, "")}
                       </option>

@@ -49,6 +49,7 @@ import {
 import {
   DEFAULT_NCF_B_CODE,
   isNcfTypeCode,
+  normalizeNcfTypeForFiscalMode,
   NCF_TIPO_OPCIONES,
   ncfTypeRequiresClientRnc,
   type NcfTypeCode,
@@ -187,6 +188,7 @@ export function Dashboard() {
   const [takeoutClientRnc, setTakeoutClientRnc] = useState("");
   const [takeoutCustomer, setTakeoutCustomer] = useState<Customer | null>(null);
   const [cashReceivedInput, setCashReceivedInput] = useState("");
+  const [orderNotes, setOrderNotes] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<{
     open: boolean;
     title: string;
@@ -205,14 +207,12 @@ export function Dashboard() {
 
       setCartItbisEnabled(settings?.defaultItbisEnabled ?? false);
       setCartPropinaEnabled(settings?.defaultPropinaEnabled ?? false);
-      setSelectedNcfType(settings?.defaultNcfType ?? DEFAULT_NCF_B_CODE);
-
-
-      const isOnline = navigator.onLine;
       const { mode, certificateId: certId } = await resolveActiveFiscalMode(tenantId, settings, isOnline);
       setFiscalMode(mode);
       setCertificateId(certId);
       setTenantNcfFiscalActive(mode !== "internal_receipt");
+
+      setSelectedNcfType(normalizeNcfTypeForFiscalMode(settings?.defaultNcfType as NcfTypeCode, mode));
     });
 
     // Proactively cache the tenant logo for offline printing
@@ -818,7 +818,7 @@ export function Dashboard() {
         mesa_numero: selectedMesa.numero,
         estado: "pendiente",
         items,
-        notas: null,
+        notas: orderNotes.trim() || null,
         tenant_id: tid,
         sucursal_id: activeSucursalId,
         creado_por: user?.id ?? null,
@@ -883,20 +883,21 @@ export function Dashboard() {
               logo_offset_x: tr.logo_offset_x,
               logo_offset_y: tr.logo_offset_y,
             },
-            {
-              id: data.id,
-              numero_comanda: (data as { numero_comanda?: number }).numero_comanda,
-              mesa_numero: data.mesa_numero,
-              items:
-                (data.items as Array<{
-                  nombre: string;
-                  cantidad: number;
-                  precio?: number;
-                  categoria?: string;
-                }>) || [],
-              notes: (data as any).notas || null,
-              created_at: data.created_at,
-            } as any,
+              {
+                id: data.id,
+                numero_comanda: (data as { numero_comanda?: number }).numero_comanda,
+                mesa_numero: data.mesa_numero,
+                items:
+                  ((data as any).items as Array<{
+                    nombre: string;
+                    cantidad: number;
+                    precio?: number;
+                    categoria?: string;
+                    notas?: string;
+                  }>) || [],
+                notas: (data as any).notas || null,
+                created_at: data.created_at,
+              } as any,
             paperWidthMm
           );
           const printSettings = getThermalPrintSettings();
@@ -962,6 +963,7 @@ export function Dashboard() {
 
     // Limpiar SOLO el carrito (todo fue enviado)
     setCart([]);
+    setOrderNotes("");
     setSentOk(true);
     setTimeout(() => setSentOk(false), 3000);
     setSending(false);
@@ -1150,7 +1152,7 @@ export function Dashboard() {
       fiscal_status: ncfPart?.ecfType ? "pending_offline" : null,
       fiscal_document_id: ecfDocumentId,
       mesa_numero: 0,
-      notas: "Para llevar",
+      notas: orderNotes.trim() ? `${orderNotes.trim()} (Para llevar)` : "Para llevar",
     };
     if (ncfPart) {
       facturaData.ncf = ncfPart.ncf;
@@ -1255,6 +1257,7 @@ export function Dashboard() {
     setTakeoutClientRnc("");
     setTakeoutCustomer(null);
     setCashReceivedInput("");
+    setOrderNotes("");
     setMesaConsumos([]);
     setChargeOk(true);
     setTimeout(() => setChargeOk(false), 3000);
@@ -1485,9 +1488,9 @@ export function Dashboard() {
                   style={{ minWidth: 180, maxHeight: 260, overflowY: "auto" }}
                 >
                   {/* Opción: sin mesa */}
-                  <button
-                    onClick={() => { setSelectedMesa(null); setShowMesaDropdown(false); setCart([]); }}
-                    className="w-full text-left flex items-center gap-[8px] px-[10px] py-[7px] rounded-[8px] cursor-pointer border-none transition-colors hover:bg-black/5 dark:hover:bg-[rgba(72,72,71,0.3)]"
+                    <button
+                      onClick={() => { setSelectedMesa(null); setShowMesaDropdown(false); }}
+                      className="w-full text-left flex items-center gap-[8px] px-[10px] py-[7px] rounded-[8px] cursor-pointer border-none transition-colors hover:bg-black/5 dark:hover:bg-[rgba(72,72,71,0.3)]"
                     style={{ backgroundColor: !selectedMesa ? "rgba(89,238,80,0.08)" : "transparent" }}
                   >
                     <span className="font-['Inter',sans-serif] text-[12px]" style={{ color: !selectedMesa ? "#59ee50" : isDark ? "#adaaaa" : "#4b5563" }}>
@@ -1530,7 +1533,7 @@ export function Dashboard() {
                               setMesaConsumos([]);
                               setMesaAccountLoading(true);
                               setSelectedMesa(mesa);
-                              setCart([]);
+                              // Keep cart and notes when reassigning the in-progress order context.
                               // Occupation now handled after order is sent; removed premature marking
                             }}
                             className="flex flex-col items-center justify-center py-[8px] rounded-[8px] cursor-pointer border-none transition-all"
@@ -1815,53 +1818,19 @@ export function Dashboard() {
                   />
                 </button>
               </div>
-              {tenantNcfFiscalActive ? (
-                <div className="flex flex-col gap-[10px] rounded-[10px] border border-black/10 bg-background px-[12px] py-[10px] dark:border-[rgba(72,72,71,0.28)] dark:bg-[#131313]">
-                  <div className="flex items-center justify-between gap-[12px]">
-                    <div className="flex flex-col min-w-0">
-                      <span className="font-['Inter',sans-serif] text-foreground text-[12px] font-semibold leading-tight">
-                        Tipo NCF
-                      </span>
-                      <span className="font-['Inter',sans-serif] text-[#6b7280] text-[10px] leading-snug">
-                        Cambialo solo para este cobro si necesitas emitir otro comprobante.
-                      </span>
-                    </div>
-                    <Select
-                      value={selectedNcfType}
-                      onValueChange={(val) =>
-                        setSelectedNcfType(
-                          isNcfTypeCode(val) ? val : DEFAULT_NCF_B_CODE
-                        )
-                      }
-                    >
-                      <SelectTrigger className="min-w-[168px] rounded-xl border border-black/10 bg-card px-[12px] py-[9px] font-['Inter',sans-serif] text-[12px] text-foreground outline-none dark:border-[rgba(72,72,71,0.3)] dark:bg-[#1a1a1a] h-auto">
-                        <SelectValue placeholder="Tipo NCF" />
-                      </SelectTrigger>
-                      <SelectContent className="rounded-xl">
-                        {NCF_TIPO_OPCIONES.filter(o => tenantNcfFiscalActive ? o.codigo.startsWith("E") : o.codigo.startsWith("B")).map((opcion) => (
-                          <SelectItem key={opcion.codigo} value={opcion.codigo}>
-                            {opcion.codigo} - {opcion.descripcion.replace(`${opcion.codigo} - `, "")}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {ncfTypeRequiresClientRnc(selectedNcfType) ? (
-                    <div className="flex flex-col gap-[6px]">
-                      <span className="font-['Inter',sans-serif] text-muted-foreground text-[10px] tracking-[0.8px] uppercase">
-                        RNC del cliente
-                      </span>
-                      <input
-                        type="text"
-                        value={takeoutClientRnc}
-                        onChange={(e) => setTakeoutClientRnc(e.target.value)}
-                        placeholder="RNC del cliente"
-                        className="w-full rounded-[10px] border border-black/10 bg-card px-[12px] py-[9px] font-['Inter',sans-serif] text-[12px] text-foreground outline-none dark:border-[rgba(72,72,71,0.3)] dark:bg-[#1a1a1a]"
-                      />
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
+              {/* NCF controls were moved to the payment modal */}
+              <div className="flex flex-col gap-2 mt-1">
+                <label htmlFor="order-notes" className="font-['Inter',sans-serif] text-foreground text-[12px] font-semibold leading-tight">
+                  Notas de la orden
+                </label>
+                <textarea
+                  id="order-notes"
+                  value={orderNotes}
+                  onChange={(e) => setOrderNotes(e.target.value)}
+                  placeholder="Instrucciones para cocina..."
+                  className="w-full rounded-[10px] border border-black/10 bg-background px-[12px] py-[8px] font-['Inter',sans-serif] text-[12px] text-foreground outline-none resize-none h-[60px] dark:border-[rgba(72,72,71,0.28)] dark:bg-[#131313] focus:border-[#ff906d]/50 transition-colors"
+                />
+              </div>
               <div className="flex justify-between">
                 <span className="font-['Inter',sans-serif] text-muted-foreground text-[11px] tracking-[1px] uppercase">
                   Subtotal {hasCuentaEnMesa ? "(en mesa)" : ""}
@@ -1985,9 +1954,10 @@ export function Dashboard() {
                   : m
               )
             );
-            setSelectedMesa(null);
-            setMesaConsumos([]);
-            setCart([]);
+              setSelectedMesa(null);
+              setMesaConsumos([]);
+              setCart([]);
+              setOrderNotes("");
           }}
         />
       )}
@@ -2004,6 +1974,7 @@ export function Dashboard() {
                 setTakeoutClientRnc("");
                 setTakeoutCustomer(null);
                 setCashReceivedInput("");
+                setOrderNotes("");
                 setShowPaymentModal(false);
               }
             }}
@@ -2031,13 +2002,14 @@ export function Dashboard() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => {
-                    setTakeoutClientRnc("");
-                    setTakeoutCustomer(null);
-                    setCashReceivedInput("");
-                    setShowPaymentModal(false);
-                  }}
-                  aria-label="Cerrar modal de cobro para llevar"
+                onClick={() => {
+                  setTakeoutClientRnc("");
+                  setTakeoutCustomer(null);
+                  setCashReceivedInput("");
+                  setOrderNotes("");
+                  setShowPaymentModal(false);
+                }}
+                aria-label="Cerrar modal de cobro para llevar"
                   className="text-zinc-400 bg-transparent border-none cursor-pointer text-[26px] hover:text-white transition-colors leading-none w-10 h-10 flex items-center justify-center rounded-full hover:bg-zinc-900"
                 >
                   ×
@@ -2154,7 +2126,11 @@ export function Dashboard() {
                             <SelectValue placeholder="Tipo NCF" />
                           </SelectTrigger>
                           <SelectContent className="rounded-xl">
-                            {NCF_TIPO_OPCIONES.filter(o => tenantNcfFiscalActive ? o.codigo.startsWith("E") : o.codigo.startsWith("B")).map((opcion) => (
+                            {NCF_TIPO_OPCIONES.filter(o => {
+                              if (fiscalMode === "dgii_ecf") return o.codigo.startsWith("E");
+                              if (fiscalMode === "ncf_legacy") return o.codigo.startsWith("B");
+                              return false;
+                            }).map((opcion) => (
                               <SelectItem key={opcion.codigo} value={opcion.codigo}>
                                 {opcion.codigo} - {opcion.descripcion.replace(`${opcion.codigo} - `, "")}
                               </SelectItem>
@@ -2279,6 +2255,7 @@ export function Dashboard() {
                         setTakeoutClientRnc("");
                         setTakeoutCustomer(null);
                         setCashReceivedInput("");
+                        setOrderNotes("");
                         setShowPaymentModal(false);
                       }}
                       className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-zinc-400 text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:border-zinc-700 hover:text-white transition-all active:scale-95"

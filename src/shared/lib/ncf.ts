@@ -90,7 +90,49 @@ export function isNcfTypeCode(tipoCodigo: string | null | undefined): tipoCodigo
 }
 
 export function ncfTypeRequiresClientRnc(tipoCodigo: string | null | undefined): boolean {
-  return normalizeCode(tipoCodigo) === "B01";
+  const code = normalizeCode(tipoCodigo);
+  return code === "B01" || code === "E31";
+}
+
+const LEGACY_TO_ECF_MAP: Record<string, string> = {
+  B01: "E31",
+  B02: "E32",
+  B14: "E41",
+  B15: "E44",
+  B16: "E46",
+  B17: "E47",
+};
+
+const ECF_TO_LEGACY_MAP: Record<string, string> = {
+  E31: "B01",
+  E32: "B02",
+  E41: "B14",
+  E44: "B15",
+  E46: "B16",
+  E47: "B17",
+};
+
+export function normalizeNcfTypeForFiscalMode(
+  currentType: NcfTypeCode | null | undefined,
+  mode: "ncf_legacy" | "dgii_ecf" | "internal_receipt" | string
+): NcfTypeCode {
+  const code = normalizeCode(currentType);
+  if (!isNcfTypeCode(code)) return DEFAULT_NCF_B_CODE;
+
+  if (mode === "dgii_ecf") {
+    if (code.startsWith("B")) {
+      const eCode = LEGACY_TO_ECF_MAP[code];
+      return isNcfTypeCode(eCode) ? (eCode as NcfTypeCode) : "E32";
+    }
+    return code as NcfTypeCode;
+  } else if (mode === "ncf_legacy") {
+    if (code.startsWith("E")) {
+      const bCode = ECF_TO_LEGACY_MAP[code];
+      return isNcfTypeCode(bCode) ? (bCode as NcfTypeCode) : DEFAULT_NCF_B_CODE;
+    }
+    return code as NcfTypeCode;
+  }
+  return code as NcfTypeCode;
 }
 
 export function etiquetaTipoNcf(codigo: string): string {

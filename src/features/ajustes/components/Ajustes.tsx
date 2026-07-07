@@ -237,7 +237,6 @@ export function Ajustes() {
     setSaveMessage(null);
     const ncfUpdate = buildTenantNcfUpdatePayload(config.ncf_fiscal_activo, config.ncf_tipo_default, config.ncf_secuencias_por_tipo, config.ncf_secuencias_por_tipo);
     const payload = {
-      id: tenantId,
       nombre_negocio: config.nombre_empresa?.trim() || "",
       rnc: config.rnc?.trim() || null,
       logo_url: config.logo_url?.trim() || null,

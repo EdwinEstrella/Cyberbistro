@@ -815,6 +815,15 @@ export interface ConflictResult {
   reason: string;
 }
 
+const SAFE_TENANT_KEYS = new Set([
+  "nombre_negocio", "rnc", "logo_url", "logo_size_px", "logo_offset_x", "logo_offset_y", "menu_url", "direccion", "telefono", "moneda",
+  "itbis_cobro_por_defecto", "propina_cobro_por_defecto",
+  "fiscal_mode", "fiscal_mode_fallback", "ecf_environment",
+  "ncf_fiscal_activo", "ncf_tipo_default", "ncf_secuencia_siguiente", "ncf_secuencias_por_tipo",
+  "ncf_b01_secuencia_siguiente", "ncf_b02_secuencia_siguiente", "ncf_b14_secuencia_siguiente", "ncf_b15_secuencia_siguiente", "ncf_b16_secuencia_siguiente", "ncf_b17_secuencia_siguiente",
+  "cantidad_mesas", "updated_at"
+]);
+
 export function resolveConflictForTable(
   tableName: LocalFirstMirrorTable,
   localEntry: SyncOutboxEntry,
@@ -858,15 +867,50 @@ export function resolveConflictForTable(
       return { resolution: "local_wins", reason: "Sin conflicto fiscal." };
     }
 
-    case "tenants":
-      if (
-        localEntry.op === "update" &&
-        localEntry.payload &&
-        Object.keys(localEntry.payload).every((key) => key === "cantidad_mesas")
-      ) {
-        return { resolution: "local_wins", reason: "Configuración de mesas debe sincronizarse al servidor." };
+    case "tenants": {
+      if (localEntry.op === "update" && localEntry.payload) {
+        const keys = Object.keys(localEntry.payload).filter((k) => !k.startsWith("__local_"));
+        
+        if (keys.length === 1 && keys[0] === "updated_at") {
+          return { resolution: "server_wins", reason: "Payload de solo timestamp ignorado." };
+        }
+
+        if (keys.length > 0 && keys.every((key) => SAFE_TENANT_KEYS.has(key))) {
+          if (serverRow) {
+            const fiscalSequenceKeys = [
+              "ncf_secuencia_siguiente",
+              "ncf_b01_secuencia_siguiente", "ncf_b02_secuencia_siguiente",
+              "ncf_b14_secuencia_siguiente", "ncf_b15_secuencia_siguiente",
+              "ncf_b16_secuencia_siguiente", "ncf_b17_secuencia_siguiente"
+            ];
+            for (const key of fiscalSequenceKeys) {
+              if (keys.includes(key) && localEntry.payload[key] !== undefined && serverRow[key] !== undefined && serverRow[key] !== null) {
+                const localSeq = Number(localEntry.payload[key]);
+                const serverSeq = Number(serverRow[key]);
+                if (!isNaN(localSeq) && !isNaN(serverSeq) && localSeq < serverSeq) {
+                  return { resolution: "server_wins", reason: `Secuencia fiscal ${key} no puede retroceder.` };
+                }
+              }
+            }
+
+            if (keys.includes("ncf_secuencias_por_tipo") && localEntry.payload["ncf_secuencias_por_tipo"] && serverRow["ncf_secuencias_por_tipo"]) {
+              const localObj = localEntry.payload["ncf_secuencias_por_tipo"] as any;
+              const serverObj = serverRow["ncf_secuencias_por_tipo"] as any;
+              for (const typeKey of Object.keys(localObj)) {
+                const localSeq = typeof localObj[typeKey] === "number" ? localObj[typeKey] : localObj[typeKey]?.secuencia_actual;
+                const serverSeq = typeof serverObj[typeKey] === "number" ? serverObj[typeKey] : serverObj[typeKey]?.secuencia_actual;
+                if (typeof localSeq === "number" && typeof serverSeq === "number" && localSeq < serverSeq) {
+                  return { resolution: "server_wins", reason: `Secuencia fiscal por tipo ${typeKey} no puede retroceder.` };
+                }
+              }
+            }
+          }
+
+          return { resolution: "local_wins", reason: "Configuración segura de tenant debe sincronizarse al servidor." };
+        }
       }
       return { resolution: "server_wins", reason: "Identidades/permisos siempre ganan del servidor." };
+    }
 
     case "tenant_users": {
       return { resolution: "server_wins", reason: "Identidades/permisos siempre ganan del servidor." };
