@@ -30,7 +30,7 @@ export type NcfBCode = (typeof NCF_B_TIPO_OPCIONES)[number]["codigo"];
 export type NcfTypeCode = (typeof NCF_TIPO_OPCIONES)[number]["codigo"];
 export type NcfSequenceMap = Record<string, number>;
 
-export const DEFAULT_NCF_B_CODE: NcfBCode = "B01";
+export const DEFAULT_NCF_B_CODE: NcfBCode = "B02";
 export const NCF_B_SEQUENCE_COLUMN_BY_CODE = {
   B01: "ncf_b01_secuencia_siguiente",
   B02: "ncf_b02_secuencia_siguiente",
@@ -116,8 +116,10 @@ export function normalizeNcfTypeForFiscalMode(
   currentType: NcfTypeCode | null | undefined,
   mode: "ncf_legacy" | "dgii_ecf" | "internal_receipt" | string
 ): NcfTypeCode {
-  const code = normalizeCode(currentType);
-  if (!isNcfTypeCode(code)) return DEFAULT_NCF_B_CODE;
+  let code = normalizeCode(currentType);
+  if (!isNcfTypeCode(code)) {
+    code = DEFAULT_NCF_B_CODE;
+  }
 
   if (mode === "dgii_ecf") {
     if (code.startsWith("B")) {

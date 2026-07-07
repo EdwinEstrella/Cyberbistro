@@ -67,17 +67,25 @@ export interface PrintThermalResult {
  */
 export async function printThermalHtml(
   html: string,
-  options?: { silent?: boolean }
+  options?: { silent?: boolean; printType?: "kitchen" | "sales" | "general" }
 ): Promise<PrintThermalResult> {
   const settings = getThermalPrintSettings();
   const api = window.electronAPI;
-  const shouldBeSilent = options?.silent ?? Boolean(settings.printerName);
+  
+  let targetPrinter = settings.printerName;
+  if (options?.printType === "kitchen" && settings.kitchenPrinterName) {
+    targetPrinter = settings.kitchenPrinterName;
+  } else if (options?.printType === "sales" && settings.salesPrinterName) {
+    targetPrinter = settings.salesPrinterName;
+  }
+
+  const shouldBeSilent = options?.silent ?? Boolean(targetPrinter);
 
   if (api?.printThermal) {
     try {
       const res = await api.printThermal({
         html,
-        deviceName: settings.printerName || undefined,
+        deviceName: targetPrinter || undefined,
         silent: shouldBeSilent,
         paperWidthMm: settings.paperWidthMm,
       });
@@ -99,9 +107,11 @@ export async function openCashDrawerForSale(): Promise<PrintThermalResult> {
     return { ok: false, error: "La apertura de caja solo está disponible en la app de escritorio." };
   }
 
+  let targetPrinter = settings.salesPrinterName || settings.printerName;
+
   try {
     const res = await api.openCashDrawer({
-      deviceName: settings.printerName || undefined,
+      deviceName: targetPrinter || undefined,
       paperWidthMm: settings.paperWidthMm,
     });
     return res ?? { ok: false, error: "Sin respuesta del proceso principal" };

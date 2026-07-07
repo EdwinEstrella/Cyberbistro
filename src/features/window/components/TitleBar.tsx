@@ -24,6 +24,9 @@ interface TitleBarProps {
   };
 }
 
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../../../shared/ui/select";
+import { Switch } from "../../../shared/ui/switch";
+
 export function TitleBar({
   showSidebarToggle = false,
   sidebarHidden = false,
@@ -45,12 +48,19 @@ export function TitleBar({
   const [printerDropdownOpen, setPrinterDropdownOpen] = useState(false);
   const [printers, setPrinters] = useState<ThermalPrinterInfo[]>([]);
   const [selectedPrinterName, setSelectedPrinterName] = useState("");
+  const [kitchenPrinterName, setKitchenPrinterName] = useState("");
+  const [salesPrinterName, setSalesPrinterName] = useState("");
+  const [printComandas, setPrintComandas] = useState(false);
 
   const [confirmState, setConfirmState] = useState<{ open: boolean; message: string; onConfirm: () => void, title?: string, variant?: "danger" | "primary" }>({ open: false, message: "", onConfirm: () => {} });
   const showConfirm = (message: string, onConfirm: () => void, title = "Confirmar", variant: "danger" | "primary" = "danger") => setConfirmState({ open: true, message, onConfirm, title, variant });
 
   useEffect(() => {
-    setSelectedPrinterName(getThermalPrintSettings().printerName);
+    const s = getThermalPrintSettings();
+    setSelectedPrinterName(s.printerName);
+    setKitchenPrinterName(s.kitchenPrinterName || "");
+    setSalesPrinterName(s.salesPrinterName || "");
+    setPrintComandas(s.printComandas || false);
   }, []);
 
   useEffect(() => {
@@ -63,11 +73,26 @@ export function TitleBar({
     }
   }, [printerDropdownOpen]);
 
-  const handleSelectPrinter = (name: string) => {
+  const handleSelectPrinter = (type: "general" | "kitchen" | "sales", name: string) => {
     const settings = getThermalPrintSettings();
-    saveThermalPrintSettings({ ...settings, printerName: name });
-    setSelectedPrinterName(name);
-    setPrinterDropdownOpen(false);
+    if (type === "general") {
+      settings.printerName = name === "none" ? "" : name;
+      setSelectedPrinterName(name === "none" ? "" : name);
+    } else if (type === "kitchen") {
+      settings.kitchenPrinterName = name === "none" ? "" : name;
+      setKitchenPrinterName(name === "none" ? "" : name);
+    } else if (type === "sales") {
+      settings.salesPrinterName = name === "none" ? "" : name;
+      setSalesPrinterName(name === "none" ? "" : name);
+    }
+    saveThermalPrintSettings(settings);
+  };
+
+  const handleToggleComandas = (checked: boolean) => {
+    const settings = getThermalPrintSettings();
+    settings.printComandas = checked;
+    setPrintComandas(checked);
+    saveThermalPrintSettings(settings);
   };
 
   const activeSucursal = sucursales.find(s => s.id === activeSucursalId);
@@ -381,50 +406,72 @@ export function TitleBar({
             {printerDropdownOpen && (
               <>
                 <div className="fixed inset-0 z-40 cursor-default" onClick={() => setPrinterDropdownOpen(false)} />
-                <div className="absolute right-0 top-full mt-1.5 w-[220px] z-50 bg-[#131313] border border-white/10 rounded-[10px] shadow-[0px_8px_24px_rgba(0,0,0,0.5)] p-1.5 flex flex-col gap-0.5 animate-in fade-in slide-in-from-top-1 duration-150">
-                  <span className="text-[9px] uppercase tracking-[0.5px] text-[#ff906d] font-bold px-2 py-1 font-['Space_Grotesk',sans-serif]">
-                    Seleccionar Impresora
+                <div className="absolute right-0 top-full mt-1.5 w-[240px] z-50 bg-[#131313] border border-white/10 rounded-[10px] shadow-[0px_8px_24px_rgba(0,0,0,0.5)] p-2 flex flex-col gap-2 animate-in fade-in slide-in-from-top-1 duration-150">
+                  <span className="text-[9px] uppercase tracking-[0.5px] text-[#ff906d] font-bold px-1 font-['Space_Grotesk',sans-serif]">
+                    Impresoras
                   </span>
-                  <div className="h-px bg-white/5 my-0.5" />
                   
-                  {/* Default System Printer Option */}
-                  <button
-                    type="button"
-                    onClick={() => handleSelectPrinter("")}
-                    className={`w-full rounded-[6px] transition-colors hover:bg-white/5 text-left px-2.5 py-1.5 font-['Space_Grotesk',sans-serif] text-[11px] cursor-pointer border-none bg-transparent flex items-center justify-between ${
-                      selectedPrinterName === "" ? "text-[#ff906d] font-bold" : "text-[#adaaaa] hover:text-white"
-                    }`}
-                  >
-                    <span>Predeterminada del sistema</span>
-                    {selectedPrinterName === "" && (
-                      <svg className="size-[12px] text-[#ff906d] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                  </button>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] text-white/70 px-1 font-['Space_Grotesk',sans-serif]">General (Por defecto)</label>
+                    <Select value={selectedPrinterName || "none"} onValueChange={(val) => handleSelectPrinter("general", val)}>
+                      <SelectTrigger className="w-full bg-white/5 border border-white/10 rounded-[6px] px-2 py-1.5 text-[11px] text-white outline-none cursor-pointer h-7">
+                        <SelectValue placeholder="Diálogo del sistema" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Diálogo del sistema</SelectItem>
+                        {printers.map((p) => (
+                          <SelectItem key={p.name} value={p.name}>
+                            {p.displayName || p.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-                  {printers.map((p) => {
-                    const isSelected = p.name === selectedPrinterName;
-                    return (
-                      <button
-                        key={p.name}
-                        type="button"
-                        onClick={() => handleSelectPrinter(p.name)}
-                        className={`w-full rounded-[6px] transition-colors hover:bg-white/5 text-left px-2.5 py-1.5 font-['Space_Grotesk',sans-serif] text-[11px] cursor-pointer border-none bg-transparent flex items-center justify-between ${
-                          isSelected ? "text-[#ff906d] font-bold" : "text-[#adaaaa] hover:text-white"
-                        }`}
-                      >
-                        <span className="truncate max-w-[170px]" title={p.displayName || p.name}>
-                          {p.displayName || p.name}
-                        </span>
-                        {isSelected && (
-                          <svg className="size-[12px] text-[#ff906d] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                          </svg>
-                        )}
-                      </button>
-                    );
-                  })}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] text-white/70 px-1 font-['Space_Grotesk',sans-serif]">Ventas (Tickets)</label>
+                    <Select value={salesPrinterName || "none"} onValueChange={(val) => handleSelectPrinter("sales", val)}>
+                      <SelectTrigger className="w-full bg-white/5 border border-white/10 rounded-[6px] px-2 py-1.5 text-[11px] text-white outline-none cursor-pointer h-7">
+                        <SelectValue placeholder="Usar General" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Usar General</SelectItem>
+                        {printers.map((p) => (
+                          <SelectItem key={p.name} value={p.name}>
+                            {p.displayName || p.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] text-white/70 px-1 font-['Space_Grotesk',sans-serif]">Cocina (Comandas)</label>
+                    <Select value={kitchenPrinterName || "none"} onValueChange={(val) => handleSelectPrinter("kitchen", val)}>
+                      <SelectTrigger className="w-full bg-white/5 border border-white/10 rounded-[6px] px-2 py-1.5 text-[11px] text-white outline-none cursor-pointer h-7">
+                        <SelectValue placeholder="Usar General" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Usar General</SelectItem>
+                        {printers.map((p) => (
+                          <SelectItem key={p.name} value={p.name}>
+                            {p.displayName || p.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div className="h-[1px] bg-white/10 my-1 w-full" />
+                  
+                  <div className="flex items-center justify-between px-1">
+                    <label className="text-[10px] text-white/70 font-['Space_Grotesk',sans-serif]">Imprimir Comandas Activo</label>
+                    <Switch
+                      checked={printComandas}
+                      onCheckedChange={handleToggleComandas}
+                      className="scale-75 origin-right"
+                    />
+                  </div>
                 </div>
               </>
             )}

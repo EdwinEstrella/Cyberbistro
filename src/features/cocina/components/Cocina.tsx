@@ -102,7 +102,7 @@ export function Cocina() {
         if (tenantReceiptRef.current) {
           const { paperWidthMm } = getThermalPrintSettings();
           const html = buildComandaReceiptHtml(tenantReceiptRef.current, comanda as any, paperWidthMm);
-          await printThermalHtml(html);
+          await printThermalHtml(html, { printType: "kitchen" });
         }
       } catch (err) {
         console.error("[Cocina] Error in auto-print:", err);
@@ -188,7 +188,7 @@ export function Cocina() {
     if (!tenantReceiptRef.current) return;
     const { paperWidthMm } = getThermalPrintSettings();
     const html = buildComandaReceiptHtml(tenantReceiptRef.current, comanda as any, paperWidthMm);
-    await printThermalHtml(html);
+    await printThermalHtml(html, { printType: "kitchen" });
   };
 
   const columns = [

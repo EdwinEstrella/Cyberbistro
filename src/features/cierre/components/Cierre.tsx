@@ -507,7 +507,7 @@ export function Cierre() {
           efectivoGastos: totalGastosEfectivoCiclo,
         }),
       }, paperWidthMm);
-      const res = await printThermalHtml(html);
+      const res = await printThermalHtml(html, { printType: "sales" });
       if (res.ok) await enqueueLocalWrite({ tenantId, tableName: "cierres_operativos", rowId: currentCycle.id, op: "update", payload: { printed_at: now }, deviceId });
     }
     setPrinting(false); await cargar();

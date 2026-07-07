@@ -87,6 +87,8 @@ export interface MesaCloseAccountModalProps {
   itbisRate?: number;
   /** Cobra 10% de propina legal sobre el subtotal para este cobro. */
   propinaEnabled?: boolean;
+  onItbisChange?: (enabled: boolean) => void;
+  onPropinaChange?: (enabled: boolean) => void;
   initialNcfType?: NcfTypeCode | null;
   onSettled?: (remaining: MesaConsumoRow[]) => void | Promise<void>;
   /** Solo cuando la mesa queda sin consumos pendientes tras un cobro completo. */
@@ -255,6 +257,8 @@ export function MesaCloseAccountModal({
   mesaNumero,
   itbisRate = ITBIS,
   propinaEnabled = false,
+  onItbisChange,
+  onPropinaChange,
   initialNcfType = null,
   onSettled,
   onPaidFull,
@@ -269,6 +273,7 @@ export function MesaCloseAccountModal({
     "efectivo" | "tarjeta" | "digital" | "transferencia" | "fiado"
   >("efectivo");
   const [ncfFiscalActive, setNcfFiscalActive] = useState(false);
+  const [solicitaComprobante, setSolicitaComprobante] = useState(false);
   const [selectedNcfType, setSelectedNcfType] = useState<NcfTypeCode>(DEFAULT_NCF_B_CODE);
   const [fiscalMode, setFiscalMode] = useState<FiscalMode>("internal_receipt");
   const [certificateId, setCertificateId] = useState<string | null>(null);
@@ -289,6 +294,7 @@ export function MesaCloseAccountModal({
       setClientRnc("");
       setSelectedCustomer(null);
       setCashReceivedInput("");
+      setSolicitaComprobante(false);
       return;
     }
     if (!tenantId) return;
@@ -350,11 +356,9 @@ export function MesaCloseAccountModal({
       setCertificateId(certId);
       setNcfFiscalActive(mode !== "internal_receipt");
 
-      const baseType = initialNcfType && isNcfTypeCode(initialNcfType)
-        ? initialNcfType
-        : settings?.defaultNcfType ?? DEFAULT_NCF_B_CODE;
-      
-      setSelectedNcfType(normalizeNcfTypeForFiscalMode(baseType as NcfTypeCode, mode));
+      const initialNcf = normalizeNcfTypeForFiscalMode("B02", mode);
+      setSelectedNcfType(initialNcf);
+      setSolicitaComprobante(false);
     });
 
     return () => {
@@ -465,7 +469,7 @@ export function MesaCloseAccountModal({
       paperWidthMm
     );
 
-    const res = await printThermalHtml(html);
+    const res = await printThermalHtml(html, { printType: "sales" });
     if (!res.ok && res.error) {
       console.warn("Impresión factura:", res.error);
     }
@@ -577,10 +581,10 @@ export function MesaCloseAccountModal({
     const normalizedClientRnc = clientRnc.trim() || selectedCustomer?.document_id?.trim() || "";
     if (
       ncfFiscalActive &&
-      ncfTypeRequiresClientRnc(selectedNcfType) &&
+      (solicitaComprobante || ncfTypeRequiresClientRnc(selectedNcfType)) &&
       normalizedClientRnc === ""
     ) {
-      alert("Debes indicar el RNC del cliente para emitir una factura B01.");
+      alert("Debes indicar el RNC del cliente para emitir comprobante fiscal.");
       return;
     }
 
@@ -808,10 +812,10 @@ export function MesaCloseAccountModal({
     const normalizedClientRnc = clientRnc.trim() || selectedCustomer?.document_id?.trim() || "";
     if (
       ncfFiscalActive &&
-      ncfTypeRequiresClientRnc(selectedNcfType) &&
+      (solicitaComprobante || ncfTypeRequiresClientRnc(selectedNcfType)) &&
       normalizedClientRnc === ""
     ) {
-      alert("Debes indicar el RNC del cliente para emitir una factura B01.");
+      alert("Debes indicar el RNC del cliente para emitir comprobante fiscal.");
       return;
     }
 
@@ -1252,6 +1256,52 @@ export function MesaCloseAccountModal({
               </div>
             )}
 
+            {/* Charge Config Toggles */}
+            <div className="flex flex-col gap-2 shrink-0">
+              <div className="flex items-center justify-between gap-[10px] rounded-[10px] border border-black/10 bg-background px-[12px] py-[10px] dark:border-[rgba(72,72,71,0.28)] dark:bg-zinc-950">
+                <div className="flex flex-col min-w-0">
+                  <span className="font-['Inter',sans-serif] text-zinc-300 text-[12px] font-semibold leading-tight">
+                    ITBIS 18%
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={itbisRate > 0}
+                  onClick={() => onItbisChange?.(itbisRate === 0)}
+                  aria-label={itbisRate > 0 ? "Desactivar ITBIS en el total" : "Activar ITBIS 18% en el total"}
+                  className={`relative h-[30px] w-[54px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${itbisRate > 0 ? "bg-[#59ee50]" : "bg-zinc-800"
+                    }`}
+                >
+                  <span
+                    className={`absolute top-[5px] left-[5px] block size-[20px] rounded-full bg-white shadow transition-transform duration-200 ease-out ${itbisRate > 0 ? "translate-x-[24px]" : "translate-x-0"
+                      }`}
+                  />
+                </button>
+              </div>
+              <div className="flex items-center justify-between gap-[10px] rounded-[10px] border border-black/10 bg-background px-[12px] py-[10px] dark:border-[rgba(72,72,71,0.28)] dark:bg-zinc-950">
+                <div className="flex flex-col min-w-0">
+                  <span className="font-['Inter',sans-serif] text-zinc-300 text-[12px] font-semibold leading-tight">
+                    Propina legal 10%
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={propinaEnabled}
+                  onClick={() => onPropinaChange?.(!propinaEnabled)}
+                  aria-label={propinaEnabled ? "Desactivar propina legal 10%" : "Activar propina legal 10%"}
+                  className={`relative h-[30px] w-[54px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${propinaEnabled ? "bg-[#59ee50]" : "bg-zinc-800"
+                    }`}
+                >
+                  <span
+                    className={`absolute top-[5px] left-[5px] block size-[20px] rounded-full bg-white shadow transition-transform duration-200 ease-out ${propinaEnabled ? "translate-x-[24px]" : "translate-x-0"
+                      }`}
+                  />
+                </button>
+              </div>
+            </div>
+
             {/* Main Totals Card */}
             <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-5 flex flex-col gap-3 shrink-0 relative overflow-hidden">
               <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_left,rgba(255,144,109,0.03),transparent)] pointer-events-none" />
@@ -1307,33 +1357,59 @@ export function MesaCloseAccountModal({
             {/* NCF Selection Cards */}
             {ncfFiscalActive && (
               <div className="flex flex-col gap-3 shrink-0 bg-zinc-900/20 border border-zinc-800/30 rounded-2xl p-4">
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="ncf-select" className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px]">
-                    Tipo NCF
+                <div className="flex items-center justify-between gap-[10px]">
+                  <label htmlFor="mesa-solicita-comprobante-toggle" className="text-zinc-300 font-['Space_Grotesk',sans-serif] font-bold text-[13px] cursor-pointer">
+                    Solicita comprobante fiscal
                   </label>
-                  <select
-                    id="ncf-select"
-                    value={selectedNcfType}
-                    onChange={(e) =>
-                      setSelectedNcfType(
-                        isNcfTypeCode(e.target.value) ? e.target.value : DEFAULT_NCF_B_CODE
-                      )
-                    }
-                    className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors cursor-pointer"
+                  <button
+                    type="button"
+                    role="switch"
+                    id="mesa-solicita-comprobante-toggle"
+                    aria-checked={solicitaComprobante}
+                    onClick={() => {
+                      const next = !solicitaComprobante;
+                      setSolicitaComprobante(next);
+                      if (next) {
+                        setSelectedNcfType(fiscalMode === "dgii_ecf" ? "E31" : "B01");
+                      } else {
+                        setSelectedNcfType(fiscalMode === "dgii_ecf" ? "E32" : "B02");
+                      }
+                    }}
+                    className={`relative h-[30px] w-[54px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${solicitaComprobante ? "bg-[#ff906d]" : "bg-zinc-800"}`}
                   >
-                    {NCF_TIPO_OPCIONES.filter(o => {
-                      if (fiscalMode === "dgii_ecf") return o.codigo.startsWith("E");
-                      if (fiscalMode === "ncf_legacy") return o.codigo.startsWith("B");
-                      return false;
-                    }).map((opcion) => (
-                      <option key={opcion.codigo} value={opcion.codigo}>
-                        {opcion.codigo} - {opcion.descripcion.replace(`${opcion.codigo} - `, "")}
-                      </option>
-                    ))}
-                  </select>
+                    <span className={`absolute top-[5px] left-[5px] block size-[20px] rounded-full bg-white shadow transition-transform duration-200 ease-out ${solicitaComprobante ? "translate-x-[24px]" : "translate-x-0"}`} />
+                  </button>
                 </div>
 
-                {ncfTypeRequiresClientRnc(selectedNcfType) && (
+                {solicitaComprobante && (
+                  <div className="flex flex-col gap-1.5 pt-2 border-t border-zinc-800/50 mt-1">
+                    <label htmlFor="ncf-select" className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px]">
+                      Tipo NCF
+                    </label>
+                    <select
+                      id="ncf-select"
+                      value={selectedNcfType}
+                      onChange={(e) =>
+                        setSelectedNcfType(
+                          isNcfTypeCode(e.target.value) ? e.target.value : DEFAULT_NCF_B_CODE
+                        )
+                      }
+                      className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors cursor-pointer"
+                    >
+                      {NCF_TIPO_OPCIONES.filter(o => {
+                        if (fiscalMode === "dgii_ecf") return o.codigo.startsWith("E");
+                        if (fiscalMode === "ncf_legacy") return o.codigo.startsWith("B");
+                        return false;
+                      }).map((opcion) => (
+                        <option key={opcion.codigo} value={opcion.codigo}>
+                          {opcion.codigo} - {opcion.descripcion.replace(`${opcion.codigo} - `, "")}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {solicitaComprobante && ncfTypeRequiresClientRnc(selectedNcfType) && (
                   <div className="flex flex-col gap-1.5">
                     <label htmlFor="client-rnc-input" className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px]">
                       RNC del cliente

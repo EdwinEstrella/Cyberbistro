@@ -430,7 +430,7 @@ export function Camarera() {
             },
             paperWidthMm
           );
-          void printThermalHtml(html);
+          void printThermalHtml(html, { printType: "kitchen" });
         }
       }
     }

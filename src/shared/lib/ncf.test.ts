@@ -37,8 +37,8 @@ describe("ncf", () => {
     expect(normalizeNcfTypeForFiscalMode("B01", "ncf_legacy")).toBe("B01"); // ya es B
 
     // Fallbacks
-    expect(normalizeNcfTypeForFiscalMode("B99" as any, "dgii_ecf")).toBe("B01"); // defaults to B01 early because B99 is invalid
-    expect(normalizeNcfTypeForFiscalMode("E99" as any, "ncf_legacy")).toBe("B01"); // early validation
+    expect(normalizeNcfTypeForFiscalMode("B99" as any, "dgii_ecf")).toBe("E32"); // defaults to B02 early, then maps to E32
+    expect(normalizeNcfTypeForFiscalMode("E99" as any, "ncf_legacy")).toBe("B02"); // early validation
   });
 
   it("construirCadenaNcf arma 11 caracteres", () => {

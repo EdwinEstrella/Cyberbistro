@@ -939,7 +939,7 @@ export function Billing() {
         paperWidthMm
       );
 
-      const res = await printThermalHtml(html);
+      const res = await printThermalHtml(html, { printType: "sales" });
       if (!res.ok && res.error) {
         console.warn("Impresion factura:", res.error);
       }
@@ -1004,7 +1004,7 @@ export function Billing() {
         paperWidthMm
       );
 
-      const res = await printThermalHtml(html);
+      const res = await printThermalHtml(html, { printType: "sales" });
       if (res.ok) {
         await enqueueLocalWrite({
           tenantId,

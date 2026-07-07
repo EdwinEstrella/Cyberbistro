@@ -181,6 +181,7 @@ export function Dashboard() {
   /** Por defecto sin propina legal; se activa desde Ajustes o por cobro. */
   const [cartPropinaEnabled, setCartPropinaEnabled] = useState(false);
   const [tenantNcfFiscalActive, setTenantNcfFiscalActive] = useState(false);
+  const [solicitaComprobante, setSolicitaComprobante] = useState(false);
   const [selectedNcfType, setSelectedNcfType] = useState<NcfTypeCode>(DEFAULT_NCF_B_CODE);
   const [fiscalMode, setFiscalMode] = useState<FiscalMode>("internal_receipt");
   const [certificateId, setCertificateId] = useState<string | null>(null);
@@ -207,12 +208,15 @@ export function Dashboard() {
 
       setCartItbisEnabled(settings?.defaultItbisEnabled ?? false);
       setCartPropinaEnabled(settings?.defaultPropinaEnabled ?? false);
+      const isOnline = navigator.onLine;
       const { mode, certificateId: certId } = await resolveActiveFiscalMode(tenantId, settings, isOnline);
       setFiscalMode(mode);
       setCertificateId(certId);
       setTenantNcfFiscalActive(mode !== "internal_receipt");
 
-      setSelectedNcfType(normalizeNcfTypeForFiscalMode(settings?.defaultNcfType as NcfTypeCode, mode));
+      const initialNcf = normalizeNcfTypeForFiscalMode("B02", mode);
+      setSelectedNcfType(initialNcf);
+      setSolicitaComprobante(false);
     });
 
     // Proactively cache the tenant logo for offline printing
@@ -753,7 +757,7 @@ export function Dashboard() {
       paperWidthMm
     );
 
-    const res = await printThermalHtml(html);
+    const res = await printThermalHtml(html, { printType: "sales" });
     if (!res.ok && res.error) {
       console.warn("Impresión factura:", res.error);
     }
@@ -902,7 +906,7 @@ export function Dashboard() {
           );
           const printSettings = getThermalPrintSettings();
           if (printSettings.printComandas !== false) {
-            const printRes = await printThermalHtml(comandaHtml);
+            const printRes = await printThermalHtml(comandaHtml, { printType: "kitchen" });
             if (!printRes.ok && printRes.error) {
               console.warn("Impresión comanda:", printRes.error);
             }
@@ -1019,10 +1023,10 @@ export function Dashboard() {
     const normalizedClientRnc = takeoutClientRnc.trim() || takeoutCustomer?.document_id?.trim() || "";
     if (
       tenantNcfFiscalActive &&
-      ncfTypeRequiresClientRnc(selectedNcfType) &&
+      (solicitaComprobante || ncfTypeRequiresClientRnc(selectedNcfType)) &&
       normalizedClientRnc === ""
     ) {
-      alert("Debes indicar el RNC del cliente para emitir una factura B01.");
+      alert("Debes indicar el RNC del cliente para emitir comprobante fiscal.");
       return;
     }
     if (paymentMethod === "fiado" && !takeoutCustomer) {
@@ -1770,55 +1774,6 @@ export function Dashboard() {
             )}
             {/* Totals (mesa abierta o solo carrito / para llevar) */}
             <div className="flex flex-col gap-[6px]">
-              <div className="flex items-center justify-between gap-[10px] rounded-[10px] border border-black/10 bg-background px-[12px] py-[10px] mb-[2px] dark:border-[rgba(72,72,71,0.28)] dark:bg-[#131313]">
-                <div className="flex flex-col min-w-0">
-                  <span className="font-['Inter',sans-serif] text-foreground text-[12px] font-semibold leading-tight">
-                    ITBIS 18%
-                  </span>
-                  <span className="font-['Inter',sans-serif] text-[#6b7280] text-[10px] leading-snug">
-                    Usa la preferencia de Ajustes al abrir y puedes cambiarlo para este cobro
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={cartItbisEnabled}
-                  onClick={() => setCartItbisEnabled((v) => !v)}
-                  aria-label={cartItbisEnabled ? "Desactivar ITBIS en el total" : "Activar ITBIS 18% en el total"}
-                  className={`relative h-[30px] w-[54px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${cartItbisEnabled ? "bg-[#59ee50]" : "bg-black/20 dark:bg-[#383838]"
-                    }`}
-                >
-                  <span
-                    className={`absolute top-[5px] left-[5px] block size-[20px] rounded-full bg-white shadow transition-transform duration-200 ease-out ${cartItbisEnabled ? "translate-x-[24px]" : "translate-x-0"
-                      }`}
-                  />
-                </button>
-              </div>
-              <div className="flex items-center justify-between gap-[10px] rounded-[10px] border border-black/10 bg-background px-[12px] py-[10px] mb-[2px] dark:border-[rgba(72,72,71,0.28)] dark:bg-[#131313]">
-                <div className="flex flex-col min-w-0">
-                  <span className="font-['Inter',sans-serif] text-foreground text-[12px] font-semibold leading-tight">
-                    Propina legal 10%
-                  </span>
-                  <span className="font-['Inter',sans-serif] text-[#6b7280] text-[10px] leading-snug">
-                    Usa la preferencia de Ajustes al abrir y puedes cambiarla para este cobro
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={cartPropinaEnabled}
-                  onClick={() => setCartPropinaEnabled((v) => !v)}
-                  aria-label={cartPropinaEnabled ? "Desactivar propina legal 10%" : "Activar propina legal 10%"}
-                  className={`relative h-[30px] w-[54px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${cartPropinaEnabled ? "bg-[#59ee50]" : "bg-black/20 dark:bg-[#383838]"
-                    }`}
-                >
-                  <span
-                    className={`absolute top-[5px] left-[5px] block size-[20px] rounded-full bg-white shadow transition-transform duration-200 ease-out ${cartPropinaEnabled ? "translate-x-[24px]" : "translate-x-0"
-                      }`}
-                  />
-                </button>
-              </div>
-              {/* NCF controls were moved to the payment modal */}
               <div className="flex flex-col gap-2 mt-1">
                 <label htmlFor="order-notes" className="font-['Inter',sans-serif] text-foreground text-[12px] font-semibold leading-tight">
                   Notas de la orden
@@ -1830,38 +1785,6 @@ export function Dashboard() {
                   placeholder="Instrucciones para cocina..."
                   className="w-full rounded-[10px] border border-black/10 bg-background px-[12px] py-[8px] font-['Inter',sans-serif] text-[12px] text-foreground outline-none resize-none h-[60px] dark:border-[rgba(72,72,71,0.28)] dark:bg-[#131313] focus:border-[#ff906d]/50 transition-colors"
                 />
-              </div>
-              <div className="flex justify-between">
-                <span className="font-['Inter',sans-serif] text-muted-foreground text-[11px] tracking-[1px] uppercase">
-                  Subtotal {hasCuentaEnMesa ? "(en mesa)" : ""}
-                </span>
-                <span className="font-['Inter',sans-serif] text-muted-foreground text-[11px] tracking-[1px] uppercase">
-                  {formatMoney(panelBillSubtotal)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-['Inter',sans-serif] text-muted-foreground text-[11px] tracking-[1px] uppercase">
-                  {cartItbisEnabled ? "ITBIS (18%)" : "ITBIS (no incluido)"}
-                </span>
-                <span className="font-['Inter',sans-serif] text-muted-foreground text-[11px] tracking-[1px] uppercase">
-                  {formatMoney(panelBillItbis)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-['Inter',sans-serif] text-muted-foreground text-[11px] tracking-[1px] uppercase">
-                  {cartPropinaEnabled ? "Propina legal (10%)" : "Propina legal (no incluida)"}
-                </span>
-                <span className="font-['Inter',sans-serif] text-muted-foreground text-[11px] tracking-[1px] uppercase">
-                  {formatMoney(panelBillPropina)}
-                </span>
-              </div>
-              <div className="border-t border-black/10 dark:border-[rgba(72,72,71,0.15)] pt-[8px] flex items-center justify-between">
-                <span className="font-['Space_Grotesk',sans-serif] font-bold text-foreground text-[16px] uppercase">
-                  Total
-                </span>
-                <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#59ee50] text-[20px]">
-                  {formatMoney(panelBillTotal)}
-                </span>
               </div>
             </div>
 
@@ -1893,7 +1816,7 @@ export function Dashboard() {
               className="w-full flex gap-[10px] items-center justify-center py-[14px] rounded-[12px] bg-[#ff906d] border-none cursor-pointer transition-opacity hover:bg-[#ff784d] disabled:opacity-45 disabled:cursor-not-allowed"
             >
               <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#5b1600] text-[14px] tracking-[2px] uppercase">
-                Cobrar {formatMoney(panelBillTotal)}
+                Cobrar
               </span>
               <svg className="size-[14px]" fill="none" viewBox="0 0 16 16">
                 <path d={svgPaths.p1a406200} fill="#5B1600" />
@@ -1921,6 +1844,8 @@ export function Dashboard() {
           mesaNumero={selectedMesa.numero}
           itbisRate={billItbisRate}
           propinaEnabled={cartPropinaEnabled}
+          onItbisChange={setCartItbisEnabled}
+          onPropinaChange={setCartPropinaEnabled}
           initialNcfType={tenantNcfFiscalActive ? selectedNcfType : null}
           onClose={() => setShowPaymentModal(false)}
           onSettled={async (remaining) => {
@@ -1984,7 +1909,7 @@ export function Dashboard() {
               aria-modal="true"
               aria-labelledby="takeout-close-title"
               aria-describedby="takeout-close-description"
-              className="bg-[#121212] border border-zinc-800 rounded-[24px] shadow-[0px_0px_50px_rgba(255,144,109,0.15)] w-full max-w-5xl max-h-[95vh] md:max-h-[85vh] flex flex-col overflow-hidden relative"
+              className="bg-[#121212] border border-zinc-800 rounded-[24px] shadow-[0px_0px_50px_rgba(255,144,109,0.15)] w-full max-w-6xl max-h-[96vh] md:max-h-[90vh] flex flex-col overflow-hidden relative"
             >
               {/* Ambient Top Glow */}
               <div className="absolute top-0 right-0 w-80 h-40 bg-[radial-gradient(ellipse_at_top_right,rgba(255,144,109,0.08),transparent)] pointer-events-none rounded-[24px]" />
@@ -2017,10 +1942,10 @@ export function Dashboard() {
               </div>
 
               {/* Modal Body */}
-              <div className="flex-1 overflow-y-auto md:overflow-hidden p-6 relative z-10 grid grid-cols-1 md:grid-cols-12 gap-6 min-h-0">
+              <div className="flex-1 overflow-y-auto md:overflow-hidden p-6 md:p-7 relative z-10 grid grid-cols-1 md:grid-cols-12 gap-7 min-h-0">
                 
                 {/* Left Column: Items and Totals */}
-                <div className="md:col-span-7 flex flex-col gap-4 md:overflow-hidden h-full">
+                <div className="md:col-span-6 flex flex-col gap-4 md:overflow-hidden h-full">
                   <div className="flex-1 flex flex-col min-h-0">
                     <span className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px] mb-2 px-1">
                       Detalle de la Orden
@@ -2052,6 +1977,52 @@ export function Dashboard() {
                           </div>
                         </div>
                       ))}
+                    </div>
+                  </div>
+
+                  {/* Charge Config Toggles */}
+                  <div className="flex flex-col gap-2 shrink-0">
+                    <div className="flex items-center justify-between gap-[10px] rounded-[10px] border border-black/10 bg-background px-[12px] py-[10px] dark:border-[rgba(72,72,71,0.28)] dark:bg-zinc-950">
+                      <div className="flex flex-col min-w-0">
+                        <span className="font-['Inter',sans-serif] text-zinc-300 text-[12px] font-semibold leading-tight">
+                          ITBIS 18%
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={cartItbisEnabled}
+                        onClick={() => setCartItbisEnabled((v) => !v)}
+                        aria-label={cartItbisEnabled ? "Desactivar ITBIS en el total" : "Activar ITBIS 18% en el total"}
+                        className={`relative h-[30px] w-[54px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${cartItbisEnabled ? "bg-[#59ee50]" : "bg-zinc-800"
+                          }`}
+                      >
+                        <span
+                          className={`absolute top-[5px] left-[5px] block size-[20px] rounded-full bg-white shadow transition-transform duration-200 ease-out ${cartItbisEnabled ? "translate-x-[24px]" : "translate-x-0"
+                            }`}
+                        />
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between gap-[10px] rounded-[10px] border border-black/10 bg-background px-[12px] py-[10px] dark:border-[rgba(72,72,71,0.28)] dark:bg-zinc-950">
+                      <div className="flex flex-col min-w-0">
+                        <span className="font-['Inter',sans-serif] text-zinc-300 text-[12px] font-semibold leading-tight">
+                          Propina legal 10%
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={cartPropinaEnabled}
+                        onClick={() => setCartPropinaEnabled((v) => !v)}
+                        aria-label={cartPropinaEnabled ? "Desactivar propina legal 10%" : "Activar propina legal 10%"}
+                        className={`relative h-[30px] w-[54px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${cartPropinaEnabled ? "bg-[#59ee50]" : "bg-zinc-800"
+                          }`}
+                      >
+                        <span
+                          className={`absolute top-[5px] left-[5px] block size-[20px] rounded-full bg-white shadow transition-transform duration-200 ease-out ${cartPropinaEnabled ? "translate-x-[24px]" : "translate-x-0"
+                            }`}
+                        />
+                      </button>
                     </div>
                   </div>
 
@@ -2087,7 +2058,7 @@ export function Dashboard() {
                 </div>
 
                 {/* Right Column: customer, NCF, payment, confirm */}
-                <div className="md:col-span-5 flex flex-col gap-5 md:overflow-y-auto pr-1 h-full custom-scrollbar md:border-l md:border-zinc-900 md:pl-6">
+                <div className="md:col-span-6 flex flex-col gap-5 md:overflow-y-auto pr-1 h-full custom-scrollbar md:border-l md:border-zinc-900 md:pl-7">
                   
                   {/* Customer Selector Card */}
                   <div className="flex flex-col gap-2 shrink-0">
@@ -2110,36 +2081,62 @@ export function Dashboard() {
                   {/* NCF Selection Cards */}
                   {tenantNcfFiscalActive && (
                     <div className="flex flex-col gap-3 shrink-0 bg-zinc-900/20 border border-zinc-800/30 rounded-2xl p-4">
-                      <div className="flex flex-col gap-1.5">
-                        <label htmlFor="ncf-select" className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px]">
-                          Tipo NCF
+                      <div className="flex items-center justify-between gap-[10px]">
+                        <label htmlFor="solicita-comprobante-toggle" className="text-zinc-300 font-['Space_Grotesk',sans-serif] font-bold text-[13px] cursor-pointer">
+                          Solicita comprobante fiscal
                         </label>
-                        <Select
-                          value={selectedNcfType}
-                          onValueChange={(val) =>
-                            setSelectedNcfType(
-                              isNcfTypeCode(val) ? val : DEFAULT_NCF_B_CODE
-                            )
-                          }
+                        <button
+                          type="button"
+                          role="switch"
+                          id="solicita-comprobante-toggle"
+                          aria-checked={solicitaComprobante}
+                          onClick={() => {
+                            const next = !solicitaComprobante;
+                            setSolicitaComprobante(next);
+                            if (next) {
+                              setSelectedNcfType(fiscalMode === "dgii_ecf" ? "E31" : "B01");
+                            } else {
+                              setSelectedNcfType(fiscalMode === "dgii_ecf" ? "E32" : "B02");
+                            }
+                          }}
+                          className={`relative h-[30px] w-[54px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${solicitaComprobante ? "bg-[#ff906d]" : "bg-zinc-800"}`}
                         >
-                          <SelectTrigger className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors cursor-pointer h-auto">
-                            <SelectValue placeholder="Tipo NCF" />
-                          </SelectTrigger>
-                          <SelectContent className="rounded-xl">
-                            {NCF_TIPO_OPCIONES.filter(o => {
-                              if (fiscalMode === "dgii_ecf") return o.codigo.startsWith("E");
-                              if (fiscalMode === "ncf_legacy") return o.codigo.startsWith("B");
-                              return false;
-                            }).map((opcion) => (
-                              <SelectItem key={opcion.codigo} value={opcion.codigo}>
-                                {opcion.codigo} - {opcion.descripcion.replace(`${opcion.codigo} - `, "")}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          <span className={`absolute top-[5px] left-[5px] block size-[20px] rounded-full bg-white shadow transition-transform duration-200 ease-out ${solicitaComprobante ? "translate-x-[24px]" : "translate-x-0"}`} />
+                        </button>
                       </div>
 
-                      {ncfTypeRequiresClientRnc(selectedNcfType) && (
+                      {solicitaComprobante && (
+                        <div className="flex flex-col gap-1.5 pt-2 border-t border-zinc-800/50 mt-1">
+                          <label htmlFor="ncf-select" className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px]">
+                            Tipo NCF
+                          </label>
+                          <Select
+                            value={selectedNcfType}
+                            onValueChange={(val) =>
+                              setSelectedNcfType(
+                                isNcfTypeCode(val) ? val : DEFAULT_NCF_B_CODE
+                              )
+                            }
+                          >
+                            <SelectTrigger className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors cursor-pointer h-auto">
+                              <SelectValue placeholder="Tipo NCF" />
+                            </SelectTrigger>
+                            <SelectContent className="rounded-xl">
+                              {NCF_TIPO_OPCIONES.filter(o => {
+                                if (fiscalMode === "dgii_ecf") return o.codigo.startsWith("E");
+                                if (fiscalMode === "ncf_legacy") return o.codigo.startsWith("B");
+                                return false;
+                              }).map((opcion) => (
+                                <SelectItem key={opcion.codigo} value={opcion.codigo}>
+                                  {opcion.codigo} - {opcion.descripcion.replace(`${opcion.codigo} - `, "")}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+
+                      {solicitaComprobante && ncfTypeRequiresClientRnc(selectedNcfType) && (
                         <div className="flex flex-col gap-1.5">
                           <label htmlFor="client-rnc-input" className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px]">
                             RNC del cliente

@@ -158,7 +158,7 @@ export function FiscalPanel() {
         paperWidthMm
       );
 
-      const res = await printThermalHtml(html, { silent: true });
+      const res = await printThermalHtml(html, { silent: true, printType: "sales" });
       if (!res.ok && res.error) {
         console.error("Error al reimprimir:", res.error);
         alert(`Error al imprimir: ${res.error}`);
