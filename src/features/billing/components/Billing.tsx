@@ -9,6 +9,7 @@ import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst }
 import { cacheLogoFromUrl } from "../../../shared/lib/logoCache";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { canUseFeature } from "../../../shared/lib/planFeatures";
+import { calculateExpectedCashDrawer, isCashPaymentMethod, sumCashExpenses } from "../../../shared/lib/cycleCash";
 // useTheme removed
 import {
   Dialog,
@@ -68,6 +69,7 @@ interface CierreOperativoRow {
   closed_at: string | null;
   printed_at: string | null;
   created_at: string;
+  efectivo_inicial?: number | null;
 }
 
 interface ExpenseCategory {
@@ -103,11 +105,20 @@ interface CycleSummary {
   pendingInvoices: Invoice[];
   cancelledInvoices: Invoice[];
   expenses: Expense[];
+  cxcPayments: any[];
   totalSold: number;
+  totalCxc: number;
+  totalCollected: number;
   totalExpenses: number;
+  cashSales: number;
+  cashCxc: number;
+  cashExpenses: number;
+  initialCash: number;
+  expectedCashDrawer: number;
   netTotal: number;
   subtotalSold: number;
   taxSold: number;
+  propinaSold: number;
   avgTicket: number;
   firstSaleAt: string | null;
   lastSaleAt: string | null;
@@ -354,8 +365,8 @@ export function Billing() {
       useLocalCycles
         ? { data: await readLocalMirror<CierreOperativoRow & { sucursal_id?: string | null }>(tenantId, "cierres_operativos").then(r => r.filter(c => !c.sucursal_id || c.sucursal_id === activeSucursalId).sort((a, b) => (b.cycle_number || 0) - (a.cycle_number || 0))), error: null }
         : activeSucursalId
-          ? insforgeClient.database.from("cierres_operativos").select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("opened_at", { ascending: false })
-          : insforgeClient.database.from("cierres_operativos").select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at").eq("tenant_id", tenantId).is("sucursal_id", null).order("opened_at", { ascending: false }),
+          ? insforgeClient.database.from("cierres_operativos").select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at, efectivo_inicial").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("opened_at", { ascending: false })
+          : insforgeClient.database.from("cierres_operativos").select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at, efectivo_inicial").eq("tenant_id", tenantId).is("sucursal_id", null).order("opened_at", { ascending: false }),
       useLocalExpenses
         ? { data: await readLocalMirror<Expense & { sucursal_id?: string | null }>(tenantId, "gastos").then(r => r.filter(g => !g.sucursal_id || g.sucursal_id === activeSucursalId).sort((a, b) => new Date(b.fecha_gasto || 0).getTime() - new Date(a.fecha_gasto || 0).getTime())), error: null }
         : activeSucursalId
@@ -594,14 +605,34 @@ export function Billing() {
       const cycleExpenses = expenses
         .filter((expense) => expense.cycle_id === cycle.id)
         .sort((a, b) => new Date(a.fecha_gasto).getTime() - new Date(b.fecha_gasto).getTime());
+      const cycleCxcPayments = cxcPagos
+        .filter((payment) => payment.cycle_id === cycle.id)
+        .sort((a, b) => new Date(a.fecha_pago || a.created_at || 0).getTime() - new Date(b.fecha_pago || b.created_at || 0).getTime());
 
       const paidInvoices = cycleInvoices.filter((inv) => inv.estado === "pagada");
       const pendingInvoices = cycleInvoices.filter((inv) => inv.estado === "pendiente");
       const cancelledInvoices = cycleInvoices.filter((inv) => inv.estado === "cancelada");
       const totalSold = paidInvoices.reduce((sum, inv) => sum + inv.total, 0);
+      const totalCxc = cycleCxcPayments.reduce((sum, payment) => sum + Number(payment.monto), 0);
+      const totalCollected = totalSold + totalCxc;
       const totalExpenses = cycleExpenses.reduce((sum, expense) => sum + Number(expense.monto), 0);
+      const cashSales = paidInvoices
+        .filter((inv) => isCashPaymentMethod(inv.metodo_pago))
+        .reduce((sum, inv) => sum + Number(inv.total), 0);
+      const cashCxc = cycleCxcPayments
+        .filter((payment) => isCashPaymentMethod(payment.metodo_pago))
+        .reduce((sum, payment) => sum + Number(payment.monto), 0);
+      const cashExpenses = sumCashExpenses(cycleExpenses);
+      const initialCash = Number(cycle.efectivo_inicial ?? 0);
+      const expectedCashDrawer = calculateExpectedCashDrawer({
+        efectivoInicial: initialCash,
+        efectivoVentas: cashSales,
+        efectivoCxc: cashCxc,
+        efectivoGastos: cashExpenses,
+      });
       const subtotalSold = paidInvoices.reduce((sum, inv) => sum + inv.subtotal, 0);
       const taxSold = paidInvoices.reduce((sum, inv) => sum + inv.itbis, 0);
+      const propinaSold = paidInvoices.reduce((sum, inv) => sum + Number(inv.propina ?? 0), 0);
       const avgTicket = paidInvoices.length > 0 ? totalSold / paidInvoices.length : 0;
 
       const methodMap = new Map<string, CycleMethodSummary>();
@@ -631,6 +662,20 @@ export function Billing() {
         }
       }
 
+      for (const payment of cycleCxcPayments) {
+        const method = payment.metodo_pago || "otro";
+        const display = getMethodDisplay(method);
+        const current = methodMap.get(method) ?? {
+          method,
+          label: display.label,
+          count: 0,
+          total: 0,
+        };
+        current.count += 1;
+        current.total += Number(payment.monto);
+        methodMap.set(method, current);
+      }
+
       for (const expense of cycleExpenses) {
         const cat = expense.category_id ? expenseCategoryById.get(expense.category_id) : null;
         const label = cat?.nombre || "Sin categoría";
@@ -647,11 +692,20 @@ export function Billing() {
         pendingInvoices,
         cancelledInvoices,
         expenses: cycleExpenses,
+        cxcPayments: cycleCxcPayments,
         totalSold,
+        totalCxc,
+        totalCollected,
         totalExpenses,
-        netTotal: totalSold - totalExpenses,
+        cashSales,
+        cashCxc,
+        cashExpenses,
+        initialCash,
+        expectedCashDrawer,
+        netTotal: totalCollected - totalExpenses,
         subtotalSold,
         taxSold,
+        propinaSold,
         avgTicket,
         firstSaleAt: cycleInvoices[0]?.created_at ?? null,
         lastSaleAt: cycleInvoices[cycleInvoices.length - 1]?.created_at ?? null,
@@ -660,7 +714,7 @@ export function Billing() {
         expenseCategoryBreakdown: [...expenseCategoryMap.values()].sort((a, b) => b.total - a.total),
       };
     });
-  }, [cycles, invoices, expenses, expenseCategories]);
+  }, [cycles, invoices, expenses, expenseCategories, cxcPagos]);
 
   const filteredCycleSummaries = useMemo(() => {
     return cycleSummaries.filter(({ cycle, invoices: cycleInvoices }) => {
@@ -988,9 +1042,12 @@ export function Billing() {
           cerradoAtIso: entry.cycle.closed_at,
           facturasPagadas: entry.paidInvoices.length,
           facturasPendientes: entry.pendingInvoices.length,
-          totalPagado: entry.totalSold,
+          totalPagado: entry.totalCollected,
           subtotalPagado: entry.subtotalSold,
           itbisPagado: entry.taxSold,
+          propinaPagado: entry.propinaSold,
+          efectivoInicial: entry.initialCash,
+          cajaEsperada: entry.expectedCashDrawer,
           gastosTotal: entry.totalExpenses,
           gastosCantidad: entry.expenses.length,
           netoOperativo: entry.netTotal,
@@ -1169,10 +1226,44 @@ export function Billing() {
         ))}
       </div>
 
-      {/* Main Two-Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Column: Filters Bar + List/Table */}
-        <div className="lg:col-span-8 xl:col-span-9 flex flex-col gap-6">
+      {/* Main Content */}
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-6">
+          <div className="bg-card rounded-[20px] border border-black/10 dark:border-white/5 p-5 shadow-sm">
+            <div className="flex items-center gap-2 pb-4 border-b border-black/5 dark:border-white/5">
+              <TrendingUp size={16} className="text-green-600 dark:text-green-400" />
+              <span className="font-['Space_Grotesk',sans-serif] font-bold text-[13px] uppercase tracking-wider text-foreground">
+                {view === "facturas" ? "Resumen Filtrado" : view === "finanzas" ? "Resumen Financiero" : "Resumen de Ciclos"}
+              </span>
+            </div>
+
+            {view === "facturas" && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 pt-4">
+                <div><span className="text-[11px] text-muted-foreground font-medium block">Monto Pagado</span><span className="font-['Space_Grotesk',sans-serif] font-bold text-[18px] text-green-600 dark:text-green-400">{RD(filteredStats.total)}</span></div>
+                <div><span className="text-[11px] text-muted-foreground font-medium block">Cantidad</span><span className="font-['Space_Grotesk',sans-serif] font-bold text-[18px] text-foreground">{filteredStats.count} facturas</span></div>
+                <div><span className="text-[11px] text-muted-foreground font-medium block">Ticket Promedio</span><span className="font-['Space_Grotesk',sans-serif] font-bold text-[18px] text-foreground">{RD(filteredStats.avg)}</span></div>
+                <div><span className="text-[11px] text-muted-foreground font-medium block">Método Principal</span><span className="font-['Space_Grotesk',sans-serif] font-bold text-[18px] text-primary">{filteredStats.mainMethodLabel}</span></div>
+              </div>
+            )}
+
+            {view === "finanzas" && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4">
+                <div><span className="text-[11px] text-muted-foreground font-medium block">Total Cobros</span><span className="font-['Space_Grotesk',sans-serif] font-bold text-[18px] text-green-600 dark:text-green-400">{RD(finanzasData.totalCobros)}</span></div>
+                <div><span className="text-[11px] text-muted-foreground font-medium block">Total Abonos</span><span className="font-['Space_Grotesk',sans-serif] font-bold text-[18px] text-rose-600 dark:text-rose-400">{RD(finanzasData.totalAbonos)}</span></div>
+                {(() => { const net = finanzasData.totalCobros - finanzasData.totalAbonos; return <div><span className="text-[11px] text-muted-foreground font-medium block">Balance Neto</span><span className={`font-['Space_Grotesk',sans-serif] font-bold text-[18px] ${net >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>{net >= 0 ? "+" : ""}{RD(net)}</span></div>; })()}
+              </div>
+            )}
+
+            {view === "ciclos" && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 pt-4">
+                <div><span className="text-[11px] text-muted-foreground font-medium block">Ciclos Filtrados</span><span className="font-['Space_Grotesk',sans-serif] font-bold text-[18px] text-foreground">{filteredCycleSummaries.length} ciclos</span></div>
+                <div><span className="text-[11px] text-muted-foreground font-medium block">Vendido Total</span><span className="font-['Space_Grotesk',sans-serif] font-bold text-[18px] text-foreground">{RD(filteredCycleSummaries.reduce((sum, c) => sum + c.totalSold, 0))}</span></div>
+                <div><span className="text-[11px] text-muted-foreground font-medium block">Gastos Total</span><span className="font-['Space_Grotesk',sans-serif] font-bold text-[18px] text-primary">{RD(filteredCycleSummaries.reduce((sum, c) => sum + c.totalExpenses, 0))}</span></div>
+                {(() => { const net = filteredCycleSummaries.reduce((sum, c) => sum + c.netTotal, 0); return <div><span className="text-[11px] text-muted-foreground font-medium block">Balance Neto</span><span className={`font-['Space_Grotesk',sans-serif] font-bold text-[18px] ${net >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>{RD(net)}</span></div>; })()}
+              </div>
+            )}
+          </div>
+
           {/* Horizontal Filter Bar Card */}
           <div className="bg-card rounded-[20px] border border-black/10 dark:border-white/5 p-4 sm:p-5 shadow-sm">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -1427,23 +1518,39 @@ export function Billing() {
 
                           <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
                              <div className="flex items-center gap-4 sm:gap-5 bg-muted/45 dark:bg-white/[0.02] rounded-xl px-4 py-2 border border-black/5 dark:border-white/5 min-w-0">
-                                <div className="flex flex-col">
-                                   <span className="text-[9px] uppercase font-bold text-muted-foreground/80 tracking-wider">Vendido</span>
-                                   <span className="font-['Space_Grotesk',sans-serif] font-bold text-[13px] sm:text-[15px] text-foreground tabular-nums">{RD(entry.totalSold)}</span>
-                                </div>
+                                 <div className="flex flex-col">
+                                    <span className="text-[9px] uppercase font-bold text-muted-foreground/80 tracking-wider">Vendido</span>
+                                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-[13px] sm:text-[15px] text-foreground tabular-nums">{RD(entry.totalSold)}</span>
+                                 </div>
+                                 {entry.totalCxc > 0 && (
+                                   <>
+                                     <div className="w-[1px] h-6 bg-black/10 dark:bg-white/10" />
+                                     <div className="flex flex-col">
+                                        <span className="text-[9px] uppercase font-bold text-muted-foreground/80 tracking-wider">Cobros</span>
+                                        <span className="font-['Space_Grotesk',sans-serif] font-bold text-[13px] sm:text-[15px] text-green-600 dark:text-green-400 tabular-nums">{RD(entry.totalCxc)}</span>
+                                     </div>
+                                   </>
+                                 )}
+                                 <div className="w-[1px] h-6 bg-black/10 dark:bg-white/10" />
+                                 <div className="flex flex-col">
+                                    <span className="text-[9px] uppercase font-bold text-muted-foreground/80 tracking-wider">Gastos</span>
+                                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-[13px] sm:text-[15px] text-primary tabular-nums">{RD(entry.totalExpenses)}</span>
+                                 </div>
                                 <div className="w-[1px] h-6 bg-black/10 dark:bg-white/10" />
-                                <div className="flex flex-col">
-                                   <span className="text-[9px] uppercase font-bold text-muted-foreground/80 tracking-wider">Gastos</span>
-                                   <span className="font-['Space_Grotesk',sans-serif] font-bold text-[13px] sm:text-[15px] text-primary tabular-nums">{RD(entry.totalExpenses)}</span>
-                                </div>
-                                <div className="w-[1px] h-6 bg-black/10 dark:bg-white/10" />
-                                <div className="flex flex-col">
-                                   <span className="text-[9px] uppercase font-bold text-muted-foreground/80 tracking-wider">Neto</span>
-                                   <span className={`font-['Space_Grotesk',sans-serif] font-bold text-[13px] sm:text-[15px] tabular-nums ${entry.netTotal >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>
-                                      {RD(entry.netTotal)}
-                                   </span>
-                                </div>
-                             </div>
+                                 <div className="flex flex-col">
+                                    <span className="text-[9px] uppercase font-bold text-muted-foreground/80 tracking-wider">Neto</span>
+                                    <span className={`font-['Space_Grotesk',sans-serif] font-bold text-[13px] sm:text-[15px] tabular-nums ${entry.netTotal >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>
+                                       {RD(entry.netTotal)}
+                                    </span>
+                                 </div>
+                                 <div className="w-[1px] h-6 bg-black/10 dark:bg-white/10" />
+                                 <div className="flex flex-col">
+                                    <span className="text-[9px] uppercase font-bold text-muted-foreground/80 tracking-wider">Caja esp.</span>
+                                    <span className={`font-['Space_Grotesk',sans-serif] font-bold text-[13px] sm:text-[15px] tabular-nums ${entry.expectedCashDrawer >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>
+                                       {RD(entry.expectedCashDrawer)}
+                                    </span>
+                                 </div>
+                              </div>
 
                              {entry.cycle.closed_at && (
                                 <button
@@ -1464,7 +1571,7 @@ export function Billing() {
                        </button>
                        
                        {expandedCycleId === entry.cycle.id && (
-                          <div className="pt-3.5 border-t border-black/10 dark:border-white/5 animate-in fade-in slide-in-from-top-2 grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-6">
+                           <div className="pt-3.5 border-t border-black/10 dark:border-white/5 animate-in fade-in slide-in-from-top-2 grid grid-cols-1 xl:grid-cols-4 gap-4 sm:gap-6">
                              <div>
                                <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-4">Por Categoría</div>
                                <div className="space-y-3">
@@ -1519,8 +1626,8 @@ export function Billing() {
                                   )}
                                </div>
                              </div>
-                             <div>
-                               <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-4">Gastos del Ciclo</div>
+                              <div>
+                                <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-4">Gastos del Ciclo</div>
                                <div className="space-y-3">
                                  <div className="rounded-xl border border-black/5 dark:border-white/5 bg-muted/20 p-3">
                                    <div className="flex items-center justify-between">
@@ -1576,8 +1683,55 @@ export function Billing() {
                                  )}
                                </div>
                              </div>
-                          </div>
-                       )}
+                              <div>
+                                <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest mb-4">Caja chica</div>
+                                <div className="space-y-3">
+                                  <div className="rounded-xl border border-black/5 dark:border-white/5 bg-muted/20 p-3 space-y-2">
+                                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Totales fiscales</div>
+                                    <div className="flex items-center justify-between gap-3">
+                                      <span className="text-muted-foreground text-[12px] font-semibold">Subtotal ventas</span>
+                                      <span className="font-bold text-[13px] tabular-nums">{RD(entry.subtotalSold)}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between gap-3">
+                                      <span className="text-muted-foreground text-[12px] font-semibold">ITBIS</span>
+                                      <span className="font-bold text-[13px] tabular-nums">{RD(entry.taxSold)}</span>
+                                    </div>
+                                    {entry.propinaSold > 0 && (
+                                      <div className="flex items-center justify-between gap-3">
+                                        <span className="text-muted-foreground text-[12px] font-semibold">Propina legal</span>
+                                        <span className="font-bold text-[13px] tabular-nums">{RD(entry.propinaSold)}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="rounded-xl border border-black/5 dark:border-white/5 bg-muted/20 p-3 space-y-2">
+                                    <div className="flex items-center justify-between gap-3">
+                                      <span className="text-muted-foreground text-[12px] font-semibold">Efectivo inicial</span>
+                                      <span className="font-bold text-[13px] tabular-nums">{RD(entry.initialCash)}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between gap-3">
+                                      <span className="text-muted-foreground text-[12px] font-semibold">Ventas en efectivo</span>
+                                      <span className="font-bold text-[13px] tabular-nums">{RD(entry.cashSales)}</span>
+                                    </div>
+                                    {entry.cashCxc > 0 && (
+                                      <div className="flex items-center justify-between gap-3">
+                                        <span className="text-muted-foreground text-[12px] font-semibold">Cobros CxC efectivo</span>
+                                        <span className="font-bold text-[13px] tabular-nums">{RD(entry.cashCxc)}</span>
+                                      </div>
+                                    )}
+                                    <div className="flex items-center justify-between gap-3">
+                                      <span className="text-muted-foreground text-[12px] font-semibold">Gastos en efectivo</span>
+                                      <span className="font-bold text-[13px] text-primary tabular-nums">-{RD(entry.cashExpenses)}</span>
+                                    </div>
+                                    <div className="h-px bg-black/10 dark:bg-white/10" />
+                                    <div className="flex items-center justify-between gap-3">
+                                      <span className="text-foreground text-[13px] font-bold">Caja esperada</span>
+                                      <span className={`font-bold text-[15px] tabular-nums ${entry.expectedCashDrawer >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>{RD(entry.expectedCashDrawer)}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                           </div>
+                        )}
                     </div>
                  </div>
               ))}
@@ -1782,107 +1936,10 @@ export function Billing() {
                       Siguiente
                     </button>
                   </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Right Column: Live Summary Counter */}
-        <div className="lg:col-span-4 xl:col-span-3">
-          <div className="bg-card rounded-[20px] border border-black/10 dark:border-white/5 p-5 flex flex-col gap-4 shadow-sm">
-            <div className="flex items-center gap-2 pb-2 border-b border-black/5 dark:border-white/5">
-              <TrendingUp size={16} className="text-green-600 dark:text-green-400" />
-              <span className="font-['Space_Grotesk',sans-serif] font-bold text-[13px] uppercase tracking-wider text-foreground">
-                {view === "facturas" ? "Resumen Filtrado" : view === "finanzas" ? "Resumen Financiero" : "Resumen de Ciclos"}
-              </span>
-            </div>
-
-            {view === "facturas" && (
-              <div className="flex flex-col gap-3.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-[12px] text-muted-foreground font-['Inter'] font-medium">Monto Pagado:</span>
-                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-[15px] text-green-600 dark:text-green-400">{RD(filteredStats.total)}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[12px] text-muted-foreground font-['Inter'] font-medium">Cantidad:</span>
-                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-[15px] text-foreground">{filteredStats.count} facturas</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[12px] text-muted-foreground font-['Inter'] font-medium">Ticket Promedio:</span>
-                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-[15px] text-foreground">{RD(filteredStats.avg)}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[12px] text-muted-foreground font-['Inter'] font-medium">Método Principal:</span>
-                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-[14px] text-primary">{filteredStats.mainMethodLabel}</span>
+                  )}
                 </div>
               </div>
             )}
-
-            {view === "finanzas" && (
-              <div className="flex flex-col gap-3.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-[12px] text-muted-foreground font-['Inter'] font-medium">Total Cobros:</span>
-                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-[15px] text-green-600 dark:text-green-400">
-                    {RD(finanzasData.totalCobros)}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[12px] text-muted-foreground font-['Inter'] font-medium">Total Abonos:</span>
-                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-[15px] text-rose-600 dark:text-rose-400">
-                    {RD(finanzasData.totalAbonos)}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center border-t border-black/5 dark:border-white/5 pt-3.5">
-                  <span className="text-[12px] text-muted-foreground font-['Inter'] font-bold">Balance Neto:</span>
-                  {(() => {
-                    const net = finanzasData.totalCobros - finanzasData.totalAbonos;
-                    return (
-                      <span
-                        className={`font-['Space_Grotesk',sans-serif] font-bold text-[16px] ${
-                          net >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"
-                        }`}
-                      >
-                        {net >= 0 ? "+" : ""}{RD(net)}
-                      </span>
-                    );
-                  })()}
-                </div>
-              </div>
-            )}
-
-            {view === "ciclos" && (
-              <div className="flex flex-col gap-3.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-[12px] text-muted-foreground font-['Inter'] font-medium">Ciclos Filtrados:</span>
-                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-[15px] text-foreground">{filteredCycleSummaries.length} ciclos</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[12px] text-muted-foreground font-['Inter'] font-medium">Vendido Total:</span>
-                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-[15px] text-foreground">
-                    {RD(filteredCycleSummaries.reduce((sum, c) => sum + c.totalSold, 0))}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[12px] text-muted-foreground font-['Inter'] font-medium">Gastos Total:</span>
-                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-[15px] text-primary">
-                    {RD(filteredCycleSummaries.reduce((sum, c) => sum + c.totalExpenses, 0))}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center border-t border-black/5 dark:border-white/5 pt-3.5">
-                  <span className="text-[12px] text-muted-foreground font-['Inter'] font-bold">Balance Neto:</span>
-                  {(() => {
-                    const net = filteredCycleSummaries.reduce((sum, c) => sum + c.netTotal, 0);
-                    return (
-                      <span className={`font-['Space_Grotesk',sans-serif] font-bold text-[16px] ${net >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive"}`}>
-                        {RD(net)}
-                      </span>
-                    );
-                  })()}
-                </div>
-              </div>
-            )}
-          </div>
         </div>
       </div>
 
@@ -1913,6 +1970,9 @@ export function Billing() {
               <div className="space-y-2 py-4">
                  <div className="flex justify-between text-muted-foreground"><span>Subtotal</span><span>{RD(invoiceModal.subtotal)}</span></div>
                  <div className="flex justify-between text-muted-foreground"><span>ITBIS (18%)</span><span>{RD(invoiceModal.itbis)}</span></div>
+                 {Number(invoiceModal.propina ?? 0) > 0 && (
+                   <div className="flex justify-between text-muted-foreground"><span>Propina legal</span><span>{RD(Number(invoiceModal.propina))}</span></div>
+                 )}
                  <div className="flex justify-between text-foreground font-bold text-[18px] pt-2 border-t"><span>Total</span><span>{RD(invoiceModal.total)}</span></div>
                  {invoiceModal.monto_recibido != null && invoiceModal.cambio_devuelto != null ? (
                    <>

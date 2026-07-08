@@ -463,7 +463,7 @@ export function Dashboard() {
   const cuentaSubtotal = mesaConsumos.reduce((s, c) => s + Number(c.subtotal), 0);
   const hasCuentaEnMesa = Boolean(selectedMesa && mesaConsumos.length > 0);
   const panelBillSubtotal = hasCuentaEnMesa ? cuentaSubtotal : cartSubtotal;
-  const { itbis: panelBillItbis, propina: panelBillPropina, total: panelBillTotal } = calculateInvoiceTotals({
+  const { itbis: _panelBillItbis, propina: _panelBillPropina, total: _panelBillTotal } = calculateInvoiceTotals({
     subtotal: panelBillSubtotal,
     itbisRate: billItbisRate,
     propinaEnabled: cartPropinaEnabled,
