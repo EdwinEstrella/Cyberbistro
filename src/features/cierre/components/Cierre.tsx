@@ -359,15 +359,19 @@ export function Cierre() {
       }
 
       const localCycleId = crypto.randomUUID();
+      const openedAt = new Date();
+      const openedAtIso = openedAt.toISOString();
+      const businessDay = todayYmd();
       await enqueueLocalWrite({
         tenantId,
         tableName: "cierres_operativos",
         rowId: localCycleId,
         op: "insert",
-        payload: { id: localCycleId, tenant_id: tenantId, sucursal_id: activeSucursalId, business_day: toYmd(fecha), cycle_number: num, efectivo_inicial: efectivoInicial, opened_by_auth_user_id: user?.id, opened_at: new Date().toISOString(), created_at: new Date().toISOString(), closed_at: null },
+        payload: { id: localCycleId, tenant_id: tenantId, sucursal_id: activeSucursalId, business_day: businessDay, cycle_number: num, efectivo_inicial: efectivoInicial, opened_by_auth_user_id: user?.id, opened_at: openedAtIso, created_at: openedAtIso, closed_at: null },
         deviceId: await getDeviceId(),
       });
 
+      setFecha(businessDay);
       setPrintMsg(`Ciclo #${num} iniciado.`);
       await cargar();
     } catch (error) {
