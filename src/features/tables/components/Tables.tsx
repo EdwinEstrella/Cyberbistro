@@ -69,6 +69,37 @@ export function Tables() {
   const [historialConsumos, setHistorialConsumos] = useState<ConsumoPanelRow[]>([]);
   const navigate = useNavigate();
 
+  const [showCodes, setShowCodes] = useState(false);
+  const [tableCodes, setTableCodes] = useState<{ mesa_numero: number; codigo_seguridad: string | null }[]>([]);
+  const [generatingCodes, setGeneratingCodes] = useState(false);
+
+  const fetchCodes = useCallback(async () => {
+    if (!tenantId || !activeSucursalId) return;
+    const { data } = await insforgeClient.database.rpc("get_table_security_codes", {
+      p_tenant_id: tenantId,
+      p_sucursal_id: activeSucursalId
+    });
+    if (data) setTableCodes(data as any);
+  }, [tenantId, activeSucursalId]);
+
+  useEffect(() => {
+    if (showCodes) fetchCodes();
+  }, [showCodes, fetchCodes]);
+
+  const generateAllCodes = async () => {
+    if (!tenantId || !activeSucursalId || tableCodes.length === 0) return;
+    setGeneratingCodes(true);
+    for (const mesa of tableCodes) {
+      await insforgeClient.database.rpc("generate_table_security_code", {
+        p_tenant_id: tenantId,
+        p_sucursal_id: activeSucursalId,
+        p_mesa_numero: mesa.mesa_numero
+      });
+    }
+    await fetchCodes();
+    setGeneratingCodes(false);
+  };
+
   const refreshDeudaPorMesa = useCallback(async () => {
     if (!tenantId || !activeSucursalId) { setDeudaPorMesa({}); return; }
     const useLocalConsumos = await shouldReadLocalFirst(tenantId, ["consumos"]);
@@ -197,7 +228,10 @@ export function Tables() {
           <h1 className="font-['Space_Grotesk'] font-bold text-foreground text-2xl sm:text-3xl">Plano de Mesas</h1>
           {mergeMode && <div className="bg-primary/10 border border-primary/20 rounded-full px-3 sm:px-4 py-1 text-primary text-[9px] sm:text-[10px] font-bold uppercase tracking-widest animate-pulse">Seleccioná una mesa al lado para unir</div>}
         </div>
-        <div className="flex flex-wrap gap-2 sm:gap-4">
+        <div className="flex flex-wrap gap-2 sm:gap-4 items-center">
+          <button onClick={() => setShowCodes(true)} className="bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest transition-colors cursor-pointer">
+            Códigos QR / Seguridad
+          </button>
           <StatusBadge color="#59ee50" label={`${mesas.filter(m => !m.fusionada && m.estado === 'libre').length} Libres`} />
           <StatusBadge color="#ff716c" label={`${mesas.filter(m => !m.fusionada && m.estado === 'ocupada').length} Ocupadas`} />
         </div>
@@ -257,6 +291,43 @@ export function Tables() {
           </div>
         )}
       </div>
+
+      {showCodes && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="bg-background border border-border rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col">
+            <div className="p-6 border-b border-border flex justify-between items-center shrink-0">
+              <div>
+                <h2 className="text-xl font-bold font-['Space_Grotesk'] text-foreground">Códigos de Mesas</h2>
+                <p className="text-xs text-muted-foreground mt-1">Imprimi estos códigos para las mesas físicas.</p>
+              </div>
+              <button onClick={() => setShowCodes(false)} className="text-muted-foreground hover:text-foreground text-2xl font-bold p-2 cursor-pointer bg-transparent border-none">×</button>
+            </div>
+            <div className="p-6 overflow-y-auto flex-1 bg-muted/10">
+              {tableCodes.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">No hay mesas configuradas.</p>
+              ) : (
+                <div className="grid grid-cols-3 gap-3">
+                  {tableCodes.map((tc) => (
+                    <div key={tc.mesa_numero} className="bg-card border border-border rounded-xl p-3 flex flex-col items-center justify-center shadow-sm">
+                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Mesa {tc.mesa_numero}</span>
+                      <span className="text-2xl font-black font-mono tracking-widest text-foreground">{tc.codigo_seguridad || "----"}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="p-6 border-t border-border bg-card rounded-b-2xl shrink-0">
+              <button 
+                onClick={generateAllCodes} 
+                disabled={generatingCodes || tableCodes.length === 0}
+                className="w-full bg-primary text-primary-foreground font-bold py-3 rounded-xl uppercase text-xs tracking-widest hover:opacity-90 transition-opacity disabled:opacity-50 cursor-pointer border-none"
+              >
+                {generatingCodes ? "Generando..." : "Regenerar Todos los Códigos"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
