@@ -56,6 +56,34 @@ function installDownloadedUpdate() {
   }, 250)
 }
 
+function isTransientUpdateError(err: unknown) {
+  const message = err instanceof Error ? err.message : String(err)
+  return /\b(408|429|500|502|503|504)\b|timeout|network|ECONNRESET|ETIMEDOUT/i.test(message)
+}
+
+function updateErrorMessage(err: unknown) {
+  const message = err instanceof Error ? err.message : String(err)
+  if (isTransientUpdateError(err)) {
+    return 'No se pudo contactar GitHub para buscar actualizaciones. Verifica tu internet e intenta de nuevo en unos minutos.'
+  }
+  return message
+}
+
+async function checkForUpdatesWithRetry(send: (channel: string, payload?: unknown) => void, attempts = 3) {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const result = await autoUpdater.checkForUpdates()
+      if (result?.isUpdateAvailable === false) send('update-not-available')
+      return
+    } catch (err) {
+      const shouldRetry = attempt < attempts && isTransientUpdateError(err)
+      log.warn(`checkForUpdates attempt ${attempt} failed`, err)
+      if (!shouldRetry) throw err
+      await new Promise((resolve) => setTimeout(resolve, 1500 * attempt))
+    }
+  }
+}
+
 export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null) {
   autoUpdater.logger = log
   autoUpdater.logger.transports.file.level = 'info'
@@ -120,11 +148,12 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null) {
 
     autoUpdater.on('error', (err) => {
       log.error('autoUpdater error', err)
+      const message = updateErrorMessage(err)
       if (updateState.phase !== 'ready') {
         updateState.phase = 'error'
-        updateState.error = err?.message ? String(err.message) : String(err)
+        updateState.error = message
       }
-      send('update-error', err.message)
+      send('update-error', message)
     })
 
     ipcMain.on('install-update', () => {
@@ -136,7 +165,7 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null) {
           void autoUpdater.downloadUpdate().catch((err: Error) => {
             installPending = false
             updateState.phase = 'error'
-            updateState.error = err?.message ? String(err.message) : String(err)
+            updateState.error = updateErrorMessage(err)
             send('update-error', updateState.error)
           })
         }
@@ -153,7 +182,7 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null) {
       void autoUpdater.downloadUpdate().catch((err: Error) => {
         log.warn('downloadUpdate (IPC) failed', err)
         updateState.phase = 'error'
-        updateState.error = err?.message ? String(err.message) : String(err)
+        updateState.error = updateErrorMessage(err)
         send('update-error', updateState.error)
       })
     })
@@ -163,18 +192,12 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null) {
       updateState.percent = 0
       updateState.error = ''
       send('checking-for-update')
-      void autoUpdater
-        .checkForUpdates()
-        .then((result) => {
-          // Tras un check previo (p. ej. al abrir la app), a veces el promise resuelve
-          // sin volver a emitir `update-not-available` y el renderer queda en "Buscando…".
-          if (result?.isUpdateAvailable === false) send('update-not-available')
-        })
+      void checkForUpdatesWithRetry(send)
         .catch((err: Error) => {
           log.warn('checkForUpdates (IPC) failed', err)
           updateState.phase = 'error'
-          updateState.error = err?.message ? String(err.message) : String(err)
-          send('update-error', err?.message ? String(err.message) : String(err))
+          updateState.error = updateErrorMessage(err)
+          send('update-error', updateState.error)
         })
     })
 
@@ -182,11 +205,7 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null) {
   }
 
   setTimeout(() => {
-    void autoUpdater
-      .checkForUpdates()
-      .then((result) => {
-        if (result?.isUpdateAvailable === false) send('update-not-available')
-      })
+    void checkForUpdatesWithRetry(send)
       .catch((err) => {
         log.warn('checkForUpdates failed', err)
       })

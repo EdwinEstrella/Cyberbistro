@@ -46,7 +46,7 @@ function printHtmlToThermal(opts: PrintThermalOptions): Promise<PrintThermalResp
       fail(`Carga fallida: ${code} ${desc}`)
     })
 
-    printWin.webContents.once('did-finish-load', () => {
+    const printLoadedPage = () => {
       setTimeout(() => {
         printWin.webContents.print(
           {
@@ -64,10 +64,32 @@ function printHtmlToThermal(opts: PrintThermalOptions): Promise<PrintThermalResp
           }
         )
       }, 450)
+    }
+
+    printWin.webContents.once('did-finish-load', () => {
+      printWin.webContents
+        .executeJavaScript(
+          `new Promise((resolve) => {
+            document.open();
+            document.write(${JSON.stringify(opts.html)});
+            document.close();
+            if (document.readyState === 'complete') {
+              resolve(true);
+              return;
+            }
+            window.addEventListener('load', () => resolve(true), { once: true });
+            setTimeout(() => resolve(true), 2500);
+          })`,
+          true
+        )
+        .then(printLoadedPage)
+        .catch((err) => {
+          clearTimeout(timer)
+          fail(err instanceof Error ? err.message : String(err))
+        })
     })
 
-    const url = 'data:text/html;charset=utf-8,' + encodeURIComponent(opts.html)
-    printWin.loadURL(url).catch((err) => {
+    printWin.loadURL('about:blank').catch((err) => {
       clearTimeout(timer)
       fail(err instanceof Error ? err.message : String(err))
     })
