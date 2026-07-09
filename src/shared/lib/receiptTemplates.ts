@@ -378,11 +378,11 @@ export async function buildFacturaReceiptHtml(
   }
 
   const body = `
-  ${headerBlock(tenant)}
-  <div class="divider"></div>
-  <table>
-    <tr class="header-row"><td><strong>Factura</strong></td><td style="text-align:right;font-weight:bold">#${String(numeroFactura).padStart(6, "0")}</td></tr>
-    <tr class="header-row"><td>Fecha</td><td style="text-align:right">${escapeHtml(fechaStr)}</td></tr>
+    ${headerBlock(tenant)}
+    <div class="divider"></div>
+    <table>
+      <tr class="header-row"><td><strong>${numeroFactura === 0 ? "Pre-cuenta" : "Factura"}</strong></td><td style="text-align:right;font-weight:bold">${numeroFactura === 0 ? "" : `#${String(numeroFactura).padStart(6, "0")}`}</td></tr>
+      <tr class="header-row"><td>Fecha</td><td style="text-align:right">${escapeHtml(fechaStr)}</td></tr>
     <tr class="header-row"><td>Hora</td><td style="text-align:right">${escapeHtml(horaStr)}</td></tr>
     ${metaCliente}
     ${metaNcf}
@@ -416,7 +416,7 @@ export async function buildFacturaReceiptHtml(
   <div class="center" style="font-size:13px;font-weight:600">${escapeHtml(new Date().toLocaleString("es-DO", { timeZone: "America/Santo_Domingo", hour12: true }))}</div>
   `;
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Factura</title><style>${thermalStyles(paperWidthMm)}</style></head><body>${body}</body></html>`;
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${numeroFactura === 0 ? "Pre-cuenta" : "Factura"}</title><style>${thermalStyles(paperWidthMm)}</style></head><body>${body}</body></html>`;
 }
 
 export function buildComandaReceiptHtml(

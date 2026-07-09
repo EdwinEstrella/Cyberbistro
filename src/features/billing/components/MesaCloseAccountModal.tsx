@@ -793,6 +793,81 @@ export function MesaCloseAccountModal({
     }
   }
 
+  async function imprimirPrecuenta() {
+    if (!tenantId || mesaConsumos.length === 0) return;
+    setCharging(true);
+
+    try {
+      let tenantPrintData: any = null;
+      if (!navigator.onLine || (await isDesktopCloudUnavailable())) {
+        const localTenants = await readLocalMirror<any>(tenantId, "tenants").catch(() => []);
+        tenantPrintData = localTenants.find((t) => t.id === tenantId) ?? null;
+      } else {
+        const { data: t, error } = await insforgeClient.database
+          .from("tenants")
+          .select("nombre_negocio, rnc, direccion, telefono, logo_url, menu_url, ecf_environment, logo_size_px, logo_offset_x, logo_offset_y, moneda")
+          .eq("id", tenantId)
+          .maybeSingle();
+        if (!error && t) {
+          tenantPrintData = t;
+        }
+      }
+      if (!tenantPrintData) {
+        tenantPrintData = { nombre_negocio: "Pre-cuenta" };
+      }
+
+      const { facturaItems, subtotal, itbis, propina, total } = await groupConsumosForFactura(
+        tenantId,
+        mesaConsumos,
+        itbisRate,
+        propinaEnabled,
+        activeSucursalId
+      );
+
+      const precuentaFactura = {
+        items: facturaItems,
+        subtotal,
+        itbis,
+        propina,
+        total,
+        metodo_pago: "N/A",
+        mesa_numero: mesaNumero,
+        notas: "PRE-CUENTA",
+        estado: "pendiente",
+        created_at: new Date().toISOString()
+      };
+
+      const paperWidthMm = getThermalPrintSettings().paperWidthMm;
+      const html = await buildFacturaReceiptHtml(
+        {
+          nombre_negocio: tenantPrintData.nombre_negocio,
+          rnc: tenantPrintData.rnc,
+          direccion: tenantPrintData.direccion,
+          telefono: tenantPrintData.telefono,
+          logo_url: tenantPrintData.logo_url,
+          ecf_environment: tenantPrintData.ecf_environment ?? "certification",
+          menu_url: tenantPrintData.menu_url,
+          moneda: tenantPrintData.moneda || "DOP",
+          logo_size_px: tenantPrintData.logo_size_px,
+          logo_offset_x: tenantPrintData.logo_offset_x,
+          logo_offset_y: tenantPrintData.logo_offset_y,
+        },
+        precuentaFactura as unknown as Parameters<typeof buildFacturaReceiptHtml>[1],
+        0, // numeroFactura = 0 significa pre-cuenta
+        paperWidthMm
+      );
+
+      const res = await printThermalHtml(html, { printType: "sales" });
+      if (!res.ok && res.error) {
+        alert("Error imprimiendo pre-cuenta: " + res.error);
+      }
+    } catch (err: any) {
+      alert("Error generando pre-cuenta: " + err.message);
+    } finally {
+      setCharging(false);
+    }
+  }
+
   async function createInvoice() {
     if (!tenantId) return;
     if (paymentMethod === "fiado" && !selectedCustomer) {
@@ -1513,6 +1588,15 @@ export function MesaCloseAccountModal({
                   className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-zinc-400 text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:border-zinc-700 hover:text-white transition-all active:scale-95"
                 >
                   Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => void imprimirPrecuenta()}
+                  disabled={charging || loading || mesaConsumos.length === 0}
+                  className="flex-1 bg-blue-600/20 border border-blue-500/50 rounded-xl py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-blue-400 text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:bg-blue-600/30 hover:text-blue-300 transition-all active:scale-95 disabled:opacity-50"
+                >
+                  Pre-cuenta
                 </button>
 
                 {splitMode ? (

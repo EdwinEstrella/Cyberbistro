@@ -1011,6 +1011,113 @@ export function Dashboard() {
     alert("⚠️ No hay ninguna mesa seleccionada.\n\n• Seleccioná una mesa, o\n• Activá 'Para llevar' para cobrar sin mesa");
   }
 
+  async function imprimirPrecuentaTakeout() {
+    if (!tenantId || cart.length === 0) return;
+    setCharging(true);
+
+    try {
+      let tenantPrintData: any = null;
+      if (!navigator.onLine || await isDesktopCloudUnavailable()) {
+        const localTenants = await readLocalMirror<any>(tenantId, "tenants").catch(() => []);
+        tenantPrintData = localTenants.find((t) => t.id === tenantId) ?? null;
+      } else {
+        const { data: t, error } = await insforgeClient.database.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url, menu_url, ecf_environment, logo_size_px, logo_offset_x, logo_offset_y, moneda").eq("id", tenantId).maybeSingle();
+        if (!error && t) {
+          tenantPrintData = t;
+        }
+      }
+      if (!tenantPrintData) {
+        tenantPrintData = { nombre_negocio: "Pre-cuenta" };
+      }
+
+      const consumosToBill = cart.map((item) => ({
+        plato_id: item.plato.id,
+        nombre: item.plato.nombre,
+        categoria: item.plato.categoria || "General",
+        cantidad: item.cantidad,
+        precio_unitario: item.plato.precio,
+        subtotal: item.plato.precio * item.cantidad,
+      }));
+
+      const groupedItems = consumosToBill.reduce(
+        (acc, consumo) => {
+          const key = consumo.plato_id;
+          if (!acc[key]) {
+            acc[key] = {
+              plato_id: consumo.plato_id,
+              nombre: consumo.nombre,
+              categoria: consumo.categoria || "General",
+              cantidad: 0,
+              precio_unitario: consumo.precio_unitario,
+              subtotal: 0,
+            };
+          }
+          acc[key].cantidad += consumo.cantidad;
+          acc[key].subtotal += consumo.subtotal;
+          return acc;
+        },
+        {} as Record<
+          number,
+          {
+            plato_id: number;
+            nombre: string;
+            categoria: string;
+            cantidad: number;
+            precio_unitario: number;
+            subtotal: number;
+          }
+        >
+      );
+
+      const facturaItems = Object.values(groupedItems);
+      const subtotal = consumosToBill.reduce((sum, c) => sum + Number(c.subtotal), 0);
+      const rate = cartItbisEnabled ? ITBIS : 0;
+      const { itbis, propina, total } = calculateInvoiceTotals({ subtotal, itbisRate: rate, propinaEnabled: cartPropinaEnabled });
+
+      const precuentaFactura = {
+        items: facturaItems,
+        subtotal,
+        itbis,
+        propina,
+        total,
+        metodo_pago: "N/A",
+        mesa_numero: 0,
+        notas: "PRE-CUENTA - PARA LLEVAR",
+        estado: "pendiente",
+        created_at: new Date().toISOString()
+      };
+
+      const paperWidthMm = getThermalPrintSettings().paperWidthMm;
+      const html = await buildFacturaReceiptHtml(
+        {
+          nombre_negocio: tenantPrintData.nombre_negocio,
+          rnc: tenantPrintData.rnc,
+          direccion: tenantPrintData.direccion,
+          telefono: tenantPrintData.telefono,
+          logo_url: tenantPrintData.logo_url,
+          ecf_environment: tenantPrintData.ecf_environment ?? "certification",
+          menu_url: tenantPrintData.menu_url,
+          moneda: tenantPrintData.moneda || "DOP",
+          logo_size_px: tenantPrintData.logo_size_px,
+          logo_offset_x: tenantPrintData.logo_offset_x,
+          logo_offset_y: tenantPrintData.logo_offset_y,
+        },
+        precuentaFactura as unknown as Parameters<typeof buildFacturaReceiptHtml>[1],
+        0,
+        paperWidthMm
+      );
+
+      const res = await printThermalHtml(html, { printType: "sales" });
+      if (!res.ok && res.error) {
+        alert("Error imprimiendo pre-cuenta: " + res.error);
+      }
+    } catch (err: any) {
+      alert("Error generando pre-cuenta: " + err.message);
+    } finally {
+      setCharging(false);
+    }
+  }
+
   async function createInvoice() {
     if (cart.length === 0) {
       alert("No hay items para cobrar");
@@ -1251,11 +1358,93 @@ export function Dashboard() {
       const localTenants = await readLocalMirror<any>(tenantId, "tenants").catch(() => []);
       tenantPrintData = localTenants.find((t) => t.id === tenantId) ?? null;
     }
-    if (tenantPrintData) {
-      // Ensure logo is cached for this and future prints
-      void cacheLogoFromUrl(tenantPrintData.logo_url);
-      await printFactura(facturaData, tenantPrintData);
-    }
+      if (tenantPrintData) {
+        // Ensure logo is cached for this and future prints
+        void cacheLogoFromUrl(tenantPrintData.logo_url);
+        await printFactura(facturaData, tenantPrintData);
+
+        // Comanda automática para items "para llevar" (cocina)
+        const kitchenItems = cart.filter((i) => i.plato.va_a_cocina !== false);
+        if (kitchenItems.length > 0) {
+          let cocinaActiva = true;
+          try {
+            if (!navigator.onLine) {
+              const localCocina = await readLocalMirror<{ activa?: boolean; sucursal_id?: string | null }>(tenantId, "cocina_estado");
+              cocinaActiva = localCocina.find(r => r.sucursal_id === activeSucursalId)?.activa !== false;
+            } else {
+              const { data: estadoData } = await insforgeClient.database
+                .from("cocina_estado")
+                .select("activa")
+                .eq("tenant_id", tenantId)
+                .eq("sucursal_id", activeSucursalId)
+                .limit(1);
+              cocinaActiva = estadoData?.[0]?.activa !== false;
+            }
+          } catch {
+            const localCocina = await readLocalMirror<{ activa?: boolean; sucursal_id?: string | null }>(tenantId, "cocina_estado").catch(() => []);
+            cocinaActiva = localCocina.find(r => r.sucursal_id === activeSucursalId)?.activa !== false;
+          }
+
+          if (cocinaActiva) {
+            const items = kitchenItems.map((i) => ({
+              nombre: i.plato.nombre,
+              categoria: i.plato.categoria || "General",
+              cantidad: i.cantidad,
+              precio: i.plato.precio,
+            }));
+
+            const localComandaId = crypto.randomUUID();
+            const comandaPayload = {
+              id: localComandaId,
+              mesa_numero: 0,
+              estado: "pendiente",
+              items,
+              notas: orderNotes.trim() ? `${orderNotes.trim()} (Para llevar)` : "Para llevar",
+              tenant_id: tenantId,
+              sucursal_id: activeSucursalId,
+              creado_por: user?.id ?? null,
+              created_at: nowIso,
+              updated_at: nowIso,
+            };
+
+            await enqueueLocalWrite({
+              tenantId,
+              tableName: "comandas",
+              rowId: localComandaId,
+              op: "insert",
+              payload: comandaPayload,
+              authUserId: user?.id ?? null,
+              deviceId: await getDeviceId(),
+            });
+
+            const paperWidthMm = getThermalPrintSettings().paperWidthMm;
+            const tr = tenantPrintData as any;
+            const comandaHtml = buildComandaReceiptHtml(
+              {
+                nombre_negocio: tr.nombre_negocio,
+                rnc: tr.rnc,
+                direccion: tr.direccion,
+                telefono: tr.telefono,
+                logo_url: tr.logo_url,
+                moneda: tr.moneda ?? null,
+                logo_size_px: tr.logo_size_px,
+                logo_offset_x: tr.logo_offset_x,
+                logo_offset_y: tr.logo_offset_y,
+              },
+              comandaPayload as any,
+              paperWidthMm
+            );
+            
+            const printSettings = getThermalPrintSettings();
+            if (printSettings.printComandas !== false) {
+              const printRes = await printThermalHtml(comandaHtml, { printType: "kitchen" });
+              if (!printRes.ok && printRes.error) {
+                console.warn("Impresión comanda para llevar:", printRes.error);
+              }
+            }
+          }
+        }
+      }
 
     setCart([]);
     setTakeoutClientRnc("");
@@ -2246,19 +2435,27 @@ export function Dashboard() {
 
                   {/* Action Buttons Section */}
                   <div className="flex gap-3 mt-2 pb-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTakeoutClientRnc("");
-                        setTakeoutCustomer(null);
-                        setCashReceivedInput("");
-                        setOrderNotes("");
-                        setShowPaymentModal(false);
-                      }}
-                      className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-zinc-400 text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:border-zinc-700 hover:text-white transition-all active:scale-95"
-                    >
-                      Cancelar
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTakeoutClientRnc("");
+                          setTakeoutCustomer(null);
+                          setCashReceivedInput("");
+                          setOrderNotes("");
+                          setShowPaymentModal(false);
+                        }}
+                        className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-zinc-400 text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:border-zinc-700 hover:text-white transition-all active:scale-95"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void imprimirPrecuentaTakeout()}
+                        disabled={charging}
+                        className="flex-1 bg-blue-600/20 border border-blue-500/50 rounded-xl py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-blue-400 text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:bg-blue-600/30 hover:text-blue-300 transition-all active:scale-95 disabled:opacity-50"
+                      >
+                        Pre-cuenta
+                      </button>
                     <button
                       type="button"
                       onClick={() => void createInvoice()}
