@@ -3,6 +3,8 @@ import { autoUpdater } from 'electron-updater'
 import log from 'electron-log'
 
 let listenersAttached = false
+let installPending = false
+let installStarted = false
 
 type UpdatePhase = 'idle' | 'checking' | 'available' | 'downloading' | 'ready' | 'error' | 'unsupported'
 
@@ -29,6 +31,29 @@ function getTargetWindow(getMain: () => BrowserWindow | null) {
   if (main && !main.isDestroyed()) return main
   const all = BrowserWindow.getAllWindows()
   return all.find((w) => !w.isDestroyed()) ?? null
+}
+
+function installDownloadedUpdate() {
+  if (installStarted) return
+  if (updateState.phase !== 'ready') {
+    installPending = true
+    return
+  }
+
+  installPending = false
+  installStarted = true
+
+  setTimeout(() => {
+    try {
+      // Silent NSIS install avoids the Windows installer wizard swallowing the first attempt.
+      autoUpdater.quitAndInstall(true, true)
+    } catch (err) {
+      installStarted = false
+      updateState.phase = 'error'
+      updateState.error = err instanceof Error ? err.message : String(err)
+      log.error('quitAndInstall failed', err)
+    }
+  }, 250)
 }
 
 export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null) {
@@ -90,6 +115,7 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null) {
         releaseDate: info.releaseDate,
         releaseNotes: info.releaseNotes,
       })
+      if (installPending) installDownloadedUpdate()
     })
 
     autoUpdater.on('error', (err) => {
@@ -102,7 +128,22 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null) {
     })
 
     ipcMain.on('install-update', () => {
-      autoUpdater.quitAndInstall(false, true)
+      if (updateState.phase !== 'ready') {
+        installPending = true
+        if (updateState.phase === 'available' || updateState.phase === 'error') {
+          updateState.phase = 'downloading'
+          updateState.error = ''
+          void autoUpdater.downloadUpdate().catch((err: Error) => {
+            installPending = false
+            updateState.phase = 'error'
+            updateState.error = err?.message ? String(err.message) : String(err)
+            send('update-error', updateState.error)
+          })
+        }
+        return
+      }
+
+      installDownloadedUpdate()
     })
 
     ipcMain.on('download-update', () => {
