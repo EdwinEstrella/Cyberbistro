@@ -5,15 +5,11 @@ export function isMissingPaymentDayColumnError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const value = error as { statusCode?: number; status?: number; code?: string; message?: string; details?: string };
   const text = `${value.code ?? ""} ${value.message ?? ""} ${value.details ?? ""}`.toLowerCase();
-  const hasErrorText = Boolean(value.code || value.message || value.details);
   const status = value.statusCode ?? value.status;
-  return (
-    status === 400 &&
-    (!hasErrorText || text.includes("payment_day_of_month"))
-  ) || (
-    text.includes("payment_day_of_month") &&
-    (text.includes("does not exist") || text.includes("schema cache") || text.includes("column"))
-  );
+  const mentionsPaymentColumn = text.includes("payment_day_of_month");
+  const identifiesMissingSchema =
+    text.includes("does not exist") || text.includes("schema cache") || text.includes("missing column") || text.includes("undefined column") || value.code === "42703";
+  return mentionsPaymentColumn && identifiesMissingSchema && (status === undefined || status === 400);
 }
 
 export function markPaymentDayUnavailable(tenantId: string): boolean {

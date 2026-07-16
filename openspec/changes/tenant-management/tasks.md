@@ -79,3 +79,8 @@ Chain strategy: size-exception
 - [x] 5.20 Reconcile access on reconnect and bounded cadence without focus-only dependence
 - [x] 5.21 Serialize delayed global channel unsubscribe before replacement subscribe
 - [x] 5.22 Add behavior-level access, resolver, reconnect, security, and data-preservation coverage
+- [x] 5.23 Remove staff-state mutation from all block/unblock definitions and preserve legacy individual staff state
+- [x] 5.24 Add user-specific revocation events for staff deletion/inactivation and tighten Auth/email identity matching
+- [x] 5.25 Preserve local session metadata during suspension with a non-destructive durable suspension marker
+- [x] 5.26 Add access-generation cancellation checks to local-first work after every protected await
+- [x] 5.27 Queue reconciliation and harden stale access-channel lifecycle cleanup/replacement

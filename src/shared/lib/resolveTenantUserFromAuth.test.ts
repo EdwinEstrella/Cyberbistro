@@ -6,11 +6,12 @@ const mocks = vi.hoisted(() => {
   const chain: any = {};
   const eq = vi.fn(() => chain);
   const ilike = vi.fn(() => chain);
-  Object.assign(chain, { eq, ilike, maybeSingle });
+  const is = vi.fn(() => chain);
+  Object.assign(chain, { eq, ilike, is, maybeSingle });
   const select = vi.fn(() => chain);
   const from = vi.fn(() => ({ select }));
   const rpc = vi.fn();
-  return { maybeSingle, eq, ilike, from, rpc };
+  return { maybeSingle, eq, ilike, is, from, rpc };
 });
 
 vi.mock("./insforge", () => ({
@@ -51,6 +52,7 @@ describe("resolveTenantUserForSession", () => {
     const row = await resolveTenantUserForSession({ id: "auth-2", email: "u2@x.com" } as any);
     expect(row?.tenant_id).toBe("t2");
     expect(mocks.ilike).toHaveBeenCalled();
+    expect(mocks.is).toHaveBeenCalledWith("auth_user_id", null);
   });
 
   it("retorna null si no hay auth ni email", async () => {

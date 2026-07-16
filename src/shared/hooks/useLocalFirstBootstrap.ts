@@ -18,6 +18,7 @@ import {
   probeCloudAvailability,
   recordCloudFailure,
 } from "../lib/cloudAvailability";
+import { canContinueTenantWork, getTenantAccessGeneration } from "../lib/tenantAccessLifecycle";
 
 export function resolveLicenseGateForOnlineSync(validation: {
   valid: boolean;
@@ -63,6 +64,8 @@ export function useLocalFirstBootstrap(tenantId: string | null, accessValidated 
       return;
     }
     const validatedTenantId = tenantId as string;
+    const accessGeneration = getTenantAccessGeneration();
+    const canContinue = () => !cancelled && canContinueTenantWork(validatedTenantId, accessGeneration);
     if (!isLocalFirstEnabled()) {
       setState({
         status: "idle",
@@ -75,16 +78,19 @@ export function useLocalFirstBootstrap(tenantId: string | null, accessValidated 
 
     let cancelled = false;
     const apply = (next: LocalFirstBootstrapState) => {
-      if (!cancelled) setState(next);
+      if (canContinue()) setState(next);
     };
 
     const syncOnlineState = async (force = false) => {
-      if (cancelled) return;
+      if (!canContinue()) return;
       const snapshot = await getLocalFirstStatusSnapshot(validatedTenantId);
+      if (!canContinue()) return;
       const cloudAvailable = await probeCloudAvailability(force);
+      if (!canContinue()) return;
       if (navigator.onLine && cloudAvailable) {
         if (snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing") {
           const licenseValidation = await revalidateLicenseOnReconnect(validatedTenantId);
+          if (!canContinue()) return;
           const licenseGate = resolveLicenseGateForOnlineSync(licenseValidation);
           if (!licenseGate.allowed) {
             apply({ ...snapshot, message: licenseGate.message || "Licencia inválida." });
@@ -96,9 +102,11 @@ export function useLocalFirstBootstrap(tenantId: string | null, accessValidated 
           }
           try {
             const outboxResult = await pushOutboxToServer(validatedTenantId);
+            if (!canContinue()) return;
             const pullResult = await syncIncremental(validatedTenantId);
-            if (cancelled) return;
+            if (!canContinue()) return;
             const next = await getLocalFirstStatusSnapshot(validatedTenantId);
+            if (!canContinue()) return;
             apply({
               ...next,
               message:
@@ -107,8 +115,9 @@ export function useLocalFirstBootstrap(tenantId: string | null, accessValidated 
                   : `Subidas ${outboxResult.pushed}, descargadas ${pullResult.rowsPulled} filas.`,
             });
           } catch (err) {
-            if (cancelled) return;
+            if (!canContinue()) return;
             const next = await getLocalFirstStatusSnapshot(validatedTenantId);
+            if (!canContinue()) return;
             if (!isCloudAvailabilityFailure(err)) {
               apply({
                 status: "error",
@@ -159,9 +168,12 @@ export function useLocalFirstBootstrap(tenantId: string | null, accessValidated 
       }
 
       if (isDesktopRuntime() && !(await probeCloudAvailability(false))) {
+        if (!canContinue()) return;
         const snapshot = await getLocalFirstStatusSnapshot(validatedTenantId);
+        if (!canContinue()) return;
         const localReady = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
         const license = await assertCanWriteOffline(validatedTenantId);
+        if (!canContinue()) return;
         if (localReady && license.valid) {
           apply({
             ...snapshot,
@@ -174,6 +186,7 @@ export function useLocalFirstBootstrap(tenantId: string | null, accessValidated 
 
       try {
         const licenseValidation = await revalidateLicenseOnReconnect(validatedTenantId);
+        if (!canContinue()) return;
         const licenseGate = resolveLicenseGateForOnlineSync(licenseValidation);
         if (!licenseGate.allowed) {
           apply({
@@ -186,7 +199,9 @@ export function useLocalFirstBootstrap(tenantId: string | null, accessValidated 
         }
 
         const snapshot = await getLocalFirstStatusSnapshot(validatedTenantId);
+        if (!canContinue()) return;
         await ensureDefaultSucursal(validatedTenantId);
+        if (!canContinue()) return;
         if (snapshot.status === "history_complete") {
           apply({ ...snapshot, status: "syncing", message: "Sincronizando cambios..." });
           await syncOnlineState();
@@ -200,9 +215,9 @@ export function useLocalFirstBootstrap(tenantId: string | null, accessValidated 
             message: "Preparando dataset mínimo local para operar.",
           });
 
-          await bootstrapLocalFirstPhase({ tenantId: validatedTenantId, phase: "minimum", tables: LOCAL_FIRST_IMMEDIATE_TABLES });
+          await bootstrapLocalFirstPhase({ tenantId: validatedTenantId, phase: "minimum", tables: LOCAL_FIRST_IMMEDIATE_TABLES, shouldContinue: canContinue });
         }
-        if (cancelled) return;
+        if (!canContinue()) return;
 
         apply({
           status: "ready_history_syncing",
@@ -215,8 +230,10 @@ export function useLocalFirstBootstrap(tenantId: string | null, accessValidated 
           tenantId: validatedTenantId,
           phase: "history",
           tables: LOCAL_FIRST_HISTORY_TABLES,
+          shouldContinue: canContinue,
           onTableDone: async () => {
             const next = await getLocalFirstStatusSnapshot(validatedTenantId);
+            if (!canContinue()) return;
             apply({
               ...next,
               message:
@@ -226,9 +243,11 @@ export function useLocalFirstBootstrap(tenantId: string | null, accessValidated 
             });
           },
         }).catch(async (err: unknown) => {
-          if (!cancelled) {
+          if (canContinue()) {
             if (isDesktopRuntime() && !(await probeCloudAvailability(false))) {
+              if (!canContinue()) return;
               const next = await getLocalFirstStatusSnapshot(validatedTenantId);
+              if (!canContinue()) return;
               apply({
                 ...next,
                 status: "offline",

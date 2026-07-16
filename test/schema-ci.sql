@@ -286,7 +286,6 @@ ALTER TABLE tenant_users ENABLE ROW LEVEL SECURITY;
 -- RLS policies for table: tenant_users
 CREATE POLICY cb_tenant_users_admin_staff_delete ON tenant_users FOR DELETE TO public USING (((tenant_id = ANY (cyberbistro_current_admin_tenant_ids())) AND (rol = ANY (ARRAY['cajera'::text, 'mesero'::text, 'cocina'::text, 'cocinero'::text]))));
 CREATE POLICY cb_tenant_users_admin_staff_insert ON tenant_users FOR INSERT TO public WITH CHECK (((tenant_id = ANY (cyberbistro_current_admin_tenant_ids())) AND (rol = ANY (ARRAY['cajera'::text, 'mesero'::text, 'cocina'::text, 'cocinero'::text])) AND (activo IS TRUE)));
-CREATE POLICY cb_tenant_users_admin_staff_update ON tenant_users FOR UPDATE TO public USING (((tenant_id = ANY (cyberbistro_current_admin_tenant_ids())) AND (rol = ANY (ARRAY['cajera'::text, 'mesero'::text, 'cocina'::text, 'cocinero'::text])))) WITH CHECK (((tenant_id = ANY (cyberbistro_current_admin_tenant_ids())) AND (rol = ANY (ARRAY['cajera'::text, 'mesero'::text, 'cocina'::text, 'cocinero'::text]))));
 CREATE POLICY cb_tenant_users_admin_team_select ON tenant_users FOR SELECT TO public USING ((tenant_id = ANY (cyberbistro_current_admin_tenant_ids())));
 CREATE POLICY cb_tenant_users_self_select ON tenant_users FOR SELECT TO public USING (((auth_user_id = cloudix_auth_user_id()) OR (lower(email) = lower(COALESCE(cloudix_auth_email(), ''::text)))));
 CREATE POLICY cb_tenant_users_super_admin_all ON tenant_users FOR ALL TO public USING (cloudix_is_super_admin()) WITH CHECK (cloudix_is_super_admin());

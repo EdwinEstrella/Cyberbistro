@@ -1878,14 +1878,18 @@ export async function bootstrapLocalFirstPhase(args: {
   phase: LocalFirstPhase;
   tables: readonly LocalFirstMirrorTable[];
   onTableDone?: (tableName: LocalFirstMirrorTable, rows: number) => void;
+  shouldContinue?: () => boolean;
 }): Promise<void> {
   if (isDesktopRuntime() && !(await isCloudAvailableForDesktop())) {
     throw new Error("Backend no disponible para preparar datos locales.");
   }
+  if (args.shouldContinue && !args.shouldContinue()) return;
   const db = await openLocalFirstDb(args.tenantId);
   try {
     for (const tableName of args.tables) {
+      if (args.shouldContinue && !args.shouldContinue()) return;
       const existing = await getSyncState(db, buildSyncStateKey(args.tenantId, tableName, args.phase));
+      if (args.shouldContinue && !args.shouldContinue()) return;
       if (existing?.completed) {
         args.onTableDone?.(tableName, existing.row_count);
         continue;
@@ -1896,9 +1900,12 @@ export async function bootstrapLocalFirstPhase(args: {
       let completed = false;
 
       while (!completed) {
+        if (args.shouldContinue && !args.shouldContinue()) return;
         const { data, error } = await runTrackedCloudOperation(() => pullTablePage(tableName, args.tenantId, offset));
+        if (args.shouldContinue && !args.shouldContinue()) return;
         if (error) {
           if (isMissingBackendTableError(tableName, error)) {
+            if (args.shouldContinue && !args.shouldContinue()) return;
             await putOne(
               db,
               "sync_state",
@@ -1912,6 +1919,7 @@ export async function bootstrapLocalFirstPhase(args: {
                 lastError: `Tabla opcional ${tableName} no existe todavia en backend; se opera localmente hasta aplicar migracion.`,
               })
             );
+            if (args.shouldContinue && !args.shouldContinue()) return;
             args.onTableDone?.(tableName, rowCount);
             break;
           }
@@ -1929,14 +1937,18 @@ export async function bootstrapLocalFirstPhase(args: {
               lastError: error.message || `No se pudo descargar ${tableName}.`,
             })
           );
+          if (args.shouldContinue && !args.shouldContinue()) return;
           throw new Error(error.message || `No se pudo descargar ${tableName}.`);
         }
 
         const rows = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
+        if (args.shouldContinue && !args.shouldContinue()) return;
         await putMany(db, tableName, rows);
+        if (args.shouldContinue && !args.shouldContinue()) return;
         rowCount += rows.length;
         offset += PAGE_SIZE;
         completed = rows.length < PAGE_SIZE;
+        if (args.shouldContinue && !args.shouldContinue()) return;
         await putOne(
           db,
           "sync_state",
@@ -1949,6 +1961,7 @@ export async function bootstrapLocalFirstPhase(args: {
             rowCount,
           })
         );
+        if (args.shouldContinue && !args.shouldContinue()) return;
       }
       args.onTableDone?.(tableName, rowCount);
     }

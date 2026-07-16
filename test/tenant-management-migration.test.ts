@@ -9,6 +9,7 @@ const superAdminUserDeleteSql = readFileSync("migrations/20260510121152_super-ad
 const repositorySchema = readFileSync("test/schema.sql", "utf8");
 const paymentsIndexMigration = readFileSync("migrations/20260715000000_add-foreign-key-and-rls-indexes.sql", "utf8");
 const accessRealtimeMigration = readFileSync("migrations/20260715123000_tenant-access-realtime.sql", "utf8");
+const authoritativeMigration = readFileSync("migrations/20260715130000_tenant-access-authoritative-rules.sql", "utf8");
 
 describe("tenant-management migration", () => {
   it("covers every repository tenant-owned table, including payments", () => {
@@ -79,5 +80,24 @@ describe("tenant-management migration", () => {
     expect(accessRealtimeMigration).toContain("WHEN (OLD.activa IS DISTINCT FROM NEW.activa)");
     expect(accessRealtimeMigration).toContain("tenant_access_changed");
     expect(accessRealtimeMigration).toContain("channel_name NOT LIKE 'tenant-access:%'");
+  });
+
+  it("suspends only tenants and publishes user revocation without reactivating staff", () => {
+    expect(authoritativeMigration).toContain("UPDATE public.tenants SET activa = false");
+    expect(authoritativeMigration).toContain("UPDATE public.tenants SET activa = true");
+    expect(authoritativeMigration).not.toMatch(/UPDATE\s+public\.tenant_users\s+SET\s+activo/i);
+    expect(authoritativeMigration).toContain("tenant-access-user:%");
+    expect(authoritativeMigration).toContain("tenant_user_access_changed");
+    expect(authoritativeMigration).toContain("TG_OP = 'DELETE'");
+    expect(authoritativeMigration).toContain("auth_user_id IS NULL");
+    expect(authoritativeMigration).toContain("DROP POLICY IF EXISTS cb_tenant_users_admin_staff_update");
+    for (const sql of [
+      readFileSync("migrations/20260510121152_super-admin-rpcs.sql", "utf8"),
+      readFileSync("migrations/20260510121926_super-admin-unblock-tenant.sql", "utf8"),
+      readFileSync("sql/cloudix_super_admin_limits.sql", "utf8"),
+    ]) {
+      expect(sql).not.toMatch(/UPDATE\s+public\.tenant_users\s+SET\s+activo/i);
+      expect(sql).not.toMatch(/UPDATE\s+public\.cocina_estado\s+SET\s+activa/i);
+    }
   });
 });

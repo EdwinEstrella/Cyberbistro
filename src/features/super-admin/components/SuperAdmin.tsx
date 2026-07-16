@@ -352,7 +352,7 @@ export function SuperAdmin() {
   }
 
   function blockTenant(tenant: TenantRow) {
-    showConfirm(`Bloquear restaurante "${tenant.nombre_negocio || tenant.id}"?\n\nEsto desactiva el restaurante, desactiva todos sus usuarios y cierra la cocina. No borra facturas ni historial.`, async () => {
+    showConfirm(`Bloquear restaurante "${tenant.nombre_negocio || tenant.id}"?\n\nEsto suspende temporalmente el restaurante sin cambiar el estado individual de sus usuarios ni borrar facturas o historial.`, async () => {
       setRowActionId(`tenant:${tenant.id}`);
       setError("");
       setInfo("");
@@ -375,7 +375,7 @@ export function SuperAdmin() {
   }
 
   function unblockTenant(tenant: TenantRow) {
-    showConfirm(`Desbloquear restaurante "${tenant.nombre_negocio || tenant.id}"?\n\nEsto reactiva el restaurante y todos sus usuarios. Revisá después si querés eliminar o limitar algún usuario puntual.`, async () => {
+    showConfirm(`Desbloquear restaurante "${tenant.nombre_negocio || tenant.id}"?\n\nEsto vuelve a habilitar el restaurante. Los usuarios eliminados o inactivos no recuperan acceso automáticamente.`, async () => {
       setRowActionId(`tenant:${tenant.id}`);
       setError("");
       setInfo("");

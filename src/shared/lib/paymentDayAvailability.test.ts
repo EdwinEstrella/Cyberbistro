@@ -14,7 +14,7 @@ describe("payment day rollout guard", () => {
       statusCode: 400,
       message: 'column "payment_day_of_month" does not exist',
     })).toBe(true);
-    expect(isMissingPaymentDayColumnError({ status: 400 })).toBe(true);
+    expect(isMissingPaymentDayColumnError({ status: 400 })).toBe(false);
     expect(isMissingPaymentDayColumnError({ status: 400, message: "permission denied" })).toBe(false);
   });
 

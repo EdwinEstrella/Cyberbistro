@@ -26,7 +26,7 @@ Migrate all `tenant_id` foreign keys to `ON DELETE CASCADE` to enable robust, si
 
 ### Decision: Temporary Blocking and Tenant Access Realtime
 
-**Choice**: Publish `tenants.activa` changes to a dedicated `tenant-access:<tenant-id>` Realtime channel. The auth/access layer is its sole owner and remains subscribed while blocked; blocked transitions clear only the automatic local-session hydration metadata and release protected services.
+**Choice**: Publish `tenants.activa` changes to a dedicated `tenant-access:<tenant-id>` Realtime channel. The auth/access layer is its sole owner and remains subscribed while blocked; blocked transitions release protected services and write a non-destructive suspension marker without clearing the local session record.
 **Alternatives considered**: Window-focus refresh, sign-out/reauthentication, or deleting the tenant IndexedDB database.
 **Rationale**: Blocking is reversible. A dedicated RLS-protected channel provides immediate bidirectional state changes without exposing other tenants, while preserving operational mirrors, unsynced sales, and outboxes.
 
@@ -34,6 +34,17 @@ Migrate all `tenant_id` foreign keys to `ON DELETE CASCADE` to enable robust, si
 
 **Choice**: Reconcile access after Realtime reconnects and on a bounded internal cadence. Focus/visibility refresh remains only a deduplicated fallback.
 **Rationale**: Realtime is the primary propagation path, but temporary network loss must not make an unblock undiscoverable.
+
+### Decision: User Revocation Channel
+
+**Choice**: Publish deletion/inactivation of a bound `tenant_users.auth_user_id` to
+`tenant-access-user:<auth-user-id>`. The client subscribes only to its own user
+channel; the database policy requires the current Auth identity, and deleted users
+cannot create a new subscription after the row disappears.
+
+**Rationale**: Tenant suspension is not staff revocation. Existing sockets need an
+explicit event because Realtime access reductions are not retroactive until a
+reconnect.
 
 ### Decision: Explicit Tenant Access Validation Gate
 
@@ -60,7 +71,7 @@ which starts protected requests and realtime retry loops before denial is known.
           └─ AppLayout computes clamped date → Renders Modal 
           └─ Dismiss → Sets localStorage('payment-alert-YYYY-MM-DD')
            └─ Tenant access Realtime → deny/restore protected context
-           └─ Block → invalidates only automatic-hydration session metadata
+           └─ Block → writes suspension marker; preserves session and operations
 
 ## File Changes
 
@@ -70,7 +81,7 @@ which starts protected requests and realtime retry loops before denial is known.
 | `sql/cloudix_super_admin_limits.sql` | Modify | Rewrites `cloudix_super_admin_delete_tenant` to capture auth IDs, delete auth users, then delete tenant. |
 | `src/app/components/AppLayout.tsx` | Modify | Computes month-end clamped date, triggers `AlertModal`, handles `localStorage` dismiss logic. |
 | `src/features/super-admin/TenantSettings.tsx` | Modify | Adds UI for super-admins to configure `payment_day_of_month` (1-31). |
-| `src/shared/lib/localFirst.ts` | Modify | Syncs `payment_day_of_month`; blocking invalidates only automatic-hydration session metadata. |
+| `src/shared/lib/localFirst.ts` | Modify | Syncs `payment_day_of_month`; blocking writes a non-destructive suspension marker. |
 | `src/shared/hooks/useAuth.ts` | Modify | Owns tenant access state and Realtime lifecycle; reconciles block/unblock/reconnect transitions. |
 | `src/shared/lib/tenantAccessRealtimeOwner.ts` | Create | Centralized `tenant-access:<tenant-id>` channel owner with bounded reconciliation. |
 | `migrations/<timestamp>_tenant-access-realtime.sql` | Create | Reviewed channel, trigger, and least-privilege RLS source; not applied remotely. |

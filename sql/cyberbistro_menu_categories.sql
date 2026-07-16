@@ -32,7 +32,7 @@ AS $$
     AND tu.rol = 'admin'
     AND (
       tu.auth_user_id = public.cyberbistro_auth_user_id()
-      OR lower(tu.email) = lower(COALESCE(public.cyberbistro_auth_email(), ''))
+      OR (tu.auth_user_id IS NULL AND lower(tu.email) = lower(COALESCE(public.cyberbistro_auth_email(), '')))
     );
 $$;
 

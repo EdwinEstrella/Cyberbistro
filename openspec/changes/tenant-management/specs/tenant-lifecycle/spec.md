@@ -88,6 +88,11 @@ an active transition MUST revalidate membership and restore them without focus,
 reload, sign-out, or reauthentication. Reconnects and a bounded reconciliation
 cadence MUST reconcile the current backend state.
 
+Suspension MUST modify only `tenants.activa`; it MUST NOT modify
+`tenant_users.activo`, clear local session metadata, or delete operational data.
+Individual staff deletion or inactivation MUST publish a user-specific revocation
+event and MUST prevent that identity from creating a new protected subscription.
+
 #### Scenario: Connected client is blocked
 
 - GIVEN an authenticated member is connected to `tenant-access:<tenant-id>`
@@ -95,6 +100,7 @@ cadence MUST reconcile the current backend state.
 - THEN the client MUST enter denied access immediately
 - AND protected realtime/local-first services MUST be released
 - AND operational data and outboxes MUST remain intact
+- AND the local session record MUST remain intact
 
 #### Scenario: Connected client is unblocked
 
@@ -102,6 +108,13 @@ cadence MUST reconcile the current backend state.
 - WHEN the tenant `activa` value changes from false to true
 - THEN the client MUST revalidate membership and restore the tenant context
 - AND protected services MUST resume without focus or reauthentication
+
+#### Scenario: Deleted staff cannot regain access
+
+- GIVEN a staff Auth identity has a tenant-specific access subscription
+- WHEN its `tenant_users` row is deleted or marked inactive
+- THEN the user-specific revocation event MUST terminate the client session/access
+- AND a later reconnect MUST fail to create a protected subscription
 
 #### Scenario: Access channel isolation
 

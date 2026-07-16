@@ -17,7 +17,7 @@ AS $$
     AND t.activa IS TRUE
     AND (
       tu.auth_user_id = public.cloudix_auth_user_id()
-      OR lower(tu.email) = lower(COALESCE(public.cloudix_auth_email(), ''))
+      OR (tu.auth_user_id IS NULL AND lower(tu.email) = lower(COALESCE(public.cloudix_auth_email(), '')))
     )
   ORDER BY (tu.auth_user_id = public.cloudix_auth_user_id()) DESC
   LIMIT 1;

@@ -25,7 +25,7 @@ USING (
       AND tu.activo IS TRUE
       AND (
         tu.auth_user_id = public.cloudix_auth_user_id()
-        OR lower(tu.email) = lower(COALESCE(public.cloudix_auth_email(), ''))
+        OR (tu.auth_user_id IS NULL AND lower(tu.email) = lower(COALESCE(public.cloudix_auth_email(), '')))
       )
   )
 );
@@ -47,7 +47,7 @@ WITH CHECK (
       AND tu.activo IS TRUE
       AND (
         tu.auth_user_id = public.cloudix_auth_user_id()
-        OR lower(tu.email) = lower(COALESCE(public.cloudix_auth_email(), ''))
+        OR (tu.auth_user_id IS NULL AND lower(tu.email) = lower(COALESCE(public.cloudix_auth_email(), '')))
       )
   )
 );

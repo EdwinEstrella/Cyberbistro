@@ -110,7 +110,7 @@ ON public.tenant_users
 FOR SELECT
 USING (
   auth_user_id = public.cloudix_auth_user_id()
-  OR lower(email) = lower(COALESCE(public.cloudix_auth_email(), ''))
+  OR (auth_user_id IS NULL AND lower(email) = lower(COALESCE(public.cloudix_auth_email(), '')))
 );
 
 CREATE POLICY cb_tenants_member_select
@@ -123,7 +123,7 @@ USING (
     WHERE tu.tenant_id = tenants.id
       AND (
         tu.auth_user_id = public.cloudix_auth_user_id()
-        OR lower(tu.email) = lower(COALESCE(public.cloudix_auth_email(), ''))
+        OR (tu.auth_user_id IS NULL AND lower(tu.email) = lower(COALESCE(public.cloudix_auth_email(), '')))
       )
   )
 );
@@ -147,7 +147,7 @@ AS $$
     AND t.activa IS TRUE
     AND (
       tu.auth_user_id = public.cloudix_auth_user_id()
-      OR lower(tu.email) = lower(COALESCE(public.cloudix_auth_email(), ''))
+        OR (tu.auth_user_id IS NULL AND lower(tu.email) = lower(COALESCE(public.cloudix_auth_email(), '')))
     )
   ORDER BY (tu.auth_user_id = public.cloudix_auth_user_id()) DESC
   LIMIT 1;
@@ -225,7 +225,6 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  affected_users integer := 0;
 BEGIN
   IF NOT public.cloudix_is_super_admin() THEN
     RAISE EXCEPTION 'Solo super admin puede bloquear restaurantes';
@@ -239,20 +238,9 @@ BEGIN
     RAISE EXCEPTION 'Restaurante no encontrado';
   END IF;
 
-  UPDATE public.tenant_users
-  SET activo = false
-  WHERE tenant_id = p_tenant_id;
-
-  GET DIAGNOSTICS affected_users = ROW_COUNT;
-
-  UPDATE public.cocina_estado
-  SET activa = false, changed_at = now()
-  WHERE tenant_id = p_tenant_id;
-
   RETURN jsonb_build_object(
     'ok', true,
-    'tenant_id', p_tenant_id,
-    'blocked_users', affected_users
+    'tenant_id', p_tenant_id
   );
 END;
 $$;
@@ -264,7 +252,6 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  affected_users integer := 0;
 BEGIN
   IF NOT public.cloudix_is_super_admin() THEN
     RAISE EXCEPTION 'Solo super admin puede desbloquear restaurantes';
@@ -278,20 +265,9 @@ BEGIN
     RAISE EXCEPTION 'Restaurante no encontrado';
   END IF;
 
-  UPDATE public.tenant_users
-  SET activo = true
-  WHERE tenant_id = p_tenant_id;
-
-  GET DIAGNOSTICS affected_users = ROW_COUNT;
-
-  UPDATE public.cocina_estado
-  SET activa = true, changed_at = now()
-  WHERE tenant_id = p_tenant_id;
-
   RETURN jsonb_build_object(
     'ok', true,
-    'tenant_id', p_tenant_id,
-    'unblocked_users', affected_users
+    'tenant_id', p_tenant_id
   );
 END;
 $$;
