@@ -33,6 +33,13 @@ export function resolveLicenseGateForOnlineSync(validation: {
   };
 }
 
+export function canStartProtectedTenantWork(args: {
+  tenantId: string | null;
+  accessValidated: boolean;
+}): boolean {
+  return Boolean(args.tenantId && args.accessValidated);
+}
+
 interface LocalFirstBootstrapState {
   status: LocalFirstStatus;
   message: string;
@@ -47,14 +54,15 @@ const EMPTY_STATE: LocalFirstBootstrapState = {
   totalHistoryTables: LOCAL_FIRST_HISTORY_TABLES.length,
 };
 
-export function useLocalFirstBootstrap(tenantId: string | null): LocalFirstBootstrapState {
+export function useLocalFirstBootstrap(tenantId: string | null, accessValidated = true): LocalFirstBootstrapState {
   const [state, setState] = useState<LocalFirstBootstrapState>(EMPTY_STATE);
 
   useEffect(() => {
-    if (!tenantId) {
+    if (!canStartProtectedTenantWork({ tenantId, accessValidated })) {
       setState(EMPTY_STATE);
       return;
     }
+    const validatedTenantId = tenantId as string;
     if (!isLocalFirstEnabled()) {
       setState({
         status: "idle",
@@ -72,11 +80,11 @@ export function useLocalFirstBootstrap(tenantId: string | null): LocalFirstBoots
 
     const syncOnlineState = async (force = false) => {
       if (cancelled) return;
-      const snapshot = await getLocalFirstStatusSnapshot(tenantId);
+      const snapshot = await getLocalFirstStatusSnapshot(validatedTenantId);
       const cloudAvailable = await probeCloudAvailability(force);
       if (navigator.onLine && cloudAvailable) {
         if (snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing") {
-          const licenseValidation = await revalidateLicenseOnReconnect(tenantId);
+          const licenseValidation = await revalidateLicenseOnReconnect(validatedTenantId);
           const licenseGate = resolveLicenseGateForOnlineSync(licenseValidation);
           if (!licenseGate.allowed) {
             apply({ ...snapshot, message: licenseGate.message || "Licencia inválida." });
@@ -87,10 +95,10 @@ export function useLocalFirstBootstrap(tenantId: string | null): LocalFirstBoots
             apply({ ...snapshot, status: "syncing", message: "Sincronizando cambios..." });
           }
           try {
-            const outboxResult = await pushOutboxToServer(tenantId);
-            const pullResult = await syncIncremental(tenantId);
+            const outboxResult = await pushOutboxToServer(validatedTenantId);
+            const pullResult = await syncIncremental(validatedTenantId);
             if (cancelled) return;
-            const next = await getLocalFirstStatusSnapshot(tenantId);
+            const next = await getLocalFirstStatusSnapshot(validatedTenantId);
             apply({
               ...next,
               message:
@@ -100,7 +108,7 @@ export function useLocalFirstBootstrap(tenantId: string | null): LocalFirstBoots
             });
           } catch (err) {
             if (cancelled) return;
-            const next = await getLocalFirstStatusSnapshot(tenantId);
+            const next = await getLocalFirstStatusSnapshot(validatedTenantId);
             if (!isCloudAvailabilityFailure(err)) {
               apply({
                 status: "error",
@@ -151,9 +159,9 @@ export function useLocalFirstBootstrap(tenantId: string | null): LocalFirstBoots
       }
 
       if (isDesktopRuntime() && !(await probeCloudAvailability(false))) {
-        const snapshot = await getLocalFirstStatusSnapshot(tenantId);
+        const snapshot = await getLocalFirstStatusSnapshot(validatedTenantId);
         const localReady = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
-        const license = await assertCanWriteOffline(tenantId);
+        const license = await assertCanWriteOffline(validatedTenantId);
         if (localReady && license.valid) {
           apply({
             ...snapshot,
@@ -165,7 +173,7 @@ export function useLocalFirstBootstrap(tenantId: string | null): LocalFirstBoots
       }
 
       try {
-        const licenseValidation = await revalidateLicenseOnReconnect(tenantId);
+        const licenseValidation = await revalidateLicenseOnReconnect(validatedTenantId);
         const licenseGate = resolveLicenseGateForOnlineSync(licenseValidation);
         if (!licenseGate.allowed) {
           apply({
@@ -177,8 +185,8 @@ export function useLocalFirstBootstrap(tenantId: string | null): LocalFirstBoots
           return;
         }
 
-        const snapshot = await getLocalFirstStatusSnapshot(tenantId);
-        await ensureDefaultSucursal(tenantId);
+        const snapshot = await getLocalFirstStatusSnapshot(validatedTenantId);
+        await ensureDefaultSucursal(validatedTenantId);
         if (snapshot.status === "history_complete") {
           apply({ ...snapshot, status: "syncing", message: "Sincronizando cambios..." });
           await syncOnlineState();
@@ -192,7 +200,7 @@ export function useLocalFirstBootstrap(tenantId: string | null): LocalFirstBoots
             message: "Preparando dataset mínimo local para operar.",
           });
 
-          await bootstrapLocalFirstPhase({ tenantId, phase: "minimum", tables: LOCAL_FIRST_IMMEDIATE_TABLES });
+          await bootstrapLocalFirstPhase({ tenantId: validatedTenantId, phase: "minimum", tables: LOCAL_FIRST_IMMEDIATE_TABLES });
         }
         if (cancelled) return;
 
@@ -204,11 +212,11 @@ export function useLocalFirstBootstrap(tenantId: string | null): LocalFirstBoots
         });
 
         void bootstrapLocalFirstPhase({
-          tenantId,
+          tenantId: validatedTenantId,
           phase: "history",
           tables: LOCAL_FIRST_HISTORY_TABLES,
           onTableDone: async () => {
-            const next = await getLocalFirstStatusSnapshot(tenantId);
+            const next = await getLocalFirstStatusSnapshot(validatedTenantId);
             apply({
               ...next,
               message:
@@ -220,7 +228,7 @@ export function useLocalFirstBootstrap(tenantId: string | null): LocalFirstBoots
         }).catch(async (err: unknown) => {
           if (!cancelled) {
             if (isDesktopRuntime() && !(await probeCloudAvailability(false))) {
-              const next = await getLocalFirstStatusSnapshot(tenantId);
+              const next = await getLocalFirstStatusSnapshot(validatedTenantId);
               apply({
                 ...next,
                 status: "offline",
@@ -254,7 +262,7 @@ export function useLocalFirstBootstrap(tenantId: string | null): LocalFirstBoots
       window.removeEventListener("offline", handleOffline);
       window.clearInterval(intervalId);
     };
-  }, [tenantId]);
+  }, [tenantId, accessValidated]);
 
   return state;
 }

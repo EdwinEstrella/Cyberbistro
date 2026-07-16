@@ -49,6 +49,7 @@ type LimitDraft = {
   meseroUserLimit: string;
   sucursalLimitEnabled: boolean;
   sucursalLimit: string;
+  paymentDayOfMonth: string;
 };
 
 type LimitDraftNumberField = Exclude<keyof LimitDraft, "userLimitEnabled" | "sucursalLimitEnabled">;
@@ -73,6 +74,7 @@ function toDraft(tenant: TenantRow): LimitDraft {
     meseroUserLimit: config.meseroUserLimit?.toString() ?? "",
     sucursalLimitEnabled: tenant.sucursal_limit_enabled !== false,
     sucursalLimit: tenant.sucursal_limit?.toString() ?? "",
+    paymentDayOfMonth: tenant.payment_day_of_month?.toString() ?? "",
   };
 }
 
@@ -90,6 +92,16 @@ function parseNullablePositiveLimit(value: string): number | null {
   const parsed = parseNullableLimit(value);
   if (parsed !== null && parsed < 1) {
     throw new Error("El limite de sucursales debe ser 1 o mayor.");
+  }
+  return parsed;
+}
+
+function parsePaymentDay(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 31) {
+    throw new Error("El día de pago debe ser un entero entre 1 y 31.");
   }
   return parsed;
 }
@@ -251,6 +263,7 @@ export function SuperAdmin() {
         mesero_user_limit: parseNullableLimit(draft.meseroUserLimit),
         sucursal_limit_enabled: draft.sucursalLimitEnabled,
         sucursal_limit: parseNullablePositiveLimit(draft.sucursalLimit),
+        payment_day_of_month: parsePaymentDay(draft.paymentDayOfMonth),
       };
 
       const { error: updateError } = await insforgeClient.database
@@ -519,6 +532,30 @@ export function SuperAdmin() {
           <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px] leading-relaxed">
             Admin queda fijo en 1 porque es el dueno. Deja los demas roles vacios para ilimitado.
           </span>
+        </div>
+
+        <div className="flex flex-col gap-2 pb-3 border-b border-[rgba(72,72,71,0.12)]">
+          <label htmlFor={`payment-day-${tenant.id}`} className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[14px] uppercase tracking-[0.5px]">
+            Día de pago mensual
+          </label>
+          <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px] leading-relaxed">
+            Usa un valor del 1 al 31. Los meses con menos días se ajustan automáticamente al último día.
+          </span>
+          <input
+            id={`payment-day-${tenant.id}`}
+            type="number"
+            min="1"
+            max="31"
+            value={draft.paymentDayOfMonth}
+            onChange={(e) => setDrafts((prev) => ({
+              ...prev,
+              [tenant.id]: { ...draft, paymentDayOfMonth: e.target.value },
+            }))}
+            placeholder="Sin configurar"
+            aria-describedby={`payment-day-help-${tenant.id}`}
+            className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-3 py-2 font-['Inter',sans-serif] text-white text-[13px] outline-none"
+          />
+          <span id={`payment-day-help-${tenant.id}`} className="sr-only">Vacío para desactivar los avisos de pago.</span>
         </div>
 
         <label className="flex items-center justify-between gap-3 bg-[#1a1a1a] rounded-[12px] px-4 py-3 border border-[rgba(72,72,71,0.18)]">

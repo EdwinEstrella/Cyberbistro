@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { resolveTenantUserForSession } from "./resolveTenantUserFromAuth";
+import { resolveTenantAccessForSession, resolveTenantUserForSession } from "./resolveTenantUserFromAuth";
 
 const mocks = vi.hoisted(() => {
   const maybeSingle = vi.fn();
@@ -34,6 +34,7 @@ describe("resolveTenantUserForSession", () => {
       data: { tenant_id: "t1", email: "u@x.com", rol: "admin", nombre: "U" },
       error: null,
     });
+    mocks.maybeSingle.mockResolvedValueOnce({ data: { activa: true }, error: null });
     const row = await resolveTenantUserForSession({ id: "auth-1", email: "u@x.com" } as any);
     expect(row?.tenant_id).toBe("t1");
     expect(mocks.from).toHaveBeenCalledWith("tenant_users");
@@ -45,7 +46,8 @@ describe("resolveTenantUserForSession", () => {
       .mockResolvedValueOnce({
         data: { tenant_id: "t2", email: "u2@x.com", rol: "mesero", nombre: "U2" },
         error: null,
-      });
+      })
+      .mockResolvedValueOnce({ data: { activa: true }, error: null });
     const row = await resolveTenantUserForSession({ id: "auth-2", email: "u2@x.com" } as any);
     expect(row?.tenant_id).toBe("t2");
     expect(mocks.ilike).toHaveBeenCalled();
@@ -74,9 +76,22 @@ describe("resolveTenantUserForSession", () => {
       data: [{ tenant_id: "t3", email: "u3@x.com", rol: "cajera", nombre: "U3" }],
       error: null,
     });
+    mocks.maybeSingle.mockResolvedValueOnce({ data: { activa: true }, error: null });
 
     const row = await resolveTenantUserForSession({ id: "auth-4", email: "u3@x.com" } as any);
     expect(row?.tenant_id).toBe("t3");
     expect(mocks.rpc).toHaveBeenCalledWith("cloudix_resolve_tenant_user");
+  });
+
+  it("rejects an active membership when its restaurant is blocked", async () => {
+    mocks.maybeSingle
+      .mockResolvedValueOnce({
+        data: { tenant_id: "blocked-tenant", email: "u@x.com", rol: "admin", nombre: "U" },
+        error: null,
+      })
+      .mockResolvedValueOnce({ data: { activa: false }, error: null });
+
+    await expect(resolveTenantAccessForSession({ id: "auth-blocked", email: "u@x.com" } as any))
+      .resolves.toEqual({ status: "blocked", tenantId: "blocked-tenant" });
   });
 });

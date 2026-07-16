@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveLicenseGateForOnlineSync } from "./useLocalFirstBootstrap";
+import { canStartProtectedTenantWork, resolveLicenseGateForOnlineSync } from "./useLocalFirstBootstrap";
 
 describe("useLocalFirstBootstrap license gate", () => {
   it("blocks online sync when license validation is not valid", () => {
@@ -12,5 +12,10 @@ describe("useLocalFirstBootstrap license gate", () => {
     const result = resolveLicenseGateForOnlineSync({ valid: true });
     expect(result.allowed).toBe(true);
     expect(result.message).toBeNull();
+  });
+
+  it("does not start protected work from a cached tenant before access validation", () => {
+    expect(canStartProtectedTenantWork({ tenantId: "tenant-1", accessValidated: false })).toBe(false);
+    expect(canStartProtectedTenantWork({ tenantId: "tenant-1", accessValidated: true })).toBe(true);
   });
 });

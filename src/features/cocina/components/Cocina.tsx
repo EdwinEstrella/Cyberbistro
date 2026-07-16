@@ -31,7 +31,7 @@ interface Comanda {
 }
 
 export function Cocina() {
-  const { tenantId, loading: authLoading } = useAuth();
+  const { tenantId, loading: authLoading, tenantAccessValidated } = useAuth();
   const { activeSucursalId } = useSucursal();
   const [cocinaActiva, setCocinaActiva] = useState(true);
   const [comandas, setComandas] = useState<Comanda[]>([]);
@@ -111,7 +111,7 @@ export function Cocina() {
     [tenantId, activeSucursalId]
   );
 
-  useCocinaRealtimeSync(tenantId, reloadComandas, setCocinaActiva, handleNewComanda);
+  useCocinaRealtimeSync(tenantId, reloadComandas, setCocinaActiva, handleNewComanda, tenantAccessValidated);
 
   useEffect(() => {
     if (authLoading || !tenantId) { if (!authLoading) setLoading(false); return; }

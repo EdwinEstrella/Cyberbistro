@@ -8,6 +8,7 @@ type DecisionInput = {
   rol: string | null;
   pathname: string;
   tenantAccessDeniedReason?: 'blocked' | 'unlinked' | null;
+  tenantAccessValidated?: boolean;
 };
 
 export type RoleGuardDecision =
@@ -20,6 +21,10 @@ export type RoleGuardDecision =
 export function getRoleGuardDecision(input: DecisionInput): RoleGuardDecision {
   if (input.loading) return { type: "loading" };
   if (!input.isAuthenticated) return { type: "redirect_login" };
+  if (input.tenantAccessDeniedReason) {
+    return { type: "tenant_access_denied", reason: input.tenantAccessDeniedReason };
+  }
+  if (input.tenantAccessValidated === false) return { type: "loading" };
   if (input.userExists && !input.tenantId) {
     return { type: "tenant_access_denied", reason: input.tenantAccessDeniedReason ?? 'unlinked' };
   }

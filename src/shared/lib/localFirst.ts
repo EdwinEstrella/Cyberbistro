@@ -821,7 +821,7 @@ const SAFE_TENANT_KEYS = new Set([
   "fiscal_mode", "fiscal_mode_fallback", "ecf_environment",
   "ncf_fiscal_activo", "ncf_tipo_default", "ncf_secuencia_siguiente", "ncf_secuencias_por_tipo",
   "ncf_b01_secuencia_siguiente", "ncf_b02_secuencia_siguiente", "ncf_b14_secuencia_siguiente", "ncf_b15_secuencia_siguiente", "ncf_b16_secuencia_siguiente", "ncf_b17_secuencia_siguiente",
-  "cantidad_mesas", "updated_at"
+  "cantidad_mesas", "payment_day_of_month", "updated_at"
 ]);
 
 export function resolveConflictForTable(
@@ -1374,6 +1374,35 @@ export async function clearLocalDeviceSession(tenantId: string): Promise<void> {
   } finally {
     db.close();
   }
+}
+
+/** Clears only the credential/context used for automatic offline hydration. */
+export async function invalidateLocalSessionContext(tenantId?: string | null): Promise<void> {
+  const targetTenantId = tenantId ?? await getLastTenantId();
+  if (targetTenantId) await clearLocalDeviceSession(targetTenantId);
+  localStorage.removeItem("cloudix_last_tenant_id");
+}
+
+export async function getLocalTenantPaymentDay(tenantId: string): Promise<number | null> {
+  const db = await openLocalFirstDbForSync(tenantId);
+  try {
+    const row = await getOneFromStore<Record<string, unknown>>(db, "tenants", tenantId);
+    return typeof row?.payment_day_of_month === "number" ? row.payment_day_of_month : null;
+  } finally {
+    db.close();
+  }
+}
+
+/** Explicit destructive operation reserved for tenant deletion workflows. */
+export async function deleteLocalTenantDatabase(tenantId?: string | null): Promise<void> {
+  const targetTenantId = tenantId ?? await getLastTenantId();
+  if (!targetTenantId) return;
+
+  await new Promise<void>((resolve) => {
+    const request = indexedDB.deleteDatabase(getLocalFirstDatabaseName(targetTenantId));
+    request.onsuccess = request.onerror = request.onblocked = () => resolve();
+  });
+  localStorage.removeItem("cloudix_last_tenant_id");
 }
 
 const OFFLINE_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;

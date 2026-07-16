@@ -154,4 +154,18 @@ describe("getRoleGuardDecision", () => {
     ).toEqual({ type: "tenant_access_denied", reason: "blocked" });
   });
 
+  it("mantiene la pantalla de carga mientras el acceso tenant se valida", () => {
+    expect(
+      getRoleGuardDecision({
+        loading: false,
+        isAuthenticated: true,
+        userExists: true,
+        tenantId: "cached-tenant",
+        rol: "admin",
+        pathname: "/dashboard",
+        tenantAccessValidated: false,
+      })
+    ).toEqual({ type: "loading" });
+  });
+
 });

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useSucursal } from "../../app/context/SucursalContext";
 import { useAuth, ensureAuthSessionFresh } from "../../shared/hooks/useAuth";
 import { insforgeClient } from "../../shared/lib/insforge";
+import { tenantRealtimeSubscriptionManager } from "../../shared/lib/tenantRealtimeSubscriptionManager";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -54,7 +55,7 @@ function orderTypeLabel(type: string | null | undefined): string {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function Pedidos() {
-  const { tenantId, loading: authLoading } = useAuth();
+  const { tenantId, loading: authLoading, tenantAccessValidated } = useAuth();
   const { activeSucursalId } = useSucursal();
   const [settings, setSettings] = useState<MenuSettings | null>(null);
   const [orders, setOrders] = useState<DigitalOrder[]>([]);
@@ -66,7 +67,7 @@ export function Pedidos() {
 
   const loadData = useCallback(
     async (background = false) => {
-      if (!tenantId) return;
+      if (!tenantId || !tenantAccessValidated) return;
       // Require an active sucursal — never load orders without branch isolation.
       if (!activeSucursalId) return;
       if (!background) setLoading(true);
@@ -111,25 +112,18 @@ export function Pedidos() {
       setOrderItems(loadedOrderItems);
       setLoading(false);
     },
-    [activeSucursalId, tenantId]
+    [activeSucursalId, tenantId, tenantAccessValidated]
   );
 
   useEffect(() => {
-    if (!authLoading && tenantId) void loadData();
-    if (!authLoading && !tenantId) setLoading(false);
-  }, [authLoading, loadData, tenantId]);
+    if (!authLoading && tenantId && tenantAccessValidated) void loadData();
+    if (!authLoading && (!tenantId || !tenantAccessValidated)) setLoading(false);
+  }, [authLoading, loadData, tenantId, tenantAccessValidated]);
 
   useEffect(() => {
-    if (!tenantId) return;
+    if (!tenantId || !tenantAccessValidated) return;
     const channelName = `cocina:${tenantId}`;
     let active = true;
-
-    const setupRealtime = async () => {
-      await insforgeClient.realtime.connect();
-      const sub = await insforgeClient.realtime.subscribe(channelName);
-      if (!sub.ok) { console.error("Realtime sub error in Pedidos:", sub.error); return; }
-    };
-
     const handleDigitalOrderChanged = (msg: unknown) => {
       if (!active) return;
       const m = msg as { meta?: { channel?: string } } | null;
@@ -137,19 +131,17 @@ export function Pedidos() {
       void loadData(true);
     };
 
-    insforgeClient.realtime.on("INSERT_digital_order", handleDigitalOrderChanged);
-    insforgeClient.realtime.on("UPDATE_digital_order", handleDigitalOrderChanged);
-    insforgeClient.realtime.on("DELETE_digital_order", handleDigitalOrderChanged);
-    void setupRealtime();
+    const registration = tenantRealtimeSubscriptionManager.acquire(channelName, {
+      INSERT_digital_order: handleDigitalOrderChanged,
+      UPDATE_digital_order: handleDigitalOrderChanged,
+      DELETE_digital_order: handleDigitalOrderChanged,
+    });
 
     return () => {
       active = false;
-      insforgeClient.realtime.off("INSERT_digital_order", handleDigitalOrderChanged);
-      insforgeClient.realtime.off("UPDATE_digital_order", handleDigitalOrderChanged);
-      insforgeClient.realtime.off("DELETE_digital_order", handleDigitalOrderChanged);
-      insforgeClient.realtime.unsubscribe(channelName);
+      registration.release();
     };
-  }, [tenantId, loadData]);
+  }, [tenantId, loadData, tenantAccessValidated]);
 
   async function updateOrderStatus(order: DigitalOrder, status: "accepted" | "rejected") {
     // Strict sucursal isolation: abort if no active sucursal or order belongs to a different one.

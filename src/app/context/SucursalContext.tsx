@@ -3,11 +3,13 @@ import {
   useContext,
   useState,
   useEffect,
+  useRef,
   type ReactNode,
 } from "react";
 import { useAuth } from "../../shared/hooks/useAuth";
 import { readLocalMirror, shouldReadLocalFirst, enqueueLocalWrite, getDeviceId } from "../../shared/lib/localFirst";
 import { insforgeClient } from "../../shared/lib/insforge";
+import { canCommitTenantAsyncState } from "../../shared/lib/tenantAccessGuard";
 
 export interface Sucursal {
   id: string;
@@ -65,10 +67,21 @@ function resolveEffectiveSucursalLimit(
 }
 
 export function SucursalProvider({ children }: { children: ReactNode }) {
-  const { tenantId, isAuthenticated, plan } = useAuth();
+  const { tenantId, isAuthenticated, plan, tenantAccessValidated } = useAuth();
   const [sucursales, setSucursales] = useState<Sucursal[]>([]);
   const [activeSucursalId, setActiveSucursalIdState] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const accessGeneration = useRef(0);
+
+  function isCurrentAccess(generation: number, expectedTenantId: string): boolean {
+    return canCommitTenantAsyncState({
+      requestGeneration: generation,
+      currentGeneration: accessGeneration.current,
+      requestTenantId: expectedTenantId,
+      currentTenantId: tenantId,
+      accessValidated: isAuthenticated && tenantAccessValidated,
+    });
+  }
 
   // Custom setter that saves to localStorage
   function setActiveSucursalId(id: string | null) {
@@ -84,8 +97,9 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  async function refreshSucursales() {
-    if (!tenantId || !isAuthenticated) {
+  async function refreshSucursales(generation = accessGeneration.current) {
+    const expectedTenantId = tenantId;
+    if (!expectedTenantId || !isAuthenticated || !tenantAccessValidated) {
       setSucursales([]);
       setActiveSucursalIdState(null);
       setLoading(false);
@@ -94,61 +108,64 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
 
     try {
       let data: any[] = [];
-      const useLocal = await shouldReadLocalFirst(tenantId, ["sucursales"]);
+      const useLocal = await shouldReadLocalFirst(expectedTenantId, ["sucursales"]);
+      if (!isCurrentAccess(generation, expectedTenantId)) return;
 
       if (useLocal) {
-        data = await readLocalMirror<any>(tenantId, "sucursales").catch(() => []);
+        data = await readLocalMirror<any>(expectedTenantId, "sucursales").catch(() => []);
+        if (!isCurrentAccess(generation, expectedTenantId)) return;
         if (data.length === 0 && navigator.onLine) {
           try {
             const res = await insforgeClient.database
               .from("sucursales")
               .select("*")
-              .eq("tenant_id", tenantId)
+              .eq("tenant_id", expectedTenantId)
               .eq("activa", true);
             if (res.error) console.warn("Fallback to online sucursales error:", res.error);
-            if (res.data && res.data.length > 0) {
-              data = res.data;
-            }
+            if (res.data && res.data.length > 0) data = res.data;
           } catch (e) {
             console.warn("Fallback to online sucursales failed", e);
           }
+          if (!isCurrentAccess(generation, expectedTenantId)) return;
         }
       } else {
         const res = await insforgeClient.database
           .from("sucursales")
           .select("*")
-          .eq("tenant_id", tenantId)
+          .eq("tenant_id", expectedTenantId)
           .eq("activa", true);
         if (res.error) console.warn("Online sucursales error:", res.error);
         data = res.data || [];
-        
+        if (!isCurrentAccess(generation, expectedTenantId)) return;
         if (data.length === 0) {
-           data = await readLocalMirror<any>(tenantId, "sucursales").catch(() => []);
+          data = await readLocalMirror<any>(expectedTenantId, "sucursales").catch(() => []);
+          if (!isCurrentAccess(generation, expectedTenantId)) return;
         }
       }
 
       const activeList = data.filter((s) => s.activa !== false) as Sucursal[];
+      if (!isCurrentAccess(generation, expectedTenantId)) return;
       setSucursales(activeList);
 
-      // Resolve active sucursal ID
-      const savedId = localStorage.getItem(scopedStorageKey(tenantId));
+      const savedId = localStorage.getItem(scopedStorageKey(expectedTenantId));
       const isSavedValid = savedId && activeList.some((s) => s.id === savedId);
-
       if (isSavedValid) {
+        if (!isCurrentAccess(generation, expectedTenantId)) return;
         setActiveSucursalIdState(savedId);
       } else if (activeList.length > 0) {
-        // Default to the first sucursal
         const defaultId = activeList[0].id;
+        if (!isCurrentAccess(generation, expectedTenantId)) return;
         setActiveSucursalIdState(defaultId);
-        localStorage.setItem(scopedStorageKey(tenantId), defaultId);
+        localStorage.setItem(scopedStorageKey(expectedTenantId), defaultId);
         localStorage.setItem(STORAGE_KEY, defaultId);
       } else {
+        if (!isCurrentAccess(generation, expectedTenantId)) return;
         setActiveSucursalIdState(null);
       }
     } catch (err) {
-      console.error("Error loading sucursales in context:", err);
+      if (isCurrentAccess(generation, expectedTenantId)) console.error("Error loading sucursales in context:", err);
     } finally {
-      setLoading(false);
+      if (isCurrentAccess(generation, expectedTenantId)) setLoading(false);
     }
   }
 
@@ -192,7 +209,7 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
   }
 
   async function addSucursal(nombre: string, direccion?: string, telefono?: string): Promise<Sucursal> {
-    if (!tenantId || !isAuthenticated) {
+    if (!tenantId || !isAuthenticated || !tenantAccessValidated) {
       throw new Error("Usuario no autenticado");
     }
 
@@ -307,8 +324,18 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
 
   // Reload sucursales when tenant or authentication changes
   useEffect(() => {
-    void refreshSucursales();
-  }, [tenantId, isAuthenticated]);
+    const generation = ++accessGeneration.current;
+    if (!tenantId || !isAuthenticated || !tenantAccessValidated) {
+      setSucursales([]);
+      setActiveSucursalIdState(null);
+      setLoading(false);
+    } else {
+      void refreshSucursales(generation);
+    }
+    return () => {
+      accessGeneration.current += 1;
+    };
+  }, [tenantId, isAuthenticated, tenantAccessValidated]);
 
   return (
     <SucursalContext.Provider

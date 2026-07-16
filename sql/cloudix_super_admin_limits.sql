@@ -57,6 +57,16 @@ ALTER TABLE public.tenants
   ADD COLUMN IF NOT EXISTS cocina_user_limit integer NULL,
   ADD COLUMN IF NOT EXISTS mesero_user_limit integer NULL;
 
+ALTER TABLE public.tenants
+  ADD COLUMN IF NOT EXISTS payment_day_of_month smallint NULL;
+
+ALTER TABLE public.tenants
+  DROP CONSTRAINT IF EXISTS tenants_payment_day_of_month_check;
+
+ALTER TABLE public.tenants
+  ADD CONSTRAINT tenants_payment_day_of_month_check
+  CHECK (payment_day_of_month IS NULL OR payment_day_of_month BETWEEN 1 AND 31);
+
 UPDATE public.tenants
 SET admin_user_limit = 1
 WHERE admin_user_limit IS DISTINCT FROM 1;
@@ -309,22 +319,12 @@ BEGIN
   FROM public.tenant_users
   WHERE tenant_id = p_tenant_id;
 
-  DELETE FROM public.consumos WHERE tenant_id = p_tenant_id;
-  DELETE FROM public.facturas WHERE tenant_id = p_tenant_id;
-  DELETE FROM public.comandas WHERE tenant_id = p_tenant_id;
-  DELETE FROM public.mesas_estado WHERE tenant_id = p_tenant_id;
-  DELETE FROM public.cocina_estado WHERE tenant_id = p_tenant_id;
-  DELETE FROM public.platos WHERE tenant_id = p_tenant_id;
-  DELETE FROM public.cierres_operativos WHERE tenant_id = p_tenant_id;
-  DELETE FROM public.tenant_users WHERE tenant_id = p_tenant_id;
-
-  GET DIAGNOSTICS deleted_users = ROW_COUNT;
-
-  DELETE FROM public.tenants WHERE id = p_tenant_id;
-
   IF array_length(auth_ids, 1) IS NOT NULL THEN
     DELETE FROM auth.users WHERE id = ANY(auth_ids);
+    GET DIAGNOSTICS deleted_users = ROW_COUNT;
   END IF;
+
+  DELETE FROM public.tenants WHERE id = p_tenant_id;
 
   RETURN jsonb_build_object(
     'ok', true,

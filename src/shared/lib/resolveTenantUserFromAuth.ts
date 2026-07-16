@@ -7,7 +7,7 @@ type TenantActiveRow = { activa: boolean | null };
 
 export type TenantAccessResolution =
   | { status: 'active'; row: TenantSessionRow }
-  | { status: 'blocked' }
+  | { status: 'blocked'; tenantId?: string }
   | { status: 'unlinked' };
 
 export const BLOCKED_ACCOUNT_MESSAGE =
@@ -71,6 +71,27 @@ async function fetchTenantActiveState(tenantId: string) {
     .maybeSingle();
 }
 
+async function resolveActiveTenantUserRow(rawRow: any): Promise<TenantAccessResolution> {
+  const tenantId = rawRow?.tenant_id;
+  if (typeof tenantId !== 'string' || !tenantId) return { status: 'unlinked' };
+  const { data: tenantState } = await withRetry('tenants estado activo para miembro activo', () =>
+    fetchTenantActiveState(tenantId)
+  );
+  if ((tenantState as TenantActiveRow | null)?.activa !== true) {
+    return { status: 'blocked', tenantId };
+  }
+  return {
+    status: 'active',
+    row: {
+      tenant_id: tenantId,
+      email: rawRow.email,
+      rol: rawRow.rol,
+      nombre: rawRow.nombre,
+      plan: rawRow.tenants?.plan ?? rawRow.plan ?? 'basico',
+    },
+  };
+}
+
 async function fetchTenantUserByRpc() {
   return insforgeClient.database
     .rpc('cloudix_resolve_tenant_user')
@@ -128,17 +149,7 @@ export async function resolveTenantAccessForSession(user: UserSchema): Promise<T
     fetchTenantUserByAuthId(user.id)
   );
   if (byAuth) {
-    const rawRow = byAuth as any;
-    return {
-      status: 'active',
-      row: {
-        tenant_id: rawRow.tenant_id,
-        email: rawRow.email,
-        rol: rawRow.rol,
-        nombre: rawRow.nombre,
-        plan: rawRow.tenants?.plan ?? 'basico',
-      },
-    };
+    return resolveActiveTenantUserRow(byAuth);
   }
 
   const email = user.email;
@@ -147,33 +158,13 @@ export async function resolveTenantAccessForSession(user: UserSchema): Promise<T
       fetchTenantUserBySessionEmail(email)
     );
     if (byEmail) {
-      const rawRow = byEmail as any;
-      return {
-        status: 'active',
-        row: {
-          tenant_id: rawRow.tenant_id,
-          email: rawRow.email,
-          rol: rawRow.rol,
-          nombre: rawRow.nombre,
-          plan: rawRow.tenants?.plan ?? 'basico',
-        },
-      };
+      return resolveActiveTenantUserRow(byEmail);
     }
   }
 
   const { data: byRpc } = await withRetry('tenant_users activo por rpc', fetchTenantUserByRpc);
   if (byRpc) {
-    const rawRow = byRpc as any;
-    return {
-      status: 'active',
-      row: {
-        tenant_id: rawRow.tenant_id,
-        email: rawRow.email,
-        rol: rawRow.rol,
-        nombre: rawRow.nombre,
-        plan: rawRow.plan ?? 'basico',
-      },
-    };
+    return resolveActiveTenantUserRow(byRpc);
   }
 
   const { data: anyByAuth } = await withRetry('tenant_users cualquier estado por auth_user_id', () =>
@@ -184,12 +175,14 @@ export async function resolveTenantAccessForSession(user: UserSchema): Promise<T
     : null)) as TenantUserAccessRow | null;
 
   if (!inactiveRow) return { status: 'unlinked' };
-  if (inactiveRow.activo === false) return { status: 'blocked' };
+  if (inactiveRow.activo === false) return { status: 'blocked', tenantId: inactiveRow.tenant_id };
 
   const { data: tenantState } = await withRetry('tenants estado activo', () =>
     fetchTenantActiveState(inactiveRow.tenant_id)
   );
-  if ((tenantState as TenantActiveRow | null)?.activa === false) return { status: 'blocked' };
+  if ((tenantState as TenantActiveRow | null)?.activa !== true) {
+    return { status: 'blocked', tenantId: inactiveRow.tenant_id };
+  }
 
   return { status: 'unlinked' };
 }

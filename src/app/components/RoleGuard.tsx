@@ -21,13 +21,24 @@ function TenantAccessDenied({
           : 'Esta cuenta no está vinculada a ningún negocio. El administrador debe darte acceso desde Soporte.'}
       </p>
       <div className="flex flex-wrap gap-3 justify-center">
-        <button
-          type="button"
-          className="font-['Space_Grotesk',sans-serif] px-4 py-2 rounded bg-[#262626] text-[#ff906d] border border-[rgba(255,144,109,0.35)]"
-          onClick={() => onRetry()}
-        >
-          Reintentar
-        </button>
+        {reason === 'blocked' ? (
+          <a
+            href="https://wa.me/18095968986?text=Hola%2C%20mi%20cuenta%20est%C3%A1%20bloqueada%20y%20necesito%20ayuda"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-['Space_Grotesk',sans-serif] px-4 py-2 rounded bg-[#262626] text-[#ff906d] border border-[rgba(255,144,109,0.35)] no-underline flex items-center justify-center"
+          >
+            Contactar por WhatsApp
+          </a>
+        ) : (
+          <button
+            type="button"
+            className="font-['Space_Grotesk',sans-serif] px-4 py-2 rounded bg-[#262626] text-[#ff906d] border border-[rgba(255,144,109,0.35)]"
+            onClick={() => onRetry()}
+          >
+            Reintentar
+          </button>
+        )}
         <button
           type="button"
           className="font-['Space_Grotesk',sans-serif] px-4 py-2 rounded bg-[#131313] text-[#adaaaa] border border-[rgba(72,72,71,0.4)]"
@@ -48,7 +59,7 @@ function TenantAccessDenied({
 }
 
 export function RoleGuard({ children }: { children: ReactNode }) {
-  const { loading, isAuthenticated, rol, tenantId, user, signOut, refreshSession, tenantAccessDeniedReason } = useAuth();
+  const { loading, isAuthenticated, rol, tenantId, user, signOut, refreshSession, tenantAccessDeniedReason, tenantAccessValidated } = useAuth();
   const location = useLocation();
   const decision = getRoleGuardDecision({
     loading,
@@ -58,6 +69,7 @@ export function RoleGuard({ children }: { children: ReactNode }) {
     rol,
     pathname: location.pathname,
     tenantAccessDeniedReason,
+    tenantAccessValidated,
   });
 
   if (decision.type === "loading") {

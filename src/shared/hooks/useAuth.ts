@@ -11,6 +11,8 @@ import {
 import { resolveTenantAccessForSession } from '../lib/resolveTenantUserFromAuth';
 import { getLocalDeviceSession, setLastTenantId, saveLocalDeviceSession } from '../lib/localFirst';
 import { isDesktopCloudUnavailable } from '../lib/cloudAvailability';
+import { AuthRefreshCoordinator, type AuthRefreshTrigger } from '../lib/authRefreshCoordinator';
+import { TenantAccessRealtimeOwner } from '../lib/tenantAccessRealtimeOwner';
 
 interface TenantUser {
   tenant_id: string;
@@ -25,6 +27,7 @@ interface SharedAuthState {
   tenantUser: TenantUser | null;
   loading: boolean;
   tenantAccessDeniedReason: 'blocked' | 'unlinked' | null;
+  accessValidationState: 'pending' | 'validated' | 'denied' | 'anonymous';
 }
 
 function rowToTenantUser(data: TenantSessionRow): TenantUser {
@@ -50,15 +53,22 @@ let activeConsumers = 0;
 let cleanupGlobalListeners: (() => void) | null = null;
 
 let isSigningOut = false;
+const refreshCoordinator = new AuthRefreshCoordinator();
+let tenantAccessTenantId: string | null = null;
+let tenantAccessGeneration = 0;
+let tenantAccessReconcileInFlight: Promise<void> | null = null;
+let tenantAccessRealtimeOwner: TenantAccessRealtimeOwner | null = null;
 
 const subscribers = new Set<() => void>();
 
-const initialCached = readTenantSessionCache();
 const sharedState: SharedAuthState = {
   user: null,
-  tenantUser: initialCached ? rowToTenantUser(initialCached) : null,
+  // A cache is only a hint. Never expose it as protected access before the
+  // current backend session has validated the tenant boundary.
+  tenantUser: null,
   loading: true,
   tenantAccessDeniedReason: null,
+  accessValidationState: 'pending',
 };
 
 function logAuth(message: string, payload?: unknown): void {
@@ -79,7 +89,91 @@ function patchSharedState(patch: Partial<SharedAuthState>): void {
     patch.tenantAccessDeniedReason === undefined
       ? sharedState.tenantAccessDeniedReason
       : patch.tenantAccessDeniedReason;
+  sharedState.accessValidationState =
+    patch.accessValidationState === undefined
+      ? sharedState.accessValidationState
+      : patch.accessValidationState;
   notifySubscribers();
+}
+
+function handleRealtimeTenantBlocked(tenantId: string): void {
+  tenantAccessTenantId = tenantId;
+  ensureTenantAccessRealtime(tenantId);
+  tenantAccessGeneration += 1;
+  refreshBlockedUntil = Date.now() + REFRESH_BLOCK_MS;
+  clearTenantSessionCache();
+  patchSharedState({
+    tenantUser: null,
+    tenantAccessDeniedReason: 'blocked',
+    accessValidationState: 'denied',
+  });
+  void import('../lib/localFirst').then(async (m) => {
+    await m.invalidateLocalSessionContext(tenantId);
+    logAuth('tenant access realtime: blocked -> local session metadata invalidated', { tenantId });
+  }).catch((error) => logAuth('tenant access realtime: local session metadata invalidation failed', error));
+  logAuth('tenant access realtime: active -> blocked', { tenantId });
+}
+
+async function reconcileTenantAccessShared(reason: 'realtime' | 'fallback' | 'focus' | 'visibility'): Promise<void> {
+  if (tenantAccessReconcileInFlight) return tenantAccessReconcileInFlight;
+  if (!sharedState.user) return;
+  const user = sharedState.user;
+  const requestGeneration = tenantAccessGeneration;
+  const operation = (async () => {
+    const resolution = await resolveTenantAccessForSession(user);
+    if (requestGeneration !== tenantAccessGeneration) return;
+    if (resolution.status !== 'active') {
+      if (resolution.status === 'blocked' && resolution.tenantId) handleRealtimeTenantBlocked(resolution.tenantId);
+      else {
+        tenantAccessGeneration += 1;
+        patchSharedState({ tenantUser: null, tenantAccessDeniedReason: 'unlinked', accessValidationState: 'denied' });
+      }
+      logAuth('tenant access reconciliation denied', { reason, status: resolution.status });
+      return;
+    }
+
+    tenantAccessTenantId = resolution.row.tenant_id;
+    refreshBlockedUntil = 0;
+    patchSharedState({
+      tenantUser: rowToTenantUser(resolution.row),
+      tenantAccessDeniedReason: null,
+      accessValidationState: 'validated',
+    });
+    writeTenantSessionCache(user.id, resolution.row);
+    ensureTenantAccessRealtime(resolution.row.tenant_id);
+    if (Boolean((window as any).electronAPI)) {
+      try {
+        await saveLocalDeviceSession(resolution.row.tenant_id, user.id, user.email, resolution.row);
+      } catch (error) {
+        logAuth('tenant access reconciliation: local session update failed', error);
+      }
+    }
+    logAuth('tenant access reconciliation active', { reason, tenantId: resolution.row.tenant_id });
+  })();
+  tenantAccessReconcileInFlight = operation;
+  try {
+    await operation;
+  } finally {
+    if (tenantAccessReconcileInFlight === operation) tenantAccessReconcileInFlight = null;
+  }
+}
+
+function ensureTenantAccessRealtime(tenantId: string): void {
+  if (!tenantAccessRealtimeOwner) {
+    tenantAccessRealtimeOwner = new TenantAccessRealtimeOwner(
+      insforgeClient.realtime as any,
+      {
+        onState: (changedTenantId, active) => {
+          if (!active) handleRealtimeTenantBlocked(changedTenantId);
+          else void reconcileTenantAccessShared('realtime');
+        },
+        onReconnect: (reconnectedTenantId) => {
+          if (tenantAccessTenantId === reconnectedTenantId) void reconcileTenantAccessShared('fallback');
+        },
+      },
+    );
+  }
+  tenantAccessRealtimeOwner.start(tenantId);
 }
 
 function isUnauthorizedError(error: unknown): boolean {
@@ -156,11 +250,15 @@ function syncSdkSession(data: unknown): void {
 }
 
 function clearSessionShared(): void {
+  tenantAccessRealtimeOwner?.stop();
+  tenantAccessRealtimeOwner = null;
+  tenantAccessTenantId = null;
+  tenantAccessGeneration += 1;
   clearTenantSessionCache();
   localStorage.removeItem(REFRESH_TOKEN_KEY);
   import('../lib/localFirst').then(m => {
     m.getLastTenantId().then(tenantId => {
-      if (tenantId) m.clearLocalDeviceSession(tenantId);
+      if (tenantId) m.invalidateLocalSessionContext(tenantId);
     });
   });
   try {
@@ -173,7 +271,7 @@ function clearSessionShared(): void {
   } catch {
     /* ignore */
   }
-  patchSharedState({ user: null, tenantUser: null, tenantAccessDeniedReason: null, loading: false });
+  patchSharedState({ user: null, tenantUser: null, tenantAccessDeniedReason: null, accessValidationState: 'anonymous', loading: false });
 }
 
 function userFromLocalDeviceSession(session: Awaited<ReturnType<typeof getLocalDeviceSession>>): UserSchema | null {
@@ -199,6 +297,7 @@ function hydrateAuthStateFromLocalDeviceSession(
     user: localUser,
     tenantUser: rowToTenantUser(tenantRow),
     tenantAccessDeniedReason: null,
+    accessValidationState: 'validated',
     loading: false,
   });
   logAuth('loadUserData:local-session-fast-path', {
@@ -218,6 +317,7 @@ export function hydrateAuthStateAfterLogin(user: UserSchema, tenantRow: TenantSe
     user,
     tenantUser: rowToTenantUser(tenantRow),
     tenantAccessDeniedReason: null,
+    accessValidationState: 'validated',
     loading: false,
   });
   logAuth('hydrate-after-login', {
@@ -231,7 +331,7 @@ export function syncAuthClientAfterLogin(data: unknown): void {
   syncSdkSession(data);
 }
 
-async function loadUserDataShared(opts?: { silent?: boolean }): Promise<void> {
+async function loadUserDataShared(opts?: { silent?: boolean; force?: boolean }): Promise<void> {
   if (loadUserDataInFlight) {
     await loadUserDataInFlight;
     return;
@@ -243,16 +343,39 @@ async function loadUserDataShared(opts?: { silent?: boolean }): Promise<void> {
     if (!silent) patchSharedState({ loading: true });
 
     try {
+      // A denied tenant is terminal for this session. Do not hydrate the same
+      // IndexedDB snapshot again on focus, visibility, or realtime callbacks.
+      if (sharedState.tenantAccessDeniedReason && !opts?.force) {
+        logAuth('loadUserData:skipped-after-tenant-denial');
+        return;
+      }
       let u: UserSchema | null = null;
       let hydratedFromLocalSession = false;
       let validatedOnlineSession = false;
+      const accessRequestGeneration = tenantAccessGeneration;
       const storedToken = readRefreshToken();
 
-      if (Boolean((window as any).electronAPI)) {
+      if (navigator.onLine) {
+        // Keep validated access mounted while refreshing the same tenant. Clearing it
+        // here remounts protected routes and causes payment/realtime effects to fire
+        // again even though the tenant did not change.
+        const keepValidatedTenant =
+          sharedState.accessValidationState === 'validated' &&
+          sharedState.tenantUser !== null;
+        if (!keepValidatedTenant) {
+          patchSharedState({ tenantUser: null, accessValidationState: 'pending' });
+        }
+      }
+
+      // Never mount protected routes from the desktop snapshot while online:
+      // the backend must validate tenant access first, otherwise a blocked
+      // tenant can briefly remount and reconnect realtime on every focus.
+      if (Boolean((window as any).electronAPI) && !navigator.onLine) {
         const localSession = await getLocalDeviceSession();
         if (localSession) {
           u = hydrateAuthStateFromLocalDeviceSession(localSession);
           hydratedFromLocalSession = true;
+          patchSharedState({ accessValidationState: 'validated' });
         }
       }
 
@@ -323,7 +446,7 @@ async function loadUserDataShared(opts?: { silent?: boolean }): Promise<void> {
 
       if (!u && !storedToken && !hydratedFromLocalSession) {
         logAuth('loadUserData:no-token-no-local-session -> anonymous');
-        patchSharedState({ user: null, tenantUser: null, loading: false });
+        patchSharedState({ user: null, tenantUser: null, accessValidationState: 'anonymous', loading: false });
         return;
       }
 
@@ -374,12 +497,16 @@ async function loadUserDataShared(opts?: { silent?: boolean }): Promise<void> {
 
       if (navigator.onLine) {
         const access = await resolveTenantAccessForSession(u);
+        if (accessRequestGeneration !== tenantAccessGeneration) return;
         if (access.status === 'active') {
+          tenantAccessTenantId = access.row.tenant_id;
           patchSharedState({
             tenantUser: rowToTenantUser(access.row),
             tenantAccessDeniedReason: null,
+            accessValidationState: 'validated',
           });
           writeTenantSessionCache(u.id, access.row);
+          ensureTenantAccessRealtime(access.row.tenant_id);
           logAuth('tenant resolved from backend', {
             tenantId: access.row.tenant_id,
             rol: access.row.rol,
@@ -396,8 +523,24 @@ async function loadUserDataShared(opts?: { silent?: boolean }): Promise<void> {
           }
         } else {
           clearTenantSessionCache();
-          patchSharedState({ tenantUser: null, tenantAccessDeniedReason: access.status });
+          const blockedTenantId = (access.status === 'blocked' ? access.tenantId : undefined) ?? tenantAccessTenantId;
+          if (access.status === 'blocked' && blockedTenantId) {
+            handleRealtimeTenantBlocked(blockedTenantId);
+          } else {
+            patchSharedState({ tenantUser: null, tenantAccessDeniedReason: access.status, accessValidationState: 'denied' });
+          }
+          refreshBlockedUntil = Date.now() + REFRESH_BLOCK_MS;
           logAuth('tenant not resolved from backend -> cache cleared', { reason: access.status });
+
+          if (Boolean((window as any).electronAPI)) {
+            try {
+              const m = await import('../lib/localFirst');
+              await m.invalidateLocalSessionContext(await m.getLastTenantId());
+              logAuth('invalidated local session context because access was denied');
+            } catch (err) {
+              logAuth('error clearing local device session', err);
+            }
+          }
         }
       } else {
         logAuth('tenant resolution:skipped-offline (using cache)');
@@ -417,14 +560,14 @@ async function loadUserDataShared(opts?: { silent?: boolean }): Promise<void> {
   }
 }
 
-async function doRefreshShared(): Promise<void> {
+async function doRefreshShared(source: AuthRefreshTrigger = 'manual'): Promise<void> {
   if (isSigningOut) {
-    logAuth('focus/visibility/interval refresh skipped (signing out)');
+    logAuth(`refresh skipped [${source}] (signing out)`);
     return;
   }
 
   if (!navigator.onLine) {
-    logAuth('focus/visibility/interval refresh skipped (offline)');
+    logAuth(`refresh skipped [${source}] (offline)`);
     return;
   }
 
@@ -432,11 +575,27 @@ async function doRefreshShared(): Promise<void> {
   const storedToken = readRefreshToken();
 
   if (!currentUser && !storedToken) {
-    logAuth('focus/visibility/interval refresh skipped (anonymous)');
+    logAuth(`refresh skipped [${source}] (anonymous)`);
     return;
   }
 
-  logAuth('focus/visibility/interval refresh triggered', {
+  if (sharedState.tenantAccessDeniedReason) {
+    if (!refreshCoordinator.shouldRefresh(source)) {
+      logAuth(`tenant access reconciliation skipped [${source}] (deduplicated restore burst)`);
+      return;
+    }
+    const reason = source === 'focus' ? 'focus' : source === 'visibility' ? 'visibility' : 'fallback';
+    logAuth(`tenant access reconciliation triggered [${source}]`);
+    await reconcileTenantAccessShared(reason);
+    return;
+  }
+
+  if (!refreshCoordinator.shouldRefresh(source)) {
+    logAuth(`refresh skipped [${source}] (deduplicated restore burst)`);
+    return;
+  }
+
+  logAuth(`refresh triggered [${source}]`, {
     hasUser: Boolean(currentUser),
     hasStoredRefresh: Boolean(storedToken),
   });
@@ -447,7 +606,7 @@ async function doRefreshShared(): Promise<void> {
   }
 
   if (refreshInFlight) {
-    logAuth('refreshSession:skip-in-flight');
+    logAuth(`refresh skipped [${source}] (in-flight)`);
     await refreshInFlight;
     return;
   }
@@ -455,8 +614,8 @@ async function doRefreshShared(): Promise<void> {
   refreshInFlight = (async (): Promise<'ok' | 'unauthorized' | 'error'> => {
     const storedToken = readRefreshToken();
     if (!storedToken) {
-      logAuth('refreshSession:no-token-stored -> loadUserData');
-      await loadUserDataShared({ silent: true });
+      logAuth(`refreshSession:no-token-stored -> loadUserData [${source}]`);
+      await loadUserDataShared({ silent: true, force: source === 'manual' });
       return 'ok';
     }
 
@@ -504,7 +663,7 @@ async function doRefreshShared(): Promise<void> {
   const result = await refreshInFlight;
   refreshInFlight = null;
   if (result === 'ok') {
-    await loadUserDataShared({ silent: true });
+    await loadUserDataShared({ silent: true, force: source === 'manual' });
   }
 }
 
@@ -513,13 +672,13 @@ const SESSION_ROTATE_MS = 9 * 60 * 1000;
 
 function ensureGlobalListeners(): void {
   if (cleanupGlobalListeners) return;
-  const onFocus = () => void doRefreshShared();
+  const onFocus = () => void doRefreshShared('focus');
   const onVisibility = () => {
-    if (document.visibilityState === 'visible') void doRefreshShared();
+    if (document.visibilityState === 'visible') void doRefreshShared('visibility');
   };
   window.addEventListener('focus', onFocus);
   document.addEventListener('visibilitychange', onVisibility);
-  const intervalId = window.setInterval(() => void doRefreshShared(), SESSION_ROTATE_MS);
+  const intervalId = window.setInterval(() => void doRefreshShared('interval'), SESSION_ROTATE_MS);
   logAuth('listeners attached', {
     events: ['focus', 'visibilitychange', `interval:${SESSION_ROTATE_MS}ms`],
   });
@@ -551,6 +710,10 @@ export async function ensureAuthSessionFresh(): Promise<void> {
   if (loadUserDataInFlight) {
     await loadUserDataInFlight;
   }
+  if (sharedState.tenantAccessDeniedReason) {
+    await reconcileTenantAccessShared('fallback');
+    return;
+  }
   await doRefreshShared();
 }
 
@@ -559,6 +722,7 @@ export function useAuth() {
   const [tenantUser, setTenantUser] = useState<TenantUser | null>(sharedState.tenantUser);
   const [loading, setLoading] = useState(sharedState.loading);
   const [tenantAccessDeniedReason, setTenantAccessDeniedReason] = useState(sharedState.tenantAccessDeniedReason);
+  const [accessValidationState, setAccessValidationState] = useState(sharedState.accessValidationState);
 
   useEffect(() => {
     const sync = () => {
@@ -566,6 +730,7 @@ export function useAuth() {
       setTenantUser(sharedState.tenantUser);
       setLoading(sharedState.loading);
       setTenantAccessDeniedReason(sharedState.tenantAccessDeniedReason);
+      setAccessValidationState(sharedState.accessValidationState);
     };
     subscribers.add(sync);
     activeConsumers += 1;
@@ -612,6 +777,7 @@ export function useAuth() {
       refreshInFlight = null;
       loadUserDataInFlight = null;
       refreshBlockedUntil = 0;
+      refreshCoordinator.reset();
       initializedOnce = false;
       clearSessionShared();
       isSigningOut = false;
@@ -620,12 +786,14 @@ export function useAuth() {
   }, []);
 
   const refreshSession = useCallback((opts?: { showLoading?: boolean }) => {
-    void loadUserDataShared({ silent: opts?.showLoading !== true });
+    void loadUserDataShared({ silent: opts?.showLoading !== true, force: true });
   }, []);
 
   const cachedRow = user ? readTenantSessionCache() : null;
   const cacheBelongsToUser = cachedRow != null && user != null && cachedRow.authUserId === user.id;
-  const tenantUserEffective = tenantUser ?? (cacheBelongsToUser ? rowToTenantUser(cachedRow) : null);
+  const tenantUserEffective = accessValidationState === 'validated'
+    ? tenantUser ?? (cacheBelongsToUser ? rowToTenantUser(cachedRow) : null)
+    : null;
 
   return {
     user,
@@ -638,5 +806,7 @@ export function useAuth() {
     isAuthenticated: !!user,
     refreshSession,
     tenantAccessDeniedReason,
+    accessValidationState,
+    tenantAccessValidated: accessValidationState === 'validated',
   };
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router";
 
 import { VentaCartSearchProvider } from "../context/VentaCartSearchContext";
@@ -22,6 +22,15 @@ import { RoleGuard } from "./RoleGuard";
 import { useAppUpdate } from "../../features/updates/AppUpdateContext";
 import { LocalFirstStatusBadge } from "../../shared/components/LocalFirstStatusBadge";
 import { useLocalFirstBootstrap } from "../../shared/hooks/useLocalFirstBootstrap";
+import { getPaymentAlert, getPaymentAlertStorageKey } from "../../shared/lib/paymentDate";
+import { getLocalTenantPaymentDay } from "../../shared/lib/localFirst";
+import {
+  isMissingPaymentDayColumnError,
+  isPaymentDayUnavailable,
+  markPaymentDayUnavailable,
+} from "../../shared/lib/paymentDayAvailability";
+import { tenantRealtimeSubscriptionManager } from "../../shared/lib/tenantRealtimeSubscriptionManager";
+import { canCommitTenantAsyncState } from "../../shared/lib/tenantAccessGuard";
 
 import { canUseFeature, type Feature } from "../../shared/lib/planFeatures";
 
@@ -304,14 +313,90 @@ export function AppLayout() {
 function AppLayoutContent() {
   const navigate = useNavigate();
   const routerLocation = useLocation();
-  const { rol, signOut, tenantId, plan, loading } = useAuth();
+  const { rol, signOut, tenantId, plan, loading, tenantAccessValidated } = useAuth();
   const { hasUpdateBellAlert, showUpdateBellToast } = useAppUpdate();
+  const currentTenantIdRef = useRef(tenantId);
+  currentTenantIdRef.current = tenantId;
   const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [paymentDay, setPaymentDay] = useState<number | null>(null);
+  const [paymentAlert, setPaymentAlert] = useState<{ tenantId: string; title: string; message: string; dateKey: string } | null>(null);
+
+  useEffect(() => {
+    setPaymentDay(null);
+    setPaymentAlert(null);
+    if (!tenantId || !tenantAccessValidated) {
+      return;
+    }
+    const lookupTenantId = tenantId;
+    let cancelled = false;
+    if (isPaymentDayUnavailable(lookupTenantId)) return;
+    void insforgeClient.database.from("tenants").select("payment_day_of_month").eq("id", tenantId).maybeSingle()
+      .then(async ({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          if (isMissingPaymentDayColumnError(error)) {
+            const shouldWarn = markPaymentDayUnavailable(lookupTenantId);
+            if (shouldWarn) {
+              console.warn("[AppLayout] payment_day_of_month is unavailable until the tenant migration is applied", {
+                tenantId: lookupTenantId,
+              });
+            }
+            setPaymentDay(null);
+            return;
+          }
+          try {
+            const localPaymentDay = await getLocalTenantPaymentDay(tenantId);
+            if (!canCommitTenantAsyncState({
+              requestGeneration: 0,
+              currentGeneration: 0,
+              requestTenantId: lookupTenantId,
+              currentTenantId: currentTenantIdRef.current,
+              accessValidated: tenantAccessValidated,
+              cancelled,
+            })) return;
+            setPaymentDay(localPaymentDay);
+          } catch {
+            if (!cancelled && currentTenantIdRef.current === lookupTenantId && tenantAccessValidated) setPaymentDay(null);
+          }
+          return;
+        }
+        if (!canCommitTenantAsyncState({
+          requestGeneration: 0,
+          currentGeneration: 0,
+          requestTenantId: lookupTenantId,
+          currentTenantId: currentTenantIdRef.current,
+          accessValidated: tenantAccessValidated,
+          cancelled,
+        })) return;
+        const day = typeof data?.payment_day_of_month === "number" ? data.payment_day_of_month : null;
+        setPaymentDay(day);
+      });
+    return () => { cancelled = true; };
+  }, [tenantId, tenantAccessValidated]);
+
+  useEffect(() => {
+    setPaymentAlert(null);
+    if (!tenantId || !tenantAccessValidated || !paymentDay) return;
+    const today = new Date();
+    const alert = getPaymentAlert(today, paymentDay);
+    if (!alert) return;
+    const dismissedKey = getPaymentAlertStorageKey(tenantId, alert.dateKey);
+    if (localStorage.getItem(dismissedKey)) return;
+    setPaymentAlert({
+      tenantId,
+      dateKey: dismissedKey,
+      title: alert.kind === "today" ? "Día de pago" : "Recordatorio de pago",
+      message: alert.kind === "today"
+        ? "Hoy corresponde realizar el pago del servicio de Cloudix."
+        : "Mañana corresponde realizar el pago del servicio de Cloudix.",
+    });
+  }, [paymentDay, tenantId, tenantAccessValidated]);
 
   // Load initial pending orders count and subscribe to updates
   useEffect(() => {
-    if (!tenantId) return;
+    setPendingOrdersCount(0);
+    if (!tenantId || !tenantAccessValidated) return;
 
     let cancelled = false;
     async function loadPendingCount() {
@@ -332,19 +417,15 @@ function AppLayoutContent() {
 
     void loadPendingCount();
 
-    // Subscribe to digital_orders table updates via custom realtime client
-    const rt = (insforgeClient as any).realtime;
-    if (!rt) return;
-
     const rtChannel = `cocina:${tenantId}`;
 
     const handleDigitalOrderEvent = (payload: any) => {
-      if (payload?.tenant_id !== tenantId) return;
+      if (cancelled || payload?.tenant_id !== tenantId) return;
       void loadPendingCount();
     };
 
     const handleDigitalOrderInsert = (payload: any) => {
-      if (payload?.tenant_id !== tenantId) return;
+      if (cancelled || payload?.tenant_id !== tenantId) return;
       void loadPendingCount();
       
       if (payload?.status === 'pending') {
@@ -354,31 +435,29 @@ function AppLayoutContent() {
       }
     };
 
-    void (async () => {
-      try {
-        await rt.connect();
-        await rt.subscribe(rtChannel);
-        if (cancelled) return;
-        rt.on("INSERT_digital_order", handleDigitalOrderInsert);
-        rt.on("UPDATE_digital_order", handleDigitalOrderEvent);
-        rt.on("DELETE_digital_order", handleDigitalOrderEvent);
-      } catch (e) {
-        console.warn("[AppLayout] Realtime connect failed:", e);
-      }
-    })();
+    const registration = tenantRealtimeSubscriptionManager.acquire(rtChannel, {
+      INSERT_digital_order: handleDigitalOrderInsert,
+      UPDATE_digital_order: handleDigitalOrderEvent,
+      DELETE_digital_order: handleDigitalOrderEvent,
+    });
+    void registration.ready.catch((e) => console.warn("[AppLayout] Realtime connect failed:", e));
 
     return () => {
       cancelled = true;
-      rt.off("INSERT_digital_order", handleDigitalOrderInsert);
-      rt.off("UPDATE_digital_order", handleDigitalOrderEvent);
-      rt.off("DELETE_digital_order", handleDigitalOrderEvent);
+      registration.release();
     };
-  }, [tenantId]);
-  const localFirst = useLocalFirstBootstrap(tenantId);
+  }, [tenantId, tenantAccessValidated]);
+  const localFirst = useLocalFirstBootstrap(tenantId, tenantAccessValidated);
   const [cocinaActiva, setCocinaActiva] = useState(true);
   const [ventaCartSearch, setVentaCartSearch] = useState("");
   const [sidebarHidden, setSidebarHidden] = useState(false);
   const [upsellType, setUpsellType] = useState<"inventario" | "sucursales" | "plan_superior" | null>(null);
+  const visiblePendingOrdersCount = tenantAccessValidated ? pendingOrdersCount : 0;
+  const visibleCocinaActiva = tenantAccessValidated ? cocinaActiva : true;
+
+  useEffect(() => {
+    if (!tenantId || !tenantAccessValidated) setCocinaActiva(true);
+  }, [tenantId, tenantAccessValidated]);
 
   const {
     activeSucursalId,
@@ -489,7 +568,7 @@ function AppLayoutContent() {
 
   // Re-fetch kitchen status per tenant on route change (never mix tenants in SaaS)
   useEffect(() => {
-    if (!tenantId) {
+    if (!tenantId || !tenantAccessValidated) {
       setCocinaActiva(true);
       return;
     }
@@ -508,7 +587,7 @@ function AppLayoutContent() {
     return () => {
       cancelled = true;
     };
-  }, [routerLocation.pathname, tenantId]);
+  }, [routerLocation.pathname, tenantId, tenantAccessValidated]);
 
   const isAjustesActive = location.pathname === "/ajustes";
 
@@ -528,11 +607,11 @@ function AppLayoutContent() {
           setShowAddBranchModal(true);
         }}
         branchContext={{
-          activeSucursalId,
+          activeSucursalId: tenantAccessValidated ? activeSucursalId : null,
           setActiveSucursalId,
-          sucursales,
+          sucursales: tenantAccessValidated ? sucursales : [],
           deleteSucursal,
-          loading: sucursalesLoading,
+          loading: !tenantAccessValidated || sucursalesLoading,
         }}
       />
 
@@ -600,9 +679,9 @@ function AppLayoutContent() {
                       >
                         {item.label}
                       </span>
-                      {item.path === "/pedidos" && pendingOrdersCount > 0 && (
+                      {item.path === "/pedidos" && visiblePendingOrdersCount > 0 && (
                         <span className="ml-auto flex items-center justify-center h-[18px] min-w-[18px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full">
-                          {pendingOrdersCount}
+                          {visiblePendingOrdersCount}
                         </span>
                       )}
                       {isLocked && !loading && (
@@ -690,20 +769,20 @@ function AppLayoutContent() {
                   type="button"
                   className="bg-card flex gap-[8px] items-center px-[13px] py-[5px] rounded-full border border-black/10 dark:border-[rgba(72,72,71,0.2)] transition-all cursor-pointer"
                   onClick={() => navigate("/cocina")}
-                  title={cocinaActiva ? "Cocina abierta" : "Cocina cerrada"}
+                   title={visibleCocinaActiva ? "Cocina abierta" : "Cocina cerrada"}
                   aria-label={
-                    cocinaActiva
+                     visibleCocinaActiva
                       ? "Cocina abierta. Ir a vista cocina."
                       : "Cocina cerrada. Ir a vista cocina."
                   }
                 >
                   <span
                     className="rounded-full size-[8px] transition-colors"
-                    style={{ backgroundColor: cocinaActiva ? "#59ee50" : "#ff716c" }}
+                     style={{ backgroundColor: visibleCocinaActiva ? "#59ee50" : "#ff716c" }}
                     aria-hidden
                   />
                   <span className="font-['Space_Grotesk',sans-serif] text-muted-foreground text-[10px] tracking-[0.5px] uppercase">
-                    {cocinaActiva ? "Cocina en Vivo" : "Cocina Cerrada"}
+                     {visibleCocinaActiva ? "Cocina en Vivo" : "Cocina Cerrada"}
                   </span>
                 </button>
               ) : (
@@ -712,18 +791,18 @@ function AppLayoutContent() {
                   title="Estado de cocina (solo personal de cocina o administrador abre la vista)"
                   role="status"
                   aria-label={
-                    cocinaActiva
+                    visibleCocinaActiva
                       ? "Estado: cocina abierta (solo lectura)"
                       : "Estado: cocina cerrada (solo lectura)"
                   }
                 >
                   <span
                     className="rounded-full size-[8px] transition-colors"
-                    style={{ backgroundColor: cocinaActiva ? "#59ee50" : "#ff716c" }}
+                     style={{ backgroundColor: visibleCocinaActiva ? "#59ee50" : "#ff716c" }}
                     aria-hidden
                   />
                   <span className="font-['Space_Grotesk',sans-serif] text-muted-foreground text-[10px] tracking-[0.5px] uppercase">
-                    {cocinaActiva ? "Cocina en Vivo" : "Cocina Cerrada"}
+                     {visibleCocinaActiva ? "Cocina en Vivo" : "Cocina Cerrada"}
                   </span>
                 </div>
               )}
@@ -760,22 +839,22 @@ function AppLayoutContent() {
                 <button
                   type="button"
                   onClick={() => {
-                    if (pendingOrdersCount > 0) {
+                    if (visiblePendingOrdersCount > 0) {
                       navigate("/pedidos");
                     } else {
                       showUpdateBellToast();
                     }
                   }}
                   title={
-                    pendingOrdersCount > 0
-                      ? `Tenés ${pendingOrdersCount} pedido(s) pendiente(s)`
+                     visiblePendingOrdersCount > 0
+                       ? `Tenés ${visiblePendingOrdersCount} pedido(s) pendiente(s)`
                       : hasUpdateBellAlert
                       ? "Hay una actualización de la app"
                       : "Notificaciones"
                   }
                   aria-label={
-                    pendingOrdersCount > 0
-                      ? `Tenés ${pendingOrdersCount} pedido(s) pendiente(s). Tocá para ver detalles.`
+                     visiblePendingOrdersCount > 0
+                       ? `Tenés ${visiblePendingOrdersCount} pedido(s) pendiente(s). Tocá para ver detalles.`
                       : hasUpdateBellAlert
                       ? "Hay una actualización disponible. Tocá para ver detalles."
                       : "Notificaciones"
@@ -790,14 +869,14 @@ function AppLayoutContent() {
                   >
                     <path
                       d={svgPaths.p28252700}
-                      fill={pendingOrdersCount > 0 ? "#ef4444" : hasUpdateBellAlert ? "#ff906d" : "#ADAAAA"}
+                       fill={visiblePendingOrdersCount > 0 ? "#ef4444" : hasUpdateBellAlert ? "#ff906d" : "#ADAAAA"}
                     />
                   </svg>
-                  {pendingOrdersCount > 0 ? (
+                   {visiblePendingOrdersCount > 0 ? (
                     <span
                       className="absolute top-[-6px] right-[-8px] min-w-[15px] h-[15px] px-1 rounded-full bg-red-500 text-white text-[8px] font-bold flex items-center justify-center shadow-[0_0_10px_rgba(239,68,68,0.85)] pointer-events-none"
                     >
-                      {pendingOrdersCount}
+                       {visiblePendingOrdersCount}
                     </span>
                   ) : hasUpdateBellAlert ? (
                     <span
@@ -1076,7 +1155,18 @@ function AppLayoutContent() {
         variant={globalAlert.variant}
       />
     </VentaCartSearchProvider>
-    </RoleGuard>
+      </RoleGuard>
+      <AlertModal
+        open={tenantAccessValidated && paymentAlert?.tenantId === tenantId}
+        title={paymentAlert?.title ?? "Aviso"}
+        message={paymentAlert?.message ?? ""}
+        variant="info"
+        onClose={() => {
+          if (!paymentAlert) return;
+          localStorage.setItem(paymentAlert.dateKey, "dismissed");
+          setPaymentAlert(null);
+        }}
+      />
     </div>
   );
 }

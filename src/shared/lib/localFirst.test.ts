@@ -34,6 +34,7 @@ import {
   resolveMirrorStoreKeyPath,
   selectProcessableOutboxEntries,
   shouldReadLocalFirst,
+  invalidateLocalSessionContext,
   type LocalLicenseCache,
   type LocalWriteMode,
   type SyncOutboxEntry,
@@ -368,6 +369,73 @@ describe("localFirst", () => {
     const guardrail = resolveOutboxConflictGuardrail("tenant-1", entry, { id: "tenant-1" });
     expect(guardrail.action).toBe("apply_local_write");
     expect(guardrail.shouldWriteServer).toBe(true);
+  });
+
+  it("invalidates only the local session context and preserves the tenant database", async () => {
+    const originalStorage = globalThis.localStorage;
+    const originalIndexedDb = globalThis.indexedDB;
+    const sessionRows = new Set(["tenant-1"]);
+    const stores = {
+      tenants: new Map([["tenant-1", { id: "tenant-1", nombre_negocio: "Preserved" }]]),
+      facturas: new Map([["sale-1", { id: "sale-1", total: 100 }]]),
+      sync_outbox: new Map([["outbox-1", { id: "outbox-1", status: "pending" }]]),
+      local_fiscal_outbox: new Map([["fiscal-1", { id: "fiscal-1", fiscal_status: "pending_sync" }]]),
+      local_device_session: sessionRows,
+    };
+    let deleteDatabaseCalled = false;
+
+    globalThis.localStorage = {
+      getItem: (key: string) => key === "cloudix_last_tenant_id" ? "tenant-1" : null,
+      removeItem: () => undefined,
+      setItem: () => undefined,
+      clear: () => undefined,
+      key: () => null,
+      length: 0,
+    } as Storage;
+    globalThis.indexedDB = {
+      open: () => {
+        const request: any = {};
+        queueMicrotask(() => {
+          const transaction: any = {
+            objectStore: (name: string) => ({
+              delete: (key: string) => (stores as any)[name]?.delete(key),
+            }),
+          };
+          request.result = {
+            transaction: () => transaction,
+            close: () => undefined,
+          };
+          request.onsuccess?.();
+          queueMicrotask(() => transaction.oncomplete?.());
+        });
+        return request;
+      },
+      deleteDatabase: () => {
+        deleteDatabaseCalled = true;
+        throw new Error("destructive database deletion is not allowed for session invalidation");
+      },
+    } as unknown as IDBFactory;
+
+    try {
+      await invalidateLocalSessionContext("tenant-1");
+      expect(sessionRows.has("tenant-1")).toBe(false);
+      expect(stores.tenants.has("tenant-1")).toBe(true);
+      expect(stores.facturas.has("sale-1")).toBe(true);
+      expect(stores.sync_outbox.has("outbox-1")).toBe(true);
+      expect(stores.local_fiscal_outbox.has("fiscal-1")).toBe(true);
+      expect(deleteDatabaseCalled).toBe(false);
+    } finally {
+      globalThis.localStorage = originalStorage;
+      globalThis.indexedDB = originalIndexedDb;
+    }
+  });
+
+  it("permite sincronizar el día de pago como configuración segura", () => {
+    const entry = createSyncOutboxEntry({
+      tenantId: "tenant-1", tableName: "tenants", rowId: "tenant-1", op: "update",
+      payload: { payment_day_of_month: 31 }, deviceId: "dev1",
+    });
+    expect(resolveConflictForTable("tenants", entry, { id: "tenant-1" }).resolution).toBe("local_wins");
   });
 
   it("bloquea actualización fiscal si intentan retroceder una secuencia respecto al servidor", () => {
