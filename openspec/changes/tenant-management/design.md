@@ -84,7 +84,7 @@ which starts protected requests and realtime retry loops before denial is known.
 | `src/shared/lib/localFirst.ts` | Modify | Syncs `payment_day_of_month`; blocking writes a non-destructive suspension marker. |
 | `src/shared/hooks/useAuth.ts` | Modify | Owns tenant access state and Realtime lifecycle; reconciles block/unblock/reconnect transitions. |
 | `src/shared/lib/tenantAccessRealtimeOwner.ts` | Create | Centralized `tenant-access:<tenant-id>` channel owner with bounded reconciliation. |
-| `migrations/<timestamp>_tenant-access-realtime.sql` | Create | Reviewed channel, trigger, and least-privilege RLS source; not applied remotely. |
+| `migrations/<timestamp>_tenant-access-realtime.sql` | Create | Channel, trigger, and least-privilege RLS applied remotely. |
 
 ## Interfaces / Contracts
 

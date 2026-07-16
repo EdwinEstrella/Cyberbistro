@@ -1,5 +1,4 @@
--- Reviewed source only: secure, bidirectional tenant block/unblock observation.
--- Do not apply remotely from this workspace.
+-- Secure, bidirectional tenant block/unblock observation.
 
 INSERT INTO realtime.channels (pattern, description, enabled)
 SELECT 'tenant-access:%', 'Per-tenant active/blocked access events', true
@@ -10,15 +9,14 @@ WHERE NOT EXISTS (
 ALTER TABLE realtime.channels ENABLE ROW LEVEL SECURITY;
 ALTER TABLE realtime.messages ENABLE ROW LEVEL SECURITY;
 
--- Preserve existing application channels while restricting the new access channel.
 DROP POLICY IF EXISTS cloudix_tenant_access_channel_select ON realtime.channels;
 CREATE POLICY cloudix_tenant_access_channel_select
 ON realtime.channels
 FOR SELECT
 TO authenticated
 USING (
-  pattern <> 'tenant-access:%'
-  OR EXISTS (
+  pattern = 'tenant-access:%'
+  AND EXISTS (
     SELECT 1
     FROM public.tenant_users tu
     WHERE tu.tenant_id = NULLIF(split_part(realtime.channel_name(), ':', 2), '')::uuid
@@ -52,14 +50,9 @@ WITH CHECK (
   )
 );
 
--- Clients cannot publish or mutate access state. Existing application broadcasts
--- retain their previous behavior; database triggers publish the access event.
+-- Clients receive access events but cannot publish them. Database triggers use
+-- the privileged realtime.publish function and do not require an INSERT policy.
 DROP POLICY IF EXISTS cloudix_tenant_access_message_insert ON realtime.messages;
-CREATE POLICY cloudix_tenant_access_message_insert
-ON realtime.messages
-FOR INSERT
-TO authenticated
-WITH CHECK (channel_name NOT LIKE 'tenant-access:%');
 
 CREATE OR REPLACE FUNCTION public.cloudix_publish_tenant_access_change()
 RETURNS trigger
