@@ -8,7 +8,8 @@ const ownerDeleteSql = readFileSync("migrations/20260519114600_owner-delete-staf
 const superAdminUserDeleteSql = readFileSync("migrations/20260510121152_super-admin-rpcs.sql", "utf8");
 const repositorySchema = readFileSync("test/schema.sql", "utf8");
 const paymentsIndexMigration = readFileSync("migrations/20260715000000_add-foreign-key-and-rls-indexes.sql", "utf8");
-const accessRealtimeMigration = readFileSync("migrations/20260715123000_tenant-access-realtime.sql", "utf8");
+const accessRealtimeMigration = readFileSync("migrations/20260715000004_tenant-access-realtime.sql", "utf8");
+const paymentAlertMigration = readFileSync("migrations/20260715000005_add-payment-day-alert-config.sql", "utf8");
 const authoritativeMigration = readFileSync("migrations/20260715130000_tenant-access-authoritative-rules.sql", "utf8");
 
 describe("tenant-management migration", () => {
@@ -23,8 +24,12 @@ describe("tenant-management migration", () => {
     expect(migration).toContain("ALTER TABLE public.%I ADD CONSTRAINT");
     expect(paymentsIndexMigration).toContain("idx_payments_tenant_id ON public.payments (tenant_id)");
     expect(migration).toContain("ON DELETE CASCADE");
-    expect(migration).toContain("payment_day_of_month smallint");
-    expect(migration).toContain("BETWEEN 1 AND 31");
+  });
+
+  it("installs payment-day alert configuration independently", () => {
+    expect(paymentAlertMigration).toContain("payment_day_of_month smallint");
+    expect(paymentAlertMigration).toContain("BETWEEN 1 AND 31");
+    expect(paymentAlertMigration).toContain("payment_day_of_month IS NULL");
   });
 
   it("preflights orphan tenant rows and duplicate Auth identities", () => {
@@ -79,7 +84,9 @@ describe("tenant-management migration", () => {
     expect(accessRealtimeMigration).toContain("tu.activo IS TRUE");
     expect(accessRealtimeMigration).toContain("WHEN (OLD.activa IS DISTINCT FROM NEW.activa)");
     expect(accessRealtimeMigration).toContain("tenant_access_changed");
-    expect(accessRealtimeMigration).toContain("channel_name NOT LIKE 'tenant-access:%'");
+    expect(accessRealtimeMigration).toContain("DROP POLICY IF EXISTS cloudix_tenant_access_message_insert");
+    expect(accessRealtimeMigration).not.toContain("CREATE POLICY cloudix_tenant_access_message_insert");
+    expect(accessRealtimeMigration).not.toContain("pattern <> 'tenant-access:%'");
   });
 
   it("suspends only tenants and publishes user revocation without reactivating staff", () => {
