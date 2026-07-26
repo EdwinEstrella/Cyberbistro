@@ -7,6 +7,7 @@ on:
     paths:
       - scripts/apply-true-local-first.mjs
       - scripts/fix-true-local-first-script.mjs
+      - scripts/post-fix-generated-local-first.mjs
       - .github/workflows/apply-true-local-first.yml
   pull_request:
     branches:
@@ -37,6 +38,9 @@ jobs:
 
       - name: Apply migration
         run: node scripts/apply-true-local-first.mjs
+
+      - name: Correct generated TypeScript
+        run: node scripts/post-fix-generated-local-first.mjs
 
       - name: Install dependencies
         run: npm ci
