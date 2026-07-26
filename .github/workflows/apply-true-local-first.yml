@@ -8,6 +8,9 @@ on:
       - scripts/apply-true-local-first.mjs
       - scripts/fix-true-local-first-script.mjs
       - .github/workflows/apply-true-local-first.yml
+  pull_request:
+    branches:
+      - master
   workflow_dispatch:
 
 permissions:
