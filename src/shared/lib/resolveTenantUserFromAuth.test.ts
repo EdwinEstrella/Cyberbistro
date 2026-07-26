@@ -11,7 +11,8 @@ const mocks = vi.hoisted(() => {
   const select = vi.fn(() => chain);
   const from = vi.fn(() => ({ select }));
   const rpc = vi.fn();
-  return { maybeSingle, eq, ilike, is, from, rpc };
+  const state = { tenantCache: null as any };
+  return { maybeSingle, eq, ilike, is, from, rpc, state };
 });
 
 vi.mock("./insforge", () => ({
@@ -23,9 +24,14 @@ vi.mock("./insforge", () => ({
   },
 }));
 
+vi.mock("./tenantSessionCache", () => ({
+  readTenantSessionCache: () => mocks.state.tenantCache,
+}));
+
 describe("resolveTenantUserForSession", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.state.tenantCache = null;
     mocks.maybeSingle.mockResolvedValue({ data: null, error: null });
     mocks.rpc.mockResolvedValue({ data: null, error: null });
   });
@@ -95,5 +101,68 @@ describe("resolveTenantUserForSession", () => {
 
     await expect(resolveTenantAccessForSession({ id: "auth-blocked", email: "u@x.com" } as any))
       .resolves.toEqual({ status: "blocked", tenantId: "blocked-tenant" });
+  });
+
+  it("conserva la autorización local validada si falla el DNS al consultar el estado del negocio", async () => {
+    mocks.state.tenantCache = {
+      authUserId: "auth-offline",
+      tenant_id: "tenant-offline",
+      email: "offline@x.com",
+      rol: "admin",
+      nombre: "Offline",
+      plan: "profesional",
+    };
+    mocks.maybeSingle
+      .mockResolvedValueOnce({
+        data: {
+          tenant_id: "tenant-offline",
+          email: "offline@x.com",
+          rol: "admin",
+          nombre: "Offline",
+          tenants: { plan: "profesional" },
+        },
+        error: null,
+      })
+      .mockResolvedValueOnce({ data: null, error: new TypeError("Failed to fetch") });
+
+    await expect(
+      resolveTenantAccessForSession({ id: "auth-offline", email: "offline@x.com" } as any),
+    ).resolves.toEqual({
+      status: "active",
+      row: {
+        tenant_id: "tenant-offline",
+        email: "offline@x.com",
+        rol: "admin",
+        nombre: "Offline",
+        plan: "profesional",
+      },
+    });
+  });
+
+  it("no convierte una caída total de la nube en una cuenta sin negocio", async () => {
+    mocks.state.tenantCache = {
+      authUserId: "auth-dns",
+      tenant_id: "tenant-dns",
+      email: "dns@x.com",
+      rol: "cajera",
+      nombre: "Caja",
+      plan: "basico",
+    };
+    const dnsError = new TypeError("Failed to fetch");
+    mocks.maybeSingle.mockResolvedValue({ data: null, error: dnsError });
+    mocks.rpc.mockResolvedValue({ data: null, error: dnsError });
+
+    await expect(
+      resolveTenantAccessForSession({ id: "auth-dns", email: "dns@x.com" } as any),
+    ).resolves.toEqual({
+      status: "active",
+      row: {
+        tenant_id: "tenant-dns",
+        email: "dns@x.com",
+        rol: "cajera",
+        nombre: "Caja",
+        plan: "basico",
+      },
+    });
   });
 });
