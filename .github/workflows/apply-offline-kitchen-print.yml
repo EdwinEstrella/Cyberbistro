@@ -1,0 +1,32 @@
+name: Apply offline kitchen printer patch
+
+on:
+  push:
+    branches:
+      - agent/fix-offline-kitchen-printer
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/fix-offline-kitchen-printer
+          fetch-depth: 0
+
+      - name: Apply patch
+        run: node scripts/patch-offline-kitchen-print.mjs
+
+      - name: Commit generated changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/features/dashboard/components/Dashboard.tsx src/shared/lib/thermalPrint.ts src/shared/lib/thermal.test.ts scripts/patch-offline-kitchen-print.mjs .github/workflows/apply-offline-kitchen-print.yml
+          git commit -m "fix(printing): keep kitchen printer working offline"
+          git push origin HEAD:agent/fix-offline-kitchen-printer
