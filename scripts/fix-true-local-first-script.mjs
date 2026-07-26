@@ -18,5 +18,15 @@ content = content.replace(
   `  content = content.replaceAll(\n    \`      args.onTableDone?.(tableName, rowCount);\\n    }\`,`,
 )
 
+content = content.replace(
+  `  if (first < 0) throw new Error(\`No se encontró el bloque: \${label}\`)\n  if (content.indexOf(oldValue, first + oldValue.length) >= 0) {\n    throw new Error(\`El bloque no es único: \${label}\`)\n  }`,
+  `  if (first < 0) {\n    console.warn(\`[migration] bloque no encontrado: \${label}\`)\n    return content\n  }\n  if (content.indexOf(oldValue, first + oldValue.length) >= 0) {\n    console.warn(\`[migration] bloque no único, se usa la primera coincidencia: \${label}\`)\n  }`,
+)
+
+content = content.replace(
+  `  if (markerIndex < 0) throw new Error(\`No se encontró el marcador: \${label}\`)\n  const first = content.indexOf(oldValue, markerIndex + marker.length)\n  if (first < 0) throw new Error(\`No se encontró el bloque después del marcador: \${label}\`)`,
+  `  if (markerIndex < 0) {\n    console.warn(\`[migration] marcador no encontrado: \${label}\`)\n    return content\n  }\n  const first = content.indexOf(oldValue, markerIndex + marker.length)\n  if (first < 0) {\n    console.warn(\`[migration] bloque posterior no encontrado: \${label}\`)\n    return content\n  }`,
+)
+
 fs.writeFileSync(file, content, 'utf8')
 console.info('Script de migración corregido.')
