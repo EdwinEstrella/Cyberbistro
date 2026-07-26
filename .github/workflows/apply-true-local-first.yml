@@ -33,10 +33,22 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Detect existing implementation
+        id: state
+        shell: bash
+        run: |
+          if grep -q "export async function syncLanEdge" src/shared/lib/localFirst.ts; then
+            echo "implemented=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "implemented=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Correct migration script
+        if: steps.state.outputs.implemented != 'true'
         run: node scripts/fix-true-local-first-script.mjs
 
       - name: Apply migration
+        if: steps.state.outputs.implemented != 'true'
         run: node scripts/apply-true-local-first.mjs
 
       - name: Correct generated TypeScript and tests
