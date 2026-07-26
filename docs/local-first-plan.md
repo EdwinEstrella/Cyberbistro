@@ -186,22 +186,22 @@ Si se mantiene borrado fisico por compatibilidad, `sync_outbox` debe registrar e
 
 ## Autenticacion local
 
-InsForge autentica online. El dispositivo autoriza offline con sesion local y PIN.
+InsForge autentica el primer acceso online. Después, el dispositivo conserva una sesión local validada y puede continuar sin PIN cuando la nube no está disponible.
 
 Flujo:
 
 1. Login online con InsForge.
 2. Resolver `tenant_users` activo.
 3. Guardar sesion local del dispositivo.
-4. Permitir bloqueo/desbloqueo local con PIN.
+4. Reutilizar automáticamente la sesión local del dispositivo cuando la nube no responda.
 5. Al reconectar, validar que `tenant_users.activo` y `tenants.activa` sigan vigentes.
 
 Hay que separar dos acciones:
 
 | Accion | Efecto |
 |---|---|
-| Bloquear caja | Mantiene sesion local y permite PIN offline |
-| Cerrar sesion total | Borra sesion local y exige internet para volver |
+| Continuar sesión local | Mantiene la operación sin pedir PIN mientras el usuario no cierre sesión |
+| Cerrar sesión total | Borra la sesión local y exige internet para volver |
 
 No se debe depender de email/password guardado en texto o JSON local para operar offline.
 
@@ -241,8 +241,8 @@ Ejemplo:
 - [x] Crear bootstrap progresivo por `tenant_id` con fase inmediata y fase historica en background.
 - [x] Guardar cursores por tabla en `sync_state`.
 - [x] Envolver escrituras locales para registrar `sync_outbox`.
-- [ ] Separar bloqueo local de logout total.
-- [ ] Reemplazar recordar password por PIN/hash local.
+- [x] Mantener sesión local automática sin PIN cuando la nube no responde.
+- [x] Conservar cierre de sesión total como acción explícita del usuario.
 - [x] Definir reglas de conflicto para facturas, cierres y NCF antes de sincronizar deletes.
 - [x] Agregar pantalla de estado: bootstrap minimo, historial sincronizando, historial completo, online, offline, sincronizando, error.
 - [x] Validacion de licencia offline (ventana 6hs) y reevaluacion al reconectar.

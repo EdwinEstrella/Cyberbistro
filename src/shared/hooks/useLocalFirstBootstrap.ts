@@ -11,6 +11,7 @@ import {
   type LocalFirstStatus,
   ensureDefaultSucursal,
   assertCanWriteOffline,
+  syncLanEdge,
 } from "../lib/localFirst";
 import {
   isCloudAvailabilityFailure,
@@ -82,6 +83,12 @@ export function useLocalFirstBootstrap(tenantId: string | null, accessValidated 
     };
 
     const syncOnlineState = async (force = false) => {
+      if (!canContinue()) return;
+      try {
+        await syncLanEdge(validatedTenantId);
+      } catch (error) {
+        console.warn("No se pudo sincronizar por LAN todavía:", error);
+      }
       if (!canContinue()) return;
       const snapshot = await getLocalFirstStatusSnapshot(validatedTenantId);
       if (!canContinue()) return;
@@ -160,6 +167,11 @@ export function useLocalFirstBootstrap(tenantId: string | null, accessValidated 
     const intervalId = window.setInterval(() => {
       void syncOnlineState(false);
     }, 15000);
+    const lanIntervalId = window.setInterval(() => {
+      void syncLanEdge(validatedTenantId).catch((error) => {
+        console.warn("Sincronización LAN pendiente:", error);
+      });
+    }, 2000);
 
     const run = async () => {
       if (!navigator.onLine) {
@@ -280,6 +292,7 @@ export function useLocalFirstBootstrap(tenantId: string | null, accessValidated 
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
       window.clearInterval(intervalId);
+      window.clearInterval(lanIntervalId);
     };
   }, [tenantId, accessValidated]);
 
