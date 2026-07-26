@@ -1,6 +1,7 @@
 import { insforgeClient } from "./insforge";
 import { incrementTenantNcfSequence, resolveNcfForNewInvoice, type ResolvedNcfForInvoice } from "./invoiceNcf";
 import { isCloudAvailabilityFailure, isCloudAvailableForDesktop, isDesktopRuntime, recordCloudFailure, recordCloudSuccess } from "./cloudAvailability";
+import { commitLanEdgeCursor, getLanEdgeBaseUrl, publishLanOutboxEntry, publishLanSnapshotEntries, pullLanOutboxEntries } from "./lanEdgeClient";
 import { buildTenantNcfUpdatePayload, DEFAULT_NCF_B_CODE, getNcfSequenceColumnName, isNcfBCode, prepareNcfForFacturaInsert, normalizeNcfSequenceMap, type TenantNcfRow } from "./ncf";
 
 export const LOCAL_FIRST_MIRROR_TABLES = [
@@ -413,12 +414,15 @@ const FULL_REFRESH_ON_SYNC_TABLES = [
 export function isLocalFirstEnabled(): boolean {
   if (typeof window === "undefined") return false;
   if (Boolean((window as Window & { electronAPI?: unknown }).electronAPI)) return true;
-  return import.meta.env.VITE_ENABLE_WEB_LOCAL_FIRST === "true";
+  const edgeHosted =
+    (window.location.protocol === "http:" || window.location.protocol === "https:") &&
+    window.location.port === "47821";
+  return edgeHosted || import.meta.env.VITE_ENABLE_WEB_LOCAL_FIRST === "true";
 }
 
 export function resolveLocalWriteMode(args: { isDesktop: boolean; isOnline: boolean }): LocalWriteMode {
   void args.isOnline;
-  return args.isDesktop ? "desktop-local-first" : "web-server-first";
+  return args.isDesktop || isLocalFirstEnabled() ? "desktop-local-first" : "web-server-first";
 }
 
 export function isLocalFirstMirrorTable(table: string): table is LocalFirstMirrorTable {
@@ -545,7 +549,7 @@ export async function resolveNcfForNewInvoiceLocalFirst(
   tenantId: string,
   preferredType?: string | null
 ): Promise<ResolvedNcfForInvoice | null> {
-  if (isDesktopRuntime() && !(await isCloudAvailableForDesktop())) {
+  if (isLocalFirstEnabled()) {
     return reserveLocalNcfForNewInvoice(tenantId, preferredType);
   }
 
@@ -556,6 +560,62 @@ async function writeLocalOutboxEntry(tenantId: string, entry: SyncOutboxEntry): 
   const db = await openLocalFirstDbForSync(tenantId);
   try {
     await putOne(db, "sync_outbox", entry);
+  } finally {
+    db.close();
+  }
+}
+
+async function writeLocalMutationAtomically(
+  args: {
+    tenantId: string;
+    tableName: LocalFirstMirrorTable;
+    rowId: string;
+    op: SyncOutboxEntry["op"];
+    payload?: Record<string, unknown> | null;
+  },
+  entry: SyncOutboxEntry,
+): Promise<void> {
+  const db = await openLocalFirstDbForSync(args.tenantId);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction([args.tableName, "sync_outbox"], "readwrite");
+      const mirrorStore = tx.objectStore(args.tableName);
+      const outboxStore = tx.objectStore("sync_outbox");
+
+      if (args.op === "delete") {
+        mirrorStore.delete(args.rowId);
+      } else if (args.payload) {
+        if (args.op === "insert") {
+          mirrorStore.put(args.payload);
+        } else {
+          const getReq = mirrorStore.get(args.rowId);
+          getReq.onsuccess = () => {
+            const merged = buildLocalMirrorWriteResult({
+              op: args.op,
+              rowId: args.rowId,
+              existing: (getReq.result as Record<string, unknown> | undefined) ?? undefined,
+              payload: args.payload,
+            });
+            if (merged) mirrorStore.put(merged);
+          };
+          getReq.onerror = () => reject(getReq.error ?? new Error("No se pudo leer el mirror local."));
+        }
+      }
+
+      const addReq = outboxStore.add(entry);
+      addReq.onerror = (event) => {
+        if (addReq.error?.name === "ConstraintError") {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        reject(addReq.error ?? new Error("No se pudo registrar sync_outbox."));
+      };
+
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error("No se pudo confirmar la transacción local."));
+      tx.onabort = () => reject(tx.error ?? new Error("La transacción local fue cancelada."));
+    });
   } finally {
     db.close();
   }
@@ -732,10 +792,13 @@ export async function enqueueLocalWrite(args: {
     authUserId: args.authUserId,
     deviceId: args.deviceId,
   });
-  await writeLocalOutboxEntry(args.tenantId, entry);
+  // Mirror + outbox are committed in one IndexedDB transaction. A crash can no
+  // longer leave visible data without a sync event, or an event without its data.
+  await writeLocalMutationAtomically(args, entry);
 
-  // Apply change locally to mirror table so the UI can see it immediately offline
-  await applyLocalMirrorWrite(args);
+  void publishLanOutboxEntry(entry, true).catch((error) => {
+    console.warn("Cloudix LAN Edge no recibió el cambio todavía:", error);
+  });
 
   if (args.tableName === "facturas" && args.op === "insert") {
     void processInvoiceInventoryDeduction(args.tenantId, args.payload, args.authUserId, args.deviceId).catch((error) => {
@@ -1447,14 +1510,16 @@ export async function assertCanWriteOffline(
   }
   return {
     valid: false,
-    reason: "Licencia offline expirada o ausente. Requiere reconexión para revalidar.",
+    reason: "No existe una validación local activa para este restaurante o usuario.",
   };
 }
 
 export function isLicenseValidOffline(cache: LocalLicenseCache | null): boolean {
   if (!cache) return false;
-  if (!cache.tenant_activa || !cache.tenant_users_activo) return false;
-  return new Date(cache.window_valid_until) > new Date();
+  // The cloud is a synchronisation/administration service, not an operational
+  // dependency. Keep the last explicit active/inactive decision until a future
+  // successful revalidation replaces it.
+  return cache.tenant_activa && cache.tenant_users_activo;
 }
 
 export async function validateAndCacheLicense(
@@ -1481,7 +1546,13 @@ export async function validateAndCacheLicense(
       if (!tenantErr && tenant) break;
     }
 
-    if (tenantErr || !tenant?.activa) {
+    if (tenantErr) {
+      if (isCloudAvailabilityFailure(tenantErr)) {
+        return assertCanWriteOffline(tenantId);
+      }
+      return { valid: false, reason: "No se pudo validar el restaurante." };
+    }
+    if (!tenant?.activa) {
       await saveLicenseCache(tenantId, false, false);
       return { valid: false, reason: "Tenant bloqueado o inactivo." };
     }
@@ -1493,7 +1564,13 @@ export async function validateAndCacheLicense(
       .eq("activo", true)
       .limit(1));
 
-    if (tuErr || !tu || tu.length === 0) {
+    if (tuErr) {
+      if (isCloudAvailabilityFailure(tuErr)) {
+        return assertCanWriteOffline(tenantId);
+      }
+      return { valid: false, reason: "No se pudo validar el usuario." };
+    }
+    if (!tu || tu.length === 0) {
       await saveLicenseCache(tenantId, true, false);
       return { valid: false, reason: "Usuario sin acceso activo." };
     }
@@ -1576,6 +1653,69 @@ export async function readLocalOutbox<T = SyncOutboxEntry>(tenantId: string): Pr
   }
 }
 
+export async function syncLanEdge(tenantId: string): Promise<{ applied: number }> {
+  if (!getLanEdgeBaseUrl()) return { applied: 0 };
+  let applied = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    const pulled = await pullLanOutboxEntries(tenantId);
+    for (const event of pulled.events) {
+      const entry = event.entry;
+      if (!entry || entry.tenant_id !== tenantId || !isLocalFirstMirrorTable(entry.table_name)) continue;
+      const mutation = {
+        tenantId,
+        tableName: entry.table_name,
+        rowId: entry.row_id,
+        op: entry.op,
+        payload: entry.payload,
+      };
+      if (event.replicate_to_cloud) {
+        await writeLocalMutationAtomically(mutation, entry);
+      } else {
+        await applyLocalMirrorWrite(mutation);
+      }
+      applied += 1;
+    }
+    commitLanEdgeCursor(tenantId, pulled.nextCursor);
+    hasMore = pulled.hasMore;
+  }
+
+  return { applied };
+}
+
+export async function publishLocalMirrorTableToLan(
+  tenantId: string,
+  tableName: LocalFirstMirrorTable,
+): Promise<number> {
+  if (!getLanEdgeBaseUrl()) return 0;
+  const rows = await readLocalMirror<Record<string, unknown>>(tenantId, tableName);
+  const deviceId = await getDeviceId();
+  let published = 0;
+
+  for (let offset = 0; offset < rows.length; offset += 200) {
+    const batch = rows.slice(offset, offset + 200).map((row) => {
+      const rowId = String(row["id"] ?? row["clave"] ?? "");
+      const version = String(row["updated_at"] ?? row["created_at"] ?? "0");
+      const entry = createSyncOutboxEntry({
+        tenantId,
+        tableName,
+        rowId,
+        op: "upsert",
+        payload: row,
+        deviceId,
+      });
+      entry.id = `lan-snapshot:${tenantId}:${tableName}:${rowId}:${version}`;
+      entry.status = "synced";
+      return entry;
+    }).filter((entry) => entry.row_id.length > 0);
+    await publishLanSnapshotEntries(batch);
+    published += batch.length;
+  }
+
+  return published;
+}
+
 export async function hasPendingLocalWrites(
   tenantId: string,
   tableNames?: readonly LocalFirstMirrorTable[]
@@ -1592,10 +1732,12 @@ export async function shouldReadLocalFirst(
   tenantId: string,
   tableNames?: readonly LocalFirstMirrorTable[]
 ): Promise<boolean> {
-  if (!isLocalFirstEnabled()) return false;
-  if (typeof navigator !== "undefined" && !navigator.onLine) return true;
-  if (isDesktopRuntime() && !(await isCloudAvailableForDesktop())) return true;
-  return await hasPendingLocalWrites(tenantId, tableNames);
+  void tenantId;
+  void tableNames;
+  // The UI always reads the local mirror. Cloud and LAN workers update that mirror
+  // in the background; they never sit in the critical path of restaurant work.
+  if (isLocalFirstEnabled()) return true;
+  return false;
 }
 
 export async function writeLocalMirrorRow<T extends Record<string, unknown>>(
@@ -1891,6 +2033,7 @@ export async function bootstrapLocalFirstPhase(args: {
       const existing = await getSyncState(db, buildSyncStateKey(args.tenantId, tableName, args.phase));
       if (args.shouldContinue && !args.shouldContinue()) return;
       if (existing?.completed) {
+        void publishLocalMirrorTableToLan(args.tenantId, tableName).catch(() => {});
         args.onTableDone?.(tableName, existing.row_count);
         continue;
       }
@@ -1963,6 +2106,7 @@ export async function bootstrapLocalFirstPhase(args: {
         );
         if (args.shouldContinue && !args.shouldContinue()) return;
       }
+      void publishLocalMirrorTableToLan(args.tenantId, tableName).catch(() => {});
       args.onTableDone?.(tableName, rowCount);
     }
   } finally {

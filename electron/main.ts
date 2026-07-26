@@ -4,9 +4,11 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setupAutoUpdater } from './autoUpdater'
+import { startLanEdgeServer, type LanEdgeServerHandle } from './lanEdgeServer'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 let mainWindow: BrowserWindow | null = null
+let lanEdgeServer: LanEdgeServerHandle | null = null
 
 // Deshabilitar la aceleración de hardware para evitar bugs de focus/puntero en Windows
 // app.disableHardwareAcceleration()
@@ -317,7 +319,16 @@ if (gotTheLock) {
     }
   })
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
+    try {
+      lanEdgeServer = await startLanEdgeServer({
+        dataDir: app.getPath('userData'),
+        distDir: path.join(__dirname, '../dist'),
+      })
+    } catch (error) {
+      console.error('[Cloudix LAN Edge] no pudo iniciar:', error)
+    }
+
     createWindow()
 
     if (app.isPackaged) {
@@ -341,6 +352,11 @@ if (gotTheLock) {
         focusMainWindowForTextInput()
       }
     })
+  })
+
+  app.on('before-quit', () => {
+    void lanEdgeServer?.close()
+    lanEdgeServer = null
   })
 
   app.on('window-all-closed', () => {

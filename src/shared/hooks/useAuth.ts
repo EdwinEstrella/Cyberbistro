@@ -9,7 +9,7 @@ import {
   type TenantSessionRow,
 } from '../lib/tenantSessionCache';
 import { resolveTenantAccessForSession } from '../lib/resolveTenantUserFromAuth';
-import { getLocalDeviceSession, setLastTenantId, saveLocalDeviceSession, saveLicenseCache, loadLicenseCache, isLicenseValidOffline } from '../lib/localFirst';
+import { getLocalDeviceSession, setLastTenantId, saveLocalDeviceSession, saveLicenseCache, loadLicenseCache, isLicenseValidOffline, isLocalFirstEnabled } from '../lib/localFirst';
 import { isDesktopCloudUnavailable } from '../lib/cloudAvailability';
 import { AuthRefreshCoordinator, type AuthRefreshTrigger } from '../lib/authRefreshCoordinator';
 import { TenantAccessRealtimeOwner } from '../lib/tenantAccessRealtimeOwner';
@@ -144,7 +144,7 @@ async function reconcileTenantAccessShared(reason: 'realtime' | 'fallback' | 'fo
     });
     writeTenantSessionCache(user.id, resolution.row);
     ensureTenantAccessRealtime(resolution.row.tenant_id);
-    if (Boolean((window as any).electronAPI)) {
+    if (isLocalFirstEnabled()) {
       try {
         await saveLocalDeviceSession(resolution.row.tenant_id, user.id, user.email, resolution.row);
       } catch (error) {
@@ -364,8 +364,38 @@ async function loadUserDataShared(opts?: { silent?: boolean; force?: boolean }):
       let validatedOnlineSession = false;
       const accessRequestGeneration = tenantAccessGeneration;
       const storedToken = readRefreshToken();
+      const localFirstRuntime = isLocalFirstEnabled();
+      const cloudUnavailable = localFirstRuntime ? await isDesktopCloudUnavailable() : !navigator.onLine;
+      const canReachCloud = navigator.onLine && !cloudUnavailable;
 
-      if (navigator.onLine) {
+      const hydrateLocalFallback = async (): Promise<boolean> => {
+        if (!localFirstRuntime || hydratedFromLocalSession) return hydratedFromLocalSession;
+        const localSession = await getLocalDeviceSession();
+        if (!localSession) return false;
+
+        const licenseCache = await loadLicenseCache(localSession.tenant_id);
+        u = userFromLocalDeviceSession(localSession);
+        tenantAccessTenantId = localSession.tenant_id;
+        hydratedFromLocalSession = true;
+
+        if (licenseCache && !isLicenseValidOffline(licenseCache)) {
+          patchSharedState({
+            user: u,
+            tenantUser: null,
+            tenantAccessDeniedReason: 'blocked',
+            accessValidationState: 'denied',
+            loading: false,
+          });
+          logAuth('loadUserData:local-suspension-marker-kept-denied', { tenantId: localSession.tenant_id });
+          return true;
+        }
+
+        u = hydrateAuthStateFromLocalDeviceSession(localSession);
+        patchSharedState({ accessValidationState: 'validated' });
+        return true;
+      };
+
+      if (canReachCloud) {
         // Keep validated access mounted while refreshing the same tenant. Clearing it
         // here remounts protected routes and causes payment/realtime effects to fire
         // again even though the tenant did not change.
@@ -377,36 +407,13 @@ async function loadUserDataShared(opts?: { silent?: boolean; force?: boolean }):
         }
       }
 
-      // Never mount protected routes from the desktop snapshot while online:
-      // the backend must validate tenant access first, otherwise a blocked
-      // tenant can briefly remount and reconnect realtime on every focus.
-      if (Boolean((window as any).electronAPI) && !navigator.onLine) {
-        const localSession = await getLocalDeviceSession();
-        if (localSession) {
-          const licenseCache = await loadLicenseCache(localSession.tenant_id);
-          if (licenseCache && !isLicenseValidOffline(licenseCache)) {
-            u = userFromLocalDeviceSession(localSession);
-            tenantAccessTenantId = localSession.tenant_id;
-            patchSharedState({
-              user: u,
-              tenantUser: null,
-              tenantAccessDeniedReason: 'blocked',
-              accessValidationState: 'denied',
-              loading: false,
-            });
-            ensureTenantAccessRealtime(localSession.tenant_id, u?.id);
-            logAuth('loadUserData:offline-suspension-marker-kept-denied', { tenantId: localSession.tenant_id });
-          } else {
-            u = hydrateAuthStateFromLocalDeviceSession(localSession);
-          }
-          hydratedFromLocalSession = true;
-          if (!licenseCache || isLicenseValidOffline(licenseCache)) {
-            patchSharedState({ accessValidationState: 'validated' });
-          }
-        }
+      // Local-first means a validated local session remains usable whenever
+      // the cloud endpoint is unavailable, even if Windows still reports Wi-Fi.
+      if (!canReachCloud) {
+        await hydrateLocalFallback();
       }
 
-      if (storedToken && navigator.onLine) {
+      if (storedToken && canReachCloud) {
         try {
           insforgeClient.getHttpClient().setRefreshToken(storedToken);
         } catch {
@@ -462,8 +469,9 @@ async function loadUserDataShared(opts?: { silent?: boolean; force?: boolean }):
           }
         } else {
           logAuth('bootstrap refresh transient error', refreshError);
+          await hydrateLocalFallback();
         }
-      } else if (storedToken && !navigator.onLine) {
+      } else if (storedToken && !canReachCloud) {
         logAuth('bootstrap refresh:skipped-offline');
         // Still set the token on the client so it can be used if we come back online
         try {
@@ -480,7 +488,7 @@ async function loadUserDataShared(opts?: { silent?: boolean; force?: boolean }):
       if (!u) {
         logAuth('loadUserData:no-user-after-refresh', { hasStoredRefreshToken: Boolean(storedToken) });
 
-        if (!navigator.onLine) {
+        if (!canReachCloud) {
           logAuth('loadUserData:offline-no-user -> skipping auth retries');
           return;
         }
@@ -504,9 +512,12 @@ async function loadUserDataShared(opts?: { silent?: boolean; force?: boolean }):
         }
 
         if (!u) {
-          return;
+          const restored = await hydrateLocalFallback();
+          if (!restored) return;
         }
       }
+
+      if (!u) return;
 
       if (hydratedFromLocalSession && !validatedOnlineSession) {
         logAuth('loadUserData:local-session-kept-without-online-validation');
@@ -522,7 +533,7 @@ async function loadUserDataShared(opts?: { silent?: boolean; force?: boolean }):
         logAuth('tenant cache hit', { tenantId: cached.tenant_id, rol: cached.rol });
       }
 
-      if (navigator.onLine) {
+      if (canReachCloud) {
         const access = await resolveTenantAccessForSession(u);
         if (accessRequestGeneration !== tenantAccessGeneration) return;
         if (access.status === 'active') {
@@ -540,7 +551,7 @@ async function loadUserDataShared(opts?: { silent?: boolean; force?: boolean }):
           });
 
           // Update local device session in IndexedDB for desktop offline support
-          if (Boolean((window as any).electronAPI)) {
+          if (isLocalFirstEnabled()) {
             try {
               await saveLocalDeviceSession(access.row.tenant_id, u.id, u.email, access.row);
               logAuth('loadUserData:updated-local-session-with-fresh-plan');
@@ -595,6 +606,10 @@ async function doRefreshShared(source: AuthRefreshTrigger = 'manual'): Promise<v
 
   if (!navigator.onLine) {
     logAuth(`refresh skipped [${source}] (offline)`);
+    return;
+  }
+  if (await isDesktopCloudUnavailable()) {
+    logAuth(`refresh skipped [${source}] (cloud unavailable; local session kept)`);
     return;
   }
 
@@ -785,7 +800,7 @@ export function useAuth() {
     
     // Clear localFirst session BEFORE doing network/storage clearing
     const currentTenantId = sharedState.tenantUser?.tenant_id;
-    if (currentTenantId && Boolean((window as any).electronAPI)) {
+    if (currentTenantId && isLocalFirstEnabled()) {
       try {
         const m = await import('../lib/localFirst');
         await m.clearLocalDeviceSession(currentTenantId);

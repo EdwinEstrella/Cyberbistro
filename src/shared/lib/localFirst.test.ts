@@ -161,7 +161,7 @@ describe("localFirst", () => {
     await expect(shouldReadLocalFirst("tenant-1", ["cierres_operativos"])).resolves.toBe(false);
   });
 
-  it("valida licencia offline con ventana de 6 horas", () => {
+  it("mantiene la última autorización activa durante una caída de nube", () => {
     const validCache: LocalLicenseCache = {
       tenant_id: "tenant-1",
       tenant_activa: true,
@@ -175,7 +175,7 @@ describe("localFirst", () => {
       ...validCache,
       window_valid_until: new Date(Date.now() - 1000).toISOString(),
     };
-    expect(isLicenseValidOffline(expiredCache)).toBe(false);
+    expect(isLicenseValidOffline(expiredCache)).toBe(true);
 
     expect(isLicenseValidOffline(null)).toBe(false);
 
@@ -720,7 +720,7 @@ describe("localFirst", () => {
     await expect(assertCanWriteOffline("tenant-1", validCache)).resolves.toEqual({ valid: true });
   });
 
-  it("rechaza write offline desktop con licencia expirada", async () => {
+  it("permite write offline con autorización activa aunque la fecha cache haya pasado", async () => {
     const expiredCache: LocalLicenseCache = {
       tenant_id: "tenant-1",
       tenant_activa: true,
@@ -728,9 +728,7 @@ describe("localFirst", () => {
       validated_at: new Date().toISOString(),
       window_valid_until: new Date(Date.now() - 1000).toISOString(),
     };
-    await expect(assertCanWriteOffline("tenant-1", expiredCache)).resolves.toMatchObject({
-      valid: false,
-    });
+    await expect(assertCanWriteOffline("tenant-1", expiredCache)).resolves.toEqual({ valid: true });
   });
 
   it("aplica upsert al mirror local fusionando fila existente", () => {

@@ -23,7 +23,7 @@ import { useAppUpdate } from "../../features/updates/AppUpdateContext";
 import { LocalFirstStatusBadge } from "../../shared/components/LocalFirstStatusBadge";
 import { useLocalFirstBootstrap } from "../../shared/hooks/useLocalFirstBootstrap";
 import { getPaymentAlert, getPaymentAlertStorageKey } from "../../shared/lib/paymentDate";
-import { getLocalTenantPaymentDay } from "../../shared/lib/localFirst";
+import { getLocalTenantPaymentDay, readLocalMirror, shouldReadLocalFirst } from "../../shared/lib/localFirst";
 import {
   isMissingPaymentDayColumnError,
   isPaymentDayUnavailable,
@@ -573,17 +573,24 @@ function AppLayoutContent() {
       return;
     }
     let cancelled = false;
-    insforgeClient.database
-      .from("cocina_estado")
-      .select("activa")
-      .eq("tenant_id", tenantId)
-      .limit(1)
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        if (!error && data?.[0]) {
-          setCocinaActiva(data[0].activa);
+    void (async () => {
+      try {
+        const useLocal = await shouldReadLocalFirst(tenantId, ["cocina_estado"]);
+        if (useLocal) {
+          const rows = await readLocalMirror<{ activa?: boolean }>(tenantId, "cocina_estado");
+          if (!cancelled && rows[0]) setCocinaActiva(rows[0].activa !== false);
+          return;
         }
-      });
+        const { data, error } = await insforgeClient.database
+          .from("cocina_estado")
+          .select("activa")
+          .eq("tenant_id", tenantId)
+          .limit(1);
+        if (!cancelled && !error && data?.[0]) setCocinaActiva(data[0].activa);
+      } catch (error) {
+        console.warn("No se pudo leer el estado de cocina:", error);
+      }
+    })();
     return () => {
       cancelled = true;
     };

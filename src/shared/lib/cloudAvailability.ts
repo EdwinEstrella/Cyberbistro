@@ -39,11 +39,19 @@ export function isDesktopRuntime(): boolean {
   return Boolean((window as Window & { electronAPI?: unknown }).electronAPI);
 }
 
+export function isOfflineCapableRuntime(): boolean {
+  if (typeof window === "undefined") return false;
+  const edgeHosted =
+    (window.location.protocol === "http:" || window.location.protocol === "https:") &&
+    window.location.port === "47821";
+  return isDesktopRuntime() || edgeHosted || import.meta.env.VITE_ENABLE_WEB_LOCAL_FIRST === "true";
+}
+
 export function getCloudAvailabilitySnapshot(): CloudAvailabilitySnapshot {
   const internetOnline = typeof navigator === "undefined" ? true : navigator.onLine;
   return {
     internetOnline,
-    cloudAvailable: !isDesktopRuntime() || (internetOnline && circuitState === "closed"),
+    cloudAvailable: !isOfflineCapableRuntime() || (internetOnline && circuitState === "closed"),
     circuitState,
     failures,
     lastOkAt,
@@ -53,7 +61,7 @@ export function getCloudAvailabilitySnapshot(): CloudAvailabilitySnapshot {
 }
 
 export function recordCloudSuccess(now = Date.now()): void {
-  if (!isDesktopRuntime()) return;
+  if (!isOfflineCapableRuntime()) return;
   circuitState = "closed";
   failures = 0;
   lastOkAt = now;
@@ -61,7 +69,7 @@ export function recordCloudSuccess(now = Date.now()): void {
 }
 
 export function recordCloudFailure(now = Date.now()): void {
-  if (!isDesktopRuntime()) return;
+  if (!isOfflineCapableRuntime()) return;
   failures += 1;
   circuitState = "open";
   lastFailAt = now;
@@ -156,7 +164,7 @@ async function runCloudProbe(): Promise<boolean> {
 }
 
 export async function probeCloudAvailability(force = false): Promise<boolean> {
-  if (!isDesktopRuntime()) return true;
+  if (!isOfflineCapableRuntime()) return true;
   if (typeof navigator !== "undefined" && !navigator.onLine) {
     circuitState = "open";
     nextProbeAt = Date.now();
@@ -184,5 +192,5 @@ export async function isCloudAvailableForDesktop(): Promise<boolean> {
 }
 
 export async function isDesktopCloudUnavailable(): Promise<boolean> {
-  return isDesktopRuntime() && !(await probeCloudAvailability(false));
+  return isOfflineCapableRuntime() && !(await probeCloudAvailability(false));
 }
