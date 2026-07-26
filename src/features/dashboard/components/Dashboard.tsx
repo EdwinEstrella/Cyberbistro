@@ -862,54 +862,73 @@ export function Dashboard() {
           tenantRow = localTenants.find((t) => t.id === tid);
         }
 
-        if (tenantRow) {
-          const paperWidthMm = getThermalPrintSettings().paperWidthMm;
-          const tr = tenantRow as {
-            nombre_negocio: string | null;
-            rnc: string | null;
-            direccion: string | null;
-            telefono: string | null;
-            logo_url: string | null;
-            moneda?: string | null;
-            logo_size_px?: number;
-            logo_offset_x?: number;
-            logo_offset_y?: number;
-          };
-          const comandaHtml = buildComandaReceiptHtml(
-            {
-              nombre_negocio: tr.nombre_negocio,
-              rnc: tr.rnc,
-              direccion: tr.direccion,
-              telefono: tr.telefono,
-              logo_url: tr.logo_url,
-              moneda: tr.moneda ?? null,
-              logo_size_px: tr.logo_size_px,
-              logo_offset_x: tr.logo_offset_x,
-              logo_offset_y: tr.logo_offset_y,
-            },
-              {
-                id: data.id,
-                numero_comanda: (data as { numero_comanda?: number }).numero_comanda,
-                mesa_numero: data.mesa_numero,
-                items:
-                  ((data as any).items as Array<{
-                    nombre: string;
-                    cantidad: number;
-                    precio?: number;
-                    categoria?: string;
-                    notas?: string;
-                  }>) || [],
-                notas: (data as any).notas || null,
-                created_at: data.created_at,
-              } as any,
-            paperWidthMm
+        if (!tenantRow) {
+          console.warn(
+            "Impresión comanda: datos del negocio no disponibles offline; usando encabezado mínimo."
           );
-          const printSettings = getThermalPrintSettings();
-          if (printSettings.printComandas !== false) {
-            const printRes = await printThermalHtml(comandaHtml, { printType: "kitchen" });
-            if (!printRes.ok && printRes.error) {
-              console.warn("Impresión comanda:", printRes.error);
-            }
+        }
+
+        const paperWidthMm = getThermalPrintSettings().paperWidthMm;
+        const tr = (tenantRow ?? {
+          nombre_negocio: "Comanda de cocina",
+          rnc: null,
+          direccion: null,
+          telefono: null,
+          logo_url: null,
+          moneda: "DOP",
+        }) as {
+          nombre_negocio: string | null;
+          rnc: string | null;
+          direccion: string | null;
+          telefono: string | null;
+          logo_url: string | null;
+          moneda?: string | null;
+          logo_size_px?: number;
+          logo_offset_x?: number;
+          logo_offset_y?: number;
+        };
+        const comandaHtml = buildComandaReceiptHtml(
+          {
+            nombre_negocio: tr.nombre_negocio,
+            rnc: tr.rnc,
+            direccion: tr.direccion,
+            telefono: tr.telefono,
+            logo_url: tr.logo_url,
+            moneda: tr.moneda ?? null,
+            logo_size_px: tr.logo_size_px,
+            logo_offset_x: tr.logo_offset_x,
+            logo_offset_y: tr.logo_offset_y,
+          },
+          {
+            id: data.id,
+            numero_comanda: (data as { numero_comanda?: number }).numero_comanda,
+            mesa_numero: data.mesa_numero,
+            items:
+              ((data as any).items as Array<{
+                nombre: string;
+                cantidad: number;
+                precio?: number;
+                categoria?: string;
+                notas?: string;
+              }>) || [],
+            notas: (data as any).notas || null,
+            created_at: data.created_at,
+          } as any,
+          paperWidthMm
+        );
+        const printSettings = getThermalPrintSettings();
+        if (printSettings.printComandas !== false) {
+          const printRes = await printThermalHtml(comandaHtml, { printType: "kitchen" });
+          if (!printRes.ok) {
+            const printError = printRes.error || "Windows no confirmó la impresión.";
+            console.warn("Impresión comanda:", printError);
+            alert(
+              `La comanda fue guardada correctamente, pero no pudo imprimirse en la impresora de cocina.
+
+${printError}
+
+Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
+            );
           }
         }
       }

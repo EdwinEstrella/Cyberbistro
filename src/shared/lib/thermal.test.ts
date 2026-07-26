@@ -18,6 +18,11 @@ describe("Thermal Printer Settings & Routing", () => {
     global.window = {
       electronAPI: {
         printThermal: vi.fn().mockResolvedValue({ ok: true }),
+        listPrinters: vi.fn().mockResolvedValue([
+          { name: "GenPrinter", displayName: "GenPrinter", description: "", isDefault: true },
+          { name: "KitchPrinter", displayName: "KitchPrinter", description: "", isDefault: false },
+          { name: "SalesPrinter", displayName: "SalesPrinter", description: "", isDefault: false },
+        ]),
         minimize: vi.fn(),
         maximize: vi.fn(),
         close: vi.fn(),
@@ -87,5 +92,22 @@ describe("Thermal Printer Settings & Routing", () => {
     expect((global.window as any).electronAPI.printThermal).toHaveBeenCalledWith(
       expect.objectContaining({ deviceName: "SalesPrinter" })
     );
+  });
+
+  it("should explain when the configured kitchen printer is missing in Windows", async () => {
+    saveThermalPrintSettings({
+      paperWidthMm: 80,
+      printerName: "GenPrinter",
+      kitchenPrinterName: "MissingKitchenPrinter",
+      salesPrinterName: "SalesPrinter",
+      printComandas: true
+    });
+
+    const result = await printThermalHtml("test", { printType: "kitchen" });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("MissingKitchenPrinter");
+    expect(result.error).toContain("no está disponible en Windows");
+    expect((global.window as any).electronAPI.printThermal).not.toHaveBeenCalled();
   });
 });
