@@ -39,7 +39,7 @@ jobs:
       - name: Apply migration
         run: node scripts/apply-true-local-first.mjs
 
-      - name: Correct generated TypeScript
+      - name: Correct generated TypeScript and tests
         run: node scripts/post-fix-generated-local-first.mjs
 
       - name: Install dependencies
@@ -68,6 +68,7 @@ jobs:
             electron/main.ts
             src/shared/lib/cloudAvailability.ts
             src/shared/lib/localFirst.ts
+            src/shared/lib/localFirst.test.ts
             src/shared/hooks/useAuth.ts
             src/shared/hooks/useLocalFirstBootstrap.ts
             src/app/components/AppLayout.tsx
@@ -94,10 +95,11 @@ jobs:
         run: |
           git config user.name "cloudix-local-first-bot"
           git config user.email "cloudix-local-first-bot@users.noreply.github.com"
-          git add electron/main.ts src/shared/lib/cloudAvailability.ts src/shared/lib/localFirst.ts src/shared/hooks/useAuth.ts src/shared/hooks/useLocalFirstBootstrap.ts src/app/components/AppLayout.tsx docs/local-first-plan.md
+          git add electron/main.ts src/shared/lib/cloudAvailability.ts src/shared/lib/localFirst.ts src/shared/lib/localFirst.test.ts src/shared/hooks/useAuth.ts src/shared/hooks/useLocalFirstBootstrap.ts src/app/components/AppLayout.tsx docs/local-first-plan.md
           if git diff --cached --quiet; then
             echo "No generated changes to commit."
           else
-            git commit -m "make Cloudix truly local-first with LAN replication"
+            git commit -m "validate durable true local-first operation"
+            git pull --rebase origin agent/true-local-first-lan-edge
             git push origin HEAD:agent/true-local-first-lan-edge
           fi
