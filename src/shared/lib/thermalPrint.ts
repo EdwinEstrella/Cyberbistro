@@ -81,6 +81,26 @@ export async function printThermalHtml(
 
   const shouldBeSilent = options?.silent ?? Boolean(targetPrinter);
 
+  // La configuración guarda el nombre exacto de Windows. Antes de imprimir en
+  // silencio verificamos que el dispositivo siga instalado y disponible para
+  // evitar que un fallo de la segunda impresora pase inadvertido.
+  if (api?.printThermal && targetPrinter && api.listPrinters) {
+    try {
+      const installedPrinters = await api.listPrinters();
+      const targetExists = installedPrinters.some((printer) => printer.name === targetPrinter);
+      if (!targetExists) {
+        return {
+          ok: false,
+          error: `La impresora "${targetPrinter}" no está disponible en Windows. Volvé a seleccionarla en Cloudix.`,
+        };
+      }
+    } catch (error) {
+      // Si Windows no permite enumerar impresoras, mantenemos el intento real de
+      // impresión: la enumeración es diagnóstica y no debe bloquear el ticket.
+      console.warn("thermalPrint: no se pudo validar la impresora configurada", error);
+    }
+  }
+
   if (api?.printThermal) {
     try {
       const res = await api.printThermal({
