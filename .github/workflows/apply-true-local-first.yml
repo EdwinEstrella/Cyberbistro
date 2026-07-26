@@ -59,6 +59,20 @@ jobs:
           path: typecheck.log
           if-no-files-found: ignore
 
+      - name: Upload generated source diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: true-local-first-generated-source
+          path: |
+            electron/main.ts
+            src/shared/lib/cloudAvailability.ts
+            src/shared/lib/localFirst.ts
+            src/shared/hooks/useAuth.ts
+            src/shared/hooks/useLocalFirstBootstrap.ts
+            src/app/components/AppLayout.tsx
+            docs/local-first-plan.md
+
       - name: Test
         run: npm test
 
