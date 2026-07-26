@@ -1,0 +1,60 @@
+name: Apply true local-first migration
+
+on:
+  push:
+    branches:
+      - agent/true-local-first-lan-edge
+    paths:
+      - scripts/apply-true-local-first.mjs
+      - scripts/fix-true-local-first-script.mjs
+      - .github/workflows/apply-true-local-first.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/true-local-first-lan-edge
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Correct migration script
+        run: node scripts/fix-true-local-first-script.mjs
+
+      - name: Apply migration
+        run: node scripts/apply-true-local-first.mjs
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit generated implementation
+        run: |
+          git config user.name "cloudix-local-first-bot"
+          git config user.email "cloudix-local-first-bot@users.noreply.github.com"
+          git add electron/main.ts src/shared/lib/cloudAvailability.ts src/shared/lib/localFirst.ts src/shared/hooks/useAuth.ts src/shared/hooks/useLocalFirstBootstrap.ts src/app/components/AppLayout.tsx docs/local-first-plan.md
+          if git diff --cached --quiet; then
+            echo "No generated changes to commit."
+          else
+            git commit -m "make Cloudix truly local-first with LAN replication"
+            git push origin HEAD:agent/true-local-first-lan-edge
+          fi
