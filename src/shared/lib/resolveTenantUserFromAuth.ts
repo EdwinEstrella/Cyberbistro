@@ -1,6 +1,7 @@
 import type { UserSchema } from '@insforge/sdk';
 import { insforgeClient } from './insforge';
-import type { TenantSessionRow } from './tenantSessionCache';
+import { isCloudAvailabilityFailure, recordCloudFailure } from './cloudAvailability';
+import { readTenantSessionCache, type TenantSessionRow } from './tenantSessionCache';
 
 type TenantUserAccessRow = TenantSessionRow & { activo: boolean | null };
 type TenantActiveRow = { activa: boolean | null };
@@ -19,6 +20,43 @@ import {
   SUPER_ADMIN_ROLE,
   SUPER_ADMIN_TENANT_ID,
 } from './superAdmin';
+
+function cachedTenantAccessForUser(
+  user: UserSchema,
+  expectedTenantId?: string,
+): TenantAccessResolution | null {
+  const cached = readTenantSessionCache();
+  if (!cached || cached.authUserId !== user.id) return null;
+  if (expectedTenantId && cached.tenant_id !== expectedTenantId) return null;
+
+  return {
+    status: 'active',
+    row: {
+      tenant_id: cached.tenant_id,
+      email: cached.email,
+      rol: cached.rol,
+      nombre: cached.nombre,
+      plan: cached.plan,
+    },
+  };
+}
+
+function preserveCachedAccessDuringCloudFailure(
+  user: UserSchema,
+  error: unknown,
+  expectedTenantId?: string,
+): TenantAccessResolution | null {
+  if (!isCloudAvailabilityFailure(error)) return null;
+  recordCloudFailure();
+  const cached = cachedTenantAccessForUser(user, expectedTenantId);
+  if (cached) {
+    console.warn(
+      'resolveTenantUser: nube no disponible; se conserva la última autorización local validada',
+      error,
+    );
+  }
+  return cached;
+}
 
 async function fetchTenantUserByAuthId(authUserId: string) {
   return insforgeClient.database
@@ -73,12 +111,39 @@ async function fetchTenantActiveState(tenantId: string) {
     .maybeSingle();
 }
 
-async function resolveActiveTenantUserRow(rawRow: any): Promise<TenantAccessResolution> {
+async function resolveActiveTenantUserRow(
+  rawRow: any,
+  user: UserSchema,
+): Promise<TenantAccessResolution> {
   const tenantId = rawRow?.tenant_id;
   if (typeof tenantId !== 'string' || !tenantId) return { status: 'unlinked' };
-  const { data: tenantState } = await withRetry('tenants estado activo para miembro activo', () =>
-    fetchTenantActiveState(tenantId)
+  const { data: tenantState, error: tenantStateError } = await withRetry(
+    'tenants estado activo para miembro activo',
+    () => fetchTenantActiveState(tenantId),
   );
+
+  if (tenantStateError) {
+    const cached = preserveCachedAccessDuringCloudFailure(user, tenantStateError, tenantId);
+    if (cached) return cached;
+
+    // La membresía activa ya fue resuelta de forma concluyente. Un fallo aislado
+    // consultando el estado del tenant no debe convertirse en un bloqueo falso.
+    console.warn(
+      'resolveTenantUser: no se pudo revalidar el estado del negocio; se conserva la membresía activa',
+      tenantStateError,
+    );
+    return {
+      status: 'active',
+      row: {
+        tenant_id: tenantId,
+        email: rawRow.email,
+        rol: rawRow.rol,
+        nombre: rawRow.nombre,
+        plan: rawRow.tenants?.plan ?? rawRow.plan ?? 'basico',
+      },
+    };
+  }
+
   if ((tenantState as TenantActiveRow | null)?.activa !== true) {
     return { status: 'blocked', tenantId };
   }
@@ -121,6 +186,10 @@ async function withRetry<T>(
       return { data: null, error: null };
     }
     lastError = error;
+
+    // DNS, timeout y servidor caído no mejoran repitiendo cinco consultas
+    // consecutivas. El circuit breaker se encargará de reintentar después.
+    if (isCloudAvailabilityFailure(error)) break;
   }
   console.warn(`resolveTenantUser: ${label} no respondió tras reintentos`, lastError);
   return { data: null, error: lastError };
@@ -147,41 +216,95 @@ export async function resolveTenantAccessForSession(user: UserSchema): Promise<T
     };
   }
 
-  const { data: byAuth } = await withRetry('tenant_users activo por auth_user_id', () =>
-    fetchTenantUserByAuthId(user.id)
+  let cloudFailure: unknown = null;
+  const rememberCloudFailure = (error: unknown) => {
+    if (error && isCloudAvailabilityFailure(error)) cloudFailure = error;
+  };
+
+  const { data: byAuth, error: byAuthError } = await withRetry(
+    'tenant_users activo por auth_user_id',
+    () => fetchTenantUserByAuthId(user.id),
   );
+  rememberCloudFailure(byAuthError);
   if (byAuth) {
-    return resolveActiveTenantUserRow(byAuth);
+    return resolveActiveTenantUserRow(byAuth, user);
   }
 
   const email = user.email;
   if (email) {
-    const { data: byEmail } = await withRetry('tenant_users activo por email', () =>
-      fetchTenantUserBySessionEmail(email)
+    const { data: byEmail, error: byEmailError } = await withRetry(
+      'tenant_users activo por email',
+      () => fetchTenantUserBySessionEmail(email),
     );
+    rememberCloudFailure(byEmailError);
     if (byEmail) {
-      return resolveActiveTenantUserRow(byEmail);
+      return resolveActiveTenantUserRow(byEmail, user);
     }
   }
 
-  const { data: byRpc } = await withRetry('tenant_users activo por rpc', fetchTenantUserByRpc);
+  const { data: byRpc, error: byRpcError } = await withRetry(
+    'tenant_users activo por rpc',
+    fetchTenantUserByRpc,
+  );
+  rememberCloudFailure(byRpcError);
   if (byRpc) {
-    return resolveActiveTenantUserRow(byRpc);
+    return resolveActiveTenantUserRow(byRpc, user);
   }
 
-  const { data: anyByAuth } = await withRetry('tenant_users cualquier estado por auth_user_id', () =>
-    fetchAnyTenantUserByAuthId(user.id)
+  const { data: anyByAuth, error: anyByAuthError } = await withRetry(
+    'tenant_users cualquier estado por auth_user_id',
+    () => fetchAnyTenantUserByAuthId(user.id),
   );
-  const inactiveRow = (anyByAuth || (email
-    ? (await withRetry('tenant_users cualquier estado por email', () => fetchAnyTenantUserBySessionEmail(email))).data
-    : null)) as TenantUserAccessRow | null;
+  rememberCloudFailure(anyByAuthError);
 
-  if (!inactiveRow) return { status: 'unlinked' };
+  let anyByEmail: TenantUserAccessRow | null = null;
+  if (!anyByAuth && email) {
+    const anyByEmailResult = await withRetry(
+      'tenant_users cualquier estado por email',
+      () => fetchAnyTenantUserBySessionEmail(email),
+    );
+    anyByEmail = anyByEmailResult.data;
+    rememberCloudFailure(anyByEmailResult.error);
+  }
+
+  const inactiveRow = (anyByAuth || anyByEmail) as TenantUserAccessRow | null;
+
+  if (!inactiveRow) {
+    if (cloudFailure) {
+      const cached = preserveCachedAccessDuringCloudFailure(user, cloudFailure);
+      if (cached) return cached;
+    }
+    return { status: 'unlinked' };
+  }
   if (inactiveRow.activo === false) return { status: 'blocked', tenantId: inactiveRow.tenant_id };
 
-  const { data: tenantState } = await withRetry('tenants estado activo', () =>
-    fetchTenantActiveState(inactiveRow.tenant_id)
+  const { data: tenantState, error: tenantStateError } = await withRetry(
+    'tenants estado activo',
+    () => fetchTenantActiveState(inactiveRow.tenant_id),
   );
+  if (tenantStateError) {
+    const cached = preserveCachedAccessDuringCloudFailure(
+      user,
+      tenantStateError,
+      inactiveRow.tenant_id,
+    );
+    if (cached) return cached;
+
+    console.warn(
+      'resolveTenantUser: no se pudo validar el tenant; se conserva la membresía activa encontrada',
+      tenantStateError,
+    );
+    return {
+      status: 'active',
+      row: {
+        tenant_id: inactiveRow.tenant_id,
+        email: inactiveRow.email,
+        rol: inactiveRow.rol,
+        nombre: inactiveRow.nombre,
+        plan: inactiveRow.plan ?? 'basico',
+      },
+    };
+  }
   if ((tenantState as TenantActiveRow | null)?.activa !== true) {
     return { status: 'blocked', tenantId: inactiveRow.tenant_id };
   }
