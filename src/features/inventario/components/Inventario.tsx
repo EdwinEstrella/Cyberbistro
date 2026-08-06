@@ -218,6 +218,11 @@ export function Inventario() {
     }, 0);
   }, [activeRecipes, insumosMap]);
 
+  const insumosBajoMinimo = useMemo(
+    () => insumos.filter((insumo) => insumo.stock_actual <= insumo.stock_minimo),
+    [insumos]
+  );
+
 
 
   async function crearMovimiento(e: FormEvent) {
@@ -489,7 +494,10 @@ export function Inventario() {
       <div className="flex flex-wrap justify-between items-center gap-4">
         <div className="flex flex-col gap-1.5">
           <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[24px] uppercase tracking-[0.5px] flex items-center gap-2">
-            Modulo de Inventario <Layers className="size-[20px] text-[#ff906d]" />
+            Inventario <Layers className="size-[20px] text-[#ff906d]" />
+          </span>
+          <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">
+            Comprá, controlá existencias y definí qué se descuenta en cada venta.
           </span>
         </div>
         <button
@@ -512,7 +520,7 @@ export function Inventario() {
           }`}
         >
           <Layers className="size-[15px]" />
-          Maestro de Insumos
+          Mi inventario
         </button>
         <button
           onClick={() => setActiveTab('recetas')}
@@ -523,7 +531,7 @@ export function Inventario() {
           }`}
         >
           <ClipboardList className="size-[15px]" />
-          Fórmulas de Recetas
+          Descuento por venta
         </button>
         <button
           onClick={() => setActiveTab('movimientos')}
@@ -534,7 +542,7 @@ export function Inventario() {
           }`}
         >
           <ArrowUpDown className="size-[15px]" />
-          Movimientos / Ajustes
+          Ajustes y pérdidas
         </button>
         <button
           onClick={() => setActiveTab('cierre')}
@@ -545,7 +553,7 @@ export function Inventario() {
           }`}
         >
           <Flame className="size-[15px]" />
-          Cierre de Cocina / Aceite
+          Uso en cocina
         </button>
       </div>
 
@@ -568,25 +576,59 @@ export function Inventario() {
       ) : (
         <div className="flex-1 flex flex-col min-h-0">
           {/* TAB 1: Maestro Insumos */}
-          {activeTab === 'insumos' && (
-            <div className="flex flex-col gap-4">
-              <div className="flex justify-between items-center">
-                <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[15px] uppercase tracking-[0.5px]">
-                  Listado de Materias Primas ({insumos.length})
+           {activeTab === 'insumos' && (
+             <div className="flex flex-col gap-4">
+               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                 <button
+                   type="button"
+                   onClick={() => navigate('/compras')}
+                   className="text-left rounded-[14px] border border-[rgba(89,238,80,0.24)] bg-[rgba(89,238,80,0.06)] p-4 cursor-pointer transition-colors hover:bg-[rgba(89,238,80,0.1)]"
+                 >
+                   <span className="block font-['Space_Grotesk',sans-serif] font-bold text-[#59ee50] text-[13px]">Registrar una compra</span>
+                   <span className="mt-1 block font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">Se abre Compras para guardar proveedor, factura y pago.</span>
+                 </button>
+                 <button
+                   type="button"
+                   onClick={() => setActiveTab('recetas')}
+                   className="text-left rounded-[14px] border border-[rgba(255,144,109,0.24)] bg-[rgba(255,144,109,0.06)] p-4 cursor-pointer transition-colors hover:bg-[rgba(255,144,109,0.1)]"
+                 >
+                   <span className="block font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[13px]">Configurar una venta</span>
+                   <span className="mt-1 block font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">Decí qué se descuenta al vender un plato, trago o shot.</span>
+                 </button>
+                 <button
+                   type="button"
+                   onClick={() => setActiveTab(insumosBajoMinimo.length > 0 ? 'movimientos' : 'insumos')}
+                   className={`text-left rounded-[14px] border p-4 cursor-pointer transition-colors ${
+                     insumosBajoMinimo.length > 0
+                       ? 'border-[rgba(255,113,108,0.28)] bg-[rgba(255,113,108,0.06)] hover:bg-[rgba(255,113,108,0.1)]'
+                       : 'border-[rgba(72,72,71,0.25)] bg-[#161616]'
+                   }`}
+                 >
+                   <span className={`block font-['Space_Grotesk',sans-serif] font-bold text-[13px] ${insumosBajoMinimo.length > 0 ? 'text-[#ff716c]' : 'text-white'}`}>
+                     {insumosBajoMinimo.length > 0 ? `${insumosBajoMinimo.length} producto${insumosBajoMinimo.length === 1 ? '' : 's'} por reponer` : 'Todo bajo control'}
+                   </span>
+                   <span className="mt-1 block font-['Inter',sans-serif] text-[#adaaaa] text-[11px]">
+                     {insumosBajoMinimo.length > 0 ? 'Revisá existencias y registrá la compra cuando llegue.' : 'No tenés alertas de inventario por ahora.'}
+                   </span>
+                 </button>
+               </div>
+               <div className="flex justify-between items-center">
+                 <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[15px] uppercase tracking-[0.5px]">
+                   Lo que tenés en existencia ({insumos.length})
                 </span>
                 <button
                   type="button"
                   onClick={() => setShowInsumoModal(true)}
                   className="bg-[#ff906d] rounded-[10px] px-3.5 py-2 font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[11px] uppercase cursor-pointer border-none flex items-center gap-1.5 transition-transform hover:scale-[1.02] active:scale-95"
                 >
-                  <Plus className="size-[14px]" strokeWidth={3} /> Nuevo Insumo
+                  <Plus className="size-[14px]" strokeWidth={3} /> Agregar producto
                 </button>
               </div>
 
               {insumos.length === 0 ? (
                 <div className="bg-[#131313] border border-[rgba(72,72,71,0.18)] rounded-[16px] p-12 text-center">
                   <p className="font-['Inter',sans-serif] text-[#6b7280] text-[13px]">
-                    No tenés insumos agregados al inventario de materias primas. Empezá agregando tu primer producto como "Aceite vegetal" o "Papas".
+                    Todavía no agregaste productos. Empezá con lo que comprás: aceite, carne, refrescos, botellas o cervezas.
                   </p>
                 </div>
               ) : (
@@ -674,10 +716,10 @@ export function Inventario() {
               <aside className="bg-[#131313] border border-[rgba(72,72,71,0.18)] rounded-[20px] p-4 flex flex-col gap-4">
                 <div className="flex flex-col gap-1">
                   <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[15px] uppercase">
-                    Elegí un Plato de la Carta
+                    Elegí lo que vendés
                   </span>
                   <span className="font-['Inter',sans-serif] text-[#6b7280] text-[11px]">
-                    Seleccioná el producto vendido para armar su receta e insumos asociados.
+                    Elegí un plato, trago o shot y definí qué debe bajar del inventario cuando se vende.
                   </span>
                 </div>
 
@@ -722,7 +764,7 @@ export function Inventario() {
                   <div className="flex justify-between items-start pb-4 border-b border-[rgba(72,72,71,0.15)]">
                     <div>
                       <span className="font-['Inter',sans-serif] text-[#6b7280] text-[11px] uppercase">
-                        Receta e Insumos de Venta
+                        Al vender este producto se descuenta
                       </span>
                       <h3 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[20px] mt-0.5">
                         {platos.find(p => p.id === selectedPlatoId)?.nombre}
@@ -734,12 +776,12 @@ export function Inventario() {
                     {/* Ingredients list */}
                     <div className="flex flex-col gap-4">
                       <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] uppercase tracking-[0.5px]">
-                        Ingredientes Definidos
+                        Productos que bajan del inventario
                       </span>
 
                       {activeRecipes.length === 0 ? (
                         <div className="bg-[#181818] rounded-[14px] p-8 text-center text-[#6b7280] font-['Inter',sans-serif] text-[12px] border border-dashed border-[rgba(72,72,71,0.22)]">
-                          Este plato no tiene insumos ni recetas asociadas. El stock no se descontará en ventas hasta que asocies materias primas.
+                          Aún no configuraste este producto. Sus ventas no descontarán inventario hasta que agregues lo que usa.
                         </div>
                       ) : (
                         <div className="flex flex-col gap-4">
@@ -828,10 +870,10 @@ export function Inventario() {
                     <div className="bg-[#181818] border border-[rgba(72,72,71,0.18)] rounded-[16px] p-4 flex flex-col gap-4 self-start">
                       <div className="flex flex-col gap-0.5">
                         <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] uppercase">
-                          Asociar Insumo
+                          Agregar lo que usa
                         </span>
                         <span className="font-['Inter',sans-serif] text-[#6b7280] text-[10px]">
-                          Vincular materia prima al plato.
+                          Ejemplo: un shot puede usar 1 oz de ron; un mojito, ron, hielo y limón.
                         </span>
                       </div>
 
@@ -883,7 +925,7 @@ export function Inventario() {
                           disabled={saving}
                           className="bg-[#ff906d] rounded-[10px] py-2.5 font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[11px] uppercase cursor-pointer border-none disabled:opacity-50 mt-2"
                         >
-                          {saving ? "Asociando..." : "Asociar a Receta"}
+                          {saving ? "Guardando..." : "Agregar al descuento"}
                         </button>
                       </form>
                     </div>
@@ -899,12 +941,12 @@ export function Inventario() {
               {/* History list */}
               <div className="flex flex-col gap-4">
                 <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[15px] uppercase tracking-[0.5px]">
-                  Historial de Movimientos de Inventario
+                  Historial de ajustes y pérdidas
                 </span>
 
                 {movimientos.length === 0 ? (
                   <div className="bg-[#131313] border border-[rgba(72,72,71,0.18)] rounded-[20px] p-12 text-center text-[#6b7280] font-['Inter',sans-serif] text-[13px]">
-                    No se registran movimientos en el inventario. Registrá una entrada o ajuste.
+                    Todavía no hay registros. Usá esta pantalla solo para corregir existencias o anotar pérdidas.
                   </div>
                 ) : (
                   <div className="overflow-x-auto rounded-[16px] border border-[rgba(72,72,71,0.18)]">
@@ -959,10 +1001,10 @@ export function Inventario() {
               <div className="bg-[#131313] border border-[rgba(72,72,71,0.18)] rounded-[20px] p-5 flex flex-col gap-4 self-start">
                 <div className="flex flex-col gap-0.5">
                   <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[15px] uppercase">
-                    Registrar Movimiento
+                    Registrar ajuste o pérdida
                   </span>
                   <span className="font-['Inter',sans-serif] text-[#6b7280] text-[11px]">
-                    Ingresá entradas de compras, mermas de almacén o ajustes manuales.
+                    Usalo si se perdió, venció o si el conteo físico no coincide. Las compras se registran en el módulo Compras.
                   </span>
                 </div>
 
@@ -993,7 +1035,7 @@ export function Inventario() {
                             : 'bg-[#111] border-[rgba(72,72,71,0.22)] text-[#adaaaa]'
                         }`}
                       >
-                        Entrada (+)
+                        Corrección positiva (+)
                       </button>
                       <button
                         type="button"
@@ -1004,7 +1046,7 @@ export function Inventario() {
                             : 'bg-[#111] border-[rgba(72,72,71,0.22)] text-[#adaaaa]'
                         }`}
                       >
-                        Merma / Salida (-)
+                        Pérdida o corrección (-)
                       </button>
                     </div>
                   </div>
@@ -1063,7 +1105,7 @@ export function Inventario() {
                     disabled={saving}
                     className="bg-[#ff906d] rounded-[10px] py-2.5 font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[11px] uppercase cursor-pointer border-none disabled:opacity-50 mt-2"
                   >
-                    {saving ? "Procesando..." : "Registrar Movimiento"}
+                    {saving ? "Guardando..." : "Guardar registro"}
                   </button>
                 </form>
               </div>
@@ -1077,10 +1119,10 @@ export function Inventario() {
               <div className="bg-[#131313] border border-[rgba(72,72,71,0.18)] rounded-[20px] p-5 flex flex-col gap-4 self-start">
                 <div className="flex flex-col gap-0.5">
                   <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[15px] uppercase">
-                    Cargar Consumo de Jornada
+                    Registrar uso en cocina
                   </span>
                   <span className="font-['Inter',sans-serif] text-[#6b7280] text-[11px]">
-                    Usa esta planilla para registrar el aceite vegetal o insumos cargados y gastados en la freidora/estaciones.
+                    Usalo para aceite, freidora u otro insumo que se consume durante la jornada y no por cada venta.
                   </span>
                 </div>
 
@@ -1114,7 +1156,7 @@ export function Inventario() {
                   </div>
 
                   <div className="flex flex-col gap-1.5">
-                    <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[9.5px] uppercase tracking-[0.5px]">Cantidad consumida / perdida *</label>
+                    <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[9.5px] uppercase tracking-[0.5px]">Cantidad usada o perdida *</label>
                     <input
                       type="number"
                       step="any"
@@ -1153,7 +1195,7 @@ export function Inventario() {
                     disabled={saving}
                     className="bg-[#ff906d] rounded-[10px] py-2.5 font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[11px] uppercase cursor-pointer border-none disabled:opacity-50 mt-2"
                   >
-                    {saving ? "Cargando..." : "Registrar en Cocina"}
+                    {saving ? "Guardando..." : "Guardar uso de cocina"}
                   </button>
                 </form>
               </div>
