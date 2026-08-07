@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain, nativeImage, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeImage, safeStorage, shell } from 'electron'
+import { P12Reader } from 'dgii-ecf'
 import type { NativeImage } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -8,6 +9,7 @@ import { startLanEdgeServer, type LanEdgeServerHandle } from './lanEdgeServer'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const CERTIFICATION_PORTAL_URL = 'https://ecf.dgii.gov.do/certecf/portalcertificacion/Login?ReturnUrl=%2Fcertecf%2Fportalcertificacion'
+const ECF_ENVIRONMENTS = new Set(['test', 'certification', 'production'])
 let mainWindow: BrowserWindow | null = null
 let lanEdgeServer: LanEdgeServerHandle | null = null
 
@@ -31,6 +33,73 @@ type RncLookupResponse = {
     status: string
   } | null
   error: string | null
+}
+
+type EcfCertificateValidationResponse = {
+  data: {
+    subject: string
+    issuer: string
+    serialNumber: string
+    validFrom: string
+    validUntil: string
+  } | null
+  error: string | null
+}
+
+function isEcfCertificatePayload(value: unknown): value is {
+  tenantId: string
+  environment: string
+  certificateBase64: string
+  passphrase: string
+} {
+  if (value === null || typeof value !== 'object') return false
+  const payload = value as Record<string, unknown>
+  return (
+    typeof payload.tenantId === 'string' && /^[0-9a-f-]{36}$/i.test(payload.tenantId) &&
+    typeof payload.environment === 'string' && ECF_ENVIRONMENTS.has(payload.environment) &&
+    typeof payload.certificateBase64 === 'string' && payload.certificateBase64.length > 0 && payload.certificateBase64.length <= 20_000_000 &&
+    typeof payload.passphrase === 'string' && payload.passphrase.length > 0 && payload.passphrase.length <= 1024
+  )
+}
+
+function validateAndStoreEcfCertificate(payload: unknown): EcfCertificateValidationResponse {
+  if (!isEcfCertificatePayload(payload)) {
+    return { data: null, error: 'Datos de certificado inválidos.' }
+  }
+  if (!safeStorage.isEncryptionAvailable()) {
+    return { data: null, error: 'El almacén seguro del sistema no está disponible.' }
+  }
+
+  try {
+    const reader = new P12Reader(payload.passphrase)
+    const info = reader.getCertificateInfoFromBase64(payload.certificateBase64)
+    const validFrom = info.validFrom.toISOString()
+    const validUntil = info.validTo.toISOString()
+    if (info.validTo.getTime() <= Date.now()) {
+      return { data: null, error: 'El certificado digital se encuentra vencido.' }
+    }
+
+    const directory = path.join(app.getPath('userData'), 'ecf-certificates')
+    fs.mkdirSync(directory, { recursive: true, mode: 0o700 })
+    const encrypted = safeStorage.encryptString(JSON.stringify({
+      certificateBase64: payload.certificateBase64,
+      passphrase: payload.passphrase,
+    }))
+    fs.writeFileSync(path.join(directory, `${payload.tenantId}-${payload.environment}.bin`), encrypted, { mode: 0o600 })
+
+    return {
+      data: {
+        subject: info.subject,
+        issuer: info.issuer,
+        serialNumber: info.serialNumber,
+        validFrom,
+        validUntil,
+      },
+      error: null,
+    }
+  } catch {
+    return { data: null, error: 'No se pudo leer el certificado. Revisá el archivo y su contraseña.' }
+  }
 }
 
 async function lookupBusinessRnc(rawRnc: unknown): Promise<RncLookupResponse> {
@@ -352,6 +421,7 @@ if (gotTheLock) {
 
   ipcMain.handle('rnc:lookup', (_event, rnc: unknown) => lookupBusinessRnc(rnc))
   ipcMain.handle('external:open-portal', () => shell.openExternal(CERTIFICATION_PORTAL_URL))
+  ipcMain.handle('ecf:validate-certificate', (_event, payload: unknown) => validateAndStoreEcfCertificate(payload))
 
   // Window controls handlers (solo instancia principal)
   ipcMain.on('window-minimize', () => {

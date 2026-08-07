@@ -31,30 +31,29 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
 
   const deviceId = await getDeviceId();
 
-  // Validate active operational cycle and purchase category for cash (contado/parcial) purchases
+  // A purchase is part of the current operating cycle regardless of its payment method.
   let activeCycleId = "";
   let comprasCategoryId = "";
   let providerName = "Proveedor";
+
+  const activeCycleRows = await readLocalMirror<{
+    id: string;
+    closed_at: string | null;
+    sucursal_id: string | null;
+    opened_at: string;
+  }>(tenantId, "cierres_operativos");
+  const activeCycle = activeCycleRows
+    .filter(c => !c.closed_at && (c.sucursal_id === sucursalId || !c.sucursal_id))
+    .sort((a, b) => b.opened_at.localeCompare(a.opened_at))[0];
+  if (!activeCycle) {
+    throw new Error("No hay un ciclo operativo abierto para registrar una compra.");
+  }
+  activeCycleId = activeCycle.id;
 
   if (tipoPago === "contado" || tipoPago === "parcial") {
     if (!metodoPago) {
       throw new Error("Selecciona un método de pago.");
     }
-    const activeCycleRows = await readLocalMirror<{
-      id: string;
-      closed_at: string | null;
-      sucursal_id: string | null;
-      opened_at: string;
-    }>(tenantId, "cierres_operativos");
-    
-    const activeCycle = activeCycleRows
-      .filter(c => !c.closed_at && (c.sucursal_id === sucursalId || !c.sucursal_id))
-      .sort((a, b) => b.opened_at.localeCompare(a.opened_at))[0];
-
-    if (!activeCycle) {
-      throw new Error("No hay un ciclo operativo abierto para registrar una compra al contado o pago parcial.");
-    }
-    activeCycleId = activeCycle.id;
 
     // Resolve compras category
     const categories = await readLocalMirror<{
@@ -185,7 +184,8 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
       metodo_pago: metodoPago || null,
       monto_pagado: resolvedMontoPagado,
       fecha_compra: fechaCompra,
-      total: totalCompra,
+        total: totalCompra,
+        cycle_id: activeCycleId,
       estado: "completada",
       observacion: observacion || null,
       usuario_id: usuarioId,
@@ -266,6 +266,7 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
       payload: {
         id: gastoId,
         tenant_id: tenantId,
+        sucursal_id: sucursalId,
         category_id: comprasCategoryId || null,
         cycle_id: activeCycleId || null,
         descripcion: `Compra - Factura ${numeroFactura || "S/N"}`,
@@ -303,6 +304,7 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
           tenant_id: tenantId,
           sucursal_id: sucursalId,
           compra_id: compraId,
+          cycle_id: activeCycleId,
           proveedor_id: proveedorId,
           monto_total: balancePendiente,
           monto_pagado: 0.00,

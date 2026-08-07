@@ -232,9 +232,9 @@ export function RegistrarCompraModal({
             </div>
           )}
           
-          {(isContado || isParcial) && !cicloAbierto && (
+          {!cicloAbierto && (
             <div className="bg-[rgba(255,113,108,0.08)] border border-[rgba(255,113,108,0.25)] rounded-[10px] p-3 text-[12px] text-[#ff716c] font-['Inter',sans-serif] shrink-0 text-left">
-              ⚠️ <strong>Caja Cerrada:</strong> No hay un ciclo operativo abierto. Debes abrir uno en la sección de Cierre antes de registrar compras con cobro inmediato.
+              ⚠️ <strong>Ciclo cerrado:</strong> Abrí un ciclo operativo antes de registrar una compra. Todas las compras, pagos y cuentas por pagar deben quedar vinculados a su ciclo.
             </div>
           )}
 
@@ -396,7 +396,7 @@ export function RegistrarCompraModal({
               </button>
               <button
                 type="submit"
-                disabled={saving || ((isContado || isParcial) && !cicloAbierto)}
+                disabled={saving || !cicloAbierto}
                 className="bg-[#ff906d] rounded-[8px] px-4 py-2 font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[10.5px] uppercase cursor-pointer border-none disabled:opacity-50 hover:bg-[#ff906d]/90 transition-colors"
               >
                 {saving ? "Registrando..." : "Guardar Compra"}

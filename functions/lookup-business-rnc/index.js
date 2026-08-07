@@ -16,7 +16,7 @@ function normalizeRnc(value) {
   return typeof value === "string" ? value.replace(/\D/g, "") : "";
 }
 
-export default async function lookupBusinessRnc(request) {
+module.exports = async function lookupBusinessRnc(request) {
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders });
   }

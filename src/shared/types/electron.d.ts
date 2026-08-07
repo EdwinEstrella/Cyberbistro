@@ -32,6 +32,17 @@ export interface RncLookupResponse {
   error: string | null;
 }
 
+export interface EcfCertificateValidationResponse {
+  data: {
+    subject: string;
+    issuer: string;
+    serialNumber: string;
+    validFrom: string;
+    validUntil: string;
+  } | null;
+  error: string | null;
+}
+
 export interface UpdateInfoPayload {
   version: string;
   releaseDate?: string;
@@ -74,6 +85,12 @@ export interface ElectronAPI {
   openCashDrawer?: (opts?: OpenCashDrawerOptions) => Promise<PrintThermalResponse>;
   lookupBusinessRnc?: (rnc: string) => Promise<RncLookupResponse>;
   openCertificationPortal?: () => Promise<void>;
+  validateEcfCertificate?: (payload: {
+    tenantId: string;
+    environment: string;
+    certificateBase64: string;
+    passphrase: string;
+  }) => Promise<EcfCertificateValidationResponse>;
   checkForUpdates?: () => void;
   downloadUpdate?: () => void;
   installUpdate?: () => void;

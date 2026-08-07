@@ -176,7 +176,7 @@ describe("purchaseService", () => {
     expect(payload.costo_promedio).toBe(15.00); // equals purchase cost
   });
 
-  it("throws error if contado purchase has no active cycle", async () => {
+  it("throws error if any purchase has no active cycle", async () => {
     // Mock readLocalMirror to return no cycles
     vi.mocked(readLocalMirror).mockImplementation(async (_tenantId, tableName) => {
       if (tableName === "productos_inventario") return mockProducts as any;
@@ -201,10 +201,41 @@ describe("purchaseService", () => {
           },
         ],
       })
-    ).rejects.toThrow("No hay un ciclo operativo abierto para registrar una compra al contado o pago parcial.");
+    ).rejects.toThrow("No hay un ciclo operativo abierto para registrar una compra.");
   });
 
-  it("allows credito purchase even with no active cycle and does not register a gasto", async () => {
+  it("records a transfer purchase in the active cycle", async () => {
+    vi.mocked(readLocalMirror).mockImplementation(async (_tenantId, tableName) => {
+      if (tableName === "productos_inventario") return mockProducts as any;
+      if (tableName === "cierres_operativos") return [{ id: "cycle-active-123", closed_at: null, sucursal_id: "suc-1", opened_at: "2026-06-08T10:00:00Z" }] as any;
+      if (tableName === "gasto_categorias") return [{ id: "cat-compras-uuid", nombre: "Compras", activa: true }] as any;
+      if (tableName === "proveedores") return [{ id: "prov-1", nombre: "Distribuidora Brugal" }] as any;
+      return [] as any;
+    });
+
+    await registrarCompra({
+      tenantId: mockTenantId,
+      sucursalId: "suc-1",
+      usuarioId: "user-1",
+      proveedorId: "prov-1",
+      numeroFactura: "FAC-TRANSFER",
+      tipoPago: "contado",
+      metodoPago: "transferencia",
+      items: [{ producto_id: "prod-simple", cantidad: 5, costo_unitario: 8 }],
+    });
+
+    const gastoCall = vi.mocked(enqueueLocalWrite).mock.calls.find(
+      call => call[0].tableName === "gastos" && call[0].op === "insert"
+    );
+    expect((gastoCall?.[0] as any)?.payload).toMatchObject({
+      monto: 40,
+      metodo_pago: "transferencia",
+      sucursal_id: "suc-1",
+      cycle_id: "cycle-active-123",
+    });
+  });
+
+  it("requires an active cycle for credito purchases", async () => {
     // Mock readLocalMirror to return no cycles
     vi.mocked(readLocalMirror).mockImplementation(async (_tenantId, tableName) => {
       if (tableName === "productos_inventario") return mockProducts as any;
@@ -212,35 +243,10 @@ describe("purchaseService", () => {
       return [] as any;
     });
 
-    const result = await registrarCompra({
-      tenantId: mockTenantId,
-      sucursalId: "suc-1",
-      usuarioId: "user-1",
-      proveedorId: "prov-1",
-      numeroFactura: "FAC-CRED",
-      tipoPago: "credito",
-      items: [
-        {
-          producto_id: "prod-simple",
-          cantidad: 5,
-          costo_unitario: 8.00,
-        },
-      ],
-    });
-
-    expect(result.compraId).toBeDefined();
-    // Verify that NO gastos table write is enqueued
-    const gastoCall = vi.mocked(enqueueLocalWrite).mock.calls.find(
-      call => call[0].tableName === "gastos"
-    );
-    expect(gastoCall).toBeUndefined();
-
-    // Verify that a cuentas_pagar write is enqueued
-    const cxpCall = vi.mocked(enqueueLocalWrite).mock.calls.find(
-      call => call[0].tableName === "cuentas_pagar" && call[0].op === "insert"
-    );
-    expect(cxpCall).toBeDefined();
-    expect((cxpCall?.[0] as any)?.payload?.monto_total).toBe(40.00);
+    await expect(registrarCompra({
+      tenantId: mockTenantId, sucursalId: "suc-1", usuarioId: "user-1", proveedorId: "prov-1", numeroFactura: "FAC-CRED", tipoPago: "credito",
+      items: [{ producto_id: "prod-simple", cantidad: 5, costo_unitario: 8 }],
+    })).rejects.toThrow("No hay un ciclo operativo abierto para registrar una compra.");
   });
 
   it("creates Compras category if it does not exist when registering contado purchase", async () => {

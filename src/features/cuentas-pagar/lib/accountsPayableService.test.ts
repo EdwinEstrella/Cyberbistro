@@ -142,7 +142,7 @@ describe("accountsPayableService", () => {
     expect((debtCall?.[0] as any)?.payload?.estado).toBe("pagada");
   });
 
-  it("throws error if cash payment has no active cycle", async () => {
+  it("throws error if any payment has no active cycle", async () => {
     vi.mocked(readLocalMirror).mockImplementation(async (_tenantId, tableName) => {
       if (tableName === "cuentas_pagar") return [mockDebt] as any;
       if (tableName === "cierres_operativos") return [] as any;
@@ -158,7 +158,7 @@ describe("accountsPayableService", () => {
         monto: 10.00,
         metodoPago: "efectivo",
       })
-    ).rejects.toThrow("No hay un ciclo operativo abierto para registrar un pago en efectivo.");
+    ).rejects.toThrow("No hay un ciclo operativo abierto para registrar un pago de cuenta por pagar.");
   });
 
   it("registers gasto and creates category if not exists for cash payments", async () => {
@@ -208,5 +208,26 @@ describe("accountsPayableService", () => {
     expect(gastoCall).toBeDefined();
     expect((gastoCall?.[0] as any)?.payload?.monto).toBe(30.00);
     expect((gastoCall?.[0] as any)?.payload?.proveedor).toBe("Distribuidora Nacional");
+  });
+
+  it("registers a transfer payment in the active cycle", async () => {
+    await registrarPagoCxP({
+      tenantId: mockTenantId,
+      sucursalId: "suc-1",
+      usuarioId: "user-1",
+      cuentaPagarId: "debt-123",
+      monto: 20,
+      metodoPago: "transferencia",
+    });
+
+    const gastoCall = vi.mocked(enqueueLocalWrite).mock.calls.find(
+      call => call[0].tableName === "gastos" && call[0].op === "insert"
+    );
+    expect((gastoCall?.[0] as any)?.payload).toMatchObject({
+      monto: 20,
+      metodo_pago: "transferencia",
+      sucursal_id: "suc-1",
+      cycle_id: "cycle-active-456",
+    });
   });
 });

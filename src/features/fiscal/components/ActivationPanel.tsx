@@ -4,6 +4,8 @@ import { useAuth } from "../../../shared/hooks/useAuth";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { NCF_E_TIPO_OPCIONES } from "../../../shared/lib/ncf";
 import { lookupBusinessByRnc } from "../../../shared/lib/dgiiRncLookup";
+import { CertificateUploader } from "../../ajustes/components/CertificateUploader";
+import { enqueueLocalWrite, getDeviceId } from "../../../shared/lib/localFirst";
 
 type EcfEnvironment = "test" | "certification" | "production";
 
@@ -43,9 +45,11 @@ const certificationPortalUrl = "https://ecf.dgii.gov.do/certecf/portalcertificac
 
 export function ActivationPanel() {
   const { tenantId } = useAuth();
-  const [step, setStep] = useState(2);
+  const [step, setStep] = useState(1);
   const [environment, setEnvironment] = useState<EcfEnvironment>("test");
-  const [company, setCompany] = useState({ name: "", rnc: "", phone: "", email: "", address: "" });
+  const [company, setCompany] = useState({
+    name: "", rnc: "", phone: "", email: "", address: "", sucursal: "", municipio: "", provincia: "", actividad: "", issuerEmail: "",
+  });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [ecfSequences, setEcfSequences] = useState<Record<string, { start: number; end: number; used: number }>>({
@@ -54,19 +58,19 @@ export function ActivationPanel() {
   });
   const [enabledTypes, setEnabledTypes] = useState<string[]>(["E31", "E32"]);
   const [certificateReady, setCertificateReady] = useState(false);
-  const [certificateFileName, setCertificateFileName] = useState("");
   const [testSetFileName, setTestSetFileName] = useState("");
   const [commercialApprovalFileName, setCommercialApprovalFileName] = useState("");
   const [fiscalActive, setFiscalActive] = useState(false);
   const [certificationStep, setCertificationStep] = useState(1);
   const [companyLookupLoading, setCompanyLookupLoading] = useState(false);
+  const [savedSequences, setSavedSequences] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (!tenantId) return;
 
     void insforgeClient.database
       .from("tenants")
-      .select("nombre_negocio, rnc, telefono, email, direccion, ecf_environment, ncf_secuencias_por_tipo, fiscal_mode")
+        .select("nombre_negocio, rnc, telefono, email, direccion, ecf_environment, ncf_secuencias_por_tipo, fiscal_mode, ecf_issuer_sucursal, ecf_issuer_municipio, ecf_issuer_provincia, ecf_issuer_actividad_economica, ecf_issuer_correo_emisor")
       .eq("id", tenantId)
       .maybeSingle()
       .then(({ data, error }) => {
@@ -77,9 +81,18 @@ export function ActivationPanel() {
           phone: data.telefono ?? "",
           email: data.email ?? "",
           address: data.direccion ?? "",
+          sucursal: data.ecf_issuer_sucursal ?? "",
+          municipio: data.ecf_issuer_municipio ?? "",
+          provincia: data.ecf_issuer_provincia ?? "",
+          actividad: data.ecf_issuer_actividad_economica ?? "",
+          issuerEmail: data.ecf_issuer_correo_emisor ?? data.email ?? "",
         });
         setFiscalActive(data.fiscal_mode === "dgii_ecf");
         const savedSequences = (data.ncf_secuencias_por_tipo ?? {}) as Record<string, unknown>;
+        setSavedSequences(Object.fromEntries(Object.entries(savedSequences).flatMap(([type, sequence]) => {
+          const value = Number(sequence);
+          return Number.isInteger(value) && value > 0 ? [[type, value]] : [];
+        })));
         const fiscalSequences = Object.fromEntries(
           NCF_E_TIPO_OPCIONES.flatMap((type) => {
             const sequence = Number(savedSequences[type.codigo]);
@@ -96,22 +109,104 @@ export function ActivationPanel() {
       });
   }, [tenantId]);
 
-  async function saveEnvironment() {
+  useEffect(() => {
+    if (!tenantId) return;
+
+    void insforgeClient.database
+      .from("ecf_certificate_metadata")
+      .select("is_ready")
+      .eq("tenant_id", tenantId)
+      .eq("environment", environment)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => setCertificateReady(Boolean(data?.is_ready)));
+  }, [tenantId, environment]);
+
+  async function saveCompany() {
+    if (!tenantId) return;
+    const required = [company.name, company.rnc, company.address, company.sucursal, company.municipio, company.provincia, company.actividad, company.issuerEmail];
+    if (required.some((value) => !value.trim())) {
+      setMessage("Completá los datos fiscales del emisor antes de continuar.");
+      return;
+    }
+
     setSaving(true);
     setMessage("");
-    setStep(3);
-    setMessage("Ambiente seleccionado para el diseño. Se persistirá cuando conectemos el motor e-CF.");
-    setSaving(false);
+    try {
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "tenants",
+        rowId: tenantId,
+        op: "update",
+        payload: {
+          nombre_negocio: company.name.trim(), rnc: company.rnc.trim(), telefono: company.phone.trim() || null, email: company.email.trim() || null, direccion: company.address.trim(),
+          ecf_issuer_sucursal: company.sucursal.trim(), ecf_issuer_municipio: company.municipio.trim(), ecf_issuer_provincia: company.provincia.trim(),
+          ecf_issuer_actividad_economica: company.actividad.trim(), ecf_issuer_correo_emisor: company.issuerEmail.trim(), updated_at: new Date().toISOString(),
+        },
+        deviceId: await getDeviceId(),
+      });
+      setStep(2);
+      setMessage("Datos fiscales del emisor guardados.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudieron guardar los datos fiscales.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveEnvironment() {
+    if (!tenantId) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "tenants",
+        rowId: tenantId,
+        op: "update",
+        payload: { ecf_environment: environment, updated_at: new Date().toISOString() },
+        deviceId: await getDeviceId(),
+      });
+      setStep(3);
+      setMessage(`Ambiente ${environments.find((item) => item.id === environment)?.title} guardado.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudo guardar el ambiente DGII.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function saveSequences() {
-    if (enabledTypes.length === 0) return;
+    if (!tenantId || enabledTypes.length === 0) return;
     setSaving(true);
     setMessage("");
-
-    setStep(4);
-    setMessage("Secuencias preparadas en el diseño. Se conectarán a las asignaciones autorizadas al implementar el motor.");
-    setSaving(false);
+    try {
+      const deviceId = await getDeviceId();
+      const nextSequences = { ...savedSequences };
+      for (const type of enabledTypes) {
+        const sequence = ecfSequences[type];
+        if (!sequence || !Number.isInteger(sequence.start) || !Number.isInteger(sequence.end) || sequence.start < 1 || sequence.end < sequence.start) {
+          throw new Error(`El rango de ${type} no es válido.`);
+        }
+        nextSequences[type] = sequence.start + sequence.used;
+      }
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "tenants",
+        rowId: tenantId,
+        op: "update",
+        payload: { ncf_secuencias_por_tipo: nextSequences, updated_at: new Date().toISOString() },
+        deviceId,
+      });
+      setSavedSequences(nextSequences);
+      setStep(4);
+      setMessage("Secuencias e-CF guardadas. La emisión continuará bloqueada hasta que la firma y el envío DGII estén disponibles.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudieron guardar las secuencias e-CF.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   function toggleType(type: string) {
@@ -126,6 +221,12 @@ export function ActivationPanel() {
     const missing = [
       !company.name && "datos de la empresa",
       !company.rnc && "RNC del emisor",
+      !company.address && "dirección fiscal",
+      !company.sucursal && "sucursal del emisor",
+      !company.municipio && "municipio del emisor",
+      !company.provincia && "provincia del emisor",
+      !company.actividad && "actividad económica",
+      !company.issuerEmail && "correo del emisor",
       !certificateReady && "certificado digital",
       enabledTypes.length === 0 && "secuencias e-CF",
     ].filter(Boolean);
@@ -136,7 +237,7 @@ export function ActivationPanel() {
     }
 
     setStep(5);
-    setMessage("Diseño de activación validado. La activación real quedará disponible con el motor e-CF.");
+    setMessage("Configuración persistida y validada. La emisión real permanece bloqueada hasta que el motor e-CF firme y entregue los documentos a la DGII.");
   }
 
   async function handleCompanyLookup() {
@@ -162,10 +263,10 @@ export function ActivationPanel() {
   }
 
   function verifyConfiguration() {
-    const ready = Boolean(company.name && company.rnc && certificateReady && enabledTypes.length > 0);
+    const ready = Boolean(company.name && company.rnc && company.address && company.sucursal && company.municipio && company.provincia && company.actividad && company.issuerEmail && certificateReady && enabledTypes.length > 0);
     setMessage(ready
       ? "La configuración está completa y lista para activar la facturación electrónica."
-      : "Falta completar empresa, certificado digital o secuencias e-CF.");
+      : "Falta completar los datos fiscales del emisor, certificado digital o secuencias e-CF.");
   }
 
   function openCertificationPortal(event?: MouseEvent<HTMLElement>) {
@@ -241,7 +342,18 @@ export function ActivationPanel() {
                 <CompanyField label="Correo electrónico" value={company.email} type="email" onChange={(email) => setCompany((current) => ({ ...current, email }))} />
                 <CompanyField label="Dirección fiscal" value={company.address} onChange={(address) => setCompany((current) => ({ ...current, address }))} />
               </div>
-              <p className="mt-4 text-xs leading-relaxed text-muted-foreground">Los cambios de esta pantalla son de diseño y todavía no modifican la ficha del negocio.</p>
+              <div className="mt-6 border-t border-border pt-5">
+                <h3 className="font-['Space_Grotesk',sans-serif] text-base font-bold text-foreground">Datos técnicos del emisor</h3>
+                <p className="mt-1 text-xs text-muted-foreground">La DGII los requiere para construir cada XML e-CF.</p>
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <CompanyField label="Sucursal emisora" value={company.sucursal} onChange={(sucursal) => setCompany((current) => ({ ...current, sucursal }))} />
+                  <CompanyField label="Municipio" value={company.municipio} onChange={(municipio) => setCompany((current) => ({ ...current, municipio }))} />
+                  <CompanyField label="Provincia" value={company.provincia} onChange={(provincia) => setCompany((current) => ({ ...current, provincia }))} />
+                  <CompanyField label="Actividad económica" value={company.actividad} onChange={(actividad) => setCompany((current) => ({ ...current, actividad }))} />
+                  <CompanyField label="Correo emisor e-CF" value={company.issuerEmail} type="email" onChange={(issuerEmail) => setCompany((current) => ({ ...current, issuerEmail }))} />
+                </div>
+              </div>
+              <p className="mt-4 text-xs leading-relaxed text-muted-foreground">Guardá esta información antes de continuar. Se sincroniza con la ficha fiscal del negocio.</p>
             </div>
           )}
 
@@ -270,22 +382,7 @@ export function ActivationPanel() {
                 })}
               </div>
 
-              <label className="mt-5 flex cursor-pointer flex-col items-center rounded-2xl border border-dashed border-primary/35 bg-primary/5 px-6 py-8 text-center transition-colors hover:bg-primary/10">
-                <FileKey2 className="size-8 text-primary" />
-                <span className="mt-3 font-['Space_Grotesk',sans-serif] text-sm font-bold text-foreground">Previsualizar certificado digital</span>
-                <span className="mt-1 text-xs text-muted-foreground">.p12 o .pfx. No se carga ni se guarda durante esta etapa de diseño.</span>
-                <input
-                  type="file"
-                  accept=".p12,.pfx,application/x-pkcs12"
-                  className="sr-only"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    setCertificateFileName(file?.name ?? "");
-                    setCertificateReady(Boolean(file));
-                  }}
-                />
-              </label>
-              {certificateFileName && <p className="mt-3 rounded-xl border border-green-500/25 bg-green-500/5 px-4 py-3 text-xs text-green-700 dark:text-green-300">Archivo seleccionado: <span className="font-semibold">{certificateFileName}</span>. La validación criptográfica se habilitará con el motor e-CF.</p>}
+              <CertificateUploader environment={environment} onValidated={() => setCertificateReady(true)} />
             </div>
           )}
 
@@ -370,7 +467,7 @@ export function ActivationPanel() {
               </div>
 
               <div className="mt-6 grid gap-3 md:grid-cols-3">
-                <ActivationStatus label="Empresa" detail={company.name && company.rnc ? `${company.name} · ${company.rnc}` : "Completá los datos del emisor"} ready={Boolean(company.name && company.rnc)} />
+                <ActivationStatus label="Empresa" detail={company.name && company.rnc && company.address && company.sucursal && company.municipio && company.provincia && company.actividad && company.issuerEmail ? `${company.name} · ${company.rnc}` : "Completá los datos fiscales del emisor"} ready={Boolean(company.name && company.rnc && company.address && company.sucursal && company.municipio && company.provincia && company.actividad && company.issuerEmail)} />
                 <ActivationStatus label="Certificado digital" detail={certificateReady ? "Validado y listo para firmar" : "Pendiente de cargar"} ready={certificateReady} />
                 <ActivationStatus label="Secuencias e-CF" detail={enabledTypes.length > 0 ? `${enabledTypes.length} tipo(s) configurado(s)` : "Pendiente de configurar"} ready={enabledTypes.length > 0} />
               </div>
@@ -405,7 +502,7 @@ export function ActivationPanel() {
                 disabled={saving || fiscalActive}
                 className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-4 font-['Space_Grotesk',sans-serif] text-sm font-bold text-primary-foreground shadow-lg shadow-primary/20 transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <Rocket className="size-4" /> {fiscalActive ? "Facturación electrónica activa" : "Preparar activación"}
+                  <Rocket className="size-4" /> {fiscalActive ? "Facturación electrónica activa" : "Validar configuración"}
               </button>
             </div>
           )}
@@ -757,7 +854,11 @@ export function ActivationPanel() {
             <button type="button" onClick={() => setStep((current) => Math.max(1, current - 1))} disabled={step === 1} className="inline-flex items-center gap-1 rounded-xl border border-border px-4 py-2.5 text-xs font-bold text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40">
               <ChevronLeft className="size-4" /> Anterior
             </button>
-            {step === 2 ? (
+            {step === 1 ? (
+              <button type="button" onClick={() => void saveCompany()} disabled={saving} className="inline-flex items-center gap-1 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50">
+                {saving ? "Guardando..." : "Guardar y continuar"} <ChevronRight className="size-4" />
+              </button>
+            ) : step === 2 ? (
               <button type="button" onClick={() => void saveEnvironment()} disabled={saving} className="inline-flex items-center gap-1 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50">
                 {saving ? "Guardando..." : "Guardar y continuar"} <ChevronRight className="size-4" />
               </button>
@@ -793,12 +894,12 @@ function CertificationComplete() {
       <div className="flex size-20 items-center justify-center rounded-full bg-green-500 text-white shadow-lg shadow-green-500/30">
         <Award className="size-10" />
       </div>
-      <h3 className="mt-6 font-['Space_Grotesk',sans-serif] text-3xl font-bold text-foreground">Certificación completada</h3>
-      <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">Tu empresa está oficialmente certificada por la DGII para emitir e-CF en producción.</p>
-      <div className="mt-6 inline-flex items-center gap-2 rounded-full border border-green-500/30 bg-green-500/10 px-5 py-2.5 text-sm font-bold text-green-700 dark:text-green-400">
-        <CheckCircle className="size-4" /> Certificado DGII
+      <h3 className="mt-6 font-['Space_Grotesk',sans-serif] text-3xl font-bold text-foreground">Checklist de certificación revisado</h3>
+      <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">La certificación sólo queda completada cuando la DGII lo confirma en su portal y el motor de emisión puede firmar y enviar e-CF.</p>
+      <div className="mt-6 inline-flex items-center gap-2 rounded-full border border-yellow-500/30 bg-yellow-500/10 px-5 py-2.5 text-sm font-bold text-yellow-700 dark:text-yellow-300">
+        <CircleAlert className="size-4" /> Confirmación DGII pendiente
       </div>
-      <p className="mt-6 text-xs text-muted-foreground">Cambiá al ambiente de Producción en el Paso 2 y comenzá a facturar en vivo.</p>
+      <p className="mt-6 text-xs text-muted-foreground">No cambies a Producción ni emitas e-CF hasta contar con la aprobación en el portal y una prueba de envío aceptada.</p>
     </div>
   );
 }

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
 
-export function CertificateUploader({ environment }: { environment: string }) {
+export function CertificateUploader({ environment, onValidated }: { environment: string; onValidated?: () => void }) {
   const { tenantId } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -36,30 +36,47 @@ export function CertificateUploader({ environment }: { environment: string }) {
     setMessage(null);
 
     try {
-      // 1. Upload to fiscal_certificates bucket
-      const filePath = `${tenantId}/${environment}_${Date.now()}.p12`;
-      const { error: uploadError } = await (insforgeClient.storage
-        .from("fiscal_certificates")
-        .upload as any)(filePath, file, { contentType: "application/pkcs12", upsert: true });
-
-      if (uploadError) throw new Error("Error al subir archivo: " + uploadError.message);
-
-      // 2. Call Edge Function / RPC to validate
-      const { error: validateError } = await insforgeClient.functions.invoke("validate-ecf-certificate", {
-        body: {
-          tenant_id: tenantId,
-          environment,
-          storage_path: filePath,
-          passphrase
-        }
+      if (!window.electronAPI?.validateEcfCertificate) {
+        throw new Error("La validación de certificados e-CF requiere la aplicación de escritorio.");
+      }
+      const certificateBase64 = await readFileAsBase64(file);
+      const result = await window.electronAPI.validateEcfCertificate({
+        tenantId,
+        environment,
+        certificateBase64,
+        passphrase,
       });
+      if (result.error || !result.data) throw new Error(result.error || "No se pudo validar el certificado.");
 
-      if (validateError) throw new Error("Error al validar certificado: " + validateError.message);
+      const certificateMetadata = {
+        tenant_id: tenantId,
+        environment,
+        subject: result.data.subject,
+        issuer: result.data.issuer,
+        serial_number: result.data.serialNumber,
+        valid_from: result.data.validFrom,
+        valid_until: result.data.validUntil,
+        is_ready: true,
+        last_validation_error: null,
+      };
+      const { data: existing, error: findError } = await insforgeClient.database
+        .from("ecf_certificate_metadata")
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .eq("environment", environment)
+        .maybeSingle();
+      if (findError) throw new Error("No se pudo consultar el certificado existente: " + findError.message);
 
-      setMessage({ type: "success", text: "Certificado validado y guardado correctamente." });
+      const { error: saveError } = existing
+        ? await insforgeClient.database.from("ecf_certificate_metadata").update(certificateMetadata).eq("id", existing.id)
+        : await insforgeClient.database.from("ecf_certificate_metadata").insert([certificateMetadata]);
+      if (saveError) throw new Error("No se pudo guardar los metadatos del certificado: " + saveError.message);
+
+      setMessage({ type: "success", text: "Certificado validado y protegido localmente." });
       setFile(null);
       setPassphrase("");
       await loadMetadata();
+      onValidated?.();
     } catch (err: any) {
       setMessage({ type: "error", text: err.message || "Ocurrió un error inesperado." });
     } finally {
@@ -131,4 +148,20 @@ export function CertificateUploader({ environment }: { environment: string }) {
       </div>
     </div>
   );
+}
+
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("No se pudo leer el certificado."));
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string") {
+        reject(new Error("No se pudo leer el certificado."));
+        return;
+      }
+      resolve(result.split(",", 2)[1] || "");
+    };
+    reader.readAsDataURL(file);
+  });
 }
