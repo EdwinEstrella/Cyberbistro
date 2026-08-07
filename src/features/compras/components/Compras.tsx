@@ -155,7 +155,7 @@ export function Compras() {
     });
   }, []);
 
-  const summaryStats = useMemo(() => {
+  const dateRange = useMemo(() => {
     const selectedPeriod = periodMode606 === "month" ? period606 : from606.slice(0, 7);
     const [year, month] = selectedPeriod.split("-");
     const start = periodMode606 === "range" ? from606 : `${year}-${month}-01`;
@@ -163,23 +163,35 @@ export function Compras() {
       ? new Date(`${to606}T00:00:00Z`).getTime() + 24 * 60 * 60 * 1000
       : new Date(Number(year), Number(month), 1).getTime();
     const endStr = new Date(endMs).toISOString().slice(0, 10);
+    return { start, endStr };
+  }, [periodMode606, period606, from606, to606]);
 
-    let totalFacturado = 0;
+  const filteredCompras = useMemo(() => {
+    const { start, endStr } = dateRange;
+    return compras.filter(c => c.fecha_compra >= start && c.fecha_compra < endStr);
+  }, [compras, dateRange]);
+
+  const summaryStats = useMemo(() => {
+    const { start, endStr } = dateRange;
     let montoServicios = 0;
     let itbisFacturado = 0;
     let itbisRetenido = 0;
 
+    // Sumar montos fiscales de la tabla `compra_fiscal`
     for (const fiscal of fiscales) {
       if (fiscal.fecha_comprobante >= start && fiscal.fecha_comprobante < endStr) {
-        totalFacturado += Number(fiscal.total_facturado) || 0;
         montoServicios += Number(fiscal.monto_servicios) || 0;
         itbisFacturado += Number(fiscal.itbis_facturado) || 0;
         itbisRetenido += Number(fiscal.itbis_retenido) || 0;
       }
     }
 
+    // El Total Facturado lo calculamos siempre en base a las compras visibles
+    // para asegurar que cuadre perfectamente con la tabla, incluso para facturas viejas.
+    const totalFacturado = filteredCompras.reduce((acc, compra) => acc + (Number(compra.total) || 0), 0);
+
     return { totalFacturado, montoServicios, itbisFacturado, itbisRetenido };
-  }, [fiscales, periodMode606, period606, from606, to606]);
+  }, [fiscales, filteredCompras, dateRange]);
 
 
 
@@ -371,7 +383,7 @@ export function Compras() {
             <div className="flex flex-col gap-4 min-h-0 flex-1">
               <div className="flex justify-between items-center shrink-0">
                 <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[15px] uppercase tracking-[0.5px]">
-                  Registro de Facturas ({compras.length})
+                  Registro de Facturas ({filteredCompras.length})
                 </span>
                 <button
                   type="button"
@@ -382,10 +394,10 @@ export function Compras() {
                 </button>
               </div>
 
-              {compras.length === 0 ? (
+              {filteredCompras.length === 0 ? (
                 <div className="bg-[#131313] border border-[rgba(72,72,71,0.18)] rounded-[16px] p-12 text-center">
                   <p className="font-['Inter',sans-serif] text-[#6b7280] text-[13px]">
-                    No se registran compras todavía en este restaurante.
+                    No se registran compras en este periodo.
                   </p>
                 </div>
               ) : (
@@ -402,7 +414,7 @@ export function Compras() {
                       </tr>
                     </thead>
                     <tbody className="font-['Inter',sans-serif] text-[13px] text-white">
-                      {compras.map((row) => {
+                      {filteredCompras.map((row) => {
                         const prov = proveedoresMap.get(row.proveedor_id || "");
                         return (
                           <tr key={row.id} className="border-t border-[rgba(72,72,71,0.12)] hover:bg-[#151515]">
