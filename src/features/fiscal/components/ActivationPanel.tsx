@@ -125,7 +125,7 @@ export function ActivationPanel() {
 
   async function saveCompany() {
     if (!tenantId) return;
-    const required = [company.name, company.rnc, company.address, company.sucursal, company.municipio, company.provincia, company.actividad, company.issuerEmail];
+    const required = [company.name, company.rnc, company.address, company.phone, company.email];
     if (required.some((value) => !value.trim())) {
       setMessage("Completá los datos fiscales del emisor antes de continuar.");
       return;
@@ -141,8 +141,7 @@ export function ActivationPanel() {
         op: "update",
         payload: {
           nombre_negocio: company.name.trim(), rnc: company.rnc.trim(), telefono: company.phone.trim() || null, email: company.email.trim() || null, direccion: company.address.trim(),
-          ecf_issuer_sucursal: company.sucursal.trim(), ecf_issuer_municipio: company.municipio.trim(), ecf_issuer_provincia: company.provincia.trim(),
-          ecf_issuer_actividad_economica: company.actividad.trim(), ecf_issuer_correo_emisor: company.issuerEmail.trim(), updated_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         },
         deviceId: await getDeviceId(),
       });
@@ -222,11 +221,8 @@ export function ActivationPanel() {
       !company.name && "datos de la empresa",
       !company.rnc && "RNC del emisor",
       !company.address && "dirección fiscal",
-      !company.sucursal && "sucursal del emisor",
-      !company.municipio && "municipio del emisor",
-      !company.provincia && "provincia del emisor",
-      !company.actividad && "actividad económica",
-      !company.issuerEmail && "correo del emisor",
+      !company.phone && "teléfono",
+      !company.email && "correo electrónico",
       !certificateReady && "certificado digital",
       enabledTypes.length === 0 && "secuencias e-CF",
     ].filter(Boolean);
@@ -263,7 +259,7 @@ export function ActivationPanel() {
   }
 
   function verifyConfiguration() {
-    const ready = Boolean(company.name && company.rnc && company.address && company.sucursal && company.municipio && company.provincia && company.actividad && company.issuerEmail && certificateReady && enabledTypes.length > 0);
+    const ready = Boolean(company.name && company.rnc && company.address && company.phone && company.email && certificateReady && enabledTypes.length > 0);
     setMessage(ready
       ? "La configuración está completa y lista para activar la facturación electrónica."
       : "Falta completar los datos fiscales del emisor, certificado digital o secuencias e-CF.");
@@ -280,7 +276,7 @@ export function ActivationPanel() {
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto bg-background p-4 sm:p-8">
-      <div className="mx-auto max-w-[1180px]">
+      <div className="mx-auto max-w-4xl">
         <header className="mb-7 flex items-start gap-4">
           <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
             <FileKey2 className="size-6" />
@@ -318,42 +314,36 @@ export function ActivationPanel() {
 
         <section className="rounded-[24px] border border-border bg-card p-5 shadow-sm sm:p-7">
           {step === 1 && (
-            <div className="max-w-xl">
+            <div>
               <span className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Paso 1</span>
               <h2 className="mt-2 font-['Space_Grotesk',sans-serif] text-2xl font-bold text-foreground">Datos de la empresa</h2>
-              <p className="mt-2 text-sm text-muted-foreground">Estos datos identifican al emisor ante la DGII.</p>
-              <div className="mt-6 rounded-2xl border border-primary/15 bg-primary/5 p-4">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-primary">Consultar por RNC o cédula</label>
-                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+              
+              <div className="mt-6 rounded-2xl border border-primary/20 bg-primary/5 p-4 sm:p-5">
+                <label className="text-[11px] font-bold text-primary flex items-center gap-2">
+                  <Search className="size-4" /> Consultar empresa en la DGII
+                </label>
+                <div className="mt-3 flex flex-col gap-3 sm:flex-row">
                   <input
                     value={company.rnc}
                     onChange={(event) => setCompany((current) => ({ ...current, rnc: event.target.value }))}
-                    placeholder="Ej. 131123456"
-                    className="min-w-0 flex-1 rounded-xl border border-border bg-card px-3 py-2.5 font-mono text-sm text-foreground outline-none focus:border-primary"
+                    placeholder="22300691924"
+                    className="min-w-0 flex-1 rounded-xl border border-border bg-background px-4 py-3 font-mono text-sm text-foreground outline-none focus:border-primary shadow-sm"
                   />
-                  <button type="button" onClick={() => void handleCompanyLookup()} disabled={companyLookupLoading || !company.rnc.trim()} className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground disabled:opacity-50">
+                  <button type="button" onClick={() => void handleCompanyLookup()} disabled={companyLookupLoading || !company.rnc.trim()} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0284c7] px-6 py-3 text-sm font-bold text-white shadow-sm hover:bg-[#0369a1] transition-colors disabled:opacity-50">
                     <Search className="size-4" /> {companyLookupLoading ? "Consultando..." : "Consultar DGII"}
                   </button>
                 </div>
               </div>
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <CompanyField label="Razón social o nombre comercial" value={company.name} onChange={(name) => setCompany((current) => ({ ...current, name }))} />
-                <CompanyField label="Teléfono" value={company.phone} onChange={(phone) => setCompany((current) => ({ ...current, phone }))} />
-                <CompanyField label="Correo electrónico" value={company.email} type="email" onChange={(email) => setCompany((current) => ({ ...current, email }))} />
-                <CompanyField label="Dirección fiscal" value={company.address} onChange={(address) => setCompany((current) => ({ ...current, address }))} />
-              </div>
-              <div className="mt-6 border-t border-border pt-5">
-                <h3 className="font-['Space_Grotesk',sans-serif] text-base font-bold text-foreground">Datos técnicos del emisor</h3>
-                <p className="mt-1 text-xs text-muted-foreground">La DGII los requiere para construir cada XML e-CF.</p>
-                <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                  <CompanyField label="Sucursal emisora" value={company.sucursal} onChange={(sucursal) => setCompany((current) => ({ ...current, sucursal }))} />
-                  <CompanyField label="Municipio" value={company.municipio} onChange={(municipio) => setCompany((current) => ({ ...current, municipio }))} />
-                  <CompanyField label="Provincia" value={company.provincia} onChange={(provincia) => setCompany((current) => ({ ...current, provincia }))} />
-                  <CompanyField label="Actividad económica" value={company.actividad} onChange={(actividad) => setCompany((current) => ({ ...current, actividad }))} />
-                  <CompanyField label="Correo emisor e-CF" value={company.issuerEmail} type="email" onChange={(issuerEmail) => setCompany((current) => ({ ...current, issuerEmail }))} />
+
+              <div className="mt-6 grid gap-x-5 gap-y-4 sm:grid-cols-2">
+                <CompanyField label="RNC DEL EMISOR" value={company.rnc} onChange={(rnc) => setCompany((current) => ({ ...current, rnc }))} />
+                <CompanyField label="RAZÓN SOCIAL" value={company.name} onChange={(name) => setCompany((current) => ({ ...current, name }))} />
+                <CompanyField label="TELÉFONO" value={company.phone} onChange={(phone) => setCompany((current) => ({ ...current, phone }))} />
+                <CompanyField label="EMAIL FISCAL" value={company.email} type="email" onChange={(email) => setCompany((current) => ({ ...current, email }))} />
+                <div className="sm:col-span-2">
+                  <CompanyField label="DIRECCIÓN" value={company.address} onChange={(address) => setCompany((current) => ({ ...current, address }))} />
                 </div>
               </div>
-              <p className="mt-4 text-xs leading-relaxed text-muted-foreground">Guardá esta información antes de continuar. Se sincroniza con la ficha fiscal del negocio.</p>
             </div>
           )}
 
@@ -467,7 +457,7 @@ export function ActivationPanel() {
               </div>
 
               <div className="mt-6 grid gap-3 md:grid-cols-3">
-                <ActivationStatus label="Empresa" detail={company.name && company.rnc && company.address && company.sucursal && company.municipio && company.provincia && company.actividad && company.issuerEmail ? `${company.name} · ${company.rnc}` : "Completá los datos fiscales del emisor"} ready={Boolean(company.name && company.rnc && company.address && company.sucursal && company.municipio && company.provincia && company.actividad && company.issuerEmail)} />
+                <ActivationStatus label="Empresa" detail={company.name && company.rnc && company.address && company.phone && company.email ? `${company.name} · ${company.rnc}` : "Completá los datos fiscales del emisor"} ready={Boolean(company.name && company.rnc && company.address && company.phone && company.email)} />
                 <ActivationStatus label="Certificado digital" detail={certificateReady ? "Validado y listo para firmar" : "Pendiente de cargar"} ready={certificateReady} />
                 <ActivationStatus label="Secuencias e-CF" detail={enabledTypes.length > 0 ? `${enabledTypes.length} tipo(s) configurado(s)` : "Pendiente de configurar"} ready={enabledTypes.length > 0} />
               </div>
@@ -850,6 +840,7 @@ export function ActivationPanel() {
             </div>
           )}
 
+          {message && <div className="mt-5 rounded-xl border border-primary/20 bg-primary/10 p-3 text-sm text-primary">{message}</div>}
           <div className="mt-7 flex items-center justify-between border-t border-border pt-5">
             <button type="button" onClick={() => setStep((current) => Math.max(1, current - 1))} disabled={step === 1} className="inline-flex items-center gap-1 rounded-xl border border-border px-4 py-2.5 text-xs font-bold text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40">
               <ChevronLeft className="size-4" /> Anterior
@@ -872,7 +863,6 @@ export function ActivationPanel() {
               </button>
             )}
           </div>
-          {message && <p className="mt-3 text-sm text-muted-foreground">{message}</p>}
         </section>
       </div>
     </div>
