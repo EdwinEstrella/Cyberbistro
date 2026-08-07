@@ -18,10 +18,19 @@ export interface PurchaseInput {
   montoPagado?: number;
   items: PurchaseItemInput[];
   observacion?: string;
+  itbisFacturado?: number;
+  itbisRetenido?: number;
+  retencionIsr?: number;
+  impuestoSelectivo?: number;
+  otrosImpuestos?: number;
+  propinaLegal?: number;
+  montoBienes?: number;
+  montoServicios?: number;
+  tipoBienServicio?: string;
 }
 
 export async function registrarCompra(input: PurchaseInput): Promise<{ compraId: string }> {
-  const { tenantId, sucursalId, usuarioId, proveedorId, numeroFactura, tipoPago, metodoPago, montoPagado, items, observacion } = input;
+  const { tenantId, sucursalId, usuarioId, proveedorId, numeroFactura, tipoPago, metodoPago, montoPagado, items, observacion, itbisFacturado = 0, itbisRetenido = 0, retencionIsr = 0, impuestoSelectivo = 0, otrosImpuestos = 0, propinaLegal = 0, montoBienes = 0, montoServicios = 0, tipoBienServicio = "09" } = input;
   if (!items || items.length === 0) {
     throw new Error("La compra debe contener al menos un ítem.");
   }
@@ -160,15 +169,18 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
     };
   });
 
+  // 2. Enqueue Local Write for Cabecera de Compra
+  const granTotal = totalCompra + (itbisFacturado || 0) + (impuestoSelectivo || 0) + (otrosImpuestos || 0) + (propinaLegal || 0);
+
   // Additional validations for parcial payment
   let resolvedMontoPagado = 0;
   if (tipoPago === "contado") {
-    resolvedMontoPagado = totalCompra;
+    resolvedMontoPagado = granTotal;
   } else if (tipoPago === "parcial") {
     if (typeof montoPagado !== "number" || montoPagado <= 0) {
       throw new Error("El monto pagado inicial debe ser mayor a cero.");
     }
-    if (montoPagado >= totalCompra) {
+    if (montoPagado >= granTotal) {
       throw new Error("El monto pagado no puede ser mayor o igual al total de la compra.");
     }
     resolvedMontoPagado = montoPagado;
@@ -190,7 +202,7 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
       metodo_pago: metodoPago || null,
       monto_pagado: resolvedMontoPagado,
       fecha_compra: fechaCompra,
-        total: totalCompra,
+        total: granTotal,
         cycle_id: activeCycleId,
       estado: "completada",
       observacion: observacion || null,
@@ -212,26 +224,26 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
       compra_id: compraId,
       rnc_cedula: providerRnc,
       tipo_identificacion: providerRnc.length === 9 ? "1" : "2",
-      tipo_bien_servicio: "09",
+      tipo_bien_servicio: tipoBienServicio || "09",
       ncf: numeroFactura.trim().toUpperCase(),
       ncf_modificado: null,
       fecha_comprobante: fechaCompra.slice(0, 10),
       fecha_pago: tipoPago === "credito" ? null : fechaCompra.slice(0, 10),
-      monto_servicios: 0,
-      monto_bienes: totalCompra,
-      total_facturado: totalCompra,
-      itbis_facturado: 0,
-      itbis_retenido: 0,
+      monto_servicios: montoServicios || 0,
+      monto_bienes: montoBienes || totalCompra,
+      total_facturado: totalCompra + (itbisFacturado || 0) + (impuestoSelectivo || 0) + (otrosImpuestos || 0) + (propinaLegal || 0),
+      itbis_facturado: itbisFacturado || 0,
+      itbis_retenido: itbisRetenido || 0,
       itbis_proporcionalidad: 0,
-      itbis_costo: 0,
-      itbis_adelantar: 0,
+      itbis_costo: itbisFacturado || 0, // By default assuming itbis goes to cost
+      itbis_adelantar: 0, // By default
       itbis_percibido: 0,
       tipo_retencion_isr: null,
-      retencion_isr: 0,
+      retencion_isr: retencionIsr || 0,
       isr_percibido: 0,
-      impuesto_selectivo: 0,
-      otros_impuestos: 0,
-      propina_legal: 0,
+      impuesto_selectivo: impuestoSelectivo || 0,
+      otros_impuestos: otrosImpuestos || 0,
+      propina_legal: propinaLegal || 0,
       forma_pago: formaPago,
     },
     deviceId,
@@ -330,9 +342,9 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
   // 5. Enqueue Local Write for Cuenta por Pagar if credito or parcial
   if (tipoPago === "credito" || tipoPago === "parcial") {
     if (!proveedorId) {
-      throw new Error("Se requiere un proveedor para registrar una compra a crédito o parcial.");
+      throw new Error("Se requiere un proveedor para registrar una compra a crǸdito o parcial.");
     }
-    const balancePendiente = tipoPago === "credito" ? totalCompra : (totalCompra - resolvedMontoPagado);
+    const balancePendiente = tipoPago === "credito" ? granTotal : (granTotal - resolvedMontoPagado);
     
     if (balancePendiente > 0) {
       const cxpId = crypto.randomUUID();

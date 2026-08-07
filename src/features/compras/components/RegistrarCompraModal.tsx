@@ -53,6 +53,14 @@ export function RegistrarCompraModal({
     monto_pagado: "",
     numero_factura: "",
     observacion: "",
+    itbis_facturado: "",
+    itbis_retenido: "",
+    retencion_isr: "",
+    impuesto_selectivo: "",
+    otros_impuestos: "",
+    propina_legal: "",
+    monto_servicios: "",
+    tipo_bien_servicio: "09",
   });
 
   const [purchaseItems, setPurchaseItems] = useState<{
@@ -66,12 +74,13 @@ export function RegistrarCompraModal({
   const isParcial = compraForm.tipo_pago === "parcial";
 
   const runningTotal = useMemo(() => {
-    return purchaseItems.reduce((acc, item) => {
+    const itemsTotal = purchaseItems.reduce((acc, item) => {
       const q = Number(item.cantidad) || 0;
       const c = Number(item.costo_unitario) || 0;
       return acc + (q * c);
     }, 0);
-  }, [purchaseItems]);
+    return itemsTotal + (Number(compraForm.itbis_facturado) || 0) + (Number(compraForm.impuesto_selectivo) || 0) + (Number(compraForm.otros_impuestos) || 0) + (Number(compraForm.propina_legal) || 0);
+  }, [purchaseItems, compraForm.itbis_facturado, compraForm.impuesto_selectivo, compraForm.otros_impuestos, compraForm.propina_legal]);
 
   if (!isOpen) return null;
 
@@ -136,10 +145,18 @@ export function RegistrarCompraModal({
         montoPagado: resolvedMontoPagado,
         items: itemsPayload,
         observacion: compraForm.observacion.trim(),
+        itbisFacturado: Number(compraForm.itbis_facturado) || 0,
+        itbisRetenido: Number(compraForm.itbis_retenido) || 0,
+        retencionIsr: Number(compraForm.retencion_isr) || 0,
+        impuestoSelectivo: Number(compraForm.impuesto_selectivo) || 0,
+        otrosImpuestos: Number(compraForm.otros_impuestos) || 0,
+        propinaLegal: Number(compraForm.propina_legal) || 0,
+        montoServicios: Number(compraForm.monto_servicios) || 0,
+        tipoBienServicio: compraForm.tipo_bien_servicio,
       });
 
       onSuccess("Compra registrada y stock actualizado correctamente.");
-      setCompraForm({ proveedor_id: "", tipo_pago: "contado", metodo_pago: "efectivo", monto_pagado: "", numero_factura: "", observacion: "" });
+      setCompraForm({ proveedor_id: "", tipo_pago: "contado", metodo_pago: "efectivo", monto_pagado: "", numero_factura: "", observacion: "", itbis_facturado: "", itbis_retenido: "", retencion_isr: "", impuesto_selectivo: "", otros_impuestos: "", propina_legal: "", monto_servicios: "", tipo_bien_servicio: "09" });
       setPurchaseItems([{ id: crypto.randomUUID(), producto_id: "", cantidad: "", costo_unitario: "" }]);
       onClose();
     } catch (err: any) {
@@ -151,7 +168,7 @@ export function RegistrarCompraModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
-      <div className="bg-[#131313] border border-[rgba(255,144,109,0.3)] rounded-[24px] shadow-[0px_0px_40px_rgba(255,144,109,0.1)] max-w-[850px] w-full p-6 sm:p-8 relative flex flex-col max-h-[90vh] text-white">
+      <div className="bg-[#131313] border border-[rgba(255,144,109,0.3)] rounded-[24px] shadow-[0px_0px_40px_rgba(255,144,109,0.1)] max-w-[1000px] w-full p-6 sm:p-8 relative flex flex-col max-h-[95vh] text-white">
         <h3 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[20px] uppercase tracking-[0.5px] mb-5 shrink-0 text-left flex items-center gap-2">
           <span className="bg-[#ff906d]/10 text-[#ff906d] p-1.5 rounded-lg border border-[#ff906d]/20"><Plus className="size-5" /></span>
           Registrar Factura de Compra
@@ -187,14 +204,99 @@ export function RegistrarCompraModal({
               </select>
             </div>
             <div className="flex flex-col gap-1.5 md:col-span-1">
-              <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.8px] font-semibold">Número Factura</label>
+              <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.8px] font-semibold">Número Factura / NCF *</label>
               <input
                 type="text"
+                required
                 placeholder="Ej: B150004523"
                 value={compraForm.numero_factura}
                 onChange={(e) => setCompraForm(prev => ({ ...prev, numero_factura: e.target.value }))}
                 className="bg-[#111] border border-[rgba(72,72,71,0.4)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors"
               />
+            </div>
+          </div>
+
+          <div className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.2)] rounded-xl p-4 flex flex-col gap-4 shrink-0">
+            <h4 className="font-['Space_Grotesk',sans-serif] text-white text-[13px] uppercase tracking-[1px] font-bold border-b border-[rgba(72,72,71,0.2)] pb-2">Datos Fiscales (606)</h4>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 text-left">
+              <div className="flex flex-col gap-1.5 md:col-span-2">
+                <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.8px] font-semibold">Tipo Bien o Servicio</label>
+                <select
+                  value={compraForm.tipo_bien_servicio}
+                  onChange={(e) => setCompraForm(prev => ({ ...prev, tipo_bien_servicio: e.target.value }))}
+                  className="bg-[#111] border border-[rgba(72,72,71,0.4)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors cursor-pointer"
+                >
+                  <option value="01">01 - Gastos de Personal</option>
+                  <option value="02">02 - Gastos por Trabajos, Suministros y Servicios</option>
+                  <option value="03">03 - Arrendamientos</option>
+                  <option value="04">04 - Gastos de Activos Fijo</option>
+                  <option value="05">05 - Gastos de Representación</option>
+                  <option value="06">06 - Otras Deducciones Admitidas</option>
+                  <option value="07">07 - Gastos Financieros</option>
+                  <option value="08">08 - Gastos Extraordinarios</option>
+                  <option value="09">09 - Compras y Gastos que formaran parte del Costo de Venta</option>
+                  <option value="10">10 - Adquisiciones de Activos</option>
+                  <option value="11">11 - Gastos de Seguros</option>
+                </select>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.8px] font-semibold">Monto Servicios</label>
+                <input
+                  type="number" min="0" step="0.01" placeholder="RD$ 0.00"
+                  value={compraForm.monto_servicios}
+                  onChange={(e) => setCompraForm(prev => ({ ...prev, monto_servicios: e.target.value }))}
+                  className="bg-[#111] border border-[rgba(72,72,71,0.4)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-5 text-left">
+              <div className="flex flex-col gap-1.5">
+                <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.8px] font-semibold">ITBIS Facturado</label>
+                <input
+                  type="number" min="0" step="0.01" placeholder="RD$ 0.00"
+                  value={compraForm.itbis_facturado}
+                  onChange={(e) => setCompraForm(prev => ({ ...prev, itbis_facturado: e.target.value }))}
+                  className="bg-[#111] border border-[rgba(72,72,71,0.4)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.8px] font-semibold">ITBIS Retenido</label>
+                <input
+                  type="number" min="0" step="0.01" placeholder="RD$ 0.00"
+                  value={compraForm.itbis_retenido}
+                  onChange={(e) => setCompraForm(prev => ({ ...prev, itbis_retenido: e.target.value }))}
+                  className="bg-[#111] border border-[rgba(72,72,71,0.4)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.8px] font-semibold">Retención ISR</label>
+                <input
+                  type="number" min="0" step="0.01" placeholder="RD$ 0.00"
+                  value={compraForm.retencion_isr}
+                  onChange={(e) => setCompraForm(prev => ({ ...prev, retencion_isr: e.target.value }))}
+                  className="bg-[#111] border border-[rgba(72,72,71,0.4)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.8px] font-semibold">ISC / Otros Imp.</label>
+                <input
+                  type="number" min="0" step="0.01" placeholder="RD$ 0.00"
+                  value={compraForm.impuesto_selectivo}
+                  onChange={(e) => setCompraForm(prev => ({ ...prev, impuesto_selectivo: e.target.value }))}
+                  className="bg-[#111] border border-[rgba(72,72,71,0.4)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.8px] font-semibold">Propina Legal</label>
+                <input
+                  type="number" min="0" step="0.01" placeholder="RD$ 0.00"
+                  value={compraForm.propina_legal}
+                  onChange={(e) => setCompraForm(prev => ({ ...prev, propina_legal: e.target.value }))}
+                  className="bg-[#111] border border-[rgba(72,72,71,0.4)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors"
+                />
+              </div>
             </div>
           </div>
 
@@ -243,7 +345,7 @@ export function RegistrarCompraModal({
           )}
 
           {/* Items Section */}
-          <div className="flex flex-col gap-3 flex-1 min-h-0 text-left bg-[#1a1a1a] border border-[rgba(72,72,71,0.2)] rounded-xl p-4">
+          <div className="flex flex-col gap-3 shrink-0 text-left bg-[#1a1a1a] border border-[rgba(72,72,71,0.2)] rounded-xl p-4">
             <div className="flex justify-between items-center pb-2">
               <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[14px] uppercase tracking-[0.5px]">
                 Insumos Comprados
@@ -257,7 +359,7 @@ export function RegistrarCompraModal({
               </button>
             </div>
 
-            <div className="overflow-auto border border-[rgba(72,72,71,0.3)] rounded-xl min-h-[150px] bg-[#111] custom-scrollbar">
+            <div className="overflow-auto border border-[rgba(72,72,71,0.3)] rounded-xl max-h-[350px] bg-[#111] custom-scrollbar">
               <table className="w-full border-collapse">
                 <thead className="bg-[#151515] sticky top-0 z-10 shadow-sm">
                   <tr className="text-left font-['Inter',sans-serif] text-[10px] uppercase tracking-[0.8px] text-[#adaaaa] border-b border-[rgba(72,72,71,0.3)]">
@@ -273,12 +375,12 @@ export function RegistrarCompraModal({
                     const isFractional = selectedProd?.mostrar_en_fracciones && selectedProd.contenido_por_unidad_compra && selectedProd.contenido_por_unidad_compra > 0;
                     return (
                       <tr key={item.id} className="border-b border-[rgba(72,72,71,0.15)] last:border-b-0 hover:bg-[#151515] transition-colors group">
-                        <td className="px-4 py-3 text-left align-top">
+                        <td className="px-4 py-4 text-left align-top">
                           <select
                             required
                             value={item.producto_id}
                             onChange={(e) => updateRow(idx, "producto_id", e.target.value)}
-                            className="w-full bg-[#1c1c1c] border border-[rgba(72,72,71,0.4)] rounded-[8px] px-3 py-2 text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors shadow-sm"
+                            className="w-full bg-[#1c1c1c] border border-[rgba(72,72,71,0.4)] rounded-[8px] px-3 py-2.5 text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors shadow-sm"
                           >
                             <option value="">Selecciona insumo</option>
                             {productos.map(p => (
@@ -288,12 +390,12 @@ export function RegistrarCompraModal({
                             ))}
                           </select>
                           {selectedProd && isFractional && item.cantidad && Number(item.cantidad) > 0 && (
-                            <span className="text-[11px] text-[#ff906d] block mt-2 px-1 font-medium bg-[#ff906d]/10 w-fit rounded px-2 py-0.5 border border-[#ff906d]/20">
+                            <span className="text-[11px] text-[#ff906d] block mt-2 px-1 font-medium bg-[#ff906d]/10 w-fit rounded py-0.5 border border-[#ff906d]/20">
                               + {(Number(item.cantidad) * (selectedProd.contenido_por_unidad_compra || 0)).toLocaleString()} {selectedProd.unidad_base} al stock
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-3 align-top">
+                        <td className="px-4 py-4 align-top">
                           <input
                             type="number"
                             required
@@ -302,7 +404,7 @@ export function RegistrarCompraModal({
                             placeholder={isFractional ? (selectedProd.unidad_compra || "Cant.") : (selectedProd?.unidad_base || "Cantidad")}
                             value={item.cantidad}
                             onChange={(e) => updateRow(idx, "cantidad", e.target.value)}
-                            className="w-full bg-[#1c1c1c] border border-[rgba(72,72,71,0.4)] rounded-[8px] px-3 py-2 text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors shadow-sm"
+                            className="w-full bg-[#1c1c1c] border border-[rgba(72,72,71,0.4)] rounded-[8px] px-3 py-2.5 text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors shadow-sm"
                           />
                           {selectedProd && (
                             <span className="block text-[10px] text-zinc-500 uppercase tracking-wide mt-2 px-1 font-semibold">
@@ -310,7 +412,7 @@ export function RegistrarCompraModal({
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-3 align-top">
+                        <td className="px-4 py-4 align-top">
                           <input
                             type="number"
                             required
@@ -319,7 +421,7 @@ export function RegistrarCompraModal({
                             placeholder={isFractional ? `Costo ${selectedProd.unidad_compra || "unidad"}` : "Costo Unit."}
                             value={item.costo_unitario}
                             onChange={(e) => updateRow(idx, "costo_unitario", e.target.value)}
-                            className="w-full bg-[#1c1c1c] border border-[rgba(72,72,71,0.4)] rounded-[8px] px-3 py-2 text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors shadow-sm"
+                            className="w-full bg-[#1c1c1c] border border-[rgba(72,72,71,0.4)] rounded-[8px] px-3 py-2.5 text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors shadow-sm"
                           />
                           {selectedProd && (
                             <span className="block text-[10px] text-zinc-500 uppercase tracking-wide mt-2 px-1 font-semibold">
@@ -327,7 +429,7 @@ export function RegistrarCompraModal({
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-center align-top pt-4">
+                        <td className="px-4 py-4 text-center align-top pt-5">
                           <button
                             type="button"
                             onClick={() => removeRow(idx)}
