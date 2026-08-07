@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeImage, shell } from 'electron'
 import type { NativeImage } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -7,6 +7,7 @@ import { setupAutoUpdater } from './autoUpdater'
 import { startLanEdgeServer, type LanEdgeServerHandle } from './lanEdgeServer'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const CERTIFICATION_PORTAL_URL = 'https://ecf.dgii.gov.do/certecf/portalcertificacion/Login?ReturnUrl=%2Fcertecf%2Fportalcertificacion'
 let mainWindow: BrowserWindow | null = null
 let lanEdgeServer: LanEdgeServerHandle | null = null
 
@@ -350,6 +351,7 @@ if (gotTheLock) {
   )
 
   ipcMain.handle('rnc:lookup', (_event, rnc: unknown) => lookupBusinessRnc(rnc))
+  ipcMain.handle('external:open-portal', () => shell.openExternal(CERTIFICATION_PORTAL_URL))
 
   // Window controls handlers (solo instancia principal)
   ipcMain.on('window-minimize', () => {

@@ -73,6 +73,7 @@ export interface ElectronAPI {
   printThermal?: (opts: PrintThermalOptions) => Promise<PrintThermalResponse>;
   openCashDrawer?: (opts?: OpenCashDrawerOptions) => Promise<PrintThermalResponse>;
   lookupBusinessRnc?: (rnc: string) => Promise<RncLookupResponse>;
+  openCertificationPortal?: () => Promise<void>;
   checkForUpdates?: () => void;
   downloadUpdate?: () => void;
   installUpdate?: () => void;

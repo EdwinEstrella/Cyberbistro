@@ -79,6 +79,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
     return ipcRenderer.invoke('rnc:lookup', rnc)
   },
+  openCertificationPortal: () => ipcRenderer.invoke('external:open-portal'),
   checkForUpdates: () => {
     ipcRenderer.send('check-for-updates')
   },

@@ -92,6 +92,7 @@ const sidebarSections: readonly SidebarSection[] = [
         customIcon: "fiscal",
         children: [
           { label: "Documentos Fiscales", customIcon: "fiscal", path: "/fiscal", feature: "dgii_ecf" },
+          { label: "Activación", customIcon: "fiscal", path: "/fiscal/activacion", feature: "dgii_ecf" },
         ],
       },
     ],
@@ -114,6 +115,7 @@ const routePrefetchers: Record<string, () => Promise<unknown>> = {
   "/soporte": () => import("../../features/soporte"),
   "/ajustes": () => import("../../features/ajustes"),
   "/fiscal": () => import("../../features/fiscal"),
+  "/fiscal/activacion": () => import("../../features/fiscal"),
   "/cuentas-cobrar": () => import("../../features/cuentas-cobrar"),
 };
 
@@ -150,7 +152,7 @@ function filterMainNavForRol(rol: string | null): readonly SidebarSection[] {
   } else if (normalized === "cocina") {
     filtered = sidebarSections.map((s) => filterSectionItems(s, ["/cocina"]));
   } else if (normalized === "cajera") {
-    const allow = ["/dashboard", "/clientes", "/tables", "/gastos", "/cierre", "/cuentas-pagar", "/cuentas-cobrar", "/pedidos", "/fiscal"];
+    const allow = ["/dashboard", "/clientes", "/tables", "/gastos", "/cierre", "/cuentas-pagar", "/cuentas-cobrar", "/pedidos", "/fiscal", "/fiscal/activacion"];
     filtered = sidebarSections.map((s) => filterSectionItems(s, allow));
   } else if (normalized === "mesero") {
     const allow = ["/camarera", "/entregas"];
@@ -659,7 +661,7 @@ function AppLayoutContent() {
             {sideNavSections.map((section) => (
               <div key={section.key} className="flex flex-col gap-[6px] mb-[12px] last:mb-0">
                 {section.key !== "soporte" && (
-                  <span className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-[1px] px-[16px] mb-[4px] font-['Space_Grotesk',sans-serif]">
+                  <span className="text-[10px] font-bold text-white uppercase tracking-[1px] px-[16px] mb-[4px] font-['Space_Grotesk',sans-serif]">
                     {section.label}
                   </span>
                 )}
@@ -692,7 +694,7 @@ function AppLayoutContent() {
                         className={`flex gap-[16px] items-center px-[16px] py-[10px] rounded-[8px] cursor-pointer relative border-none text-left w-full transition-colors ${
                           isActive
                             ? "bg-primary/10 text-primary dark:bg-[#262626] dark:text-[#ff906d]"
-                            : "bg-transparent text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                            : "bg-transparent text-white hover:bg-sidebar-accent hover:text-white"
                         }`}
                       >
                         {isActive && (
@@ -747,7 +749,7 @@ function AppLayoutContent() {
                                 }}
                                 aria-current={childActive ? "page" : undefined}
                                 className={`flex items-center rounded-[6px] px-3 py-2 text-left text-[12px] transition-colors ${
-                                  childActive ? "bg-primary/10 font-bold text-primary dark:text-[#ff906d]" : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                                  childActive ? "bg-primary/10 font-bold text-primary dark:text-[#ff906d]" : "text-white hover:bg-sidebar-accent hover:text-white"
                                 }`}
                               >
                                 {child.label}
@@ -783,7 +785,7 @@ function AppLayoutContent() {
                 className={`flex gap-[16px] items-center px-[16px] py-[12px] cursor-pointer relative border-none text-left w-full rounded-[8px] transition-colors ${
                   isAjustesActive
                     ? "bg-primary/10 text-primary dark:bg-[#262626] dark:text-[#ff906d]"
-                    : "bg-transparent text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                    : "bg-transparent text-white hover:bg-sidebar-accent hover:text-white"
                 }`}
               >
                 {isAjustesActive && (
@@ -805,7 +807,7 @@ function AppLayoutContent() {
 
             <button
               type="button"
-              className="flex gap-[16px] items-center px-[16px] py-[12px] cursor-pointer border-none bg-transparent text-left w-full rounded-[8px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+              className="flex gap-[16px] items-center px-[16px] py-[12px] cursor-pointer border-none bg-transparent text-left w-full rounded-[8px] text-white hover:bg-destructive/10 hover:text-destructive transition-colors"
               onClick={() => setShowLogoutConfirm(true)}
             >
               <svg className="shrink-0 size-[18px]" fill="none" viewBox="0 0 18 18" aria-hidden>
