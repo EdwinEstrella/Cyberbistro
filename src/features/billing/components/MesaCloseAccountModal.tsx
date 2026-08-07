@@ -1243,11 +1243,11 @@ export function MesaCloseAccountModal({
                       className={`rounded-xl p-3.5 bg-[#0a0a0a] border transition-colors hover:bg-[#111] ${
                         splitMode 
                           ? "border-white/10 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between" 
-                          : "border-white/5 flex items-center justify-between"
+                          : "border-white/20 flex items-center justify-between"
                       }`}
                     >
                       <div className="flex items-start gap-3.5">
-                        <div className="min-w-[28px] h-[28px] rounded-lg bg-[#1a1a1a] border border-white/5 flex items-center justify-center font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px]">
+                        <div className="min-w-[28px] h-[28px] rounded-lg bg-[#1a1a1a] border border-white/20 flex items-center justify-center font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px]">
                           {consumo.cantidad}
                         </div>
                         <div>
@@ -1406,14 +1406,14 @@ export function MesaCloseAccountModal({
           </div>
 
           {/* Right Column: Customer, NCF, Payment Methods, Received and Actions */}
-          <div className="md:col-span-5 flex flex-col gap-5 md:overflow-y-auto pr-1 h-full custom-scrollbar md:border-l md:border-white/5 md:pl-6">
+          <div className="md:col-span-5 flex flex-col gap-5 md:overflow-y-auto pr-1 h-full custom-scrollbar md:border-l md:border-white/20 md:pl-6">
             
             {/* Customer Selector Card */}
             <div className="flex flex-col gap-2 shrink-0">
               <span className="text-white font-['Space_Grotesk',sans-serif] font-bold text-[11px] uppercase tracking-[1px] px-1">
                 Cliente
               </span>
-              <div className="bg-[#0a0a0a] border border-white/5 rounded-2xl p-3">
+              <div className="bg-[#0a0a0a] border border-white/20 rounded-2xl p-3">
                 <CustomerSelect
                   tenantId={tenantId}
                   value={selectedCustomer}
@@ -1429,7 +1429,7 @@ export function MesaCloseAccountModal({
             {/* NCF Selection Cards */}
             {ncfFiscalActive && (
               <div className="flex flex-col gap-3 shrink-0">
-                <div className="flex items-center justify-between gap-[10px] rounded-[14px] border border-white/5 bg-[#0a0a0a] px-4 py-3">
+                <div className="flex items-center justify-between gap-[10px] rounded-[14px] border border-white/20 bg-[#0a0a0a] px-4 py-3">
                   <div className="flex flex-col min-w-0">
                     <span className="font-['Inter',sans-serif] text-zinc-200 text-[13px] font-medium leading-tight">
                       Solicita comprobante fiscal
@@ -1456,7 +1456,7 @@ export function MesaCloseAccountModal({
                 </div>
 
                 {solicitaComprobante && (
-                  <div className="flex flex-col gap-2 pt-1 border-t border-white/5 mt-1">
+                  <div className="flex flex-col gap-2 pt-1 border-t border-white/20 mt-1">
                     <label htmlFor="ncf-select" className="text-zinc-400 font-['Space_Grotesk',sans-serif] font-bold text-[11px] uppercase tracking-[1px] px-1">
                       Tipo NCF
                     </label>
@@ -1468,7 +1468,7 @@ export function MesaCloseAccountModal({
                           isNcfTypeCode(e.target.value) ? e.target.value : DEFAULT_NCF_B_CODE
                         )
                       }
-                      className="w-full rounded-[14px] border border-white/5 bg-[#0a0a0a] px-4 py-3.5 font-['Inter',sans-serif] text-zinc-300 text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors cursor-pointer h-auto shadow-sm"
+                      className="w-full rounded-[14px] border border-white/20 bg-[#0a0a0a] px-4 py-3.5 font-['Inter',sans-serif] text-zinc-300 text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors cursor-pointer h-auto shadow-sm"
                     >
                       {NCF_TIPO_OPCIONES.filter(o => {
                         if (fiscalMode === "dgii_ecf") return o.codigo.startsWith("E");
@@ -1494,7 +1494,7 @@ export function MesaCloseAccountModal({
                       value={clientRnc}
                       onChange={(e) => setClientRnc(e.target.value)}
                       placeholder="RNC del cliente (obligatorio)"
-                      className="w-full rounded-[14px] border border-white/5 bg-[#0a0a0a] px-4 py-3.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors shadow-sm"
+                      className="w-full rounded-[14px] border border-white/20 bg-[#0a0a0a] px-4 py-3.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors shadow-sm"
                     />
                   </div>
                 )}
@@ -1506,7 +1506,7 @@ export function MesaCloseAccountModal({
 
             {/* Payment Method Section */}
             <div className="flex flex-col gap-2 shrink-0">
-              <span className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px] px-1">
+              <span className="text-white font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px] px-1">
                 Método de pago
               </span>
               <div className="grid grid-cols-2 gap-2">
@@ -1528,7 +1528,7 @@ export function MesaCloseAccountModal({
                       className={`flex items-center gap-3 px-4 py-3.5 rounded-xl cursor-pointer border transition-all active:scale-95 justify-start ${
                         active
                           ? "bg-[#ff906d] border-[#ff906d] text-[#5b1600] shadow-[0_4px_12px_rgba(255,144,109,0.2)] font-bold"
-                          : "bg-zinc-900/50 border-zinc-800/80 text-zinc-300 hover:bg-zinc-800 hover:border-zinc-700"
+                          : "bg-zinc-900/50 border-white/20 text-zinc-300 hover:bg-zinc-800 hover:border-white/40"
                       }`}
                     >
                       <span className="text-[18px]">{method.icon}</span>
@@ -1543,7 +1543,7 @@ export function MesaCloseAccountModal({
 
             {/* Cash Calculator Section */}
             {(paymentMethod === "efectivo" || paymentMethod === "fiado") && !splitMode && (
-              <div className="flex flex-col gap-2 shrink-0 bg-[#0a0a0a] border border-white/5 rounded-[20px] p-4">
+              <div className="flex flex-col gap-2 shrink-0 bg-[#0a0a0a] border border-white/20 rounded-[20px] p-4">
                 <label htmlFor="cash-received-input" className="text-white font-['Space_Grotesk',sans-serif] font-bold text-[11px] uppercase tracking-[1px]">
                   {paymentMethod === "fiado" ? "Abono inicial (opcional)" : "Dinero recibido (opcional)"}
                 </label>
@@ -1558,7 +1558,7 @@ export function MesaCloseAccountModal({
                     value={cashReceivedInput}
                     onChange={(e) => setCashReceivedInput(e.target.value)}
                     placeholder="Ej: 1000"
-                    className="w-full rounded-[14px] border border-white/5 bg-[#111] pl-12 pr-4 py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-white text-[15px] outline-none focus:border-[#ff906d]/50 transition-colors shadow-sm"
+                    className="w-full rounded-[14px] border border-white/20 bg-[#111] pl-12 pr-4 py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-white text-[15px] outline-none focus:border-[#ff906d]/50 transition-colors shadow-sm"
                   />
                 </div>
                 {cashReceivedInput.trim() !== "" && (
@@ -1584,7 +1584,7 @@ export function MesaCloseAccountModal({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="flex-1 bg-[#111] border border-white/5 rounded-xl py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-zinc-400 text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:bg-[#1a1a1a] hover:text-white transition-all active:scale-95 shadow-sm"
+                  className="flex-1 bg-[#111] border border-white/20 rounded-xl py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-zinc-400 text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:bg-[#1a1a1a] hover:text-white transition-all active:scale-95 shadow-sm"
                 >
                   Cancelar
                 </button>

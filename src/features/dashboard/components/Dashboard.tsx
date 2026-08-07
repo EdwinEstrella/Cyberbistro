@@ -2120,7 +2120,7 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
               className="bg-[#000000] border border-white/10 rounded-[24px] shadow-[0px_0px_50px_rgba(0,0,0,0.5)] w-full max-w-6xl max-h-[96vh] md:max-h-[90vh] flex flex-col overflow-hidden relative"
             >
               {/* Modal Header */}
-              <div className="flex items-center justify-between px-6 py-5 border-b border-white/5 shrink-0 relative z-10">
+              <div className="flex items-center justify-between px-6 py-5 border-b border-white/20 shrink-0 relative z-10">
                 <div>
                   <h2 id="takeout-close-title" className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[22px] tracking-[0.5px] flex items-center gap-2">
                     <span className="text-[#ff906d]">●</span> Cobrar para llevar
@@ -2155,10 +2155,10 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                       {cart.map((line) => (
                         <div
                           key={line.plato.id}
-                          className="rounded-xl p-3.5 bg-[#0a0a0a] border border-white/5 flex items-center justify-between transition-colors hover:bg-[#111]"
+                          className="rounded-xl p-3.5 bg-[#0a0a0a] border border-white/20 flex items-center justify-between transition-colors hover:bg-[#111]"
                         >
                           <div className="flex items-start gap-3.5">
-                            <div className="min-w-[28px] h-[28px] rounded-lg bg-[#1a1a1a] border border-white/5 flex items-center justify-center font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px]">
+                            <div className="min-w-[28px] h-[28px] rounded-lg bg-[#1a1a1a] border border-white/20 flex items-center justify-center font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px]">
                               {line.cantidad}
                             </div>
                             <div>
@@ -2183,7 +2183,7 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
 
                   {/* Charge Config Toggles */}
                   <div className="flex flex-col gap-2 shrink-0 pt-2">
-                    <div className="flex items-center justify-between gap-[10px] rounded-[14px] border border-white/5 bg-[#0a0a0a] px-4 py-3">
+                    <div className="flex items-center justify-between gap-[10px] rounded-[14px] border border-white/20 bg-[#0a0a0a] px-4 py-3">
                       <div className="flex flex-col min-w-0">
                         <span className="font-['Inter',sans-serif] text-zinc-300 text-[13px] font-medium leading-tight">
                           ITBIS 18%
@@ -2204,7 +2204,7 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                         />
                       </button>
                     </div>
-                    <div className="flex items-center justify-between gap-[10px] rounded-[14px] border border-white/5 bg-[#0a0a0a] px-4 py-3">
+                    <div className="flex items-center justify-between gap-[10px] rounded-[14px] border border-white/20 bg-[#0a0a0a] px-4 py-3">
                       <div className="flex flex-col min-w-0">
                         <span className="font-['Inter',sans-serif] text-zinc-300 text-[13px] font-medium leading-tight">
                           Propina legal 10%
@@ -2228,7 +2228,7 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                   </div>
 
                   {/* Main Totals Card */}
-                  <div className="bg-[#0a0a0a] border border-white/5 rounded-[20px] p-6 flex flex-col gap-3.5 shrink-0 relative overflow-hidden mt-2">
+                  <div className="bg-[#0a0a0a] border border-white/20 rounded-[20px] p-6 flex flex-col gap-3.5 shrink-0 relative overflow-hidden mt-2">
                     <div className="flex justify-between items-center relative z-10">
                       <span className="font-['Inter',sans-serif] text-zinc-500 text-[13px]">Subtotal</span>
                       <span className="font-['Space_Grotesk',sans-serif] font-bold text-zinc-300 text-[14px]">{formatMoney(calcSubtotal)}</span>
@@ -2262,10 +2262,10 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                   
                   {/* Customer Selector Card */}
                   <div className="flex flex-col gap-2 shrink-0">
-                    <span className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px] px-1">
+                    <span className="text-white font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px] px-1">
                       Cliente
                     </span>
-                    <div className="bg-zinc-900/30 border border-zinc-800/40 rounded-2xl p-3">
+                    <div className="bg-zinc-900/30 border border-white/20 rounded-2xl p-3">
                       <CustomerSelect
                         tenantId={tenantId}
                         value={takeoutCustomer}
@@ -2280,8 +2280,8 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
 
                   {/* NCF Selection Cards */}
                   {tenantNcfFiscalActive && (
-                    <div className="flex flex-col gap-3 shrink-0 bg-zinc-900/20 border border-zinc-800/30 rounded-2xl p-4">
-                      <div className="flex items-center justify-between gap-[10px] rounded-[14px] border border-white/5 bg-[#0a0a0a] px-4 py-3">
+                    <div className="flex flex-col gap-3 shrink-0 bg-zinc-900/20 border border-white/20 rounded-2xl p-4">
+                      <div className="flex items-center justify-between gap-[10px] rounded-[14px] border border-white/20 bg-[#0a0a0a] px-4 py-3">
                         <div className="flex flex-col min-w-0">
                           <span className="font-['Inter',sans-serif] text-zinc-200 text-[13px] font-medium leading-tight">
                             Solicita comprobante fiscal
@@ -2308,7 +2308,7 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                       </div>
 
                       {solicitaComprobante && (
-                        <div className="flex flex-col gap-2 pt-1 border-t border-white/5 mt-1">
+                        <div className="flex flex-col gap-2 pt-1 border-t border-white/20 mt-1">
                           <label htmlFor="ncf-select" className="text-zinc-400 font-['Space_Grotesk',sans-serif] font-bold text-[11px] uppercase tracking-[1px] px-1">
                             Tipo NCF
                           </label>
@@ -2320,7 +2320,7 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                               )
                             }
                           >
-                            <SelectTrigger className="w-full rounded-[14px] border border-white/5 bg-[#0a0a0a] px-4 py-3.5 font-['Inter',sans-serif] text-zinc-200 text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors cursor-pointer h-auto shadow-sm">
+                            <SelectTrigger className="w-full rounded-[14px] border border-white/20 bg-[#0a0a0a] px-4 py-3.5 font-['Inter',sans-serif] text-zinc-200 text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors cursor-pointer h-auto shadow-sm">
                               <SelectValue placeholder="Tipo NCF" />
                             </SelectTrigger>
                             <SelectContent className="rounded-xl bg-[#111] border-white/10 text-zinc-200">
@@ -2349,7 +2349,7 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                             value={takeoutClientRnc}
                             onChange={(e) => setTakeoutClientRnc(e.target.value)}
                             placeholder="RNC del cliente (obligatorio)"
-                            className="w-full rounded-[14px] border border-white/5 bg-[#0a0a0a] px-4 py-3.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors shadow-sm"
+                            className="w-full rounded-[14px] border border-white/20 bg-[#0a0a0a] px-4 py-3.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors shadow-sm"
                           />
                         </div>
                       )}
@@ -2358,7 +2358,7 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
 
                   {/* Payment Method Section */}
                   <div className="flex flex-col gap-2 shrink-0">
-                    <span className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px] px-1">
+                    <span className="text-white font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px] px-1">
                       Método de pago
                     </span>
                     <div className="grid grid-cols-2 gap-2">
@@ -2396,7 +2396,7 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                             className={`flex items-center gap-3 px-4 py-3.5 rounded-xl cursor-pointer border transition-all active:scale-95 justify-start ${
                               active
                                   ? "bg-[#ff906d] border-[#ff906d] text-[#5b1600] shadow-[0_4px_12px_rgba(255,144,109,0.2)] font-bold"
-                                  : "bg-zinc-900/50 border-zinc-800/80 text-zinc-300 hover:bg-zinc-800 hover:border-zinc-700"
+                                  : "bg-zinc-900/50 border-white/20 text-zinc-300 hover:bg-zinc-800 hover:border-white/40"
                             } ${isFiadoLocked ? "opacity-60" : ""}`}
                           >
                             <span className="text-[18px]">{method.icon}</span>
@@ -2411,8 +2411,8 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
 
                   {/* Cash Calculator Section */}
                   {(paymentMethod === "efectivo" || paymentMethod === "fiado") && (
-                    <div className="flex flex-col gap-2 shrink-0 bg-zinc-900/20 border border-zinc-800/30 rounded-2xl p-4">
-                      <label htmlFor="cash-received-input" className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px]">
+                    <div className="flex flex-col gap-2 shrink-0 bg-zinc-900/20 border border-white/20 rounded-2xl p-4">
+                      <label htmlFor="cash-received-input" className="text-white font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px]">
                         {paymentMethod === "fiado" ? "Abono inicial (opcional)" : "Dinero recibido (opcional)"}
                       </label>
                       <div className="relative">
@@ -2426,7 +2426,7 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                           value={cashReceivedInput}
                           onChange={(e) => setCashReceivedInput(e.target.value)}
                           placeholder="Ej: 1000"
-                          className="w-full rounded-xl border border-zinc-800 bg-zinc-950 pl-12 pr-4 py-3 font-['Space_Grotesk',sans-serif] font-bold text-white text-[15px] outline-none focus:border-[#ff906d]/50 transition-colors"
+                          className="w-full rounded-xl border border-white/20 bg-zinc-950 pl-12 pr-4 py-3 font-['Space_Grotesk',sans-serif] font-bold text-white text-[15px] outline-none focus:border-[#ff906d]/50 transition-colors"
                         />
                       </div>
                       {cashReceivedInput.trim() !== "" && (
@@ -2457,7 +2457,7 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                           setOrderNotes("");
                           setShowPaymentModal(false);
                         }}
-                        className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-zinc-400 text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:border-zinc-700 hover:text-white transition-all active:scale-95"
+                        className="flex-1 bg-zinc-900 border border-white/20 rounded-xl py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-zinc-400 text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:border-white/40 hover:text-white transition-all active:scale-95"
                       >
                         Cancelar
                       </button>
