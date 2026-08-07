@@ -1231,30 +1231,30 @@ export function MesaCloseAccountModal({
 
             {/* Items List Wrapper */}
             <div className="flex-1 flex flex-col min-h-0">
-              <span className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px] mb-2 px-1">
+              <span className="text-white font-['Space_Grotesk',sans-serif] font-bold text-[11px] uppercase tracking-[1px] mb-3 px-1">
                 Detalle del Consumo
               </span>
-              <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-2.5 custom-scrollbar">
+              <div className="flex-1 overflow-y-auto pr-2 flex flex-col gap-2 custom-scrollbar">
                 {mesaConsumos.map((consumo) => {
                   const activePerson = personIndexForConsumo(consumo);
                   return (
                     <div
                       key={consumo.id}
-                      className={`rounded-xl p-3 bg-zinc-900/40 border transition-all hover:bg-zinc-900/60 ${
+                      className={`rounded-xl p-3.5 bg-[#0a0a0a] border transition-colors hover:bg-[#111] ${
                         splitMode 
-                          ? "border-zinc-800/80 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between" 
-                          : "border-zinc-800/40 flex items-center justify-between"
+                          ? "border-white/10 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between" 
+                          : "border-white/5 flex items-center justify-between"
                       }`}
                     >
-                      <div className="flex items-start gap-3">
-                        <div className="min-w-[28px] h-[28px] rounded-lg bg-zinc-800 border border-zinc-800 flex items-center justify-center font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] mt-0.5">
+                      <div className="flex items-start gap-3.5">
+                        <div className="min-w-[28px] h-[28px] rounded-lg bg-[#1a1a1a] border border-white/5 flex items-center justify-center font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px]">
                           {consumo.cantidad}
                         </div>
                         <div>
                           <div className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[14px]">
                             {consumo.nombre}
                           </div>
-                          <div className="text-zinc-500 text-[12px] font-['Inter',sans-serif] mt-0.5">
+                          <div className="text-zinc-400 text-[12px] font-['Inter',sans-serif] mt-0.5">
                             RD$ {Number(consumo.precio_unitario).toFixed(2)} c/u
                           </div>
                         </div>
@@ -1406,14 +1406,14 @@ export function MesaCloseAccountModal({
           </div>
 
           {/* Right Column: Customer, NCF, Payment Methods, Received and Actions */}
-          <div className="md:col-span-5 flex flex-col gap-5 md:overflow-y-auto pr-1 h-full custom-scrollbar md:border-l md:border-zinc-900 md:pl-6">
+          <div className="md:col-span-5 flex flex-col gap-5 md:overflow-y-auto pr-1 h-full custom-scrollbar md:border-l md:border-white/5 md:pl-6">
             
             {/* Customer Selector Card */}
             <div className="flex flex-col gap-2 shrink-0">
-              <span className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px] px-1">
+              <span className="text-white font-['Space_Grotesk',sans-serif] font-bold text-[11px] uppercase tracking-[1px] px-1">
                 Cliente
               </span>
-              <div className="bg-zinc-900/30 border border-zinc-800/40 rounded-2xl p-3">
+              <div className="bg-[#0a0a0a] border border-white/5 rounded-2xl p-3">
                 <CustomerSelect
                   tenantId={tenantId}
                   value={selectedCustomer}
@@ -1428,11 +1428,13 @@ export function MesaCloseAccountModal({
 
             {/* NCF Selection Cards */}
             {ncfFiscalActive && (
-              <div className="flex flex-col gap-3 shrink-0 bg-zinc-900/20 border border-zinc-800/30 rounded-2xl p-4">
-                <div className="flex items-center justify-between gap-[10px]">
-                  <label htmlFor="mesa-solicita-comprobante-toggle" className="text-zinc-300 font-['Space_Grotesk',sans-serif] font-bold text-[13px] cursor-pointer">
-                    Solicita comprobante fiscal
-                  </label>
+              <div className="flex flex-col gap-3 shrink-0">
+                <div className="flex items-center justify-between gap-[10px] rounded-[14px] border border-white/5 bg-[#0a0a0a] px-4 py-3">
+                  <div className="flex flex-col min-w-0">
+                    <span className="font-['Inter',sans-serif] text-zinc-200 text-[13px] font-medium leading-tight">
+                      Solicita comprobante fiscal
+                    </span>
+                  </div>
                   <button
                     type="button"
                     role="switch"
@@ -1447,15 +1449,15 @@ export function MesaCloseAccountModal({
                         setSelectedNcfType(fiscalMode === "dgii_ecf" ? "E32" : "B02");
                       }
                     }}
-                    className={`relative h-[30px] w-[54px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${solicitaComprobante ? "bg-[#ff906d]" : "bg-zinc-800"}`}
+                    className={`relative h-[28px] w-[50px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${solicitaComprobante ? "bg-[#ff906d]" : "bg-[#222]"}`}
                   >
-                    <span className={`absolute top-[5px] left-[5px] block size-[20px] rounded-full bg-white shadow transition-transform duration-200 ease-out ${solicitaComprobante ? "translate-x-[24px]" : "translate-x-0"}`} />
+                    <span className={`absolute top-[4px] left-[4px] block size-[20px] rounded-full bg-white shadow-sm transition-transform duration-200 ease-out ${solicitaComprobante ? "translate-x-[22px]" : "translate-x-0"}`} />
                   </button>
                 </div>
 
                 {solicitaComprobante && (
-                  <div className="flex flex-col gap-1.5 pt-2 border-t border-zinc-800/50 mt-1">
-                    <label htmlFor="ncf-select" className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px]">
+                  <div className="flex flex-col gap-2 pt-1 border-t border-white/5 mt-1">
+                    <label htmlFor="ncf-select" className="text-zinc-400 font-['Space_Grotesk',sans-serif] font-bold text-[11px] uppercase tracking-[1px] px-1">
                       Tipo NCF
                     </label>
                     <select
@@ -1466,14 +1468,14 @@ export function MesaCloseAccountModal({
                           isNcfTypeCode(e.target.value) ? e.target.value : DEFAULT_NCF_B_CODE
                         )
                       }
-                      className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors cursor-pointer"
+                      className="w-full rounded-[14px] border border-white/5 bg-[#0a0a0a] px-4 py-3.5 font-['Inter',sans-serif] text-zinc-300 text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors cursor-pointer h-auto shadow-sm"
                     >
                       {NCF_TIPO_OPCIONES.filter(o => {
                         if (fiscalMode === "dgii_ecf") return o.codigo.startsWith("E");
                         if (fiscalMode === "ncf_legacy") return o.codigo.startsWith("B");
                         return false;
                       }).map((opcion) => (
-                        <option key={opcion.codigo} value={opcion.codigo}>
+                        <option key={opcion.codigo} value={opcion.codigo} className="bg-[#111] text-zinc-300">
                           {opcion.codigo} - {opcion.descripcion.replace(`${opcion.codigo} - `, "")}
                         </option>
                       ))}
@@ -1482,8 +1484,8 @@ export function MesaCloseAccountModal({
                 )}
 
                 {solicitaComprobante && ncfTypeRequiresClientRnc(selectedNcfType) && (
-                  <div className="flex flex-col gap-1.5">
-                    <label htmlFor="client-rnc-input" className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px]">
+                  <div className="flex flex-col gap-2">
+                    <label htmlFor="client-rnc-input" className="text-zinc-400 font-['Space_Grotesk',sans-serif] font-bold text-[11px] uppercase tracking-[1px] px-1">
                       RNC del cliente
                     </label>
                     <input
@@ -1492,7 +1494,7 @@ export function MesaCloseAccountModal({
                       value={clientRnc}
                       onChange={(e) => setClientRnc(e.target.value)}
                       placeholder="RNC del cliente (obligatorio)"
-                      className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors"
+                      className="w-full rounded-[14px] border border-white/5 bg-[#0a0a0a] px-4 py-3.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors shadow-sm"
                     />
                   </div>
                 )}
@@ -1541,8 +1543,8 @@ export function MesaCloseAccountModal({
 
             {/* Cash Calculator Section */}
             {(paymentMethod === "efectivo" || paymentMethod === "fiado") && !splitMode && (
-              <div className="flex flex-col gap-2 shrink-0 bg-zinc-900/20 border border-zinc-800/30 rounded-2xl p-4">
-                <label htmlFor="cash-received-input" className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px]">
+              <div className="flex flex-col gap-2 shrink-0 bg-[#0a0a0a] border border-white/5 rounded-[20px] p-4">
+                <label htmlFor="cash-received-input" className="text-white font-['Space_Grotesk',sans-serif] font-bold text-[11px] uppercase tracking-[1px]">
                   {paymentMethod === "fiado" ? "Abono inicial (opcional)" : "Dinero recibido (opcional)"}
                 </label>
                 <div className="relative">
@@ -1556,15 +1558,15 @@ export function MesaCloseAccountModal({
                     value={cashReceivedInput}
                     onChange={(e) => setCashReceivedInput(e.target.value)}
                     placeholder="Ej: 1000"
-                    className="w-full rounded-xl border border-zinc-800 bg-zinc-950 pl-12 pr-4 py-3 font-['Space_Grotesk',sans-serif] font-bold text-white text-[15px] outline-none focus:border-[#ff906d]/50 transition-colors"
+                    className="w-full rounded-[14px] border border-white/5 bg-[#111] pl-12 pr-4 py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-white text-[15px] outline-none focus:border-[#ff906d]/50 transition-colors shadow-sm"
                   />
                 </div>
                 {cashReceivedInput.trim() !== "" && (
-                  <div className="flex justify-between items-center px-1 py-0.5">
-                    <span className="text-zinc-500 text-[12px] font-['Inter',sans-serif]">
+                  <div className="flex justify-between items-center px-1 py-1 mt-1">
+                    <span className="text-zinc-400 text-[12px] font-['Inter',sans-serif]">
                       {paymentMethod === "fiado" ? "Balance pendiente:" : "Cambio devuelto:"}
                     </span>
-                    <span className={`font-['Space_Grotesk',sans-serif] font-bold ${paymentMethod === "fiado" ? "text-[#ff906d]" : "text-[#59ee50]"} text-[14px]`}>
+                    <span className={`font-['Space_Grotesk',sans-serif] font-bold ${paymentMethod === "fiado" ? "text-[#ff906d]" : "text-[#59ee50]"} text-[15px]`}>
                       {RD(
                         paymentMethod === "fiado"
                           ? Math.max(0, calcTotal - Number(cashReceivedInput.replace(",", ".")))
@@ -1577,12 +1579,12 @@ export function MesaCloseAccountModal({
             )}
 
             {/* Action Buttons Section */}
-            <div className="flex flex-col gap-3 mt-2 pb-2 shrink-0">
+            <div className="flex flex-col gap-3 mt-4 pb-2 shrink-0">
               <div className="flex gap-3">
                 <button
                   type="button"
                   onClick={onClose}
-                  className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-zinc-400 text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:border-zinc-700 hover:text-white transition-all active:scale-95"
+                  className="flex-1 bg-[#111] border border-white/5 rounded-xl py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-zinc-400 text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:bg-[#1a1a1a] hover:text-white transition-all active:scale-95 shadow-sm"
                 >
                   Cancelar
                 </button>
@@ -1591,7 +1593,7 @@ export function MesaCloseAccountModal({
                   type="button"
                   onClick={() => void imprimirPrecuenta()}
                   disabled={charging || loading || mesaConsumos.length === 0}
-                  className="flex-1 bg-blue-600/20 border border-blue-500/50 rounded-xl py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-blue-400 text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:bg-blue-600/30 hover:text-blue-300 transition-all active:scale-95 disabled:opacity-50"
+                  className="flex-1 bg-white/5 border border-white/10 rounded-xl py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-white text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:bg-white/10 transition-all active:scale-95 disabled:opacity-50 shadow-sm"
                 >
                   Pre-cuenta
                 </button>
@@ -1601,7 +1603,7 @@ export function MesaCloseAccountModal({
                     type="button"
                     onClick={() => void createSplitInvoices("all")}
                     disabled={charging || loading || personsWithItems.length === 0}
-                    className="flex-1 bg-[#ff906d] rounded-xl py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-[#5b1600] text-[12px] tracking-[0.5px] uppercase cursor-pointer border-none disabled:opacity-50 hover:bg-[#ff8059] transition-all shadow-md active:scale-95"
+                    className="flex-1 bg-[#ff906d] rounded-xl py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-[#0a0a0a] text-[12px] tracking-[0.5px] uppercase cursor-pointer border-none disabled:opacity-50 hover:bg-[#ff8059] transition-all shadow-[0_4px_20px_rgba(255,144,109,0.25)] active:scale-95"
                   >
                     {charging
                       ? "Procesando..."
@@ -1614,7 +1616,7 @@ export function MesaCloseAccountModal({
                     type="button"
                     onClick={() => void createInvoice()}
                     disabled={charging || loading || mesaConsumos.length === 0}
-                    className="flex-1 bg-[#59ee50] rounded-xl py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-[#0e0e0e] text-[12px] tracking-[0.5px] uppercase cursor-pointer border-none disabled:opacity-50 hover:bg-[#4cd444] transition-all shadow-[0_4px_12px_rgba(89,238,80,0.2)] active:scale-95"
+                    className="flex-1 bg-[#59ee50] rounded-xl py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-[#0a0a0a] text-[12px] tracking-[0.5px] uppercase cursor-pointer border-none disabled:opacity-50 hover:bg-[#4cd444] transition-all shadow-[0_4px_20px_rgba(89,238,80,0.25)] active:scale-95"
                   >
                     {charging ? "Procesando..." : "Confirmar Pago"}
                   </button>

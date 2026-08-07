@@ -2117,18 +2117,14 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
               aria-modal="true"
               aria-labelledby="takeout-close-title"
               aria-describedby="takeout-close-description"
-              className="bg-black border border-zinc-800/80 rounded-[24px] shadow-[0px_0px_50px_rgba(255,144,109,0.15)] w-full max-w-6xl max-h-[96vh] md:max-h-[90vh] flex flex-col overflow-hidden relative"
+              className="bg-[#000000] border border-white/10 rounded-[24px] shadow-[0px_0px_50px_rgba(0,0,0,0.5)] w-full max-w-6xl max-h-[96vh] md:max-h-[90vh] flex flex-col overflow-hidden relative"
             >
               {/* Modal Header */}
-              <div className="flex items-center justify-between px-6 py-5 border-b border-zinc-900 shrink-0 relative z-10">
+              <div className="flex items-center justify-between px-6 py-5 border-b border-white/5 shrink-0 relative z-10">
                 <div>
                   <h2 id="takeout-close-title" className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[22px] tracking-[0.5px] flex items-center gap-2">
                     <span className="text-[#ff906d]">●</span> Cobrar para llevar
                   </h2>
-                  <p id="takeout-close-description" className="text-zinc-400 text-[13px] mt-0.5 font-['Inter',sans-serif] flex items-center gap-1.5">
-                    <span className="px-2 py-0.5 text-[11px] font-bold bg-zinc-800 text-zinc-300 rounded-full">{cart.length}</span>
-                    ítem{cart.length !== 1 ? "s" : ""} en el carrito
-                  </p>
                 </div>
                 <button
                   type="button"
@@ -2140,7 +2136,7 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                   setShowPaymentModal(false);
                 }}
                 aria-label="Cerrar modal de cobro para llevar"
-                  className="text-zinc-400 bg-transparent border-none cursor-pointer text-[26px] hover:text-white transition-colors leading-none w-10 h-10 flex items-center justify-center rounded-full hover:bg-zinc-900"
+                  className="text-zinc-500 bg-transparent border-none cursor-pointer text-[26px] hover:text-white transition-colors leading-none w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/5"
                 >
                   ×
                 </button>
@@ -2152,31 +2148,31 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                 {/* Left Column: Items and Totals */}
                 <div className="md:col-span-6 flex flex-col gap-4 md:overflow-hidden h-full">
                   <div className="flex-1 flex flex-col min-h-0">
-                    <span className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px] mb-2 px-1">
+                    <span className="text-white font-['Space_Grotesk',sans-serif] font-bold text-[11px] uppercase tracking-[1px] mb-3 px-1">
                       Detalle de la Orden
                     </span>
-                    <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-2.5 custom-scrollbar">
+                    <div className="flex-1 overflow-y-auto pr-2 flex flex-col gap-2 custom-scrollbar">
                       {cart.map((line) => (
                         <div
                           key={line.plato.id}
-                          className="rounded-xl p-3 bg-zinc-900/40 border border-zinc-800/40 flex items-center justify-between transition-all hover:bg-zinc-900/60"
+                          className="rounded-xl p-3.5 bg-[#0a0a0a] border border-white/5 flex items-center justify-between transition-colors hover:bg-[#111]"
                         >
-                          <div className="flex items-start gap-3">
-                            <div className="min-w-[28px] h-[28px] rounded-lg bg-zinc-800 border border-zinc-800 flex items-center justify-center font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] mt-0.5">
+                          <div className="flex items-start gap-3.5">
+                            <div className="min-w-[28px] h-[28px] rounded-lg bg-[#1a1a1a] border border-white/5 flex items-center justify-center font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px]">
                               {line.cantidad}
                             </div>
                             <div>
                               <div className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[14px]">
                                 {line.plato.nombre}
                               </div>
-                              <div className="text-zinc-500 text-[12px] font-['Inter',sans-serif] mt-0.5">
+                              <div className="text-zinc-300 text-[12px] font-['Inter',sans-serif] mt-0.5">
                                 {`${currencySymbol} ${Number(line.plato.precio).toFixed(2)} c/u`}
                               </div>
                             </div>
                           </div>
 
                           <div className="text-right shrink-0">
-                            <span className="text-[#ff906d] font-['Space_Grotesk',sans-serif] font-bold text-[14px]">
+                            <span className="text-white font-['Space_Grotesk',sans-serif] font-bold text-[14px]">
                               {`${currencySymbol} ${(line.plato.precio * line.cantidad).toFixed(2)}`}
                             </span>
                           </div>
@@ -2186,10 +2182,10 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                   </div>
 
                   {/* Charge Config Toggles */}
-                  <div className="flex flex-col gap-2 shrink-0">
-                    <div className="flex items-center justify-between gap-[10px] rounded-[10px] border border-black/10 bg-background px-[12px] py-[10px] dark:border-[rgba(72,72,71,0.28)] dark:bg-zinc-950">
+                  <div className="flex flex-col gap-2 shrink-0 pt-2">
+                    <div className="flex items-center justify-between gap-[10px] rounded-[14px] border border-white/5 bg-[#0a0a0a] px-4 py-3">
                       <div className="flex flex-col min-w-0">
-                        <span className="font-['Inter',sans-serif] text-zinc-300 text-[12px] font-semibold leading-tight">
+                        <span className="font-['Inter',sans-serif] text-zinc-300 text-[13px] font-medium leading-tight">
                           ITBIS 18%
                         </span>
                       </div>
@@ -2199,18 +2195,18 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                         aria-checked={cartItbisEnabled}
                         onClick={() => setCartItbisEnabled((v) => !v)}
                         aria-label={cartItbisEnabled ? "Desactivar ITBIS en el total" : "Activar ITBIS 18% en el total"}
-                        className={`relative h-[30px] w-[54px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${cartItbisEnabled ? "bg-[#59ee50]" : "bg-zinc-800"
+                        className={`relative h-[28px] w-[50px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${cartItbisEnabled ? "bg-[#59ee50]" : "bg-[#222]"
                           }`}
                       >
                         <span
-                          className={`absolute top-[5px] left-[5px] block size-[20px] rounded-full bg-white shadow transition-transform duration-200 ease-out ${cartItbisEnabled ? "translate-x-[24px]" : "translate-x-0"
+                          className={`absolute top-[4px] left-[4px] block size-[20px] rounded-full bg-white shadow-sm transition-transform duration-200 ease-out ${cartItbisEnabled ? "translate-x-[22px]" : "translate-x-0"
                             }`}
                         />
                       </button>
                     </div>
-                    <div className="flex items-center justify-between gap-[10px] rounded-[10px] border border-black/10 bg-background px-[12px] py-[10px] dark:border-[rgba(72,72,71,0.28)] dark:bg-zinc-950">
+                    <div className="flex items-center justify-between gap-[10px] rounded-[14px] border border-white/5 bg-[#0a0a0a] px-4 py-3">
                       <div className="flex flex-col min-w-0">
-                        <span className="font-['Inter',sans-serif] text-zinc-300 text-[12px] font-semibold leading-tight">
+                        <span className="font-['Inter',sans-serif] text-zinc-300 text-[13px] font-medium leading-tight">
                           Propina legal 10%
                         </span>
                       </div>
@@ -2220,11 +2216,11 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                         aria-checked={cartPropinaEnabled}
                         onClick={() => setCartPropinaEnabled((v) => !v)}
                         aria-label={cartPropinaEnabled ? "Desactivar propina legal 10%" : "Activar propina legal 10%"}
-                        className={`relative h-[30px] w-[54px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${cartPropinaEnabled ? "bg-[#59ee50]" : "bg-zinc-800"
+                        className={`relative h-[28px] w-[50px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${cartPropinaEnabled ? "bg-[#59ee50]" : "bg-[#222]"
                           }`}
                       >
                         <span
-                          className={`absolute top-[5px] left-[5px] block size-[20px] rounded-full bg-white shadow transition-transform duration-200 ease-out ${cartPropinaEnabled ? "translate-x-[24px]" : "translate-x-0"
+                          className={`absolute top-[4px] left-[4px] block size-[20px] rounded-full bg-white shadow-sm transition-transform duration-200 ease-out ${cartPropinaEnabled ? "translate-x-[22px]" : "translate-x-0"
                             }`}
                         />
                       </button>
@@ -2232,8 +2228,7 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                   </div>
 
                   {/* Main Totals Card */}
-                  <div className="bg-zinc-950 border border-zinc-900 rounded-2xl p-5 flex flex-col gap-3 shrink-0 relative overflow-hidden">
-                    <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_left,rgba(255,144,109,0.03),transparent)] pointer-events-none" />
+                  <div className="bg-[#0a0a0a] border border-white/5 rounded-[20px] p-6 flex flex-col gap-3.5 shrink-0 relative overflow-hidden mt-2">
                     <div className="flex justify-between items-center relative z-10">
                       <span className="font-['Inter',sans-serif] text-zinc-500 text-[13px]">Subtotal</span>
                       <span className="font-['Space_Grotesk',sans-serif] font-bold text-zinc-300 text-[14px]">{formatMoney(calcSubtotal)}</span>
@@ -2286,10 +2281,12 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                   {/* NCF Selection Cards */}
                   {tenantNcfFiscalActive && (
                     <div className="flex flex-col gap-3 shrink-0 bg-zinc-900/20 border border-zinc-800/30 rounded-2xl p-4">
-                      <div className="flex items-center justify-between gap-[10px]">
-                        <label htmlFor="solicita-comprobante-toggle" className="text-zinc-300 font-['Space_Grotesk',sans-serif] font-bold text-[13px] cursor-pointer">
-                          Solicita comprobante fiscal
-                        </label>
+                      <div className="flex items-center justify-between gap-[10px] rounded-[14px] border border-white/5 bg-[#0a0a0a] px-4 py-3">
+                        <div className="flex flex-col min-w-0">
+                          <span className="font-['Inter',sans-serif] text-zinc-200 text-[13px] font-medium leading-tight">
+                            Solicita comprobante fiscal
+                          </span>
+                        </div>
                         <button
                           type="button"
                           role="switch"
@@ -2304,15 +2301,15 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                               setSelectedNcfType(fiscalMode === "dgii_ecf" ? "E32" : "B02");
                             }
                           }}
-                          className={`relative h-[30px] w-[54px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${solicitaComprobante ? "bg-[#ff906d]" : "bg-zinc-800"}`}
+                          className={`relative h-[28px] w-[50px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${solicitaComprobante ? "bg-[#ff906d]" : "bg-[#222]"}`}
                         >
-                          <span className={`absolute top-[5px] left-[5px] block size-[20px] rounded-full bg-white shadow transition-transform duration-200 ease-out ${solicitaComprobante ? "translate-x-[24px]" : "translate-x-0"}`} />
+                          <span className={`absolute top-[4px] left-[4px] block size-[20px] rounded-full bg-white shadow-sm transition-transform duration-200 ease-out ${solicitaComprobante ? "translate-x-[22px]" : "translate-x-0"}`} />
                         </button>
                       </div>
 
                       {solicitaComprobante && (
-                        <div className="flex flex-col gap-1.5 pt-2 border-t border-zinc-800/50 mt-1">
-                          <label htmlFor="ncf-select" className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px]">
+                        <div className="flex flex-col gap-2 pt-1 border-t border-white/5 mt-1">
+                          <label htmlFor="ncf-select" className="text-zinc-400 font-['Space_Grotesk',sans-serif] font-bold text-[11px] uppercase tracking-[1px] px-1">
                             Tipo NCF
                           </label>
                           <Select
@@ -2323,10 +2320,10 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                               )
                             }
                           >
-                            <SelectTrigger className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors cursor-pointer h-auto">
+                            <SelectTrigger className="w-full rounded-[14px] border border-white/5 bg-[#0a0a0a] px-4 py-3.5 font-['Inter',sans-serif] text-zinc-200 text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors cursor-pointer h-auto shadow-sm">
                               <SelectValue placeholder="Tipo NCF" />
                             </SelectTrigger>
-                            <SelectContent className="rounded-xl">
+                            <SelectContent className="rounded-xl bg-[#111] border-white/10 text-zinc-200">
                               {NCF_TIPO_OPCIONES.filter(o => {
                                 if (fiscalMode === "dgii_ecf") return o.codigo.startsWith("E");
                                 if (fiscalMode === "ncf_legacy") return o.codigo.startsWith("B");
@@ -2342,8 +2339,8 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                       )}
 
                       {solicitaComprobante && ncfTypeRequiresClientRnc(selectedNcfType) && (
-                        <div className="flex flex-col gap-1.5">
-                          <label htmlFor="client-rnc-input" className="text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[1px]">
+                        <div className="flex flex-col gap-2">
+                          <label htmlFor="client-rnc-input" className="text-zinc-400 font-['Space_Grotesk',sans-serif] font-bold text-[11px] uppercase tracking-[1px] px-1">
                             RNC del cliente
                           </label>
                           <input
@@ -2352,7 +2349,7 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                             value={takeoutClientRnc}
                             onChange={(e) => setTakeoutClientRnc(e.target.value)}
                             placeholder="RNC del cliente (obligatorio)"
-                            className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors"
+                            className="w-full rounded-[14px] border border-white/5 bg-[#0a0a0a] px-4 py-3.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors shadow-sm"
                           />
                         </div>
                       )}
