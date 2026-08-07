@@ -24,12 +24,12 @@ describe("customers domain helpers", () => {
       name: "Restaurante Demo",
       phone: "8095551111",
       email: "cliente@demo.com",
-      document_id: "RNC-123",
+    document_id: "101-00106-2",
     } as Customer;
 
     expect(customerMatchesSearch(customer, "demo")).toBe(true);
     expect(customerMatchesSearch(customer, "555")).toBe(true);
-    expect(customerMatchesSearch(customer, "rnc")).toBe(true);
+    expect(customerMatchesSearch(customer, "101001062")).toBe(true);
     expect(customerMatchesSearch(customer, "otro")).toBe(false);
   });
 

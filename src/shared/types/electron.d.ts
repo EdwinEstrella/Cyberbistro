@@ -22,6 +22,16 @@ export interface OpenCashDrawerOptions {
   paperWidthMm?: number;
 }
 
+export interface RncLookupResponse {
+  data: {
+    rnc: string;
+    legalName: string;
+    tradeName: string;
+    status: string;
+  } | null;
+  error: string | null;
+}
+
 export interface UpdateInfoPayload {
   version: string;
   releaseDate?: string;
@@ -62,6 +72,7 @@ export interface ElectronAPI {
   listPrinters?: () => Promise<ThermalPrinterInfo[]>;
   printThermal?: (opts: PrintThermalOptions) => Promise<PrintThermalResponse>;
   openCashDrawer?: (opts?: OpenCashDrawerOptions) => Promise<PrintThermalResponse>;
+  lookupBusinessRnc?: (rnc: string) => Promise<RncLookupResponse>;
   checkForUpdates?: () => void;
   downloadUpdate?: () => void;
   installUpdate?: () => void;

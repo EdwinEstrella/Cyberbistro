@@ -22,6 +22,66 @@ type PrintThermalOptions = {
 
 type PrintThermalResponse = { ok: boolean; error?: string }
 
+type RncLookupResponse = {
+  data: {
+    rnc: string
+    legalName: string
+    tradeName: string
+    status: string
+  } | null
+  error: string | null
+}
+
+async function lookupBusinessRnc(rawRnc: unknown): Promise<RncLookupResponse> {
+  const rnc = typeof rawRnc === 'string' ? rawRnc.replace(/\D/g, '') : ''
+  if (rnc.length !== 9) {
+    return { data: null, error: 'Ingresá un RNC válido de 9 dígitos.' }
+  }
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 10_000)
+
+  try {
+    const response = await fetch('https://rnc.megaplus.com.do/api/consulta', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ rnc }),
+      signal: controller.signal,
+    })
+    const payload = await response.json().catch(() => null) as Record<string, unknown> | null
+
+    if (response.status === 404 || payload?.error) {
+      return { data: null, error: String(payload?.mensaje || 'No encontramos un negocio registrado con ese RNC.') }
+    }
+
+    if (!response.ok || typeof payload?.nombre_razon_social !== 'string') {
+      return { data: null, error: 'No pudimos consultar la DGII. Intentá de nuevo.' }
+    }
+
+    return {
+      data: {
+        rnc: typeof payload.cedula_rnc === 'string' ? payload.cedula_rnc : rnc,
+        legalName: payload.nombre_razon_social,
+        tradeName: typeof payload.nombre_comercial === 'string' ? payload.nombre_comercial : '',
+        status: typeof payload.estado === 'string' ? payload.estado : '',
+      },
+      error: null,
+    }
+  } catch (error) {
+    return {
+      data: null,
+      error: error instanceof Error && error.name === 'AbortError'
+        ? 'La consulta tardó demasiado. Intentá de nuevo.'
+        : 'No pudimos conectar con la DGII. Intentá de nuevo.',
+    }
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 function printHtmlToThermal(opts: PrintThermalOptions): Promise<PrintThermalResponse> {
   return new Promise((resolve) => {
     const printWin = new BrowserWindow({
@@ -288,6 +348,8 @@ if (gotTheLock) {
       })
     }
   )
+
+  ipcMain.handle('rnc:lookup', (_event, rnc: unknown) => lookupBusinessRnc(rnc))
 
   // Window controls handlers (solo instancia principal)
   ipcMain.on('window-minimize', () => {

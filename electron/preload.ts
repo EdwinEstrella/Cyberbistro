@@ -73,6 +73,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
     return ipcRenderer.invoke('cash-drawer:open', opts ?? {})
   },
+  lookupBusinessRnc: (rnc: unknown) => {
+    if (typeof rnc !== 'string' || rnc.length > 32) {
+      return Promise.resolve({ data: null, error: 'RNC inválido.' })
+    }
+    return ipcRenderer.invoke('rnc:lookup', rnc)
+  },
   checkForUpdates: () => {
     ipcRenderer.send('check-for-updates')
   },

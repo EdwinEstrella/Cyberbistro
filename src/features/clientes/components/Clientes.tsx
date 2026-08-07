@@ -25,6 +25,7 @@ import {
 } from "../lib/customers";
 import { AlertModal } from "../../../shared/components/AlertModal";
 import { ConfirmModal } from "../../../shared/components/ConfirmModal";
+import { lookupBusinessByRnc } from "../../../shared/lib/dgiiRncLookup";
 
 const emptyForm: CustomerFormInput = {
   name: "",
@@ -43,6 +44,8 @@ export function Clientes() {
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
   const [form, setForm] = useState<CustomerFormInput>(emptyForm);
+  const [rncLookupMessage, setRncLookupMessage] = useState("");
+  const [rncLookupLoading, setRncLookupLoading] = useState(false);
   
   // Tab control: "list" or "form"
   const [activeSubTab, setActiveSubTab] = useState<"list" | "form">("list");
@@ -88,6 +91,7 @@ export function Clientes() {
   function startCreate() {
     setEditing(null);
     setForm(emptyForm);
+    setRncLookupMessage("");
     setActiveSubTab("form");
   }
 
@@ -101,7 +105,33 @@ export function Clientes() {
       address: customer.address ?? "",
       notes: customer.notes ?? "",
     });
+    setRncLookupMessage("");
     setActiveSubTab("form");
+  }
+
+  async function lookupCustomerBusiness() {
+    setRncLookupMessage("");
+    setRncLookupLoading(true);
+
+    try {
+      const result = await lookupBusinessByRnc(form.document_id ?? "");
+      if (result.error) {
+        setRncLookupMessage(result.error);
+        return;
+      }
+
+      const business = result.data;
+      if (!business) return;
+
+      setForm((current) => ({
+        ...current,
+        document_id: business.rnc,
+        name: business.tradeName || business.legalName,
+      }));
+      setRncLookupMessage(`Encontramos: ${business.legalName}${business.status ? ` (${business.status})` : ""}. Revisá y creá el cliente.`);
+    } finally {
+      setRncLookupLoading(false);
+    }
   }
 
   async function saveCustomer() {
@@ -370,15 +400,32 @@ export function Clientes() {
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <label className="text-zinc-500 font-['Space_Grotesk'] font-bold text-[11px] uppercase tracking-[1px] px-1">
-                    RNC o Cédula
+                    RNC del negocio
                   </label>
                   <input
                     type="text"
                     value={form.document_id}
-                    onChange={(e) => setForm((c) => ({ ...c, document_id: e.target.value }))}
+                    onChange={(e) => {
+                      setForm((c) => ({ ...c, document_id: e.target.value }));
+                      setRncLookupMessage("");
+                    }}
                     placeholder="Ej: 101001234"
+                    inputMode="numeric"
                     className="rounded-xl border border-zinc-800 bg-zinc-900/30 px-4 py-3.5 text-sm text-white font-mono outline-none focus:border-[#ff906d]/50 transition-colors"
                   />
+                  <div className="mt-1 flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => void lookupCustomerBusiness()}
+                      disabled={rncLookupLoading || !form.document_id?.trim()}
+                      className="rounded-lg border border-[#ff906d]/40 px-3 py-1.5 font-['Space_Grotesk'] text-[10px] font-bold uppercase tracking-[0.8px] text-[#ff906d] transition-colors hover:bg-[#ff906d]/10 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {rncLookupLoading ? "Buscando..." : "Buscar RNC"}
+                    </button>
+                    {rncLookupMessage && (
+                      <span className="text-[11px] leading-snug text-zinc-400">{rncLookupMessage}</span>
+                    )}
+                  </div>
                 </div>
               </div>
 

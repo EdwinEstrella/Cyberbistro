@@ -57,9 +57,14 @@ export function customerLabel(customer: Pick<Customer, "name" | "phone" | "docum
 export function customerMatchesSearch(customer: Customer, rawQuery: string) {
   const query = rawQuery.trim().toLowerCase();
   if (!query) return true;
-  return [customer.name, customer.phone, customer.email, customer.document_id]
+  const matchesText = [customer.name, customer.phone, customer.email, customer.document_id]
     .filter(Boolean)
     .some((value) => String(value).toLowerCase().includes(query));
+  if (matchesText) return true;
+
+  const documentDigits = customer.document_id?.replace(/\D/g, "") ?? "";
+  const queryDigits = rawQuery.replace(/\D/g, "");
+  return Boolean(queryDigits) && documentDigits.includes(queryDigits);
 }
 
 export async function listCustomers(tenantId: string): Promise<Customer[]> {

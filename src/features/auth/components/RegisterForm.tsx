@@ -7,6 +7,7 @@ import { TitleBar } from "../../window";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { writeTenantSessionCache } from "../../../shared/lib/tenantSessionCache";
 import { INSFORGE_REFRESH_TOKEN_STORAGE_KEY } from "../../../shared/lib/insforgeAuthStorage";
+import { lookupBusinessByRnc } from "../../../shared/lib/dgiiRncLookup";
 
 function extractAccessTokenFromPayload(data: unknown): string | null {
   if (!data || typeof data != "object") return null;
@@ -47,6 +48,8 @@ export function Register() {
   const [rnc, setRnc] = useState("");
   const [direccion, setDireccion] = useState("");
   const [telefono, setTelefono] = useState("");
+  const [rncLookupMessage, setRncLookupMessage] = useState("");
+  const [rncLookupLoading, setRncLookupLoading] = useState(false);
   /** ID de Auth devuelto por signUp; getCurrentUser puede fallar si la sesión aún no está lista */
   const [registeredAuthUserId, setRegisteredAuthUserId] = useState<string | null>(null);
 
@@ -110,6 +113,28 @@ export function Register() {
     } catch (err: any) {
       setError(err.message || "Error al crear cuenta");
       setLoading(false);
+    }
+  };
+
+  const handleRncLookup = async () => {
+    setRncLookupMessage("");
+    setRncLookupLoading(true);
+
+    try {
+      const result = await lookupBusinessByRnc(rnc);
+      if (result.error) {
+        setRncLookupMessage(result.error);
+        return;
+      }
+
+      const business = result.data;
+      if (!business) return;
+
+      setRnc(business.rnc);
+      setNombreNegocio(business.tradeName || business.legalName);
+      setRncLookupMessage(`Negocio encontrado: ${business.legalName}${business.status ? ` (${business.status})` : ""}.`);
+    } finally {
+      setRncLookupLoading(false);
     }
   };
 
@@ -626,16 +651,33 @@ export function Register() {
                       RNC
                     </div>
                     <div className="bg-[#131313] relative w-full">
-                      <input
-                        type="text"
-                        value={rnc}
-                        onChange={(e) => setRnc(e.target.value)}
-                        placeholder="Opcional"
-                        className="w-full bg-transparent font-['Inter',sans-serif] text-[14px] sm:text-[16px] text-white placeholder:text-[rgba(72,72,71,0.5)] px-4 py-3 sm:py-4 outline-none"
-                      />
-                      <div aria-hidden="true" className="absolute border-[#484847] border-b border-solid inset-0 pointer-events-none" />
+                        <input
+                          type="text"
+                          value={rnc}
+                          onChange={(e) => {
+                            setRnc(e.target.value);
+                            setRncLookupMessage("");
+                          }}
+                          placeholder="RNC de 9 dígitos"
+                          inputMode="numeric"
+                          className="w-full bg-transparent font-['Inter',sans-serif] text-[14px] sm:text-[16px] text-white placeholder:text-[rgba(72,72,71,0.5)] px-4 py-3 sm:py-4 outline-none"
+                        />
+                        <div aria-hidden="true" className="absolute border-[#484847] border-b border-solid inset-0 pointer-events-none" />
+                      </div>
+                      <div className="mt-2 flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={handleRncLookup}
+                          disabled={rncLookupLoading || !rnc.trim()}
+                          className="rounded-[6px] border border-[#ff906d]/50 px-3 py-1.5 font-['Space_Grotesk',sans-serif] text-[10px] font-bold uppercase tracking-[0.8px] text-[#ff906d] transition-colors hover:bg-[#ff906d]/10 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {rncLookupLoading ? "Buscando..." : "Buscar negocio"}
+                        </button>
+                        {rncLookupMessage && (
+                          <span className="font-['Inter',sans-serif] text-[10px] text-[#adaaaa]">{rncLookupMessage}</span>
+                        )}
+                      </div>
                     </div>
-                  </div>
 
                   <div className="relative shrink-0 w-full">
                     <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff7346] text-[9px] sm:text-[10px] tracking-[0.8px] sm:tracking-[1px] uppercase mb-1 sm:mb-2">
