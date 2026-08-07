@@ -31,8 +31,8 @@ export interface PurchaseInput {
 
 export async function registrarCompra(input: PurchaseInput): Promise<{ compraId: string }> {
   const { tenantId, sucursalId, usuarioId, proveedorId, numeroFactura, tipoPago, metodoPago, montoPagado, items, observacion, itbisFacturado = 0, itbisRetenido = 0, retencionIsr = 0, impuestoSelectivo = 0, otrosImpuestos = 0, propinaLegal = 0, montoBienes = 0, montoServicios = 0, tipoBienServicio = "09" } = input;
-  if (!items || items.length === 0) {
-    throw new Error("La compra debe contener al menos un ítem.");
+  if ((!items || items.length === 0) && (!montoServicios || montoServicios <= 0)) {
+    throw new Error("La compra debe contener al menos un tem o un monto en servicios.");
   }
   if ((tipoPago === "credito" || tipoPago === "parcial") && !proveedorId) {
     throw new Error("Se requiere un proveedor para registrar una compra a crédito o parcial.");
@@ -170,7 +170,7 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
   });
 
   // 2. Enqueue Local Write for Cabecera de Compra
-  const granTotal = totalCompra + (itbisFacturado || 0) + (impuestoSelectivo || 0) + (otrosImpuestos || 0) + (propinaLegal || 0);
+  const granTotal = totalCompra + (montoServicios || 0) + (itbisFacturado || 0) + (impuestoSelectivo || 0) + (otrosImpuestos || 0) + (propinaLegal || 0);
 
   // Additional validations for parcial payment
   let resolvedMontoPagado = 0;
@@ -231,7 +231,7 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
       fecha_pago: tipoPago === "credito" ? null : fechaCompra.slice(0, 10),
       monto_servicios: montoServicios || 0,
       monto_bienes: montoBienes || totalCompra,
-      total_facturado: totalCompra + (itbisFacturado || 0) + (impuestoSelectivo || 0) + (otrosImpuestos || 0) + (propinaLegal || 0),
+      total_facturado: (montoServicios || 0) + (montoBienes || totalCompra),
       itbis_facturado: itbisFacturado || 0,
       itbis_retenido: itbisRetenido || 0,
       itbis_proporcionalidad: 0,

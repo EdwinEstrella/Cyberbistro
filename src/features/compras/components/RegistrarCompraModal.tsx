@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Trash2, Plus } from "lucide-react";
 import { registrarCompra } from "../lib/purchaseService";
 
@@ -73,14 +73,27 @@ export function RegistrarCompraModal({
   const isContado = compraForm.tipo_pago === "contado";
   const isParcial = compraForm.tipo_pago === "parcial";
 
-  const runningTotal = useMemo(() => {
-    const itemsTotal = purchaseItems.reduce((acc, item) => {
+  const itemsTotal = useMemo(() => {
+    return purchaseItems.reduce((acc, item) => {
       const q = Number(item.cantidad) || 0;
       const c = Number(item.costo_unitario) || 0;
       return acc + (q * c);
     }, 0);
-    return itemsTotal + (Number(compraForm.itbis_facturado) || 0) + (Number(compraForm.impuesto_selectivo) || 0) + (Number(compraForm.otros_impuestos) || 0) + (Number(compraForm.propina_legal) || 0);
-  }, [purchaseItems, compraForm.itbis_facturado, compraForm.impuesto_selectivo, compraForm.otros_impuestos, compraForm.propina_legal]);
+  }, [purchaseItems]);
+
+  const runningTotal = useMemo(() => {
+    return itemsTotal + (Number(compraForm.monto_servicios) || 0) + (Number(compraForm.itbis_facturado) || 0) + (Number(compraForm.impuesto_selectivo) || 0) + (Number(compraForm.otros_impuestos) || 0) + (Number(compraForm.propina_legal) || 0);
+  }, [itemsTotal, compraForm.monto_servicios, compraForm.itbis_facturado, compraForm.impuesto_selectivo, compraForm.otros_impuestos, compraForm.propina_legal]);
+
+  useEffect(() => {
+    // Auto-calculate 18% ITBIS when the items total or services amount changes
+    const baseAmount = itemsTotal + (Number(compraForm.monto_servicios) || 0);
+    if (baseAmount > 0) {
+      setCompraForm(prev => ({ ...prev, itbis_facturado: (baseAmount * 0.18).toFixed(2) }));
+    } else {
+      setCompraForm(prev => ({ ...prev, itbis_facturado: "" }));
+    }
+  }, [itemsTotal, compraForm.monto_servicios]);
 
   if (!isOpen) return null;
 
@@ -107,8 +120,10 @@ export function RegistrarCompraModal({
 
     // Filter valid items
     const validItems = purchaseItems.filter(i => i.producto_id && Number(i.cantidad) > 0 && Number(i.costo_unitario) >= 0);
-    if (validItems.length === 0) {
-      onError("Debes agregar al menos un insumo válido con cantidad mayor a cero.");
+    const montoServiciosNum = Number(compraForm.monto_servicios) || 0;
+    
+    if (validItems.length === 0 && montoServiciosNum <= 0) {
+      onError("Debes agregar al menos un insumo válido o registrar un Monto de Servicios.");
       return;
     }
 
