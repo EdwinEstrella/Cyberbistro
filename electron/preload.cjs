@@ -46,6 +46,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
     return ipcRenderer.invoke('print:thermal', opts)
   },
+  lookupBusinessRnc: (rnc) => {
+    if (typeof rnc !== 'string' || rnc.length > 32) {
+      return Promise.resolve({ data: null, error: 'RNC inválido.' })
+    }
+    return ipcRenderer.invoke('rnc:lookup', rnc)
+  },
   checkForUpdates: () => {
     ipcRenderer.send('check-for-updates')
   },

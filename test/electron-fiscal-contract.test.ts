@@ -68,6 +68,7 @@ describe("electron fiscal contract", () => {
     const mainSource = readFileSync(path.join(projectRoot, "electron", "main.ts"), "utf8");
     const preloadSource = readFileSync(path.join(projectRoot, "electron", "preload.ts"), "utf8");
     const thermalPrintSource = readFileSync(path.join(projectRoot, "src", "shared", "lib", "thermalPrint.ts"), "utf8");
+    const packagedPreloadSource = readFileSync(path.join(projectRoot, "electron", "preload.cjs"), "utf8");
 
     expect(mainSource).toMatch(/ipcMain\.handle\(\s*['"]print:thermal['"]/);
     expect(mainSource).toMatch(/ipcMain\.handle\(\s*['"]cash-drawer:open['"]/);
@@ -82,5 +83,7 @@ describe("electron fiscal contract", () => {
     expect(thermalPrintSource).toContain("api?.printThermal");
     expect(thermalPrintSource).toContain("api?.openCashDrawer");
     expect(thermalPrintSource).not.toMatch(/dgii-ecf|certificate/i);
+    expect(packagedPreloadSource).toContain("lookupBusinessRnc");
+    expect(packagedPreloadSource).toContain("rnc:lookup");
   });
 });

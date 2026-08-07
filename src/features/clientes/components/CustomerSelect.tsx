@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { customerLabel, customerMatchesSearch, listCustomers, type Customer } from "../lib/customers";
+import { lookupBusinessByRnc } from "../../../shared/lib/dgiiRncLookup";
+import { createCustomer, customerLabel, customerMatchesSearch, listCustomers, type Customer } from "../lib/customers";
 
 interface CustomerSelectProps {
   tenantId: string | null;
@@ -12,6 +13,8 @@ export function CustomerSelect({ tenantId, value, onChange, compact = false }: C
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [lookupMessage, setLookupMessage] = useState("");
 
   useEffect(() => {
     if (!tenantId) {
@@ -43,6 +46,43 @@ export function CustomerSelect({ tenantId, value, onChange, compact = false }: C
     [customers, query]
   );
 
+  const queryRnc = query.replace(/\D/g, "");
+
+  async function handleRncLookup() {
+    if (!tenantId || queryRnc.length !== 9) return;
+
+    setLookupMessage("");
+    const savedCustomer = customers.find(
+      (customer) => customer.document_id?.replace(/\D/g, "") === queryRnc
+    );
+    if (savedCustomer) {
+      onChange(savedCustomer);
+      setQuery("");
+      return;
+    }
+
+    setLookupLoading(true);
+    try {
+      const result = await lookupBusinessByRnc(queryRnc);
+      if (result.error || !result.data) {
+        setLookupMessage(result.error || "No encontramos un negocio con ese RNC.");
+        return;
+      }
+
+      const business = result.data;
+      const customer = await createCustomer(tenantId, {
+        name: business.tradeName || business.legalName,
+        document_id: business.rnc,
+      });
+      setCustomers((current) => [...current, customer].sort((a, b) => a.name.localeCompare(b.name)));
+      onChange(customer);
+      setQuery("");
+      setLookupMessage("Cliente agregado y seleccionado.");
+    } finally {
+      setLookupLoading(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-[8px]">
       <div className="flex items-center justify-between gap-[8px]">
@@ -66,13 +106,30 @@ export function CustomerSelect({ tenantId, value, onChange, compact = false }: C
         </div>
       ) : null}
 
-      <input
-        type="search"
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        placeholder={loading ? "Cargando clientes..." : "Buscar por nombre, teléfono o RNC"}
-        className="w-full rounded-[12px] border border-[rgba(72,72,71,0.3)] bg-[#262626] px-[14px] py-[12px] font-['Inter',sans-serif] text-white text-[13px] outline-none"
-      />
+      <div className="flex gap-2">
+        <input
+          type="search"
+          value={query}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setLookupMessage("");
+          }}
+          placeholder={loading ? "Cargando clientes..." : "Buscar por nombre, teléfono o RNC"}
+          className="min-w-0 flex-1 rounded-[12px] border border-[rgba(72,72,71,0.3)] bg-[#262626] px-[14px] py-[12px] font-['Inter',sans-serif] text-white text-[13px] outline-none"
+        />
+        <button
+          type="button"
+          onClick={() => void handleRncLookup()}
+          disabled={lookupLoading || queryRnc.length !== 9}
+          className="shrink-0 rounded-[12px] border border-[#ff906d]/40 px-3 font-['Space_Grotesk',sans-serif] text-[10px] font-bold uppercase tracking-[0.7px] text-[#ff906d] transition-colors hover:bg-[#ff906d]/10 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {lookupLoading ? "Buscando..." : "Buscar RNC"}
+        </button>
+      </div>
+
+      {lookupMessage && (
+        <span className="font-['Inter',sans-serif] text-[11px] text-[#adaaaa]">{lookupMessage}</span>
+      )}
 
       {query.trim() || (!compact && !value) ? (
         <div className="max-h-[180px] overflow-y-auto rounded-[12px] border border-[rgba(72,72,71,0.25)] bg-[#1f1f1f]">
