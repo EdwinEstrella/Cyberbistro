@@ -41,7 +41,7 @@ function field(value: string | null | undefined): string {
   return (value ?? "").trim().replace(/\|/g, "");
 }
 
-export function generateFormato606(rncEmisor: string, period: string, records: CompraFiscal606[]): string {
+export function generateFormato606(rncEmisor: string, period: string, records: CompraFiscal606[], format: 'txt' | 'csv' = 'txt'): string {
   const normalizedRnc = rncEmisor.replace(/\D/g, "");
   if (normalizedRnc.length !== 9 && normalizedRnc.length !== 11) throw new Error("El RNC o cédula del emisor no es válido.");
   if (!/^\d{6}$/.test(period)) throw new Error("El período debe usar el formato AAAAMM.");
@@ -57,8 +57,19 @@ export function generateFormato606(rncEmisor: string, period: string, records: C
       amount(record.itbis_facturado), amount(record.itbis_retenido), amount(record.itbis_proporcionalidad), amount(record.itbis_costo), amount(record.itbis_adelantar),
       amount(record.itbis_percibido), field(record.tipo_retencion_isr), amount(record.retencion_isr), amount(record.isr_percibido), amount(record.impuesto_selectivo),
       amount(record.otros_impuestos), amount(record.propina_legal), field(record.forma_pago),
-    ].join("|");
+    ].join(format === 'csv' ? "," : "|");
   });
+
+  if (format === 'csv') {
+    const headers = [
+      "RNC/Cédula", "Tipo Id", "Tipo Bien/Servicio", "NCF", "NCF Modificado", "Fecha Comp", "Fecha Pago",
+      "Monto Serv", "Monto Bienes", "Total Facturado", "ITBIS Facturado", "ITBIS Retenido", "ITBIS Prop",
+      "ITBIS Costo", "ITBIS Adelantar", "ITBIS Percibido", "Tipo Ret ISR", "Ret ISR", "ISR Percibido",
+      "ISC", "Otros Imp", "Propina", "Forma Pago"
+    ].join(",");
+    // Prepend UTF-8 BOM for Excel compatibility
+    return "\uFEFF" + [headers, ...lines].join("\r\n");
+  }
 
   return [`606|${normalizedRnc}|${period}|${records.length}`, ...lines].join("\r\n");
 }

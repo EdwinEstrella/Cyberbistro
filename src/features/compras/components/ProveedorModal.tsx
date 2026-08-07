@@ -1,5 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { enqueueLocalWrite, getDeviceId } from "../../../shared/lib/localFirst";
+import { lookupBusinessByRnc } from "../../../shared/lib/dgiiRncLookup";
+import { Search } from "lucide-react";
 
 interface ProveedorRow {
   id: string;
@@ -30,6 +32,7 @@ export function ProveedorModal({
   onError
 }: ProveedorModalProps) {
   const [saving, setSaving] = useState(false);
+  const [lookupLoading, setLookupLoading] = useState(false);
   const [proveedorForm, setProveedorForm] = useState({
     nombre: "",
     rnc: "",
@@ -37,6 +40,29 @@ export function ProveedorModal({
     email: "",
     direccion: "",
   });
+
+  async function handleLookupRnc() {
+    const rawRnc = proveedorForm.rnc.trim();
+    if (!rawRnc) return;
+    setLookupLoading(true);
+    try {
+      const result = await lookupBusinessByRnc(rawRnc);
+      if (result.error || !result.data) {
+        onError(result.error || "No encontramos el negocio en la DGII.");
+        return;
+      }
+      setProveedorForm((prev) => ({
+        ...prev,
+        rnc: result.data.rnc,
+        nombre: result.data.tradeName || result.data.legalName || prev.nombre,
+      }));
+      onSuccess(`Datos cargados: ${result.data.legalName}`);
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "Error de red al consultar a la DGII.");
+    } finally {
+      setLookupLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (editingProveedor) {
@@ -120,17 +146,28 @@ export function ProveedorModal({
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1.5 col-span-2 sm:col-span-1">
               <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.5px]">RNC / Cédula</label>
-              <input
-                type="text"
-                placeholder="Ej: 130-12345-6"
-                value={proveedorForm.rnc}
-                onChange={(e) => setProveedorForm(prev => ({ ...prev, rnc: e.target.value }))}
-                className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors"
-              />
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Ej: 130-12345-6"
+                  value={proveedorForm.rnc}
+                  onChange={(e) => setProveedorForm(prev => ({ ...prev, rnc: e.target.value }))}
+                  className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors flex-1 w-full"
+                />
+                <button
+                  type="button"
+                  onClick={handleLookupRnc}
+                  disabled={lookupLoading || !proveedorForm.rnc.trim()}
+                  className="bg-[#262626] border border-[rgba(255,144,109,0.25)] text-[#ff906d] rounded-[10px] px-3 py-2.5 flex items-center justify-center cursor-pointer hover:bg-zinc-800 disabled:opacity-50 transition-colors"
+                  title="Consultar DGII"
+                >
+                  <Search className="size-[15px]" />
+                </button>
+              </div>
             </div>
-            <div className="flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1.5 col-span-2 sm:col-span-1">
               <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.5px]">Teléfono</label>
               <input
                 type="text"

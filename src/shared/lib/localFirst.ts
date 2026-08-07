@@ -404,7 +404,7 @@ export interface OutboxConflictGuardrail {
 }
 
 const PAGE_SIZE = 250;
-export const LOCAL_FIRST_DB_VERSION = 9;
+export const LOCAL_FIRST_DB_VERSION = 10;
 const SYNCING_STALE_MS = 5 * 60 * 1000;
 const FULL_REFRESH_ON_SYNC_TABLES = [
   "tenant_users",

@@ -79,6 +79,16 @@ html, body {
   overflow: hidden;
 }
 
+/* Ocultar flechas de inputs numéricos globalmente */
+input[type=number]::-webkit-inner-spin-button, 
+input[type=number]::-webkit-outer-spin-button { 
+  -webkit-appearance: none; 
+  margin: 0; 
+}
+input[type=number] {
+  -moz-appearance: textfield;
+}
+
 select {
   appearance: none;
   -webkit-appearance: none;

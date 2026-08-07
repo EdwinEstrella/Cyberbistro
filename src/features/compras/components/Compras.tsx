@@ -155,8 +155,7 @@ export function Compras() {
     setEditingProveedor(prov);
     setShowProveedorModal(true);
   }
-
-  async function exportFormato606() {
+  async function exportFormato606(format: 'txt' | 'csv' = 'txt') {
     if (!tenantId) return;
     setExporting606(true);
     setMessage("");
@@ -172,24 +171,42 @@ export function Compras() {
         ? new Date(`${to606}T00:00:00Z`).getTime() + 24 * 60 * 60 * 1000
         : new Date(Number(year), Number(month), 1).getTime();
       const endDate = new Date(end).toISOString().slice(0, 10);
-      const [tenantResult, fiscalResult] = await Promise.all([
-        insforgeClient.database.from("tenants").select("rnc").eq("id", tenantId).maybeSingle(),
-        insforgeClient.database.from("compra_fiscal").select("*").eq("tenant_id", tenantId).gte("fecha_comprobante", start).lt("fecha_comprobante", endDate).order("fecha_comprobante", { ascending: true }),
-      ]);
-      if (tenantResult.error) throw tenantResult.error;
-      if (fiscalResult.error) throw fiscalResult.error;
-      const emitterRnc = tenantResult.data?.rnc?.replace(/\D/g, "") || "";
-      if (!/^[0-9]{9,11}$/.test(emitterRnc)) {
-        throw new Error("Configurá el RNC o cédula del emisor en Ajustes antes de exportar el Formato 606.");
+      
+      const useLocal = await shouldReadLocalFirst(tenantId, ["compra_fiscal", "tenants"]);
+      let emitterRnc = "";
+      let fiscalData: CompraFiscal606[] = [];
+
+      if (useLocal) {
+        const [localTenants, localFiscal] = await Promise.all([
+          readLocalMirror<{ id: string; rnc: string | null }>(tenantId, "tenants"),
+          readLocalMirror<CompraFiscal606 & { tenant_id: string; fecha_comprobante: string }>(tenantId, "compra_fiscal")
+        ]);
+        emitterRnc = localTenants.find(t => t.id === tenantId)?.rnc?.replace(/\D/g, "") || "";
+        fiscalData = localFiscal
+          .filter(f => f.tenant_id === tenantId && f.fecha_comprobante >= start && f.fecha_comprobante < endDate)
+          .sort((a, b) => a.fecha_comprobante.localeCompare(b.fecha_comprobante));
+      } else {
+        const [tenantResult, fiscalResult] = await Promise.all([
+          insforgeClient.database.from("tenants").select("rnc").eq("id", tenantId).maybeSingle(),
+          insforgeClient.database.from("compra_fiscal").select("*").eq("tenant_id", tenantId).gte("fecha_comprobante", start).lt("fecha_comprobante", endDate).order("fecha_comprobante", { ascending: true }),
+        ]);
+        if (tenantResult.error) throw tenantResult.error;
+        if (fiscalResult.error) throw fiscalResult.error;
+        emitterRnc = tenantResult.data?.rnc?.replace(/\D/g, "") || "";
+        fiscalData = (fiscalResult.data || []) as CompraFiscal606[];
       }
-      const text = generateFormato606(emitterRnc, `${year}${month}`, (fiscalResult.data || []) as CompraFiscal606[]);
-      const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+
+      if (!/^[0-9]{9,11}$/.test(emitterRnc)) {
+        throw new Error("Falta el RNC de tu negocio. Configurá el RNC o cédula de tu restaurante (el emisor del reporte) en la pantalla de Ajustes antes de exportar.");
+      }
+      const text = generateFormato606(emitterRnc, `${year}${month}`, fiscalData, format);
+      const url = URL.createObjectURL(new Blob([text], { type: format === "csv" ? "text/csv;charset=utf-8" : "text/plain;charset=utf-8" }));
       const link = document.createElement("a");
       link.href = url;
-      link.download = `DGII-606-${year}${month}.txt`;
+      link.download = `DGII-606-${year}${month}.${format}`;
       link.click();
       URL.revokeObjectURL(url);
-      setSuccessMsg(`Formato 606 generado con ${(fiscalResult.data || []).length} compra(s).`);
+      setSuccessMsg(`Formato 606 generado con ${fiscalData.length} compra(s).`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "No se pudo generar el Formato 606.");
     } finally {
@@ -209,31 +226,43 @@ export function Compras() {
             Módulo de Compras
           </h2>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <div className="flex rounded-[10px] border border-[rgba(72,72,71,0.3)] bg-[#111] p-1">
-            <button type="button" onClick={() => setPeriodMode606("month")} className={`rounded-[7px] px-2.5 py-1.5 text-[10px] font-bold uppercase ${periodMode606 === "month" ? "bg-[#ff906d] text-[#460f00]" : "text-[#adaaaa]"}`}>Mes</button>
-            <button type="button" onClick={() => setPeriodMode606("range")} className={`rounded-[7px] px-2.5 py-1.5 text-[10px] font-bold uppercase ${periodMode606 === "range" ? "bg-[#ff906d] text-[#460f00]" : "text-[#adaaaa]"}`}>Desde/Hasta</button>
+        <div className="flex flex-wrap items-center justify-end gap-3 mt-4 sm:mt-0">
+          <div className="flex rounded-[10px] border border-[rgba(72,72,71,0.4)] bg-[#1a1a1a] p-1 shadow-sm">
+            <button type="button" onClick={() => setPeriodMode606("month")} className={`rounded-[7px] px-3 py-1.5 text-[11px] font-bold uppercase transition-colors ${periodMode606 === "month" ? "bg-[#ff906d] text-[#460f00]" : "text-[#e5e7eb] hover:bg-[#2a2a2a]"}`}>Mes</button>
+            <button type="button" onClick={() => setPeriodMode606("range")} className={`rounded-[7px] px-3 py-1.5 text-[11px] font-bold uppercase transition-colors ${periodMode606 === "range" ? "bg-[#ff906d] text-[#460f00]" : "text-[#e5e7eb] hover:bg-[#2a2a2a]"}`}>Desde/Hasta</button>
           </div>
           {periodMode606 === "month" ? (
-            <label className="flex items-center gap-2 rounded-[10px] border border-[rgba(72,72,71,0.3)] bg-[#111] px-2.5 py-2">
-              <span className="text-[9px] font-bold uppercase tracking-wide text-[#6b7280]">Seleccionar mes</span>
-              <select value={period606} onChange={(event) => setPeriod606(event.target.value)} className="bg-transparent text-xs font-semibold capitalize text-white outline-none" aria-label="Seleccionar mes para Formato 606">
-                {monthOptions606.map((option) => <option key={option.value} value={option.value} className="bg-[#111]">{option.label}</option>)}
+            <div className="flex items-center gap-3 rounded-[10px] border border-[rgba(72,72,71,0.4)] bg-[#1a1a1a] px-3 py-2 shadow-sm">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-white">Seleccionar mes:</span>
+              <select value={period606} onChange={(event) => setPeriod606(event.target.value)} className="bg-transparent text-[13px] font-semibold capitalize text-white outline-none cursor-pointer" aria-label="Seleccionar mes para Formato 606">
+                {monthOptions606.map((option) => <option key={option.value} value={option.value} className="bg-[#1a1a1a] text-white">{option.label}</option>)}
               </select>
-            </label>
+            </div>
           ) : (
-            <div className="flex items-center gap-2 rounded-[10px] border border-[rgba(72,72,71,0.3)] bg-[#111] px-2.5 py-2 text-xs">
-              <label className="text-[#6b7280]">Desde <input type="date" value={from606} onChange={(event) => setFrom606(event.target.value)} className="ml-1 bg-transparent text-white outline-none" /></label>
-              <label className="text-[#6b7280]">Hasta <input type="date" value={to606} onChange={(event) => setTo606(event.target.value)} className="ml-1 bg-transparent text-white outline-none" /></label>
+            <div className="flex items-center gap-4 rounded-[10px] border border-[rgba(72,72,71,0.4)] bg-[#1a1a1a] px-3 py-2 text-[13px] font-medium text-white shadow-sm">
+              <label className="flex items-center gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-white">Desde:</span>
+                <input type="date" value={from606} onChange={(event) => setFrom606(event.target.value)} className="bg-transparent text-white outline-none cursor-pointer [color-scheme:dark]" />
+              </label>
+              <div className="w-px h-4 bg-[rgba(72,72,71,0.4)]"></div>
+              <label className="flex items-center gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-white">Hasta:</span>
+                <input type="date" value={to606} onChange={(event) => setTo606(event.target.value)} className="bg-transparent text-white outline-none cursor-pointer [color-scheme:dark]" />
+              </label>
             </div>
           )}
-          <button type="button" onClick={() => void exportFormato606()} disabled={exporting606} className="flex items-center gap-1.5 rounded-[10px] border border-[#ff906d]/50 px-3 py-2 text-[11px] font-bold uppercase text-[#ff906d] disabled:opacity-50">
-            <Download className="size-4" /> {exporting606 ? "Generando" : "Exportar 606"}
-          </button>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => void exportFormato606('txt')} disabled={exporting606} className="flex items-center gap-2 rounded-[10px] bg-[rgba(255,144,109,0.15)] border border-[#ff906d]/50 px-4 py-2 text-[12px] font-bold uppercase text-[#ff906d] shadow-sm disabled:opacity-50 hover:bg-[#ff906d]/20 transition-colors cursor-pointer">
+              <Download className="size-[15px]" /> TXT
+            </button>
+            <button type="button" onClick={() => void exportFormato606('csv')} disabled={exporting606} className="flex items-center gap-2 rounded-[10px] bg-[#1a1a1a] border border-[#22c55e]/50 px-4 py-2 text-[12px] font-bold uppercase text-[#22c55e] shadow-sm disabled:opacity-50 hover:bg-[#22c55e]/10 transition-colors cursor-pointer">
+              <FileText className="size-[15px]" /> Excel
+            </button>
+          </div>
           <button
             type="button"
             onClick={() => void cargarDatos()}
-            className="bg-transparent border border-[rgba(72,72,71,0.3)] hover:border-white text-[#adaaaa] hover:text-white rounded-[10px] p-2.5 transition-colors cursor-pointer"
+            className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.4)] hover:border-white text-white rounded-[10px] p-2.5 transition-colors cursor-pointer shadow-sm"
             title="Refrescar datos"
           >
             <RefreshCw className="size-[16px]" />

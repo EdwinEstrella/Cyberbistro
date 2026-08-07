@@ -125,8 +125,10 @@ export function DetalleCompraModal({
               <span className="font-bold text-white text-base">
                 {proveedor?.nombre || "Proveedor Desconocido"}
               </span>
-              {proveedor?.rnc && (
+              {proveedor?.rnc ? (
                 <span className="text-[#adaaaa] text-xs">RNC: {proveedor.rnc}</span>
+              ) : (
+                <span className="text-yellow-600 dark:text-yellow-500 font-bold text-xs uppercase tracking-wide">⚠️ Sin RNC registrado</span>
               )}
             </div>
             <div className="flex flex-col gap-1 border-t border-[rgba(72,72,71,0.1)] pt-2 mt-1">

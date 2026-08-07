@@ -1,5 +1,5 @@
 import { FormEvent, useMemo, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { Trash2, Plus } from "lucide-react";
 import { registrarCompra } from "../lib/purchaseService";
 
 const RD = (n: number) =>
@@ -151,21 +151,22 @@ export function RegistrarCompraModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
-      <div className="bg-[#131313] border border-[rgba(255,144,109,0.3)] rounded-[20px] shadow-[0px_0px_30px_rgba(255,144,109,0.15)] max-w-[700px] w-full p-6 relative flex flex-col max-h-[90vh] text-white">
-        <h3 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px] uppercase tracking-[0.5px] mb-4 shrink-0 text-left">
+      <div className="bg-[#131313] border border-[rgba(255,144,109,0.3)] rounded-[24px] shadow-[0px_0px_40px_rgba(255,144,109,0.1)] max-w-[850px] w-full p-6 sm:p-8 relative flex flex-col max-h-[90vh] text-white">
+        <h3 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[20px] uppercase tracking-[0.5px] mb-5 shrink-0 text-left flex items-center gap-2">
+          <span className="bg-[#ff906d]/10 text-[#ff906d] p-1.5 rounded-lg border border-[#ff906d]/20"><Plus className="size-5" /></span>
           Registrar Factura de Compra
         </h3>
 
-        <form onSubmit={handleRegistrarCompra} className="flex flex-col gap-4 overflow-y-auto pr-1 flex-1 min-h-0">
+        <form onSubmit={handleRegistrarCompra} className="flex flex-col gap-5 overflow-y-auto pr-2 flex-1 min-h-0 custom-scrollbar">
           {/* Header Info */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 shrink-0 text-left">
-            <div className="flex flex-col gap-1.5">
-              <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[9.5px] uppercase tracking-[0.5px]">Proveedor *</label>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 shrink-0 text-left bg-[#1a1a1a] border border-[rgba(72,72,71,0.2)] rounded-xl p-4">
+            <div className="flex flex-col gap-1.5 md:col-span-2">
+              <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.8px] font-semibold">Proveedor *</label>
               <select
                 required
                 value={compraForm.proveedor_id}
                 onChange={(e) => setCompraForm(prev => ({ ...prev, proveedor_id: e.target.value }))}
-                className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[8px] px-3 py-2 font-['Inter',sans-serif] text-white text-[12px] outline-none focus:border-[#ff906d]/50 transition-colors cursor-pointer"
+                className="bg-[#111] border border-[rgba(72,72,71,0.4)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors cursor-pointer"
               >
                 <option value="">Selecciona proveedor</option>
                 {proveedores.map(p => (
@@ -173,40 +174,40 @@ export function RegistrarCompraModal({
                 ))}
               </select>
             </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[9.5px] uppercase tracking-[0.5px]">Tipo de Pago *</label>
+            <div className="flex flex-col gap-1.5 md:col-span-1">
+              <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.8px] font-semibold">Tipo de Pago *</label>
               <select
                 value={compraForm.tipo_pago}
                 onChange={(e) => setCompraForm(prev => ({ ...prev, tipo_pago: e.target.value as any, metodo_pago: e.target.value === "credito" ? "" : "efectivo", monto_pagado: "" }))}
-                className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[8px] px-3 py-2 font-['Inter',sans-serif] text-white text-[12px] outline-none focus:border-[#ff906d]/50 transition-colors cursor-pointer"
+                className="bg-[#111] border border-[rgba(72,72,71,0.4)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors cursor-pointer"
               >
                 <option value="contado">Contado</option>
                 <option value="parcial">Pago Parcial / Crédito</option>
                 <option value="credito">Crédito Puro</option>
               </select>
             </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[9.5px] uppercase tracking-[0.5px]">Número Factura</label>
+            <div className="flex flex-col gap-1.5 md:col-span-1">
+              <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.8px] font-semibold">Número Factura</label>
               <input
                 type="text"
                 placeholder="Ej: B150004523"
                 value={compraForm.numero_factura}
                 onChange={(e) => setCompraForm(prev => ({ ...prev, numero_factura: e.target.value }))}
-                className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[8px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[12.5px] outline-none focus:border-[#ff906d]/50 transition-colors"
+                className="bg-[#111] border border-[rgba(72,72,71,0.4)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors"
               />
             </div>
           </div>
 
           {/* Conditional payment details (method and initial pay) */}
           {(isContado || isParcial) && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 shrink-0 border border-zinc-800 bg-zinc-950/20 p-3 rounded-[12px] text-left">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 shrink-0 border border-[rgba(255,144,109,0.15)] bg-[rgba(255,144,109,0.02)] p-4 rounded-xl text-left">
               <div className="flex flex-col gap-1.5">
-                <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[9.5px] uppercase tracking-[0.5px]">Método de Pago *</label>
+                <label className="font-['Inter',sans-serif] text-[#ff906d] text-[10px] uppercase tracking-[0.8px] font-semibold">Método de Pago *</label>
                 <select
                   required
                   value={compraForm.metodo_pago}
                   onChange={(e) => setCompraForm(prev => ({ ...prev, metodo_pago: e.target.value as any }))}
-                  className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[8px] px-3 py-2 font-['Inter',sans-serif] text-white text-[12px] outline-none focus:border-[#ff906d]/50 transition-colors cursor-pointer"
+                  className="bg-[#111] border border-[rgba(255,144,109,0.3)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors cursor-pointer"
                 >
                   <option value="efectivo">Efectivo</option>
                   <option value="tarjeta">Tarjeta</option>
@@ -216,7 +217,7 @@ export function RegistrarCompraModal({
               </div>
               {isParcial && (
                 <div className="flex flex-col gap-1.5">
-                  <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[9.5px] uppercase tracking-[0.5px]">Monto Inicial Pagado (RD$) *</label>
+                  <label className="font-['Inter',sans-serif] text-[#ff906d] text-[10px] uppercase tracking-[0.8px] font-semibold">Monto Inicial Pagado (RD$) *</label>
                   <input
                     type="number"
                     required
@@ -225,7 +226,7 @@ export function RegistrarCompraModal({
                     placeholder="Ej: 5000"
                     value={compraForm.monto_pagado}
                     onChange={(e) => setCompraForm(prev => ({ ...prev, monto_pagado: e.target.value }))}
-                    className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[8px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[12.5px] outline-none focus:border-[#ff906d]/50 transition-colors"
+                    className="bg-[#111] border border-[rgba(255,144,109,0.3)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors"
                   />
                 </div>
               )}
@@ -233,48 +234,51 @@ export function RegistrarCompraModal({
           )}
           
           {!cicloAbierto && (
-            <div className="bg-[rgba(255,113,108,0.08)] border border-[rgba(255,113,108,0.25)] rounded-[10px] p-3 text-[12px] text-[#ff716c] font-['Inter',sans-serif] shrink-0 text-left">
-              ⚠️ <strong>Ciclo cerrado:</strong> Abrí un ciclo operativo antes de registrar una compra. Todas las compras, pagos y cuentas por pagar deben quedar vinculados a su ciclo.
+            <div className="bg-[rgba(255,113,108,0.08)] border border-[rgba(255,113,108,0.25)] rounded-[12px] p-3 text-[13px] text-[#ff716c] font-['Inter',sans-serif] shrink-0 text-left flex items-start gap-2">
+              <span className="text-[16px] leading-none">⚠️</span>
+              <p>
+                <strong>Ciclo cerrado:</strong> Abrí un ciclo operativo antes de registrar una compra. Todas las compras, pagos y cuentas por pagar deben quedar vinculados a su ciclo.
+              </p>
             </div>
           )}
 
           {/* Items Section */}
-          <div className="flex flex-col gap-2 flex-1 min-h-0 text-left">
-            <div className="flex justify-between items-center">
-              <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[12px] uppercase">
+          <div className="flex flex-col gap-3 flex-1 min-h-0 text-left bg-[#1a1a1a] border border-[rgba(72,72,71,0.2)] rounded-xl p-4">
+            <div className="flex justify-between items-center pb-2">
+              <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[14px] uppercase tracking-[0.5px]">
                 Insumos Comprados
               </span>
               <button
                 type="button"
                 onClick={addRow}
-                className="bg-[#262626] border border-[rgba(255,144,109,0.25)] text-[#ff906d] rounded-[6px] px-2.5 py-1 text-[10.5px] font-bold uppercase cursor-pointer hover:bg-zinc-800 transition-colors"
+                className="bg-[rgba(255,144,109,0.1)] border border-[rgba(255,144,109,0.3)] text-[#ff906d] rounded-[8px] px-3 py-1.5 text-[11px] font-bold uppercase cursor-pointer hover:bg-[rgba(255,144,109,0.2)] transition-colors shadow-sm"
               >
                 + Agregar Fila
               </button>
             </div>
 
-            <div className="overflow-auto border border-[rgba(72,72,71,0.18)] rounded-[10px] min-h-[150px] bg-[#101010]">
+            <div className="overflow-auto border border-[rgba(72,72,71,0.3)] rounded-xl min-h-[150px] bg-[#111] custom-scrollbar">
               <table className="w-full border-collapse">
-                <thead className="bg-[#181818]">
-                  <tr className="text-left font-['Inter',sans-serif] text-[9px] uppercase tracking-[0.5px] text-[#adaaaa] border-b border-[rgba(72,72,71,0.18)]">
-                    <th className="px-3 py-2">Insumo / Materia Prima</th>
-                    <th className="px-3 py-2 w-[120px]">Cant.</th>
-                    <th className="px-3 py-2 w-[150px]">Costo (RD$)</th>
-                    <th className="px-3 py-2 w-[45px]"></th>
+                <thead className="bg-[#151515] sticky top-0 z-10 shadow-sm">
+                  <tr className="text-left font-['Inter',sans-serif] text-[10px] uppercase tracking-[0.8px] text-[#adaaaa] border-b border-[rgba(72,72,71,0.3)]">
+                    <th className="px-4 py-3 font-semibold">Insumo / Materia Prima</th>
+                    <th className="px-4 py-3 font-semibold w-[140px]">Cant.</th>
+                    <th className="px-4 py-3 font-semibold w-[160px]">Costo (RD$)</th>
+                    <th className="px-4 py-3 font-semibold w-[60px] text-center">Acción</th>
                   </tr>
                 </thead>
-                <tbody className="font-['Inter',sans-serif] text-[12px] text-white">
+                <tbody className="font-['Inter',sans-serif] text-[13px] text-white">
                   {purchaseItems.map((item, idx) => {
                     const selectedProd = productos.find(p => p.id === item.producto_id);
                     const isFractional = selectedProd?.mostrar_en_fracciones && selectedProd.contenido_por_unidad_compra && selectedProd.contenido_por_unidad_compra > 0;
                     return (
-                      <tr key={item.id} className="border-t border-[rgba(72,72,71,0.1)]">
-                        <td className="px-2.5 py-2 text-left align-top">
+                      <tr key={item.id} className="border-b border-[rgba(72,72,71,0.15)] last:border-b-0 hover:bg-[#151515] transition-colors group">
+                        <td className="px-4 py-3 text-left align-top">
                           <select
                             required
                             value={item.producto_id}
                             onChange={(e) => updateRow(idx, "producto_id", e.target.value)}
-                            className="w-full bg-[#151515] border border-[rgba(72,72,71,0.3)] rounded-[6px] px-2 py-1.5 text-white outline-none focus:border-[#ff906d]/50 transition-colors mt-4"
+                            className="w-full bg-[#1c1c1c] border border-[rgba(72,72,71,0.4)] rounded-[8px] px-3 py-2 text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors shadow-sm"
                           >
                             <option value="">Selecciona insumo</option>
                             {productos.map(p => (
@@ -284,17 +288,12 @@ export function RegistrarCompraModal({
                             ))}
                           </select>
                           {selectedProd && isFractional && item.cantidad && Number(item.cantidad) > 0 && (
-                            <span className="text-[10px] text-[#ff906d] block mt-1.5 px-1 font-medium">
-                              + {(Number(item.cantidad) * (selectedProd.contenido_por_unidad_compra || 0)).toLocaleString()} {selectedProd.unidad_base} agregados al stock
+                            <span className="text-[11px] text-[#ff906d] block mt-2 px-1 font-medium bg-[#ff906d]/10 w-fit rounded px-2 py-0.5 border border-[#ff906d]/20">
+                              + {(Number(item.cantidad) * (selectedProd.contenido_por_unidad_compra || 0)).toLocaleString()} {selectedProd.unidad_base} al stock
                             </span>
                           )}
                         </td>
-                        <td className="px-2.5 py-2 align-top">
-                          {selectedProd && (
-                            <span className="block text-[9px] text-zinc-500 uppercase tracking-wide mb-1 px-1">
-                              {isFractional ? `${selectedProd.unidad_compra || "Cajas"} comprad.` : `${selectedProd.unidad_base || "Cant."} comprad.`}
-                            </span>
-                          )}
+                        <td className="px-4 py-3 align-top">
                           <input
                             type="number"
                             required
@@ -303,15 +302,15 @@ export function RegistrarCompraModal({
                             placeholder={isFractional ? (selectedProd.unidad_compra || "Cant.") : (selectedProd?.unidad_base || "Cantidad")}
                             value={item.cantidad}
                             onChange={(e) => updateRow(idx, "cantidad", e.target.value)}
-                            className="w-full bg-[#151515] border border-[rgba(72,72,71,0.3)] rounded-[6px] px-2 py-1.5 text-white outline-none focus:border-[#ff906d]/50 transition-colors"
+                            className="w-full bg-[#1c1c1c] border border-[rgba(72,72,71,0.4)] rounded-[8px] px-3 py-2 text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors shadow-sm"
                           />
-                        </td>
-                        <td className="px-2.5 py-2 align-top">
                           {selectedProd && (
-                            <span className="block text-[9px] text-zinc-500 uppercase tracking-wide mb-1 px-1">
-                              Costo por {isFractional ? (selectedProd.unidad_compra || "caja") : (selectedProd.unidad_base || "unidad")}
+                            <span className="block text-[10px] text-zinc-500 uppercase tracking-wide mt-2 px-1 font-semibold">
+                              {isFractional ? `${selectedProd.unidad_compra || "Cajas"} comprad.` : `${selectedProd.unidad_base || "Cant."} comprad.`}
                             </span>
                           )}
+                        </td>
+                        <td className="px-4 py-3 align-top">
                           <input
                             type="number"
                             required
@@ -320,17 +319,22 @@ export function RegistrarCompraModal({
                             placeholder={isFractional ? `Costo ${selectedProd.unidad_compra || "unidad"}` : "Costo Unit."}
                             value={item.costo_unitario}
                             onChange={(e) => updateRow(idx, "costo_unitario", e.target.value)}
-                            className="w-full bg-[#151515] border border-[rgba(72,72,71,0.3)] rounded-[6px] px-2 py-1.5 text-white outline-none focus:border-[#ff906d]/50 transition-colors"
+                            className="w-full bg-[#1c1c1c] border border-[rgba(72,72,71,0.4)] rounded-[8px] px-3 py-2 text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors shadow-sm"
                           />
+                          {selectedProd && (
+                            <span className="block text-[10px] text-zinc-500 uppercase tracking-wide mt-2 px-1 font-semibold">
+                              x {isFractional ? (selectedProd.unidad_compra || "caja") : (selectedProd.unidad_base || "unidad")}
+                            </span>
+                          )}
                         </td>
-                        <td className="px-2.5 py-2 text-center">
+                        <td className="px-4 py-3 text-center align-top pt-4">
                           <button
                             type="button"
                             onClick={() => removeRow(idx)}
-                            className="bg-transparent border-none text-[#ff716c] hover:text-[#ff3831] cursor-pointer"
-                            title="Remover"
+                            className="bg-transparent border-none text-[#ff716c] hover:text-[#ff3831] hover:bg-[#ff716c]/10 p-2 rounded-lg cursor-pointer transition-colors"
+                            title="Remover Fila"
                           >
-                            <Trash2 className="size-[14px]" />
+                            <Trash2 className="size-4" />
                           </button>
                         </td>
                       </tr>
@@ -341,9 +345,9 @@ export function RegistrarCompraModal({
             </div>
 
             {purchaseItems.some(i => i.producto_id) && (
-              <div className="bg-[#181818] border border-zinc-800 rounded-xl p-3 text-[11px] text-[#adaaaa] font-['Inter',sans-serif] shrink-0 mt-1.5 text-left">
-                <span className="font-bold text-white uppercase block mb-1">Resumen de Incremento de Inventario</span>
-                <ul className="list-disc pl-4 flex flex-col gap-1">
+              <div className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-xl p-3.5 text-[12px] text-[#adaaaa] font-['Inter',sans-serif] shrink-0 mt-2 text-left shadow-sm">
+                <span className="font-bold text-white uppercase tracking-[0.5px] block mb-2 text-[11px]">Resumen de Incremento de Inventario</span>
+                <ul className="list-disc pl-5 flex flex-col gap-1.5">
                   {purchaseItems.map((item) => {
                     const prod = productos.find(p => p.id === item.producto_id);
                     const q = Number(item.cantidad) || 0;
@@ -351,8 +355,8 @@ export function RegistrarCompraModal({
                     const isFractional = prod.mostrar_en_fracciones && prod.contenido_por_unidad_compra && prod.contenido_por_unidad_compra > 0;
                     const addedBase = isFractional ? (q * (prod.contenido_por_unidad_compra || 0)) : q;
                     return (
-                      <li key={item.id}>
-                        <b>{prod.nombre}:</b> +{q.toLocaleString()} {isFractional ? `${prod.unidad_compra || 'Cajas'} (${addedBase.toLocaleString()} ${prod.unidad_base})` : `${prod.unidad_base}`} agregados al stock.
+                      <li key={item.id} className="marker:text-[#ff906d]">
+                        <b className="text-white">{prod.nombre}:</b> +{q.toLocaleString()} {isFractional ? `${prod.unidad_compra || 'Cajas'} (${addedBase.toLocaleString()} ${prod.unidad_base})` : `${prod.unidad_base}`} agregados al stock.
                       </li>
                     );
                   })}
@@ -362,42 +366,42 @@ export function RegistrarCompraModal({
           </div>
 
           {/* Extra notes */}
-          <div className="flex flex-col gap-1.5 shrink-0 text-left">
-            <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[9.5px] uppercase tracking-[0.5px]">Observaciones</label>
+          <div className="flex flex-col gap-1.5 shrink-0 text-left bg-[#1a1a1a] border border-[rgba(72,72,71,0.2)] rounded-xl p-4">
+            <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.8px] font-semibold">Observaciones</label>
             <textarea
               placeholder="Detalles extra de la compra, condiciones de recepción, etc."
               value={compraForm.observacion}
               onChange={(e) => setCompraForm(prev => ({ ...prev, observacion: e.target.value }))}
-              className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[8px] px-3 py-2 font-['Inter',sans-serif] text-white text-[12px] outline-none h-[60px] resize-none focus:border-[#ff906d]/50 transition-colors"
+              className="bg-[#111] border border-[rgba(72,72,71,0.4)] rounded-[10px] px-4 py-3 font-['Inter',sans-serif] text-white text-[13px] outline-none h-[70px] resize-none focus:border-[#ff906d]/60 transition-colors shadow-sm"
             />
           </div>
 
           {/* Summary and Buttons */}
-          <div className="flex justify-between items-center pt-3 border-t border-[rgba(72,72,71,0.15)] mt-1 shrink-0">
+          <div className="flex justify-between items-center pt-5 border-t border-[rgba(72,72,71,0.2)] mt-2 shrink-0">
             <div className="flex flex-col text-left">
-              <span className="text-[10px] text-[#adaaaa] uppercase tracking-[0.5px] font-['Inter',sans-serif]">Monto Total Factura:</span>
-              <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[16px]">
+              <span className="text-[11px] text-[#adaaaa] uppercase tracking-[0.8px] font-['Inter',sans-serif] font-semibold">Monto Total Factura:</span>
+              <span className="font-['Space_Grotesk',sans-serif] font-black text-white text-[22px]">
                 {RD(runningTotal)}
               </span>
               {isParcial && compraForm.monto_pagado && (
-                <span className="text-[11px] text-[#ff906d]">
-                  Paga hoy: {RD(Number(compraForm.monto_pagado) || 0)} · Pendiente: {RD(Math.max(0, runningTotal - (Number(compraForm.monto_pagado) || 0)))}
+                <span className="text-[12px] text-[#ff906d] font-medium mt-0.5">
+                  Paga hoy: {RD(Number(compraForm.monto_pagado) || 0)} <span className="text-[#adaaaa] mx-1">·</span> Pendiente: {RD(Math.max(0, runningTotal - (Number(compraForm.monto_pagado) || 0)))}
                 </span>
               )}
             </div>
 
-            <div className="flex gap-2.5">
+            <div className="flex gap-3">
               <button
                 type="button"
                 onClick={onClose}
-                className="bg-[#262626] text-[#adaaaa] rounded-[8px] px-4 py-2 font-['Space_Grotesk',sans-serif] font-bold text-[10.5px] uppercase cursor-pointer border-none hover:bg-zinc-800 transition-colors"
+                className="bg-[#262626] text-[#adaaaa] rounded-[10px] px-5 py-2.5 font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase cursor-pointer border-none hover:bg-zinc-800 hover:text-white transition-colors shadow-sm"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
                 disabled={saving || !cicloAbierto}
-                className="bg-[#ff906d] rounded-[8px] px-4 py-2 font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[10.5px] uppercase cursor-pointer border-none disabled:opacity-50 hover:bg-[#ff906d]/90 transition-colors"
+                className="bg-[#ff906d] rounded-[10px] px-6 py-2.5 font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[12px] uppercase cursor-pointer border-none disabled:opacity-50 hover:bg-[#ff906d]/90 hover:shadow-[0_0_15px_rgba(255,144,109,0.3)] transition-all"
               >
                 {saving ? "Registrando..." : "Guardar Compra"}
               </button>
