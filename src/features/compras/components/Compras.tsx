@@ -67,6 +67,7 @@ export function Compras() {
   const [proveedores, setProveedores] = useState<ProveedorRow[]>([]);
   const [productos, setProductos] = useState<ProductoRow[]>([]);
   const [cicloAbierto, setCicloAbierto] = useState<{ id: string; closed_at: string | null; opened_at: string } | null>(null);
+  const [fiscales, setFiscales] = useState<CompraFiscal606[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
@@ -90,35 +91,40 @@ export function Compras() {
     setLoading(true);
     setMessage("");
     try {
-      const useLocal = await shouldReadLocalFirst(tenantId, ["compras", "proveedores", "productos_inventario", "cierres_operativos"]);
+      const useLocal = await shouldReadLocalFirst(tenantId, ["compras", "proveedores", "productos_inventario", "cierres_operativos", "compra_fiscal"]);
       
       let comprasData: CompraRow[] = [];
       let proveedoresData: ProveedorRow[] = [];
       let productosData: ProductoRow[] = [];
       let ciclosData: any[] = [];
+      let fiscalesData: CompraFiscal606[] = [];
 
       if (useLocal) {
         comprasData = await readLocalMirror<CompraRow>(tenantId, "compras");
         proveedoresData = await readLocalMirror<ProveedorRow>(tenantId, "proveedores");
         productosData = await readLocalMirror<ProductoRow>(tenantId, "productos_inventario");
         ciclosData = await readLocalMirror<any>(tenantId, "cierres_operativos");
+        fiscalesData = await readLocalMirror<CompraFiscal606>(tenantId, "compra_fiscal");
       } else {
-        const [cRes, pRes, iRes, cyRes] = await Promise.all([
+        const [cRes, pRes, iRes, cyRes, fRes] = await Promise.all([
           insforgeClient.database.from("compras").select("*").eq("tenant_id", tenantId),
           insforgeClient.database.from("proveedores").select("*").eq("tenant_id", tenantId),
           insforgeClient.database.from("productos_inventario").select("*").eq("tenant_id", tenantId),
           insforgeClient.database.from("cierres_operativos").select("id, cycle_number, opened_at, closed_at, sucursal_id").eq("tenant_id", tenantId).is("closed_at", null).order("opened_at", { ascending: false }).limit(1),
+          insforgeClient.database.from("compra_fiscal").select("*").eq("tenant_id", tenantId)
         ]);
         comprasData = cRes.data || [];
         proveedoresData = pRes.data || [];
         productosData = iRes.data || [];
         ciclosData = cyRes.data || [];
+        fiscalesData = (fRes.data || []) as CompraFiscal606[];
       }
 
       // Filter and Sort
       setCompras(comprasData.sort((a, b) => b.fecha_compra.localeCompare(a.fecha_compra)));
       setProveedores(proveedoresData.filter(p => p.activo).sort((a, b) => a.nombre.localeCompare(b.nombre)));
       setProductos(productosData.filter(i => i.activo).sort((a, b) => a.nombre.localeCompare(b.nombre)));
+      setFiscales(fiscalesData);
 
       const activeCycle = useLocal
         ? ciclosData.filter(c => !c.closed_at && (c.sucursal_id === activeSucursalId || !c.sucursal_id)).sort((a, b) => b.opened_at.localeCompare(a.opened_at))[0] ?? null
@@ -148,6 +154,32 @@ export function Compras() {
       return { value, label: formatter.format(date) };
     });
   }, []);
+
+  const summaryStats = useMemo(() => {
+    const selectedPeriod = periodMode606 === "month" ? period606 : from606.slice(0, 7);
+    const [year, month] = selectedPeriod.split("-");
+    const start = periodMode606 === "range" ? from606 : `${year}-${month}-01`;
+    const endMs = periodMode606 === "range"
+      ? new Date(`${to606}T00:00:00Z`).getTime() + 24 * 60 * 60 * 1000
+      : new Date(Number(year), Number(month), 1).getTime();
+    const endStr = new Date(endMs).toISOString().slice(0, 10);
+
+    let totalFacturado = 0;
+    let montoServicios = 0;
+    let itbisFacturado = 0;
+    let itbisRetenido = 0;
+
+    for (const fiscal of fiscales) {
+      if (fiscal.fecha_comprobante >= start && fiscal.fecha_comprobante < endStr) {
+        totalFacturado += Number(fiscal.total_facturado) || 0;
+        montoServicios += Number(fiscal.monto_servicios) || 0;
+        itbisFacturado += Number(fiscal.itbis_facturado) || 0;
+        itbisRetenido += Number(fiscal.itbis_retenido) || 0;
+      }
+    }
+
+    return { totalFacturado, montoServicios, itbisFacturado, itbisRetenido };
+  }, [fiscales, periodMode606, period606, from606, to606]);
 
 
 
@@ -232,22 +264,22 @@ export function Compras() {
             <button type="button" onClick={() => setPeriodMode606("range")} className={`rounded-[7px] px-3 py-1.5 text-[11px] font-bold uppercase transition-colors ${periodMode606 === "range" ? "bg-[#ff906d] text-[#460f00]" : "text-[#e5e7eb] hover:bg-[#2a2a2a]"}`}>Desde/Hasta</button>
           </div>
           {periodMode606 === "month" ? (
-            <div className="flex items-center gap-3 rounded-[10px] border border-[rgba(72,72,71,0.4)] bg-[#1a1a1a] px-3 py-2 shadow-sm">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-white">Seleccionar mes:</span>
-              <select value={period606} onChange={(event) => setPeriod606(event.target.value)} className="bg-transparent text-[13px] font-semibold capitalize text-white outline-none cursor-pointer" aria-label="Seleccionar mes para Formato 606">
+            <div className="flex items-center gap-3 rounded-[10px] border border-[rgba(72,72,71,0.4)] bg-[#1a1a1a] px-4 py-2 shadow-sm">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#adaaaa]">Seleccionar mes:</span>
+              <select value={period606} onChange={(event) => setPeriod606(event.target.value)} className="bg-[#222] border border-[rgba(72,72,71,0.3)] rounded-lg px-2 py-1.5 text-[13px] font-semibold capitalize text-white outline-none cursor-pointer flex items-center justify-center transition-colors hover:border-[#ff906d]/50" aria-label="Seleccionar mes para Formato 606">
                 {monthOptions606.map((option) => <option key={option.value} value={option.value} className="bg-[#1a1a1a] text-white">{option.label}</option>)}
               </select>
             </div>
           ) : (
-            <div className="flex items-center gap-4 rounded-[10px] border border-[rgba(72,72,71,0.4)] bg-[#1a1a1a] px-3 py-2 text-[13px] font-medium text-white shadow-sm">
+            <div className="flex items-center gap-3 rounded-[10px] border border-[rgba(72,72,71,0.4)] bg-[#1a1a1a] px-4 py-2 text-[13px] font-medium text-white shadow-sm">
               <label className="flex items-center gap-2">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-white">Desde:</span>
-                <input type="date" value={from606} onChange={(event) => setFrom606(event.target.value)} className="bg-transparent text-white outline-none cursor-pointer [color-scheme:dark]" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#adaaaa]">Desde:</span>
+                <input type="date" value={from606} onChange={(event) => setFrom606(event.target.value)} className="bg-[#222] border border-[rgba(72,72,71,0.3)] rounded-lg px-2 py-1.5 text-white outline-none cursor-pointer [color-scheme:dark] transition-colors hover:border-[#ff906d]/50" />
               </label>
               <div className="w-px h-4 bg-[rgba(72,72,71,0.4)]"></div>
               <label className="flex items-center gap-2">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-white">Hasta:</span>
-                <input type="date" value={to606} onChange={(event) => setTo606(event.target.value)} className="bg-transparent text-white outline-none cursor-pointer [color-scheme:dark]" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#adaaaa]">Hasta:</span>
+                <input type="date" value={to606} onChange={(event) => setTo606(event.target.value)} className="bg-[#222] border border-[rgba(72,72,71,0.3)] rounded-lg px-2 py-1.5 text-white outline-none cursor-pointer [color-scheme:dark] transition-colors hover:border-[#ff906d]/50" />
               </label>
             </div>
           )}
@@ -267,6 +299,26 @@ export function Compras() {
           >
             <RefreshCw className="size-[16px]" />
           </button>
+        </div>
+      </div>
+
+      {/* KPIs Fiscales */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 shrink-0">
+        <div className="bg-[#131313] border border-[rgba(72,72,71,0.2)] rounded-xl p-4 flex flex-col justify-center shadow-sm">
+          <span className="text-[10px] text-[#adaaaa] font-semibold uppercase tracking-[0.5px]">Monto Total Facturado</span>
+          <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[20px] mt-1">{RD(summaryStats.totalFacturado)}</span>
+        </div>
+        <div className="bg-[#131313] border border-[rgba(72,72,71,0.2)] rounded-xl p-4 flex flex-col justify-center shadow-sm">
+          <span className="text-[10px] text-[#adaaaa] font-semibold uppercase tracking-[0.5px]">Monto en Servicios</span>
+          <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[20px] mt-1">{RD(summaryStats.montoServicios)}</span>
+        </div>
+        <div className="bg-[#131313] border border-[rgba(72,72,71,0.2)] rounded-xl p-4 flex flex-col justify-center shadow-sm">
+          <span className="text-[10px] text-[#adaaaa] font-semibold uppercase tracking-[0.5px]">ITBIS Facturado</span>
+          <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#59ee50] text-[20px] mt-1">{RD(summaryStats.itbisFacturado)}</span>
+        </div>
+        <div className="bg-[#131313] border border-[rgba(72,72,71,0.2)] rounded-xl p-4 flex flex-col justify-center shadow-sm">
+          <span className="text-[10px] text-[#adaaaa] font-semibold uppercase tracking-[0.5px]">ITBIS Retenido</span>
+          <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff716c] text-[20px] mt-1">{RD(summaryStats.itbisRetenido)}</span>
         </div>
       </div>
 

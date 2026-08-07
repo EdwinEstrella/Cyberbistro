@@ -171,17 +171,18 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
 
   // 2. Enqueue Local Write for Cabecera de Compra
   const granTotal = totalCompra + (montoServicios || 0) + (itbisFacturado || 0) + (impuestoSelectivo || 0) + (otrosImpuestos || 0) + (propinaLegal || 0);
+  const totalAPagar = granTotal - (itbisRetenido || 0) - (retencionIsr || 0);
 
   // Additional validations for parcial payment
   let resolvedMontoPagado = 0;
   if (tipoPago === "contado") {
-    resolvedMontoPagado = granTotal;
+    resolvedMontoPagado = totalAPagar;
   } else if (tipoPago === "parcial") {
     if (typeof montoPagado !== "number" || montoPagado <= 0) {
       throw new Error("El monto pagado inicial debe ser mayor a cero.");
     }
-    if (montoPagado >= granTotal) {
-      throw new Error("El monto pagado no puede ser mayor o igual al total de la compra.");
+    if (montoPagado >= totalAPagar) {
+      throw new Error("El monto pagado no puede ser mayor o igual al total a pagar de la compra.");
     }
     resolvedMontoPagado = montoPagado;
   }
@@ -344,7 +345,7 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
     if (!proveedorId) {
       throw new Error("Se requiere un proveedor para registrar una compra a crǸdito o parcial.");
     }
-    const balancePendiente = tipoPago === "credito" ? granTotal : (granTotal - resolvedMontoPagado);
+    const balancePendiente = tipoPago === "credito" ? totalAPagar : (totalAPagar - resolvedMontoPagado);
     
     if (balancePendiente > 0) {
       const cxpId = crypto.randomUUID();

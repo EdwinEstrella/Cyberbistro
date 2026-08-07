@@ -85,11 +85,18 @@ export function RegistrarCompraModal({
     return itemsTotal + (Number(compraForm.monto_servicios) || 0) + (Number(compraForm.itbis_facturado) || 0) + (Number(compraForm.impuesto_selectivo) || 0) + (Number(compraForm.otros_impuestos) || 0) + (Number(compraForm.propina_legal) || 0);
   }, [itemsTotal, compraForm.monto_servicios, compraForm.itbis_facturado, compraForm.impuesto_selectivo, compraForm.otros_impuestos, compraForm.propina_legal]);
 
+  const totalAPagar = useMemo(() => {
+    return runningTotal - (Number(compraForm.itbis_retenido) || 0) - (Number(compraForm.retencion_isr) || 0);
+  }, [runningTotal, compraForm.itbis_retenido, compraForm.retencion_isr]);
+
   useEffect(() => {
     // Auto-calculate 18% ITBIS when the items total or services amount changes
     const baseAmount = itemsTotal + (Number(compraForm.monto_servicios) || 0);
     if (baseAmount > 0) {
-      setCompraForm(prev => ({ ...prev, itbis_facturado: (baseAmount * 0.18).toFixed(2) }));
+      setCompraForm(prev => ({ 
+        ...prev, 
+        itbis_facturado: (baseAmount * 0.18).toFixed(2)
+      }));
     } else {
       setCompraForm(prev => ({ ...prev, itbis_facturado: "" }));
     }
@@ -500,9 +507,14 @@ export function RegistrarCompraModal({
               <span className="font-['Space_Grotesk',sans-serif] font-black text-white text-[22px]">
                 {RD(runningTotal)}
               </span>
+              {(Number(compraForm.itbis_retenido) > 0 || Number(compraForm.retencion_isr) > 0) && (
+                <span className="text-[12px] text-sky-400 font-medium mt-1">
+                  Monto a Pagar al Suplidor (Neto): <span className="font-bold">{RD(totalAPagar)}</span>
+                </span>
+              )}
               {isParcial && compraForm.monto_pagado && (
                 <span className="text-[12px] text-[#ff906d] font-medium mt-0.5">
-                  Paga hoy: {RD(Number(compraForm.monto_pagado) || 0)} <span className="text-[#adaaaa] mx-1">·</span> Pendiente: {RD(Math.max(0, runningTotal - (Number(compraForm.monto_pagado) || 0)))}
+                  Paga hoy: {RD(Number(compraForm.monto_pagado) || 0)} <span className="text-[#adaaaa] mx-1">·</span> Pendiente: {RD(Math.max(0, totalAPagar - (Number(compraForm.monto_pagado) || 0)))}
                 </span>
               )}
             </div>
