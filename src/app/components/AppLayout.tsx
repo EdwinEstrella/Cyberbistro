@@ -36,11 +36,12 @@ import { canUseFeature, type Feature } from "../../shared/lib/planFeatures";
 
 type SidebarItem = {
   readonly label: string;
-  readonly path: string;
+  readonly path?: string;
   readonly customIcon?: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras" | "cxp" | "cxc" | "pedidos" | "fiscal";
   readonly icon?: string;
   readonly viewBox?: string;
   readonly feature?: Feature;
+  readonly children?: readonly SidebarItem[];
 };
 
 type SidebarSection = {
@@ -86,7 +87,13 @@ const sidebarSections: readonly SidebarSection[] = [
       { label: "Cierre", customIcon: "cierre", path: "/cierre" },
       { label: "Cuentas por Pagar", customIcon: "cxp", path: "/cuentas-pagar", feature: "accounts_payable" },
       { label: "Cuentas por Cobrar", customIcon: "cxc", path: "/cuentas-cobrar", feature: "accounts_receivable" },
-      { label: "Documentos Fiscales", customIcon: "fiscal", path: "/fiscal", feature: "dgii_ecf" },
+      {
+        label: "DGII e-CF",
+        customIcon: "fiscal",
+        children: [
+          { label: "Documentos Fiscales", customIcon: "fiscal", path: "/fiscal", feature: "dgii_ecf" },
+        ],
+      },
     ],
   },
 ];
@@ -117,10 +124,22 @@ function prefetchRoute(path: string) {
 function filterMainNavForRol(rol: string | null): readonly SidebarSection[] {
   const normalized = normalizeTenantRol(rol);
 
+  const filterItem = (item: SidebarItem, allowedPaths: readonly string[]): SidebarItem | null => {
+    if (item.children) {
+      const children = item.children
+        .map((child) => filterItem(child, allowedPaths))
+        .filter((child): child is SidebarItem => Boolean(child));
+      return children.length > 0 ? { ...item, children } : null;
+    }
+    return item.path && allowedPaths.includes(item.path) ? item : null;
+  };
+
   const filterSectionItems = (section: SidebarSection, allowedPaths: readonly string[]): SidebarSection => {
     return {
       ...section,
-      items: section.items.filter((item) => allowedPaths.includes(item.path)),
+      items: section.items
+        .map((item) => filterItem(item, allowedPaths))
+        .filter((item): item is SidebarItem => Boolean(item)),
     };
   };
 
@@ -451,6 +470,7 @@ function AppLayoutContent() {
   const [cocinaActiva, setCocinaActiva] = useState(true);
   const [ventaCartSearch, setVentaCartSearch] = useState("");
   const [sidebarHidden, setSidebarHidden] = useState(false);
+  const [expandedSidebarModules, setExpandedSidebarModules] = useState<Record<string, boolean>>({});
   const [upsellType, setUpsellType] = useState<"inventario" | "sucursales" | "plan_superior" | null>(null);
   const visiblePendingOrdersCount = tenantAccessValidated ? pendingOrdersCount : 0;
   const visibleCocinaActiva = tenantAccessValidated ? cocinaActiva : true;
@@ -530,11 +550,11 @@ function AppLayoutContent() {
   }, [rol]);
 
   const sideNavItems = useMemo(() => {
-    return sideNavSections.flatMap((section) => section.items);
+    return sideNavSections.flatMap((section) => section.items.flatMap((item) => item.children ?? [item]));
   }, [sideNavSections]);
 
   useEffect(() => {
-    const allowedPaths = new Set<string>(sideNavItems.map((item) => item.path));
+    const allowedPaths = new Set<string>(sideNavItems.flatMap((item) => item.path ? [item.path] : []));
     if (showAjustesInSidebar(rol)) {
       allowedPaths.add("/ajustes");
       allowedPaths.add("/fiscal");
@@ -644,62 +664,100 @@ function AppLayoutContent() {
                   </span>
                 )}
                 {section.items.map((item) => {
-                  const isActive = location.pathname === item.path;
+                  const isModule = Boolean(item.children);
+                  const isActive = item.path
+                    ? routerLocation.pathname === item.path
+                    : item.children?.some((child) => child.path === routerLocation.pathname) ?? false;
                   const isLocked = item.feature ? !canUseFeature(plan, item.feature) : false;
+                  const isExpanded = expandedSidebarModules[item.label] ?? isActive;
                   return (
-                    <button
-                      key={item.label}
-                      type="button"
-                      onMouseEnter={() => prefetchRoute(item.path)}
-                      onFocus={() => prefetchRoute(item.path)}
-                      onClick={() => {
-                        if (isLocked && !loading) {
-                          setUpsellType("plan_superior");
-                          return;
-                        }
-                        navigate(item.path);
-                      }}
-                      aria-current={isActive ? "page" : undefined}
-                      className={`flex gap-[16px] items-center px-[16px] py-[10px] rounded-[8px] cursor-pointer relative border-none text-left w-full transition-colors ${
-                        isActive
-                          ? "bg-primary/10 text-primary dark:bg-[#262626] dark:text-[#ff906d]"
-                          : "bg-transparent text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                      }`}
-                    >
-                      {isActive && (
-                        <div className="absolute left-0 top-[8px] bottom-[8px] w-[4px] bg-primary dark:bg-[#ff906d]" aria-hidden />
-                      )}
-                      {"customIcon" in item && item.customIcon ? (
-                        <SidebarCustomIcon name={item.customIcon} />
-                      ) : (
-                        <svg className="shrink-0 size-[18px]" fill="none" viewBox={item.viewBox} aria-hidden>
-                          <path
-                            d={item.icon}
-                            fill="currentColor"
-                          />
-                        </svg>
-                      )}
-                      <span
-                        className={`font-['Space_Grotesk',sans-serif] text-[15px] tracking-[-0.4px] ${
-                          isActive ? "font-bold" : ""
+                    <div key={item.label} className="flex flex-col gap-1">
+                      <button
+                        type="button"
+                        onMouseEnter={() => item.path && prefetchRoute(item.path)}
+                        onFocus={() => item.path && prefetchRoute(item.path)}
+                        onClick={() => {
+                          if (isModule) {
+                            setExpandedSidebarModules((current) => ({ ...current, [item.label]: !isExpanded }));
+                            return;
+                          }
+                          if (isLocked && !loading) {
+                            setUpsellType("plan_superior");
+                            return;
+                          }
+                          if (item.path) navigate(item.path);
+                        }}
+                        aria-current={isActive && !isModule ? "page" : undefined}
+                        aria-expanded={isModule ? isExpanded : undefined}
+                        className={`flex gap-[16px] items-center px-[16px] py-[10px] rounded-[8px] cursor-pointer relative border-none text-left w-full transition-colors ${
+                          isActive
+                            ? "bg-primary/10 text-primary dark:bg-[#262626] dark:text-[#ff906d]"
+                            : "bg-transparent text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                         }`}
                       >
-                        {item.label}
-                      </span>
-                      {item.path === "/pedidos" && visiblePendingOrdersCount > 0 && (
-                        <span className="ml-auto flex items-center justify-center h-[18px] min-w-[18px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full">
-                          {visiblePendingOrdersCount}
-                        </span>
-                      )}
-                      {isLocked && !loading && (
-                        <span className="ml-auto flex items-center justify-center p-1 bg-[rgba(255,144,109,0.12)] border border-[rgba(255,144,109,0.3)] rounded animate-pulse" aria-label="Locked feature">
-                          <svg className="size-[10px] text-[#ff906d] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                            <path d="M7 11V7a5 5 0 0110 0v4" />
+                        {isActive && (
+                          <div className="absolute left-0 top-[8px] bottom-[8px] w-[4px] bg-primary dark:bg-[#ff906d]" aria-hidden />
+                        )}
+                        {item.customIcon ? (
+                          <SidebarCustomIcon name={item.customIcon} />
+                        ) : (
+                          <svg className="shrink-0 size-[18px]" fill="none" viewBox={item.viewBox} aria-hidden>
+                            <path d={item.icon} fill="currentColor" />
                           </svg>
+                        )}
+                        <span className={`font-['Space_Grotesk',sans-serif] text-[15px] tracking-[-0.4px] ${isActive ? "font-bold" : ""}`}>
+                          {item.label}
                         </span>
+                        {item.path === "/pedidos" && visiblePendingOrdersCount > 0 && (
+                          <span className="ml-auto flex items-center justify-center h-[18px] min-w-[18px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full">
+                            {visiblePendingOrdersCount}
+                          </span>
+                        )}
+                        {isLocked && !loading && !isModule && (
+                          <span className="ml-auto flex items-center justify-center p-1 bg-[rgba(255,144,109,0.12)] border border-[rgba(255,144,109,0.3)] rounded animate-pulse" aria-label="Locked feature">
+                            <svg className="size-[10px] text-[#ff906d] shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                              <path d="M7 11V7a5 5 0 0110 0v4" />
+                            </svg>
+                          </span>
+                        )}
+                        {isModule && (
+                          <svg className={`ml-auto size-4 transition-transform ${isExpanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                            <path d="m6 9 6 6 6-6" />
+                          </svg>
+                        )}
+                      </button>
+                      {isModule && isExpanded && (
+                        <div className="ml-7 flex flex-col gap-1 border-l border-sidebar-border pl-3">
+                          {item.children?.map((child) => {
+                            const childActive = child.path === routerLocation.pathname;
+                            const childLocked = child.feature ? !canUseFeature(plan, child.feature) : false;
+                            return (
+                              <button
+                                key={child.label}
+                                type="button"
+                                onMouseEnter={() => child.path && prefetchRoute(child.path)}
+                                onFocus={() => child.path && prefetchRoute(child.path)}
+                                onClick={() => {
+                                  if (childLocked && !loading) {
+                                    setUpsellType("plan_superior");
+                                    return;
+                                  }
+                                  if (child.path) navigate(child.path);
+                                }}
+                                aria-current={childActive ? "page" : undefined}
+                                className={`flex items-center rounded-[6px] px-3 py-2 text-left text-[12px] transition-colors ${
+                                  childActive ? "bg-primary/10 font-bold text-primary dark:text-[#ff906d]" : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                                }`}
+                              >
+                                {child.label}
+                                {childLocked && !loading && <span className="ml-auto text-[#ff906d]">Bloqueado</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
                       )}
-                    </button>
+                    </div>
                   );
                 })}
               </div>
