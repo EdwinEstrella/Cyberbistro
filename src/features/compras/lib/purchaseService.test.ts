@@ -71,6 +71,7 @@ describe("purchaseService", () => {
           {
             id: "prov-1",
             nombre: "Distribuidora Brugal",
+            rnc: "101123456",
           }
         ] as any;
       }
@@ -209,7 +210,7 @@ describe("purchaseService", () => {
       if (tableName === "productos_inventario") return mockProducts as any;
       if (tableName === "cierres_operativos") return [{ id: "cycle-active-123", closed_at: null, sucursal_id: "suc-1", opened_at: "2026-06-08T10:00:00Z" }] as any;
       if (tableName === "gasto_categorias") return [{ id: "cat-compras-uuid", nombre: "Compras", activa: true }] as any;
-      if (tableName === "proveedores") return [{ id: "prov-1", nombre: "Distribuidora Brugal" }] as any;
+      if (tableName === "proveedores") return [{ id: "prov-1", nombre: "Distribuidora Brugal", rnc: "101123456" }] as any;
       return [] as any;
     });
 
@@ -263,6 +264,7 @@ describe("purchaseService", () => {
         ] as any;
       }
       if (tableName === "gasto_categorias") return [] as any; // No categories
+      if (tableName === "proveedores") return [{ id: "prov-1", nombre: "Distribuidora Brugal", rnc: "101123456" }] as any;
       return [] as any;
     });
 

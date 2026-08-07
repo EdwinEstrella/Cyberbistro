@@ -86,16 +86,22 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
     }
   }
 
-  // Resolve provider name
-  if (proveedorId) {
-    const providers = await readLocalMirror<{
-      id: string;
-      nombre: string;
-    }>(tenantId, "proveedores");
-    const foundProv = providers.find(p => p.id === proveedorId);
-    if (foundProv) {
-      providerName = foundProv.nombre;
-    }
+  // A fiscal purchase must retain the supplier identity used for the 606.
+  const providers = await readLocalMirror<{
+    id: string;
+    nombre: string;
+    rnc: string | null;
+  }>(tenantId, "proveedores");
+  const foundProv = providers.find(p => p.id === proveedorId);
+  if (foundProv) {
+    providerName = foundProv.nombre;
+  }
+  const providerRnc = foundProv?.rnc?.replace(/\D/g, "") || "";
+  if (!proveedorId || !providerRnc || !/^[0-9]{9,11}$/.test(providerRnc)) {
+    throw new Error("Seleccioná un proveedor con RNC o cédula válido para registrar una compra fiscal.");
+  }
+  if (!numeroFactura.trim()) {
+    throw new Error("Indicá el NCF o número de comprobante de la compra.");
   }
 
   // 1. Fetch products catalog details
@@ -189,6 +195,44 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
       estado: "completada",
       observacion: observacion || null,
       usuario_id: usuarioId,
+    },
+    deviceId,
+  });
+
+  const formaPago = tipoPago === "credito" ? "04" : metodoPago === "efectivo" ? "01" : metodoPago === "tarjeta" ? "03" : "02";
+  const compraFiscalId = crypto.randomUUID();
+  await enqueueLocalWrite({
+    tenantId,
+    tableName: "compra_fiscal",
+    rowId: compraFiscalId,
+    op: "insert",
+    payload: {
+      id: compraFiscalId,
+      tenant_id: tenantId,
+      compra_id: compraId,
+      rnc_cedula: providerRnc,
+      tipo_identificacion: providerRnc.length === 9 ? "1" : "2",
+      tipo_bien_servicio: "09",
+      ncf: numeroFactura.trim().toUpperCase(),
+      ncf_modificado: null,
+      fecha_comprobante: fechaCompra.slice(0, 10),
+      fecha_pago: tipoPago === "credito" ? null : fechaCompra.slice(0, 10),
+      monto_servicios: 0,
+      monto_bienes: totalCompra,
+      total_facturado: totalCompra,
+      itbis_facturado: 0,
+      itbis_retenido: 0,
+      itbis_proporcionalidad: 0,
+      itbis_costo: 0,
+      itbis_adelantar: 0,
+      itbis_percibido: 0,
+      tipo_retencion_isr: null,
+      retencion_isr: 0,
+      isr_percibido: 0,
+      impuesto_selectivo: 0,
+      otros_impuestos: 0,
+      propina_legal: 0,
+      forma_pago: formaPago,
     },
     deviceId,
   });

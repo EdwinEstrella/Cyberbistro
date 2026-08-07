@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, RefreshCw, FileText, Users, Edit, Eye } from "lucide-react";
+import { Plus, RefreshCw, FileText, Users, Edit, Eye, Download } from "lucide-react";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { RegistrarCompraModal } from "./RegistrarCompraModal";
 import { ProveedorModal } from "./ProveedorModal";
@@ -7,6 +7,7 @@ import { DetalleCompraModal } from "./DetalleCompraModal";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { insforgeClient } from "../../../shared/lib/insforge";
+import { generateFormato606, type CompraFiscal606 } from "../../contabilidad/lib/formato606";
 
 export interface ProveedorRow {
   id: string;
@@ -69,6 +70,11 @@ export function Compras() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  const [period606, setPeriod606] = useState(() => new Date().toISOString().slice(0, 7));
+  const [periodMode606, setPeriodMode606] = useState<"month" | "range">("month");
+  const [from606, setFrom606] = useState(() => `${new Date().toISOString().slice(0, 7)}-01`);
+  const [to606, setTo606] = useState(() => new Date().toISOString().slice(0, 10));
+  const [exporting606, setExporting606] = useState(false);
 
   // Modals
   const [showCompraModal, setShowCompraModal] = useState(false);
@@ -133,11 +139,62 @@ export function Compras() {
     return new Map(proveedores.map(p => [p.id, p]));
   }, [proveedores]);
 
+  const monthOptions606 = useMemo(() => {
+    const formatter = new Intl.DateTimeFormat("es-DO", { month: "long", year: "numeric" });
+    const now = new Date();
+    return Array.from({ length: 24 }, (_, index) => {
+      const date = new Date(now.getFullYear(), now.getMonth() - index, 1);
+      const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      return { value, label: formatter.format(date) };
+    });
+  }, []);
+
 
 
   function handleEditProveedor(prov: ProveedorRow) {
     setEditingProveedor(prov);
     setShowProveedorModal(true);
+  }
+
+  async function exportFormato606() {
+    if (!tenantId) return;
+    setExporting606(true);
+    setMessage("");
+    try {
+      const selectedPeriod = periodMode606 === "month" ? period606 : from606.slice(0, 7);
+      if (periodMode606 === "range" && (from606.slice(0, 7) !== to606.slice(0, 7) || from606 > to606)) {
+        throw new Error("El Formato 606 se presenta por mes. Elegí fechas dentro del mismo mes.");
+      }
+      const [year, month] = selectedPeriod.split("-");
+      if (!year || !month) throw new Error("Seleccioná un período válido.");
+      const start = periodMode606 === "range" ? from606 : `${year}-${month}-01`;
+      const end = periodMode606 === "range"
+        ? new Date(`${to606}T00:00:00Z`).getTime() + 24 * 60 * 60 * 1000
+        : new Date(Number(year), Number(month), 1).getTime();
+      const endDate = new Date(end).toISOString().slice(0, 10);
+      const [tenantResult, fiscalResult] = await Promise.all([
+        insforgeClient.database.from("tenants").select("rnc").eq("id", tenantId).maybeSingle(),
+        insforgeClient.database.from("compra_fiscal").select("*").eq("tenant_id", tenantId).gte("fecha_comprobante", start).lt("fecha_comprobante", endDate).order("fecha_comprobante", { ascending: true }),
+      ]);
+      if (tenantResult.error) throw tenantResult.error;
+      if (fiscalResult.error) throw fiscalResult.error;
+      const emitterRnc = tenantResult.data?.rnc?.replace(/\D/g, "") || "";
+      if (!/^[0-9]{9,11}$/.test(emitterRnc)) {
+        throw new Error("Configurá el RNC o cédula del emisor en Ajustes antes de exportar el Formato 606.");
+      }
+      const text = generateFormato606(emitterRnc, `${year}${month}`, (fiscalResult.data || []) as CompraFiscal606[]);
+      const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `DGII-606-${year}${month}.txt`;
+      link.click();
+      URL.revokeObjectURL(url);
+      setSuccessMsg(`Formato 606 generado con ${(fiscalResult.data || []).length} compra(s).`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudo generar el Formato 606.");
+    } finally {
+      setExporting606(false);
+    }
   }
 
   return (
@@ -152,14 +209,36 @@ export function Compras() {
             Módulo de Compras
           </h2>
         </div>
-        <button
-          type="button"
-          onClick={() => void cargarDatos()}
-          className="bg-transparent border border-[rgba(72,72,71,0.3)] hover:border-white text-[#adaaaa] hover:text-white rounded-[10px] p-2.5 transition-colors cursor-pointer"
-          title="Refrescar datos"
-        >
-          <RefreshCw className="size-[16px]" />
-        </button>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex rounded-[10px] border border-[rgba(72,72,71,0.3)] bg-[#111] p-1">
+            <button type="button" onClick={() => setPeriodMode606("month")} className={`rounded-[7px] px-2.5 py-1.5 text-[10px] font-bold uppercase ${periodMode606 === "month" ? "bg-[#ff906d] text-[#460f00]" : "text-[#adaaaa]"}`}>Mes</button>
+            <button type="button" onClick={() => setPeriodMode606("range")} className={`rounded-[7px] px-2.5 py-1.5 text-[10px] font-bold uppercase ${periodMode606 === "range" ? "bg-[#ff906d] text-[#460f00]" : "text-[#adaaaa]"}`}>Desde/Hasta</button>
+          </div>
+          {periodMode606 === "month" ? (
+            <label className="flex items-center gap-2 rounded-[10px] border border-[rgba(72,72,71,0.3)] bg-[#111] px-2.5 py-2">
+              <span className="text-[9px] font-bold uppercase tracking-wide text-[#6b7280]">Seleccionar mes</span>
+              <select value={period606} onChange={(event) => setPeriod606(event.target.value)} className="bg-transparent text-xs font-semibold capitalize text-white outline-none" aria-label="Seleccionar mes para Formato 606">
+                {monthOptions606.map((option) => <option key={option.value} value={option.value} className="bg-[#111]">{option.label}</option>)}
+              </select>
+            </label>
+          ) : (
+            <div className="flex items-center gap-2 rounded-[10px] border border-[rgba(72,72,71,0.3)] bg-[#111] px-2.5 py-2 text-xs">
+              <label className="text-[#6b7280]">Desde <input type="date" value={from606} onChange={(event) => setFrom606(event.target.value)} className="ml-1 bg-transparent text-white outline-none" /></label>
+              <label className="text-[#6b7280]">Hasta <input type="date" value={to606} onChange={(event) => setTo606(event.target.value)} className="ml-1 bg-transparent text-white outline-none" /></label>
+            </div>
+          )}
+          <button type="button" onClick={() => void exportFormato606()} disabled={exporting606} className="flex items-center gap-1.5 rounded-[10px] border border-[#ff906d]/50 px-3 py-2 text-[11px] font-bold uppercase text-[#ff906d] disabled:opacity-50">
+            <Download className="size-4" /> {exporting606 ? "Generando" : "Exportar 606"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void cargarDatos()}
+            className="bg-transparent border border-[rgba(72,72,71,0.3)] hover:border-white text-[#adaaaa] hover:text-white rounded-[10px] p-2.5 transition-colors cursor-pointer"
+            title="Refrescar datos"
+          >
+            <RefreshCw className="size-[16px]" />
+          </button>
+        </div>
       </div>
 
       {/* Tabs Selector */}

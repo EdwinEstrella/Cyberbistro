@@ -26,6 +26,7 @@ export async function registrarPagoCxP(input: PaymentInput): Promise<{ pagoId: s
     id: string;
     tenant_id: string;
     proveedor_id: string;
+    compra_id: string | null;
     monto_total: number;
     monto_pagado: number;
     estado: string;
@@ -165,6 +166,21 @@ export async function registrarPagoCxP(input: PaymentInput): Promise<{ pagoId: s
     },
     deviceId,
   });
+
+  if (nuevoEstado === "pagada" && debt.compra_id) {
+    const fiscalRows = await readLocalMirror<{ id: string; compra_id: string }>(tenantId, "compra_fiscal");
+    const fiscal = fiscalRows.find((row) => row.compra_id === debt.compra_id);
+    if (fiscal) {
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "compra_fiscal",
+        rowId: fiscal.id,
+        op: "update",
+        payload: { fecha_pago: fechaPago.slice(0, 10), updated_at: fechaPago },
+        deviceId,
+      });
+    }
+  }
 
   return { pagoId };
 }
