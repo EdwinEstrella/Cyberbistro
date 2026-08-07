@@ -1116,11 +1116,8 @@ export function MesaCloseAccountModal({
         aria-modal="true"
         aria-labelledby="mesa-close-title"
         aria-describedby="mesa-close-description"
-        className="bg-[#121212] border border-zinc-800 rounded-[24px] shadow-[0px_0px_50px_rgba(255,144,109,0.15)] w-full max-w-5xl max-h-[95vh] md:max-h-[85vh] flex flex-col overflow-hidden relative"
+        className="bg-black border border-zinc-800/80 rounded-[24px] shadow-[0px_0px_50px_rgba(255,144,109,0.15)] w-full max-w-5xl max-h-[95vh] md:max-h-[85vh] flex flex-col overflow-hidden relative"
       >
-        {/* Ambient Top Glow */}
-        <div className="absolute top-0 right-0 w-80 h-40 bg-[radial-gradient(ellipse_at_top_right,rgba(255,144,109,0.08),transparent)] pointer-events-none rounded-[24px]" />
-
         {/* Modal Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-zinc-900 shrink-0 relative z-10">
           <div>
