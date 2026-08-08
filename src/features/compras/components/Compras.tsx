@@ -658,13 +658,13 @@ export function Compras() {
       />
 
       <ConfirmModal
-        isOpen={confirmDelete.open}
+        open={confirmDelete.open}
         title="¿Anular y Revertir Compra?"
         message="Esta acción es irreversible. Se eliminará la factura, la cuenta por pagar y se restará automáticamente del inventario la cantidad de insumos que entraron con esta compra."
         onConfirm={() => void handleEliminarCompra(confirmDelete.id)}
         onCancel={() => setConfirmDelete({ open: false, id: "" })}
-        confirmText="Sí, Anular Compra"
-        confirmVariant="danger"
+        confirmLabel="Sí, Anular Compra"
+        variant="danger"
       />
     </div>
   );

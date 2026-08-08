@@ -78,7 +78,7 @@ async function loginIfNeeded(page: Page): Promise<void> {
   await waitForAppShell(page);
 }
 
-test.describe('Compras E2E - Crear y Editar Fiscal', () => {
+test.describe('Compras E2E - Crear, Editar y Anular', () => {
   const diagnostics: BrowserDiagnostics[] = [];
 
   test.afterEach(async ({}, testInfo) => {
@@ -87,7 +87,7 @@ test.describe('Compras E2E - Crear y Editar Fiscal', () => {
     }
   });
 
-  test('debe registrar una compra (servicio) y luego editar su NCF', async () => {
+  test('debe registrar, editar y anular una compra de servicio', async () => {
     const { app, window } = await launchApp(diagnostics);
 
     try {
@@ -170,7 +170,17 @@ test.describe('Compras E2E - Crear y Editar Fiscal', () => {
       await expect(window.locator('text=/Datos fiscales actualizados/i')).toBeVisible({ timeout: 10000 });
 
       // 14. Confirmar que la tabla ahora muestra el nuevo NCF
-      await expect(window.locator('tr', { hasText: ncfNuevo })).toBeVisible();
+      const updatedRow = window.locator('tr', { hasText: ncfNuevo });
+      await expect(updatedRow).toBeVisible();
+
+      // 15. Anular la compra y confirmar el diálogo de seguridad.
+      await updatedRow.locator('button[title="Anular Compra (Revertir Stock)"]').click();
+      await expect(window.locator('h3', { hasText: '¿Anular y Revertir Compra?' })).toBeVisible();
+      await window.getByRole('button', { name: 'Sí, Anular Compra' }).click();
+
+      // 16. La compra deja de aparecer después de revertir y sincronizar el borrado.
+      await expect(window.locator('text=/Compra anulada exitosamente/i')).toBeVisible({ timeout: 10_000 });
+      await expect(window.locator('tr', { hasText: ncfNuevo })).toHaveCount(0, { timeout: 10_000 });
 
     } finally {
       await app.close();
