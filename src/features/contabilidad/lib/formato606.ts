@@ -24,6 +24,10 @@ export type CompraFiscal606 = {
   forma_pago: string;
 };
 
+export function filterRecordsWithNcf(records: CompraFiscal606[]): CompraFiscal606[] {
+  return records.filter((record) => /^(B|E)/.test(record.ncf.trim().toUpperCase()));
+}
+
 function dateFor606(value: string | null): string {
   if (!value) return "";
   const date = new Date(`${value.slice(0, 10)}T00:00:00Z`);

@@ -8,7 +8,7 @@ import { DetalleCompraModal } from "./DetalleCompraModal";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { insforgeClient } from "../../../shared/lib/insforge";
-import { generateFormato606, type CompraFiscal606 } from "../../contabilidad/lib/formato606";
+import { filterRecordsWithNcf, generateFormato606, type CompraFiscal606 } from "../../contabilidad/lib/formato606";
 import { eliminarCompra } from "../lib/purchaseService";
 import { ConfirmModal } from "../../../shared/components/ConfirmModal";
 
@@ -278,14 +278,15 @@ export function Compras() {
       if (!/^[0-9]{9,11}$/.test(emitterRnc)) {
         throw new Error("Falta el RNC de tu negocio. Configurá el RNC o cédula de tu restaurante (el emisor del reporte) en la pantalla de Ajustes antes de exportar.");
       }
-      const text = generateFormato606(emitterRnc, `${year}${month}`, fiscalData, format);
+      const exportData = soloFiscales ? filterRecordsWithNcf(fiscalData) : fiscalData;
+      const text = generateFormato606(emitterRnc, `${year}${month}`, exportData, format);
       const url = URL.createObjectURL(new Blob([text], { type: format === "csv" ? "text/csv;charset=utf-8" : "text/plain;charset=utf-8" }));
       const link = document.createElement("a");
       link.href = url;
       link.download = `DGII-606-${year}${month}.${format}`;
       link.click();
       URL.revokeObjectURL(url);
-      setSuccessMsg(`Formato 606 generado con ${fiscalData.length} compra(s).`);
+      setSuccessMsg(`Formato 606 generado con ${exportData.length} compra(s).`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "No se pudo generar el Formato 606.");
     } finally {

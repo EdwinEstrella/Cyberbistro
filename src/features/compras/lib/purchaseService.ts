@@ -28,6 +28,7 @@ export interface PurchaseInput {
   montoServicios?: number;
   tipoBienServicio?: string;
   fechaCompra?: string;
+  isFiscal?: boolean;
 }
 
 export async function eliminarCompra(tenantId: string, compraId: string, usuarioId: string | null): Promise<void> {
@@ -146,7 +147,7 @@ export async function eliminarCompra(tenantId: string, compraId: string, usuario
   });
 }
 export async function registrarCompra(input: PurchaseInput): Promise<{ compraId: string }> {
-  const { tenantId, sucursalId, usuarioId, proveedorId, numeroFactura, tipoPago, metodoPago, montoPagado, items, observacion, itbisFacturado = 0, itbisRetenido = 0, retencionIsr = 0, impuestoSelectivo = 0, otrosImpuestos = 0, propinaLegal = 0, montoBienes = 0, montoServicios = 0, tipoBienServicio = "09", fechaCompra } = input;
+  const { tenantId, sucursalId, usuarioId, proveedorId, numeroFactura, tipoPago, metodoPago, montoPagado, items, observacion, itbisFacturado = 0, itbisRetenido = 0, retencionIsr = 0, impuestoSelectivo = 0, otrosImpuestos = 0, propinaLegal = 0, montoBienes = 0, montoServicios = 0, tipoBienServicio = "09", fechaCompra, isFiscal = true } = input;
   if ((!items || items.length === 0) && (!montoServicios || montoServicios <= 0)) {
     throw new Error("La compra debe contener al menos un tem o un monto en servicios.");
   }
@@ -156,7 +157,13 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
 
   const deviceId = await getDeviceId();
 
-  // A purchase is part of the current operating cycle regardless of its payment method.
+  const purchaseDate = fechaCompra ? new Date(fechaCompra) : new Date();
+  if (Number.isNaN(purchaseDate.getTime())) {
+    throw new Error("La fecha de compra no es válida.");
+  }
+  const fechaCompraFinal = purchaseDate.toISOString();
+
+  // Historical purchases belong to the cycle opened on their purchase date.
   let activeCycleId = "";
   let comprasCategoryId = "";
   let providerName = "Proveedor";
@@ -167,11 +174,16 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
     sucursal_id: string | null;
     opened_at: string;
   }>(tenantId, "cierres_operativos");
+  const purchaseDay = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santo_Domingo" }).format(new Date(fechaCompraFinal));
   const activeCycle = activeCycleRows
-    .filter(c => !c.closed_at && (c.sucursal_id === sucursalId || !c.sucursal_id))
+    .filter(c => c.sucursal_id === sucursalId || !c.sucursal_id)
+    .filter(c => !fechaCompra || new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santo_Domingo" }).format(new Date(c.opened_at)) === purchaseDay)
+    .filter(c => Boolean(fechaCompra) || !c.closed_at)
     .sort((a, b) => b.opened_at.localeCompare(a.opened_at))[0];
   if (!activeCycle) {
-    throw new Error("No hay un ciclo operativo abierto para registrar una compra.");
+    throw new Error(fechaCompra
+      ? "No hay un ciclo iniciado en la fecha de compra para registrar esta factura."
+      : "No hay un ciclo operativo abierto para registrar una compra.");
   }
   activeCycleId = activeCycle.id;
 
@@ -222,10 +234,10 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
     providerName = foundProv.nombre;
   }
   const providerRnc = foundProv?.rnc?.replace(/\D/g, "") || "";
-  if (!proveedorId || !providerRnc || !/^[0-9]{9,11}$/.test(providerRnc)) {
+  if (isFiscal && (!proveedorId || !providerRnc || !/^[0-9]{9,11}$/.test(providerRnc))) {
     throw new Error("Seleccioná un proveedor con RNC o cédula válido para registrar una compra fiscal.");
   }
-  if (!numeroFactura.trim()) {
+  if (isFiscal && !numeroFactura.trim()) {
     throw new Error("Indicá el NCF o número de comprobante de la compra.");
   }
 
@@ -242,8 +254,6 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
 
   const inventarioMap = new Map(inventarioRows.map(r => [r.id, r]));
   const compraId = crypto.randomUUID();
-  const fechaCompraFinal = fechaCompra ? new Date(fechaCompra).toISOString() : new Date().toISOString();
-
   // Validate items and pre-calculate conversions
   let totalCompra = 0;
   const processedItems = items.map(item => {
@@ -318,7 +328,7 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
       tipo_pago: tipoPago,
       metodo_pago: metodoPago || null,
       monto_pagado: resolvedMontoPagado,
-      fecha_compra: fechaCompra,
+        fecha_compra: fechaCompraFinal,
         total: granTotal,
         cycle_id: activeCycleId,
       estado: "completada",
@@ -328,9 +338,10 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
     deviceId,
   });
 
-  const formaPago = tipoPago === "credito" ? "04" : metodoPago === "efectivo" ? "01" : metodoPago === "tarjeta" ? "03" : "02";
-  const compraFiscalId = crypto.randomUUID();
-  await enqueueLocalWrite({
+  if (isFiscal) {
+    const formaPago = tipoPago === "credito" ? "04" : metodoPago === "efectivo" ? "01" : metodoPago === "tarjeta" ? "03" : "02";
+    const compraFiscalId = crypto.randomUUID();
+    await enqueueLocalWrite({
     tenantId,
     tableName: "compra_fiscal",
     rowId: compraFiscalId,
@@ -344,8 +355,8 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
       tipo_bien_servicio: tipoBienServicio || "09",
       ncf: numeroFactura.trim().toUpperCase(),
       ncf_modificado: null,
-      fecha_comprobante: fechaCompra.slice(0, 10),
-      fecha_pago: tipoPago === "credito" ? null : fechaCompra.slice(0, 10),
+      fecha_comprobante: fechaCompraFinal.slice(0, 10),
+      fecha_pago: tipoPago === "credito" ? null : fechaCompraFinal.slice(0, 10),
       monto_servicios: montoServicios || 0,
       monto_bienes: montoBienes || totalCompra,
       total_facturado: (montoServicios || 0) + (montoBienes || totalCompra),
@@ -364,7 +375,8 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
       forma_pago: formaPago,
     },
     deviceId,
-  });
+    });
+  }
 
   // 3. Enqueue Local Writes for each Item (Detalle, Stock Update, and Movement)
   for (const item of processedItems) {
@@ -421,7 +433,7 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
         costo_unitario: item.costoBase,
         motivo: "Ingreso por compra",
         referencia: `Compra: ${compraId}`,
-        fecha: fechaCompra,
+        fecha: fechaCompraFinal,
         usuario_id: usuarioId,
       },
       deviceId,
@@ -446,7 +458,7 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
         proveedor: providerName,
         monto: resolvedMontoPagado,
         metodo_pago: metodoPago,
-        fecha_gasto: fechaCompra,
+        fecha_gasto: fechaCompraFinal,
         notas: observacion || `Registrado automáticamente desde Módulo de Compras (ID: ${compraId})`,
         created_by_auth_user_id: usuarioId,
         created_at: new Date().toISOString(),
@@ -481,7 +493,7 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
           proveedor_id: proveedorId,
           monto_total: balancePendiente,
           monto_pagado: 0.00,
-          fecha_emision: fechaCompra,
+          fecha_emision: fechaCompraFinal,
           fecha_vencimiento: dueDate.toISOString(),
           estado: "pendiente",
           observacion: observacion || `Registrada automáticamente desde Módulo de Compras (ID: ${compraId})`,

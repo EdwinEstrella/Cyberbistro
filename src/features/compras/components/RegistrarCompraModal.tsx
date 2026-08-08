@@ -61,6 +61,7 @@ export function RegistrarCompraModal({
     propina_legal: "",
     monto_servicios: "",
     tipo_bien_servicio: "09",
+    is_fiscal: true,
     fecha_compra: new Date().toISOString().slice(0, 16),
   });
 
@@ -93,7 +94,7 @@ export function RegistrarCompraModal({
   useEffect(() => {
     // Auto-calculate 18% ITBIS when the items total or services amount changes
     const baseAmount = itemsTotal + (Number(compraForm.monto_servicios) || 0);
-    if (baseAmount > 0) {
+    if (compraForm.is_fiscal && baseAmount > 0) {
       setCompraForm(prev => ({ 
         ...prev, 
         itbis_facturado: (baseAmount * 0.18).toFixed(2)
@@ -176,11 +177,12 @@ export function RegistrarCompraModal({
         propinaLegal: Number(compraForm.propina_legal) || 0,
         montoServicios: Number(compraForm.monto_servicios) || 0,
         tipoBienServicio: compraForm.tipo_bien_servicio,
+        isFiscal: compraForm.is_fiscal,
         fechaCompra: new Date(compraForm.fecha_compra).toISOString(),
       });
 
       onSuccess("Compra registrada y stock actualizado correctamente.");
-      setCompraForm({ proveedor_id: "", tipo_pago: "contado", metodo_pago: "efectivo", monto_pagado: "", numero_factura: "", observacion: "", itbis_facturado: "", itbis_retenido: "", retencion_isr: "", impuesto_selectivo: "", otros_impuestos: "", propina_legal: "", monto_servicios: "", tipo_bien_servicio: "09", fecha_compra: new Date().toISOString().slice(0, 16) });
+      setCompraForm({ proveedor_id: "", tipo_pago: "contado", metodo_pago: "efectivo", monto_pagado: "", numero_factura: "", observacion: "", itbis_facturado: "", itbis_retenido: "", retencion_isr: "", impuesto_selectivo: "", otros_impuestos: "", propina_legal: "", monto_servicios: "", tipo_bien_servicio: "09", is_fiscal: true, fecha_compra: new Date().toISOString().slice(0, 16) });
       setPurchaseItems([{ id: crypto.randomUUID(), producto_id: "", cantidad: "", costo_unitario: "" }]);
       onClose();
     } catch (err: any) {
@@ -251,7 +253,23 @@ export function RegistrarCompraModal({
           </div>
 
           <div className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.2)] rounded-xl p-4 flex flex-col gap-4 shrink-0">
-            <h4 className="font-['Space_Grotesk',sans-serif] text-white text-[13px] uppercase tracking-[1px] font-bold border-b border-[rgba(72,72,71,0.2)] pb-2">Datos Fiscales (606)</h4>
+            <div className="flex items-center justify-between gap-4 border-b border-[rgba(72,72,71,0.2)] pb-2">
+              <h4 className="font-['Space_Grotesk',sans-serif] text-white text-[13px] uppercase tracking-[1px] font-bold">Datos Fiscales (606)</h4>
+              <label className="flex items-center gap-2 text-[11px] font-['Inter',sans-serif] text-[#adaaaa] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={compraForm.is_fiscal}
+                  onChange={(e) => setCompraForm(prev => ({ ...prev, is_fiscal: e.target.checked }))}
+                  className="accent-[#ff906d]"
+                />
+                Tiene comprobante fiscal
+              </label>
+            </div>
+            {!compraForm.is_fiscal && (
+              <p className="text-[11px] font-['Inter',sans-serif] text-[#adaaaa]">
+                Se registrará la compra y el inventario, pero no se incluirá en el Formato 606.
+              </p>
+            )}
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5 text-left">
               <div className="flex flex-col gap-1.5 md:col-span-2">
