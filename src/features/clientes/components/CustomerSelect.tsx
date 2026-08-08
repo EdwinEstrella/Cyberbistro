@@ -6,10 +6,11 @@ interface CustomerSelectProps {
   tenantId: string | null;
   value: Customer | null;
   onChange: (customer: Customer | null) => void;
+  onQueryChange?: (query: string) => void;
   compact?: boolean;
 }
 
-export function CustomerSelect({ tenantId, value, onChange, compact = false }: CustomerSelectProps) {
+export function CustomerSelect({ tenantId, value, onChange, onQueryChange, compact = false }: CustomerSelectProps) {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -112,6 +113,7 @@ export function CustomerSelect({ tenantId, value, onChange, compact = false }: C
           value={query}
           onChange={(event) => {
             setQuery(event.target.value);
+            onQueryChange?.(event.target.value);
             setLookupMessage("");
           }}
           placeholder={loading ? "Cargando clientes..." : "Buscar por nombre, teléfono o RNC"}

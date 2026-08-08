@@ -188,6 +188,7 @@ export function Dashboard() {
 
   const [takeoutClientRnc, setTakeoutClientRnc] = useState("");
   const [takeoutCustomer, setTakeoutCustomer] = useState<Customer | null>(null);
+  const [takeoutCustomerName, setTakeoutCustomerName] = useState("");
   const [cashReceivedInput, setCashReceivedInput] = useState("");
   const [orderNotes, setOrderNotes] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<{
@@ -1021,6 +1022,7 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
       }
       setTakeoutClientRnc("");
       setTakeoutCustomer(null);
+      setTakeoutCustomerName("");
       setCashReceivedInput("");
       setMesaConsumos([]);
       setShowPaymentModal(true);
@@ -1294,9 +1296,12 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
     if (normalizedClientRnc !== "") {
       facturaData.cliente_rnc = normalizedClientRnc;
     }
+    const customerName = takeoutCustomerName.trim() || takeoutCustomer?.name || "";
+    if (customerName) {
+      facturaData.cliente_nombre = customerName;
+    }
     if (takeoutCustomer) {
       facturaData.customer_id = takeoutCustomer.id;
-      facturaData.cliente_nombre = takeoutCustomer.name;
       if (takeoutCustomer.document_id?.trim()) {
         facturaData.cliente_rnc = takeoutCustomer.document_id.trim();
       }
@@ -1468,6 +1473,7 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
     setCart([]);
     setTakeoutClientRnc("");
     setTakeoutCustomer(null);
+    setTakeoutCustomerName("");
     setCashReceivedInput("");
     setOrderNotes("");
     setMesaConsumos([]);
@@ -2103,10 +2109,11 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
           <div
             className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm transition-all duration-300"
             onClick={(e) => {
-              if (e.target === e.currentTarget) {
-                setTakeoutClientRnc("");
-                setTakeoutCustomer(null);
-                setCashReceivedInput("");
+                if (e.target === e.currentTarget) {
+                  setTakeoutClientRnc("");
+                  setTakeoutCustomer(null);
+                  setTakeoutCustomerName("");
+                  setCashReceivedInput("");
                 setOrderNotes("");
                 setShowPaymentModal(false);
               }
@@ -2131,6 +2138,7 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                 onClick={() => {
                   setTakeoutClientRnc("");
                   setTakeoutCustomer(null);
+                  setTakeoutCustomerName("");
                   setCashReceivedInput("");
                   setOrderNotes("");
                   setShowPaymentModal(false);
@@ -2271,11 +2279,16 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                         value={takeoutCustomer}
                         onChange={(customer) => {
                           setTakeoutCustomer(customer);
+                          if (customer) setTakeoutCustomerName(customer.name);
                           if (customer?.document_id) setTakeoutClientRnc(customer.document_id);
                         }}
+                        onQueryChange={setTakeoutCustomerName}
                         compact
                       />
                     </div>
+                    <p className="px-1 text-[11px] font-['Inter',sans-serif] text-zinc-500">
+                      Si no seleccionás un cliente, el nombre escrito se imprimirá sin crear un registro nuevo.
+                    </p>
                   </div>
 
                   {/* NCF Selection Cards */}
@@ -2453,6 +2466,7 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                         onClick={() => {
                           setTakeoutClientRnc("");
                           setTakeoutCustomer(null);
+                          setTakeoutCustomerName("");
                           setCashReceivedInput("");
                           setOrderNotes("");
                           setShowPaymentModal(false);
