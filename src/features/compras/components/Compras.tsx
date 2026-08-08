@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, RefreshCw, FileText, Users, Edit, Eye, Download } from "lucide-react";
+import { Plus, RefreshCw, FileText, Users, Edit, Eye, Download, Trash2 } from "lucide-react";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { RegistrarCompraModal } from "./RegistrarCompraModal";
+import { EditarCompraFiscalModal } from "./EditarCompraFiscalModal";
 import { ProveedorModal } from "./ProveedorModal";
 import { DetalleCompraModal } from "./DetalleCompraModal";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { generateFormato606, type CompraFiscal606 } from "../../contabilidad/lib/formato606";
+import { eliminarCompra } from "../lib/purchaseService";
+import { ConfirmModal } from "../../../shared/components/ConfirmModal";
 
 export interface ProveedorRow {
   id: string;
@@ -76,12 +79,15 @@ export function Compras() {
   const [from606, setFrom606] = useState(() => `${new Date().toISOString().slice(0, 7)}-01`);
   const [to606, setTo606] = useState(() => new Date().toISOString().slice(0, 10));
   const [exporting606, setExporting606] = useState(false);
+  const [soloFiscales, setSoloFiscales] = useState(false);
 
   // Modals
   const [showCompraModal, setShowCompraModal] = useState(false);
   const [showProveedorModal, setShowProveedorModal] = useState(false);
   const [editingProveedor, setEditingProveedor] = useState<ProveedorRow | null>(null);
   const [selectedCompraForDetail, setSelectedCompraForDetail] = useState<CompraRow | null>(null);
+  const [editingCompraFiscal, setEditingCompraFiscal] = useState<CompraRow | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ open: boolean; id: string }>({ open: false, id: "" });
 
 
 
@@ -168,8 +174,17 @@ export function Compras() {
 
   const filteredCompras = useMemo(() => {
     const { start, endStr } = dateRange;
-    return compras.filter(c => c.fecha_compra >= start && c.fecha_compra < endStr);
-  }, [compras, dateRange]);
+    return compras.filter(c => {
+      const inDate = c.fecha_compra >= start && c.fecha_compra < endStr;
+      if (!inDate) return false;
+      
+      if (soloFiscales) {
+        const ncf = (c.numero_factura || "").trim().toUpperCase();
+        return ncf.startsWith("B") || ncf.startsWith("E");
+      }
+      return true;
+    });
+  }, [compras, dateRange, soloFiscales]);
 
   const summaryStats = useMemo(() => {
     const { start, endStr } = dateRange;
@@ -180,6 +195,11 @@ export function Compras() {
     // Sumar montos fiscales de la tabla `compra_fiscal`
     for (const fiscal of fiscales) {
       if (fiscal.fecha_comprobante >= start && fiscal.fecha_comprobante < endStr) {
+        if (soloFiscales) {
+          const ncf = (fiscal.ncf || "").trim().toUpperCase();
+          if (!ncf.startsWith("B") && !ncf.startsWith("E")) continue;
+        }
+        
         montoServicios += Number(fiscal.monto_servicios) || 0;
         itbisFacturado += Number(fiscal.itbis_facturado) || 0;
         itbisRetenido += Number(fiscal.itbis_retenido) || 0;
@@ -191,13 +211,28 @@ export function Compras() {
     const totalFacturado = filteredCompras.reduce((acc, compra) => acc + (Number(compra.total) || 0), 0);
 
     return { totalFacturado, montoServicios, itbisFacturado, itbisRetenido };
-  }, [fiscales, filteredCompras, dateRange]);
+  }, [fiscales, filteredCompras, dateRange, soloFiscales]);
 
 
 
   function handleEditProveedor(prov: ProveedorRow) {
     setEditingProveedor(prov);
     setShowProveedorModal(true);
+  }
+
+  async function handleEliminarCompra(id: string) {
+    if (!tenantId) return;
+    setLoading(true);
+    try {
+      await eliminarCompra(tenantId, id, user?.id || null);
+      setSuccessMsg("Compra anulada exitosamente. Se ha revertido el stock.");
+      await cargarDatos();
+    } catch (err: any) {
+      setMessage("Error al anular compra: " + err.message);
+    } finally {
+      setLoading(false);
+      setConfirmDelete({ open: false, id: "" });
+    }
   }
   async function exportFormato606(format: 'txt' | 'csv' = 'txt') {
     if (!tenantId) return;
@@ -263,9 +298,6 @@ export function Compras() {
       {/* Header */}
       <div className="flex justify-between items-center pb-4 border-b border-[rgba(72,72,71,0.15)] shrink-0">
         <div>
-          <span className="font-['Inter',sans-serif] text-[#6b7280] text-[11px] uppercase tracking-[0.5px]">
-            Inventario y Abastecimiento
-          </span>
           <h2 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[24px] uppercase tracking-[0.5px] mt-0.5">
             Módulo de Compras
           </h2>
@@ -385,13 +417,24 @@ export function Compras() {
                 <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[15px] uppercase tracking-[0.5px]">
                   Registro de Facturas ({filteredCompras.length})
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setShowCompraModal(true)}
-                  className="bg-[#ff906d] rounded-[10px] px-3.5 py-2 font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[11px] uppercase cursor-pointer border-none flex items-center gap-1.5 transition-transform hover:scale-[1.02] active:scale-95"
-                >
-                  <Plus className="size-[14px]" strokeWidth={3} /> Registrar Compra
-                </button>
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer text-[#adaaaa] hover:text-white transition-colors border border-[rgba(72,72,71,0.3)] bg-[#1a1a1a] rounded-[10px] px-3 py-1.5 shadow-sm">
+                    <input 
+                      type="checkbox" 
+                      checked={soloFiscales} 
+                      onChange={(e) => setSoloFiscales(e.target.checked)} 
+                      className="accent-[#ff906d] cursor-pointer size-3.5" 
+                    />
+                    <span className="text-[11px] font-bold uppercase tracking-[0.5px] font-['Space_Grotesk',sans-serif] mt-0.5">Solo NCF</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowCompraModal(true)}
+                    className="bg-[#ff906d] rounded-[10px] px-3.5 py-2 font-['Space_Grotesk',sans-serif] font-bold text-[#460f00] text-[11px] uppercase cursor-pointer border-none flex items-center gap-1.5 transition-transform hover:scale-[1.02] active:scale-95 shadow-sm"
+                  >
+                    <Plus className="size-[14px]" strokeWidth={3} /> Registrar Compra
+                  </button>
+                </div>
               </div>
 
               {filteredCompras.length === 0 ? (
@@ -438,14 +481,32 @@ export function Compras() {
                               {RD(row.total)}
                             </td>
                             <td className="px-4 py-3 text-center">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedCompraForDetail(row)}
-                                className="bg-transparent border-none text-[#adaaaa] hover:text-[#ff906d] cursor-pointer p-1 transition-colors"
-                                title="Ver Detalles"
-                              >
-                                <Eye className="size-[15px]" />
-                              </button>
+                              <div className="flex items-center justify-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedCompraForDetail(row)}
+                                  className="bg-transparent border-none text-[#adaaaa] hover:text-[#ff906d] cursor-pointer p-1 transition-colors"
+                                  title="Ver Detalles"
+                                >
+                                  <Eye className="size-[15px]" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingCompraFiscal(row)}
+                                  className="bg-transparent border-none text-[#adaaaa] hover:text-sky-400 cursor-pointer p-1 transition-colors"
+                                  title="Editar Datos Fiscales"
+                                >
+                                  <Edit className="size-[15px]" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDelete({ open: true, id: row.id })}
+                                  className="bg-transparent border-none text-[#adaaaa] hover:text-red-500 cursor-pointer p-1 transition-colors"
+                                  title="Anular Compra (Revertir Stock)"
+                                >
+                                  <Trash2 className="size-[15px]" />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -572,6 +633,20 @@ export function Compras() {
         }}
       />
 
+      {/* EDITAR COMPRA FISCAL MODAL */}
+      <EditarCompraFiscalModal
+        isOpen={editingCompraFiscal !== null}
+        onClose={() => setEditingCompraFiscal(null)}
+        tenantId={tenantId}
+        compra={editingCompraFiscal}
+        proveedores={proveedores}
+        onSuccess={(msg) => {
+          setSuccessMsg(msg);
+          void cargarDatos();
+        }}
+        onError={(msg) => setMessage(msg)}
+      />
+
       {/* DETALLE COMPRA MODAL */}
       <DetalleCompraModal
         isOpen={selectedCompraForDetail !== null}
@@ -580,6 +655,16 @@ export function Compras() {
         compra={selectedCompraForDetail}
         proveedor={selectedCompraForDetail ? proveedoresMap.get(selectedCompraForDetail.proveedor_id || "") || null : null}
         productos={productos}
+      />
+
+      <ConfirmModal
+        isOpen={confirmDelete.open}
+        title="¿Anular y Revertir Compra?"
+        message="Esta acción es irreversible. Se eliminará la factura, la cuenta por pagar y se restará automáticamente del inventario la cantidad de insumos que entraron con esta compra."
+        onConfirm={() => void handleEliminarCompra(confirmDelete.id)}
+        onCancel={() => setConfirmDelete({ open: false, id: "" })}
+        confirmText="Sí, Anular Compra"
+        confirmVariant="danger"
       />
     </div>
   );

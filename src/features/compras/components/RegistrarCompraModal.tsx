@@ -61,6 +61,7 @@ export function RegistrarCompraModal({
     propina_legal: "",
     monto_servicios: "",
     tipo_bien_servicio: "09",
+    fecha_compra: new Date().toISOString().slice(0, 16),
   });
 
   const [purchaseItems, setPurchaseItems] = useState<{
@@ -175,10 +176,11 @@ export function RegistrarCompraModal({
         propinaLegal: Number(compraForm.propina_legal) || 0,
         montoServicios: Number(compraForm.monto_servicios) || 0,
         tipoBienServicio: compraForm.tipo_bien_servicio,
+        fechaCompra: new Date(compraForm.fecha_compra).toISOString(),
       });
 
       onSuccess("Compra registrada y stock actualizado correctamente.");
-      setCompraForm({ proveedor_id: "", tipo_pago: "contado", metodo_pago: "efectivo", monto_pagado: "", numero_factura: "", observacion: "", itbis_facturado: "", itbis_retenido: "", retencion_isr: "", impuesto_selectivo: "", otros_impuestos: "", propina_legal: "", monto_servicios: "", tipo_bien_servicio: "09" });
+      setCompraForm({ proveedor_id: "", tipo_pago: "contado", metodo_pago: "efectivo", monto_pagado: "", numero_factura: "", observacion: "", itbis_facturado: "", itbis_retenido: "", retencion_isr: "", impuesto_selectivo: "", otros_impuestos: "", propina_legal: "", monto_servicios: "", tipo_bien_servicio: "09", fecha_compra: new Date().toISOString().slice(0, 16) });
       setPurchaseItems([{ id: crypto.randomUUID(), producto_id: "", cantidad: "", costo_unitario: "" }]);
       onClose();
     } catch (err: any) {
@@ -198,7 +200,7 @@ export function RegistrarCompraModal({
 
         <form onSubmit={handleRegistrarCompra} className="flex flex-col gap-5 overflow-y-auto pr-2 flex-1 min-h-0 custom-scrollbar">
           {/* Header Info */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 shrink-0 text-left bg-[#1a1a1a] border border-[rgba(72,72,71,0.2)] rounded-xl p-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 shrink-0 text-left bg-[#1a1a1a] border border-[rgba(72,72,71,0.2)] rounded-xl p-4">
             <div className="flex flex-col gap-1.5 md:col-span-2">
               <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.8px] font-semibold">Proveedor *</label>
               <select
@@ -212,6 +214,16 @@ export function RegistrarCompraModal({
                   <option key={p.id} value={p.id}>{p.nombre} ({p.rnc || "S/RNC"})</option>
                 ))}
               </select>
+            </div>
+            <div className="flex flex-col gap-1.5 md:col-span-1">
+              <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.8px] font-semibold">Fecha de Factura *</label>
+              <input
+                type="datetime-local"
+                required
+                value={compraForm.fecha_compra}
+                onChange={(e) => setCompraForm(prev => ({ ...prev, fecha_compra: e.target.value }))}
+                className="bg-[#111] border border-[rgba(72,72,71,0.4)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors [color-scheme:dark]"
+              />
             </div>
             <div className="flex flex-col gap-1.5 md:col-span-1">
               <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.8px] font-semibold">Tipo de Pago *</label>

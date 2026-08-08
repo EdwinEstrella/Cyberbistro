@@ -27,10 +27,126 @@ export interface PurchaseInput {
   montoBienes?: number;
   montoServicios?: number;
   tipoBienServicio?: string;
+  fechaCompra?: string;
 }
 
+export async function eliminarCompra(tenantId: string, compraId: string, usuarioId: string | null): Promise<void> {
+  const deviceId = await getDeviceId();
+
+  // 1. Obtener la compra
+  const compras = await readLocalMirror<{ id: string; sucursal_id: string; fecha_compra: string }>(tenantId, "compras");
+  const compra = compras.find(c => c.id === compraId);
+  if (!compra) throw new Error("La compra no existe o ya fue eliminada.");
+
+  // 2. Obtener movimientos de inventario asociados para revertir el stock
+  const movimientos = await readLocalMirror<{
+    id: string;
+    producto_id: string;
+    cantidad: number;
+    referencia: string;
+  }>(tenantId, "inventario_movimientos");
+  
+  const movsCompra = movimientos.filter(m => m.referencia === `Compra: ${compraId}`);
+
+  // Revertir el stock en productos_inventario
+  const productos = await readLocalMirror<{ id: string; stock_actual: number }>(tenantId, "productos_inventario");
+  
+  for (const mov of movsCompra) {
+    const prod = productos.find(p => p.id === mov.producto_id);
+    if (prod) {
+      const nuevoStock = Number(prod.stock_actual) - Number(mov.cantidad);
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "productos_inventario",
+        rowId: prod.id,
+        op: "update",
+        payload: {
+          stock_actual: Math.max(0, nuevoStock),
+          updated_at: new Date().toISOString()
+        },
+        deviceId
+      });
+    }
+
+    // Borrar el movimiento original para que el historial cuadre con el nuevo stock
+    await enqueueLocalWrite({
+      tenantId,
+      tableName: "inventario_movimientos",
+      rowId: mov.id,
+      op: "delete",
+      payload: { id: mov.id },
+      deviceId
+    });
+  }
+
+  // 3. Borrar los detalles de la compra
+  const detalles = await readLocalMirror<{ id: string; compra_id: string }>(tenantId, "compra_detalles");
+  const detallesCompra = detalles.filter(d => d.compra_id === compraId);
+  for (const d of detallesCompra) {
+    await enqueueLocalWrite({
+      tenantId,
+      tableName: "compra_detalles",
+      rowId: d.id,
+      op: "delete",
+      payload: { id: d.id },
+      deviceId
+    });
+  }
+
+  // 4. Borrar registro fiscal
+  const fiscales = await readLocalMirror<{ compra_id: string; id: string }>(tenantId, "compra_fiscal");
+  const fiscal = fiscales.find(f => f.compra_id === compraId);
+  if (fiscal) {
+    await enqueueLocalWrite({
+      tenantId,
+      tableName: "compra_fiscal",
+      rowId: fiscal.id,
+      op: "delete",
+      payload: { id: fiscal.id },
+      deviceId
+    });
+  }
+
+  // 5. Borrar CxP
+  const cxpList = await readLocalMirror<{ compra_id: string; id: string }>(tenantId, "cuentas_pagar");
+  const cxp = cxpList.find(c => c.compra_id === compraId);
+  if (cxp) {
+    await enqueueLocalWrite({
+      tenantId,
+      tableName: "cuentas_pagar",
+      rowId: cxp.id,
+      op: "delete",
+      payload: { id: cxp.id },
+      deviceId
+    });
+  }
+
+  // 6. Borrar Gasto asociado (si aplica)
+  const gastos = await readLocalMirror<{ id: string; notas: string | null }>(tenantId, "gastos");
+  const gasto = gastos.find(g => g.notas && g.notas.includes(`ID: ${compraId}`));
+  if (gasto) {
+    await enqueueLocalWrite({
+      tenantId,
+      tableName: "gastos",
+      rowId: gasto.id,
+      op: "delete",
+      payload: { id: gasto.id },
+      deviceId
+    });
+  }
+
+  // 7. Borrar la compra
+  await enqueueLocalWrite({
+    tenantId,
+    tableName: "compras",
+    rowId: compraId,
+    op: "delete",
+    payload: { id: compraId },
+    deviceId
+  });
+}
 export async function registrarCompra(input: PurchaseInput): Promise<{ compraId: string }> {
-  const { tenantId, sucursalId, usuarioId, proveedorId, numeroFactura, tipoPago, metodoPago, montoPagado, items, observacion, itbisFacturado = 0, itbisRetenido = 0, retencionIsr = 0, impuestoSelectivo = 0, otrosImpuestos = 0, propinaLegal = 0, montoBienes = 0, montoServicios = 0, tipoBienServicio = "09" } = input;
+  const { tenantId, sucursalId, usuarioId, proveedorId, numeroFactura, tipoPago, metodoPago, montoPagado, items, observacion, itbisFacturado = 0, itbisRetenido = 0, retencionIsr = 0, impuestoSelectivo = 0, otrosImpuestos = 0, propinaLegal = 0, montoBienes = 0, montoServicios = 0, tipoBienServicio = "09", fechaCompra } = input;
   if ((!items || items.length === 0) && (!montoServicios || montoServicios <= 0)) {
     throw new Error("La compra debe contener al menos un tem o un monto en servicios.");
   }
@@ -126,7 +242,7 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
 
   const inventarioMap = new Map(inventarioRows.map(r => [r.id, r]));
   const compraId = crypto.randomUUID();
-  const fechaCompra = new Date().toISOString();
+  const fechaCompraFinal = fechaCompra ? new Date(fechaCompra).toISOString() : new Date().toISOString();
 
   // Validate items and pre-calculate conversions
   let totalCompra = 0;
@@ -378,4 +494,91 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
   }
 
   return { compraId };
+}
+
+export async function actualizarDatosFiscalesCompra(
+  tenantId: string,
+  compraId: string,
+  updates: { proveedorId: string; numeroFactura: string; fechaCompra: string; observacion: string }
+): Promise<void> {
+  const deviceId = await getDeviceId();
+
+  // Obtener detalles del proveedor
+  const providers = await readLocalMirror<{ id: string; nombre: string; rnc: string | null }>(tenantId, "proveedores");
+  const prov = providers.find(p => p.id === updates.proveedorId);
+  const providerName = prov?.nombre || "Proveedor Desconocido";
+  const providerRnc = prov?.rnc?.replace(/\D/g, "") || "";
+
+  // 1. Actualizar tabla compras
+  await enqueueLocalWrite({
+    tenantId,
+    tableName: "compras",
+    rowId: compraId,
+    op: "update",
+    payload: {
+      proveedor_id: updates.proveedorId,
+      numero_factura: updates.numeroFactura.trim(),
+      fecha_compra: updates.fechaCompra,
+      observacion: updates.observacion.trim(),
+      updated_at: new Date().toISOString()
+    },
+    deviceId
+  });
+
+  // 2. Actualizar compra_fiscal
+  const fiscales = await readLocalMirror<{ id: string; compra_id: string }>(tenantId, "compra_fiscal");
+  const fiscal = fiscales.find(f => f.compra_id === compraId);
+  if (fiscal) {
+    await enqueueLocalWrite({
+      tenantId,
+      tableName: "compra_fiscal",
+      rowId: fiscal.id,
+      op: "update",
+      payload: {
+        rnc_cedula: providerRnc,
+        tipo_identificacion: providerRnc.length === 9 ? "1" : "2",
+        ncf: updates.numeroFactura.trim().toUpperCase(),
+        fecha_comprobante: updates.fechaCompra.slice(0, 10),
+      },
+      deviceId
+    });
+  }
+
+  // 3. Actualizar CxP
+  const cxps = await readLocalMirror<{ id: string; compra_id: string }>(tenantId, "cuentas_pagar");
+  const cxp = cxps.find(c => c.compra_id === compraId);
+  if (cxp) {
+    await enqueueLocalWrite({
+      tenantId,
+      tableName: "cuentas_pagar",
+      rowId: cxp.id,
+      op: "update",
+      payload: {
+        proveedor_id: updates.proveedorId,
+        fecha_emision: updates.fechaCompra,
+        observacion: updates.observacion.trim(),
+        updated_at: new Date().toISOString()
+      },
+      deviceId
+    });
+  }
+
+  // 4. Actualizar Gasto
+  const gastos = await readLocalMirror<{ id: string; notas: string | null }>(tenantId, "gastos");
+  const gasto = gastos.find(g => g.notas && g.notas.includes(`ID: ${compraId}`));
+  if (gasto) {
+    await enqueueLocalWrite({
+      tenantId,
+      tableName: "gastos",
+      rowId: gasto.id,
+      op: "update",
+      payload: {
+        proveedor: providerName,
+        fecha_gasto: updates.fechaCompra,
+        descripcion: `Compra - Factura ${updates.numeroFactura.trim() || "S/N"}`,
+        updated_at: new Date().toISOString()
+      },
+      deviceId
+    });
+  }
 }
