@@ -100,15 +100,11 @@ test.describe('Compras E2E - Crear, Editar y Anular', () => {
       await expect(window.locator('text="Registrar Factura de Compra"').first()).toBeVisible();
 
       // 3. Seleccionar Proveedor (el primero disponible)
-      const provSelect = window.locator('label:has-text("Proveedor *")').locator('..').locator('select');
-      await provSelect.waitFor({ state: 'attached' });
-      
-      // Validar si hay proveedores creados
-      const optionsCount = await provSelect.locator('option').count();
-      if (optionsCount <= 1) {
+      const providerOptions = window.getByTestId('purchase-provider-option');
+      if ((await providerOptions.count()) === 0) {
         throw new Error("❌ PRUEBA DETENIDA: No tienes ningún Proveedor registrado. Cierra esto, ve a la pestaña de 'Proveedores', crea uno y vuelve a correr el test.");
       }
-      await provSelect.selectOption({ index: 1 });
+      await providerOptions.first().click();
 
       // Validar si el ciclo de caja está abierto (si no, el botón Guardar estará bloqueado)
       const cicloCerrado = window.locator('text="Ciclo cerrado:"');

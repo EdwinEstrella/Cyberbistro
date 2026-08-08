@@ -80,6 +80,7 @@ export function Compras() {
   const [to606, setTo606] = useState(() => new Date().toISOString().slice(0, 10));
   const [exporting606, setExporting606] = useState(false);
   const [soloFiscales, setSoloFiscales] = useState(false);
+  const [proveedorFilter, setProveedorFilter] = useState("");
 
   // Modals
   const [showCompraModal, setShowCompraModal] = useState(false);
@@ -180,11 +181,12 @@ export function Compras() {
       
       if (soloFiscales) {
         const ncf = (c.numero_factura || "").trim().toUpperCase();
-        return ncf.startsWith("B") || ncf.startsWith("E");
+        if (!ncf.startsWith("B") && !ncf.startsWith("E")) return false;
       }
-      return true;
+      const providerName = proveedoresMap.get(c.proveedor_id || "")?.nombre || "";
+      return providerName.toLocaleLowerCase().includes(proveedorFilter.trim().toLocaleLowerCase());
     });
-  }, [compras, dateRange, soloFiscales]);
+  }, [compras, dateRange, soloFiscales, proveedorFilter, proveedoresMap]);
 
   const summaryStats = useMemo(() => {
     const { start, endStr } = dateRange;
@@ -419,6 +421,13 @@ export function Compras() {
                   Registro de Facturas ({filteredCompras.length})
                 </span>
                 <div className="flex items-center gap-4">
+                  <input
+                    type="search"
+                    value={proveedorFilter}
+                    onChange={(e) => setProveedorFilter(e.target.value)}
+                    placeholder="Filtrar proveedor"
+                    className="w-40 rounded-[10px] border border-[rgba(72,72,71,0.3)] bg-[#1a1a1a] px-3 py-2 font-['Inter',sans-serif] text-[12px] text-white outline-none placeholder:text-[#6b7280] focus:border-[#ff906d]/60"
+                  />
                   <label className="flex items-center gap-2 cursor-pointer text-[#adaaaa] hover:text-white transition-colors border border-[rgba(72,72,71,0.3)] bg-[#1a1a1a] rounded-[10px] px-3 py-1.5 shadow-sm">
                     <input 
                       type="checkbox" 

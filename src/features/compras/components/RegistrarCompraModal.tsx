@@ -71,6 +71,7 @@ export function RegistrarCompraModal({
     cantidad: string;
     costo_unitario: string;
   }[]>([{ id: crypto.randomUUID(), producto_id: "", cantidad: "", costo_unitario: "" }]);
+  const [providerQuery, setProviderQuery] = useState("");
 
   const isContado = compraForm.tipo_pago === "contado";
   const isParcial = compraForm.tipo_pago === "parcial";
@@ -183,6 +184,7 @@ export function RegistrarCompraModal({
 
       onSuccess("Compra registrada y stock actualizado correctamente.");
       setCompraForm({ proveedor_id: "", tipo_pago: "contado", metodo_pago: "efectivo", monto_pagado: "", numero_factura: "", observacion: "", itbis_facturado: "", itbis_retenido: "", retencion_isr: "", impuesto_selectivo: "", otros_impuestos: "", propina_legal: "", monto_servicios: "", tipo_bien_servicio: "09", is_fiscal: true, fecha_compra: new Date().toISOString().slice(0, 16) });
+      setProviderQuery("");
       setPurchaseItems([{ id: crypto.randomUUID(), producto_id: "", cantidad: "", costo_unitario: "" }]);
       onClose();
     } catch (err: any) {
@@ -204,18 +206,42 @@ export function RegistrarCompraModal({
           {/* Header Info */}
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 shrink-0 text-left bg-[#1a1a1a] border border-[rgba(72,72,71,0.2)] rounded-xl p-4">
             <div className="flex flex-col gap-1.5 md:col-span-2">
-              <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.8px] font-semibold">Proveedor *</label>
-              <select
-                required
-                value={compraForm.proveedor_id}
-                onChange={(e) => setCompraForm(prev => ({ ...prev, proveedor_id: e.target.value }))}
-                className="bg-[#111] border border-[rgba(72,72,71,0.4)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors cursor-pointer"
-              >
-                <option value="">Selecciona proveedor</option>
-                {proveedores.map(p => (
-                  <option key={p.id} value={p.id}>{p.nombre} ({p.rnc || "S/RNC"})</option>
-                ))}
-              </select>
+              <label htmlFor="purchase-provider-search" className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.8px] font-semibold">Buscar o seleccionar proveedor *</label>
+              <input
+                id="purchase-provider-search"
+                type="search"
+                value={providerQuery}
+                onChange={(e) => {
+                  const query = e.target.value;
+                  setProviderQuery(query);
+                  const exactProvider = proveedores.find(provider => provider.nombre.toLocaleLowerCase() === query.trim().toLocaleLowerCase());
+                  setCompraForm(prev => ({ ...prev, proveedor_id: exactProvider?.id || "" }));
+                }}
+                placeholder="Escribí para buscar"
+                className="bg-[#111] border border-[rgba(72,72,71,0.4)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors"
+              />
+              <div className="max-h-28 overflow-y-auto rounded-[10px] border border-[rgba(72,72,71,0.2)] bg-[#111]">
+                {proveedores
+                  .filter(provider => provider.nombre.toLocaleLowerCase().includes(providerQuery.trim().toLocaleLowerCase()))
+                  .slice(0, 8)
+                  .map(provider => (
+                    <button
+                      key={provider.id}
+                      type="button"
+                      data-testid="purchase-provider-option"
+                      onClick={() => {
+                        setProviderQuery(provider.nombre);
+                        setCompraForm(prev => ({ ...prev, proveedor_id: provider.id }));
+                      }}
+                      className={`block w-full border-0 border-b border-[rgba(72,72,71,0.18)] px-3 py-2 text-left font-['Inter',sans-serif] text-[12px] transition-colors ${compraForm.proveedor_id === provider.id ? "bg-[#ff906d]/15 text-[#ffb49a]" : "bg-transparent text-white hover:bg-[#1a1a1a]"}`}
+                    >
+                      {provider.nombre} <span className="text-[#6b7280]">{provider.rnc || "S/RNC"}</span>
+                    </button>
+                  ))}
+                {providerQuery.trim() && !proveedores.some(provider => provider.nombre.toLocaleLowerCase().includes(providerQuery.trim().toLocaleLowerCase())) && (
+                  <p className="px-3 py-2 font-['Inter',sans-serif] text-[11px] text-[#adaaaa]">No existe. Crealo desde la pestaña Proveedores.</p>
+                )}
+              </div>
             </div>
             <div className="flex flex-col gap-1.5 md:col-span-1">
               <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.8px] font-semibold">Fecha de Factura *</label>
