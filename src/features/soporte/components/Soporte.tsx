@@ -37,6 +37,7 @@ import {
 
 const STAFF_ROLES = [
   { value: "cajera", label: "Cajera / Venta" },
+  { value: "contabilidad", label: "Contabilidad" },
   { value: "mesero", label: "Camarera" },
   { value: "cocina", label: "Cocina" },
 ] as const;
@@ -968,7 +969,7 @@ function UsuariosPanel() {
       <div className="max-w-[1000px] mx-auto grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] gap-8 items-start">
         <div className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 sm:p-8 shadow-sm h-fit">
           <h2 className="font-['Space_Grotesk'] text-xl font-bold text-foreground mb-1">Equipo de Trabajo</h2>
-          <p className="text-muted-foreground text-[13px] mb-6">Gestión de accesos para cajeras y personal de cocina.</p>
+          <p className="text-muted-foreground text-[13px] mb-6">Gestión de accesos para ventas, contabilidad y operación.</p>
           
           {listLoading ? <div className="py-10 text-center text-muted-foreground text-sm">Cargando...</div> : (
             <div className="overflow-x-auto rounded-xl border border-black/5 dark:border-white/5 bg-muted/20">

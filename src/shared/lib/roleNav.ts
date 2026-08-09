@@ -6,7 +6,7 @@
 
 import { SUPER_ADMIN_ROLE, SUPER_ADMIN_ROUTE } from "./superAdmin";
 
-export type TenantRol = "admin" | "cocina" | "cajera" | "mesero" | typeof SUPER_ADMIN_ROLE;
+export type TenantRol = "admin" | "cocina" | "cajera" | "mesero" | "contabilidad" | typeof SUPER_ADMIN_ROLE;
 
 const VENTA_PATHS = ["/dashboard", "/tables"] as const;
 
@@ -28,6 +28,7 @@ export function normalizeTenantRol(rol: string | null): TenantRol | null {
     rol === "cocina" ||
     rol === "cajera" ||
     rol === "mesero" ||
+    rol === "contabilidad" ||
     rol === SUPER_ADMIN_ROLE
   ) return rol;
   if (rol === "vender" || rol === "vendedor" || rol === "ventas" || rol === "cajero") {
@@ -44,6 +45,7 @@ export function defaultRouteForRol(rol: string | null): string {
   if (normalized === SUPER_ADMIN_ROLE) return SUPER_ADMIN_ROUTE;
   if (normalized === "cocina") return "/cocina";
   if (normalized === "mesero") return "/camarera";
+  if (normalized === "contabilidad") return "/billing";
   return "/dashboard";
 }
 
@@ -68,6 +70,9 @@ export function isAppRouteAllowed(rol: string | null, pathname: string): boolean
   }
   if (normalized === "mesero") {
     return pathname === "/camarera" || pathname === "/entregas";
+  }
+  if (normalized === "contabilidad") {
+    return ["/billing", "/inventario", "/gastos", "/compras", "/cuentas-pagar", "/cuentas-cobrar", "/fiscal"].includes(pathname);
   }
   return pathname === "/dashboard";
 }

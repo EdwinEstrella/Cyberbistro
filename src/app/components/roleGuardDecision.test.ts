@@ -154,6 +154,18 @@ describe("getRoleGuardDecision", () => {
     ).toEqual({ type: "tenant_access_denied", reason: "blocked" });
   });
 
+  it("contabilidad puede abrir los módulos financieros y de inventario", () => {
+    expect(
+      getRoleGuardDecision({ loading: false, isAuthenticated: true, userExists: true, tenantId: "tenant-1", rol: "contabilidad", pathname: "/compras" })
+    ).toEqual({ type: "allow" });
+    expect(
+      getRoleGuardDecision({ loading: false, isAuthenticated: true, userExists: true, tenantId: "tenant-1", rol: "contabilidad", pathname: "/inventario" })
+    ).toEqual({ type: "allow" });
+    expect(
+      getRoleGuardDecision({ loading: false, isAuthenticated: true, userExists: true, tenantId: "tenant-1", rol: "contabilidad", pathname: "/dashboard" })
+    ).toEqual({ type: "redirect_role", to: "/billing" });
+  });
+
   it("mantiene la pantalla de carga mientras el acceso tenant se valida", () => {
     expect(
       getRoleGuardDecision({
