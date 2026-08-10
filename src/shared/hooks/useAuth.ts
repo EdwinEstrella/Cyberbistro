@@ -127,9 +127,11 @@ async function reconcileTenantAccessShared(reason: 'realtime' | 'fallback' | 'fo
     if (requestGeneration !== tenantAccessGeneration) return;
     if (resolution.status !== 'active') {
       if (resolution.status === 'blocked' && resolution.tenantId) handleRealtimeTenantBlocked(resolution.tenantId);
-      else {
+      else if (resolution.status === 'truly_unlinked') {
         tenantAccessGeneration = advanceTenantAccessGeneration();
         patchSharedState({ tenantUser: null, tenantAccessDeniedReason: 'unlinked', accessValidationState: 'denied' });
+      } else {
+        patchSharedState({ tenantUser: null, tenantAccessDeniedReason: null, accessValidationState: 'pending' });
       }
       logAuth('tenant access reconciliation denied', { reason, status: resolution.status });
       return;
@@ -563,14 +565,16 @@ async function loadUserDataShared(opts?: { silent?: boolean; force?: boolean }):
           const blockedTenantId = (access.status === 'blocked' ? access.tenantId : undefined) ?? tenantAccessTenantId;
           if (access.status === 'blocked' && blockedTenantId) {
             handleRealtimeTenantBlocked(blockedTenantId);
-          } else {
+          } else if (access.status === 'truly_unlinked') {
             clearTenantSessionCache();
-            patchSharedState({ tenantUser: null, tenantAccessDeniedReason: access.status, accessValidationState: 'denied' });
+            patchSharedState({ tenantUser: null, tenantAccessDeniedReason: 'unlinked', accessValidationState: 'denied' });
+          } else {
+            patchSharedState({ tenantUser: null, tenantAccessDeniedReason: null, accessValidationState: 'pending' });
           }
           refreshBlockedUntil = Date.now() + REFRESH_BLOCK_MS;
           logAuth('tenant not resolved from backend', { reason: access.status });
 
-          if (access.status !== 'blocked' && Boolean((window as any).electronAPI)) {
+          if (access.status === 'truly_unlinked' && Boolean((window as any).electronAPI)) {
             try {
               const m = await import('../lib/localFirst');
               await m.invalidateLocalSessionContext(await m.getLastTenantId());

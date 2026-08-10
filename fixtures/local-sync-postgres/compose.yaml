@@ -1,0 +1,30 @@
+name: cyberbistro-sync-fixture
+
+services:
+  postgres:
+    image: postgres:17.4-alpine
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - cyberbistro_sync_fixture_pgdata:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d:ro
+      - ./validate.sql:/fixture/validate.sql:ro
+      - ./validate-protocol.sql:/fixture/validate-protocol.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    networks:
+      - fixture
+
+volumes:
+  cyberbistro_sync_fixture_pgdata:
+    name: cyberbistro_sync_fixture_pgdata
+
+networks:
+  fixture:
+    internal: true

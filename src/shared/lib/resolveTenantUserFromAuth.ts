@@ -2,6 +2,7 @@ import type { UserSchema } from '@insforge/sdk';
 import { insforgeClient } from './insforge';
 import { isCloudAvailabilityFailure, recordCloudFailure } from './cloudAvailability';
 import { readTenantSessionCache, type TenantSessionRow } from './tenantSessionCache';
+import { classifyTenantMembershipResolution } from './tenantAccess';
 
 type TenantUserAccessRow = TenantSessionRow & { activo: boolean | null };
 type TenantActiveRow = { activa: boolean | null };
@@ -9,7 +10,10 @@ type TenantActiveRow = { activa: boolean | null };
 export type TenantAccessResolution =
   | { status: 'active'; row: TenantSessionRow }
   | { status: 'blocked'; tenantId?: string }
-  | { status: 'unlinked' };
+  | { status: 'truly_unlinked' }
+  | { status: 'cloud_unavailable' }
+  | { status: 'authorization_error' }
+  | { status: 'cardinality_error' };
 
 export const BLOCKED_ACCOUNT_MESSAGE =
   'Tu cuenta está bloqueada. Contactá al administrador del sistema para recuperar el acceso.';
@@ -116,7 +120,7 @@ async function resolveActiveTenantUserRow(
   user: UserSchema,
 ): Promise<TenantAccessResolution> {
   const tenantId = rawRow?.tenant_id;
-  if (typeof tenantId !== 'string' || !tenantId) return { status: 'unlinked' };
+  if (typeof tenantId !== 'string' || !tenantId) return { status: 'truly_unlinked' };
   const { data: tenantState, error: tenantStateError } = await withRetry(
     'tenants estado activo para miembro activo',
     () => fetchTenantActiveState(tenantId),
@@ -164,6 +168,15 @@ async function fetchTenantUserByRpc() {
     .rpc('cloudix_resolve_tenant_user')
     .then(({ data, error }) => ({
       data: Array.isArray(data) ? (data[0] ?? null) : data,
+      error,
+    }));
+}
+
+async function fetchTenantMembershipsByRpc() {
+  return insforgeClient.database
+    .rpc('cloudix_resolve_tenant_memberships')
+    .then(({ data, error }) => ({
+      data: Array.isArray(data) ? data : [],
       error,
     }));
 }
@@ -221,6 +234,39 @@ export async function resolveTenantAccessForSession(user: UserSchema): Promise<T
     if (error && isCloudAvailabilityFailure(error)) cloudFailure = error;
   };
 
+  const { data: memberships, error: membershipsError } = await withRetry(
+    'tenant memberships via authoritative RPC',
+    fetchTenantMembershipsByRpc,
+  );
+  rememberCloudFailure(membershipsError);
+  if (membershipsError) {
+    const cached = preserveCachedAccessDuringCloudFailure(user, membershipsError);
+    if (cached) return cached;
+    return isCloudAvailabilityFailure(membershipsError)
+      ? { status: 'cloud_unavailable' }
+      : { status: 'authorization_error' };
+  }
+
+  const membershipRows = memberships ?? [];
+  const membershipResolution = classifyTenantMembershipResolution({
+    kind: 'memberships',
+    rows: membershipRows as Array<{ tenant_id: string; activo?: boolean | null }>,
+  });
+  if (membershipResolution.status === 'active_memberships') {
+    const membership = membershipRows[0] as TenantUserAccessRow;
+    return {
+      status: 'active',
+      row: {
+        tenant_id: membership.tenant_id,
+        email: membership.email,
+        rol: membership.rol,
+        nombre: membership.nombre,
+        plan: membership.plan ?? 'basico',
+      },
+    };
+  }
+  if (membershipResolution.status === 'cardinality_error') return membershipResolution;
+
   const { data: byAuth, error: byAuthError } = await withRetry(
     'tenant_users activo por auth_user_id',
     () => fetchTenantUserByAuthId(user.id),
@@ -274,7 +320,7 @@ export async function resolveTenantAccessForSession(user: UserSchema): Promise<T
       const cached = preserveCachedAccessDuringCloudFailure(user, cloudFailure);
       if (cached) return cached;
     }
-    return { status: 'unlinked' };
+    return { status: 'truly_unlinked' };
   }
   if (inactiveRow.activo === false) return { status: 'blocked', tenantId: inactiveRow.tenant_id };
 
@@ -309,7 +355,7 @@ export async function resolveTenantAccessForSession(user: UserSchema): Promise<T
     return { status: 'blocked', tenantId: inactiveRow.tenant_id };
   }
 
-  return { status: 'unlinked' };
+  return { status: 'truly_unlinked' };
 }
 
 export async function resolveTenantUserForSession(user: UserSchema): Promise<TenantSessionRow | null> {

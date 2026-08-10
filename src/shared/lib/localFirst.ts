@@ -119,6 +119,91 @@ export type LocalFirstStatus =
   | "syncing"
   | "error";
 
+export interface LegacyIndexedDbImportPayload {
+  manifest: { tenantId: string; tables: Array<{ name: string; count: number; hash: string }>; outboxIdsHash: string; hash: string };
+  chunks: Array<{ table: string; rows: Record<string, unknown>[] }>;
+}
+
+/** The renderer may export its legacy IndexedDB snapshot, but activation and validation remain main-process authority. */
+export async function importLegacyIndexedDbThroughDesktop(payload: LegacyIndexedDbImportPayload): Promise<{ tenantId: string; importedRows: number; recoveredOutbox: number }> {
+  const importer = window.electronAPI?.importLegacyIndexedDb;
+  if (!importer) throw new Error("Desktop IndexedDB import is unavailable outside Electron.");
+  const response = await importer(payload);
+  return response.data;
+}
+
+/** Reads only this tenant's legacy IndexedDB rows in fixed-size batches for main-process validation and activation. */
+export async function exportLegacyIndexedDbImportPayload(tenantId: string, chunkSize = 250): Promise<LegacyIndexedDbImportPayload> {
+  if (!Number.isInteger(chunkSize) || chunkSize < 1 || chunkSize > 250) throw new Error("Invalid legacy export chunk size.");
+  const db = await openLocalFirstDbForSync(tenantId);
+  try {
+    const chunks: LegacyIndexedDbImportPayload["chunks"] = [];
+    const tables = [...LOCAL_FIRST_MIRROR_TABLES, "sync_outbox", "local_fiscal_outbox"];
+    for (const table of tables) {
+      if (!db.objectStoreNames.contains(table)) continue;
+      chunks.push(...await readLegacyStoreInChunks(db, table, tenantId, chunkSize));
+    }
+    const manifest = await buildLegacyIndexedDbManifest(tenantId, chunks);
+    return { manifest, chunks };
+  } finally {
+    db.close();
+  }
+}
+
+async function readLegacyStoreInChunks(db: IDBDatabase, table: string, tenantId: string, chunkSize: number): Promise<Array<{ table: string; rows: Record<string, unknown>[] }>> {
+  return new Promise((resolve, reject) => {
+    const chunks: Array<{ table: string; rows: Record<string, unknown>[] }> = [];
+    const tx = db.transaction(table, "readonly");
+    const request = tx.objectStore(table).openCursor();
+    let rows: Record<string, unknown>[] = [];
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) {
+        if (rows.length > 0) chunks.push({ table, rows });
+        resolve(chunks);
+        return;
+      }
+      const row = cursor.value as Record<string, unknown>;
+      const belongsToTenant = table === "tenants" ? row.id === tenantId : row.tenant_id === tenantId;
+      if (belongsToTenant) {
+        rows.push(row);
+        if (rows.length === chunkSize) {
+          chunks.push({ table, rows });
+          rows = [];
+        }
+      }
+      cursor.continue();
+    };
+    request.onerror = () => reject(request.error ?? new Error(`No se pudo leer ${table} desde IndexedDB.`));
+  });
+}
+
+async function buildLegacyIndexedDbManifest(tenantId: string, chunks: LegacyIndexedDbImportPayload["chunks"]): Promise<LegacyIndexedDbImportPayload["manifest"]> {
+  const rowsByTable = new Map<string, Record<string, unknown>[]>();
+  const outboxIds: string[] = [];
+  for (const chunk of chunks) {
+    const rows = rowsByTable.get(chunk.table) ?? [];
+    rows.push(...chunk.rows);
+    rowsByTable.set(chunk.table, rows);
+    if (chunk.table === "sync_outbox") outboxIds.push(...chunk.rows.map((row) => String(row.id ?? "")));
+  }
+  const tables = await Promise.all([...rowsByTable.entries()].map(async ([name, rows]) => ({ name, count: rows.length, hash: await sha256(legacyCanonical(rows)) })));
+  tables.sort((a, b) => a.name.localeCompare(b.name));
+  const outboxIdsHash = await sha256(legacyCanonical(outboxIds.sort()));
+  return { tenantId, tables, outboxIdsHash, hash: await sha256(legacyCanonical({ tenantId, tables, outboxIdsHash })) };
+}
+
+function legacyCanonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(legacyCanonical).join(",")}]`;
+  if (value && typeof value === "object") return `{${Object.keys(value as Record<string, unknown>).sort().map((key) => `${JSON.stringify(key)}:${legacyCanonical((value as Record<string, unknown>)[key])}`).join(",")}}`;
+  return JSON.stringify(value) ?? "null";
+}
+
+async function sha256(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 export interface SyncStateRow {
   key: string;
   tenant_id: string;
@@ -390,6 +475,65 @@ export interface SyncErrorRow {
   created_at: string;
   recoverable: boolean;
   retry_status: SyncRetryStatus;
+}
+
+const PURCHASE_OUTBOX_TABLES = new Set<LocalFirstMirrorTable>([
+  "compras",
+  "compra_fiscal",
+  "compra_detalles",
+  "inventario_movimientos",
+]);
+
+export type PurchaseOutboxInsertFailureDisposition =
+  | "mark_synced"
+  | "terminal_failure"
+  | "retryable_failure"
+  | "not_applicable";
+
+export interface PurchaseOutboxInsertFailureResolution {
+  disposition: PurchaseOutboxInsertFailureDisposition;
+  reason: string;
+  retryStatus?: SyncRetryStatus;
+}
+
+/** Classifies only the purchase records whose repeated local-first inserts are safe to deduplicate. */
+export function resolvePurchaseOutboxInsertFailure(
+  entry: SyncOutboxEntry,
+  errorMessage: string,
+  existing: { foundById: boolean; foundByCompraId: boolean }
+): PurchaseOutboxInsertFailureResolution {
+  if (entry.op !== "insert" || !PURCHASE_OUTBOX_TABLES.has(entry.table_name)) {
+    return { disposition: "not_applicable", reason: errorMessage };
+  }
+
+  if (existing.foundById || (entry.table_name === "compra_fiscal" && existing.foundByCompraId)) {
+    return {
+      disposition: "mark_synced",
+      reason: existing.foundById
+        ? "El registro de compra ya existe en servidor con el mismo id; se confirma sin reescribir."
+        : "El fiscal de compra ya existe en servidor para la misma compra; se confirma sin reescribir.",
+    };
+  }
+
+  const normalized = errorMessage.toLowerCase();
+  if (
+    normalized.includes("foreign key") ||
+    normalized.includes("violates check constraint") ||
+    normalized.includes("validation") ||
+    normalized.includes("invalid")
+  ) {
+    return {
+      disposition: "terminal_failure",
+      reason: errorMessage,
+      retryStatus: "not_retryable",
+    };
+  }
+
+  return {
+    disposition: "retryable_failure",
+    reason: errorMessage,
+    retryStatus: "retryable",
+  };
 }
 
 export type OutboxConflictGuardrailAction =
@@ -1038,6 +1182,33 @@ export async function checkServerRowExists(
   return data as Record<string, unknown>;
 }
 
+async function findExistingPurchaseOutboxRecord(entry: SyncOutboxEntry): Promise<{
+  foundById: boolean;
+  foundByCompraId: boolean;
+}> {
+  const byId = await runTrackedCloudOperation(() => insforgeClient.database
+    .from(entry.table_name)
+    .select("id")
+    .eq("id", entry.row_id)
+    .maybeSingle() as any);
+  if (byId.error) return { foundById: false, foundByCompraId: false };
+
+  const compraId = entry.table_name === "compra_fiscal" ? entry.payload?.["compra_id"] : null;
+  if (typeof compraId !== "string" || compraId.length === 0) {
+    return { foundById: Boolean(byId.data), foundByCompraId: false };
+  }
+
+  const byCompraId = await runTrackedCloudOperation(() => insforgeClient.database
+    .from("compra_fiscal")
+    .select("id")
+    .eq("compra_id", compraId)
+    .maybeSingle() as any);
+  return {
+    foundById: Boolean(byId.data),
+    foundByCompraId: !byCompraId.error && Boolean(byCompraId.data),
+  };
+}
+
 type PayloadAdjustmentResult =
   | { payload: Record<string, unknown>; adjusted: boolean; afterSuccessfulPush?: () => Promise<void> }
   | { reason: string; retryStatus: SyncRetryStatus };
@@ -1312,14 +1483,34 @@ export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: nu
           result = await runTrackedCloudOperation(() => insforgeClient.database.from(entry.table_name).delete().eq("id", entry.row_id) as any);
         }
         if (result?.error) {
-          await persistSyncError(db, buildSyncErrorRow({
-            outboxEntry: entry,
-            reason: result.error.message || "Error en sync.",
-            retryStatus: "retryable",
-            recoverable: true,
-          }));
-          await updateOutboxEntryStatus(db, entry.id, "error", result.error.message || "Error en sync.");
-          failed++;
+          const reason = result.error.message || "Error en sync.";
+          const isPurchaseInsert = entry.op === "insert" && PURCHASE_OUTBOX_TABLES.has(entry.table_name);
+          const purchaseResolution = resolvePurchaseOutboxInsertFailure(
+            entry,
+            reason,
+            isPurchaseInsert
+              ? await findExistingPurchaseOutboxRecord(entry)
+              : { foundById: false, foundByCompraId: false }
+          );
+          if (purchaseResolution.disposition === "mark_synced") {
+            await updateOutboxEntryStatus(db, entry.id, "synced", purchaseResolution.reason);
+            pushed++;
+          } else {
+            const retryStatus = purchaseResolution.retryStatus ?? "retryable";
+            await persistSyncError(db, buildSyncErrorRow({
+              outboxEntry: entry,
+              reason: purchaseResolution.reason,
+              retryStatus,
+              recoverable: retryStatus === "retryable",
+            }));
+            await updateOutboxEntryStatus(
+              db,
+              entry.id,
+              retryStatus === "not_retryable" ? "not_retryable" : "error",
+              purchaseResolution.reason
+            );
+            failed++;
+          }
         } else {
           if (adjustedOutgoingPayload && serverPayload) {
             await applyLocalMirrorWrite({

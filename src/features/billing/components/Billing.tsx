@@ -10,6 +10,7 @@ import { cacheLogoFromUrl } from "../../../shared/lib/logoCache";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { canUseFeature } from "../../../shared/lib/planFeatures";
 import { calculateExpectedCashDrawer, isCashPaymentMethod, sumCashExpenses } from "../../../shared/lib/cycleCash";
+import { getFiscalPendingPresentation } from "../../../shared/lib/salesFiscalUiAdapter";
 // useTheme removed
 import {
   Dialog,
@@ -256,7 +257,7 @@ function getEcfStatusDisplay(status: string) {
   switch (status) {
     case "pending_offline":
     case "pending_sync":
-      return { label: "e-CF: Pendiente de envío DGII", color: "#6b7280", bg: "rgba(107, 114, 128, 0.1)" };
+      return { label: getFiscalPendingPresentation("dgii_ecf").label, color: "#6b7280", bg: "rgba(107, 114, 128, 0.1)" };
     case "queued":
     case "signed":
       return { label: "e-CF: Sincronizado, pendiente de firma", color: "#f59e0b", bg: "rgba(245, 158, 11, 0.1)" };

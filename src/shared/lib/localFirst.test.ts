@@ -31,6 +31,7 @@ import {
   resolveLocalWriteMode,
   resolveConflictForTable,
   resolveOutboxConflictGuardrail,
+  resolvePurchaseOutboxInsertFailure,
   resolveMirrorStoreKeyPath,
   selectProcessableOutboxEntries,
   shouldReadLocalFirst,
@@ -582,6 +583,93 @@ describe("localFirst", () => {
     expect(guardrail.action).toBe("skip_with_audit_error");
     expect(guardrail.shouldWriteServer).toBe(false);
     expect(guardrail.reason).toContain("factura");
+  });
+
+  it.each(["compras", "compra_detalles", "inventario_movimientos"] as const)(
+    "marca como sincronizado el conflicto insert 409 de %s cuando ya existe el mismo id remoto",
+    (tableName) => {
+      const entry = createSyncOutboxEntry({
+        tenantId: "tenant-1",
+        tableName,
+        rowId: `${tableName}-1`,
+        op: "insert",
+        payload: { id: `${tableName}-1` },
+        deviceId: "device-1",
+      });
+
+      expect(resolvePurchaseOutboxInsertFailure(entry, "duplicate key value violates unique constraint", {
+        foundById: true,
+        foundByCompraId: false,
+      })).toMatchObject({ disposition: "mark_synced" });
+    }
+  );
+
+  it("marca compra_fiscal como sincronizada cuando existe el mismo id remoto", () => {
+    const entry = createSyncOutboxEntry({
+      tenantId: "tenant-1",
+      tableName: "compra_fiscal",
+      rowId: "fiscal-1",
+      op: "insert",
+      payload: { id: "fiscal-1", compra_id: "compra-1" },
+      deviceId: "device-1",
+    });
+
+    expect(resolvePurchaseOutboxInsertFailure(entry, "409 conflict", {
+      foundById: true,
+      foundByCompraId: false,
+    })).toMatchObject({ disposition: "mark_synced" });
+  });
+
+  it("acepta compra_fiscal existente por compra_id aunque su id remoto sea diferente", () => {
+    const entry = createSyncOutboxEntry({
+      tenantId: "tenant-1",
+      tableName: "compra_fiscal",
+      rowId: "local-fiscal-1",
+      op: "insert",
+      payload: { id: "local-fiscal-1", compra_id: "compra-1" },
+      deviceId: "device-1",
+    });
+
+    expect(resolvePurchaseOutboxInsertFailure(entry, "duplicate key value", {
+      foundById: false,
+      foundByCompraId: true,
+    })).toMatchObject({ disposition: "mark_synced" });
+  });
+
+  it.each([
+    "insert or update violates foreign key constraint",
+    "new row violates check constraint",
+    "validation failed for purchase detail",
+  ])("deja una falla terminal auditable para conflicto FK o validación: %s", (message) => {
+    const entry = createSyncOutboxEntry({
+      tenantId: "tenant-1",
+      tableName: "compras",
+      rowId: "compra-1",
+      op: "insert",
+      payload: { id: "compra-1" },
+      deviceId: "device-1",
+    });
+
+    expect(resolvePurchaseOutboxInsertFailure(entry, message, {
+      foundById: false,
+      foundByCompraId: false,
+    })).toMatchObject({ disposition: "terminal_failure", retryStatus: "not_retryable" });
+  });
+
+  it("conserva como retryable una falla transitoria de compra desconocida", () => {
+    const entry = createSyncOutboxEntry({
+      tenantId: "tenant-1",
+      tableName: "compras",
+      rowId: "compra-1",
+      op: "insert",
+      payload: { id: "compra-1" },
+      deviceId: "device-1",
+    });
+
+    expect(resolvePurchaseOutboxInsertFailure(entry, "network timeout while contacting server", {
+      foundById: false,
+      foundByCompraId: false,
+    })).toMatchObject({ disposition: "retryable_failure", retryStatus: "retryable" });
   });
 
   it("persiste metadata de error de sync con retry status", () => {

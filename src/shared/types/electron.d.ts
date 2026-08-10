@@ -77,6 +77,12 @@ export interface ElectronAPI {
   minimize: () => void;
   maximize: () => void;
   ensureInputFocus?: () => Promise<boolean>;
+  getTenantStoreStatus?: () => Promise<{ ok: true; data: { isOpen: boolean } }>;
+  executeCatalogCommand?: (command: import("../lib/catalogContracts").CatalogCommand) => Promise<{ ok: true; data: import("../lib/catalogContracts").CatalogRepositoryResult }>;
+  executeOrdersCommand?: (command: import("../lib/ordersContracts").OrdersCommand) => Promise<{ ok: true; data: import("../lib/ordersContracts").OrdersRepositoryResult }>;
+  executeSalesFiscalCommand?: (command: import("../../../electron/persistence/salesFiscalRepository").SalesFiscalCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/salesFiscalRepository").SalesFiscalRepositoryResult }>;
+  executeCashPurchaseCommand?: (command: import("../../../electron/persistence/cashPurchaseRepository").CashPurchaseCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/cashPurchaseRepository").CashPurchaseRepositoryResult }>;
+  importLegacyIndexedDb?: (payload: unknown) => Promise<{ ok: true; data: { tenantId: string; importedRows: number; recoveredOutbox: number } }>;
   close: () => void;
   getVersions: () => NodeJS.ProcessVersions;
   onWindowMaximized?: (callback: (isMaximized: boolean) => void) => void;

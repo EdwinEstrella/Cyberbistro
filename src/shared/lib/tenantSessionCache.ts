@@ -12,6 +12,28 @@ export interface TenantSessionCache extends TenantSessionRow {
   authUserId: string;
 }
 
+export interface TenantSessionCacheEntry {
+  authUserId: string;
+  tenantId: string;
+  generation: number;
+  validatedAt: string;
+}
+
+const OFFLINE_SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+export function createTenantSessionCacheEntry(entry: TenantSessionCacheEntry): TenantSessionCacheEntry {
+  return { ...entry };
+}
+
+export function getTenantSessionCacheKey(entry: TenantSessionCacheEntry): string {
+  return `${entry.authUserId}:${entry.tenantId}:${entry.generation}`;
+}
+
+export function canUseOfflineTenantSession(entry: TenantSessionCacheEntry, now = new Date()): boolean {
+  const validatedAt = Date.parse(entry.validatedAt);
+  return Number.isFinite(validatedAt) && now.getTime() - validatedAt < OFFLINE_SESSION_MAX_AGE_MS;
+}
+
 export function readTenantSessionCache(): TenantSessionCache | null {
   try {
     const raw = localStorage.getItem(CACHE_KEY);

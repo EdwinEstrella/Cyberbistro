@@ -6,12 +6,20 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setupAutoUpdater } from './autoUpdater'
 import { startLanEdgeServer, type LanEdgeServerHandle } from './lanEdgeServer'
+import { registerCashPurchaseRepositoryIpc, registerCatalogRepositoryIpc, registerDesktopRepositoryIpc, registerOrdersRepositoryIpc, registerSalesFiscalRepositoryIpc, registerTenantStoreIpc } from './persistence/ipc'
+import { TenantStoreController } from './persistence/tenantStore'
+import { DesktopRepository } from '../src/shared/lib/desktopRepository'
+import { CatalogRepository } from './persistence/catalogRepository'
+import { OrdersRepository } from './persistence/ordersRepository'
+import { SalesFiscalRepository } from './persistence/salesFiscalRepository'
+import { CashPurchaseRepository } from './persistence/cashPurchaseRepository'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const CERTIFICATION_PORTAL_URL = 'https://ecf.dgii.gov.do/certecf/portalcertificacion/Login?ReturnUrl=%2Fcertecf%2Fportalcertificacion'
 const ECF_ENVIRONMENTS = new Set(['test', 'certification', 'production'])
 let mainWindow: BrowserWindow | null = null
 let lanEdgeServer: LanEdgeServerHandle | null = null
+let tenantStoreController: TenantStoreController | null = null
 
 // Deshabilitar la aceleración de hardware para evitar bugs de focus/puntero en Windows
 // app.disableHardwareAcceleration()
@@ -377,7 +385,27 @@ function createWindow() {
 }
 
 if (gotTheLock) {
-  ipcMain.handle('window:ensure-input-focus', () => focusMainWindowForTextInput())
+   registerTenantStoreIpc({
+    ipcMain,
+    isTrustedSender: (event) => event.senderId === mainWindow?.webContents.id,
+     getStatus: () => tenantStoreController?.getStatus() ?? ({ tenantId: null, isOpen: false }),
+     getActiveTenantId: () => tenantStoreController?.getActiveStore()?.getTenantId() ?? null,
+     importLegacySnapshot: (payload) => {
+       const request = payload as Parameters<TenantSQLiteImporter["import"]>[0]
+       if (!tenantStoreController) throw new Error('Tenant store is unavailable')
+       return tenantStoreController.importLegacySnapshot(request)
+      },
+    })
+    registerDesktopRepositoryIpc({
+     ipcMain,
+     isTrustedSender: (event) => event.senderId === mainWindow?.webContents.id,
+     getRepository: () => {
+       const store = tenantStoreController?.getActiveStore()
+       if (!store) throw new Error('Tenant store is unavailable')
+       return new DesktopRepository({ store, branchId: 'main-process-default' })
+     },
+   })
+   ipcMain.handle('window:ensure-input-focus', () => focusMainWindowForTextInput())
 
   ipcMain.handle('printers:list', async () => {
     const w = mainWindow || BrowserWindow.getAllWindows()[0]
@@ -454,6 +482,7 @@ if (gotTheLock) {
   })
 
   app.whenReady().then(async () => {
+    tenantStoreController = new TenantStoreController(app.getPath('userData'))
     try {
       lanEdgeServer = await startLanEdgeServer({
         dataDir: app.getPath('userData'),
@@ -486,9 +515,43 @@ if (gotTheLock) {
         focusMainWindowForTextInput()
       }
     })
+    registerCatalogRepositoryIpc({
+      ipcMain,
+      isTrustedSender: (event) => event.senderId === mainWindow?.webContents.id,
+      getRepository: () => {
+        const store = tenantStoreController?.getActiveStore()
+        if (!store) throw new Error('Tenant store is unavailable')
+        return new CatalogRepository({ store, branchId: 'main-process-default' })
+      },
+    })
+    registerOrdersRepositoryIpc({
+      ipcMain,
+      isTrustedSender: (event) => event.senderId === mainWindow?.webContents.id,
+      getRepository: () => {
+        const store = tenantStoreController?.getActiveStore()
+        if (!store) throw new Error('Tenant store is unavailable')
+        return new OrdersRepository({ store, branchId: 'main-process-default' })
+      },
+    })
+    registerSalesFiscalRepositoryIpc({
+      ipcMain,
+      isTrustedSender: (event) => event.senderId === mainWindow?.webContents.id,
+      getRepository: () => {
+        const store = tenantStoreController?.getActiveStore()
+        if (!store) throw new Error('Tenant store is unavailable')
+        return new SalesFiscalRepository({ store, branchId: 'main-process-default' })
+      },
+    })
+    registerCashPurchaseRepositoryIpc({ ipcMain, isTrustedSender: (event) => event.senderId === mainWindow?.webContents.id, getRepository: () => {
+      const store = tenantStoreController?.getActiveStore()
+      if (!store) throw new Error('Tenant store is unavailable')
+      return new CashPurchaseRepository({ store, branchId: 'main-process-default' })
+    } })
   })
 
   app.on('before-quit', () => {
+    tenantStoreController?.close()
+    tenantStoreController = null
     void lanEdgeServer?.close()
     lanEdgeServer = null
   })

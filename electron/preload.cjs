@@ -27,6 +27,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.send('window-maximize')
   },
   ensureInputFocus: () => ipcRenderer.invoke('window:ensure-input-focus'),
+  executeCatalogCommand: (command) => ipcRenderer.invoke('catalog-repository:execute', command),
+  executeOrdersCommand: (command) => ipcRenderer.invoke('orders-repository:execute', command),
+  executeSalesFiscalCommand: (command) => ipcRenderer.invoke('sales-fiscal-repository:execute', command),
+  executeCashPurchaseCommand: (command) => ipcRenderer.invoke('cash-purchase-repository:execute', command),
   close: () => {
     console.log('preload: close called')
     ipcRenderer.send('window-close')
