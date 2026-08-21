@@ -15,10 +15,33 @@ function canonical(value: unknown): string {
 }
 
 export class SQLitePayrollSyncStore implements DurableSyncStore {
+  private active = true;
+
   constructor(
     private readonly db: DatabaseSync,
     private readonly tenantId: string
   ) {}
+
+  deactivate(): void {
+    this.active = false;
+  }
+
+  releaseClaims(): void {
+    this.db.prepare(`
+      UPDATE sync_outbox
+      SET status = 'pending'
+      WHERE tenant_id = ?
+        AND status = 'syncing'
+        AND (
+          table_name IN ('payroll_employees', 'payroll_payments', 'payroll_payment_adjustments')
+          OR (
+            table_name = 'gastos'
+            AND json_valid(payload_json) = 1
+            AND json_extract(payload_json, '$.expenseType') = 'payroll'
+          )
+        )
+    `).run(this.tenantId);
+  }
 
   get operations(): DurableOperation[] {
     return [];
@@ -31,6 +54,10 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
   }
 
   claim(nowMs: number): DurableOperation[] {
+    if (!this.active) {
+      return [];
+    }
+
     // We claim only pending payroll rows.
     // Payroll rows:
     // payroll_employees, payroll_payments, payroll_payment_adjustments,
@@ -152,6 +179,10 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
   }
 
   settle(id: string, status: DurableOperationStatus, result: Record<string, unknown> | null): void {
+    if (!this.active) {
+      return;
+    }
+
     if (status === "synced") {
       this.db.prepare("DELETE FROM sync_outbox WHERE id = ?").run(id);
     } else {

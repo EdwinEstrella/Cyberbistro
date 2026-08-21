@@ -5,11 +5,27 @@ import { fileURLToPath } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import electron from 'vite-plugin-electron/simple'
+import { notBundle } from 'vite-plugin-electron/plugin'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const ELECTRON_MAIN_EXTERNALS = [
+  'electron',
+  'electron-updater',
+  'electron-log',
+  '@insforge/sdk',
+  'socket.io-client',
+  'engine.io-client',
+  'ws',
+  'bufferutil',
+  'utf-8-validate',
+] as const
 const pkg = JSON.parse(
   fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8')
 ) as { version: string }
+
+function shouldExternalizeElectronMainDependency(id: string) {
+  return ELECTRON_MAIN_EXTERNALS.some((pkgName) => id === pkgName || id.startsWith(`${pkgName}/`))
+}
 
 function figmaAssetResolver() {
   return {
@@ -51,9 +67,18 @@ export default defineConfig(async () => ({
           startup()
         },
         vite: {
+          plugins: [
+            notBundle({
+              filter(id) {
+                return shouldExternalizeElectronMainDependency(id)
+              },
+            }),
+          ],
           build: {
             rollupOptions: {
-              external: ['electron', 'electron-updater', 'electron-log'],
+              external(id) {
+                return shouldExternalizeElectronMainDependency(id)
+              },
             },
           },
         },

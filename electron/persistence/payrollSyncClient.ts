@@ -1,4 +1,4 @@
-import { createClient, type InsForgeClient } from "@insforge/sdk";
+import type { InsForgeClient } from "@insforge/sdk";
 import { DurableOperation, PullBatch, ServerSyncClient } from "./syncWorker";
 
 type MutationError = {
@@ -20,18 +20,20 @@ type ClientOverride =
 type PushResponse = Awaited<ReturnType<ServerSyncClient["push"]>>;
 
 export class PayrollSyncClient implements ServerSyncClient {
-  private client: InsForgeClient | ClientOverride;
+  private clientPromise: Promise<InsForgeClient | ClientOverride>;
 
   constructor(clientOverride?: ClientOverride) {
     if (clientOverride) {
-      this.client = clientOverride;
+      this.clientPromise = Promise.resolve(clientOverride);
     } else {
       const url = process.env.VITE_INSFORGE_BASE_URL || process.env.INSFORGE_URL || "";
       const key = process.env.VITE_INSFORGE_ANON_KEY || process.env.INSFORGE_ANON_KEY || "";
       if (!url || !key) {
         throw new Error("Missing InsForge configuration in main process");
       }
-      this.client = createClient({ baseUrl: url, anonKey: key, isServerMode: true });
+      this.clientPromise = import("@insforge/sdk").then(({ createClient }) =>
+        createClient({ baseUrl: url, anonKey: key, isServerMode: true })
+      );
     }
   }
 
@@ -45,7 +47,8 @@ export class PayrollSyncClient implements ServerSyncClient {
       return { permanent: mapped.error };
     }
 
-    const { error } = await this.getTableClient(mapped.remoteTable)
+    const tableClient = await this.getTableClient(mapped.remoteTable);
+    const { error } = await tableClient
       .upsert(mapped.payload, { onConflict: "id" });
 
     if (error) {
@@ -68,7 +71,8 @@ export class PayrollSyncClient implements ServerSyncClient {
       return { permanent: mapped.error };
     }
 
-    const { error } = await this.getTableClient(mapped.remoteTable)
+    const tableClient = await this.getTableClient(mapped.remoteTable);
+    const { error } = await tableClient
       .delete()
       .eq("id", operation.rowId);
 
@@ -82,11 +86,13 @@ export class PayrollSyncClient implements ServerSyncClient {
     return { result: { deleted: true, remoteTable: mapped.remoteTable } };
   }
 
-  private getTableClient(table: string): RemoteMutationBuilder {
-    if ("database" in this.client) {
-      return this.client.database.from(table) as unknown as RemoteMutationBuilder;
+  private async getTableClient(table: string): Promise<RemoteMutationBuilder> {
+    const client = await this.clientPromise;
+
+    if ("database" in client) {
+      return client.database.from(table) as unknown as RemoteMutationBuilder;
     }
-    return this.client.from(table);
+    return client.from(table);
   }
 }
 

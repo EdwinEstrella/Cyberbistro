@@ -5,6 +5,7 @@ import { PayrollSyncClient } from "./payrollSyncClient";
 
 export class PayrollSyncOrchestrator {
   private worker: DurableSyncWorker | null = null;
+  private store: SQLitePayrollSyncStore | null = null;
   private intervalId: NodeJS.Timeout | null = null;
   private isSyncing = false;
   private stopRequested = false;
@@ -15,6 +16,7 @@ export class PayrollSyncOrchestrator {
     try {
       const store = new SQLitePayrollSyncStore(db, tenantId);
       const client = clientOverride || new PayrollSyncClient();
+      this.store = store;
       this.worker = new DurableSyncWorker(store, client, tenantId);
       
       this.intervalId = setInterval(() => this.triggerSync(), 30000);
@@ -22,6 +24,7 @@ export class PayrollSyncOrchestrator {
     } catch (err) {
       // Missing config or error - fail closed
       console.error("[PayrollSyncOrchestrator] failed to start:", err);
+      this.store = null;
       this.worker = null;
     }
   }
@@ -32,6 +35,9 @@ export class PayrollSyncOrchestrator {
       clearInterval(this.intervalId);
       this.intervalId = null;
     }
+    this.store?.releaseClaims();
+    this.store?.deactivate();
+    this.store = null;
     this.worker = null;
   }
 

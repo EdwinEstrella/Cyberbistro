@@ -127,6 +127,20 @@ describe("getRoleGuardDecision", () => {
       ).toEqual({ type: "allow" });
     }
   });
+
+  it("cajera puede abrir nómina", () => {
+    expect(
+      getRoleGuardDecision({
+        loading: false,
+        isAuthenticated: true,
+        userExists: true,
+        tenantId: "tenant-1",
+        rol: "cajera",
+        pathname: "/nomina",
+      })
+    ).toEqual({ type: "allow" });
+  });
+
   it("ventas no puede abrir entregas", () => {
     expect(
       getRoleGuardDecision({
@@ -160,6 +174,9 @@ describe("getRoleGuardDecision", () => {
     ).toEqual({ type: "allow" });
     expect(
       getRoleGuardDecision({ loading: false, isAuthenticated: true, userExists: true, tenantId: "tenant-1", rol: "contabilidad", pathname: "/inventario" })
+    ).toEqual({ type: "allow" });
+    expect(
+      getRoleGuardDecision({ loading: false, isAuthenticated: true, userExists: true, tenantId: "tenant-1", rol: "contabilidad", pathname: "/nomina" })
     ).toEqual({ type: "allow" });
     expect(
       getRoleGuardDecision({ loading: false, isAuthenticated: true, userExists: true, tenantId: "tenant-1", rol: "contabilidad", pathname: "/dashboard" })

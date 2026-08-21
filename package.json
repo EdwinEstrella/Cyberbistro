@@ -66,7 +66,8 @@
   "scripts": {
     "postinstall": "node scripts/patch-dev-electron-icon.cjs",
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && npm run verify:electron-main-externalization",
+    "verify:electron-main-externalization": "node scripts/verify-electron-main-externalization.cjs",
     "icon:build": "node scripts/build-icon.mjs && node scripts/patch-dev-electron-icon.cjs",
     "package": "npm run build && node scripts/clean-env.cjs electron-forge package",
     "make": "npm run build && node scripts/clean-env.cjs electron-forge make",
