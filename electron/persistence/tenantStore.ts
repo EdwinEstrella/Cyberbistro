@@ -16,6 +16,10 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     private readonly tenantId: string,
   ) {}
 
+  public getDatabase(): DatabaseSync {
+    return this.database;
+  }
+
   static open(input: { dataRoot: string; tenantId: string }): TenantStore {
     const directory = join(input.dataRoot, "tenant-stores");
     mkdirSync(directory, { recursive: true, mode: 0o700 });

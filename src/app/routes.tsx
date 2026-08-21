@@ -42,6 +42,7 @@ export const appRoutes = [
       { path: "/compras", lazy: () => import("../features/compras").then(({ Compras }) => ({ Component: () => <FeatureGuard feature="inventory_purchases"><Compras /></FeatureGuard> })) },
       { path: "/cuentas-pagar", lazy: () => import("../features/cuentas-pagar").then(({ CuentasPagar }) => ({ Component: () => <FeatureGuard feature="accounts_payable"><CuentasPagar /></FeatureGuard> })) },
       { path: "/cuentas-cobrar", lazy: () => import("../features/cuentas-cobrar").then(({ CuentasCobrar }) => ({ Component: () => <FeatureGuard feature="accounts_receivable"><CuentasCobrar /></FeatureGuard> })) },
+      { path: "/nomina", lazy: () => import("../features/nomina").then(({ Nomina }) => ({ Component: Nomina })) },
       { path: "/pedidos", lazy: () => import("../features/pedidos").then(({ Pedidos }) => ({ Component: () => <FeatureGuard feature="digital_menu"><Pedidos /></FeatureGuard> })) },
     ],
   },

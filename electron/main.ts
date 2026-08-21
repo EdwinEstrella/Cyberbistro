@@ -6,7 +6,8 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setupAutoUpdater } from './autoUpdater'
 import { startLanEdgeServer, type LanEdgeServerHandle } from './lanEdgeServer'
-import { registerCashPurchaseRepositoryIpc, registerCatalogRepositoryIpc, registerDesktopRepositoryIpc, registerOrdersRepositoryIpc, registerSalesFiscalRepositoryIpc, registerTenantStoreIpc } from './persistence/ipc'
+import { registerCashPurchaseRepositoryIpc, registerCatalogRepositoryIpc, registerDesktopRepositoryIpc, registerOrdersRepositoryIpc, registerSalesFiscalRepositoryIpc, registerTenantStoreIpc, registerPayrollRepositoryIpc } from './persistence/ipc'
+import { PayrollRepository } from './persistence/payrollRepository'
 import { TenantStoreController } from './persistence/tenantStore'
 import { DesktopRepository } from '../src/shared/lib/desktopRepository'
 import { CatalogRepository } from './persistence/catalogRepository'
@@ -547,6 +548,61 @@ if (gotTheLock) {
       if (!store) throw new Error('Tenant store is unavailable')
       return new CashPurchaseRepository({ store, branchId: 'main-process-default' })
     } })
+    registerPayrollRepositoryIpc({
+      ipcMain,
+      isTrustedSender: (event) => event.senderId === mainWindow?.webContents.id,
+      executeCommand: async (command: any) => {
+        const store = tenantStoreController?.getActiveStore()
+        if (!store) throw new Error('Tenant store is unavailable')
+        const repo = new PayrollRepository(store.getDatabase())
+        
+        switch (command.type) {
+          case 'GET_EMPLOYEES': {
+            const rows = repo.getEmployees(command.tenantId, command.sucursalId)
+            const mapped = rows.map(r => ({
+              id: r.id,
+              firstName: r.first_name,
+              lastName: r.last_name,
+              role: r.role,
+              baseSalary: r.base_salary,
+              frequency: r.frequency,
+              isActive: r.is_active === 1
+            }))
+            return { type: 'EMPLOYEES_LIST', employees: mapped }
+          }
+          case 'UPSERT_EMPLOYEE': {
+            const rowPartial = {
+              id: command.employee.id,
+              first_name: command.employee.firstName,
+              last_name: command.employee.lastName,
+              role: command.employee.role,
+              base_salary: command.employee.baseSalary,
+              frequency: command.employee.frequency,
+              is_active: command.employee.isActive ? 1 : 0
+            }
+            return { type: 'ID_RETURNED', id: repo.upsertEmployee(command.tenantId, command.sucursalId, rowPartial) }
+          }
+          case 'DISABLE_EMPLOYEE':
+            repo.disableEmployee(command.tenantId, command.sucursalId, command.employeeId)
+            return { type: 'SUCCESS' }
+          case 'CREATE_PAYMENT': {
+            const payloadMap = {
+              employee_id: command.payload.employeeId,
+              period: command.payload.period,
+              frequency: command.payload.frequency,
+              base_amount: command.payload.baseAmount,
+              amount_paid: command.payload.amountPaid,
+              pending_amount: command.payload.pendingAmount,
+              receipt_snapshot: command.payload.receiptSnapshot,
+              adjustments: command.payload.adjustments
+            }
+            return { type: 'ID_RETURNED', id: repo.createPayment(command.tenantId, command.sucursalId, payloadMap) }
+          }
+          default:
+            throw new Error(`Unknown payroll command: ${command.type}`)
+        }
+      }
+    })
   })
 
   app.on('before-quit', () => {

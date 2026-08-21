@@ -69,6 +69,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   executeOrdersCommand: (command: unknown) => ipcRenderer.invoke('orders-repository:execute', command),
   executeSalesFiscalCommand: (command: unknown) => ipcRenderer.invoke('sales-fiscal-repository:execute', command),
   executeCashPurchaseCommand: (command: unknown) => ipcRenderer.invoke('cash-purchase-repository:execute', command),
+  executePayrollCommand: (command: unknown) => ipcRenderer.invoke('payroll-repository:execute', command),
   importLegacyIndexedDb: (payload: unknown) => ipcRenderer.invoke('tenant-store:import-indexeddb', payload),
   close: () => {
     console.log('preload: close called')

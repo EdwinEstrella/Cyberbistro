@@ -188,6 +188,42 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
       local_status TEXT NOT NULL CHECK (local_status IN ('committed', 'pending_sync')),
       FOREIGN KEY (compra_id, tenant_id, sucursal_id) REFERENCES compras (id, tenant_id, sucursal_id)
     ) STRICT;
+    CREATE TABLE IF NOT EXISTS payroll_employees (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL REFERENCES tenants(id),
+      sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
+      first_name TEXT NOT NULL,
+      last_name TEXT NOT NULL,
+      role TEXT NOT NULL,
+      base_salary REAL NOT NULL CHECK (base_salary >= 0),
+      frequency TEXT NOT NULL CHECK (frequency IN ('weekly', 'biweekly', 'monthly')),
+      is_active INTEGER NOT NULL CHECK (is_active IN (0, 1)),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS payroll_payments (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL REFERENCES tenants(id),
+      sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
+      employee_id TEXT NOT NULL REFERENCES payroll_employees(id),
+      period TEXT NOT NULL,
+      frequency TEXT NOT NULL,
+      base_amount REAL NOT NULL CHECK (base_amount >= 0),
+      amount_paid REAL NOT NULL CHECK (amount_paid >= 0),
+      pending_amount REAL NOT NULL CHECK (pending_amount >= 0),
+      receipt_snapshot TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS payroll_payment_adjustments (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL REFERENCES tenants(id),
+      payment_id TEXT NOT NULL REFERENCES payroll_payments(id),
+      kind TEXT NOT NULL,
+      type TEXT NOT NULL,
+      amount REAL NOT NULL CHECK (amount > 0),
+      note TEXT,
+      apply_mode TEXT NOT NULL
+    ) STRICT;
     CREATE INDEX IF NOT EXISTS idx_comandas_branch_state ON comandas (tenant_id, sucursal_id, state);
     CREATE INDEX IF NOT EXISTS idx_consumos_comanda ON consumos (comanda_id, state);
     CREATE INDEX IF NOT EXISTS idx_cierres_open ON cierres_operativos (tenant_id, sucursal_id, state);

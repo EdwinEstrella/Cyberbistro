@@ -11,6 +11,7 @@ export const CATALOG_REPOSITORY_EXECUTE_CHANNEL = "catalog-repository:execute";
 export const ORDERS_REPOSITORY_EXECUTE_CHANNEL = "orders-repository:execute";
 export const FISCAL_SALES_REPOSITORY_EXECUTE_CHANNEL = "sales-fiscal-repository:execute";
 export const CASH_PURCHASE_REPOSITORY_EXECUTE_CHANNEL = "cash-purchase-repository:execute";
+export const PAYROLL_REPOSITORY_EXECUTE_CHANNEL = "payroll-repository:execute";
 
 export interface TenantStoreIpcMain {
   handle(channel: string, handler: (event: { senderId: number }, payload?: unknown) => unknown): void;
@@ -35,6 +36,21 @@ export interface SalesFiscalRepositoryIpcMain {
   removeHandler(channel: string): void;
 }
 export interface CashPurchaseRepositoryIpcMain { handle(channel: string, handler: (event: { senderId: number }, payload?: unknown) => unknown): void; removeHandler(channel: string): void; }
+export interface PayrollRepositoryIpcMain { handle(channel: string, handler: (event: { senderId: number }, payload?: unknown) => unknown): void; removeHandler(channel: string): void; }
+
+export function registerPayrollRepositoryIpc(input: {
+  ipcMain: PayrollRepositoryIpcMain;
+  isTrustedSender: (event: { senderId: number }) => boolean;
+  executeCommand: (command: any) => Promise<any>;
+}): void {
+  input.ipcMain.removeHandler(PAYROLL_REPOSITORY_EXECUTE_CHANNEL);
+  input.ipcMain.handle(PAYROLL_REPOSITORY_EXECUTE_CHANNEL, async (event, payload) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    const command = parsePayrollCommand(payload);
+    if (!command) throw new Error("Invalid payroll command");
+    return { ok: true, data: await input.executeCommand(command) };
+  });
+}
 
 export function registerCashPurchaseRepositoryIpc(input: { ipcMain: CashPurchaseRepositoryIpcMain; isTrustedSender: (event: { senderId: number }) => boolean; getRepository: () => { execute(command: CashPurchaseCommand): CashPurchaseRepositoryResult } }): void {
   input.ipcMain.removeHandler(CASH_PURCHASE_REPOSITORY_EXECUTE_CHANNEL);
@@ -181,4 +197,16 @@ function parseCashPurchaseCommand(payload: unknown): CashPurchaseCommand | null 
   const text = (key: string) => typeof command[key] === "string" && command[key].length > 0 && command[key].length <= 256;
   if (Object.keys(command).length !== keys.length || !Object.keys(command).every((key) => keys.includes(key)) || command.type !== "purchase.cash.create" || !keys.slice(1, 7).every(text)) return null;
   return typeof command.quantity === "number" && Number.isFinite(command.quantity) && command.quantity > 0 && typeof command.unitCost === "number" && Number.isFinite(command.unitCost) && command.unitCost >= 0 ? command as CashPurchaseCommand : null;
+}
+
+function parsePayrollCommand(payload: unknown): any | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const command = payload as Record<string, unknown>;
+  const text = (key: string) => typeof command[key] === "string" && command[key].length > 0 && command[key].length <= 256;
+  if (!text("type") || !text("tenantId") || !text("sucursalId")) return null;
+  if (command.type === "GET_EMPLOYEES") return command;
+  if (command.type === "UPSERT_EMPLOYEE" && typeof command.employee === "object" && command.employee !== null) return command;
+  if (command.type === "DISABLE_EMPLOYEE" && text("employeeId")) return command;
+  if (command.type === "CREATE_PAYMENT" && typeof command.payload === "object" && command.payload !== null) return command;
+  return null;
 }

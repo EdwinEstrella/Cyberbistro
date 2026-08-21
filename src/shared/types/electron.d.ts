@@ -82,6 +82,7 @@ export interface ElectronAPI {
   executeOrdersCommand?: (command: import("../lib/ordersContracts").OrdersCommand) => Promise<{ ok: true; data: import("../lib/ordersContracts").OrdersRepositoryResult }>;
   executeSalesFiscalCommand?: (command: import("../../../electron/persistence/salesFiscalRepository").SalesFiscalCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/salesFiscalRepository").SalesFiscalRepositoryResult }>;
   executeCashPurchaseCommand?: (command: import("../../../electron/persistence/cashPurchaseRepository").CashPurchaseCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/cashPurchaseRepository").CashPurchaseRepositoryResult }>;
+  executePayrollCommand?: (command: unknown) => Promise<{ ok: true; data: any }>;
   importLegacyIndexedDb?: (payload: unknown) => Promise<{ ok: true; data: { tenantId: string; importedRows: number; recoveredOutbox: number } }>;
   close: () => void;
   getVersions: () => NodeJS.ProcessVersions;
