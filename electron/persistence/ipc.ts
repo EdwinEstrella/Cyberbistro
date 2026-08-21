@@ -1,6 +1,12 @@
 import type { DesktopCommand, DesktopRepositoryResult } from "../../src/shared/lib/desktopRepository";
 import type { CatalogCommand, CatalogRepositoryResult } from "../../src/shared/lib/catalogContracts";
 import type { OrdersCommand, OrdersRepositoryResult } from "../../src/shared/lib/ordersContracts";
+import {
+  PAYROLL_ADJUSTMENT_KINDS,
+  PAYROLL_ADJUSTMENT_SCOPES,
+  PAYROLL_FREQUENCIES,
+  type PayrollCommand,
+} from "../../src/shared/lib/payrollContracts";
 import type { SalesFiscalCommand, SalesFiscalRepositoryResult } from "./salesFiscalRepository";
 import type { CashPurchaseCommand, CashPurchaseRepositoryResult } from "./cashPurchaseRepository";
 
@@ -41,7 +47,7 @@ export interface PayrollRepositoryIpcMain { handle(channel: string, handler: (ev
 export function registerPayrollRepositoryIpc(input: {
   ipcMain: PayrollRepositoryIpcMain;
   isTrustedSender: (event: { senderId: number }) => boolean;
-  executeCommand: (command: any) => Promise<any>;
+  executeCommand: (command: PayrollCommand) => Promise<unknown>;
 }): void {
   input.ipcMain.removeHandler(PAYROLL_REPOSITORY_EXECUTE_CHANNEL);
   input.ipcMain.handle(PAYROLL_REPOSITORY_EXECUTE_CHANNEL, async (event, payload) => {
@@ -199,14 +205,112 @@ function parseCashPurchaseCommand(payload: unknown): CashPurchaseCommand | null 
   return typeof command.quantity === "number" && Number.isFinite(command.quantity) && command.quantity > 0 && typeof command.unitCost === "number" && Number.isFinite(command.unitCost) && command.unitCost >= 0 ? command as CashPurchaseCommand : null;
 }
 
-function parsePayrollCommand(payload: unknown): any | null {
+function parsePayrollCommand(payload: unknown): PayrollCommand | null {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
   const command = payload as Record<string, unknown>;
-  const text = (key: string) => typeof command[key] === "string" && command[key].length > 0 && command[key].length <= 256;
-  if (!text("type") || !text("tenantId") || !text("sucursalId")) return null;
-  if (command.type === "GET_EMPLOYEES") return command;
-  if (command.type === "UPSERT_EMPLOYEE" && typeof command.employee === "object" && command.employee !== null) return command;
-  if (command.type === "DISABLE_EMPLOYEE" && text("employeeId")) return command;
-  if (command.type === "CREATE_PAYMENT" && typeof command.payload === "object" && command.payload !== null) return command;
+  if (!isNonEmptyText(command.tenantId) || !isNonEmptyText(command.sucursalId) || !isNonEmptyText(command.type)) return null;
+
+  if (command.type === "payroll.getEmployees") {
+    return command as PayrollCommand;
+  }
+
+  if (command.type === "payroll.disableEmployee") {
+    return isExactObject(payload, ["type", "tenantId", "sucursalId", "employeeId"]) && isNonEmptyText(command.employeeId)
+      ? (command as PayrollCommand)
+      : null;
+  }
+
+  if (command.type === "payroll.upsertEmployee") {
+    if (!isExactObject(payload, ["type", "tenantId", "sucursalId", "employee"])) return null;
+    return isValidPayrollEmployee(command.employee) ? (command as PayrollCommand) : null;
+  }
+
+  if (command.type === "payroll.getPaymentContext") {
+    if (!isExactObject(payload, ["type", "tenantId", "sucursalId", "payload"])) return null;
+    return isValidPaymentContextPayload(command.payload, false) ? (command as PayrollCommand) : null;
+  }
+
+  if (command.type === "payroll.createPayment") {
+    if (!isExactObject(payload, ["type", "tenantId", "sucursalId", "payload"])) return null;
+    return isValidPaymentContextPayload(command.payload, true) ? (command as PayrollCommand) : null;
+  }
+
   return null;
+}
+
+function isValidPayrollEmployee(value: unknown): boolean {
+  if (!isExactObject(value, ["id", "firstName", "lastName", "role", "baseSalaryCents", "frequency", "isActive"])) return false;
+  const employee = value as Record<string, unknown>;
+  return (
+    (employee.id === undefined || isNonEmptyText(employee.id)) &&
+    isNonEmptyText(employee.firstName) &&
+    isNonEmptyText(employee.lastName) &&
+    isNonEmptyText(employee.role) &&
+    isCents(employee.baseSalaryCents) &&
+    isPayrollFrequency(employee.frequency) &&
+    typeof employee.isActive === "boolean"
+  );
+}
+
+function isValidPaymentContextPayload(value: unknown, requirePaymentAmount: boolean): boolean {
+  const keys = requirePaymentAmount
+    ? ["employeeId", "period", "frequency", "paymentAmountCents", "receiptSnapshot", "adjustments"]
+    : ["employeeId", "period", "frequency", "adjustments"];
+
+  if (!isExactObject(value, keys)) return false;
+  const payload = value as Record<string, unknown>;
+
+  return (
+    isNonEmptyText(payload.employeeId) &&
+    isValidPayrollPeriod(payload.period, payload.frequency) &&
+    isPayrollFrequency(payload.frequency) &&
+    (!requirePaymentAmount || isCents(payload.paymentAmountCents)) &&
+    (!requirePaymentAmount || typeof payload.receiptSnapshot === "string") &&
+    Array.isArray(payload.adjustments) &&
+    payload.adjustments.every(isValidAdjustment)
+  );
+}
+
+function isValidAdjustment(value: unknown): boolean {
+  if (!isExactObject(value, ["kind", "type", "scope", "amountCents", "note"])) return false;
+  const adjustment = value as Record<string, unknown>;
+  if (!PAYROLL_ADJUSTMENT_KINDS.includes(adjustment.kind as (typeof PAYROLL_ADJUSTMENT_KINDS)[number])) return false;
+  if (!PAYROLL_ADJUSTMENT_SCOPES.includes(adjustment.scope as (typeof PAYROLL_ADJUSTMENT_SCOPES)[number])) return false;
+  if (!isNonEmptyText(adjustment.type) || !isCents(adjustment.amountCents) || typeof adjustment.note !== "string") return false;
+  if (adjustment.kind === "discount" && adjustment.note.trim().length === 0) return false;
+  return true;
+}
+
+function isExactObject(value: unknown, keys: string[], allowUndefinedKeys = true): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  const valueKeys = Object.keys(record);
+  if (!valueKeys.every((key) => keys.includes(key))) return false;
+  if (!allowUndefinedKeys && !keys.every((key) => key in record)) return false;
+  for (const key of valueKeys) {
+    const nestedValue = record[key];
+    if (nestedValue && typeof nestedValue === "object" && !Array.isArray(nestedValue) && key !== "employee" && key !== "payload") {
+      return false;
+    }
+  }
+  return true;
+}
+
+function isNonEmptyText(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= 256;
+}
+
+function isCents(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+function isPayrollFrequency(value: unknown): boolean {
+  return PAYROLL_FREQUENCIES.includes(value as (typeof PAYROLL_FREQUENCIES)[number]);
+}
+
+function isValidPayrollPeriod(period: unknown, frequency: unknown): boolean {
+  if (typeof period !== "string" || !isPayrollFrequency(frequency)) return false;
+  if (frequency === "monthly") return /^\d{4}-\d{2}$/.test(period);
+  if (frequency === "biweekly") return /^\d{4}-\d{2}-(1|2)$/.test(period);
+  return /^\d{4}-W(0[1-9]|[1-4][0-9]|5[0-3])$/.test(period);
 }

@@ -178,16 +178,6 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
       unit_cost REAL NOT NULL CHECK (unit_cost >= 0),
       FOREIGN KEY (compra_id, tenant_id, sucursal_id) REFERENCES compras (id, tenant_id, sucursal_id)
     ) STRICT;
-    CREATE TABLE IF NOT EXISTS gastos (
-      id TEXT PRIMARY KEY,
-      tenant_id TEXT NOT NULL REFERENCES tenants(id),
-      sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
-      compra_id TEXT NOT NULL UNIQUE REFERENCES compras(id),
-      payment_method TEXT NOT NULL CHECK (payment_method = 'cash'),
-      amount REAL NOT NULL CHECK (amount >= 0),
-      local_status TEXT NOT NULL CHECK (local_status IN ('committed', 'pending_sync')),
-      FOREIGN KEY (compra_id, tenant_id, sucursal_id) REFERENCES compras (id, tenant_id, sucursal_id)
-    ) STRICT;
     CREATE TABLE IF NOT EXISTS payroll_employees (
       id TEXT PRIMARY KEY,
       tenant_id TEXT NOT NULL REFERENCES tenants(id),
@@ -195,7 +185,7 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
       first_name TEXT NOT NULL,
       last_name TEXT NOT NULL,
       role TEXT NOT NULL,
-      base_salary REAL NOT NULL CHECK (base_salary >= 0),
+      base_salary_cents INTEGER NOT NULL CHECK (base_salary_cents >= 0),
       frequency TEXT NOT NULL CHECK (frequency IN ('weekly', 'biweekly', 'monthly')),
       is_active INTEGER NOT NULL CHECK (is_active IN (0, 1)),
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -207,22 +197,46 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
       sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
       employee_id TEXT NOT NULL REFERENCES payroll_employees(id),
       period TEXT NOT NULL,
-      frequency TEXT NOT NULL,
-      base_amount REAL NOT NULL CHECK (base_amount >= 0),
-      amount_paid REAL NOT NULL CHECK (amount_paid >= 0),
-      pending_amount REAL NOT NULL CHECK (pending_amount >= 0),
+      frequency TEXT NOT NULL CHECK (frequency IN ('weekly', 'biweekly', 'monthly')),
+      base_salary_cents INTEGER NOT NULL CHECK (base_salary_cents >= 0),
+      period_salary_cents INTEGER NOT NULL CHECK (period_salary_cents >= 0),
+      adjustments_delta_cents INTEGER NOT NULL,
+      total_due_cents INTEGER NOT NULL CHECK (total_due_cents >= 0),
+      amount_paid_cents INTEGER NOT NULL CHECK (amount_paid_cents >= 0),
+      pending_cents INTEGER NOT NULL CHECK (pending_cents >= 0),
       receipt_snapshot TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     ) STRICT;
     CREATE TABLE IF NOT EXISTS payroll_payment_adjustments (
       id TEXT PRIMARY KEY,
       tenant_id TEXT NOT NULL REFERENCES tenants(id),
+      sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
       payment_id TEXT NOT NULL REFERENCES payroll_payments(id),
-      kind TEXT NOT NULL,
+      period TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('bonus', 'discount')),
       type TEXT NOT NULL,
-      amount REAL NOT NULL CHECK (amount > 0),
-      note TEXT,
-      apply_mode TEXT NOT NULL
+      scope TEXT NOT NULL CHECK (scope IN ('currentPayment', 'nextPayment')),
+      amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+      note TEXT NOT NULL
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS gastos (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL REFERENCES tenants(id),
+      sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
+      compra_id TEXT UNIQUE REFERENCES compras(id),
+      payroll_payment_id TEXT UNIQUE REFERENCES payroll_payments(id),
+      expense_type TEXT NOT NULL CHECK (expense_type IN ('purchase', 'payroll')),
+      payment_method TEXT NOT NULL CHECK (payment_method = 'cash'),
+      amount REAL,
+      amount_cents INTEGER,
+      local_status TEXT NOT NULL CHECK (local_status IN ('committed', 'pending_sync')),
+      description TEXT,
+      CHECK (
+        (expense_type = 'purchase' AND compra_id IS NOT NULL AND payroll_payment_id IS NULL AND amount IS NOT NULL AND amount >= 0 AND amount_cents IS NULL)
+        OR
+        (expense_type = 'payroll' AND compra_id IS NULL AND payroll_payment_id IS NOT NULL AND amount IS NULL AND amount_cents IS NOT NULL AND amount_cents >= 0)
+      ),
+      FOREIGN KEY (compra_id, tenant_id, sucursal_id) REFERENCES compras (id, tenant_id, sucursal_id)
     ) STRICT;
     CREATE INDEX IF NOT EXISTS idx_comandas_branch_state ON comandas (tenant_id, sucursal_id, state);
     CREATE INDEX IF NOT EXISTS idx_consumos_comanda ON consumos (comanda_id, state);
@@ -232,6 +246,172 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
     CREATE INDEX IF NOT EXISTS idx_fiscal_outbox_pending ON fiscal_outbox (tenant_id, sucursal_id, status);
     CREATE INDEX IF NOT EXISTS idx_compras_tenant_branch ON compras (tenant_id, sucursal_id);
     CREATE INDEX IF NOT EXISTS idx_movimientos_inventario_purchase ON movimientos_inventario (compra_id, inventory_product_id);
+    CREATE INDEX IF NOT EXISTS idx_payroll_payments_employee_period ON payroll_payments (tenant_id, sucursal_id, employee_id, period);
+    CREATE INDEX IF NOT EXISTS idx_payroll_adjustments_payment ON payroll_payment_adjustments (payment_id);
+    CREATE INDEX IF NOT EXISTS idx_gastos_payroll_payment ON gastos (payroll_payment_id);
+  `);
+  migrateLegacyPayrollSchema(database);
+  database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_payroll_payments_employee_period ON payroll_payments (tenant_id, sucursal_id, employee_id, period);
+    CREATE INDEX IF NOT EXISTS idx_payroll_adjustments_payment ON payroll_payment_adjustments (payment_id);
+    CREATE INDEX IF NOT EXISTS idx_gastos_payroll_payment ON gastos (payroll_payment_id);
   `);
   database.exec("UPDATE sync_outbox SET status = 'pending' WHERE status = 'syncing';");
+}
+
+function migrateLegacyPayrollSchema(database: DatabaseSync): void {
+  ensureTableShape(database, "payroll_employees", (columns) => columns.includes("base_salary_cents"), () => {
+    recreateTable(database, "payroll_employees", `
+      CREATE TABLE payroll_employees (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id),
+        sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
+        first_name TEXT NOT NULL,
+        last_name TEXT NOT NULL,
+        role TEXT NOT NULL,
+        base_salary_cents INTEGER NOT NULL CHECK (base_salary_cents >= 0),
+        frequency TEXT NOT NULL CHECK (frequency IN ('weekly', 'biweekly', 'monthly')),
+        is_active INTEGER NOT NULL CHECK (is_active IN (0, 1)),
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) STRICT;
+    `, `
+      INSERT INTO payroll_employees (id, tenant_id, sucursal_id, first_name, last_name, role, base_salary_cents, frequency, is_active, created_at, updated_at)
+      SELECT id, tenant_id, sucursal_id, first_name, last_name, role, CAST(ROUND(COALESCE(base_salary, 0) * 100) AS INTEGER), frequency, COALESCE(is_active, 1), CURRENT_TIMESTAMP, COALESCE(updated_at, CURRENT_TIMESTAMP)
+      FROM __old_table__;
+    `);
+  });
+
+  ensureTableShape(database, "payroll_payments", (columns) => columns.includes("amount_paid_cents"), () => {
+    recreateTable(database, "payroll_payments", `
+      CREATE TABLE payroll_payments (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id),
+        sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
+        employee_id TEXT NOT NULL REFERENCES payroll_employees(id),
+        period TEXT NOT NULL,
+        frequency TEXT NOT NULL CHECK (frequency IN ('weekly', 'biweekly', 'monthly')),
+        base_salary_cents INTEGER NOT NULL CHECK (base_salary_cents >= 0),
+        period_salary_cents INTEGER NOT NULL CHECK (period_salary_cents >= 0),
+        adjustments_delta_cents INTEGER NOT NULL,
+        total_due_cents INTEGER NOT NULL CHECK (total_due_cents >= 0),
+        amount_paid_cents INTEGER NOT NULL CHECK (amount_paid_cents >= 0),
+        pending_cents INTEGER NOT NULL CHECK (pending_cents >= 0),
+        receipt_snapshot TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) STRICT;
+    `, `
+      INSERT INTO payroll_payments (id, tenant_id, sucursal_id, employee_id, period, frequency, base_salary_cents, period_salary_cents, adjustments_delta_cents, total_due_cents, amount_paid_cents, pending_cents, receipt_snapshot, created_at)
+      SELECT
+        id,
+        tenant_id,
+        sucursal_id,
+        employee_id,
+        period,
+        frequency,
+        CAST(ROUND(COALESCE(base_amount, 0) * 100) AS INTEGER),
+        CAST(ROUND(COALESCE(base_amount, 0) * 100) AS INTEGER),
+        0,
+        CAST(ROUND(COALESCE(base_amount, 0) * 100) AS INTEGER),
+        CAST(ROUND(COALESCE(amount_paid, 0) * 100) AS INTEGER),
+        CAST(ROUND(COALESCE(pending_amount, 0) * 100) AS INTEGER),
+        receipt_snapshot,
+        COALESCE(created_at, CURRENT_TIMESTAMP)
+      FROM __old_table__;
+    `);
+  });
+
+  ensureTableShape(database, "payroll_payment_adjustments", (columns) => columns.includes("amount_cents") && columns.includes("scope") && columns.includes("sucursal_id"), () => {
+    recreateTable(database, "payroll_payment_adjustments", `
+      CREATE TABLE payroll_payment_adjustments (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id),
+        sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
+        payment_id TEXT NOT NULL REFERENCES payroll_payments(id),
+        period TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('bonus', 'discount')),
+        type TEXT NOT NULL,
+        scope TEXT NOT NULL CHECK (scope IN ('currentPayment', 'nextPayment')),
+        amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+        note TEXT NOT NULL
+      ) STRICT;
+    `, `
+      INSERT INTO payroll_payment_adjustments (id, tenant_id, sucursal_id, payment_id, period, kind, type, scope, amount_cents, note)
+      SELECT
+        a.id,
+        a.tenant_id,
+        p.sucursal_id,
+        a.payment_id,
+        p.period,
+        CASE WHEN a.kind = 'deduction' THEN 'discount' ELSE a.kind END,
+        a.type,
+        CASE WHEN a.apply_mode = 'next_payment' THEN 'nextPayment' ELSE 'currentPayment' END,
+        CAST(ROUND(COALESCE(a.amount, 0) * 100) AS INTEGER),
+        COALESCE(a.note, '')
+      FROM __old_table__ a
+      JOIN payroll_payments p ON p.id = a.payment_id;
+    `);
+  });
+
+  ensureTableShape(database, "gastos", (columns) => columns.includes("expense_type") && columns.includes("payroll_payment_id") && columns.includes("amount_cents"), () => {
+    recreateTable(database, "gastos", `
+      CREATE TABLE gastos (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id),
+        sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
+        compra_id TEXT UNIQUE REFERENCES compras(id),
+        payroll_payment_id TEXT UNIQUE REFERENCES payroll_payments(id),
+        expense_type TEXT NOT NULL CHECK (expense_type IN ('purchase', 'payroll')),
+        payment_method TEXT NOT NULL CHECK (payment_method = 'cash'),
+        amount REAL,
+        amount_cents INTEGER,
+        local_status TEXT NOT NULL CHECK (local_status IN ('committed', 'pending_sync')),
+        description TEXT,
+        CHECK (
+          (expense_type = 'purchase' AND compra_id IS NOT NULL AND payroll_payment_id IS NULL AND amount IS NOT NULL AND amount >= 0 AND amount_cents IS NULL)
+          OR
+          (expense_type = 'payroll' AND compra_id IS NULL AND payroll_payment_id IS NOT NULL AND amount IS NULL AND amount_cents IS NOT NULL AND amount_cents >= 0)
+        ),
+        FOREIGN KEY (compra_id, tenant_id, sucursal_id) REFERENCES compras (id, tenant_id, sucursal_id)
+      ) STRICT;
+    `, `
+      INSERT INTO gastos (id, tenant_id, sucursal_id, compra_id, payroll_payment_id, expense_type, payment_method, amount, amount_cents, local_status, description)
+      SELECT id, tenant_id, sucursal_id, compra_id, NULL, 'purchase', payment_method, amount, NULL, local_status, NULL
+      FROM __old_table__;
+    `);
+  });
+}
+
+function ensureTableShape(
+  database: DatabaseSync,
+  tableName: string,
+  isValid: (columns: string[]) => boolean,
+  migrate: () => void,
+): void {
+  const columns = getTableColumns(database, tableName);
+  if (columns.length === 0 || isValid(columns)) return;
+  migrate();
+}
+
+function getTableColumns(database: DatabaseSync, tableName: string): string[] {
+  return (database.prepare(`PRAGMA table_info(${tableName});`).all() as Array<{ name: string }>).map((column) => column.name);
+}
+
+function recreateTable(database: DatabaseSync, tableName: string, createSql: string, copySql: string): void {
+  const tempTableName = `${tableName}__legacy_migration`;
+  database.exec("PRAGMA foreign_keys = OFF;");
+  database.exec("BEGIN IMMEDIATE;");
+
+  try {
+    database.exec(`ALTER TABLE ${tableName} RENAME TO ${tempTableName};`);
+    database.exec(createSql);
+    database.exec(copySql.replace(/__old_table__/g, tempTableName));
+    database.exec(`DROP TABLE ${tempTableName};`);
+    database.exec("COMMIT;");
+  } catch (error) {
+    database.exec("ROLLBACK;");
+    throw error;
+  } finally {
+    database.exec("PRAGMA foreign_keys = ON;");
+  }
 }

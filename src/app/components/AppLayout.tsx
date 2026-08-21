@@ -37,7 +37,7 @@ import { canUseFeature, type Feature } from "../../shared/lib/planFeatures";
 type SidebarItem = {
   readonly label: string;
   readonly path?: string;
-  readonly customIcon?: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras" | "cxp" | "cxc" | "pedidos" | "fiscal";
+  readonly customIcon?: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras" | "cxp" | "cxc" | "pedidos" | "fiscal" | "nomina";
   readonly icon?: string;
   readonly viewBox?: string;
   readonly feature?: Feature;
@@ -84,6 +84,7 @@ const sidebarSections: readonly SidebarSection[] = [
     items: [
       { label: "Analíticas", icon: svgPaths.p30837e80, viewBox: "0 0 18 18", path: "/billing" },
       { label: "Gastos", customIcon: "gastos", path: "/gastos" },
+      { label: "Nómina", customIcon: "nomina", path: "/nomina" },
       { label: "Cierre", customIcon: "cierre", path: "/cierre" },
       { label: "Cuentas por Pagar", customIcon: "cxp", path: "/cuentas-pagar", feature: "accounts_payable" },
       { label: "Cuentas por Cobrar", customIcon: "cxc", path: "/cuentas-cobrar", feature: "accounts_receivable" },
@@ -108,6 +109,7 @@ const routePrefetchers: Record<string, () => Promise<unknown>> = {
   "/tables": () => import("../../features/tables"),
   "/billing": () => import("../../features/billing"),
   "/gastos": () => import("../../features/gastos"),
+  "/nomina": () => import("../../features/nomina"),
   "/cierre": () => import("../../features/cierre"),
   "/cocina": () => import("../../features/cocina"),
   "/entregas": () => import("../../features/entregas"),
@@ -152,13 +154,13 @@ function filterMainNavForRol(rol: string | null): readonly SidebarSection[] {
   } else if (normalized === "cocina") {
     filtered = sidebarSections.map((s) => filterSectionItems(s, ["/cocina"]));
   } else if (normalized === "cajera") {
-    const allow = ["/dashboard", "/clientes", "/tables", "/gastos", "/cierre", "/cuentas-pagar", "/cuentas-cobrar", "/pedidos", "/fiscal", "/fiscal/activacion"];
+    const allow = ["/dashboard", "/clientes", "/tables", "/gastos", "/nomina", "/cierre", "/cuentas-pagar", "/cuentas-cobrar", "/pedidos", "/fiscal", "/fiscal/activacion"];
     filtered = sidebarSections.map((s) => filterSectionItems(s, allow));
   } else if (normalized === "mesero") {
     const allow = ["/camarera", "/entregas"];
     filtered = sidebarSections.map((s) => filterSectionItems(s, allow));
   } else if (normalized === "contabilidad") {
-    const allow = ["/billing", "/inventario", "/gastos", "/compras", "/cuentas-pagar", "/cuentas-cobrar", "/fiscal"];
+    const allow = ["/billing", "/inventario", "/gastos", "/nomina", "/compras", "/cuentas-pagar", "/cuentas-cobrar", "/fiscal"];
     filtered = sidebarSections.map((s) => filterSectionItems(s, allow));
   } else {
     filtered = sidebarSections.map((s) => filterSectionItems(s, ["/dashboard"]));
@@ -185,7 +187,7 @@ function filterMainNavForRol(rol: string | null): readonly SidebarSection[] {
   return filtered.filter((section) => section.items.length > 0);
 }
 
-function SidebarCustomIcon({ name }: { name: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras" | "cxp" | "cxc" | "pedidos" | "fiscal" }) {
+function SidebarCustomIcon({ name }: { name: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras" | "cxp" | "cxc" | "pedidos" | "fiscal" | "nomina" }) {
   if (name === "fiscal") {
     return (
       <svg className="shrink-0 size-[20px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden>
@@ -295,6 +297,15 @@ function SidebarCustomIcon({ name }: { name: "gastos" | "cocina" | "entregas" | 
         <path d="M17.21 9 19 6.44 14.09 3 9.88 9ZM9.09 4 5.58 9h4.3L12 6Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
         <rect x="3" y="9" width="18" height="12" rx="1" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
         <path d="M16 13h5v4h-5a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+      </svg>
+    );
+  }
+
+  if (name === "nomina") {
+    return (
+      <svg className="shrink-0 size-[20px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v18m9-9H3" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M7 7h10v10H7z" opacity="0.4" />
       </svg>
     );
   }

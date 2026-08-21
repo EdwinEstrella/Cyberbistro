@@ -8,6 +8,7 @@ import { setupAutoUpdater } from './autoUpdater'
 import { startLanEdgeServer, type LanEdgeServerHandle } from './lanEdgeServer'
 import { registerCashPurchaseRepositoryIpc, registerCatalogRepositoryIpc, registerDesktopRepositoryIpc, registerOrdersRepositoryIpc, registerSalesFiscalRepositoryIpc, registerTenantStoreIpc, registerPayrollRepositoryIpc } from './persistence/ipc'
 import { PayrollRepository } from './persistence/payrollRepository'
+import type { PayrollCommand } from '../src/shared/lib/payrollContracts'
 import { TenantStoreController } from './persistence/tenantStore'
 import { DesktopRepository } from '../src/shared/lib/desktopRepository'
 import { CatalogRepository } from './persistence/catalogRepository'
@@ -551,52 +552,27 @@ if (gotTheLock) {
     registerPayrollRepositoryIpc({
       ipcMain,
       isTrustedSender: (event) => event.senderId === mainWindow?.webContents.id,
-      executeCommand: async (command: any) => {
+      executeCommand: async (command: PayrollCommand) => {
         const store = tenantStoreController?.getActiveStore()
         if (!store) throw new Error('Tenant store is unavailable')
         const repo = new PayrollRepository(store.getDatabase())
         
         switch (command.type) {
-          case 'GET_EMPLOYEES': {
-            const rows = repo.getEmployees(command.tenantId, command.sucursalId)
-            const mapped = rows.map(r => ({
-              id: r.id,
-              firstName: r.first_name,
-              lastName: r.last_name,
-              role: r.role,
-              baseSalary: r.base_salary,
-              frequency: r.frequency,
-              isActive: r.is_active === 1
-            }))
-            return { type: 'EMPLOYEES_LIST', employees: mapped }
+          case 'payroll.getEmployees': {
+            return { type: 'payroll.employees', employees: repo.getEmployees(command.tenantId, command.sucursalId) }
           }
-          case 'UPSERT_EMPLOYEE': {
-            const rowPartial = {
-              id: command.employee.id,
-              first_name: command.employee.firstName,
-              last_name: command.employee.lastName,
-              role: command.employee.role,
-              base_salary: command.employee.baseSalary,
-              frequency: command.employee.frequency,
-              is_active: command.employee.isActive ? 1 : 0
-            }
-            return { type: 'ID_RETURNED', id: repo.upsertEmployee(command.tenantId, command.sucursalId, rowPartial) }
+          case 'payroll.upsertEmployee': {
+            return { type: 'payroll.employeeSaved', id: repo.upsertEmployee(command.tenantId, command.sucursalId, command.employee) }
           }
-          case 'DISABLE_EMPLOYEE':
+          case 'payroll.disableEmployee':
             repo.disableEmployee(command.tenantId, command.sucursalId, command.employeeId)
-            return { type: 'SUCCESS' }
-          case 'CREATE_PAYMENT': {
-            const payloadMap = {
-              employee_id: command.payload.employeeId,
-              period: command.payload.period,
-              frequency: command.payload.frequency,
-              base_amount: command.payload.baseAmount,
-              amount_paid: command.payload.amountPaid,
-              pending_amount: command.payload.pendingAmount,
-              receipt_snapshot: command.payload.receiptSnapshot,
-              adjustments: command.payload.adjustments
-            }
-            return { type: 'ID_RETURNED', id: repo.createPayment(command.tenantId, command.sucursalId, payloadMap) }
+            return { type: 'payroll.success' }
+          case 'payroll.getPaymentContext': {
+            return { type: 'payroll.paymentContext', context: repo.getPaymentContext(command.tenantId, command.sucursalId, command.payload) }
+          }
+          case 'payroll.createPayment': {
+            const result = repo.createPayment(command.tenantId, command.sucursalId, command.payload)
+            return { type: 'payroll.paymentCommitted', ...result }
           }
           default:
             throw new Error(`Unknown payroll command: ${command.type}`)
