@@ -40,7 +40,7 @@ export interface DurableSyncStore {
 }
 
 export interface ServerSyncClient {
-  push(operation: DurableOperation): Promise<{ result?: Record<string, unknown>; conflict?: { reason: string } }>;
+  push(operation: DurableOperation): Promise<{ result?: Record<string, unknown>; conflict?: { reason: string }; permanent?: Record<string, unknown> & { reason: string; retryable?: false } }>;
   pull(input: { tenantId: string; cursor: string | null }): Promise<PullBatch>;
 }
 
@@ -79,6 +79,11 @@ export class DurableSyncWorker {
       }
       try {
         const response = await this.server.push(operation);
+        if (response.permanent) {
+          this.store.settle(operation.id, "not_retryable", { ...response.permanent, retryable: false });
+          conflicted++;
+          continue;
+        }
         if (response.conflict || MANUAL_CONFLICT_TABLES.has(operation.tableName) && response.result?.["conflict"] === true) {
           this.store.settle(operation.id, "conflicted", response.conflict ?? response.result ?? { reason: "Manual conflict resolution required" });
           conflicted++;

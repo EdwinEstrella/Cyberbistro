@@ -562,20 +562,24 @@ if (gotTheLock) {
             return { type: 'payroll.employees', employees: repo.getEmployees(command.tenantId, command.sucursalId) }
           }
           case 'payroll.upsertEmployee': {
-            return { type: 'payroll.employeeSaved', id: repo.upsertEmployee(command.tenantId, command.sucursalId, command.employee) }
+            const result = { type: 'payroll.employeeSaved', id: repo.upsertEmployee(command.tenantId, command.sucursalId, command.employee) } as const;
+            tenantStoreController?.payrollSync.triggerSync().catch(console.error);
+            return result;
           }
           case 'payroll.disableEmployee':
             repo.disableEmployee(command.tenantId, command.sucursalId, command.employeeId)
+            tenantStoreController?.payrollSync.triggerSync().catch(console.error);
             return { type: 'payroll.success' }
           case 'payroll.getPaymentContext': {
             return { type: 'payroll.paymentContext', context: repo.getPaymentContext(command.tenantId, command.sucursalId, command.payload) }
           }
           case 'payroll.createPayment': {
             const result = repo.createPayment(command.tenantId, command.sucursalId, command.payload)
+            tenantStoreController?.payrollSync.triggerSync().catch(console.error);
             return { type: 'payroll.paymentCommitted', ...result }
           }
           default:
-            throw new Error(`Unknown payroll command: ${command.type}`)
+            throw new Error(`Unknown payroll command: ${(command as any).type}`)
         }
       }
     })

@@ -251,12 +251,20 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
     CREATE INDEX IF NOT EXISTS idx_gastos_payroll_payment ON gastos (payroll_payment_id);
   `);
   migrateLegacyPayrollSchema(database);
+  ensureSyncOutboxSchemaEvolution(database);
   database.exec(`
     CREATE INDEX IF NOT EXISTS idx_payroll_payments_employee_period ON payroll_payments (tenant_id, sucursal_id, employee_id, period);
     CREATE INDEX IF NOT EXISTS idx_payroll_adjustments_payment ON payroll_payment_adjustments (payment_id);
     CREATE INDEX IF NOT EXISTS idx_gastos_payroll_payment ON gastos (payroll_payment_id);
   `);
   database.exec("UPDATE sync_outbox SET status = 'pending' WHERE status = 'syncing';");
+}
+
+function ensureSyncOutboxSchemaEvolution(database: DatabaseSync): void {
+  const columns = getTableColumns(database, "sync_outbox");
+  if (!columns.includes("error_json")) {
+    database.exec("ALTER TABLE sync_outbox ADD COLUMN error_json TEXT;");
+  }
 }
 
 function migrateLegacyPayrollSchema(database: DatabaseSync): void {

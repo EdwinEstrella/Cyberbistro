@@ -58,70 +58,122 @@ export class PayrollRepository {
   public upsertEmployee(tenantId: string, sucursalId: string, employee: PayrollEmployeeDraft): string {
     const id = employee.id ?? randomUUID();
 
-    if (employee.id) {
+    this.db.exec("BEGIN IMMEDIATE;");
+
+    try {
+      if (employee.id) {
+        const result = this.db
+          .prepare(
+            `
+              UPDATE payroll_employees
+              SET first_name = ?, last_name = ?, role = ?, base_salary_cents = ?, frequency = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
+              WHERE id = ? AND tenant_id = ? AND sucursal_id = ?
+            `,
+          )
+          .run(
+            employee.firstName,
+            employee.lastName,
+            employee.role,
+            employee.baseSalaryCents,
+            employee.frequency,
+            Number(employee.isActive),
+            id,
+            tenantId,
+            sucursalId,
+          );
+
+        if ((result.changes ?? 0) === 0) {
+          throw new Error("Employee not found");
+        }
+      } else {
+        this.db
+          .prepare(
+            `
+              INSERT INTO payroll_employees (
+                id, tenant_id, sucursal_id, first_name, last_name, role, base_salary_cents, frequency, is_active
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `,
+          )
+          .run(
+            id,
+            tenantId,
+            sucursalId,
+            employee.firstName,
+            employee.lastName,
+            employee.role,
+            employee.baseSalaryCents,
+            employee.frequency,
+            Number(employee.isActive),
+          );
+      }
+
+      this.insertOutboxRow({
+        id: randomUUID(),
+        tenantId,
+        branchId: sucursalId,
+        tableName: "payroll_employees",
+        rowId: id,
+        payload: {
+          id,
+          sucursalId,
+          firstName: employee.firstName,
+          lastName: employee.lastName,
+          role: employee.role,
+          baseSalaryCents: employee.baseSalaryCents,
+          frequency: employee.frequency,
+          isActive: employee.isActive,
+        },
+      });
+
+      this.db.exec("COMMIT;");
+      return id;
+    } catch (error) {
+      this.db.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
+  public disableEmployee(tenantId: string, sucursalId: string, employeeId: string): void {
+    this.db.exec("BEGIN IMMEDIATE;");
+
+    try {
       const result = this.db
         .prepare(
           `
             UPDATE payroll_employees
-            SET first_name = ?, last_name = ?, role = ?, base_salary_cents = ?, frequency = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
+            SET is_active = 0, updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND tenant_id = ? AND sucursal_id = ?
           `,
         )
-        .run(
-          employee.firstName,
-          employee.lastName,
-          employee.role,
-          employee.baseSalaryCents,
-          employee.frequency,
-          Number(employee.isActive),
-          id,
-          tenantId,
-          sucursalId,
-        );
+        .run(employeeId, tenantId, sucursalId);
 
       if ((result.changes ?? 0) === 0) {
         throw new Error("Employee not found");
       }
 
-      return id;
-    }
-
-    this.db
-      .prepare(
-        `
-          INSERT INTO payroll_employees (
-            id, tenant_id, sucursal_id, first_name, last_name, role, base_salary_cents, frequency, is_active
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `,
-      )
-      .run(
-        id,
+      const employee = this.getEmployeeOrThrow(tenantId, sucursalId, employeeId);
+      this.insertOutboxRow({
+        id: randomUUID(),
         tenantId,
-        sucursalId,
-        employee.firstName,
-        employee.lastName,
-        employee.role,
-        employee.baseSalaryCents,
-        employee.frequency,
-        Number(employee.isActive),
-      );
+        branchId: sucursalId,
+        tableName: "payroll_employees",
+        rowId: employeeId,
+        payload: {
+          id: employeeId,
+          sucursalId,
+          firstName: employee.first_name,
+          lastName: employee.last_name,
+          role: employee.role,
+          baseSalaryCents: employee.base_salary_cents,
+          frequency: employee.frequency,
+          isActive: false,
+        },
+      });
 
-    return id;
-  }
-
-  public disableEmployee(tenantId: string, sucursalId: string, employeeId: string): void {
-    const result = this.db
-      .prepare(
-        `
-          UPDATE payroll_employees
-          SET is_active = 0, updated_at = CURRENT_TIMESTAMP
-          WHERE id = ? AND tenant_id = ? AND sucursal_id = ?
-        `,
-      )
-      .run(employeeId, tenantId, sucursalId);
-
-    if ((result.changes ?? 0) === 0) {
-      throw new Error("Employee not found");
+      this.db.exec("COMMIT;");
+    } catch (error) {
+      this.db.exec("ROLLBACK;");
+      throw error;
     }
   }
 
@@ -172,6 +224,8 @@ export class PayrollRepository {
       const expenseId = randomUUID();
       const adjustmentDeltaCents = sumImmediateAdjustmentDelta(payload.adjustments);
       const pendingCents = context.pendingCents - payload.paymentAmountCents;
+      const expenseDescription = `Payroll payment ${payload.period}`;
+      const expenseRecordedAt = new Date().toISOString();
 
       this.db
         .prepare(
@@ -266,7 +320,7 @@ export class PayrollRepository {
             ) VALUES (?, ?, ?, NULL, ?, 'payroll', 'cash', NULL, ?, 'pending_sync', ?)
           `,
         )
-        .run(expenseId, tenantId, sucursalId, paymentId, payload.paymentAmountCents, `Payroll payment ${payload.period}`);
+        .run(expenseId, tenantId, sucursalId, paymentId, payload.paymentAmountCents, expenseDescription);
 
       this.insertOutboxRow({
         id: `${paymentId}:payment`,
@@ -298,6 +352,8 @@ export class PayrollRepository {
           id: expenseId,
           payrollPaymentId: paymentId,
           expenseType: "payroll",
+          description: expenseDescription,
+          recordedAt: expenseRecordedAt,
           paymentMethod: "cash",
           amountCents: payload.paymentAmountCents,
           localStatus: "pending_sync",

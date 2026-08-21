@@ -39,3 +39,58 @@ CREATE TABLE IF NOT EXISTS nomina_pagos (
     gasto_id UUID, -- Reference to the gasto record created
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE IF EXISTS public.gastos
+    ADD COLUMN IF NOT EXISTS payroll_payment_id UUID,
+    ADD COLUMN IF NOT EXISTS payroll_sync_status TEXT;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'gastos_payroll_payment_id_fkey'
+    ) THEN
+        ALTER TABLE public.gastos
+            ADD CONSTRAINT gastos_payroll_payment_id_fkey
+            FOREIGN KEY (payroll_payment_id) REFERENCES public.nomina_pagos(id) ON DELETE SET NULL;
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'gastos_payroll_sync_status_valid'
+    ) THEN
+        ALTER TABLE public.gastos
+            ADD CONSTRAINT gastos_payroll_sync_status_valid
+            CHECK (payroll_sync_status IS NULL OR payroll_sync_status IN ('pending_sync', 'committed'));
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'gastos_payroll_columns_consistent'
+    ) THEN
+        ALTER TABLE public.gastos
+            ADD CONSTRAINT gastos_payroll_columns_consistent
+            CHECK (
+                (payroll_payment_id IS NULL AND payroll_sync_status IS NULL)
+                OR
+                (payroll_payment_id IS NOT NULL AND payroll_sync_status IS NOT NULL)
+            );
+    END IF;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS gastos_payroll_payment_unique_idx
+    ON public.gastos (payroll_payment_id)
+    WHERE payroll_payment_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS gastos_tenant_payroll_payment_idx
+    ON public.gastos (tenant_id, payroll_payment_id)
+    WHERE payroll_payment_id IS NOT NULL;

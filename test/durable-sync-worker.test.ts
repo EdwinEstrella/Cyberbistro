@@ -85,4 +85,20 @@ describe("durable cloud sync worker", () => {
     await new DurableSyncWorker(store, client, tenantId).push();
     expect(store.operations.map((operation) => operation.status)).toEqual(["conflicted", "conflicted"]);
   });
+
+  it("marks permanent payroll sync rejections as not_retryable instead of retrying forever", async () => {
+    const store = createStore();
+    store.commitMutation(createDurableOperation({ tenantId, tableName: "payroll_employees", rowId: "emp-1", op: "upsert", payload: { id: "emp-1" }, deviceId: "device-1", sequence: 1, id: "payroll-permanent" }));
+    const client: ServerSyncClient = {
+      push: async () => ({ permanent: { reason: "Unsupported payroll payload", category: "malformed_payload", retryable: false } }),
+      pull: async () => ({ cursor: "0", changes: [] }),
+    };
+
+    await new DurableSyncWorker(store, client, tenantId).push();
+
+    expect(store.operations[0]).toMatchObject({
+      status: "not_retryable",
+      result: { reason: "Unsupported payroll payload", category: "malformed_payload", retryable: false },
+    });
+  });
 });

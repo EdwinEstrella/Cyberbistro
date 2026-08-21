@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { initializeTenantSchema } from "./schema";
 import { TenantSQLiteImporter, type LegacyImportChunk, type LegacyImportManifest } from "./importer";
+import { PayrollSyncOrchestrator } from "./payrollSyncOrchestrator";
 import type { DesktopCommand, DesktopRepositoryStore } from "../../src/shared/lib/desktopRepository";
 import type { CatalogCommand } from "../../src/shared/lib/catalogContracts";
 import type { OrdersCommand } from "../../src/shared/lib/ordersContracts";
@@ -242,6 +243,7 @@ function catalogDefinition(command: CatalogCommand, tenantId: string): { tableNa
 
 export class TenantStoreController {
   private activeStore: TenantStore | null = null;
+  public readonly payrollSync = new PayrollSyncOrchestrator();
 
   constructor(private readonly dataRoot: string) {}
 
@@ -252,6 +254,7 @@ export class TenantStoreController {
 
     this.close();
     this.activeStore = TenantStore.open({ dataRoot: this.dataRoot, tenantId });
+    this.payrollSync.start(this.activeStore.getDatabase(), tenantId);
     return this.activeStore;
   }
 
@@ -281,6 +284,7 @@ export class TenantStoreController {
   }
 
   close(): void {
+    this.payrollSync.stop();
     this.activeStore?.close();
     this.activeStore = null;
   }

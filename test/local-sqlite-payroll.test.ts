@@ -56,6 +56,54 @@ describe("local sqlite payroll", () => {
     expect(executed).toEqual([command]);
   });
 
+  it("emits payroll_employees outbox rows for employee upsert and disable", () => {
+    const employeeId = repository.upsertEmployee("tenant-1", "branch-1", {
+      firstName: "Ana",
+      lastName: "Pérez",
+      role: "Caja",
+      baseSalaryCents: 100000,
+      frequency: "monthly",
+      isActive: true,
+    });
+
+    repository.disableEmployee("tenant-1", "branch-1", employeeId);
+
+    const outbox = db.prepare(`
+      SELECT table_name, row_id, payload_json, status
+      FROM sync_outbox
+      WHERE table_name = 'payroll_employees'
+      ORDER BY rowid ASC
+    `).all() as Array<{ table_name: string; row_id: string; payload_json: string; status: string }>;
+
+    expect(outbox).toHaveLength(2);
+    expect(outbox.map((row) => ({ table_name: row.table_name, row_id: row.row_id, status: row.status }))).toEqual([
+      { table_name: "payroll_employees", row_id: employeeId, status: "pending" },
+      { table_name: "payroll_employees", row_id: employeeId, status: "pending" },
+    ]);
+    expect(outbox.map((row) => JSON.parse(row.payload_json))).toEqual([
+      expect.objectContaining({
+        id: employeeId,
+        sucursalId: "branch-1",
+        firstName: "Ana",
+        lastName: "Pérez",
+        role: "Caja",
+        baseSalaryCents: 100000,
+        frequency: "monthly",
+        isActive: true,
+      }),
+      expect.objectContaining({
+        id: employeeId,
+        sucursalId: "branch-1",
+        firstName: "Ana",
+        lastName: "Pérez",
+        role: "Caja",
+        baseSalaryCents: 100000,
+        frequency: "monthly",
+        isActive: false,
+      }),
+    ]);
+  });
+
   it("rejects unexpected nested adjustment payloads and missing discount notes", async () => {
     const handlers = new Map<string, (event: { senderId: number }, payload?: unknown) => unknown>();
     const ipcMain: PayrollRepositoryIpcMain = {
@@ -129,11 +177,12 @@ describe("local sqlite payroll", () => {
     const expense = db.prepare("SELECT compra_id, payroll_payment_id, expense_type, amount, amount_cents, local_status FROM gastos WHERE id = ?").get(result.expenseId) as Record<string, unknown>;
     expect(expense).toEqual({ compra_id: null, payroll_payment_id: result.paymentId, expense_type: "payroll", amount: null, amount_cents: 70000, local_status: "pending_sync" });
 
-    const outbox = db.prepare("SELECT table_name, operation, status FROM sync_outbox ORDER BY id").all() as Array<Record<string, string>>;
+    const outbox = db.prepare("SELECT table_name, operation, status FROM sync_outbox ORDER BY rowid ASC").all() as Array<Record<string, string>>;
     expect(outbox).toEqual([
+      { table_name: "payroll_employees", operation: "upsert", status: "pending" },
       { table_name: "payroll_payment_adjustments", operation: "upsert", status: "pending" },
-      { table_name: "gastos", operation: "upsert", status: "pending" },
       { table_name: "payroll_payments", operation: "upsert", status: "pending" },
+      { table_name: "gastos", operation: "upsert", status: "pending" },
     ]);
   });
 
@@ -170,7 +219,8 @@ describe("local sqlite payroll", () => {
     expect(db.prepare("SELECT COUNT(*) AS count FROM payroll_payments").get()).toEqual({ count: 0 });
     expect(db.prepare("SELECT COUNT(*) AS count FROM payroll_payment_adjustments").get()).toEqual({ count: 0 });
     expect(db.prepare("SELECT COUNT(*) AS count FROM gastos WHERE expense_type = 'payroll'").get()).toEqual({ count: 0 });
-    expect(db.prepare("SELECT COUNT(*) AS count FROM sync_outbox").get()).toEqual({ count: 0 });
+    expect(db.prepare("SELECT COUNT(*) AS count FROM sync_outbox").get()).toEqual({ count: 1 });
+    expect(db.prepare("SELECT table_name FROM sync_outbox").get()).toEqual({ table_name: "payroll_employees" });
   });
 
   it("scopes cumulative overpayment checks by tenant and sucursal", () => {
