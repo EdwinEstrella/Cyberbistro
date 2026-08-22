@@ -251,4 +251,123 @@ test.describe("Nomina (Payroll) Full CRUD & Local-First SQLite E2E", () => {
       )
     ).rejects.toThrow();
   });
+
+  test("records payment of RD$ 12,500.00 and verifies persistent receipt in historical list", async () => {
+    console.log("\n=======================================================");
+    console.log("🧾 TEST VISUAL: PAGO DE RD$ 12,500 Y HISTORIAL DE RECIBOS");
+    console.log("=======================================================");
+
+    // 1. Create employee with RD$ 25,000 monthly salary and biweekly payment
+    console.log("⏳ [1/4] Creando empleado 'Manuel Diaz' (Salario Base RD$25,000, Quincenal)...");
+    const createEmp = await page.evaluate(
+      ({ tid, sid }) =>
+        window.electronAPI!.executePayrollCommand!({
+          type: "payroll.upsertEmployee",
+          tenantId: tid,
+          sucursalId: sid,
+          employee: {
+            firstName: "Manuel",
+            lastName: "Diaz",
+            role: "Bartender",
+            baseSalaryCents: 2500000, // 25,000.00 DOP
+            frequency: "biweekly",
+            isActive: true,
+          },
+        }),
+      { tid: tenantId, sid: sucursalId }
+    );
+    expect(createEmp.ok).toBe(true);
+
+    const empList = await page.evaluate(
+      ({ tid, sid }) =>
+        window.electronAPI!.executePayrollCommand!({
+          type: "payroll.getEmployees",
+          tenantId: tid,
+          sucursalId: sid,
+        }),
+      { tid: tenantId, sid: sucursalId }
+    );
+    const employee = (empList.data as any).employees[0];
+    console.log(`✔ [1/4] Empleado creado: ${employee.firstName} ${employee.lastName} (ID: ${employee.id})`);
+
+    // 2. Calculate payment context for 1st biweekly period (should be RD$ 12,500.00)
+    console.log("⏳ [2/4] Calculando pago quincenal (RD$25,000 / 2 = RD$12,500)...");
+    const contextRes = await page.evaluate(
+      ({ tid, sid, empId }) =>
+        window.electronAPI!.executePayrollCommand!({
+          type: "payroll.getPaymentContext",
+          tenantId: tid,
+          sucursalId: sid,
+          payload: {
+            employeeId: empId,
+            period: "2026-08-1",
+            frequency: "biweekly",
+            adjustments: [],
+          },
+        }),
+      { tid: tenantId, sid: sucursalId, empId: employee.id }
+    );
+    expect(contextRes.ok).toBe(true);
+    const context = (contextRes.data as any).context;
+    expect(context.periodSalaryCents).toBe(1250000); // RD$ 12,500.00
+    expect(context.dueCents).toBe(1250000);
+    console.log(`✔ [2/4] Cálculo exacto: Total a pagar = RD$${context.dueCents / 100} (Quincenal)`);
+
+    // 3. Register payment of RD$ 12,500.00
+    console.log("⏳ [3/4] Registrando pago de RD$ 12,500.00 en SQLite...");
+    const payRes = await page.evaluate(
+      ({ tid, sid, empId, ctx }) =>
+        window.electronAPI!.executePayrollCommand!({
+          type: "payroll.createPayment",
+          tenantId: tid,
+          sucursalId: sid,
+          payload: {
+            employeeId: empId,
+            period: "2026-08-1",
+            frequency: "biweekly",
+            paymentAmountCents: 1250000,
+            receiptSnapshot: JSON.stringify({
+              employee: { firstName: "Manuel", lastName: "Diaz", role: "Bartender" },
+              period: "2026-08-1",
+              paymentAmountCents: 1250000,
+            }),
+            adjustments: [],
+          },
+        }),
+      { tid: tenantId, sid: sucursalId, empId: employee.id, ctx: context }
+    );
+    expect(payRes.ok).toBe(true);
+    const paymentId = (payRes.data as any).paymentId;
+    console.log(`✔ [3/4] Pago asentado exitosamente con ID: ${paymentId}`);
+
+    // 4. Query receipts history (getPayments)
+    console.log("⏳ [4/4] Consultando historial de recibos en SQLite...");
+    const paymentsList = await page.evaluate(
+      ({ tid, sid }) =>
+        window.electronAPI!.executePayrollCommand!({
+          type: "payroll.getPayments",
+          tenantId: tid,
+          sucursalId: sid,
+        }),
+      { tid: tenantId, sid: sucursalId }
+    );
+    expect(paymentsList.ok).toBe(true);
+    const receipts = (paymentsList.data as any).payments;
+    expect(receipts).toHaveLength(1);
+    expect(receipts[0].employeeName).toBe("Manuel Diaz");
+    expect(receipts[0].employeeRole).toBe("Bartender");
+    expect(receipts[0].period).toBe("2026-08-1");
+    expect(receipts[0].amountPaidCents).toBe(1250000);
+    expect(receipts[0].pendingCents).toBe(0);
+
+    console.log(`✔ [4/4] RECIBO ENCONTRADO EN LISTA HISTÓRICA:`);
+    console.log(`       - Empleado: ${receipts[0].employeeName}`);
+    console.log(`       - Cargo:    ${receipts[0].employeeRole}`);
+    console.log(`       - Período:  ${receipts[0].period}`);
+    console.log(`       - Monto:    RD$ ${(receipts[0].amountPaidCents / 100).toLocaleString('es-DO', { minimumFractionDigits: 2 })}`);
+    console.log(`       - Pendiente: RD$ ${(receipts[0].pendingCents / 100).toLocaleString('es-DO', { minimumFractionDigits: 2 })}`);
+    console.log("=======================================================");
+    console.log("🎉 VERIFICACIÓN DE HISTORIAL DE RECIBO EXITOSA");
+    console.log("=======================================================\n");
+  });
 });

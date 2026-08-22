@@ -275,6 +275,12 @@ function parsePayrollCommand(payload: unknown): PayrollCommand | null {
     return command as PayrollCommand;
   }
 
+  if (command.type === "payroll.getPayments") {
+    return isExactObject(payload, ["type", "tenantId", "sucursalId", "employeeId"])
+      ? (command as PayrollCommand)
+      : null;
+  }
+
   if (command.type === "payroll.disableEmployee") {
     return isExactObject(payload, ["type", "tenantId", "sucursalId", "employeeId"]) && isNonEmptyText(command.employeeId)
       ? (command as PayrollCommand)

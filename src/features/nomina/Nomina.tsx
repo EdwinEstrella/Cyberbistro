@@ -174,6 +174,12 @@ export function Nomina() {
     void loadPayments();
   }, [tenantId, activeSucursalId, loadEmployees, loadPayments]);
 
+  useEffect(() => {
+    if (activeTab === "recibos" && tenantId && activeSucursalId) {
+      void loadPayments();
+    }
+  }, [activeTab, tenantId, activeSucursalId, loadPayments]);
+
   // Fetch payment calculation context in real-time
   useEffect(() => {
     setPaymentContext(null);
@@ -427,7 +433,7 @@ export function Nomina() {
         setAdjustmentDraft(emptyAdjustmentDraft);
         setPaymentSuccessMsg(`Pago de ${formatMoney(paymentAmountCents)} registrado exitosamente.`);
         setPaymentContext(result.context);
-        void loadPayments();
+        await loadPayments();
         setActiveTab("recibos");
       }
     } catch (error) {
