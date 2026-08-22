@@ -364,14 +364,36 @@ test.describe("Nomina (Payroll) Full CRUD & Local-First SQLite E2E", () => {
 
     await page.screenshot({ path: "test-results/nomina-receipt-visual.png", fullPage: true });
 
-    console.log(`✔ [4/4] RECIBO ENCONTRADO EN LISTA HISTÓRICA:`);
+    console.log(`✔ [4/5] RECIBO ENCONTRADO EN LISTA HISTÓRICA:`);
     console.log(`       - Empleado:  ${receipts[0].employeeName}`);
     console.log(`       - Cargo:     ${receipts[0].employeeRole}`);
     console.log(`       - Período:   ${receipts[0].period}`);
     console.log(`       - Monto:     RD$ ${(receipts[0].amountPaidCents / 100).toLocaleString('es-DO', { minimumFractionDigits: 2 })}`);
     console.log(`       - Pendiente: RD$ ${(receipts[0].pendingCents / 100).toLocaleString('es-DO', { minimumFractionDigits: 2 })}`);
+
+    // 5. Query gastos table in SQLite to verify automatic expense record
+    console.log("⏳ [5/5] Verificando registro automático en tabla GASTOS de SQLite...");
+    const verifyStore = TenantStore.open({ dataRoot: userDataDirectory, tenantId });
+    const verifyDb = verifyStore.getDatabase();
+    const gastoRow = verifyDb.prepare("SELECT id, compra_id, payroll_payment_id, expense_type, payment_method, amount, amount_cents, local_status, description FROM gastos WHERE payroll_payment_id = ?").get(paymentId) as any;
+    verifyStore.close();
+
+    expect(gastoRow).toBeTruthy();
+    expect(gastoRow.payroll_payment_id).toBe(paymentId);
+    expect(gastoRow.expense_type).toBe("payroll");
+    expect(gastoRow.payment_method).toBe("cash");
+    expect(gastoRow.amount_cents).toBe(1250000);
+    expect(gastoRow.local_status).toBe("pending_sync");
+
+    console.log(`✔ [5/5] GASTO REGISTRADO CORRECTAMENTE EN SQLITE:`);
+    console.log(`       - Gasto ID:            ${gastoRow.id}`);
+    console.log(`       - Tipo de Gasto:       ${gastoRow.expense_type} (Nómina)`);
+    console.log(`       - Método de Pago:      ${gastoRow.payment_method} (Efectivo)`);
+    console.log(`       - Monto en Gastos:     RD$ ${(gastoRow.amount_cents / 100).toLocaleString('es-DO', { minimumFractionDigits: 2 })}`);
+    console.log(`       - Pago Nómina Vincul.: ${gastoRow.payroll_payment_id}`);
+    console.log(`       - Estado Sync:         ${gastoRow.local_status}`);
     console.log("=======================================================");
-    console.log("🎉 VERIFICACIÓN DE HISTORIAL DE RECIBO EXITOSA");
+    console.log("🎉 VERIFICACIÓN COMPLETA: PAGO DE NÓMINA Y GASTO ASENTADOS");
     console.log("📸 Screenshot guardado en test-results/nomina-receipt-visual.png");
     console.log("=======================================================\n");
   });
