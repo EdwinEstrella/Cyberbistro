@@ -16,14 +16,22 @@ interface CategoriaGasto {
 interface GastoRow {
   id: string;
   tenant_id: string;
-  category_id: string | null;
-  cycle_id: string | null;
-  descripcion: string;
-  proveedor: string | null;
-  monto: number;
-  metodo_pago: string | null;
-  fecha_gasto: string;
-  notas: string | null;
+  category_id?: string | null;
+  cycle_id?: string | null;
+  descripcion?: string;
+  description?: string;
+  proveedor?: string | null;
+  monto?: number;
+  amount?: number;
+  amount_cents?: number;
+  expense_type?: string;
+  payroll_payment_id?: string | null;
+  compra_id?: string | null;
+  metodo_pago?: string | null;
+  payment_method?: string | null;
+  fecha_gasto?: string;
+  created_at?: string;
+  notas?: string | null;
 }
 
 interface CicloAbierto {
@@ -45,6 +53,30 @@ const METODOS_PAGO = ["efectivo", "tarjeta", "transferencia", "digital"];
 
 const RD = (n: number) =>
   "RD$ " + Number(n).toLocaleString("es-DO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function getGastoMonto(gasto: GastoRow): number {
+  if (typeof gasto.monto === "number" && !Number.isNaN(gasto.monto)) return gasto.monto;
+  if (typeof gasto.amount === "number" && !Number.isNaN(gasto.amount)) return gasto.amount;
+  if (typeof gasto.amount_cents === "number" && !Number.isNaN(gasto.amount_cents)) return gasto.amount_cents / 100;
+  return 0;
+}
+
+function getGastoDescripcion(gasto: GastoRow): string {
+  if (gasto.descripcion) return gasto.descripcion;
+  if (gasto.description) return gasto.description;
+  if (gasto.expense_type === "payroll" || gasto.payroll_payment_id) return "Pago de Nómina";
+  if (gasto.expense_type === "purchase" || gasto.compra_id) return "Compra de Insumos";
+  return "Gasto general";
+}
+
+function getGastoFecha(gasto: GastoRow): string {
+  return gasto.fecha_gasto || gasto.created_at || new Date().toISOString();
+}
+
+function getGastoMetodo(gasto: GastoRow): string {
+  const m = gasto.metodo_pago || gasto.payment_method || "efectivo";
+  return m === "cash" ? "efectivo" : m;
+}
 
 function todayInputValue(): string {
   const n = new Date();
@@ -155,15 +187,15 @@ export function Gastos() {
     const now = Date.now();
     const startMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
     const totalMes = gastos
-      .filter((gasto) => new Date(gasto.fecha_gasto).getTime() >= startMonth)
-      .reduce((sum, gasto) => sum + Number(gasto.monto), 0);
+      .filter((gasto) => new Date(getGastoFecha(gasto)).getTime() >= startMonth)
+      .reduce((sum, gasto) => sum + getGastoMonto(gasto), 0);
     const total24h = gastos
-      .filter((gasto) => new Date(gasto.fecha_gasto).getTime() >= now - 24 * 60 * 60 * 1000)
-      .reduce((sum, gasto) => sum + Number(gasto.monto), 0);
+      .filter((gasto) => new Date(getGastoFecha(gasto)).getTime() >= now - 24 * 60 * 60 * 1000)
+      .reduce((sum, gasto) => sum + getGastoMonto(gasto), 0);
     const totalCiclo = cicloAbierto
       ? gastos
           .filter((gasto) => gasto.cycle_id === cicloAbierto.id)
-          .reduce((sum, gasto) => sum + Number(gasto.monto), 0)
+          .reduce((sum, gasto) => sum + getGastoMonto(gasto), 0)
       : 0;
     return { totalMes, total24h, totalCiclo, cantidad: gastos.length };
   }, [gastos, cicloAbierto]);
@@ -533,11 +565,22 @@ export function Gastos() {
               ) : (
                 gastos.map((gasto) => {
                   const cat = gasto.category_id ? categoriaPorId.get(gasto.category_id) : null;
+                  const isPayroll = gasto.expense_type === "payroll" || Boolean(gasto.payroll_payment_id);
+                  const descripcion = getGastoDescripcion(gasto);
+                  const monto = getGastoMonto(gasto);
+                  const fecha = getGastoFecha(gasto);
+                  const metodo = getGastoMetodo(gasto);
+
                   return (
                     <div key={gasto.id} className="grid grid-cols-1 gap-4 px-6 py-5 hover:bg-muted/30 transition-colors lg:grid-cols-[1fr_180px_140px_44px] lg:items-center">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-semibold text-foreground">{gasto.descripcion}</span>
+                          <span className="font-semibold text-foreground">{descripcion}</span>
+                          {isPayroll && (
+                            <span className="rounded-full bg-orange-500/10 text-orange-500 border border-orange-500/20 px-2 py-0.5 text-[10px] font-bold uppercase">
+                              Nómina
+                            </span>
+                          )}
                           {cat && (
                             <span className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase text-white" style={{ backgroundColor: cat.color }}>
                               {cat.nombre}
@@ -546,13 +589,13 @@ export function Gastos() {
                           {gasto.cycle_id && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase text-primary">Con ciclo</span>}
                         </div>
                         <div className="mt-1 text-xs text-muted-foreground">
-                          {formatDateTime(gasto.fecha_gasto)}
+                          {formatDateTime(fecha)}
                           {gasto.proveedor ? ` · ${gasto.proveedor}` : ""}
-                          {gasto.metodo_pago ? ` · ${gasto.metodo_pago}` : ""}
+                          {metodo ? ` · ${metodo}` : ""}
                         </div>
                       </div>
-                      <div className="text-sm text-muted-foreground">{gasto.notas || "Sin notas"}</div>
-                      <div className="font-['Space_Grotesk',sans-serif] text-xl font-bold text-foreground tabular-nums lg:text-right">{RD(gasto.monto)}</div>
+                      <div className="text-sm text-muted-foreground">{gasto.notas || (isPayroll ? "Pago de sueldo registrado" : "Sin notas")}</div>
+                      <div className="font-['Space_Grotesk',sans-serif] text-xl font-bold text-foreground tabular-nums lg:text-right">{RD(monto)}</div>
                       <button onClick={() => void eliminarGasto(gasto)} className="inline-flex size-10 items-center justify-center rounded-xl bg-muted text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
                         <Trash2 size={16} />
                       </button>

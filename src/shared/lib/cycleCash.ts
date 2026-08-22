@@ -6,17 +6,29 @@ export interface ExpectedCashDrawerInput {
 }
 
 export interface ExpenseCashInput {
-  monto: number;
+  monto?: number;
+  amount?: number;
+  amount_cents?: number;
   metodo_pago?: string | null;
+  payment_method?: string | null;
 }
 
 export function isCashPaymentMethod(metodoPago: string | null | undefined): boolean {
-  return String(metodoPago ?? "").trim().toLowerCase() === "efectivo";
+  const normalized = String(metodoPago ?? "").trim().toLowerCase();
+  return normalized === "efectivo" || normalized === "cash";
+}
+
+export function getExpenseAmount(expense: ExpenseCashInput): number {
+  if (typeof expense.monto === "number" && !Number.isNaN(expense.monto)) return expense.monto;
+  if (typeof expense.amount === "number" && !Number.isNaN(expense.amount)) return expense.amount;
+  if (typeof expense.amount_cents === "number" && !Number.isNaN(expense.amount_cents)) return expense.amount_cents / 100;
+  return 0;
 }
 
 export function sumCashExpenses(expenses: ExpenseCashInput[]): number {
   return expenses.reduce((total, expense) => {
-    return isCashPaymentMethod(expense.metodo_pago) ? total + Number(expense.monto) : total;
+    const isCash = isCashPaymentMethod(expense.metodo_pago ?? expense.payment_method);
+    return isCash ? total + getExpenseAmount(expense) : total;
   }, 0);
 }
 
