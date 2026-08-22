@@ -333,4 +333,39 @@ describe("local sqlite payroll", () => {
       pendingCents: 200000,
     });
   });
+
+  it("lists historical payments with employee metadata via getPayments", () => {
+    const employeeId = repository.upsertEmployee("tenant-1", "branch-1", {
+      firstName: "Maria",
+      lastName: "Rodriguez",
+      role: "Gerente",
+      baseSalaryCents: 6000000,
+      frequency: "monthly",
+      isActive: true,
+    });
+
+    const payment = repository.createPayment("tenant-1", "branch-1", {
+      employeeId,
+      period: "2026-08",
+      frequency: "monthly",
+      paymentAmountCents: 6000000,
+      receiptSnapshot: JSON.stringify({ note: "Pago completo" }),
+      adjustments: [],
+    });
+
+    const history = repository.getPayments("tenant-1", "branch-1");
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({
+      id: payment.paymentId,
+      employeeId,
+      employeeName: "Maria Rodriguez",
+      employeeRole: "Gerente",
+      period: "2026-08",
+      amountPaidCents: 6000000,
+    });
+
+    const filteredHistory = repository.getPayments("tenant-1", "branch-1", employeeId);
+    expect(filteredHistory).toHaveLength(1);
+    expect(filteredHistory[0].id).toBe(payment.paymentId);
+  });
 });

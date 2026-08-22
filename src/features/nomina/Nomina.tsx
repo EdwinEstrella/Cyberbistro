@@ -19,6 +19,7 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   CheckCircle,
+  Eye,
 } from "lucide-react";
 import { useAuth } from "../../shared/hooks/useAuth";
 import { useSucursal } from "../../app/context/SucursalContext";
@@ -31,6 +32,7 @@ import type {
   PayrollFrequency,
   PayrollPaymentAdjustment,
   PayrollPaymentContext,
+  PayrollPaymentRecord,
 } from "../../shared/lib/payrollContracts";
 
 const emptyEmployeeDraft: PayrollEmployeeDraft = {
@@ -107,6 +109,10 @@ export function Nomina() {
   const [adjustmentDraft, setAdjustmentDraft] = useState<AdjustmentDraft>(emptyAdjustmentDraft);
   const [adjustments, setAdjustments] = useState<PayrollPaymentAdjustment[]>([]);
   const [receipt, setReceipt] = useState<ReceiptState | null>(null);
+  const [payments, setPayments] = useState<PayrollPaymentRecord[]>([]);
+  const [loadingPayments, setLoadingPayments] = useState(false);
+  const [receiptSearchQuery, setReceiptSearchQuery] = useState("");
+  const [previewPayment, setPreviewPayment] = useState<PayrollPaymentRecord | null>(null);
 
   const selectedEmployee = useMemo(
     () => employees.find((employee) => employee.id === selectedEmployeeId) ?? null,
@@ -142,10 +148,31 @@ export function Nomina() {
     }
   }, [activeSucursalId, selectedEmployeeId, tenantId]);
 
+  // Load payments list
+  const loadPayments = useCallback(async () => {
+    if (!tenantId || !activeSucursalId) return;
+    setLoadingPayments(true);
+    try {
+      const result = await executePayrollCommandLocally({
+        type: "payroll.getPayments",
+        tenantId,
+        sucursalId: activeSucursalId,
+      });
+      if (result.type === "payroll.payments") {
+        setPayments(result.payments);
+      }
+    } catch (error) {
+      console.error("Error cargando historial de recibos:", error);
+    } finally {
+      setLoadingPayments(false);
+    }
+  }, [activeSucursalId, tenantId]);
+
   useEffect(() => {
     if (!tenantId || !activeSucursalId) return;
     void loadEmployees();
-  }, [tenantId, activeSucursalId, loadEmployees]);
+    void loadPayments();
+  }, [tenantId, activeSucursalId, loadEmployees, loadPayments]);
 
   // Fetch payment calculation context in real-time
   useEffect(() => {
@@ -212,6 +239,19 @@ export function Nomina() {
       return matchSearch && matchFrequency;
     });
   }, [employees, searchQuery, frequencyFilter]);
+
+  // Filtered payments list (receipts history)
+  const filteredPayments = useMemo(() => {
+    return payments.filter((p) => {
+      const q = receiptSearchQuery.toLowerCase().trim();
+      if (!q) return true;
+      return (
+        p.employeeName.toLowerCase().includes(q) ||
+        p.employeeRole.toLowerCase().includes(q) ||
+        p.period.toLowerCase().includes(q)
+      );
+    });
+  }, [payments, receiptSearchQuery]);
 
   // Open modal to create new employee
   function handleOpenNewEmployee() {
@@ -387,6 +427,7 @@ export function Nomina() {
         setAdjustmentDraft(emptyAdjustmentDraft);
         setPaymentSuccessMsg(`Pago de ${formatMoney(paymentAmountCents)} registrado exitosamente.`);
         setPaymentContext(result.context);
+        void loadPayments();
         setActiveTab("recibos");
       }
     } catch (error) {
@@ -1113,104 +1154,225 @@ export function Nomina() {
         </div>
       )}
 
-      {/* TAB 3: RECIBO DE NÓMINA */}
+      {/* TAB 3: RECIBOS DE NÓMINA (HISTORIAL EN LISTA) */}
       {activeTab === "recibos" && (
-        <div className="flex-1 flex flex-col min-h-0 overflow-auto items-center justify-start py-4">
-          {receipt ? (
-            <div className="w-full max-w-3xl flex flex-col gap-4">
-              <div className="flex justify-between items-center">
-                <span className="font-['Space_Grotesk',sans-serif] text-[13px] uppercase tracking-wider text-[#adaaaa]">
-                  Comprobante Oficial Generado
-                </span>
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden gap-4">
+          {/* Barra de Filtros y Búsqueda */}
+          <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
+            <div className="relative flex-1 w-full max-w-md">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-[#adaaaa]" />
+              <input
+                type="text"
+                value={receiptSearchQuery}
+                onChange={(e) => setReceiptSearchQuery(e.target.value)}
+                placeholder="Buscar por empleado, cargo o período..."
+                className="w-full bg-[#131313] border border-[rgba(72,72,71,0.25)] focus:border-[#ff906d] rounded-[12px] pl-10 pr-4 py-2.5 text-[13px] text-white outline-none font-['Inter',sans-serif] transition-colors"
+              />
+              {receiptSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setReceiptSearchQuery("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#adaaaa] hover:text-white"
+                >
+                  <X className="size-3.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+              <span className="text-[12px] font-['Space_Grotesk',sans-serif] text-[#adaaaa]">
+                Total: <strong className="text-white">{filteredPayments.length}</strong> recibos
+              </span>
+              <button
+                type="button"
+                onClick={() => void loadPayments()}
+                disabled={loadingPayments}
+                className="bg-[#191919] hover:bg-[#222] border border-[rgba(72,72,71,0.3)] text-white px-3 py-2 rounded-[10px] text-[12px] font-['Space_Grotesk',sans-serif] flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                title="Refrescar lista"
+              >
+                <RefreshCw className={`size-3.5 ${loadingPayments ? "animate-spin text-[#ff906d]" : ""}`} />
+                Actualizar
+              </button>
+            </div>
+          </div>
+
+          {/* Tabla / Lista de Recibos */}
+          <div className="flex-1 min-h-0 bg-[#131313] border border-[rgba(72,72,71,0.18)] rounded-[16px] overflow-hidden flex flex-col">
+            <div className="flex-1 overflow-auto">
+              {filteredPayments.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+                  <Receipt className="size-12 text-[#484847] mb-3" />
+                  <h4 className="font-['Space_Grotesk',sans-serif] font-bold text-[16px] text-white uppercase">
+                    {receiptSearchQuery ? "No se encontraron recibos" : "Sin historial de recibos"}
+                  </h4>
+                  <p className="text-[13px] text-[#adaaaa] font-['Inter',sans-serif] mt-1 max-w-sm">
+                    {receiptSearchQuery
+                      ? "No hay recibos emitidos que coincidan con el término de búsqueda ingresado."
+                      : "Los pagos registrados en la pestaña 'Calcular y Pagar Nómina' aparecerán automáticamente aquí listados."}
+                  </p>
+                  {!receiptSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("pagar")}
+                      className="mt-4 bg-[#ff906d] text-black font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase px-4 py-2.5 rounded-[10px] hover:brightness-110 cursor-pointer"
+                    >
+                      Ir a Calcular y Pagar
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-[rgba(72,72,71,0.2)] bg-[#101010]/80 sticky top-0 z-10 text-[11px] font-['Inter',sans-serif] uppercase tracking-[0.5px] text-[#adaaaa]">
+                      <th className="py-3 px-4">Empleado</th>
+                      <th className="py-3 px-4">Período</th>
+                      <th className="py-3 px-4">Modalidad</th>
+                      <th className="py-3 px-4">Fecha de Emisión</th>
+                      <th className="py-3 px-4 text-right">Monto Pagado</th>
+                      <th className="py-3 px-4 text-center">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[rgba(72,72,71,0.12)]">
+                    {filteredPayments.map((p) => (
+                      <tr key={p.id} className="hover:bg-white/[0.02] transition-colors group">
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center gap-3">
+                            <div className="size-8 rounded-[8px] bg-[rgba(255,144,109,0.15)] border border-[rgba(255,144,109,0.3)] flex items-center justify-center text-[#ff906d] font-['Space_Grotesk',sans-serif] font-bold text-[12px]">
+                              {p.employeeName.charAt(0)}
+                            </div>
+                            <div>
+                              <span className="font-semibold text-[13px] text-white block">{p.employeeName}</span>
+                              <span className="text-[11px] text-[#adaaaa] font-['Inter',sans-serif]">{p.employeeRole}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] bg-[#191919] border border-[rgba(72,72,71,0.3)] text-[12px] font-['Space_Grotesk',sans-serif] font-medium text-white">
+                            <Calendar className="size-3 text-[#ff906d]" />
+                            {p.period}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className="text-[12px] font-['Inter',sans-serif] text-[#38bdf8]">
+                            {frequencyLabel(p.frequency)}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-[12px] text-[#adaaaa] font-['Inter',sans-serif]">
+                          {p.createdAt ? new Date(p.createdAt).toLocaleDateString("es-DO", {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          }) : "N/A"}
+                        </td>
+                        <td className="py-3.5 px-4 text-right">
+                          <span className="font-['Space_Grotesk',sans-serif] font-bold text-[14px] text-[#59ee50]">
+                            {formatMoney(p.amountPaidCents)}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-center">
+                          <button
+                            type="button"
+                            onClick={() => setPreviewPayment(p)}
+                            className="bg-[#191919] hover:bg-[#222] border border-[rgba(72,72,71,0.3)] hover:border-[#ff906d] text-white px-3 py-1.5 rounded-[8px] text-[12px] font-['Space_Grotesk',sans-serif] font-bold uppercase transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
+                          >
+                            <Eye className="size-3.5 text-[#ff906d]" />
+                            Ver Recibo
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: VER / IMPRIMIR COMPROBANTE DE NÓMINA */}
+      {previewPayment && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#131313] border border-[rgba(72,72,71,0.3)] rounded-[20px] max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            {/* Header del Modal */}
+            <div className="flex items-center justify-between p-5 border-b border-[rgba(72,72,71,0.2)] bg-[#101010]">
+              <div className="flex items-center gap-2">
+                <Receipt className="size-5 text-[#ff906d]" />
+                <h3 className="font-['Space_Grotesk',sans-serif] font-bold text-[16px] text-white uppercase tracking-wider">
+                  Comprobante de Pago
+                </h3>
+              </div>
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={printReceipt}
-                  className="bg-[#ff906d] text-black font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[0.5px] px-4 py-2 rounded-[10px] flex items-center gap-2 hover:brightness-110 transition-all cursor-pointer shadow-[0_0_12px_rgba(255,144,109,0.2)]"
+                  className="bg-[#ff906d] text-black font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[0.5px] px-3.5 py-1.5 rounded-[8px] flex items-center gap-1.5 hover:brightness-110 transition-all cursor-pointer"
                 >
-                  <Printer className="size-4" />
-                  Imprimir Comprobante
+                  <Printer className="size-3.5" />
+                  Imprimir
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPreviewPayment(null)}
+                  className="p-1.5 text-[#adaaaa] hover:text-white rounded-[8px] hover:bg-white/5 transition-colors cursor-pointer"
+                >
+                  <X className="size-5" />
                 </button>
               </div>
+            </div>
 
-              {/* Printable Receipt Card */}
+            {/* Cuerpo Imprimible */}
+            <div className="p-6 overflow-y-auto">
               <article
                 id="payroll-receipt"
-                className="bg-[#131313] border border-[rgba(72,72,71,0.25)] rounded-[20px] p-8 text-white flex flex-col gap-6 shadow-2xl"
+                className="bg-[#191919] border border-[rgba(72,72,71,0.3)] rounded-[16px] p-6 text-white flex flex-col gap-6 shadow-md"
               >
-                {/* Receipt Header */}
-                <div className="flex justify-between items-start border-b border-[rgba(72,72,71,0.2)] pb-6">
+                <div className="flex justify-between items-start border-b border-[rgba(72,72,71,0.2)] pb-5">
                   <div>
                     <span className="text-[10px] font-['Space_Grotesk',sans-serif] uppercase tracking-[2px] text-[#ff906d] block mb-1">
-                      Comprobante de Pago de Nómina
+                      Comprobante de Nómina
                     </span>
-                    <h3 className="font-['Space_Grotesk',sans-serif] font-bold text-[26px] text-white">
-                      {receipt.employee.firstName} {receipt.employee.lastName}
+                    <h3 className="font-['Space_Grotesk',sans-serif] font-bold text-[22px] text-white">
+                      {previewPayment.employeeName}
                     </h3>
                     <p className="text-[13px] text-[#adaaaa] font-['Inter',sans-serif] mt-0.5">
-                      {receipt.employee.role} · Frecuencia {frequencyLabel(receipt.employee.frequency)}
+                      {previewPayment.employeeRole} · Modalidad {frequencyLabel(previewPayment.frequency)}
                     </p>
                   </div>
 
                   <div className="text-right font-['Space_Grotesk',sans-serif]">
                     <span className="text-[11px] text-[#6b7280] uppercase tracking-wider block">Período</span>
-                    <span className="font-bold text-[16px] text-white">{receipt.period}</span>
+                    <span className="font-bold text-[15px] text-white">{previewPayment.period}</span>
                     <span className="text-[11px] text-[#59ee50] block mt-1">● Pagado</span>
                   </div>
                 </div>
 
-                {/* Receipt Summary Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                  <div className="p-3.5 bg-[#191919] border border-[rgba(72,72,71,0.2)] rounded-[12px]">
-                    <span className="text-[10px] uppercase tracking-wider text-[#adaaaa] block">Monto Aplicado</span>
-                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-[18px] text-[#59ee50]">
-                      {formatMoney(receipt.paymentAmountCents)}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div className="p-3 bg-[#131313] border border-[rgba(72,72,71,0.2)] rounded-[10px]">
+                    <span className="text-[10px] uppercase tracking-wider text-[#adaaaa] block">Monto Pagado</span>
+                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-[16px] text-[#59ee50]">
+                      {formatMoney(previewPayment.amountPaidCents)}
                     </span>
                   </div>
 
-                  <div className="p-3.5 bg-[#191919] border border-[rgba(72,72,71,0.2)] rounded-[12px]">
+                  <div className="p-3 bg-[#131313] border border-[rgba(72,72,71,0.2)] rounded-[10px]">
                     <span className="text-[10px] uppercase tracking-wider text-[#adaaaa] block">Total Debido</span>
-                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-[18px] text-white">
-                      {formatMoney(receipt.context.dueCents)}
+                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-[16px] text-white">
+                      {formatMoney(previewPayment.totalDueCents)}
                     </span>
                   </div>
 
-                  <div className="p-3.5 bg-[#191919] border border-[rgba(72,72,71,0.2)] rounded-[12px]">
-                    <span className="text-[10px] uppercase tracking-wider text-[#adaaaa] block">Balance Restante</span>
-                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-[18px] text-[#ff906d]">
-                      {formatMoney(receipt.context.pendingCents)}
+                  <div className="p-3 bg-[#131313] border border-[rgba(72,72,71,0.2)] rounded-[10px]">
+                    <span className="text-[10px] uppercase tracking-wider text-[#adaaaa] block">Balance Pendiente</span>
+                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-[16px] text-[#ff906d]">
+                      {formatMoney(previewPayment.pendingCents)}
                     </span>
                   </div>
                 </div>
 
-                {/* Adjustments in Receipt */}
-                {receipt.adjustments.length > 0 && (
-                  <div className="flex flex-col gap-2 border-t border-[rgba(72,72,71,0.15)] pt-4">
-                    <span className="text-[11px] uppercase tracking-wider text-[#adaaaa] font-['Space_Grotesk',sans-serif] font-bold">
-                      Desglose de Ajustes Aplicados
-                    </span>
-                    <div className="divide-y divide-[rgba(72,72,71,0.1)]">
-                      {receipt.adjustments.map((adj, i) => (
-                        <div key={i} className="flex justify-between py-2 text-[12px]">
-                          <span className="text-white">
-                            {adj.type} ({adj.kind === "bonus" ? "Bono" : "Descuento"})
-                            {adj.note && ` — ${adj.note}`}
-                          </span>
-                          <span
-                            className={`font-['Space_Grotesk',sans-serif] font-bold ${
-                              adj.kind === "bonus" ? "text-[#59ee50]" : "text-[#ff716c]"
-                            }`}
-                          >
-                            {adj.kind === "bonus" ? "+" : "-"}
-                            {formatMoney(adj.amountCents)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 {/* Signatures */}
-                <div className="grid grid-cols-2 gap-12 pt-8 border-t border-[rgba(72,72,71,0.2)] mt-4">
+                <div className="grid grid-cols-2 gap-8 pt-6 border-t border-[rgba(72,72,71,0.2)] mt-2">
                   <div className="flex flex-col items-center">
                     <div className="w-full border-b border-dashed border-[rgba(72,72,71,0.5)] mb-2" />
                     <span className="text-[11px] font-['Inter',sans-serif] text-[#adaaaa]">Firma del Empleado</span>
@@ -1222,25 +1384,7 @@ export function Nomina() {
                 </div>
               </article>
             </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center p-12 text-center max-w-md bg-[#131313] border border-[rgba(72,72,71,0.18)] rounded-[16px]">
-              <Receipt className="size-12 text-[#484847] mb-3" />
-              <h4 className="font-['Space_Grotesk',sans-serif] font-bold text-[18px] text-white uppercase">
-                Sin recibos recientes
-              </h4>
-              <p className="text-[13px] text-[#adaaaa] font-['Inter',sans-serif] mt-1">
-                Realizá una liquidación de nómina en la pestaña "Calcular y Pagar Nómina" para generar un comprobante
-                oficial imprimible.
-              </p>
-              <button
-                type="button"
-                onClick={() => setActiveTab("pagar")}
-                className="mt-4 bg-[#ff906d] text-black font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase px-4 py-2.5 rounded-[10px] hover:brightness-110 cursor-pointer"
-              >
-                Ir a Calcular Pago
-              </button>
-            </div>
-          )}
+          </div>
         </div>
       )}
 

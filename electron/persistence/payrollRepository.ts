@@ -8,6 +8,7 @@ import type {
   PayrollPaymentAdjustment,
   PayrollPaymentContext,
   PayrollPaymentContextRequest,
+  PayrollPaymentRecord,
 } from "../../src/shared/lib/payrollContracts";
 
 type PayrollEmployeeRow = {
@@ -53,6 +54,51 @@ export class PayrollRepository {
       .all(tenantId, sucursalId) as PayrollEmployeeRow[];
 
     return rows.map(mapEmployeeRow);
+  }
+
+  public getPayments(tenantId: string, sucursalId: string, employeeId?: string): PayrollPaymentRecord[] {
+    const query = employeeId
+      ? `
+          SELECT p.id, p.employee_id, p.period, p.frequency, p.base_salary_cents,
+                 p.period_salary_cents, p.adjustments_delta_cents, p.total_due_cents,
+                 p.amount_paid_cents, p.pending_cents, p.receipt_snapshot, p.created_at,
+                 e.first_name, e.last_name, e.role
+          FROM payroll_payments p
+          LEFT JOIN payroll_employees e ON e.id = p.employee_id
+          WHERE p.tenant_id = ? AND p.sucursal_id = ? AND p.employee_id = ?
+          ORDER BY p.created_at DESC
+        `
+      : `
+          SELECT p.id, p.employee_id, p.period, p.frequency, p.base_salary_cents,
+                 p.period_salary_cents, p.adjustments_delta_cents, p.total_due_cents,
+                 p.amount_paid_cents, p.pending_cents, p.receipt_snapshot, p.created_at,
+                 e.first_name, e.last_name, e.role
+          FROM payroll_payments p
+          LEFT JOIN payroll_employees e ON e.id = p.employee_id
+          WHERE p.tenant_id = ? AND p.sucursal_id = ?
+          ORDER BY p.created_at DESC
+        `;
+
+    const rows = (employeeId
+      ? this.db.prepare(query).all(tenantId, sucursalId, employeeId)
+      : this.db.prepare(query).all(tenantId, sucursalId)) as any[];
+
+    return rows.map((row) => ({
+      id: row.id,
+      employeeId: row.employee_id,
+      employeeName: `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim() || "Empleado",
+      employeeRole: row.role ?? "N/A",
+      period: row.period,
+      frequency: row.frequency,
+      baseSalaryCents: row.base_salary_cents,
+      periodSalaryCents: row.period_salary_cents,
+      adjustmentsDeltaCents: row.adjustments_delta_cents,
+      totalDueCents: row.total_due_cents,
+      amountPaidCents: row.amount_paid_cents,
+      pendingCents: row.pending_cents,
+      receiptSnapshot: row.receipt_snapshot ?? "",
+      createdAt: row.created_at,
+    }));
   }
 
   private ensureTenantAndBranch(tenantId: string, sucursalId: string): void {

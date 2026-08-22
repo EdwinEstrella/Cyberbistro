@@ -582,6 +582,9 @@ if (gotTheLock) {
           case 'payroll.getEmployees': {
             return { type: 'payroll.employees', employees: repo.getEmployees(command.tenantId, command.sucursalId) }
           }
+          case 'payroll.getPayments': {
+            return { type: 'payroll.payments', payments: repo.getPayments(command.tenantId, command.sucursalId, command.employeeId) }
+          }
           case 'payroll.upsertEmployee': {
             const result = { type: 'payroll.employeeSaved', id: repo.upsertEmployee(command.tenantId, command.sucursalId, command.employee) } as const;
             tenantStoreController?.payrollSync.triggerSync().catch(console.error);

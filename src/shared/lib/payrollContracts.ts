@@ -58,8 +58,26 @@ export interface PayrollCreatePaymentRequest extends PayrollPaymentContextReques
   receiptSnapshot: string;
 }
 
+export interface PayrollPaymentRecord {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  employeeRole: string;
+  period: string;
+  frequency: PayrollFrequency;
+  baseSalaryCents: number;
+  periodSalaryCents: number;
+  adjustmentsDeltaCents: number;
+  totalDueCents: number;
+  amountPaidCents: number;
+  pendingCents: number;
+  receiptSnapshot: string;
+  createdAt: string;
+}
+
 export type PayrollCommand =
   | { type: "payroll.getEmployees"; tenantId: string; sucursalId: string }
+  | { type: "payroll.getPayments"; tenantId: string; sucursalId: string; employeeId?: string }
   | { type: "payroll.upsertEmployee"; tenantId: string; sucursalId: string; employee: PayrollEmployeeDraft }
   | { type: "payroll.disableEmployee"; tenantId: string; sucursalId: string; employeeId: string }
   | { type: "payroll.getPaymentContext"; tenantId: string; sucursalId: string; payload: PayrollPaymentContextRequest }
@@ -67,6 +85,7 @@ export type PayrollCommand =
 
 export type PayrollRepositoryResult =
   | { type: "payroll.employees"; employees: PayrollEmployee[] }
+  | { type: "payroll.payments"; payments: PayrollPaymentRecord[] }
   | { type: "payroll.paymentContext"; context: PayrollPaymentContext }
   | { type: "payroll.employeeSaved"; id: string }
   | { type: "payroll.paymentCommitted"; paymentId: string; expenseId: string; context: PayrollPaymentContext }
@@ -74,6 +93,7 @@ export type PayrollRepositoryResult =
 
 export interface PayrollAdapter {
   getEmployees(tenantId: string, sucursalId: string): Promise<PayrollEmployee[]>;
+  getPayments(tenantId: string, sucursalId: string, employeeId?: string): Promise<PayrollPaymentRecord[]>;
   upsertEmployee(tenantId: string, sucursalId: string, employee: PayrollEmployeeDraft): Promise<string>;
   disableEmployee(tenantId: string, sucursalId: string, employeeId: string): Promise<void>;
   getPaymentContext(tenantId: string, sucursalId: string, payload: PayrollPaymentContextRequest): Promise<PayrollPaymentContext>;
