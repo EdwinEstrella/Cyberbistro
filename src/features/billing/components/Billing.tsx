@@ -321,7 +321,8 @@ export function Billing() {
 
     setLoading(true);
 
-    await ensureAuthSessionFresh();
+    // Revalidación asíncrona en segundo plano sin bloquear analítica
+    void ensureAuthSessionFresh();
 
     const [
       useLocalInvoices,
