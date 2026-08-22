@@ -264,7 +264,9 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     const { command, commitId, branchId } = input;
     this.database.exec("BEGIN IMMEDIATE;");
     try {
+      this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(branchId, this.tenantId, "Principal");
       if (command.type === "receivables.create") {
+        this.database.prepare("INSERT OR IGNORE INTO customers (id, tenant_id, name) VALUES (?, ?, ?)").run(command.customerId, this.tenantId, "Cliente");
         this.database.prepare(`
           INSERT INTO cuentas_cobrar (id, tenant_id, sucursal_id, factura_id, customer_id, monto_total, monto_pendiente, estado, fecha_vencimiento)
           VALUES (?, ?, ?, ?, ?, ?, ?, 'pendiente', ?)
@@ -300,7 +302,9 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     const { command, commitId, branchId } = input;
     this.database.exec("BEGIN IMMEDIATE;");
     try {
+      this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(branchId, this.tenantId, "Principal");
       if (command.type === "payables.create") {
+        this.database.prepare("INSERT OR IGNORE INTO proveedores (id, tenant_id, name) VALUES (?, ?, ?)").run(command.supplierId, this.tenantId, "Proveedor");
         this.database.prepare(`
           INSERT INTO cuentas_pagar (id, tenant_id, sucursal_id, compra_id, proveedor_id, monto_total, monto_pendiente, estado, fecha_vencimiento)
           VALUES (?, ?, ?, ?, ?, ?, ?, 'pendiente', ?)

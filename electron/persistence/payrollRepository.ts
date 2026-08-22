@@ -55,12 +55,20 @@ export class PayrollRepository {
     return rows.map(mapEmployeeRow);
   }
 
+  private ensureTenantAndBranch(tenantId: string, sucursalId: string): void {
+    this.db.prepare("INSERT OR IGNORE INTO tenant_identity (id) VALUES (?)").run(tenantId);
+    this.db.prepare("INSERT OR IGNORE INTO tenants (id) VALUES (?)").run(tenantId);
+    this.db.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(sucursalId, tenantId, "Principal");
+  }
+
   public upsertEmployee(tenantId: string, sucursalId: string, employee: PayrollEmployeeDraft): string {
     const id = employee.id ?? randomUUID();
 
     this.db.exec("BEGIN IMMEDIATE;");
 
     try {
+      this.ensureTenantAndBranch(tenantId, sucursalId);
+
       if (employee.id) {
         const result = this.db
           .prepare(
@@ -137,6 +145,7 @@ export class PayrollRepository {
     this.db.exec("BEGIN IMMEDIATE;");
 
     try {
+      this.ensureTenantAndBranch(tenantId, sucursalId);
       const result = this.db
         .prepare(
           `
@@ -215,6 +224,7 @@ export class PayrollRepository {
     this.db.exec("BEGIN IMMEDIATE;");
 
     try {
+      this.ensureTenantAndBranch(tenantId, sucursalId);
       const context = this.getPaymentContext(tenantId, sucursalId, payload);
       if (payload.paymentAmountCents > context.pendingCents) {
         throw new Error("Overpayment not allowed");
