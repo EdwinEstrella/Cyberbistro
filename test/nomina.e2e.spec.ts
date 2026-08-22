@@ -22,6 +22,7 @@ test.describe("Nomina (Payroll) Full CRUD & Local-First SQLite E2E", () => {
       args: [".", `--user-data-dir=${userDataDirectory}`],
     });
     page = await app.firstWindow();
+    await page.bringToFront();
     await expect(page.getByLabel("Correo")).toBeVisible();
   });
 
@@ -342,6 +343,7 @@ test.describe("Nomina (Payroll) Full CRUD & Local-First SQLite E2E", () => {
 
     // 4. Query receipts history (getPayments)
     console.log("⏳ [4/4] Consultando historial de recibos en SQLite...");
+    await page.waitForTimeout(1000);
     const paymentsList = await page.evaluate(
       ({ tid, sid }) =>
         window.electronAPI!.executePayrollCommand!({
@@ -360,14 +362,17 @@ test.describe("Nomina (Payroll) Full CRUD & Local-First SQLite E2E", () => {
     expect(receipts[0].amountPaidCents).toBe(1250000);
     expect(receipts[0].pendingCents).toBe(0);
 
+    await page.screenshot({ path: "test-results/nomina-receipt-visual.png", fullPage: true });
+
     console.log(`✔ [4/4] RECIBO ENCONTRADO EN LISTA HISTÓRICA:`);
-    console.log(`       - Empleado: ${receipts[0].employeeName}`);
-    console.log(`       - Cargo:    ${receipts[0].employeeRole}`);
-    console.log(`       - Período:  ${receipts[0].period}`);
-    console.log(`       - Monto:    RD$ ${(receipts[0].amountPaidCents / 100).toLocaleString('es-DO', { minimumFractionDigits: 2 })}`);
+    console.log(`       - Empleado:  ${receipts[0].employeeName}`);
+    console.log(`       - Cargo:     ${receipts[0].employeeRole}`);
+    console.log(`       - Período:   ${receipts[0].period}`);
+    console.log(`       - Monto:     RD$ ${(receipts[0].amountPaidCents / 100).toLocaleString('es-DO', { minimumFractionDigits: 2 })}`);
     console.log(`       - Pendiente: RD$ ${(receipts[0].pendingCents / 100).toLocaleString('es-DO', { minimumFractionDigits: 2 })}`);
     console.log("=======================================================");
     console.log("🎉 VERIFICACIÓN DE HISTORIAL DE RECIBO EXITOSA");
+    console.log("📸 Screenshot guardado en test-results/nomina-receipt-visual.png");
     console.log("=======================================================\n");
   });
 });
