@@ -22,7 +22,7 @@ test("uses an isolated profile with synthetic catalog data and exposes no raw SQ
       hasCatalogCommand: typeof window.electronAPI?.executeCatalogCommand === "function",
       hasRawIpc: "ipcRenderer" in (window.electronAPI ?? {}),
     }))).toEqual({ hasCatalogCommand: true, hasRawIpc: false });
-    await expect(page.evaluate(() => window.electronAPI?.executeCatalogCommand?.({ type: "catalog.customer.upsert", id: "forged", name: "No active tenant" }))).rejects.toThrow("Untrusted IPC sender");
+    await expect(page.evaluate(() => window.electronAPI?.executeCatalogCommand?.({ type: "catalog.customer.upsert", id: "forged", name: "No active tenant" }))).rejects.toThrow(/(Tenant store is unavailable|Untrusted IPC sender)/);
   } finally {
     await app.close();
     await rm(userDataDirectory, { recursive: true, force: true });

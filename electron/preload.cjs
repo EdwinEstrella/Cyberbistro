@@ -27,10 +27,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.send('window-maximize')
   },
   ensureInputFocus: () => ipcRenderer.invoke('window:ensure-input-focus'),
+  getTenantStoreStatus: () => ipcRenderer.invoke('tenant-store:status'),
   executeCatalogCommand: (command) => ipcRenderer.invoke('catalog-repository:execute', command),
   executeOrdersCommand: (command) => ipcRenderer.invoke('orders-repository:execute', command),
   executeSalesFiscalCommand: (command) => ipcRenderer.invoke('sales-fiscal-repository:execute', command),
   executeCashPurchaseCommand: (command) => ipcRenderer.invoke('cash-purchase-repository:execute', command),
+  executePayrollCommand: (command) => ipcRenderer.invoke('payroll-repository:execute', command),
+  executeReceivablesCommand: (command) => ipcRenderer.invoke('receivables-repository:execute', command),
+  executePayablesCommand: (command) => ipcRenderer.invoke('payables-repository:execute', command),
+  importLegacyIndexedDb: (payload) => ipcRenderer.invoke('tenant-store:import-indexeddb', payload),
   close: () => {
     console.log('preload: close called')
     ipcRenderer.send('window-close')

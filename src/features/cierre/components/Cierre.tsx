@@ -9,6 +9,7 @@ import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst }
 import { isDesktopRuntime, isCloudAvailableForDesktop } from "../../../shared/lib/cloudAvailability";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { calculateExpectedCashDrawer, sumCashExpenses } from "../../../shared/lib/cycleCash";
+import { openOperatingCycle, closeOperatingCycle } from "../../../shared/lib/ordersUiAdapter";
 
 type FacturaEstado = "pagada" | "pendiente" | "cancelada";
 
@@ -362,6 +363,15 @@ export function Cierre() {
       const openedAt = new Date();
       const openedAtIso = openedAt.toISOString();
       const businessDay = todayYmd();
+
+      if (typeof window !== "undefined" && window.electronAPI?.executeOrdersCommand) {
+        try {
+          await openOperatingCycle(localCycleId, businessDay, efectivoInicial);
+        } catch (e) {
+          console.warn("Desktop SQLite cycle open failed, falling back to localFirst enqueue:", e);
+        }
+      }
+
       await enqueueLocalWrite({
         tenantId,
         tableName: "cierres_operativos",
@@ -474,6 +484,14 @@ export function Cierre() {
       setPrinting(false);
       await cargar();
       return;
+    }
+
+    if (typeof window !== "undefined" && window.electronAPI?.executeOrdersCommand) {
+      try {
+        await closeOperatingCycle(currentCycle.id);
+      } catch (e) {
+        console.warn("Desktop SQLite cycle close failed, falling back to localFirst enqueue:", e);
+      }
     }
 
     await enqueueLocalWrite({ tenantId, tableName: "cierres_operativos", rowId: currentCycle.id, op: "update", payload: { closed_at: now, closed_by_auth_user_id: user?.id ?? null }, deviceId });

@@ -9,6 +9,8 @@ import {
 } from "../../src/shared/lib/payrollContracts";
 import type { SalesFiscalCommand, SalesFiscalRepositoryResult } from "./salesFiscalRepository";
 import type { CashPurchaseCommand, CashPurchaseRepositoryResult } from "./cashPurchaseRepository";
+import type { ReceivablesCommand, ReceivablesRepositoryResult } from "./receivablesRepository";
+import type { PayablesCommand, PayablesRepositoryResult } from "./payablesRepository";
 
 export const TENANT_STORE_STATUS_CHANNEL = "tenant-store:status";
 export const TENANT_STORE_IMPORT_CHANNEL = "tenant-store:import-indexeddb";
@@ -18,6 +20,11 @@ export const ORDERS_REPOSITORY_EXECUTE_CHANNEL = "orders-repository:execute";
 export const FISCAL_SALES_REPOSITORY_EXECUTE_CHANNEL = "sales-fiscal-repository:execute";
 export const CASH_PURCHASE_REPOSITORY_EXECUTE_CHANNEL = "cash-purchase-repository:execute";
 export const PAYROLL_REPOSITORY_EXECUTE_CHANNEL = "payroll-repository:execute";
+export const RECEIVABLES_REPOSITORY_EXECUTE_CHANNEL = "receivables-repository:execute";
+export const PAYABLES_REPOSITORY_EXECUTE_CHANNEL = "payables-repository:execute";
+
+export interface ReceivablesRepositoryIpcMain { handle(channel: string, handler: (event: { senderId: number }, payload?: unknown) => unknown): void; removeHandler(channel: string): void; }
+export interface PayablesRepositoryIpcMain { handle(channel: string, handler: (event: { senderId: number }, payload?: unknown) => unknown): void; removeHandler(channel: string): void; }
 
 export interface TenantStoreIpcMain {
   handle(channel: string, handler: (event: { senderId: number }, payload?: unknown) => unknown): void;
@@ -43,6 +50,26 @@ export interface SalesFiscalRepositoryIpcMain {
 }
 export interface CashPurchaseRepositoryIpcMain { handle(channel: string, handler: (event: { senderId: number }, payload?: unknown) => unknown): void; removeHandler(channel: string): void; }
 export interface PayrollRepositoryIpcMain { handle(channel: string, handler: (event: { senderId: number }, payload?: unknown) => unknown): void; removeHandler(channel: string): void; }
+
+export function registerReceivablesRepositoryIpc(input: { ipcMain: ReceivablesRepositoryIpcMain; isTrustedSender: (event: { senderId: number }) => boolean; getRepository: () => { execute(command: ReceivablesCommand): ReceivablesRepositoryResult } }): void {
+  input.ipcMain.removeHandler(RECEIVABLES_REPOSITORY_EXECUTE_CHANNEL);
+  input.ipcMain.handle(RECEIVABLES_REPOSITORY_EXECUTE_CHANNEL, async (event, payload) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    const command = parseReceivablesCommand(payload);
+    if (!command) throw new Error("Invalid receivables command");
+    return { ok: true, data: input.getRepository().execute(command) };
+  });
+}
+
+export function registerPayablesRepositoryIpc(input: { ipcMain: PayablesRepositoryIpcMain; isTrustedSender: (event: { senderId: number }) => boolean; getRepository: () => { execute(command: PayablesCommand): PayablesRepositoryResult } }): void {
+  input.ipcMain.removeHandler(PAYABLES_REPOSITORY_EXECUTE_CHANNEL);
+  input.ipcMain.handle(PAYABLES_REPOSITORY_EXECUTE_CHANNEL, async (event, payload) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    const command = parsePayablesCommand(payload);
+    if (!command) throw new Error("Invalid payables command");
+    return { ok: true, data: input.getRepository().execute(command) };
+  });
+}
 
 export function registerPayrollRepositoryIpc(input: {
   ipcMain: PayrollRepositoryIpcMain;
@@ -203,6 +230,40 @@ function parseCashPurchaseCommand(payload: unknown): CashPurchaseCommand | null 
   const text = (key: string) => typeof command[key] === "string" && command[key].length > 0 && command[key].length <= 256;
   if (Object.keys(command).length !== keys.length || !Object.keys(command).every((key) => keys.includes(key)) || command.type !== "purchase.cash.create" || !keys.slice(1, 7).every(text)) return null;
   return typeof command.quantity === "number" && Number.isFinite(command.quantity) && command.quantity > 0 && typeof command.unitCost === "number" && Number.isFinite(command.unitCost) && command.unitCost >= 0 ? command as CashPurchaseCommand : null;
+}
+
+function parseReceivablesCommand(payload: unknown): ReceivablesCommand | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const command = payload as Record<string, unknown>;
+  const text = (key: string) => typeof command[key] === "string" && (command[key] as string).trim().length > 0 && (command[key] as string).length <= 256;
+  if (command.type === "receivables.create") {
+    if (!text("id") || !text("customerId")) return null;
+    if (typeof command.totalAmount !== "number" || !Number.isFinite(command.totalAmount) || command.totalAmount < 0) return null;
+    return command as ReceivablesCommand;
+  }
+  if (command.type === "receivables.payment.record") {
+    if (!text("paymentId") || !text("receivableId") || !text("paymentMethod")) return null;
+    if (typeof command.amount !== "number" || !Number.isFinite(command.amount) || command.amount <= 0) return null;
+    return command as ReceivablesCommand;
+  }
+  return null;
+}
+
+function parsePayablesCommand(payload: unknown): PayablesCommand | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const command = payload as Record<string, unknown>;
+  const text = (key: string) => typeof command[key] === "string" && (command[key] as string).trim().length > 0 && (command[key] as string).length <= 256;
+  if (command.type === "payables.create") {
+    if (!text("id") || !text("supplierId")) return null;
+    if (typeof command.totalAmount !== "number" || !Number.isFinite(command.totalAmount) || command.totalAmount < 0) return null;
+    return command as PayablesCommand;
+  }
+  if (command.type === "payables.payment.record") {
+    if (!text("paymentId") || !text("payableId") || !text("paymentMethod")) return null;
+    if (typeof command.amount !== "number" || !Number.isFinite(command.amount) || command.amount <= 0) return null;
+    return command as PayablesCommand;
+  }
+  return null;
 }
 
 function parsePayrollCommand(payload: unknown): PayrollCommand | null {

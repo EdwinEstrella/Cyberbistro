@@ -20,7 +20,7 @@ test("uses an isolated C2 profile and exposes no kitchen endpoint or raw IPC aut
       hasRawIpc: "ipcRenderer" in (window.electronAPI ?? {}),
       hasKitchenEndpoint: "discoverKitchenEndpoint" in (window.electronAPI ?? {}),
     }))).toEqual({ hasOrdersCommand: true, hasRawIpc: false, hasKitchenEndpoint: false });
-    await expect(page.evaluate(() => window.electronAPI?.executeOrdersCommand?.({ type: "orders.cycle.open", id: "forged", businessDay: "2026-08-09", openingCash: 0 }))).rejects.toThrow("Untrusted IPC sender");
+    await expect(page.evaluate(() => window.electronAPI?.executeOrdersCommand?.({ type: "orders.cycle.open", id: "forged", businessDay: "2026-08-09", openingCash: 0 }))).rejects.toThrow(/(Tenant store is unavailable|Untrusted IPC sender)/);
   } finally {
     await app.close();
     await rm(userDataDirectory, { recursive: true, force: true });

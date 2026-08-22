@@ -9,8 +9,10 @@ import type { CatalogCommand } from "../../src/shared/lib/catalogContracts";
 import type { OrdersCommand } from "../../src/shared/lib/ordersContracts";
 import type { SalesFiscalCommand, SalesFiscalRepositoryStore } from "./salesFiscalRepository";
 import type { CashPurchaseCommand, CashPurchaseRepositoryStore } from "./cashPurchaseRepository";
+import type { ReceivablesCommand, ReceivablesRepositoryStore } from "./receivablesRepository";
+import type { PayablesCommand, PayablesRepositoryStore } from "./payablesRepository";
 
-export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositoryStore, CashPurchaseRepositoryStore {
+export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositoryStore, CashPurchaseRepositoryStore, ReceivablesRepositoryStore, PayablesRepositoryStore {
   private constructor(
     private readonly database: DatabaseSync,
     private readonly databasePath: string,
@@ -95,6 +97,48 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
 
   readCashPurchaseRows(): { purchases: Array<Record<string, unknown>>; details: Array<Record<string, unknown>>; movements: Array<Record<string, unknown>>; expenses: Array<Record<string, unknown>> } {
     return { purchases: this.database.prepare("SELECT id, total FROM compras ORDER BY id").all() as Array<Record<string, unknown>>, details: this.database.prepare("SELECT id, compra_id AS purchaseId, quantity, subtotal FROM detalles_compra ORDER BY id").all() as Array<Record<string, unknown>>, movements: this.database.prepare("SELECT id, compra_id AS purchaseId, quantity FROM movimientos_inventario ORDER BY id").all() as Array<Record<string, unknown>>, expenses: this.database.prepare("SELECT id, compra_id AS purchaseId, amount FROM gastos WHERE expense_type = 'purchase' ORDER BY id").all() as Array<Record<string, unknown>> };
+  }
+
+  readAnalyticsSummary(sucursalId?: string): {
+    totalSales: number;
+    totalExpenses: number;
+    openOrdersCount: number;
+    totalReceivables: number;
+    totalPayables: number;
+    activePayrollEmployees: number;
+  } {
+    const salesRow = this.database.prepare(
+      "SELECT COALESCE(SUM(total), 0) AS total FROM facturas WHERE tenant_id = ?" + (sucursalId ? " AND sucursal_id = ?" : "")
+    ).get(...(sucursalId ? [this.tenantId, sucursalId] : [this.tenantId])) as { total: number };
+
+    const expensesRow = this.database.prepare(
+      "SELECT COALESCE(SUM(amount), 0) + COALESCE(SUM(amount_cents)/100.0, 0) AS total FROM gastos WHERE tenant_id = ?" + (sucursalId ? " AND sucursal_id = ?" : "")
+    ).get(...(sucursalId ? [this.tenantId, sucursalId] : [this.tenantId])) as { total: number };
+
+    const ordersRow = this.database.prepare(
+      "SELECT COUNT(*) AS count FROM comandas WHERE tenant_id = ? AND state IN ('pending', 'preparing', 'ready')" + (sucursalId ? " AND sucursal_id = ?" : "")
+    ).get(...(sucursalId ? [this.tenantId, sucursalId] : [this.tenantId])) as { count: number };
+
+    const cxcRow = this.database.prepare(
+      "SELECT COALESCE(SUM(monto_pendiente), 0) AS total FROM cuentas_cobrar WHERE tenant_id = ? AND estado != 'pagado'" + (sucursalId ? " AND sucursal_id = ?" : "")
+    ).get(...(sucursalId ? [this.tenantId, sucursalId] : [this.tenantId])) as { total: number };
+
+    const cxpRow = this.database.prepare(
+      "SELECT COALESCE(SUM(monto_pendiente), 0) AS total FROM cuentas_pagar WHERE tenant_id = ? AND estado != 'pagado'" + (sucursalId ? " AND sucursal_id = ?" : "")
+    ).get(...(sucursalId ? [this.tenantId, sucursalId] : [this.tenantId])) as { total: number };
+
+    const employeesRow = this.database.prepare(
+      "SELECT COUNT(*) AS count FROM payroll_employees WHERE tenant_id = ? AND is_active = 1" + (sucursalId ? " AND sucursal_id = ?" : "")
+    ).get(...(sucursalId ? [this.tenantId, sucursalId] : [this.tenantId])) as { count: number };
+
+    return {
+      totalSales: salesRow.total,
+      totalExpenses: expensesRow.total,
+      openOrdersCount: ordersRow.count,
+      totalReceivables: cxcRow.total,
+      totalPayables: cxpRow.total,
+      activePayrollEmployees: employeesRow.count,
+    };
   }
 
   markOutboxSyncingForRecovery(rowId: string): void {
@@ -214,6 +258,78 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
       for (const [tableName, rowId, suffix] of [["compras", command.purchaseId, "purchase"], ["detalles_compra", command.detailId, "detail"], ["movimientos_inventario", command.inventoryMovementId, "movement"], ["gastos", command.expenseId, "expense"]]) this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, ?, ?, 'upsert', ?, 'pending')").run(`${commitId}:${suffix}`, this.tenantId, branchId, tableName, rowId, JSON.stringify(command));
       this.database.exec("COMMIT;");
     } catch (error) { this.database.exec("ROLLBACK;"); throw error; }
+  }
+
+  executeReceivablesCommand(input: { command: ReceivablesCommand; commitId: string; branchId: string }): void {
+    const { command, commitId, branchId } = input;
+    this.database.exec("BEGIN IMMEDIATE;");
+    try {
+      if (command.type === "receivables.create") {
+        this.database.prepare(`
+          INSERT INTO cuentas_cobrar (id, tenant_id, sucursal_id, factura_id, customer_id, monto_total, monto_pendiente, estado, fecha_vencimiento)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'pendiente', ?)
+        `).run(command.id, this.tenantId, branchId, command.facturaId ?? null, command.customerId, command.totalAmount, command.totalAmount, command.dueDate ?? null);
+        this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, ?, ?, 'upsert', ?, 'pending')")
+          .run(`${commitId}:cxc-create`, this.tenantId, branchId, "cuentas_cobrar", command.id, JSON.stringify(command));
+      } else if (command.type === "receivables.payment.record") {
+        const row = this.database.prepare("SELECT monto_pendiente FROM cuentas_cobrar WHERE id = ? AND tenant_id = ?").get(command.receivableId, this.tenantId) as { monto_pendiente: number } | undefined;
+        if (!row) throw new Error(`Cuenta por cobrar ${command.receivableId} no encontrada.`);
+        if (command.amount <= 0 || command.amount > row.monto_pendiente) {
+          throw new Error(`Monto de pago inválido. Pendiente: ${row.monto_pendiente}`);
+        }
+        const newPending = row.monto_pendiente - command.amount;
+        const newStatus = newPending === 0 ? "pagado" : "parcial";
+        this.database.prepare(`
+          INSERT INTO cxc_pagos (id, tenant_id, sucursal_id, cuenta_cobrar_id, monto, metodo_pago)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(command.paymentId, this.tenantId, branchId, command.receivableId, command.amount, command.paymentMethod);
+        this.database.prepare(`
+          UPDATE cuentas_cobrar SET monto_pendiente = ?, estado = ? WHERE id = ? AND tenant_id = ?
+        `).run(newPending, newStatus, command.receivableId, this.tenantId);
+        this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, ?, ?, 'upsert', ?, 'pending')")
+          .run(`${commitId}:cxc-payment`, this.tenantId, branchId, "cxc_pagos", command.paymentId, JSON.stringify(command));
+      }
+      this.database.exec("COMMIT;");
+    } catch (error) {
+      this.database.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
+  executePayablesCommand(input: { command: PayablesCommand; commitId: string; branchId: string }): void {
+    const { command, commitId, branchId } = input;
+    this.database.exec("BEGIN IMMEDIATE;");
+    try {
+      if (command.type === "payables.create") {
+        this.database.prepare(`
+          INSERT INTO cuentas_pagar (id, tenant_id, sucursal_id, compra_id, proveedor_id, monto_total, monto_pendiente, estado, fecha_vencimiento)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'pendiente', ?)
+        `).run(command.id, this.tenantId, branchId, command.compraId ?? null, command.supplierId, command.totalAmount, command.totalAmount, command.dueDate ?? null);
+        this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, ?, ?, 'upsert', ?, 'pending')")
+          .run(`${commitId}:cxp-create`, this.tenantId, branchId, "cuentas_pagar", command.id, JSON.stringify(command));
+      } else if (command.type === "payables.payment.record") {
+        const row = this.database.prepare("SELECT monto_pendiente FROM cuentas_pagar WHERE id = ? AND tenant_id = ?").get(command.payableId, this.tenantId) as { monto_pendiente: number } | undefined;
+        if (!row) throw new Error(`Cuenta por pagar ${command.payableId} no encontrada.`);
+        if (command.amount <= 0 || command.amount > row.monto_pendiente) {
+          throw new Error(`Monto de pago inválido. Pendiente: ${row.monto_pendiente}`);
+        }
+        const newPending = row.monto_pendiente - command.amount;
+        const newStatus = newPending === 0 ? "pagado" : "parcial";
+        this.database.prepare(`
+          INSERT INTO cxp_pagos (id, tenant_id, sucursal_id, cuenta_pagar_id, monto, metodo_pago)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(command.paymentId, this.tenantId, branchId, command.payableId, command.amount, command.paymentMethod);
+        this.database.prepare(`
+          UPDATE cuentas_pagar SET monto_pendiente = ?, estado = ? WHERE id = ? AND tenant_id = ?
+        `).run(newPending, newStatus, command.payableId, this.tenantId);
+        this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, ?, ?, 'upsert', ?, 'pending')")
+          .run(`${commitId}:cxp-payment`, this.tenantId, branchId, "cxp_pagos", command.paymentId, JSON.stringify(command));
+      }
+      this.database.exec("COMMIT;");
+    } catch (error) {
+      this.database.exec("ROLLBACK;");
+      throw error;
+    }
   }
 
   close(): void {

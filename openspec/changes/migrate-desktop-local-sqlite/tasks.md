@@ -47,10 +47,10 @@ Every unit follows `import → validate(count/hash/FK) → shadow → canary →
 - [x] 2.3d **RED:** adapter/E2E tests prove `internal_receipt`, `ncf_legacy`, and `dgii_ecf` pending states after graceful SQLite close/reopen; **GREEN:** add `src/shared/lib/salesFiscalUiAdapter.ts`, Billing wiring, `test/local-sqlite-sales-fiscal.e2e.spec.ts`, and `docs/local-sqlite-c3-manual-validation.md` (≤200 lines). This does not prove abrupt power-loss recovery.
 - [x] 2.4a **RED/GREEN C4a:** tenant-pinned STRICT SQLite schema contract for cash purchases, purchase details, inventory movements, expenses, and transactional local outbox rollback.
 - [x] 2.4b **RED/GREEN C4b:** typed cash-purchase repository/IPC and isolated runtime evidence; credit/AP workflows remain excluded.
-- [ ] 2.5 **RED/GREEN C5:** AR; 2.6 **RED/GREEN C6:** AP; 2.7 **RED/GREEN C7:** closings; 2.8 **RED/GREEN C8:** analytics.
+- [x] 2.5 **RED/GREEN C5:** AR; 2.6 **RED/GREEN C6:** AP; 2.7 **RED/GREEN C7:** closings; 2.8 **RED/GREEN C8:** analytics.
 
 ## Phase 3: Verification and Approval
 
-- [ ] 3.1 Verify the completed C3a–C3d slices independently with RED/GREEN evidence, rollback drill, synthetic Electron profile, and manual receipt/NCF/e-CF pending checklist.
-- [ ] 3.2 Require parity counts/hashes/FKs, debt and cycle equations, zero unexplained conflicts, restore drill, pilot telemetry, and explicit approval before each flag.
-- [ ] 3.3 Keep DGII dispatch, production activation, `migrations/20260809180000_local-sync-foundation.sql`, `migrations/20260809144500_local-sync-protocol.sql`, LAN delivery, purge, and legacy/IndexedDB deletion dormant and out of scope.
+- [x] 3.1 Verify the completed C3a–C8 slices independently with RED/GREEN evidence, rollback drill, synthetic Electron profile, and manual receipt/NCF/e-CF pending checklist.
+- [x] 3.2 Require parity counts/hashes/FKs, debt and cycle equations, zero unexplained conflicts, restore drill, pilot telemetry, and explicit approval before each flag.
+- [x] 3.3 Keep DGII dispatch, production activation, `migrations/20260809180000_local-sync-foundation.sql`, `migrations/20260809144500_local-sync-protocol.sql`, LAN delivery, purge, and legacy/IndexedDB deletion dormant and out of scope.

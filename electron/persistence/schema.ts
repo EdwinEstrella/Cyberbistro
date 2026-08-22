@@ -238,6 +238,120 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
       ),
       FOREIGN KEY (compra_id, tenant_id, sucursal_id) REFERENCES compras (id, tenant_id, sucursal_id)
     ) STRICT;
+    CREATE TABLE IF NOT EXISTS tenant_users (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL REFERENCES tenants(id),
+      auth_user_id TEXT,
+      role TEXT NOT NULL,
+      nombre TEXT,
+      pin TEXT,
+      activo INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0, 1))
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS gasto_categorias (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL REFERENCES tenants(id),
+      name TEXT NOT NULL
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS cuentas_pagar (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL REFERENCES tenants(id),
+      sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
+      compra_id TEXT REFERENCES compras(id),
+      proveedor_id TEXT NOT NULL REFERENCES proveedores(id),
+      monto_total REAL NOT NULL CHECK (monto_total >= 0),
+      monto_pendiente REAL NOT NULL CHECK (monto_pendiente >= 0),
+      estado TEXT NOT NULL CHECK (estado IN ('pendiente', 'parcial', 'pagado', 'vencido')),
+      fecha_vencimiento TEXT
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS cxp_pagos (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL REFERENCES tenants(id),
+      sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
+      cuenta_pagar_id TEXT NOT NULL REFERENCES cuentas_pagar(id),
+      monto REAL NOT NULL CHECK (monto > 0),
+      metodo_pago TEXT NOT NULL,
+      fecha_pago TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS cuentas_cobrar (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL REFERENCES tenants(id),
+      sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
+      factura_id TEXT REFERENCES facturas(id),
+      customer_id TEXT NOT NULL REFERENCES customers(id),
+      monto_total REAL NOT NULL CHECK (monto_total >= 0),
+      monto_pendiente REAL NOT NULL CHECK (monto_pendiente >= 0),
+      estado TEXT NOT NULL CHECK (estado IN ('pendiente', 'parcial', 'pagado', 'vencido')),
+      fecha_vencimiento TEXT
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS cxc_pagos (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL REFERENCES tenants(id),
+      sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
+      cuenta_cobrar_id TEXT NOT NULL REFERENCES cuentas_cobrar(id),
+      monto REAL NOT NULL CHECK (monto > 0),
+      metodo_pago TEXT NOT NULL,
+      fecha_pago TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS digital_menu_settings (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL REFERENCES tenants(id),
+      sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
+      is_enabled INTEGER NOT NULL DEFAULT 1 CHECK (is_enabled IN (0, 1)),
+      settings_json TEXT
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS digital_menu_items (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL REFERENCES tenants(id),
+      plato_id TEXT NOT NULL REFERENCES platos(id),
+      is_available INTEGER NOT NULL DEFAULT 1 CHECK (is_available IN (0, 1)),
+      price_override REAL
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS digital_orders (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL REFERENCES tenants(id),
+      sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
+      customer_name TEXT,
+      total REAL NOT NULL CHECK (total >= 0),
+      status TEXT NOT NULL
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS digital_order_items (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL REFERENCES tenants(id),
+      order_id TEXT NOT NULL REFERENCES digital_orders(id),
+      plato_id TEXT NOT NULL REFERENCES platos(id),
+      quantity INTEGER NOT NULL CHECK (quantity > 0),
+      unit_price REAL NOT NULL CHECK (unit_price >= 0),
+      subtotal REAL NOT NULL CHECK (subtotal >= 0)
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS sync_state (
+      key TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL REFERENCES tenants(id),
+      table_name TEXT NOT NULL,
+      phase TEXT NOT NULL,
+      cursor TEXT,
+      completed INTEGER NOT NULL CHECK (completed IN (0, 1)),
+      row_count INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      last_error TEXT
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS sync_errors (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL REFERENCES tenants(id),
+      table_name TEXT NOT NULL,
+      row_id TEXT NOT NULL,
+      error_message TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS local_device_session (
+      tenant_id TEXT PRIMARY KEY REFERENCES tenants(id),
+      session_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS local_license_cache (
+      tenant_id TEXT PRIMARY KEY REFERENCES tenants(id),
+      license_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) STRICT;
     CREATE INDEX IF NOT EXISTS idx_comandas_branch_state ON comandas (tenant_id, sucursal_id, state);
     CREATE INDEX IF NOT EXISTS idx_consumos_comanda ON consumos (comanda_id, state);
     CREATE INDEX IF NOT EXISTS idx_cierres_open ON cierres_operativos (tenant_id, sucursal_id, state);
@@ -246,6 +360,10 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
     CREATE INDEX IF NOT EXISTS idx_fiscal_outbox_pending ON fiscal_outbox (tenant_id, sucursal_id, status);
     CREATE INDEX IF NOT EXISTS idx_compras_tenant_branch ON compras (tenant_id, sucursal_id);
     CREATE INDEX IF NOT EXISTS idx_movimientos_inventario_purchase ON movimientos_inventario (compra_id, inventory_product_id);
+    CREATE INDEX IF NOT EXISTS idx_cuentas_pagar_proveedor ON cuentas_pagar (tenant_id, sucursal_id, proveedor_id, estado);
+    CREATE INDEX IF NOT EXISTS idx_cuentas_cobrar_customer ON cuentas_cobrar (tenant_id, sucursal_id, customer_id, estado);
+    CREATE INDEX IF NOT EXISTS idx_cxp_pagos_cuenta ON cxp_pagos (cuenta_pagar_id);
+    CREATE INDEX IF NOT EXISTS idx_cxc_pagos_cuenta ON cxc_pagos (cuenta_cobrar_id);
     CREATE INDEX IF NOT EXISTS idx_payroll_payments_employee_period ON payroll_payments (tenant_id, sucursal_id, employee_id, period);
     CREATE INDEX IF NOT EXISTS idx_payroll_adjustments_payment ON payroll_payment_adjustments (payment_id);
     CREATE INDEX IF NOT EXISTS idx_gastos_payroll_payment ON gastos (payroll_payment_id);

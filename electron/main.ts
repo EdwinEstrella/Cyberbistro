@@ -6,7 +6,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setupAutoUpdater } from './autoUpdater'
 import { startLanEdgeServer, type LanEdgeServerHandle } from './lanEdgeServer'
-import { registerCashPurchaseRepositoryIpc, registerCatalogRepositoryIpc, registerDesktopRepositoryIpc, registerOrdersRepositoryIpc, registerSalesFiscalRepositoryIpc, registerTenantStoreIpc, registerPayrollRepositoryIpc } from './persistence/ipc'
+import { registerCashPurchaseRepositoryIpc, registerCatalogRepositoryIpc, registerDesktopRepositoryIpc, registerOrdersRepositoryIpc, registerSalesFiscalRepositoryIpc, registerTenantStoreIpc, registerPayrollRepositoryIpc, registerReceivablesRepositoryIpc, registerPayablesRepositoryIpc } from './persistence/ipc'
 import { PayrollRepository } from './persistence/payrollRepository'
 import type { PayrollCommand } from '../src/shared/lib/payrollContracts'
 import { TenantStoreController } from './persistence/tenantStore'
@@ -15,6 +15,8 @@ import { CatalogRepository } from './persistence/catalogRepository'
 import { OrdersRepository } from './persistence/ordersRepository'
 import { SalesFiscalRepository } from './persistence/salesFiscalRepository'
 import { CashPurchaseRepository } from './persistence/cashPurchaseRepository'
+import { ReceivablesRepository } from './persistence/receivablesRepository'
+import { PayablesRepository } from './persistence/payablesRepository'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const CERTIFICATION_PORTAL_URL = 'https://ecf.dgii.gov.do/certecf/portalcertificacion/Login?ReturnUrl=%2Fcertecf%2Fportalcertificacion'
@@ -517,9 +519,15 @@ if (gotTheLock) {
         focusMainWindowForTextInput()
       }
     })
+
+    const isTrustedSender = (event: { senderId?: number; sender?: { id: number } }) => {
+      const senderId = event.senderId ?? event.sender?.id;
+      return Boolean(mainWindow && senderId === mainWindow.webContents.id);
+    };
+
     registerCatalogRepositoryIpc({
       ipcMain,
-      isTrustedSender: (event) => event.senderId === mainWindow?.webContents.id,
+      isTrustedSender,
       getRepository: () => {
         const store = tenantStoreController?.getActiveStore()
         if (!store) throw new Error('Tenant store is unavailable')
@@ -528,7 +536,7 @@ if (gotTheLock) {
     })
     registerOrdersRepositoryIpc({
       ipcMain,
-      isTrustedSender: (event) => event.senderId === mainWindow?.webContents.id,
+      isTrustedSender,
       getRepository: () => {
         const store = tenantStoreController?.getActiveStore()
         if (!store) throw new Error('Tenant store is unavailable')
@@ -537,24 +545,37 @@ if (gotTheLock) {
     })
     registerSalesFiscalRepositoryIpc({
       ipcMain,
-      isTrustedSender: (event) => event.senderId === mainWindow?.webContents.id,
+      isTrustedSender,
       getRepository: () => {
         const store = tenantStoreController?.getActiveStore()
         if (!store) throw new Error('Tenant store is unavailable')
         return new SalesFiscalRepository({ store, branchId: 'main-process-default' })
       },
     })
-    registerCashPurchaseRepositoryIpc({ ipcMain, isTrustedSender: (event) => event.senderId === mainWindow?.webContents.id, getRepository: () => {
+    registerCashPurchaseRepositoryIpc({ ipcMain, isTrustedSender, getRepository: () => {
       const store = tenantStoreController?.getActiveStore()
       if (!store) throw new Error('Tenant store is unavailable')
       return new CashPurchaseRepository({ store, branchId: 'main-process-default' })
     } })
+    registerReceivablesRepositoryIpc({ ipcMain, isTrustedSender, getRepository: () => {
+      const store = tenantStoreController?.getActiveStore()
+      if (!store) throw new Error('Tenant store is unavailable')
+      return new ReceivablesRepository({ store, branchId: 'main-process-default' })
+    } })
+    registerPayablesRepositoryIpc({ ipcMain, isTrustedSender, getRepository: () => {
+      const store = tenantStoreController?.getActiveStore()
+      if (!store) throw new Error('Tenant store is unavailable')
+      return new PayablesRepository({ store, branchId: 'main-process-default' })
+    } })
     registerPayrollRepositoryIpc({
       ipcMain,
-      isTrustedSender: (event) => event.senderId === mainWindow?.webContents.id,
+      isTrustedSender,
       executeCommand: async (command: PayrollCommand) => {
-        const store = tenantStoreController?.getActiveStore()
-        if (!store) throw new Error('Tenant store is unavailable')
+        if (!tenantStoreController) throw new Error('Tenant store is unavailable')
+        let store = tenantStoreController.getActiveStore()
+        if (!store || store.getTenantId() !== command.tenantId) {
+          store = tenantStoreController.activate(command.tenantId)
+        }
         const repo = new PayrollRepository(store.getDatabase())
         
         switch (command.type) {

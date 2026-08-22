@@ -1,4 +1,5 @@
 import { enqueueLocalWrite, readLocalMirror, getDeviceId } from "../../../shared/lib/localFirst";
+import { executeReceivablesCommandLocally } from "../../../shared/lib/receivablesUiAdapter";
 
 export interface PaymentInput {
   tenantId: string;
@@ -65,7 +66,22 @@ export async function registrarPagoCxC(input: PaymentInput): Promise<{ pagoId: s
     activeCycleId = activeCycle.id;
   }
 
-  // 3. Enqueue payment insert
+  // 3. If in Desktop Electron runtime, execute through SQLite repository
+  if (typeof window !== "undefined" && window.electronAPI?.executeReceivablesCommand) {
+    try {
+      await executeReceivablesCommandLocally({
+        type: "receivables.payment.record",
+        paymentId: pagoId,
+        receivableId: cuentaCobrarId,
+        amount: monto,
+        paymentMethod: metodoPago,
+      });
+    } catch (e) {
+      console.warn("Desktop SQLite receivables command failed, falling back to localFirst enqueue:", e);
+    }
+  }
+
+  // 4. Enqueue payment insert in local mirror
   await enqueueLocalWrite({
     tenantId,
     tableName: "cxc_pagos",
@@ -87,7 +103,7 @@ export async function registrarPagoCxC(input: PaymentInput): Promise<{ pagoId: s
     deviceId,
   });
 
-  // 4. Enqueue debt update
+  // 5. Enqueue debt update in local mirror
   const nuevoPagado = Number((pagado + monto).toFixed(2));
   const nuevoEstado = nuevoPagado >= total ? "pagada" : "parcial";
 

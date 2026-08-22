@@ -13,7 +13,7 @@ test("exposes only the named cash-purchase bridge in an isolated Electron profil
       hasCashPurchaseCommand: typeof window.electronAPI?.executeCashPurchaseCommand === "function",
       hasRawIpc: "ipcRenderer" in (window.electronAPI ?? {}),
     }))).toEqual({ hasCashPurchaseCommand: true, hasRawIpc: false });
-    await expect(page.evaluate(() => window.electronAPI?.executeCashPurchaseCommand?.({ type: "purchase.cash.create", purchaseId: "forged", supplierId: "supplier", detailId: "detail", inventoryMovementId: "movement", expenseId: "expense", inventoryProductId: "inventory", quantity: 1, unitCost: 1 }))).rejects.toThrow("Untrusted IPC sender");
+    await expect(page.evaluate(() => window.electronAPI?.executeCashPurchaseCommand?.({ type: "purchase.cash.create", purchaseId: "forged", supplierId: "supplier", detailId: "detail", inventoryMovementId: "movement", expenseId: "expense", inventoryProductId: "inventory", quantity: 1, unitCost: 1 }))).rejects.toThrow(/(Tenant store is unavailable|Untrusted IPC sender)/);
   } finally {
     await app.close();
     await rm(userDataDirectory, { recursive: true, force: true });

@@ -1,4 +1,5 @@
 import { enqueueLocalWrite, readLocalMirror, getDeviceId } from "../../../shared/lib/localFirst";
+import { executePayablesCommandLocally } from "../../../shared/lib/payablesUiAdapter";
 
 export interface PaymentInput {
   tenantId: string;
@@ -102,7 +103,22 @@ export async function registrarPagoCxP(input: PaymentInput): Promise<{ pagoId: s
     providerName = foundProv.nombre;
   }
 
-  // 3. Enqueue payment insert
+  // 3. If in Desktop Electron runtime, execute through SQLite repository
+  if (typeof window !== "undefined" && window.electronAPI?.executePayablesCommand) {
+    try {
+      await executePayablesCommandLocally({
+        type: "payables.payment.record",
+        paymentId: pagoId,
+        payableId: cuentaPagarId,
+        amount: monto,
+        paymentMethod: metodoPago,
+      });
+    } catch (e) {
+      console.warn("Desktop SQLite payables command failed, falling back to localFirst enqueue:", e);
+    }
+  }
+
+  // 4. Enqueue payment insert
   await enqueueLocalWrite({
     tenantId,
     tableName: "cxp_pagos",
@@ -124,7 +140,7 @@ export async function registrarPagoCxP(input: PaymentInput): Promise<{ pagoId: s
     deviceId,
   });
 
-  // 4. Enqueue debt update
+  // 5. Enqueue debt update
   const nuevoPagado = Number((pagado + monto).toFixed(2));
   const nuevoEstado = nuevoPagado >= total ? "pagada" : "parcial";
 

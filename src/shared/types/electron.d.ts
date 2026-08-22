@@ -83,6 +83,8 @@ export interface ElectronAPI {
   executeSalesFiscalCommand?: (command: import("../../../electron/persistence/salesFiscalRepository").SalesFiscalCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/salesFiscalRepository").SalesFiscalRepositoryResult }>;
   executeCashPurchaseCommand?: (command: import("../../../electron/persistence/cashPurchaseRepository").CashPurchaseCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/cashPurchaseRepository").CashPurchaseRepositoryResult }>;
   executePayrollCommand?: (command: import("../lib/payrollContracts").PayrollCommand) => Promise<{ ok: true; data: import("../lib/payrollContracts").PayrollRepositoryResult }>;
+  executeReceivablesCommand?: (command: import("../../../electron/persistence/receivablesRepository").ReceivablesCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/receivablesRepository").ReceivablesRepositoryResult }>;
+  executePayablesCommand?: (command: import("../../../electron/persistence/payablesRepository").PayablesCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/payablesRepository").PayablesRepositoryResult }>;
   importLegacyIndexedDb?: (payload: unknown) => Promise<{ ok: true; data: { tenantId: string; importedRows: number; recoveredOutbox: number } }>;
   close: () => void;
   getVersions: () => NodeJS.ProcessVersions;
