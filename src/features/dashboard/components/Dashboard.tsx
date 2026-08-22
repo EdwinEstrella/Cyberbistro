@@ -253,8 +253,8 @@ export function Dashboard() {
     let cancelled = false;
  
     const load = async () => {
-      // Garantizar que la sesión sea válida antes de consultar
-      await ensureAuthSessionFresh();
+      // Revalidar sesión en segundo plano sin bloquear el renderizado local-first
+      void ensureAuthSessionFresh();
  
       const snapshot = await getLocalFirstStatusSnapshot(tenantId);
       const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
