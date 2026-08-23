@@ -60,16 +60,6 @@ type AdjustmentDraft = {
   note: string;
 };
 
-type ReceiptState = {
-  employee: PayrollEmployee;
-  paymentId: string;
-  expenseId: string;
-  period: string;
-  paymentAmountCents: number;
-  context: PayrollPaymentContext;
-  adjustments: PayrollPaymentAdjustment[];
-};
-
 export function Nomina() {
   const { tenantId } = useAuth();
   const { activeSucursalId } = useSucursal();
@@ -88,6 +78,7 @@ export function Nomina() {
   // Employee Modal
   const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState(false);
   const [employeeDraft, setEmployeeDraft] = useState<PayrollEmployeeDraft>(emptyEmployeeDraft);
+  const [salaryInput, setSalaryInput] = useState<string>("");
   const [employeeMessage, setEmployeeMessage] = useState<string>("");
 
   // Confirm Modal for Deactivation
@@ -108,7 +99,6 @@ export function Nomina() {
   const [periodWeek, setPeriodWeek] = useState<string>(toWeekInputValue(new Date()));
   const [adjustmentDraft, setAdjustmentDraft] = useState<AdjustmentDraft>(emptyAdjustmentDraft);
   const [adjustments, setAdjustments] = useState<PayrollPaymentAdjustment[]>([]);
-  const [receipt, setReceipt] = useState<ReceiptState | null>(null);
   const [payments, setPayments] = useState<PayrollPaymentRecord[]>([]);
   const [loadingPayments, setLoadingPayments] = useState(false);
   const [receiptSearchQuery, setReceiptSearchQuery] = useState("");
@@ -202,7 +192,7 @@ export function Nomina() {
         if (cancelled || result.type !== "payroll.paymentContext") return;
         setPaymentContext(result.context);
         if (paymentAmountInput.trim().length === 0) {
-          setPaymentAmountInput(centsToCurrencyInput(result.context.pendingCents));
+          setPaymentAmountInput(formatCentsToCurrencyDisplay(result.context.pendingCents));
         }
       })
       .catch((error) => {
@@ -262,6 +252,7 @@ export function Nomina() {
   // Open modal to create new employee
   function handleOpenNewEmployee() {
     setEmployeeDraft(emptyEmployeeDraft);
+    setSalaryInput("");
     setEmployeeMessage("");
     setIsEmployeeModalOpen(true);
   }
@@ -277,6 +268,11 @@ export function Nomina() {
       frequency: employee.frequency,
       isActive: employee.isActive,
     });
+    setSalaryInput(
+      employee.baseSalaryCents > 0
+        ? formatCentsToCurrencyDisplay(employee.baseSalaryCents)
+        : ""
+    );
     setEmployeeMessage("");
     setIsEmployeeModalOpen(true);
   }
@@ -304,7 +300,8 @@ export function Nomina() {
       setEmployeeMessage("El cargo o puesto es obligatorio.");
       return;
     }
-    if (employeeDraft.baseSalaryCents <= 0) {
+    const salaryCents = currencyInputToCents(salaryInput);
+    if (salaryCents <= 0) {
       setEmployeeMessage("El salario base debe ser mayor a 0.");
       return;
     }
@@ -316,13 +313,17 @@ export function Nomina() {
         type: "payroll.upsertEmployee",
         tenantId,
         sucursalId: activeSucursalId,
-        employee: employeeDraft,
+        employee: {
+          ...employeeDraft,
+          baseSalaryCents: salaryCents,
+        },
       });
 
       if (result.type === "payroll.employeeSaved") {
         await loadEmployees();
         setIsEmployeeModalOpen(false);
         setEmployeeDraft(emptyEmployeeDraft);
+        setSalaryInput("");
       }
     } catch (error) {
       setEmployeeMessage(error instanceof Error ? error.message : "Error al guardar el empleado.");
@@ -417,17 +418,6 @@ export function Nomina() {
       });
 
       if (result.type === "payroll.paymentCommitted") {
-        const createdReceipt: ReceiptState = {
-          employee: selectedEmployee,
-          paymentId: result.paymentId,
-          expenseId: result.expenseId,
-          period: payload.period,
-          paymentAmountCents,
-          context: result.context,
-          adjustments,
-        };
-
-        setReceipt(createdReceipt);
         setPaymentAmountInput("");
         setAdjustments([]);
         setAdjustmentDraft(emptyAdjustmentDraft);
@@ -933,14 +923,22 @@ export function Nomina() {
                     <label className="text-[11px] font-['Inter',sans-serif] uppercase tracking-[0.5px] text-[#adaaaa]">
                       Monto (RD$)
                     </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={adjustmentDraft.amountInput}
-                      onChange={(e) => setAdjustmentDraft((c) => ({ ...c, amountInput: e.target.value }))}
-                      placeholder="0.00"
-                      className="bg-[#191919] border border-[rgba(72,72,71,0.3)] focus:border-[#ff906d] rounded-[10px] px-3 py-2 text-[12px] text-white outline-none font-['Space_Grotesk',sans-serif]"
-                    />
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[13px]">
+                        RD$
+                      </span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={adjustmentDraft.amountInput}
+                        onChange={(e) => {
+                          const formatted = formatCurrencyInput(e.target.value);
+                          setAdjustmentDraft((c) => ({ ...c, amountInput: formatted }));
+                        }}
+                        placeholder="0.00"
+                        className="w-full bg-[#191919] border border-[rgba(72,72,71,0.3)] focus:border-[#ff906d] rounded-[10px] pl-11 pr-3 py-2 text-[13px] text-white outline-none font-['Space_Grotesk',sans-serif] font-bold"
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -1103,13 +1101,16 @@ export function Nomina() {
                     Monto a Pagar Ahora (RD$)
                   </label>
                   <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[15px]">
+                      RD$
+                    </span>
                     <input
-                      type="number"
-                      step="0.01"
+                      type="text"
+                      inputMode="decimal"
                       value={paymentAmountInput}
-                      onChange={(e) => setPaymentAmountInput(e.target.value)}
+                      onChange={(e) => setPaymentAmountInput(formatCurrencyInput(e.target.value))}
                       placeholder="0.00"
-                      className="w-full bg-[#191919] border border-[rgba(72,72,71,0.3)] focus:border-[#ff906d] rounded-[10px] px-4 py-3 text-[16px] font-['Space_Grotesk',sans-serif] font-bold text-white outline-none"
+                      className="w-full bg-[#191919] border border-[rgba(72,72,71,0.3)] focus:border-[#ff906d] rounded-[10px] pl-14 pr-4 py-3 text-[16px] font-['Space_Grotesk',sans-serif] font-bold text-white outline-none"
                     />
                   </div>
 
@@ -1118,7 +1119,7 @@ export function Nomina() {
                     <div className="flex gap-2 mt-1">
                       <button
                         type="button"
-                        onClick={() => setPaymentAmountInput(centsToCurrencyInput(paymentContext.pendingCents))}
+                        onClick={() => setPaymentAmountInput(formatCentsToCurrencyDisplay(paymentContext.pendingCents))}
                         className="flex-1 py-1.5 rounded-[8px] bg-[#191919] border border-[rgba(72,72,71,0.25)] hover:border-[#ff906d] text-[11px] font-['Space_Grotesk',sans-serif] uppercase tracking-wider text-[#adaaaa] hover:text-white transition-all cursor-pointer"
                       >
                         Pago Completo (100%)
@@ -1126,7 +1127,7 @@ export function Nomina() {
                       <button
                         type="button"
                         onClick={() =>
-                          setPaymentAmountInput(centsToCurrencyInput(Math.floor(paymentContext.pendingCents / 2)))
+                          setPaymentAmountInput(formatCentsToCurrencyDisplay(Math.floor(paymentContext.pendingCents / 2)))
                         }
                         className="flex-1 py-1.5 rounded-[8px] bg-[#191919] border border-[rgba(72,72,71,0.25)] hover:border-[#ff906d] text-[11px] font-['Space_Grotesk',sans-serif] uppercase tracking-wider text-[#adaaaa] hover:text-white transition-all cursor-pointer"
                       >
@@ -1471,17 +1472,27 @@ export function Nomina() {
                   <label className="text-[11px] font-['Inter',sans-serif] uppercase tracking-[0.5px] text-[#adaaaa]">
                     Salario Base (RD$) <span className="text-[#ff906d]">*</span>
                   </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    required
-                    value={centsToCurrencyInput(employeeDraft.baseSalaryCents)}
-                    onChange={(e) =>
-                      setEmployeeDraft((c) => ({ ...c, baseSalaryCents: currencyInputToCents(e.target.value) }))
-                    }
-                    placeholder="0.00"
-                    className="bg-[#191919] border border-[rgba(72,72,71,0.3)] focus:border-[#ff906d] rounded-[10px] px-3.5 py-2.5 text-[13px] font-['Space_Grotesk',sans-serif] font-bold text-white outline-none"
-                  />
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 font-['Space_Grotesk',sans-serif] font-bold text-[13px]">
+                      RD$
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      required
+                      value={salaryInput}
+                      onChange={(e) => {
+                        const formatted = formatCurrencyInput(e.target.value);
+                        setSalaryInput(formatted);
+                        setEmployeeDraft((c) => ({
+                          ...c,
+                          baseSalaryCents: currencyInputToCents(formatted),
+                        }));
+                      }}
+                      placeholder="0.00"
+                      className="w-full bg-[#191919] border border-[rgba(72,72,71,0.3)] focus:border-[#ff906d] rounded-[10px] pl-11 pr-3.5 py-2.5 text-[13px] font-['Space_Grotesk',sans-serif] font-bold text-white outline-none"
+                    />
+                  </div>
                 </div>
 
                 <div className="flex flex-col gap-1.5">
@@ -1575,12 +1586,50 @@ function formatSignedMoney(cents: number): string {
   return `${prefix}${formatMoney(Math.abs(cents))}`;
 }
 
-function centsToCurrencyInput(cents: number): string {
-  if (!cents || isNaN(cents)) return "0.00";
-  return (cents / 100).toFixed(2);
+export function formatCurrencyInput(val: string): string {
+  let cleaned = val.replace(/[^0-9.,]/g, "");
+  if (!cleaned) return "";
+
+  const hasDot = cleaned.includes(".");
+  const hasComma = cleaned.includes(",");
+
+  if (hasComma && !hasDot) {
+    const parts = cleaned.split(",");
+    if (parts.length === 2 && parts[1].length <= 2) {
+      cleaned = parts[0] + "." + parts[1];
+    } else {
+      cleaned = cleaned.replace(/,/g, "");
+    }
+  } else {
+    cleaned = cleaned.replace(/,/g, "");
+  }
+
+  const dotIndex = cleaned.indexOf(".");
+  let integerPart = dotIndex >= 0 ? cleaned.slice(0, dotIndex) : cleaned;
+  const decimalPart = dotIndex >= 0 ? cleaned.slice(dotIndex + 1).replace(/\./g, "").slice(0, 2) : undefined;
+
+  if (integerPart.length > 1 && integerPart.startsWith("0")) {
+    integerPart = integerPart.replace(/^0+/, "") || "0";
+  }
+
+  const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
+  if (dotIndex >= 0) {
+    return `${formattedInteger || "0"}.${decimalPart ?? ""}`;
+  }
+  return formattedInteger;
 }
 
-function currencyInputToCents(input: string): number {
+export function formatCentsToCurrencyDisplay(cents: number): string {
+  if (!cents || isNaN(cents) || cents <= 0) return "";
+  return (cents / 100).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+export function currencyInputToCents(input: string): number {
+  if (!input) return 0;
   const clean = input.replace(/,/g, "").trim();
   const parsed = parseFloat(clean);
   if (isNaN(parsed) || parsed <= 0) return 0;
