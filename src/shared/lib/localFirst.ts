@@ -2134,7 +2134,16 @@ export async function syncIncremental(tenantId: string): Promise<{ tablesUpdated
       rowsPulled += pulled;
     }
   }
+  if (rowsPulled > 0) {
+    notifyLocalMirrorUpdated(tenantId);
+  }
   return { tablesUpdated, rowsPulled };
+}
+
+export function notifyLocalMirrorUpdated(tenantId: string, tableName?: LocalFirstMirrorTable): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("local-mirror-updated", { detail: { tenantId, tableName } }));
+  }
 }
 
 function openLocalFirstDb(tenantId: string): Promise<IDBDatabase> {
@@ -2300,6 +2309,7 @@ export async function bootstrapLocalFirstPhase(args: {
         if (args.shouldContinue && !args.shouldContinue()) return;
       }
       void publishLocalMirrorTableToLan(args.tenantId, tableName).catch(() => {});
+      notifyLocalMirrorUpdated(args.tenantId, tableName);
       args.onTableDone?.(tableName, rowCount);
     }
   } finally {

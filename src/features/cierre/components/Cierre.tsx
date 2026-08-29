@@ -303,15 +303,40 @@ export function Cierre() {
     if (authLoading || !tenantId || !activeSucursalId) return;
     shouldReadLocalFirst(tenantId, ["cierres_operativos"]).then(useLocal => {
       if (useLocal) {
-        return readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos").then(rows => rows.filter(c => c.sucursal_id === activeSucursalId));
+        return readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos").then(rows =>
+          sortByOpenedAtDesc(rows.filter(c => (c.sucursal_id === activeSucursalId || !c.sucursal_id) && !c.closed_at))
+        );
       }
-      return insforgeClient.database.from("cierres_operativos").select("business_day").eq("tenant_id", tenantId).eq("sucursal_id", activeSucursalId).is("closed_at", null).order("opened_at", { ascending: false }).limit(1).maybeSingle().then(r => r.data ? [r.data] : []);
+      return insforgeClient.database
+        .from("cierres_operativos")
+        .select("business_day")
+        .eq("tenant_id", tenantId)
+        .or(activeSucursalId ? `sucursal_id.eq.${activeSucursalId},sucursal_id.is.null` : `sucursal_id.is.null`)
+        .is("closed_at", null)
+        .order("opened_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+        .then(r => r.data ? [r.data] : []);
     }).then((rows: any) => {
-      if (rows?.[0]?.business_day) setFecha(toYmd(rows[0].business_day));
+      if (rows?.[0]?.business_day) {
+        setFecha(toYmd(rows[0].business_day));
+      }
     }).catch(() => {});
   }, [authLoading, tenantId, activeSucursalId]);
 
-  useEffect(() => { if (!authLoading) void cargar(); }, [authLoading, cargar]);
+  useEffect(() => {
+    if (!authLoading) void cargar();
+  }, [authLoading, cargar]);
+
+  useEffect(() => {
+    const onMirrorUpdated = () => {
+      void cargar();
+    };
+    window.addEventListener("local-mirror-updated", onMirrorUpdated);
+    return () => {
+      window.removeEventListener("local-mirror-updated", onMirrorUpdated);
+    };
+  }, [cargar]);
 
   async function handleStartCycle(efectivoInicial: number) {
     if (!tenantId || !activeSucursalId || globalHasOpenCycle) return;
