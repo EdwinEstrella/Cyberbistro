@@ -38,6 +38,9 @@ export const LOCAL_FIRST_MIRROR_TABLES = [
   "digital_orders",
   "digital_order_items",
   "ecf_sequence_allocations",
+  "nomina_empleados",
+  "nomina_pagos",
+  "nomina_ajustes",
 ] as const;
 
 export const LOCAL_FIRST_METADATA_TABLES = [
@@ -68,6 +71,9 @@ export const LOCAL_FIRST_IMMEDIATE_TABLES = [
   "recetas",
   "proveedores",
   "ecf_sequence_allocations",
+  "nomina_empleados",
+  "nomina_pagos",
+  "nomina_ajustes",
 ] as const;
 
 export const LOCAL_FIRST_HISTORY_TABLES = [
@@ -104,6 +110,9 @@ export const LOCAL_FIRST_HISTORY_TABLES = [
   "digital_orders",
   "digital_order_items",
   "ecf_sequence_allocations",
+  "nomina_empleados",
+  "nomina_pagos",
+  "nomina_ajustes",
 ] as const;
 
 export type LocalFirstMirrorTable = (typeof LOCAL_FIRST_MIRROR_TABLES)[number];
@@ -488,6 +497,9 @@ const PURCHASE_OUTBOX_TABLES = new Set<LocalFirstMirrorTable>([
   "cxc_pagos",
   "gastos",
   "gasto_categorias",
+  "nomina_empleados",
+  "nomina_pagos",
+  "nomina_ajustes",
 ]);
 
 export type PurchaseOutboxInsertFailureDisposition =
@@ -567,13 +579,15 @@ export interface OutboxConflictGuardrail {
 }
 
 const PAGE_SIZE = 250;
-export const LOCAL_FIRST_DB_VERSION = 10;
+export const LOCAL_FIRST_DB_VERSION = 11;
 const SYNCING_STALE_MS = 5 * 60 * 1000;
-const FULL_REFRESH_ON_SYNC_TABLES = [
+export const FULL_REFRESH_ON_SYNC_TABLES = [
   "tenant_users",
   "platos",
   "cocina_estado",
   "cierres_operativos",
+  "nomina_pagos",
+  "nomina_ajustes",
 ] as const satisfies readonly LocalFirstMirrorTable[];
 
 export function isLocalFirstEnabled(): boolean {
@@ -2020,10 +2034,9 @@ async function pullIncrementalChanges(
       .order("id", { ascending: true })
       .range(offset, offset + PAGE_SIZE - 1) as any;
 
-    if (shouldFilterByTenant(tableName)) {
-      query = query.eq("tenant_id", tenantId);
-    } else {
-      query = query.eq("id", tenantId);
+    const tenantReadFilter = getTenantReadFilter(tableName, tenantId);
+    if (tenantReadFilter) {
+      query = query.eq(tenantReadFilter.column, tenantReadFilter.value);
     }
 
     if (sinceCursor?.updated_at) {
@@ -2232,8 +2245,15 @@ function getSyncState(db: IDBDatabase, key: string): Promise<SyncStateRow | null
   });
 }
 
-function shouldFilterByTenant(tableName: LocalFirstMirrorTable): boolean {
-  return tableName !== "tenants";
+export function getTenantReadFilter(
+  tableName: LocalFirstMirrorTable,
+  tenantId: string
+): { column: "tenant_id" | "id"; value: string } | null {
+  // These child tables are tenant-scoped by their employee relation and RLS;
+  // neither one has a direct tenant_id column.
+  if (tableName === "nomina_pagos" || tableName === "nomina_ajustes") return null;
+  if (tableName === "tenants") return { column: "id", value: tenantId };
+  return { column: "tenant_id", value: tenantId };
 }
 
 async function pullTablePage(tableName: LocalFirstMirrorTable, tenantId: string, offset: number) {
@@ -2243,10 +2263,9 @@ async function pullTablePage(tableName: LocalFirstMirrorTable, tenantId: string,
     .order("id", { ascending: true })
     .range(offset, offset + PAGE_SIZE - 1) as any;
 
-  if (shouldFilterByTenant(tableName)) {
-    query = query.eq("tenant_id", tenantId);
-  } else {
-    query = query.eq("id", tenantId);
+  const tenantReadFilter = getTenantReadFilter(tableName, tenantId);
+  if (tenantReadFilter) {
+    query = query.eq(tenantReadFilter.column, tenantReadFilter.value);
   }
 
   return query;

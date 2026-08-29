@@ -18,7 +18,9 @@ import {
   isRowAfterCursor,
   createSyncOutboxEntry,
   createSyncStateRow,
+  FULL_REFRESH_ON_SYNC_TABLES,
   getHistoricalSyncIncompleteMessage,
+  getTenantReadFilter,
   isLocalFirstEnabled,
   isLicenseValidOffline,
   isLocalFirstMirrorTable,
@@ -79,6 +81,18 @@ describe("localFirst", () => {
         "fiscal_outbox",
       ])
     );
+  });
+
+  it("leaves employee child-table isolation to backend RLS and keeps direct tenant filters elsewhere", () => {
+    expect(getTenantReadFilter("nomina_pagos", "tenant-1")).toBeNull();
+    expect(getTenantReadFilter("nomina_ajustes", "tenant-1")).toBeNull();
+    expect(getTenantReadFilter("tenants", "tenant-1")).toEqual({ column: "id", value: "tenant-1" });
+    expect(getTenantReadFilter("facturas", "tenant-1")).toEqual({ column: "tenant_id", value: "tenant-1" });
+  });
+
+  it("uses a full refresh for employee child tables without updated_at cursors", () => {
+    expect(FULL_REFRESH_ON_SYNC_TABLES).toContain("nomina_pagos");
+    expect(FULL_REFRESH_ON_SYNC_TABLES).toContain("nomina_ajustes");
   });
 
   it("genera cursores por tenant, fase y tabla", () => {

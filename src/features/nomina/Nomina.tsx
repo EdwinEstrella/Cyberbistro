@@ -23,7 +23,12 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../shared/hooks/useAuth";
 import { useSucursal } from "../../app/context/SucursalContext";
-import { executePayrollCommandLocally } from "../../shared/lib/payrollUiAdapter";
+import { executePayrollCommandLocally, isPayrollLocalStorageAvailable } from "../../shared/lib/payrollUiAdapter";
+import {
+  deactivatePayrollEmployeeInCloud,
+  mapPayrollFrequencyFromCloud,
+  syncPayrollEmployeeToCloud,
+} from "../../shared/lib/payrollCloudSync";
 import { ConfirmModal } from "../../shared/components/ConfirmModal";
 import {
   buildNominaReceiptHtml,
@@ -193,29 +198,11 @@ export function Nomina() {
   );
   const paymentAmountCents = useMemo(() => currencyInputToCents(paymentAmountInput), [paymentAmountInput]);
 
-  // Helper to sync an employee to InsForge with authenticated session
+  // Let user-initiated saves report remote sync failures to the form.
   const syncEmployeeToCloud = useCallback(
     async (emp: PayrollEmployee) => {
       if (!tenantId || !activeSucursalId) return;
-      try {
-        await insforgeClient.database.from("nomina_empleados").upsert(
-          {
-            id: emp.id,
-            tenant_id: tenantId,
-            sucursal_id: activeSucursalId,
-            nombre_completo: `${emp.firstName} ${emp.lastName}`.trim(),
-            identificacion: emp.id,
-            telefono: null,
-            cargo: emp.role || "Personal",
-            salario_base_mensual: emp.baseSalaryCents,
-            frecuencia_pago: emp.frequency,
-            activo: emp.isActive,
-          },
-          { onConflict: "id" },
-        );
-      } catch (err) {
-        console.warn("[Nomina] Error syncing employee to cloud:", err);
-      }
+      await syncPayrollEmployeeToCloud(insforgeClient, emp, tenantId, activeSucursalId);
     },
     [activeSucursalId, tenantId],
   );
@@ -262,7 +249,7 @@ export function Nomina() {
             lastName,
             role: ce.cargo || "Personal",
             baseSalaryCents: Number(ce.salario_base_mensual || 0),
-            frequency: (ce.frecuencia_pago || "monthly") as PayrollFrequency,
+            frequency: mapPayrollFrequencyFromCloud(ce.frecuencia_pago),
             isActive: ce.activo !== false,
           };
         });
@@ -272,7 +259,9 @@ export function Nomina() {
 
       // Sincronizar a InsForge los empleados locales existentes
       for (const emp of localEmployees) {
-        void syncEmployeeToCloud(emp);
+        void syncEmployeeToCloud(emp).catch((error) => {
+          console.warn("[Nomina] Error syncing employee to cloud:", error);
+        });
       }
 
       setEmployees(finalEmployees);
@@ -312,7 +301,7 @@ export function Nomina() {
             employeeName: emp?.nombre_completo || "Empleado",
             employeeRole: emp?.cargo || "N/A",
             period: cp.periodo,
-            frequency: (emp?.frecuencia_pago || "monthly") as PayrollFrequency,
+            frequency: mapPayrollFrequencyFromCloud(emp?.frecuencia_pago),
             baseSalaryCents: Number(emp?.salario_base_mensual || cp.monto_base || 0),
             periodSalaryCents: Number(cp.monto_base || 0),
             adjustmentsDeltaCents: delta,
@@ -336,23 +325,6 @@ export function Nomina() {
         });
         if (result.type === "payroll.payments") {
           setPayments(result.payments);
-          for (const p of result.payments) {
-            void insforgeClient.database.from("nomina_pagos").upsert(
-              {
-                id: p.id,
-                empleado_id: p.employeeId,
-                periodo: p.period,
-                monto_base: p.periodSalaryCents || p.baseSalaryCents,
-                total_bonos: p.adjustmentsDeltaCents > 0 ? p.adjustmentsDeltaCents : 0,
-                total_descuentos: p.adjustmentsDeltaCents < 0 ? Math.abs(p.adjustmentsDeltaCents) : 0,
-                monto_neto: p.totalDueCents,
-                monto_pagado: p.amountPaidCents,
-                monto_pendiente: p.pendingCents,
-                gasto_id: null,
-              },
-              { onConflict: "id" },
-            );
-          }
         }
       }
     } catch (error) {
@@ -379,6 +351,10 @@ export function Nomina() {
     setPaymentContext(null);
     setPaymentMessage("");
     if (!tenantId || !activeSucursalId || !selectedEmployee || !periodValue) return;
+    if (!isPayrollLocalStorageAvailable()) {
+      setPaymentMessage("El cálculo de pagos de nómina requiere la aplicación de escritorio.");
+      return;
+    }
 
     let cancelled = false;
     void executePayrollCommandLocally({
@@ -515,24 +491,21 @@ export function Nomina() {
     try {
       let assignedId = employeeDraft.id || crypto.randomUUID();
 
-      if (window.electronAPI?.executePayrollCommand) {
-        try {
-          const result = await executePayrollCommandLocally({
-            type: "payroll.upsertEmployee",
-            tenantId,
-            sucursalId: activeSucursalId,
-            employee: {
-              ...employeeDraft,
-              id: assignedId,
-              baseSalaryCents: salaryCents,
-            },
-          });
-          if (result.type === "payroll.employeeSaved") {
-            assignedId = result.id;
-          }
-        } catch (e) {
-          console.warn("[Nomina] Error guardando empleado localmente:", e);
+      if (isPayrollLocalStorageAvailable()) {
+        const result = await executePayrollCommandLocally({
+          type: "payroll.upsertEmployee",
+          tenantId,
+          sucursalId: activeSucursalId,
+          employee: {
+            ...employeeDraft,
+            id: assignedId,
+            baseSalaryCents: salaryCents,
+          },
+        });
+        if (result.type !== "payroll.employeeSaved") {
+          throw new Error("El almacenamiento local no confirmó el guardado del empleado.");
         }
+        assignedId = result.id;
       }
 
       const savedEmp: PayrollEmployee = {
@@ -545,7 +518,9 @@ export function Nomina() {
         isActive: employeeDraft.isActive ?? true,
       };
 
-      await syncEmployeeToCloud(savedEmp);
+      if (!isPayrollLocalStorageAvailable()) {
+        await syncEmployeeToCloud(savedEmp);
+      }
 
       await loadEmployees();
       setIsEmployeeModalOpen(false);
@@ -562,29 +537,25 @@ export function Nomina() {
   async function handleConfirmDisable() {
     if (!tenantId || !activeSucursalId || !confirmDeactivate.employeeId) return;
     try {
-      if (window.electronAPI?.executePayrollCommand) {
-        try {
-          await executePayrollCommandLocally({
-            type: "payroll.disableEmployee",
-            tenantId,
-            sucursalId: activeSucursalId,
-            employeeId: confirmDeactivate.employeeId,
-          });
-        } catch (e) {
-          console.warn("[Nomina] Error desactivando localmente:", e);
+      if (isPayrollLocalStorageAvailable()) {
+        const result = await executePayrollCommandLocally({
+          type: "payroll.disableEmployee",
+          tenantId,
+          sucursalId: activeSucursalId,
+          employeeId: confirmDeactivate.employeeId,
+        });
+        if (result.type !== "payroll.success") {
+          throw new Error("El almacenamiento local no confirmó la baja del empleado.");
         }
+      } else {
+        await deactivatePayrollEmployeeInCloud(insforgeClient, confirmDeactivate.employeeId);
       }
 
-      await insforgeClient.database
-        .from("nomina_empleados")
-        .update({ activo: false, updated_at: new Date().toISOString() })
-        .eq("id", confirmDeactivate.employeeId);
-
       await loadEmployees();
+      setConfirmDeactivate({ open: false, employeeId: "", employeeName: "" });
     } catch (err) {
       console.error("[Nomina] Error desactivando empleado:", err);
-    } finally {
-      setConfirmDeactivate({ open: false, employeeId: "", employeeName: "" });
+      setPaymentMessage(err instanceof Error ? err.message : "No se pudo desactivar el empleado.");
     }
   }
 
@@ -630,12 +601,15 @@ export function Nomina() {
       setPaymentMessage("El monto a pagar debe ser mayor a 0.");
       return;
     }
+    if (!isPayrollLocalStorageAvailable()) {
+      setPaymentMessage("El registro de pagos de nómina requiere la aplicación de escritorio.");
+      return;
+    }
 
     setPaying(true);
     setPaymentMessage("");
     setPaymentSuccessMsg("");
     try {
-      const paymentId = crypto.randomUUID();
       const payload: PayrollCreatePaymentRequest = {
         employeeId: selectedEmployee.id,
         period: paymentContext.period,
@@ -651,57 +625,16 @@ export function Nomina() {
         adjustments,
       };
 
-      let committedContext = paymentContext;
-      if (window.electronAPI?.executePayrollCommand) {
-        try {
-          const result = await executePayrollCommandLocally({
-            type: "payroll.createPayment",
-            tenantId,
-            sucursalId: activeSucursalId,
-            payload,
-          });
-          if (result.type === "payroll.paymentCommitted") {
-            committedContext = result.context;
-          }
-        } catch (e) {
-          console.warn("[Nomina] Error registrando pago local:", e);
-        }
+      const result = await executePayrollCommandLocally({
+        type: "payroll.createPayment",
+        tenantId,
+        sucursalId: activeSucursalId,
+        payload,
+      });
+      if (result.type !== "payroll.paymentCommitted") {
+        throw new Error("El almacenamiento local no confirmó el registro del pago.");
       }
-
-      // Sincronizar pago a InsForge con sesión autenticada
-      const delta = adjustments.reduce((sum, adj) => {
-        return adj.kind === "bonus" ? sum + adj.amountCents : sum - adj.amountCents;
-      }, 0);
-
-      await insforgeClient.database.from("nomina_pagos").upsert(
-        {
-          id: paymentId,
-          empleado_id: selectedEmployee.id,
-          periodo: paymentContext.period,
-          monto_base: paymentContext.periodSalaryCents,
-          total_bonos: delta > 0 ? delta : 0,
-          total_descuentos: delta < 0 ? Math.abs(delta) : 0,
-          monto_neto: paymentContext.dueCents,
-          monto_pagado: paymentAmountCents,
-          monto_pendiente: Math.max(0, paymentContext.dueCents - paymentAmountCents),
-          gasto_id: null,
-        },
-        { onConflict: "id" },
-      );
-
-      for (const adj of adjustments) {
-        await insforgeClient.database.from("nomina_ajustes").upsert(
-          {
-            id: crypto.randomUUID(),
-            empleado_id: selectedEmployee.id,
-            tipo: adj.kind === "bonus" ? "bono" : "descuento",
-            frecuencia: adj.scope === "currentPayment" ? "unico" : "por_periodo",
-            monto: adj.amountCents,
-            motivo: adj.type + (adj.note ? `: ${adj.note}` : ""),
-          },
-          { onConflict: "id" },
-        );
-      }
+      const committedContext = result.context;
 
       setPaymentAmountInput("");
       setAdjustments([]);
