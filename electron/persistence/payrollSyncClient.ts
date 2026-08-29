@@ -19,6 +19,10 @@ type ClientOverride =
 
 type PushResponse = Awaited<ReturnType<ServerSyncClient["push"]>>;
 
+const FALLBACK_BASE_URL = "https://restaurante.azokia.com";
+const FALLBACK_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3OC0xMjM0LTU2NzgtOTBhYi1jZGVmMTIzNDU2NzgiLCJlbWFpbCI6ImFub25AaW5zZm9yZ2UuY29tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU5NDAxMzF9.OQwbEoWPtw-inbXdU3D7c39RZn3c87FJ-HvMBF_jrn4";
+
 export class PayrollSyncClient implements ServerSyncClient {
   private clientPromise: Promise<InsForgeClient | ClientOverride>;
 
@@ -26,8 +30,9 @@ export class PayrollSyncClient implements ServerSyncClient {
     if (clientOverride) {
       this.clientPromise = Promise.resolve(clientOverride);
     } else {
-      const url = process.env.VITE_INSFORGE_BASE_URL || process.env.INSFORGE_URL || "";
-      const key = process.env.VITE_INSFORGE_ANON_KEY || process.env.INSFORGE_ANON_KEY || "";
+      const fallbackAllowed = process.env.DISABLE_INSFORGE_FALLBACK !== "true";
+      const url = (process.env.VITE_INSFORGE_BASE_URL || process.env.INSFORGE_URL || (fallbackAllowed ? FALLBACK_BASE_URL : "")).trim();
+      const key = (process.env.VITE_INSFORGE_ANON_KEY || process.env.INSFORGE_ANON_KEY || (fallbackAllowed ? FALLBACK_ANON_KEY : "")).trim();
       if (!url || !key) {
         throw new Error("Missing InsForge configuration in main process");
       }

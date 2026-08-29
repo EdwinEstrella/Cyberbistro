@@ -688,3 +688,116 @@ export function buildCierreDiaReceiptHtml(
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Cierre día</title><style>${thermalStyles(paperWidthMm)}</style></head><body>${body}</body></html>`;
 }
+
+export interface NominaReceiptData {
+  empleadoNombre: string;
+  empleadoCargo?: string | null;
+  empleadoIdentificacion?: string | null;
+  periodo: string;
+  frecuencia?: string | null;
+  fechaPagoIso?: string | null;
+  metodoPago?: string | null;
+  salarioBase: number;
+  adicionales?: number;
+  deducciones?: number;
+  totalDebido: number;
+  montoPagado: number;
+  balancePendiente?: number;
+  notas?: string | null;
+  ajustesDetalle?: Array<{ descripcion: string; monto: number; tipo: "adicion" | "deduccion" }>;
+}
+
+export function buildNominaReceiptHtml(
+  tenant: TenantReceiptInfo,
+  data: NominaReceiptData,
+  paperWidthMm: PaperWidthMm
+): string {
+  const when = data.fechaPagoIso || new Date().toISOString();
+  const { date: fechaStr, time: horaStr } = formatFacturaDateParts(when);
+
+  const freqLabel = (data.frecuencia || "").toLowerCase();
+  const frecuenciaText =
+    freqLabel === "monthly" || freqLabel === "mensual"
+      ? "Mensual"
+      : freqLabel === "biweekly" || freqLabel === "quincenal"
+      ? "Quincenal"
+      : freqLabel === "weekly" || freqLabel === "semanal"
+      ? "Semanal"
+      : data.frecuencia || "Mensual";
+
+  const ajustesRows = (data.ajustesDetalle || [])
+    .map((aj) => {
+      const isDeduccion = aj.tipo === "deduccion";
+      const sign = isDeduccion ? "-" : "+";
+      return `
+      <tr class="fdo-item-sub">
+        <td style="width:65%">${escapeHtml(aj.descripcion)}</td>
+        <td style="width:35%;text-align:right;font-weight:600">${sign} ${rd(aj.monto, tenant)}</td>
+      </tr>`;
+    })
+    .join("");
+
+  const body = `
+  ${headerBlock(tenant)}
+  <div class="divider"></div>
+  <h2>RECIBO DE NÓMINA</h2>
+  <table>
+    <tr class="header-row"><td><strong>Empleado</strong></td><td style="text-align:right;font-weight:bold;font-size:15px">${escapeHtml(data.empleadoNombre)}</td></tr>
+    ${data.empleadoCargo ? `<tr class="header-row"><td>Cargo</td><td style="text-align:right">${escapeHtml(data.empleadoCargo)}</td></tr>` : ""}
+    ${data.empleadoIdentificacion ? `<tr class="header-row"><td>Cédula/ID</td><td style="text-align:right">${escapeHtml(data.empleadoIdentificacion)}</td></tr>` : ""}
+    <tr class="header-row"><td>Período</td><td style="text-align:right;font-weight:bold">${escapeHtml(data.periodo)}</td></tr>
+    <tr class="header-row"><td>Modalidad</td><td style="text-align:right">${escapeHtml(frecuenciaText)}</td></tr>
+    <tr class="header-row"><td>Fecha de pago</td><td style="text-align:right">${escapeHtml(fechaStr)} ${escapeHtml(horaStr)}</td></tr>
+    ${data.metodoPago ? `<tr class="header-row"><td>Método</td><td style="text-align:right">${escapeHtml(data.metodoPago.toUpperCase())}</td></tr>` : ""}
+  </table>
+  <div class="divider"></div>
+  <table>
+    <tr class="header-row"><td>Salario base</td><td style="text-align:right">${rd(data.salarioBase, tenant)}</td></tr>
+    ${(data.adicionales ?? 0) > 0 ? `<tr class="header-row"><td>(+) Bonos / Adicionales</td><td style="text-align:right;color:#000">${rd(data.adicionales ?? 0, tenant)}</td></tr>` : ""}
+    ${(data.deducciones ?? 0) > 0 ? `<tr class="header-row"><td>(-) Descuentos / Adelantos</td><td style="text-align:right;color:#000">-${rd(data.deducciones ?? 0, tenant)}</td></tr>` : ""}
+    <tr class="header-row"><td><strong>Total devengado</strong></td><td style="text-align:right;font-weight:bold">${rd(data.totalDebido, tenant)}</td></tr>
+  </table>
+  ${
+    ajustesRows
+      ? `
+  <div class="divider"></div>
+  <table>
+    <thead class="fdo-items-head"><tr><th>Detalle de Ajustes</th><th class="r">Monto</th></tr></thead>
+    <tbody>${ajustesRows}</tbody>
+  </table>`
+      : ""
+  }
+  <div class="divider"></div>
+  <table>
+    <tr class="total-xl"><td>TOTAL PAGADO</td><td style="text-align:right">${rd(data.montoPagado, tenant)}</td></tr>
+    ${
+      (data.balancePendiente ?? 0) > 0
+        ? `<tr class="header-row"><td style="color:#000">Balance pendiente</td><td style="text-align:right;font-weight:bold;color:#000">${rd(data.balancePendiente ?? 0, tenant)}</td></tr>`
+        : ""
+    }
+  </table>
+  ${data.notas ? `<div class="divider"></div><div style="font-size:13px;font-weight:600"><b>Notas:</b> ${escapeHtml(data.notas)}</div>` : ""}
+  <div class="divider"></div>
+  <table style="margin-top:22px;margin-bottom:8px">
+    <tr>
+      <td style="width:46%;text-align:center;vertical-align:bottom;padding-top:28px;border-top:1px dashed #000;font-size:12px;font-weight:600">
+        Firma del Empleado
+      </td>
+      <td style="width:8%"></td>
+      <td style="width:46%;text-align:center;vertical-align:bottom;padding-top:28px;border-top:1px dashed #000;font-size:12px;font-weight:600">
+        Firma Autorizada
+      </td>
+    </tr>
+  </table>
+  <div class="double-divider"></div>
+  <div class="footer">
+    <p style="margin:0 0 4px">Comprobante de Pago de Nómina</p>
+    <p style="margin:4px 0 0;font-size:12px;font-weight:600">Cloudix OS — Nómina</p>
+  </div>
+  <div class="divider"></div>
+  <div class="center" style="font-size:12px;font-weight:600">${escapeHtml(new Date().toLocaleString("es-DO", { timeZone: "America/Santo_Domingo", hour12: true }))}</div>
+  `;
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Comprobante de Nómina - ${escapeHtml(data.empleadoNombre)}</title><style>${thermalStyles(paperWidthMm)}</style></head><body>${body}</body></html>`;
+}
+

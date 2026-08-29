@@ -104,15 +104,24 @@ describe('PayrollSyncOrchestrator Lifecycle', () => {
   });
 
   it('fails closed when missing config and does not crash app', () => {
-    const originalEnv = process.env;
-    process.env = {}; // Clear config
+    const originalUrl = process.env.VITE_INSFORGE_BASE_URL;
+    const originalKey = process.env.VITE_INSFORGE_ANON_KEY;
+    const originalDisable = process.env.DISABLE_INSFORGE_FALLBACK;
+    process.env.DISABLE_INSFORGE_FALLBACK = 'true';
+    delete process.env.VITE_INSFORGE_BASE_URL;
+    delete process.env.INSFORGE_URL;
+    delete process.env.VITE_INSFORGE_ANON_KEY;
+    delete process.env.INSFORGE_ANON_KEY;
     
     // Should catch the error and not crash
     orchestrator.start(db, 'tenant-123'); // without fakeClient, it tries to init PayrollSyncClient
     
     expect(orchestrator.isRunning()).toBe(false);
     
-    process.env = originalEnv;
+    if (originalUrl !== undefined) process.env.VITE_INSFORGE_BASE_URL = originalUrl;
+    if (originalKey !== undefined) process.env.VITE_INSFORGE_ANON_KEY = originalKey;
+    if (originalDisable !== undefined) process.env.DISABLE_INSFORGE_FALLBACK = originalDisable;
+    else delete process.env.DISABLE_INSFORGE_FALLBACK;
   });
 
   it('triggers non-blocking sync successfully', async () => {

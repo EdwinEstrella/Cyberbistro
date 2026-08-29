@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import QRCode from "qrcode";
-import { buildFacturaReceiptHtml, type TenantReceiptInfo } from "./receiptTemplates";
+import { buildFacturaReceiptHtml, buildNominaReceiptHtml, type TenantReceiptInfo } from "./receiptTemplates";
 
 vi.mock("./logoCache", () => ({
   getLogoUrlForPrint: vi.fn(() => null),
@@ -147,5 +147,42 @@ describe("receiptTemplates fiscal regression", () => {
     expect(html).toContain("RECHAZADO POR DGII");
     expect(html).toContain("Accion recomendada: revisar datos fiscales y reenviar el comprobante.");
     expect(html).not.toContain("Documento pendiente de envio a DGII");
+  });
+
+  it("builds a clean thermal payroll receipt with employee details, bonuses, deductions, and signature lines", () => {
+    const html = buildNominaReceiptHtml(
+      tenant,
+      {
+        empleadoNombre: "Juan Perez",
+        empleadoCargo: "Cocinero",
+        empleadoIdentificacion: "402-0000000-1",
+        periodo: "2026-08 (Quincena 1)",
+        frecuencia: "biweekly",
+        fechaPagoIso: "2026-08-15T12:00:00.000Z",
+        metodoPago: "efectivo",
+        salarioBase: 15000,
+        adicionales: 2000,
+        deducciones: 500,
+        totalDebido: 16500,
+        montoPagado: 16500,
+        balancePendiente: 0,
+        notas: "Pago regular",
+        ajustesDetalle: [
+          { descripcion: "Bono asistencia", monto: 2000, tipo: "adicion" },
+          { descripcion: "Adelanto", monto: 500, tipo: "deduccion" },
+        ],
+      },
+      80
+    );
+
+    expect(html).toContain("RECIBO DE NÓMINA");
+    expect(html).toContain("Juan Perez");
+    expect(html).toContain("Cocinero");
+    expect(html).toContain("402-0000000-1");
+    expect(html).toContain("Quincenal");
+    expect(html).toContain("TOTAL PAGADO");
+    expect(html).toContain("Bono asistencia");
+    expect(html).toContain("Firma del Empleado");
+    expect(html).toContain("Firma Autorizada");
   });
 });

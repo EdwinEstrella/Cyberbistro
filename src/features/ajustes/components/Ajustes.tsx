@@ -29,8 +29,10 @@ import {
   buildSplitTicketHtml,
   buildThermalSplitLineHtml,
   buildCierreDiaReceiptHtml,
+  buildNominaReceiptHtml,
   type TenantReceiptInfo,
   type CierreDiaThermalData,
+  type NominaReceiptData,
 } from "../../../shared/lib/receiptTemplates";
 import {
   saveTenantLogoUrl,
@@ -130,13 +132,35 @@ const SAMPLE_CIERRE_THERMAL_BASE: Omit<CierreDiaThermalData, "generadoEn" | "gen
   ticketPromedioPagado: 889.34,
 };
 
-type ThermalPreviewKind = "factura" | "comanda" | "cierre" | "split";
+const SAMPLE_NOMINA_THERMAL: NominaReceiptData = {
+  empleadoNombre: "Carlos Manuel De La Rosa",
+  empleadoCargo: "Chef Principal",
+  empleadoIdentificacion: "001-1234567-8",
+  periodo: "2026-08 (Quincena 2)",
+  frecuencia: "Quincenal",
+  fechaPagoIso: new Date().toISOString(),
+  metodoPago: "transferencia",
+  salarioBase: 25000,
+  adicionales: 3500,
+  deducciones: 1200,
+  totalDebido: 27300,
+  montoPagado: 27300,
+  balancePendiente: 0,
+  notas: "Incluye bono por desempeño y horas extra.",
+  ajustesDetalle: [
+    { descripcion: "Bono desempeño", monto: 3500, tipo: "adicion" },
+    { descripcion: "Adelanto de quincena", monto: 1200, tipo: "deduccion" },
+  ],
+};
+
+type ThermalPreviewKind = "factura" | "comanda" | "cierre" | "split" | "nomina";
 
 const THERMAL_PREVIEW_TABS: { id: ThermalPreviewKind; label: string }[] = [
   { id: "factura", label: "Factura" },
   { id: "comanda", label: "Comanda" },
   { id: "cierre", label: "Cierre" },
   { id: "split", label: "Separar cuenta" },
+  { id: "nomina", label: "Nómina" },
 ];
 
 export function Ajustes() {
@@ -345,6 +369,9 @@ export function Ajustes() {
           const splitSymbol = config.currency_code === "ARS" ? "AR$" : "RD$";
           const rows = buildThermalSplitLineHtml("Plato ejemplo", 1, 350, config.currency_code);
           html = buildSplitTicketHtml(tenantPreview, [{ personIndex: 1, splitParts: 1, rowsHtml: rows, totalLine: `${splitSymbol} 350.00` }], 4, paperWidthMm);
+          break;
+        case "nomina":
+          html = buildNominaReceiptHtml(tenantPreview, { ...SAMPLE_NOMINA_THERMAL, fechaPagoIso: nowIso }, paperWidthMm);
           break;
       }
       if (active) setThermalPreviewHtml(html);

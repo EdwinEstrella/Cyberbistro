@@ -25,6 +25,15 @@ import { useAuth } from "../../shared/hooks/useAuth";
 import { useSucursal } from "../../app/context/SucursalContext";
 import { executePayrollCommandLocally } from "../../shared/lib/payrollUiAdapter";
 import { ConfirmModal } from "../../shared/components/ConfirmModal";
+import {
+  buildNominaReceiptHtml,
+  type TenantReceiptInfo,
+  type NominaReceiptData,
+} from "../../shared/lib/receiptTemplates";
+import { getThermalPrintSettings } from "../../shared/lib/thermalStorage";
+import { printThermalHtml } from "../../shared/lib/thermalPrint";
+import { insforgeClient } from "../../shared/lib/insforge";
+import { shouldReadLocalFirst, readLocalMirror } from "../../shared/lib/localFirst";
 import type {
   PayrollCreatePaymentRequest,
   PayrollEmployee,
@@ -103,6 +112,74 @@ export function Nomina() {
   const [loadingPayments, setLoadingPayments] = useState(false);
   const [receiptSearchQuery, setReceiptSearchQuery] = useState("");
   const [previewPayment, setPreviewPayment] = useState<PayrollPaymentRecord | null>(null);
+  const [tenantInfo, setTenantInfo] = useState<TenantReceiptInfo>({
+    nombre_negocio: "Cloudix",
+    rnc: "",
+    direccion: "",
+    telefono: "",
+    logo_url: "",
+  });
+
+  useEffect(() => {
+    if (!tenantId) return;
+    void (async () => {
+      try {
+        if (await shouldReadLocalFirst(tenantId, ["tenants"])) {
+          const rows = await readLocalMirror<any>(tenantId, "tenants");
+          const t = rows.find((r) => r.id === tenantId);
+          if (t) {
+            setTenantInfo({
+              nombre_negocio: t.nombre_negocio || t.nombre || "Cloudix",
+              rnc: t.rnc || "",
+              direccion: t.direccion || "",
+              telefono: t.telefono || "",
+              logo_url: t.logo_url || "",
+              moneda: t.moneda || "DOP",
+              logo_size_px: t.logo_size_px,
+              logo_offset_x: t.logo_offset_x,
+              logo_offset_y: t.logo_offset_y,
+            });
+            return;
+          }
+        }
+        const { data } = await insforgeClient.database.from("tenants").select("*").eq("id", tenantId).maybeSingle();
+        if (data) {
+          setTenantInfo({
+            nombre_negocio: (data as any).nombre_negocio || (data as any).nombre || "Cloudix",
+            rnc: (data as any).rnc || "",
+            direccion: (data as any).direccion || "",
+            telefono: (data as any).telefono || "",
+            logo_url: (data as any).logo_url || "",
+            moneda: (data as any).moneda || "DOP",
+            logo_size_px: (data as any).logo_size_px,
+            logo_offset_x: (data as any).logo_offset_x,
+            logo_offset_y: (data as any).logo_offset_y,
+          });
+        }
+      } catch {
+        /* fallback to default */
+      }
+    })();
+  }, [tenantId]);
+
+  const previewReceiptHtml = useMemo(() => {
+    if (!previewPayment) return "";
+    const { paperWidthMm } = getThermalPrintSettings();
+    const receiptData: NominaReceiptData = {
+      empleadoNombre: previewPayment.employeeName,
+      empleadoCargo: previewPayment.employeeRole,
+      periodo: previewPayment.period,
+      frecuencia: previewPayment.frequency,
+      fechaPagoIso: previewPayment.createdAt,
+      salarioBase: previewPayment.baseSalaryCents / 100,
+      adicionales: previewPayment.adjustmentsDeltaCents > 0 ? previewPayment.adjustmentsDeltaCents / 100 : 0,
+      deducciones: previewPayment.adjustmentsDeltaCents < 0 ? Math.abs(previewPayment.adjustmentsDeltaCents) / 100 : 0,
+      totalDebido: previewPayment.totalDueCents / 100,
+      montoPagado: previewPayment.amountPaidCents / 100,
+      balancePendiente: previewPayment.pendingCents / 100,
+    };
+    return buildNominaReceiptHtml(tenantInfo, receiptData, paperWidthMm);
+  }, [previewPayment, tenantInfo]);
 
   const selectedEmployee = useMemo(
     () => employees.find((employee) => employee.id === selectedEmployeeId) ?? null,
@@ -1301,7 +1378,7 @@ export function Nomina() {
       {/* MODAL: VER / IMPRIMIR COMPROBANTE DE NÓMINA */}
       {previewPayment && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
-          <div className="bg-[#131313] border border-[rgba(72,72,71,0.3)] rounded-[20px] max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+          <div className="bg-[#131313] border border-[rgba(72,72,71,0.3)] rounded-[20px] max-w-lg w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
             {/* Header del Modal */}
             <div className="flex items-center justify-between p-5 border-b border-[rgba(72,72,71,0.2)] bg-[#101010]">
               <div className="flex items-center gap-2">
@@ -1313,8 +1390,12 @@ export function Nomina() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={printReceipt}
-                  className="bg-[#ff906d] text-black font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[0.5px] px-3.5 py-1.5 rounded-[8px] flex items-center gap-1.5 hover:brightness-110 transition-all cursor-pointer"
+                  onClick={async () => {
+                    if (previewReceiptHtml) {
+                      await printThermalHtml(previewReceiptHtml);
+                    }
+                  }}
+                  className="bg-[#ff906d] text-black font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[0.5px] px-3.5 py-1.5 rounded-[8px] flex items-center gap-1.5 hover:brightness-110 transition-all cursor-pointer shadow-[0_0_10px_rgba(255,144,109,0.3)]"
                 >
                   <Printer className="size-3.5" />
                   Imprimir
@@ -1329,67 +1410,13 @@ export function Nomina() {
               </div>
             </div>
 
-            {/* Cuerpo Imprimible */}
-            <div className="p-6 overflow-y-auto">
-              <article
-                id="payroll-receipt"
-                className="bg-[#191919] border border-[rgba(72,72,71,0.3)] rounded-[16px] p-6 text-white flex flex-col gap-6 shadow-md"
-              >
-                <div className="flex justify-between items-start border-b border-[rgba(72,72,71,0.2)] pb-5">
-                  <div>
-                    <span className="text-[10px] font-['Space_Grotesk',sans-serif] uppercase tracking-[2px] text-[#ff906d] block mb-1">
-                      Comprobante de Nómina
-                    </span>
-                    <h3 className="font-['Space_Grotesk',sans-serif] font-bold text-[22px] text-white">
-                      {previewPayment.employeeName}
-                    </h3>
-                    <p className="text-[13px] text-[#adaaaa] font-['Inter',sans-serif] mt-0.5">
-                      {previewPayment.employeeRole} · Modalidad {frequencyLabel(previewPayment.frequency)}
-                    </p>
-                  </div>
-
-                  <div className="text-right font-['Space_Grotesk',sans-serif]">
-                    <span className="text-[11px] text-[#6b7280] uppercase tracking-wider block">Período</span>
-                    <span className="font-bold text-[15px] text-white">{previewPayment.period}</span>
-                    <span className="text-[11px] text-[#59ee50] block mt-1">● Pagado</span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  <div className="p-3 bg-[#131313] border border-[rgba(72,72,71,0.2)] rounded-[10px]">
-                    <span className="text-[10px] uppercase tracking-wider text-[#adaaaa] block">Monto Pagado</span>
-                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-[16px] text-[#59ee50]">
-                      {formatMoney(previewPayment.amountPaidCents)}
-                    </span>
-                  </div>
-
-                  <div className="p-3 bg-[#131313] border border-[rgba(72,72,71,0.2)] rounded-[10px]">
-                    <span className="text-[10px] uppercase tracking-wider text-[#adaaaa] block">Total Debido</span>
-                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-[16px] text-white">
-                      {formatMoney(previewPayment.totalDueCents)}
-                    </span>
-                  </div>
-
-                  <div className="p-3 bg-[#131313] border border-[rgba(72,72,71,0.2)] rounded-[10px]">
-                    <span className="text-[10px] uppercase tracking-wider text-[#adaaaa] block">Balance Pendiente</span>
-                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-[16px] text-[#ff906d]">
-                      {formatMoney(previewPayment.pendingCents)}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Signatures */}
-                <div className="grid grid-cols-2 gap-8 pt-6 border-t border-[rgba(72,72,71,0.2)] mt-2">
-                  <div className="flex flex-col items-center">
-                    <div className="w-full border-b border-dashed border-[rgba(72,72,71,0.5)] mb-2" />
-                    <span className="text-[11px] font-['Inter',sans-serif] text-[#adaaaa]">Firma del Empleado</span>
-                  </div>
-                  <div className="flex flex-col items-center">
-                    <div className="w-full border-b border-dashed border-[rgba(72,72,71,0.5)] mb-2" />
-                    <span className="text-[11px] font-['Inter',sans-serif] text-[#adaaaa]">Firma Autorizada / RRHH</span>
-                  </div>
-                </div>
-              </article>
+            {/* Vista Previa Térmica */}
+            <div className="p-6 overflow-y-auto flex justify-center bg-[#0d0d0d]">
+              <iframe
+                srcDoc={previewReceiptHtml}
+                className="bg-white rounded-[8px] shadow-2xl border-none w-[80mm] min-h-[500px]"
+                title="Comprobante de Nómina"
+              />
             </div>
           </div>
         </div>
@@ -1667,41 +1694,4 @@ function toWeekInputValue(date: Date): string {
   const yearStart = new Date(Date.UTC(temp.getUTCFullYear(), 0, 1));
   const weekNo = Math.ceil(((temp.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
   return `${temp.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
-}
-
-function printReceipt(): void {
-  const receipt = document.getElementById("payroll-receipt");
-  if (!receipt) return;
-  const popup = window.open("", "payroll-receipt-print", "width=900,height=700");
-  if (!popup) return;
-  popup.document.write(`<!doctype html>
-<html>
-<head>
-  <title>Comprobante de Nómina</title>
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      padding: 32px;
-      background: #fff;
-      color: #111;
-    }
-    * { box-sizing: border-box; }
-    #payroll-receipt {
-      border: 1px solid #ddd;
-      border-radius: 12px;
-      padding: 24px;
-      max-width: 750px;
-      margin: 0 auto;
-    }
-    button { display: none !important; }
-    h3 { margin-top: 4px; font-size: 24px; }
-  </style>
-</head>
-<body>
-  ${receipt.outerHTML}
-</body>
-</html>`);
-  popup.document.close();
-  popup.focus();
-  popup.print();
 }
