@@ -482,6 +482,12 @@ const PURCHASE_OUTBOX_TABLES = new Set<LocalFirstMirrorTable>([
   "compra_fiscal",
   "compra_detalles",
   "inventario_movimientos",
+  "cuentas_pagar",
+  "cxp_pagos",
+  "cuentas_cobrar",
+  "cxc_pagos",
+  "gastos",
+  "gasto_categorias",
 ]);
 
 export type PurchaseOutboxInsertFailureDisposition =
@@ -510,12 +516,25 @@ export function resolvePurchaseOutboxInsertFailure(
     return {
       disposition: "mark_synced",
       reason: existing.foundById
-        ? "El registro de compra ya existe en servidor con el mismo id; se confirma sin reescribir."
-        : "El fiscal de compra ya existe en servidor para la misma compra; se confirma sin reescribir.",
+        ? `El registro de ${entry.table_name} ya existe en servidor con el mismo id; se confirma sin reescribir.`
+        : `El fiscal de compra ya existe en servidor para la misma compra; se confirma sin reescribir.`,
     };
   }
 
   const normalized = errorMessage.toLowerCase();
+  if (
+    normalized.includes("conflict") ||
+    normalized.includes("409") ||
+    normalized.includes("already exists") ||
+    normalized.includes("duplicate key") ||
+    normalized.includes("unique constraint")
+  ) {
+    return {
+      disposition: "mark_synced",
+      reason: `Registro de ${entry.table_name} ya existe en servidor (conflicto 409 resuelto); se confirma sin reescribir.`,
+    };
+  }
+
   if (
     normalized.includes("foreign key") ||
     normalized.includes("violates check constraint") ||
@@ -1061,7 +1080,22 @@ export function resolveConflictForTable(
     }
 
     case "comandas":
-    case "consumos": {
+    case "consumos":
+    case "cuentas_cobrar":
+    case "cxc_pagos":
+    case "cuentas_pagar":
+    case "cxp_pagos":
+    case "compras":
+    case "compra_detalles":
+    case "compra_fiscal":
+    case "gastos":
+    case "gasto_categorias":
+    case "inventario_movimientos":
+    case "productos_inventario":
+    case "recetas":
+    case "produccion_cocina":
+    case "proveedores":
+    case "customers": {
       if (localEntry.op === "insert" && serverRow) {
         return { resolution: "server_wins", reason: "Registro ya existe en servidor." };
       }

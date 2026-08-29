@@ -874,4 +874,30 @@ describe("localFirst", () => {
       nombre: "Cyber Bistro",
     });
   });
+
+  it("resuelve conflicto deduplicando insert de cxc_pagos y cxp_pagos si ya existen en servidor", () => {
+    const entryCxc = createSyncOutboxEntry({
+      tenantId: "tenant-1",
+      tableName: "cxc_pagos",
+      rowId: "cxc-pago-1",
+      op: "insert",
+      payload: { id: "cxc-pago-1", monto: 500 },
+      deviceId: "dev1",
+    });
+
+    const resultCxc = resolveConflictForTable("cxc_pagos", entryCxc, { id: "cxc-pago-1" });
+    expect(resultCxc.resolution).toBe("server_wins");
+
+    const entryCxp = createSyncOutboxEntry({
+      tenantId: "tenant-1",
+      tableName: "cxp_pagos",
+      rowId: "cxp-pago-1",
+      op: "insert",
+      payload: { id: "cxp-pago-1", monto: 1200 },
+      deviceId: "dev1",
+    });
+
+    const resultCxp = resolveConflictForTable("cxp_pagos", entryCxp, { id: "cxp-pago-1" });
+    expect(resultCxp.resolution).toBe("server_wins");
+  });
 });
