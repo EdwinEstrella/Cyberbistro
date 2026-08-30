@@ -54,7 +54,7 @@ describe("PayrollSyncClient", () => {
     expect(response.result).toMatchObject({ synced: true, remoteTable: "nomina_empleados" });
   });
 
-  it("maps repository payment, adjustment, and payroll gasto outbox rows to the remote payroll schema", async () => {
+  it("sends desktop payments through the atomic RPC while preserving other payroll sync tables", async () => {
     const employeeId = repository.upsertEmployee("tenant-1", "branch-1", {
       firstName: "Luis",
       lastName: "Martínez",
@@ -100,21 +100,6 @@ describe("PayrollSyncClient", () => {
       ],
       [
         {
-          id: paymentOperation?.rowId,
-          empleado_id: employeeId,
-          periodo: "2026-08",
-          monto_base: 100000,
-          total_bonos: 0,
-          total_descuentos: 10000,
-          monto_neto: 90000,
-          monto_pagado: 70000,
-          monto_pendiente: 20000,
-          gasto_id: null,
-        },
-        { onConflict: "id" },
-      ],
-      [
-        {
           id: expenseOperation?.rowId,
           tenant_id: "tenant-1",
           descripcion: "Payroll payment 2026-08",
@@ -127,7 +112,15 @@ describe("PayrollSyncClient", () => {
         { onConflict: "id" },
       ],
     ]);
-    expect(fakeSdk.from.mock.calls).toEqual([["nomina_ajustes"], ["nomina_pagos"], ["gastos"]]);
+    expect(fakeSdk.from.mock.calls).toEqual([["nomina_ajustes"], ["gastos"]]);
+    expect(fakeSdk.rpc).toHaveBeenCalledWith("register_nomina_pago", {
+      p_pago_id: paymentOperation?.rowId,
+      p_empleado_id: employeeId,
+      p_periodo: "2026-08",
+      p_monto_pagado: 70000,
+      p_total_bonos: 0,
+      p_total_descuentos: 10000,
+    });
   });
 
   it("keeps payroll gastos payload aligned with the post-migration remote gastos schema", async () => {
@@ -221,6 +214,29 @@ describe("PayrollSyncClient", () => {
       code: "23502",
     });
   });
+
+  it("keeps authorization failures retryable so a refreshed renderer token can resume the outbox", async () => {
+    const employeeId = repository.upsertEmployee("tenant-1", "branch-1", {
+      firstName: "Ana",
+      lastName: "Auth",
+      role: "Caja",
+      baseSalaryCents: 100000,
+      frequency: "monthly",
+      isActive: true,
+    });
+    repository.createPayment("tenant-1", "branch-1", {
+      employeeId,
+      period: "2026-08",
+      frequency: "monthly",
+      paymentAmountCents: 100000,
+      receiptSnapshot: "{}",
+      adjustments: [],
+    });
+    fakeSdk.nextRpcError = { code: "42501", message: "Not authorized to register payroll payments" };
+
+    const payment = store.claim(Date.now()).find((operation) => operation.tableName === "payroll_payments");
+    await expect(client.push(payment as DurableOperation)).rejects.toThrow("Upsert failed: Not authorized");
+  });
 });
 
 function createFakeSdk() {
@@ -228,9 +244,11 @@ function createFakeSdk() {
   const upsert = vi.fn(async () => ({ error: state.nextUpsertError }));
   const eq = vi.fn(async () => ({ error: state.nextDeleteError }));
   const remove = vi.fn(() => ({ eq }));
-  const state: { nextUpsertError: { message: string; code?: string } | null; nextDeleteError: { message: string; code?: string } | null } = {
+  const rpc = vi.fn(async () => ({ error: state.nextRpcError }));
+  const state: { nextUpsertError: { message: string; code?: string } | null; nextDeleteError: { message: string; code?: string } | null; nextRpcError: { message: string; code?: string } | null } = {
     nextUpsertError: null,
     nextDeleteError: null,
+    nextRpcError: null,
   };
 
   from.mockImplementation(() => ({
@@ -249,9 +267,10 @@ function createFakeSdk() {
   }));
 
   return {
-    client: { database: { from } },
+    client: { database: { from, rpc } },
     from,
     upsert,
+    rpc,
     delete: remove,
     eq,
     get nextUpsertError() {
@@ -265,6 +284,12 @@ function createFakeSdk() {
     },
     set nextDeleteError(value) {
       state.nextDeleteError = value;
+    },
+    get nextRpcError() {
+      return state.nextRpcError;
+    },
+    set nextRpcError(value) {
+      state.nextRpcError = value;
     },
   };
 }

@@ -5,11 +5,15 @@ import type {
   PayrollEmployee,
   PayrollEmployeeDraft,
   PayrollFrequency,
-  PayrollPaymentAdjustment,
   PayrollPaymentContext,
   PayrollPaymentContextRequest,
   PayrollPaymentRecord,
 } from "../../src/shared/lib/payrollContracts";
+import {
+  calculatePayrollPaymentContext,
+  getCurrentPaymentAdjustmentTotals,
+  type PayrollPaymentHistory,
+} from "../../src/shared/lib/payrollCalculation";
 
 type PayrollEmployeeRow = {
   id: string;
@@ -19,23 +23,6 @@ type PayrollEmployeeRow = {
   base_salary_cents: number;
   frequency: PayrollFrequency;
   is_active: number;
-};
-
-type TotalsRow = {
-  paid_cents: number;
-  immediate_bonus_cents: number;
-  immediate_discount_cents: number;
-};
-
-type PaymentSnapshotRow = {
-  base_salary_cents: number;
-  period_salary_cents: number;
-};
-
-const FREQUENCY_DIVISOR: Record<PayrollFrequency, number> = {
-  weekly: 4,
-  biweekly: 2,
-  monthly: 1,
 };
 
 export class PayrollRepository {
@@ -237,29 +224,8 @@ export class PayrollRepository {
     sucursalId: string,
     payload: PayrollPaymentContextRequest,
   ): PayrollPaymentContext {
-    const employee = this.getEmployeeOrThrow(tenantId, sucursalId, payload.employeeId);
-    ensureFrequencyMatches(employee.frequency, payload.frequency);
-
-    const existingPaymentSnapshot = this.getFirstPaymentSnapshot(tenantId, sucursalId, payload.employeeId, payload.period);
-    const baseSalaryCents = existingPaymentSnapshot?.base_salary_cents ?? employee.base_salary_cents;
-    const periodSalaryCents = existingPaymentSnapshot?.period_salary_cents
-      ?? calculatePeriodSalaryCents(employee.base_salary_cents, employee.frequency);
-    const existingTotals = this.getExistingTotals(tenantId, sucursalId, payload.employeeId, payload.period);
-    const currentAdjustmentDeltaCents = sumImmediateAdjustmentDelta(payload.adjustments);
-    const dueCents = Math.max(periodSalaryCents + existingTotals.immediate_bonus_cents - existingTotals.immediate_discount_cents + currentAdjustmentDeltaCents, 0);
-    const pendingCents = Math.max(dueCents - existingTotals.paid_cents, 0);
-
-    return {
-      employeeId: payload.employeeId,
-      period: payload.period,
-      frequency: payload.frequency,
-      baseSalaryCents,
-      periodSalaryCents,
-      adjustmentDeltaCents: existingTotals.immediate_bonus_cents - existingTotals.immediate_discount_cents + currentAdjustmentDeltaCents,
-      dueCents,
-      alreadyPaidCents: existingTotals.paid_cents,
-      pendingCents,
-    };
+    const employee = mapEmployeeRow(this.getEmployeeOrThrow(tenantId, sucursalId, payload.employeeId));
+    return calculatePayrollPaymentContext(employee, payload, this.getPaymentHistory(tenantId, sucursalId, payload.employeeId, payload.period));
   }
 
   public createPayment(
@@ -278,7 +244,7 @@ export class PayrollRepository {
 
       const paymentId = randomUUID();
       const expenseId = randomUUID();
-      const adjustmentDeltaCents = sumImmediateAdjustmentDelta(payload.adjustments);
+      const { deltaCents: adjustmentDeltaCents } = getCurrentPaymentAdjustmentTotals(payload.adjustments);
       const pendingCents = context.pendingCents - payload.paymentAmountCents;
       const expenseDescription = `Payroll payment ${payload.period}`;
       const expenseRecordedAt = new Date().toISOString();
@@ -452,63 +418,41 @@ export class PayrollRepository {
     return employee;
   }
 
-  private getExistingTotals(tenantId: string, sucursalId: string, employeeId: string, period: string): TotalsRow {
-    return this.db
-      .prepare(
-        `
-          SELECT
-            COALESCE((
-              SELECT SUM(amount_paid_cents)
-              FROM payroll_payments
-              WHERE tenant_id = ? AND sucursal_id = ? AND employee_id = ? AND period = ?
-            ), 0) AS paid_cents,
-            COALESCE((
-              SELECT SUM(a.amount_cents)
-              FROM payroll_payment_adjustments a
-              INNER JOIN payroll_payments p ON p.id = a.payment_id
-              WHERE p.tenant_id = ? AND p.sucursal_id = ? AND p.employee_id = ? AND p.period = ? AND a.scope = 'currentPayment' AND a.kind = 'bonus'
-            ), 0) AS immediate_bonus_cents,
-            COALESCE((
-              SELECT SUM(a.amount_cents)
-              FROM payroll_payment_adjustments a
-              INNER JOIN payroll_payments p ON p.id = a.payment_id
-              WHERE p.tenant_id = ? AND p.sucursal_id = ? AND p.employee_id = ? AND p.period = ? AND a.scope = 'currentPayment' AND a.kind = 'discount'
-            ), 0) AS immediate_discount_cents
-        `,
-      )
-      .get(
-        tenantId,
-        sucursalId,
-        employeeId,
-        period,
-        tenantId,
-        sucursalId,
-        employeeId,
-        period,
-        tenantId,
-        sucursalId,
-        employeeId,
-        period,
-      ) as TotalsRow;
-  }
-
-  private getFirstPaymentSnapshot(
+  private getPaymentHistory(
     tenantId: string,
     sucursalId: string,
     employeeId: string,
     period: string,
-  ): PaymentSnapshotRow | undefined {
-    return this.db
+  ): PayrollPaymentHistory[] {
+    const rows = this.db
       .prepare(
         `
-          SELECT base_salary_cents, period_salary_cents
+          SELECT employee_id, period, base_salary_cents, period_salary_cents,
+                 adjustments_delta_cents, amount_paid_cents, created_at
           FROM payroll_payments
           WHERE tenant_id = ? AND sucursal_id = ? AND employee_id = ? AND period = ?
           ORDER BY created_at ASC, rowid ASC
-          LIMIT 1
         `,
       )
-      .get(tenantId, sucursalId, employeeId, period) as PaymentSnapshotRow | undefined;
+      .all(tenantId, sucursalId, employeeId, period) as Array<{
+        employee_id: string;
+        period: string;
+        base_salary_cents: number;
+        period_salary_cents: number;
+        adjustments_delta_cents: number;
+        amount_paid_cents: number;
+        created_at: string;
+      }>;
+
+    return rows.map((row) => ({
+      employeeId: row.employee_id,
+      period: row.period,
+      baseSalaryCents: row.base_salary_cents,
+      periodSalaryCents: row.period_salary_cents,
+      adjustmentsDeltaCents: row.adjustments_delta_cents,
+      amountPaidCents: row.amount_paid_cents,
+      createdAt: row.created_at,
+    }));
   }
 
   private insertOutboxRow(input: {
@@ -540,22 +484,4 @@ function mapEmployeeRow(row: PayrollEmployeeRow): PayrollEmployee {
     frequency: row.frequency,
     isActive: row.is_active === 1,
   };
-}
-
-function calculatePeriodSalaryCents(baseSalaryCents: number, frequency: PayrollFrequency): number {
-  const divisor = FREQUENCY_DIVISOR[frequency];
-  return Math.round(baseSalaryCents / divisor);
-}
-
-function ensureFrequencyMatches(employeeFrequency: PayrollFrequency, payloadFrequency: PayrollFrequency): void {
-  if (employeeFrequency !== payloadFrequency) {
-    throw new Error("Employee frequency mismatch");
-  }
-}
-
-function sumImmediateAdjustmentDelta(adjustments: PayrollPaymentAdjustment[]): number {
-  return adjustments.reduce((total, adjustment) => {
-    if (adjustment.scope !== "currentPayment") return total;
-    return total + (adjustment.kind === "bonus" ? adjustment.amountCents : -adjustment.amountCents);
-  }, 0);
 }

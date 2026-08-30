@@ -25,7 +25,9 @@ import { useAuth } from "../../shared/hooks/useAuth";
 import { useSucursal } from "../../app/context/SucursalContext";
 import { executePayrollCommandLocally, isPayrollLocalStorageAvailable } from "../../shared/lib/payrollUiAdapter";
 import {
+  createPayrollPaymentInCloud,
   deactivatePayrollEmployeeInCloud,
+  getPayrollPaymentContextFromCloud,
   mapPayrollFrequencyFromCloud,
   syncPayrollEmployeeToCloud,
 } from "../../shared/lib/payrollCloudSync";
@@ -46,6 +48,7 @@ import type {
   PayrollFrequency,
   PayrollPaymentAdjustment,
   PayrollPaymentContext,
+  PayrollPaymentContextRequest,
   PayrollPaymentRecord,
 } from "../../shared/lib/payrollContracts";
 
@@ -351,36 +354,30 @@ export function Nomina() {
     setPaymentContext(null);
     setPaymentMessage("");
     if (!tenantId || !activeSucursalId || !selectedEmployee || !periodValue) return;
-    if (!isPayrollLocalStorageAvailable()) {
-      setPaymentMessage("El cálculo de pagos de nómina requiere la aplicación de escritorio.");
-      return;
-    }
-
     let cancelled = false;
-    void executePayrollCommandLocally({
-      type: "payroll.getPaymentContext",
-      tenantId,
-      sucursalId: activeSucursalId,
-      payload: {
-        employeeId: selectedEmployee.id,
-        period: periodValue,
-        frequency: selectedEmployee.frequency,
-        adjustments,
-      },
-    })
-      .then((result) => {
-        if (cancelled || result.type !== "payroll.paymentContext") return;
-        setPaymentContext(result.context);
+    void (async () => {
+      try {
+        const payload = {
+          employeeId: selectedEmployee.id,
+          period: periodValue,
+          frequency: selectedEmployee.frequency,
+          adjustments,
+        };
+        const context = isPayrollLocalStorageAvailable()
+          ? await getLocalPaymentContext(tenantId, activeSucursalId, payload)
+          : await getPayrollPaymentContextFromCloud(insforgeClient as never, selectedEmployee, payload);
+        if (cancelled) return;
+        setPaymentContext(context);
         if (paymentAmountInput.trim().length === 0) {
-          setPaymentAmountInput(formatCentsToCurrencyDisplay(result.context.pendingCents));
+          setPaymentAmountInput(formatCentsToCurrencyDisplay(context.pendingCents));
         }
-      })
-      .catch((error) => {
+      } catch (error) {
         if (!cancelled) {
           setPaymentContext(null);
           setPaymentMessage(error instanceof Error ? error.message : "No se pudo calcular el balance de nómina.");
         }
-      });
+      }
+    })();
 
     return () => {
       cancelled = true;
@@ -601,11 +598,6 @@ export function Nomina() {
       setPaymentMessage("El monto a pagar debe ser mayor a 0.");
       return;
     }
-    if (!isPayrollLocalStorageAvailable()) {
-      setPaymentMessage("El registro de pagos de nómina requiere la aplicación de escritorio.");
-      return;
-    }
-
     setPaying(true);
     setPaymentMessage("");
     setPaymentSuccessMsg("");
@@ -625,16 +617,9 @@ export function Nomina() {
         adjustments,
       };
 
-      const result = await executePayrollCommandLocally({
-        type: "payroll.createPayment",
-        tenantId,
-        sucursalId: activeSucursalId,
-        payload,
-      });
-      if (result.type !== "payroll.paymentCommitted") {
-        throw new Error("El almacenamiento local no confirmó el registro del pago.");
-      }
-      const committedContext = result.context;
+      const committedContext = isPayrollLocalStorageAvailable()
+        ? await createPaymentLocally(tenantId, activeSucursalId, payload)
+        : await createPaymentInCloud(payload);
 
       setPaymentAmountInput("");
       setAdjustments([]);
@@ -1741,6 +1726,46 @@ export function Nomina() {
       />
     </div>
   );
+}
+
+async function getLocalPaymentContext(
+  tenantId: string,
+  sucursalId: string,
+  payload: PayrollPaymentContextRequest,
+): Promise<PayrollPaymentContext> {
+  const result = await executePayrollCommandLocally({
+    type: "payroll.getPaymentContext",
+    tenantId,
+    sucursalId,
+    payload,
+  });
+  if (result.type !== "payroll.paymentContext") {
+    throw new Error("El almacenamiento local no confirmó el cálculo del pago.");
+  }
+  return result.context;
+}
+
+async function createPaymentLocally(
+  tenantId: string,
+  sucursalId: string,
+  payload: PayrollCreatePaymentRequest,
+): Promise<PayrollPaymentContext> {
+  const result = await executePayrollCommandLocally({
+    type: "payroll.createPayment",
+    tenantId,
+    sucursalId,
+    payload,
+  });
+  if (result.type !== "payroll.paymentCommitted") {
+    throw new Error("El almacenamiento local no confirmó el registro del pago.");
+  }
+  return result.context;
+}
+
+async function createPaymentInCloud(
+  payload: PayrollCreatePaymentRequest,
+): Promise<PayrollPaymentContext> {
+  return createPayrollPaymentInCloud(insforgeClient as never, payload);
 }
 
 function formatMoney(cents: number): string {

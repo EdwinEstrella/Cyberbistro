@@ -255,6 +255,7 @@ function syncSdkSession(data: unknown): void {
       }).tokenManager;
       tokenManager?.setAccessToken?.(accessToken);
       if (user) tokenManager?.setUser?.(user);
+      void window.electronAPI?.setPayrollSyncAccessToken?.(accessToken).catch(() => undefined);
     }
   } catch {
     /* best effort: InsForge SDK internals are not public API */
@@ -274,6 +275,7 @@ function clearSessionShared(): void {
     });
   });
   try {
+    void window.electronAPI?.setPayrollSyncAccessToken?.(null).catch(() => undefined);
     insforgeClient.getHttpClient().setAuthToken(null);
     insforgeClient.getHttpClient().setRefreshToken(null);
     const tokenManager = (insforgeClient as unknown as {

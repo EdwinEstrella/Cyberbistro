@@ -6,7 +6,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setupAutoUpdater } from './autoUpdater'
 import { startLanEdgeServer, type LanEdgeServerHandle } from './lanEdgeServer'
-import { registerCashPurchaseRepositoryIpc, registerCatalogRepositoryIpc, registerDesktopRepositoryIpc, registerOrdersRepositoryIpc, registerSalesFiscalRepositoryIpc, registerTenantStoreIpc, registerPayrollRepositoryIpc, registerReceivablesRepositoryIpc, registerPayablesRepositoryIpc } from './persistence/ipc'
+import { registerCashPurchaseRepositoryIpc, registerCatalogRepositoryIpc, registerDesktopRepositoryIpc, registerOrdersRepositoryIpc, registerSalesFiscalRepositoryIpc, registerTenantStoreIpc, registerPayrollRepositoryIpc, registerPayrollSyncAccessTokenIpc, registerReceivablesRepositoryIpc, registerPayablesRepositoryIpc } from './persistence/ipc'
 import { PayrollRepository } from './persistence/payrollRepository'
 import type { PayrollCommand } from '../src/shared/lib/payrollContracts'
 import { TenantStoreController } from './persistence/tenantStore'
@@ -606,6 +606,14 @@ if (gotTheLock) {
             throw new Error(`Unknown payroll command: ${(command as any).type}`)
         }
       }
+    })
+    registerPayrollSyncAccessTokenIpc({
+      ipcMain,
+      isTrustedSender,
+      setAccessToken: (accessToken) => {
+        tenantStoreController?.payrollSync.setAccessToken(accessToken)
+        if (accessToken) tenantStoreController?.payrollSync.triggerSync().catch(console.error)
+      },
     })
   })
 

@@ -70,6 +70,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   executeSalesFiscalCommand: (command: unknown) => ipcRenderer.invoke('sales-fiscal-repository:execute', command),
   executeCashPurchaseCommand: (command: unknown) => ipcRenderer.invoke('cash-purchase-repository:execute', command),
   executePayrollCommand: (command: unknown) => ipcRenderer.invoke('payroll-repository:execute', command),
+  setPayrollSyncAccessToken: (accessToken: unknown) => ipcRenderer.invoke('payroll-sync:set-access-token', accessToken === null ? null : { accessToken }),
   executeReceivablesCommand: (command: unknown) => ipcRenderer.invoke('receivables-repository:execute', command),
   executePayablesCommand: (command: unknown) => ipcRenderer.invoke('payables-repository:execute', command),
   importLegacyIndexedDb: (payload: unknown) => ipcRenderer.invoke('tenant-store:import-indexeddb', payload),

@@ -13,9 +13,13 @@ type RemoteMutationBuilder = {
   };
 };
 
+type RemoteRpcClient = {
+  rpc(functionName: string, args: Record<string, unknown>): Promise<{ data?: unknown; error: MutationError | null }>;
+};
+
 type ClientOverride =
   | Pick<InsForgeClient, "database">
-  | { from(table: string): RemoteMutationBuilder };
+  | { from(table: string): RemoteMutationBuilder; rpc?(functionName: string, args: Record<string, unknown>): Promise<{ data?: unknown; error: MutationError | null }> };
 
 type PushResponse = Awaited<ReturnType<ServerSyncClient["push"]>>;
 
@@ -25,9 +29,11 @@ const FALLBACK_ANON_KEY =
 
 export class PayrollSyncClient implements ServerSyncClient {
   private clientPromise: Promise<InsForgeClient | ClientOverride>;
+  private readonly config: { url: string; key: string } | null;
 
-  constructor(clientOverride?: ClientOverride) {
+  constructor(clientOverride?: ClientOverride, accessToken?: string | null) {
     if (clientOverride) {
+      this.config = null;
       this.clientPromise = Promise.resolve(clientOverride);
     } else {
       const fallbackAllowed = process.env.DISABLE_INSFORGE_FALLBACK !== "true";
@@ -36,9 +42,14 @@ export class PayrollSyncClient implements ServerSyncClient {
       if (!url || !key) {
         throw new Error("Missing InsForge configuration in main process");
       }
-      this.clientPromise = import("@insforge/sdk").then(({ createClient }) =>
-        createClient({ baseUrl: url, anonKey: key, isServerMode: true })
-      );
+      this.config = { url, key };
+      this.clientPromise = this.createClient(accessToken);
+    }
+  }
+
+  setAccessToken(accessToken: string | null): void {
+    if (this.config) {
+      this.clientPromise = this.createClient(accessToken);
     }
   }
 
@@ -52,9 +63,12 @@ export class PayrollSyncClient implements ServerSyncClient {
       return { permanent: mapped.error };
     }
 
+    if (operation.tableName === "payroll_payments") {
+      return this.registerPayment(operation, mapped.payload);
+    }
+
     const tableClient = await this.getTableClient(mapped.remoteTable);
-    const { error } = await tableClient
-      .upsert(mapped.payload, { onConflict: "id" });
+    const { error } = await tableClient.upsert(mapped.payload, { onConflict: "id" });
 
     if (error) {
       return classifyRemoteError(error, operation.tableName, "upsert");
@@ -98,6 +112,44 @@ export class PayrollSyncClient implements ServerSyncClient {
       return client.database.from(table) as unknown as RemoteMutationBuilder;
     }
     return client.from(table);
+  }
+
+  private async registerPayment(operation: DurableOperation, payload: Record<string, unknown>): Promise<PushResponse> {
+    const client = await this.clientPromise;
+    const database = "database" in client ? client.database : client;
+    const rpc = (database as unknown as RemoteRpcClient).rpc;
+    if (typeof rpc !== "function") {
+      return { permanent: permanentReason("Payroll sync client does not support RPC", "unsupported_client", operation.tableName) };
+    }
+
+    const { error } = await rpc.call(database, "register_nomina_pago", {
+      p_pago_id: operation.rowId,
+      p_empleado_id: payload.empleado_id,
+      p_periodo: payload.periodo,
+      p_monto_pagado: payload.monto_pagado,
+      p_total_bonos: payload.total_bonos,
+      p_total_descuentos: payload.total_descuentos,
+    });
+
+    if (error) {
+      return classifyRemoteError(error, operation.tableName, "upsert");
+    }
+
+    return { result: { synced: true, id: operation.rowId, remoteTable: "nomina_pagos" } };
+  }
+
+  private createClient(accessToken?: string | null): Promise<InsForgeClient> {
+    if (!this.config) {
+      throw new Error("Payroll sync client configuration is unavailable");
+    }
+    return import("@insforge/sdk").then(({ createClient }) =>
+      createClient({
+        baseUrl: this.config.url,
+        anonKey: this.config.key,
+        edgeFunctionToken: accessToken || undefined,
+        isServerMode: true,
+      })
+    );
   }
 }
 
@@ -260,7 +312,7 @@ function classifyRemoteError(error: MutationError, tableName: string, operation:
 }
 
 function isPermanentRemoteError(code: string): boolean {
-  return code.startsWith("22") || code.startsWith("23") || code.startsWith("42") || code === "PGRST204";
+  return code.startsWith("22") || code.startsWith("23") || (code.startsWith("42") && code !== "42501") || code === "PGRST204";
 }
 
 function permanentReason(reason: string, category: string, tableName: string, extra: Record<string, unknown> = {}): Record<string, unknown> & { reason: string; retryable: false } {

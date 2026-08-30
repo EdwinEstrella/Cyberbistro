@@ -1,8 +1,36 @@
-import type { PayrollEmployee, PayrollFrequency } from "./payrollContracts";
+import {
+  calculatePayrollPaymentContext,
+  getCurrentPaymentAdjustmentTotals,
+  type PayrollPaymentHistory,
+} from "./payrollCalculation";
+import type {
+  PayrollCreatePaymentRequest,
+  PayrollEmployee,
+  PayrollFrequency,
+  PayrollPaymentContext,
+} from "./payrollContracts";
 
 type PayrollEmployeeRemoteError = {
   code?: string;
   message: string;
+};
+
+type PayrollPaymentQuery = {
+  eq(column: string, value: string): PayrollPaymentQuery;
+  order(column: string, options: { ascending: boolean }): PromiseLike<{
+    data: PayrollPaymentRemoteRow[] | null;
+    error: PayrollEmployeeRemoteError | null;
+  }>;
+};
+
+type PayrollPaymentRemoteRow = {
+  empleado_id: string;
+  periodo: string;
+  monto_base: number;
+  total_bonos: number;
+  total_descuentos: number;
+  monto_pagado: number;
+  created_at: string | null;
 };
 
 type PayrollEmployeeCloudClient = {
@@ -24,6 +52,33 @@ type PayrollEmployeeUpdateClient = {
       };
     };
   };
+};
+
+type PayrollPaymentContextCloudClient = {
+  database: {
+    from(table: string): {
+      select(columns: string): PayrollPaymentQuery;
+      insert(payload: Record<string, unknown>[]): PromiseLike<{ error: PayrollEmployeeRemoteError | null }>;
+    };
+  };
+};
+
+type PayrollPaymentCloudClient = {
+  database: {
+    rpc(
+      functionName: string,
+      args: Record<string, unknown>,
+    ): PromiseLike<{ data: PayrollPaymentRpcRow[] | null; error: PayrollEmployeeRemoteError | null }>;
+  };
+};
+
+type PayrollPaymentRpcRow = {
+  payment_id: string;
+  period_salary_cents: number;
+  due_cents: number;
+  amount_paid_cents: number;
+  pending_cents: number;
+  paid_total_cents: number;
 };
 
 export class PayrollCloudSyncError extends Error {
@@ -116,4 +171,75 @@ export async function deactivatePayrollEmployeeInCloud(
       code,
     );
   }
+}
+
+export async function getPayrollPaymentContextFromCloud(
+  client: PayrollPaymentContextCloudClient,
+  employee: PayrollEmployee,
+  request: Pick<PayrollCreatePaymentRequest, "employeeId" | "period" | "frequency" | "adjustments">,
+): Promise<PayrollPaymentContext> {
+  const { data, error } = await client.database
+    .from("nomina_pagos")
+    .select("empleado_id, periodo, monto_base, total_bonos, total_descuentos, monto_pagado, created_at")
+    .eq("empleado_id", request.employeeId)
+    .eq("periodo", request.period)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    const code = error.code ?? "PAYROLL_CLOUD_CONTEXT_FAILED";
+    throw new PayrollCloudSyncError(`Payroll payment context query failed (${code}): ${error.message}`, code);
+  }
+
+  return calculatePayrollPaymentContext(employee, request, (data ?? []).map(mapPaymentHistory));
+}
+
+export async function createPayrollPaymentInCloud(
+  client: PayrollPaymentCloudClient,
+  payload: PayrollCreatePaymentRequest,
+): Promise<PayrollPaymentContext> {
+  const currentTotals = getCurrentPaymentAdjustmentTotals(payload.adjustments);
+  const { data, error } = await client.database.rpc("register_nomina_pago", {
+    p_empleado_id: payload.employeeId,
+    p_periodo: payload.period,
+    p_monto_pagado: payload.paymentAmountCents,
+    p_total_bonos: currentTotals.bonusesCents,
+    p_total_descuentos: currentTotals.discountsCents,
+  });
+
+  if (error) {
+    const code = error.code ?? "PAYROLL_CLOUD_PAYMENT_REGISTER_FAILED";
+    throw new PayrollCloudSyncError(`Payroll payment registration failed (${code}): ${error.message}`, code);
+  }
+
+  const result = data?.[0];
+  if (!result) {
+    throw new PayrollCloudSyncError(
+      "Payroll payment registration returned no result.",
+      "PAYROLL_CLOUD_PAYMENT_EMPTY_RESULT",
+    );
+  }
+
+  return {
+    employeeId: payload.employeeId,
+    period: payload.period,
+    frequency: payload.frequency,
+    baseSalaryCents: result.period_salary_cents,
+    periodSalaryCents: result.period_salary_cents,
+    adjustmentDeltaCents: result.due_cents - result.period_salary_cents,
+    dueCents: result.due_cents,
+    alreadyPaidCents: result.paid_total_cents,
+    pendingCents: result.pending_cents,
+  };
+}
+
+function mapPaymentHistory(row: PayrollPaymentRemoteRow): PayrollPaymentHistory {
+  return {
+    employeeId: row.empleado_id,
+    period: row.periodo,
+    baseSalaryCents: Number(row.monto_base),
+    periodSalaryCents: Number(row.monto_base),
+    adjustmentsDeltaCents: Number(row.total_bonos) - Number(row.total_descuentos),
+    amountPaidCents: Number(row.monto_pagado),
+    createdAt: row.created_at ?? "",
+  };
 }

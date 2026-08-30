@@ -20,6 +20,7 @@ export const ORDERS_REPOSITORY_EXECUTE_CHANNEL = "orders-repository:execute";
 export const FISCAL_SALES_REPOSITORY_EXECUTE_CHANNEL = "sales-fiscal-repository:execute";
 export const CASH_PURCHASE_REPOSITORY_EXECUTE_CHANNEL = "cash-purchase-repository:execute";
 export const PAYROLL_REPOSITORY_EXECUTE_CHANNEL = "payroll-repository:execute";
+export const PAYROLL_SYNC_ACCESS_TOKEN_CHANNEL = "payroll-sync:set-access-token";
 export const RECEIVABLES_REPOSITORY_EXECUTE_CHANNEL = "receivables-repository:execute";
 export const PAYABLES_REPOSITORY_EXECUTE_CHANNEL = "payables-repository:execute";
 
@@ -82,6 +83,21 @@ export function registerPayrollRepositoryIpc(input: {
     const command = parsePayrollCommand(payload);
     if (!command) throw new Error("Invalid payroll command");
     return { ok: true, data: await input.executeCommand(command) };
+  });
+}
+
+export function registerPayrollSyncAccessTokenIpc(input: {
+  ipcMain: PayrollRepositoryIpcMain;
+  isTrustedSender: (event: { senderId: number }) => boolean;
+  setAccessToken: (accessToken: string | null) => void;
+}): void {
+  input.ipcMain.removeHandler(PAYROLL_SYNC_ACCESS_TOKEN_CHANNEL);
+  input.ipcMain.handle(PAYROLL_SYNC_ACCESS_TOKEN_CHANNEL, async (event, payload) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    const accessToken = parsePayrollSyncAccessToken(payload);
+    if (accessToken === undefined) throw new Error("Invalid payroll sync access token");
+    input.setAccessToken(accessToken);
+    return { ok: true };
   });
 }
 
@@ -303,6 +319,25 @@ function parsePayrollCommand(payload: unknown): PayrollCommand | null {
   }
 
   return null;
+}
+
+function parsePayrollSyncAccessToken(payload: unknown): string | null | undefined {
+  if (payload === null) return null;
+  if (!isExactObject(payload, ["accessToken"], false)) return undefined;
+  const accessToken = (payload as Record<string, unknown>).accessToken;
+  if (typeof accessToken !== "string" || accessToken.length > 8192) return undefined;
+
+  const parts = accessToken.split(".");
+  if (parts.length !== 3) return undefined;
+  try {
+    const claims = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")) as { exp?: unknown; sub?: unknown };
+    if (typeof claims.sub !== "string" || typeof claims.exp !== "number" || !Number.isFinite(claims.exp) || claims.exp <= Date.now() / 1000) {
+      return undefined;
+    }
+  } catch {
+    return undefined;
+  }
+  return accessToken;
 }
 
 function isValidPayrollEmployee(value: unknown): boolean {

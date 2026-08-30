@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   TENANT_STORE_IMPORT_CHANNEL,
   TENANT_STORE_STATUS_CHANNEL,
+  PAYROLL_SYNC_ACCESS_TOKEN_CHANNEL,
+  registerPayrollSyncAccessTokenIpc,
   registerTenantStoreIpc,
   type TenantStoreIpcMain,
 } from "../electron/persistence/ipc";
@@ -70,3 +72,28 @@ describe("tenant store IPC boundary", () => {
     })).resolves.toEqual({ ok: true, data: { received: { manifest: { tenantId: "tenant-a" }, chunks: [] } } });
   });
 });
+
+describe("payroll sync auth IPC boundary", () => {
+  it("accepts only an unexpired JWT from the trusted renderer and keeps it out of the IPC response", async () => {
+    const { handlers, ipcMain } = createIpcHarness();
+    const received: Array<string | null> = [];
+    registerPayrollSyncAccessTokenIpc({
+      ipcMain,
+      isTrustedSender: (event) => event.senderId === 7,
+      setAccessToken: (token) => received.push(token),
+    });
+    const token = createJwt({ sub: "user-1", exp: Math.floor(Date.now() / 1000) + 60 });
+    const handler = handlers.get(PAYROLL_SYNC_ACCESS_TOKEN_CHANNEL);
+
+    await expect(handler?.({ senderId: 99 }, { accessToken: token })).rejects.toThrow("Untrusted IPC sender");
+    await expect(handler?.({ senderId: 7 }, { accessToken: "not-a-jwt" })).rejects.toThrow("Invalid payroll sync access token");
+    await expect(handler?.({ senderId: 7 }, { accessToken: token })).resolves.toEqual({ ok: true });
+    await expect(handler?.({ senderId: 7 }, null)).resolves.toEqual({ ok: true });
+    expect(received).toEqual([token, null]);
+  });
+});
+
+function createJwt(payload: Record<string, unknown>): string {
+  const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  return `${encode({ alg: "none", typ: "JWT" })}.${encode(payload)}.signature`;
+}
