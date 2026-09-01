@@ -144,9 +144,10 @@ export class PayrollSyncClient implements ServerSyncClient {
     }
     return import("@insforge/sdk").then(({ createClient }) =>
       createClient({
-        baseUrl: this.config.url,
-        anonKey: this.config.key,
+        baseUrl: this.config!.url,
+        anonKey: this.config!.key,
         edgeFunctionToken: accessToken || undefined,
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
         isServerMode: true,
       })
     );

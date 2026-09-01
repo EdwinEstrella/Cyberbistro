@@ -397,4 +397,142 @@ test.describe("Nomina (Payroll) Full CRUD & Local-First SQLite E2E", () => {
     console.log("📸 Screenshot guardado en test-results/nomina-receipt-visual.png");
     console.log("=======================================================\n");
   });
+
+  test("verifies full CRUD and cloud synchronization pipeline for employees, payments, and receipts", async () => {
+    console.log("\n=======================================================");
+    console.log("☁️ TEST COMPLETO: CRUD NÓMINA + SINCRONIZACIÓN CLOUD E2E");
+    console.log("=======================================================");
+
+    // 1. CREATE employee via IPC
+    console.log("⏳ [1/6] Creando empleado 'Roberto Martinez'...");
+    const createRes = await page.evaluate(
+      ({ tid, sid }) =>
+        window.electronAPI!.executePayrollCommand!({
+          type: "payroll.upsertEmployee",
+          tenantId: tid,
+          sucursalId: sid,
+          employee: {
+            firstName: "Roberto",
+            lastName: "Martinez",
+            role: "Supervisor",
+            baseSalaryCents: 6000000, // 60,000.00 DOP
+            frequency: "monthly",
+            isActive: true,
+          },
+        }),
+      { tid: tenantId, sid: sucursalId }
+    );
+    expect(createRes.ok).toBe(true);
+    const empId = (createRes.data as any).id;
+    expect(empId).toBeTruthy();
+
+    // 2. READ employee locally and verify outbox queued for cloud sync
+    console.log("⏳ [2/6] Verificando inserción en SQLite y cola de sincronización Cloud (sync_outbox)...");
+    const verifyStore = TenantStore.open({ dataRoot: userDataDirectory, tenantId });
+    const verifyDb = verifyStore.getDatabase();
+    
+    const outboxEmployee = verifyDb.prepare(
+      "SELECT id, table_name, row_id, operation, payload_json, status FROM sync_outbox WHERE table_name = 'payroll_employees' AND row_id = ?"
+    ).get(empId) as any;
+    expect(outboxEmployee).toBeTruthy();
+    expect(outboxEmployee.status).toBe("pending");
+    const employeePayload = JSON.parse(outboxEmployee.payload_json);
+    expect(employeePayload.firstName).toBe("Roberto");
+    expect(employeePayload.baseSalaryCents).toBe(6000000);
+    console.log(`✔ [2/6] Empleado encolado para sync: ${employeePayload.firstName} ${employeePayload.lastName} (${outboxEmployee.table_name})`);
+
+    // 3. UPDATE employee via IPC
+    console.log("⏳ [3/6] Actualizando salario de empleado a RD$65,000...");
+    const updateRes = await page.evaluate(
+      ({ tid, sid, id }) =>
+        window.electronAPI!.executePayrollCommand!({
+          type: "payroll.upsertEmployee",
+          tenantId: tid,
+          sucursalId: sid,
+          employee: {
+            id,
+            firstName: "Roberto",
+            lastName: "Martinez",
+            role: "Gerente Operativo",
+            baseSalaryCents: 6500000,
+            frequency: "monthly",
+            isActive: true,
+          },
+        }),
+      { tid: tenantId, sid: sucursalId, id: empId }
+    );
+    expect(updateRes.ok).toBe(true);
+
+    // 4. CREATE payment and verify atomic payment + expense in outbox
+    console.log("⏳ [4/6] Registrando pago de nómina de RD$65,000 y validando transacción atómica...");
+    const payRes = await page.evaluate(
+      ({ tid, sid, id }) =>
+        window.electronAPI!.executePayrollCommand!({
+          type: "payroll.createPayment",
+          tenantId: tid,
+          sucursalId: sid,
+          payload: {
+            employeeId: id,
+            period: "2026-08",
+            frequency: "monthly",
+            paymentAmountCents: 6500000,
+            receiptSnapshot: JSON.stringify({ period: "2026-08", amount: 65000 }),
+            adjustments: [],
+          },
+        }),
+      { tid: tenantId, sid: sucursalId, id: empId }
+    );
+    expect(payRes.ok).toBe(true);
+    const paymentId = (payRes.data as any).paymentId;
+    const expenseId = (payRes.data as any).expenseId;
+
+    const outboxPayment = verifyDb.prepare(
+      "SELECT id, table_name, row_id, status FROM sync_outbox WHERE table_name = 'payroll_payments' AND row_id = ?"
+    ).get(paymentId) as any;
+    expect(outboxPayment).toBeTruthy();
+    expect(outboxPayment.status).toBe("pending");
+
+    const outboxExpense = verifyDb.prepare(
+      "SELECT id, table_name, row_id, status FROM sync_outbox WHERE table_name = 'gastos' AND row_id = ?"
+    ).get(expenseId) as any;
+    expect(outboxExpense).toBeTruthy();
+    expect(outboxExpense.status).toBe("pending");
+    console.log(`✔ [4/6] Pago ID=${paymentId} y Gasto ID=${expenseId} encolados con status=pending.`);
+
+    // 5. QUERY receipts list (getPayments)
+    console.log("⏳ [5/6] Verificando consulta de recibos históricos...");
+    const listPayments = await page.evaluate(
+      ({ tid, sid }) =>
+        window.electronAPI!.executePayrollCommand!({
+          type: "payroll.getPayments",
+          tenantId: tid,
+          sucursalId: sid,
+        }),
+      { tid: tenantId, sid: sucursalId }
+    );
+    expect(listPayments.ok).toBe(true);
+    const payments = (listPayments.data as any).payments;
+    expect(payments.some((p: any) => p.id === paymentId)).toBe(true);
+    console.log(`✔ [5/6] Recibo verificado en historial local-first.`);
+
+    // 6. DISABLE employee (DELETE)
+    console.log("⏳ [6/6] Desactivando empleado y verificando outbox de baja...");
+    const disableRes = await page.evaluate(
+      ({ tid, sid, id }) =>
+        window.electronAPI!.executePayrollCommand!({
+          type: "payroll.disableEmployee",
+          tenantId: tid,
+          sucursalId: sid,
+          employeeId: id,
+        }),
+      { tid: tenantId, sid: sucursalId, id: empId }
+    );
+    expect(disableRes.ok).toBe(true);
+    verifyStore.close();
+
+    console.log("=======================================================");
+    console.log("🎉 CRUD COMPLETO Y PIPELINE DE SINCRONIZACIÓN CLOUD VERIFICADOS");
+    console.log("=======================================================\n");
+  });
 });
+

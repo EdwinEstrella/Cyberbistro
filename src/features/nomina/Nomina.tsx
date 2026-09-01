@@ -239,14 +239,18 @@ export function Nomina() {
         .eq("sucursal_id", activeSucursalId)
         .order("nombre_completo", { ascending: true });
 
-      let finalEmployees: PayrollEmployee[] = [];
+      const employeeMap = new Map<string, PayrollEmployee>();
+
+      for (const emp of localEmployees) {
+        employeeMap.set(emp.id, emp);
+      }
 
       if (!cloudError && cloudEmployees && cloudEmployees.length > 0) {
-        finalEmployees = cloudEmployees.map((ce: any) => {
+        for (const ce of cloudEmployees) {
           const nameParts = (ce.nombre_completo || "").trim().split(" ");
           const firstName = nameParts[0] || "Empleado";
           const lastName = nameParts.slice(1).join(" ") || "";
-          return {
+          const cloudEmp: PayrollEmployee = {
             id: ce.id,
             firstName,
             lastName,
@@ -255,10 +259,32 @@ export function Nomina() {
             frequency: mapPayrollFrequencyFromCloud(ce.frecuencia_pago),
             isActive: ce.activo !== false,
           };
-        });
-      } else if (localEmployees.length > 0) {
-        finalEmployees = localEmployees;
+          if (!employeeMap.has(cloudEmp.id)) {
+            employeeMap.set(cloudEmp.id, cloudEmp);
+            // Sincronizar hacia SQLite local para que el repositorio local disponga del empleado
+            if (window.electronAPI?.executePayrollCommand) {
+              void executePayrollCommandLocally({
+                type: "payroll.upsertEmployee",
+                tenantId,
+                sucursalId: activeSucursalId,
+                employee: {
+                  id: cloudEmp.id,
+                  firstName: cloudEmp.firstName,
+                  lastName: cloudEmp.lastName,
+                  role: cloudEmp.role,
+                  baseSalaryCents: cloudEmp.baseSalaryCents,
+                  frequency: cloudEmp.frequency,
+                  isActive: cloudEmp.isActive,
+                },
+              }).catch((e) => {
+                console.warn("[Nomina] Error mirroring employee to local SQLite:", e);
+              });
+            }
+          }
+        }
       }
+
+      const finalEmployees = Array.from(employeeMap.values());
 
       // Sincronizar a InsForge los empleados locales existentes
       for (const emp of localEmployees) {
@@ -284,7 +310,22 @@ export function Nomina() {
     if (!tenantId || !activeSucursalId) return;
     setLoadingPayments(true);
     try {
-      // 1. Cargar desde InsForge
+      let localPayments: PayrollPaymentRecord[] = [];
+      if (window.electronAPI?.executePayrollCommand) {
+        try {
+          const result = await executePayrollCommandLocally({
+            type: "payroll.getPayments",
+            tenantId,
+            sucursalId: activeSucursalId,
+          });
+          if (result.type === "payroll.payments") {
+            localPayments = result.payments;
+          }
+        } catch (e) {
+          console.warn("[Nomina] Error cargando pagos locales:", e);
+        }
+      }
+
       const { data: cloudPayments, error: cloudErr } = await insforgeClient.database
         .from("nomina_pagos")
         .select(`
@@ -294,11 +335,17 @@ export function Nomina() {
         `)
         .order("created_at", { ascending: false });
 
+      const paymentMap = new Map<string, PayrollPaymentRecord>();
+
+      for (const p of localPayments) {
+        paymentMap.set(p.id, p);
+      }
+
       if (!cloudErr && cloudPayments && cloudPayments.length > 0) {
-        const mapped: PayrollPaymentRecord[] = cloudPayments.map((cp: any) => {
-          const emp = cp.nomina_empleados;
+        for (const cp of cloudPayments) {
+          const emp = (Array.isArray(cp.nomina_empleados) ? cp.nomina_empleados[0] : cp.nomina_empleados) as any;
           const delta = Number(cp.total_bonos || 0) - Number(cp.total_descuentos || 0);
-          return {
+          const cloudRecord: PayrollPaymentRecord = {
             id: cp.id,
             employeeId: cp.empleado_id,
             employeeName: emp?.nombre_completo || "Empleado",
@@ -314,22 +361,14 @@ export function Nomina() {
             receiptSnapshot: "",
             createdAt: cp.created_at || new Date().toISOString(),
           };
-        });
-        setPayments(mapped);
-        return;
-      }
-
-      // 2. Si no hay en nube o falla, cargar de SQLite local
-      if (window.electronAPI?.executePayrollCommand) {
-        const result = await executePayrollCommandLocally({
-          type: "payroll.getPayments",
-          tenantId,
-          sucursalId: activeSucursalId,
-        });
-        if (result.type === "payroll.payments") {
-          setPayments(result.payments);
+          paymentMap.set(cloudRecord.id, cloudRecord);
         }
       }
+
+      const finalPayments = Array.from(paymentMap.values()).sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+      setPayments(finalPayments);
     } catch (error) {
       console.error("[Nomina] Error cargando historial de recibos:", error);
     } finally {

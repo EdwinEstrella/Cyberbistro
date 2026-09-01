@@ -102,51 +102,35 @@ export class PayrollRepository {
     try {
       this.ensureTenantAndBranch(tenantId, sucursalId);
 
-      if (employee.id) {
-        const result = this.db
-          .prepare(
-            `
-              UPDATE payroll_employees
-              SET first_name = ?, last_name = ?, role = ?, base_salary_cents = ?, frequency = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP
-              WHERE id = ? AND tenant_id = ? AND sucursal_id = ?
-            `,
-          )
-          .run(
-            employee.firstName,
-            employee.lastName,
-            employee.role,
-            employee.baseSalaryCents,
-            employee.frequency,
-            Number(employee.isActive),
-            id,
-            tenantId,
-            sucursalId,
-          );
-
-        if ((result.changes ?? 0) === 0) {
-          throw new Error("Employee not found");
-        }
-      } else {
-        this.db
-          .prepare(
-            `
-              INSERT INTO payroll_employees (
-                id, tenant_id, sucursal_id, first_name, last_name, role, base_salary_cents, frequency, is_active
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `,
-          )
-          .run(
-            id,
-            tenantId,
-            sucursalId,
-            employee.firstName,
-            employee.lastName,
-            employee.role,
-            employee.baseSalaryCents,
-            employee.frequency,
-            Number(employee.isActive),
-          );
-      }
+      this.db
+        .prepare(
+          `
+            INSERT INTO payroll_employees (
+              id, tenant_id, sucursal_id, first_name, last_name, role, base_salary_cents, frequency, is_active, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(id) DO UPDATE SET
+              tenant_id = excluded.tenant_id,
+              sucursal_id = excluded.sucursal_id,
+              first_name = excluded.first_name,
+              last_name = excluded.last_name,
+              role = excluded.role,
+              base_salary_cents = excluded.base_salary_cents,
+              frequency = excluded.frequency,
+              is_active = excluded.is_active,
+              updated_at = CURRENT_TIMESTAMP
+          `,
+        )
+        .run(
+          id,
+          tenantId,
+          sucursalId,
+          employee.firstName,
+          employee.lastName,
+          employee.role,
+          employee.baseSalaryCents,
+          employee.frequency,
+          Number(employee.isActive),
+        );
 
       this.insertOutboxRow({
         id: randomUUID(),
