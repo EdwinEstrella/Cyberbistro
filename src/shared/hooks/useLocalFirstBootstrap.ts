@@ -95,6 +95,14 @@ export function useLocalFirstBootstrap(tenantId: string | null, accessValidated 
       const cloudAvailable = await probeCloudAvailability(force);
       if (!canContinue()) return;
       if (navigator.onLine && cloudAvailable) {
+        let outboxPushed = 0;
+        try {
+          const outboxRes = await pushOutboxToServer(validatedTenantId);
+          outboxPushed = outboxRes.pushed;
+        } catch (outboxErr) {
+          console.warn("Error enviando outbox a la nube:", outboxErr);
+        }
+
         if (snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing") {
           const licenseValidation = await revalidateLicenseOnReconnect(validatedTenantId);
           if (!canContinue()) return;
@@ -108,8 +116,6 @@ export function useLocalFirstBootstrap(tenantId: string | null, accessValidated 
             apply({ ...snapshot, status: "syncing", message: "Sincronizando cambios..." });
           }
           try {
-            const outboxResult = await pushOutboxToServer(validatedTenantId);
-            if (!canContinue()) return;
             const pullResult = await syncIncremental(validatedTenantId);
             if (!canContinue()) return;
             const next = await getLocalFirstStatusSnapshot(validatedTenantId);
@@ -119,7 +125,7 @@ export function useLocalFirstBootstrap(tenantId: string | null, accessValidated 
               message:
                 next.status === "history_complete"
                   ? "Historial completo disponible offline."
-                  : `Subidas ${outboxResult.pushed}, descargadas ${pullResult.rowsPulled} filas.`,
+                  : `Subidas ${outboxPushed}, descargadas ${pullResult.rowsPulled} filas.`,
             });
           } catch (err) {
             if (!canContinue()) return;
