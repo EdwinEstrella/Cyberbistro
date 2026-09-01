@@ -106,23 +106,26 @@ export class PayrollSyncClient implements ServerSyncClient {
   }
 
   private async getTableClient(table: string): Promise<RemoteMutationBuilder> {
-    const client = await this.clientPromise;
+    const client: any = await this.clientPromise;
 
-    if ("database" in client) {
-      return client.database.from(table) as unknown as RemoteMutationBuilder;
+    if (client?.database?.from && typeof client.database.from === "function") {
+      return client.database.from(table);
     }
-    return client.from(table);
+    if (client?.from && typeof client.from === "function") {
+      return client.from(table);
+    }
+    throw new Error("Invalid InsForge client: missing from method");
   }
 
   private async registerPayment(operation: DurableOperation, payload: Record<string, unknown>): Promise<PushResponse> {
-    const client = await this.clientPromise;
-    const database = "database" in client ? client.database : client;
-    const rpc = (database as unknown as RemoteRpcClient).rpc;
+    const client: any = await this.clientPromise;
+    const db = client?.database || client;
+    const rpc = db?.rpc;
     if (typeof rpc !== "function") {
       return { permanent: permanentReason("Payroll sync client does not support RPC", "unsupported_client", operation.tableName) };
     }
 
-    const { error } = await rpc.call(database, "register_nomina_pago", {
+    const { error } = await db.rpc("register_nomina_pago", {
       p_pago_id: operation.rowId,
       p_empleado_id: payload.empleado_id,
       p_periodo: payload.periodo,
