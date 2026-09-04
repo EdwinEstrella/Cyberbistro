@@ -17,6 +17,29 @@ function isPrintThermalPayload(v) {
   return true
 }
 
+function isOpenCashDrawerPayload(v) {
+  if (v === undefined) return true
+  if (v === null || typeof v !== 'object') return false
+  if (v.deviceName !== undefined && typeof v.deviceName !== 'string') return false
+  if (
+    v.paperWidthMm !== undefined &&
+    (typeof v.paperWidthMm !== 'number' || !Number.isFinite(v.paperWidthMm))
+  ) {
+    return false
+  }
+  return true
+}
+
+function isEcfCertificatePayload(v) {
+  if (v === null || typeof v !== 'object') return false
+  return (
+    typeof v.tenantId === 'string' && /^[0-9a-f-]{36}$/i.test(v.tenantId) &&
+    typeof v.environment === 'string' && ['test', 'certification', 'production'].includes(v.environment) &&
+    typeof v.certificateBase64 === 'string' && v.certificateBase64.length > 0 && v.certificateBase64.length <= 20_000_000 &&
+    typeof v.passphrase === 'string' && v.passphrase.length > 0 && v.passphrase.length <= 1024
+  )
+}
+
 contextBridge.exposeInMainWorld('electronAPI', {
   minimize: () => {
     console.log('preload: minimize called')
@@ -33,6 +56,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   executeSalesFiscalCommand: (command) => ipcRenderer.invoke('sales-fiscal-repository:execute', command),
   executeCashPurchaseCommand: (command) => ipcRenderer.invoke('cash-purchase-repository:execute', command),
   executePayrollCommand: (command) => ipcRenderer.invoke('payroll-repository:execute', command),
+  setPayrollSyncAccessToken: (accessToken) => ipcRenderer.invoke('payroll-sync:set-access-token', accessToken === null ? null : { accessToken }),
   executeReceivablesCommand: (command) => ipcRenderer.invoke('receivables-repository:execute', command),
   executePayablesCommand: (command) => ipcRenderer.invoke('payables-repository:execute', command),
   importLegacyIndexedDb: (payload) => ipcRenderer.invoke('tenant-store:import-indexeddb', payload),
@@ -55,11 +79,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
     return ipcRenderer.invoke('print:thermal', opts)
   },
+  openCashDrawer: (opts) => {
+    if (!isOpenCashDrawerPayload(opts)) {
+      return Promise.resolve({ ok: false, error: 'Payload de caja inválido' })
+    }
+    return ipcRenderer.invoke('cash-drawer:open', opts ?? {})
+  },
   lookupBusinessRnc: (rnc) => {
     if (typeof rnc !== 'string' || rnc.length > 32) {
       return Promise.resolve({ data: null, error: 'RNC inválido.' })
     }
     return ipcRenderer.invoke('rnc:lookup', rnc)
+  },
+  openCertificationPortal: () => ipcRenderer.invoke('external:open-portal'),
+  validateEcfCertificate: (payload) => {
+    if (!isEcfCertificatePayload(payload)) {
+      return Promise.resolve({ data: null, error: 'Datos de certificado inválidos.' })
+    }
+    return ipcRenderer.invoke('ecf:validate-certificate', payload)
   },
   checkForUpdates: () => {
     ipcRenderer.send('check-for-updates')
