@@ -3,7 +3,7 @@ import { insforgeClient } from "../../../shared/lib/insforge";
 import { ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
 import { buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
-import { openCashDrawerForSale, printThermalHtml } from "../../../shared/lib/thermalPrint";
+import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import {
   incrementTenantNcfSequence,
 } from "../../../shared/lib/invoiceNcf";
@@ -475,13 +475,6 @@ export function MesaCloseAccountModal({
     }
   }
 
-  async function openCashDrawerSafely() {
-    const res = await openCashDrawerForSale();
-    if (!res.ok && res.error) {
-      console.warn("Apertura de caja:", res.error);
-    }
-  }
-
   function collectPersonGroups(): Map<number, MesaConsumoRow[]> {
     const m = new Map<number, MesaConsumoRow[]>();
     for (let p = 1; p <= splitParts; p++) m.set(p, []);
@@ -595,7 +588,6 @@ export function MesaCloseAccountModal({
     try {
       const deviceId = await getDeviceId();
       let nextFacturaNumber = await getNextFacturaNumber(tenantId);
-      let cashDrawerOpened = false;
 
       const localFacturaIds = new Map<number, string>();
       const numeroFacturas = new Map<number, number>();
@@ -740,11 +732,6 @@ export function MesaCloseAccountModal({
             ecfDocumentId: ecfDocumentId!,
           });
         }
-        if (!cashDrawerOpened) {
-          await openCashDrawerSafely();
-          cashDrawerOpened = true;
-        }
-
         if (ncfPart && ncfPart.tipoCodigo && ncfPart.usedSequence !== null && !ncfPart.sequenceReservedAtomically) {
           await incrementTenantNcfSequence(tenantId, ncfPart.tipoCodigo, ncfPart.usedSequence);
         }
@@ -1035,8 +1022,6 @@ export function MesaCloseAccountModal({
         ecfDocumentId: ecfDocumentId!,
       });
     }
-
-    await openCashDrawerSafely();
 
     if (ncfPart && ncfPart.tipoCodigo && ncfPart.usedSequence !== null && !ncfPart.sequenceReservedAtomically) {
       await incrementTenantNcfSequence(tenantId, ncfPart.tipoCodigo, ncfPart.usedSequence);

@@ -36,7 +36,7 @@ import {
   buildComandaReceiptHtml,
 } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
-import { openCashDrawerForSale, printThermalHtml } from "../../../shared/lib/thermalPrint";
+import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { useTenantCurrency } from "../../../shared/hooks/useTenantCurrency";
 import { useTheme } from "../../../shared/context/ThemeContext";
 import { buildPosCategoryTabs, suggestCategoryColor } from "../../../shared/lib/menuCategories";
@@ -1354,13 +1354,6 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
           deviceId: await getDeviceId(),
           ecfDocumentId: ecfDocumentId!,
         });
-      }
-    }
-
-    if (!isFiado) {
-      const cashDrawerRes = await openCashDrawerForSale();
-      if (!cashDrawerRes.ok && cashDrawerRes.error) {
-        console.warn("Apertura de caja:", cashDrawerRes.error);
       }
     }
 
