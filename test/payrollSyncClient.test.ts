@@ -54,7 +54,7 @@ describe("PayrollSyncClient", () => {
     expect(response.result).toMatchObject({ synced: true, remoteTable: "nomina_empleados" });
   });
 
-  it("sends desktop payments through the atomic RPC while preserving other payroll sync tables", async () => {
+  it("sends desktop payments through direct upsert on nomina_pagos", async () => {
     const employeeId = repository.upsertEmployee("tenant-1", "branch-1", {
       firstName: "Luis",
       lastName: "Martínez",
@@ -100,6 +100,21 @@ describe("PayrollSyncClient", () => {
       ],
       [
         {
+          id: paymentOperation?.rowId,
+          empleado_id: employeeId,
+          periodo: "2026-08",
+          monto_base: 100000,
+          total_bonos: 0,
+          total_descuentos: 10000,
+          monto_neto: 90000,
+          monto_pagado: 70000,
+          monto_pendiente: 20000,
+          gasto_id: null,
+        },
+        { onConflict: "id" },
+      ],
+      [
+        {
           id: expenseOperation?.rowId,
           tenant_id: "tenant-1",
           descripcion: "Payroll payment 2026-08",
@@ -112,15 +127,7 @@ describe("PayrollSyncClient", () => {
         { onConflict: "id" },
       ],
     ]);
-    expect(fakeSdk.from.mock.calls).toEqual([["nomina_ajustes"], ["gastos"]]);
-    expect(fakeSdk.rpc).toHaveBeenCalledWith("register_nomina_pago", {
-      p_pago_id: paymentOperation?.rowId,
-      p_empleado_id: employeeId,
-      p_periodo: "2026-08",
-      p_monto_pagado: 70000,
-      p_total_bonos: 0,
-      p_total_descuentos: 10000,
-    });
+    expect(fakeSdk.from.mock.calls).toEqual([["nomina_ajustes"], ["nomina_pagos"], ["gastos"]]);
   });
 
   it("keeps payroll gastos payload aligned with the post-migration remote gastos schema", async () => {
@@ -232,7 +239,7 @@ describe("PayrollSyncClient", () => {
       receiptSnapshot: "{}",
       adjustments: [],
     });
-    fakeSdk.nextRpcError = { code: "42501", message: "Not authorized to register payroll payments" };
+    fakeSdk.nextUpsertError = { code: "42501", message: "Not authorized to register payroll payments" };
 
     const payment = store.claim(Date.now()).find((operation) => operation.tableName === "payroll_payments");
     await expect(client.push(payment as DurableOperation)).rejects.toThrow("Upsert failed: Not authorized");

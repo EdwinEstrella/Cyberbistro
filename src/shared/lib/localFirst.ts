@@ -2378,14 +2378,21 @@ export async function getLocalFirstStatusSnapshot(tenantId: string): Promise<{
   const db = await openLocalFirstDb(tenantId);
   try {
     const states = await getAllSyncStates(db);
+    const validHistoryTables = new Set<string>(LOCAL_FIRST_HISTORY_TABLES);
+    const validImmediateTables = new Set<string>(LOCAL_FIRST_IMMEDIATE_TABLES);
+
     const historyCompleted = new Set(
-      states.filter((row) => row.phase === "history" && row.completed).map((row) => row.table_name)
+      states
+        .filter((row) => row.phase === "history" && row.completed && validHistoryTables.has(row.table_name))
+        .map((row) => row.table_name)
     );
     const minimumCompleted = new Set(
-      states.filter((row) => row.phase === "minimum" && row.completed).map((row) => row.table_name)
+      states
+        .filter((row) => row.phase === "minimum" && row.completed && validImmediateTables.has(row.table_name))
+        .map((row) => row.table_name)
     );
     const totalHistoryTables = LOCAL_FIRST_HISTORY_TABLES.length;
-    const completedHistoryTables = historyCompleted.size;
+    const completedHistoryTables = Math.min(historyCompleted.size, totalHistoryTables);
 
     if (completedHistoryTables >= totalHistoryTables) {
       return { status: "history_complete", completedHistoryTables, totalHistoryTables };

@@ -63,10 +63,6 @@ export class PayrollSyncClient implements ServerSyncClient {
       return { permanent: mapped.error };
     }
 
-    if (operation.tableName === "payroll_payments") {
-      return this.registerPayment(operation, mapped.payload);
-    }
-
     const tableClient = await this.getTableClient(mapped.remoteTable);
     const { error } = await tableClient.upsert(mapped.payload, { onConflict: "id" });
 
@@ -115,30 +111,6 @@ export class PayrollSyncClient implements ServerSyncClient {
       return client.from(table);
     }
     throw new Error("Invalid InsForge client: missing from method");
-  }
-
-  private async registerPayment(operation: DurableOperation, payload: Record<string, unknown>): Promise<PushResponse> {
-    const client: any = await this.clientPromise;
-    const db = client?.database || client;
-    const rpc = db?.rpc;
-    if (typeof rpc !== "function") {
-      return { permanent: permanentReason("Payroll sync client does not support RPC", "unsupported_client", operation.tableName) };
-    }
-
-    const { error } = await db.rpc("register_nomina_pago", {
-      p_pago_id: operation.rowId,
-      p_empleado_id: payload.empleado_id,
-      p_periodo: payload.periodo,
-      p_monto_pagado: payload.monto_pagado,
-      p_total_bonos: payload.total_bonos,
-      p_total_descuentos: payload.total_descuentos,
-    });
-
-    if (error) {
-      return classifyRemoteError(error, operation.tableName, "upsert");
-    }
-
-    return { result: { synced: true, id: operation.rowId, remoteTable: "nomina_pagos" } };
   }
 
   private createClient(accessToken?: string | null): Promise<InsForgeClient> {
@@ -306,6 +278,10 @@ function classifyRemoteError(error: MutationError, tableName: string, operation:
   const code = error.code ?? "unknown";
   const message = error.message;
 
+  if (code === "23505" || message.toLowerCase().includes("duplicate key") || message.toLowerCase().includes("already exists")) {
+    return { result: { synced: true, id: tableName, note: "already synced", code } };
+  }
+
   if (isPermanentRemoteError(code)) {
     return {
       permanent: permanentReason(`Remote ${operation} rejected for ${tableName}: ${message}`, "remote_structural_error", tableName, { code }),
@@ -316,7 +292,7 @@ function classifyRemoteError(error: MutationError, tableName: string, operation:
 }
 
 function isPermanentRemoteError(code: string): boolean {
-  return code.startsWith("22") || code.startsWith("23") || (code.startsWith("42") && code !== "42501") || code === "PGRST204";
+  return code === "23502" || code.startsWith("22") || (code.startsWith("42") && code !== "42501") || code === "PGRST204";
 }
 
 function permanentReason(reason: string, category: string, tableName: string, extra: Record<string, unknown> = {}): Record<string, unknown> & { reason: string; retryable: false } {

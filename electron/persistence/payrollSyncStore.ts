@@ -20,7 +20,9 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
   constructor(
     private readonly db: DatabaseSync,
     private readonly tenantId: string
-  ) {}
+  ) {
+    this.releaseClaims();
+  }
 
   deactivate(): void {
     this.active = false;
@@ -29,9 +31,8 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
   releaseClaims(): void {
     this.db.prepare(`
       UPDATE sync_outbox
-      SET status = 'pending'
+      SET status = 'pending', error_json = NULL
       WHERE tenant_id = ?
-        AND status = 'syncing'
         AND (
           table_name IN ('payroll_employees', 'payroll_payments', 'payroll_payment_adjustments')
           OR (
