@@ -62,8 +62,9 @@ describe("Local-First Flow: Create Locally in SQLite -> Auto-Sync to Cloud -> Co
       password: "lia2026",
     });
     expect(authError).toBeNull();
-    const accessToken = authData!.session?.accessToken || authData!.session?.token || (authData as any).token;
-    console.log(`✔ [AUTH] Autenticado como test@test.com | Token obtenido.`);
+    const accessToken = (authData as any)?.accessToken || authData?.session?.accessToken || (authData as any)?.token || (authData as any)?.session?.token;
+    expect(accessToken).toBeTruthy();
+    console.log("✔ [AUTH] Autenticado como test@test.com | Token obtenido.");
 
     // 3. Ejecutar el worker real de sincronización con el token autenticado
     const syncClient = new PayrollSyncClient(undefined, accessToken);
@@ -72,7 +73,11 @@ describe("Local-First Flow: Create Locally in SQLite -> Auto-Sync to Cloud -> Co
     const worker = new DurableSyncWorker(syncStore, syncClient, tenantId);
 
     console.log("⏳ [SYNC] Vaciando la cola de sync_outbox hacia la nube InsForge...");
-    await worker.push();
+    const pushResult = await worker.push();
+    expect(pushResult.conflicted).toBe(0);
+
+    const remainingOutbox = db.prepare("SELECT id, table_name, row_id, status, error_json FROM sync_outbox WHERE tenant_id = ?").all(tenantId);
+    expect(remainingOutbox.length).toBe(0);
 
     console.log("\n=======================================================");
     console.log("☁️ [PASO 3] VERIFICANDO LA BASE DE DATOS CLOUD (POSTGRESQL)");

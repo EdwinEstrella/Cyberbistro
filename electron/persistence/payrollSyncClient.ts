@@ -117,15 +117,24 @@ export class PayrollSyncClient implements ServerSyncClient {
     if (!this.config) {
       throw new Error("Payroll sync client configuration is unavailable");
     }
-    return import("@insforge/sdk").then(({ createClient }) =>
-      createClient({
+    return import("@insforge/sdk").then(({ createClient }) => {
+      const client = createClient({
         baseUrl: this.config!.url,
         anonKey: this.config!.key,
         edgeFunctionToken: accessToken || undefined,
         headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
         isServerMode: true,
-      })
-    );
+      });
+      if (accessToken) {
+        try {
+          (client as any).getHttpClient?.()?.setAuthToken?.(accessToken);
+          (client as any).tokenManager?.setAccessToken?.(accessToken);
+        } catch {
+          /* ignore */
+        }
+      }
+      return client;
+    });
   }
 }
 
