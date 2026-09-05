@@ -5,6 +5,7 @@ interface LocalFirstStatusBadgeProps {
   message: string;
   completedHistoryTables: number;
   totalHistoryTables: number;
+  onClick?: () => void;
 }
 
 function labelForStatus(status: LocalFirstStatus): string {
@@ -64,6 +65,7 @@ export function LocalFirstStatusBadge({
   message,
   completedHistoryTables,
   totalHistoryTables,
+  onClick,
 }: LocalFirstStatusBadgeProps) {
   if (status === "idle") return null;
 
@@ -72,9 +74,21 @@ export function LocalFirstStatusBadge({
 
   return (
     <div
-      className={`rounded-xl border p-3 font-['Inter',sans-serif] text-[11px] leading-tight transition-all duration-300 flex flex-col gap-2.5 ${theme.bg}`}
-      role={status === "error" ? "alert" : "status"}
-      title={message}
+      onClick={onClick}
+      className={`rounded-xl border p-3 font-['Inter',sans-serif] text-[11px] leading-tight transition-all duration-300 flex flex-col gap-2.5 ${theme.bg} ${
+        onClick
+          ? "cursor-pointer hover:opacity-90 hover:scale-[1.01] active:scale-[0.99] transition-transform select-none"
+          : ""
+      }`}
+      role={onClick ? "button" : status === "error" ? "alert" : "status"}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={(e) => {
+        if (onClick && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      title={onClick ? `${message} · Hacé clic para ver el monitor técnico de sincronización` : message}
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
@@ -89,9 +103,12 @@ export function LocalFirstStatusBadge({
             {labelForStatus(status)}
           </span>
         </div>
-        <span className="text-[9.5px] font-bold opacity-80 tabular-nums shrink-0">
-          {completedHistoryTables}/{totalHistoryTables}
-        </span>
+        <div className="flex items-center gap-1 shrink-0">
+          <span className="text-[9.5px] font-bold opacity-80 tabular-nums">
+            {completedHistoryTables}/{totalHistoryTables}
+          </span>
+          {onClick && <span className="text-[10px] opacity-60">↗</span>}
+        </div>
       </div>
 
       {/* Progress Bar */}

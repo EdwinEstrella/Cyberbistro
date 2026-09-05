@@ -98,6 +98,9 @@ export interface ElectronAPI {
   executeCustomerCommand?: (command: import("../../../electron/persistence/customerRepository").CustomerCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/customerRepository").CustomerRepositoryResult }>;
   listCustomers?: () => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
   syncCloudCustomers?: (customers: unknown[]) => Promise<{ ok: true }>;
+  getSyncDiagnosticReport?: (tenantId?: string) => Promise<{ ok: true; data: any }>;
+  triggerSync?: () => Promise<{ ok: true }>;
+  retryFailedSyncErrors?: (tenantId?: string) => Promise<{ ok: true; data: { count: number } }>;
   importLegacyIndexedDb?: (payload: unknown) => Promise<{ ok: true; data: { tenantId: string; importedRows: number; recoveredOutbox: number } }>;
   close: () => void;
   getVersions: () => NodeJS.ProcessVersions;

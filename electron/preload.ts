@@ -85,6 +85,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   executeCustomerCommand: (command: unknown) => ipcRenderer.invoke('customer-repository:execute', command),
   listCustomers: () => ipcRenderer.invoke('customers:list'),
   syncCloudCustomers: (customers: unknown[]) => ipcRenderer.invoke('customers:sync-cloud', customers),
+  getSyncDiagnosticReport: (tenantId?: string) => ipcRenderer.invoke('sync:get-diagnostic-report', tenantId),
+  triggerSync: () => ipcRenderer.invoke('sync:trigger'),
+  retryFailedSyncErrors: (tenantId?: string) => ipcRenderer.invoke('sync:retry-errors', tenantId),
   importLegacyIndexedDb: (payload: unknown) => ipcRenderer.invoke('tenant-store:import-indexeddb', payload),
   close: () => {
     console.log('preload: close called')

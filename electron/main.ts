@@ -6,7 +6,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setupAutoUpdater } from './autoUpdater'
 import { startLanEdgeServer, type LanEdgeServerHandle } from './lanEdgeServer'
-import { registerCashPurchaseRepositoryIpc, registerCatalogRepositoryIpc, registerDesktopRepositoryIpc, registerOrdersRepositoryIpc, registerSalesFiscalRepositoryIpc, registerTenantStoreIpc, registerPayrollRepositoryIpc, registerPayrollSyncAccessTokenIpc, registerReceivablesRepositoryIpc, registerPayablesRepositoryIpc, registerSavedAccountIpc, registerExpenseRepositoryIpc, registerCustomerRepositoryIpc } from './persistence/ipc'
+import { registerCashPurchaseRepositoryIpc, registerCatalogRepositoryIpc, registerDesktopRepositoryIpc, registerOrdersRepositoryIpc, registerSalesFiscalRepositoryIpc, registerTenantStoreIpc, registerPayrollRepositoryIpc, registerPayrollSyncAccessTokenIpc, registerReceivablesRepositoryIpc, registerPayablesRepositoryIpc, registerSavedAccountIpc, registerExpenseRepositoryIpc, registerCustomerRepositoryIpc, SYNC_DIAGNOSTICS_REPORT_CHANNEL, SYNC_TRIGGER_CHANNEL, SYNC_RETRY_ERRORS_CHANNEL } from './persistence/ipc'
 import { PayrollRepository } from './persistence/payrollRepository'
 import { PayrollSyncClient, type PayrollAuthorizationContext } from './persistence/payrollSyncClient'
 import type { PayrollCommand } from '../src/shared/lib/payrollContracts'
@@ -561,6 +561,23 @@ if (gotTheLock) {
         if (!store) throw new Error('Tenant store is unavailable');
         return new DesktopRepository({ store, branchId: 'main-process-default' });
       },
+    });
+
+    ipcMain.handle(SYNC_DIAGNOSTICS_REPORT_CHANNEL, async (event, tenantId?: string) => {
+      if (!isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+      return { ok: true, data: tenantStoreController?.getSyncDiagnosticReport(tenantId) ?? null };
+    });
+
+    ipcMain.handle(SYNC_TRIGGER_CHANNEL, async (event) => {
+      if (!isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+      await tenantStoreController?.payrollSync.triggerSync();
+      return { ok: true };
+    });
+
+    ipcMain.handle(SYNC_RETRY_ERRORS_CHANNEL, async (event, tenantId?: string) => {
+      if (!isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+      const count = tenantStoreController?.retryFailedOutboxOperations(tenantId) ?? 0;
+      return { ok: true, data: { count } };
     });
     registerSavedAccountIpc({
       ipcMain,

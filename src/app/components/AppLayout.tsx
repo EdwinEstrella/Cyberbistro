@@ -119,6 +119,7 @@ const routePrefetchers: Record<string, () => Promise<unknown>> = {
   "/fiscal": () => import("../../features/fiscal"),
   "/fiscal/activacion": () => import("../../features/fiscal"),
   "/cuentas-cobrar": () => import("../../features/cuentas-cobrar"),
+  "/historial": () => import("../../features/historial"),
 };
 
 function prefetchRoute(path: string) {
@@ -154,13 +155,13 @@ function filterMainNavForRol(rol: string | null): readonly SidebarSection[] {
   } else if (normalized === "cocina") {
     filtered = sidebarSections.map((s) => filterSectionItems(s, ["/cocina"]));
   } else if (normalized === "cajera") {
-    const allow = ["/dashboard", "/clientes", "/tables", "/gastos", "/nomina", "/cierre", "/cuentas-pagar", "/cuentas-cobrar", "/pedidos", "/fiscal", "/fiscal/activacion"];
+    const allow = ["/dashboard", "/clientes", "/tables", "/gastos", "/nomina", "/cierre", "/cuentas-pagar", "/cuentas-cobrar", "/pedidos", "/fiscal", "/fiscal/activacion", "/historial"];
     filtered = sidebarSections.map((s) => filterSectionItems(s, allow));
   } else if (normalized === "mesero") {
     const allow = ["/camarera", "/entregas"];
     filtered = sidebarSections.map((s) => filterSectionItems(s, allow));
   } else if (normalized === "contabilidad") {
-    const allow = ["/billing", "/inventario", "/gastos", "/nomina", "/compras", "/cuentas-pagar", "/cuentas-cobrar", "/fiscal"];
+    const allow = ["/billing", "/inventario", "/gastos", "/nomina", "/compras", "/cuentas-pagar", "/cuentas-cobrar", "/fiscal", "/historial"];
     filtered = sidebarSections.map((s) => filterSectionItems(s, allow));
   } else {
     filtered = sidebarSections.map((s) => filterSectionItems(s, ["/dashboard"]));
@@ -187,7 +188,15 @@ function filterMainNavForRol(rol: string | null): readonly SidebarSection[] {
   return filtered.filter((section) => section.items.length > 0);
 }
 
-function SidebarCustomIcon({ name }: { name: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras" | "cxp" | "cxc" | "pedidos" | "fiscal" | "nomina" }) {
+function SidebarCustomIcon({ name }: { name: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras" | "cxp" | "cxc" | "pedidos" | "fiscal" | "nomina" | "historial" }) {
+  if (name === "historial") {
+    return (
+      <svg className="shrink-0 size-[20px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    );
+  }
+
   if (name === "fiscal") {
     return (
       <svg className="shrink-0 size-[20px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden>
@@ -789,6 +798,7 @@ function AppLayoutContent() {
               message={localFirst.message}
               completedHistoryTables={localFirst.completedHistoryTables}
               totalHistoryTables={localFirst.totalHistoryTables}
+              onClick={() => navigate("/historial")}
             />
 
             {/* Ajustes — solo administrador del negocio */}

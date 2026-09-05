@@ -614,6 +614,77 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     }
   }
 
+  getSyncDiagnosticReport(): {
+    tenantId: string;
+    databasePath: string;
+    walMode: boolean;
+    tableCounts: Array<{ table: string; count: number }>;
+    outboxSummary: Array<{ tableName: string; status: string; count: number; errorCount: number }>;
+    recentErrors: Array<{ id: string; tableName: string; rowId: string; operation: string; status: string; errorJson: string | null; payloadJson: string }>;
+    pendingQueue: Array<{ id: string; tableName: string; rowId: string; operation: string; status: string }>;
+  } {
+    const tableNames = [
+      "customers", "gastos", "gasto_categorias", "payroll_employees", "payroll_payments",
+      "payroll_payment_adjustments", "compras", "detalles_compra", "movimientos_inventario",
+      "cuentas_cobrar", "cxc_pagos", "cuentas_pagar", "cxp_pagos", "platos", "menu_categories",
+      "sucursales", "comandas", "consumos", "facturas", "mesas_estado"
+    ];
+
+    const tableCounts: Array<{ table: string; count: number }> = [];
+    for (const table of tableNames) {
+      try {
+        const row = this.database.prepare(`SELECT COUNT(*) as c FROM ${table}`).get() as { c: number } | undefined;
+        tableCounts.push({ table, count: row?.c ?? 0 });
+      } catch {
+        // Table might not exist yet
+      }
+    }
+
+    const outboxSummary = this.database.prepare(`
+      SELECT table_name as tableName, status, COUNT(*) as count,
+             SUM(CASE WHEN error_json IS NOT NULL THEN 1 ELSE 0 END) as errorCount
+      FROM sync_outbox
+      WHERE tenant_id = ?
+      GROUP BY table_name, status
+      ORDER BY table_name, status
+    `).all(this.tenantId) as Array<{ tableName: string; status: string; count: number; errorCount: number }>;
+
+    const recentErrors = this.database.prepare(`
+      SELECT id, table_name as tableName, row_id as rowId, operation, status, error_json as errorJson, payload_json as payloadJson
+      FROM sync_outbox
+      WHERE tenant_id = ? AND (error_json IS NOT NULL OR status = 'not_retryable')
+      ORDER BY rowid DESC
+      LIMIT 50
+    `).all(this.tenantId) as Array<{ id: string; tableName: string; rowId: string; operation: string; status: string; errorJson: string | null; payloadJson: string }>;
+
+    const pendingQueue = this.database.prepare(`
+      SELECT id, table_name as tableName, row_id as rowId, operation, status
+      FROM sync_outbox
+      WHERE tenant_id = ? AND status = 'pending' AND error_json IS NULL
+      ORDER BY rowid ASC
+      LIMIT 50
+    `).all(this.tenantId) as Array<{ id: string; tableName: string; rowId: string; operation: string; status: string }>;
+
+    return {
+      tenantId: this.tenantId,
+      databasePath: this.databasePath,
+      walMode: true,
+      tableCounts,
+      outboxSummary,
+      recentErrors,
+      pendingQueue,
+    };
+  }
+
+  retryFailedOutboxOperations(): number {
+    const result = this.database.prepare(`
+      UPDATE sync_outbox
+      SET status = 'pending', error_json = NULL
+      WHERE tenant_id = ? AND (error_json IS NOT NULL OR status = 'not_retryable')
+    `).run(this.tenantId);
+    return Number(result.changes);
+  }
+
   close(): void {
     this.database.exec("PRAGMA wal_checkpoint(TRUNCATE);");
     this.database.close();
@@ -679,6 +750,26 @@ export class TenantStoreController {
       this.activeStore = TenantStore.open({ dataRoot: this.dataRoot, tenantId });
       throw error;
     }
+  }
+
+  getSyncDiagnosticReport(tenantId?: string) {
+    let store = this.activeStore;
+    if (tenantId && (!store || store.getTenantId() !== tenantId)) {
+      store = this.activate(tenantId);
+    }
+    if (!store) return null;
+    return store.getSyncDiagnosticReport();
+  }
+
+  retryFailedOutboxOperations(tenantId?: string): number {
+    let store = this.activeStore;
+    if (tenantId && (!store || store.getTenantId() !== tenantId)) {
+      store = this.activate(tenantId);
+    }
+    if (!store) return 0;
+    const count = store.retryFailedOutboxOperations();
+    this.payrollSync.triggerSync().catch(console.error);
+    return count;
   }
 
   close(): void {
