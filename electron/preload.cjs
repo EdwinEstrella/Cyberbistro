@@ -68,6 +68,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   executeExpenseCommand: (command) => ipcRenderer.invoke('expense-repository:execute', command),
   listExpenses: (filter) => ipcRenderer.invoke('expenses:list', filter),
   listExpenseCategories: () => ipcRenderer.invoke('expense-categories:list'),
+  executeCustomerCommand: (command) => ipcRenderer.invoke('customer-repository:execute', command),
+  listCustomers: () => ipcRenderer.invoke('customers:list'),
   importLegacyIndexedDb: (payload) => ipcRenderer.invoke('tenant-store:import-indexeddb', payload),
   close: () => {
     console.log('preload: close called')

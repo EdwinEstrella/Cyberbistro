@@ -6,7 +6,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setupAutoUpdater } from './autoUpdater'
 import { startLanEdgeServer, type LanEdgeServerHandle } from './lanEdgeServer'
-import { registerCashPurchaseRepositoryIpc, registerCatalogRepositoryIpc, registerDesktopRepositoryIpc, registerOrdersRepositoryIpc, registerSalesFiscalRepositoryIpc, registerTenantStoreIpc, registerPayrollRepositoryIpc, registerPayrollSyncAccessTokenIpc, registerReceivablesRepositoryIpc, registerPayablesRepositoryIpc, registerSavedAccountIpc, registerExpenseRepositoryIpc } from './persistence/ipc'
+import { registerCashPurchaseRepositoryIpc, registerCatalogRepositoryIpc, registerDesktopRepositoryIpc, registerOrdersRepositoryIpc, registerSalesFiscalRepositoryIpc, registerTenantStoreIpc, registerPayrollRepositoryIpc, registerPayrollSyncAccessTokenIpc, registerReceivablesRepositoryIpc, registerPayablesRepositoryIpc, registerSavedAccountIpc, registerExpenseRepositoryIpc, registerCustomerRepositoryIpc } from './persistence/ipc'
 import { PayrollRepository } from './persistence/payrollRepository'
 import { PayrollSyncClient, type PayrollAuthorizationContext } from './persistence/payrollSyncClient'
 import type { PayrollCommand } from '../src/shared/lib/payrollContracts'
@@ -19,6 +19,7 @@ import { CashPurchaseRepository } from './persistence/cashPurchaseRepository'
 import { ReceivablesRepository } from './persistence/receivablesRepository'
 import { PayablesRepository } from './persistence/payablesRepository'
 import { ExpenseRepository } from './persistence/expenseRepository'
+import { CustomerRepository } from './persistence/customerRepository'
 import { DeviceAccountDirectory } from './persistence/deviceAccountDirectory'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -349,13 +350,32 @@ function createWindow() {
 
   applyWindowsTaskbarIdentity(mainWindow)
 
+  let focusTimer: NodeJS.Timeout | null = null;
   // Forzar foco en webContents y forzar que Windows redibuje el contexto del caret
   mainWindow.on('focus', () => {
-    mainWindow?.setAlwaysOnTop(true);
-    setTimeout(() => {
-      mainWindow?.setAlwaysOnTop(false);
-      mainWindow?.webContents.focus();
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    try {
+      mainWindow.setAlwaysOnTop(true);
+    } catch {}
+    if (focusTimer) clearTimeout(focusTimer);
+    focusTimer = setTimeout(() => {
+      focusTimer = null;
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      try {
+        mainWindow.setAlwaysOnTop(false);
+        if (!mainWindow.webContents.isDestroyed()) {
+          mainWindow.webContents.focus();
+        }
+      } catch {}
     }, 50);
+  });
+
+  mainWindow.on('closed', () => {
+    if (focusTimer) {
+      clearTimeout(focusTimer);
+      focusTimer = null;
+    }
+    mainWindow = null;
   });
 
   // Load from Vite dev server in development, or from files in production
@@ -385,11 +405,17 @@ function createWindow() {
 
   // Notify renderer when window is maximized/unmaximized
   mainWindow.on('maximize', () => {
-    mainWindow?.webContents.send('window-maximized', true)
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    try {
+      mainWindow.webContents.send('window-maximized', true)
+    } catch {}
   })
 
   mainWindow.on('unmaximize', () => {
-    mainWindow?.webContents.send('window-maximized', false)
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    try {
+      mainWindow.webContents.send('window-maximized', false)
+    } catch {}
   })
 }
 
@@ -601,6 +627,20 @@ if (gotTheLock) {
         const store = tenantStoreController?.getActiveStore()
         if (!store) return []
         return store.listExpenseCategories()
+      },
+    })
+    registerCustomerRepositoryIpc({
+      ipcMain,
+      isTrustedSender,
+      getRepository: () => {
+        const store = tenantStoreController?.getActiveStore()
+        if (!store) throw new Error('Tenant store is unavailable')
+        return new CustomerRepository({ store, branchId: 'main-process-default' })
+      },
+      listCustomers: () => {
+        const store = tenantStoreController?.getActiveStore()
+        if (!store) return []
+        return store.listCustomers()
       },
     })
     registerPayrollRepositoryIpc({

@@ -34,7 +34,7 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
       SET status = 'pending', error_json = NULL
       WHERE tenant_id = ?
         AND (
-          table_name IN ('payroll_employees', 'payroll_payments', 'payroll_payment_adjustments', 'gasto_categorias')
+          table_name IN ('payroll_employees', 'payroll_payments', 'payroll_payment_adjustments', 'gasto_categorias', 'customers')
           OR (
             table_name = 'gastos'
             AND json_valid(payload_json) = 1
@@ -77,7 +77,7 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
             OR COALESCE(json_extract(error_json, '$.retryable'), 1) = 1
           )
           AND (
-            table_name IN ('payroll_employees', 'payroll_payments', 'payroll_payment_adjustments', 'gasto_categorias')
+            table_name IN ('payroll_employees', 'payroll_payments', 'payroll_payment_adjustments', 'gasto_categorias', 'customers')
             OR (
               table_name = 'gastos'
               AND json_valid(payload_json) = 1
@@ -206,7 +206,7 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
 }
 
 function isClaimablePayrollRow(tableName: string, payload: unknown): boolean {
-  if (tableName === "gasto_categorias") return true;
+  if (tableName === "gasto_categorias" || tableName === "customers") return true;
   if (tableName !== "gastos") return true;
   if (!payload || typeof payload !== "object") return false;
   const expenseType = (payload as Record<string, unknown>).expenseType;

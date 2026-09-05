@@ -12,8 +12,9 @@ import type { CashPurchaseCommand, CashPurchaseRepositoryStore } from "./cashPur
 import type { ReceivablesCommand, ReceivablesRepositoryStore } from "./receivablesRepository";
 import type { PayablesCommand, PayablesRepositoryStore } from "./payablesRepository";
 import type { ExpenseCommand, ExpenseRepositoryStore } from "./expenseRepository";
+import type { CustomerCommand, CustomerRepositoryStore } from "./customerRepository";
 
-export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositoryStore, CashPurchaseRepositoryStore, ReceivablesRepositoryStore, PayablesRepositoryStore, ExpenseRepositoryStore {
+export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositoryStore, CashPurchaseRepositoryStore, ReceivablesRepositoryStore, PayablesRepositoryStore, ExpenseRepositoryStore, CustomerRepositoryStore {
   private constructor(
     private readonly database: DatabaseSync,
     private readonly databasePath: string,
@@ -473,6 +474,94 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
             "gasto_categorias",
             command.id,
             JSON.stringify({ id: command.id, tenantId: this.tenantId, active: false })
+          );
+          break;
+        }
+      }
+
+      this.database.exec("COMMIT;");
+    } catch (error) {
+      this.database.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
+  listCustomers(): Array<Record<string, unknown>> {
+    return this.database.prepare(
+      "SELECT id, tenant_id, name, phone, email, document_id, address, notes, created_at, updated_at, deleted_at FROM customers WHERE tenant_id = ? AND deleted_at IS NULL ORDER BY name ASC"
+    ).all(this.tenantId) as Array<Record<string, unknown>>;
+  }
+
+  executeCustomerCommand(input: { command: CustomerCommand; commitId: string; branchId: string }): void {
+    const { command, commitId, branchId } = input;
+    this.database.exec("BEGIN IMMEDIATE;");
+    try {
+      this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(branchId, this.tenantId, "Principal");
+
+      switch (command.type) {
+        case "customer.upsert": {
+          const now = new Date().toISOString();
+          this.database.prepare(`
+            INSERT INTO customers (id, tenant_id, name, phone, email, document_id, address, notes, created_at, updated_at, deleted_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+            ON CONFLICT(id) DO UPDATE SET
+              name = excluded.name,
+              phone = excluded.phone,
+              email = excluded.email,
+              document_id = excluded.document_id,
+              address = excluded.address,
+              notes = excluded.notes,
+              updated_at = excluded.updated_at,
+              deleted_at = NULL
+          `).run(
+            command.id,
+            this.tenantId,
+            command.name,
+            command.phone ?? null,
+            command.email ?? null,
+            command.documentId ?? null,
+            command.address ?? null,
+            command.notes ?? null,
+            now,
+            now
+          );
+
+          this.database.prepare(
+            "INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, ?, ?, 'upsert', ?, 'pending')"
+          ).run(
+            `${commitId}:customer-upsert`,
+            this.tenantId,
+            branchId,
+            "customers",
+            command.id,
+            JSON.stringify({
+              id: command.id,
+              tenantId: this.tenantId,
+              name: command.name,
+              phone: command.phone ?? null,
+              email: command.email ?? null,
+              documentId: command.documentId ?? null,
+              address: command.address ?? null,
+              notes: command.notes ?? null,
+              updatedAt: now,
+            })
+          );
+          break;
+        }
+
+        case "customer.delete": {
+          const now = new Date().toISOString();
+          this.database.prepare("UPDATE customers SET deleted_at = ?, updated_at = ? WHERE id = ? AND tenant_id = ?").run(now, now, command.id, this.tenantId);
+
+          this.database.prepare(
+            "INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, ?, ?, 'delete', ?, 'pending')"
+          ).run(
+            `${commitId}:customer-delete`,
+            this.tenantId,
+            branchId,
+            "customers",
+            command.id,
+            JSON.stringify({ id: command.id, tenantId: this.tenantId, deletedAt: now })
           );
           break;
         }

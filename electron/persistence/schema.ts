@@ -19,7 +19,15 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
     CREATE TABLE IF NOT EXISTS customers (
       id TEXT PRIMARY KEY,
       tenant_id TEXT NOT NULL REFERENCES tenants(id),
-      name TEXT NOT NULL
+      name TEXT NOT NULL,
+      phone TEXT,
+      email TEXT,
+      document_id TEXT,
+      address TEXT,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      deleted_at TEXT
     ) STRICT;
     CREATE TABLE IF NOT EXISTS proveedores (
       id TEXT PRIMARY KEY,
@@ -482,6 +490,28 @@ function migrateLegacyPayrollSchema(database: DatabaseSync): void {
         COALESCE(a.note, '')
       FROM __old_table__ a
       JOIN payroll_payments p ON p.id = a.payment_id;
+    `);
+  });
+
+  ensureTableShape(database, "customers", (columns) => columns.includes("phone") && columns.includes("document_id") && columns.includes("deleted_at"), () => {
+    recreateTable(database, "customers", `
+      CREATE TABLE customers (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id),
+        name TEXT NOT NULL,
+        phone TEXT,
+        email TEXT,
+        document_id TEXT,
+        address TEXT,
+        notes TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        deleted_at TEXT
+      ) STRICT;
+    `, `
+      INSERT INTO customers (id, tenant_id, name, phone, email, document_id, address, notes, created_at, updated_at, deleted_at)
+      SELECT id, tenant_id, name, NULL, NULL, NULL, NULL, NULL, datetime('now'), datetime('now'), NULL
+      FROM __old_table__;
     `);
   });
 

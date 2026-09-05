@@ -68,6 +68,32 @@ export function customerMatchesSearch(customer: Customer, rawQuery: string) {
 }
 
 export async function listCustomers(tenantId: string): Promise<Customer[]> {
+  if (window.electronAPI?.listCustomers) {
+    try {
+      const response = await window.electronAPI.listCustomers();
+      if (response?.ok && Array.isArray(response.data)) {
+        return (response.data as any[])
+          .map((c) => ({
+            id: c.id,
+            tenant_id: c.tenant_id ?? tenantId,
+            name: c.name,
+            phone: c.phone ?? null,
+            email: c.email ?? null,
+            document_id: c.document_id ?? null,
+            address: c.address ?? null,
+            notes: c.notes ?? null,
+            created_at: c.created_at ?? null,
+            updated_at: c.updated_at ?? null,
+            deleted_at: c.deleted_at ?? null,
+          }))
+          .filter((c) => !c.deleted_at)
+          .sort((a, b) => a.name.localeCompare(b.name));
+      }
+    } catch (e) {
+      console.warn("[Customers] Error querying SQLite customers, falling back:", e);
+    }
+  }
+
   if (await shouldReadLocalFirst(tenantId, ["customers"])) {
     const rows = await readLocalMirror<Customer>(tenantId, "customers");
     return rows
@@ -89,8 +115,9 @@ export async function listCustomers(tenantId: string): Promise<Customer[]> {
 export async function createCustomer(tenantId: string, input: CustomerFormInput): Promise<Customer> {
   const payload = normalizeCustomerInput(input);
   const now = new Date().toISOString();
+  const id = crypto.randomUUID();
   const row: Customer = {
-    id: crypto.randomUUID(),
+    id,
     tenant_id: tenantId,
     ...payload,
     created_at: now,
@@ -98,30 +125,57 @@ export async function createCustomer(tenantId: string, input: CustomerFormInput)
     deleted_at: null,
   };
 
-  await enqueueLocalWrite({
-    tenantId,
-    tableName: "customers",
-    rowId: row.id,
-    op: "insert",
-    payload: row as unknown as Record<string, unknown>,
-    deviceId: await getDeviceId(),
-  });
+  if (window.electronAPI?.executeCustomerCommand) {
+    await window.electronAPI.executeCustomerCommand({
+      type: "customer.upsert",
+      id: row.id,
+      name: row.name,
+      phone: row.phone,
+      email: row.email,
+      documentId: row.document_id,
+      address: row.address,
+      notes: row.notes,
+    });
+  } else {
+    await enqueueLocalWrite({
+      tenantId,
+      tableName: "customers",
+      rowId: row.id,
+      op: "insert",
+      payload: row as unknown as Record<string, unknown>,
+      deviceId: await getDeviceId(),
+    });
+  }
 
   return row;
 }
 
 export async function updateCustomer(tenantId: string, customerId: string, input: CustomerFormInput): Promise<Customer> {
   const payload = normalizeCustomerInput(input);
-  const row = { ...payload, updated_at: new Date().toISOString() };
+  const now = new Date().toISOString();
+  const row = { ...payload, updated_at: now };
 
-  await enqueueLocalWrite({
-    tenantId,
-    tableName: "customers",
-    rowId: customerId,
-    op: "update",
-    payload: row,
-    deviceId: await getDeviceId(),
-  });
+  if (window.electronAPI?.executeCustomerCommand) {
+    await window.electronAPI.executeCustomerCommand({
+      type: "customer.upsert",
+      id: customerId,
+      name: row.name,
+      phone: row.phone,
+      email: row.email,
+      documentId: row.document_id,
+      address: row.address,
+      notes: row.notes,
+    });
+  } else {
+    await enqueueLocalWrite({
+      tenantId,
+      tableName: "customers",
+      rowId: customerId,
+      op: "update",
+      payload: row,
+      deviceId: await getDeviceId(),
+    });
+  }
 
   return { id: customerId, tenant_id: tenantId, ...row } as Customer;
 }
@@ -129,14 +183,21 @@ export async function updateCustomer(tenantId: string, customerId: string, input
 export async function softDeleteCustomer(tenantId: string, customerId: string): Promise<void> {
   const now = new Date().toISOString();
 
-  await enqueueLocalWrite({
-    tenantId,
-    tableName: "customers",
-    rowId: customerId,
-    op: "update",
-    payload: { deleted_at: now, updated_at: now },
-    deviceId: await getDeviceId(),
-  });
+  if (window.electronAPI?.executeCustomerCommand) {
+    await window.electronAPI.executeCustomerCommand({
+      type: "customer.delete",
+      id: customerId,
+    });
+  } else {
+    await enqueueLocalWrite({
+      tenantId,
+      tableName: "customers",
+      rowId: customerId,
+      op: "update",
+      payload: { deleted_at: now, updated_at: now },
+      deviceId: await getDeviceId(),
+    });
+  }
 }
 
 export async function listCustomerInvoices(tenantId: string, customerId: string) {

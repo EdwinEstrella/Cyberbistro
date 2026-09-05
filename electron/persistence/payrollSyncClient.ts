@@ -168,6 +168,9 @@ function mapDeleteOperation(operation: DurableOperation):
   if (operation.tableName === "gasto_categorias") {
     return { ok: true, remoteTable: "gasto_categorias" };
   }
+  if (operation.tableName === "customers") {
+    return { ok: true, remoteTable: "customers" };
+  }
 
   const remoteTable = PAYROLL_TABLES[operation.tableName];
   if (!remoteTable) {
@@ -194,6 +197,8 @@ function mapOperation(operation: DurableOperation):
         return { ok: true, remoteTable: "nomina_ajustes", payload: mapAdjustmentPayload(operation, operation.payload) };
       case "gasto_categorias":
         return { ok: true, remoteTable: "gasto_categorias", payload: mapCategoryPayload(operation, operation.payload) };
+      case "customers":
+        return { ok: true, remoteTable: "customers", payload: mapCustomerPayload(operation, operation.payload) };
       case "gastos": {
         if (operation.payload.expenseType === "payroll") {
           const tableResult = mapPayrollExpenseTable(operation);
@@ -312,6 +317,20 @@ function mapCategoryPayload(operation: DurableOperation, payload: Record<string,
     descripcion: payload.description ? String(payload.description) : null,
     color: payload.color ? String(payload.color) : "#ff906d",
     activa: payload.active !== false,
+  };
+}
+
+function mapCustomerPayload(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: operation.rowId,
+    tenant_id: operation.tenantId,
+    name: requireString(payload.name, "customers.name"),
+    phone: payload.phone ? String(payload.phone) : null,
+    email: payload.email ? String(payload.email) : null,
+    document_id: payload.documentId ? String(payload.documentId) : null,
+    address: payload.address ? String(payload.address) : null,
+    notes: payload.notes ? String(payload.notes) : null,
+    updated_at: payload.updatedAt ? String(payload.updatedAt) : new Date().toISOString(),
   };
 }
 

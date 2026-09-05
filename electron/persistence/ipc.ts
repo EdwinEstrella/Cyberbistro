@@ -12,6 +12,7 @@ import type { CashPurchaseCommand, CashPurchaseRepositoryResult } from "./cashPu
 import type { ReceivablesCommand, ReceivablesRepositoryResult } from "./receivablesRepository";
 import type { PayablesCommand, PayablesRepositoryResult } from "./payablesRepository";
 import type { ExpenseCommand, ExpenseRepositoryResult } from "./expenseRepository";
+import type { CustomerCommand, CustomerRepositoryResult } from "./customerRepository";
 
 export const TENANT_STORE_STATUS_CHANNEL = "tenant-store:status";
 export const TENANT_STORE_IMPORT_CHANNEL = "tenant-store:import-indexeddb";
@@ -27,6 +28,8 @@ export const PAYABLES_REPOSITORY_EXECUTE_CHANNEL = "payables-repository:execute"
 export const EXPENSE_REPOSITORY_EXECUTE_CHANNEL = "expense-repository:execute";
 export const EXPENSES_LIST_CHANNEL = "expenses:list";
 export const EXPENSE_CATEGORIES_LIST_CHANNEL = "expense-categories:list";
+export const CUSTOMER_REPOSITORY_EXECUTE_CHANNEL = "customer-repository:execute";
+export const CUSTOMERS_LIST_CHANNEL = "customers:list";
 export const SAVED_ACCOUNTS_LIST_CHANNEL = "saved-accounts:list";
 export const SAVED_ACCOUNTS_SAVE_CHANNEL = "saved-accounts:save";
 export const SAVED_ACCOUNTS_CREDENTIAL_CHANNEL = "saved-accounts:credential";
@@ -37,6 +40,7 @@ export const DEVICE_SESSION_PREFERENCE_READ_CHANNEL = "device-session:read-prefe
 export interface ReceivablesRepositoryIpcMain { handle(channel: string, handler: (event: { senderId: number }, payload?: unknown) => unknown): void; removeHandler(channel: string): void; }
 export interface PayablesRepositoryIpcMain { handle(channel: string, handler: (event: { senderId: number }, payload?: unknown) => unknown): void; removeHandler(channel: string): void; }
 export interface ExpenseRepositoryIpcMain { handle(channel: string, handler: (event: { senderId: number }, payload?: unknown) => unknown): void; removeHandler(channel: string): void; }
+export interface CustomerRepositoryIpcMain { handle(channel: string, handler: (event: { senderId: number }, payload?: unknown) => unknown): void; removeHandler(channel: string): void; }
 
 export interface TenantStoreIpcMain {
   handle(channel: string, handler: (event: { senderId: number }, payload?: unknown) => unknown): void;
@@ -180,6 +184,27 @@ export function registerExpenseRepositoryIpc(input: {
   input.ipcMain.handle(EXPENSE_CATEGORIES_LIST_CHANNEL, async (event) => {
     if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
     return { ok: true, data: input.listCategories?.() ?? [] };
+  });
+}
+
+export function registerCustomerRepositoryIpc(input: {
+  ipcMain: CustomerRepositoryIpcMain;
+  isTrustedSender: (event: { senderId: number }) => boolean;
+  getRepository: () => { execute(command: CustomerCommand): CustomerRepositoryResult };
+  listCustomers?: () => Array<Record<string, unknown>>;
+}): void {
+  input.ipcMain.removeHandler(CUSTOMER_REPOSITORY_EXECUTE_CHANNEL);
+  input.ipcMain.handle(CUSTOMER_REPOSITORY_EXECUTE_CHANNEL, async (event, payload) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    const command = parseCustomerCommand(payload);
+    if (!command) throw new Error("Invalid customer command");
+    return { ok: true, data: input.getRepository().execute(command) };
+  });
+
+  input.ipcMain.removeHandler(CUSTOMERS_LIST_CHANNEL);
+  input.ipcMain.handle(CUSTOMERS_LIST_CHANNEL, async (event) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    return { ok: true, data: input.listCustomers?.() ?? [] };
   });
 }
 
@@ -442,6 +467,33 @@ function parseExpenseCommand(payload: unknown): ExpenseCommand | null {
   if (p.type === "expense.category.delete") {
     if (!text(p.id)) return null;
     return { type: "expense.category.delete", id: String(p.id).trim() };
+  }
+
+  return null;
+}
+
+function parseCustomerCommand(payload: unknown): CustomerCommand | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const p = payload as Record<string, unknown>;
+  const text = (val: unknown) => typeof val === "string" && val.trim().length > 0 && val.length <= 512;
+
+  if (p.type === "customer.upsert") {
+    if (!text(p.id) || !text(p.name)) return null;
+    return {
+      type: "customer.upsert",
+      id: String(p.id).trim(),
+      name: String(p.name).trim(),
+      phone: typeof p.phone === "string" && p.phone.trim() ? p.phone.trim() : null,
+      email: typeof p.email === "string" && p.email.trim() ? p.email.trim().toLowerCase() : null,
+      documentId: typeof p.documentId === "string" && p.documentId.trim() ? p.documentId.trim() : null,
+      address: typeof p.address === "string" && p.address.trim() ? p.address.trim() : null,
+      notes: typeof p.notes === "string" && p.notes.trim() ? p.notes.trim() : null,
+    };
+  }
+
+  if (p.type === "customer.delete") {
+    if (!text(p.id)) return null;
+    return { type: "customer.delete", id: String(p.id).trim() };
   }
 
   return null;
