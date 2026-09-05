@@ -420,27 +420,7 @@ function createWindow() {
 }
 
 if (gotTheLock) {
-   registerTenantStoreIpc({
-    ipcMain,
-    isTrustedSender: (event) => event.senderId === mainWindow?.webContents.id,
-     getStatus: () => tenantStoreController?.getStatus() ?? ({ tenantId: null, isOpen: false }),
-     getActiveTenantId: () => tenantStoreController?.getActiveStore()?.getTenantId() ?? null,
-     importLegacySnapshot: (payload) => {
-       const request = payload as Parameters<TenantSQLiteImporter["import"]>[0]
-       if (!tenantStoreController) throw new Error('Tenant store is unavailable')
-       return tenantStoreController.importLegacySnapshot(request)
-      },
-    })
-    registerDesktopRepositoryIpc({
-     ipcMain,
-     isTrustedSender: (event) => event.senderId === mainWindow?.webContents.id,
-     getRepository: () => {
-       const store = tenantStoreController?.getActiveStore()
-       if (!store) throw new Error('Tenant store is unavailable')
-       return new DesktopRepository({ store, branchId: 'main-process-default' })
-     },
-   })
-   ipcMain.handle('window:ensure-input-focus', () => focusMainWindowForTextInput())
+  ipcMain.handle('window:ensure-input-focus', () => focusMainWindowForTextInput())
 
   ipcMain.handle('printers:list', async () => {
     const w = mainWindow || BrowserWindow.getAllWindows()[0]
@@ -554,8 +534,34 @@ if (gotTheLock) {
 
     const isTrustedSender = (event: { senderId?: number; sender?: { id: number } }) => {
       const senderId = event.senderId ?? event.sender?.id;
-      return Boolean(mainWindow && senderId === mainWindow.webContents.id);
+      return Boolean(mainWindow && !mainWindow.isDestroyed() && senderId === mainWindow.webContents.id);
     };
+
+    registerTenantStoreIpc({
+      ipcMain,
+      isTrustedSender,
+      getStatus: () => tenantStoreController?.getStatus() ?? ({ tenantId: null, isOpen: false }),
+      getActiveTenantId: () => tenantStoreController?.getActiveStore()?.getTenantId() ?? null,
+      importLegacySnapshot: (payload) => {
+        const request = payload as Parameters<TenantSQLiteImporter["import"]>[0];
+        if (!tenantStoreController) throw new Error('Tenant store is unavailable');
+        const manifestTenantId = (request as any)?.manifest?.tenantId;
+        if (manifestTenantId && tenantStoreController.getActiveStore()?.getTenantId() !== manifestTenantId) {
+          tenantStoreController.activate(manifestTenantId);
+        }
+        return tenantStoreController.importLegacySnapshot(request);
+      },
+    });
+
+    registerDesktopRepositoryIpc({
+      ipcMain,
+      isTrustedSender,
+      getRepository: () => {
+        const store = tenantStoreController?.getActiveStore();
+        if (!store) throw new Error('Tenant store is unavailable');
+        return new DesktopRepository({ store, branchId: 'main-process-default' });
+      },
+    });
     registerSavedAccountIpc({
       ipcMain,
       isTrustedSender,

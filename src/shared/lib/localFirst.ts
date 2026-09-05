@@ -173,9 +173,18 @@ async function readLegacyStoreInChunks(db: IDBDatabase, table: string, tenantId:
         return;
       }
       const row = cursor.value as Record<string, unknown>;
-      const belongsToTenant = table === "tenants" ? row.id === tenantId : row.tenant_id === tenantId;
+      if (!row || row.id == null || String(row.id).trim() === "") {
+        cursor.continue();
+        return;
+      }
+      const belongsToTenant =
+        table === "tenants"
+          ? String(row.id) === tenantId
+          : (table === "nomina_pagos" || table === "nomina_ajustes")
+          ? true
+          : String(row.tenant_id ?? "") === tenantId;
       if (belongsToTenant) {
-        rows.push(row);
+        rows.push({ ...row, id: String(row.id).trim() });
         if (rows.length === chunkSize) {
           chunks.push({ table, rows });
           rows = [];

@@ -332,9 +332,10 @@ export function registerTenantStoreIpc(input: {
     input.ipcMain.removeHandler(TENANT_STORE_IMPORT_CHANNEL);
     input.ipcMain.handle(TENANT_STORE_IMPORT_CHANNEL, async (event, payload) => {
       if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
-      const activeTenantId = input.getActiveTenantId();
       const manifestTenantId = getManifestTenantId(payload);
-      if (!activeTenantId || manifestTenantId !== activeTenantId) throw new Error("Legacy import tenant mismatch");
+      if (!manifestTenantId) throw new Error("Legacy import manifest is invalid");
+      const activeTenantId = input.getActiveTenantId();
+      if (activeTenantId && manifestTenantId !== activeTenantId) throw new Error("Legacy import tenant mismatch");
       return { ok: true, data: await input.importLegacySnapshot(payload) };
     });
   }

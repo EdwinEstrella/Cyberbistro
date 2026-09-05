@@ -140,12 +140,17 @@ function validateChunks(manifest: LegacyImportManifest, chunks: readonly LegacyI
   for (const chunk of chunks) {
     if (!/^[a-z_]{1,64}$/.test(chunk.table) || chunk.rows.length > chunkSize) throw new Error("Invalid bounded import chunk");
     for (const row of chunk.rows) {
-      if (!row || typeof row !== "object" || typeof row.id !== "string" || row.id.length === 0) throw new Error("Invalid legacy row identity");
-      const rowTenantId = chunk.table === "tenants" ? row.id : row.tenant_id;
+      const rowId = row?.id != null ? String(row.id).trim() : "";
+      if (!row || typeof row !== "object" || rowId.length === 0) throw new Error("Invalid legacy row identity");
+      const rowTenantId = chunk.table === "tenants"
+        ? String(row.id)
+        : (chunk.table === "nomina_pagos" || chunk.table === "nomina_ajustes")
+        ? manifest.tenantId
+        : String(row.tenant_id ?? "");
       if (rowTenantId !== manifest.tenantId) throw new Error("Legacy row tenant mismatch");
       if (chunk.table === "sync_outbox") {
-        if (outboxIds.has(row.id)) throw new Error("Duplicate outbox identity");
-        outboxIds.add(row.id);
+        if (outboxIds.has(rowId)) throw new Error("Duplicate outbox identity");
+        outboxIds.add(rowId);
       }
     }
   }
