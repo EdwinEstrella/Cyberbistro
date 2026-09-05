@@ -31,6 +31,7 @@ describe("local sqlite payroll", () => {
     registerPayrollRepositoryIpc({
       ipcMain,
       isTrustedSender: (event) => event.senderId === 7,
+      getAuthorizationContext: () => ({ tenantId: "tenant-1", allowedBranchIds: ["branch-1"] }),
       executeCommand: async (command) => {
         executed.push(command);
         return command;
@@ -54,6 +55,49 @@ describe("local sqlite payroll", () => {
 
     await expect(handler?.({ senderId: 7 }, command)).resolves.toEqual({ ok: true, data: command });
     expect(executed).toEqual([command]);
+  });
+
+  it("rejects tenant and branch claims that are not in the main-process authorization context before execution", async () => {
+    const handlers = new Map<string, (event: { senderId: number }, payload?: unknown) => unknown>();
+    const ipcMain: PayrollRepositoryIpcMain = {
+      handle: (channel, handler) => handlers.set(channel, handler),
+      removeHandler: (channel) => handlers.delete(channel),
+    };
+    const executed: unknown[] = [];
+    registerPayrollRepositoryIpc({
+      ipcMain,
+      isTrustedSender: (event) => event.senderId === 7,
+      getAuthorizationContext: () => ({ tenantId: "tenant-1", allowedBranchIds: ["branch-1"] }),
+      executeCommand: async (command) => {
+        executed.push(command);
+        return command;
+      },
+    });
+
+    const handler = handlers.get(PAYROLL_REPOSITORY_EXECUTE_CHANNEL);
+    await expect(handler?.({ senderId: 7 }, { type: "payroll.getEmployees", tenantId: "tenant-2", sucursalId: "branch-1" }))
+      .rejects.toThrow("Payroll tenant mismatch");
+    await expect(handler?.({ senderId: 7 }, { type: "payroll.getEmployees", tenantId: "tenant-1", sucursalId: "branch-2" }))
+      .rejects.toThrow("Payroll branch access denied");
+    expect(executed).toEqual([]);
+  });
+
+  it("fails closed when the main process has not resolved an authenticated authorization context", async () => {
+    const handlers = new Map<string, (event: { senderId: number }, payload?: unknown) => unknown>();
+    const ipcMain: PayrollRepositoryIpcMain = {
+      handle: (channel, handler) => handlers.set(channel, handler),
+      removeHandler: (channel) => handlers.delete(channel),
+    };
+    registerPayrollRepositoryIpc({
+      ipcMain,
+      isTrustedSender: (event) => event.senderId === 7,
+      getAuthorizationContext: () => null,
+      executeCommand: async (command) => command,
+    });
+
+    await expect(handlers.get(PAYROLL_REPOSITORY_EXECUTE_CHANNEL)?.({ senderId: 7 }, {
+      type: "payroll.getEmployees", tenantId: "tenant-1", sucursalId: "branch-1",
+    })).rejects.toThrow("Payroll authorization context is unavailable");
   });
 
   it("emits payroll_employees outbox rows for employee upsert and disable", () => {
@@ -114,6 +158,7 @@ describe("local sqlite payroll", () => {
     registerPayrollRepositoryIpc({
       ipcMain,
       isTrustedSender: (event) => event.senderId === 7,
+      getAuthorizationContext: () => ({ tenantId: "tenant-1", allowedBranchIds: ["branch-1"] }),
       executeCommand: async (command) => command,
     });
 

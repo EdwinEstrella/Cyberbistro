@@ -870,6 +870,7 @@ function CategoriasPanel() {
 
 function UsuariosPanel() {
   const { tenantId, tenantUser, user } = useAuth();
+  const { sucursales } = useSucursal();
   const [teamUsers, setTeamUsers] = useState<TenantUserRow[]>([]);
   const [tenantLimitConfig, setTenantLimitConfig] = useState<TenantUserLimitConfig>({
     userLimitEnabled: false,
@@ -884,6 +885,7 @@ function UsuariosPanel() {
   const [password, setPassword] = useState("");
   const [nombre, setNombre] = useState("");
   const [rol, setRol] = useState<(typeof STAFF_ROLES)[number]["value"]>("cajera");
+  const [selectedBranchIds, setSelectedBranchIds] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
@@ -904,6 +906,9 @@ function UsuariosPanel() {
   }
 
   useEffect(() => { void loadUsers(); }, [tenantId]);
+  useEffect(() => {
+    setSelectedBranchIds((current) => current.filter((id) => sucursales.some((branch) => branch.id === id)));
+  }, [sucursales]);
 
   function handleDeleteUser(row: TenantUserRow) {
     if (!tenantId || (row.auth_user_id === user?.id)) return;
@@ -925,7 +930,7 @@ function UsuariosPanel() {
   }
 
   async function handleCreate() {
-    if (!email.trim() || !password.trim()) { setError("Completa todos los campos."); return; }
+    if (!email.trim() || !password.trim() || selectedBranchIds.length === 0) { setError("Completá los campos y asigná al menos una sucursal."); return; }
     if (!tenantId || !tenantUser?.email) return;
     setCreating(true); setError(""); setSuccess("");
     
@@ -948,7 +953,13 @@ function UsuariosPanel() {
 
     const newUserId = (signData as any)?.user?.id;
 
-    const { error: insertError } = await insforgeClient.database.from("tenant_users").insert([{ auth_user_id: newUserId, tenant_id: tenantId, email: staffEmail, password_hash: "MANAGED_BY_AUTH", rol, nombre: nombre.trim() || null, activo: true }]);
+    const { error: insertError } = await insforgeClient.database.rpc("cloudix_owner_create_staff_membership", {
+      p_auth_user_id: newUserId,
+      p_email: staffEmail,
+      p_nombre: nombre.trim(),
+      p_rol: rol,
+      p_sucursal_ids: selectedBranchIds,
+    });
     
     if (insertError) {
       setError(buildStaffProvisioningRecoveryMessage({
@@ -960,7 +971,7 @@ function UsuariosPanel() {
       return;
     }
 
-    setSuccess(`Usuario creado.`); setEmail(""); setPassword(""); setNombre(""); await loadUsers();
+    setSuccess(`Usuario creado.`); setEmail(""); setPassword(""); setNombre(""); setSelectedBranchIds([]); await loadUsers();
     setCreating(false);
   }
 
@@ -1016,9 +1027,18 @@ function UsuariosPanel() {
               <div className="flex flex-col gap-1.5"><label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">Email</label>
                 <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="input-field" placeholder="email@negocio.com" />
               </div>
-              <div className="flex flex-col gap-1.5"><label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">Contraseña</label>
-                <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="input-field" placeholder="Mín. 6 caracteres" />
-              </div>
+               <div className="flex flex-col gap-1.5"><label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">Contraseña</label>
+                 <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="input-field" placeholder="Mín. 6 caracteres" />
+               </div>
+               <fieldset className="flex flex-col gap-2 rounded-xl border border-black/10 bg-muted/20 p-3 dark:border-white/10">
+                 <legend className="px-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Sucursales asignadas</legend>
+                 {sucursales.length === 0 ? <p className="text-xs text-destructive">Creá una sucursal activa antes de registrar personal.</p> : sucursales.map((branch) => (
+                   <label key={branch.id} className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+                     <input type="checkbox" checked={selectedBranchIds.includes(branch.id)} onChange={(event) => setSelectedBranchIds((ids) => event.target.checked ? [...ids, branch.id] : ids.filter((id) => id !== branch.id))} />
+                     {branch.nombre}
+                   </label>
+                 ))}
+               </fieldset>
            </div>
            <button onClick={handleCreate} disabled={creating} className="bg-primary text-primary-foreground rounded-xl py-3.5 font-bold uppercase text-[12px] tracking-widest shadow-lg hover:opacity-90 disabled:opacity-50 transition-all border-none cursor-pointer mt-2">{creating ? "Creando..." : "Registrar Miembro"}</button>
           </div>

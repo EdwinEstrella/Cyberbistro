@@ -262,6 +262,8 @@ export async function resolveTenantAccessForSession(user: UserSchema): Promise<T
         rol: membership.rol,
         nombre: membership.nombre,
         plan: membership.plan ?? 'basico',
+        allowed_branch_ids: Array.isArray(membership.allowed_branch_ids) ? membership.allowed_branch_ids : [],
+        default_branch_id: typeof membership.default_branch_id === "string" ? membership.default_branch_id : null,
       },
     };
   }

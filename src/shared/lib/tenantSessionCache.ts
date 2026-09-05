@@ -6,6 +6,8 @@ export interface TenantSessionRow {
   rol: string;
   nombre: string | null;
   plan?: string | null;
+  allowed_branch_ids?: string[];
+  default_branch_id?: string | null;
 }
 
 export interface TenantSessionCache extends TenantSessionRow {
@@ -54,6 +56,8 @@ export function readTenantSessionCache(): TenantSessionCache | null {
       rol: o.rol,
       nombre: o.nombre ?? null,
       plan: o.plan ?? 'basico',
+      allowed_branch_ids: Array.isArray(o.allowed_branch_ids) ? o.allowed_branch_ids.filter((id): id is string => typeof id === "string") : [],
+      default_branch_id: typeof o.default_branch_id === "string" ? o.default_branch_id : null,
     };
   } catch {
     return null;
@@ -69,6 +73,8 @@ export function writeTenantSessionCache(authUserId: string, row: TenantSessionRo
       rol: row.rol,
       nombre: row.nombre ?? null,
       plan: row.plan ?? 'basico',
+      allowed_branch_ids: row.allowed_branch_ids ?? [],
+      default_branch_id: row.default_branch_id ?? null,
     };
     localStorage.setItem(CACHE_KEY, JSON.stringify(payload));
   } catch {

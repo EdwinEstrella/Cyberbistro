@@ -6,8 +6,9 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setupAutoUpdater } from './autoUpdater'
 import { startLanEdgeServer, type LanEdgeServerHandle } from './lanEdgeServer'
-import { registerCashPurchaseRepositoryIpc, registerCatalogRepositoryIpc, registerDesktopRepositoryIpc, registerOrdersRepositoryIpc, registerSalesFiscalRepositoryIpc, registerTenantStoreIpc, registerPayrollRepositoryIpc, registerPayrollSyncAccessTokenIpc, registerReceivablesRepositoryIpc, registerPayablesRepositoryIpc } from './persistence/ipc'
+import { registerCashPurchaseRepositoryIpc, registerCatalogRepositoryIpc, registerDesktopRepositoryIpc, registerOrdersRepositoryIpc, registerSalesFiscalRepositoryIpc, registerTenantStoreIpc, registerPayrollRepositoryIpc, registerPayrollSyncAccessTokenIpc, registerReceivablesRepositoryIpc, registerPayablesRepositoryIpc, registerSavedAccountIpc } from './persistence/ipc'
 import { PayrollRepository } from './persistence/payrollRepository'
+import { PayrollSyncClient, type PayrollAuthorizationContext } from './persistence/payrollSyncClient'
 import type { PayrollCommand } from '../src/shared/lib/payrollContracts'
 import { TenantStoreController } from './persistence/tenantStore'
 import { DesktopRepository } from '../src/shared/lib/desktopRepository'
@@ -17,6 +18,7 @@ import { SalesFiscalRepository } from './persistence/salesFiscalRepository'
 import { CashPurchaseRepository } from './persistence/cashPurchaseRepository'
 import { ReceivablesRepository } from './persistence/receivablesRepository'
 import { PayablesRepository } from './persistence/payablesRepository'
+import { DeviceAccountDirectory } from './persistence/deviceAccountDirectory'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const CERTIFICATION_PORTAL_URL = 'https://ecf.dgii.gov.do/certecf/portalcertificacion/Login?ReturnUrl=%2Fcertecf%2Fportalcertificacion'
@@ -24,6 +26,8 @@ const ECF_ENVIRONMENTS = new Set(['test', 'certification', 'production'])
 let mainWindow: BrowserWindow | null = null
 let lanEdgeServer: LanEdgeServerHandle | null = null
 let tenantStoreController: TenantStoreController | null = null
+let deviceAccountDirectory: DeviceAccountDirectory | null = null
+let payrollAuthorizationContext: PayrollAuthorizationContext | null = null
 
 // Deshabilitar la aceleración de hardware para evitar bugs de focus/puntero en Windows
 // app.disableHardwareAcceleration()
@@ -487,6 +491,7 @@ if (gotTheLock) {
 
   app.whenReady().then(async () => {
     tenantStoreController = new TenantStoreController(app.getPath('userData'))
+    deviceAccountDirectory = DeviceAccountDirectory.open(app.getPath('userData'))
     try {
       lanEdgeServer = await startLanEdgeServer({
         dataDir: app.getPath('userData'),
@@ -524,6 +529,17 @@ if (gotTheLock) {
       const senderId = event.senderId ?? event.sender?.id;
       return Boolean(mainWindow && senderId === mainWindow.webContents.id);
     };
+    registerSavedAccountIpc({
+      ipcMain,
+      isTrustedSender,
+      getDirectory: () => {
+        if (!deviceAccountDirectory) throw new Error('Saved account directory is unavailable')
+        return deviceAccountDirectory
+      },
+      isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
+      encrypt: (password) => safeStorage.encryptString(password),
+      decrypt: (ciphertext) => safeStorage.decryptString(Buffer.from(ciphertext)),
+    })
 
     registerCatalogRepositoryIpc({
       ipcMain,
@@ -570,6 +586,7 @@ if (gotTheLock) {
     registerPayrollRepositoryIpc({
       ipcMain,
       isTrustedSender,
+      getAuthorizationContext: () => payrollAuthorizationContext,
       executeCommand: async (command: PayrollCommand) => {
         if (!tenantStoreController) throw new Error('Tenant store is unavailable')
         let store = tenantStoreController.getActiveStore()
@@ -610,9 +627,13 @@ if (gotTheLock) {
     registerPayrollSyncAccessTokenIpc({
       ipcMain,
       isTrustedSender,
-      setAccessToken: (accessToken) => {
+      setAccessToken: async (accessToken) => {
+        payrollAuthorizationContext = null
         tenantStoreController?.payrollSync.setAccessToken(accessToken)
-        if (accessToken) tenantStoreController?.payrollSync.triggerSync().catch(console.error)
+        if (!accessToken) return
+
+        payrollAuthorizationContext = await new PayrollSyncClient(undefined, accessToken).resolveAuthorizationContext()
+        tenantStoreController?.payrollSync.triggerSync().catch(console.error)
       },
     })
   })
@@ -620,6 +641,9 @@ if (gotTheLock) {
   app.on('before-quit', () => {
     tenantStoreController?.close()
     tenantStoreController = null
+    payrollAuthorizationContext = null
+    deviceAccountDirectory?.close()
+    deviceAccountDirectory = null
     void lanEdgeServer?.close()
     lanEdgeServer = null
   })

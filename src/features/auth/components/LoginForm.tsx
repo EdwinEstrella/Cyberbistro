@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "react-router";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, Trash2 } from "lucide-react";
 import svgPaths from "../../../imports/svg-h2gjocs89h";
 import imgLoginRegistro from "figma:asset/47f7239cc7433af3270415eeec94f9bdbb11cd99.png";
 import imgDecorativeScanlineEffect from "figma:asset/70a05c412757c6d4e1cffbb0780858880dce7a5a.png";
@@ -18,7 +18,7 @@ import {
 import { hydrateAuthStateAfterLogin, syncAuthClientAfterLogin, useAuth } from "../../../shared/hooks/useAuth";
 import { defaultRouteForRol } from "../../../shared/lib/roleNav";
 import { saveLocalDeviceSession } from "../../../shared/lib/localFirst";
-import { parseRememberedLogin, serializeRememberedLogin } from "../../../shared/lib/rememberLoginStorage";
+import { consumeRememberedLogin } from "../../../shared/lib/rememberLoginStorage";
 
 const LOGIN_NOTICE_KEY = "cloudix_login_notice";
 const REFRESH_TOKEN_KEY = INSFORGE_REFRESH_TOKEN_STORAGE_KEY;
@@ -59,6 +59,9 @@ export function Login() {
   const [password, setPassword] = useState(!import.meta.env.PROD ? "lia2026" : "");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberLogin, setRememberLogin] = useState(false);
+  const [savedAccounts, setSavedAccounts] = useState<Array<{ id: string; email: string; hasPassword: boolean }>>([]);
+  const [savedAccountId, setSavedAccountId] = useState("");
+  const [secureStorageAvailable, setSecureStorageAvailable] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -197,23 +200,35 @@ export function Login() {
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(REMEMBER_LOGIN_KEY);
-      const remembered = parseRememberedLogin(raw);
-      if (!remembered.enabled) {
-        localStorage.removeItem(REMEMBER_LOGIN_KEY);
-        return;
-      }
-
-      setEmail(remembered.email ?? "");
-      if (remembered.password) {
-        setPassword(remembered.password);
-      }
-      setRememberLogin(true);
-      localStorage.setItem(REMEMBER_LOGIN_KEY, serializeRememberedLogin(remembered.email ?? "", remembered.password));
+      const remembered = consumeRememberedLogin(localStorage, REMEMBER_LOGIN_KEY);
+      // The old payload could contain a password. It is removed before any UI state is hydrated.
+      if (remembered.email) setEmail(remembered.email);
     } catch {
       localStorage.removeItem(REMEMBER_LOGIN_KEY);
     }
+    const listSavedAccounts = window.electronAPI?.listSavedAccounts;
+    if (!listSavedAccounts) return;
+    void listSavedAccounts().then((response) => {
+      setSecureStorageAvailable(response.data.encryptionAvailable);
+      setSavedAccounts(response.data.accounts);
+    }).catch(() => setSecureStorageAvailable(false));
   }, []);
+
+  const selectSavedAccount = useCallback(async (id: string) => {
+    setSavedAccountId(id);
+    const account = savedAccounts.find((item) => item.id === id);
+    if (!account) return;
+    setEmail(account.email);
+    setPassword("");
+    const response = await window.electronAPI?.getSavedAccountCredential?.(id);
+    if (response?.data?.password) setPassword(response.data.password);
+  }, [savedAccounts]);
+
+  const deleteSavedAccount = useCallback(async (id: string) => {
+    await window.electronAPI?.deleteSavedAccount?.(id);
+    setSavedAccounts((accounts) => accounts.filter((account) => account.id !== id));
+    if (savedAccountId === id) setSavedAccountId("");
+  }, [savedAccountId]);
 
   // Move interaction logic to event handler (Vercel best practice)
   const handleLogin = useCallback(async () => {
@@ -248,17 +263,17 @@ export function Login() {
       return;
     }
 
-    try {
-      if (rememberLogin) {
-        localStorage.setItem(
-          REMEMBER_LOGIN_KEY,
-          serializeRememberedLogin(email, password)
-        );
-      } else {
-        localStorage.removeItem(REMEMBER_LOGIN_KEY);
+    localStorage.removeItem(REMEMBER_LOGIN_KEY);
+    if (rememberLogin && secureStorageAvailable) {
+      try {
+        const saved = await window.electronAPI?.saveSavedAccount?.({ email, password });
+        if (saved?.data) {
+          setSavedAccounts((accounts) => [saved.data, ...accounts.filter((account) => account.id !== saved.data.id)]);
+          setSavedAccountId(saved.data.id);
+        }
+      } catch {
+        setError("No se pudo guardar esta cuenta en el almacén seguro del sistema.");
       }
-    } catch {
-      /* ignore storage errors */
     }
 
     const refreshToken = extractRefreshTokenFromSignInPayload(data);
@@ -300,7 +315,7 @@ export function Login() {
       setTimeout(() => navigate(dest), 300);
     }
     setIsLoading(false);
-  }, [email, isLoading, password, navigate, rememberLogin]);
+  }, [email, isLoading, password, navigate, rememberLogin, secureStorageAvailable]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
@@ -405,7 +420,23 @@ export function Login() {
 
               {/* Form */}
               <div className="relative shrink-0 w-full flex flex-col gap-3 sm:gap-4">
-                {/* Email Input */}
+               {/* Email Input */}
+                {savedAccounts.length > 0 && (
+                  <div className="relative shrink-0 w-full group">
+                    <label htmlFor="saved-login-account" className="block font-['Space_Grotesk',sans-serif] font-bold text-[#ff7346] text-[9px] sm:text-[10px] tracking-[0.8px] sm:tracking-[1px] uppercase mb-1 sm:mb-2">
+                      Cuenta guardada
+                    </label>
+                    <div className="flex gap-2">
+                      <select id="saved-login-account" value={savedAccountId} onChange={(event) => void selectSavedAccount(event.target.value)} className="min-w-0 flex-1 rounded-[8px] border border-[#484847] bg-[#131313] px-3 py-3 font-['Inter',sans-serif] text-[13px] text-white outline-none focus:border-[#ff906d]">
+                        <option value="">Elegí una cuenta</option>
+                        {savedAccounts.map((account) => <option key={account.id} value={account.id}>{account.email}{account.hasPassword ? "" : " (sin contraseña guardada)"}</option>)}
+                      </select>
+                      <button type="button" disabled={!savedAccountId} onClick={() => savedAccountId && void deleteSavedAccount(savedAccountId)} aria-label="Eliminar cuenta guardada" className="rounded-[8px] border border-[#ff7346]/40 bg-[#ff7346]/10 px-3 text-[#ff906d] transition-colors hover:bg-[#ff7346]/20 disabled:cursor-not-allowed disabled:opacity-40">
+                        <Trash2 size={16} aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <div className="relative shrink-0 w-full group">
                   <label
                     htmlFor="login-email"
@@ -498,12 +529,11 @@ export function Login() {
                       id="login-remember"
                       type="checkbox"
                       checked={rememberLogin}
+                      disabled={!secureStorageAvailable}
                       onChange={(e) => {
                         const nextChecked = e.target.checked;
                         setRememberLogin(nextChecked);
-                        if (!nextChecked) {
-                          localStorage.removeItem(REMEMBER_LOGIN_KEY);
-                        }
+                        localStorage.removeItem(REMEMBER_LOGIN_KEY);
                       }}
                       className="peer sr-only"
                     />
@@ -515,7 +545,7 @@ export function Login() {
                         Recordar
                       </span>
                       <span className="font-['Inter',sans-serif] text-[#7c7c7c] text-[10px] sm:text-[11px] leading-relaxed">
-                        Guarda tus credenciales localmente
+                        {secureStorageAvailable ? "Guarda esta cuenta con el almacén seguro del sistema" : "El almacén seguro no está disponible en este dispositivo"}
                       </span>
                     </div>
                   </div>
@@ -524,9 +554,9 @@ export function Login() {
                     role="status"
                     aria-label="Modo local"
                   >
-                    <span className={`h-1.5 w-1.5 rounded-full transition-all duration-300 ${rememberLogin ? "bg-[#ff906d] shadow-[0px_0px_8px_0px_rgba(255,144,109,0.9)]" : "bg-[#4a4a4a]"}`} />
+                    <span className={`h-1.5 w-1.5 rounded-full transition-all duration-300 ${rememberLogin && secureStorageAvailable ? "bg-[#ff906d] shadow-[0px_0px_8px_0px_rgba(255,144,109,0.9)]" : "bg-[#4a4a4a]"}`} />
                     <span className="font-['Inter',sans-serif] text-[10px] uppercase tracking-[0.18em] text-[#8a8a8a]">
-                      local
+                      {secureStorageAvailable ? "seguro" : "no disponible"}
                     </span>
                   </div>
                 </label>

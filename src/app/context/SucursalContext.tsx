@@ -67,7 +67,7 @@ function resolveEffectiveSucursalLimit(
 }
 
 export function SucursalProvider({ children }: { children: ReactNode }) {
-  const { tenantId, isAuthenticated, plan, tenantAccessValidated } = useAuth();
+  const { tenantId, user, tenantUser, isAuthenticated, plan, tenantAccessValidated } = useAuth();
   const [sucursales, setSucursales] = useState<Sucursal[]>([]);
   const [activeSucursalId, setActiveSucursalIdState] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -85,6 +85,7 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
 
   // Custom setter that saves to localStorage
   function setActiveSucursalId(id: string | null) {
+    if (id && !(tenantUser?.allowedBranchIds ?? []).includes(id)) return;
     setActiveSucursalIdState(id);
     if (!tenantId) return;
     const key = scopedStorageKey(tenantId);
@@ -94,6 +95,14 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
     } else {
       localStorage.removeItem(key);
       localStorage.removeItem(STORAGE_KEY);
+    }
+    if (user) {
+      void window.electronAPI?.saveDeviceSessionPreference?.({
+        tenantId,
+        userId: user.id,
+        allowedBranchIds: tenantUser?.allowedBranchIds ?? [],
+        defaultBranchId: id,
+      });
     }
   }
 
@@ -143,11 +152,16 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      const activeList = data.filter((s) => s.activa !== false) as Sucursal[];
+       const allowedBranchIds = tenantUser?.allowedBranchIds ?? [];
+       const activeList = (data.filter((s) => s.activa !== false) as Sucursal[])
+         .filter((s) => allowedBranchIds.includes(s.id));
       if (!isCurrentAccess(generation, expectedTenantId)) return;
       setSucursales(activeList);
 
-      const savedId = localStorage.getItem(scopedStorageKey(expectedTenantId));
+       const preference = user
+         ? await window.electronAPI?.getDeviceSessionPreference?.({ tenantId: expectedTenantId, userId: user.id }).catch(() => undefined)
+         : undefined;
+       const savedId = preference?.data?.defaultBranchId ?? localStorage.getItem(scopedStorageKey(expectedTenantId));
       const isSavedValid = savedId && activeList.some((s) => s.id === savedId);
       if (isSavedValid) {
         if (!isCurrentAccess(generation, expectedTenantId)) return;
@@ -155,7 +169,8 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
       } else if (activeList.length > 0) {
         const defaultId = activeList[0].id;
         if (!isCurrentAccess(generation, expectedTenantId)) return;
-        setActiveSucursalIdState(defaultId);
+         setActiveSucursalIdState(defaultId);
+         if (user) void window.electronAPI?.saveDeviceSessionPreference?.({ tenantId: expectedTenantId, userId: user.id, allowedBranchIds, defaultBranchId: defaultId });
         localStorage.setItem(scopedStorageKey(expectedTenantId), defaultId);
         localStorage.setItem(STORAGE_KEY, defaultId);
       } else {
@@ -335,7 +350,7 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
     return () => {
       accessGeneration.current += 1;
     };
-  }, [tenantId, isAuthenticated, tenantAccessValidated]);
+  }, [tenantId, isAuthenticated, tenantAccessValidated, tenantUser, user]);
 
   return (
     <SucursalContext.Provider

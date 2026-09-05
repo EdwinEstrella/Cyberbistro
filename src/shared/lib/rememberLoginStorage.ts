@@ -1,12 +1,23 @@
 export interface RememberedLoginState {
-  enabled: boolean;
-  email?: string;
-  password?: string;
-  shouldPersist: boolean;
+  email: string | null;
+  hadLegacySecret: boolean;
+}
+
+type StorageLike = Pick<Storage, "getItem" | "removeItem">;
+
+export function consumeRememberedLogin(storage: StorageLike, key: string): RememberedLoginState {
+  let raw: string | null = null;
+  try {
+    raw = storage.getItem(key);
+  } finally {
+    // Remove legacy plaintext data even if parsing or storage reads fail.
+    storage.removeItem(key);
+  }
+  return parseRememberedLogin(raw);
 }
 
 export function parseRememberedLogin(raw: string | null): RememberedLoginState {
-  if (!raw) return { enabled: false, shouldPersist: false };
+  if (!raw) return { email: null, hadLegacySecret: false };
 
   try {
     const parsed = JSON.parse(raw) as {
@@ -15,16 +26,9 @@ export function parseRememberedLogin(raw: string | null): RememberedLoginState {
       password?: unknown;
     };
 
-    if (parsed.enabled !== true) return { enabled: false, shouldPersist: false };
-
-    const email = typeof parsed.email === "string" ? parsed.email : "";
-    const password = typeof parsed.password === "string" ? parsed.password : "";
-    return { enabled: true, email, password, shouldPersist: true };
+    const email = typeof parsed.email === "string" && parsed.email.trim() ? parsed.email.trim() : null;
+    return { email, hadLegacySecret: typeof parsed.password === "string" && parsed.password.length > 0 };
   } catch {
-    return { enabled: false, shouldPersist: false };
+    return { email: null, hadLegacySecret: false };
   }
-}
-
-export function serializeRememberedLogin(email: string, password?: string): string {
-  return JSON.stringify({ enabled: true, email, password: password || "" });
 }

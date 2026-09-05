@@ -78,6 +78,12 @@ export interface ElectronAPI {
   maximize: () => void;
   ensureInputFocus?: () => Promise<boolean>;
   getTenantStoreStatus?: () => Promise<{ ok: true; data: { isOpen: boolean } }>;
+  listSavedAccounts?: () => Promise<{ ok: true; data: { encryptionAvailable: boolean; accounts: Array<{ id: string; email: string; hasPassword: boolean }> } }>;
+  saveSavedAccount?: (account: { email: string; password: string | null }) => Promise<{ ok: true; data: { id: string; email: string; hasPassword: boolean } }>;
+  getSavedAccountCredential?: (id: string) => Promise<{ ok: true; data: { password: string } | null }>;
+  deleteSavedAccount?: (id: string) => Promise<{ ok: true }>;
+  saveDeviceSessionPreference?: (preference: { tenantId: string; userId: string; allowedBranchIds: string[]; defaultBranchId: string | null }) => Promise<{ ok: true; data: { defaultBranchId: string | null } }>;
+  getDeviceSessionPreference?: (identity: { tenantId: string; userId: string }) => Promise<{ ok: true; data: { allowedBranchIds: string[]; defaultBranchId: string | null } | null }>;
   executeCatalogCommand?: (command: import("../lib/catalogContracts").CatalogCommand) => Promise<{ ok: true; data: import("../lib/catalogContracts").CatalogRepositoryResult }>;
   executeOrdersCommand?: (command: import("../lib/ordersContracts").OrdersCommand) => Promise<{ ok: true; data: import("../lib/ordersContracts").OrdersRepositoryResult }>;
   executeSalesFiscalCommand?: (command: import("../../../electron/persistence/salesFiscalRepository").SalesFiscalCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/salesFiscalRepository").SalesFiscalRepositoryResult }>;

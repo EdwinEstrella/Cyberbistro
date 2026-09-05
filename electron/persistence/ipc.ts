@@ -23,6 +23,12 @@ export const PAYROLL_REPOSITORY_EXECUTE_CHANNEL = "payroll-repository:execute";
 export const PAYROLL_SYNC_ACCESS_TOKEN_CHANNEL = "payroll-sync:set-access-token";
 export const RECEIVABLES_REPOSITORY_EXECUTE_CHANNEL = "receivables-repository:execute";
 export const PAYABLES_REPOSITORY_EXECUTE_CHANNEL = "payables-repository:execute";
+export const SAVED_ACCOUNTS_LIST_CHANNEL = "saved-accounts:list";
+export const SAVED_ACCOUNTS_SAVE_CHANNEL = "saved-accounts:save";
+export const SAVED_ACCOUNTS_CREDENTIAL_CHANNEL = "saved-accounts:credential";
+export const SAVED_ACCOUNTS_DELETE_CHANNEL = "saved-accounts:delete";
+export const DEVICE_SESSION_PREFERENCE_SAVE_CHANNEL = "device-session:save-preference";
+export const DEVICE_SESSION_PREFERENCE_READ_CHANNEL = "device-session:read-preference";
 
 export interface ReceivablesRepositoryIpcMain { handle(channel: string, handler: (event: { senderId: number }, payload?: unknown) => unknown): void; removeHandler(channel: string): void; }
 export interface PayablesRepositoryIpcMain { handle(channel: string, handler: (event: { senderId: number }, payload?: unknown) => unknown): void; removeHandler(channel: string): void; }
@@ -52,6 +58,78 @@ export interface SalesFiscalRepositoryIpcMain {
 export interface CashPurchaseRepositoryIpcMain { handle(channel: string, handler: (event: { senderId: number }, payload?: unknown) => unknown): void; removeHandler(channel: string): void; }
 export interface PayrollRepositoryIpcMain { handle(channel: string, handler: (event: { senderId: number }, payload?: unknown) => unknown): void; removeHandler(channel: string): void; }
 
+export interface PayrollAuthorizationContext {
+  tenantId: string;
+  allowedBranchIds: readonly string[];
+}
+
+export interface SavedAccountIpcMain { handle(channel: string, handler: (event: { senderId: number }, payload?: unknown) => unknown): void; removeHandler(channel: string): void; }
+
+type SavedAccountDirectory = {
+  listAccounts(): Array<{ id: string; email: string; hasPassword: boolean }>;
+  saveAccount(input: { email: string; passwordCiphertext: Uint8Array | null }): { id: string; email: string; hasPassword: boolean };
+  getPasswordCiphertext(id: string): Uint8Array | null;
+  deleteAccount(id: string): void;
+  saveSessionPreference(input: { tenantId: string; userId: string; allowedBranchIds: string[]; defaultBranchId: string | null }): { tenantId: string; userId: string; allowedBranchIds: string[]; defaultBranchId: string | null };
+  readSessionPreference(tenantId: string, userId: string): { tenantId: string; userId: string; allowedBranchIds: string[]; defaultBranchId: string | null } | null;
+};
+
+export function registerSavedAccountIpc(input: {
+  ipcMain: SavedAccountIpcMain;
+  isTrustedSender: (event: { senderId: number }) => boolean;
+  getDirectory: () => SavedAccountDirectory;
+  isEncryptionAvailable: () => boolean;
+  encrypt: (password: string) => Uint8Array;
+  decrypt: (ciphertext: Uint8Array) => string;
+}): void {
+  const trusted = (event: { senderId: number }) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+  };
+  input.ipcMain.removeHandler(SAVED_ACCOUNTS_LIST_CHANNEL);
+  input.ipcMain.handle(SAVED_ACCOUNTS_LIST_CHANNEL, async (event) => {
+    trusted(event);
+    return { ok: true, data: { encryptionAvailable: input.isEncryptionAvailable(), accounts: input.getDirectory().listAccounts() } };
+  });
+  input.ipcMain.removeHandler(SAVED_ACCOUNTS_SAVE_CHANNEL);
+  input.ipcMain.handle(SAVED_ACCOUNTS_SAVE_CHANNEL, async (event, payload) => {
+    trusted(event);
+    const account = parseSavedAccount(payload);
+    if (!account) throw new Error("Invalid saved account payload");
+    const ciphertext = account.password && input.isEncryptionAvailable() ? input.encrypt(account.password) : null;
+    return { ok: true, data: input.getDirectory().saveAccount({ email: account.email, passwordCiphertext: ciphertext }) };
+  });
+  input.ipcMain.removeHandler(SAVED_ACCOUNTS_CREDENTIAL_CHANNEL);
+  input.ipcMain.handle(SAVED_ACCOUNTS_CREDENTIAL_CHANNEL, async (event, payload) => {
+    trusted(event);
+    const id = parseId(payload);
+    if (!id || !input.isEncryptionAvailable()) return { ok: true, data: null };
+    const ciphertext = input.getDirectory().getPasswordCiphertext(id);
+    return { ok: true, data: ciphertext ? { password: input.decrypt(ciphertext) } : null };
+  });
+  input.ipcMain.removeHandler(SAVED_ACCOUNTS_DELETE_CHANNEL);
+  input.ipcMain.handle(SAVED_ACCOUNTS_DELETE_CHANNEL, async (event, payload) => {
+    trusted(event);
+    const id = parseId(payload);
+    if (!id) throw new Error("Invalid saved account id");
+    input.getDirectory().deleteAccount(id);
+    return { ok: true };
+  });
+  input.ipcMain.removeHandler(DEVICE_SESSION_PREFERENCE_SAVE_CHANNEL);
+  input.ipcMain.handle(DEVICE_SESSION_PREFERENCE_SAVE_CHANNEL, async (event, payload) => {
+    trusted(event);
+    const preference = parseSessionPreference(payload);
+    if (!preference) throw new Error("Invalid device session preference");
+    return { ok: true, data: input.getDirectory().saveSessionPreference(preference) };
+  });
+  input.ipcMain.removeHandler(DEVICE_SESSION_PREFERENCE_READ_CHANNEL);
+  input.ipcMain.handle(DEVICE_SESSION_PREFERENCE_READ_CHANNEL, async (event, payload) => {
+    trusted(event);
+    const identity = parseSessionIdentity(payload);
+    if (!identity) throw new Error("Invalid device session identity");
+    return { ok: true, data: input.getDirectory().readSessionPreference(identity.tenantId, identity.userId) };
+  });
+}
+
 export function registerReceivablesRepositoryIpc(input: { ipcMain: ReceivablesRepositoryIpcMain; isTrustedSender: (event: { senderId: number }) => boolean; getRepository: () => { execute(command: ReceivablesCommand): ReceivablesRepositoryResult } }): void {
   input.ipcMain.removeHandler(RECEIVABLES_REPOSITORY_EXECUTE_CHANNEL);
   input.ipcMain.handle(RECEIVABLES_REPOSITORY_EXECUTE_CHANNEL, async (event, payload) => {
@@ -75,6 +153,7 @@ export function registerPayablesRepositoryIpc(input: { ipcMain: PayablesReposito
 export function registerPayrollRepositoryIpc(input: {
   ipcMain: PayrollRepositoryIpcMain;
   isTrustedSender: (event: { senderId: number }) => boolean;
+  getAuthorizationContext: () => PayrollAuthorizationContext | null;
   executeCommand: (command: PayrollCommand) => Promise<unknown>;
 }): void {
   input.ipcMain.removeHandler(PAYROLL_REPOSITORY_EXECUTE_CHANNEL);
@@ -82,21 +161,28 @@ export function registerPayrollRepositoryIpc(input: {
     if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
     const command = parsePayrollCommand(payload);
     if (!command) throw new Error("Invalid payroll command");
+    authorizePayrollCommand(input.getAuthorizationContext(), command);
     return { ok: true, data: await input.executeCommand(command) };
   });
+}
+
+function authorizePayrollCommand(context: PayrollAuthorizationContext | null, command: PayrollCommand): void {
+  if (!context) throw new Error("Payroll authorization context is unavailable");
+  if (command.tenantId !== context.tenantId) throw new Error("Payroll tenant mismatch");
+  if (!context.allowedBranchIds.includes(command.sucursalId)) throw new Error("Payroll branch access denied");
 }
 
 export function registerPayrollSyncAccessTokenIpc(input: {
   ipcMain: PayrollRepositoryIpcMain;
   isTrustedSender: (event: { senderId: number }) => boolean;
-  setAccessToken: (accessToken: string | null) => void;
+  setAccessToken: (accessToken: string | null) => Promise<void> | void;
 }): void {
   input.ipcMain.removeHandler(PAYROLL_SYNC_ACCESS_TOKEN_CHANNEL);
   input.ipcMain.handle(PAYROLL_SYNC_ACCESS_TOKEN_CHANNEL, async (event, payload) => {
     if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
     const accessToken = parsePayrollSyncAccessToken(payload);
     if (accessToken === undefined) throw new Error("Invalid payroll sync access token");
-    input.setAccessToken(accessToken);
+    await input.setAccessToken(accessToken);
     return { ok: true };
   });
 }
@@ -319,6 +405,36 @@ function parsePayrollCommand(payload: unknown): PayrollCommand | null {
   }
 
   return null;
+}
+
+function parseSavedAccount(payload: unknown): { email: string; password: string | null } | null {
+  if (!isExactObject(payload, ["email", "password"], false)) return null;
+  const { email, password } = payload as Record<string, unknown>;
+  if (typeof email !== "string" || email.trim().length === 0 || email.length > 320) return null;
+  if (password !== null && (typeof password !== "string" || password.length === 0 || password.length > 1024)) return null;
+  return { email, password };
+}
+
+function parseId(payload: unknown): string | null {
+  return isExactObject(payload, ["id"], false) && isNonEmptyText((payload as Record<string, unknown>).id)
+    ? (payload as { id: string }).id
+    : null;
+}
+
+function parseSessionIdentity(payload: unknown): { tenantId: string; userId: string } | null {
+  if (!isExactObject(payload, ["tenantId", "userId"], false)) return null;
+  const record = payload as Record<string, unknown>;
+  return isNonEmptyText(record.tenantId) && isNonEmptyText(record.userId)
+    ? { tenantId: record.tenantId, userId: record.userId }
+    : null;
+}
+
+function parseSessionPreference(payload: unknown): { tenantId: string; userId: string; allowedBranchIds: string[]; defaultBranchId: string | null } | null {
+  if (!isExactObject(payload, ["tenantId", "userId", "allowedBranchIds", "defaultBranchId"], false)) return null;
+  const record = payload as Record<string, unknown>;
+  if (!isNonEmptyText(record.tenantId) || !isNonEmptyText(record.userId) || !Array.isArray(record.allowedBranchIds) || record.allowedBranchIds.length > 100) return null;
+  if (!record.allowedBranchIds.every(isNonEmptyText) || (record.defaultBranchId !== null && !isNonEmptyText(record.defaultBranchId))) return null;
+  return { tenantId: record.tenantId, userId: record.userId, allowedBranchIds: record.allowedBranchIds, defaultBranchId: record.defaultBranchId as string | null };
 }
 
 function parsePayrollSyncAccessToken(payload: unknown): string | null | undefined {

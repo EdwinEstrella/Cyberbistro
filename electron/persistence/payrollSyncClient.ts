@@ -23,6 +23,11 @@ type ClientOverride =
 
 type PushResponse = Awaited<ReturnType<ServerSyncClient["push"]>>;
 
+export interface PayrollAuthorizationContext {
+  tenantId: string;
+  allowedBranchIds: string[];
+}
+
 const FALLBACK_BASE_URL = "https://restaurante.azokia.com";
 const FALLBACK_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3OC0xMjM0LTU2NzgtOTBhYi1jZGVmMTIzNDU2NzgiLCJlbWFpbCI6ImFub25AaW5zZm9yZ2UuY29tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU5NDAxMzF9.OQwbEoWPtw-inbXdU3D7c39RZn3c87FJ-HvMBF_jrn4";
@@ -51,6 +56,22 @@ export class PayrollSyncClient implements ServerSyncClient {
     if (this.config) {
       this.clientPromise = this.createClient(accessToken);
     }
+  }
+
+  async resolveAuthorizationContext(): Promise<PayrollAuthorizationContext> {
+    const client: any = await this.clientPromise;
+    const { data, error } = await client.database.rpc("cloudix_resolve_tenant_memberships", {});
+    if (error) throw new Error(`Payroll authorization lookup failed: ${error.message}`);
+    const rows = Array.isArray(data) ? data : data ? [data] : [];
+    if (rows.length !== 1) throw new Error("Payroll authorization requires exactly one active tenant membership");
+
+    const row = rows[0] as { tenant_id?: unknown; allowed_branch_ids?: unknown };
+    if (typeof row.tenant_id !== "string" || !Array.isArray(row.allowed_branch_ids)) {
+      throw new Error("Payroll authorization response is invalid");
+    }
+    const allowedBranchIds = [...new Set(row.allowed_branch_ids.filter((id): id is string => typeof id === "string" && id.length > 0))];
+    if (allowedBranchIds.length === 0) throw new Error("Payroll authorization has no assigned branches");
+    return { tenantId: row.tenant_id, allowedBranchIds };
   }
 
   async push(operation: DurableOperation): Promise<PushResponse> {

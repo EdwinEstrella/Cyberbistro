@@ -21,6 +21,8 @@ interface TenantUser {
   rol: string;
   nombre: string;
   plan: string;
+  allowedBranchIds: string[];
+  defaultBranchId: string | null;
 }
 
 interface SharedAuthState {
@@ -38,6 +40,8 @@ function rowToTenantUser(data: TenantSessionRow): TenantUser {
     rol: data.rol,
     nombre: data.nombre ?? '',
     plan: data.plan ?? 'basico',
+    allowedBranchIds: data.allowed_branch_ids ?? [],
+    defaultBranchId: data.default_branch_id ?? null,
   };
 }
 
