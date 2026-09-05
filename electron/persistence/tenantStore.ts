@@ -492,6 +492,46 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     ).all(this.tenantId) as Array<Record<string, unknown>>;
   }
 
+  syncCloudCustomers(customers: Array<Record<string, unknown>>): void {
+    const stmt = this.database.prepare(`
+      INSERT INTO customers (id, tenant_id, name, phone, email, document_id, address, notes, created_at, updated_at, deleted_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        phone = excluded.phone,
+        email = excluded.email,
+        document_id = excluded.document_id,
+        address = excluded.address,
+        notes = excluded.notes,
+        created_at = excluded.created_at,
+        updated_at = excluded.updated_at,
+        deleted_at = excluded.deleted_at
+    `);
+    this.database.exec("BEGIN IMMEDIATE;");
+    try {
+      for (const c of customers) {
+        if (!c || typeof c !== "object" || !c.id || !c.name) continue;
+        stmt.run(
+          String(c.id),
+          this.tenantId,
+          String(c.name),
+          c.phone ? String(c.phone) : null,
+          c.email ? String(c.email) : null,
+          c.document_id ? String(c.document_id) : null,
+          c.address ? String(c.address) : null,
+          c.notes ? String(c.notes) : null,
+          c.created_at ? String(c.created_at) : new Date().toISOString(),
+          c.updated_at ? String(c.updated_at) : new Date().toISOString(),
+          c.deleted_at ? String(c.deleted_at) : null
+        );
+      }
+      this.database.exec("COMMIT;");
+    } catch (e) {
+      this.database.exec("ROLLBACK;");
+      throw e;
+    }
+  }
+
   executeCustomerCommand(input: { command: CustomerCommand; commitId: string; branchId: string }): void {
     const { command, commitId, branchId } = input;
     this.database.exec("BEGIN IMMEDIATE;");

@@ -642,6 +642,9 @@ if (gotTheLock) {
         if (!store) return []
         return store.listCustomers()
       },
+      syncCloudCustomers: (customers) => {
+        tenantStoreController?.getActiveStore()?.syncCloudCustomers(customers)
+      },
     })
     registerPayrollRepositoryIpc({
       ipcMain,

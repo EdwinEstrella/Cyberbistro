@@ -30,6 +30,7 @@ export const EXPENSES_LIST_CHANNEL = "expenses:list";
 export const EXPENSE_CATEGORIES_LIST_CHANNEL = "expense-categories:list";
 export const CUSTOMER_REPOSITORY_EXECUTE_CHANNEL = "customer-repository:execute";
 export const CUSTOMERS_LIST_CHANNEL = "customers:list";
+export const CUSTOMERS_SYNC_CLOUD_CHANNEL = "customers:sync-cloud";
 export const SAVED_ACCOUNTS_LIST_CHANNEL = "saved-accounts:list";
 export const SAVED_ACCOUNTS_SAVE_CHANNEL = "saved-accounts:save";
 export const SAVED_ACCOUNTS_CREDENTIAL_CHANNEL = "saved-accounts:credential";
@@ -192,6 +193,7 @@ export function registerCustomerRepositoryIpc(input: {
   isTrustedSender: (event: { senderId: number }) => boolean;
   getRepository: () => { execute(command: CustomerCommand): CustomerRepositoryResult };
   listCustomers?: () => Array<Record<string, unknown>>;
+  syncCloudCustomers?: (customers: Array<Record<string, unknown>>) => void;
 }): void {
   input.ipcMain.removeHandler(CUSTOMER_REPOSITORY_EXECUTE_CHANNEL);
   input.ipcMain.handle(CUSTOMER_REPOSITORY_EXECUTE_CHANNEL, async (event, payload) => {
@@ -205,6 +207,15 @@ export function registerCustomerRepositoryIpc(input: {
   input.ipcMain.handle(CUSTOMERS_LIST_CHANNEL, async (event) => {
     if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
     return { ok: true, data: input.listCustomers?.() ?? [] };
+  });
+
+  input.ipcMain.removeHandler(CUSTOMERS_SYNC_CLOUD_CHANNEL);
+  input.ipcMain.handle(CUSTOMERS_SYNC_CLOUD_CHANNEL, async (event, payload) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    if (Array.isArray(payload)) {
+      input.syncCloudCustomers?.(payload);
+    }
+    return { ok: true };
   });
 }
 

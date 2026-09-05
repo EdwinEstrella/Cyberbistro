@@ -70,6 +70,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   listExpenseCategories: () => ipcRenderer.invoke('expense-categories:list'),
   executeCustomerCommand: (command) => ipcRenderer.invoke('customer-repository:execute', command),
   listCustomers: () => ipcRenderer.invoke('customers:list'),
+  syncCloudCustomers: (customers) => ipcRenderer.invoke('customers:sync-cloud', customers),
   importLegacyIndexedDb: (payload) => ipcRenderer.invoke('tenant-store:import-indexeddb', payload),
   close: () => {
     console.log('preload: close called')

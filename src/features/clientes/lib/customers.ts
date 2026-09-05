@@ -68,11 +68,14 @@ export function customerMatchesSearch(customer: Customer, rawQuery: string) {
 }
 
 export async function listCustomers(tenantId: string): Promise<Customer[]> {
+  let localList: Customer[] = [];
+
+  // 1. Read SQLite immediately
   if (window.electronAPI?.listCustomers) {
     try {
       const response = await window.electronAPI.listCustomers();
       if (response?.ok && Array.isArray(response.data)) {
-        return (response.data as any[])
+        localList = (response.data as any[])
           .map((c) => ({
             id: c.id,
             tenant_id: c.tenant_id ?? tenantId,
@@ -94,22 +97,60 @@ export async function listCustomers(tenantId: string): Promise<Customer[]> {
     }
   }
 
-  if (await shouldReadLocalFirst(tenantId, ["customers"])) {
-    const rows = await readLocalMirror<Customer>(tenantId, "customers");
-    return rows
-      .filter((customer) => customer.tenant_id === tenantId && !customer.deleted_at)
-      .sort((a, b) => a.name.localeCompare(b.name));
+  // 2. If SQLite is empty, check IndexedDB legacy mirror to recover any local customers
+  if (localList.length === 0 && (await shouldReadLocalFirst(tenantId, ["customers"]))) {
+    try {
+      const rows = await readLocalMirror<Customer>(tenantId, "customers");
+      const valid = rows
+        .filter((customer) => customer.tenant_id === tenantId && !customer.deleted_at)
+        .sort((a, b) => a.name.localeCompare(b.name));
+      if (valid.length > 0) {
+        localList = valid;
+        if (window.electronAPI?.syncCloudCustomers) {
+          void window.electronAPI.syncCloudCustomers(valid).catch(() => {});
+        }
+      }
+    } catch (e) {
+      console.warn("[Customers] Error reading IndexedDB fallback:", e);
+    }
   }
 
-  const { data, error } = await insforgeClient.database
-    .from("customers")
-    .select("*")
-    .eq("tenant_id", tenantId)
-    .is("deleted_at", null)
-    .order("name", { ascending: true });
+  // 3. Sync from cloud in the background or if local is empty (WhatsApp style reconciliation)
+  try {
+    const { data: cloudCustomers, error } = await insforgeClient.database
+      .from("customers")
+      .select("*")
+      .eq("tenant_id", tenantId)
+      .is("deleted_at", null)
+      .order("name", { ascending: true });
 
-  if (error) throw error;
-  return (data ?? []) as Customer[];
+    if (!error && cloudCustomers && cloudCustomers.length > 0) {
+      const mappedCloud: Customer[] = cloudCustomers.map((c: any) => ({
+        id: c.id,
+        tenant_id: c.tenant_id,
+        name: c.name,
+        phone: c.phone ?? null,
+        email: c.email ?? null,
+        document_id: c.document_id ?? null,
+        address: c.address ?? null,
+        notes: c.notes ?? null,
+        created_at: c.created_at ?? null,
+        updated_at: c.updated_at ?? null,
+        deleted_at: c.deleted_at ?? null,
+      }));
+
+      // Mirror into local SQLite permanently
+      if (window.electronAPI?.syncCloudCustomers) {
+        void window.electronAPI.syncCloudCustomers(mappedCloud).catch(() => {});
+      }
+
+      return mappedCloud;
+    }
+  } catch (e) {
+    console.warn("[Customers] Cloud sync skipped (offline):", e);
+  }
+
+  return localList;
 }
 
 export async function createCustomer(tenantId: string, input: CustomerFormInput): Promise<Customer> {
