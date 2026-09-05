@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, ReceiptText, RefreshCw, Sparkles, Tag, Trash2, WalletCards } from "lucide-react";
 import { insforgeClient } from "../../../shared/lib/insforge";
 import { useAuth } from "../../../shared/hooks/useAuth";
+import { useSucursal } from "../../../app/context/SucursalContext";
 import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { ConfirmModal } from "../../../shared/components/ConfirmModal";
 
@@ -104,6 +105,7 @@ function formatDateTime(iso: string): string {
 
 export function Gastos() {
   const { tenantId, user, loading: authLoading } = useAuth();
+  const { activeSucursalId } = useSucursal();
   const [categorias, setCategorias] = useState<CategoriaGasto[]>([]);
   const [gastos, setGastos] = useState<GastoRow[]>([]);
   const [cicloAbierto, setCicloAbierto] = useState<CicloAbierto | null>(null);
@@ -142,29 +144,69 @@ export function Gastos() {
     setMessage("");
 
     try {
-      const [useLocalCategorias, useLocalGastos, useLocalCiclos] = await Promise.all([
-        shouldReadLocalFirst(tenantId, ["gasto_categorias"]),
-        shouldReadLocalFirst(tenantId, ["gastos"]),
-        shouldReadLocalFirst(tenantId, ["cierres_operativos"]),
-      ]);
+      let loadedFromElectron = false;
+      if (window.electronAPI?.listExpenses && window.electronAPI?.listExpenseCategories) {
+        try {
+          const [catsRes, expRes] = await Promise.all([
+            window.electronAPI.listExpenseCategories(),
+            window.electronAPI.listExpenses({ sucursalId: activeSucursalId || undefined, limit: 80 }),
+          ]);
+          if (catsRes?.ok && expRes?.ok && Array.isArray(catsRes.data) && Array.isArray(expRes.data)) {
+            const mappedCats: CategoriaGasto[] = catsRes.data.map((c: any) => ({
+              id: c.id,
+              nombre: c.nombre ?? c.name,
+              descripcion: c.descripcion ?? c.description ?? null,
+              color: c.color ?? "#ff906d",
+              activa: Boolean(c.activa ?? c.active ?? true),
+            }));
+            const mappedGastos: GastoRow[] = expRes.data.map((g: any) => ({
+              id: g.id,
+              tenant_id: g.tenant_id,
+              category_id: g.category_id,
+              cycle_id: g.cycle_id,
+              descripcion: g.description ?? g.descripcion,
+              description: g.description ?? g.descripcion,
+              proveedor: g.supplier ?? g.proveedor,
+              monto: g.amount ?? (g.amount_cents ? g.amount_cents / 100 : 0),
+              amount: g.amount ?? (g.amount_cents ? g.amount_cents / 100 : 0),
+              metodo_pago: g.payment_method ?? g.metodo_pago,
+              fecha_gasto: g.expense_date ?? g.fecha_gasto,
+              notas: g.notes ?? g.notas,
+            }));
+            setCategorias(mappedCats.filter((c) => c.activa));
+            setGastos(mappedGastos);
+            loadedFromElectron = true;
+          }
+        } catch (e) {
+          console.warn("[Gastos] SQLite load failed, falling back:", e);
+        }
+      }
 
-      const [categoriasData, gastosData, ciclosData] = await Promise.all([
-        useLocalCategorias
-          ? readLocalMirror<CategoriaGasto>(tenantId, "gasto_categorias")
-          : insforgeClient.database.from("gasto_categorias").select("id, nombre, descripcion, color, activa").eq("tenant_id", tenantId).eq("activa", true).order("nombre", { ascending: true }).then(r => r.data ?? []),
-        useLocalGastos
-          ? readLocalMirror<GastoRow>(tenantId, "gastos")
-          : insforgeClient.database.from("gastos").select("*").eq("tenant_id", tenantId).order("fecha_gasto", { ascending: false }).limit(80).then(r => r.data ?? []),
-        useLocalCiclos
-          ? readLocalMirror<CicloAbierto>(tenantId, "cierres_operativos")
-          : insforgeClient.database.from("cierres_operativos").select("id, cycle_number, opened_at, closed_at").eq("tenant_id", tenantId).is("closed_at", null).order("opened_at", { ascending: false }).limit(1).then(r => r.data ?? []),
-      ]);
+      if (!loadedFromElectron) {
+        const [useLocalCategorias, useLocalGastos] = await Promise.all([
+          shouldReadLocalFirst(tenantId, ["gasto_categorias"]),
+          shouldReadLocalFirst(tenantId, ["gastos"]),
+        ]);
 
-      setCategorias(useLocalCategorias ? (categoriasData as CategoriaGasto[]).filter(c => c.activa) : (categoriasData as CategoriaGasto[]));
-      
-      const gList = useLocalGastos ? (gastosData as GastoRow[]).sort((a, b) => new Date(b.fecha_gasto).getTime() - new Date(a.fecha_gasto).getTime()).slice(0, 80) : (gastosData as GastoRow[]);
-      setGastos(gList);
-      
+        const [categoriasData, gastosData] = await Promise.all([
+          useLocalCategorias
+            ? readLocalMirror<CategoriaGasto>(tenantId, "gasto_categorias")
+            : insforgeClient.database.from("gasto_categorias").select("id, nombre, descripcion, color, activa").eq("tenant_id", tenantId).eq("activa", true).order("nombre", { ascending: true }).then(r => r.data ?? []),
+          useLocalGastos
+            ? readLocalMirror<GastoRow>(tenantId, "gastos")
+            : insforgeClient.database.from("gastos").select("*").eq("tenant_id", tenantId).order("fecha_gasto", { ascending: false }).limit(80).then(r => r.data ?? []),
+        ]);
+
+        setCategorias(useLocalCategorias ? (categoriasData as CategoriaGasto[]).filter(c => c.activa) : (categoriasData as CategoriaGasto[]));
+        const gList = useLocalGastos ? (gastosData as GastoRow[]).sort((a, b) => new Date(b.fecha_gasto).getTime() - new Date(a.fecha_gasto).getTime()).slice(0, 80) : (gastosData as GastoRow[]);
+        setGastos(gList);
+      }
+
+      const useLocalCiclos = await shouldReadLocalFirst(tenantId, ["cierres_operativos"]);
+      const ciclosData = useLocalCiclos
+        ? await readLocalMirror<CicloAbierto>(tenantId, "cierres_operativos")
+        : await insforgeClient.database.from("cierres_operativos").select("id, cycle_number, opened_at, closed_at").eq("tenant_id", tenantId).is("closed_at", null).order("opened_at", { ascending: false }).limit(1).then(r => r.data ?? []);
+
       const openCycle = useLocalCiclos ? (ciclosData as any[]).filter(c => !c.closed_at).sort((a, b) => new Date(b.opened_at).getTime() - new Date(a.opened_at).getTime())[0] ?? null : (ciclosData as any[])[0] ?? null;
       setCicloAbierto(openCycle);
     } catch (err: any) {
@@ -172,7 +214,7 @@ export function Gastos() {
     }
 
     setLoading(false);
-  }, [tenantId]);
+  }, [tenantId, activeSucursalId]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -215,14 +257,24 @@ export function Gastos() {
     setMessage("");
     try {
       const id = crypto.randomUUID();
-      await enqueueLocalWrite({
-        tenantId,
-        tableName: "gasto_categorias",
-        rowId: id,
-        op: "insert",
-        payload: { id, tenant_id: tenantId, nombre, descripcion: categoriaForm.descripcion.trim() || null, color: categoriaForm.color, activa: true },
-        deviceId: await getDeviceId(),
-      });
+      if (window.electronAPI?.executeExpenseCommand) {
+        await window.electronAPI.executeExpenseCommand({
+          type: "expense.category.create",
+          id,
+          name: nombre,
+          description: categoriaForm.descripcion.trim() || null,
+          color: categoriaForm.color,
+        });
+      } else {
+        await enqueueLocalWrite({
+          tenantId,
+          tableName: "gasto_categorias",
+          rowId: id,
+          op: "insert",
+          payload: { id, tenant_id: tenantId, nombre, descripcion: categoriaForm.descripcion.trim() || null, color: categoriaForm.color, activa: true },
+          deviceId: await getDeviceId(),
+        });
+      }
       setCategoriaForm({ nombre: "", descripcion: "", color: "#ff906d" });
       await cargar();
     } catch (err: any) {
@@ -237,14 +289,24 @@ export function Gastos() {
     setMessage("");
     try {
       const id = crypto.randomUUID();
-      await enqueueLocalWrite({
-        tenantId,
-        tableName: "gasto_categorias",
-        rowId: id,
-        op: "insert",
-        payload: { id, tenant_id: tenantId, nombre: cat.nombre, descripcion: cat.descripcion, color: cat.color, activa: true },
-        deviceId: await getDeviceId(),
-      });
+      if (window.electronAPI?.executeExpenseCommand) {
+        await window.electronAPI.executeExpenseCommand({
+          type: "expense.category.create",
+          id,
+          name: cat.nombre,
+          description: cat.descripcion,
+          color: cat.color,
+        });
+      } else {
+        await enqueueLocalWrite({
+          tenantId,
+          tableName: "gasto_categorias",
+          rowId: id,
+          op: "insert",
+          payload: { id, tenant_id: tenantId, nombre: cat.nombre, descripcion: cat.descripcion, color: cat.color, activa: true },
+          deviceId: await getDeviceId(),
+        });
+      }
       await cargar();
     } catch (err: any) {
       setMessage(err.message);
@@ -283,13 +345,20 @@ export function Gastos() {
         onConfirm: async () => {
           setConfirmState(s => ({ ...s, open: false }));
           try {
-            await enqueueLocalWrite({
-              tenantId,
-              tableName: "gasto_categorias",
-              rowId: cat.id,
-              op: "delete",
-              deviceId: await getDeviceId(),
-            });
+            if (window.electronAPI?.executeExpenseCommand) {
+              await window.electronAPI.executeExpenseCommand({
+                type: "expense.category.delete",
+                id: cat.id,
+              });
+            } else {
+              await enqueueLocalWrite({
+                tenantId,
+                tableName: "gasto_categorias",
+                rowId: cat.id,
+                op: "delete",
+                deviceId: await getDeviceId(),
+              });
+            }
             await cargar();
             setMessage(`Categoría "${cat.nombre}" eliminada.`);
           } catch (err: any) {
@@ -323,26 +392,42 @@ export function Gastos() {
     setMessage("");
     try {
       const id = crypto.randomUUID();
-      await enqueueLocalWrite({
-        tenantId,
-        tableName: "gastos",
-        rowId: id,
-        op: "insert",
-        payload: {
+      if (window.electronAPI?.executeExpenseCommand) {
+        await window.electronAPI.executeExpenseCommand({
+          type: "expense.create",
           id,
-          tenant_id: tenantId,
-          category_id: gastoForm.category_id || null,
-          cycle_id: cicloAbierto.id,
-          descripcion,
-          proveedor: gastoForm.proveedor.trim() || null,
-          monto,
-          metodo_pago: gastoForm.metodo_pago || null,
-          fecha_gasto: new Date(gastoForm.fecha_gasto).toISOString(),
-          notas: gastoForm.notas.trim() || null,
-          created_by_auth_user_id: user?.id ?? null,
-        },
-        deviceId: await getDeviceId(),
-      });
+          categoryId: gastoForm.category_id || null,
+          cycleId: cicloAbierto.id,
+          description: descripcion,
+          supplier: gastoForm.proveedor.trim() || null,
+          amount: monto,
+          paymentMethod: gastoForm.metodo_pago || "cash",
+          expenseDate: new Date(gastoForm.fecha_gasto).toISOString(),
+          notes: gastoForm.notas.trim() || null,
+        });
+      } else {
+        await enqueueLocalWrite({
+          tenantId,
+          tableName: "gastos",
+          rowId: id,
+          op: "insert",
+          payload: {
+            id,
+            tenant_id: tenantId,
+            category_id: gastoForm.category_id || null,
+            cycle_id: cicloAbierto.id,
+            descripcion,
+            proveedor: gastoForm.proveedor.trim() || null,
+            monto,
+            metodo_pago: gastoForm.metodo_pago || null,
+            fecha_gasto: new Date(gastoForm.fecha_gasto).toISOString(),
+            notas: gastoForm.notas.trim() || null,
+            created_by_auth_user_id: user?.id ?? null,
+            sucursal_id: activeSucursalId || null,
+          },
+          deviceId: await getDeviceId(),
+        });
+      }
       setGastoForm({
         descripcion: "",
         monto: "",
@@ -371,13 +456,20 @@ export function Gastos() {
         setSaving(true);
         setMessage("");
         try {
-          await enqueueLocalWrite({
-            tenantId: tenantId!,
-            tableName: "gastos",
-            rowId: gasto.id,
-            op: "delete",
-            deviceId: await getDeviceId(),
-          });
+          if (window.electronAPI?.executeExpenseCommand) {
+            await window.electronAPI.executeExpenseCommand({
+              type: "expense.delete",
+              id: gasto.id,
+            });
+          } else {
+            await enqueueLocalWrite({
+              tenantId: tenantId!,
+              tableName: "gastos",
+              rowId: gasto.id,
+              op: "delete",
+              deviceId: await getDeviceId(),
+            });
+          }
           await cargar();
         } catch (err: any) {
           setMessage(err.message);

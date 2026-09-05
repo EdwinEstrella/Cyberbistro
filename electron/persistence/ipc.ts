@@ -11,6 +11,7 @@ import type { SalesFiscalCommand, SalesFiscalRepositoryResult } from "./salesFis
 import type { CashPurchaseCommand, CashPurchaseRepositoryResult } from "./cashPurchaseRepository";
 import type { ReceivablesCommand, ReceivablesRepositoryResult } from "./receivablesRepository";
 import type { PayablesCommand, PayablesRepositoryResult } from "./payablesRepository";
+import type { ExpenseCommand, ExpenseRepositoryResult } from "./expenseRepository";
 
 export const TENANT_STORE_STATUS_CHANNEL = "tenant-store:status";
 export const TENANT_STORE_IMPORT_CHANNEL = "tenant-store:import-indexeddb";
@@ -23,6 +24,9 @@ export const PAYROLL_REPOSITORY_EXECUTE_CHANNEL = "payroll-repository:execute";
 export const PAYROLL_SYNC_ACCESS_TOKEN_CHANNEL = "payroll-sync:set-access-token";
 export const RECEIVABLES_REPOSITORY_EXECUTE_CHANNEL = "receivables-repository:execute";
 export const PAYABLES_REPOSITORY_EXECUTE_CHANNEL = "payables-repository:execute";
+export const EXPENSE_REPOSITORY_EXECUTE_CHANNEL = "expense-repository:execute";
+export const EXPENSES_LIST_CHANNEL = "expenses:list";
+export const EXPENSE_CATEGORIES_LIST_CHANNEL = "expense-categories:list";
 export const SAVED_ACCOUNTS_LIST_CHANNEL = "saved-accounts:list";
 export const SAVED_ACCOUNTS_SAVE_CHANNEL = "saved-accounts:save";
 export const SAVED_ACCOUNTS_CREDENTIAL_CHANNEL = "saved-accounts:credential";
@@ -32,6 +36,7 @@ export const DEVICE_SESSION_PREFERENCE_READ_CHANNEL = "device-session:read-prefe
 
 export interface ReceivablesRepositoryIpcMain { handle(channel: string, handler: (event: { senderId: number }, payload?: unknown) => unknown): void; removeHandler(channel: string): void; }
 export interface PayablesRepositoryIpcMain { handle(channel: string, handler: (event: { senderId: number }, payload?: unknown) => unknown): void; removeHandler(channel: string): void; }
+export interface ExpenseRepositoryIpcMain { handle(channel: string, handler: (event: { senderId: number }, payload?: unknown) => unknown): void; removeHandler(channel: string): void; }
 
 export interface TenantStoreIpcMain {
   handle(channel: string, handler: (event: { senderId: number }, payload?: unknown) => unknown): void;
@@ -150,10 +155,38 @@ export function registerPayablesRepositoryIpc(input: { ipcMain: PayablesReposito
   });
 }
 
+export function registerExpenseRepositoryIpc(input: {
+  ipcMain: ExpenseRepositoryIpcMain;
+  isTrustedSender: (event: { senderId: number }) => boolean;
+  getRepository: () => { execute(command: ExpenseCommand): ExpenseRepositoryResult };
+  listExpenses?: (filter?: { sucursalId?: string; limit?: number }) => Array<Record<string, unknown>>;
+  listCategories?: () => Array<Record<string, unknown>>;
+}): void {
+  input.ipcMain.removeHandler(EXPENSE_REPOSITORY_EXECUTE_CHANNEL);
+  input.ipcMain.handle(EXPENSE_REPOSITORY_EXECUTE_CHANNEL, async (event, payload) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    const command = parseExpenseCommand(payload);
+    if (!command) throw new Error("Invalid expense command");
+    return { ok: true, data: input.getRepository().execute(command) };
+  });
+
+  input.ipcMain.removeHandler(EXPENSES_LIST_CHANNEL);
+  input.ipcMain.handle(EXPENSES_LIST_CHANNEL, async (event, filter) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    return { ok: true, data: input.listExpenses?.(filter as any) ?? [] };
+  });
+
+  input.ipcMain.removeHandler(EXPENSE_CATEGORIES_LIST_CHANNEL);
+  input.ipcMain.handle(EXPENSE_CATEGORIES_LIST_CHANNEL, async (event) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    return { ok: true, data: input.listCategories?.() ?? [] };
+  });
+}
+
 export function registerPayrollRepositoryIpc(input: {
   ipcMain: PayrollRepositoryIpcMain;
   isTrustedSender: (event: { senderId: number }) => boolean;
-  getAuthorizationContext: () => PayrollAuthorizationContext | null;
+  getAuthorizationContext: (tenantId?: string) => PayrollAuthorizationContext | null;
   executeCommand: (command: PayrollCommand) => Promise<unknown>;
 }): void {
   input.ipcMain.removeHandler(PAYROLL_REPOSITORY_EXECUTE_CHANNEL);
@@ -161,7 +194,7 @@ export function registerPayrollRepositoryIpc(input: {
     if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
     const command = parsePayrollCommand(payload);
     if (!command) throw new Error("Invalid payroll command");
-    authorizePayrollCommand(input.getAuthorizationContext(), command);
+    authorizePayrollCommand(input.getAuthorizationContext(command.tenantId), command);
     return { ok: true, data: await input.executeCommand(command) };
   });
 }
@@ -365,6 +398,52 @@ function parsePayablesCommand(payload: unknown): PayablesCommand | null {
     if (typeof command.amount !== "number" || !Number.isFinite(command.amount) || command.amount <= 0) return null;
     return command as PayablesCommand;
   }
+  return null;
+}
+
+function parseExpenseCommand(payload: unknown): ExpenseCommand | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const p = payload as Record<string, unknown>;
+  const text = (val: unknown) => typeof val === "string" && val.trim().length > 0 && val.length <= 512;
+
+  if (p.type === "expense.create") {
+    if (!text(p.id) || !text(p.description)) return null;
+    if (typeof p.amount !== "number" || !Number.isFinite(p.amount) || p.amount <= 0) return null;
+    return {
+      type: "expense.create",
+      id: String(p.id).trim(),
+      categoryId: typeof p.categoryId === "string" && p.categoryId.trim() ? p.categoryId.trim() : null,
+      cycleId: typeof p.cycleId === "string" && p.cycleId.trim() ? p.cycleId.trim() : null,
+      description: String(p.description).trim(),
+      supplier: typeof p.supplier === "string" && p.supplier.trim() ? p.supplier.trim() : null,
+      amount: p.amount,
+      paymentMethod: typeof p.paymentMethod === "string" && p.paymentMethod.trim() ? p.paymentMethod.trim() : "cash",
+      expenseDate: typeof p.expenseDate === "string" && p.expenseDate.trim() ? p.expenseDate.trim() : undefined,
+      notes: typeof p.notes === "string" && p.notes.trim() ? p.notes.trim() : null,
+    };
+  }
+
+  if (p.type === "expense.delete") {
+    if (!text(p.id)) return null;
+    return { type: "expense.delete", id: String(p.id).trim() };
+  }
+
+  if (p.type === "expense.category.create") {
+    if (!text(p.id) || !text(p.name)) return null;
+    return {
+      type: "expense.category.create",
+      id: String(p.id).trim(),
+      name: String(p.name).trim(),
+      description: typeof p.description === "string" && p.description.trim() ? p.description.trim() : null,
+      color: typeof p.color === "string" && p.color.trim() ? p.color.trim() : "#ff906d",
+    };
+  }
+
+  if (p.type === "expense.category.delete") {
+    if (!text(p.id)) return null;
+    return { type: "expense.category.delete", id: String(p.id).trim() };
+  }
+
   return null;
 }
 

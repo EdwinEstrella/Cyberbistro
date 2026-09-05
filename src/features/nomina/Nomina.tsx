@@ -225,6 +225,14 @@ export function Nomina() {
           });
           if (result.type === "payroll.employees") {
             localEmployees = result.employees;
+            if (localEmployees.length > 0) {
+              setEmployees(localEmployees);
+              setLoading(false);
+              if (!selectedEmployeeId) {
+                const firstActive = localEmployees.find((e) => e.isActive) ?? localEmployees[0];
+                if (firstActive) setSelectedEmployeeId(firstActive.id);
+              }
+            }
           }
         } catch (e) {
           console.warn("[Nomina] Error getting local employees:", e);
@@ -320,6 +328,10 @@ export function Nomina() {
           });
           if (result.type === "payroll.payments") {
             localPayments = result.payments;
+            if (localPayments.length > 0) {
+              setPayments(localPayments);
+              setLoadingPayments(false);
+            }
           }
         } catch (e) {
           console.warn("[Nomina] Error cargando pagos locales:", e);

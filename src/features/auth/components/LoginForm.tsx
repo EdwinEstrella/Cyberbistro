@@ -199,35 +199,71 @@ export function Login() {
   }, []);
 
   useEffect(() => {
-    try {
-      const remembered = consumeRememberedLogin(localStorage, REMEMBER_LOGIN_KEY);
-      // The old payload could contain a password. It is removed before any UI state is hydrated.
-      if (remembered.email) setEmail(remembered.email);
-    } catch {
-      localStorage.removeItem(REMEMBER_LOGIN_KEY);
-    }
     const listSavedAccounts = window.electronAPI?.listSavedAccounts;
-    if (!listSavedAccounts) return;
-    void listSavedAccounts().then((response) => {
-      setSecureStorageAvailable(response.data.encryptionAvailable);
-      setSavedAccounts(response.data.accounts);
-    }).catch(() => setSecureStorageAvailable(false));
+    if (listSavedAccounts) {
+      void listSavedAccounts().then(async (response) => {
+        const available = Boolean(response?.data?.encryptionAvailable);
+        setSecureStorageAvailable(available);
+        const accounts = response?.data?.accounts ?? [];
+        setSavedAccounts(accounts);
+        if (accounts.length > 0) {
+          const latestAccount = accounts[0];
+          setSavedAccountId(latestAccount.id);
+          setEmail(latestAccount.email);
+          setRememberLogin(true);
+          if (latestAccount.hasPassword && window.electronAPI?.getSavedAccountCredential) {
+            try {
+              const cred = await window.electronAPI.getSavedAccountCredential(latestAccount.id);
+              if (cred?.data?.password) {
+                setPassword(cred.data.password);
+              }
+            } catch (e) {
+              console.warn("[LoginForm] Error auto-filling saved account password:", e);
+            }
+          }
+        }
+      }).catch(() => setSecureStorageAvailable(false));
+    } else {
+      try {
+        const remembered = consumeRememberedLogin(localStorage, REMEMBER_LOGIN_KEY);
+        if (remembered.email) {
+          setEmail(remembered.email);
+          setRememberLogin(true);
+        }
+      } catch {
+        localStorage.removeItem(REMEMBER_LOGIN_KEY);
+      }
+    }
   }, []);
 
   const selectSavedAccount = useCallback(async (id: string) => {
     setSavedAccountId(id);
+    if (!id) {
+      setEmail("");
+      setPassword("");
+      setRememberLogin(false);
+      return;
+    }
     const account = savedAccounts.find((item) => item.id === id);
     if (!account) return;
     setEmail(account.email);
     setPassword("");
+    setRememberLogin(true);
     const response = await window.electronAPI?.getSavedAccountCredential?.(id);
-    if (response?.data?.password) setPassword(response.data.password);
+    if (response?.data?.password) {
+      setPassword(response.data.password);
+    }
   }, [savedAccounts]);
 
   const deleteSavedAccount = useCallback(async (id: string) => {
     await window.electronAPI?.deleteSavedAccount?.(id);
     setSavedAccounts((accounts) => accounts.filter((account) => account.id !== id));
-    if (savedAccountId === id) setSavedAccountId("");
+    if (savedAccountId === id) {
+      setSavedAccountId("");
+      setEmail("");
+      setPassword("");
+      setRememberLogin(false);
+    }
   }, [savedAccountId]);
 
   // Move interaction logic to event handler (Vercel best practice)
@@ -556,7 +592,7 @@ export function Login() {
                   >
                     <span className={`h-1.5 w-1.5 rounded-full transition-all duration-300 ${rememberLogin && secureStorageAvailable ? "bg-[#ff906d] shadow-[0px_0px_8px_0px_rgba(255,144,109,0.9)]" : "bg-[#4a4a4a]"}`} />
                     <span className="font-['Inter',sans-serif] text-[10px] uppercase tracking-[0.18em] text-[#8a8a8a]">
-                      {secureStorageAvailable ? "seguro" : "no disponible"}
+                      {secureStorageAvailable ? "local seguro" : "no disponible"}
                     </span>
                   </div>
                 </label>

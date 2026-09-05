@@ -163,7 +163,10 @@ function mapDeleteOperation(operation: DurableOperation):
   | { ok: true; remoteTable: string }
   | { ok: false; error: Record<string, unknown> & { reason: string; retryable: false } } {
   if (operation.tableName === "gastos") {
-    return mapPayrollExpenseTable(operation);
+    return { ok: true, remoteTable: "gastos" };
+  }
+  if (operation.tableName === "gasto_categorias") {
+    return { ok: true, remoteTable: "gasto_categorias" };
   }
 
   const remoteTable = PAYROLL_TABLES[operation.tableName];
@@ -189,12 +192,17 @@ function mapOperation(operation: DurableOperation):
         return { ok: true, remoteTable: "nomina_pagos", payload: mapPaymentPayload(operation, operation.payload) };
       case "payroll_payment_adjustments":
         return { ok: true, remoteTable: "nomina_ajustes", payload: mapAdjustmentPayload(operation, operation.payload) };
+      case "gasto_categorias":
+        return { ok: true, remoteTable: "gasto_categorias", payload: mapCategoryPayload(operation, operation.payload) };
       case "gastos": {
-        const tableResult = mapPayrollExpenseTable(operation);
-        if (!tableResult.ok) {
-          return tableResult;
+        if (operation.payload.expenseType === "payroll") {
+          const tableResult = mapPayrollExpenseTable(operation);
+          if (!tableResult.ok) {
+            return tableResult;
+          }
+          return { ok: true, remoteTable: tableResult.remoteTable, payload: mapPayrollExpensePayload(operation, operation.payload) };
         }
-        return { ok: true, remoteTable: tableResult.remoteTable, payload: mapPayrollExpensePayload(operation, operation.payload) };
+        return { ok: true, remoteTable: "gastos", payload: mapGeneralExpensePayload(operation, operation.payload) };
       }
       default:
         return { ok: false, error: permanentReason(`Unsupported payroll sync table: ${operation.tableName}`, "unsupported_table", operation.tableName) };
@@ -276,6 +284,34 @@ function mapPayrollExpensePayload(operation: DurableOperation, payload: Record<s
     fecha_gasto: requireString(payload.recordedAt, "gastos.recordedAt"),
     payroll_payment_id: payrollPaymentId,
     payroll_sync_status: requireString(payload.localStatus, "gastos.localStatus"),
+  };
+}
+
+function mapGeneralExpensePayload(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
+  const amount = typeof payload.amount === "number" ? payload.amount : Number(payload.amount ?? 0);
+  return {
+    id: operation.rowId,
+    tenant_id: operation.tenantId,
+    sucursal_id: payload.sucursalId ? String(payload.sucursalId) : null,
+    category_id: payload.categoryId ? String(payload.categoryId) : null,
+    cycle_id: payload.cycleId ? String(payload.cycleId) : null,
+    descripcion: typeof payload.description === "string" ? payload.description : "Gasto operacional",
+    proveedor: payload.supplier ? String(payload.supplier) : null,
+    monto: amount,
+    metodo_pago: payload.paymentMethod ? String(payload.paymentMethod) : "cash",
+    fecha_gasto: payload.expenseDate ? String(payload.expenseDate) : new Date().toISOString(),
+    notas: payload.notes ? String(payload.notes) : null,
+  };
+}
+
+function mapCategoryPayload(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: operation.rowId,
+    tenant_id: operation.tenantId,
+    nombre: typeof payload.name === "string" ? payload.name : "Categoría",
+    descripcion: payload.description ? String(payload.description) : null,
+    color: payload.color ? String(payload.color) : "#ff906d",
+    activa: payload.active !== false,
   };
 }
 

@@ -34,11 +34,11 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
       SET status = 'pending', error_json = NULL
       WHERE tenant_id = ?
         AND (
-          table_name IN ('payroll_employees', 'payroll_payments', 'payroll_payment_adjustments')
+          table_name IN ('payroll_employees', 'payroll_payments', 'payroll_payment_adjustments', 'gasto_categorias')
           OR (
             table_name = 'gastos'
             AND json_valid(payload_json) = 1
-            AND json_extract(payload_json, '$.expenseType') = 'payroll'
+            AND json_extract(payload_json, '$.expenseType') IN ('payroll', 'operational')
           )
         )
     `).run(this.tenantId);
@@ -77,11 +77,11 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
             OR COALESCE(json_extract(error_json, '$.retryable'), 1) = 1
           )
           AND (
-            table_name IN ('payroll_employees', 'payroll_payments', 'payroll_payment_adjustments')
+            table_name IN ('payroll_employees', 'payroll_payments', 'payroll_payment_adjustments', 'gasto_categorias')
             OR (
               table_name = 'gastos'
               AND json_valid(payload_json) = 1
-              AND json_extract(payload_json, '$.expenseType') = 'payroll'
+              AND json_extract(payload_json, '$.expenseType') IN ('payroll', 'operational')
             )
           )
         ORDER BY rowid ASC
@@ -206,8 +206,11 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
 }
 
 function isClaimablePayrollRow(tableName: string, payload: unknown): boolean {
+  if (tableName === "gasto_categorias") return true;
   if (tableName !== "gastos") return true;
-  return !!payload && typeof payload === "object" && (payload as Record<string, unknown>).expenseType === "payroll";
+  if (!payload || typeof payload !== "object") return false;
+  const expenseType = (payload as Record<string, unknown>).expenseType;
+  return expenseType === "payroll" || expenseType === "operational";
 }
 
 function safeParseJson(raw: string | null): { ok: true; value: unknown } | { ok: false; error: string } {

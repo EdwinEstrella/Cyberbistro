@@ -11,8 +11,9 @@ import type { SalesFiscalCommand, SalesFiscalRepositoryStore } from "./salesFisc
 import type { CashPurchaseCommand, CashPurchaseRepositoryStore } from "./cashPurchaseRepository";
 import type { ReceivablesCommand, ReceivablesRepositoryStore } from "./receivablesRepository";
 import type { PayablesCommand, PayablesRepositoryStore } from "./payablesRepository";
+import type { ExpenseCommand, ExpenseRepositoryStore } from "./expenseRepository";
 
-export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositoryStore, CashPurchaseRepositoryStore, ReceivablesRepositoryStore, PayablesRepositoryStore {
+export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositoryStore, CashPurchaseRepositoryStore, ReceivablesRepositoryStore, PayablesRepositoryStore, ExpenseRepositoryStore {
   private constructor(
     private readonly database: DatabaseSync,
     private readonly databasePath: string,
@@ -329,6 +330,154 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
         this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, ?, ?, 'upsert', ?, 'pending')")
           .run(`${commitId}:cxp-payment`, this.tenantId, branchId, "cxp_pagos", command.paymentId, JSON.stringify(command));
       }
+      this.database.exec("COMMIT;");
+    } catch (error) {
+      this.database.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
+  listExpenses(filter?: { sucursalId?: string; limit?: number }): Array<Record<string, unknown>> {
+    const limit = filter?.limit ?? 100;
+    if (filter?.sucursalId) {
+      return this.database.prepare(
+        "SELECT * FROM gastos WHERE tenant_id = ? AND sucursal_id = ? ORDER BY expense_date DESC LIMIT ?"
+      ).all(this.tenantId, filter.sucursalId, limit) as Array<Record<string, unknown>>;
+    }
+    return this.database.prepare(
+      "SELECT * FROM gastos WHERE tenant_id = ? ORDER BY expense_date DESC LIMIT ?"
+    ).all(this.tenantId, limit) as Array<Record<string, unknown>>;
+  }
+
+  listExpenseCategories(): Array<Record<string, unknown>> {
+    return this.database.prepare(
+      "SELECT id, name AS nombre, description AS descripcion, color, active AS activa FROM gasto_categorias WHERE tenant_id = ? AND active = 1 ORDER BY name ASC"
+    ).all(this.tenantId) as Array<Record<string, unknown>>;
+  }
+
+  executeExpenseCommand(input: { command: ExpenseCommand; commitId: string; branchId: string }): void {
+    const { command, commitId, branchId } = input;
+    this.database.exec("BEGIN IMMEDIATE;");
+    try {
+      this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(branchId, this.tenantId, "Principal");
+
+      switch (command.type) {
+        case "expense.create": {
+          const expenseDate = command.expenseDate ?? new Date().toISOString();
+          this.database.prepare(`
+            INSERT INTO gastos (
+              id, tenant_id, sucursal_id, category_id, cycle_id,
+              expense_type, payment_method, amount, local_status,
+              description, supplier, notes, expense_date
+            ) VALUES (?, ?, ?, ?, ?, 'operational', ?, ?, 'pending_sync', ?, ?, ?, ?)
+          `).run(
+            command.id,
+            this.tenantId,
+            branchId,
+            command.categoryId ?? null,
+            command.cycleId ?? null,
+            command.paymentMethod ?? "cash",
+            command.amount,
+            command.description,
+            command.supplier ?? null,
+            command.notes ?? null,
+            expenseDate
+          );
+
+          this.database.prepare(
+            "INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, ?, ?, 'upsert', ?, 'pending')"
+          ).run(
+            `${commitId}:expense-create`,
+            this.tenantId,
+            branchId,
+            "gastos",
+            command.id,
+            JSON.stringify({
+              id: command.id,
+              tenantId: this.tenantId,
+              sucursalId: branchId,
+              categoryId: command.categoryId ?? null,
+              cycleId: command.cycleId ?? null,
+              description: command.description,
+              supplier: command.supplier ?? null,
+              amount: command.amount,
+              paymentMethod: command.paymentMethod ?? "cash",
+              expenseDate,
+              notes: command.notes ?? null,
+              expenseType: "operational",
+            })
+          );
+          break;
+        }
+
+        case "expense.delete": {
+          this.database.prepare("DELETE FROM gastos WHERE id = ? AND tenant_id = ?").run(command.id, this.tenantId);
+          this.database.prepare(
+            "INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, ?, ?, 'delete', ?, 'pending')"
+          ).run(
+            `${commitId}:expense-delete`,
+            this.tenantId,
+            branchId,
+            "gastos",
+            command.id,
+            JSON.stringify({ id: command.id, tenantId: this.tenantId, sucursalId: branchId })
+          );
+          break;
+        }
+
+        case "expense.category.create": {
+          this.database.prepare(`
+            INSERT INTO gasto_categorias (id, tenant_id, name, description, color, active)
+            VALUES (?, ?, ?, ?, ?, 1)
+            ON CONFLICT(id) DO UPDATE SET
+              name = excluded.name,
+              description = excluded.description,
+              color = excluded.color,
+              active = 1
+          `).run(
+            command.id,
+            this.tenantId,
+            command.name,
+            command.description ?? null,
+            command.color ?? "#ff906d"
+          );
+
+          this.database.prepare(
+            "INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, ?, ?, 'upsert', ?, 'pending')"
+          ).run(
+            `${commitId}:category-create`,
+            this.tenantId,
+            branchId,
+            "gasto_categorias",
+            command.id,
+            JSON.stringify({
+              id: command.id,
+              tenantId: this.tenantId,
+              name: command.name,
+              description: command.description ?? null,
+              color: command.color ?? "#ff906d",
+              active: true,
+            })
+          );
+          break;
+        }
+
+        case "expense.category.delete": {
+          this.database.prepare("UPDATE gasto_categorias SET active = 0 WHERE id = ? AND tenant_id = ?").run(command.id, this.tenantId);
+          this.database.prepare(
+            "INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, ?, ?, 'delete', ?, 'pending')"
+          ).run(
+            `${commitId}:category-delete`,
+            this.tenantId,
+            branchId,
+            "gasto_categorias",
+            command.id,
+            JSON.stringify({ id: command.id, tenantId: this.tenantId, active: false })
+          );
+          break;
+        }
+      }
+
       this.database.exec("COMMIT;");
     } catch (error) {
       this.database.exec("ROLLBACK;");

@@ -6,7 +6,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setupAutoUpdater } from './autoUpdater'
 import { startLanEdgeServer, type LanEdgeServerHandle } from './lanEdgeServer'
-import { registerCashPurchaseRepositoryIpc, registerCatalogRepositoryIpc, registerDesktopRepositoryIpc, registerOrdersRepositoryIpc, registerSalesFiscalRepositoryIpc, registerTenantStoreIpc, registerPayrollRepositoryIpc, registerPayrollSyncAccessTokenIpc, registerReceivablesRepositoryIpc, registerPayablesRepositoryIpc, registerSavedAccountIpc } from './persistence/ipc'
+import { registerCashPurchaseRepositoryIpc, registerCatalogRepositoryIpc, registerDesktopRepositoryIpc, registerOrdersRepositoryIpc, registerSalesFiscalRepositoryIpc, registerTenantStoreIpc, registerPayrollRepositoryIpc, registerPayrollSyncAccessTokenIpc, registerReceivablesRepositoryIpc, registerPayablesRepositoryIpc, registerSavedAccountIpc, registerExpenseRepositoryIpc } from './persistence/ipc'
 import { PayrollRepository } from './persistence/payrollRepository'
 import { PayrollSyncClient, type PayrollAuthorizationContext } from './persistence/payrollSyncClient'
 import type { PayrollCommand } from '../src/shared/lib/payrollContracts'
@@ -18,6 +18,7 @@ import { SalesFiscalRepository } from './persistence/salesFiscalRepository'
 import { CashPurchaseRepository } from './persistence/cashPurchaseRepository'
 import { ReceivablesRepository } from './persistence/receivablesRepository'
 import { PayablesRepository } from './persistence/payablesRepository'
+import { ExpenseRepository } from './persistence/expenseRepository'
 import { DeviceAccountDirectory } from './persistence/deviceAccountDirectory'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -583,10 +584,52 @@ if (gotTheLock) {
       if (!store) throw new Error('Tenant store is unavailable')
       return new PayablesRepository({ store, branchId: 'main-process-default' })
     } })
+    registerExpenseRepositoryIpc({
+      ipcMain,
+      isTrustedSender,
+      getRepository: () => {
+        const store = tenantStoreController?.getActiveStore()
+        if (!store) throw new Error('Tenant store is unavailable')
+        return new ExpenseRepository({ store, branchId: 'main-process-default' })
+      },
+      listExpenses: (filter) => {
+        const store = tenantStoreController?.getActiveStore()
+        if (!store) return []
+        return store.listExpenses(filter)
+      },
+      listCategories: () => {
+        const store = tenantStoreController?.getActiveStore()
+        if (!store) return []
+        return store.listExpenseCategories()
+      },
+    })
     registerPayrollRepositoryIpc({
       ipcMain,
       isTrustedSender,
-      getAuthorizationContext: () => payrollAuthorizationContext,
+      getAuthorizationContext: (commandTenantId?: string) => {
+        if (payrollAuthorizationContext && (!commandTenantId || payrollAuthorizationContext.tenantId === commandTenantId)) {
+          return payrollAuthorizationContext
+        }
+        if (commandTenantId && tenantStoreController) {
+          try {
+            const store = tenantStoreController.getActiveStore()?.getTenantId() === commandTenantId
+              ? tenantStoreController.getActiveStore()!
+              : tenantStoreController.activate(commandTenantId)
+            const branches = (store.getDatabase().prepare(
+              "SELECT id FROM sucursales WHERE tenant_id = ?"
+            ).all(commandTenantId) as Array<{ id: string }>).map(b => b.id)
+            if (branches.length > 0) {
+              return {
+                tenantId: commandTenantId,
+                allowedBranchIds: branches,
+              }
+            }
+          } catch {
+            // fallback
+          }
+        }
+        return payrollAuthorizationContext
+      },
       executeCommand: async (command: PayrollCommand) => {
         if (!tenantStoreController) throw new Error('Tenant store is unavailable')
         let store = tenantStoreController.getActiveStore()

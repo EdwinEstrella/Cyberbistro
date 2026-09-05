@@ -79,6 +79,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setPayrollSyncAccessToken: (accessToken: unknown) => ipcRenderer.invoke('payroll-sync:set-access-token', accessToken === null ? null : { accessToken }),
   executeReceivablesCommand: (command: unknown) => ipcRenderer.invoke('receivables-repository:execute', command),
   executePayablesCommand: (command: unknown) => ipcRenderer.invoke('payables-repository:execute', command),
+  executeExpenseCommand: (command: unknown) => ipcRenderer.invoke('expense-repository:execute', command),
+  listExpenses: (filter?: unknown) => ipcRenderer.invoke('expenses:list', filter),
+  listExpenseCategories: () => ipcRenderer.invoke('expense-categories:list'),
   importLegacyIndexedDb: (payload: unknown) => ipcRenderer.invoke('tenant-store:import-indexeddb', payload),
   close: () => {
     console.log('preload: close called')

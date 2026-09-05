@@ -92,6 +92,9 @@ export interface ElectronAPI {
   setPayrollSyncAccessToken?: (accessToken: string | null) => Promise<{ ok: true }>;
   executeReceivablesCommand?: (command: import("../../../electron/persistence/receivablesRepository").ReceivablesCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/receivablesRepository").ReceivablesRepositoryResult }>;
   executePayablesCommand?: (command: import("../../../electron/persistence/payablesRepository").PayablesCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/payablesRepository").PayablesRepositoryResult }>;
+  executeExpenseCommand?: (command: import("../../../electron/persistence/expenseRepository").ExpenseCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/expenseRepository").ExpenseRepositoryResult }>;
+  listExpenses?: (filter?: { sucursalId?: string; limit?: number }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
+  listExpenseCategories?: () => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
   importLegacyIndexedDb?: (payload: unknown) => Promise<{ ok: true; data: { tenantId: string; importedRows: number; recoveredOutbox: number } }>;
   close: () => void;
   getVersions: () => NodeJS.ProcessVersions;

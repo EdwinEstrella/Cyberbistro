@@ -219,23 +219,34 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
       amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
       note TEXT NOT NULL
     ) STRICT;
+    CREATE TABLE IF NOT EXISTS gasto_categorias (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL REFERENCES tenants(id),
+      name TEXT NOT NULL,
+      description TEXT,
+      color TEXT NOT NULL DEFAULT '#ff906d',
+      active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
+    ) STRICT;
     CREATE TABLE IF NOT EXISTS gastos (
       id TEXT PRIMARY KEY,
       tenant_id TEXT NOT NULL REFERENCES tenants(id),
       sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
+      category_id TEXT REFERENCES gasto_categorias(id),
+      cycle_id TEXT,
       compra_id TEXT UNIQUE REFERENCES compras(id),
       payroll_payment_id TEXT UNIQUE REFERENCES payroll_payments(id),
-      expense_type TEXT NOT NULL CHECK (expense_type IN ('purchase', 'payroll')),
-      payment_method TEXT NOT NULL CHECK (payment_method = 'cash'),
+      expense_type TEXT NOT NULL DEFAULT 'operational',
+      payment_method TEXT NOT NULL DEFAULT 'cash',
       amount REAL,
       amount_cents INTEGER,
-      local_status TEXT NOT NULL CHECK (local_status IN ('committed', 'pending_sync')),
+      local_status TEXT NOT NULL DEFAULT 'committed' CHECK (local_status IN ('committed', 'pending_sync')),
       description TEXT,
-      CHECK (
-        (expense_type = 'purchase' AND compra_id IS NOT NULL AND payroll_payment_id IS NULL AND amount IS NOT NULL AND amount >= 0 AND amount_cents IS NULL)
-        OR
-        (expense_type = 'payroll' AND compra_id IS NULL AND payroll_payment_id IS NOT NULL AND amount IS NULL AND amount_cents IS NOT NULL AND amount_cents >= 0)
-      ),
+      supplier TEXT,
+      notes TEXT,
+      expense_date TEXT NOT NULL DEFAULT (datetime('now')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      CHECK (amount IS NULL OR amount >= 0),
+      CHECK (amount_cents IS NULL OR amount_cents >= 0),
       FOREIGN KEY (compra_id, tenant_id, sucursal_id) REFERENCES compras (id, tenant_id, sucursal_id)
     ) STRICT;
     CREATE TABLE IF NOT EXISTS tenant_users (
@@ -246,11 +257,6 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
       nombre TEXT,
       pin TEXT,
       activo INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0, 1))
-    ) STRICT;
-    CREATE TABLE IF NOT EXISTS gasto_categorias (
-      id TEXT PRIMARY KEY,
-      tenant_id TEXT NOT NULL REFERENCES tenants(id),
-      name TEXT NOT NULL
     ) STRICT;
     CREATE TABLE IF NOT EXISTS cuentas_pagar (
       id TEXT PRIMARY KEY,
@@ -479,30 +485,50 @@ function migrateLegacyPayrollSchema(database: DatabaseSync): void {
     `);
   });
 
-  ensureTableShape(database, "gastos", (columns) => columns.includes("expense_type") && columns.includes("payroll_payment_id") && columns.includes("amount_cents"), () => {
+  ensureTableShape(database, "gasto_categorias", (columns) => columns.includes("color") && columns.includes("active"), () => {
+    recreateTable(database, "gasto_categorias", `
+      CREATE TABLE gasto_categorias (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id),
+        name TEXT NOT NULL,
+        description TEXT,
+        color TEXT NOT NULL DEFAULT '#ff906d',
+        active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
+      ) STRICT;
+    `, `
+      INSERT INTO gasto_categorias (id, tenant_id, name, description, color, active)
+      SELECT id, tenant_id, name, NULL, '#ff906d', 1
+      FROM __old_table__;
+    `);
+  });
+
+  ensureTableShape(database, "gastos", (columns) => columns.includes("category_id") && columns.includes("cycle_id") && columns.includes("expense_date"), () => {
     recreateTable(database, "gastos", `
       CREATE TABLE gastos (
         id TEXT PRIMARY KEY,
         tenant_id TEXT NOT NULL REFERENCES tenants(id),
         sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
+        category_id TEXT REFERENCES gasto_categorias(id),
+        cycle_id TEXT,
         compra_id TEXT UNIQUE REFERENCES compras(id),
         payroll_payment_id TEXT UNIQUE REFERENCES payroll_payments(id),
-        expense_type TEXT NOT NULL CHECK (expense_type IN ('purchase', 'payroll')),
-        payment_method TEXT NOT NULL CHECK (payment_method = 'cash'),
+        expense_type TEXT NOT NULL DEFAULT 'operational',
+        payment_method TEXT NOT NULL DEFAULT 'cash',
         amount REAL,
         amount_cents INTEGER,
-        local_status TEXT NOT NULL CHECK (local_status IN ('committed', 'pending_sync')),
+        local_status TEXT NOT NULL DEFAULT 'committed' CHECK (local_status IN ('committed', 'pending_sync')),
         description TEXT,
-        CHECK (
-          (expense_type = 'purchase' AND compra_id IS NOT NULL AND payroll_payment_id IS NULL AND amount IS NOT NULL AND amount >= 0 AND amount_cents IS NULL)
-          OR
-          (expense_type = 'payroll' AND compra_id IS NULL AND payroll_payment_id IS NOT NULL AND amount IS NULL AND amount_cents IS NOT NULL AND amount_cents >= 0)
-        ),
+        supplier TEXT,
+        notes TEXT,
+        expense_date TEXT NOT NULL DEFAULT (datetime('now')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        CHECK (amount IS NULL OR amount >= 0),
+        CHECK (amount_cents IS NULL OR amount_cents >= 0),
         FOREIGN KEY (compra_id, tenant_id, sucursal_id) REFERENCES compras (id, tenant_id, sucursal_id)
       ) STRICT;
     `, `
-      INSERT INTO gastos (id, tenant_id, sucursal_id, compra_id, payroll_payment_id, expense_type, payment_method, amount, amount_cents, local_status, description)
-      SELECT id, tenant_id, sucursal_id, compra_id, NULL, 'purchase', payment_method, amount, NULL, local_status, NULL
+      INSERT INTO gastos (id, tenant_id, sucursal_id, compra_id, payroll_payment_id, expense_type, payment_method, amount, amount_cents, local_status, description, expense_date, created_at)
+      SELECT id, tenant_id, sucursal_id, compra_id, payroll_payment_id, expense_type, payment_method, amount, amount_cents, local_status, description, datetime('now'), datetime('now')
       FROM __old_table__;
     `);
   });
