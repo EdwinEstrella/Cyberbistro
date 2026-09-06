@@ -238,4 +238,42 @@ describe("local sqlite expenses & categories", () => {
       );
     });
   });
+
+  it("mirrors external cloud expenses and categories into local SQLite via syncCloud methods", () => {
+    withStore((store) => {
+      store.syncCloudExpenseCategories([
+        { id: "cat-cloud-1", nombre: "Mantenimiento", descripcion: "Reparaciones", color: "#10b981", activa: true },
+      ]);
+      const cats = store.listExpenseCategories();
+      expect(cats).toHaveLength(1);
+      expect(cats[0]).toEqual({
+        id: "cat-cloud-1",
+        nombre: "Mantenimiento",
+        descripcion: "Reparaciones",
+        color: "#10b981",
+        activa: 1,
+      });
+
+      store.syncCloudExpenses([
+        {
+          id: "exp-cloud-1",
+          category_id: "cat-cloud-1",
+          descripcion: "Reparación de aire acondicionado",
+          proveedor: "TecniClima",
+          monto: 3500,
+          metodo_pago: "efectivo",
+          fecha_gasto: "2026-09-06T10:00:00.000Z",
+          notas: "Factura #102",
+        },
+      ], "branch-test");
+
+      const expenses = store.listExpenses({ sucursalId: "branch-test" });
+      expect(expenses).toHaveLength(1);
+      expect(expenses[0].id).toBe("exp-cloud-1");
+      expect(expenses[0].description).toBe("Reparación de aire acondicionado");
+      expect(expenses[0].amount).toBe(3500);
+      expect(expenses[0].supplier).toBe("TecniClima");
+      expect(expenses[0].local_status).toBe("committed");
+    });
+  });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  TENANT_STORE_ACTIVATE_CHANNEL,
   TENANT_STORE_IMPORT_CHANNEL,
   TENANT_STORE_STATUS_CHANNEL,
   PAYROLL_SYNC_ACCESS_TOKEN_CHANNEL,
@@ -70,6 +71,24 @@ describe("tenant store IPC boundary", () => {
     await expect(handlers.get(TENANT_STORE_IMPORT_CHANNEL)?.({ senderId: 7 }, {
       manifest: { tenantId: "tenant-a" }, chunks: [],
     })).resolves.toEqual({ ok: true, data: { received: { manifest: { tenantId: "tenant-a" }, chunks: [] } } });
+  });
+
+  it("validates and activates valid tenant identity while rejecting untrusted sender and malformed tenantId", async () => {
+    const { handlers, ipcMain } = createIpcHarness();
+    const activated: string[] = [];
+    registerTenantStoreIpc({
+      ipcMain,
+      isTrustedSender: (event) => event.senderId === 7,
+      getStatus: () => ({ tenantId: "tenant-a", isOpen: true }),
+      activateTenant: (id) => activated.push(id),
+    });
+
+    const handler = handlers.get(TENANT_STORE_ACTIVATE_CHANNEL);
+    await expect(handler?.({ senderId: 99 }, "tenant-1")).rejects.toThrow("Untrusted IPC sender");
+    await expect(handler?.({ senderId: 7 }, "invalid tenant identity with spaces")).rejects.toThrow("Invalid tenant identity");
+    await expect(handler?.({ senderId: 7 }, "")).rejects.toThrow("Invalid tenant identity");
+    await expect(handler?.({ senderId: 7 }, "valid-tenant-123")).resolves.toEqual({ ok: true, data: { tenantId: "valid-tenant-123" } });
+    expect(activated).toEqual(["valid-tenant-123"]);
   });
 });
 

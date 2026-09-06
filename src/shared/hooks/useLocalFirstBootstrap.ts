@@ -67,6 +67,9 @@ export function useLocalFirstBootstrap(tenantId: string | null, accessValidated 
       return;
     }
     const validatedTenantId = tenantId as string;
+    if (window.electronAPI?.activateTenant) {
+      void window.electronAPI.activateTenant(validatedTenantId).catch(() => undefined);
+    }
     const accessGeneration = getTenantAccessGeneration();
     const canContinue = () => !cancelled && canContinueTenantWork(validatedTenantId, accessGeneration);
     if (!isLocalFirstEnabled()) {

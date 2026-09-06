@@ -99,6 +99,11 @@ function patchSharedState(patch: Partial<SharedAuthState>): void {
     patch.accessValidationState === undefined
       ? sharedState.accessValidationState
       : patch.accessValidationState;
+
+  if (patch.tenantUser?.tenant_id && window.electronAPI?.activateTenant) {
+    void window.electronAPI.activateTenant(patch.tenantUser.tenant_id).catch(() => undefined);
+  }
+
   notifySubscribers();
 }
 

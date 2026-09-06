@@ -537,11 +537,24 @@ if (gotTheLock) {
       return Boolean(mainWindow && !mainWindow.isDestroyed() && senderId === mainWindow.webContents.id);
     };
 
+    const getStore = (targetTenantId?: string) => {
+      let store = tenantStoreController?.getActiveStore();
+      const desiredTenantId = targetTenantId || payrollAuthorizationContext?.tenantId;
+      if (desiredTenantId && (!store || store.getTenantId() !== desiredTenantId)) {
+        store = tenantStoreController?.activate(desiredTenantId) ?? null;
+      }
+      return store;
+    };
+
     registerTenantStoreIpc({
       ipcMain,
       isTrustedSender,
       getStatus: () => tenantStoreController?.getStatus() ?? ({ tenantId: null, isOpen: false }),
       getActiveTenantId: () => tenantStoreController?.getActiveStore()?.getTenantId() ?? null,
+      activateTenant: (tenantId: string) => {
+        if (!tenantStoreController) throw new Error('Tenant store is unavailable');
+        tenantStoreController.activate(tenantId);
+      },
       importLegacySnapshot: (payload) => {
         const request = payload as Parameters<TenantSQLiteImporter["import"]>[0];
         if (!tenantStoreController) throw new Error('Tenant store is unavailable');
@@ -557,7 +570,7 @@ if (gotTheLock) {
       ipcMain,
       isTrustedSender,
       getRepository: () => {
-        const store = tenantStoreController?.getActiveStore();
+        const store = getStore();
         if (!store) throw new Error('Tenant store is unavailable');
         return new DesktopRepository({ store, branchId: 'main-process-default' });
       },
@@ -595,7 +608,7 @@ if (gotTheLock) {
       ipcMain,
       isTrustedSender,
       getRepository: () => {
-        const store = tenantStoreController?.getActiveStore()
+        const store = getStore()
         if (!store) throw new Error('Tenant store is unavailable')
         return new CatalogRepository({ store, branchId: 'main-process-default' })
       },
@@ -604,7 +617,7 @@ if (gotTheLock) {
       ipcMain,
       isTrustedSender,
       getRepository: () => {
-        const store = tenantStoreController?.getActiveStore()
+        const store = getStore()
         if (!store) throw new Error('Tenant store is unavailable')
         return new OrdersRepository({ store, branchId: 'main-process-default' })
       },
@@ -613,23 +626,23 @@ if (gotTheLock) {
       ipcMain,
       isTrustedSender,
       getRepository: () => {
-        const store = tenantStoreController?.getActiveStore()
+        const store = getStore()
         if (!store) throw new Error('Tenant store is unavailable')
         return new SalesFiscalRepository({ store, branchId: 'main-process-default' })
       },
     })
     registerCashPurchaseRepositoryIpc({ ipcMain, isTrustedSender, getRepository: () => {
-      const store = tenantStoreController?.getActiveStore()
+      const store = getStore()
       if (!store) throw new Error('Tenant store is unavailable')
       return new CashPurchaseRepository({ store, branchId: 'main-process-default' })
     } })
     registerReceivablesRepositoryIpc({ ipcMain, isTrustedSender, getRepository: () => {
-      const store = tenantStoreController?.getActiveStore()
+      const store = getStore()
       if (!store) throw new Error('Tenant store is unavailable')
       return new ReceivablesRepository({ store, branchId: 'main-process-default' })
     } })
     registerPayablesRepositoryIpc({ ipcMain, isTrustedSender, getRepository: () => {
-      const store = tenantStoreController?.getActiveStore()
+      const store = getStore()
       if (!store) throw new Error('Tenant store is unavailable')
       return new PayablesRepository({ store, branchId: 'main-process-default' })
     } })
@@ -637,36 +650,42 @@ if (gotTheLock) {
       ipcMain,
       isTrustedSender,
       getRepository: () => {
-        const store = tenantStoreController?.getActiveStore()
+        const store = getStore()
         if (!store) throw new Error('Tenant store is unavailable')
         return new ExpenseRepository({ store, branchId: 'main-process-default' })
       },
       listExpenses: (filter) => {
-        const store = tenantStoreController?.getActiveStore()
+        const store = getStore((filter as any)?.tenantId)
         if (!store) return []
         return store.listExpenses(filter)
       },
       listCategories: () => {
-        const store = tenantStoreController?.getActiveStore()
+        const store = getStore()
         if (!store) return []
         return store.listExpenseCategories()
+      },
+      syncCloudExpenses: (expenses, branchId) => {
+        getStore()?.syncCloudExpenses(expenses, branchId)
+      },
+      syncCloudExpenseCategories: (categories) => {
+        getStore()?.syncCloudExpenseCategories(categories)
       },
     })
     registerCustomerRepositoryIpc({
       ipcMain,
       isTrustedSender,
       getRepository: () => {
-        const store = tenantStoreController?.getActiveStore()
+        const store = getStore()
         if (!store) throw new Error('Tenant store is unavailable')
         return new CustomerRepository({ store, branchId: 'main-process-default' })
       },
       listCustomers: () => {
-        const store = tenantStoreController?.getActiveStore()
+        const store = getStore()
         if (!store) return []
         return store.listCustomers()
       },
       syncCloudCustomers: (customers) => {
-        tenantStoreController?.getActiveStore()?.syncCloudCustomers(customers)
+        getStore()?.syncCloudCustomers(customers)
       },
     })
     registerPayrollRepositoryIpc({
@@ -742,6 +761,13 @@ if (gotTheLock) {
         if (!accessToken) return
 
         payrollAuthorizationContext = await new PayrollSyncClient(undefined, accessToken).resolveAuthorizationContext()
+        if (payrollAuthorizationContext?.tenantId && tenantStoreController) {
+          try {
+            tenantStoreController.activate(payrollAuthorizationContext.tenantId)
+          } catch (e) {
+            console.error('Failed to activate tenant from session context:', e)
+          }
+        }
         tenantStoreController?.payrollSync.triggerSync().catch(console.error)
       },
     })

@@ -15,6 +15,7 @@ import type { ExpenseCommand, ExpenseRepositoryResult } from "./expenseRepositor
 import type { CustomerCommand, CustomerRepositoryResult } from "./customerRepository";
 
 export const TENANT_STORE_STATUS_CHANNEL = "tenant-store:status";
+export const TENANT_STORE_ACTIVATE_CHANNEL = "tenant-store:activate";
 export const TENANT_STORE_IMPORT_CHANNEL = "tenant-store:import-indexeddb";
 export const DESKTOP_REPOSITORY_EXECUTE_CHANNEL = "desktop-repository:execute";
 export const CATALOG_REPOSITORY_EXECUTE_CHANNEL = "catalog-repository:execute";
@@ -27,7 +28,9 @@ export const RECEIVABLES_REPOSITORY_EXECUTE_CHANNEL = "receivables-repository:ex
 export const PAYABLES_REPOSITORY_EXECUTE_CHANNEL = "payables-repository:execute";
 export const EXPENSE_REPOSITORY_EXECUTE_CHANNEL = "expense-repository:execute";
 export const EXPENSES_LIST_CHANNEL = "expenses:list";
+export const EXPENSES_SYNC_CLOUD_CHANNEL = "expenses:sync-cloud";
 export const EXPENSE_CATEGORIES_LIST_CHANNEL = "expense-categories:list";
+export const EXPENSE_CATEGORIES_SYNC_CLOUD_CHANNEL = "expense-categories:sync-cloud";
 export const CUSTOMER_REPOSITORY_EXECUTE_CHANNEL = "customer-repository:execute";
 export const CUSTOMERS_LIST_CHANNEL = "customers:list";
 export const CUSTOMERS_SYNC_CLOUD_CHANNEL = "customers:sync-cloud";
@@ -169,6 +172,8 @@ export function registerExpenseRepositoryIpc(input: {
   getRepository: () => { execute(command: ExpenseCommand): ExpenseRepositoryResult };
   listExpenses?: (filter?: { sucursalId?: string; limit?: number }) => Array<Record<string, unknown>>;
   listCategories?: () => Array<Record<string, unknown>>;
+  syncCloudExpenses?: (expenses: Array<Record<string, unknown>>, branchId?: string) => void;
+  syncCloudExpenseCategories?: (categories: Array<Record<string, unknown>>) => void;
 }): void {
   input.ipcMain.removeHandler(EXPENSE_REPOSITORY_EXECUTE_CHANNEL);
   input.ipcMain.handle(EXPENSE_REPOSITORY_EXECUTE_CHANNEL, async (event, payload) => {
@@ -184,10 +189,28 @@ export function registerExpenseRepositoryIpc(input: {
     return { ok: true, data: input.listExpenses?.(filter as any) ?? [] };
   });
 
+  input.ipcMain.removeHandler(EXPENSES_SYNC_CLOUD_CHANNEL);
+  input.ipcMain.handle(EXPENSES_SYNC_CLOUD_CHANNEL, async (event, payload, branchId) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    if (Array.isArray(payload)) {
+      input.syncCloudExpenses?.(payload, typeof branchId === "string" ? branchId : undefined);
+    }
+    return { ok: true };
+  });
+
   input.ipcMain.removeHandler(EXPENSE_CATEGORIES_LIST_CHANNEL);
   input.ipcMain.handle(EXPENSE_CATEGORIES_LIST_CHANNEL, async (event) => {
     if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
     return { ok: true, data: input.listCategories?.() ?? [] };
+  });
+
+  input.ipcMain.removeHandler(EXPENSE_CATEGORIES_SYNC_CLOUD_CHANNEL);
+  input.ipcMain.handle(EXPENSE_CATEGORIES_SYNC_CLOUD_CHANNEL, async (event, payload) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    if (Array.isArray(payload)) {
+      input.syncCloudExpenseCategories?.(payload);
+    }
+    return { ok: true };
   });
 }
 
@@ -322,6 +345,7 @@ export function registerTenantStoreIpc(input: {
   isTrustedSender: (event: { senderId: number }) => boolean;
   getStatus: () => { tenantId: string | null; isOpen: boolean };
   getActiveTenantId?: () => string | null;
+  activateTenant?: (tenantId: string) => void;
   importLegacySnapshot?: (payload: unknown) => Promise<unknown> | unknown;
 }): void {
   input.ipcMain.removeHandler(TENANT_STORE_STATUS_CHANNEL);
@@ -330,6 +354,17 @@ export function registerTenantStoreIpc(input: {
     const status = input.getStatus();
     return { ok: true, data: { isOpen: status.isOpen } };
   });
+
+  if (input.activateTenant) {
+    input.ipcMain.removeHandler(TENANT_STORE_ACTIVATE_CHANNEL);
+    input.ipcMain.handle(TENANT_STORE_ACTIVATE_CHANNEL, async (event, payload) => {
+      if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+      const tenantId = parseTenantIdentity(payload);
+      if (!tenantId) throw new Error("Invalid tenant identity");
+      input.activateTenant(tenantId);
+      return { ok: true, data: { tenantId } };
+    });
+  }
 
   if (input.getActiveTenantId && input.importLegacySnapshot) {
     input.ipcMain.removeHandler(TENANT_STORE_IMPORT_CHANNEL);
@@ -350,6 +385,14 @@ function getManifestTenantId(payload: unknown): string | null {
   if (!manifest || typeof manifest !== "object") return null;
   const tenantId = (manifest as { tenantId?: unknown }).tenantId;
   return typeof tenantId === "string" ? tenantId : null;
+}
+
+function parseTenantIdentity(payload: unknown): string | null {
+  if (typeof payload === "string" && /^[a-zA-Z0-9-]{1,128}$/.test(payload)) return payload;
+  if (payload && typeof payload === "object" && typeof (payload as any).tenantId === "string" && /^[a-zA-Z0-9-]{1,128}$/.test((payload as any).tenantId)) {
+    return (payload as any).tenantId;
+  }
+  return null;
 }
 
 function parseDesktopCommand(payload: unknown): DesktopCommand | null {
@@ -452,6 +495,7 @@ function parseExpenseCommand(payload: unknown): ExpenseCommand | null {
     return {
       type: "expense.create",
       id: String(p.id).trim(),
+      branchId: typeof p.branchId === "string" && p.branchId.trim() ? p.branchId.trim() : (typeof p.sucursalId === "string" && p.sucursalId.trim() ? p.sucursalId.trim() : null),
       categoryId: typeof p.categoryId === "string" && p.categoryId.trim() ? p.categoryId.trim() : null,
       cycleId: typeof p.cycleId === "string" && p.cycleId.trim() ? p.cycleId.trim() : null,
       description: String(p.description).trim(),

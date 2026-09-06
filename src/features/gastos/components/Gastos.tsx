@@ -144,22 +144,31 @@ export function Gastos() {
     setMessage("");
 
     try {
-      let loadedFromElectron = false;
+      if (window.electronAPI?.activateTenant) {
+        await window.electronAPI.activateTenant(tenantId).catch(() => undefined);
+      }
+
+      let localCats: CategoriaGasto[] = [];
+      let localGastos: GastoRow[] = [];
+
+      // 1. Read local SQLite immediately
       if (window.electronAPI?.listExpenses && window.electronAPI?.listExpenseCategories) {
         try {
           const [catsRes, expRes] = await Promise.all([
             window.electronAPI.listExpenseCategories(),
-            window.electronAPI.listExpenses({ sucursalId: activeSucursalId || undefined, limit: 80 }),
+            window.electronAPI.listExpenses({ tenantId, sucursalId: activeSucursalId || undefined, limit: 80 }),
           ]);
-          if (catsRes?.ok && expRes?.ok && Array.isArray(catsRes.data) && Array.isArray(expRes.data)) {
-            const mappedCats: CategoriaGasto[] = catsRes.data.map((c: any) => ({
+          if (catsRes?.ok && Array.isArray(catsRes.data)) {
+            localCats = catsRes.data.map((c: any) => ({
               id: c.id,
               nombre: c.nombre ?? c.name,
               descripcion: c.descripcion ?? c.description ?? null,
               color: c.color ?? "#ff906d",
               activa: Boolean(c.activa ?? c.active ?? true),
-            }));
-            const mappedGastos: GastoRow[] = expRes.data.map((g: any) => ({
+            })).filter((c) => c.activa);
+          }
+          if (expRes?.ok && Array.isArray(expRes.data)) {
+            localGastos = expRes.data.map((g: any) => ({
               id: g.id,
               tenant_id: g.tenant_id,
               category_id: g.category_id,
@@ -173,33 +182,91 @@ export function Gastos() {
               fecha_gasto: g.expense_date ?? g.fecha_gasto,
               notas: g.notes ?? g.notas,
             }));
-            setCategorias(mappedCats.filter((c) => c.activa));
-            setGastos(mappedGastos);
-            loadedFromElectron = true;
           }
+          if (localCats.length > 0) setCategorias(localCats);
+          if (localGastos.length > 0) setGastos(localGastos);
         } catch (e) {
           console.warn("[Gastos] SQLite load failed, falling back:", e);
         }
       }
 
-      if (!loadedFromElectron) {
-        const [useLocalCategorias, useLocalGastos] = await Promise.all([
-          shouldReadLocalFirst(tenantId, ["gasto_categorias"]),
-          shouldReadLocalFirst(tenantId, ["gastos"]),
+      // 2. If SQLite has no categories or expenses, check IndexedDB legacy mirror to recover previous offline data
+      if (localCats.length === 0 || localGastos.length === 0) {
+        try {
+          const [useLocalCats, useLocalG] = await Promise.all([
+            shouldReadLocalFirst(tenantId, ["gasto_categorias"]),
+            shouldReadLocalFirst(tenantId, ["gastos"]),
+          ]);
+          if (localCats.length === 0 && useLocalCats) {
+            const idbCats = await readLocalMirror<CategoriaGasto>(tenantId, "gasto_categorias");
+            const activeIdbCats = idbCats.filter((c) => c.activa);
+            if (activeIdbCats.length > 0) {
+              localCats = activeIdbCats;
+              setCategorias(localCats);
+              if (window.electronAPI?.syncCloudExpenseCategories) {
+                void window.electronAPI.syncCloudExpenseCategories(idbCats).catch(() => {});
+              }
+            }
+          }
+          if (localGastos.length === 0 && useLocalG) {
+            const idbGastos = await readLocalMirror<GastoRow>(tenantId, "gastos");
+            const validGastos = idbGastos.sort((a, b) => new Date(getGastoFecha(b)).getTime() - new Date(getGastoFecha(a)).getTime());
+            if (validGastos.length > 0) {
+              localGastos = validGastos.slice(0, 80);
+              setGastos(localGastos);
+              if (window.electronAPI?.syncCloudExpenses) {
+                void window.electronAPI.syncCloudExpenses(idbGastos, activeSucursalId || undefined).catch(() => {});
+              }
+            }
+          }
+        } catch (idbErr) {
+          console.warn("[Gastos] IndexedDB recovery error:", idbErr);
+        }
+      }
+
+      // 3. Background Cloud Reconciliation (mirroring all cloud categories and expenses permanently into SQLite)
+      try {
+        const [cloudCatsRes, cloudGastosRes] = await Promise.all([
+          insforgeClient.database.from("gasto_categorias").select("id, nombre, descripcion, color, activa").eq("tenant_id", tenantId).order("nombre", { ascending: true }),
+          insforgeClient.database.from("gastos").select("*").eq("tenant_id", tenantId).order("fecha_gasto", { ascending: false }).limit(80),
         ]);
 
-        const [categoriasData, gastosData] = await Promise.all([
-          useLocalCategorias
-            ? readLocalMirror<CategoriaGasto>(tenantId, "gasto_categorias")
-            : insforgeClient.database.from("gasto_categorias").select("id, nombre, descripcion, color, activa").eq("tenant_id", tenantId).eq("activa", true).order("nombre", { ascending: true }).then(r => r.data ?? []),
-          useLocalGastos
-            ? readLocalMirror<GastoRow>(tenantId, "gastos")
-            : insforgeClient.database.from("gastos").select("*").eq("tenant_id", tenantId).order("fecha_gasto", { ascending: false }).limit(80).then(r => r.data ?? []),
-        ]);
+        if (!cloudCatsRes.error && Array.isArray(cloudCatsRes.data) && cloudCatsRes.data.length > 0) {
+          const mappedCloudCats: CategoriaGasto[] = cloudCatsRes.data.map((c: any) => ({
+            id: c.id,
+            nombre: c.nombre,
+            descripcion: c.descripcion || null,
+            color: c.color || "#ff906d",
+            activa: Boolean(c.activa ?? true),
+          }));
+          setCategorias(mappedCloudCats.filter((c) => c.activa));
+          if (window.electronAPI?.syncCloudExpenseCategories) {
+            void window.electronAPI.syncCloudExpenseCategories(cloudCatsRes.data).catch(() => {});
+          }
+        }
 
-        setCategorias(useLocalCategorias ? (categoriasData as CategoriaGasto[]).filter(c => c.activa) : (categoriasData as CategoriaGasto[]));
-        const gList = useLocalGastos ? (gastosData as GastoRow[]).sort((a, b) => new Date(b.fecha_gasto).getTime() - new Date(a.fecha_gasto).getTime()).slice(0, 80) : (gastosData as GastoRow[]);
-        setGastos(gList);
+        if (!cloudGastosRes.error && Array.isArray(cloudGastosRes.data) && cloudGastosRes.data.length > 0) {
+          const mappedCloudGastos: GastoRow[] = cloudGastosRes.data.map((g: any) => ({
+            id: g.id,
+            tenant_id: g.tenant_id,
+            category_id: g.category_id,
+            cycle_id: g.cycle_id,
+            descripcion: g.descripcion || g.description,
+            description: g.descripcion || g.description,
+            proveedor: g.proveedor || g.supplier,
+            monto: g.monto ?? g.amount ?? (g.amount_cents ? g.amount_cents / 100 : 0),
+            amount: g.monto ?? g.amount ?? (g.amount_cents ? g.amount_cents / 100 : 0),
+            metodo_pago: g.metodo_pago || g.payment_method,
+            fecha_gasto: g.fecha_gasto || g.expense_date,
+            notas: g.notas || g.notes,
+          }));
+          setGastos(mappedCloudGastos);
+          if (window.electronAPI?.syncCloudExpenses) {
+            void window.electronAPI.syncCloudExpenses(cloudGastosRes.data, activeSucursalId || undefined).catch(() => {});
+          }
+        }
+      } catch (cloudErr) {
+        console.warn("[Gastos] Cloud reconciliation skipped (offline):", cloudErr);
       }
 
       const useLocalCiclos = await shouldReadLocalFirst(tenantId, ["cierres_operativos"]);
@@ -257,6 +324,9 @@ export function Gastos() {
     setMessage("");
     try {
       const id = crypto.randomUUID();
+      if (window.electronAPI?.activateTenant) {
+        await window.electronAPI.activateTenant(tenantId).catch(() => undefined);
+      }
       if (window.electronAPI?.executeExpenseCommand) {
         await window.electronAPI.executeExpenseCommand({
           type: "expense.category.create",
@@ -289,6 +359,9 @@ export function Gastos() {
     setMessage("");
     try {
       const id = crypto.randomUUID();
+      if (window.electronAPI?.activateTenant) {
+        await window.electronAPI.activateTenant(tenantId).catch(() => undefined);
+      }
       if (window.electronAPI?.executeExpenseCommand) {
         await window.electronAPI.executeExpenseCommand({
           type: "expense.category.create",
@@ -345,6 +418,9 @@ export function Gastos() {
         onConfirm: async () => {
           setConfirmState(s => ({ ...s, open: false }));
           try {
+            if (window.electronAPI?.activateTenant) {
+              await window.electronAPI.activateTenant(tenantId).catch(() => undefined);
+            }
             if (window.electronAPI?.executeExpenseCommand) {
               await window.electronAPI.executeExpenseCommand({
                 type: "expense.category.delete",
@@ -392,10 +468,14 @@ export function Gastos() {
     setMessage("");
     try {
       const id = crypto.randomUUID();
+      if (window.electronAPI?.activateTenant) {
+        await window.electronAPI.activateTenant(tenantId).catch(() => undefined);
+      }
       if (window.electronAPI?.executeExpenseCommand) {
         await window.electronAPI.executeExpenseCommand({
           type: "expense.create",
           id,
+          branchId: activeSucursalId || "main-process-default",
           categoryId: gastoForm.category_id || null,
           cycleId: cicloAbierto.id,
           description: descripcion,
@@ -450,18 +530,21 @@ export function Gastos() {
     setConfirmState({
       open: true,
       title: "Eliminar Gasto",
-      message: `Eliminar gasto "${gasto.descripcion}" por ${RD(gasto.monto)}?`,
-      onConfirm: async () => {
-        setConfirmState(s => ({ ...s, open: false }));
-        setSaving(true);
-        setMessage("");
-        try {
-          if (window.electronAPI?.executeExpenseCommand) {
-            await window.electronAPI.executeExpenseCommand({
-              type: "expense.delete",
-              id: gasto.id,
-            });
-          } else {
+      message: `Eliminar gasto "${gasto.descripcion}" por ${RD(getGastoMonto(gasto))}?`,
+        onConfirm: async () => {
+          setConfirmState(s => ({ ...s, open: false }));
+          setSaving(true);
+          setMessage("");
+          try {
+            if (window.electronAPI?.activateTenant) {
+              await window.electronAPI.activateTenant(tenantId).catch(() => undefined);
+            }
+            if (window.electronAPI?.executeExpenseCommand) {
+              await window.electronAPI.executeExpenseCommand({
+                type: "expense.delete",
+                id: gasto.id,
+              });
+            } else {
             await enqueueLocalWrite({
               tenantId: tenantId!,
               tableName: "gastos",

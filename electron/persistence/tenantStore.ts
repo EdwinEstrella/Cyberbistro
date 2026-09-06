@@ -342,7 +342,7 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     const limit = filter?.limit ?? 100;
     if (filter?.sucursalId) {
       return this.database.prepare(
-        "SELECT * FROM gastos WHERE tenant_id = ? AND sucursal_id = ? ORDER BY expense_date DESC LIMIT ?"
+        "SELECT * FROM gastos WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id = 'main-process-default') ORDER BY expense_date DESC LIMIT ?"
       ).all(this.tenantId, filter.sucursalId, limit) as Array<Record<string, unknown>>;
     }
     return this.database.prepare(
@@ -356,11 +356,119 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     ).all(this.tenantId) as Array<Record<string, unknown>>;
   }
 
-  executeExpenseCommand(input: { command: ExpenseCommand; commitId: string; branchId: string }): void {
-    const { command, commitId, branchId } = input;
+  syncCloudExpenseCategories(categories: Array<Record<string, unknown>>): void {
+    const stmt = this.database.prepare(`
+      INSERT INTO gasto_categorias (id, tenant_id, name, description, color, active)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        description = excluded.description,
+        color = excluded.color,
+        active = excluded.active
+    `);
     this.database.exec("BEGIN IMMEDIATE;");
     try {
-      this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(branchId, this.tenantId, "Principal");
+      for (const cat of categories) {
+        if (!cat || typeof cat !== "object" || !cat.id) continue;
+        const name = String(cat.nombre ?? cat.name ?? "").trim();
+        if (!name) continue;
+        const active = (cat.activa ?? cat.active ?? true) ? 1 : 0;
+        stmt.run(
+          String(cat.id),
+          this.tenantId,
+          name,
+          cat.descripcion ? String(cat.descripcion) : (cat.description ? String(cat.description) : null),
+          cat.color ? String(cat.color) : "#ff906d",
+          active
+        );
+      }
+      this.database.exec("COMMIT;");
+    } catch (e) {
+      this.database.exec("ROLLBACK;");
+      throw e;
+    }
+  }
+
+  syncCloudExpenses(expenses: Array<Record<string, unknown>>, defaultBranchId = "main-process-default"): void {
+    this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(defaultBranchId, this.tenantId, "Principal");
+    const stmt = this.database.prepare(`
+      INSERT INTO gastos (
+        id, tenant_id, sucursal_id, category_id, cycle_id,
+        compra_id, payroll_payment_id, expense_type, payment_method,
+        amount, amount_cents, local_status, description, supplier, notes,
+        expense_date, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'committed', ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        sucursal_id = excluded.sucursal_id,
+        category_id = excluded.category_id,
+        cycle_id = excluded.cycle_id,
+        expense_type = excluded.expense_type,
+        payment_method = excluded.payment_method,
+        amount = excluded.amount,
+        amount_cents = excluded.amount_cents,
+        description = excluded.description,
+        supplier = excluded.supplier,
+        notes = excluded.notes,
+        expense_date = excluded.expense_date,
+        created_at = excluded.created_at
+    `);
+    this.database.exec("BEGIN IMMEDIATE;");
+    try {
+      for (const g of expenses) {
+        if (!g || typeof g !== "object" || !g.id) continue;
+        const branchId = typeof g.sucursal_id === "string" && g.sucursal_id.trim() ? g.sucursal_id.trim() : defaultBranchId;
+        this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(branchId, this.tenantId, "Principal");
+
+        const categoryId = g.category_id ? String(g.category_id) : null;
+        if (categoryId) {
+          this.database.prepare("INSERT OR IGNORE INTO gasto_categorias (id, tenant_id, name, color, active) VALUES (?, ?, 'General', '#ff906d', 1)").run(categoryId, this.tenantId);
+        }
+
+        const rawAmount = typeof g.monto === "number" ? g.monto : (typeof g.amount === "number" ? g.amount : 0);
+        const amount = Number.isFinite(rawAmount) && rawAmount >= 0 ? rawAmount : 0;
+        const rawAmountCents = typeof g.amount_cents === "number" ? g.amount_cents : Math.round(amount * 100);
+        const amountCents = Number.isFinite(rawAmountCents) && rawAmountCents >= 0 ? rawAmountCents : 0;
+        const expenseType = typeof g.expense_type === "string" && ["operational", "purchase", "payroll"].includes(g.expense_type) ? g.expense_type : "operational";
+        const paymentMethod = typeof g.metodo_pago === "string" ? g.metodo_pago : (typeof g.payment_method === "string" ? g.payment_method : "cash");
+        const description = g.descripcion ? String(g.descripcion) : (g.description ? String(g.description) : null);
+        const supplier = g.proveedor ? String(g.proveedor) : (g.supplier ? String(g.supplier) : null);
+        const notes = g.notas ? String(g.notas) : (g.notes ? String(g.notes) : null);
+        const expenseDate = g.fecha_gasto ? String(g.fecha_gasto) : (g.expense_date ? String(g.expense_date) : new Date().toISOString());
+        const createdAt = g.created_at ? String(g.created_at) : expenseDate;
+        const cycleId = g.cycle_id ? String(g.cycle_id) : null;
+
+        stmt.run(
+          String(g.id),
+          this.tenantId,
+          branchId,
+          categoryId,
+          cycleId,
+          g.compra_id ? String(g.compra_id) : null,
+          g.payroll_payment_id ? String(g.payroll_payment_id) : null,
+          expenseType,
+          paymentMethod,
+          amount,
+          amountCents,
+          description,
+          supplier,
+          notes,
+          expenseDate,
+          createdAt
+        );
+      }
+      this.database.exec("COMMIT;");
+    } catch (e) {
+      this.database.exec("ROLLBACK;");
+      throw e;
+    }
+  }
+
+  executeExpenseCommand(input: { command: ExpenseCommand; commitId: string; branchId: string }): void {
+    const { command, commitId, branchId } = input;
+    const targetBranch = (command.type === "expense.create" && (command as any).branchId) ? (command as any).branchId : branchId;
+    this.database.exec("BEGIN IMMEDIATE;");
+    try {
+      this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(targetBranch, this.tenantId, "Principal");
 
       switch (command.type) {
         case "expense.create": {
@@ -374,7 +482,7 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
           `).run(
             command.id,
             this.tenantId,
-            branchId,
+            targetBranch,
             command.categoryId ?? null,
             command.cycleId ?? null,
             command.paymentMethod ?? "cash",
@@ -390,13 +498,13 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
           ).run(
             `${commitId}:expense-create`,
             this.tenantId,
-            branchId,
+            targetBranch,
             "gastos",
             command.id,
             JSON.stringify({
               id: command.id,
               tenantId: this.tenantId,
-              sucursalId: branchId,
+              sucursalId: targetBranch,
               categoryId: command.categoryId ?? null,
               cycleId: command.cycleId ?? null,
               description: command.description,

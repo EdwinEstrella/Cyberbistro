@@ -78,6 +78,7 @@ export interface ElectronAPI {
   maximize: () => void;
   ensureInputFocus?: () => Promise<boolean>;
   getTenantStoreStatus?: () => Promise<{ ok: true; data: { isOpen: boolean } }>;
+  activateTenant?: (tenantId: string) => Promise<{ ok: true; data: { tenantId: string } }>;
   listSavedAccounts?: () => Promise<{ ok: true; data: { encryptionAvailable: boolean; accounts: Array<{ id: string; email: string; hasPassword: boolean }> } }>;
   saveSavedAccount?: (account: { email: string; password: string | null }) => Promise<{ ok: true; data: { id: string; email: string; hasPassword: boolean } }>;
   getSavedAccountCredential?: (id: string) => Promise<{ ok: true; data: { password: string } | null }>;
@@ -93,8 +94,10 @@ export interface ElectronAPI {
   executeReceivablesCommand?: (command: import("../../../electron/persistence/receivablesRepository").ReceivablesCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/receivablesRepository").ReceivablesRepositoryResult }>;
   executePayablesCommand?: (command: import("../../../electron/persistence/payablesRepository").PayablesCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/payablesRepository").PayablesRepositoryResult }>;
   executeExpenseCommand?: (command: import("../../../electron/persistence/expenseRepository").ExpenseCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/expenseRepository").ExpenseRepositoryResult }>;
-  listExpenses?: (filter?: { sucursalId?: string; limit?: number }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
+  listExpenses?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
   listExpenseCategories?: () => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
+  syncCloudExpenses?: (expenses: unknown[], defaultBranchId?: string) => Promise<{ ok: true }>;
+  syncCloudExpenseCategories?: (categories: unknown[]) => Promise<{ ok: true }>;
   executeCustomerCommand?: (command: import("../../../electron/persistence/customerRepository").CustomerCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/customerRepository").CustomerRepositoryResult }>;
   listCustomers?: () => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
   syncCloudCustomers?: (customers: unknown[]) => Promise<{ ok: true }>;

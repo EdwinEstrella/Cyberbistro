@@ -4,6 +4,7 @@ export type ExpenseCommand =
   | {
       type: "expense.create";
       id: string;
+      branchId?: string | null;
       categoryId?: string | null;
       cycleId?: string | null;
       description: string;
