@@ -585,16 +585,6 @@ export function Login() {
                       </span>
                     </div>
                   </div>
-                  <div
-                    className="relative flex items-center gap-1.5"
-                    role="status"
-                    aria-label="Modo local"
-                  >
-                    <span className={`h-1.5 w-1.5 rounded-full transition-all duration-300 ${rememberLogin && secureStorageAvailable ? "bg-[#ff906d] shadow-[0px_0px_8px_0px_rgba(255,144,109,0.9)]" : "bg-[#4a4a4a]"}`} />
-                    <span className="font-['Inter',sans-serif] text-[10px] uppercase tracking-[0.18em] text-[#8a8a8a]">
-                      {secureStorageAvailable ? "local seguro" : "no disponible"}
-                    </span>
-                  </div>
                 </label>
 
                 {/* Biometric Button (Comentado a pedido)

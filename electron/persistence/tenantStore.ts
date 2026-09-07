@@ -468,7 +468,11 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     const targetBranch = (command.type === "expense.create" && (command as any).branchId) ? (command as any).branchId : branchId;
     this.database.exec("BEGIN IMMEDIATE;");
     try {
+      this.database.prepare("INSERT OR IGNORE INTO tenants (id) VALUES (?)").run(this.tenantId);
       this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(targetBranch, this.tenantId, "Principal");
+      if (command.type === "expense.create" && command.categoryId) {
+        this.database.prepare("INSERT OR IGNORE INTO gasto_categorias (id, tenant_id, name, color, active) VALUES (?, ?, 'General', '#ff906d', 1)").run(command.categoryId, this.tenantId);
+      }
 
       switch (command.type) {
         case "expense.create": {
