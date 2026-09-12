@@ -391,6 +391,8 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
 
   syncCloudExpenses(expenses: Array<Record<string, unknown>>, defaultBranchId = "main-process-default"): void {
     this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(defaultBranchId, this.tenantId, "Principal");
+    const checkCompraStmt = this.database.prepare("SELECT 1 FROM compras WHERE id = ? AND tenant_id = ? AND sucursal_id = ?");
+    const checkPayrollStmt = this.database.prepare("SELECT 1 FROM payroll_payments WHERE id = ? AND tenant_id = ?");
     const stmt = this.database.prepare(`
       INSERT INTO gastos (
         id, tenant_id, sucursal_id, category_id, cycle_id,
@@ -428,7 +430,9 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
         const amount = Number.isFinite(rawAmount) && rawAmount >= 0 ? rawAmount : 0;
         const rawAmountCents = typeof g.amount_cents === "number" ? g.amount_cents : Math.round(amount * 100);
         const amountCents = Number.isFinite(rawAmountCents) && rawAmountCents >= 0 ? rawAmountCents : 0;
-        const expenseType = typeof g.expense_type === "string" && ["operational", "purchase", "payroll"].includes(g.expense_type) ? g.expense_type : "operational";
+        const expenseType = typeof g.expense_type === "string" && ["operational", "purchase", "payroll"].includes(g.expense_type)
+          ? g.expense_type
+          : (g.compra_id ? "purchase" : (g.payroll_payment_id ? "payroll" : "operational"));
         const paymentMethod = typeof g.metodo_pago === "string" ? g.metodo_pago : (typeof g.payment_method === "string" ? g.payment_method : "cash");
         const description = g.descripcion ? String(g.descripcion) : (g.description ? String(g.description) : null);
         const supplier = g.proveedor ? String(g.proveedor) : (g.supplier ? String(g.supplier) : null);
@@ -437,14 +441,24 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
         const createdAt = g.created_at ? String(g.created_at) : expenseDate;
         const cycleId = g.cycle_id ? String(g.cycle_id) : null;
 
+        const hasValidCompra = g.compra_id
+          ? Boolean(checkCompraStmt.get(String(g.compra_id), this.tenantId, branchId))
+          : false;
+        const compraId = hasValidCompra ? String(g.compra_id) : null;
+
+        const hasValidPayrollPayment = g.payroll_payment_id
+          ? Boolean(checkPayrollStmt.get(String(g.payroll_payment_id), this.tenantId))
+          : false;
+        const payrollPaymentId = hasValidPayrollPayment ? String(g.payroll_payment_id) : null;
+
         stmt.run(
           String(g.id),
           this.tenantId,
           branchId,
           categoryId,
           cycleId,
-          g.compra_id ? String(g.compra_id) : null,
-          g.payroll_payment_id ? String(g.payroll_payment_id) : null,
+          compraId,
+          payrollPaymentId,
           expenseType,
           paymentMethod,
           amount,

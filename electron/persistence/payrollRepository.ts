@@ -29,16 +29,29 @@ export class PayrollRepository {
   constructor(private readonly db: DatabaseSync) {}
 
   public getEmployees(tenantId: string, sucursalId: string): PayrollEmployee[] {
-    const rows = this.db
+    let rows = this.db
       .prepare(
         `
           SELECT id, first_name, last_name, role, base_salary_cents, frequency, is_active
           FROM payroll_employees
-          WHERE tenant_id = ? AND sucursal_id = ?
+          WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id = 'main-process-default')
           ORDER BY first_name, last_name
         `,
       )
       .all(tenantId, sucursalId) as PayrollEmployeeRow[];
+
+    if (rows.length === 0) {
+      rows = this.db
+        .prepare(
+          `
+            SELECT id, first_name, last_name, role, base_salary_cents, frequency, is_active
+            FROM payroll_employees
+            WHERE tenant_id = ?
+            ORDER BY first_name, last_name
+          `,
+        )
+        .all(tenantId) as PayrollEmployeeRow[];
+    }
 
     return rows.map(mapEmployeeRow);
   }
@@ -163,7 +176,7 @@ export class PayrollRepository {
 
     try {
       this.ensureTenantAndBranch(tenantId, sucursalId);
-      const result = this.db
+      let result = this.db
         .prepare(
           `
             UPDATE payroll_employees
@@ -172,6 +185,18 @@ export class PayrollRepository {
           `,
         )
         .run(employeeId, tenantId, sucursalId);
+
+      if ((result.changes ?? 0) === 0) {
+        result = this.db
+          .prepare(
+            `
+              UPDATE payroll_employees
+              SET is_active = 0, updated_at = CURRENT_TIMESTAMP
+              WHERE id = ? AND tenant_id = ?
+            `,
+          )
+          .run(employeeId, tenantId);
+      }
 
       if ((result.changes ?? 0) === 0) {
         throw new Error("Employee not found");
@@ -385,7 +410,7 @@ export class PayrollRepository {
   }
 
   private getEmployeeOrThrow(tenantId: string, sucursalId: string, employeeId: string) {
-    const employee = this.db
+    let employee = this.db
       .prepare(
         `
           SELECT id, first_name, last_name, role, base_salary_cents, frequency, is_active
@@ -394,6 +419,18 @@ export class PayrollRepository {
         `,
       )
       .get(employeeId, tenantId, sucursalId) as PayrollEmployeeRow | undefined;
+
+    if (!employee) {
+      employee = this.db
+        .prepare(
+          `
+            SELECT id, first_name, last_name, role, base_salary_cents, frequency, is_active
+            FROM payroll_employees
+            WHERE id = ? AND tenant_id = ?
+          `,
+        )
+        .get(employeeId, tenantId) as PayrollEmployeeRow | undefined;
+    }
 
     if (!employee) {
       throw new Error("Employee not found");

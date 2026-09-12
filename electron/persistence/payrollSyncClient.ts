@@ -37,8 +37,8 @@ export class PayrollSyncClient implements ServerSyncClient {
       this.config = null;
       this.clientPromise = Promise.resolve(clientOverride);
     } else {
-      const url = process.env.SUPABASE_URL?.trim() || "";
-      const key = process.env.SUPABASE_PUBLISHABLE_KEY?.trim() || "";
+      const url = process.env.SUPABASE_URL?.trim() || process.env.VITE_SUPABASE_URL?.trim() || "";
+      const key = process.env.SUPABASE_PUBLISHABLE_KEY?.trim() || process.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() || "";
       if (!url || !key) {
         throw new Error("Missing Supabase configuration in main process");
       }

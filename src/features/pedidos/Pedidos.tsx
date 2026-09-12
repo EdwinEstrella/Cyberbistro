@@ -43,7 +43,7 @@ const currency = (value: number) =>
   new Intl.NumberFormat("es-DO", { style: "currency", currency: "DOP" }).format(value || 0);
 
 function buildMenuUrl(slug: string) {
-  return `https://claudix-app.azokia.com/#/menu/${encodeURIComponent(slug)}`;
+  return `https://cloudix-app.azokia.com/#/menu/${encodeURIComponent(slug)}`;
 }
 
 function orderTypeLabel(type: string | null | undefined): string {

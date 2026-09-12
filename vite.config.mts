@@ -61,6 +61,11 @@ export default defineConfig(async ({ mode }) => {
     throw new Error('VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY are required to build Cloudix.')
   }
 
+  process.env.SUPABASE_URL = supabaseUrl
+  process.env.SUPABASE_PUBLISHABLE_KEY = supabasePublishableKey
+  process.env.VITE_SUPABASE_URL = supabaseUrl
+  process.env.VITE_SUPABASE_PUBLISHABLE_KEY = supabasePublishableKey
+
   return {
   base: './',
   plugins: [
@@ -75,6 +80,12 @@ export default defineConfig(async ({ mode }) => {
           startup()
         },
         vite: {
+          define: {
+            'process.env.SUPABASE_URL': JSON.stringify(supabaseUrl),
+            'process.env.SUPABASE_PUBLISHABLE_KEY': JSON.stringify(supabasePublishableKey),
+            'process.env.VITE_SUPABASE_URL': JSON.stringify(supabaseUrl),
+            'process.env.VITE_SUPABASE_PUBLISHABLE_KEY': JSON.stringify(supabasePublishableKey),
+          },
           plugins: [
             notBundle({
               filter(id) {

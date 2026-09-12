@@ -265,6 +265,24 @@ export function Nomina() {
               const firstActive = localEmployees.find((e) => e.isActive) ?? localEmployees[0];
               if (firstActive) setSelectedEmployeeId(firstActive.id);
             }
+            if (window.electronAPI?.executePayrollCommand) {
+              for (const emp of localEmployees) {
+                void executePayrollCommandLocally({
+                  type: "payroll.upsertEmployee",
+                  tenantId,
+                  sucursalId: activeSucursalId,
+                  employee: {
+                    id: emp.id,
+                    firstName: emp.firstName,
+                    lastName: emp.lastName,
+                    role: emp.role,
+                    baseSalaryCents: emp.baseSalaryCents,
+                    frequency: emp.frequency,
+                    isActive: emp.isActive,
+                  },
+                }).catch(() => {});
+              }
+            }
           }
         } catch { /* ignore fallback error */ }
       }
@@ -303,27 +321,25 @@ export function Nomina() {
             frequency: mapPayrollFrequencyFromCloud(ce.frecuencia_pago),
             isActive: ce.activo !== false,
           };
-          if (!employeeMap.has(cloudEmp.id)) {
-            employeeMap.set(cloudEmp.id, cloudEmp);
-            // Sincronizar hacia SQLite local para que el repositorio local disponga del empleado
-            if (window.electronAPI?.executePayrollCommand) {
-              void executePayrollCommandLocally({
-                type: "payroll.upsertEmployee",
-                tenantId,
-                sucursalId: activeSucursalId,
-                employee: {
-                  id: cloudEmp.id,
-                  firstName: cloudEmp.firstName,
-                  lastName: cloudEmp.lastName,
-                  role: cloudEmp.role,
-                  baseSalaryCents: cloudEmp.baseSalaryCents,
-                  frequency: cloudEmp.frequency,
-                  isActive: cloudEmp.isActive,
-                },
-              }).catch((e) => {
-                console.warn("[Nomina] Error mirroring employee to local SQLite:", e);
-              });
-            }
+          employeeMap.set(cloudEmp.id, cloudEmp);
+          // Sincronizar hacia SQLite local para que el repositorio local disponga del empleado
+          if (window.electronAPI?.executePayrollCommand) {
+            void executePayrollCommandLocally({
+              type: "payroll.upsertEmployee",
+              tenantId,
+              sucursalId: activeSucursalId,
+              employee: {
+                id: cloudEmp.id,
+                firstName: cloudEmp.firstName,
+                lastName: cloudEmp.lastName,
+                role: cloudEmp.role,
+                baseSalaryCents: cloudEmp.baseSalaryCents,
+                frequency: cloudEmp.frequency,
+                isActive: cloudEmp.isActive,
+              },
+            }).catch((e) => {
+              console.warn("[Nomina] Error mirroring employee to local SQLite:", e);
+            });
           }
         }
       }
@@ -515,9 +531,34 @@ export function Nomina() {
           frequency: selectedEmployee.frequency,
           adjustments,
         };
-        const context = isPayrollLocalStorageAvailable()
-          ? await getLocalPaymentContext(tenantId, activeSucursalId, payload)
-          : await getPayrollPaymentContextFromCloud(supabase as never, selectedEmployee, payload);
+        let context: PayrollPaymentContext | null = null;
+        if (isPayrollLocalStorageAvailable()) {
+          try {
+            context = await getLocalPaymentContext(tenantId, activeSucursalId, payload);
+          } catch (localErr) {
+            // Si el empleado no estaba registrado localmente, asegurar su registro en SQLite y reintentar
+            if (window.electronAPI?.executePayrollCommand && selectedEmployee) {
+              await executePayrollCommandLocally({
+                type: "payroll.upsertEmployee",
+                tenantId,
+                sucursalId: activeSucursalId,
+                employee: {
+                  id: selectedEmployee.id,
+                  firstName: selectedEmployee.firstName,
+                  lastName: selectedEmployee.lastName,
+                  role: selectedEmployee.role,
+                  baseSalaryCents: selectedEmployee.baseSalaryCents,
+                  frequency: selectedEmployee.frequency,
+                  isActive: selectedEmployee.isActive,
+                },
+              }).catch(() => {});
+              context = await getLocalPaymentContext(tenantId, activeSucursalId, payload).catch(() => null);
+            }
+          }
+        }
+        if (!context) {
+          context = await getPayrollPaymentContextFromCloud(supabase as never, selectedEmployee, payload);
+        }
         if (cancelled) return;
         setPaymentContext(context);
         if (paymentAmountInput.trim().length === 0) {

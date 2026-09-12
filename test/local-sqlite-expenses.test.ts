@@ -276,4 +276,42 @@ describe("local sqlite expenses & categories", () => {
       expect(expenses[0].local_status).toBe("committed");
     });
   });
+
+  it("syncs cloud expenses safely even when compra_id or payroll_payment_id do not exist locally", () => {
+    withStore((store) => {
+      store.syncCloudExpenses([
+        {
+          id: "exp-purchase-cloud",
+          compra_id: "compra-non-existent-123",
+          descripcion: "Compra remota de carnes",
+          monto: 12000,
+          metodo_pago: "cash",
+          fecha_gasto: "2026-09-08T12:00:00.000Z",
+        },
+        {
+          id: "exp-payroll-cloud",
+          payroll_payment_id: "payment-non-existent-456",
+          descripcion: "Pago de nómina remota",
+          monto: 25000,
+          metodo_pago: "transferencia",
+          fecha_gasto: "2026-09-08T13:00:00.000Z",
+        },
+      ], "branch-test");
+
+      const expenses = store.listExpenses({ sucursalId: "branch-test" });
+      expect(expenses).toHaveLength(2);
+      const purchaseExp = expenses.find((e) => e.id === "exp-purchase-cloud");
+      const payrollExp = expenses.find((e) => e.id === "exp-payroll-cloud");
+
+      expect(purchaseExp).toBeDefined();
+      expect(purchaseExp?.expense_type).toBe("purchase");
+      expect(purchaseExp?.amount).toBe(12000);
+      expect(purchaseExp?.compra_id).toBeNull();
+
+      expect(payrollExp).toBeDefined();
+      expect(payrollExp?.expense_type).toBe("payroll");
+      expect(payrollExp?.amount).toBe(25000);
+      expect(payrollExp?.payroll_payment_id).toBeNull();
+    });
+  });
 });

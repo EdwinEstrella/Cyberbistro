@@ -1339,8 +1339,8 @@ function DigitalMenuPanel() {
   const resolvedSlug = slug.trim().toLowerCase().replace(/[^a-z0-9-_]/g, "");
   
   const qrUrl = plan === "profesional" || plan === "empresarial"
-    ? `https://claudix-app.azokia.com/#/menu/${resolvedSlug}`
-    : `https://claudix-app.azokia.com`;
+    ? `https://cloudix-app.azokia.com/#/menu/${resolvedSlug}`
+    : `https://cloudix-app.azokia.com`;
 
   useEffect(() => {
     if (!qrUrl) return;
@@ -1396,7 +1396,7 @@ function DigitalMenuPanel() {
         tableName: "tenants",
         rowId: tenantId,
         op: "update",
-        payload: { id: tenantId, menu_url: enabled ? `https://claudix-app.azokia.com/#/menu/${resolvedSlug}` : null, updated_at: new Date().toISOString() },
+        payload: { id: tenantId, menu_url: enabled ? `https://cloudix-app.azokia.com/#/menu/${resolvedSlug}` : null, updated_at: new Date().toISOString() },
         deviceId: await getDeviceId(),
       });
 
@@ -1592,7 +1592,7 @@ function DigitalMenuPanel() {
               <div className="flex flex-col gap-1.5">
                 <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Link del Restaurante (Slug)</label>
                 <div className="flex items-center bg-muted border border-border rounded-xl px-3 py-2 text-sm text-muted-foreground">
-                  <span className="select-none opacity-60 shrink-0">https://claudix-app.azokia.com/#/menu/</span>
+                  <span className="select-none opacity-60 shrink-0">https://cloudix-app.azokia.com/#/menu/</span>
                   <input 
                     type="text" 
                     placeholder="mi-restaurante"
