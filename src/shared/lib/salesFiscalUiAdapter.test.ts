@@ -8,7 +8,7 @@ describe("C3d renderer fiscal adapter", () => {
 
     await expect(createLocalFiscalSale({ type: "sales.fiscal.create", invoiceId: "invoice-1", fiscalIntentId: "intent-1", fiscalMode: "dgii_ecf", documentType: "31", total: 25 })).resolves.toMatchObject({ localStatus: "committed", syncStatus: "pending" });
     expect(execute).toHaveBeenCalledWith(expect.objectContaining({ fiscalMode: "dgii_ecf" }));
-    expect(["internal_receipt", "ncf_legacy", "dgii_ecf"].map(getFiscalPendingPresentation)).toEqual([
+    expect((["internal_receipt", "ncf_legacy", "dgii_ecf"] as const).map(getFiscalPendingPresentation)).toEqual([
       { label: "Recibo local pendiente de sincronización", status: "pending_sync" },
       { label: "NCF local pendiente de sincronización", status: "pending_sync" },
       { label: "e-CF local pendiente de sincronización", status: "pending_sync" },

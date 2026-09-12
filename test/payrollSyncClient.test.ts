@@ -274,7 +274,7 @@ function createFakeSdk() {
   }));
 
   return {
-    client: { database: { from, rpc } },
+    client: { from, rpc },
     from,
     upsert,
     rpc,
@@ -303,7 +303,7 @@ function createFakeSdk() {
 
 function readPostMigrationGastosColumns(): string[] {
   const baseSchema = readFileSync(path.join(process.cwd(), "sql", "cloudix_gastos.sql"), "utf8");
-  const payrollMigration = readFileSync(path.join(process.cwd(), "migrations", "20260829160000_add-payroll-schema.sql"), "utf8");
+  const payrollMigration = readFileSync(path.join(process.cwd(), "supabase", "migrations", "20260829160000_add-payroll-schema.sql"), "utf8");
   const columns = new Set<string>(extractCreateTableColumns(baseSchema, "public.gastos"));
 
   for (const column of extractAlterTableColumns(payrollMigration, "public.gastos")) {

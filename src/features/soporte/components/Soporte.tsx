@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Navigate, useNavigate } from "react-router";
 import QRCode from "qrcode";
 import { ExternalLink } from "lucide-react";
-import { insforgeClient } from "../../../shared/lib/insforge";
+import { supabase } from "../../../shared/lib/supabase";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { useTenantCurrency } from "../../../shared/hooks/useTenantCurrency";
@@ -121,13 +121,13 @@ async function loadCartaData(tenantId: string, sucursalId: string): Promise<{
   }
 
   const [platosRes, categoriesRes] = await Promise.all([
-    insforgeClient.database
+    supabase
       .from("platos")
       .select("*")
       .eq("tenant_id", tenantId)
       .eq("sucursal_id", sucursalId)
       .order("categoria"),
-    insforgeClient.database
+    supabase
       .from("menu_categories")
       .select("id, tenant_id, nombre, color, sort_order, sucursal_id")
       .eq("tenant_id", tenantId)
@@ -897,8 +897,8 @@ function UsuariosPanel() {
     if (!tenantId) return;
     setListLoading(true);
     const [usersRes, tenantRes] = await Promise.all([
-      insforgeClient.database.from("tenant_users").select("id, email, rol, nombre, activo, auth_user_id").eq("tenant_id", tenantId).order("email"),
-      insforgeClient.database.from("tenants").select("*").eq("id", tenantId).maybeSingle(),
+      supabase.from("tenant_users").select("id, email, rol, nombre, activo, auth_user_id").eq("tenant_id", tenantId).order("email"),
+      supabase.from("tenants").select("*").eq("id", tenantId).maybeSingle(),
     ]);
     if (!usersRes.error && usersRes.data) setTeamUsers(usersRes.data as TenantUserRow[]);
     if (!tenantRes.error && tenantRes.data) setTenantLimitConfig(extractTenantUserLimitConfig(tenantRes.data as TenantRow));
@@ -916,7 +916,7 @@ function UsuariosPanel() {
     showConfirm(`¿Eliminar completamente el acceso de «${row.email}» y todo lo relacionado?`, async () => {
       setDeletingId(row.id);
       
-      const { error } = await insforgeClient.database.rpc("cloudix_owner_delete_staff_user", {
+      const { error } = await supabase.rpc("cloudix_owner_delete_staff_user", {
         p_tenant_user_id: row.id,
       });
       
@@ -935,25 +935,22 @@ function UsuariosPanel() {
     setCreating(true); setError(""); setSuccess("");
     
     const staffEmail = email.trim();
-    const currentForRole = countActiveUsersByRole(teamUsers, rol);
-    const roleLimit = getLimitForRole(tenantLimitConfig, rol);
+    const managedRole = rol as Parameters<typeof countActiveUsersByRole>[1];
+    const currentForRole = countActiveUsersByRole(teamUsers, managedRole);
+    const roleLimit = getLimitForRole(tenantLimitConfig, managedRole);
     if (roleLimit !== null && currentForRole >= roleLimit) {
       setError(`Límite de usuarios (${roleLimit}) alcanzado para este rol.`);
       setCreating(false); return;
     }
 
-    const tempClient = (await import("@insforge/sdk")).createClient({
-      baseUrl: import.meta.env.VITE_INSFORGE_BASE_URL || "https://restaurante.azokia.com",
-      anonKey: import.meta.env.VITE_INSFORGE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3OC0xMjM0LTU2NzgtOTBhYi1jZGVmMTIzNDU2NzgiLCJlbWFpbCI6ImFub25AaW5zZm9yZ2UuY29tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU5NDAxMzF9.OQwbEoWPtw-inbXdU3D7c39RZn3c87FJ-HvMBF_jrn4",
-      isServerMode: true
-    });
+    const tempClient = supabase;
 
     const { data: signData, error: authError } = await tempClient.auth.signUp({ email: staffEmail, password });
     if (authError) { setError((authError as any).message); setCreating(false); return; }
 
     const newUserId = (signData as any)?.user?.id;
 
-    const { error: insertError } = await insforgeClient.database.rpc("cloudix_owner_create_staff_membership", {
+    const { error: insertError } = await supabase.rpc("cloudix_owner_create_staff_membership", {
       p_auth_user_id: newUserId,
       p_email: staffEmail,
       p_nombre: nombre.trim(),
@@ -1097,7 +1094,7 @@ function ChangePasswordCard() {
     setSuccess(false);
 
     try {
-      const { error: signInError } = await insforgeClient.auth.signInWithPassword({
+      const { error: signInError } = await supabase.auth.signInWithPassword({
         email: user.email,
         password: currentPassword,
       });
@@ -1108,7 +1105,7 @@ function ChangePasswordCard() {
         return;
       }
 
-      const { error: updateError } = await insforgeClient.database.rpc("cloudix_update_my_password", {
+      const { error: updateError } = await supabase.rpc("cloudix_update_my_password", {
         p_new_password: newPassword,
       });
 
@@ -1513,7 +1510,7 @@ function DigitalMenuPanel() {
       const fileExt = file.name.split('.').pop();
       const fileName = `${tenantId}/platos/${editingPlato.id}-${Date.now()}.${fileExt}`;
 
-      const { error } = await insforgeClient.storage
+      const { error } = await supabase.storage
         .from('configuracion')
         .upload(fileName, file);
 
@@ -1522,7 +1519,7 @@ function DigitalMenuPanel() {
         console.error(error);
         return;
       }
-      const publicUrl = insforgeClient.storage
+      const publicUrl = supabase.storage
         .from('configuracion')
         .getPublicUrl(fileName);
 

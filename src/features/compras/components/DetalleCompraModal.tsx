@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { X, Receipt } from "lucide-react";
 import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
-import { insforgeClient } from "../../../shared/lib/insforge";
+import { supabase } from "../../../shared/lib/supabase";
 import type { CompraRow, ProveedorRow, ProductoRow } from "./Compras";
 
 interface CompraDetalleRow {
@@ -62,7 +62,7 @@ export function DetalleCompraModal({
           const allDetalles = await readLocalMirror<CompraDetalleRow>(currentTenantId, "compra_detalles");
           data = allDetalles.filter(d => d.compra_id === currentCompra.id);
         } else {
-          const res = await insforgeClient.database
+          const res = await supabase
             .from("compra_detalles")
             .select("*")
             .eq("compra_id", currentCompra.id);

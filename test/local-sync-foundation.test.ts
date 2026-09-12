@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const migrationFile = "20260809180000_local-sync-foundation.sql";
-const migrationPath = join(process.cwd(), "migrations", migrationFile);
+const migrationPath = join(process.cwd(), "supabase", "migrations", migrationFile);
 
 function migration(): string {
   return readFileSync(migrationPath, "utf8");

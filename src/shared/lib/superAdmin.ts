@@ -1,4 +1,4 @@
-import type { UserSchema } from "@insforge/sdk";
+import type { User } from "@supabase/supabase-js";
 
 export const SUPER_ADMIN_EMAIL = "admin@gmail.com";
 export const SUPER_ADMIN_ROLE = "super_admin";
@@ -9,6 +9,6 @@ export function isSuperAdminEmail(email: string | null | undefined): boolean {
   return (email ?? "").trim().toLowerCase() === SUPER_ADMIN_EMAIL;
 }
 
-export function isSuperAdminUser(user: UserSchema | null | undefined): boolean {
+export function isSuperAdminUser(user: User | null | undefined): boolean {
   return isSuperAdminEmail(user?.email);
 }

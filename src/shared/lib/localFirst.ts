@@ -1,4 +1,4 @@
-import { insforgeClient } from "./insforge";
+import { supabase } from "./supabase";
 import { incrementTenantNcfSequence, resolveNcfForNewInvoice, type ResolvedNcfForInvoice } from "./invoiceNcf";
 import { isCloudAvailabilityFailure, isCloudAvailableForDesktop, isDesktopRuntime, recordCloudFailure, recordCloudSuccess } from "./cloudAvailability";
 import { commitLanEdgeCursor, getLanEdgeBaseUrl, publishLanOutboxEntry, publishLanSnapshotEntries, pullLanOutboxEntries } from "./lanEdgeClient";
@@ -922,13 +922,13 @@ async function writeDirectlyToServer(args: {
     ? buildServerWritePayload(args.tenantId, args.tableName, outgoingPayload)
     : null;
   if (args.op === "insert") {
-    result = await runTrackedCloudOperation(() => insforgeClient.database.from(args.tableName).insert([serverPayload as Record<string, unknown>]) as any);
+    result = await runTrackedCloudOperation(() => supabase.from(args.tableName).insert([serverPayload as Record<string, unknown>]) as any);
   } else if (args.op === "update") {
-    result = await runTrackedCloudOperation(() => insforgeClient.database.from(args.tableName).update(serverPayload as Record<string, unknown>).eq("id", args.rowId) as any);
+    result = await runTrackedCloudOperation(() => supabase.from(args.tableName).update(serverPayload as Record<string, unknown>).eq("id", args.rowId) as any);
   } else if (args.op === "upsert") {
-    result = await runTrackedCloudOperation(() => insforgeClient.database.from(args.tableName).upsert(serverPayload as Record<string, unknown>, { onConflict: resolveUpsertConflictTarget(args.tableName) }) as any);
+    result = await runTrackedCloudOperation(() => supabase.from(args.tableName).upsert(serverPayload as Record<string, unknown>, { onConflict: resolveUpsertConflictTarget(args.tableName) }) as any);
   } else if (args.op === "delete") {
-    result = await runTrackedCloudOperation(() => insforgeClient.database.from(args.tableName).delete().eq("id", args.rowId) as any);
+    result = await runTrackedCloudOperation(() => supabase.from(args.tableName).delete().eq("id", args.rowId) as any);
   }
   if (result?.error) {
     throw new Error(result.error.message || `No se pudo sincronizar ${args.tableName}.`);
@@ -1234,7 +1234,7 @@ export async function checkServerRowExists(
   tableName: LocalFirstMirrorTable,
   rowId: string
 ): Promise<Record<string, unknown> | null> {
-  const { data, error } = await runTrackedCloudOperation(() => insforgeClient.database.from(tableName).select("*").eq("id", rowId).maybeSingle() as any);
+  const { data, error } = await runTrackedCloudOperation(() => supabase.from(tableName).select("*").eq("id", rowId).maybeSingle() as any);
   if (error || !data) return null;
   return data as Record<string, unknown>;
 }
@@ -1243,7 +1243,7 @@ async function findExistingPurchaseOutboxRecord(entry: SyncOutboxEntry): Promise
   foundById: boolean;
   foundByCompraId: boolean;
 }> {
-  const byId = await runTrackedCloudOperation(() => insforgeClient.database
+  const byId = await runTrackedCloudOperation(() => supabase
     .from(entry.table_name)
     .select("id")
     .eq("id", entry.row_id)
@@ -1255,7 +1255,7 @@ async function findExistingPurchaseOutboxRecord(entry: SyncOutboxEntry): Promise
     return { foundById: Boolean(byId.data), foundByCompraId: false };
   }
 
-  const byCompraId = await runTrackedCloudOperation(() => insforgeClient.database
+  const byCompraId = await runTrackedCloudOperation(() => supabase
     .from("compra_fiscal")
     .select("id")
     .eq("compra_id", compraId)
@@ -1274,7 +1274,7 @@ async function getNextAvailableCierreCycleNumber(tenantId: string, requestedCycl
   cycleNumber?: number;
   reason?: string;
 }> {
-  const { data, error } = await runTrackedCloudOperation(() => insforgeClient.database
+  const { data, error } = await runTrackedCloudOperation(() => supabase
     .from("cierres_operativos")
     .select("cycle_number")
     .eq("tenant_id", tenantId)
@@ -1322,7 +1322,7 @@ async function isNcfAvailableForFactura(tenantId: string, facturaId: string, ncf
   available?: boolean;
   reason?: string;
 }> {
-  const { data, error } = await runTrackedCloudOperation(() => insforgeClient.database
+  const { data, error } = await runTrackedCloudOperation(() => supabase
     .from("facturas")
     .select("id,ncf")
     .eq("tenant_id", tenantId)
@@ -1400,7 +1400,7 @@ export async function validateNcfSequence(
   ncfTipo: string,
   ncfToUse: string
 ): Promise<{ valid: boolean; reason?: string }> {
-  const { data: tenant, error } = await runTrackedCloudOperation(() => insforgeClient.database.from("tenants").select("ncf_secuencias_por_tipo").eq("id", tenantId).single() as any);
+  const { data: tenant, error } = await runTrackedCloudOperation(() => supabase.from("tenants").select("ncf_secuencias_por_tipo").eq("id", tenantId).single() as any);
   if (error || !tenant) return { valid: false, reason: "No se pudo leer secuencia NCF del tenant." };
 
   const secuencias = tenant.ncf_secuencias_por_tipo as Record<string, number | { secuencia_actual?: number }> | null;
@@ -1420,7 +1420,7 @@ export async function validateCierreCicleSequence(
   tenantId: string,
   cycleNumber: number
 ): Promise<{ valid: boolean; reason?: string }> {
-  const { data, error } = await runTrackedCloudOperation(() => insforgeClient.database
+  const { data, error } = await runTrackedCloudOperation(() => supabase
     .from("cierres_operativos")
     .select("cycle_number")
     .eq("tenant_id", tenantId)
@@ -1531,13 +1531,13 @@ export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: nu
           ? buildServerWritePayload(tenantId, entry.table_name, outgoingPayload)
           : null;
         if (entry.op === "insert") {
-          result = await runTrackedCloudOperation(() => insforgeClient.database.from(entry.table_name).insert([serverPayload as Record<string, unknown>]) as any);
+          result = await runTrackedCloudOperation(() => supabase.from(entry.table_name).insert([serverPayload as Record<string, unknown>]) as any);
         } else if (entry.op === "update") {
-          result = await runTrackedCloudOperation(() => insforgeClient.database.from(entry.table_name).update(serverPayload as Record<string, unknown>).eq("id", entry.row_id) as any);
+          result = await runTrackedCloudOperation(() => supabase.from(entry.table_name).update(serverPayload as Record<string, unknown>).eq("id", entry.row_id) as any);
         } else if (entry.op === "upsert") {
-          result = await runTrackedCloudOperation(() => insforgeClient.database.from(entry.table_name).upsert(serverPayload as Record<string, unknown>, { onConflict: resolveUpsertConflictTarget(entry.table_name) }) as any);
+          result = await runTrackedCloudOperation(() => supabase.from(entry.table_name).upsert(serverPayload as Record<string, unknown>, { onConflict: resolveUpsertConflictTarget(entry.table_name) }) as any);
         } else if (entry.op === "delete") {
-          result = await runTrackedCloudOperation(() => insforgeClient.database.from(entry.table_name).delete().eq("id", entry.row_id) as any);
+          result = await runTrackedCloudOperation(() => supabase.from(entry.table_name).delete().eq("id", entry.row_id) as any);
         }
         if (result?.error) {
           const reason = result.error.message || "Error en sync.";
@@ -1784,7 +1784,7 @@ export async function validateAndCacheLicense(
         await new Promise((resolve) => setTimeout(resolve, 250 * attempt));
       }
 
-      const result = await runTrackedCloudOperation(() => insforgeClient.database
+      const result = await runTrackedCloudOperation(() => supabase
         .from("tenants")
         .select("activa")
         .eq("id", tenantId)
@@ -1807,7 +1807,7 @@ export async function validateAndCacheLicense(
       return { valid: false, reason: "Tenant bloqueado o inactivo." };
     }
 
-    const { data: tu, error: tuErr } = await runTrackedCloudOperation(() => insforgeClient.database
+    const { data: tu, error: tuErr } = await runTrackedCloudOperation(() => supabase
       .from("tenant_users")
       .select("activo")
       .eq("tenant_id", tenantId)
@@ -2036,7 +2036,7 @@ async function pullIncrementalChanges(
   let reachedEnd = false;
 
   while (selectedRows.length < PAGE_SIZE && !reachedEnd) {
-    let query = insforgeClient.database
+    let query = supabase
       .from(tableName)
       .select("*")
       .order("updated_at", { ascending: true })
@@ -2266,7 +2266,7 @@ export function getTenantReadFilter(
 }
 
 async function pullTablePage(tableName: LocalFirstMirrorTable, tenantId: string, offset: number) {
-  let query = insforgeClient.database
+  let query = supabase
     .from(tableName)
     .select("*")
     .order("id", { ascending: true })
@@ -2550,7 +2550,7 @@ async function processInvoiceInventoryDeduction(
 export async function ensureDefaultSucursal(tenantId: string): Promise<void> {
   if (navigator.onLine) {
     try {
-      const res = await insforgeClient.database
+      const res = await supabase
         .from("sucursales")
         .select("id")
         .eq("tenant_id", tenantId);

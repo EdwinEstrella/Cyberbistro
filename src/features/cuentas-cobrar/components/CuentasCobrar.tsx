@@ -3,7 +3,7 @@ import { RefreshCw, DollarSign, FileText, CheckCircle, Clock, Eye } from "lucide
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
-import { insforgeClient } from "../../../shared/lib/insforge";
+import { supabase } from "../../../shared/lib/supabase";
 import { RegistrarPagoCxCModal } from "./RegistrarPagoCxCModal";
 import { DetalleCuentaCobrarModal } from "./DetalleCuentaCobrarModal";
 
@@ -115,11 +115,11 @@ export function CuentasCobrar() {
         ciclosData = await readLocalMirror<any>(tenantId, "cierres_operativos");
       } else {
         const [cRes, paRes, cuRes, fRes, cyRes] = await Promise.all([
-          insforgeClient.database.from("cuentas_cobrar").select("*").eq("tenant_id", tenantId),
-          insforgeClient.database.from("cxc_pagos").select("*").eq("tenant_id", tenantId),
-          insforgeClient.database.from("customers").select("id, name").eq("tenant_id", tenantId),
-          insforgeClient.database.from("facturas").select("id, numero_factura").eq("tenant_id", tenantId),
-          insforgeClient.database.from("cierres_operativos").select("id, cycle_number, opened_at, closed_at, sucursal_id").eq("tenant_id", tenantId).is("closed_at", null).order("opened_at", { ascending: false }).limit(1),
+          supabase.from("cuentas_cobrar").select("*").eq("tenant_id", tenantId),
+          supabase.from("cxc_pagos").select("*").eq("tenant_id", tenantId),
+          supabase.from("customers").select("id, name").eq("tenant_id", tenantId),
+          supabase.from("facturas").select("id, numero_factura").eq("tenant_id", tenantId),
+          supabase.from("cierres_operativos").select("id, cycle_number, opened_at, closed_at, sucursal_id").eq("tenant_id", tenantId).is("closed_at", null).order("opened_at", { ascending: false }).limit(1),
         ]);
         cuentasData = cRes.data || [];
         pagosData = paRes.data || [];

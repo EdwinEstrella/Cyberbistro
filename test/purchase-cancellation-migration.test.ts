@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const migration = readFileSync(
-  join(process.cwd(), "migrations", "20260808120000_allow-admin-purchase-cancellation.sql"),
+  join(process.cwd(), "supabase", "migrations", "20260808120000_allow-admin-purchase-cancellation.sql"),
   "utf8"
 );
 

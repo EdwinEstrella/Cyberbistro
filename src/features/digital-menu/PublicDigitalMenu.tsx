@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router";
-import { insforgeClient } from "../../shared/lib/insforge";
+import { supabase } from "../../shared/lib/supabase";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -107,7 +107,7 @@ export function PublicDigitalMenu() {
     setLoading(true);
     setError(null);
     void (async () => {
-      const { data, error: rpcError } = await insforgeClient.database.rpc(
+      const { data, error: rpcError } = await supabase.rpc(
         "get_public_digital_menu",
         { p_public_slug: slug }
       );
@@ -129,30 +129,30 @@ export function PublicDigitalMenu() {
     const channelName = `digital_menu:${menu.settings.tenant_id}`;
     let active = true;
 
-    const setupRealtime = async () => {
-      await insforgeClient.realtime.connect();
-      const sub = await insforgeClient.realtime.subscribe(channelName);
-      if (!sub.ok) { console.error("Realtime sub error:", sub.error); return; }
-    };
+    const channel = supabase.channel(channelName);
 
     const handleMenuChanged = (msg: unknown) => {
       if (!active) return;
       const m = msg as { meta?: { channel?: string } } | null;
       if (m?.meta?.channel && !m.meta.channel.includes(channelName)) return;
-      void insforgeClient.database
+      void supabase
         .rpc("get_public_digital_menu", { p_public_slug: slug })
         .then(({ data, error }) => {
           if (!error && active) setMenu(asMenuPayload(data));
         });
     };
 
-    insforgeClient.realtime.on("menu_changed", handleMenuChanged);
-    void setupRealtime();
+    channel
+      .on("broadcast", { event: "menu_changed" }, handleMenuChanged)
+      .subscribe((status) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.error("Realtime subscription failed:", status);
+        }
+      });
 
     return () => {
       active = false;
-      insforgeClient.realtime.off("menu_changed", handleMenuChanged);
-      insforgeClient.realtime.unsubscribe(channelName);
+      void supabase.removeChannel(channel);
     };
   }, [menu.settings?.tenant_id, slug]);
 
@@ -160,7 +160,7 @@ export function PublicDigitalMenu() {
   useEffect(() => {
     if (!menu.settings?.tenant_id || !clientSessionId) return;
 
-    void insforgeClient.database
+    void supabase
       .from("digital_orders")
       .select("id", { count: "exact", head: true })
       .eq("tenant_id", menu.settings.tenant_id)
@@ -269,9 +269,9 @@ export function PublicDigitalMenu() {
       p_client_session_id: clientSessionId || null,
     };
 
-    const { data, error: rpcError } = await insforgeClient.database.rpc(
+    const { data, error: rpcError } = await supabase.rpc(
       "create_public_digital_order",
-      rpcArgs as Parameters<typeof insforgeClient.database.rpc>[1]
+      rpcArgs as Parameters<typeof supabase.rpc>[1]
     );
 
     setPlacing(false);

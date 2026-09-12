@@ -29,19 +29,15 @@ vi.mock("../src/shared/lib/localFirst", () => ({
   enqueueLocalWrite: vi.fn(),
 }));
 
-// Mock insforgeClient
-vi.mock("../src/shared/lib/insforge", () => {
+// Mock Supabase client
+vi.mock("../src/shared/lib/supabase", () => {
   const queryChain = {
     select: vi.fn(() => queryChain),
     eq: vi.fn(() => queryChain),
     maybeSingle: vi.fn(() => ({ data: null, error: null })),
   };
   return {
-    insforgeClient: {
-      database: {
-        from: vi.fn(() => queryChain),
-      },
-    },
+    supabase: { from: vi.fn(() => queryChain) },
   };
 });
 

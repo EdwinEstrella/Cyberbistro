@@ -1,4 +1,4 @@
-import { insforgeClient } from "./insforge";
+import { supabase } from "./supabase";
 import { isCloudAvailabilityFailure, isDesktopCloudUnavailable, recordCloudFailure, recordCloudSuccess } from "./cloudAvailability";
 import { readLocalMirror } from "./localFirst";
 import { normalizeFiscalMode, type FiscalMode } from "./fiscalTypes";
@@ -87,14 +87,14 @@ export async function loadTenantBillingSettings(
     return loadLocalTenantBillingSettings(tenantId);
   }
 
-  let res = await insforgeClient.database
+  let res = await supabase
     .from("tenants")
     .select(TENANT_BILLING_SETTINGS_SELECT)
     .eq("id", tenantId)
     .maybeSingle();
 
   if (res.error) {
-    res = await insforgeClient.database
+    res = await supabase
       .from("tenants")
       .select("ncf_fiscal_activo, ncf_tipo_default")
       .eq("id", tenantId)

@@ -16,7 +16,7 @@ import {
   Trash2,
   ChevronRight
 } from "lucide-react";
-import { insforgeClient } from "../lib/insforge";
+import { supabase } from "../lib/supabase";
 
 interface DigitalMenuSettings {
   id: string;
@@ -91,7 +91,7 @@ export default function DigitalMenuPage() {
         setErrorState(null);
         
         // 1. Fetch settings
-        const { data: settingsData, error: settingsError } = await insforgeClient.database
+        const { data: settingsData, error: settingsError } = await supabase
           .from("digital_menu_settings")
           .select("*")
           .eq("public_slug", slug)
@@ -121,11 +121,11 @@ export default function DigitalMenuPage() {
 
         // 2. Fetch platos, menu_categories, and digital_menu_items
         const [platosRes, menuItemsRes] = await Promise.all([
-          insforgeClient.database
+          supabase
             .from("platos")
             .select("*")
             .eq("tenant_id", tenantId),
-          insforgeClient.database
+          supabase
             .from("digital_menu_items")
             .select("*")
             .eq("tenant_id", tenantId)
@@ -267,7 +267,7 @@ export default function DigitalMenuPage() {
       setSubmittingOrder(true);
 
       // 1. Insert order
-      const { data: orderData, error: orderError } = await insforgeClient.database
+      const { data: orderData, error: orderError } = await supabase
         .from("digital_orders")
         .insert([
           {
@@ -299,7 +299,7 @@ export default function DigitalMenuPage() {
         subtotal: item.plato.precio * item.quantity
       }));
 
-      const { error: itemsError } = await insforgeClient.database
+      const { error: itemsError } = await supabase
         .from("digital_order_items")
         .insert(orderItems);
 

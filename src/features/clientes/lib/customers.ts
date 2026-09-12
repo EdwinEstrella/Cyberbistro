@@ -1,4 +1,4 @@
-import { insforgeClient } from "../../../shared/lib/insforge";
+import { supabase } from "../../../shared/lib/supabase";
 import {
   enqueueLocalWrite,
   getDeviceId,
@@ -117,7 +117,7 @@ export async function listCustomers(tenantId: string): Promise<Customer[]> {
 
   // 3. Sync from cloud in the background or if local is empty (WhatsApp style reconciliation)
   try {
-    const { data: cloudCustomers, error } = await insforgeClient.database
+    const { data: cloudCustomers, error } = await supabase
       .from("customers")
       .select("*")
       .eq("tenant_id", tenantId)
@@ -262,7 +262,7 @@ export async function listCustomerInvoices(tenantId: string, customerId: string)
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   }
 
-  const { data, error } = await insforgeClient.database
+  const { data, error } = await supabase
     .from("facturas")
     .select("id, numero_factura, total, estado, metodo_pago, created_at, pagada_at, cliente_nombre, cliente_rnc")
     .eq("tenant_id", tenantId)

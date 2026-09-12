@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const migration = readFileSync(
-  join(process.cwd(), "migrations", "20260608150000_add-advanced-inventory-columns.sql"),
+  join(process.cwd(), "supabase", "migrations", "20260608150000_add-advanced-inventory-columns.sql"),
   "utf8"
 );
 

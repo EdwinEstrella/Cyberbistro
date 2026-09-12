@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSucursal } from "../../app/context/SucursalContext";
 import { useAuth, ensureAuthSessionFresh } from "../../shared/hooks/useAuth";
-import { insforgeClient } from "../../shared/lib/insforge";
+import { supabase } from "../../shared/lib/supabase";
 import { tenantRealtimeSubscriptionManager } from "../../shared/lib/tenantRealtimeSubscriptionManager";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -73,14 +73,14 @@ export function Pedidos() {
       if (!background) setLoading(true);
       await ensureAuthSessionFresh();
 
-      const settingsQuery = insforgeClient.database
+      const settingsQuery = supabase
         .from("digital_menu_settings")
         .select("id, tenant_id, public_slug")
         .eq("tenant_id", tenantId);
 
       const [settingsRes, ordersRes] = await Promise.all([
         settingsQuery.eq("sucursal_id", activeSucursalId).maybeSingle(),
-        insforgeClient.database
+        supabase
           .from("digital_orders")
           .select(
             "id, tenant_id, customer_name, customer_phone, notes, status, total, created_at, order_type, mesa_numero, numero_pedido, sucursal_id"
@@ -99,7 +99,7 @@ export function Pedidos() {
       let loadedOrderItems: DigitalOrderItem[] = [];
 
       if (orderIds.length > 0) {
-        const orderItemsRes = await insforgeClient.database
+        const orderItemsRes = await supabase
           .from("digital_order_items")
           .select("id, order_id, plato_id, name_snapshot, price_snapshot, quantity, subtotal")
           .in("order_id", orderIds);
@@ -155,7 +155,7 @@ export function Pedidos() {
     }
 
     if (status === "rejected") {
-      const { error } = await insforgeClient.database
+      const { error } = await supabase
         .from("digital_orders")
         .delete()
         .eq("id", order.id)
@@ -178,7 +178,7 @@ export function Pedidos() {
         // ── Idempotent claim: transition pending → accepted atomically ──────────
         // Enforce tenant + sucursal isolation server-side so a rogue client
         // cannot claim another tenant's or branch's order.
-        const { data: claimData, error: claimError } = await insforgeClient.database
+        const { data: claimData, error: claimError } = await supabase
           .from("digital_orders")
           .update({
             status: "accepted",
@@ -228,7 +228,7 @@ export function Pedidos() {
           comandaPayload.mesa_numero = order.mesa_numero;
         }
 
-        const { data: comandaData, error: comandaError } = await insforgeClient.database
+        const { data: comandaData, error: comandaError } = await supabase
           .from("comandas")
           .insert(comandaPayload)
           .select("id")
@@ -236,7 +236,7 @@ export function Pedidos() {
 
         if (comandaError || !comandaData) {
           // Comanda failed — revert the accepted status back to pending
-          await insforgeClient.database
+          await supabase
             .from("digital_orders")
             .update({ status: "pending", accepted_at: null })
             .eq("id", order.id)
@@ -266,7 +266,7 @@ export function Pedidos() {
             created_by_auth_user_id: null,
           }));
 
-          const { error: consumosError } = await insforgeClient.database
+          const { error: consumosError } = await supabase
             .from("consumos")
             .insert(consumosPayload);
 
@@ -275,7 +275,7 @@ export function Pedidos() {
             // Only revert to pending if the comanda deletion succeeds (prevents
             // orphan comanda + duplicate on retry). If deletion fails, keep the
             // order accepted and surface a manual intervention error.
-            const { error: comandaDeleteError } = await insforgeClient.database
+            const { error: comandaDeleteError } = await supabase
               .from("comandas")
               .delete()
               .eq("id", comandaId);
@@ -288,7 +288,7 @@ export function Pedidos() {
               );
             } else {
               // Comanda deleted cleanly — safe to revert order to pending for retry.
-              await insforgeClient.database
+              await supabase
                 .from("digital_orders")
                 .update({ status: "pending", accepted_at: null })
                 .eq("id", order.id)

@@ -1,4 +1,4 @@
-import { insforgeClient } from "./insforge";
+import { supabase } from "./supabase";
 import {
   buildBSequenceMapFromRow,
   buildTenantNcfUpdatePayload,
@@ -23,7 +23,7 @@ export type ResolvedNcfForInvoice = {
 
 /** Solo la fila del tenant de la sesion (`tenants.id` = tenant del usuario). */
 export async function loadTenantNcfRow(tenantId: string): Promise<TenantNcfRow | null> {
-  let res = await insforgeClient.database
+  let res = await supabase
     .from("tenants")
     .select(
       `ncf_fiscal_activo, ncf_tipo_default, ncf_secuencia_siguiente, ncf_secuencias_por_tipo, ${NCF_B_SEQUENCE_FIELDS_SELECT}`
@@ -32,7 +32,7 @@ export async function loadTenantNcfRow(tenantId: string): Promise<TenantNcfRow |
     .maybeSingle();
 
   if (res.error) {
-    res = await insforgeClient.database
+    res = await supabase
       .from("tenants")
       .select("ncf_fiscal_activo, ncf_tipo_default, ncf_secuencia_siguiente")
       .eq("id", tenantId)
@@ -95,7 +95,7 @@ export async function resolveNcfForNewInvoice(
     rpcArgs.p_ncf_tipo = "E32";
   }
 
-  const { data, error } = await insforgeClient.database.rpc(rpcName, rpcArgs);
+  const { data, error } = await supabase.rpc(rpcName, rpcArgs);
 
   if (error) {
     if (isCloudAvailabilityFailure(error)) recordCloudFailure();
@@ -152,7 +152,7 @@ export async function incrementTenantNcfSequence(
     row?.ncf_secuencias_por_tipo
   );
 
-  const { error } = await insforgeClient.database
+  const { error } = await supabase
     .from("tenants")
     .update({
       ...updatePayload,

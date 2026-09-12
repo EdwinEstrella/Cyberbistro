@@ -13,8 +13,8 @@ import type {
   WorkerResult,
 } from "./types";
 
-export class InsforgeStorageCertificateCustody implements CertificateCustody {
-  constructor(private readonly insforgeUrl: string, private readonly insforgeKey: string, private readonly db: any) {}
+export class SupabaseStorageCertificateCustody implements CertificateCustody {
+  constructor(private readonly supabaseUrl: string, private readonly supabaseKey: string, private readonly db: any) {}
 
   async getSigningMaterial(request: import("./types").GetSigningMaterialRequest): Promise<WorkerResult<SigningMaterial>> {
     try {
@@ -29,12 +29,12 @@ export class InsforgeStorageCertificateCustody implements CertificateCustody {
         return { ok: false, error: fiscalWorkerError("CERTIFICATE_NOT_FOUND", "Certificate metadata not found or storage_ref missing.", false) };
       }
 
-      // 2. Download from Insforge Storage REST API
+      // 2. Download from Supabase Storage REST API
       // Note: if private bucket, we must use authenticated request
-      const response = await fetch(`${this.insforgeUrl}/storage/v1/object/fiscal_certificates/${row.storage_ref}`, {
+      const response = await fetch(`${this.supabaseUrl}/storage/v1/object/fiscal_certificates/${row.storage_ref}`, {
         headers: {
-          'Authorization': `Bearer ${this.insforgeKey}`,
-          'apikey': this.insforgeKey,
+          'Authorization': `Bearer ${this.supabaseKey}`,
+          'apikey': this.supabaseKey,
         }
       });
 

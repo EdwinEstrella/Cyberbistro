@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { insforgeClient } from "../../../shared/lib/insforge";
+import { supabase } from "../../../shared/lib/supabase";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { useTenantCurrency } from "../../../shared/hooks/useTenantCurrency";
 import { generateMesasConfig } from "../../tables/config/mesas";
@@ -188,7 +188,7 @@ export function Camarera() {
       } catch {
         // Si IndexedDB falla, seguimos con servidor.
       }
-      return insforgeClient.database
+      return supabase
         .from("consumos")
         .select("mesa_numero, subtotal, created_by_auth_user_id")
         .eq("tenant_id", tenantId)
@@ -197,7 +197,7 @@ export function Camarera() {
      };
 
     Promise.all([
-      insforgeClient.database
+      supabase
         .from("platos")
         .select("*")
         .eq("tenant_id", tenantId)
@@ -206,7 +206,7 @@ export function Camarera() {
         .order("categoria"),
       loadOpenConsumos(),
       loadCantidadMesas(tenantId),
-      insforgeClient.database
+      supabase
         .from("tenant_users")
         .select("auth_user_id, nombre, email")
         .eq("tenant_id", tenantId),
@@ -274,7 +274,7 @@ export function Camarera() {
     } catch {
       // Si IndexedDB falla, seguimos con servidor.
     }
-    const { data, error } = await insforgeClient.database
+    const { data, error } = await supabase
       .from("consumos")
       .select("id, comanda_id, plato_id, nombre, cantidad, precio_unitario, subtotal, tipo, estado, created_at, created_by_auth_user_id")
       .eq("tenant_id", tenantId)
@@ -355,7 +355,7 @@ export function Camarera() {
     let comandaId: string | null = null;
 
     if (kitchenItems.length > 0) {
-      const { data: cocinaEstado } = await insforgeClient.database
+      const { data: cocinaEstado } = await supabase
         .from("cocina_estado")
         .select("activa")
         .eq("tenant_id", tenantId)
@@ -408,7 +408,7 @@ export function Camarera() {
       const comanda = comandaPayload;
       comandaId = localComandaId;
 
-      const { data: tenantRow } = await insforgeClient.database
+      const { data: tenantRow } = await supabase
         .from("tenants")
         .select("nombre_negocio, rnc, direccion, telefono, logo_url, moneda")
         .eq("id", tenantId)
@@ -541,7 +541,7 @@ export function Camarera() {
         ? (await readLocalMirror<any>(tenantId, "consumos"))
             .filter((row: any) => row.tenant_id === tenantId && row.comanda_id === comandaId && row.estado !== "pagado" && !group.ids.includes(row.id))
             .map((row: any) => ({ id: row.id }))
-        : ((await insforgeClient.database
+        : ((await supabase
             .from("consumos")
             .select("id")
             .eq("tenant_id", tenantId)
@@ -564,7 +564,7 @@ export function Camarera() {
           .reduce((sum, row) => sum + Number(row.cantidad), 0);
         const comanda = useLocalState
           ? (await readLocalMirror<any>(tenantId, "comandas")).find((row: any) => row.id === comandaId && row.tenant_id === tenantId)
-          : (await insforgeClient.database
+          : (await supabase
               .from("comandas")
               .select("items")
               .eq("id", comandaId)

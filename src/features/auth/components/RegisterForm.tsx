@@ -4,34 +4,9 @@ import svgPaths from "../../../imports/svg-h2gjocs89h";
 import imgLoginRegistro from "figma:asset/47f7239cc7433af3270415eeec94f9bdbb11cd99.png";
 import imgDecorativeScanlineEffect from "figma:asset/70a05c412757c6d4e1cffbb0780858880dce7a5a.png";
 import { TitleBar } from "../../window";
-import { insforgeClient } from "../../../shared/lib/insforge";
+import { supabase } from "../../../shared/lib/supabase";
 import { writeTenantSessionCache } from "../../../shared/lib/tenantSessionCache";
-import { INSFORGE_REFRESH_TOKEN_STORAGE_KEY } from "../../../shared/lib/insforgeAuthStorage";
 import { lookupBusinessByRnc } from "../../../shared/lib/dgiiRncLookup";
-
-function extractAccessTokenFromPayload(data: unknown): string | null {
-  if (!data || typeof data != "object") return null;
-  const maybeData = data as any;
-  const direct = maybeData.accessToken || maybeData.access_token;
-  if (typeof direct === "string" && direct.trim().length > 0) return direct;
-  const inSession = maybeData.session?.accessToken || maybeData.session?.access_token;
-  if (typeof inSession === "string" && inSession.trim().length > 0) return inSession;
-  const inTokens = maybeData.tokens?.accessToken || maybeData.tokens?.access_token;
-  if (typeof inTokens === "string" && inTokens.trim().length > 0) return inTokens;
-  return null;
-}
-
-function extractRefreshTokenFromPayload(data: unknown): string | null {
-  if (!data || typeof data !== "object") return null;
-  const maybeData = data as any;
-  const direct = maybeData.refreshToken || maybeData.refresh_token;
-  if (typeof direct === "string" && direct.trim().length > 0) return direct;
-  const inSession = maybeData.session?.refreshToken || maybeData.session?.refresh_token;
-  if (typeof inSession === "string" && inSession.trim().length > 0) return inSession;
-  const inTokens = maybeData.tokens?.refreshToken || maybeData.tokens?.refresh_token;
-  if (typeof inTokens === "string" && inTokens.trim().length > 0) return inTokens;
-  return null;
-}
 
 export function Register() {
   const [email, setEmail] = useState("");
@@ -40,6 +15,7 @@ export function Register() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [confirmationRequired, setConfirmationRequired] = useState(false);
   const [step, setStep] = useState<'account' | 'plan' | 'basic' | 'contact' | 'location'>('account');
   const [plan, setPlan] = useState<'basico' | 'profesional' | 'empresarial'>('basico');
 
@@ -75,7 +51,7 @@ export function Register() {
 
     try {
       // Crear usuario en Auth
-      const { data: signData, error: authError } = await insforgeClient.auth.signUp({
+      const { data: signData, error: authError } = await supabase.auth.signUp({
         email,
         password
       });
@@ -84,28 +60,17 @@ export function Register() {
         throw new Error(authError.message || "Error al crear usuario");
       }
 
-      if (signData?.requireEmailVerification) {
-        throw new Error("El backend todav?a est? exigiendo validar el correo. Desactiv? la verificaci?n de email en InsForge para este flujo de registro.");
-      }
-
-      const accessToken = extractAccessTokenFromPayload(signData);
-      if (accessToken) {
-        try {
-          insforgeClient.getHttpClient().setAuthToken(accessToken);
-        } catch { /* ignore */ }
-      }
-
-      const refreshToken = extractRefreshTokenFromPayload(signData);
-      if (refreshToken) {
-        localStorage.setItem(INSFORGE_REFRESH_TOKEN_STORAGE_KEY, refreshToken);
-        try {
-          insforgeClient.getHttpClient().setRefreshToken(refreshToken);
-        } catch { /* ignore */ }
-      }
-
       const newUserId = signData?.user?.id;
-      if (newUserId) {
-        setRegisteredAuthUserId(newUserId);
+      if (!newUserId) {
+        throw new Error("Supabase no devolvió la cuenta creada. Intentá registrarte de nuevo.");
+      }
+      setRegisteredAuthUserId(newUserId);
+
+      if (!signData.session) {
+        setConfirmationRequired(true);
+        setSuccess(true);
+        setLoading(false);
+        return;
       }
 
       setLoading(false);
@@ -182,29 +147,19 @@ export function Register() {
       let authUserId = registeredAuthUserId;
 
       if (!authUserId) {
-        const { data: cur, error: userError } = await insforgeClient.auth.getCurrentUser();
+        const { data: cur, error: userError } = await supabase.auth.getUser();
         if (!userError && cur?.user?.id) {
           authUserId = cur.user.id;
         }
       }
 
       if (!authUserId && email && password) {
-        const { data: signInData, error: signInErr } = await insforgeClient.auth.signInWithPassword({
+        const { error: signInErr } = await supabase.auth.signInWithPassword({
           email: email.trim(),
           password,
         });
         if (!signInErr) {
-          const accessToken = extractAccessTokenFromPayload(signInData);
-          if (accessToken) {
-            try { insforgeClient.getHttpClient().setAuthToken(accessToken); } catch { /* ignore */ }
-          }
-
-          const refreshToken = extractRefreshTokenFromPayload(signInData);
-          if (refreshToken) {
-            localStorage.setItem(INSFORGE_REFRESH_TOKEN_STORAGE_KEY, refreshToken);
-            try { insforgeClient.getHttpClient().setRefreshToken(refreshToken); } catch { /* ignore */ }
-          }
-          const { data: cur2 } = await insforgeClient.auth.getCurrentUser();
+          const { data: cur2 } = await supabase.auth.getUser();
           if (cur2?.user?.id) authUserId = cur2.user.id;
         }
       }
@@ -218,7 +173,7 @@ export function Register() {
       // 2. Crear el tenant y su usuario due?o en una sola operaci?n de BD.
       // Direct inserts contra `tenants` + `tenant_users` rompen con RLS: todav?a no existe
       // membres?a del tenant para que la policy pueda autorizar al usuario.
-      const { data: registrationRows, error: registrationError } = await insforgeClient.database.rpc(
+      const { data: registrationRows, error: registrationError } = await supabase.rpc(
         'cyberbistro_register_tenant',
         {
           p_auth_user_id: authUserId,
@@ -317,7 +272,9 @@ export function Register() {
               {success && (
                 <div className="bg-[rgba(89,238,80,0.1)] border border-[#59ee50] rounded-[8px] p-[12px]">
                   <div className="font-['Inter',sans-serif] text-[#59ee50] text-[12px] text-center">
-                    ¡Registro exitoso! Redirigiendo al login...
+                    {confirmationRequired
+                      ? "Revisá tu correo y confirmá la cuenta antes de iniciar sesión."
+                      : "¡Registro exitoso! Redirigiendo al login..."}
                   </div>
                 </div>
               )}

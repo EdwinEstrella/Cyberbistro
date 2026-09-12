@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { resolveActiveFiscalMode, runFiscalEngine, enqueueEcfDocuments } from "./fiscalEngine";
 import { resolveNcfForNewInvoiceLocalFirst, enqueueLocalWrite } from "./localFirst";
-import { insforgeClient } from "./insforge";
+import { supabase } from "./supabase";
 import { loadTenantBillingSettings } from "./tenantBillingSettings";
 
 class LocalStorageMock {
@@ -22,20 +22,18 @@ vi.mock("./tenantBillingSettings", () => ({
   loadTenantBillingSettings: vi.fn(),
 }));
 
-vi.mock("./insforge", () => ({
-  insforgeClient: {
-    database: {
-      from: vi.fn(() => ({
-        select: vi.fn(() => ({
+vi.mock("./supabase", () => ({
+  supabase: {
+    from: vi.fn(() => ({
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({
           eq: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              maybeSingle: vi.fn(),
-            })),
             maybeSingle: vi.fn(),
           })),
+          maybeSingle: vi.fn(),
         })),
       })),
-    },
+    })),
   },
 }));
 
@@ -81,7 +79,7 @@ describe("fiscalEngine", () => {
       const settings = { ...validEcfSettings };
 
       const mockMaybeSingle = vi.fn().mockResolvedValue({ data: { id: "cert-uuid" }, error: null });
-      vi.mocked(insforgeClient.database.from).mockReturnValue({
+      vi.mocked(supabase.from).mockReturnValue({
         select: () => ({
           eq: () => ({
             eq: () => ({
@@ -103,7 +101,7 @@ describe("fiscalEngine", () => {
       };
 
       const mockMaybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
-      vi.mocked(insforgeClient.database.from).mockReturnValue({
+      vi.mocked(supabase.from).mockReturnValue({
         select: () => ({
           eq: () => ({
             eq: () => ({
@@ -124,7 +122,7 @@ describe("fiscalEngine", () => {
 
       const result = await resolveActiveFiscalMode("tenant-1", settings, false);
       expect(result).toEqual({ mode: "dgii_ecf", certificateId: null });
-      expect(insforgeClient.database.from).not.toHaveBeenCalled();
+      expect(supabase.from).not.toHaveBeenCalled();
     });
 
     it("falls back if any required configuration field is missing when online", async () => {
@@ -256,7 +254,7 @@ describe("fiscalEngine", () => {
       };
 
       // Mock database call to throw an error
-      vi.mocked(insforgeClient.database.from).mockReturnValue({
+      vi.mocked(supabase.from).mockReturnValue({
         select: () => ({
           eq: () => ({
             eq: () => ({
@@ -274,7 +272,7 @@ describe("fiscalEngine", () => {
       const settings = { ...validEcfSettings };
 
       const mockMaybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
-      vi.mocked(insforgeClient.database.from).mockReturnValue({
+      vi.mocked(supabase.from).mockReturnValue({
         select: () => ({
           eq: () => ({
             eq: () => ({

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { insforgeClient } from "../../../shared/lib/insforge";
+import { supabase } from "../../../shared/lib/supabase";
 import { useAuth, ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
 import { useCocinaRealtimeSync } from "../useCocinaRealtimeSync";
 import { buildComandaReceiptHtml, type TenantReceiptInfo } from "../../../shared/lib/receiptTemplates";
@@ -47,7 +47,7 @@ export function Cocina() {
       setComandas(rows.filter(c => c.tenant_id === tenantId && c.sucursal_id === activeSucursalId && ["pendiente", "en_preparacion", "listo"].includes(c.estado)).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
       return;
     }
-    const { data, error } = await insforgeClient.database
+    const { data, error } = await supabase
       .from("comandas")
       .select("*")
       .eq("tenant_id", tenantId)
@@ -73,7 +73,7 @@ export function Cocina() {
           const rows = await readLocalMirror<Comanda & { tenant_id?: string; sucursal_id?: string | null }>(tenantId, "comandas");
           comanda = rows.find(c => c.id === payload.id && c.tenant_id === tenantId) ?? null;
         } else {
-          const { data, error } = await insforgeClient.database
+          const { data, error } = await supabase
             .from("comandas")
             .select("*")
             .eq("tenant_id", tenantId)
@@ -126,9 +126,9 @@ export function Cocina() {
         shouldReadLocalFirst(tid, ["tenants"]),
       ]);
       const [estadoRes, comandasRes, tenantRes] = await Promise.all([
-        useLocalEstado ? readLocalMirror<any>(tid, "cocina_estado").then(data => ({ data: data.filter((row: any) => row.sucursal_id === activeSucursalId) })) : insforgeClient.database.from("cocina_estado").select("*").eq("tenant_id", tid).eq("sucursal_id", activeSucursalId).limit(1),
-        useLocalComandas ? readLocalMirror<Comanda & { tenant_id?: string; sucursal_id?: string | null }>(tid, "comandas").then(data => ({ data: data.filter(c => c.tenant_id === tid && c.sucursal_id === activeSucursalId && ["pendiente", "en_preparacion", "listo"].includes(c.estado)).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()) })) : insforgeClient.database.from("comandas").select("*").eq("tenant_id", tid).eq("sucursal_id", activeSucursalId).in("estado", ["pendiente", "en_preparacion", "listo"]).order("created_at", { ascending: true }),
-        useLocalTenant ? readLocalMirror<any>(tid, "tenants").then(data => ({ data: data.find(t => t.id === tid) ?? null })) : insforgeClient.database.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url, moneda, logo_size_px, logo_offset_x, logo_offset_y").eq("id", tid).maybeSingle(),
+        useLocalEstado ? readLocalMirror<any>(tid, "cocina_estado").then(data => ({ data: data.filter((row: any) => row.sucursal_id === activeSucursalId) })) : supabase.from("cocina_estado").select("*").eq("tenant_id", tid).eq("sucursal_id", activeSucursalId).limit(1),
+        useLocalComandas ? readLocalMirror<Comanda & { tenant_id?: string; sucursal_id?: string | null }>(tid, "comandas").then(data => ({ data: data.filter(c => c.tenant_id === tid && c.sucursal_id === activeSucursalId && ["pendiente", "en_preparacion", "listo"].includes(c.estado)).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()) })) : supabase.from("comandas").select("*").eq("tenant_id", tid).eq("sucursal_id", activeSucursalId).in("estado", ["pendiente", "en_preparacion", "listo"]).order("created_at", { ascending: true }),
+        useLocalTenant ? readLocalMirror<any>(tid, "tenants").then(data => ({ data: data.find(t => t.id === tid) ?? null })) : supabase.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url, moneda, logo_size_px, logo_offset_x, logo_offset_y").eq("id", tid).maybeSingle(),
       ]);
       if (cancelled) return;
       if (estadoRes.data?.[0]) setCocinaActiva(estadoRes.data[0].activa);
@@ -170,7 +170,7 @@ export function Cocina() {
     if (nextEstado === "listo") {
       const consumos = isLocalFirstEnabled()
         ? await readLocalMirror<any>(tenantId, "consumos")
-        : ((await insforgeClient.database
+        : ((await supabase
             .from("consumos")
             .select("id, tenant_id, comanda_id, estado")
             .eq("tenant_id", tenantId)

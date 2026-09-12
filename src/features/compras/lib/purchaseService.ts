@@ -31,7 +31,7 @@ export interface PurchaseInput {
   isFiscal?: boolean;
 }
 
-export async function eliminarCompra(tenantId: string, compraId: string, usuarioId: string | null): Promise<void> {
+export async function eliminarCompra(tenantId: string, compraId: string, _usuarioId: string | null): Promise<void> {
   const deviceId = await getDeviceId();
 
   // 1. Obtener la compra

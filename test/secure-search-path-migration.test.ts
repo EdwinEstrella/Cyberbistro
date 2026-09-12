@@ -4,7 +4,7 @@ import * as path from 'path';
 
 describe('Secure search_path migration', () => {
   const migrationFile = '20260715000001_secure-search-path.sql';
-  const filePath = path.join(__dirname, '../migrations', migrationFile);
+  const filePath = path.join(__dirname, '../supabase/migrations', migrationFile);
 
   const getMigrationContent = () => fs.readFileSync(filePath, 'utf-8');
 

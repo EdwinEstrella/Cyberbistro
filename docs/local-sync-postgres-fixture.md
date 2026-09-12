@@ -1,6 +1,6 @@
 # Local Sync PostgreSQL Fixture
 
-This fixture is an isolated PostgreSQL 17 database for Slice 3's dormant `sync_*` protocol validation. It contains no application tables, production URL, InsForge credential, active-user configuration, or production data.
+This fixture is an isolated PostgreSQL 17 database for Slice 3's dormant `sync_*` protocol validation. It contains no application tables, production URL, Supabase credential, active-user configuration, or production data.
 
 ## Quick path
 
@@ -36,7 +36,7 @@ This fixture is an isolated PostgreSQL 17 database for Slice 3's dormant `sync_*
 
 ## Reset
 
-Reset destroys only the named Docker volume `cyberbistro_sync_fixture_pgdata`. It does not start a container, alter the app, or contact InsForge.
+Reset destroys only the named Docker volume `cyberbistro_sync_fixture_pgdata`. It does not start a container, alter the app, or contact Supabase.
 
 ```powershell
 .\scripts\local-sync-postgres.ps1 reset
@@ -60,11 +60,11 @@ The schema has only `sync_tenants`, `sync_operations`, `sync_stream_heads`, `syn
 
 ## Safety proof
 
-- `compose.yaml` has no application environment file, URL, InsForge key, database URL, service dependency, or production mount.
+- `compose.yaml` has no application environment file, URL, Supabase key, database URL, service dependency, or production mount.
 - PostgreSQL is bound only to loopback on a non-default port. There is no externally reachable host port.
 - The only Docker network is declared `internal: true`, isolating the container from external networks.
 - The only writable persistence is the explicitly named local Docker volume. Schema, seed, and validation scripts are mounted read-only.
-- The lifecycle script invokes only local `docker compose` commands. It does not call InsForge, npm scripts, application code, HTTP clients, or production tooling.
+- The lifecycle script invokes only local `docker compose` commands. It does not call Supabase, npm scripts, application code, HTTP clients, or production tooling.
 - `init` validates Compose with `docker compose config --quiet`; it does not start the service.
 
 ## Next validation

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { X, Receipt, DollarSign, Calendar, Info } from "lucide-react";
 import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
-import { insforgeClient } from "../../../shared/lib/insforge";
+import { supabase } from "../../../shared/lib/supabase";
 
 interface CuentaPagarRow {
   id: string;
@@ -83,7 +83,7 @@ export function DetalleCuentaPagarModal({
           const allPagos = await readLocalMirror<CxpPagoRow>(currentTenantId, "cxp_pagos");
           data = allPagos.filter(d => d.cuenta_pagar_id === currentCuenta.id);
         } else {
-          const res = await insforgeClient.database
+          const res = await supabase
             .from("cxp_pagos")
             .select("*")
             .eq("cuenta_pagar_id", currentCuenta.id);

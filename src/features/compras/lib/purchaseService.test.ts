@@ -369,7 +369,7 @@ describe("purchaseService", () => {
         montoPagado: 40,
         items: [{ producto_id: "prod-simple", cantidad: 5, costo_unitario: 8.00 }],
       })
-    ).rejects.toThrow("El monto pagado no puede ser mayor o igual al total de la compra.");
+    ).rejects.toThrow("El monto pagado no puede ser mayor o igual al total a pagar de la compra.");
 
     await expect(
       registrarCompra({
@@ -383,7 +383,7 @@ describe("purchaseService", () => {
         montoPagado: 45,
         items: [{ producto_id: "prod-simple", cantidad: 5, costo_unitario: 8.00 }],
       })
-    ).rejects.toThrow("El monto pagado no puede ser mayor o igual al total de la compra.");
+    ).rejects.toThrow("El monto pagado no puede ser mayor o igual al total a pagar de la compra.");
   });
 
   it("correctly registers partial purchase with gasto and cuentas_pagar", async () => {

@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 
-vi.mock("./insforge", () => ({
-  insforgeClient: { functions: { invoke } },
+vi.mock("./supabase", () => ({
+  supabase: { functions: { invoke } },
 }));
 
 import { lookupBusinessByRnc } from "./dgiiRncLookup";

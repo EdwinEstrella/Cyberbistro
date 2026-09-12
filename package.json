@@ -75,7 +75,7 @@
     "release:win": "npm run icon:build && npm run build && node scripts/clean-env.cjs electron-builder --win --publish always",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --config vitest.config.ts",
     "fiscal-worker": "npx tsx worker/fiscal/runFiscalWorker.ts"
   },
   "devDependencies": {
@@ -104,8 +104,6 @@
   "dependencies": {
     "@emotion/react": "11.14.0",
     "@emotion/styled": "11.14.1",
-    "@insforge/cli": "^0.1.73",
-    "@insforge/sdk": "^1.2.4",
     "@mui/icons-material": "7.3.5",
     "@mui/material": "7.3.5",
     "@popperjs/core": "2.11.8",
@@ -135,6 +133,7 @@
     "@radix-ui/react-toggle": "1.1.2",
     "@radix-ui/react-toggle-group": "1.1.2",
     "@radix-ui/react-tooltip": "1.1.8",
+    "@supabase/supabase-js": "^2.116.0",
     "canvas-confetti": "1.9.4",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",

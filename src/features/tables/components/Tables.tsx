@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router";
-import { insforgeClient } from "../../../shared/lib/insforge";
+import { supabase } from "../../../shared/lib/supabase";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import type { MesaConfig } from "../config/mesas";
 import { loadCantidadMesas } from "../../../shared/lib/tenantMesasSettings";
@@ -75,7 +75,7 @@ export function Tables() {
 
   const fetchCodes = useCallback(async () => {
     if (!tenantId || !activeSucursalId) return;
-    const { data } = await insforgeClient.database.rpc("get_table_security_codes", {
+    const { data } = await supabase.rpc("get_table_security_codes", {
       p_tenant_id: tenantId,
       p_sucursal_id: activeSucursalId
     });
@@ -90,7 +90,7 @@ export function Tables() {
     if (!tenantId || !activeSucursalId || tableCodes.length === 0) return;
     setGeneratingCodes(true);
     for (const mesa of tableCodes) {
-      await insforgeClient.database.rpc("generate_table_security_code", {
+      await supabase.rpc("generate_table_security_code", {
         p_tenant_id: tenantId,
         p_sucursal_id: activeSucursalId,
         p_mesa_numero: mesa.mesa_numero
@@ -109,7 +109,7 @@ export function Tables() {
       const consumos = await readLocalMirror<any>(tenantId, "consumos");
       data = consumos.filter((c: any) => c.estado !== "pagado" && c.sucursal_id === activeSucursalId);
     } else {
-      const res = await insforgeClient.database.from("consumos").select("mesa_numero, subtotal").eq("tenant_id", tenantId).eq("sucursal_id", activeSucursalId).neq("estado", "pagado");
+      const res = await supabase.from("consumos").select("mesa_numero, subtotal").eq("tenant_id", tenantId).eq("sucursal_id", activeSucursalId).neq("estado", "pagado");
       if (res.error) { setDeudaPorMesa({}); return; }
       data = res.data;
     }
@@ -134,8 +134,8 @@ export function Tables() {
       shouldReadLocalFirst(tenantId, ["consumos"]),
     ]).then(([useLocalMesas, useLocalConsumos]) => {
       Promise.all([
-        useLocalMesas ? readLocalMirror<any>(tenantId, "mesas_estado").then(r => ({ data: r.filter((m: any) => m.sucursal_id === activeSucursalId) })) : insforgeClient.database.from("mesas_estado").select("*").eq("tenant_id", tenantId).eq("sucursal_id", activeSucursalId),
-        useLocalConsumos ? readLocalMirror<any>(tenantId, "consumos").then(r => ({ data: r.filter((c: any) => c.estado !== "pagado" && c.sucursal_id === activeSucursalId) })) : insforgeClient.database.from("consumos").select("mesa_numero, subtotal").eq("tenant_id", tenantId).eq("sucursal_id", activeSucursalId).neq("estado", "pagado"),
+        useLocalMesas ? readLocalMirror<any>(tenantId, "mesas_estado").then(r => ({ data: r.filter((m: any) => m.sucursal_id === activeSucursalId) })) : supabase.from("mesas_estado").select("*").eq("tenant_id", tenantId).eq("sucursal_id", activeSucursalId),
+        useLocalConsumos ? readLocalMirror<any>(tenantId, "consumos").then(r => ({ data: r.filter((c: any) => c.estado !== "pagado" && c.sucursal_id === activeSucursalId) })) : supabase.from("consumos").select("mesa_numero, subtotal").eq("tenant_id", tenantId).eq("sucursal_id", activeSucursalId).neq("estado", "pagado"),
         loadCantidadMesas(tenantId)
       ]).then(([estadosRes, consumosPendRes, cantidadMesas]) => {
         setMesas(buildTablesForConfiguredCount({ cantidadMesas, estadosRows: estadosRes.data as any[] | null, pendingConsumptionRows: consumosPendRes.data as any[] | null }));
@@ -164,7 +164,7 @@ export function Tables() {
         const consumos = await readLocalMirror<ConsumoPanelRow>(tid, "consumos");
         data = consumos.filter(c => c.mesa_numero === selectedMesa!.numero && c.estado !== "pagado" && c.sucursal_id === activeSucursalId).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
       } else {
-        const { data: resData } = await insforgeClient.database.from("consumos").select("*").eq("tenant_id", tid).eq("sucursal_id", activeSucursalId).eq("mesa_numero", selectedMesa!.numero).neq("estado", "pagado").order("created_at", { ascending: false });
+        const { data: resData } = await supabase.from("consumos").select("*").eq("tenant_id", tid).eq("sucursal_id", activeSucursalId).eq("mesa_numero", selectedMesa!.numero).neq("estado", "pagado").order("created_at", { ascending: false });
         data = resData;
       }
       if (cancelled || !data) return;

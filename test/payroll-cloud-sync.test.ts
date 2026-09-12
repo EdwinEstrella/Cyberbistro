@@ -57,11 +57,7 @@ describe("payroll employee cloud synchronization", () => {
 
   it("rejects weekly employees before making a remote request", async () => {
     const upsert = vi.fn();
-    const client = {
-      database: {
-        from: vi.fn().mockReturnValue({ upsert }),
-      },
-    };
+    const client = { from: vi.fn().mockReturnValue({ upsert }) };
 
     await expect(
       syncPayrollEmployeeToCloud(
@@ -92,11 +88,7 @@ describe("payroll employee cloud synchronization", () => {
         message: "nomina_empleados_frecuencia_pago_check",
       },
     });
-    const client = {
-      database: {
-        from: vi.fn().mockReturnValue({ upsert }),
-      },
-    };
+    const client = { from: vi.fn().mockReturnValue({ upsert }) };
 
     await expect(
       syncPayrollEmployeeToCloud(
@@ -127,11 +119,7 @@ describe("payroll employee cloud synchronization", () => {
       },
     });
     const update = vi.fn().mockReturnValue({ eq });
-    const client = {
-      database: {
-        from: vi.fn().mockReturnValue({ update }),
-      },
-    };
+    const client = { from: vi.fn().mockReturnValue({ update }) };
 
     await expect(deactivatePayrollEmployeeInCloud(client, "employee-1")).rejects.toMatchObject({
       code: "42501",
@@ -167,12 +155,10 @@ describe("payroll employee cloud synchronization", () => {
       error: null,
     });
     const client = {
-      database: {
-        from: vi.fn().mockReturnValue({
-          select: vi.fn().mockReturnValue({ eq, order }),
-        }),
-        rpc,
-      },
+      from: vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnValue({ eq, order }),
+      }),
+      rpc,
     };
     const employee = {
       id: "employee-1",
@@ -196,7 +182,7 @@ describe("payroll employee cloud synchronization", () => {
     const committedContext = await createPayrollPaymentInCloud(client, payload);
 
     expect(context).toMatchObject({ dueCents: 95000, alreadyPaidCents: 40000, pendingCents: 55000 });
-    expect(client.database.from).toHaveBeenCalledWith("nomina_pagos");
+    expect(client.from).toHaveBeenCalledWith("nomina_pagos");
     expect(rpc).toHaveBeenCalledWith("register_nomina_pago", {
       p_empleado_id: "employee-1",
       p_periodo: "2026-08",
@@ -213,7 +199,7 @@ describe("payroll employee cloud synchronization", () => {
 
   it("surfaces rejected atomic payroll registration", async () => {
     const rpc = vi.fn().mockResolvedValue({ error: { code: "P0001", message: "Overpayment not allowed" } });
-    const client = { database: { rpc } };
+    const client = { rpc };
     const payload = {
       employeeId: "employee-1",
       period: "2026-08",

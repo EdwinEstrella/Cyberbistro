@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { insforgeClient } from "../../../shared/lib/insforge";
+import { supabase } from "../../../shared/lib/supabase";
 import { canUseFeature } from "../../../shared/lib/planFeatures";
 import {
   Select,
@@ -211,11 +211,11 @@ export function Ajustes() {
         const localTenants = await readLocalMirror<any>(tenantId, "tenants").catch(() => []);
         data = localTenants.find((t) => t.id === tenantId);
         if (!data && navigator.onLine) {
-          const res = await insforgeClient.database.from("tenants").select(`${TENANT_FIELDS_BASE}, ${TENANT_FIELDS_CURRENCY}, ${TENANT_FIELDS_NCF}`).eq("id", tenantId).maybeSingle();
+          const res = await supabase.from("tenants").select(`${TENANT_FIELDS_BASE}, ${TENANT_FIELDS_CURRENCY}, ${TENANT_FIELDS_NCF}`).eq("id", tenantId).maybeSingle();
           data = res.data;
         }
       } else {
-        const res = await insforgeClient.database.from("tenants").select(`${TENANT_FIELDS_BASE}, ${TENANT_FIELDS_CURRENCY}, ${TENANT_FIELDS_NCF}`).eq("id", tenantId).maybeSingle();
+        const res = await supabase.from("tenants").select(`${TENANT_FIELDS_BASE}, ${TENANT_FIELDS_CURRENCY}, ${TENANT_FIELDS_NCF}`).eq("id", tenantId).maybeSingle();
         if (res.error) console.error(res.error.message);
         data = res.data;
       }
@@ -437,7 +437,7 @@ export function Ajustes() {
               <div className="border-t border-border pt-5 flex flex-col gap-4">
                 <div>
                   <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Logo en recibos</div>
-                  <p className="text-xs text-muted-foreground leading-relaxed">Se guarda en InsForge al presionar Guardar Cambios.</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">Se guarda en Supabase al presionar Guardar Cambios.</p>
                 </div>
                 <Field label={`Tamaño (${config.logo_size_px}px)`}>
                   <input type="range" min="32" max="90" value={config.logo_size_px} onChange={e => setConfig(p => ({ ...p, logo_size_px: Number(e.target.value) }))} className="w-full accent-primary" />

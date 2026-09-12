@@ -37,8 +37,8 @@ vi.mock("react", async (importOriginal) => {
 });
 
 // Mock dependencies
-vi.mock("../../../shared/lib/insforge", () => ({
-  insforgeClient: {
+vi.mock("../../../shared/lib/supabase", () => ({
+  supabase: {
     database: {
       from: vi.fn(() => ({
         select: vi.fn(() => ({

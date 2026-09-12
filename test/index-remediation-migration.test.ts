@@ -4,7 +4,7 @@ import * as path from 'path';
 
 describe('Index remediation migration', () => {
   const migrationFile = '20260715000000_add-foreign-key-and-rls-indexes.sql';
-  const filePath = path.join(__dirname, '../migrations', migrationFile);
+  const filePath = path.join(__dirname, '../supabase/migrations', migrationFile);
 
   const getMigrationContent = () => fs.readFileSync(filePath, 'utf-8');
 

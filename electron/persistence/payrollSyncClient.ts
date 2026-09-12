@@ -1,4 +1,4 @@
-import type { InsForgeClient } from "@insforge/sdk";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { DurableOperation, PullBatch, ServerSyncClient } from "./syncWorker";
 
 type MutationError = {
@@ -18,7 +18,7 @@ type RemoteRpcClient = {
 };
 
 type ClientOverride =
-  | Pick<InsForgeClient, "database">
+  | Pick<SupabaseClient, "from" | "rpc">
   | { from(table: string): RemoteMutationBuilder; rpc?(functionName: string, args: Record<string, unknown>): Promise<{ data?: unknown; error: MutationError | null }> };
 
 type PushResponse = Awaited<ReturnType<ServerSyncClient["push"]>>;
@@ -28,12 +28,8 @@ export interface PayrollAuthorizationContext {
   allowedBranchIds: string[];
 }
 
-const FALLBACK_BASE_URL = "https://restaurante.azokia.com";
-const FALLBACK_ANON_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3OC0xMjM0LTU2NzgtOTBhYi1jZGVmMTIzNDU2NzgiLCJlbWFpbCI6ImFub25AaW5zZm9yZ2UuY29tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU5NDAxMzF9.OQwbEoWPtw-inbXdU3D7c39RZn3c87FJ-HvMBF_jrn4";
-
 export class PayrollSyncClient implements ServerSyncClient {
-  private clientPromise: Promise<InsForgeClient | ClientOverride>;
+  private clientPromise: Promise<SupabaseClient | ClientOverride>;
   private readonly config: { url: string; key: string } | null;
 
   constructor(clientOverride?: ClientOverride, accessToken?: string | null) {
@@ -41,11 +37,13 @@ export class PayrollSyncClient implements ServerSyncClient {
       this.config = null;
       this.clientPromise = Promise.resolve(clientOverride);
     } else {
-      const fallbackAllowed = process.env.DISABLE_INSFORGE_FALLBACK !== "true";
-      const url = (process.env.VITE_INSFORGE_BASE_URL || process.env.INSFORGE_URL || (fallbackAllowed ? FALLBACK_BASE_URL : "")).trim();
-      const key = (process.env.VITE_INSFORGE_ANON_KEY || process.env.INSFORGE_ANON_KEY || (fallbackAllowed ? FALLBACK_ANON_KEY : "")).trim();
+      const url = process.env.SUPABASE_URL?.trim() || "";
+      const key = process.env.SUPABASE_PUBLISHABLE_KEY?.trim() || "";
       if (!url || !key) {
-        throw new Error("Missing InsForge configuration in main process");
+        throw new Error("Missing Supabase configuration in main process");
+      }
+      if (!/^https:\/\/[^\s/]+/i.test(url)) {
+        throw new Error("Invalid SUPABASE_URL in main process configuration");
       }
       this.config = { url, key };
       this.clientPromise = this.createClient(accessToken);
@@ -60,7 +58,7 @@ export class PayrollSyncClient implements ServerSyncClient {
 
   async resolveAuthorizationContext(): Promise<PayrollAuthorizationContext> {
     const client: any = await this.clientPromise;
-    const { data, error } = await client.database.rpc("cloudix_resolve_tenant_memberships", {});
+    const { data, error } = await client.rpc("cloudix_resolve_tenant_memberships", {});
     if (error) throw new Error(`Payroll authorization lookup failed: ${error.message}`);
     const rows = Array.isArray(data) ? data : data ? [data] : [];
     if (rows.length !== 1) throw new Error("Payroll authorization requires exactly one active tenant membership");
@@ -125,37 +123,20 @@ export class PayrollSyncClient implements ServerSyncClient {
   private async getTableClient(table: string): Promise<RemoteMutationBuilder> {
     const client: any = await this.clientPromise;
 
-    if (client?.database?.from && typeof client.database.from === "function") {
-      return client.database.from(table);
-    }
     if (client?.from && typeof client.from === "function") {
       return client.from(table);
     }
-    throw new Error("Invalid InsForge client: missing from method");
+    throw new Error("Invalid Supabase client: missing from method");
   }
 
-  private createClient(accessToken?: string | null): Promise<InsForgeClient> {
+  private createClient(accessToken?: string | null): Promise<SupabaseClient> {
     if (!this.config) {
       throw new Error("Payroll sync client configuration is unavailable");
     }
-    return import("@insforge/sdk").then(({ createClient }) => {
-      const client = createClient({
-        baseUrl: this.config!.url,
-        anonKey: this.config!.key,
-        edgeFunctionToken: accessToken || undefined,
-        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
-        isServerMode: true,
-      });
-      if (accessToken) {
-        try {
-          (client as any).getHttpClient?.()?.setAuthToken?.(accessToken);
-          (client as any).tokenManager?.setAccessToken?.(accessToken);
-        } catch {
-          /* ignore */
-        }
-      }
-      return client;
-    });
+    return Promise.resolve(createClient(this.config.url, this.config.key, {
+      global: { headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined },
+      auth: { autoRefreshToken: false, persistSession: false },
+    }));
   }
 }
 

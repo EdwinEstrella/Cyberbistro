@@ -1,4 +1,4 @@
-import { insforgeClient } from "./insforge";
+import { supabase } from "./supabase";
 import { isDesktopCloudUnavailable } from "./cloudAvailability";
 import { readLocalMirror } from "./localFirst";
 
@@ -23,7 +23,7 @@ async function getMaxLocalInvoiceNumber(tenantId: string): Promise<number> {
 
 async function getMaxServerInvoiceNumber(tenantId: string): Promise<number> {
   try {
-    const { data, error } = await insforgeClient.database
+    const { data, error } = await supabase
       .from("facturas")
       .select("numero_factura")
       .eq("tenant_id", tenantId)

@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import path from 'node:path'
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -12,7 +12,6 @@ const ELECTRON_MAIN_EXTERNALS = [
   'electron',
   'electron-updater',
   'electron-log',
-  '@insforge/sdk',
   'socket.io-client',
   'engine.io-client',
   'ws',
@@ -53,7 +52,16 @@ function copyPreload() {
 
 // package.json sin "type":"module": el main de Electron se emite como CJS (require).
 // Este archivo .mts fuerza ESM solo para la config de Vite (plugins como @tailwindcss/vite).
-export default defineConfig(async () => ({
+export default defineConfig(async ({ mode }) => {
+  const env = loadEnv(mode, __dirname, 'VITE_')
+  const supabaseUrl = env.VITE_SUPABASE_URL?.trim()
+  const supabasePublishableKey = env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim()
+
+  if (!supabaseUrl || !supabasePublishableKey) {
+    throw new Error('VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY are required to build Cloudix.')
+  }
+
+  return {
   base: './',
   plugins: [
     figmaAssetResolver(),
@@ -97,5 +105,8 @@ export default defineConfig(async () => ({
   },
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
+    'process.env.SUPABASE_URL': JSON.stringify(supabaseUrl),
+    'process.env.SUPABASE_PUBLISHABLE_KEY': JSON.stringify(supabasePublishableKey),
   },
-}))
+  }
+})

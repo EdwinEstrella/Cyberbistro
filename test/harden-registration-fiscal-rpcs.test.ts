@@ -244,7 +244,7 @@ function validateMigration(sql: string) {
 }
 
 describe('harden-registration-fiscal-rpcs migration', () => {
-  const migrationPath = path.resolve(__dirname, '../migrations/20260715000003_harden-registration-fiscal-rpcs.sql');
+  const migrationPath = path.resolve(__dirname, '../supabase/migrations/20260715000003_harden-registration-fiscal-rpcs.sql');
   const migrationSQL = fs.readFileSync(migrationPath, 'utf8');
 
   it('validates the original migration perfectly', () => {

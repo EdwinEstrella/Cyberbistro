@@ -136,7 +136,7 @@ async function runCloudProbe(): Promise<boolean> {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
   try {
-    const url = `${registeredBaseUrl ?? ""}/api/database/records/tenants?limit=1`;
+    const url = `${registeredBaseUrl ?? ""}/rest/v1/tenants?select=id&limit=1`;
     const headers: Record<string, string> = {};
     if (registeredAnonKey) {
       headers["apikey"] = registeredAnonKey;

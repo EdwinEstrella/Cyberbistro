@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { UserSchema } from '@insforge/sdk';
-import { insforgeClient } from '../lib/insforge';
-import { INSFORGE_REFRESH_TOKEN_STORAGE_KEY } from '../lib/insforgeAuthStorage';
+import type { User } from '@supabase/supabase-js';
+import { supabase } from '../lib/supabase';
+import { SUPABASE_REFRESH_TOKEN_STORAGE_KEY } from '../lib/supabaseAuthStorage';
 import {
   readTenantSessionCache,
   writeTenantSessionCache,
@@ -26,7 +26,7 @@ interface TenantUser {
 }
 
 interface SharedAuthState {
-  user: UserSchema | null;
+  user: User | null;
   tenantUser: TenantUser | null;
   loading: boolean;
   tenantAccessDeniedReason: 'blocked' | 'unlinked' | null;
@@ -48,7 +48,7 @@ function rowToTenantUser(data: TenantSessionRow): TenantUser {
 const AUTH_RETRIES = 5;
 const AUTH_LOG_PREFIX = '[AuthFlow]';
 const REFRESH_BLOCK_MS = 30_000;
-const REFRESH_TOKEN_KEY = INSFORGE_REFRESH_TOKEN_STORAGE_KEY;
+const REFRESH_TOKEN_KEY = SUPABASE_REFRESH_TOKEN_STORAGE_KEY;
 
 let refreshInFlight: Promise<'ok' | 'unauthorized' | 'error'> | null = null;
 let refreshBlockedUntil = 0;
@@ -157,7 +157,7 @@ async function reconcileTenantAccessShared(reason: 'realtime' | 'fallback' | 'fo
     ensureTenantAccessRealtime(resolution.row.tenant_id);
     if (isLocalFirstEnabled()) {
       try {
-        await saveLocalDeviceSession(resolution.row.tenant_id, user.id, user.email, resolution.row);
+        await saveLocalDeviceSession(resolution.row.tenant_id, user.id, user.email ?? '', resolution.row);
       } catch (error) {
         logAuth('tenant access reconciliation: local session update failed', error);
       }
@@ -181,7 +181,7 @@ async function reconcileTenantAccessShared(reason: 'realtime' | 'fallback' | 'fo
 function ensureTenantAccessRealtime(tenantId: string, userId = sharedState.user?.id): void {
   if (!tenantAccessRealtimeOwner) {
     tenantAccessRealtimeOwner = new TenantAccessRealtimeOwner(
-      insforgeClient.realtime as any,
+      supabase,
       {
         onState: (changedTenantId, active) => {
           if (!active) handleRealtimeTenantBlocked(changedTenantId);
@@ -234,41 +234,24 @@ function extractAccessTokenFromPayload(data: unknown): string | null {
   return null;
 }
 
-function extractUserFromAuthPayload(data: unknown): UserSchema | null {
+function extractUserFromAuthPayload(data: unknown): User | null {
   if (!data || typeof data !== 'object') return null;
   const maybeData = data as {
     user?: unknown;
     session?: { user?: unknown };
   };
   if (maybeData.user && typeof maybeData.user === 'object') {
-    return maybeData.user as UserSchema;
+    return maybeData.user as User;
   }
   if (maybeData.session?.user && typeof maybeData.session.user === 'object') {
-    return maybeData.session.user as UserSchema;
+    return maybeData.session.user as User;
   }
   return null;
 }
 
 function syncSdkSession(data: unknown): void {
   const accessToken = extractAccessTokenFromPayload(data);
-  const user = extractUserFromAuthPayload(data);
-
-  try {
-    if (accessToken) {
-      insforgeClient.getHttpClient().setAuthToken(accessToken);
-      const tokenManager = (insforgeClient as unknown as {
-        tokenManager?: {
-          setAccessToken?: (token: string) => void;
-          setUser?: (nextUser: UserSchema) => void;
-        };
-      }).tokenManager;
-      tokenManager?.setAccessToken?.(accessToken);
-      if (user) tokenManager?.setUser?.(user);
-      void window.electronAPI?.setPayrollSyncAccessToken?.(accessToken).catch(() => undefined);
-    }
-  } catch {
-    /* best effort: InsForge SDK internals are not public API */
-  }
+  if (accessToken) void window.electronAPI?.setPayrollSyncAccessToken?.(accessToken).catch(() => undefined);
 }
 
 function clearSessionShared(): void {
@@ -283,21 +266,11 @@ function clearSessionShared(): void {
       if (tenantId) m.invalidateLocalSessionContext(tenantId);
     });
   });
-  try {
-    void window.electronAPI?.setPayrollSyncAccessToken?.(null).catch(() => undefined);
-    insforgeClient.getHttpClient().setAuthToken(null);
-    insforgeClient.getHttpClient().setRefreshToken(null);
-    const tokenManager = (insforgeClient as unknown as {
-      tokenManager?: { clearSession?: () => void };
-    }).tokenManager;
-    tokenManager?.clearSession?.();
-  } catch {
-    /* ignore */
-  }
+  void window.electronAPI?.setPayrollSyncAccessToken?.(null).catch(() => undefined);
   patchSharedState({ user: null, tenantUser: null, tenantAccessDeniedReason: null, accessValidationState: 'anonymous', loading: false });
 }
 
-function userFromLocalDeviceSession(session: Awaited<ReturnType<typeof getLocalDeviceSession>>): UserSchema | null {
+function userFromLocalDeviceSession(session: Awaited<ReturnType<typeof getLocalDeviceSession>>): User | null {
   if (!session) return null;
   return {
     id: session.user_id,
@@ -306,12 +279,12 @@ function userFromLocalDeviceSession(session: Awaited<ReturnType<typeof getLocalD
     user_metadata: {},
     aud: '',
     created_at: '',
-  } as unknown as UserSchema;
+  } as unknown as User;
 }
 
 function hydrateAuthStateFromLocalDeviceSession(
   session: NonNullable<Awaited<ReturnType<typeof getLocalDeviceSession>>>
-): UserSchema {
+): User {
   const localUser = userFromLocalDeviceSession(session)!;
   const tenantRow = session.tenant_user_row as unknown as TenantSessionRow;
   writeTenantSessionCache(localUser.id, tenantRow);
@@ -331,7 +304,7 @@ function hydrateAuthStateFromLocalDeviceSession(
   return localUser;
 }
 
-export function hydrateAuthStateAfterLogin(user: UserSchema, tenantRow: TenantSessionRow): void {
+export function hydrateAuthStateAfterLogin(user: User, tenantRow: TenantSessionRow): void {
   writeTenantSessionCache(user.id, tenantRow);
   setLastTenantId(tenantRow.tenant_id);
   refreshBlockedUntil = 0;
@@ -372,7 +345,7 @@ async function loadUserDataShared(opts?: { silent?: boolean; force?: boolean }):
         logAuth('loadUserData:skipped-after-tenant-denial');
         return;
       }
-      let u: UserSchema | null = null;
+      let u: User | null = null;
       let hydratedFromLocalSession = false;
       let validatedOnlineSession = false;
       const accessRequestGeneration = tenantAccessGeneration;
@@ -427,14 +400,9 @@ async function loadUserDataShared(opts?: { silent?: boolean; force?: boolean }):
       }
 
       if (storedToken && canReachCloud) {
-        try {
-          insforgeClient.getHttpClient().setRefreshToken(storedToken);
-        } catch {
-          /* ignore */
-        }
         logAuth('bootstrap refresh:start', { tokenLength: storedToken.length });
-        const { data: refreshed, error: refreshError } = await insforgeClient.auth.refreshSession({
-          refreshToken: storedToken,
+        const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession({
+          refresh_token: storedToken,
         });
 
         if (!refreshError) {
@@ -457,7 +425,7 @@ async function loadUserDataShared(opts?: { silent?: boolean; force?: boolean }):
             });
           } else {
             const { data: authDataAfterRefresh, error: authErrorAfterRefresh } =
-              await insforgeClient.auth.getCurrentUser();
+              await supabase.auth.getUser();
             if (!authErrorAfterRefresh && authDataAfterRefresh?.user) {
               u = authDataAfterRefresh.user;
               validatedOnlineSession = true;
@@ -487,9 +455,6 @@ async function loadUserDataShared(opts?: { silent?: boolean; force?: boolean }):
       } else if (storedToken && !canReachCloud) {
         logAuth('bootstrap refresh:skipped-offline');
         // Still set the token on the client so it can be used if we come back online
-        try {
-          insforgeClient.getHttpClient().setRefreshToken(storedToken);
-        } catch { /* ignore */ }
       }
 
       if (!u && !storedToken && !hydratedFromLocalSession) {
@@ -511,7 +476,7 @@ async function loadUserDataShared(opts?: { silent?: boolean; force?: boolean }):
           logAuth('auth attempt', { attempt: attempt + 1, total: attempts });
           if (attempt > 0) await new Promise((r) => setTimeout(r, 280 * attempt));
 
-          const { data, error } = await insforgeClient.auth.getCurrentUser();
+          const { data, error } = await supabase.auth.getUser();
           if (error) {
             logAuth('getCurrentUser:error', error);
             if (isUnauthorizedError(error)) break;
@@ -566,7 +531,7 @@ async function loadUserDataShared(opts?: { silent?: boolean; force?: boolean }):
           // Update local device session in IndexedDB for desktop offline support
           if (isLocalFirstEnabled()) {
             try {
-              await saveLocalDeviceSession(access.row.tenant_id, u.id, u.email, access.row);
+              await saveLocalDeviceSession(access.row.tenant_id, u.id, u.email ?? '', access.row);
               logAuth('loadUserData:updated-local-session-with-fresh-plan');
             } catch (err) {
               logAuth('loadUserData:saveLocalDeviceSessionError', err);
@@ -677,13 +642,12 @@ async function doRefreshShared(source: AuthRefreshTrigger = 'manual'): Promise<v
     }
 
     try {
-      insforgeClient.getHttpClient().setRefreshToken(storedToken);
     } catch {
       /* ignore */
     }
 
-    const { data, error } = await insforgeClient.auth.refreshSession({
-      refreshToken: storedToken,
+    const { data, error } = await supabase.auth.refreshSession({
+        refresh_token: storedToken,
     });
 
     if (error) {
@@ -775,7 +739,7 @@ export async function ensureAuthSessionFresh(): Promise<void> {
 }
 
 export function useAuth() {
-  const [user, setUser] = useState<UserSchema | null>(sharedState.user);
+  const [user, setUser] = useState<User | null>(sharedState.user);
   const [tenantUser, setTenantUser] = useState<TenantUser | null>(sharedState.tenantUser);
   const [loading, setLoading] = useState(sharedState.loading);
   const [tenantAccessDeniedReason, setTenantAccessDeniedReason] = useState(sharedState.tenantAccessDeniedReason);
@@ -826,7 +790,7 @@ export function useAuth() {
     }
 
     try {
-      const { error } = await insforgeClient.auth.signOut();
+      const { error } = await supabase.auth.signOut();
       if (error) console.error('Error signing out:', error);
     } catch (e) {
       console.error('Exception signing out:', e);

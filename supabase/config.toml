@@ -1,0 +1,7 @@
+project_id = "cyberbistro"
+
+[api]
+enabled = true
+
+[functions.validate-ecf-certificate]
+verify_jwt = true

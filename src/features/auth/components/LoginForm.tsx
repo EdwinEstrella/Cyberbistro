@@ -6,10 +6,10 @@ import imgLoginRegistro from "figma:asset/47f7239cc7433af3270415eeec94f9bdbb11cd
 import imgDecorativeScanlineEffect from "figma:asset/70a05c412757c6d4e1cffbb0780858880dce7a5a.png";
 import { TitleBar } from "../../window";
 import {
-  insforgeClient,
-  formatInsforgeConnectivityError,
-} from "../../../shared/lib/insforge";
-import { INSFORGE_REFRESH_TOKEN_STORAGE_KEY } from "../../../shared/lib/insforgeAuthStorage";
+  supabase,
+  formatSupabaseConnectivityError,
+} from "../../../shared/lib/supabase";
+import { SUPABASE_REFRESH_TOKEN_STORAGE_KEY } from "../../../shared/lib/supabaseAuthStorage";
 import {
   BLOCKED_ACCOUNT_MESSAGE,
   UNLINKED_ACCOUNT_MESSAGE,
@@ -21,7 +21,7 @@ import { saveLocalDeviceSession } from "../../../shared/lib/localFirst";
 import { consumeRememberedLogin } from "../../../shared/lib/rememberLoginStorage";
 
 const LOGIN_NOTICE_KEY = "cloudix_login_notice";
-const REFRESH_TOKEN_KEY = INSFORGE_REFRESH_TOKEN_STORAGE_KEY;
+const REFRESH_TOKEN_KEY = SUPABASE_REFRESH_TOKEN_STORAGE_KEY;
 const REMEMBER_LOGIN_KEY = "cloudix_remember_login";
 
 // Hoist static SVG paths to avoid re-creation
@@ -279,7 +279,7 @@ export function Login() {
     setIsLoading(true);
     setError("");
 
-    const { data, error: authError } = await insforgeClient.auth.signInWithPassword({
+    const { data, error: authError } = await supabase.auth.signInWithPassword({
       email,
       password
     });
@@ -290,14 +290,15 @@ export function Login() {
         Boolean(data && typeof data === "object" && "refreshToken" in data),
     });
 
-    syncAuthClientAfterLogin(data);
-
     if (authError) {
-      const connectivity = formatInsforgeConnectivityError(authError);
+      console.error("[AuthFlow] login error", authError);
+      const connectivity = formatSupabaseConnectivityError(authError);
       setIsLoading(false);
       setError(connectivity ?? (authError.message || "Error al iniciar sesión"));
       return;
     }
+
+    syncAuthClientAfterLogin(data);
 
     localStorage.removeItem(REMEMBER_LOGIN_KEY);
     if (rememberLogin && secureStorageAvailable) {
@@ -315,11 +316,6 @@ export function Login() {
     const refreshToken = extractRefreshTokenFromSignInPayload(data);
     if (refreshToken) {
       localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
-      try {
-        insforgeClient.getHttpClient().setRefreshToken(refreshToken);
-      } catch {
-        /* ignore */
-      }
       console.info("[AuthFlow] login refresh token stored", {
         tokenLength: refreshToken.length,
       });
@@ -331,7 +327,7 @@ export function Login() {
       const access = await resolveTenantAccessForSession(data.user);
       if (access.status !== "active") {
         setError(access.status === "blocked" ? BLOCKED_ACCOUNT_MESSAGE : UNLINKED_ACCOUNT_MESSAGE);
-        await insforgeClient.auth.signOut();
+        await supabase.auth.signOut();
         setIsLoading(false);
         return;
       }
@@ -340,7 +336,7 @@ export function Login() {
         await saveLocalDeviceSession(
           access.row.tenant_id,
           data.user.id,
-          data.user.email,
+          data.user.email ?? "",
           access.row
         );
       }

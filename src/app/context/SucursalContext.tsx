@@ -8,7 +8,7 @@ import {
 } from "react";
 import { useAuth } from "../../shared/hooks/useAuth";
 import { readLocalMirror, shouldReadLocalFirst, enqueueLocalWrite, getDeviceId } from "../../shared/lib/localFirst";
-import { insforgeClient } from "../../shared/lib/insforge";
+import { supabase } from "../../shared/lib/supabase";
 import { canCommitTenantAsyncState } from "../../shared/lib/tenantAccessGuard";
 
 export interface Sucursal {
@@ -125,7 +125,7 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
         if (!isCurrentAccess(generation, expectedTenantId)) return;
         if (data.length === 0 && navigator.onLine) {
           try {
-            const res = await insforgeClient.database
+            const res = await supabase
               .from("sucursales")
               .select("*")
               .eq("tenant_id", expectedTenantId)
@@ -138,7 +138,7 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
           if (!isCurrentAccess(generation, expectedTenantId)) return;
         }
       } else {
-        const res = await insforgeClient.database
+        const res = await supabase
           .from("sucursales")
           .select("*")
           .eq("tenant_id", expectedTenantId)
@@ -189,7 +189,7 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
 
     if (navigator.onLine) {
       try {
-        const res = await insforgeClient.database
+        const res = await supabase
           .from("tenants")
           .select("id, plan, sucursal_limit_enabled, sucursal_limit")
           .eq("id", tenantId)
@@ -209,7 +209,7 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
 
     if (navigator.onLine) {
       try {
-        const res = await insforgeClient.database
+        const res = await supabase
           .from("sucursales")
           .select("id", { count: "exact", head: true })
           .eq("tenant_id", tenantId)
@@ -291,7 +291,7 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
       } else {
         const tables = ["productos_inventario", "inventario_movimientos", "produccion_cocina"];
         for (const table of tables) {
-          const res = await insforgeClient.database
+          const res = await supabase
             .from(table)
             .select("id", { count: "exact", head: true })
             .eq("sucursal_id", sucursalId);

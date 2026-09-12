@@ -15,7 +15,7 @@ async function hasOpenCycle(tenantId: string, sucursalId: string | null): Promis
       return cycles.some(c => !c.closed_at && (c.sucursal_id === sucursalId || !c.sucursal_id));
     }
   } catch { /* fall through to online */ }
-  const { data, error } = await insforgeClient.database
+  const { data, error } = await supabase
     .from("cierres_operativos")
     .select("id, sucursal_id")
     .eq("tenant_id", tenantId)
@@ -27,7 +27,7 @@ async function hasOpenCycle(tenantId: string, sucursalId: string | null): Promis
   return (data && (data as any[]).some(c => c.sucursal_id === sucursalId || !c.sucursal_id));
 }
 
-import { insforgeClient } from "../../../shared/lib/insforge";
+import { supabase } from "../../../shared/lib/supabase";
 import { generateMesasConfig } from "../../tables/config/mesas";
 import { loadCantidadMesas } from "../../../shared/lib/tenantMesasSettings";
 import { useAuth, ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
@@ -269,7 +269,7 @@ export function Dashboard() {
       let [platosData, categoriasData, estadosData, consumosData, cantidadMesas] = await Promise.all([
         useLocalRead
           ? readLocalMirror<Plato>(tenantId, "platos").then(rows => rows.filter(r => r.sucursal_id === activeSucursalId))
-          : insforgeClient.database
+          : supabase
               .from("platos")
               .select("*")
               .eq("tenant_id", tenantId)
@@ -279,7 +279,7 @@ export function Dashboard() {
               .then(r => r.data ?? []),
         useLocalRead
           ? readLocalMirror<MenuCategoryRow>(tenantId, "menu_categories").then(rows => rows.filter(r => r.sucursal_id === activeSucursalId))
-          : insforgeClient.database
+          : supabase
               .from("menu_categories")
               .select("id, tenant_id, nombre, color, sort_order")
               .eq("tenant_id", tenantId)
@@ -289,7 +289,7 @@ export function Dashboard() {
               .then(r => r.data ?? []),
         useLocalRead
           ? readLocalMirror<any>(tenantId, "mesas_estado").then(rows => rows.filter(r => r.sucursal_id === activeSucursalId))
-          : insforgeClient.database
+          : supabase
               .from("mesas_estado")
               .select("*")
               .eq("tenant_id", tenantId)
@@ -298,7 +298,7 @@ export function Dashboard() {
         useLocalOpenConsumos
           ? readLocalMirror<{ mesa_numero: number | null; subtotal: number; estado?: string; sucursal_id?: string | null }>(tenantId, "consumos")
               .then(rows => rows.filter(row => row.estado !== "pagado" && row.sucursal_id === activeSucursalId))
-          : insforgeClient.database
+          : supabase
               .from("consumos")
               .select("mesa_numero, subtotal")
               .eq("tenant_id", tenantId)
@@ -310,14 +310,14 @@ export function Dashboard() {
 
       if (useLocalRead && (platosData as Plato[]).filter(p => p.disponible).length === 0 && navigator.onLine) {
         const [serverPlatosRes, serverCategoriesRes] = await Promise.all([
-          insforgeClient.database
+          supabase
             .from("platos")
             .select("*")
             .eq("tenant_id", tenantId)
             .eq("sucursal_id", activeSucursalId)
             .eq("disponible", true)
             .order("categoria"),
-          insforgeClient.database
+          supabase
             .from("menu_categories")
             .select("id, tenant_id, nombre, color, sort_order, sucursal_id")
             .eq("tenant_id", tenantId)
@@ -529,7 +529,7 @@ export function Dashboard() {
       );
       return;
     }
-    const { data, error } = await insforgeClient.database
+    const { data, error } = await supabase
       .from("consumos")
       .select("subtotal")
       .eq("tenant_id", tenantId)
@@ -588,7 +588,7 @@ export function Dashboard() {
       } catch {
         // Si IndexedDB no está disponible, caemos al servidor.
       }
-      const { data, error } = await insforgeClient.database
+      const { data, error } = await supabase
          .from("consumos")
          .select("*")
          .eq("tenant_id", tenantId)
@@ -791,7 +791,7 @@ export function Dashboard() {
           const localCocina = await readLocalMirror<{ activa?: boolean; sucursal_id?: string | null }>(tid, "cocina_estado");
           cocinaActiva = localCocina.find(r => r.sucursal_id === activeSucursalId)?.activa !== false;
         } else {
-          const { data: estadoData } = await insforgeClient.database
+          const { data: estadoData } = await supabase
             .from("cocina_estado")
             .select("activa")
             .eq("tenant_id", tid)
@@ -850,7 +850,7 @@ export function Dashboard() {
             const localTenants = await readLocalMirror<any>(tid, "tenants");
             tenantRow = localTenants.find((t) => t.id === tid);
           } else {
-            const { data: t, error } = await insforgeClient.database
+            const { data: t, error } = await supabase
               .from("tenants")
               .select("nombre_negocio, rnc, direccion, telefono, logo_url, menu_url, moneda, logo_size_px, logo_offset_x, logo_offset_y")
               .eq("id", tid)
@@ -1042,7 +1042,7 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
         const localTenants = await readLocalMirror<any>(tenantId, "tenants").catch(() => []);
         tenantPrintData = localTenants.find((t) => t.id === tenantId) ?? null;
       } else {
-        const { data: t, error } = await insforgeClient.database.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url, menu_url, ecf_environment, logo_size_px, logo_offset_x, logo_offset_y, moneda").eq("id", tenantId).maybeSingle();
+        const { data: t, error } = await supabase.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url, menu_url, ecf_environment, logo_size_px, logo_offset_x, logo_offset_y, moneda").eq("id", tenantId).maybeSingle();
         if (!error && t) {
           tenantPrintData = t;
         }
@@ -1367,7 +1367,7 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
         const localTenants = await readLocalMirror<any>(tenantId, "tenants");
         tenantPrintData = localTenants.find((t) => t.id === tenantId) ?? null;
       } else {
-        const { data: t, error } = await insforgeClient.database.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url, menu_url, ecf_environment, logo_size_px, logo_offset_x, logo_offset_y").eq("id", tenantId).maybeSingle();
+        const { data: t, error } = await supabase.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url, menu_url, ecf_environment, logo_size_px, logo_offset_x, logo_offset_y").eq("id", tenantId).maybeSingle();
         if (error) throw error;
         tenantPrintData = t;
       }
@@ -1389,7 +1389,7 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
               const localCocina = await readLocalMirror<{ activa?: boolean; sucursal_id?: string | null }>(tenantId, "cocina_estado");
               cocinaActiva = localCocina.find(r => r.sucursal_id === activeSucursalId)?.activa !== false;
             } else {
-              const { data: estadoData } = await insforgeClient.database
+              const { data: estadoData } = await supabase
                 .from("cocina_estado")
                 .select("activa")
                 .eq("tenant_id", tenantId)
@@ -1487,7 +1487,7 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
     );
   }
 
-  /* Sesión InsForge válida = ya pasó el login; tenant/rol vienen de la misma sesión (estado + caché en useAuth). */
+  /* Sesión Supabase válida = ya pasó el login; tenant/rol vienen de la misma sesión (estado + caché en useAuth). */
   if (!user) {
     return (
       <div className="flex items-center justify-center h-screen bg-[#0e0e0e]">

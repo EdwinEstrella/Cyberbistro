@@ -1,4 +1,4 @@
-import { insforgeClient } from "./insforge";
+import { supabase } from "./supabase";
 import { enqueueLocalWrite, getDeviceId, readLocalMirror, shouldReadLocalFirst } from "./localFirst";
 
 export async function loadCantidadMesas(tenantId: string): Promise<number> {
@@ -14,7 +14,7 @@ export async function loadCantidadMesas(tenantId: string): Promise<number> {
     if (localCantidad) return localCantidad;
   }
 
-  const { data, error } = await insforgeClient.database
+  const { data, error } = await supabase
     .from("tenants")
     .select("cantidad_mesas")
     .eq("id", tenantId)

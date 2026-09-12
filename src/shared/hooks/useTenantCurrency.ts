@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { insforgeClient } from "../lib/insforge";
+import { supabase } from "../lib/supabase";
 import {
   formatTenantCurrency,
   normalizeTenantCurrencyCode,
@@ -30,7 +30,7 @@ export function useTenantCurrency() {
         return;
       }
 
-      let res = await insforgeClient.database
+      let res = await supabase
         .from("tenants")
         .select("moneda")
         .eq("id", tenantId)
@@ -38,7 +38,7 @@ export function useTenantCurrency() {
 
       if (res.error) {
         // Compatibilidad para entornos que usan currency_code
-        res = await insforgeClient.database
+        res = await supabase
           .from("tenants")
           .select("currency_code")
           .eq("id", tenantId)

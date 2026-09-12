@@ -1,6 +1,6 @@
-import { insforgeClient } from "./insforge";
+import { supabase } from "./supabase";
 
-/** Bucket InsForge para assets de configuración (logos multitenant). */
+/** Bucket Supabase para assets de configuración (logos multitenant). */
 export const TENANT_ASSETS_BUCKET = "configuracion";
 
 const MAX_BYTES = 2 * 1024 * 1024;
@@ -55,7 +55,7 @@ export async function uploadTenantLogoFile(
 
   const path = tenantLogoObjectPath(tenantId, file);
 
-  const { error } = await insforgeClient.storage
+  const { error } = await supabase.storage
     .from(TENANT_ASSETS_BUCKET)
     .upload(path, file);
 
@@ -66,9 +66,10 @@ export async function uploadTenantLogoFile(
     };
   }
 
-  const publicUrl = insforgeClient.storage
+  const { data } = supabase.storage
     .from(TENANT_ASSETS_BUCKET)
     .getPublicUrl(path);
+  const publicUrl = data.publicUrl;
 
   if (!publicUrl) {
     return { ok: false, message: "Subida ok pero no se obtuvo la URL pública." };
@@ -82,7 +83,7 @@ export async function saveTenantLogoUrl(
   tenantId: string,
   logoUrl: string | null
 ): Promise<{ ok: true } | { ok: false; message: string }> {
-  const { error } = await insforgeClient.database
+  const { error } = await supabase
     .from("tenants")
     .update({
       logo_url: logoUrl?.trim() || null,

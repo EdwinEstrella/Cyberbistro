@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { insforgeClient } from "../../../shared/lib/insforge";
+import { supabase } from "../../../shared/lib/supabase";
 import { useAuth } from "../../../shared/hooks/useAuth";
 
 export function CertificateUploader({ environment, onValidated }: { environment: string; onValidated?: () => void }) {
@@ -19,7 +19,7 @@ export function CertificateUploader({ environment, onValidated }: { environment:
   }, [tenantId, environment]);
 
   async function loadMetadata() {
-    const { data } = await insforgeClient.database
+    const { data } = await supabase
       .from("ecf_certificate_metadata")
       .select("*")
       .eq("tenant_id", tenantId)
@@ -59,7 +59,7 @@ export function CertificateUploader({ environment, onValidated }: { environment:
         is_ready: true,
         last_validation_error: null,
       };
-      const { data: existing, error: findError } = await insforgeClient.database
+      const { data: existing, error: findError } = await supabase
         .from("ecf_certificate_metadata")
         .select("id")
         .eq("tenant_id", tenantId)
@@ -68,8 +68,8 @@ export function CertificateUploader({ environment, onValidated }: { environment:
       if (findError) throw new Error("No se pudo consultar el certificado existente: " + findError.message);
 
       const { error: saveError } = existing
-        ? await insforgeClient.database.from("ecf_certificate_metadata").update(certificateMetadata).eq("id", existing.id)
-        : await insforgeClient.database.from("ecf_certificate_metadata").insert([certificateMetadata]);
+        ? await supabase.from("ecf_certificate_metadata").update(certificateMetadata).eq("id", existing.id)
+        : await supabase.from("ecf_certificate_metadata").insert([certificateMetadata]);
       if (saveError) throw new Error("No se pudo guardar los metadatos del certificado: " + saveError.message);
 
       setMessage({ type: "success", text: "Certificado validado y protegido localmente." });

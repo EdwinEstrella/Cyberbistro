@@ -2,15 +2,15 @@ import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-const migration = readFileSync("migrations/20260715120000_tenant-management.sql", "utf8");
+const migration = readFileSync("supabase/migrations/20260715120000_tenant-management.sql", "utf8");
 const adminSql = readFileSync("sql/cloudix_super_admin_limits.sql", "utf8");
-const ownerDeleteSql = readFileSync("migrations/20260519114600_owner-delete-staff.sql", "utf8");
-const superAdminUserDeleteSql = readFileSync("migrations/20260510121152_super-admin-rpcs.sql", "utf8");
+const ownerDeleteSql = readFileSync("supabase/migrations/20260519114600_owner-delete-staff.sql", "utf8");
+const superAdminUserDeleteSql = readFileSync("supabase/migrations/20260510121152_super-admin-rpcs.sql", "utf8");
 const repositorySchema = readFileSync("test/schema.sql", "utf8");
-const paymentsIndexMigration = readFileSync("migrations/20260715000000_add-foreign-key-and-rls-indexes.sql", "utf8");
-const accessRealtimeMigration = readFileSync("migrations/20260715000004_tenant-access-realtime.sql", "utf8");
-const paymentAlertMigration = readFileSync("migrations/20260715000005_add-payment-day-alert-config.sql", "utf8");
-const authoritativeMigration = readFileSync("migrations/20260715130000_tenant-access-authoritative-rules.sql", "utf8");
+const paymentsIndexMigration = readFileSync("supabase/migrations/20260715000000_add-foreign-key-and-rls-indexes.sql", "utf8");
+const accessRealtimeMigration = readFileSync("supabase/migrations/20260715000004_tenant-access-realtime.sql", "utf8");
+const paymentAlertMigration = readFileSync("supabase/migrations/20260715000005_add-payment-day-alert-config.sql", "utf8");
+const authoritativeMigration = readFileSync("supabase/migrations/20260715130000_tenant-access-authoritative-rules.sql", "utf8");
 
 describe("tenant-management migration", () => {
   it("covers every repository tenant-owned table, including payments", () => {
@@ -41,7 +41,7 @@ describe("tenant-management migration", () => {
   });
 
   it("does not regress inline tenant FKs in repository migrations", () => {
-    const migrationDir = join(process.cwd(), "migrations");
+    const migrationDir = join(process.cwd(), "supabase", "migrations");
     const migrationFiles = readdirSync(migrationDir);
     const inlineTenantReferences = migrationFiles
       .filter((file) => file.endsWith(".sql"))
@@ -99,8 +99,8 @@ describe("tenant-management migration", () => {
     expect(authoritativeMigration).toContain("auth_user_id IS NULL");
     expect(authoritativeMigration).toContain("DROP POLICY IF EXISTS cb_tenant_users_admin_staff_update");
     for (const sql of [
-      readFileSync("migrations/20260510121152_super-admin-rpcs.sql", "utf8"),
-      readFileSync("migrations/20260510121926_super-admin-unblock-tenant.sql", "utf8"),
+      readFileSync("supabase/migrations/20260510121152_super-admin-rpcs.sql", "utf8"),
+      readFileSync("supabase/migrations/20260510121926_super-admin-unblock-tenant.sql", "utf8"),
       readFileSync("sql/cloudix_super_admin_limits.sql", "utf8"),
     ]) {
       expect(sql).not.toMatch(/UPDATE\s+public\.tenant_users\s+SET\s+activo/i);

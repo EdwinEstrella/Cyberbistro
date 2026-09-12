@@ -64,7 +64,7 @@ export function EditarCompraFiscalModal({
       const d = new Date(formData.fecha_compra);
       const safeIso = isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
 
-      await actualizarDatosFiscalesCompra(tenantId, compra.id, {
+       await actualizarDatosFiscalesCompra(tenantId, compra!.id, {
         proveedorId: formData.proveedor_id,
         numeroFactura: formData.numero_factura,
         fechaCompra: safeIso,

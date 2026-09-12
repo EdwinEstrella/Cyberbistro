@@ -39,7 +39,7 @@ import {
 } from "../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../shared/lib/thermalPrint";
-import { insforgeClient } from "../../shared/lib/insforge";
+import { supabase } from "../../shared/lib/supabase";
 import { shouldReadLocalFirst, readLocalMirror } from "../../shared/lib/localFirst";
 import type {
   PayrollCreatePaymentRequest,
@@ -150,7 +150,7 @@ export function Nomina() {
             return;
           }
         }
-        const { data } = await insforgeClient.database.from("tenants").select("*").eq("id", tenantId).maybeSingle();
+        const { data } = await supabase.from("tenants").select("*").eq("id", tenantId).maybeSingle();
         if (data) {
           setTenantInfo({
             nombre_negocio: (data as any).nombre_negocio || (data as any).nombre || "Cloudix",
@@ -205,7 +205,7 @@ export function Nomina() {
   const syncEmployeeToCloud = useCallback(
     async (emp: PayrollEmployee) => {
       if (!tenantId || !activeSucursalId) return;
-      await syncPayrollEmployeeToCloud(insforgeClient, emp, tenantId, activeSucursalId);
+      await syncPayrollEmployeeToCloud(supabase, emp, tenantId, activeSucursalId);
     },
     [activeSucursalId, tenantId],
   );
@@ -239,8 +239,8 @@ export function Nomina() {
         }
       }
 
-      // Cargar de InsForge
-      const { data: cloudEmployees, error: cloudError } = await insforgeClient.database
+      // Cargar de Supabase
+      const { data: cloudEmployees, error: cloudError } = await supabase
         .from("nomina_empleados")
         .select("*")
         .eq("tenant_id", tenantId)
@@ -294,7 +294,7 @@ export function Nomina() {
 
       const finalEmployees = Array.from(employeeMap.values());
 
-      // Sincronizar a InsForge los empleados locales existentes
+      // Sincronizar a Supabase los empleados locales existentes
       for (const emp of localEmployees) {
         void syncEmployeeToCloud(emp).catch((error) => {
           console.warn("[Nomina] Error syncing employee to cloud:", error);
@@ -338,7 +338,7 @@ export function Nomina() {
         }
       }
 
-      const { data: cloudPayments, error: cloudErr } = await insforgeClient.database
+      const { data: cloudPayments, error: cloudErr } = await supabase
         .from("nomina_pagos")
         .select(`
           id, empleado_id, periodo, monto_base, total_bonos, total_descuentos,
@@ -416,7 +416,7 @@ export function Nomina() {
         };
         const context = isPayrollLocalStorageAvailable()
           ? await getLocalPaymentContext(tenantId, activeSucursalId, payload)
-          : await getPayrollPaymentContextFromCloud(insforgeClient as never, selectedEmployee, payload);
+          : await getPayrollPaymentContextFromCloud(supabase as never, selectedEmployee, payload);
         if (cancelled) return;
         setPaymentContext(context);
         if (paymentAmountInput.trim().length === 0) {
@@ -596,7 +596,7 @@ export function Nomina() {
           throw new Error("El almacenamiento local no confirmó la baja del empleado.");
         }
       } else {
-        await deactivatePayrollEmployeeInCloud(insforgeClient, confirmDeactivate.employeeId);
+        await deactivatePayrollEmployeeInCloud(supabase, confirmDeactivate.employeeId);
       }
 
       await loadEmployees();
@@ -1816,7 +1816,7 @@ async function createPaymentLocally(
 async function createPaymentInCloud(
   payload: PayrollCreatePaymentRequest,
 ): Promise<PayrollPaymentContext> {
-  return createPayrollPaymentInCloud(insforgeClient as never, payload);
+  return createPayrollPaymentInCloud(supabase as never, payload);
 }
 
 function formatMoney(cents: number): string {

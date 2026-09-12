@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
-import { InsforgeStorageCertificateCustody } from "./certificateCustody";
+import { SupabaseStorageCertificateCustody } from "./certificateCustody";
 import { RealDgiiClient, RealXmlSigner } from "./dgiiAdapters";
 import { FiscalWorker } from "./fiscalWorker";
 import { PostgresFiscalWorkerRepository, createProjectAdminPgPoolFromEnv } from "./postgresFiscalWorkerRepository";
 import type { FiscalWorkerRepository } from "./types";
 
-export type InsforgeWorkerCredentialClass = "service_role" | "project_admin" | "anon" | "unknown";
+export type SupabaseWorkerCredentialClass = "service_role" | "project_admin" | "anon" | "unknown";
 
 function decodeJwtPayload(jwt: string): Record<string, unknown> | null {
   const [, payload] = jwt.split(".");
@@ -18,7 +18,7 @@ function decodeJwtPayload(jwt: string): Record<string, unknown> | null {
   }
 }
 
-export function classifyInsforgeWorkerCredential(key: string): InsforgeWorkerCredentialClass {
+export function classifySupabaseWorkerCredential(key: string): SupabaseWorkerCredentialClass {
   const trimmed = key.trim();
   if (!trimmed) return "unknown";
 
@@ -34,16 +34,24 @@ export function classifyInsforgeWorkerCredential(key: string): InsforgeWorkerCre
 }
 
 export function resolveFiscalWorkerCredentialFromEnv(env: NodeJS.ProcessEnv = process.env): string {
-  const key = env.INSFORGE_SERVICE_ROLE_KEY?.trim();
+  const key = env.SUPABASE_SERVICE_ROLE_KEY?.trim();
   if (!key) {
-    throw new Error("INSFORGE_SERVICE_ROLE_KEY is required for the fiscal worker.");
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY is required for the fiscal worker.");
   }
 
-  const credentialClass = classifyInsforgeWorkerCredential(key);
+  const credentialClass = classifySupabaseWorkerCredential(key);
   if (credentialClass === "anon") {
-    throw new Error("Fiscal worker refused anon InsForge credential; use service-role or project-admin credentials.");
+    throw new Error("Fiscal worker refused anon Supabase credential; use service-role or project-admin credentials.");
   }
   return key;
+}
+
+export function resolveFiscalWorkerSupabaseUrlFromEnv(env: NodeJS.ProcessEnv = process.env): string {
+  const url = env.SUPABASE_URL?.trim() || env.VITE_SUPABASE_URL?.trim() || "";
+  if (!/^https:\/\/[^\s/]+/i.test(url)) {
+    throw new Error("SUPABASE_URL is required for fiscal certificate storage.");
+  }
+  return url;
 }
 
 export interface FiscalWorkerRuntimeOptions {
@@ -83,7 +91,7 @@ export class FiscalWorkerRuntime {
 }
 
 export function createFiscalWorkerRuntimeFromEnv(env: NodeJS.ProcessEnv = process.env): FiscalWorkerRuntime {
-  const insforgeKey = resolveFiscalWorkerCredentialFromEnv(env);
+  const supabaseKey = resolveFiscalWorkerCredentialFromEnv(env);
 
   const encryptionKey = env.ECF_ENCRYPTION_KEY?.trim();
   if (!encryptionKey) {
@@ -95,10 +103,10 @@ export function createFiscalWorkerRuntimeFromEnv(env: NodeJS.ProcessEnv = proces
   const pool = createProjectAdminPgPoolFromEnv(env);
   const repository = new PostgresFiscalWorkerRepository({ db: pool });
   const workerId = env.FISCAL_WORKER_ID?.trim() || `fiscal-worker-${randomUUID()}`;
-  const insforgeUrl = env.VITE_INSFORGE_BASE_URL || env.INSFORGE_BASE_URL || "";
+  const supabaseUrl = resolveFiscalWorkerSupabaseUrlFromEnv(env);
   const worker = new FiscalWorker({
     repository,
-    custody: new InsforgeStorageCertificateCustody(insforgeUrl, insforgeKey, pool),
+    custody: new SupabaseStorageCertificateCustody(supabaseUrl, supabaseKey, pool),
     signer: new RealXmlSigner(),
     dgii: new RealDgiiClient(),
     workerId,

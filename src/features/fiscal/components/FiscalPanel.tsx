@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import QRCode from "qrcode";
-import { insforgeClient } from "../../../shared/lib/insforge";
+import { supabase } from "../../../shared/lib/supabase";
 import { useAuth } from "../../../shared/hooks/useAuth";
-import { reenqueueEcfDocument, type FiscalRpcClient } from "../lib/reenqueueEcfDocument";
+import { reenqueueEcfDocument } from "../lib/reenqueueEcfDocument";
 import { getLocalFirstStatusSnapshot, readLocalMirror } from "../../../shared/lib/localFirst";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
@@ -37,7 +37,7 @@ export function FiscalPanel() {
   const fetchDocuments = useCallback(async () => {
     if (!tenantId) return;
     try {
-      const { data, error } = await insforgeClient.database
+      const { data, error } = await supabase
         .from("ecf_documents")
         .select(`
           *,
@@ -70,7 +70,7 @@ export function FiscalPanel() {
     setResubmitting(documentId);
     try {
       await reenqueueEcfDocument({
-        client: insforgeClient as unknown as FiscalRpcClient,
+        client: supabase,
         tenantId,
         ecfDocumentId: documentId,
       });
@@ -100,7 +100,7 @@ export function FiscalPanel() {
           factura = allFacturas.find((f: any) => f.id === doc.factura_id);
         }
       } else {
-        const { data: tenantData } = await insforgeClient.database
+        const { data: tenantData } = await supabase
           .from("tenants")
           .select("nombre_negocio, rnc, direccion, telefono, logo_url, ecf_environment, logo_size_px, logo_offset_x, logo_offset_y, moneda")
           .eq("id", tenantId)
@@ -108,7 +108,7 @@ export function FiscalPanel() {
         tenant = tenantData;
 
         if (!factura) {
-          const { data: factData } = await insforgeClient.database
+          const { data: factData } = await supabase
             .from("facturas")
             .select("*")
             .eq("id", doc.factura_id)

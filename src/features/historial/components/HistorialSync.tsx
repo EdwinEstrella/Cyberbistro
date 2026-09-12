@@ -1,24 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Activity,
   AlertCircle,
-  ArrowDownCircle,
   ArrowUpCircle,
   CheckCircle2,
   Clock,
   Database,
-  Eye,
-  FileText,
   HardDrive,
   Layers,
   RefreshCw,
   RotateCw,
   Server,
   ShieldCheck,
-  Zap,
 } from "lucide-react";
 import { useAuth } from "../../../shared/hooks/useAuth";
-import { insforgeClient } from "../../../shared/lib/insforge";
+import { supabase } from "../../../shared/lib/supabase";
 import {
   exportLegacyIndexedDbImportPayload,
   importLegacyIndexedDbThroughDesktop,
@@ -65,7 +60,7 @@ interface DiagnosticReport {
 }
 
 export function HistorialSync() {
-  const { tenantId, user } = useAuth();
+  const { tenantId } = useAuth();
   const [report, setReport] = useState<DiagnosticReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -92,7 +87,7 @@ export function HistorialSync() {
   const checkCloudHealth = useCallback(async () => {
     const start = performance.now();
     try {
-      const { error } = await insforgeClient.database.from("tenants").select("id").limit(1);
+      const { error } = await supabase.from("tenants").select("id").limit(1);
       const end = performance.now();
       if (!error) {
         setCloudStatus("online");
@@ -231,7 +226,7 @@ export function HistorialSync() {
                 Historial & Monitor de Sincronización
               </h1>
               <p className="font-['Inter',sans-serif] text-sm text-muted-foreground max-w-3xl">
-                Supervisión del motor SQLite local, outbox durable, detección de anomalías y sincronización bidireccional con InsForge.
+                Supervisión del motor SQLite local, outbox durable, detección de anomalías y sincronización bidireccional con Supabase.
               </p>
             </div>
 
@@ -343,10 +338,10 @@ export function HistorialSync() {
             </p>
           </div>
 
-          {/* Card 4: Nube InsForge */}
+          {/* Card 4: Nube Supabase */}
           <div className="rounded-[20px] border border-black/10 dark:border-white/10 bg-card p-5 shadow-sm">
             <div className="flex items-center justify-between text-muted-foreground text-xs uppercase font-bold tracking-wider">
-              <span>Conexión InsForge</span>
+              <span>Conexión Supabase</span>
               <Server className={`size-4 ${cloudStatus === "online" ? "text-emerald-500" : "text-rose-500"}`} />
             </div>
             <div className="mt-3 flex items-baseline gap-2">

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { insforgeClient } from "../../../shared/lib/insforge";
+import { supabase } from "../../../shared/lib/supabase";
 import { useAuth } from "../../../shared/hooks/useAuth";
 
 import { buildCierreDiaReceiptHtml } from "../../../shared/lib/receiptTemplates";
@@ -210,16 +210,16 @@ export function Cierre() {
       const [cyclesAll, consAll, openGlobal, categoriasData] = await Promise.all([
         useLocalCiclos
           ? readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos").then(rows => rows.filter(c => c.sucursal_id === activeSucursalId || !c.sucursal_id))
-          : insforgeClient.database.from("cierres_operativos").select("*").eq("tenant_id", tenantId).or(activeSucursalId ? `sucursal_id.eq.${activeSucursalId},sucursal_id.is.null` : `sucursal_id.is.null`).eq("business_day", toYmd(fecha)).order("cycle_number", { ascending: false }).then(r => ({ data: r.data, error: r.error })),
+          : supabase.from("cierres_operativos").select("*").eq("tenant_id", tenantId).or(activeSucursalId ? `sucursal_id.eq.${activeSucursalId},sucursal_id.is.null` : `sucursal_id.is.null`).eq("business_day", toYmd(fecha)).order("cycle_number", { ascending: false }).then(r => ({ data: r.data, error: r.error })),
         useLocalConsumos
           ? readLocalMirror<ConsumoAbiertoRow & { sucursal_id?: string | null; created_at?: string }>(tenantId, "consumos").then(rows => rows.filter(c => c.sucursal_id === activeSucursalId || !c.sucursal_id))
-          : insforgeClient.database.from("consumos").select("mesa_numero, subtotal, estado, created_at").eq("tenant_id", tenantId).or(activeSucursalId ? `sucursal_id.eq.${activeSucursalId},sucursal_id.is.null` : `sucursal_id.is.null`).neq("estado", "pagado").then(r => ({ data: r.data, error: r.error })),
+          : supabase.from("consumos").select("mesa_numero, subtotal, estado, created_at").eq("tenant_id", tenantId).or(activeSucursalId ? `sucursal_id.eq.${activeSucursalId},sucursal_id.is.null` : `sucursal_id.is.null`).neq("estado", "pagado").then(r => ({ data: r.data, error: r.error })),
         useLocalCiclos
           ? readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos").then(rows => rows.filter(c => c.sucursal_id === activeSucursalId || !c.sucursal_id))
-          : insforgeClient.database.from("cierres_operativos").select("*").eq("tenant_id", tenantId).or(activeSucursalId ? `sucursal_id.eq.${activeSucursalId},sucursal_id.is.null` : `sucursal_id.is.null`).is("closed_at", null).order("opened_at", { ascending: false }).limit(1).then(r => ({ data: r.data, error: r.error })),
+          : supabase.from("cierres_operativos").select("*").eq("tenant_id", tenantId).or(activeSucursalId ? `sucursal_id.eq.${activeSucursalId},sucursal_id.is.null` : `sucursal_id.is.null`).is("closed_at", null).order("opened_at", { ascending: false }).limit(1).then(r => ({ data: r.data, error: r.error })),
         useLocalCategorias
           ? readLocalMirror<GastoCategoriaRow & { sucursal_id?: string | null }>(tenantId, "gasto_categorias").then(rows => rows.filter(c => c.sucursal_id === activeSucursalId || !c.sucursal_id))
-          : insforgeClient.database.from("gasto_categorias").select("id, nombre").eq("tenant_id", tenantId).or(activeSucursalId ? `sucursal_id.eq.${activeSucursalId},sucursal_id.is.null` : `sucursal_id.is.null`).then(r => ({ data: r.data, error: r.error })),
+          : supabase.from("gasto_categorias").select("id, nombre").eq("tenant_id", tenantId).or(activeSucursalId ? `sucursal_id.eq.${activeSucursalId},sucursal_id.is.null` : `sucursal_id.is.null`).then(r => ({ data: r.data, error: r.error })),
       ]);
 
       if (!useLocalCiclos && (cyclesAll as any).error) { setLoadError((cyclesAll as any).error.message); setLoading(false); return; }
@@ -248,18 +248,18 @@ export function Cierre() {
           shouldReadLocalFirst(tenantId, ["facturas"]).then(useLocal => useLocal
             ? readLocalMirror<FacturaRow & { sucursal_id?: string | null }>(tenantId, "facturas").then(fs => fs.filter(f => f.sucursal_id === activeSucursalId || !f.sucursal_id))
             : activeSucursalId 
-              ? insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("created_at", { ascending: false }).then(r => r.data ?? [])
-              : insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).is("sucursal_id", null).order("created_at", { ascending: false }).then(r => r.data ?? [])),
+              ? supabase.from("facturas").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("created_at", { ascending: false }).then(r => r.data ?? [])
+              : supabase.from("facturas").select("*").eq("tenant_id", tenantId).is("sucursal_id", null).order("created_at", { ascending: false }).then(r => r.data ?? [])),
           shouldReadLocalFirst(tenantId, ["gastos"]).then(useLocal => useLocal
             ? readLocalMirror<GastoRow & { sucursal_id?: string | null }>(tenantId, "gastos").then(gs => gs.filter(g => g.cycle_id === sel.id && (g.sucursal_id === activeSucursalId || !g.sucursal_id)))
             : activeSucursalId 
-              ? insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, metodo_pago, fecha_gasto").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).eq("cycle_id", sel.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? [])
-              : insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, metodo_pago, fecha_gasto").eq("tenant_id", tenantId).is("sucursal_id", null).eq("cycle_id", sel.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? [])),
+              ? supabase.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, metodo_pago, fecha_gasto").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).eq("cycle_id", sel.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? [])
+              : supabase.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, metodo_pago, fecha_gasto").eq("tenant_id", tenantId).is("sucursal_id", null).eq("cycle_id", sel.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? [])),
           shouldReadLocalFirst(tenantId, ["cxc_pagos"]).then(useLocal => useLocal
             ? readLocalMirror<any>(tenantId, "cxc_pagos").then(ps => ps.filter(p => p.cycle_id === sel.id && (p.sucursal_id === activeSucursalId || !p.sucursal_id)))
             : activeSucursalId
-              ? insforgeClient.database.from("cxc_pagos").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).eq("cycle_id", sel.id).then(r => r.data ?? [])
-              : insforgeClient.database.from("cxc_pagos").select("*").eq("tenant_id", tenantId).is("sucursal_id", null).eq("cycle_id", sel.id).then(r => r.data ?? [])),
+              ? supabase.from("cxc_pagos").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).eq("cycle_id", sel.id).then(r => r.data ?? [])
+              : supabase.from("cxc_pagos").select("*").eq("tenant_id", tenantId).is("sucursal_id", null).eq("cycle_id", sel.id).then(r => r.data ?? [])),
         ]);
 
         const allFacturas = (factData as FacturaRow[] | null) ?? [];
@@ -307,7 +307,7 @@ export function Cierre() {
           sortByOpenedAtDesc(rows.filter(c => (c.sucursal_id === activeSucursalId || !c.sucursal_id) && !c.closed_at))
         );
       }
-      return insforgeClient.database
+      return supabase
         .from("cierres_operativos")
         .select("business_day")
         .eq("tenant_id", tenantId)
@@ -355,7 +355,7 @@ export function Cierre() {
           return;
         }
       } else {
-        const { data: openCycles, error: openError } = await insforgeClient.database
+        const { data: openCycles, error: openError } = await supabase
           .from("cierres_operativos")
           .select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at")
           .eq("tenant_id", tenantId)
@@ -380,7 +380,7 @@ export function Cierre() {
         const maxNum = allCycles.reduce((m, c) => Math.max(m, c.cycle_number), 0);
         num = maxNum + 1;
       } else {
-        const { data: latest } = await insforgeClient.database.from("cierres_operativos").select("cycle_number").eq("tenant_id", tenantId).order("cycle_number", { ascending: false }).limit(1).maybeSingle();
+        const { data: latest } = await supabase.from("cierres_operativos").select("cycle_number").eq("tenant_id", tenantId).order("cycle_number", { ascending: false }).limit(1).maybeSingle();
         num = ((latest as any)?.cycle_number ?? 0) + 1;
       }
 
@@ -444,7 +444,7 @@ export function Cierre() {
       if (cloudAvailable) {
         // VPS ONLINE: Consultamos de manera obligatoria y en tiempo real directamente al servidor
         // para enterarnos instantáneamente de cualquier comanda agregada por los meseros desde la versión web.
-        const res = await insforgeClient.database
+        const res = await supabase
           .from("consumos")
           .select("id, sucursal_id, estado")
           .eq("tenant_id", tenantId)
@@ -485,13 +485,13 @@ export function Cierre() {
     const [facturasAll, gastosAll, cxcAll] = await Promise.all([
       useLocalFacturas
         ? readLocalMirror<FacturaRow & { sucursal_id?: string | null }>(tenantId, "facturas").then(fs => fs.filter(f => f.sucursal_id === activeSucursalId || !f.sucursal_id))
-        : insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("created_at", { ascending: false }).then(r => r.data ?? []),
+        : supabase.from("facturas").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("created_at", { ascending: false }).then(r => r.data ?? []),
       useLocalGastos
         ? readLocalMirror<GastoRow & { sucursal_id?: string | null }>(tenantId, "gastos").then(gs => gs.filter(g => g.cycle_id === currentCycle.id && (g.sucursal_id === activeSucursalId || !g.sucursal_id)))
-        : insforgeClient.database.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, metodo_pago, fecha_gasto").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).eq("cycle_id", currentCycle.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? []),
+        : supabase.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, metodo_pago, fecha_gasto").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).eq("cycle_id", currentCycle.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? []),
       useLocalCxc
         ? readLocalMirror<any>(tenantId, "cxc_pagos").then(ps => ps.filter(p => p.cycle_id === currentCycle.id && (p.sucursal_id === activeSucursalId || !p.sucursal_id)))
-        : insforgeClient.database.from("cxc_pagos").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).eq("cycle_id", currentCycle.id).then(r => r.data ?? []),
+        : supabase.from("cxc_pagos").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).eq("cycle_id", currentCycle.id).then(r => r.data ?? []),
     ]);
 
     const facturasCiclo = ((facturasAll as FacturaRow[]) ?? []).filter((invoice) => invoiceBelongsToCycle(invoice, currentCycle, now));
@@ -527,7 +527,7 @@ export function Cierre() {
       const allTenants = await readLocalMirror<any>(tenantId, "tenants");
       tenantData = allTenants.find((t: any) => t.id === tenantId) ?? null;
     } else {
-      const tenantRes = await insforgeClient.database.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url, logo_size_px, logo_offset_x, logo_offset_y").eq("id", tenantId).maybeSingle();
+      const tenantRes = await supabase.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url, logo_size_px, logo_offset_x, logo_offset_y").eq("id", tenantId).maybeSingle();
       tenantData = tenantRes.data;
     }
 

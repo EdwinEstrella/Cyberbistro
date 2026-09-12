@@ -11,14 +11,10 @@ if (!fs.existsSync(mainPath)) {
 const source = fs.readFileSync(mainPath, 'utf8')
 const failures = []
 
-if (!/(require|import)\(["']@insforge\/sdk["']\)/.test(source)) {
-  failures.push('Expected dist-electron/main.js to keep @insforge/sdk as an external module reference.')
-}
-
 const forbiddenPatterns = [
   {
-    pattern: /class\s+InsForgeClient\b/,
-    message: 'Found bundled InsForge SDK implementation (class InsForgeClient).',
+    pattern: /@insforge\/sdk/,
+    message: 'Found an InsForge SDK reference in Electron main output.',
   },
   {
     pattern: /require\(["']bufferutil["']\)/,
@@ -44,4 +40,4 @@ if (failures.length > 0) {
   process.exit(1)
 }
 
-console.log('Electron main externalization verified: @insforge/sdk remains external and optional ws natives are absent from dist-electron/main.js')
+console.log('Electron main output verified: InsForge and optional ws native references are absent.')

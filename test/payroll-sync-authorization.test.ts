@@ -3,10 +3,11 @@ import { PayrollSyncClient } from "../electron/persistence/payrollSyncClient";
 
 function authorizationClient(rows: unknown[]) {
   return new PayrollSyncClient({
-    database: {
-      rpc: async () => ({ data: rows, error: null }),
+    from: () => {
+      throw new Error("Unexpected table request");
     },
-  } as any);
+    rpc: async () => ({ data: rows, error: null }),
+  });
 }
 
 describe("payroll authorization context", () => {

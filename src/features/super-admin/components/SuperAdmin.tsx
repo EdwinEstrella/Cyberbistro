@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Navigate, useNavigate } from "react-router";
 import { TitleBar } from "../../window";
 import { useAuth } from "../../../shared/hooks/useAuth";
-import { insforgeClient } from "../../../shared/lib/insforge";
+import { supabase } from "../../../shared/lib/supabase";
 import { isSuperAdminUser, SUPER_ADMIN_EMAIL } from "../../../shared/lib/superAdmin";
 import {
   countActiveUsersByRole,
@@ -162,8 +162,8 @@ export function SuperAdmin() {
     setInfo("");
 
     const [tenantRes, userRes] = await Promise.all([
-      insforgeClient.database.from("tenants").select("*"),
-      insforgeClient.database
+      supabase.from("tenants").select("*"),
+      supabase
         .from("tenant_users")
         .select("id, tenant_id, email, rol, nombre, activo, auth_user_id"),
     ]);
@@ -266,7 +266,7 @@ export function SuperAdmin() {
         payment_day_of_month: parsePaymentDay(draft.paymentDayOfMonth),
       };
 
-      const { error: updateError } = await insforgeClient.database
+      const { error: updateError } = await supabase
         .from("tenants")
         .update(payload)
         .eq("id", tenantId);
@@ -302,7 +302,7 @@ export function SuperAdmin() {
         setError("");
         setInfo("");
 
-        const { error: updateError } = await insforgeClient.database
+        const { error: updateError } = await supabase
           .from("tenants")
           .update({ plan })
           .eq("id", tenantId);
@@ -334,7 +334,7 @@ export function SuperAdmin() {
       setError("");
       setInfo("");
 
-      const { error: rpcError } = await insforgeClient.database.rpc(
+      const { error: rpcError } = await supabase.rpc(
         "cloudix_super_admin_delete_tenant_user",
         { p_tenant_user_id: row.id }
       );
@@ -357,7 +357,7 @@ export function SuperAdmin() {
       setError("");
       setInfo("");
 
-      const { error: rpcError } = await insforgeClient.database.rpc(
+      const { error: rpcError } = await supabase.rpc(
         "cloudix_super_admin_block_tenant",
         { p_tenant_id: tenant.id }
       );
@@ -380,7 +380,7 @@ export function SuperAdmin() {
       setError("");
       setInfo("");
 
-      const { error: rpcError } = await insforgeClient.database.rpc(
+      const { error: rpcError } = await supabase.rpc(
         "cloudix_super_admin_unblock_tenant",
         { p_tenant_id: tenant.id }
       );
@@ -406,7 +406,7 @@ export function SuperAdmin() {
           setError("");
           setInfo("");
 
-          const { error: rpcError } = await insforgeClient.database.rpc(
+          const { error: rpcError } = await supabase.rpc(
             "cloudix_super_admin_delete_tenant",
             { p_tenant_id: tenant.id }
           );

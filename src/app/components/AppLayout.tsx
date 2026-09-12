@@ -5,7 +5,7 @@ import { VentaCartSearchProvider } from "../context/VentaCartSearchContext";
 import { SucursalProvider, useSucursal } from "../context/SucursalContext";
 import svgPaths from "../../imports/svg-qgatbhef3k";
 import { TitleBar } from "../../features/window";
-import { insforgeClient } from "../../shared/lib/insforge";
+import { supabase } from "../../shared/lib/supabase";
 import { useAuth } from "../../shared/hooks/useAuth";
 import {
   canAccessCocinaRoute,
@@ -378,7 +378,7 @@ function AppLayoutContent() {
     const lookupTenantId = tenantId;
     let cancelled = false;
     if (isPaymentDayUnavailable(lookupTenantId)) return;
-    void insforgeClient.database.from("tenants").select("payment_day_of_month").eq("id", tenantId).maybeSingle()
+    void supabase.from("tenants").select("payment_day_of_month").eq("id", tenantId).maybeSingle()
       .then(async ({ data, error }) => {
         if (cancelled) return;
         if (error) {
@@ -448,7 +448,7 @@ function AppLayoutContent() {
     let cancelled = false;
     async function loadPendingCount() {
       try {
-        const { data, error } = await insforgeClient.database
+        const { data, error } = await supabase
           .from("digital_orders")
           .select("id")
           .eq("tenant_id", tenantId)
@@ -629,7 +629,7 @@ function AppLayoutContent() {
           if (!cancelled && rows[0]) setCocinaActiva(rows[0].activa !== false);
           return;
         }
-        const { data, error } = await insforgeClient.database
+        const { data, error } = await supabase
           .from("cocina_estado")
           .select("activa")
           .eq("tenant_id", tenantId)

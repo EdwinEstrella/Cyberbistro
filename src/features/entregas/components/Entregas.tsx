@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { insforgeClient } from "../../../shared/lib/insforge";
+import { supabase } from "../../../shared/lib/supabase";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { normalizeTenantRol } from "../../../shared/lib/roleNav";
 import { enqueueLocalWrite, getDeviceId, readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
@@ -46,7 +46,7 @@ export function Entregas() {
         .filter(c => !isCamarera || !user?.id || c.created_by_auth_user_id === user.id)
         .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
     } else {
-      let consumosQuery = insforgeClient.database
+      let consumosQuery = supabase
         .from("consumos")
         .select("*")
         .eq("tenant_id", tenantId)
@@ -70,12 +70,12 @@ export function Entregas() {
       platoIds.length > 0
         ? useLocalPlatos
           ? readLocalMirror<any>(tenantId, "platos").then(rows => ({ data: rows.filter(p => platoIds.includes(p.id)) }))
-          : insforgeClient.database.from("platos").select("id, va_a_cocina").in("id", platoIds)
+          : supabase.from("platos").select("id, va_a_cocina").in("id", platoIds)
         : Promise.resolve({ data: [] }),
       comandaIds.length > 0
         ? useLocalComandas
           ? readLocalMirror<any>(tenantId, "comandas").then(rows => ({ data: rows.filter(c => comandaIds.includes(c.id)) }))
-          : insforgeClient.database.from("comandas").select("id, estado").in("id", comandaIds)
+          : supabase.from("comandas").select("id, estado").in("id", comandaIds)
         : Promise.resolve({ data: [] }),
     ]);
     const platoMap = new Map(platosRes.data?.map((p: any) => [p.id, p.va_a_cocina]));

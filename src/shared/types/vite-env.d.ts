@@ -6,8 +6,8 @@ interface ImportMetaEnv {
   readonly DEV: boolean;
   readonly PROD: boolean;
   readonly MODE: string;
-  readonly VITE_INSFORGE_BASE_URL?: string;
-  readonly VITE_INSFORGE_ANON_KEY?: string;
+  readonly VITE_SUPABASE_URL?: string;
+  readonly VITE_SUPABASE_PUBLISHABLE_KEY?: string;
   readonly VITE_ENABLE_WEB_LOCAL_FIRST?: string;
 }
 

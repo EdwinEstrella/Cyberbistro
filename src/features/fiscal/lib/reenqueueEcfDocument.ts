@@ -1,21 +1,4 @@
-type ReenqueueRpcResponse = {
-  ok?: boolean;
-  outbox_id?: string;
-  status?: string;
-  idempotent?: boolean;
-};
-
-export type FiscalRpcClient = {
-  database: {
-    rpc: (
-      functionName: "cloudix_reenqueue_ecf_document",
-      params: {
-        p_tenant_id: string;
-        p_ecf_document_id: string;
-      }
-    ) => Promise<{ data: ReenqueueRpcResponse | null; error: unknown }>;
-  };
-};
+export type FiscalRpcClient = Pick<SupabaseClient, "rpc">;
 
 export type ReenqueueEcfDocumentResult = {
   ok: boolean;
@@ -33,7 +16,7 @@ export async function reenqueueEcfDocument({
   tenantId: string;
   ecfDocumentId: string;
 }): Promise<ReenqueueEcfDocumentResult> {
-  const { data, error } = await client.database.rpc("cloudix_reenqueue_ecf_document", {
+  const { data, error } = await client.rpc("cloudix_reenqueue_ecf_document", {
     p_tenant_id: tenantId,
     p_ecf_document_id: ecfDocumentId,
   });
@@ -47,3 +30,4 @@ export async function reenqueueEcfDocument({
     idempotent: data?.idempotent === true,
   };
 }
+import type { SupabaseClient } from "@supabase/supabase-js";

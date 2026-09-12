@@ -1,7 +1,7 @@
 import { type MouseEvent, useEffect, useState } from "react";
 import { AlertTriangle, Award, Building2, Check, CheckCircle, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Copy, Download, ExternalLink, FileKey2, FileText, Hash, ListOrdered, RefreshCw, Rocket, Search, ShieldAlert, ShieldCheck, Sparkles, Upload, Wifi, X } from "lucide-react";
 import { useAuth } from "../../../shared/hooks/useAuth";
-import { insforgeClient } from "../../../shared/lib/insforge";
+import { supabase } from "../../../shared/lib/supabase";
 import { NCF_E_TIPO_OPCIONES } from "../../../shared/lib/ncf";
 import { lookupBusinessByRnc } from "../../../shared/lib/dgiiRncLookup";
 import { CertificateUploader } from "../../ajustes/components/CertificateUploader";
@@ -68,7 +68,7 @@ export function ActivationPanel() {
   useEffect(() => {
     if (!tenantId) return;
 
-    void insforgeClient.database
+    void supabase
       .from("tenants")
         .select("nombre_negocio, rnc, telefono, email, direccion, ecf_environment, ncf_secuencias_por_tipo, fiscal_mode, ecf_issuer_sucursal, ecf_issuer_municipio, ecf_issuer_provincia, ecf_issuer_actividad_economica, ecf_issuer_correo_emisor")
       .eq("id", tenantId)
@@ -112,7 +112,7 @@ export function ActivationPanel() {
   useEffect(() => {
     if (!tenantId) return;
 
-    void insforgeClient.database
+    void supabase
       .from("ecf_certificate_metadata")
       .select("is_ready")
       .eq("tenant_id", tenantId)

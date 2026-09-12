@@ -1,4 +1,4 @@
-import { insforgeClient } from "./insforge";
+import { supabase } from "./supabase";
 
 export type BusinessRncLookup = {
   rnc: string;
@@ -31,7 +31,7 @@ export async function lookupBusinessByRnc(rawRnc: string): Promise<LookupResult>
       : { data: result.data, error: null };
   }
 
-  const { data, error } = await insforgeClient.functions.invoke("lookup-business-rnc", {
+  const { data, error } = await supabase.functions.invoke("lookup-business-rnc", {
     body: { rnc },
   });
 

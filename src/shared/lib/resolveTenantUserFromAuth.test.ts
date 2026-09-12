@@ -15,12 +15,10 @@ const mocks = vi.hoisted(() => {
   return { maybeSingle, eq, ilike, is, from, rpc, state };
 });
 
-vi.mock("./insforge", () => ({
-  insforgeClient: {
-    database: {
-      from: mocks.from,
-      rpc: mocks.rpc,
-    },
+vi.mock("./supabase", () => ({
+  supabase: {
+    from: mocks.from,
+    rpc: mocks.rpc,
   },
 }));
 
@@ -30,7 +28,12 @@ vi.mock("./tenantSessionCache", () => ({
 
 describe("resolveTenantUserForSession", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    mocks.maybeSingle.mockReset();
+    mocks.eq.mockClear();
+    mocks.ilike.mockClear();
+    mocks.is.mockClear();
+    mocks.from.mockClear();
+    mocks.rpc.mockReset();
     mocks.state.tenantCache = null;
     mocks.maybeSingle.mockResolvedValue({ data: null, error: null });
     mocks.rpc.mockResolvedValue({ data: null, error: null });
@@ -88,10 +91,11 @@ describe("resolveTenantUserForSession", () => {
 
     const row = await resolveTenantUserForSession({ id: "auth-4", email: "u3@x.com" } as any);
     expect(row?.tenant_id).toBe("t3");
-    expect(mocks.rpc).toHaveBeenCalledWith("cloudix_resolve_tenant_user");
+    expect(mocks.rpc).toHaveBeenCalledWith("cloudix_resolve_tenant_memberships");
   });
 
   it("rejects an active membership when its restaurant is blocked", async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: [], error: null });
     mocks.maybeSingle
       .mockResolvedValueOnce({
         data: { tenant_id: "blocked-tenant", email: "u@x.com", rol: "admin", nombre: "U" },
@@ -124,6 +128,7 @@ describe("resolveTenantUserForSession", () => {
         error: null,
       })
       .mockResolvedValueOnce({ data: null, error: new TypeError("Failed to fetch") });
+    mocks.rpc.mockResolvedValueOnce({ data: [], error: null });
 
     await expect(
       resolveTenantAccessForSession({ id: "auth-offline", email: "offline@x.com" } as any),

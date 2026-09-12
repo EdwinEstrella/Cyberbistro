@@ -2,7 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { Plus, RefreshCw, Layers, ClipboardList, Flame, Trash2, ArrowUpDown } from "lucide-react";
 import { NewInsumoModal } from "./NewInsumoModal";
-import { insforgeClient } from "../../../shared/lib/insforge";
+import { supabase } from "../../../shared/lib/supabase";
 import { formatFractionalStock } from "../../../shared/lib/presentationUnits";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
@@ -165,19 +165,19 @@ export function Inventario() {
       const [insumosData, movsData, recetasData, platosData, prodData] = await Promise.all([
         useLocalInsumos
           ? readLocalMirror<InsumoRow>(tenantId, "productos_inventario").then(rows => rows.filter(r => r.sucursal_id === activeSucursalId))
-          : insforgeClient.database.from("productos_inventario").select("*").eq("tenant_id", tenantId).eq("sucursal_id", activeSucursalId).eq("activo", true).order("nombre", { ascending: true }).then(r => r.data ?? []),
+          : supabase.from("productos_inventario").select("*").eq("tenant_id", tenantId).eq("sucursal_id", activeSucursalId).eq("activo", true).order("nombre", { ascending: true }).then(r => r.data ?? []),
         useLocalMovs
           ? readLocalMirror<MovimientoRow>(tenantId, "inventario_movimientos").then(rows => rows.filter(r => r.sucursal_id === activeSucursalId))
-          : insforgeClient.database.from("inventario_movimientos").select("*").eq("tenant_id", tenantId).eq("sucursal_id", activeSucursalId).order("fecha", { ascending: false }).limit(60).then(r => r.data ?? []),
+          : supabase.from("inventario_movimientos").select("*").eq("tenant_id", tenantId).eq("sucursal_id", activeSucursalId).order("fecha", { ascending: false }).limit(60).then(r => r.data ?? []),
         useLocalRecetas
           ? readLocalMirror<RecetaRow>(tenantId, "recetas")
-          : insforgeClient.database.from("recetas").select("*").eq("tenant_id", tenantId).then(r => r.data ?? []),
+          : supabase.from("recetas").select("*").eq("tenant_id", tenantId).then(r => r.data ?? []),
         useLocalPlatos
           ? readLocalMirror<PlatoRow>(tenantId, "platos")
-          : insforgeClient.database.from("platos").select("id, nombre, categoria, precio").eq("tenant_id", tenantId).then(r => r.data ?? []),
+          : supabase.from("platos").select("id, nombre, categoria, precio").eq("tenant_id", tenantId).then(r => r.data ?? []),
         useLocalProd
           ? readLocalMirror<ProduccionRow>(tenantId, "produccion_cocina").then(rows => rows.filter(r => r.sucursal_id === activeSucursalId))
-          : insforgeClient.database.from("produccion_cocina").select("*").eq("tenant_id", tenantId).eq("sucursal_id", activeSucursalId).order("fecha", { ascending: false }).limit(40).then(r => r.data ?? []),
+          : supabase.from("produccion_cocina").select("*").eq("tenant_id", tenantId).eq("sucursal_id", activeSucursalId).order("fecha", { ascending: false }).limit(40).then(r => r.data ?? []),
       ]);
 
       setInsumos(useLocalInsumos ? (insumosData as InsumoRow[]).filter(i => i.activo) : (insumosData as InsumoRow[]));

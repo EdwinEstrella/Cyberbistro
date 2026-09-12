@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { insforgeClient } from "../../../shared/lib/insforge";
+import { supabase } from "../../../shared/lib/supabase";
 import { ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
 import { buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
@@ -41,7 +41,7 @@ async function hasOpenCycle(tenantId: string, sucursalId: string | null): Promis
       return cycles.some(c => !c.closed_at && (c.sucursal_id === sucursalId || !c.sucursal_id));
     }
   } catch { /* fall through to online */ }
-  const { data, error } = await insforgeClient.database
+  const { data, error } = await supabase
     .from("cierres_operativos")
     .select("id, sucursal_id")
     .eq("tenant_id", tenantId)
@@ -137,7 +137,7 @@ async function loadTableConsumption(
     if (typeof navigator !== "undefined" && !navigator.onLine) return [];
   }
 
-  const { data, error } = await insforgeClient.database
+  const { data, error } = await supabase
     .from("consumos")
     .select("*")
     .eq("tenant_id", tenantId)
@@ -168,7 +168,7 @@ async function groupConsumosForFactura(
         .catch(() => []);
     })();
 
-    const data = localPlates ?? (await insforgeClient.database
+    const data = localPlates ?? (await supabase
       .from("platos")
       .select("id, categoria")
       .eq("tenant_id", tenantId)
@@ -226,7 +226,7 @@ async function cerrarComandasCocinaMesa(tenantId: string, mesaNumero: number, su
         .filter((row: any) => row.tenant_id === tenantId && row.mesa_numero === mesaNumero && row.sucursal_id === sucursalId && ["pendiente", "en_preparacion", "listo"].includes(row.estado))
         .map((row: any) => ({ id: row.id }))
     : await (async () => {
-        const { data, error } = await insforgeClient.database
+        const { data, error } = await supabase
           .from("comandas")
           .select("id")
           .eq("tenant_id", tenantId)
@@ -384,7 +384,7 @@ export function MesaCloseAccountModal({
         tenant = allTenants.find((t: any) => t.id === tenantId);
       } else {
         try {
-          const { data: factData, error: facturaError } = await insforgeClient.database
+          const { data: factData, error: facturaError } = await supabase
             .from("facturas")
             .select("*")
             .eq("id", facturaId)
@@ -393,7 +393,7 @@ export function MesaCloseAccountModal({
           if (facturaError) throw facturaError;
           factura = factData;
 
-          const { data: tenantData, error: tenantError } = await insforgeClient.database
+          const { data: tenantData, error: tenantError } = await supabase
             .from("tenants")
             .select("nombre_negocio, rnc, direccion, telefono, logo_url, ecf_environment, logo_size_px, logo_offset_x, logo_offset_y")
             .eq("id", tenantId)
@@ -431,7 +431,7 @@ export function MesaCloseAccountModal({
         const allEcf = await readLocalMirror<any>(tenantId, "ecf_documents").catch(() => []);
         ecfDoc = allEcf.find((e: any) => e.factura_id === facturaId) ?? null;
       } else {
-        const { data: ecfData } = await insforgeClient.database
+        const { data: ecfData } = await supabase
           .from("ecf_documents")
           .select("*")
           .eq("factura_id", facturaId)
@@ -790,7 +790,7 @@ export function MesaCloseAccountModal({
         const localTenants = await readLocalMirror<any>(tenantId, "tenants").catch(() => []);
         tenantPrintData = localTenants.find((t) => t.id === tenantId) ?? null;
       } else {
-        const { data: t, error } = await insforgeClient.database
+        const { data: t, error } = await supabase
           .from("tenants")
           .select("nombre_negocio, rnc, direccion, telefono, logo_url, menu_url, ecf_environment, logo_size_px, logo_offset_x, logo_offset_y, moneda")
           .eq("id", tenantId)

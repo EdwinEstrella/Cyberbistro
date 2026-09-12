@@ -34,42 +34,34 @@ type PayrollPaymentRemoteRow = {
 };
 
 type PayrollEmployeeCloudClient = {
-  database: {
-    from(table: string): {
+  from(table: string): {
       upsert(
         payload: Record<string, unknown>,
         options: { onConflict: string },
       ): PromiseLike<{ error: PayrollEmployeeRemoteError | null }>;
     };
-  };
 };
 
 type PayrollEmployeeUpdateClient = {
-  database: {
-    from(table: string): {
+  from(table: string): {
       update(payload: Record<string, unknown>): {
         eq(column: string, value: string): PromiseLike<{ error: PayrollEmployeeRemoteError | null }>;
       };
     };
-  };
 };
 
 type PayrollPaymentContextCloudClient = {
-  database: {
-    from(table: string): {
+  from(table: string): {
       select(columns: string): PayrollPaymentQuery;
       insert(payload: Record<string, unknown>[]): PromiseLike<{ error: PayrollEmployeeRemoteError | null }>;
     };
-  };
 };
 
 type PayrollPaymentCloudClient = {
-  database: {
-    rpc(
+  rpc(
       functionName: string,
       args: Record<string, unknown>,
     ): PromiseLike<{ data: PayrollPaymentRpcRow[] | null; error: PayrollEmployeeRemoteError | null }>;
-  };
 };
 
 type PayrollPaymentRpcRow = {
@@ -141,7 +133,7 @@ export async function syncPayrollEmployeeToCloud(
   tenantId: string,
   sucursalId: string,
 ): Promise<void> {
-  const { error } = await client.database.from("nomina_empleados").upsert(
+  const { error } = await client.from("nomina_empleados").upsert(
     mapPayrollEmployeeForCloud(employee, tenantId, sucursalId),
     { onConflict: "id" },
   );
@@ -159,7 +151,7 @@ export async function deactivatePayrollEmployeeInCloud(
   client: PayrollEmployeeUpdateClient,
   employeeId: string,
 ): Promise<void> {
-  const { error } = await client.database
+  const { error } = await client
     .from("nomina_empleados")
     .update({ activo: false, updated_at: new Date().toISOString() })
     .eq("id", employeeId);
@@ -178,7 +170,7 @@ export async function getPayrollPaymentContextFromCloud(
   employee: PayrollEmployee,
   request: Pick<PayrollCreatePaymentRequest, "employeeId" | "period" | "frequency" | "adjustments">,
 ): Promise<PayrollPaymentContext> {
-  const { data, error } = await client.database
+  const { data, error } = await client
     .from("nomina_pagos")
     .select("empleado_id, periodo, monto_base, total_bonos, total_descuentos, monto_pagado, created_at")
     .eq("empleado_id", request.employeeId)
@@ -198,7 +190,7 @@ export async function createPayrollPaymentInCloud(
   payload: PayrollCreatePaymentRequest,
 ): Promise<PayrollPaymentContext> {
   const currentTotals = getCurrentPaymentAdjustmentTotals(payload.adjustments);
-  const { data, error } = await client.database.rpc("register_nomina_pago", {
+  const { data, error } = await client.rpc("register_nomina_pago", {
     p_empleado_id: payload.employeeId,
     p_periodo: payload.period,
     p_monto_pagado: payload.paymentAmountCents,

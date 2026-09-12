@@ -9,7 +9,7 @@ describe("reenqueueEcfDocument", () => {
     });
 
     const result = await reenqueueEcfDocument({
-      client: { database: { rpc } },
+      client: { rpc },
       tenantId: "tenant-1",
       ecfDocumentId: "doc-1",
     });
@@ -32,7 +32,7 @@ describe("reenqueueEcfDocument", () => {
 
     await expect(
       reenqueueEcfDocument({
-        client: { database: { rpc } },
+        client: { rpc },
         tenantId: "tenant-1",
         ecfDocumentId: "doc-1",
       })

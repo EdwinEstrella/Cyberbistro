@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Plus, ReceiptText, RefreshCw, Sparkles, Tag, Trash2, WalletCards } from "lucide-react";
-import { insforgeClient } from "../../../shared/lib/insforge";
+import { supabase } from "../../../shared/lib/supabase";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
@@ -227,8 +227,8 @@ export function Gastos() {
       // 3. Background Cloud Reconciliation (mirroring all cloud categories and expenses permanently into SQLite)
       try {
         const [cloudCatsRes, cloudGastosRes] = await Promise.all([
-          insforgeClient.database.from("gasto_categorias").select("id, nombre, descripcion, color, activa").eq("tenant_id", tenantId).order("nombre", { ascending: true }),
-          insforgeClient.database.from("gastos").select("*").eq("tenant_id", tenantId).order("fecha_gasto", { ascending: false }).limit(80),
+          supabase.from("gasto_categorias").select("id, nombre, descripcion, color, activa").eq("tenant_id", tenantId).order("nombre", { ascending: true }),
+          supabase.from("gastos").select("*").eq("tenant_id", tenantId).order("fecha_gasto", { ascending: false }).limit(80),
         ]);
 
         if (!cloudCatsRes.error && Array.isArray(cloudCatsRes.data) && cloudCatsRes.data.length > 0) {
@@ -272,7 +272,7 @@ export function Gastos() {
       const useLocalCiclos = await shouldReadLocalFirst(tenantId, ["cierres_operativos"]);
       const ciclosData = useLocalCiclos
         ? await readLocalMirror<CicloAbierto>(tenantId, "cierres_operativos")
-        : await insforgeClient.database.from("cierres_operativos").select("id, cycle_number, opened_at, closed_at").eq("tenant_id", tenantId).is("closed_at", null).order("opened_at", { ascending: false }).limit(1).then(r => r.data ?? []);
+        : await supabase.from("cierres_operativos").select("id, cycle_number, opened_at, closed_at").eq("tenant_id", tenantId).is("closed_at", null).order("opened_at", { ascending: false }).limit(1).then(r => r.data ?? []);
 
       const openCycle = useLocalCiclos ? (ciclosData as any[]).filter(c => !c.closed_at).sort((a, b) => new Date(b.opened_at).getTime() - new Date(a.opened_at).getTime())[0] ?? null : (ciclosData as any[])[0] ?? null;
       setCicloAbierto(openCycle);
@@ -398,7 +398,7 @@ export function Gastos() {
         const localGastos = await readLocalMirror<GastoRow>(tenantId, "gastos");
         hasExpenses = localGastos.some(g => g.category_id === cat.id);
       } else {
-        const { count, error } = await insforgeClient.database
+        const { count, error } = await supabase
           .from("gastos")
           .select("id", { count: "exact", head: true })
           .eq("tenant_id", tenantId)

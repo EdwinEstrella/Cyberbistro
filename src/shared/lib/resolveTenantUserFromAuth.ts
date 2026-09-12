@@ -1,5 +1,5 @@
-import type { UserSchema } from '@insforge/sdk';
-import { insforgeClient } from './insforge';
+import type { User } from '@supabase/supabase-js';
+import { supabase } from './supabase';
 import { isCloudAvailabilityFailure, recordCloudFailure } from './cloudAvailability';
 import { readTenantSessionCache, type TenantSessionRow } from './tenantSessionCache';
 import { classifyTenantMembershipResolution } from './tenantAccess';
@@ -26,7 +26,7 @@ import {
 } from './superAdmin';
 
 function cachedTenantAccessForUser(
-  user: UserSchema,
+  user: User,
   expectedTenantId?: string,
 ): TenantAccessResolution | null {
   const cached = readTenantSessionCache();
@@ -46,7 +46,7 @@ function cachedTenantAccessForUser(
 }
 
 function preserveCachedAccessDuringCloudFailure(
-  user: UserSchema,
+  user: User,
   error: unknown,
   expectedTenantId?: string,
 ): TenantAccessResolution | null {
@@ -63,7 +63,7 @@ function preserveCachedAccessDuringCloudFailure(
 }
 
 async function fetchTenantUserByAuthId(authUserId: string) {
-  return insforgeClient.database
+  return supabase
     .from('tenant_users')
     .select('tenant_id, email, rol, nombre, tenants(plan)')
     .eq('auth_user_id', authUserId)
@@ -71,13 +71,13 @@ async function fetchTenantUserByAuthId(authUserId: string) {
     .maybeSingle();
 }
 
-/** Misma fila que crea Soporte con signUp + insert: email del usuario InsForge Auth. */
+/** Misma fila que crea Soporte con signUp + insert: email del usuario Supabase Auth. */
 async function fetchTenantUserBySessionEmail(email: string) {
   const normalized = email.trim();
   if (!normalized) {
     return { data: null as any, error: null as null };
   }
-  return insforgeClient.database
+  return supabase
     .from('tenant_users')
     .select('tenant_id, email, rol, nombre, tenants(plan)')
     .ilike('email', normalized)
@@ -87,7 +87,7 @@ async function fetchTenantUserBySessionEmail(email: string) {
 }
 
 async function fetchAnyTenantUserByAuthId(authUserId: string) {
-  return insforgeClient.database
+  return supabase
     .from('tenant_users')
     .select('tenant_id, email, rol, nombre, activo')
     .eq('auth_user_id', authUserId)
@@ -99,7 +99,7 @@ async function fetchAnyTenantUserBySessionEmail(email: string) {
   if (!normalized) {
     return { data: null as TenantUserAccessRow | null, error: null as null };
   }
-  return insforgeClient.database
+  return supabase
     .from('tenant_users')
     .select('tenant_id, email, rol, nombre, activo')
     .ilike('email', normalized)
@@ -108,7 +108,7 @@ async function fetchAnyTenantUserBySessionEmail(email: string) {
 }
 
 async function fetchTenantActiveState(tenantId: string) {
-  return insforgeClient.database
+  return supabase
     .from('tenants')
     .select('activa')
     .eq('id', tenantId)
@@ -117,7 +117,7 @@ async function fetchTenantActiveState(tenantId: string) {
 
 async function resolveActiveTenantUserRow(
   rawRow: any,
-  user: UserSchema,
+  user: User,
 ): Promise<TenantAccessResolution> {
   const tenantId = rawRow?.tenant_id;
   if (typeof tenantId !== 'string' || !tenantId) return { status: 'truly_unlinked' };
@@ -164,7 +164,7 @@ async function resolveActiveTenantUserRow(
 }
 
 async function fetchTenantUserByRpc() {
-  return insforgeClient.database
+  return supabase
     .rpc('cloudix_resolve_tenant_user')
     .then(({ data, error }) => ({
       data: Array.isArray(data) ? (data[0] ?? null) : data,
@@ -173,7 +173,7 @@ async function fetchTenantUserByRpc() {
 }
 
 async function fetchTenantMembershipsByRpc() {
-  return insforgeClient.database
+  return supabase
     .rpc('cloudix_resolve_tenant_memberships')
     .then(({ data, error }) => ({
       data: Array.isArray(data) ? data : [],
@@ -209,10 +209,10 @@ async function withRetry<T>(
 }
 
 /**
- * Resuelve la fila `tenant_users` para la sesión InsForge actual (dueño o personal creado en Soporte).
+ * Resuelve la fila `tenant_users` para la sesión Supabase actual (dueño o personal creado en Soporte).
  * Primero por `auth_user_id`, luego por email de la sesión.
  */
-export async function resolveTenantAccessForSession(user: UserSchema): Promise<TenantAccessResolution> {
+export async function resolveTenantAccessForSession(user: User): Promise<TenantAccessResolution> {
   if (isSuperAdminEmail(user.email)) {
     return {
       status: 'active',
@@ -221,8 +221,8 @@ export async function resolveTenantAccessForSession(user: UserSchema): Promise<T
         email: user.email ?? "",
         rol: SUPER_ADMIN_ROLE,
         nombre:
-          typeof user.profile?.name === "string" && user.profile.name.trim()
-            ? user.profile.name
+          typeof user.user_metadata?.name === "string" && user.user_metadata.name.trim()
+            ? user.user_metadata.name
             : "Super Admin",
         plan: 'profesional',
       },
@@ -360,7 +360,7 @@ export async function resolveTenantAccessForSession(user: UserSchema): Promise<T
   return { status: 'truly_unlinked' };
 }
 
-export async function resolveTenantUserForSession(user: UserSchema): Promise<TenantSessionRow | null> {
+export async function resolveTenantUserForSession(user: User): Promise<TenantSessionRow | null> {
   const resolution = await resolveTenantAccessForSession(user);
   return resolution.status === 'active' ? resolution.row : null;
 }

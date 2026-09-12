@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const migration = readFileSync(
-  join(process.cwd(), "migrations", "20260525133000_harden-consumos-facturas-delete-policies.sql"),
+  join(process.cwd(), "supabase", "migrations", "20260525133000_harden-consumos-facturas-delete-policies.sql"),
   "utf8"
 );
 

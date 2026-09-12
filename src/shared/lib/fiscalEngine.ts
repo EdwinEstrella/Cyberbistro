@@ -1,7 +1,7 @@
 import { resolveNcfForNewInvoiceLocalFirst, enqueueLocalWrite } from "./localFirst";
 
 import { type FiscalMode } from "./fiscalTypes";
-import { insforgeClient } from "./insforge";
+import { supabase } from "./supabase";
 import { type TenantBillingSettings, loadTenantBillingSettings } from "./tenantBillingSettings";
 
 export async function resolveActiveFiscalMode(
@@ -35,7 +35,7 @@ export async function resolveActiveFiscalMode(
     }
 
     try {
-      const { data: cert } = await insforgeClient.database
+      const { data: cert } = await supabase
         .from("ecf_certificate_metadata")
         .select("id")
         .eq("tenant_id", tenantId)

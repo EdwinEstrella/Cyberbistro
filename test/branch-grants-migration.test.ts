@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const migration = readFileSync("migrations/20260905120000_saved-accounts-and-branch-grants.sql", "utf8");
+const migration = readFileSync("supabase/migrations/20260905120000_saved-accounts-and-branch-grants.sql", "utf8");
 
 describe("branch grants migration", () => {
   it("keeps owners tenant-wide while requiring explicit staff branch grants", () => {

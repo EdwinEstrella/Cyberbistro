@@ -7,7 +7,7 @@ import { ProveedorModal } from "./ProveedorModal";
 import { DetalleCompraModal } from "./DetalleCompraModal";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
-import { insforgeClient } from "../../../shared/lib/insforge";
+import { supabase } from "../../../shared/lib/supabase";
 import { filterRecordsWithNcf, generateFormato606, type CompraFiscal606 } from "../../contabilidad/lib/formato606";
 import { eliminarCompra } from "../lib/purchaseService";
 import { ConfirmModal } from "../../../shared/components/ConfirmModal";
@@ -114,11 +114,11 @@ export function Compras() {
         fiscalesData = await readLocalMirror<CompraFiscal606>(tenantId, "compra_fiscal");
       } else {
         const [cRes, pRes, iRes, cyRes, fRes] = await Promise.all([
-          insforgeClient.database.from("compras").select("*").eq("tenant_id", tenantId),
-          insforgeClient.database.from("proveedores").select("*").eq("tenant_id", tenantId),
-          insforgeClient.database.from("productos_inventario").select("*").eq("tenant_id", tenantId),
-          insforgeClient.database.from("cierres_operativos").select("id, cycle_number, opened_at, closed_at, sucursal_id").eq("tenant_id", tenantId).is("closed_at", null).order("opened_at", { ascending: false }).limit(1),
-          insforgeClient.database.from("compra_fiscal").select("*").eq("tenant_id", tenantId)
+          supabase.from("compras").select("*").eq("tenant_id", tenantId),
+          supabase.from("proveedores").select("*").eq("tenant_id", tenantId),
+          supabase.from("productos_inventario").select("*").eq("tenant_id", tenantId),
+          supabase.from("cierres_operativos").select("id, cycle_number, opened_at, closed_at, sucursal_id").eq("tenant_id", tenantId).is("closed_at", null).order("opened_at", { ascending: false }).limit(1),
+          supabase.from("compra_fiscal").select("*").eq("tenant_id", tenantId)
         ]);
         comprasData = cRes.data || [];
         proveedoresData = pRes.data || [];
@@ -268,8 +268,8 @@ export function Compras() {
           .sort((a, b) => a.fecha_comprobante.localeCompare(b.fecha_comprobante));
       } else {
         const [tenantResult, fiscalResult] = await Promise.all([
-          insforgeClient.database.from("tenants").select("rnc").eq("id", tenantId).maybeSingle(),
-          insforgeClient.database.from("compra_fiscal").select("*").eq("tenant_id", tenantId).gte("fecha_comprobante", start).lt("fecha_comprobante", endDate).order("fecha_comprobante", { ascending: true }),
+          supabase.from("tenants").select("rnc").eq("id", tenantId).maybeSingle(),
+          supabase.from("compra_fiscal").select("*").eq("tenant_id", tenantId).gte("fecha_comprobante", start).lt("fecha_comprobante", endDate).order("fecha_comprobante", { ascending: true }),
         ]);
         if (tenantResult.error) throw tenantResult.error;
         if (fiscalResult.error) throw fiscalResult.error;

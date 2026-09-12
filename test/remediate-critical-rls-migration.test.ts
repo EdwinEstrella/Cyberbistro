@@ -4,7 +4,7 @@ import * as path from 'path';
 
 describe('Critical RLS Remediation Migration Contract', () => {
   const MIGRATION_FILE = '20260715000002_remediate-critical-rls.sql';
-  const migrationPath = path.join(process.cwd(), 'migrations', MIGRATION_FILE);
+  const migrationPath = path.join(process.cwd(), 'supabase', 'migrations', MIGRATION_FILE);
   let statements: string[] = [];
 
   beforeAll(() => {

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { ChevronDown, Eye, Printer, Trash2, TrendingUp, DollarSign, RefreshCw, FileText, Activity, Calendar } from "lucide-react";
-import { insforgeClient } from "../../../shared/lib/insforge";
+import { supabase } from "../../../shared/lib/supabase";
 import { useAuth, ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
 import { buildCierreDiaReceiptHtml, buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
@@ -168,7 +168,7 @@ async function hydrateInvoiceItemCategories(tenantId: string, rawInvoices: Invoi
         platesData = [];
       }
     } else {
-      const { data } = await insforgeClient.database
+      const { data } = await supabase
         .from("platos")
         .select("id, categoria")
         .eq("tenant_id", tenantId)
@@ -362,52 +362,52 @@ export function Billing() {
       useLocalInvoices
         ? { data: await readLocalMirror<Invoice & { sucursal_id?: string | null }>(tenantId, "facturas").then(r => r.filter(f => !f.sucursal_id || f.sucursal_id === activeSucursalId).sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())), error: null }
         : activeSucursalId
-          ? insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("created_at", { ascending: false })
-          : insforgeClient.database.from("facturas").select("*").eq("tenant_id", tenantId).is("sucursal_id", null).order("created_at", { ascending: false }),
+          ? supabase.from("facturas").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("created_at", { ascending: false })
+          : supabase.from("facturas").select("*").eq("tenant_id", tenantId).is("sucursal_id", null).order("created_at", { ascending: false }),
       useLocalCycles
         ? { data: await readLocalMirror<CierreOperativoRow & { sucursal_id?: string | null }>(tenantId, "cierres_operativos").then(r => r.filter(c => !c.sucursal_id || c.sucursal_id === activeSucursalId).sort((a, b) => (b.cycle_number || 0) - (a.cycle_number || 0))), error: null }
         : activeSucursalId
-          ? insforgeClient.database.from("cierres_operativos").select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at, efectivo_inicial").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("opened_at", { ascending: false })
-          : insforgeClient.database.from("cierres_operativos").select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at, efectivo_inicial").eq("tenant_id", tenantId).is("sucursal_id", null).order("opened_at", { ascending: false }),
+          ? supabase.from("cierres_operativos").select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at, efectivo_inicial").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("opened_at", { ascending: false })
+          : supabase.from("cierres_operativos").select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at, efectivo_inicial").eq("tenant_id", tenantId).is("sucursal_id", null).order("opened_at", { ascending: false }),
       useLocalExpenses
         ? { data: await readLocalMirror<Expense & { sucursal_id?: string | null }>(tenantId, "gastos").then(r => r.filter(g => !g.sucursal_id || g.sucursal_id === activeSucursalId).sort((a, b) => new Date(b.fecha_gasto || 0).getTime() - new Date(a.fecha_gasto || 0).getTime())), error: null }
         : activeSucursalId
-          ? insforgeClient.database.from("gastos").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("fecha_gasto", { ascending: false })
-          : insforgeClient.database.from("gastos").select("*").eq("tenant_id", tenantId).is("sucursal_id", null).order("fecha_gasto", { ascending: false }),
+          ? supabase.from("gastos").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("fecha_gasto", { ascending: false })
+          : supabase.from("gastos").select("*").eq("tenant_id", tenantId).is("sucursal_id", null).order("fecha_gasto", { ascending: false }),
       useLocalExpenseCategories
         ? { data: await readLocalMirror<ExpenseCategory & { sucursal_id?: string | null }>(tenantId, "gasto_categorias").then(r => r.filter(c => !c.sucursal_id || c.sucursal_id === activeSucursalId)), error: null }
         : activeSucursalId
-          ? insforgeClient.database.from("gasto_categorias").select("id, nombre, color").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
-          : insforgeClient.database.from("gasto_categorias").select("id, nombre, color").eq("tenant_id", tenantId).is("sucursal_id", null),
+          ? supabase.from("gasto_categorias").select("id, nombre, color").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
+          : supabase.from("gasto_categorias").select("id, nombre, color").eq("tenant_id", tenantId).is("sucursal_id", null),
       useLocalCxc
         ? { data: await readLocalMirror<any>(tenantId, "cuentas_cobrar").then(r => r.filter(c => !c.sucursal_id || c.sucursal_id === activeSucursalId)), error: null }
         : activeSucursalId
-          ? insforgeClient.database.from("cuentas_cobrar").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
-          : insforgeClient.database.from("cuentas_cobrar").select("*").eq("tenant_id", tenantId).is("sucursal_id", null),
+          ? supabase.from("cuentas_cobrar").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
+          : supabase.from("cuentas_cobrar").select("*").eq("tenant_id", tenantId).is("sucursal_id", null),
       useLocalCxc
         ? { data: await readLocalMirror<any>(tenantId, "cxc_pagos").then(r => r.filter(p => !p.sucursal_id || p.sucursal_id === activeSucursalId)), error: null }
         : activeSucursalId
-          ? insforgeClient.database.from("cxc_pagos").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
-          : insforgeClient.database.from("cxc_pagos").select("*").eq("tenant_id", tenantId).is("sucursal_id", null),
+          ? supabase.from("cxc_pagos").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
+          : supabase.from("cxc_pagos").select("*").eq("tenant_id", tenantId).is("sucursal_id", null),
       useLocalCxp
         ? { data: await readLocalMirror<any>(tenantId, "cuentas_pagar").then(r => r.filter(c => !c.sucursal_id || c.sucursal_id === activeSucursalId)), error: null }
         : activeSucursalId
-          ? insforgeClient.database.from("cuentas_pagar").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
-          : insforgeClient.database.from("cuentas_pagar").select("*").eq("tenant_id", tenantId).is("sucursal_id", null),
+          ? supabase.from("cuentas_pagar").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
+          : supabase.from("cuentas_pagar").select("*").eq("tenant_id", tenantId).is("sucursal_id", null),
       useLocalCxp
         ? { data: await readLocalMirror<any>(tenantId, "cxp_pagos").then(r => r.filter(p => !p.sucursal_id || p.sucursal_id === activeSucursalId)), error: null }
         : activeSucursalId
-          ? insforgeClient.database.from("cxp_pagos").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
-          : insforgeClient.database.from("cxp_pagos").select("*").eq("tenant_id", tenantId).is("sucursal_id", null),
+          ? supabase.from("cxp_pagos").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
+          : supabase.from("cxp_pagos").select("*").eq("tenant_id", tenantId).is("sucursal_id", null),
       useLocalCustomers
         ? { data: await readLocalMirror<any>(tenantId, "customers"), error: null }
-        : insforgeClient.database.from("customers").select("id, name").eq("tenant_id", tenantId),
+        : supabase.from("customers").select("id, name").eq("tenant_id", tenantId),
       useLocalProveedores
         ? { data: await readLocalMirror<any>(tenantId, "proveedores"), error: null }
-        : insforgeClient.database.from("proveedores").select("id, nombre").eq("tenant_id", tenantId),
+        : supabase.from("proveedores").select("id, nombre").eq("tenant_id", tenantId),
       useLocalEcf
         ? { data: await readLocalMirror<any>(tenantId, "ecf_documents"), error: null }
-        : insforgeClient.database.from("ecf_documents").select("*").eq("tenant_id", tenantId),
+        : supabase.from("ecf_documents").select("*").eq("tenant_id", tenantId),
     ]);
 
     if (!invoicesRes.error && invoicesRes.data) {
@@ -931,7 +931,7 @@ export function Billing() {
           const localTenants = await readLocalMirror<any>(tid, "tenants");
           tenant = localTenants.find(t => t.id === tid) ?? null;
         } else {
-          const { data, error } = await insforgeClient.database
+          const { data, error } = await supabase
             .from("tenants")
             .select("nombre_negocio, rnc, direccion, telefono, logo_url, menu_url, ecf_environment, logo_size_px, logo_offset_x, logo_offset_y")
             .eq("id", tid)
@@ -1014,7 +1014,7 @@ export function Billing() {
           const localTenants = await readLocalMirror<any>(tenantId, "tenants");
           tenant = localTenants.find(t => t.id === tenantId) ?? null;
         } else {
-          const { data, error } = await insforgeClient.database
+          const { data, error } = await supabase
             .from("tenants")
             .select("nombre_negocio, rnc, direccion, telefono, logo_url, logo_size_px, logo_offset_x, logo_offset_y")
             .eq("id", tenantId)
@@ -1098,7 +1098,7 @@ export function Billing() {
           const allConsumos = await readLocalMirror<any>(tenantId, "consumos");
           consumosAsociados = allConsumos.filter((c: any) => c.factura_id === inv.id);
         } else {
-          const { data } = await insforgeClient.database.from("consumos").select("id").eq("tenant_id", tenantId).eq("factura_id", inv.id);
+          const { data } = await supabase.from("consumos").select("id").eq("tenant_id", tenantId).eq("factura_id", inv.id);
           if (data) consumosAsociados = data;
         }
 
