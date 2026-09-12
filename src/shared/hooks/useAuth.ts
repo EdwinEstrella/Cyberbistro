@@ -735,6 +735,13 @@ export async function ensureAuthSessionFresh(): Promise<void> {
     await reconcileTenantAccessShared('fallback');
     return;
   }
+
+  const { data: sessionData } = await supabase.auth.getSession();
+  const session = sessionData.session;
+  if (session?.expires_at && (session.expires_at * 1000 - Date.now() > 2 * 60 * 1000)) {
+    return;
+  }
+
   await doRefreshShared();
 }
 

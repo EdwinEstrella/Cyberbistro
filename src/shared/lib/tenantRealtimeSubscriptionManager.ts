@@ -28,7 +28,14 @@ export class TenantRealtimeSubscriptionManager {
         channel,
         consumers: new Map(),
         subscribed: new Promise((resolve) => {
-          channel.subscribe((status) => resolve(status === 'SUBSCRIBED'));
+          channel.subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+              resolve(true);
+            } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+              resolve(false);
+              void this.client.removeChannel(channel);
+            }
+          });
         }),
       };
       this.channels.set(topic, entry);

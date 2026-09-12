@@ -23,6 +23,7 @@ import { useAppUpdate } from "../../features/updates/AppUpdateContext";
 import { LocalFirstStatusBadge } from "../../shared/components/LocalFirstStatusBadge";
 import { useLocalFirstBootstrap } from "../../shared/hooks/useLocalFirstBootstrap";
 import { getPaymentAlert, getPaymentAlertStorageKey } from "../../shared/lib/paymentDate";
+import { isDesktopCloudUnavailable } from "../../shared/lib/cloudAvailability";
 import { getLocalTenantPaymentDay, readLocalMirror, shouldReadLocalFirst } from "../../shared/lib/localFirst";
 import {
   isMissingPaymentDayColumnError,
@@ -378,8 +379,21 @@ function AppLayoutContent() {
     const lookupTenantId = tenantId;
     let cancelled = false;
     if (isPaymentDayUnavailable(lookupTenantId)) return;
-    void supabase.from("tenants").select("payment_day_of_month").eq("id", tenantId).maybeSingle()
-      .then(async ({ data, error }) => {
+    void (async () => {
+      const cloudDown = await isDesktopCloudUnavailable();
+      if (!navigator.onLine || cloudDown) {
+        try {
+          const localPaymentDay = await getLocalTenantPaymentDay(lookupTenantId);
+          if (!cancelled && currentTenantIdRef.current === lookupTenantId && tenantAccessValidated) {
+            setPaymentDay(localPaymentDay);
+          }
+        } catch {
+          if (!cancelled && currentTenantIdRef.current === lookupTenantId && tenantAccessValidated) setPaymentDay(null);
+        }
+        return;
+      }
+      void supabase.from("tenants").select("payment_day_of_month").eq("id", tenantId).maybeSingle()
+        .then(async ({ data, error }) => {
         if (cancelled) return;
         if (error) {
           if (isMissingPaymentDayColumnError(error)) {
@@ -419,6 +433,7 @@ function AppLayoutContent() {
         const day = typeof data?.payment_day_of_month === "number" ? data.payment_day_of_month : null;
         setPaymentDay(day);
       });
+    })();
     return () => { cancelled = true; };
   }, [tenantId, tenantAccessValidated]);
 
@@ -448,6 +463,8 @@ function AppLayoutContent() {
     let cancelled = false;
     async function loadPendingCount() {
       try {
+        const cloudDown = await isDesktopCloudUnavailable();
+        if (!navigator.onLine || cloudDown) return;
         const { data, error } = await supabase
           .from("digital_orders")
           .select("id")
@@ -482,16 +499,22 @@ function AppLayoutContent() {
       }
     };
 
-    const registration = tenantRealtimeSubscriptionManager.acquire(rtChannel, {
-      INSERT_digital_order: handleDigitalOrderInsert,
-      UPDATE_digital_order: handleDigitalOrderEvent,
-      DELETE_digital_order: handleDigitalOrderEvent,
-    });
-    void registration.ready.catch((e) => console.warn("[AppLayout] Realtime connect failed:", e));
+    let registration: ReturnType<typeof tenantRealtimeSubscriptionManager.acquire> | null = null;
+    void (async () => {
+      const cloudDown = await isDesktopCloudUnavailable().catch(() => false);
+      if (!navigator.onLine || cloudDown || cancelled) return;
+
+      registration = tenantRealtimeSubscriptionManager.acquire(rtChannel, {
+        INSERT_digital_order: handleDigitalOrderInsert,
+        UPDATE_digital_order: handleDigitalOrderEvent,
+        DELETE_digital_order: handleDigitalOrderEvent,
+      });
+      void registration.ready.catch((e: unknown) => console.warn("[AppLayout] Realtime connect failed:", e));
+    })();
 
     return () => {
       cancelled = true;
-      registration.release();
+      registration?.release();
     };
   }, [tenantId, tenantAccessValidated]);
   const localFirst = useLocalFirstBootstrap(tenantId, tenantAccessValidated);

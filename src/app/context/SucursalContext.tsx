@@ -153,8 +153,9 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
       }
 
        const allowedBranchIds = tenantUser?.allowedBranchIds ?? [];
+       const isAdmin = tenantUser?.rol === "admin";
        const activeList = (data.filter((s) => s.activa !== false) as Sucursal[])
-         .filter((s) => allowedBranchIds.includes(s.id));
+         .filter((s) => isAdmin || allowedBranchIds.length === 0 || allowedBranchIds.includes(s.id));
       if (!isCurrentAccess(generation, expectedTenantId)) return;
       setSucursales(activeList);
 

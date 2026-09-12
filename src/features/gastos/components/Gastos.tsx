@@ -3,6 +3,7 @@ import { Plus, ReceiptText, RefreshCw, Sparkles, Tag, Trash2, WalletCards } from
 import { supabase } from "../../../shared/lib/supabase";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { useSucursal } from "../../../app/context/SucursalContext";
+import { isDesktopCloudUnavailable } from "../../../shared/lib/cloudAvailability";
 import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { ConfirmModal } from "../../../shared/components/ConfirmModal";
 
@@ -225,52 +226,57 @@ export function Gastos() {
       }
 
       // 3. Background Cloud Reconciliation (mirroring all cloud categories and expenses permanently into SQLite)
-      try {
-        const [cloudCatsRes, cloudGastosRes] = await Promise.all([
-          supabase.from("gasto_categorias").select("id, nombre, descripcion, color, activa").eq("tenant_id", tenantId).order("nombre", { ascending: true }),
-          supabase.from("gastos").select("*").eq("tenant_id", tenantId).order("fecha_gasto", { ascending: false }).limit(80),
-        ]);
+      const cloudDown = await isDesktopCloudUnavailable();
+      if (navigator.onLine && !cloudDown) {
+        void (async () => {
+          try {
+            const [cloudCatsRes, cloudGastosRes] = await Promise.all([
+              supabase.from("gasto_categorias").select("id, nombre, descripcion, color, activa").eq("tenant_id", tenantId).order("nombre", { ascending: true }),
+              supabase.from("gastos").select("*").eq("tenant_id", tenantId).order("fecha_gasto", { ascending: false }).limit(80),
+            ]);
 
-        if (!cloudCatsRes.error && Array.isArray(cloudCatsRes.data) && cloudCatsRes.data.length > 0) {
-          const mappedCloudCats: CategoriaGasto[] = cloudCatsRes.data.map((c: any) => ({
-            id: c.id,
-            nombre: c.nombre,
-            descripcion: c.descripcion || null,
-            color: c.color || "#ff906d",
-            activa: Boolean(c.activa ?? true),
-          }));
-          setCategorias(mappedCloudCats.filter((c) => c.activa));
-          if (window.electronAPI?.syncCloudExpenseCategories) {
-            void window.electronAPI.syncCloudExpenseCategories(cloudCatsRes.data).catch(() => {});
-          }
-        }
+            if (!cloudCatsRes.error && Array.isArray(cloudCatsRes.data) && cloudCatsRes.data.length > 0) {
+              const mappedCloudCats: CategoriaGasto[] = cloudCatsRes.data.map((c: any) => ({
+                id: c.id,
+                nombre: c.nombre,
+                descripcion: c.descripcion || null,
+                color: c.color || "#ff906d",
+                activa: Boolean(c.activa ?? true),
+              }));
+              setCategorias(mappedCloudCats.filter((c) => c.activa));
+              if (window.electronAPI?.syncCloudExpenseCategories) {
+                void window.electronAPI.syncCloudExpenseCategories(cloudCatsRes.data).catch(() => {});
+              }
+            }
 
-        if (!cloudGastosRes.error && Array.isArray(cloudGastosRes.data) && cloudGastosRes.data.length > 0) {
-          const mappedCloudGastos: GastoRow[] = cloudGastosRes.data.map((g: any) => ({
-            id: g.id,
-            tenant_id: g.tenant_id,
-            category_id: g.category_id,
-            cycle_id: g.cycle_id,
-            descripcion: g.descripcion || g.description,
-            description: g.descripcion || g.description,
-            proveedor: g.proveedor || g.supplier,
-            monto: g.monto ?? g.amount ?? (g.amount_cents ? g.amount_cents / 100 : 0),
-            amount: g.monto ?? g.amount ?? (g.amount_cents ? g.amount_cents / 100 : 0),
-            metodo_pago: g.metodo_pago || g.payment_method,
-            fecha_gasto: g.fecha_gasto || g.expense_date,
-            notas: g.notas || g.notes,
-          }));
-          setGastos(mappedCloudGastos);
-          if (window.electronAPI?.syncCloudExpenses) {
-            void window.electronAPI.syncCloudExpenses(cloudGastosRes.data, activeSucursalId || undefined).catch(() => {});
+            if (!cloudGastosRes.error && Array.isArray(cloudGastosRes.data) && cloudGastosRes.data.length > 0) {
+              const mappedCloudGastos: GastoRow[] = cloudGastosRes.data.map((g: any) => ({
+                id: g.id,
+                tenant_id: g.tenant_id,
+                category_id: g.category_id,
+                cycle_id: g.cycle_id,
+                descripcion: g.descripcion || g.description,
+                description: g.descripcion || g.description,
+                proveedor: g.proveedor || g.supplier,
+                monto: g.monto ?? g.amount ?? (g.amount_cents ? g.amount_cents / 100 : 0),
+                amount: g.monto ?? g.amount ?? (g.amount_cents ? g.amount_cents / 100 : 0),
+                metodo_pago: g.metodo_pago || g.payment_method,
+                fecha_gasto: g.fecha_gasto || g.expense_date,
+                notas: g.notas || g.notes,
+              }));
+              setGastos(mappedCloudGastos);
+              if (window.electronAPI?.syncCloudExpenses) {
+                void window.electronAPI.syncCloudExpenses(cloudGastosRes.data, activeSucursalId || undefined).catch(() => {});
+              }
+            }
+          } catch (cloudErr) {
+            console.warn("[Gastos] Cloud reconciliation skipped (offline):", cloudErr);
           }
-        }
-      } catch (cloudErr) {
-        console.warn("[Gastos] Cloud reconciliation skipped (offline):", cloudErr);
+        })();
       }
 
       const useLocalCiclos = await shouldReadLocalFirst(tenantId, ["cierres_operativos"]);
-      const ciclosData = useLocalCiclos
+      const ciclosData = (useLocalCiclos || cloudDown || !navigator.onLine)
         ? await readLocalMirror<CicloAbierto>(tenantId, "cierres_operativos")
         : await supabase.from("cierres_operativos").select("id, cycle_number, opened_at, closed_at").eq("tenant_id", tenantId).is("closed_at", null).order("opened_at", { ascending: false }).limit(1).then(r => r.data ?? []);
 

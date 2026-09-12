@@ -41,6 +41,8 @@ function cachedTenantAccessForUser(
       rol: cached.rol,
       nombre: cached.nombre,
       plan: cached.plan,
+      allowed_branch_ids: cached.allowed_branch_ids,
+      default_branch_id: cached.default_branch_id,
     },
   };
 }
@@ -350,6 +352,8 @@ export async function resolveTenantAccessForSession(user: User): Promise<TenantA
         rol: inactiveRow.rol,
         nombre: inactiveRow.nombre,
         plan: inactiveRow.plan ?? 'basico',
+        allowed_branch_ids: inactiveRow.allowed_branch_ids,
+        default_branch_id: inactiveRow.default_branch_id,
       },
     };
   }

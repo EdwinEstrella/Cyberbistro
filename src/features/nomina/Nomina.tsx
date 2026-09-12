@@ -40,7 +40,8 @@ import {
 import { getThermalPrintSettings } from "../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../shared/lib/thermalPrint";
 import { supabase } from "../../shared/lib/supabase";
-import { shouldReadLocalFirst, readLocalMirror } from "../../shared/lib/localFirst";
+import { isDesktopCloudUnavailable } from "../../shared/lib/cloudAvailability";
+import { shouldReadLocalFirst, readLocalMirror, writeLocalMirrorRow } from "../../shared/lib/localFirst";
 import type {
   PayrollCreatePaymentRequest,
   PayrollEmployee,
@@ -150,6 +151,8 @@ export function Nomina() {
             return;
           }
         }
+        const cloudDown = await isDesktopCloudUnavailable();
+        if (!navigator.onLine || cloudDown) return;
         const { data } = await supabase.from("tenants").select("*").eq("id", tenantId).maybeSingle();
         if (data) {
           setTenantInfo({
@@ -239,7 +242,40 @@ export function Nomina() {
         }
       }
 
+      if (localEmployees.length === 0 && (await shouldReadLocalFirst(tenantId, ["nomina_empleados"]))) {
+        try {
+          const idbEmps = await readLocalMirror<any>(tenantId, "nomina_empleados");
+          const activeEmps = idbEmps.filter((e: any) => e.tenant_id === tenantId && (e.sucursal_id === activeSucursalId || !e.sucursal_id) && e.activo !== false);
+          if (activeEmps.length > 0) {
+            localEmployees = activeEmps.map((ce: any) => {
+              const nameParts = (ce.nombre_completo || "").trim().split(" ");
+              return {
+                id: ce.id,
+                firstName: nameParts[0] || "Empleado",
+                lastName: nameParts.slice(1).join(" ") || "",
+                role: ce.cargo || "Personal",
+                baseSalaryCents: Number(ce.salario_base_mensual || 0),
+                frequency: mapPayrollFrequencyFromCloud(ce.frecuencia_pago),
+                isActive: ce.activo !== false,
+              };
+            });
+            setEmployees(localEmployees);
+            setLoading(false);
+            if (!selectedEmployeeId) {
+              const firstActive = localEmployees.find((e) => e.isActive) ?? localEmployees[0];
+              if (firstActive) setSelectedEmployeeId(firstActive.id);
+            }
+          }
+        } catch { /* ignore fallback error */ }
+      }
+
       // Cargar de Supabase
+      const cloudDown = await isDesktopCloudUnavailable();
+      if (!navigator.onLine || cloudDown) {
+        setLoading(false);
+        return;
+      }
+
       const { data: cloudEmployees, error: cloudError } = await supabase
         .from("nomina_empleados")
         .select("*")
@@ -338,6 +374,49 @@ export function Nomina() {
         }
       }
 
+      if (localPayments.length === 0 && (await shouldReadLocalFirst(tenantId, ["nomina_pagos"]))) {
+        try {
+          const [idbPayments, idbEmployees] = await Promise.all([
+            readLocalMirror<any>(tenantId, "nomina_pagos"),
+            readLocalMirror<any>(tenantId, "nomina_empleados"),
+          ]);
+          const empLookup = new Map(idbEmployees.map((e: any) => [e.id, e]));
+
+          if (idbPayments.length > 0) {
+            localPayments = idbPayments.map((p: any) => {
+              const emp = empLookup.get(p.empleado_id);
+              const delta = Number(p.total_bonos || 0) - Number(p.total_descuentos || 0);
+              return {
+                id: p.id,
+                employeeId: p.empleado_id,
+                employeeName: emp?.nombre_completo || "Empleado",
+                employeeRole: emp?.cargo || "Personal",
+                period: p.periodo,
+                frequency: mapPayrollFrequencyFromCloud(emp?.frecuencia_pago),
+                baseSalaryCents: Number(emp?.salario_base_mensual || p.monto_base || 0),
+                periodSalaryCents: Number(p.monto_base || 0),
+                adjustmentsDeltaCents: delta,
+                totalDueCents: Number(p.monto_neto || 0),
+                amountPaidCents: Number(p.monto_pagado || 0),
+                pendingCents: Number(p.monto_pendiente || 0),
+                receiptSnapshot: "",
+                createdAt: p.created_at || new Date().toISOString(),
+              };
+            });
+            setPayments(localPayments);
+            setLoadingPayments(false);
+          }
+        } catch (e) {
+          console.warn("[Nomina] Error cargando pagos desde IndexedDB fallback:", e);
+        }
+      }
+
+      const cloudDown = await isDesktopCloudUnavailable();
+      if (!navigator.onLine || cloudDown) {
+        setLoadingPayments(false);
+        return;
+      }
+
       const { data: cloudPayments, error: cloudErr } = await supabase
         .from("nomina_pagos")
         .select(`
@@ -375,6 +454,28 @@ export function Nomina() {
           };
           paymentMap.set(cloudRecord.id, cloudRecord);
         }
+
+        void (async () => {
+          try {
+            for (const cp of cloudPayments) {
+              await writeLocalMirrorRow(tenantId, "nomina_pagos", {
+                id: cp.id,
+                tenant_id: tenantId,
+                empleado_id: cp.empleado_id,
+                periodo: cp.periodo,
+                monto_base: cp.monto_base,
+                total_bonos: cp.total_bonos,
+                total_descuentos: cp.total_descuentos,
+                monto_neto: cp.monto_neto,
+                monto_pagado: cp.monto_pagado,
+                monto_pendiente: cp.monto_pendiente,
+                created_at: cp.created_at,
+              });
+            }
+          } catch {
+            /* ignore background mirror error */
+          }
+        })();
       }
 
       const finalPayments = Array.from(paymentMap.values()).sort(

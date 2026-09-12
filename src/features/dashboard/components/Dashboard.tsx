@@ -268,7 +268,7 @@ export function Dashboard() {
  
       let [platosData, categoriasData, estadosData, consumosData, cantidadMesas] = await Promise.all([
         useLocalRead
-          ? readLocalMirror<Plato>(tenantId, "platos").then(rows => rows.filter(r => r.sucursal_id === activeSucursalId))
+          ? readLocalMirror<Plato>(tenantId, "platos").then(rows => rows.filter(r => !r.sucursal_id || r.sucursal_id === activeSucursalId))
           : supabase
               .from("platos")
               .select("*")
@@ -278,7 +278,7 @@ export function Dashboard() {
               .order("categoria")
               .then(r => r.data ?? []),
         useLocalRead
-          ? readLocalMirror<MenuCategoryRow>(tenantId, "menu_categories").then(rows => rows.filter(r => r.sucursal_id === activeSucursalId))
+          ? readLocalMirror<MenuCategoryRow>(tenantId, "menu_categories").then(rows => rows.filter(r => !r.sucursal_id || r.sucursal_id === activeSucursalId))
           : supabase
               .from("menu_categories")
               .select("id, tenant_id, nombre, color, sort_order")
@@ -288,7 +288,7 @@ export function Dashboard() {
               .order("nombre")
               .then(r => r.data ?? []),
         useLocalRead
-          ? readLocalMirror<any>(tenantId, "mesas_estado").then(rows => rows.filter(r => r.sucursal_id === activeSucursalId))
+          ? readLocalMirror<any>(tenantId, "mesas_estado").then(rows => rows.filter(r => !r.sucursal_id || r.sucursal_id === activeSucursalId))
           : supabase
               .from("mesas_estado")
               .select("*")
@@ -297,7 +297,7 @@ export function Dashboard() {
               .then(r => r.data ?? []),
         useLocalOpenConsumos
           ? readLocalMirror<{ mesa_numero: number | null; subtotal: number; estado?: string; sucursal_id?: string | null }>(tenantId, "consumos")
-              .then(rows => rows.filter(row => row.estado !== "pagado" && row.sucursal_id === activeSucursalId))
+              .then(rows => rows.filter(row => row.estado !== "pagado" && (!row.sucursal_id || row.sucursal_id === activeSucursalId)))
           : supabase
               .from("consumos")
               .select("mesa_numero, subtotal")
@@ -308,7 +308,8 @@ export function Dashboard() {
         loadCantidadMesas(tenantId),
       ]);
 
-      if (useLocalRead && (platosData as Plato[]).filter(p => p.disponible).length === 0 && navigator.onLine) {
+      const isCloudDown = await isDesktopCloudUnavailable();
+      if (useLocalRead && (platosData as Plato[]).filter(p => p.disponible).length === 0 && navigator.onLine && !isCloudDown) {
         const [serverPlatosRes, serverCategoriesRes] = await Promise.all([
           supabase
             .from("platos")

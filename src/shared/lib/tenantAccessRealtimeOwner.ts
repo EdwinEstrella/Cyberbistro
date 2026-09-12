@@ -1,4 +1,5 @@
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
+import { isDesktopCloudUnavailable } from './cloudAvailability';
 
 export interface TenantAccessRealtimeOwnerCallbacks {
   onState: (tenantId: string, active: boolean) => void;
@@ -25,30 +26,43 @@ export class TenantAccessRealtimeOwner {
     this.tenantId = tenantId;
     this.userId = userId ?? null;
 
-    const tenantChannel = this.client.channel(`tenant-access:${tenantId}`)
-      .on('broadcast', { event: 'tenant_access_changed' }, ({ payload }) => {
-        const active = (payload as { activa?: unknown }).activa;
-        if (typeof active === 'boolean') this.callbacks.onState(tenantId, active);
-      });
-    this.channels.push(tenantChannel);
+    void (async () => {
+      const cloudDown = await isDesktopCloudUnavailable().catch(() => false);
+      if (!navigator.onLine || cloudDown) {
+        this.reconcileTimer = setInterval(() => this.callbacks.onReconnect(tenantId), this.reconcileMs);
+        return;
+      }
 
-    if (userId) {
-      const userChannel = this.client.channel(`tenant-access-user:${userId}`)
-        .on('broadcast', { event: 'tenant_user_access_changed' }, ({ payload }) => {
-          const event = payload as { revoked?: unknown; activo?: unknown; tenant_id?: unknown };
-          if (event.tenant_id === tenantId && (event.revoked === true || event.activo === false)) {
-            this.callbacks.onRevoked(tenantId);
+      const tenantChannel = this.client.channel(`tenant-access:${tenantId}`)
+        .on('broadcast', { event: 'tenant_access_changed' }, ({ payload }) => {
+          const active = (payload as { activa?: unknown }).activa;
+          if (typeof active === 'boolean') this.callbacks.onState(tenantId, active);
+        });
+      this.channels.push(tenantChannel);
+
+      if (userId) {
+        const userChannel = this.client.channel(`tenant-access-user:${userId}`)
+          .on('broadcast', { event: 'tenant_user_access_changed' }, ({ payload }) => {
+            const event = payload as { revoked?: unknown; activo?: unknown; tenant_id?: unknown };
+            if (event.tenant_id === tenantId && (event.revoked === true || event.activo === false)) {
+              this.callbacks.onRevoked(tenantId);
+            }
+          });
+        this.channels.push(userChannel);
+      }
+
+      for (const channel of this.channels) {
+        channel.subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            this.callbacks.onReconnect(tenantId);
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            void this.client.removeChannel(channel);
+            void this.client.realtime.disconnect();
           }
         });
-      this.channels.push(userChannel);
-    }
-
-    for (const channel of this.channels) {
-      channel.subscribe((status) => {
-        if (status === 'SUBSCRIBED') this.callbacks.onReconnect(tenantId);
-      });
-    }
-    this.reconcileTimer = setInterval(() => this.callbacks.onReconnect(tenantId), this.reconcileMs);
+      }
+      this.reconcileTimer = setInterval(() => this.callbacks.onReconnect(tenantId), this.reconcileMs);
+    })();
   }
 
   stop(): void {

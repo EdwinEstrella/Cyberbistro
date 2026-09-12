@@ -75,7 +75,7 @@ export function Compras() {
   const [message, setMessage] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
   const [period606, setPeriod606] = useState(() => new Date().toISOString().slice(0, 7));
-  const [periodMode606, setPeriodMode606] = useState<"month" | "range">("month");
+  const [periodMode606, setPeriodMode606] = useState<"month" | "range" | "all">("all");
   const [from606, setFrom606] = useState(() => `${new Date().toISOString().slice(0, 7)}-01`);
   const [to606, setTo606] = useState(() => new Date().toISOString().slice(0, 10));
   const [exporting606, setExporting606] = useState(false);
@@ -163,6 +163,9 @@ export function Compras() {
   }, []);
 
   const dateRange = useMemo(() => {
+    if (periodMode606 === "all") {
+      return { start: "1970-01-01", endStr: "9999-12-31" };
+    }
     const selectedPeriod = periodMode606 === "month" ? period606 : from606.slice(0, 7);
     const [year, month] = selectedPeriod.split("-");
     const start = periodMode606 === "range" ? from606 : `${year}-${month}-01`;
@@ -307,10 +310,15 @@ export function Compras() {
         </div>
         <div className="flex flex-wrap items-center justify-end gap-3 mt-4 sm:mt-0">
           <div className="flex rounded-[10px] border border-[rgba(72,72,71,0.4)] bg-[#1a1a1a] p-1 shadow-sm">
+            <button type="button" onClick={() => setPeriodMode606("all")} className={`rounded-[7px] px-3 py-1.5 text-[11px] font-bold uppercase transition-colors ${periodMode606 === "all" ? "bg-[#ff906d] text-[#460f00]" : "text-[#e5e7eb] hover:bg-[#2a2a2a]"}`}>Todas</button>
             <button type="button" onClick={() => setPeriodMode606("month")} className={`rounded-[7px] px-3 py-1.5 text-[11px] font-bold uppercase transition-colors ${periodMode606 === "month" ? "bg-[#ff906d] text-[#460f00]" : "text-[#e5e7eb] hover:bg-[#2a2a2a]"}`}>Mes</button>
             <button type="button" onClick={() => setPeriodMode606("range")} className={`rounded-[7px] px-3 py-1.5 text-[11px] font-bold uppercase transition-colors ${periodMode606 === "range" ? "bg-[#ff906d] text-[#460f00]" : "text-[#e5e7eb] hover:bg-[#2a2a2a]"}`}>Desde/Hasta</button>
           </div>
-          {periodMode606 === "month" ? (
+          {periodMode606 === "all" ? (
+            <div className="flex items-center gap-2 rounded-[10px] border border-[rgba(72,72,71,0.4)] bg-[#1a1a1a] px-3 py-2 text-[12px] font-semibold text-[#adaaaa] shadow-sm">
+              <span>Histórico Completo</span>
+            </div>
+          ) : periodMode606 === "month" ? (
             <div className="flex items-center gap-3 rounded-[10px] border border-[rgba(72,72,71,0.4)] bg-[#1a1a1a] px-4 py-2 shadow-sm">
               <span className="text-[10px] font-bold uppercase tracking-wider text-[#adaaaa]">Seleccionar mes:</span>
               <select value={period606} onChange={(event) => setPeriod606(event.target.value)} className="bg-[#222] border border-[rgba(72,72,71,0.3)] rounded-lg px-2 py-1.5 text-[13px] font-semibold capitalize text-white outline-none cursor-pointer flex items-center justify-center transition-colors hover:border-[#ff906d]/50" aria-label="Seleccionar mes para Formato 606">

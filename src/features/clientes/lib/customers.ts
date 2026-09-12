@@ -1,4 +1,5 @@
 import { supabase } from "../../../shared/lib/supabase";
+import { isDesktopCloudUnavailable } from "../../../shared/lib/cloudAvailability";
 import {
   enqueueLocalWrite,
   getDeviceId,
@@ -116,6 +117,48 @@ export async function listCustomers(tenantId: string): Promise<Customer[]> {
   }
 
   // 3. Sync from cloud in the background or if local is empty (WhatsApp style reconciliation)
+  const cloudDown = await isDesktopCloudUnavailable();
+  if (!navigator.onLine || cloudDown) {
+    return localList;
+  }
+
+  if (localList.length > 0) {
+    void (async () => {
+      try {
+        const { data: cloudCustomers, error } = await supabase
+          .from("customers")
+          .select("*")
+          .eq("tenant_id", tenantId)
+          .is("deleted_at", null)
+          .order("name", { ascending: true });
+
+        if (!error && cloudCustomers && cloudCustomers.length > 0) {
+          const mappedCloud: Customer[] = cloudCustomers.map((c: any) => ({
+            id: c.id,
+            tenant_id: c.tenant_id,
+            name: c.name,
+            phone: c.phone ?? null,
+            email: c.email ?? null,
+            document_id: c.document_id ?? null,
+            address: c.address ?? null,
+            notes: c.notes ?? null,
+            created_at: c.created_at ?? null,
+            updated_at: c.updated_at ?? null,
+            deleted_at: c.deleted_at ?? null,
+          }));
+
+          if (window.electronAPI?.syncCloudCustomers) {
+            void window.electronAPI.syncCloudCustomers(mappedCloud).catch(() => {});
+          }
+        }
+      } catch (e) {
+        console.warn("[Customers] Background cloud sync skipped:", e);
+      }
+    })();
+
+    return localList;
+  }
+
   try {
     const { data: cloudCustomers, error } = await supabase
       .from("customers")
