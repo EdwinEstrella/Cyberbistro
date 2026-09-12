@@ -199,10 +199,18 @@ function ensureTenantAccessRealtime(tenantId: string, userId = sharedState.user?
 
 function isUnauthorizedError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
-  const e = error as { statusCode?: number; message?: string; error?: string };
-  if (e.statusCode === 401 || e.statusCode === 403) return true;
-  const msg = `${e.error ?? ''} ${e.message ?? ''}`.toLowerCase();
-  return msg.includes('unauthorized') || msg.includes('forbidden') || msg.includes('invalid token');
+  const e = error as { status?: number; statusCode?: number; message?: string; error?: string; code?: string };
+  const status = e.status ?? e.statusCode;
+  if (status === 401 || status === 403) return true;
+  if (e.code === 'refresh_token_not_found' || e.code === 'invalid_grant') return true;
+  const msg = `${e.error ?? ''} ${e.message ?? ''} ${e.code ?? ''}`.toLowerCase();
+  return (
+    msg.includes('unauthorized') ||
+    msg.includes('forbidden') ||
+    msg.includes('invalid token') ||
+    msg.includes('invalid refresh token') ||
+    msg.includes('refresh token not found')
+  );
 }
 
 function readRefreshToken(): string | null {
