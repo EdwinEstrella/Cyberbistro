@@ -1,4 +1,5 @@
 import { getThermalPrintSettings } from "./thermalStorage";
+import { invalidatePrinterValidation, observePrinterValidation } from "./printerValidationCache";
 
 function openBrowserPrint(html: string): void {
   const isMobile = window.matchMedia("(max-width: 768px), (pointer: coarse)").matches;
@@ -81,23 +82,15 @@ export async function printThermalHtml(
 
   const shouldBeSilent = options?.silent ?? Boolean(targetPrinter);
 
-  // La configuración guarda el nombre exacto de Windows. Antes de imprimir en
-  // silencio verificamos que el dispositivo siga instalado y disponible para
-  // evitar que un fallo de la segunda impresora pase inadvertido.
+  // Windows printer enumeration can be slow. A fresh cached result can stop an
+  // invalid silent job, but a refresh never delays payment or receipt printing.
   if (api?.printThermal && targetPrinter && api.listPrinters) {
-    try {
-      const installedPrinters = await api.listPrinters();
-      const targetExists = installedPrinters.some((printer) => printer.name === targetPrinter);
-      if (!targetExists) {
-        return {
-          ok: false,
-          error: `La impresora "${targetPrinter}" no está disponible en Windows. Volvé a seleccionarla en Cloudix.`,
-        };
-      }
-    } catch (error) {
-      // Si Windows no permite enumerar impresoras, mantenemos el intento real de
-      // impresión: la enumeración es diagnóstica y no debe bloquear el ticket.
-      console.warn("thermalPrint: no se pudo validar la impresora configurada", error);
+    const targetExists = observePrinterValidation(targetPrinter, api.listPrinters);
+    if (targetExists === false) {
+      return {
+        ok: false,
+        error: `La impresora "${targetPrinter}" no está disponible en Windows. Volvé a seleccionarla en Cloudix.`,
+      };
     }
   }
 
@@ -109,8 +102,17 @@ export async function printThermalHtml(
         silent: shouldBeSilent,
         paperWidthMm: settings.paperWidthMm,
       });
-      return res ?? { ok: false, error: "Sin respuesta del proceso principal" };
+      const result = res ?? { ok: false, error: "Sin respuesta del proceso principal" };
+      if (!result.ok && targetPrinter && api.listPrinters) {
+        invalidatePrinterValidation();
+        observePrinterValidation(targetPrinter, api.listPrinters);
+      }
+      return result;
     } catch (e) {
+      if (targetPrinter && api.listPrinters) {
+        invalidatePrinterValidation();
+        observePrinterValidation(targetPrinter, api.listPrinters);
+      }
       return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
   }

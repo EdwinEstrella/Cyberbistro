@@ -94,7 +94,7 @@ describe("Thermal Printer Settings & Routing", () => {
     );
   });
 
-  it("should explain when the configured kitchen printer is missing in Windows", async () => {
+  it("should explain when a cached kitchen printer validation is missing in Windows", async () => {
     saveThermalPrintSettings({
       paperWidthMm: 80,
       printerName: "GenPrinter",
@@ -103,11 +103,12 @@ describe("Thermal Printer Settings & Routing", () => {
       printComandas: true
     });
 
+    await printThermalHtml("test", { printType: "kitchen" });
     const result = await printThermalHtml("test", { printType: "kitchen" });
 
     expect(result.ok).toBe(false);
     expect(result.error).toContain("MissingKitchenPrinter");
     expect(result.error).toContain("no está disponible en Windows");
-    expect((global.window as any).electronAPI.printThermal).not.toHaveBeenCalled();
+    expect((global.window as any).electronAPI.printThermal).toHaveBeenCalledTimes(1);
   });
 });

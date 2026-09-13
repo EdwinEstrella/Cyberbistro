@@ -6,6 +6,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setupAutoUpdater } from './autoUpdater'
 import { startLanEdgeServer, type LanEdgeServerHandle } from './lanEdgeServer'
+import { ThermalPrintQueue } from './thermalPrintQueue'
 import { registerCashPurchaseRepositoryIpc, registerCatalogRepositoryIpc, registerDesktopRepositoryIpc, registerOrdersRepositoryIpc, registerSalesFiscalRepositoryIpc, registerTenantStoreIpc, registerPayrollRepositoryIpc, registerPayrollSyncAccessTokenIpc, registerReceivablesRepositoryIpc, registerPayablesRepositoryIpc, registerSavedAccountIpc, registerExpenseRepositoryIpc, registerCustomerRepositoryIpc, SYNC_DIAGNOSTICS_REPORT_CHANNEL, SYNC_TRIGGER_CHANNEL, SYNC_RETRY_ERRORS_CHANNEL } from './persistence/ipc'
 import { PayrollRepository } from './persistence/payrollRepository'
 import { PayrollSyncClient, type PayrollAuthorizationContext } from './persistence/payrollSyncClient'
@@ -30,6 +31,9 @@ let lanEdgeServer: LanEdgeServerHandle | null = null
 let tenantStoreController: TenantStoreController | null = null
 let deviceAccountDirectory: DeviceAccountDirectory | null = null
 let payrollAuthorizationContext: PayrollAuthorizationContext | null = null
+let thermalPrintWindow: BrowserWindow | null = null
+let thermalPrintWindowReady: Promise<BrowserWindow> | null = null
+const thermalPrintQueue = new ThermalPrintQueue()
 
 // Deshabilitar la aceleración de hardware para evitar bugs de focus/puntero en Windows
 // app.disableHardwareAcceleration()
@@ -170,51 +174,106 @@ async function lookupBusinessRnc(rawRnc: unknown): Promise<RncLookupResponse> {
   }
 }
 
-function printHtmlToThermal(opts: PrintThermalOptions): Promise<PrintThermalResponse> {
-  return new Promise((resolve) => {
-    const printWin = new BrowserWindow({
+function discardThermalPrintWindow(window = thermalPrintWindow): void {
+  if (!window) return
+  if (thermalPrintWindow === window) {
+    thermalPrintWindow = null
+    thermalPrintWindowReady = null
+  }
+  if (!window.isDestroyed()) window.destroy()
+}
+
+async function getThermalPrintWindow(): Promise<BrowserWindow> {
+  if (thermalPrintWindow && !thermalPrintWindow.isDestroyed() && !thermalPrintWindow.webContents.isDestroyed()) {
+    if (thermalPrintWindowReady) return thermalPrintWindowReady
+    return thermalPrintWindow
+  }
+
+  discardThermalPrintWindow()
+  const printWin = new BrowserWindow({
       width: 420,
       height: 900,
       show: false,
+      skipTaskbar: true,
       backgroundColor: '#ffffff',
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
         sandbox: false,
       },
-    })
+  })
+  thermalPrintWindow = printWin
+  printWin.on('closed', () => {
+    if (thermalPrintWindow === printWin) {
+      thermalPrintWindow = null
+      thermalPrintWindowReady = null
+    }
+  })
+  printWin.webContents.on('render-process-gone', (_event, details) => {
+    console.error('thermal print renderer exited:', details.reason)
+    discardThermalPrintWindow(printWin)
+  })
 
-    const fail = (msg: string) => {
-      if (!printWin.isDestroyed()) printWin.close()
-      resolve({ ok: false, error: msg })
+  let loadTimer: NodeJS.Timeout | undefined
+  const ready = Promise.race([
+      printWin.loadURL('about:blank'),
+      new Promise<never>((_resolve, reject) => {
+        loadTimer = setTimeout(() => reject(new Error('Tiempo de carga agotado')), 15_000)
+      }),
+    ])
+    .then(() => printWin)
+  thermalPrintWindowReady = ready
+  try {
+    return await ready
+  } catch (error) {
+    discardThermalPrintWindow(printWin)
+    throw new Error(`No se pudo preparar el renderer térmico: ${error instanceof Error ? error.message : String(error)}`)
+  } finally {
+    if (loadTimer) clearTimeout(loadTimer)
+    if (thermalPrintWindowReady === ready) thermalPrintWindowReady = null
+  }
+}
+
+async function printHtmlToThermal(opts: PrintThermalOptions): Promise<PrintThermalResponse> {
+  return thermalPrintQueue.enqueue(async () => {
+    let printWin: BrowserWindow
+    try {
+      printWin = await getThermalPrintWindow()
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
     }
 
-    const timer = setTimeout(() => fail('Tiempo de impresión agotado'), 45000)
+    return new Promise((resolve) => {
+      let settled = false
+      let printStarted = false
+      const renderTimer = setTimeout(() => fail('Tiempo de preparación de impresión agotado', true), 45_000)
 
-    printWin.webContents.once('did-fail-load', (_e, code, desc) => {
-      clearTimeout(timer)
-      fail(`Carga fallida: ${code} ${desc}`)
-    })
+      const cleanup = () => {
+        clearTimeout(renderTimer)
+        printWin.removeListener('closed', onRendererDestroyed)
+        printWin.webContents.removeListener('render-process-gone', onRendererGone)
+        printWin.webContents.removeListener('did-fail-load', onLoadFailed)
+      }
+      const finish = (response: PrintThermalResponse) => {
+        if (settled) return
+        settled = true
+        cleanup()
+        resolve(response)
+      }
+      const fail = (error: string, discardRenderer: boolean) => {
+        if (settled) return
+        finish({ ok: false, error })
+        if (discardRenderer) discardThermalPrintWindow(printWin)
+      }
+      const onRendererDestroyed = () => fail('El renderer térmico se cerró antes de completar la impresión', true)
+      const onRendererGone = () => fail('El renderer térmico falló antes de completar la impresión', true)
+      const onLoadFailed = (_event: Electron.Event, code: number, description: string) => {
+        fail(`Carga fallida: ${code} ${description}`, true)
+      }
 
-    const printLoadedPage = () => {
-      printWin.webContents.print(
-        {
-          silent: Boolean(opts.silent),
-          printBackground: true,
-          deviceName: opts.deviceName || undefined,
-          usePrinterDefaultPageSize: true,
-          margins: { marginType: 'none' },
-        },
-        (success, failureReason) => {
-          clearTimeout(timer)
-          if (!printWin.isDestroyed()) printWin.close()
-          if (success) resolve({ ok: true })
-          else resolve({ ok: false, error: String(failureReason || 'Error de impresión') })
-        }
-      )
-    }
-
-    printWin.webContents.once('did-finish-load', () => {
+      printWin.once('closed', onRendererDestroyed)
+      printWin.webContents.once('render-process-gone', onRendererGone)
+      printWin.webContents.once('did-fail-load', onLoadFailed)
       printWin.webContents
         .executeJavaScript(
           `new Promise((resolve) => {
@@ -225,16 +284,32 @@ function printHtmlToThermal(opts: PrintThermalOptions): Promise<PrintThermalResp
           })`,
           true
         )
-        .then(printLoadedPage)
-        .catch((err) => {
-          clearTimeout(timer)
-          fail(err instanceof Error ? err.message : String(err))
+        .then(() => {
+          if (settled) return
+          printStarted = true
+          clearTimeout(renderTimer)
+          try {
+            printWin.webContents.print(
+              {
+                silent: Boolean(opts.silent),
+                printBackground: true,
+                deviceName: opts.deviceName || undefined,
+                usePrinterDefaultPageSize: true,
+                margins: { marginType: 'none' },
+              },
+              (success, failureReason) => {
+                // Electron confirms handoff to the print subsystem, not paper output.
+                if (success) finish({ ok: true })
+                else finish({ ok: false, error: String(failureReason || 'Error de impresión') })
+              }
+            )
+          } catch (error) {
+            fail(error instanceof Error ? error.message : String(error), true)
+          }
         })
-    })
-
-    printWin.loadURL('about:blank').catch((err) => {
-      clearTimeout(timer)
-      fail(err instanceof Error ? err.message : String(err))
+        .catch((error) => {
+          if (!printStarted) fail(error instanceof Error ? error.message : String(error), true)
+        })
     })
   })
 }
@@ -369,6 +444,7 @@ function createWindow() {
       focusTimer = null;
     }
     mainWindow = null;
+    discardThermalPrintWindow()
   });
 
   // Load from Vite dev server in development, or from files in production
@@ -502,6 +578,9 @@ if (gotTheLock) {
     }
 
     createWindow()
+    void getThermalPrintWindow().catch((error) => {
+      console.warn('thermal print renderer prewarm failed:', error)
+    })
 
     if (app.isPackaged) {
       setupAutoUpdater(() => mainWindow)
@@ -518,7 +597,7 @@ if (gotTheLock) {
     }
 
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
+      if (!mainWindow || mainWindow.isDestroyed()) {
         createWindow()
       } else {
         focusMainWindowForTextInput()
@@ -772,6 +851,7 @@ if (gotTheLock) {
   })
 
   app.on('before-quit', () => {
+    discardThermalPrintWindow()
     tenantStoreController?.close()
     tenantStoreController = null
     payrollAuthorizationContext = null

@@ -1,3 +1,5 @@
+import { invalidatePrinterValidation } from "./printerValidationCache";
+
 const STORAGE_KEY = "cloudix_thermal_print_v1";
 
 export type PaperWidthMm = 80 | 58;
@@ -47,4 +49,5 @@ export function saveThermalPrintSettings(s: ThermalPrintSettings): void {
       printComandas: s.printComandas !== false,
     })
   );
+  invalidatePrinterValidation();
 }
