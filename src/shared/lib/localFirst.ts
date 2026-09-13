@@ -1011,6 +1011,122 @@ export async function enqueueLocalWrite(args: {
   }
 }
 
+export type LocalFirstWrite = {
+  tenantId: string;
+  tableName: LocalFirstMirrorTable;
+  rowId: string;
+  op: SyncOutboxEntry["op"];
+  payload?: Record<string, unknown> | null;
+  authUserId?: string | null;
+  deviceId: string;
+};
+
+/**
+ * Commits a checkout's mirror rows and their outbox entries in one IndexedDB
+ * transaction. A completed invoice can therefore never survive locally while
+ * its paid consumptions or related records do not.
+ */
+export async function enqueueLocalWritesAtomically(writes: readonly LocalFirstWrite[]): Promise<void> {
+  if (writes.length === 0) return;
+
+  const first = writes[0];
+  if (writes.some((write) => write.tenantId !== first.tenantId || write.deviceId !== first.deviceId)) {
+    throw new Error("Las escrituras atómicas deben pertenecer al mismo tenant y dispositivo.");
+  }
+
+  const writeKeys = new Set<string>();
+  for (const write of writes) {
+    const key = `${write.tableName}:${write.rowId}:${write.op}`;
+    if (writeKeys.has(key)) throw new Error(`La escritura local de checkout está duplicada: ${key}.`);
+    writeKeys.add(key);
+  }
+
+  const isOnline = typeof navigator === "undefined" || navigator.onLine;
+  const isDesktop = isDesktopRuntime();
+  const mode = resolveLocalWriteMode({ isDesktop, isOnline });
+  if (mode === "web-server-first") {
+    for (const write of writes) await enqueueLocalWrite(write);
+    return;
+  }
+
+  const cloudAvailable = isDesktop ? getCloudAvailabilitySnapshot().cloudAvailable : isOnline;
+  if (!cloudAvailable) {
+    const licenseCheck = await assertCanWriteOffline(first.tenantId);
+    if (!licenseCheck.valid) throw new Error(licenseCheck.reason || "Licencia offline inválida para operar.");
+  }
+
+  const entries = writes.map((write) => createSyncOutboxEntry({
+    tenantId: write.tenantId,
+    tableName: write.tableName,
+    rowId: write.rowId,
+    op: write.op,
+    payload: write.payload,
+    authUserId: write.authUserId,
+    deviceId: write.deviceId,
+  }));
+  const storeNames = [...new Set([...writes.map((write) => write.tableName), "sync_outbox"])];
+  const db = await openLocalFirstDbForSync(first.tenantId);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(storeNames, "readwrite");
+      const outboxStore = tx.objectStore("sync_outbox");
+      writes.forEach((write, index) => {
+        const mirrorStore = tx.objectStore(write.tableName);
+        if (write.op === "delete") {
+          mirrorStore.delete(write.rowId);
+        } else if (write.payload) {
+          if (write.op === "insert") {
+            mirrorStore.put(write.payload);
+          } else {
+            const getReq = mirrorStore.get(write.rowId);
+            getReq.onsuccess = () => {
+              const merged = buildLocalMirrorWriteResult({
+                op: write.op,
+                rowId: write.rowId,
+                existing: (getReq.result as Record<string, unknown> | undefined) ?? undefined,
+                payload: write.payload,
+              });
+              if (merged) mirrorStore.put(merged);
+            };
+            getReq.onerror = () => reject(getReq.error ?? new Error("No se pudo leer el mirror local."));
+          }
+        }
+        outboxStore.add(entries[index]);
+      });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error("No se pudo confirmar el checkout local."));
+      tx.onabort = () => reject(tx.error ?? new Error("El checkout local fue cancelado."));
+    });
+  } finally {
+    db.close();
+  }
+
+  for (const entry of entries) {
+    void publishLanOutboxEntry(entry, true).catch((error) => {
+      console.warn("Cloudix LAN Edge no recibió el cambio todavía:", error);
+    });
+  }
+  for (const write of writes) {
+    if (write.tableName === "facturas" && write.op === "insert") {
+      void processInvoiceInventoryDeduction(write.tenantId, write.payload, write.authUserId, write.deviceId).catch((error) => {
+        console.error("Error calculating local inventory deduction:", error);
+      });
+    }
+  }
+  if (isDesktop) {
+    void isCloudAvailableForDesktop().then((available) => {
+      if (available) return pushOutboxToServer(first.tenantId);
+      return undefined;
+    }).catch((error) => {
+      console.error("Error pushing outbox after local checkout:", error);
+    });
+  } else if (cloudAvailable) {
+    void pushOutboxToServer(first.tenantId).catch((error) => {
+      console.error("Error pushing outbox after local checkout:", error);
+    });
+  }
+}
+
 export function buildLocalMirrorWriteResult(args: {
   op: SyncOutboxEntry["op"];
   rowId: string;

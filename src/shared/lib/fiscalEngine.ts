@@ -1,4 +1,4 @@
-import { resolveNcfForNewInvoiceLocalFirst, enqueueLocalWrite } from "./localFirst";
+import { resolveNcfForNewInvoiceLocalFirst, enqueueLocalWrite, type LocalFirstWrite } from "./localFirst";
 
 import { type FiscalMode } from "./fiscalTypes";
 import { supabase } from "./supabase";
@@ -130,6 +130,20 @@ export async function enqueueEcfDocuments(args: {
   deviceId: string;
   ecfDocumentId?: string;
 }) {
+  const writes = await buildEcfDocumentWrites(args);
+  for (const write of writes) await enqueueLocalWrite(write);
+  return { ecfDocumentId: args.ecfDocumentId ?? String(writes[0].rowId) };
+}
+
+/** Builds e-CF records so a checkout can commit them with its invoice atomically. */
+export async function buildEcfDocumentWrites(args: {
+  tenantId: string;
+  facturaId: string;
+  certificateId: string | null;
+  ecfType: string;
+  deviceId: string;
+  ecfDocumentId?: string;
+}): Promise<LocalFirstWrite[]> {
   const ecfDocumentId = args.ecfDocumentId || crypto.randomUUID();
   const now = new Date().toISOString();
 
@@ -150,7 +164,7 @@ export async function enqueueEcfDocuments(args: {
   const documentStatus = isConfigComplete ? "pending_offline" : "pending_configuration";
   const jobStatus = isConfigComplete ? "pending_sync" : "blocked_configuration";
 
-  await enqueueLocalWrite({
+  const documentWrite: LocalFirstWrite = {
     tenantId: args.tenantId,
     tableName: "ecf_documents",
     rowId: ecfDocumentId,
@@ -166,10 +180,10 @@ export async function enqueueEcfDocuments(args: {
       updated_at: now,
     },
     deviceId: args.deviceId,
-  });
+  };
 
   const jobId = crypto.randomUUID();
-  await enqueueLocalWrite({
+  const outboxWrite: LocalFirstWrite = {
     tenantId: args.tenantId,
     tableName: "fiscal_outbox",
     rowId: jobId,
@@ -188,7 +202,7 @@ export async function enqueueEcfDocuments(args: {
       updated_at: now,
     },
     deviceId: args.deviceId,
-  });
+  };
 
-  return { ecfDocumentId };
+  return [documentWrite, outboxWrite];
 }

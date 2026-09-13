@@ -1,5 +1,37 @@
 import { getThermalPrintSettings } from "./thermalStorage";
 import { invalidatePrinterValidation, observePrinterValidation } from "./printerValidationCache";
+import { toast } from "sonner";
+
+const queuedPrintIds = new Set<string>();
+let thermalPrintQueue = Promise.resolve();
+
+export function enqueueThermalPrint(args: {
+  id: string;
+  label: string;
+  print: () => Promise<PrintThermalResult>;
+}): boolean {
+  if (queuedPrintIds.has(args.id)) return false;
+  queuedPrintIds.add(args.id);
+  thermalPrintQueue = thermalPrintQueue.then(async () => {
+    try {
+      const result = await args.print();
+      if (!result.ok) {
+        toast.error(`${args.label} fue guardado, pero no se pudo imprimir.`, {
+          description: `${result.error || "Error de impresión"} Reimprimí usando el ID ${args.id}.`,
+          duration: Infinity,
+        });
+      }
+    } catch (error) {
+      toast.error(`${args.label} fue guardado, pero no se pudo imprimir.`, {
+        description: `${error instanceof Error ? error.message : String(error)} Reimprimí usando el ID ${args.id}.`,
+        duration: Infinity,
+      });
+    } finally {
+      queuedPrintIds.delete(args.id);
+    }
+  });
+  return true;
+}
 
 function openBrowserPrint(html: string): void {
   const isMobile = window.matchMedia("(max-width: 768px), (pointer: coarse)").matches;

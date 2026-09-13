@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { getThermalPrintSettings, saveThermalPrintSettings } from "./thermalStorage";
-import { printThermalHtml } from "./thermalPrint";
+import { enqueueThermalPrint, printThermalHtml } from "./thermalPrint";
 
 describe("Thermal Printer Settings & Routing", () => {
   beforeEach(() => {
@@ -110,5 +110,12 @@ describe("Thermal Printer Settings & Routing", () => {
     expect(result.error).toContain("MissingKitchenPrinter");
     expect(result.error).toContain("no está disponible en Windows");
     expect((global.window as any).electronAPI.printThermal).toHaveBeenCalledTimes(1);
+  });
+
+  it("queues a receipt only once while it is still pending", () => {
+    const print = vi.fn().mockResolvedValue({ ok: true });
+
+    expect(enqueueThermalPrint({ id: "invoice-1", label: "Factura #1", print })).toBe(true);
+    expect(enqueueThermalPrint({ id: "invoice-1", label: "Factura #1", print })).toBe(false);
   });
 });

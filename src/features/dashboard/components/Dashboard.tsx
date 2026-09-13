@@ -37,7 +37,7 @@ import {
 } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
-import { loadReceiptTenantForPrint, printLocalInvoiceReceipt } from "../../../shared/lib/localInvoiceReceipt";
+import { printLocalInvoiceReceipt } from "../../../shared/lib/localInvoiceReceipt";
 import { useTenantCurrency } from "../../../shared/hooks/useTenantCurrency";
 import { useTheme } from "../../../shared/context/ThemeContext";
 import { buildPosCategoryTabs, suggestCategoryColor } from "../../../shared/lib/menuCategories";
@@ -58,8 +58,9 @@ import {
 import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
 import { calculateInvoiceTotals } from "../../../shared/lib/billingTotals";
 import { type FiscalMode } from "../../../shared/lib/fiscalTypes";
-import { resolveActiveFiscalMode, runFiscalEngine, enqueueEcfDocuments } from "../../../shared/lib/fiscalEngine";
-import { getLocalFirstStatusSnapshot, readLocalMirror, readLocalOutbox, enqueueLocalWrite, getDeviceId, writeLocalMirrorRow, shouldReadLocalFirst, LOCAL_NCF_RESERVED_PAYLOAD_FLAG } from "../../../shared/lib/localFirst";
+import { resolveActiveFiscalMode, runFiscalEngine, buildEcfDocumentWrites } from "../../../shared/lib/fiscalEngine";
+import { getLocalFirstStatusSnapshot, readLocalMirror, readLocalOutbox, enqueueLocalWrite, getDeviceId, writeLocalMirrorRow, shouldReadLocalFirst, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, type LocalFirstWrite } from "../../../shared/lib/localFirst";
+import { commitCheckout } from "../../../shared/lib/checkoutCommit";
 import { getNextFacturaNumber } from "../../../shared/lib/invoiceNumber";
 import { writePosMutationLocalFirst } from "../../pos/lib/localFirstMutations";
 import { cacheLogoFromUrl } from "../../../shared/lib/logoCache";
@@ -736,21 +737,6 @@ export function Dashboard() {
     return { amount, change: Math.max(0, amount - total) };
   }
 
-  async function printFactura(facturaData: Record<string, unknown>) {
-    if (!tenantId) return;
-    const res = await printLocalInvoiceReceipt({
-      tenantId,
-      factura: facturaData,
-      numeroFactura: facturaData.numero_factura as number,
-    });
-    if (!res.ok && res.error) {
-      console.warn("Impresión factura:", res.error);
-    }
-  }
-
-
-
-
   async function sendToKitchen() {
     if (!selectedMesa || cart.length === 0 || !activeSucursalId) return;
     if (!tenantId) {
@@ -1291,21 +1277,22 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
       }
     }
 
-    if (tenantId) {
-      await enqueueLocalWrite({
+    const deviceId = await getDeviceId();
+    const checkoutWrites: LocalFirstWrite[] = [{
         tenantId,
         tableName: "facturas",
         rowId: localFacturaId,
         op: "insert",
         payload: facturaData,
-        deviceId: await getDeviceId(),
-      });
+        deviceId,
+      }];
+    const kitchenPrints: Array<{ id: string; label: string; print: () => ReturnType<typeof printThermalHtml> }> = [];
 
       if (isFiado && takeoutCustomer) {
         const cxcId = crypto.randomUUID();
         const dueDate = new Date();
         dueDate.setDate(dueDate.getDate() + 30);
-        await enqueueLocalWrite({
+        checkoutWrites.push({
           tenantId,
           tableName: "cuentas_cobrar",
           rowId: cxcId,
@@ -1325,53 +1312,35 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
             created_at: nowIso,
             updated_at: nowIso,
           },
-          deviceId: await getDeviceId(),
+          deviceId,
         });
       }
 
       if (ncfPart?.ecfType) {
-        await enqueueEcfDocuments({
+        checkoutWrites.push(...await buildEcfDocumentWrites({
           tenantId,
           facturaId: localFacturaId,
           certificateId: ncfPart.certificateId ?? null,
           ecfType: ncfPart.ecfType,
-          deviceId: await getDeviceId(),
+          deviceId,
           ecfDocumentId: ecfDocumentId!,
-        });
+        }));
       }
-    }
 
     if (tenantId && ncfPart && ncfPart.tipoCodigo && ncfPart.usedSequence !== null && !ncfPart.sequenceReservedAtomically) {
-      await incrementTenantNcfSequence(tenantId, ncfPart.tipoCodigo, ncfPart.usedSequence);
+      void incrementTenantNcfSequence(tenantId, ncfPart.tipoCodigo, ncfPart.usedSequence).catch(console.error);
     }
 
-    await printFactura(facturaData);
 
-    const tenantPrintData = await loadReceiptTenantForPrint(tenantId).catch(() => null);
-    if (tenantPrintData) {
-      // Comanda automática para items "para llevar" (cocina)
-      const kitchenItems = cart.filter((i) => i.plato.va_a_cocina !== false);
-      if (kitchenItems.length > 0) {
-          let cocinaActiva = true;
-          try {
-            if (!navigator.onLine) {
-              const localCocina = await readLocalMirror<{ activa?: boolean; sucursal_id?: string | null }>(tenantId, "cocina_estado");
-              cocinaActiva = localCocina.find(r => r.sucursal_id === activeSucursalId)?.activa !== false;
-            } else {
-              const { data: estadoData } = await supabase
-                .from("cocina_estado")
-                .select("activa")
-                .eq("tenant_id", tenantId)
-                .eq("sucursal_id", activeSucursalId)
-                .limit(1);
-              cocinaActiva = estadoData?.[0]?.activa !== false;
-            }
-          } catch {
-            const localCocina = await readLocalMirror<{ activa?: boolean; sucursal_id?: string | null }>(tenantId, "cocina_estado").catch(() => []);
-            cocinaActiva = localCocina.find(r => r.sucursal_id === activeSucursalId)?.activa !== false;
-          }
+    // Checkout must not wait for a cloud kitchen-status probe. The local mirror is
+    // the authoritative operational snapshot; absent data preserves the legacy
+    // default of accepting the order.
+    const kitchenItems = cart.filter((i) => i.plato.va_a_cocina !== false);
+    if (kitchenItems.length > 0) {
+      const localCocina = await readLocalMirror<{ activa?: boolean; sucursal_id?: string | null }>(tenantId, "cocina_estado").catch(() => []);
+      const cocinaActiva = localCocina.find(r => r.sucursal_id === activeSucursalId)?.activa !== false;
 
-          if (cocinaActiva) {
+      if (cocinaActiva) {
             const items = kitchenItems.map((i) => ({
               nombre: i.plato.nombre,
               categoria: i.plato.categoria || "General",
@@ -1393,18 +1362,19 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
               updated_at: nowIso,
             };
 
-            await enqueueLocalWrite({
+            checkoutWrites.push({
               tenantId,
               tableName: "comandas",
               rowId: localComandaId,
               op: "insert",
               payload: comandaPayload,
               authUserId: user?.id ?? null,
-              deviceId: await getDeviceId(),
+              deviceId,
             });
 
             const paperWidthMm = getThermalPrintSettings().paperWidthMm;
-            const tr = tenantPrintData as any;
+            const localTenants = await readLocalMirror<any>(tenantId, "tenants").catch(() => []);
+            const tr = localTenants.find((tenant) => tenant.id === tenantId) ?? { nombre_negocio: "Comanda de cocina", moneda: "DOP" };
             const comandaHtml = buildComandaReceiptHtml(
               {
                 nombre_negocio: tr.nombre_negocio,
@@ -1423,14 +1393,22 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
             
             const printSettings = getThermalPrintSettings();
             if (printSettings.printComandas !== false) {
-              const printRes = await printThermalHtml(comandaHtml, { printType: "kitchen" });
-              if (!printRes.ok && printRes.error) {
-                console.warn("Impresión comanda para llevar:", printRes.error);
-              }
+              kitchenPrints.push({
+                id: localComandaId,
+                label: `Comanda #${localComandaId}`,
+                print: () => printThermalHtml(comandaHtml, { printType: "kitchen" }),
+              });
             }
           }
         }
-      }
+
+    await commitCheckout({
+      writes: checkoutWrites,
+      prints: [
+        { id: localFacturaId, label: `Factura #${numeroFactura}`, print: () => printLocalInvoiceReceipt({ tenantId, factura: facturaData, numeroFactura }) },
+        ...kitchenPrints,
+      ],
+    });
 
     setCart([]);
     setTakeoutClientRnc("");

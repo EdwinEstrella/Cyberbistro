@@ -19,10 +19,10 @@ import {
 import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
 import { calculateInvoiceTotals } from "../../../shared/lib/billingTotals";
 import { type FiscalMode } from "../../../shared/lib/fiscalTypes";
-import { resolveActiveFiscalMode, runFiscalEngine, enqueueEcfDocuments } from "../../../shared/lib/fiscalEngine";
-import { enqueueLocalWrite, getDeviceId, getLocalFirstStatusSnapshot, isLocalFirstEnabled, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, readLocalMirror, readLocalOutbox } from "../../../shared/lib/localFirst";
+import { resolveActiveFiscalMode, runFiscalEngine, buildEcfDocumentWrites } from "../../../shared/lib/fiscalEngine";
+import { getDeviceId, getLocalFirstStatusSnapshot, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, readLocalMirror, readLocalOutbox, type LocalFirstWrite } from "../../../shared/lib/localFirst";
 import { getNextFacturaNumber } from "../../../shared/lib/invoiceNumber";
-import { closeKitchenComandasForMesaLocalFirst } from "../../pos/lib/localFirstMutations";
+import { commitCheckout } from "../../../shared/lib/checkoutCommit";
 import { isDesktopCloudUnavailable } from "../../../shared/lib/cloudAvailability";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { CustomerSelect } from "../../clientes/components/CustomerSelect";
@@ -218,38 +218,6 @@ async function groupConsumosForFactura(
   return { facturaItems, subtotal, itbis, propina, total };
 }
 
-/** Cierra comandas de cocina abiertas para esta mesa (evita que la vista Mesas siga sumando su total). */
-async function cerrarComandasCocinaMesa(tenantId: string, mesaNumero: number, sucursalId: string | null): Promise<void> {
-  if (!sucursalId) return;
-  const openComandas = isLocalFirstEnabled()
-    ? (await readLocalMirror<any>(tenantId, "comandas"))
-        .filter((row: any) => row.tenant_id === tenantId && row.mesa_numero === mesaNumero && row.sucursal_id === sucursalId && ["pendiente", "en_preparacion", "listo"].includes(row.estado))
-        .map((row: any) => ({ id: row.id }))
-    : await (async () => {
-        const { data, error } = await supabase
-          .from("comandas")
-          .select("id")
-          .eq("tenant_id", tenantId)
-          .eq("sucursal_id", sucursalId)
-          .eq("mesa_numero", mesaNumero)
-          .in("estado", ["pendiente", "en_preparacion", "listo"]);
-
-        if (error) {
-          console.warn("MesaCloseAccountModal: no se pudieron cerrar comandas de cocina:", error);
-          return [];
-        }
-        return ((data as Array<{ id: string }> | null) ?? []).map((row) => ({ id: row.id }));
-      })();
-
-  const deviceId = await getDeviceId();
-  await closeKitchenComandasForMesaLocalFirst({
-    tenantId,
-    mesaNumero,
-    deviceId,
-    listOpenComandas: async () => openComandas,
-  });
-}
-
 export function MesaCloseAccountModal({
   open,
   onClose,
@@ -366,14 +334,6 @@ export function MesaCloseAccountModal({
     };
   }, [open, tenantId, initialNcfType]);
 
-  async function printFactura(factura: Record<string, unknown>, numeroFactura: number) {
-    if (!tenantId) return;
-    const res = await printLocalInvoiceReceipt({ tenantId, factura, numeroFactura });
-    if (!res.ok && res.error) {
-      console.warn("Impresión factura:", res.error);
-    }
-  }
-
   function collectPersonGroups(): Map<number, MesaConsumoRow[]> {
     const m = new Map<number, MesaConsumoRow[]>();
     for (let p = 1; p <= splitParts; p++) m.set(p, []);
@@ -484,8 +444,11 @@ export function MesaCloseAccountModal({
     await ensureAuthSessionFresh();
 
     const paidConsumoIds = new Set<string>();
+    const facturasToPrint: Array<{ factura: Record<string, unknown>; numero: number }> = [];
+    const checkoutWrites: LocalFirstWrite[] = [];
+    const deferredNcfIncrements: Array<{ tipoCodigo: string; usedSequence: number }> = [];
+    const deviceId = await getDeviceId();
     try {
-      const deviceId = await getDeviceId();
       let nextFacturaNumber = await getNextFacturaNumber(tenantId);
 
       const localFacturaIds = new Map<number, string>();
@@ -584,7 +547,7 @@ export function MesaCloseAccountModal({
           }
         }
 
-        await enqueueLocalWrite({
+        checkoutWrites.push({
           tenantId,
           tableName: "facturas",
           rowId: localFacturaId,
@@ -597,7 +560,7 @@ export function MesaCloseAccountModal({
           const cxcId = crypto.randomUUID();
           const dueDate = new Date();
           dueDate.setDate(dueDate.getDate() + 30);
-          await enqueueLocalWrite({
+          checkoutWrites.push({
             tenantId,
             tableName: "cuentas_cobrar",
             rowId: cxcId,
@@ -622,23 +585,21 @@ export function MesaCloseAccountModal({
         }
 
         if (ncfPart?.ecfType) {
-          await enqueueEcfDocuments({
+          checkoutWrites.push(...await buildEcfDocumentWrites({
             tenantId,
             facturaId: localFacturaId,
             certificateId: ncfPart.certificateId ?? null,
             ecfType: ncfPart.ecfType,
             deviceId,
             ecfDocumentId: ecfDocumentId!,
-          });
+          }));
         }
         if (ncfPart && ncfPart.tipoCodigo && ncfPart.usedSequence !== null && !ncfPart.sequenceReservedAtomically) {
-          await incrementTenantNcfSequence(tenantId, ncfPart.tipoCodigo, ncfPart.usedSequence);
+          deferredNcfIncrements.push({ tipoCodigo: ncfPart.tipoCodigo, usedSequence: ncfPart.usedSequence });
         }
 
-        await printFactura(insertRow, Number(insertRow.numero_factura));
-
         for (const consumo of consumosToInvoice) {
-          await enqueueLocalWrite({
+          checkoutWrites.push({
             tenantId,
             tableName: "consumos",
             rowId: consumo.id,
@@ -653,17 +614,27 @@ export function MesaCloseAccountModal({
           });
           paidConsumoIds.add(consumo.id);
         }
+        facturasToPrint.push({ factura: insertRow, numero: numFactura });
       }
     } finally {
       setCharging(false);
     }
 
     const updatedConsumos = mesaConsumos.filter((consumo) => !paidConsumoIds.has(consumo.id));
+    if (updatedConsumos.length === 0) {
+      for (const comandaId of new Set(mesaConsumos.map((consumo) => consumo.comanda_id).filter(Boolean))) {
+        checkoutWrites.push({ tenantId, tableName: "comandas", rowId: comandaId!, op: "delete", deviceId });
+      }
+    }
+    await commitCheckout({
+      writes: checkoutWrites,
+      prints: facturasToPrint.map(({ factura, numero }) => ({ id: String(factura.id), label: `Factura #${numero}`, print: () => printLocalInvoiceReceipt({ tenantId, factura, numeroFactura: numero }) })),
+    });
+    for (const increment of deferredNcfIncrements) void incrementTenantNcfSequence(tenantId, increment.tipoCodigo, increment.usedSequence).catch(console.error);
     setMesaConsumos(updatedConsumos);
-    await onSettled?.(updatedConsumos);
+    void onSettled?.(updatedConsumos);
 
     if (updatedConsumos.length === 0) {
-      await cerrarComandasCocinaMesa(tenantId, mesaNumero, activeSucursalId);
       if (mode === "all" && order.length > 1) {
         alert(`✅ Se emitieron ${order.length} facturas (cada una con su NCF si está activo).`);
       }
@@ -874,20 +845,20 @@ export function MesaCloseAccountModal({
       }
     }
 
-    await enqueueLocalWrite({
+    const checkoutWrites: LocalFirstWrite[] = [{
       tenantId,
       tableName: "facturas",
       rowId: localFacturaId,
       op: "insert",
       payload: facturaData,
       deviceId,
-    });
+    }];
 
     if (paymentMethod === "fiado" && selectedCustomer) {
       const cxcId = crypto.randomUUID();
       const dueDate = new Date();
       dueDate.setDate(dueDate.getDate() + 30); // 30 days default
-      await enqueueLocalWrite({
+      checkoutWrites.push({
         tenantId,
         tableName: "cuentas_cobrar",
         rowId: cxcId,
@@ -912,24 +883,22 @@ export function MesaCloseAccountModal({
     }
 
     if (ncfPart?.ecfType) {
-      await enqueueEcfDocuments({
+      checkoutWrites.push(...await buildEcfDocumentWrites({
         tenantId,
         facturaId: localFacturaId,
         certificateId: ncfPart.certificateId ?? null,
         ecfType: ncfPart.ecfType,
         deviceId,
         ecfDocumentId: ecfDocumentId!,
-      });
+      }));
     }
 
     if (ncfPart && ncfPart.tipoCodigo && ncfPart.usedSequence !== null && !ncfPart.sequenceReservedAtomically) {
-      await incrementTenantNcfSequence(tenantId, ncfPart.tipoCodigo, ncfPart.usedSequence);
+      void incrementTenantNcfSequence(tenantId, ncfPart.tipoCodigo, ncfPart.usedSequence).catch(console.error);
     }
 
-    await printFactura(facturaData, nextFacturaNumber);
-
     for (const consumo of consumosToBill) {
-      await enqueueLocalWrite({
+      checkoutWrites.push({
         tenantId,
         tableName: "consumos",
         rowId: consumo.id,
@@ -943,15 +912,18 @@ export function MesaCloseAccountModal({
         deviceId,
       });
     }
+    for (const comandaId of new Set(consumosToBill.map((consumo) => consumo.comanda_id).filter(Boolean))) {
+      checkoutWrites.push({ tenantId, tableName: "comandas", rowId: comandaId!, op: "delete", deviceId });
+    }
+    await commitCheckout({
+      writes: checkoutWrites,
+      prints: [{ id: localFacturaId, label: `Factura #${nextFacturaNumber}`, print: () => printLocalInvoiceReceipt({ tenantId, factura: facturaData, numeroFactura: nextFacturaNumber }) }],
+    });
 
     const paidConsumoIds = new Set(consumosToBill.map((consumo) => consumo.id));
     const restantes = mesaConsumos.filter((consumo) => !paidConsumoIds.has(consumo.id));
     setMesaConsumos(restantes);
-    await onSettled?.(restantes);
-
-    if (restantes.length === 0) {
-      await cerrarComandasCocinaMesa(tenantId, mesaNumero, activeSucursalId);
-    }
+    void onSettled?.(restantes);
 
     setCharging(false);
     setSplitMode(false);
