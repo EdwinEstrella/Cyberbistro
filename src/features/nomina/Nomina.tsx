@@ -23,6 +23,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CalendarDays,
+  ShieldCheck,
 } from "lucide-react";
 import { useAuth } from "../../shared/hooks/useAuth";
 import { useSucursal } from "../../app/context/SucursalContext";
@@ -897,6 +898,40 @@ export function Nomina() {
     setAdjustments((current) => current.filter((_, idx) => idx !== indexToRemove));
   }
 
+  const tssAlreadyApplied = useMemo(() => {
+    return adjustments.some(
+      (a) => a.kind === "discount" && (a.type.toUpperCase() === "TSS" || a.type.toUpperCase().includes("TSS"))
+    );
+  }, [adjustments]);
+
+  function handleApplyTss() {
+    if (!paymentContext || paymentContext.periodSalaryCents <= 0) return;
+    if (tssAlreadyApplied) {
+      setPaymentMessage("El descuento de TSS ya está aplicado a este pago.");
+      return;
+    }
+    // 5.91% de ley aplicado estrictamente al salario del período de pago (quincena, semana o mes)
+    const tssCents = Math.round(paymentContext.periodSalaryCents * 0.0591);
+    const periodName =
+      selectedFrequency === "biweekly"
+        ? "quincena"
+        : selectedFrequency === "weekly"
+        ? "semana"
+        : "mes";
+
+    setAdjustments((current) => [
+      ...current,
+      {
+        kind: "discount",
+        type: "TSS",
+        scope: "currentPayment",
+        amountCents: tssCents,
+        note: `SFS (3.04%) + AFP (2.87%) sobre ${periodName} (${formatMoney(paymentContext.periodSalaryCents)})`,
+      },
+    ]);
+    setPaymentMessage("");
+  }
+
   // Submit Payroll Payment
   async function handleSubmitPayment(event: FormEvent) {
     event.preventDefault();
@@ -1509,14 +1544,36 @@ export function Nomina() {
 
               {/* Sección de Ajustes: Bonos y Deducciones */}
               <div className="bg-[#131313] border border-[rgba(72,72,71,0.18)] rounded-[16px] p-5 flex flex-col gap-4">
-                <div className="flex items-center justify-between pb-3 border-b border-[rgba(72,72,71,0.15)]">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-[rgba(72,72,71,0.15)] gap-2">
                   <div className="flex items-center gap-2">
                     <TrendingUp className="size-4 text-[#59ee50]" />
                     <h3 className="font-['Space_Grotesk',sans-serif] font-bold text-[14px] uppercase tracking-wider text-white">
                       2. Bonificaciones y Descuentos
                     </h3>
                   </div>
-                  <span className="text-[11px] text-[#adaaaa] font-['Inter',sans-serif]">Ajustes al período</span>
+                  
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleApplyTss}
+                      disabled={!selectedEmployee || !paymentContext || tssAlreadyApplied}
+                      className={`px-3 py-1.5 rounded-[8px] font-['Space_Grotesk',sans-serif] text-[11px] font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                        tssAlreadyApplied
+                          ? "bg-[rgba(89,238,80,0.1)] border border-[rgba(89,238,80,0.3)] text-[#59ee50]"
+                          : "bg-[rgba(255,144,109,0.15)] border border-[#ff906d] text-[#ff906d] hover:brightness-125 shadow-[0_0_10px_rgba(255,144,109,0.2)]"
+                      }`}
+                      title={
+                        paymentContext
+                          ? `Aplica el 5.91% de ley sobre el pago de esta ${selectedFrequency === "biweekly" ? "quincena" : "modalidad"} (${formatMoney(paymentContext.periodSalaryCents)})`
+                          : "Selecciona un empleado para calcular TSS"
+                      }
+                    >
+                      <ShieldCheck className="size-3.5" />
+                      {tssAlreadyApplied
+                        ? "✓ TSS Aplicado"
+                        : `TSS (5.91% - ${formatMoney(Math.round((paymentContext?.periodSalaryCents || 0) * 0.0591))})`}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
