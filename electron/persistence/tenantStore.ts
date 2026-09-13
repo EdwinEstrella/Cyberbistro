@@ -538,6 +538,30 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
         }
 
         case "expense.delete": {
+          const expenseRow = this.database
+            .prepare("SELECT id, payroll_payment_id, expense_type FROM gastos WHERE id = ? AND tenant_id = ?")
+            .get(command.id, this.tenantId) as { id: string; payroll_payment_id: string | null; expense_type: string | null } | undefined;
+
+          if (expenseRow?.payroll_payment_id) {
+            const payrollPaymentId = expenseRow.payroll_payment_id;
+            this.database
+              .prepare("DELETE FROM payroll_payment_adjustments WHERE payment_id = ? AND tenant_id = ?")
+              .run(payrollPaymentId, this.tenantId);
+            this.database
+              .prepare("DELETE FROM payroll_payments WHERE id = ? AND tenant_id = ?")
+              .run(payrollPaymentId, this.tenantId);
+            this.database.prepare(
+              "INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, ?, ?, 'delete', ?, 'pending')"
+            ).run(
+              `${commitId}:payroll-delete`,
+              this.tenantId,
+              branchId,
+              "payroll_payments",
+              payrollPaymentId,
+              JSON.stringify({ id: payrollPaymentId, tenantId: this.tenantId, sucursalId: branchId })
+            );
+          }
+
           this.database.prepare("DELETE FROM gastos WHERE id = ? AND tenant_id = ?").run(command.id, this.tenantId);
           this.database.prepare(
             "INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, ?, ?, 'delete', ?, 'pending')"
@@ -547,7 +571,12 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
             branchId,
             "gastos",
             command.id,
-            JSON.stringify({ id: command.id, tenantId: this.tenantId, sucursalId: branchId })
+            JSON.stringify({
+              id: command.id,
+              tenantId: this.tenantId,
+              sucursalId: branchId,
+              expenseType: expenseRow?.expense_type || "operational",
+            })
           );
           break;
         }

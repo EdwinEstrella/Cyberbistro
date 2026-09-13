@@ -551,15 +551,25 @@ export function Gastos() {
                 id: gasto.id,
               });
             } else {
-            await enqueueLocalWrite({
-              tenantId: tenantId!,
-              tableName: "gastos",
-              rowId: gasto.id,
-              op: "delete",
-              deviceId: await getDeviceId(),
-            });
-          }
-          await cargar();
+              await enqueueLocalWrite({
+                tenantId: tenantId!,
+                tableName: "gastos",
+                rowId: gasto.id,
+                op: "delete",
+                deviceId: await getDeviceId(),
+              });
+            }
+
+            if (navigator.onLine && !(await isDesktopCloudUnavailable().catch(() => true))) {
+              await supabase.from("gastos").delete().eq("id", gasto.id);
+              const payrollPaymentId = (gasto as any).payroll_payment_id;
+              if (payrollPaymentId) {
+                await supabase.from("nomina_pagos").delete().eq("id", payrollPaymentId);
+              }
+            }
+
+            setGastos((current) => current.filter((g) => g.id !== gasto.id));
+            await cargar();
         } catch (err: any) {
           setMessage(err.message);
         }

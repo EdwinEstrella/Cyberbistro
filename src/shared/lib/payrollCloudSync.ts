@@ -211,6 +211,11 @@ export async function createPayrollPaymentInCloud(
     );
   }
 
+  if (result.payment_id && payload.paymentDate) {
+    const paymentDateIso = new Date(`${payload.paymentDate}T12:00:00Z`).toISOString();
+    await (client as any).from?.("nomina_pagos")?.update({ created_at: paymentDateIso })?.eq("id", result.payment_id);
+  }
+
   return {
     employeeId: payload.employeeId,
     period: payload.period,
@@ -222,6 +227,20 @@ export async function createPayrollPaymentInCloud(
     alreadyPaidCents: result.paid_total_cents,
     pendingCents: result.pending_cents,
   };
+}
+
+export async function deletePayrollPaymentInCloud(
+  client: any,
+  paymentId: string,
+): Promise<void> {
+  if (client?.from) {
+    await client.from("gastos").delete().eq("payroll_payment_id", paymentId);
+    const { error } = await client.from("nomina_pagos").delete().eq("id", paymentId);
+    if (error) {
+      const code = error.code ?? "PAYROLL_CLOUD_PAYMENT_DELETE_FAILED";
+      throw new PayrollCloudSyncError(`Error deleting payroll payment from cloud: ${error.message}`, code);
+    }
+  }
 }
 
 function mapPaymentHistory(row: PayrollPaymentRemoteRow): PayrollPaymentHistory {

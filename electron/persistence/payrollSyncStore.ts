@@ -37,8 +37,13 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
           table_name IN ('payroll_employees', 'payroll_payments', 'payroll_payment_adjustments', 'gasto_categorias', 'customers')
           OR (
             table_name = 'gastos'
-            AND json_valid(payload_json) = 1
-            AND json_extract(payload_json, '$.expenseType') IN ('payroll', 'operational')
+            AND (
+              operation = 'delete'
+              OR (
+                json_valid(payload_json) = 1
+                AND json_extract(payload_json, '$.expenseType') IN ('payroll', 'operational')
+              )
+            )
           )
         )
     `).run(this.tenantId);

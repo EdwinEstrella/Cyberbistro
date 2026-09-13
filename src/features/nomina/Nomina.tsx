@@ -20,6 +20,9 @@ import {
   ArrowDownRight,
   CheckCircle,
   Eye,
+  ChevronLeft,
+  ChevronRight,
+  CalendarDays,
 } from "lucide-react";
 import { useAuth } from "../../shared/hooks/useAuth";
 import { useSucursal } from "../../app/context/SucursalContext";
@@ -27,11 +30,19 @@ import { executePayrollCommandLocally, isPayrollLocalStorageAvailable } from "..
 import {
   createPayrollPaymentInCloud,
   deactivatePayrollEmployeeInCloud,
+  deletePayrollPaymentInCloud,
   getPayrollPaymentContextFromCloud,
   mapPayrollFrequencyFromCloud,
   syncPayrollEmployeeToCloud,
 } from "../../shared/lib/payrollCloudSync";
 import { ConfirmModal } from "../../shared/components/ConfirmModal";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../shared/ui/select";
 import {
   buildNominaReceiptHtml,
   type TenantReceiptInfo,
@@ -176,18 +187,44 @@ export function Nomina() {
   const previewReceiptHtml = useMemo(() => {
     if (!previewPayment) return "";
     const { paperWidthMm } = getThermalPrintSettings();
+
+    let ajustesDetalle: Array<{ descripcion: string; monto: number; tipo: "adicion" | "deduccion" }> | undefined;
+    let paymentDateIso = previewPayment.createdAt;
+
+    if (previewPayment.receiptSnapshot) {
+      try {
+        const snap = JSON.parse(previewPayment.receiptSnapshot);
+        if (snap.paymentDate) {
+          paymentDateIso = snap.paymentDate;
+        }
+        if (Array.isArray(snap.adjustments) && snap.adjustments.length > 0) {
+          ajustesDetalle = snap.adjustments.map((a: any) => {
+            const label = a.note ? `${a.type || "Ajuste"}: ${a.note}` : a.type || "Ajuste";
+            return {
+              descripcion: label,
+              monto: (a.amountCents ?? 0) / 100,
+              tipo: a.kind === "bonus" ? "adicion" : "deduccion",
+            };
+          });
+        }
+      } catch {
+        /* fallback */
+      }
+    }
+
     const receiptData: NominaReceiptData = {
       empleadoNombre: previewPayment.employeeName,
       empleadoCargo: previewPayment.employeeRole,
       periodo: previewPayment.period,
       frecuencia: previewPayment.frequency,
-      fechaPagoIso: previewPayment.createdAt,
+      fechaPagoIso: paymentDateIso,
       salarioBase: previewPayment.baseSalaryCents / 100,
       adicionales: previewPayment.adjustmentsDeltaCents > 0 ? previewPayment.adjustmentsDeltaCents / 100 : 0,
       deducciones: previewPayment.adjustmentsDeltaCents < 0 ? Math.abs(previewPayment.adjustmentsDeltaCents) / 100 : 0,
       totalDebido: previewPayment.totalDueCents / 100,
       montoPagado: previewPayment.amountPaidCents / 100,
       balancePendiente: previewPayment.pendingCents / 100,
+      ajustesDetalle,
     };
     return buildNominaReceiptHtml(tenantInfo, receiptData, paperWidthMm);
   }, [previewPayment, tenantInfo]);

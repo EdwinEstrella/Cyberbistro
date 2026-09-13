@@ -725,6 +725,9 @@ export function buildNominaReceiptHtml(
       ? "Semanal"
       : data.frecuencia || "Mensual";
 
+  const deduccionesItems = (data.ajustesDetalle || []).filter((aj) => aj.tipo === "deduccion");
+  const adicionalesItems = (data.ajustesDetalle || []).filter((aj) => aj.tipo === "adicion");
+
   const ajustesRows = (data.ajustesDetalle || [])
     .map((aj) => {
       const isDeduccion = aj.tipo === "deduccion";
@@ -753,8 +756,18 @@ export function buildNominaReceiptHtml(
   <div class="divider"></div>
   <table>
     <tr class="header-row"><td>Salario base</td><td style="text-align:right">${rd(data.salarioBase, tenant)}</td></tr>
-    ${(data.adicionales ?? 0) > 0 ? `<tr class="header-row"><td>(+) Bonos / Adicionales</td><td style="text-align:right;color:#000">${rd(data.adicionales ?? 0, tenant)}</td></tr>` : ""}
-    ${(data.deducciones ?? 0) > 0 ? `<tr class="header-row"><td>(-) Descuentos / Adelantos</td><td style="text-align:right;color:#000">-${rd(data.deducciones ?? 0, tenant)}</td></tr>` : ""}
+    ${
+      (data.adicionales ?? 0) > 0
+        ? `<tr class="header-row"><td>(+) Bonos / Adicionales</td><td style="text-align:right;color:#000">${rd(data.adicionales ?? 0, tenant)}</td></tr>
+           ${adicionalesItems.map((a) => `<tr style="font-size:11px;color:#444"><td style="padding-left:10px">• ${escapeHtml(a.descripcion)}</td><td style="text-align:right">+${rd(a.monto, tenant)}</td></tr>`).join("")}`
+        : ""
+    }
+    ${
+      (data.deducciones ?? 0) > 0
+        ? `<tr class="header-row"><td>(-) Descuentos / Adelantos</td><td style="text-align:right;color:#000">-${rd(data.deducciones ?? 0, tenant)}</td></tr>
+           ${deduccionesItems.map((d) => `<tr style="font-size:11px;color:#444"><td style="padding-left:10px">• ${escapeHtml(d.descripcion)}</td><td style="text-align:right">-${rd(d.monto, tenant)}</td></tr>`).join("")}`
+        : ""
+    }
     <tr class="header-row"><td><strong>Total devengado</strong></td><td style="text-align:right;font-weight:bold">${rd(data.totalDebido, tenant)}</td></tr>
   </table>
   ${
