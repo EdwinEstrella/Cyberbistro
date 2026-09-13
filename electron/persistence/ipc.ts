@@ -594,6 +594,11 @@ function parsePayrollCommand(payload: unknown): PayrollCommand | null {
     return isValidPaymentContextPayload(command.payload, true) ? (command as PayrollCommand) : null;
   }
 
+  if (command.type === "payroll.deletePayment") {
+    if (!isExactObject(payload, ["type", "tenantId", "sucursalId", "paymentId"], false)) return null;
+    return isNonEmptyText((payload as Record<string, unknown>).paymentId) ? (command as PayrollCommand) : null;
+  }
+
   return null;
 }
 
@@ -662,7 +667,7 @@ function isValidPayrollEmployee(value: unknown): boolean {
 
 function isValidPaymentContextPayload(value: unknown, requirePaymentAmount: boolean): boolean {
   const keys = requirePaymentAmount
-    ? ["employeeId", "period", "frequency", "paymentAmountCents", "receiptSnapshot", "adjustments"]
+    ? ["employeeId", "period", "frequency", "paymentAmountCents", "receiptSnapshot", "adjustments", "paymentDate"]
     : ["employeeId", "period", "frequency", "adjustments"];
 
   if (!isExactObject(value, keys)) return false;
@@ -674,6 +679,7 @@ function isValidPaymentContextPayload(value: unknown, requirePaymentAmount: bool
     isPayrollFrequency(payload.frequency) &&
     (!requirePaymentAmount || isCents(payload.paymentAmountCents)) &&
     (!requirePaymentAmount || typeof payload.receiptSnapshot === "string") &&
+    (payload.paymentDate === undefined || typeof payload.paymentDate === "string") &&
     Array.isArray(payload.adjustments) &&
     payload.adjustments.every(isValidAdjustment)
   );

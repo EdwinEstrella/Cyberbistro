@@ -747,6 +747,11 @@ if (gotTheLock) {
             tenantStoreController?.payrollSync.triggerSync().catch(console.error);
             return { type: 'payroll.paymentCommitted', ...result }
           }
+          case 'payroll.deletePayment': {
+            repo.deletePayment(command.tenantId, command.sucursalId, command.paymentId)
+            tenantStoreController?.payrollSync.triggerSync().catch(console.error);
+            return { type: 'payroll.paymentDeleted', paymentId: command.paymentId }
+          }
           default:
             throw new Error(`Unknown payroll command: ${(command as any).type}`)
         }

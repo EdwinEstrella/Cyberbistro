@@ -256,7 +256,7 @@ export class PayrollRepository {
       const { deltaCents: adjustmentDeltaCents } = getCurrentPaymentAdjustmentTotals(payload.adjustments);
       const pendingCents = context.pendingCents - payload.paymentAmountCents;
       const expenseDescription = `Payroll payment ${payload.period}`;
-      const expenseRecordedAt = new Date().toISOString();
+      const expenseRecordedAt = payload.paymentDate ? new Date(payload.paymentDate).toISOString() : new Date().toISOString();
 
       this.db
         .prepare(
@@ -274,8 +274,9 @@ export class PayrollRepository {
               total_due_cents,
               amount_paid_cents,
               pending_cents,
-              receipt_snapshot
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              receipt_snapshot,
+              created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `,
         )
         .run(
@@ -292,6 +293,7 @@ export class PayrollRepository {
           payload.paymentAmountCents,
           pendingCents,
           payload.receiptSnapshot,
+          expenseRecordedAt,
         );
 
       const insertAdjustment = this.db.prepare(
@@ -347,11 +349,12 @@ export class PayrollRepository {
               amount,
               amount_cents,
               local_status,
-              description
-            ) VALUES (?, ?, ?, NULL, ?, 'payroll', 'cash', NULL, ?, 'pending_sync', ?)
+              description,
+              expense_date
+            ) VALUES (?, ?, ?, NULL, ?, 'payroll', 'cash', NULL, ?, 'pending_sync', ?, ?)
           `,
         )
-        .run(expenseId, tenantId, sucursalId, paymentId, payload.paymentAmountCents, expenseDescription);
+        .run(expenseId, tenantId, sucursalId, paymentId, payload.paymentAmountCents, expenseDescription, expenseRecordedAt);
 
       this.insertOutboxRow({
         id: `${paymentId}:payment`,
@@ -385,6 +388,7 @@ export class PayrollRepository {
           expenseType: "payroll",
           description: expenseDescription,
           recordedAt: expenseRecordedAt,
+          expenseDate: expenseRecordedAt,
           paymentMethod: "cash",
           amountCents: payload.paymentAmountCents,
           localStatus: "pending_sync",
@@ -403,6 +407,52 @@ export class PayrollRepository {
           pendingCents,
         },
       };
+    } catch (error) {
+      this.db.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
+  public deletePayment(tenantId: string, sucursalId: string, paymentId: string): void {
+    this.db.exec("BEGIN IMMEDIATE;");
+
+    try {
+      this.ensureTenantAndBranch(tenantId, sucursalId);
+
+      this.db
+        .prepare("DELETE FROM payroll_payment_adjustments WHERE payment_id = ? AND tenant_id = ?")
+        .run(paymentId, tenantId);
+
+      const expense = this.db
+        .prepare("SELECT id FROM gastos WHERE payroll_payment_id = ? AND tenant_id = ?")
+        .get(paymentId, tenantId) as { id: string } | undefined;
+
+      if (expense) {
+        this.db.prepare("DELETE FROM gastos WHERE id = ? AND tenant_id = ?").run(expense.id, tenantId);
+        this.insertOutboxDelete({
+          id: `${paymentId}:expense-delete`,
+          tenantId,
+          branchId: sucursalId,
+          tableName: "gastos",
+          rowId: expense.id,
+          payload: { id: expense.id, tenantId, sucursalId, expenseType: "payroll" },
+        });
+      }
+
+      this.db
+        .prepare("DELETE FROM payroll_payments WHERE id = ? AND tenant_id = ?")
+        .run(paymentId, tenantId);
+
+      this.insertOutboxDelete({
+        id: `${paymentId}:payment-delete`,
+        tenantId,
+        branchId: sucursalId,
+        tableName: "payroll_payments",
+        rowId: paymentId,
+        payload: { id: paymentId, tenantId, sucursalId },
+      });
+
+      this.db.exec("COMMIT;");
     } catch (error) {
       this.db.exec("ROLLBACK;");
       throw error;
@@ -489,6 +539,24 @@ export class PayrollRepository {
         `
           INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status)
           VALUES (?, ?, ?, ?, ?, 'upsert', ?, 'pending')
+        `,
+      )
+      .run(input.id, input.tenantId, input.branchId, input.tableName, input.rowId, JSON.stringify(input.payload));
+  }
+
+  private insertOutboxDelete(input: {
+    id: string;
+    tenantId: string;
+    branchId: string;
+    tableName: string;
+    rowId: string;
+    payload: unknown;
+  }): void {
+    this.db
+      .prepare(
+        `
+          INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status)
+          VALUES (?, ?, ?, ?, ?, 'delete', ?, 'pending')
         `,
       )
       .run(input.id, input.tenantId, input.branchId, input.tableName, input.rowId, JSON.stringify(input.payload));

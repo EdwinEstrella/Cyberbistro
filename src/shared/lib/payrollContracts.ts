@@ -56,6 +56,7 @@ export interface PayrollPaymentContext {
 export interface PayrollCreatePaymentRequest extends PayrollPaymentContextRequest {
   paymentAmountCents: number;
   receiptSnapshot: string;
+  paymentDate?: string;
 }
 
 export interface PayrollPaymentRecord {
@@ -81,7 +82,8 @@ export type PayrollCommand =
   | { type: "payroll.upsertEmployee"; tenantId: string; sucursalId: string; employee: PayrollEmployeeDraft }
   | { type: "payroll.disableEmployee"; tenantId: string; sucursalId: string; employeeId: string }
   | { type: "payroll.getPaymentContext"; tenantId: string; sucursalId: string; payload: PayrollPaymentContextRequest }
-  | { type: "payroll.createPayment"; tenantId: string; sucursalId: string; payload: PayrollCreatePaymentRequest };
+  | { type: "payroll.createPayment"; tenantId: string; sucursalId: string; payload: PayrollCreatePaymentRequest }
+  | { type: "payroll.deletePayment"; tenantId: string; sucursalId: string; paymentId: string };
 
 export type PayrollRepositoryResult =
   | { type: "payroll.employees"; employees: PayrollEmployee[] }
@@ -89,6 +91,7 @@ export type PayrollRepositoryResult =
   | { type: "payroll.paymentContext"; context: PayrollPaymentContext }
   | { type: "payroll.employeeSaved"; id: string }
   | { type: "payroll.paymentCommitted"; paymentId: string; expenseId: string; context: PayrollPaymentContext }
+  | { type: "payroll.paymentDeleted"; paymentId: string }
   | { type: "payroll.success" };
 
 export interface PayrollAdapter {
@@ -98,4 +101,5 @@ export interface PayrollAdapter {
   disableEmployee(tenantId: string, sucursalId: string, employeeId: string): Promise<void>;
   getPaymentContext(tenantId: string, sucursalId: string, payload: PayrollPaymentContextRequest): Promise<PayrollPaymentContext>;
   createPayment(tenantId: string, sucursalId: string, payload: PayrollCreatePaymentRequest): Promise<{ paymentId: string; expenseId: string; context: PayrollPaymentContext }>;
+  deletePayment(tenantId: string, sucursalId: string, paymentId: string): Promise<void>;
 }
