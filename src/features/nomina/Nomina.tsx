@@ -680,9 +680,13 @@ export function Nomina() {
         }
         if (cancelled) return;
         setPaymentContext(context);
-        if (paymentAmountInput.trim().length === 0) {
-          setPaymentAmountInput(formatCentsToCurrencyDisplay(context.pendingCents));
-        }
+        setPaymentAmountInput((prev) => {
+          const prevCents = currencyInputToCents(prev);
+          if (!prev || prevCents <= 0 || prevCents > context.pendingCents) {
+            return formatCentsToCurrencyDisplay(context.pendingCents);
+          }
+          return prev;
+        });
       } catch (error) {
         if (!cancelled) {
           setPaymentContext(null);
@@ -694,7 +698,7 @@ export function Nomina() {
     return () => {
       cancelled = true;
     };
-  }, [activeSucursalId, adjustments, paymentAmountInput, periodValue, selectedEmployee, tenantId]);
+  }, [activeSucursalId, adjustments, periodValue, selectedEmployee, tenantId]);
 
   // KPI Statistics
   const stats = useMemo(() => {
@@ -938,6 +942,16 @@ export function Nomina() {
     if (!tenantId || !activeSucursalId || !selectedEmployee || !paymentContext) return;
     if (paymentAmountCents <= 0) {
       setPaymentMessage("El monto a pagar debe ser mayor a 0.");
+      return;
+    }
+    if (paymentContext.pendingCents <= 0) {
+      setPaymentMessage("Este período ya se encuentra completamente liquidado para este empleado.");
+      return;
+    }
+    if (paymentAmountCents > paymentContext.pendingCents) {
+      setPaymentMessage(
+        `El monto a pagar (${formatMoney(paymentAmountCents)}) excede el balance pendiente de este período (${formatMoney(paymentContext.pendingCents)}).`
+      );
       return;
     }
     setPaying(true);
@@ -1806,16 +1820,34 @@ export function Nomina() {
                   </div>
                 </div>
 
+                {paymentContext && paymentContext.pendingCents <= 0 && (
+                  <div className="p-3 rounded-[10px] bg-[rgba(89,238,80,0.1)] border border-[rgba(89,238,80,0.3)] text-[#59ee50] text-[12px] flex items-center gap-2">
+                    <CheckCircle className="size-4 shrink-0" />
+                    <span>Este período ya fue liquidado en su totalidad. Para corregir o rehacer el pago, podés anular el recibo en la pestaña <b>Recibos de Nómina</b>.</span>
+                  </div>
+                )}
+
                 {/* Botón de Confirmación de Pago */}
                 <button
                   type="submit"
-                  disabled={paying || !selectedEmployee || !paymentContext || paymentAmountCents <= 0}
+                  disabled={
+                    paying ||
+                    !selectedEmployee ||
+                    !paymentContext ||
+                    paymentAmountCents <= 0 ||
+                    paymentContext.pendingCents <= 0
+                  }
                   className="w-full mt-2 bg-[#ff906d] hover:brightness-110 disabled:opacity-50 disabled:hover:brightness-100 text-black font-['Space_Grotesk',sans-serif] font-bold text-[14px] uppercase tracking-wider py-3.5 rounded-[12px] transition-all cursor-pointer shadow-[0_0_20px_rgba(255,144,109,0.2)] flex items-center justify-center gap-2"
                 >
                   {paying ? (
                     <>
                       <RefreshCw className="size-4 animate-spin" />
                       Procesando Pago...
+                    </>
+                  ) : paymentContext && paymentContext.pendingCents <= 0 ? (
+                    <>
+                      <CheckCircle className="size-4 text-black" />
+                      Período ya pagado (Saldo RD$ 0.00)
                     </>
                   ) : (
                     <>
