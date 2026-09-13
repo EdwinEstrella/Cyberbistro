@@ -37,6 +37,7 @@ import {
 } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
+import { loadReceiptTenantForPrint, printLocalInvoiceReceipt } from "../../../shared/lib/localInvoiceReceipt";
 import { useTenantCurrency } from "../../../shared/hooks/useTenantCurrency";
 import { useTheme } from "../../../shared/context/ThemeContext";
 import { buildPosCategoryTabs, suggestCategoryColor } from "../../../shared/lib/menuCategories";
@@ -735,31 +736,13 @@ export function Dashboard() {
     return { amount, change: Math.max(0, amount - total) };
   }
 
-  async function printFactura(facturaData: Record<string, unknown>, tenantData: { nombre_negocio: string | null; rnc: string | null; direccion: string | null; telefono: string | null; logo_url: string | null; menu_url?: string | null; logo_size_px?: number; logo_offset_x?: number; logo_offset_y?: number }) {
-    const paperWidthMm = getThermalPrintSettings().paperWidthMm;
-    const html = await buildFacturaReceiptHtml(
-      {
-        nombre_negocio: tenantData.nombre_negocio,
-        rnc: tenantData.rnc,
-        direccion: tenantData.direccion,
-        telefono: tenantData.telefono,
-        logo_url: tenantData.logo_url,
-        menu_url: tenantData.menu_url,
-        moneda: "DOP", // fallback
-        logo_size_px: tenantData.logo_size_px,
-        logo_offset_x: tenantData.logo_offset_x,
-        logo_offset_y: tenantData.logo_offset_y,
-      },
-      {
-        ...(facturaData as unknown as Parameters<typeof buildFacturaReceiptHtml>[1]),
-        ecf_status: (facturaData.fiscal_status as string | null | undefined) ?? null,
-        ecf_security_code: null,
-      },
-      facturaData.numero_factura as number,
-      paperWidthMm
-    );
-
-    const res = await printThermalHtml(html, { printType: "sales" });
+  async function printFactura(facturaData: Record<string, unknown>) {
+    if (!tenantId) return;
+    const res = await printLocalInvoiceReceipt({
+      tenantId,
+      factura: facturaData,
+      numeroFactura: facturaData.numero_factura as number,
+    });
     if (!res.ok && res.error) {
       console.warn("Impresión factura:", res.error);
     }
@@ -1362,28 +1345,13 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
       await incrementTenantNcfSequence(tenantId, ncfPart.tipoCodigo, ncfPart.usedSequence);
     }
 
-    let tenantPrintData: { nombre_negocio: string | null; rnc: string | null; direccion: string | null; telefono: string | null; logo_url: string | null; menu_url?: string | null; ecf_environment?: "test" | "certification" | "production" | null } | null = null;
-    try {
-      if (!navigator.onLine || await isDesktopCloudUnavailable()) {
-        const localTenants = await readLocalMirror<any>(tenantId, "tenants");
-        tenantPrintData = localTenants.find((t) => t.id === tenantId) ?? null;
-      } else {
-        const { data: t, error } = await supabase.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url, menu_url, ecf_environment, logo_size_px, logo_offset_x, logo_offset_y").eq("id", tenantId).maybeSingle();
-        if (error) throw error;
-        tenantPrintData = t;
-      }
-    } catch {
-      const localTenants = await readLocalMirror<any>(tenantId, "tenants").catch(() => []);
-      tenantPrintData = localTenants.find((t) => t.id === tenantId) ?? null;
-    }
-      if (tenantPrintData) {
-        // Ensure logo is cached for this and future prints
-        void cacheLogoFromUrl(tenantPrintData.logo_url);
-        await printFactura(facturaData, tenantPrintData);
+    await printFactura(facturaData);
 
-        // Comanda automática para items "para llevar" (cocina)
-        const kitchenItems = cart.filter((i) => i.plato.va_a_cocina !== false);
-        if (kitchenItems.length > 0) {
+    const tenantPrintData = await loadReceiptTenantForPrint(tenantId).catch(() => null);
+    if (tenantPrintData) {
+      // Comanda automática para items "para llevar" (cocina)
+      const kitchenItems = cart.filter((i) => i.plato.va_a_cocina !== false);
+      if (kitchenItems.length > 0) {
           let cocinaActiva = true;
           try {
             if (!navigator.onLine) {

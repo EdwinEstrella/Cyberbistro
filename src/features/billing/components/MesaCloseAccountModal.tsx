@@ -4,6 +4,7 @@ import { ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
 import { buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
+import { printLocalInvoiceReceipt } from "../../../shared/lib/localInvoiceReceipt";
 import {
   incrementTenantNcfSequence,
 } from "../../../shared/lib/invoiceNcf";
@@ -22,7 +23,6 @@ import { resolveActiveFiscalMode, runFiscalEngine, enqueueEcfDocuments } from ".
 import { enqueueLocalWrite, getDeviceId, getLocalFirstStatusSnapshot, isLocalFirstEnabled, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, readLocalMirror, readLocalOutbox } from "../../../shared/lib/localFirst";
 import { getNextFacturaNumber } from "../../../shared/lib/invoiceNumber";
 import { closeKitchenComandasForMesaLocalFirst } from "../../pos/lib/localFirstMutations";
-import { cacheLogoFromUrl } from "../../../shared/lib/logoCache";
 import { isDesktopCloudUnavailable } from "../../../shared/lib/cloudAvailability";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { CustomerSelect } from "../../clientes/components/CustomerSelect";
@@ -366,110 +366,9 @@ export function MesaCloseAccountModal({
     };
   }, [open, tenantId, initialNcfType]);
 
-  async function printFactura(facturaId: string, numeroFactura: number) {
+  async function printFactura(factura: Record<string, unknown>, numeroFactura: number) {
     if (!tenantId) return;
-
-    let factura: any = null;
-    let tenant: any = null;
-
-    try {
-      const snapshot = await getLocalFirstStatusSnapshot(tenantId);
-      const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
-
-      if (localMode || !navigator.onLine) {
-        const allFacturas = await readLocalMirror<any>(tenantId, "facturas").catch(() => []);
-        factura = allFacturas.find((f: any) => f.id === facturaId);
-
-        const allTenants = await readLocalMirror<any>(tenantId, "tenants").catch(() => []);
-        tenant = allTenants.find((t: any) => t.id === tenantId);
-      } else {
-        try {
-          const { data: factData, error: facturaError } = await supabase
-            .from("facturas")
-            .select("*")
-            .eq("id", facturaId)
-            .eq("tenant_id", tenantId)
-            .single();
-          if (facturaError) throw facturaError;
-          factura = factData;
-
-          const { data: tenantData, error: tenantError } = await supabase
-            .from("tenants")
-            .select("nombre_negocio, rnc, direccion, telefono, logo_url, ecf_environment, logo_size_px, logo_offset_x, logo_offset_y")
-            .eq("id", tenantId)
-            .single();
-          if (tenantError) throw tenantError;
-          tenant = tenantData;
-        } catch {
-          const allFacturas = await readLocalMirror<any>(tenantId, "facturas").catch(() => []);
-          factura = allFacturas.find((f: any) => f.id === facturaId);
-
-          const allTenants = await readLocalMirror<any>(tenantId, "tenants").catch(() => []);
-          tenant = allTenants.find((t: any) => t.id === tenantId);
-        }
-      }
-    } catch (err) {
-      console.error("Error leyendo datos para factura:", err);
-      return;
-    }
-
-    if (!factura) {
-      console.error("Error: No se encontró la factura para imprimir");
-      return;
-    }
-
-    if (!tenant) {
-      console.error("Error: No se encontró información del tenant");
-      return;
-    }
-
-    let ecfDoc: any = null;
-    try {
-      const snapshot = await getLocalFirstStatusSnapshot(tenantId);
-      const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
-      if (localMode || !navigator.onLine) {
-        const allEcf = await readLocalMirror<any>(tenantId, "ecf_documents").catch(() => []);
-        ecfDoc = allEcf.find((e: any) => e.factura_id === facturaId) ?? null;
-      } else {
-        const { data: ecfData } = await supabase
-          .from("ecf_documents")
-          .select("*")
-          .eq("factura_id", facturaId)
-          .maybeSingle();
-        ecfDoc = ecfData;
-      }
-    } catch (err) {
-      console.warn("Error leyendo datos de e-CF para imprimir:", err);
-    }
-
-    const paperWidthMm = getThermalPrintSettings().paperWidthMm;
-    void cacheLogoFromUrl(tenant.logo_url);
-    const html = await buildFacturaReceiptHtml(
-      {
-        nombre_negocio: tenant.nombre_negocio,
-        rnc: tenant.rnc,
-        direccion: tenant.direccion,
-        telefono: tenant.telefono,
-        logo_url: tenant.logo_url,
-        ecf_environment: (tenant as any).ecf_environment ?? "certification",
-        menu_url: (tenant as any).menu_url,
-        moneda: (tenant as any).moneda || "DOP",
-        logo_size_px: (tenant as any).logo_size_px,
-        logo_offset_x: (tenant as any).logo_offset_x,
-        logo_offset_y: (tenant as any).logo_offset_y,
-      },
-        {
-          ...factura,
-          ecf_status: ecfDoc?.status ?? null,
-          ecf_track_id: ecfDoc?.dgii_track_id ?? null,
-          ecf_security_code: ecfDoc?.dgii_security_code ?? null,
-          ecf_submitted_at: ecfDoc?.submitted_at ?? null,
-        } as unknown as Parameters<typeof buildFacturaReceiptHtml>[1],
-      numeroFactura,
-      paperWidthMm
-    );
-
-    const res = await printThermalHtml(html, { printType: "sales" });
+    const res = await printLocalInvoiceReceipt({ tenantId, factura, numeroFactura });
     if (!res.ok && res.error) {
       console.warn("Impresión factura:", res.error);
     }
@@ -736,7 +635,7 @@ export function MesaCloseAccountModal({
           await incrementTenantNcfSequence(tenantId, ncfPart.tipoCodigo, ncfPart.usedSequence);
         }
 
-        await printFactura(localFacturaId, Number(insertRow.numero_factura));
+        await printFactura(insertRow, Number(insertRow.numero_factura));
 
         for (const consumo of consumosToInvoice) {
           await enqueueLocalWrite({
@@ -1027,7 +926,7 @@ export function MesaCloseAccountModal({
       await incrementTenantNcfSequence(tenantId, ncfPart.tipoCodigo, ncfPart.usedSequence);
     }
 
-    await printFactura(localFacturaId, nextFacturaNumber);
+    await printFactura(facturaData, nextFacturaNumber);
 
     for (const consumo of consumosToBill) {
       await enqueueLocalWrite({

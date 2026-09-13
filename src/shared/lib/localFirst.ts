@@ -1,6 +1,6 @@
 import { supabase } from "./supabase";
 import { incrementTenantNcfSequence, resolveNcfForNewInvoice, type ResolvedNcfForInvoice } from "./invoiceNcf";
-import { isCloudAvailabilityFailure, isCloudAvailableForDesktop, isDesktopRuntime, recordCloudFailure, recordCloudSuccess } from "./cloudAvailability";
+import { getCloudAvailabilitySnapshot, isCloudAvailabilityFailure, isCloudAvailableForDesktop, isDesktopRuntime, recordCloudFailure, recordCloudSuccess } from "./cloudAvailability";
 import { commitLanEdgeCursor, getLanEdgeBaseUrl, publishLanOutboxEntry, publishLanSnapshotEntries, pullLanOutboxEntries } from "./lanEdgeClient";
 import { buildTenantNcfUpdatePayload, DEFAULT_NCF_B_CODE, getNcfSequenceColumnName, isNcfBCode, prepareNcfForFacturaInsert, normalizeNcfSequenceMap, type TenantNcfRow } from "./ncf";
 
@@ -966,7 +966,7 @@ export async function enqueueLocalWrite(args: {
     return;
   }
 
-  const cloudAvailable = isDesktop ? await isCloudAvailableForDesktop() : isOnline;
+  const cloudAvailable = isDesktop ? getCloudAvailabilitySnapshot().cloudAvailable : isOnline;
   if (!cloudAvailable) {
     const licenseCheck = await assertCanWriteOffline(args.tenantId);
     if (!licenseCheck.valid) {
@@ -997,7 +997,14 @@ export async function enqueueLocalWrite(args: {
     });
   }
 
-  if (cloudAvailable) {
+  if (isDesktop) {
+    void isCloudAvailableForDesktop().then((available) => {
+      if (!available) return;
+      return pushOutboxToServer(args.tenantId);
+    }).catch((error) => {
+      console.error("Error pushing outbox after local enqueue:", error);
+    });
+  } else if (cloudAvailable) {
     void pushOutboxToServer(args.tenantId).catch((error) => {
       console.error("Error pushing outbox after local enqueue:", error);
     });

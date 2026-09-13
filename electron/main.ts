@@ -197,23 +197,21 @@ function printHtmlToThermal(opts: PrintThermalOptions): Promise<PrintThermalResp
     })
 
     const printLoadedPage = () => {
-      setTimeout(() => {
-        printWin.webContents.print(
-          {
-            silent: Boolean(opts.silent),
-            printBackground: true,
-            deviceName: opts.deviceName || undefined,
-            usePrinterDefaultPageSize: true,
-            margins: { marginType: 'none' },
-          },
-          (success, failureReason) => {
-            clearTimeout(timer)
-            if (!printWin.isDestroyed()) printWin.close()
-            if (success) resolve({ ok: true })
-            else resolve({ ok: false, error: String(failureReason || 'Error de impresión') })
-          }
-        )
-      }, 450)
+      printWin.webContents.print(
+        {
+          silent: Boolean(opts.silent),
+          printBackground: true,
+          deviceName: opts.deviceName || undefined,
+          usePrinterDefaultPageSize: true,
+          margins: { marginType: 'none' },
+        },
+        (success, failureReason) => {
+          clearTimeout(timer)
+          if (!printWin.isDestroyed()) printWin.close()
+          if (success) resolve({ ok: true })
+          else resolve({ ok: false, error: String(failureReason || 'Error de impresión') })
+        }
+      )
     }
 
     printWin.webContents.once('did-finish-load', () => {
@@ -223,12 +221,7 @@ function printHtmlToThermal(opts: PrintThermalOptions): Promise<PrintThermalResp
             document.open();
             document.write(${JSON.stringify(opts.html)});
             document.close();
-            if (document.readyState === 'complete') {
-              resolve(true);
-              return;
-            }
-            window.addEventListener('load', () => resolve(true), { once: true });
-            setTimeout(() => resolve(true), 2500);
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)));
           })`,
           true
         )
