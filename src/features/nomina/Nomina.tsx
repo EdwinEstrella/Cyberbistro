@@ -281,7 +281,12 @@ export function Nomina() {
         }
         if (Array.isArray(snap.adjustments) && snap.adjustments.length > 0) {
           ajustesDetalle = snap.adjustments.map((a: any) => {
-            const label = a.note ? `${a.type || "Ajuste"}: ${a.note}` : a.type || "Ajuste";
+            const concept = (a.type || "").trim();
+            const note = (a.note || "").trim();
+            let label = concept || note || (a.kind === "bonus" ? "Bono" : "Descuento");
+            if (concept && note && concept.toLowerCase() !== note.toLowerCase()) {
+              label = `${concept} (${note})`;
+            }
             return {
               descripcion: label,
               monto: (a.amountCents ?? 0) / 100,
@@ -930,7 +935,7 @@ export function Nomina() {
         type: "TSS",
         scope: "currentPayment",
         amountCents: tssCents,
-        note: `SFS (3.04%) + AFP (2.87%) sobre ${periodName} (${formatMoney(paymentContext.periodSalaryCents)})`,
+        note: "Ley 87-01",
       },
     ]);
     setPaymentMessage("");

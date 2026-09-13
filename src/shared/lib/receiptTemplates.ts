@@ -757,29 +757,31 @@ export function buildNominaReceiptHtml(
   <table>
     <tr class="header-row"><td>Salario base</td><td style="text-align:right">${rd(data.salarioBase, tenant)}</td></tr>
     ${
-      (data.adicionales ?? 0) > 0
-        ? `<tr class="header-row"><td>(+) Bonos / Adicionales</td><td style="text-align:right;color:#000">${rd(data.adicionales ?? 0, tenant)}</td></tr>
-           ${adicionalesItems.map((a) => `<tr style="font-size:11px;color:#444"><td style="padding-left:10px">• ${escapeHtml(a.descripcion)}</td><td style="text-align:right">+${rd(a.monto, tenant)}</td></tr>`).join("")}`
+      adicionalesItems.length > 0
+        ? adicionalesItems
+            .map(
+              (a) =>
+                `<tr class="header-row"><td>(+) ${escapeHtml(a.descripcion)}</td><td style="text-align:right;color:#000">+${rd(a.monto, tenant)}</td></tr>`
+            )
+            .join("")
+        : (data.adicionales ?? 0) > 0
+        ? `<tr class="header-row"><td>(+) Bonificación</td><td style="text-align:right;color:#000">+${rd(data.adicionales ?? 0, tenant)}</td></tr>`
         : ""
     }
     ${
-      (data.deducciones ?? 0) > 0
-        ? `<tr class="header-row"><td>(-) Descuentos / Adelantos</td><td style="text-align:right;color:#000">-${rd(data.deducciones ?? 0, tenant)}</td></tr>
-           ${deduccionesItems.map((d) => `<tr style="font-size:11px;color:#444"><td style="padding-left:10px">• ${escapeHtml(d.descripcion)}</td><td style="text-align:right">-${rd(d.monto, tenant)}</td></tr>`).join("")}`
+      deduccionesItems.length > 0
+        ? deduccionesItems
+            .map(
+              (d) =>
+                `<tr class="header-row"><td>(-) ${escapeHtml(d.descripcion)}</td><td style="text-align:right;color:#000">-${rd(d.monto, tenant)}</td></tr>`
+            )
+            .join("")
+        : (data.deducciones ?? 0) > 0
+        ? `<tr class="header-row"><td>(-) Descuento</td><td style="text-align:right;color:#000">-${rd(data.deducciones ?? 0, tenant)}</td></tr>`
         : ""
     }
     <tr class="header-row"><td><strong>Total devengado</strong></td><td style="text-align:right;font-weight:bold">${rd(data.totalDebido, tenant)}</td></tr>
   </table>
-  ${
-    ajustesRows
-      ? `
-  <div class="divider"></div>
-  <table>
-    <thead class="fdo-items-head"><tr><th>Detalle de Ajustes</th><th class="r">Monto</th></tr></thead>
-    <tbody>${ajustesRows}</tbody>
-  </table>`
-      : ""
-  }
   <div class="divider"></div>
   <table>
     <tr class="total-xl"><td>TOTAL PAGADO</td><td style="text-align:right">${rd(data.montoPagado, tenant)}</td></tr>
