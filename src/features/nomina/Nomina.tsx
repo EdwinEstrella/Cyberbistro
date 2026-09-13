@@ -1804,28 +1804,6 @@ export function Nomina() {
                       className="w-full bg-[#191919] border border-[rgba(72,72,71,0.3)] focus:border-[#ff906d] rounded-[10px] pl-14 pr-4 py-3 text-[16px] font-['Space_Grotesk',sans-serif] font-bold text-white outline-none"
                     />
                   </div>
-
-                  {/* Atajos Rápidos */}
-                  {paymentContext && paymentContext.pendingCents > 0 && (
-                    <div className="flex gap-2 mt-1">
-                      <button
-                        type="button"
-                        onClick={() => setPaymentAmountInput(formatCentsToCurrencyDisplay(paymentContext.pendingCents))}
-                        className="flex-1 py-1.5 rounded-[8px] bg-[#191919] border border-[rgba(72,72,71,0.25)] hover:border-[#ff906d] text-[11px] font-['Space_Grotesk',sans-serif] uppercase tracking-wider text-[#adaaaa] hover:text-white transition-all cursor-pointer"
-                      >
-                        Pago Completo (100%)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setPaymentAmountInput(formatCentsToCurrencyDisplay(Math.floor(paymentContext.pendingCents / 2)))
-                        }
-                        className="flex-1 py-1.5 rounded-[8px] bg-[#191919] border border-[rgba(72,72,71,0.25)] hover:border-[#ff906d] text-[11px] font-['Space_Grotesk',sans-serif] uppercase tracking-wider text-[#adaaaa] hover:text-white transition-all cursor-pointer"
-                      >
-                        Pago Parcial (50%)
-                      </button>
-                    </div>
-                  )}
                 </div>
 
                 {/* Botón de Confirmación de Pago */}
