@@ -83,22 +83,50 @@ export class PayrollRepository {
       ? this.db.prepare(query).all(tenantId, sucursalId, employeeId)
       : this.db.prepare(query).all(tenantId, sucursalId)) as any[];
 
-    return rows.map((row) => ({
-      id: row.id,
-      employeeId: row.employee_id,
-      employeeName: `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim() || "Empleado",
-      employeeRole: row.role ?? "N/A",
-      period: row.period,
-      frequency: row.frequency,
-      baseSalaryCents: row.base_salary_cents,
-      periodSalaryCents: row.period_salary_cents,
-      adjustmentsDeltaCents: row.adjustments_delta_cents,
-      totalDueCents: row.total_due_cents,
-      amountPaidCents: row.amount_paid_cents,
-      pendingCents: row.pending_cents,
-      receiptSnapshot: row.receipt_snapshot ?? "",
-      createdAt: row.created_at,
-    }));
+    const adjStmt = this.db.prepare(
+      "SELECT kind, type, scope, amount_cents as amountCents, note FROM payroll_payment_adjustments WHERE payment_id = ?"
+    );
+
+    return rows.map((row) => {
+      let snapshotStr = row.receipt_snapshot ?? "";
+      let parsedSnap: any = {};
+      try {
+        if (snapshotStr) parsedSnap = JSON.parse(snapshotStr);
+      } catch {
+        parsedSnap = {};
+      }
+
+      if (!Array.isArray(parsedSnap.adjustments) || parsedSnap.adjustments.length === 0) {
+        const adjs = adjStmt.all(row.id) as Array<{
+          kind: string;
+          type: string;
+          scope: string;
+          amountCents: number;
+          note: string;
+        }>;
+        if (adjs.length > 0) {
+          parsedSnap.adjustments = adjs;
+          snapshotStr = JSON.stringify(parsedSnap);
+        }
+      }
+
+      return {
+        id: row.id,
+        employeeId: row.employee_id,
+        employeeName: `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim() || "Empleado",
+        employeeRole: row.role ?? "N/A",
+        period: row.period,
+        frequency: row.frequency,
+        baseSalaryCents: row.base_salary_cents,
+        periodSalaryCents: row.period_salary_cents,
+        adjustmentsDeltaCents: row.adjustments_delta_cents,
+        totalDueCents: row.total_due_cents,
+        amountPaidCents: row.amount_paid_cents,
+        pendingCents: row.pending_cents,
+        receiptSnapshot: snapshotStr,
+        createdAt: row.created_at,
+      };
+    });
   }
 
   private ensureTenantAndBranch(tenantId: string, sucursalId: string): void {
