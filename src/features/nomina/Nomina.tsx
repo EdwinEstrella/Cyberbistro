@@ -701,11 +701,7 @@ export function Nomina() {
     const activos = employees.filter((e) => e.isActive).length;
     const mensualEstimado = employees.reduce((sum, emp) => {
       if (!emp.isActive) return sum;
-      const base = emp.baseSalaryCents || 0;
-      if (emp.frequency === "monthly") return sum + base;
-      if (emp.frequency === "biweekly") return sum + base * 2;
-      if (emp.frequency === "weekly") return sum + Math.round((base * 52) / 12);
-      return sum + base;
+      return sum + (emp.baseSalaryCents || 0);
     }, 0);
 
     return { total, activos, inactivos: total - activos, mensualEstimado };
