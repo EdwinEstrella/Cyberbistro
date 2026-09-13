@@ -182,6 +182,7 @@ describe("receiptTemplates fiscal regression", () => {
     expect(html).toContain("Quincenal");
     expect(html).toContain("TOTAL PAGADO");
     expect(html).toContain("Bono asistencia");
+    expect(html).toContain("Adelanto");
     expect(html).toContain("Firma del Empleado");
     expect(html).toContain("Firma Autorizada");
   });
