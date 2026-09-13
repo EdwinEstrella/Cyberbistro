@@ -81,6 +81,13 @@ const emptyAdjustmentDraft = {
   note: "",
 };
 
+const MONTH_NAMES_ES = [
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+];
+
+const WEEKDAY_NAMES_ES = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+
 type AdjustmentDraft = {
   kind: PayrollPaymentAdjustment["kind"];
   type: string;
@@ -123,15 +130,24 @@ export function Nomina() {
   const [paymentSuccessMsg, setPaymentSuccessMsg] = useState<string>("");
   const [paymentContext, setPaymentContext] = useState<PayrollPaymentContext | null>(null);
   const [paymentAmountInput, setPaymentAmountInput] = useState<string>("");
-  const [periodMonth, setPeriodMonth] = useState<string>(new Date().toISOString().slice(0, 7));
-  const [periodHalf, setPeriodHalf] = useState<"1" | "2">("1");
-  const [periodWeek, setPeriodWeek] = useState<string>(toWeekInputValue(new Date()));
+  const [selectedPaymentDate, setSelectedPaymentDate] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
+  const [calendarView, setCalendarView] = useState<{ year: number; month: number }>(() => {
+    const d = new Date();
+    return { year: d.getFullYear(), month: d.getMonth() };
+  });
+  const [overrideHalf, setOverrideHalf] = useState<"1" | "2" | null>(null);
+
   const [adjustmentDraft, setAdjustmentDraft] = useState<AdjustmentDraft>(emptyAdjustmentDraft);
   const [adjustments, setAdjustments] = useState<PayrollPaymentAdjustment[]>([]);
   const [payments, setPayments] = useState<PayrollPaymentRecord[]>([]);
   const [loadingPayments, setLoadingPayments] = useState(false);
   const [receiptSearchQuery, setReceiptSearchQuery] = useState("");
   const [previewPayment, setPreviewPayment] = useState<PayrollPaymentRecord | null>(null);
+  const [paymentToAnnull, setPaymentToAnnull] = useState<PayrollPaymentRecord | null>(null);
+  const [annulling, setAnnulling] = useState(false);
   const [tenantInfo, setTenantInfo] = useState<TenantReceiptInfo>({
     nombre_negocio: "Cloudix",
     rnc: "",
@@ -139,6 +155,71 @@ export function Nomina() {
     telefono: "",
     logo_url: "",
   });
+
+  const selectedDateObj = useMemo(() => {
+    const [y, m, d] = selectedPaymentDate.split("-").map(Number);
+    return new Date(y || 2026, (m || 1) - 1, d || 1);
+  }, [selectedPaymentDate]);
+
+  const periodMonth = useMemo(() => selectedPaymentDate.slice(0, 7), [selectedPaymentDate]);
+  const defaultHalf = useMemo<"1" | "2">(() => {
+    const day = parseInt(selectedPaymentDate.slice(8, 10), 10);
+    return day <= 15 ? "1" : "2";
+  }, [selectedPaymentDate]);
+  const periodHalf = overrideHalf ?? defaultHalf;
+  const periodWeek = useMemo(() => toWeekInputValue(selectedDateObj), [selectedDateObj]);
+
+  const calendarDaysInMonth = useMemo(() => {
+    return new Date(calendarView.year, calendarView.month + 1, 0).getDate();
+  }, [calendarView]);
+
+  const calendarFirstDayOfWeek = useMemo(() => {
+    return (new Date(calendarView.year, calendarView.month, 1).getDay() + 6) % 7;
+  }, [calendarView]);
+
+  const todayIsoDate = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }, []);
+
+  const formattedSelectedDateDisplay = useMemo(() => {
+    return selectedDateObj.toLocaleDateString("es-DO", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  }, [selectedDateObj]);
+
+  function handleSelectDay(dayNum: number) {
+    const y = calendarView.year;
+    const m = calendarView.month + 1;
+    const formatted = `${y}-${String(m).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
+    setSelectedPaymentDate(formatted);
+    setOverrideHalf(null);
+  }
+
+  function handlePrevMonth() {
+    setCalendarView((prev) => {
+      if (prev.month === 0) return { year: prev.year - 1, month: 11 };
+      return { year: prev.year, month: prev.month - 1 };
+    });
+  }
+
+  function handleNextMonth() {
+    setCalendarView((prev) => {
+      if (prev.month === 11) return { year: prev.year + 1, month: 0 };
+      return { year: prev.year, month: prev.month + 1 };
+    });
+  }
+
+  function handleToday() {
+    const d = new Date();
+    const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    setCalendarView({ year: d.getFullYear(), month: d.getMonth() });
+    setSelectedPaymentDate(todayStr);
+    setOverrideHalf(null);
+  }
 
   useEffect(() => {
     if (!tenantId) return;
@@ -832,17 +913,20 @@ export function Nomina() {
     setPaymentMessage("");
     setPaymentSuccessMsg("");
     try {
+      const paymentDateIso = new Date(`${selectedPaymentDate}T12:00:00Z`).toISOString();
       const payload: PayrollCreatePaymentRequest = {
         employeeId: selectedEmployee.id,
         period: paymentContext.period,
         frequency: selectedEmployee.frequency,
         paymentAmountCents,
+        paymentDate: selectedPaymentDate,
         receiptSnapshot: JSON.stringify({
           employee: selectedEmployee,
           context: paymentContext,
           paymentAmountCents,
           adjustments,
-          createdAt: new Date().toISOString(),
+          paymentDate: selectedPaymentDate,
+          createdAt: paymentDateIso,
         }),
         adjustments,
       };
@@ -854,7 +938,7 @@ export function Nomina() {
       setPaymentAmountInput("");
       setAdjustments([]);
       setAdjustmentDraft(emptyAdjustmentDraft);
-      setPaymentSuccessMsg(`Pago de ${formatMoney(paymentAmountCents)} registrado exitosamente.`);
+      setPaymentSuccessMsg(`Pago de ${formatMoney(paymentAmountCents)} registrado para el día ${selectedPaymentDate}.`);
       setPaymentContext(committedContext);
       await loadPayments();
       setActiveTab("recibos");
@@ -862,6 +946,40 @@ export function Nomina() {
       setPaymentMessage(error instanceof Error ? error.message : "No se pudo registrar el pago.");
     } finally {
       setPaying(false);
+    }
+  }
+
+  async function handleConfirmAnnullPayment() {
+    if (!paymentToAnnull || !tenantId || !activeSucursalId) return;
+    setAnnulling(true);
+    setPaymentMessage("");
+    try {
+      if (isPayrollLocalStorageAvailable()) {
+        await executePayrollCommandLocally({
+          type: "payroll.deletePayment",
+          tenantId,
+          sucursalId: activeSucursalId,
+          paymentId: paymentToAnnull.id,
+        });
+      } else {
+        await deletePayrollPaymentInCloud(supabase as never, paymentToAnnull.id);
+      }
+
+      // Reconciliar en Supabase si estamos online
+      if (navigator.onLine && !(await isDesktopCloudUnavailable().catch(() => true))) {
+        await supabase.from("gastos").delete().eq("payroll_payment_id", paymentToAnnull.id);
+        await supabase.from("nomina_pagos").delete().eq("id", paymentToAnnull.id);
+      }
+
+      setPayments((curr) => curr.filter((item) => item.id !== paymentToAnnull.id));
+      setPaymentSuccessMsg(`Pago de ${paymentToAnnull.employeeName} anulado exitosamente. Se revirtió el asiento en gastos.`);
+      setPaymentToAnnull(null);
+      await loadPayments();
+      await loadEmployees();
+    } catch (err: any) {
+      setPaymentMessage(`Error al anular pago: ${err.message}`);
+    } finally {
+      setAnnulling(false);
     }
   }
 
@@ -1038,18 +1156,21 @@ export function Nomina() {
               />
             </div>
 
-            <div className="flex items-center gap-2">
-              <select
+            <div className="flex items-center gap-2 min-w-[200px]">
+              <Select
                 value={frequencyFilter}
-                onChange={(e) => setFrequencyFilter(e.target.value)}
-                aria-label="Filtrar por frecuencia de pago"
-                className="bg-[#131313] border border-[rgba(72,72,71,0.25)] rounded-[10px] px-3.5 py-2 text-[12px] text-[#adaaaa] outline-none font-['Inter',sans-serif] cursor-pointer"
+                onValueChange={(val) => setFrequencyFilter(val)}
               >
-                <option value="all">Todas las Frecuencias</option>
-                <option value="monthly">Mensual</option>
-                <option value="biweekly">Quincenal</option>
-                <option value="weekly">Semanal</option>
-              </select>
+                <SelectTrigger className="bg-[#131313] border border-[rgba(72,72,71,0.25)] rounded-[10px] px-3.5 py-2 text-[12px] text-[#adaaaa] outline-none font-['Inter',sans-serif] h-[40px]">
+                  <SelectValue placeholder="Todas las Frecuencias" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#191919] border border-[rgba(72,72,71,0.3)] text-white">
+                  <SelectItem value="all">Todas las Frecuencias</SelectItem>
+                  <SelectItem value="monthly">Mensual</SelectItem>
+                  <SelectItem value="biweekly">Quincenal</SelectItem>
+                  <SelectItem value="weekly">Semanal</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
@@ -1207,37 +1328,121 @@ export function Nomina() {
                   </h3>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="flex flex-col gap-4">
                   <div className="flex flex-col gap-1.5">
                     <label className="text-[11px] font-['Inter',sans-serif] uppercase tracking-[0.5px] text-[#adaaaa]">
                       Empleado a Liquidar
                     </label>
-                    <select
+                    <Select
                       value={selectedEmployeeId}
-                      onChange={(e) => setSelectedEmployeeId(e.target.value)}
-                      className="bg-[#191919] border border-[rgba(72,72,71,0.3)] focus:border-[#ff906d] rounded-[10px] px-3.5 py-2.5 text-[13px] text-white outline-none font-['Inter',sans-serif] cursor-pointer"
+                      onValueChange={(val) => setSelectedEmployeeId(val)}
                     >
-                      <option value="">Seleccione un empleado...</option>
-                      {employees
-                        .filter((e) => e.isActive)
-                        .map((e) => (
-                          <option key={e.id} value={e.id}>
-                            {e.firstName} {e.lastName} — {e.role} ({frequencyLabel(e.frequency)})
-                          </option>
-                        ))}
-                    </select>
+                      <SelectTrigger className="w-full bg-[#191919] border-[rgba(72,72,71,0.3)] text-white focus:border-[#ff906d] h-[42px] rounded-[10px] text-[13px]">
+                        <SelectValue placeholder="Seleccione un empleado..." />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#191919] border-[rgba(72,72,71,0.3)] text-white max-h-60">
+                        {employees
+                          .filter((e) => e.isActive)
+                          .map((e) => (
+                            <SelectItem key={e.id} value={e.id} className="text-white hover:bg-white/10 cursor-pointer text-[13px]">
+                              {e.firstName} {e.lastName} — {e.role} ({frequencyLabel(e.frequency)})
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
                   </div>
 
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-[11px] font-['Inter',sans-serif] uppercase tracking-[0.5px] text-[#adaaaa]">
-                      Mes de Liquidación
-                    </label>
-                    <input
-                      type="month"
-                      value={periodMonth}
-                      onChange={(e) => setPeriodMonth(e.target.value)}
-                      className="bg-[#191919] border border-[rgba(72,72,71,0.3)] focus:border-[#ff906d] rounded-[10px] px-3.5 py-2.5 text-[13px] text-white outline-none font-['Inter',sans-serif]"
-                    />
+                  {/* Calendario integrado de Selección de Mes y Día */}
+                  <div className="flex flex-col gap-2.5 p-4 bg-[#161616] border border-[rgba(72,72,71,0.25)] rounded-[14px]">
+                    <div className="flex items-center justify-between pb-2 border-b border-[rgba(72,72,71,0.15)]">
+                      <div className="flex items-center gap-2">
+                        <CalendarDays className="size-4 text-[#ff906d]" />
+                        <span className="font-['Space_Grotesk',sans-serif] font-bold text-[14px] uppercase tracking-wider text-white">
+                          {MONTH_NAMES_ES[calendarView.month]} {calendarView.year}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={handlePrevMonth}
+                          className="size-7 rounded-[8px] bg-[#191919] border border-[rgba(72,72,71,0.3)] hover:border-[#ff906d] text-white flex items-center justify-center transition-colors cursor-pointer"
+                          title="Mes anterior"
+                        >
+                          <ChevronLeft className="size-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleToday}
+                          className="px-2.5 h-7 rounded-[8px] bg-[#191919] border border-[rgba(72,72,71,0.3)] hover:border-[#ff906d] text-[11px] font-bold uppercase tracking-wider text-[#adaaaa] hover:text-white transition-colors cursor-pointer"
+                          title="Ir a hoy"
+                        >
+                          Hoy
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleNextMonth}
+                          className="size-7 rounded-[8px] bg-[#191919] border border-[rgba(72,72,71,0.3)] hover:border-[#ff906d] text-white flex items-center justify-center transition-colors cursor-pointer"
+                          title="Mes siguiente"
+                        >
+                          <ChevronRight className="size-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Días de la semana */}
+                    <div className="grid grid-cols-7 gap-1 text-center py-1">
+                      {WEEKDAY_NAMES_ES.map((dayName) => (
+                        <div key={dayName} className="text-[10px] font-bold uppercase tracking-wider text-[#737373]">
+                          {dayName}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Cuadrícula de todos los días del mes */}
+                    <div className="grid grid-cols-7 gap-1 text-center">
+                      {Array.from({ length: calendarFirstDayOfWeek }).map((_, idx) => (
+                        <div key={`blank-${idx}`} className="h-8" />
+                      ))}
+                      {Array.from({ length: calendarDaysInMonth }, (_, idx) => idx + 1).map((dayNum) => {
+                        const dateStr = `${calendarView.year}-${String(calendarView.month + 1).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`;
+                        const isSelected = dateStr === selectedPaymentDate;
+                        const isToday = dateStr === todayIsoDate;
+                        return (
+                          <button
+                            key={dayNum}
+                            type="button"
+                            onClick={() => handleSelectDay(dayNum)}
+                            className={`h-8 rounded-[8px] text-[12px] font-['Space_Grotesk',sans-serif] font-bold transition-all cursor-pointer flex items-center justify-center ${
+                              isSelected
+                                ? "bg-[#ff906d] text-black shadow-[0_0_12px_rgba(255,144,109,0.35)] scale-105"
+                                : isToday
+                                ? "bg-[#222] border border-[#ff906d] text-[#ff906d] hover:bg-[#2a2a2a]"
+                                : "bg-[#191919] border border-transparent text-[#e5e5e5] hover:bg-[#252525] hover:border-[rgba(72,72,71,0.3)]"
+                            }`}
+                          >
+                            {dayNum}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Banner de fecha seleccionada */}
+                    <div className="mt-2 pt-2.5 border-t border-[rgba(72,72,71,0.15)] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 text-[12px] text-[#adaaaa]">
+                        <Calendar className="size-3.5 text-[#ff906d]" />
+                        <span>Día seleccionado para el recibo:</span>
+                        <strong className="text-white capitalize">{formattedSelectedDateDisplay}</strong>
+                      </div>
+                      <span className="text-[11px] px-2.5 py-0.5 rounded-[6px] bg-[rgba(255,144,109,0.1)] border border-[rgba(255,144,109,0.3)] text-[#ff906d] font-bold uppercase tracking-wider w-fit">
+                        {selectedFrequency === "biweekly"
+                          ? periodHalf === "1"
+                            ? "1ra Quincena (1 - 15)"
+                            : "2da Quincena (16 - Fin)"
+                          : selectedFrequency === "weekly"
+                          ? `Semana ${periodWeek}`
+                          : `Mes ${MONTH_NAMES_ES[selectedDateObj.getMonth()]}`}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
@@ -1270,7 +1475,7 @@ export function Nomina() {
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
-                        onClick={() => setPeriodHalf("1")}
+                        onClick={() => setOverrideHalf("1")}
                         className={`py-2 rounded-[8px] font-['Space_Grotesk',sans-serif] text-[12px] font-bold uppercase transition-all ${
                           periodHalf === "1"
                             ? "bg-[rgba(255,144,109,0.15)] border border-[#ff906d] text-[#ff906d]"
@@ -1281,7 +1486,7 @@ export function Nomina() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setPeriodHalf("2")}
+                        onClick={() => setOverrideHalf("2")}
                         className={`py-2 rounded-[8px] font-['Space_Grotesk',sans-serif] text-[12px] font-bold uppercase transition-all ${
                           periodHalf === "2"
                             ? "bg-[rgba(255,144,109,0.15)] border border-[#ff906d] text-[#ff906d]"
@@ -1295,16 +1500,13 @@ export function Nomina() {
                 )}
 
                 {selectedFrequency === "weekly" && (
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-[11px] font-['Inter',sans-serif] uppercase tracking-[0.5px] text-[#adaaaa]">
+                  <div className="flex items-center justify-between p-3 bg-[#191919] border border-[rgba(72,72,71,0.25)] rounded-[10px]">
+                    <span className="text-[11px] font-['Inter',sans-serif] uppercase tracking-[0.5px] text-[#adaaaa]">
                       Semana correspondiente
-                    </label>
-                    <input
-                      type="week"
-                      value={periodWeek}
-                      onChange={(e) => setPeriodWeek(e.target.value)}
-                      className="bg-[#191919] border border-[rgba(72,72,71,0.3)] focus:border-[#ff906d] rounded-[10px] px-3.5 py-2.5 text-[13px] text-white outline-none font-['Inter',sans-serif]"
-                    />
+                    </span>
+                    <span className="font-['Space_Grotesk',sans-serif] font-bold text-[13px] text-[#ff906d]">
+                      {periodWeek}
+                    </span>
                   </div>
                 )}
               </div>
@@ -1326,16 +1528,20 @@ export function Nomina() {
                     <label className="text-[11px] font-['Inter',sans-serif] uppercase tracking-[0.5px] text-[#adaaaa]">
                       Tipo de Ajuste
                     </label>
-                    <select
+                    <Select
                       value={adjustmentDraft.kind}
-                      onChange={(e) =>
-                        setAdjustmentDraft((c) => ({ ...c, kind: e.target.value as "bonus" | "discount" }))
+                      onValueChange={(val) =>
+                        setAdjustmentDraft((c) => ({ ...c, kind: val as "bonus" | "discount" }))
                       }
-                      className="bg-[#191919] border border-[rgba(72,72,71,0.3)] focus:border-[#ff906d] rounded-[10px] px-3 py-2 text-[12px] text-white outline-none"
                     >
-                      <option value="bonus">+ Bonificación / Extra</option>
-                      <option value="discount">- Descuento / Deducción</option>
-                    </select>
+                      <SelectTrigger className="bg-[#191919] border border-[rgba(72,72,71,0.3)] focus:border-[#ff906d] rounded-[10px] px-3 py-2 text-[12px] text-white outline-none h-[38px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#191919] border border-[rgba(72,72,71,0.3)] text-white">
+                        <SelectItem value="bonus">+ Bonificación / Extra</SelectItem>
+                        <SelectItem value="discount">- Descuento / Deducción</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   <div className="flex flex-col gap-1.5">
@@ -1666,7 +1872,7 @@ export function Nomina() {
                       <th className="py-3 px-4">Empleado</th>
                       <th className="py-3 px-4">Período</th>
                       <th className="py-3 px-4">Modalidad</th>
-                      <th className="py-3 px-4">Fecha de Emisión</th>
+                      <th className="py-3 px-4">Fecha de Pago</th>
                       <th className="py-3 px-4 text-right">Monto Pagado</th>
                       <th className="py-3 px-4 text-center">Acciones</th>
                     </tr>
@@ -1697,13 +1903,7 @@ export function Nomina() {
                           </span>
                         </td>
                         <td className="py-3.5 px-4 text-[12px] text-[#adaaaa] font-['Inter',sans-serif]">
-                          {p.createdAt ? new Date(p.createdAt).toLocaleDateString("es-DO", {
-                            day: "2-digit",
-                            month: "short",
-                            year: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          }) : "N/A"}
+                          {formatPaymentDisplayDate(p)}
                         </td>
                         <td className="py-3.5 px-4 text-right">
                           <span className="font-['Space_Grotesk',sans-serif] font-bold text-[14px] text-[#59ee50]">
@@ -1711,14 +1911,27 @@ export function Nomina() {
                           </span>
                         </td>
                         <td className="py-3.5 px-4 text-center">
-                          <button
-                            type="button"
-                            onClick={() => setPreviewPayment(p)}
-                            className="bg-[#191919] hover:bg-[#222] border border-[rgba(72,72,71,0.3)] hover:border-[#ff906d] text-white px-3 py-1.5 rounded-[8px] text-[12px] font-['Space_Grotesk',sans-serif] font-bold uppercase transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
-                          >
-                            <Eye className="size-3.5 text-[#ff906d]" />
-                            Ver Recibo
-                          </button>
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setPreviewPayment(p)}
+                              className="bg-[#191919] hover:bg-[#222] border border-[rgba(72,72,71,0.3)] hover:border-[#ff906d] text-white px-3 py-1.5 rounded-[8px] text-[12px] font-['Space_Grotesk',sans-serif] font-bold uppercase transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
+                              title="Ver comprobante de pago"
+                            >
+                              <Eye className="size-3.5 text-[#ff906d]" />
+                              Ver Recibo
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPaymentToAnnull(p)}
+                              disabled={annulling}
+                              className="bg-transparent hover:bg-destructive/10 border border-destructive/30 hover:border-destructive text-destructive px-3 py-1.5 rounded-[8px] text-[12px] font-['Space_Grotesk',sans-serif] font-bold uppercase transition-all inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                              title="Anular pago y revertir gasto"
+                            >
+                              <Trash2 className="size-3.5" />
+                              Anular
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1881,17 +2094,21 @@ export function Nomina() {
                   <label className="text-[11px] font-['Inter',sans-serif] uppercase tracking-[0.5px] text-[#adaaaa]">
                     Frecuencia de Pago
                   </label>
-                  <select
+                  <Select
                     value={employeeDraft.frequency}
-                    onChange={(e) =>
-                      setEmployeeDraft((c) => ({ ...c, frequency: e.target.value as PayrollFrequency }))
+                    onValueChange={(val) =>
+                      setEmployeeDraft((c) => ({ ...c, frequency: val as PayrollFrequency }))
                     }
-                    className="bg-[#191919] border border-[rgba(72,72,71,0.3)] focus:border-[#ff906d] rounded-[10px] px-3.5 py-2.5 text-[13px] text-white outline-none font-['Inter',sans-serif] cursor-pointer"
                   >
-                    <option value="monthly">Mensual</option>
-                    <option value="biweekly">Quincenal</option>
-                    <option value="weekly">Semanal</option>
-                  </select>
+                    <SelectTrigger className="bg-[#191919] border border-[rgba(72,72,71,0.3)] focus:border-[#ff906d] rounded-[10px] px-3.5 py-2.5 text-[13px] text-white outline-none font-['Inter',sans-serif] h-[42px]">
+                      <SelectValue placeholder="Frecuencia de Pago" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#191919] border border-[rgba(72,72,71,0.3)] text-white">
+                      <SelectItem value="monthly">Mensual</SelectItem>
+                      <SelectItem value="biweekly">Quincenal</SelectItem>
+                      <SelectItem value="weekly">Semanal</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
@@ -1954,8 +2171,46 @@ export function Nomina() {
         onConfirm={handleConfirmDisable}
         onCancel={() => setConfirmDeactivate({ open: false, employeeId: "", employeeName: "" })}
       />
+
+      {/* CONFIRM MODAL: ANULAR PAGO */}
+      <ConfirmModal
+        open={Boolean(paymentToAnnull)}
+        title="¿Anular pago de nómina?"
+        message={`¿Estás seguro de anular el pago de ${paymentToAnnull ? formatMoney(paymentToAnnull.amountPaidCents) : ""} para ${paymentToAnnull?.employeeName || ""}? Se revertirá el asiento contable en gastos y el balance del empleado quedará restablecido.`}
+        confirmLabel={annulling ? "Anulando..." : "Sí, Anular Pago"}
+        cancelLabel="Cancelar"
+        variant="danger"
+        onConfirm={handleConfirmAnnullPayment}
+        onCancel={() => setPaymentToAnnull(null)}
+      />
     </div>
   );
+}
+
+function formatPaymentDisplayDate(p: PayrollPaymentRecord): string {
+  try {
+    if (p.receiptSnapshot) {
+      const snap = JSON.parse(p.receiptSnapshot);
+      if (snap.paymentDate) {
+        const [y, m, d] = snap.paymentDate.split("-").map(Number);
+        if (y && m && d) {
+          return new Date(y, m - 1, d).toLocaleDateString("es-DO", {
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+          });
+        }
+      }
+    }
+  } catch {
+    /* fallback */
+  }
+  if (!p.createdAt) return "N/A";
+  return new Date(p.createdAt).toLocaleDateString("es-DO", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 async function getLocalPaymentContext(

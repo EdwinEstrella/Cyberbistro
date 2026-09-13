@@ -413,4 +413,48 @@ describe("local sqlite payroll", () => {
     expect(filteredHistory).toHaveLength(1);
     expect(filteredHistory[0].id).toBe(payment.paymentId);
   });
+
+  it("deletes a payroll payment and cascades to associated expense and adjustments", () => {
+    const employeeId = repository.upsertEmployee("tenant-1", "branch-1", {
+      firstName: "Carlos",
+      lastName: "Gomez",
+      role: "Mesero",
+      baseSalaryCents: 3000000,
+      frequency: "monthly",
+      isActive: true,
+    });
+
+    const payment = repository.createPayment("tenant-1", "branch-1", {
+      employeeId,
+      period: "2026-09",
+      frequency: "monthly",
+      paymentAmountCents: 2500000,
+      paymentDate: "2026-09-14",
+      receiptSnapshot: JSON.stringify({ paymentDate: "2026-09-14" }),
+      adjustments: [
+        { kind: "discount", type: "adelanto", scope: "currentPayment", amountCents: 500000, note: "Adelanto" },
+      ],
+    });
+
+    expect(repository.getPayments("tenant-1", "branch-1")).toHaveLength(1);
+    expect(db.prepare("SELECT COUNT(*) as count FROM gastos WHERE payroll_payment_id = ?").get(payment.paymentId)).toEqual({ count: 1 });
+
+    // Anular el pago
+    repository.deletePayment("tenant-1", "branch-1", payment.paymentId);
+
+    // Verificar que se borró el pago, el gasto y el ajuste
+    expect(repository.getPayments("tenant-1", "branch-1")).toHaveLength(0);
+    expect(db.prepare("SELECT COUNT(*) as count FROM gastos WHERE payroll_payment_id = ?").get(payment.paymentId)).toEqual({ count: 0 });
+    expect(db.prepare("SELECT COUNT(*) as count FROM payroll_payment_adjustments WHERE payment_id = ?").get(payment.paymentId)).toEqual({ count: 0 });
+
+    // Verificar que el cálculo de balance del empleado se restablece
+    const context = repository.getPaymentContext("tenant-1", "branch-1", {
+      employeeId,
+      period: "2026-09",
+      frequency: "monthly",
+      adjustments: [],
+    });
+    expect(context.alreadyPaidCents).toBe(0);
+    expect(context.pendingCents).toBe(3000000);
+  });
 });
