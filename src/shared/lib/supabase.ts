@@ -35,6 +35,22 @@ export const supabase = createClient(url, publishableKey, {
   global: { fetch: customFetch },
 });
 
+export function createIsolatedAuthClient() {
+  return createClient(url!, publishableKey!, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+      detectSessionInUrl: false,
+      storage: {
+        getItem: () => null,
+        setItem: () => {},
+        removeItem: () => {},
+      },
+    },
+    global: { fetch: customFetch },
+  });
+}
+
 export function getSupabaseResolvedBaseUrl(): string {
   return url!;
 }

@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Navigate, useNavigate } from "react-router";
 import QRCode from "qrcode";
 import { ExternalLink } from "lucide-react";
-import { supabase } from "../../../shared/lib/supabase";
+import { supabase, createIsolatedAuthClient } from "../../../shared/lib/supabase";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { useTenantCurrency } from "../../../shared/hooks/useTenantCurrency";
@@ -932,9 +932,15 @@ function UsuariosPanel() {
   async function handleCreate() {
     if (!email.trim() || !password.trim() || selectedBranchIds.length === 0) { setError("Completá los campos y asigná al menos una sucursal."); return; }
     if (!tenantId || !tenantUser?.email) return;
+
+    const staffEmail = email.trim();
+    if (teamUsers.some(u => u.email.toLowerCase() === staffEmail.toLowerCase())) {
+      setError("Este usuario ya está registrado en este restaurante.");
+      return;
+    }
+
     setCreating(true); setError(""); setSuccess("");
     
-    const staffEmail = email.trim();
     const managedRole = rol as Parameters<typeof countActiveUsersByRole>[1];
     const currentForRole = countActiveUsersByRole(teamUsers, managedRole);
     const roleLimit = getLimitForRole(tenantLimitConfig, managedRole);
@@ -943,12 +949,54 @@ function UsuariosPanel() {
       setCreating(false); return;
     }
 
-    const tempClient = supabase;
+    const tempClient = createIsolatedAuthClient();
 
+    let newUserId: string | null = null;
     const { data: signData, error: authError } = await tempClient.auth.signUp({ email: staffEmail, password });
-    if (authError) { setError((authError as any).message); setCreating(false); return; }
+    
+    if (authError) {
+      const isAlreadyRegistered =
+        /already registered|already exists|ya está registrado/i.test(authError.message) ||
+        (authError as any).status === 422 ||
+        (authError as any).status === 400;
 
-    const newUserId = (signData as any)?.user?.id;
+      if (isAlreadyRegistered) {
+        const { data: signInData, error: signInError } = await tempClient.auth.signInWithPassword({
+          email: staffEmail,
+          password,
+        });
+        if (signInError || !signInData.user?.id) {
+          setError(`El correo ${staffEmail} ya está registrado en el sistema. Verificá la contraseña ingresada.`);
+          setCreating(false);
+          return;
+        }
+        newUserId = signInData.user.id;
+      } else {
+        setError((authError as any).message);
+        setCreating(false);
+        return;
+      }
+    } else {
+      newUserId = signData?.user?.id ?? null;
+      if (signData?.user && Array.isArray(signData.user.identities) && signData.user.identities.length === 0) {
+        const { data: signInData, error: signInError } = await tempClient.auth.signInWithPassword({
+          email: staffEmail,
+          password,
+        });
+        if (signInError || !signInData.user?.id) {
+          setError(`El correo ${staffEmail} ya está registrado en el sistema. Verificá la contraseña ingresada.`);
+          setCreating(false);
+          return;
+        }
+        newUserId = signInData.user.id;
+      }
+    }
+
+    if (!newUserId) {
+      setError("No se pudo obtener el identificador de autenticación del usuario.");
+      setCreating(false);
+      return;
+    }
 
     const { error: insertError } = await supabase.rpc("cloudix_owner_create_staff_membership", {
       p_auth_user_id: newUserId,
