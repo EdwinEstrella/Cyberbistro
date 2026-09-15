@@ -244,6 +244,67 @@ describe("PayrollSyncClient", () => {
     const payment = store.claim(Date.now()).find((operation) => operation.tableName === "payroll_payments");
     await expect(client.push(payment as DurableOperation)).rejects.toThrow("Upsert failed: Not authorized");
   });
+
+  it("reconciles a legacy close only when its exact remote id is already closed", async () => {
+    const from = vi.fn(() => ({
+      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: "cycle-1", tenant_id: "tenant-1", closed_at: "2026-09-15T12:00:00Z" }, error: null }) }) }),
+    }));
+    const cycleClient = new PayrollSyncClient({ from } as never);
+    const response = await cycleClient.push({
+      id: "close-1", tenantId: "tenant-1", branchId: "branch-1", tableName: "cierres_operativos", rowId: "cycle-1", op: "upsert",
+      payload: { type: "orders.cycle.close", id: "cycle-1" }, payloadHash: "hash", sequence: 0, deviceId: "device", status: "syncing", leaseUntil: 0, result: null,
+    });
+    expect(response.result).toMatchObject({ reconciled: true, audit: "remote_cycle_already_closed" });
+  });
+
+  it("blocks a legacy close when its exact remote row is absent", async () => {
+    const from = vi.fn(() => ({
+      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
+    }));
+    const cycleClient = new PayrollSyncClient({ from } as never);
+    const response = await cycleClient.push({
+      id: "close-1", tenantId: "tenant-1", branchId: "branch-1", tableName: "cierres_operativos", rowId: "cycle-1", op: "upsert",
+      payload: { type: "orders.cycle.close", id: "cycle-1" }, payloadHash: "hash", sequence: 0, deviceId: "device", status: "syncing", leaseUntil: 0, result: null,
+    });
+    expect(response.permanent).toMatchObject({ category: "cycle_close_requires_intervention", retryable: false });
+  });
+
+  it("reconciles cycle-open when exact matching open remote row already exists", async () => {
+    const from = vi.fn(() => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: async () => ({
+            data: {
+              id: "cycle-1",
+              tenant_id: "tenant-1",
+              business_day: "2026-09-15",
+              cycle_number: 1,
+              efectivo_inicial: 1000,
+              closed_at: null,
+            },
+            error: null,
+          }),
+        }),
+      }),
+    }));
+    const cycleClient = new PayrollSyncClient({ from } as never);
+    const response = await cycleClient.push({
+      id: "open-1",
+      tenantId: "tenant-1",
+      branchId: "main-process-default",
+      tableName: "cierres_operativos",
+      rowId: "cycle-1",
+      op: "upsert",
+      payload: { type: "orders.cycle.open", id: "cycle-1", businessDay: "2026-09-15", openingCash: 1000 },
+      payloadHash: "hash",
+      sequence: 0,
+      deviceId: "device",
+      status: "syncing",
+      leaseUntil: 0,
+      result: null,
+    });
+    expect(response.result).toMatchObject({ reconciled: true, audit: "remote_cycle_matches_exact_id" });
+  });
 });
 
 function createFakeSdk() {

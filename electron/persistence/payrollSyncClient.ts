@@ -73,6 +73,9 @@ export class PayrollSyncClient implements ServerSyncClient {
   }
 
   async push(operation: DurableOperation): Promise<PushResponse> {
+    if (operation.tableName === "cierres_operativos") {
+      return this.pushOperationalCycle(operation);
+    }
     if (operation.op === "delete") {
       return this.deleteRemote(operation);
     }
@@ -90,6 +93,64 @@ export class PayrollSyncClient implements ServerSyncClient {
     }
 
     return { result: { synced: true, id: operation.rowId, remoteTable: mapped.remoteTable } };
+  }
+
+  private async pushOperationalCycle(operation: DurableOperation): Promise<PushResponse> {
+    const client: any = await this.clientPromise;
+    const remote = await client.from("cierres_operativos")
+      .select("id,tenant_id,business_day,cycle_number,efectivo_inicial,closed_at")
+      .eq("id", operation.rowId)
+      .maybeSingle();
+    if (remote.error) throw new Error(`Operational cycle lookup failed: ${remote.error.message}`);
+
+    const payload = operation.payload ?? {};
+    if (payload.type === "orders.cycle.close") {
+      if (remote.data && remote.data.tenant_id === operation.tenantId && remote.data.closed_at) {
+        return { result: { synced: true, reconciled: true, audit: "remote_cycle_already_closed", id: operation.rowId } };
+      }
+      return { permanent: permanentReason(
+        remote.data ? "Operational close diverges from the remote cycle and requires intervention" : "Operational close has no exact remote cycle to reconcile",
+        "cycle_close_requires_intervention",
+        operation.tableName,
+      ) };
+    }
+
+    if (remote.data) {
+      const tenantMatches = remote.data.tenant_id === operation.tenantId;
+      const isOpen = remote.data.closed_at === null;
+      const dayMatches = !payload.businessDay || remote.data.business_day === payload.businessDay;
+      const cashMatches = payload.openingCash == null || Number(remote.data.efectivo_inicial) === payload.openingCash;
+      if (tenantMatches && isOpen && dayMatches && cashMatches) {
+        return { result: { synced: true, reconciled: true, audit: "remote_cycle_matches_exact_id", id: operation.rowId } };
+      }
+      return { permanent: permanentReason("Operational cycle open diverges from the exact remote row and requires intervention", "cycle_open_diverged", operation.tableName) };
+    }
+
+    const cycleNumber = payload.cycleNumber;
+    const businessDay = payload.businessDay;
+    const openingCash = payload.openingCash;
+    if (payload.type !== "orders.cycle.open" || !Number.isInteger(cycleNumber) || (cycleNumber as number) < 1 || typeof businessDay !== "string" || typeof openingCash !== "number" || !Number.isFinite(openingCash) || openingCash < 0 || !isUuid(operation.branchId ?? "")) {
+      return { permanent: permanentReason("Operational cycle open lacks the current remote contract", "cycle_open_contract_missing", operation.tableName) };
+    }
+
+    const expected = {
+      id: operation.rowId,
+      tenant_id: operation.tenantId,
+      sucursal_id: operation.branchId,
+      business_day: businessDay,
+      cycle_number: cycleNumber,
+      efectivo_inicial: openingCash,
+      closed_at: null,
+    };
+
+    const inserted = await client.from("cierres_operativos").insert(expected).select("id,tenant_id,business_day,cycle_number,efectivo_inicial,closed_at");
+    if (inserted.error) {
+      return { permanent: permanentReason(`Operational cycle open was not acknowledged: ${inserted.error.message}`, "cycle_open_unacknowledged", operation.tableName) };
+    }
+    const row = Array.isArray(inserted.data) ? inserted.data[0] : inserted.data;
+    return cycleMatches(row, expected)
+      ? { result: { synced: true, id: operation.rowId, remoteTable: "cierres_operativos" } }
+      : { permanent: permanentReason("Operational cycle open was not acknowledged with the exact remote row", "cycle_open_unacknowledged", operation.tableName) };
   }
 
   async pull(input: { tenantId: string; cursor: string | null }): Promise<PullBatch> {
@@ -409,4 +470,14 @@ function unsupportedValue(field: string, value: unknown): never {
 
 function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function cycleMatches(row: unknown, expected: Record<string, unknown>): boolean {
+  if (!row || typeof row !== "object") return false;
+  const remote = row as Record<string, unknown>;
+  return remote.id === expected.id && remote.tenant_id === expected.tenant_id && remote.business_day === expected.business_day && remote.cycle_number === expected.cycle_number && Number(remote.efectivo_inicial) === expected.efectivo_inicial && remote.closed_at === expected.closed_at;
 }

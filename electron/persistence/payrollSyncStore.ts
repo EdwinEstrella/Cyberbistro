@@ -34,7 +34,7 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
       SET status = 'pending', error_json = NULL
       WHERE tenant_id = ?
         AND (
-          table_name IN ('payroll_employees', 'payroll_payments', 'payroll_payment_adjustments', 'gasto_categorias', 'customers')
+          table_name IN ('payroll_employees', 'payroll_payments', 'payroll_payment_adjustments', 'gasto_categorias', 'customers', 'cierres_operativos')
           OR (
             table_name = 'gastos'
             AND (
@@ -64,7 +64,8 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
       return [];
     }
 
-    // We claim only pending payroll rows.
+    // Operational cycles use the same durable claim path, but the client only
+    // reconciles exact remote IDs and never applies a legacy close.
     // Payroll rows:
     // payroll_employees, payroll_payments, payroll_payment_adjustments,
     // and gastos where payload_json has expenseType = 'payroll'.
@@ -82,7 +83,7 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
             OR COALESCE(json_extract(error_json, '$.retryable'), 1) = 1
           )
           AND (
-            table_name IN ('payroll_employees', 'payroll_payments', 'payroll_payment_adjustments', 'gasto_categorias', 'customers')
+            table_name IN ('payroll_employees', 'payroll_payments', 'payroll_payment_adjustments', 'gasto_categorias', 'customers', 'cierres_operativos')
             OR (
               table_name = 'gastos'
               AND json_valid(payload_json) = 1
@@ -128,6 +129,7 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
         claimedOperations.push({
           id: row.id,
           tenantId: row.tenant_id,
+          branchId: row.branch_id,
           tableName: row.table_name,
           rowId: row.row_id,
           op: row.operation,

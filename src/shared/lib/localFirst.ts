@@ -250,6 +250,9 @@ export interface SyncOutboxEntry {
   status: "pending" | "syncing" | "synced" | "error" | "not_retryable";
   syncing_started_at?: string | null;
   error_message: string | null;
+  retry_count?: number;
+  next_attempt_at?: string | null;
+  compra_dependency_id?: string | null;
 }
 
 export interface LocalFiscalOutboxEntry {
@@ -554,8 +557,9 @@ export function resolvePurchaseOutboxInsertFailure(
     normalized.includes("unique constraint")
   ) {
     return {
-      disposition: "mark_synced",
-      reason: `Registro de ${entry.table_name} ya existe en servidor (conflicto 409 resuelto); se confirma sin reescribir.`,
+      disposition: "retryable_failure",
+      retryStatus: "retryable",
+      reason: `El servidor informó conflicto para ${entry.table_name}, pero no confirmó una fila equivalente; se conserva para reintento.`,
     };
   }
 
@@ -591,8 +595,11 @@ export interface OutboxConflictGuardrail {
 }
 
 const PAGE_SIZE = 250;
-export const LOCAL_FIRST_DB_VERSION = 11;
+export const LOCAL_FIRST_DB_VERSION = 12;
 const SYNCING_STALE_MS = 5 * 60 * 1000;
+const MAX_TRANSIENT_SYNC_RETRIES = 4;
+const TRANSIENT_RETRY_BASE_MS = 1_000;
+const TRANSIENT_RETRY_MAX_MS = 60_000;
 export const FULL_REFRESH_ON_SYNC_TABLES = [
   "tenant_users",
   "platos",
@@ -672,6 +679,8 @@ export function createSyncOutboxEntry(args: {
     status: "pending",
     syncing_started_at: null,
     error_message: null,
+    retry_count: 0,
+    next_attempt_at: null,
   };
 }
 
@@ -825,7 +834,9 @@ async function getPendingOutboxEntries(db: IDBDatabase): Promise<SyncOutboxEntry
         entries.push(entry);
         cursor.continue();
       } else {
-        resolve(selectProcessableOutboxEntries(entries));
+        hydrateCompraDependencies(db, entries)
+          .then((hydrated) => resolve(selectProcessableOutboxEntries(hydrated)))
+          .catch(reject);
       }
     };
     request.onerror = () => reject(request.error ?? new Error("No se pudo leer sync_outbox."));
@@ -833,7 +844,11 @@ async function getPendingOutboxEntries(db: IDBDatabase): Promise<SyncOutboxEntry
 }
 
 export function isOutboxEntryProcessable(entry: SyncOutboxEntry, nowMs = Date.now()): boolean {
-  if (entry.status === "pending" || entry.status === "error") return true;
+  if (entry.status === "pending") return true;
+  if (entry.status === "error") {
+    const nextAttemptAt = entry.next_attempt_at ? Date.parse(entry.next_attempt_at) : Number.NaN;
+    return Number.isNaN(nextAttemptAt) || nextAttemptAt <= nowMs;
+  }
   if (entry.status !== "syncing") return false;
   if (!entry.syncing_started_at) return true;
 
@@ -852,9 +867,46 @@ function compareOutboxEntriesByCreatedAtThenId(a: SyncOutboxEntry, b: SyncOutbox
 }
 
 export function selectProcessableOutboxEntries(entries: readonly SyncOutboxEntry[], nowMs = Date.now()): SyncOutboxEntry[] {
+  const entriesByPurchaseId = new Map<string, SyncOutboxEntry[]>();
+  for (const entry of entries) {
+    if (entry.table_name !== "compras") continue;
+    const matches = entriesByPurchaseId.get(entry.row_id) ?? [];
+    matches.push(entry);
+    entriesByPurchaseId.set(entry.row_id, matches);
+  }
+
   return [...entries]
     .filter((entry) => isOutboxEntryProcessable(entry, nowMs))
+    .filter((entry) => {
+      const compraId = getCompraDependencyId(entry);
+      if (!compraId) return true;
+      // A local purchase header must be confirmed before its RLS-protected children.
+      return !(entriesByPurchaseId.get(compraId) ?? []).some((parent) => parent.status !== "synced");
+    })
     .sort(compareOutboxEntriesByCreatedAtThenId);
+}
+
+export function resolveCompraDependencyId(
+  entry: SyncOutboxEntry,
+  localRow?: Record<string, unknown> | null
+): string | null {
+  if (entry.table_name !== "compra_detalles" && entry.table_name !== "compra_fiscal" && entry.table_name !== "cuentas_pagar") return null;
+  const compraId = entry.payload?.["compra_id"] ?? entry.compra_dependency_id ?? localRow?.["compra_id"];
+  return typeof compraId === "string" && compraId.length > 0 ? compraId : null;
+}
+
+function getCompraDependencyId(entry: SyncOutboxEntry): string | null {
+  return resolveCompraDependencyId(entry);
+}
+
+async function hydrateCompraDependencies(db: IDBDatabase, entries: readonly SyncOutboxEntry[]): Promise<SyncOutboxEntry[]> {
+  return Promise.all(entries.map(async (entry) => {
+    if (getCompraDependencyId(entry)) return entry;
+    if (entry.table_name !== "compra_detalles" && entry.table_name !== "compra_fiscal" && entry.table_name !== "cuentas_pagar") return entry;
+    const localRow = await getOneFromStore<Record<string, unknown>>(db, entry.table_name, entry.row_id);
+    const compraId = resolveCompraDependencyId(entry, localRow);
+    return compraId ? { ...entry, compra_dependency_id: compraId } : entry;
+  }));
 }
 
 async function updateOutboxEntryStatus(
@@ -873,6 +925,7 @@ async function updateOutboxEntryStatus(
       entry.status = status;
       entry.syncing_started_at = status === "syncing" ? new Date().toISOString() : null;
       if (errorMessage !== undefined) entry.error_message = errorMessage ?? null;
+      if (status === "synced" || status === "not_retryable" || status === "pending") entry.next_attempt_at = null;
       const putReq = store.put(entry);
       putReq.onerror = () => reject(putReq.error ?? new Error("No se pudo actualizar outbox."));
       putReq.onsuccess = () => resolve();
@@ -913,7 +966,7 @@ async function writeDirectlyToServer(args: {
   op: SyncOutboxEntry["op"];
   payload?: Record<string, unknown> | null;
 }): Promise<void> {
-  let result: { error?: { message?: string } | null } | null = null;
+  let result: { data?: unknown; error?: { message?: string } | null } | null = null;
   let outgoingPayload = args.payload ?? null;
   if (outgoingPayload && args.tableName === "ecf_documents" && args.op === "insert") {
     outgoingPayload = buildEcfDocumentPayloadForServer(outgoingPayload).payload;
@@ -925,17 +978,19 @@ async function writeDirectlyToServer(args: {
     ? buildServerWritePayload(args.tenantId, args.tableName, outgoingPayload)
     : null;
   if (args.op === "insert") {
-    result = await runTrackedCloudOperation(() => supabase.from(args.tableName).insert([serverPayload as Record<string, unknown>]) as any);
+    result = await runTrackedCloudOperation(() => supabase.from(args.tableName).insert([serverPayload as Record<string, unknown>]).select("id") as any);
   } else if (args.op === "update") {
-    result = await runTrackedCloudOperation(() => supabase.from(args.tableName).update(serverPayload as Record<string, unknown>).eq("id", args.rowId) as any);
+    result = await runTrackedCloudOperation(() => supabase.from(args.tableName).update(serverPayload as Record<string, unknown>).eq("id", args.rowId).select("id") as any);
   } else if (args.op === "upsert") {
-    result = await runTrackedCloudOperation(() => supabase.from(args.tableName).upsert(serverPayload as Record<string, unknown>, { onConflict: resolveUpsertConflictTarget(args.tableName) }) as any);
+    result = await runTrackedCloudOperation(() => supabase.from(args.tableName).upsert(serverPayload as Record<string, unknown>, { onConflict: resolveUpsertConflictTarget(args.tableName) }).select("id") as any);
   } else if (args.op === "delete") {
-    result = await runTrackedCloudOperation(() => supabase.from(args.tableName).delete().eq("id", args.rowId) as any);
+    result = await runTrackedCloudOperation(() => supabase.from(args.tableName).delete().eq("id", args.rowId).select("id") as any);
   }
   if (result?.error) {
     throw new Error(result.error.message || `No se pudo sincronizar ${args.tableName}.`);
   }
+  const acknowledgementFailure = getOutboxAcknowledgementFailure({ row_id: args.rowId }, result);
+  if (acknowledgementFailure) throw new Error(acknowledgementFailure);
 }
 
 export async function enqueueLocalWrite(args: {
@@ -1009,6 +1064,53 @@ export async function enqueueLocalWrite(args: {
       console.error("Error pushing outbox after local enqueue:", error);
     });
   }
+}
+
+async function scheduleOutboxRetry(
+  db: IDBDatabase,
+  entry: SyncOutboxEntry,
+  reason: string,
+  nextAttemptAt: string
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("sync_outbox", "readwrite");
+    const store = tx.objectStore("sync_outbox");
+    const getReq = store.get(entry.id);
+    getReq.onsuccess = () => {
+      const current = getReq.result as SyncOutboxEntry | undefined;
+      if (!current) { resolve(); return; }
+      current.status = "error";
+      current.syncing_started_at = null;
+      current.error_message = reason;
+      current.retry_count = (current.retry_count ?? 0) + 1;
+      current.next_attempt_at = nextAttemptAt;
+      const putReq = store.put(current);
+      putReq.onerror = () => reject(putReq.error ?? new Error("No se pudo programar reintento de outbox."));
+      putReq.onsuccess = () => resolve();
+    };
+    getReq.onerror = () => reject(getReq.error ?? new Error("No se pudo leer outbox."));
+  });
+}
+
+async function deferOutboxForDependency(db: IDBDatabase, entry: SyncOutboxEntry, reason: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("sync_outbox", "readwrite");
+    const store = tx.objectStore("sync_outbox");
+    const getReq = store.get(entry.id);
+    getReq.onsuccess = () => {
+      const current = getReq.result as SyncOutboxEntry | undefined;
+      if (!current) { resolve(); return; }
+      current.status = "error";
+      current.syncing_started_at = null;
+      current.error_message = reason;
+      // This is a dependency recheck, not a failed POST retry.
+      current.next_attempt_at = new Date(Date.now() + TRANSIENT_RETRY_MAX_MS).toISOString();
+      const putReq = store.put(current);
+      putReq.onerror = () => reject(putReq.error ?? new Error("No se pudo diferir outbox dependiente."));
+      putReq.onsuccess = () => resolve();
+    };
+    getReq.onerror = () => reject(getReq.error ?? new Error("No se pudo leer outbox."));
+  });
 }
 
 export type LocalFirstWrite = {
@@ -1215,7 +1317,7 @@ export function resolveConflictForTable(
     }
 
     case "cierres_operativos": {
-      if (localEntry.op === "insert" && serverRow) {
+      if ((localEntry.op === "insert" || (localEntry.op === "upsert" && localEntry.payload?.["type"] === "orders.cycle.open")) && serverRow) {
         return { resolution: "server_wins", reason: "Cierre de ciclo ya existe en servidor — no se duplica." };
       }
       if (localEntry.op === "update" && serverRow) {
@@ -1396,6 +1498,97 @@ type PayloadAdjustmentResult =
   | { payload: Record<string, unknown>; adjusted: boolean; afterSuccessfulPush?: () => Promise<void> }
   | { reason: string; retryStatus: SyncRetryStatus };
 
+export function normalizeLegacyCierreOutboxEntry(entry: SyncOutboxEntry): PayloadAdjustmentResult {
+  if (entry.table_name !== "cierres_operativos" || entry.op !== "upsert") {
+    return { payload: entry.payload ?? {}, adjusted: false };
+  }
+
+  const payload = entry.payload ?? {};
+  if (payload["type"] !== "orders.cycle.open") {
+    return {
+      reason: "Cierre legacy bloqueado: el comando no contiene el contrato remoto completo; requiere revisión manual y se conserva sin sincronizar.",
+      retryStatus: "not_retryable",
+    };
+  }
+
+  const id = typeof payload["id"] === "string" && payload["id"].trim() ? payload["id"] : entry.row_id;
+  const businessDay = payload["businessDay"];
+  const openingCash = payload["openingCash"];
+  const parsedBusinessDay = typeof businessDay === "string" ? new Date(`${businessDay}T00:00:00.000Z`) : null;
+  const validBusinessDay = Boolean(
+    parsedBusinessDay &&
+    !Number.isNaN(parsedBusinessDay.getTime()) &&
+    parsedBusinessDay.toISOString().slice(0, 10) === businessDay
+  );
+  if (
+    typeof id !== "string" || !id.trim() ||
+    typeof businessDay !== "string" || !validBusinessDay ||
+    typeof openingCash !== "number" || !Number.isFinite(openingCash) || openingCash < 0 ||
+    Number.isNaN(Date.parse(entry.created_at))
+  ) {
+    return {
+      reason: "Cierre legacy bloqueado: businessDay u openingCash no cumplen el contrato remoto; se conserva sin sincronizar.",
+      retryStatus: "not_retryable",
+    };
+  }
+
+  return {
+    payload: {
+      id,
+      tenant_id: entry.tenant_id,
+      business_day: businessDay,
+      // The first free number is resolved against the server before the write.
+      cycle_number: 1,
+      opened_at: entry.created_at,
+      closed_at: null,
+      efectivo_inicial: openingCash,
+    },
+    adjusted: true,
+  };
+}
+
+export function resolveSyncFailureRetry(error: { message?: string; status?: number | string; code?: string } | Error | unknown, retryCount: number): {
+  retryStatus: SyncRetryStatus;
+  reason: string;
+  nextAttemptAt: string | null;
+} {
+  const source = error && typeof error === "object" ? error as { message?: unknown; status?: unknown; code?: unknown } : {};
+  const reason = typeof source.message === "string"
+    ? source.message
+    : error instanceof Error
+      ? error.message
+      : "Excepción en sync.";
+  const status = Number(source.status);
+  const normalized = reason.toLowerCase();
+  const transient =
+    source.code === "OUTBOX_NO_ACK" ||
+    source.code === "OUTBOX_UNCONFIRMED_CONFLICT" ||
+    (Number.isFinite(status) && (status === 408 || status === 425 || status === 429 || status >= 500)) ||
+    (!Number.isFinite(status) && /network|timeout|timed out|failed to fetch|connection|offline|temporarily unavailable/i.test(normalized));
+
+  if (!transient) return { retryStatus: "not_retryable", reason, nextAttemptAt: null };
+  if (retryCount >= MAX_TRANSIENT_SYNC_RETRIES) {
+    return { retryStatus: "max_retries_exceeded", reason: `${reason} (se agotaron los reintentos transitorios).`, nextAttemptAt: null };
+  }
+
+  const delay = Math.min(TRANSIENT_RETRY_BASE_MS * 2 ** retryCount, TRANSIENT_RETRY_MAX_MS);
+  return {
+    retryStatus: "retryable",
+    reason,
+    nextAttemptAt: new Date(Date.now() + delay).toISOString(),
+  };
+}
+
+export function getOutboxAcknowledgementFailure(
+  entry: Pick<SyncOutboxEntry, "row_id">,
+  result: { data?: unknown; error?: unknown } | null
+): string | null {
+  if (result?.error) return null;
+  const rows = Array.isArray(result?.data) ? result.data : result?.data ? [result.data] : [];
+  const acknowledged = rows.some((row) => row && typeof row === "object" && (row as Record<string, unknown>)["id"] === entry.row_id);
+  return acknowledged ? null : `El servidor no confirmó la mutación de ${entry.row_id}; el registro se conserva para reintento.`;
+}
+
 async function getNextAvailableCierreCycleNumber(tenantId: string, requestedCycleNumber: number): Promise<{
   cycleNumber?: number;
   reason?: string;
@@ -1551,15 +1744,25 @@ export async function validateCierreCicleSequence(
     .select("cycle_number")
     .eq("tenant_id", tenantId)
     .eq("cycle_number", cycleNumber)
-    .single() as any);
+    .maybeSingle() as any);
 
-  if (error && (error as any)?.code !== "PGRST116") {
+  if (error) {
     return { valid: false, reason: "No se pudo validar secuencia de ciclo." };
   }
   if (data) {
     return { valid: false, reason: `Ciclo ${cycleNumber} ya existe en servidor — no se duplica.` };
   }
   return { valid: true };
+}
+
+async function isOutboxDependencyConfirmed(tenantId: string, entry: SyncOutboxEntry): Promise<boolean> {
+  const compraId = getCompraDependencyId(entry);
+  if (!compraId) return true;
+  try {
+    return Boolean(await checkServerRowExists(tenantId, "compras", compraId));
+  } catch {
+    return false;
+  }
 }
 
 const pushOutboxLocks = new Set<string>();
@@ -1576,6 +1779,19 @@ export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: nu
     for (const entry of pending) {
       const leaseAcquired = await tryAcquireOutboxEntryLease(db, entry);
       if (!leaseAcquired) continue;
+
+      if (!(await isOutboxDependencyConfirmed(tenantId, entry))) {
+        const reason = `Esperando confirmación remota de la compra ${getCompraDependencyId(entry)} antes de sincronizar ${entry.table_name}.`;
+        await persistSyncError(db, buildSyncErrorRow({
+          outboxEntry: entry,
+          reason,
+          retryStatus: "retryable",
+          recoverable: true,
+        }));
+        await deferOutboxForDependency(db, entry, reason);
+        failed++;
+        continue;
+      }
 
       const serverRow = await checkServerRowExists(tenantId, entry.table_name, entry.row_id);
       const guardrail = resolveOutboxConflictGuardrail(tenantId, entry, serverRow);
@@ -1608,12 +1824,12 @@ export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: nu
             retryStatus: adjustment.retryStatus,
             recoverable: true,
           }));
-          await updateOutboxEntryStatus(
-            db,
-            entry.id,
-            adjustment.retryStatus === "not_retryable" ? "not_retryable" : "error",
-            adjustment.reason
-          );
+          if (adjustment.retryStatus === "retryable") {
+            const retry = resolveSyncFailureRetry({ message: "network timeout" }, entry.retry_count ?? 0);
+            if (retry.nextAttemptAt) await scheduleOutboxRetry(db, entry, adjustment.reason, retry.nextAttemptAt);
+          } else {
+            await updateOutboxEntryStatus(db, entry.id, "not_retryable", adjustment.reason);
+          }
           failed++;
           continue;
         }
@@ -1622,21 +1838,45 @@ export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: nu
         afterSuccessfulPush = adjustment.afterSuccessfulPush;
       }
 
-      if (outgoingPayload && entry.table_name === "cierres_operativos" && entry.op === "insert") {
-        const adjustment = await adjustCierrePayloadForServer(tenantId, outgoingPayload);
-        if ("retryStatus" in adjustment) {
+      if (outgoingPayload && entry.table_name === "cierres_operativos") {
+        const legacyNormalization = normalizeLegacyCierreOutboxEntry(entry);
+        if ("retryStatus" in legacyNormalization) {
           await persistSyncError(db, buildSyncErrorRow({
             outboxEntry: entry,
-            reason: adjustment.reason,
-            retryStatus: adjustment.retryStatus,
+            reason: legacyNormalization.reason,
+            retryStatus: legacyNormalization.retryStatus,
             recoverable: true,
           }));
-          await updateOutboxEntryStatus(db, entry.id, "error", adjustment.reason);
+          await updateOutboxEntryStatus(db, entry.id, "not_retryable", legacyNormalization.reason);
           failed++;
           continue;
         }
-        outgoingPayload = adjustment.payload;
-        adjustedOutgoingPayload = adjustment.adjusted;
+        outgoingPayload = legacyNormalization.payload;
+        adjustedOutgoingPayload = legacyNormalization.adjusted;
+
+        if (entry.op !== "insert" && !legacyNormalization.adjusted) {
+          // A current upsert already has its own server contract; it needs no cycle rewrite.
+        } else {
+          const adjustment = await adjustCierrePayloadForServer(tenantId, outgoingPayload);
+          if ("retryStatus" in adjustment) {
+            await persistSyncError(db, buildSyncErrorRow({
+              outboxEntry: entry,
+              reason: adjustment.reason,
+              retryStatus: adjustment.retryStatus,
+              recoverable: true,
+            }));
+            const retry = resolveSyncFailureRetry({ message: "network timeout" }, entry.retry_count ?? 0);
+            if (adjustment.retryStatus === "retryable" && retry.nextAttemptAt) {
+              await scheduleOutboxRetry(db, entry, adjustment.reason, retry.nextAttemptAt);
+            } else {
+              await updateOutboxEntryStatus(db, entry.id, "not_retryable", adjustment.reason);
+            }
+            failed++;
+            continue;
+          }
+          outgoingPayload = adjustment.payload;
+          adjustedOutgoingPayload ||= adjustment.adjusted;
+        }
       }
 
       if (outgoingPayload && entry.table_name === "ecf_documents" && entry.op === "insert") {
@@ -1652,18 +1892,18 @@ export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: nu
       }
 
       try {
-        let result: { data?: unknown; error?: { message?: string } } | null = null;
+        let result: { data?: unknown; error?: { message?: string; status?: number | string; code?: string } } | null = null;
         const serverPayload = outgoingPayload
           ? buildServerWritePayload(tenantId, entry.table_name, outgoingPayload)
           : null;
         if (entry.op === "insert") {
-          result = await runTrackedCloudOperation(() => supabase.from(entry.table_name).insert([serverPayload as Record<string, unknown>]) as any);
+          result = await runTrackedCloudOperation(() => supabase.from(entry.table_name).insert([serverPayload as Record<string, unknown>]).select("id") as any);
         } else if (entry.op === "update") {
-          result = await runTrackedCloudOperation(() => supabase.from(entry.table_name).update(serverPayload as Record<string, unknown>).eq("id", entry.row_id) as any);
+          result = await runTrackedCloudOperation(() => supabase.from(entry.table_name).update(serverPayload as Record<string, unknown>).eq("id", entry.row_id).select("id") as any);
         } else if (entry.op === "upsert") {
-          result = await runTrackedCloudOperation(() => supabase.from(entry.table_name).upsert(serverPayload as Record<string, unknown>, { onConflict: resolveUpsertConflictTarget(entry.table_name) }) as any);
+          result = await runTrackedCloudOperation(() => supabase.from(entry.table_name).upsert(serverPayload as Record<string, unknown>, { onConflict: resolveUpsertConflictTarget(entry.table_name) }).select("id") as any);
         } else if (entry.op === "delete") {
-          result = await runTrackedCloudOperation(() => supabase.from(entry.table_name).delete().eq("id", entry.row_id) as any);
+          result = await runTrackedCloudOperation(() => supabase.from(entry.table_name).delete().eq("id", entry.row_id).select("id") as any);
         }
         if (result?.error) {
           const reason = result.error.message || "Error en sync.";
@@ -1679,22 +1919,46 @@ export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: nu
             await updateOutboxEntryStatus(db, entry.id, "synced", purchaseResolution.reason);
             pushed++;
           } else {
-            const retryStatus = purchaseResolution.retryStatus ?? "retryable";
+            const retry = purchaseResolution.disposition === "not_applicable"
+              ? resolveSyncFailureRetry(result.error, entry.retry_count ?? 0)
+              : purchaseResolution.retryStatus === "retryable"
+                ? resolveSyncFailureRetry({
+                  message: purchaseResolution.reason,
+                  code: "OUTBOX_UNCONFIRMED_CONFLICT",
+                }, entry.retry_count ?? 0)
+                : { retryStatus: purchaseResolution.retryStatus ?? "not_retryable", reason: purchaseResolution.reason, nextAttemptAt: null };
+            const retryStatus = retry.retryStatus;
             await persistSyncError(db, buildSyncErrorRow({
               outboxEntry: entry,
-              reason: purchaseResolution.reason,
+              reason: retry.reason,
               retryStatus,
               recoverable: retryStatus === "retryable",
             }));
-            await updateOutboxEntryStatus(
-              db,
-              entry.id,
-              retryStatus === "not_retryable" ? "not_retryable" : "error",
-              purchaseResolution.reason
-            );
+            if (retryStatus === "retryable" && retry.nextAttemptAt) {
+              await scheduleOutboxRetry(db, entry, retry.reason, retry.nextAttemptAt);
+            } else {
+              await updateOutboxEntryStatus(db, entry.id, "not_retryable", retry.reason);
+            }
             failed++;
           }
         } else {
+          const acknowledgementFailure = getOutboxAcknowledgementFailure(entry, result);
+          if (acknowledgementFailure) {
+            const retry = resolveSyncFailureRetry({ message: acknowledgementFailure, code: "OUTBOX_NO_ACK" }, entry.retry_count ?? 0);
+            await persistSyncError(db, buildSyncErrorRow({
+              outboxEntry: entry,
+              reason: retry.reason,
+              retryStatus: retry.retryStatus,
+              recoverable: retry.retryStatus === "retryable",
+            }));
+            if (retry.retryStatus === "retryable" && retry.nextAttemptAt) {
+              await scheduleOutboxRetry(db, entry, retry.reason, retry.nextAttemptAt);
+            } else {
+              await updateOutboxEntryStatus(db, entry.id, "not_retryable", retry.reason);
+            }
+            failed++;
+            continue;
+          }
           if (adjustedOutgoingPayload && serverPayload) {
             await applyLocalMirrorWrite({
               tenantId,
@@ -1715,14 +1979,18 @@ export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: nu
           pushed++;
         }
       } catch (err) {
-        const reason = err instanceof Error ? err.message : "Excepcion en sync.";
+        const retry = resolveSyncFailureRetry(err, entry.retry_count ?? 0);
         await persistSyncError(db, buildSyncErrorRow({
           outboxEntry: entry,
-          reason,
-          retryStatus: "retryable",
-          recoverable: true,
+          reason: retry.reason,
+          retryStatus: retry.retryStatus,
+          recoverable: retry.retryStatus === "retryable",
         }));
-        await updateOutboxEntryStatus(db, entry.id, "error", reason);
+        if (retry.retryStatus === "retryable" && retry.nextAttemptAt) {
+          await scheduleOutboxRetry(db, entry, retry.reason, retry.nextAttemptAt);
+        } else {
+          await updateOutboxEntryStatus(db, entry.id, "not_retryable", retry.reason);
+        }
         failed++;
       }
     }

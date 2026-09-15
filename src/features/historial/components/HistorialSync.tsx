@@ -18,6 +18,7 @@ import {
   exportLegacyIndexedDbImportPayload,
   importLegacyIndexedDbThroughDesktop,
 } from "../../../shared/lib/localFirst";
+import { resolveSyncHealth } from "../lib/syncHealth";
 
 interface OutboxSummaryItem {
   tableName: string;
@@ -207,6 +208,8 @@ export function HistorialSync() {
     return report.tableCounts.reduce((acc, curr) => acc + curr.count, 0);
   }, [report]);
 
+  const syncHealth = resolveSyncHealth(totalPending, totalErrors);
+
   return (
     <div className="flex-1 bg-background p-4 sm:p-8 lg:p-10 overflow-y-auto min-h-0 text-foreground">
       <div className="max-w-[1500px] mx-auto flex flex-col gap-6">
@@ -288,19 +291,19 @@ export function HistorialSync() {
           <div className="rounded-[20px] border border-black/10 dark:border-white/10 bg-card p-5 shadow-sm">
             <div className="flex items-center justify-between text-muted-foreground text-xs uppercase font-bold tracking-wider">
               <span>Salud del Sistema</span>
-              {totalErrors === 0 ? (
+              {syncHealth.tone === "healthy" ? (
                 <CheckCircle2 className="size-4 text-emerald-500" />
               ) : (
-                <AlertCircle className="size-4 text-rose-500" />
+                <AlertCircle className={`size-4 ${syncHealth.tone === "blocked" ? "text-rose-500" : "text-amber-500"}`} />
               )}
             </div>
             <div className="mt-3 flex items-baseline gap-2">
-              <span className={`text-2xl font-bold font-['Space_Grotesk'] ${totalErrors === 0 ? "text-emerald-500" : "text-rose-500"}`}>
-                {totalErrors === 0 ? "100% Saludable" : `${totalErrors} Incidencia(s)`}
+              <span className={`text-2xl font-bold font-['Space_Grotesk'] ${syncHealth.tone === "healthy" ? "text-emerald-500" : syncHealth.tone === "blocked" ? "text-rose-500" : "text-amber-500"}`}>
+                {syncHealth.label}
               </span>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              {totalPending === 0 ? "Todo al día con la nube" : `${totalPending} operaciones esperando subida`}
+              {syncHealth.tone === "blocked" ? `${totalErrors} operación(es) requieren intervención` : totalPending === 0 ? "Todo al día con la nube" : `${totalPending} operaciones esperando subida`}
             </p>
           </div>
 

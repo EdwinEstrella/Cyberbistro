@@ -149,7 +149,7 @@ async function hydrateInvoiceItemCategories(tenantId: string, rawInvoices: Invoi
         Array.isArray(invoice.items)
           ? invoice.items
               .map((item) => Number(item.plato_id))
-              .filter((id) => Number.isFinite(id))
+              .filter((id) => Number.isSafeInteger(id) && id > 0)
           : []
       )
     ),
@@ -168,12 +168,22 @@ async function hydrateInvoiceItemCategories(tenantId: string, rawInvoices: Invoi
         platesData = [];
       }
     } else {
-      const { data } = await supabase
-        .from("platos")
-        .select("id, categoria")
-        .eq("tenant_id", tenantId)
-        .in("id", plateIds);
-      platesData = (data as Array<{ id: number; categoria?: string | null }>) ?? [];
+      const CHUNK_SIZE = 50;
+      for (let i = 0; i < plateIds.length; i += CHUNK_SIZE) {
+        const chunk = plateIds.slice(i, i + CHUNK_SIZE);
+        try {
+          const { data, error } = await supabase
+            .from("platos")
+            .select("id, categoria")
+            .eq("tenant_id", tenantId)
+            .in("id", chunk);
+          if (!error && Array.isArray(data)) {
+            platesData.push(...(data as Array<{ id: number; categoria?: string | null }>));
+          }
+        } catch (e) {
+          console.warn("[Billing] Error fetching plate category chunk:", e);
+        }
+      }
     }
 
     for (const plate of platesData) {

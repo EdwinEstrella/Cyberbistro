@@ -6,6 +6,7 @@ export type DurableOperationKind = "insert" | "update" | "upsert" | "delete";
 export interface DurableOperation {
   id: string;
   tenantId: string;
+  branchId?: string;
   tableName: string;
   rowId: string;
   op: DurableOperationKind;

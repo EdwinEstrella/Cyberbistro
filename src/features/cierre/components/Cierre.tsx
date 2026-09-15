@@ -245,16 +245,55 @@ export function Cierre() {
 
       if (sel) {
         const [factData, gastosData, cxcData] = await Promise.all([
-          shouldReadLocalFirst(tenantId, ["facturas"]).then(useLocal => useLocal
-            ? readLocalMirror<FacturaRow & { sucursal_id?: string | null }>(tenantId, "facturas").then(fs => fs.filter(f => f.sucursal_id === activeSucursalId || !f.sucursal_id))
-            : activeSucursalId 
-              ? supabase.from("facturas").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("created_at", { ascending: false }).then(r => r.data ?? [])
-              : supabase.from("facturas").select("*").eq("tenant_id", tenantId).is("sucursal_id", null).order("created_at", { ascending: false }).then(r => r.data ?? [])),
-          shouldReadLocalFirst(tenantId, ["gastos"]).then(useLocal => useLocal
-            ? readLocalMirror<GastoRow & { sucursal_id?: string | null }>(tenantId, "gastos").then(gs => gs.filter(g => g.cycle_id === sel.id && (g.sucursal_id === activeSucursalId || !g.sucursal_id)))
-            : activeSucursalId 
+          shouldReadLocalFirst(tenantId, ["facturas"]).then(useLocal => {
+            if (useLocal) {
+              return readLocalMirror<FacturaRow & { sucursal_id?: string | null }>(tenantId, "facturas").then(fs => fs.filter(f => f.sucursal_id === activeSucursalId || !f.sucursal_id));
+            }
+            const cycleStartMs = new Date(getCycleStartIso(sel)).getTime();
+            const minCreatedAt = new Date(cycleStartMs - 12 * 60 * 60 * 1000).toISOString();
+            let query = supabase.from("facturas").select("*").eq("tenant_id", tenantId).gte("created_at", minCreatedAt);
+            if (activeSucursalId) {
+              query = query.or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`);
+            } else {
+              query = query.is("sucursal_id", null);
+            }
+            if (sel.closed_at) {
+              const maxCreatedAt = new Date(new Date(sel.closed_at).getTime() + 12 * 60 * 60 * 1000).toISOString();
+              query = query.lte("created_at", maxCreatedAt);
+            }
+            return query.order("created_at", { ascending: false }).then(r => r.data ?? []);
+          }),
+          shouldReadLocalFirst(tenantId, ["gastos"]).then(async (useLocal) => {
+            if (window.electronAPI?.listExpenses) {
+              try {
+                const res = await window.electronAPI.listExpenses({ tenantId, sucursalId: activeSucursalId || undefined, limit: 200 });
+                if (res?.ok && Array.isArray(res.data)) {
+                  const mapped = res.data.map((g: any) => ({
+                    id: g.id,
+                    tenant_id: g.tenant_id,
+                    category_id: g.category_id,
+                    cycle_id: g.cycle_id,
+                    descripcion: g.description ?? g.descripcion,
+                    description: g.description ?? g.descripcion,
+                    proveedor: g.supplier ?? g.proveedor,
+                    monto: g.amount ?? (g.amount_cents ? g.amount_cents / 100 : 0),
+                    amount: g.amount ?? (g.amount_cents ? g.amount_cents / 100 : 0),
+                    metodo_pago: g.payment_method ?? g.metodo_pago,
+                    fecha_gasto: g.expense_date ?? g.fecha_gasto,
+                  }));
+                  return mapped.filter((g: any) => g.cycle_id === sel.id && (g.sucursal_id === activeSucursalId || !g.sucursal_id));
+                }
+              } catch (e) {
+                console.warn("[Cierre] Error listing expenses from desktop SQLite:", e);
+              }
+            }
+            if (useLocal) {
+              return readLocalMirror<GastoRow & { sucursal_id?: string | null }>(tenantId, "gastos").then(gs => gs.filter(g => g.cycle_id === sel.id && (g.sucursal_id === activeSucursalId || !g.sucursal_id)));
+            }
+            return activeSucursalId 
               ? supabase.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, metodo_pago, fecha_gasto").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).eq("cycle_id", sel.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? [])
-              : supabase.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, metodo_pago, fecha_gasto").eq("tenant_id", tenantId).is("sucursal_id", null).eq("cycle_id", sel.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? [])),
+              : supabase.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, metodo_pago, fecha_gasto").eq("tenant_id", tenantId).is("sucursal_id", null).eq("cycle_id", sel.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? []);
+          }),
           shouldReadLocalFirst(tenantId, ["cxc_pagos"]).then(useLocal => useLocal
             ? readLocalMirror<any>(tenantId, "cxc_pagos").then(ps => ps.filter(p => p.cycle_id === sel.id && (p.sucursal_id === activeSucursalId || !p.sucursal_id)))
             : activeSucursalId
@@ -391,7 +430,7 @@ export function Cierre() {
 
       if (typeof window !== "undefined" && window.electronAPI?.executeOrdersCommand) {
         try {
-          await openOperatingCycle(localCycleId, businessDay, efectivoInicial);
+          await openOperatingCycle(localCycleId, businessDay, efectivoInicial, num);
         } catch (e) {
           console.warn("Desktop SQLite cycle open failed, falling back to localFirst enqueue:", e);
         }

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { DatabaseSync } from "node:sqlite";
 import { initializeTenantSchema } from "../electron/persistence/schema";
 import { SQLitePayrollSyncStore } from "../electron/persistence/payrollSyncStore";
-import { DurableSyncWorker, type ServerSyncClient } from "../electron/persistence/syncWorker";
+import { DurableSyncWorker, createDurableOperation, type ServerSyncClient } from "../electron/persistence/syncWorker";
 
 describe("local sqlite payroll sync store", () => {
   let db: DatabaseSync;
@@ -229,5 +229,21 @@ describe("local sqlite payroll sync store", () => {
     expect(() => {
       store.commitMutation({} as any);
     }).toThrow("commitMutation not implemented for legacy sync_outbox bridge");
+  });
+
+  it("claims operational-cycle rows and reconciles them upon push", async () => {
+    db.prepare(`
+      INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run("cycle-close", tenantId, "branch-1", "cierres_operativos", "cycle-1", "upsert", JSON.stringify({ type: "orders.cycle.close", id: "cycle-1" }), "pending");
+
+    const client: ServerSyncClient = {
+      push: async () => ({ result: { synced: true, reconciled: true, audit: "remote_cycle_already_closed" } }),
+      pull: async () => ({ cursor: "0", changes: [] }),
+    };
+    await new DurableSyncWorker(store, client, tenantId).push();
+
+    const row = db.prepare("SELECT * FROM sync_outbox WHERE id = 'cycle-close'").get();
+    expect(row).toBeUndefined();
   });
 });

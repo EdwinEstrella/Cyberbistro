@@ -4,7 +4,7 @@ import { supabase } from "../../../shared/lib/supabase";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { isDesktopCloudUnavailable } from "../../../shared/lib/cloudAvailability";
-import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
+import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst, writeLocalMirrorRow } from "../../../shared/lib/localFirst";
 import { ConfirmModal } from "../../../shared/components/ConfirmModal";
 
 interface CategoriaGasto {
@@ -264,7 +264,13 @@ export function Gastos() {
                 fecha_gasto: g.fecha_gasto || g.expense_date,
                 notas: g.notas || g.notes,
               }));
-              setGastos(mappedCloudGastos);
+              setGastos((prevLocal) => {
+                const cloudIds = new Set(mappedCloudGastos.map((cg) => String(cg.id)));
+                const unmergedLocal = prevLocal.filter((local) => !cloudIds.has(String(local.id)));
+                return [...unmergedLocal, ...mappedCloudGastos].sort(
+                  (a, b) => new Date(getGastoFecha(b)).getTime() - new Date(getGastoFecha(a)).getTime()
+                ).slice(0, 80);
+              });
               if (window.electronAPI?.syncCloudExpenses) {
                 void window.electronAPI.syncCloudExpenses(cloudGastosRes.data, activeSucursalId || undefined).catch(() => {});
               }
@@ -491,6 +497,25 @@ export function Gastos() {
           expenseDate: new Date(gastoForm.fecha_gasto).toISOString(),
           notes: gastoForm.notas.trim() || null,
         });
+        await writeLocalMirrorRow(tenantId, "gastos", {
+          id,
+          tenant_id: tenantId,
+          category_id: gastoForm.category_id || null,
+          cycle_id: cicloAbierto.id,
+          descripcion,
+          description: descripcion,
+          proveedor: gastoForm.proveedor.trim() || null,
+          supplier: gastoForm.proveedor.trim() || null,
+          monto,
+          amount: monto,
+          metodo_pago: gastoForm.metodo_pago || "efectivo",
+          payment_method: gastoForm.metodo_pago || "efectivo",
+          fecha_gasto: new Date(gastoForm.fecha_gasto).toISOString(),
+          expense_date: new Date(gastoForm.fecha_gasto).toISOString(),
+          notas: gastoForm.notas.trim() || null,
+          created_by_auth_user_id: user?.id ?? null,
+          sucursal_id: activeSucursalId || null,
+        }).catch(() => undefined);
       } else {
         await enqueueLocalWrite({
           tenantId,

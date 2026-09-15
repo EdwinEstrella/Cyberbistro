@@ -7,6 +7,10 @@ import {
   buildFacturaPayloadWithNcfSequence,
   buildLocalTenantNcfReservation,
   buildNcfWithSequence,
+  getOutboxAcknowledgementFailure,
+  normalizeLegacyCierreOutboxEntry,
+  resolveCompraDependencyId,
+  resolveSyncFailureRetry,
   buildSyncErrorRow,
   buildLocalMirrorWriteResult,
   buildMirrorStoreResetSyncStateKeys,
@@ -650,6 +654,17 @@ describe("localFirst", () => {
     })).toMatchObject({ disposition: "mark_synced" });
   });
 
+  it("no confirma un insert con conflicto si la relectura no acusa una fila remota", () => {
+    const entry = createSyncOutboxEntry({
+      tenantId: "tenant-1", tableName: "compras", rowId: "compra-1", op: "insert", payload: { id: "compra-1" }, deviceId: "device-1",
+    });
+
+    expect(resolvePurchaseOutboxInsertFailure(entry, "409 conflict", {
+      foundById: false,
+      foundByCompraId: false,
+    })).toMatchObject({ disposition: "retryable_failure", retryStatus: "retryable" });
+  });
+
   it.each([
     "insert or update violates foreign key constraint",
     "new row violates check constraint",
@@ -766,6 +781,115 @@ describe("localFirst", () => {
 
     const selected = selectProcessableOutboxEntries(entries);
     expect(selected.map((entry) => entry.id)).toEqual(["error", "pending", "syncing"]);
+  });
+
+  it.each(["insert", "update"] as const)("no programa hijos de compra en %s hasta que su cabecera esté confirmada", (op) => {
+    const parent = {
+      ...createSyncOutboxEntry({ tenantId: "tenant-1", tableName: "compras", rowId: "compra-1", op: "insert", payload: { id: "compra-1" }, deviceId: "dev1" }),
+      id: "parent",
+      created_at: "2026-01-01T00:00:00.000Z",
+    };
+    const child = {
+      ...createSyncOutboxEntry({ tenantId: "tenant-1", tableName: "compra_fiscal", rowId: "fiscal-1", op, payload: op === "insert" ? { id: "fiscal-1", compra_id: "compra-1" } : { ncf: "B0100000001" }, deviceId: "dev1" }),
+      id: "child",
+      created_at: "2026-01-01T00:00:00.000Z",
+      ...(op === "update" ? { compra_dependency_id: "compra-1" } : {}),
+    };
+
+    expect(selectProcessableOutboxEntries([parent, child]).map((entry) => entry.id)).toEqual(["parent"]);
+    expect(selectProcessableOutboxEntries([{ ...parent, status: "synced" }, child]).map((entry) => entry.id)).toEqual(["child"]);
+  });
+
+  it("bloquea un update de cuentas_pagar hasta que su compra padre esté confirmada", () => {
+    const parent = {
+      ...createSyncOutboxEntry({ tenantId: "tenant-1", tableName: "compras", rowId: "compra-1", op: "insert", payload: { id: "compra-1" }, deviceId: "dev1" }),
+      id: "parent",
+      created_at: "2026-01-01T00:00:00.000Z",
+    };
+    const accountPayableUpdate = {
+      ...createSyncOutboxEntry({ tenantId: "tenant-1", tableName: "cuentas_pagar", rowId: "cxp-1", op: "update", payload: { saldo_pendiente: 50 }, deviceId: "dev1" }),
+      id: "cxp-update",
+      created_at: "2026-01-01T00:00:00.000Z",
+      compra_dependency_id: "compra-1",
+    };
+
+    expect(selectProcessableOutboxEntries([parent, accountPayableUpdate]).map((entry) => entry.id)).toEqual(["parent"]);
+    expect(selectProcessableOutboxEntries([{ ...parent, status: "synced" }, accountPayableUpdate]).map((entry) => entry.id)).toEqual(["cxp-update"]);
+  });
+
+  it("deriva la dependencia de compra de la fila local para updates de fiscal y CxP", () => {
+    for (const tableName of ["compra_fiscal", "cuentas_pagar"] as const) {
+      const entry = createSyncOutboxEntry({
+        tenantId: "tenant-1", tableName, rowId: `${tableName}-1`, op: "update", payload: { updated_at: "2026-01-01T00:00:00.000Z" }, deviceId: "dev1",
+      });
+      expect(resolveCompraDependencyId(entry, { id: entry.row_id, compra_id: "compra-1" })).toBe("compra-1");
+    }
+  });
+
+  it.each([
+    ["insert", [{ id: "compra-1" }], null],
+    ["update", [{ id: "compra-1" }], null],
+    ["insert", [], "servidor no confirmó"],
+    ["update", [], "servidor no confirmó"],
+  ] as const)("requiere acuse remoto para %s", (op, data, expectedFailure) => {
+    const entry = createSyncOutboxEntry({ tenantId: "tenant-1", tableName: "compras", rowId: "compra-1", op, deviceId: "dev1" });
+    const failure = getOutboxAcknowledgementFailure(entry, { data });
+    if (expectedFailure) expect(failure).toContain(expectedFailure);
+    else expect(failure).toBeNull();
+  });
+
+  it("aplica backoff sólo a fallos transitorios y corta tras el máximo", () => {
+    expect(resolveSyncFailureRetry({ message: "Forbidden", status: 403 }, 0)).toMatchObject({
+      retryStatus: "not_retryable",
+      nextAttemptAt: null,
+    });
+    expect(resolveSyncFailureRetry({ message: "Gateway timeout", status: 504 }, 0)).toMatchObject({
+      retryStatus: "retryable",
+    });
+    expect(resolveSyncFailureRetry({ message: "Gateway timeout", status: 504 }, 4)).toMatchObject({
+      retryStatus: "max_retries_exceeded",
+      nextAttemptAt: null,
+    });
+    expect(resolveSyncFailureRetry({ message: "sin acuse", code: "OUTBOX_NO_ACK" }, 0)).toMatchObject({
+      retryStatus: "retryable",
+    });
+    expect(resolveSyncFailureRetry({ message: "conflicto sin fila confirmada", code: "OUTBOX_UNCONFIRMED_CONFLICT" }, 0)).toMatchObject({
+      retryStatus: "retryable",
+    });
+    expect(resolveSyncFailureRetry({ message: "conflicto sin fila confirmada", code: "OUTBOX_UNCONFIRMED_CONFLICT" }, 4)).toMatchObject({
+      retryStatus: "max_retries_exceeded",
+      nextAttemptAt: null,
+    });
+  });
+
+  it("respeta next_attempt_at antes de volver a procesar un error transitorio", () => {
+    const entry = {
+      ...createSyncOutboxEntry({ tenantId: "tenant-1", tableName: "compras", rowId: "compra-1", op: "insert", deviceId: "dev1" }),
+      status: "error" as const,
+      next_attempt_at: "2026-01-01T00:01:00.000Z",
+    };
+    expect(selectProcessableOutboxEntries([entry], Date.parse("2026-01-01T00:00:00.000Z"))).toEqual([]);
+    expect(selectProcessableOutboxEntries([entry], Date.parse("2026-01-01T00:01:00.000Z")).map((item) => item.id)).toEqual([entry.id]);
+  });
+
+  it("normaliza sólo aperturas legacy de cierre y bloquea cierres incompletos sin descartarlos", () => {
+    const openEntry = {
+      ...createSyncOutboxEntry({
+        tenantId: "tenant-1", tableName: "cierres_operativos", rowId: "cierre-1", op: "upsert",
+        payload: { type: "orders.cycle.open", id: "cierre-1", businessDay: "2026-09-15", openingCash: 125 }, deviceId: "dev1",
+      }),
+      created_at: "2026-09-15T10:00:00.000Z",
+    };
+    expect(normalizeLegacyCierreOutboxEntry(openEntry)).toEqual({
+      adjusted: true,
+      payload: {
+        id: "cierre-1", tenant_id: "tenant-1", business_day: "2026-09-15", cycle_number: 1,
+        opened_at: "2026-09-15T10:00:00.000Z", closed_at: null, efectivo_inicial: 125,
+      },
+    });
+
+    const closeEntry = { ...openEntry, payload: { type: "orders.cycle.close", id: "cierre-1" } };
+    expect(normalizeLegacyCierreOutboxEntry(closeEntry)).toMatchObject({ retryStatus: "not_retryable" });
   });
 
   it("reintenta syncing stale pero no uno activo con lease reciente", () => {

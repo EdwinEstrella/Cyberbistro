@@ -223,8 +223,11 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
           break;
         }
         case "orders.cycle.close":
-          this.database.prepare("UPDATE cierres_operativos SET state = 'closed', closed_at = datetime('now') WHERE id = ? AND tenant_id = ? AND state = 'open'").run(command.id, this.tenantId);
-          outbox("cierres_operativos", command.id, command, "cycle-close");
+          {
+            const result = this.database.prepare("UPDATE cierres_operativos SET state = 'closed', closed_at = datetime('now') WHERE id = ? AND tenant_id = ? AND state = 'open'").run(command.id, this.tenantId);
+            // Never create a close event without one local state transition.
+            if (Number(result.changes) === 1) outbox("cierres_operativos", command.id, command, "cycle-close");
+          }
           break;
       }
       this.database.exec("COMMIT;");
@@ -815,7 +818,7 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     const pendingQueue = this.database.prepare(`
       SELECT id, table_name as tableName, row_id as rowId, operation, status
       FROM sync_outbox
-      WHERE tenant_id = ? AND status = 'pending' AND error_json IS NULL
+      WHERE tenant_id = ? AND status IN ('pending', 'syncing')
       ORDER BY rowid ASC
       LIMIT 50
     `).all(this.tenantId) as Array<{ id: string; tableName: string; rowId: string; operation: string; status: string }>;
@@ -835,7 +838,9 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     const result = this.database.prepare(`
       UPDATE sync_outbox
       SET status = 'pending', error_json = NULL
-      WHERE tenant_id = ? AND (error_json IS NOT NULL OR status = 'not_retryable')
+      WHERE tenant_id = ?
+        AND (error_json IS NULL OR json_valid(error_json) = 0 OR COALESCE(json_extract(error_json, '$.retryable'), 1) = 1)
+        AND (error_json IS NOT NULL OR status = 'not_retryable')
     `).run(this.tenantId);
     return Number(result.changes);
   }
