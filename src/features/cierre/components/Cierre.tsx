@@ -390,15 +390,37 @@ export function Cierre() {
         }
       }
 
-      let num = 1;
-      if (useLocalCiclos) {
+      // The next cycle number must never come from a possibly-stale local
+      // mirror alone: a device behind the cloud (e.g. mirror stuck at 103 while
+      // the cloud is at 105) would recompute an existing number and create a
+      // duplicate cycle. Derive it from the authoritative max of BOTH the local
+      // mirror and the cloud when reachable, falling back to whichever source
+      // is available offline.
+      let localMax = 0;
+      try {
         const allCycles = await readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos");
-        const maxNum = allCycles.reduce((m, c) => Math.max(m, c.cycle_number), 0);
-        num = maxNum + 1;
-      } else {
-        const { data: latest } = await supabase.from("cierres_operativos").select("cycle_number").eq("tenant_id", tenantId).order("cycle_number", { ascending: false }).limit(1).maybeSingle();
-        num = ((latest as any)?.cycle_number ?? 0) + 1;
+        localMax = allCycles.reduce((m, c) => Math.max(m, c.cycle_number ?? 0), 0);
+      } catch {
+        // Mirror unavailable (e.g. web runtime): rely on the cloud max.
       }
+
+      let cloudMax = 0;
+      try {
+        const { data: latest, error: latestError } = await supabase
+          .from("cierres_operativos")
+          .select("cycle_number")
+          .eq("tenant_id", tenantId)
+          .order("cycle_number", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (!latestError) {
+          cloudMax = Number((latest as { cycle_number?: number } | null)?.cycle_number ?? 0);
+        }
+      } catch {
+        // Offline or cloud unreachable: the local mirror max is the best source.
+      }
+
+      const num = Math.max(localMax, cloudMax) + 1;
 
       const localCycleId = crypto.randomUUID();
       const openedAt = new Date();
