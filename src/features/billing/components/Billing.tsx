@@ -7,6 +7,7 @@ import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { readLocalInvoices } from "../lib/invoicesLocal";
+import { readLocalCierres } from "../../cierre/lib/cierresLocal";
 import { readLocalExpenses, readLocalExpenseCategories } from "../../gastos/lib/expensesLocal";
 import { listCustomers } from "../../clientes/lib/customers";
 import { cacheLogoFromUrl } from "../../../shared/lib/logoCache";
@@ -378,7 +379,7 @@ export function Billing() {
           ? supabase.from("facturas").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("created_at", { ascending: false })
           : supabase.from("facturas").select("*").eq("tenant_id", tenantId).is("sucursal_id", null).order("created_at", { ascending: false }),
       useLocalCycles
-        ? { data: await readLocalMirror<CierreOperativoRow & { sucursal_id?: string | null }>(tenantId, "cierres_operativos").then(r => r.filter(c => !c.sucursal_id || c.sucursal_id === activeSucursalId).sort((a, b) => (b.cycle_number || 0) - (a.cycle_number || 0))), error: null }
+        ? { data: (await readLocalCierres(tenantId, { sucursalId: activeSucursalId || undefined })) as unknown as CierreOperativoRow[], error: null }
         : activeSucursalId
           ? supabase.from("cierres_operativos").select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at, efectivo_inicial").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("opened_at", { ascending: false })
           : supabase.from("cierres_operativos").select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at, efectivo_inicial").eq("tenant_id", tenantId).is("sucursal_id", null).order("opened_at", { ascending: false }),

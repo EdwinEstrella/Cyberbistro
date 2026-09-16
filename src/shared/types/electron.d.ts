@@ -96,6 +96,7 @@ export interface ElectronAPI {
   executeExpenseCommand?: (command: import("../../../electron/persistence/expenseRepository").ExpenseCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/expenseRepository").ExpenseRepositoryResult }>;
   listExpenses?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
   listInvoices?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
+  listCierres?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
   listExpenseCategories?: () => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
   syncCloudExpenses?: (expenses: unknown[], defaultBranchId?: string) => Promise<{ ok: true }>;
   syncCloudExpenseCategories?: (categories: unknown[]) => Promise<{ ok: true }>;

@@ -177,8 +177,8 @@ export function applyCloudOperationalCycleRows(
 ): void {
   const ensureBranch = db.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)");
   const stmt = db.prepare(`
-    INSERT INTO cierres_operativos (id, tenant_id, sucursal_id, business_day, opening_cash, state, closed_at, cycle_number, opened_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO cierres_operativos (id, tenant_id, sucursal_id, business_day, opening_cash, state, closed_at, cycle_number, opened_at, printed_at, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       sucursal_id = excluded.sucursal_id,
       business_day = excluded.business_day,
@@ -186,7 +186,9 @@ export function applyCloudOperationalCycleRows(
       state = excluded.state,
       closed_at = excluded.closed_at,
       cycle_number = excluded.cycle_number,
-      opened_at = excluded.opened_at
+      opened_at = excluded.opened_at,
+      printed_at = excluded.printed_at,
+      created_at = excluded.created_at
   `);
   for (const c of cycles) {
     if (!c || typeof c !== "object" || !c.id || !c.business_day) continue;
@@ -204,6 +206,8 @@ export function applyCloudOperationalCycleRows(
       closedAt,
       c.cycle_number != null ? Number(c.cycle_number) : null,
       c.opened_at ? String(c.opened_at) : null,
+      c.printed_at ? String(c.printed_at) : null,
+      c.created_at ? String(c.created_at) : null,
     );
   }
 }

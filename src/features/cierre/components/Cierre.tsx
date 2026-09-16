@@ -7,6 +7,7 @@ import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { readLocalExpenses, readLocalExpenseCategories } from "../../gastos/lib/expensesLocal";
+import { readLocalCierres } from "../lib/cierresLocal";
 import { isDesktopRuntime, isCloudAvailableForDesktop } from "../../../shared/lib/cloudAvailability";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { calculateExpectedCashDrawer, sumCashExpenses } from "../../../shared/lib/cycleCash";
@@ -209,13 +210,13 @@ export function Cierre() {
 
       const [cyclesAll, consAll, openGlobal, categoriasData] = await Promise.all([
         useLocalCiclos
-          ? readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos").then(rows => rows.filter(c => c.sucursal_id === activeSucursalId || !c.sucursal_id))
+          ? (readLocalCierres(tenantId, { sucursalId: activeSucursalId || undefined }) as unknown as Promise<CierreOperativoRow[]>)
           : supabase.from("cierres_operativos").select("*").eq("tenant_id", tenantId).or(activeSucursalId ? `sucursal_id.eq.${activeSucursalId},sucursal_id.is.null` : `sucursal_id.is.null`).eq("business_day", toYmd(fecha)).order("cycle_number", { ascending: false }).then(r => ({ data: r.data, error: r.error })),
         useLocalConsumos
           ? readLocalMirror<ConsumoAbiertoRow & { sucursal_id?: string | null; created_at?: string }>(tenantId, "consumos").then(rows => rows.filter(c => c.sucursal_id === activeSucursalId || !c.sucursal_id))
           : supabase.from("consumos").select("mesa_numero, subtotal, estado, created_at").eq("tenant_id", tenantId).or(activeSucursalId ? `sucursal_id.eq.${activeSucursalId},sucursal_id.is.null` : `sucursal_id.is.null`).neq("estado", "pagado").then(r => ({ data: r.data, error: r.error })),
         useLocalCiclos
-          ? readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos").then(rows => rows.filter(c => c.sucursal_id === activeSucursalId || !c.sucursal_id))
+          ? (readLocalCierres(tenantId, { sucursalId: activeSucursalId || undefined }) as unknown as Promise<CierreOperativoRow[]>)
           : supabase.from("cierres_operativos").select("*").eq("tenant_id", tenantId).or(activeSucursalId ? `sucursal_id.eq.${activeSucursalId},sucursal_id.is.null` : `sucursal_id.is.null`).is("closed_at", null).order("opened_at", { ascending: false }).limit(1).then(r => ({ data: r.data, error: r.error })),
         useLocalCategorias
           ? readLocalExpenseCategories(tenantId, { sucursalId: activeSucursalId || undefined })
@@ -398,10 +399,10 @@ export function Cierre() {
       // is available offline.
       let localMax = 0;
       try {
-        const allCycles = await readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos");
+        const allCycles = (await readLocalCierres(tenantId)) as unknown as CierreOperativoRow[];
         localMax = allCycles.reduce((m, c) => Math.max(m, c.cycle_number ?? 0), 0);
       } catch {
-        // Mirror unavailable (e.g. web runtime): rely on the cloud max.
+        // Local sources unavailable (e.g. web runtime): rely on the cloud max.
       }
 
       let cloudMax = 0;

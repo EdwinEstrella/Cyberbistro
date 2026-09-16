@@ -701,6 +701,11 @@ if (gotTheLock) {
         if (!store) throw new Error('Tenant store is unavailable')
         return new OrdersRepository({ store, branchId: 'main-process-default' })
       },
+      listCierres: (filter) => {
+        const store = getStore((filter as { tenantId?: string })?.tenantId)
+        if (!store) return []
+        return store.listCierres(filter)
+      },
     })
     registerSalesFiscalRepositoryIpc({
       ipcMain,

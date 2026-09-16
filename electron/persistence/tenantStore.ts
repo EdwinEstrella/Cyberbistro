@@ -372,6 +372,19 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     ).all(this.tenantId, limit) as Array<Record<string, unknown>>;
   }
 
+  listCierres(filter?: { sucursalId?: string; limit?: number }): Array<Record<string, unknown>> {
+    const limit = filter?.limit ?? 500;
+    const columns = "id, tenant_id, sucursal_id, business_day, opening_cash AS efectivo_inicial, state, closed_at, cycle_number, opened_at, printed_at, created_at";
+    if (filter?.sucursalId) {
+      return this.database.prepare(
+        `SELECT ${columns} FROM cierres_operativos WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id IS NULL) ORDER BY cycle_number DESC LIMIT ?`
+      ).all(this.tenantId, filter.sucursalId, limit) as Array<Record<string, unknown>>;
+    }
+    return this.database.prepare(
+      `SELECT ${columns} FROM cierres_operativos WHERE tenant_id = ? ORDER BY cycle_number DESC LIMIT ?`
+    ).all(this.tenantId, limit) as Array<Record<string, unknown>>;
+  }
+
   syncCloudExpenseCategories(categories: Array<Record<string, unknown>>): void {
     this.database.exec("BEGIN IMMEDIATE;");
     try {

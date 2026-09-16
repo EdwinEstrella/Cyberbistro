@@ -2649,10 +2649,25 @@ export async function pullIncrementalChangesForTable(
 }
 
 const mirrorSyncInFlight = new Map<string, Promise<{ tablesUpdated: number; rowsPulled: number }>>();
+const SYNC_WATCHDOG_MS = 90_000;
 export function syncIncremental(tenantId: string): Promise<{ tablesUpdated: number; rowsPulled: number }> {
   const existing = mirrorSyncInFlight.get(tenantId);
   if (existing) return existing;
-  const run = runMirrorSync(tenantId).finally(() => mirrorSyncInFlight.delete(tenantId));
+  // Watchdog: a single run that hangs (e.g. a blocked IndexedDB open) must never
+  // wedge the in-flight entry forever — otherwise every later 15s tick returns
+  // the same dead promise and sync stops until a full page reload. The timeout
+  // releases the entry so the next tick starts a fresh run.
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  const guarded = Promise.race([
+    runMirrorSync(tenantId),
+    new Promise<never>((_, reject) => {
+      watchdog = setTimeout(() => reject(new Error("Sync watchdog: mirror sync excedió el tiempo máximo.")), SYNC_WATCHDOG_MS);
+    }),
+  ]);
+  const run = guarded.finally(() => {
+    if (watchdog) clearTimeout(watchdog);
+    mirrorSyncInFlight.delete(tenantId);
+  });
   mirrorSyncInFlight.set(tenantId, run);
   return run;
 }

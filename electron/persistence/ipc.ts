@@ -20,6 +20,7 @@ export const TENANT_STORE_IMPORT_CHANNEL = "tenant-store:import-indexeddb";
 export const DESKTOP_REPOSITORY_EXECUTE_CHANNEL = "desktop-repository:execute";
 export const CATALOG_REPOSITORY_EXECUTE_CHANNEL = "catalog-repository:execute";
 export const ORDERS_REPOSITORY_EXECUTE_CHANNEL = "orders-repository:execute";
+export const CIERRES_LIST_CHANNEL = "cierres:list";
 export const FISCAL_SALES_REPOSITORY_EXECUTE_CHANNEL = "sales-fiscal-repository:execute";
 export const FACTURAS_LIST_CHANNEL = "facturas:list";
 export const CASH_PURCHASE_REPOSITORY_EXECUTE_CHANNEL = "cash-purchase-repository:execute";
@@ -314,13 +315,24 @@ export function registerSalesFiscalRepositoryIpc(input: {
   });
 }
 
-export function registerOrdersRepositoryIpc(input: { ipcMain: OrdersRepositoryIpcMain; isTrustedSender: (event: { senderId: number }) => boolean; getRepository: () => { execute(command: OrdersCommand): OrdersRepositoryResult } }): void {
+export function registerOrdersRepositoryIpc(input: {
+  ipcMain: OrdersRepositoryIpcMain;
+  isTrustedSender: (event: { senderId: number }) => boolean;
+  getRepository: () => { execute(command: OrdersCommand): OrdersRepositoryResult };
+  listCierres?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Array<Record<string, unknown>>;
+}): void {
   input.ipcMain.removeHandler(ORDERS_REPOSITORY_EXECUTE_CHANNEL);
   input.ipcMain.handle(ORDERS_REPOSITORY_EXECUTE_CHANNEL, async (event, payload) => {
     if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
     const command = parseOrdersCommand(payload);
     if (!command) throw new Error("Invalid orders command");
     return { ok: true, data: input.getRepository().execute(command) };
+  });
+
+  input.ipcMain.removeHandler(CIERRES_LIST_CHANNEL);
+  input.ipcMain.handle(CIERRES_LIST_CHANNEL, async (event, filter) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    return { ok: true, data: input.listCierres?.(filter as { tenantId?: string; sucursalId?: string; limit?: number }) ?? [] };
   });
 }
 

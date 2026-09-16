@@ -395,6 +395,7 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
   migrateLegacyPayrollSchema(database);
   ensureSyncOutboxSchemaEvolution(database);
   ensureFacturasSchemaEvolution(database);
+  ensureCierresSchemaEvolution(database);
   database.exec(`
     CREATE INDEX IF NOT EXISTS idx_payroll_payments_employee_period ON payroll_payments (tenant_id, sucursal_id, employee_id, period);
     CREATE INDEX IF NOT EXISTS idx_payroll_adjustments_payment ON payroll_payment_adjustments (payment_id);
@@ -444,6 +445,22 @@ function ensureFacturasSchemaEvolution(database: DatabaseSync): void {
   for (const [name, type] of additions) {
     if (!columns.includes(name)) {
       database.exec(`ALTER TABLE facturas ADD COLUMN ${name} ${type};`);
+    }
+  }
+}
+
+/**
+ * The cloud cierres carry `printed_at` and `created_at` that the cierre and
+ * billing screens read; the local table gains them additively so the cutover to
+ * SQLite reads lose no fields. (`efectivo_inicial` is exposed as an alias of the
+ * existing `opening_cash` column at query time, so no column is needed for it.)
+ */
+function ensureCierresSchemaEvolution(database: DatabaseSync): void {
+  const columns = getTableColumns(database, "cierres_operativos");
+  if (columns.length === 0) return;
+  for (const [name, type] of [["printed_at", "TEXT"], ["created_at", "TEXT"]] as const) {
+    if (!columns.includes(name)) {
+      database.exec(`ALTER TABLE cierres_operativos ADD COLUMN ${name} ${type};`);
     }
   }
 }

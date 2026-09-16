@@ -81,4 +81,12 @@ describe("cierres_operativos cloud→local pull", () => {
     expect(row).toBeTruthy();
     expect(row.sucursal_id).toBeNull();
   });
+
+  it("persists printed_at and created_at from the cloud cycle", async () => {
+    const cloud = makeCloud({ cierres_operativos: [cloudCycle({ id: "cycle-4", cycle_number: 5, printed_at: "2026-09-16T21:00:00Z", created_at: "2026-09-16T07:59:00Z" })] });
+    await pull(cloud);
+    const row = db.prepare("SELECT * FROM cierres_operativos WHERE id = 'cycle-4'").get() as Row;
+    expect(row.printed_at).toBe("2026-09-16T21:00:00Z");
+    expect(row.created_at).toBe("2026-09-16T07:59:00Z");
+  });
 });
