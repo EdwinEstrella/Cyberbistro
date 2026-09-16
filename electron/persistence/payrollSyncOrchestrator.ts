@@ -54,14 +54,21 @@ export class PayrollSyncOrchestrator {
 
   public async triggerSync(): Promise<void> {
     if (!this.worker || this.isSyncing || this.stopRequested) return;
-    
+
     this.isSyncing = true;
     try {
-      await this.worker.push();
-      // Note: Actual production remote transmission still needs the remote migration applied
-    } catch (err) {
-      // Fail closed, log error
-      console.error("[PayrollSyncOrchestrator] sync error:", err);
+      // Push (local → cloud) and pull (cloud → local) run each turn. A failure in
+      // one direction must not block the other, so they are isolated.
+      try {
+        await this.worker.push();
+      } catch (err) {
+        console.error("[PayrollSyncOrchestrator] push error:", err);
+      }
+      try {
+        await this.worker.pull();
+      } catch (err) {
+        console.error("[PayrollSyncOrchestrator] pull error:", err);
+      }
     } finally {
       this.isSyncing = false;
     }

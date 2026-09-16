@@ -10,7 +10,6 @@ import { readLocalExpenses, readLocalExpenseCategories } from "../../gastos/lib/
 import { isDesktopRuntime, isCloudAvailableForDesktop } from "../../../shared/lib/cloudAvailability";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { calculateExpectedCashDrawer, sumCashExpenses } from "../../../shared/lib/cycleCash";
-import { openOperatingCycle, closeOperatingCycle } from "../../../shared/lib/ordersUiAdapter";
 
 type FacturaEstado = "pagada" | "pendiente" | "cancelada";
 
@@ -406,14 +405,11 @@ export function Cierre() {
       const openedAtIso = openedAt.toISOString();
       const businessDay = todayYmd();
 
-      if (typeof window !== "undefined" && window.electronAPI?.executeOrdersCommand) {
-        try {
-          await openOperatingCycle(localCycleId, businessDay, efectivoInicial, num);
-        } catch (e) {
-          console.warn("Desktop SQLite cycle open failed, falling back to localFirst enqueue:", e);
-        }
-      }
-
+      // Operational cycles are written through a single engine (IndexedDB) to
+      // avoid the double cloud push that produced duplicate/ghost cycles. The
+      // SQLite cycle path was an incomplete stub (no cycle_number/opened_at) and
+      // is intentionally not used here; a full cierres→SQLite migration is a
+      // separate vertical (needs schema expansion).
       await enqueueLocalWrite({
         tenantId,
         tableName: "cierres_operativos",
@@ -528,14 +524,8 @@ export function Cierre() {
       return;
     }
 
-    if (typeof window !== "undefined" && window.electronAPI?.executeOrdersCommand) {
-      try {
-        await closeOperatingCycle(currentCycle.id);
-      } catch (e) {
-        console.warn("Desktop SQLite cycle close failed, falling back to localFirst enqueue:", e);
-      }
-    }
-
+    // Single-engine write (see cycle open): no SQLite dual-write to avoid the
+    // double cloud push that caused ghost/duplicate cycles.
     await enqueueLocalWrite({ tenantId, tableName: "cierres_operativos", rowId: currentCycle.id, op: "update", payload: { closed_at: now, closed_by_auth_user_id: user?.id ?? null }, deviceId });
     setPrintMsg("Ciclo cerrado.");
 

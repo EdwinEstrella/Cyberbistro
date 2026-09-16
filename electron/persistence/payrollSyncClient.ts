@@ -1,5 +1,13 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { DurableOperation, PullBatch, ServerSyncClient } from "./syncWorker";
+import { DurableOperation, PullBatch, ServerChange, ServerSyncClient } from "./syncWorker";
+
+/** Cloud tables pulled into SQLite, with the column used as the incremental cursor. */
+const PULL_TABLES: ReadonlyArray<{ table: string; cursorColumn: string }> = [
+  { table: "gasto_categorias", cursorColumn: "updated_at" },
+  { table: "gastos", cursorColumn: "updated_at" },
+  { table: "customers", cursorColumn: "updated_at" },
+];
+const PULL_PAGE_SIZE = 500;
 
 type MutationError = {
   code?: string;
@@ -154,10 +162,39 @@ export class PayrollSyncClient implements ServerSyncClient {
   }
 
   async pull(input: { tenantId: string; cursor: string | null }): Promise<PullBatch> {
-    return {
-      cursor: input.cursor || new Date().toISOString(),
-      changes: [],
-    };
+    const client: any = await this.clientPromise;
+    const changes: ServerChange[] = [];
+    let maxCursor = input.cursor;
+
+    for (const { table, cursorColumn } of PULL_TABLES) {
+      let query = client
+        .from(table)
+        .select("*")
+        .eq("tenant_id", input.tenantId)
+        .order(cursorColumn, { ascending: true })
+        .limit(PULL_PAGE_SIZE);
+      if (input.cursor) {
+        query = query.gt(cursorColumn, input.cursor);
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        throw new Error(`Pull failed for ${table}: ${error.message}`);
+      }
+
+      for (const row of (Array.isArray(data) ? data : [])) {
+        if (!row || typeof row !== "object" || row.id == null) continue;
+        changes.push({ tableName: table, rowId: String(row.id), payload: row as Record<string, unknown>, deleted: false });
+        const updatedAt = typeof row[cursorColumn] === "string" ? (row[cursorColumn] as string) : null;
+        if (updatedAt && (!maxCursor || updatedAt > maxCursor)) {
+          maxCursor = updatedAt;
+        }
+      }
+    }
+
+    // Keep the previous cursor when nothing changed; only fall back to "now" on a
+    // first-ever pull that returned no rows (empty tenant), so we never skip data.
+    return { cursor: maxCursor ?? new Date().toISOString(), changes };
   }
 
   private async deleteRemote(operation: DurableOperation): Promise<PushResponse> {
