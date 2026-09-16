@@ -302,8 +302,14 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
   }
 
   getCursor(): string | null {
-    const row = this.db.prepare("SELECT cursor FROM sync_state WHERE key = ?").get(this.pullCursorKey()) as { cursor: string | null } | undefined;
-    return row?.cursor ?? null;
+    // Never throw from cursor lookup: a missing/unready sync_state simply means
+    // "no cursor yet" → a full pull, which is the correct safe fallback.
+    try {
+      const row = this.db.prepare("SELECT cursor FROM sync_state WHERE key = ?").get(this.pullCursorKey()) as { cursor: string | null } | undefined;
+      return row?.cursor ?? null;
+    } catch {
+      return null;
+    }
   }
 
   private pullCursorKey(): string {
