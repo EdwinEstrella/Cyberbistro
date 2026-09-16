@@ -112,7 +112,11 @@ async function loadTableConsumption(
     if (shouldTrustLocal) {
       const localRows = await readLocalMirror<MesaConsumoRow>(tenantId, "consumos");
       const mesaRows = localRows
-        .filter((row) => row.mesa_numero === mesaNumero && row.sucursal_id === sucursalId)
+        // Match the mesa grid's occupancy rule (Dashboard): a consumo with a null
+        // sucursal_id belongs to the active branch's table. If the modal filtered
+        // it out (strict ===), the grid kept counting it as pending and the table
+        // never closed after charging.
+        .filter((row) => row.mesa_numero === mesaNumero && (!row.sucursal_id || row.sucursal_id === sucursalId))
         .sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
       const localPendingRows = mesaRows.filter((row) => row.estado !== "pagado");
 
@@ -126,7 +130,7 @@ async function loadTableConsumption(
         if (entry.status !== "pending" && entry.status !== "syncing" && entry.status !== "error") return false;
         if (entry.table_name !== "consumos") return false;
         if (mesaRowIds.has(entry.row_id)) return true;
-        return Number(entry.payload?.mesa_numero) === mesaNumero && entry.payload?.sucursal_id === sucursalId;
+        return Number(entry.payload?.mesa_numero) === mesaNumero && (!entry.payload?.sucursal_id || entry.payload?.sucursal_id === sucursalId);
       });
 
       if (hasPendingMesaWrites) {
@@ -141,7 +145,7 @@ async function loadTableConsumption(
     .from("consumos")
     .select("*")
     .eq("tenant_id", tenantId)
-    .eq("sucursal_id", sucursalId)
+    .or(`sucursal_id.eq.${sucursalId},sucursal_id.is.null`)
     .eq("mesa_numero", mesaNumero)
     .neq("estado", "pagado")
     .order("created_at", { ascending: true });

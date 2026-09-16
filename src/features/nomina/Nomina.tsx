@@ -53,7 +53,7 @@ import { getThermalPrintSettings } from "../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../shared/lib/thermalPrint";
 import { supabase } from "../../shared/lib/supabase";
 import { isDesktopCloudUnavailable } from "../../shared/lib/cloudAvailability";
-import { shouldReadLocalFirst, readLocalMirror, writeLocalMirrorRow } from "../../shared/lib/localFirst";
+import { readLocalMirror, shouldReadLocalFirst } from "../../shared/lib/localFirst";
 import type {
   PayrollCreatePaymentRequest,
   PayrollEmployee,
@@ -145,6 +145,8 @@ export function Nomina() {
   const [adjustments, setAdjustments] = useState<PayrollPaymentAdjustment[]>([]);
   const [payments, setPayments] = useState<PayrollPaymentRecord[]>([]);
   const [loadingPayments, setLoadingPayments] = useState(false);
+  const [employeeLoadError, setEmployeeLoadError] = useState("");
+  const [paymentLoadError, setPaymentLoadError] = useState("");
   const [receiptSearchQuery, setReceiptSearchQuery] = useState("");
   const [previewPayment, setPreviewPayment] = useState<PayrollPaymentRecord | null>(null);
   const [paymentToAnnull, setPaymentToAnnull] = useState<PayrollPaymentRecord | null>(null);
@@ -228,18 +230,18 @@ export function Nomina() {
       try {
         if (await shouldReadLocalFirst(tenantId, ["tenants"])) {
           const rows = await readLocalMirror<any>(tenantId, "tenants");
-          const t = rows.find((r) => r.id === tenantId);
-          if (t) {
+          const tenant = rows.find((row) => row.id === tenantId);
+          if (tenant) {
             setTenantInfo({
-              nombre_negocio: t.nombre_negocio || t.nombre || "Cloudix",
-              rnc: t.rnc || "",
-              direccion: t.direccion || "",
-              telefono: t.telefono || "",
-              logo_url: t.logo_url || "",
-              moneda: t.moneda || "DOP",
-              logo_size_px: t.logo_size_px,
-              logo_offset_x: t.logo_offset_x,
-              logo_offset_y: t.logo_offset_y,
+              nombre_negocio: tenant.nombre_negocio || tenant.nombre || "Cloudix",
+              rnc: tenant.rnc || "",
+              direccion: tenant.direccion || "",
+              telefono: tenant.telefono || "",
+              logo_url: tenant.logo_url || "",
+              moneda: tenant.moneda || "DOP",
+              logo_size_px: tenant.logo_size_px,
+              logo_offset_x: tenant.logo_offset_x,
+              logo_offset_y: tenant.logo_offset_y,
             });
             return;
           }
@@ -341,8 +343,8 @@ export function Nomina() {
   const loadEmployees = useCallback(async () => {
     if (!tenantId || !activeSucursalId) return;
     setLoading(true);
+    setEmployeeLoadError("");
     try {
-      let localEmployees: PayrollEmployee[] = [];
       if (isPayrollLocalStorageAvailable()) {
         const result = await executePayrollCommandLocally({
           type: "payroll.getEmployees", tenantId, sucursalId: activeSucursalId,
@@ -353,39 +355,9 @@ export function Nomina() {
         return;
       }
 
-      if (localEmployees.length === 0 && (await shouldReadLocalFirst(tenantId, ["nomina_empleados"]))) {
-        try {
-          const idbEmps = await readLocalMirror<any>(tenantId, "nomina_empleados");
-          const activeEmps = idbEmps.filter((e: any) => e.tenant_id === tenantId && (e.sucursal_id === activeSucursalId || !e.sucursal_id) && e.activo !== false);
-          if (activeEmps.length > 0) {
-            localEmployees = activeEmps.map((ce: any) => {
-              const nameParts = (ce.nombre_completo || "").trim().split(" ");
-              return {
-                id: ce.id,
-                firstName: nameParts[0] || "Empleado",
-                lastName: nameParts.slice(1).join(" ") || "",
-                role: ce.cargo || "Personal",
-                baseSalaryCents: Number(ce.salario_base_mensual || 0),
-                frequency: mapPayrollFrequencyFromCloud(ce.frecuencia_pago),
-                isActive: ce.activo !== false,
-              };
-            });
-            setEmployees(localEmployees);
-            setLoading(false);
-            if (!selectedEmployeeId) {
-              const firstActive = localEmployees.find((e) => e.isActive) ?? localEmployees[0];
-              if (firstActive) setSelectedEmployeeId(firstActive.id);
-            }
-
-          }
-        } catch { /* ignore fallback error */ }
-      }
-
-      // Cargar de Supabase
       const cloudDown = await isDesktopCloudUnavailable();
       if (!navigator.onLine || cloudDown) {
-        setLoading(false);
-        return;
+        throw new Error("No se pudo cargar la nómina: se necesita conexión con el servidor.");
       }
 
       const { data: cloudEmployees, error: cloudError } = await supabase
@@ -395,18 +367,15 @@ export function Nomina() {
         .eq("sucursal_id", activeSucursalId)
         .order("nombre_completo", { ascending: true });
 
-      const employeeMap = new Map<string, PayrollEmployee>();
-
-      for (const emp of localEmployees) {
-        employeeMap.set(emp.id, emp);
+      if (cloudError) {
+        throw cloudError;
       }
 
-      if (!cloudError && cloudEmployees && cloudEmployees.length > 0) {
-        for (const ce of cloudEmployees) {
+      const finalEmployees = (cloudEmployees ?? []).map((ce) => {
           const nameParts = (ce.nombre_completo || "").trim().split(" ");
           const firstName = nameParts[0] || "Empleado";
           const lastName = nameParts.slice(1).join(" ") || "";
-          const cloudEmp: PayrollEmployee = {
+          return {
             id: ce.id,
             firstName,
             lastName,
@@ -414,14 +383,8 @@ export function Nomina() {
             baseSalaryCents: Number(ce.salario_base_mensual || 0),
             frequency: mapPayrollFrequencyFromCloud(ce.frecuencia_pago),
             isActive: ce.activo !== false,
-          };
-          employeeMap.set(cloudEmp.id, cloudEmp);
-          // Sincronizar hacia SQLite local para que el repositorio local disponga del empleado
-
-        }
-      }
-
-      const finalEmployees = Array.from(employeeMap.values());
+          } satisfies PayrollEmployee;
+        });
 
       setEmployees(finalEmployees);
       if (!selectedEmployeeId && finalEmployees.length > 0) {
@@ -430,17 +393,20 @@ export function Nomina() {
       }
     } catch (err) {
       console.error("[Nomina] Error loading employees:", err);
+      setEmployeeLoadError(
+        err instanceof Error ? err.message : "No se pudo cargar la lista de empleados.",
+      );
     } finally {
       setLoading(false);
     }
-  }, [activeSucursalId, selectedEmployeeId, syncEmployeeToCloud, tenantId]);
+  }, [activeSucursalId, selectedEmployeeId, tenantId]);
 
   // Load payments list
   const loadPayments = useCallback(async () => {
     if (!tenantId || !activeSucursalId) return;
     setLoadingPayments(true);
+    setPaymentLoadError("");
     try {
-      let localPayments: PayrollPaymentRecord[] = [];
       if (isPayrollLocalStorageAvailable()) {
         const result = await executePayrollCommandLocally({
           type: "payroll.getPayments", tenantId, sucursalId: activeSucursalId,
@@ -451,47 +417,9 @@ export function Nomina() {
         return;
       }
 
-      if (localPayments.length === 0 && (await shouldReadLocalFirst(tenantId, ["nomina_pagos"]))) {
-        try {
-          const [idbPayments, idbEmployees] = await Promise.all([
-            readLocalMirror<any>(tenantId, "nomina_pagos"),
-            readLocalMirror<any>(tenantId, "nomina_empleados"),
-          ]);
-          const empLookup = new Map(idbEmployees.map((e: any) => [e.id, e]));
-
-          if (idbPayments.length > 0) {
-            localPayments = idbPayments.map((p: any) => {
-              const emp = empLookup.get(p.empleado_id);
-              const delta = Number(p.total_bonos || 0) - Number(p.total_descuentos || 0);
-              return {
-                id: p.id,
-                employeeId: p.empleado_id,
-                employeeName: emp?.nombre_completo || "Empleado",
-                employeeRole: emp?.cargo || "Personal",
-                period: p.periodo,
-                frequency: mapPayrollFrequencyFromCloud(emp?.frecuencia_pago),
-                baseSalaryCents: Number(emp?.salario_base_mensual || p.monto_base || 0),
-                periodSalaryCents: Number(p.monto_base || 0),
-                adjustmentsDeltaCents: delta,
-                totalDueCents: Number(p.monto_neto || 0),
-                amountPaidCents: Number(p.monto_pagado || 0),
-                pendingCents: Number(p.monto_pendiente || 0),
-                receiptSnapshot: "",
-                createdAt: p.created_at || new Date().toISOString(),
-              };
-            });
-            setPayments(localPayments);
-            setLoadingPayments(false);
-          }
-        } catch (e) {
-          console.warn("[Nomina] Error cargando pagos desde IndexedDB fallback:", e);
-        }
-      }
-
       const cloudDown = await isDesktopCloudUnavailable();
       if (!navigator.onLine || cloudDown) {
-        setLoadingPayments(false);
-        return;
+        throw new Error("No se pudo cargar el historial de pagos: se necesita conexión con el servidor.");
       }
 
       const { data: cloudPayments, error: cloudErr } = await supabase
@@ -503,17 +431,15 @@ export function Nomina() {
         `)
         .order("created_at", { ascending: false });
 
-      const paymentMap = new Map<string, PayrollPaymentRecord>();
-
-      for (const p of localPayments) {
-        paymentMap.set(p.id, p);
+      if (cloudErr) {
+        throw cloudErr;
       }
 
-      if (!cloudErr && cloudPayments && cloudPayments.length > 0) {
-        for (const cp of cloudPayments) {
+      const finalPayments = (cloudPayments ?? [])
+        .map((cp) => {
           const emp = (Array.isArray(cp.nomina_empleados) ? cp.nomina_empleados[0] : cp.nomina_empleados) as any;
           const delta = Number(cp.total_bonos || 0) - Number(cp.total_descuentos || 0);
-          const cloudRecord: PayrollPaymentRecord = {
+          return {
             id: cp.id,
             employeeId: cp.empleado_id,
             employeeName: emp?.nombre_completo || "Empleado",
@@ -528,39 +454,17 @@ export function Nomina() {
             pendingCents: Number(cp.monto_pendiente || 0),
             receiptSnapshot: "",
             createdAt: cp.created_at || new Date().toISOString(),
-          };
-          paymentMap.set(cloudRecord.id, cloudRecord);
-        }
-
-        void (async () => {
-          try {
-            for (const cp of cloudPayments) {
-              await writeLocalMirrorRow(tenantId, "nomina_pagos", {
-                id: cp.id,
-                tenant_id: tenantId,
-                empleado_id: cp.empleado_id,
-                periodo: cp.periodo,
-                monto_base: cp.monto_base,
-                total_bonos: cp.total_bonos,
-                total_descuentos: cp.total_descuentos,
-                monto_neto: cp.monto_neto,
-                monto_pagado: cp.monto_pagado,
-                monto_pendiente: cp.monto_pendiente,
-                created_at: cp.created_at,
-              });
-            }
-          } catch {
-            /* ignore background mirror error */
-          }
-        })();
-      }
-
-      const finalPayments = Array.from(paymentMap.values()).sort(
+          } satisfies PayrollPaymentRecord;
+        })
+        .sort(
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       );
       setPayments(finalPayments);
     } catch (error) {
       console.error("[Nomina] Error cargando historial de recibos:", error);
+      setPaymentLoadError(
+        error instanceof Error ? error.message : "No se pudo cargar el historial de pagos.",
+      );
     } finally {
       setLoadingPayments(false);
     }
@@ -1090,6 +994,14 @@ export function Nomina() {
       </div>
 
       {/* Global Notifications */}
+      {(employeeLoadError || paymentLoadError) && (
+        <div className="bg-[rgba(255,113,108,0.06)] border border-[rgba(255,113,108,0.22)] rounded-[12px] px-4 py-3 flex items-center gap-3 shrink-0">
+          <AlertCircle className="size-4 text-[#ff716c] shrink-0" />
+          <span className="font-['Inter',sans-serif] text-[#ff716c] text-[13px]">
+            {[employeeLoadError, paymentLoadError].filter(Boolean).join(" ")}
+          </span>
+        </div>
+      )}
       {paymentMessage && (
         <div className="bg-[rgba(255,113,108,0.06)] border border-[rgba(255,113,108,0.22)] rounded-[12px] px-4 py-3 flex items-center gap-3 shrink-0">
           <AlertCircle className="size-4 text-[#ff716c] shrink-0" />

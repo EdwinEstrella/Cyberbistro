@@ -11,6 +11,7 @@ Last updated: 2026-09-16
 - C:\Users\Edwin\.pi\agent\skills
 - C:\Users\Edwin\.agents\skills
 - C:\Users\Edwin\.config\opencode\skills
+- C:\Users\Edwin\.claude\skills
 - C:\Users\Edwin\.cursor\skills
 - C:\Users\Edwin\.copilot\skills
 - C:\Users\Edwin\.codex\skills
@@ -44,7 +45,7 @@ Last updated: 2026-09-16
 | `insforge-cli` | Use this skill whenever someone needs a backend, or a task touches InsForge backend or cloud infrastructure through the InsForge CLI: projects, SQL, migrations, RLS policies, functions, storage, deployments, compute, secrets, config, schedules, logs, diagnostics, import/export, AI/OpenRouter setup, Stripe/Razorpay payments, backend branches, or CLI docs. For app code with InsForge or @insforge/sdk, use the insforge app-integration skill instead. | project | `C:\Users\Edwin\Desktop\Trabajos\cyberbistro\.agents\skills\insforge-cli\SKILL.md` |
 | `insforge-debug` | Use when diagnosing problems in an InsForge project — reactive failures (SDK error object, HTTP 4xx/5xx, gateway timeout 502/503/504, edge function failure or timeout, login/OAuth/auth errors, RLS denial, realtime channel issues, slow query on one endpoint, edge function or Vercel deploy failure), proactive audits (security/RLS review, performance/index review, system health check, pre-launch readiness), or when the user has an error but doesn't know where to start. | project | `C:\Users\Edwin\Desktop\Trabajos\cyberbistro\.agents\skills\insforge-debug\SKILL.md` |
 | `insforge-integrations` | Use when wiring an external auth provider (Clerk, Auth0, WorkOS, Kinde, Stytch, Better Auth) into InsForge for JWT-based RLS, or when adding the OKX x402 payment facilitator for onchain pay-per-use billing. | project | `C:\Users\Edwin\Desktop\Trabajos\cyberbistro\.agents\skills\insforge-integrations\SKILL.md` |
-| `issue-creation` | Create and triage GitHub issues from repository evidence. Trigger: issue creation, bug reports, feature requests, or issue approval. | user | `C:\Users\Edwin\.agents\skills\issue-creation\SKILL.md` |
+| `issue-creation` | Trigger: issue creation, bug reports, feature requests, or issue approval. Create and triage GitHub issues from repository evidence. | user | `C:\Users\Edwin\.agents\skills\issue-creation\SKILL.md` |
 | `judgment-day` | Trigger: judgment day, dual review, adversarial review, juzgar. Run explicit blind dual review with at most two scoped fix/re-judgment rounds. | user | `C:\Users\Edwin\.agents\skills\judgment-day\SKILL.md` |
 | `nodejs-backend-patterns` | Build production-ready Node.js backend services with Express/Fastify, implementing middleware patterns, error handling, authentication, database integration, and API design best practices. Use when creating Node.js servers, REST APIs, GraphQL backends, or microservices architectures. | project | `C:\Users\Edwin\Desktop\Trabajos\cyberbistro\.agents\skills\nodejs-backend-patterns\SKILL.md` |
 | `nodejs-best-practices` | Node.js development principles and decision-making. Framework selection, async patterns, security, and architecture. Teaches thinking, not copying. | project | `C:\Users\Edwin\Desktop\Trabajos\cyberbistro\.agents\skills\nodejs-best-practices\SKILL.md` |
