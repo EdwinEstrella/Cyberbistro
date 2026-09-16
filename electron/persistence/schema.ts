@@ -394,6 +394,7 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
   `);
   migrateLegacyPayrollSchema(database);
   ensureSyncOutboxSchemaEvolution(database);
+  ensureFacturasSchemaEvolution(database);
   database.exec(`
     CREATE INDEX IF NOT EXISTS idx_payroll_payments_employee_period ON payroll_payments (tenant_id, sucursal_id, employee_id, period);
     CREATE INDEX IF NOT EXISTS idx_payroll_adjustments_payment ON payroll_payment_adjustments (payment_id);
@@ -406,6 +407,44 @@ function ensureSyncOutboxSchemaEvolution(database: DatabaseSync): void {
   const columns = getTableColumns(database, "sync_outbox");
   if (!columns.includes("error_json")) {
     database.exec("ALTER TABLE sync_outbox ADD COLUMN error_json TEXT;");
+  }
+}
+
+/**
+ * The original SQLite `facturas` table was a skeleton (id, total, fiscal_mode)
+ * sized only for the analytics aggregate. Cloud→SQLite pull and the local-first
+ * invoice list need the full invoice shape, so these columns are added
+ * additively (nullable) to existing local databases. Kept out of the STRICT
+ * CREATE so no data-carrying rebuild is required, exactly like the sync_outbox
+ * evolution above.
+ */
+function ensureFacturasSchemaEvolution(database: DatabaseSync): void {
+  const columns = getTableColumns(database, "facturas");
+  if (columns.length === 0) return;
+  const additions: ReadonlyArray<readonly [string, string]> = [
+    ["numero_factura", "INTEGER"],
+    ["mesa_numero", "INTEGER"],
+    ["cliente_nombre", "TEXT"],
+    ["metodo_pago", "TEXT"],
+    ["estado", "TEXT"],
+    ["subtotal", "REAL"],
+    ["itbis", "REAL"],
+    ["propina", "REAL"],
+    ["moneda", "TEXT"],
+    ["items", "TEXT"],
+    ["notas", "TEXT"],
+    ["ncf", "TEXT"],
+    ["ncf_tipo", "TEXT"],
+    ["cliente_rnc", "TEXT"],
+    ["customer_id", "TEXT"],
+    ["created_at", "TEXT"],
+    ["updated_at", "TEXT"],
+    ["pagada_at", "TEXT"],
+  ];
+  for (const [name, type] of additions) {
+    if (!columns.includes(name)) {
+      database.exec(`ALTER TABLE facturas ADD COLUMN ${name} ${type};`);
+    }
   }
 }
 

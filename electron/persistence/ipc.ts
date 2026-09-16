@@ -21,6 +21,7 @@ export const DESKTOP_REPOSITORY_EXECUTE_CHANNEL = "desktop-repository:execute";
 export const CATALOG_REPOSITORY_EXECUTE_CHANNEL = "catalog-repository:execute";
 export const ORDERS_REPOSITORY_EXECUTE_CHANNEL = "orders-repository:execute";
 export const FISCAL_SALES_REPOSITORY_EXECUTE_CHANNEL = "sales-fiscal-repository:execute";
+export const FACTURAS_LIST_CHANNEL = "facturas:list";
 export const CASH_PURCHASE_REPOSITORY_EXECUTE_CHANNEL = "cash-purchase-repository:execute";
 export const PAYROLL_REPOSITORY_EXECUTE_CHANNEL = "payroll-repository:execute";
 export const PAYROLL_SYNC_ACCESS_TOKEN_CHANNEL = "payroll-sync:set-access-token";
@@ -292,13 +293,24 @@ export function registerCashPurchaseRepositoryIpc(input: { ipcMain: CashPurchase
   });
 }
 
-export function registerSalesFiscalRepositoryIpc(input: { ipcMain: SalesFiscalRepositoryIpcMain; isTrustedSender: (event: { senderId: number }) => boolean; getRepository: () => { execute(command: SalesFiscalCommand): SalesFiscalRepositoryResult } }): void {
+export function registerSalesFiscalRepositoryIpc(input: {
+  ipcMain: SalesFiscalRepositoryIpcMain;
+  isTrustedSender: (event: { senderId: number }) => boolean;
+  getRepository: () => { execute(command: SalesFiscalCommand): SalesFiscalRepositoryResult };
+  listInvoices?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Array<Record<string, unknown>>;
+}): void {
   input.ipcMain.removeHandler(FISCAL_SALES_REPOSITORY_EXECUTE_CHANNEL);
   input.ipcMain.handle(FISCAL_SALES_REPOSITORY_EXECUTE_CHANNEL, async (event, payload) => {
     if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
     const command = parseSalesFiscalCommand(payload);
     if (!command) throw new Error("Invalid sales fiscal command");
     return { ok: true, data: input.getRepository().execute(command) };
+  });
+
+  input.ipcMain.removeHandler(FACTURAS_LIST_CHANNEL);
+  input.ipcMain.handle(FACTURAS_LIST_CHANNEL, async (event, filter) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    return { ok: true, data: input.listInvoices?.(filter as { tenantId?: string; sucursalId?: string; limit?: number }) ?? [] };
   });
 }
 

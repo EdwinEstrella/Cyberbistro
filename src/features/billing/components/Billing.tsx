@@ -6,6 +6,7 @@ import { buildCierreDiaReceiptHtml, buildFacturaReceiptHtml } from "../../../sha
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
+import { readLocalInvoices } from "../lib/invoicesLocal";
 import { readLocalExpenses, readLocalExpenseCategories } from "../../gastos/lib/expensesLocal";
 import { listCustomers } from "../../clientes/lib/customers";
 import { cacheLogoFromUrl } from "../../../shared/lib/logoCache";
@@ -372,7 +373,7 @@ export function Billing() {
       ecfRes
     ] = await Promise.all([
       useLocalInvoices
-        ? { data: await readLocalMirror<Invoice & { sucursal_id?: string | null }>(tenantId, "facturas").then(r => r.filter(f => !f.sucursal_id || f.sucursal_id === activeSucursalId).sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())), error: null }
+        ? { data: (await readLocalInvoices(tenantId, { sucursalId: activeSucursalId || undefined, limit: 1000 })) as unknown as Invoice[], error: null }
         : activeSucursalId
           ? supabase.from("facturas").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("created_at", { ascending: false })
           : supabase.from("facturas").select("*").eq("tenant_id", tenantId).is("sucursal_id", null).order("created_at", { ascending: false }),

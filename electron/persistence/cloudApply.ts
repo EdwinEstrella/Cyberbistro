@@ -208,6 +208,104 @@ export function applyCloudOperationalCycleRows(
   }
 }
 
+/**
+ * Applies cloud invoices into the local SQLite mirror. The cloud shape carries
+ * the full invoice (line items as a JSONB array, fiscal fields, totals); we map
+ * it onto the evolved local `facturas` columns so analytics and the invoice
+ * list can read from SQLite. Pulled rows are always `committed`. A row with a
+ * pending local write is skipped so an unsynced local edit is never clobbered.
+ */
+export function applyCloudFacturaRows(
+  db: DatabaseSync,
+  tenantId: string,
+  facturas: Array<Record<string, unknown>>,
+  defaultBranchId = "main-process-default",
+): void {
+  const ensureBranch = db.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)");
+  ensureBranch.run(defaultBranchId, tenantId, "Principal");
+  const stmt = db.prepare(`
+    INSERT INTO facturas (
+      id, tenant_id, sucursal_id, fiscal_mode, total, local_status,
+      numero_factura, mesa_numero, cliente_nombre, metodo_pago, estado,
+      subtotal, itbis, propina, moneda, items, notas, ncf, ncf_tipo,
+      cliente_rnc, customer_id, created_at, updated_at, pagada_at
+    ) VALUES (?, ?, ?, ?, ?, 'committed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      sucursal_id = excluded.sucursal_id,
+      fiscal_mode = excluded.fiscal_mode,
+      total = excluded.total,
+      numero_factura = excluded.numero_factura,
+      mesa_numero = excluded.mesa_numero,
+      cliente_nombre = excluded.cliente_nombre,
+      metodo_pago = excluded.metodo_pago,
+      estado = excluded.estado,
+      subtotal = excluded.subtotal,
+      itbis = excluded.itbis,
+      propina = excluded.propina,
+      moneda = excluded.moneda,
+      items = excluded.items,
+      notas = excluded.notas,
+      ncf = excluded.ncf,
+      ncf_tipo = excluded.ncf_tipo,
+      cliente_rnc = excluded.cliente_rnc,
+      customer_id = excluded.customer_id,
+      created_at = excluded.created_at,
+      updated_at = excluded.updated_at,
+      pagada_at = excluded.pagada_at
+  `);
+  const allowedFiscalModes = new Set(["internal_receipt", "ncf_legacy", "dgii_ecf"]);
+  const str = (value: unknown): string | null => {
+    if (value === null || value === undefined) return null;
+    const s = String(value);
+    return s.length > 0 ? s : null;
+  };
+  const int = (value: unknown): number | null => {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.round(n) : null;
+  };
+  const real = (value: unknown): number | null => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  };
+  for (const f of facturas) {
+    if (!f || typeof f !== "object" || !f.id) continue;
+    if (hasPendingCloudWrite(db, tenantId, "facturas", String(f.id))) continue;
+    const branchId = typeof f.sucursal_id === "string" && f.sucursal_id.trim() ? f.sucursal_id.trim() : defaultBranchId;
+    ensureBranch.run(branchId, tenantId, "Principal");
+
+    const rawTotal = Number(f.total ?? 0);
+    const total = Number.isFinite(rawTotal) && rawTotal >= 0 ? rawTotal : 0;
+    const fiscalMode = typeof f.fiscal_mode === "string" && allowedFiscalModes.has(f.fiscal_mode) ? f.fiscal_mode : "internal_receipt";
+    const items = f.items == null ? null : (typeof f.items === "string" ? f.items : JSON.stringify(f.items));
+
+    stmt.run(
+      String(f.id),
+      tenantId,
+      branchId,
+      fiscalMode,
+      total,
+      int(f.numero_factura),
+      int(f.mesa_numero),
+      str(f.cliente_nombre),
+      str(f.metodo_pago),
+      str(f.estado),
+      real(f.subtotal),
+      real(f.itbis),
+      real(f.propina),
+      str(f.moneda),
+      items,
+      str(f.notas),
+      str(f.ncf),
+      str(f.ncf_tipo),
+      str(f.cliente_rnc),
+      str(f.customer_id),
+      str(f.created_at),
+      str(f.updated_at),
+      str(f.pagada_at),
+    );
+  }
+}
+
 function hasPendingCloudWrite(db: DatabaseSync, tenantId: string, table: string, id: string): boolean {
   return Boolean(db.prepare("SELECT 1 FROM sync_outbox WHERE tenant_id=? AND table_name=? AND row_id=? LIMIT 1")
     .get(tenantId, table, id));

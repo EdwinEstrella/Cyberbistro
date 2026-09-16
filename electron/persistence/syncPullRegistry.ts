@@ -33,6 +33,10 @@ export const SYNC_PULL_TABLES: readonly SyncPullTable[] = [
   // Operational cycles download for analytics grouping. Never hard-deleted via
   // pull: a cycle absent from a snapshot page must survive locally.
   { remoteTable: "cierres_operativos", localTable: "cierres_operativos", child: false, deletable: false },
+  // Invoices download for analytics (ventas) and the local-first invoice list.
+  // Not hard-deleted via pull: invoice deletion is audited, never a silent
+  // snapshot-absence removal.
+  { remoteTable: "facturas", localTable: "facturas", child: false, deletable: false },
 ] as const;
 
 /** Local table names whose cloud→local pull is implemented. */

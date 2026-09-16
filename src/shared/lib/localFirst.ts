@@ -697,6 +697,9 @@ function openLocalFirstDbForSync(tenantId: string): Promise<IDBDatabase> {
     }
     const request = indexedDB.open(getLocalFirstDatabaseName(tenantId), LOCAL_FIRST_DB_VERSION);
     request.onerror = () => reject(request.error ?? new Error("No se pudo abrir la DB local."));
+    // Another still-open connection (e.g. a second window) can block a version
+    // upgrade indefinitely. Reject instead of hanging so callers/watchdogs retry.
+    request.onblocked = () => reject(new Error("IndexedDB bloqueada por otra conexión abierta."));
     request.onsuccess = () => resolve(request.result);
     request.onupgradeneeded = () => {
       const db = request.result;
@@ -2710,6 +2713,9 @@ function openLocalFirstDb(tenantId: string): Promise<IDBDatabase> {
 
     const request = indexedDB.open(getLocalFirstDatabaseName(tenantId), LOCAL_FIRST_DB_VERSION);
     request.onerror = () => reject(request.error ?? new Error("No se pudo abrir la DB local."));
+    // Another still-open connection (e.g. a second window) can block a version
+    // upgrade indefinitely. Reject instead of hanging so callers/watchdogs retry.
+    request.onblocked = () => reject(new Error("IndexedDB bloqueada por otra conexión abierta."));
     request.onsuccess = () => resolve(request.result);
     request.onupgradeneeded = () => {
       const db = request.result;

@@ -710,6 +710,11 @@ if (gotTheLock) {
         if (!store) throw new Error('Tenant store is unavailable')
         return new SalesFiscalRepository({ store, branchId: 'main-process-default' })
       },
+      listInvoices: (filter) => {
+        const store = getStore((filter as { tenantId?: string })?.tenantId)
+        if (!store) return []
+        return store.listInvoices(filter)
+      },
     })
     registerCashPurchaseRepositoryIpc({ ipcMain, isTrustedSender, getRepository: () => {
       const store = getStore()

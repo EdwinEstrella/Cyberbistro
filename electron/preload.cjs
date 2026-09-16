@@ -68,6 +68,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   executePayablesCommand: (command) => ipcRenderer.invoke('payables-repository:execute', command),
   executeExpenseCommand: (command) => ipcRenderer.invoke('expense-repository:execute', command),
   listExpenses: (filter) => ipcRenderer.invoke('expenses:list', filter),
+  listInvoices: (filter) => ipcRenderer.invoke('facturas:list', filter),
   listExpenseCategories: () => ipcRenderer.invoke('expense-categories:list'),
   syncCloudExpenses: (expenses, defaultBranchId) => ipcRenderer.invoke('expenses:sync-cloud', expenses, defaultBranchId),
   syncCloudExpenseCategories: (categories) => ipcRenderer.invoke('expense-categories:sync-cloud', categories),
