@@ -23,6 +23,7 @@ export function applyCloudExpenseCategoryRows(
   `);
   for (const cat of categories) {
     if (!cat || typeof cat !== "object" || !cat.id) continue;
+    if (hasPendingCloudWrite(db, tenantId, "gasto_categorias", String(cat.id))) continue;
     const name = String(cat.nombre ?? cat.name ?? "").trim();
     if (!name) continue;
     const active = (cat.activa ?? cat.active ?? true) ? 1 : 0;
@@ -55,6 +56,8 @@ export function applyCloudExpenseRows(
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'committed', ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       sucursal_id = excluded.sucursal_id,
+      compra_id = excluded.compra_id,
+      payroll_payment_id = excluded.payroll_payment_id,
       category_id = excluded.category_id,
       cycle_id = excluded.cycle_id,
       expense_type = excluded.expense_type,
@@ -69,6 +72,7 @@ export function applyCloudExpenseRows(
   `);
   for (const g of expenses) {
     if (!g || typeof g !== "object" || !g.id) continue;
+    if (hasPendingCloudWrite(db, tenantId, "gastos", String(g.id))) continue;
     const branchId = typeof g.sucursal_id === "string" && g.sucursal_id.trim() ? g.sucursal_id.trim() : defaultBranchId;
     db.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(branchId, tenantId, "Principal");
 
@@ -77,7 +81,7 @@ export function applyCloudExpenseRows(
       db.prepare("INSERT OR IGNORE INTO gasto_categorias (id, tenant_id, name, color, active) VALUES (?, ?, 'General', '#ff906d', 1)").run(categoryId, tenantId);
     }
 
-    const rawAmount = typeof g.monto === "number" ? g.monto : (typeof g.amount === "number" ? g.amount : 0);
+    const rawAmount = Number(g.monto ?? g.amount ?? 0);
     const amount = Number.isFinite(rawAmount) && rawAmount >= 0 ? rawAmount : 0;
     const rawAmountCents = typeof g.amount_cents === "number" ? g.amount_cents : Math.round(amount * 100);
     const amountCents = Number.isFinite(rawAmountCents) && rawAmountCents >= 0 ? rawAmountCents : 0;
@@ -144,6 +148,7 @@ export function applyCloudCustomerRows(
   `);
   for (const c of customers) {
     if (!c || typeof c !== "object" || !c.id || !c.name) continue;
+    if (hasPendingCloudWrite(db, tenantId, "customers", String(c.id))) continue;
     stmt.run(
       String(c.id),
       tenantId,
@@ -160,15 +165,32 @@ export function applyCloudCustomerRows(
   }
 }
 
+function hasPendingCloudWrite(db: DatabaseSync, tenantId: string, table: string, id: string): boolean {
+  return Boolean(db.prepare("SELECT 1 FROM sync_outbox WHERE tenant_id=? AND table_name=? AND row_id=? LIMIT 1")
+    .get(tenantId, table, id));
+}
+
 /** Deletes rows by id from a known synced table (used for cloud tombstones). */
 export function applyCloudDeletes(
   db: DatabaseSync,
   tableName: string,
   ids: string[],
-): void {
-  if (ids.length === 0) return;
-  const allowed = new Set(["gastos", "gasto_categorias", "customers"]);
-  if (!allowed.has(tableName)) return;
-  const stmt = db.prepare(`DELETE FROM ${tableName} WHERE id = ?`);
-  for (const id of ids) stmt.run(id);
+  tenantId?: string,
+): boolean {
+  if (ids.length === 0) return true;
+  const allowed = new Set(["gastos", "gasto_categorias", "customers", "payroll_employees", "payroll_payments", "payroll_cloud_adjustments"]);
+  if (!allowed.has(tableName)) return false;
+  const stmt = db.prepare(`DELETE FROM ${tableName} WHERE id = ?${tenantId ? " AND tenant_id = ?" : ""}`);
+  let complete = true;
+  for (const id of ids) {
+    if (tableName === "payroll_payments") {
+      // A retained expense may still be pending locally; keep its parent.
+      if (db.prepare("SELECT 1 FROM gastos WHERE payroll_payment_id=?").get(id)) { complete = false; continue; }
+      db.prepare("DELETE FROM payroll_payment_adjustments WHERE payment_id=?").run(id);
+    }
+    if (tableName === "payroll_employees" && db.prepare("SELECT 1 FROM payroll_payments WHERE employee_id=?").get(id)) { complete = false; continue; }
+    if (tableName === "gasto_categorias" && db.prepare("SELECT 1 FROM gastos WHERE category_id=?").get(id)) { complete = false; continue; }
+    if (tenantId) stmt.run(id, tenantId); else stmt.run(id);
+  }
+  return complete;
 }

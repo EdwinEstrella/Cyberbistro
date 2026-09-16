@@ -281,7 +281,7 @@ export class PayrollRepository {
 
       const paymentId = randomUUID();
       const expenseId = randomUUID();
-      const { deltaCents: adjustmentDeltaCents } = getCurrentPaymentAdjustmentTotals(payload.adjustments);
+      const { deltaCents: adjustmentDeltaCents, bonusesCents, discountsCents } = getCurrentPaymentAdjustmentTotals(payload.adjustments);
       const pendingCents = context.pendingCents - payload.paymentAmountCents;
       const expenseDescription = `Payroll payment ${payload.period}`;
       const expenseRecordedAt = payload.paymentDate ? new Date(payload.paymentDate).toISOString() : new Date().toISOString();
@@ -398,9 +398,12 @@ export class PayrollRepository {
           baseSalaryCents: context.baseSalaryCents,
           periodSalaryCents: context.periodSalaryCents,
           adjustmentsDeltaCents: adjustmentDeltaCents,
+          totalBonusesCents: bonusesCents,
+          totalDiscountsCents: discountsCents,
           totalDueCents: context.dueCents,
           paymentAmountCents: payload.paymentAmountCents,
           pendingCents,
+          createdAt: expenseRecordedAt,
         },
       });
 

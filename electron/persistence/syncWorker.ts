@@ -29,6 +29,8 @@ export interface ServerChange {
 export interface PullBatch {
   cursor: string;
   changes: ServerChange[];
+  /** Complete, tenant-scoped snapshots; absent previously downloaded IDs are deletions. */
+  snapshotTables?: string[];
 }
 
 export interface DurableSyncStore {

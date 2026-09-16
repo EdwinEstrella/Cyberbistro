@@ -343,27 +343,14 @@ export function Nomina() {
     setLoading(true);
     try {
       let localEmployees: PayrollEmployee[] = [];
-      if (window.electronAPI?.executePayrollCommand) {
-        try {
-          const result = await executePayrollCommandLocally({
-            type: "payroll.getEmployees",
-            tenantId,
-            sucursalId: activeSucursalId,
-          });
-          if (result.type === "payroll.employees") {
-            localEmployees = result.employees;
-            if (localEmployees.length > 0) {
-              setEmployees(localEmployees);
-              setLoading(false);
-              if (!selectedEmployeeId) {
-                const firstActive = localEmployees.find((e) => e.isActive) ?? localEmployees[0];
-                if (firstActive) setSelectedEmployeeId(firstActive.id);
-              }
-            }
-          }
-        } catch (e) {
-          console.warn("[Nomina] Error getting local employees:", e);
-        }
+      if (isPayrollLocalStorageAvailable()) {
+        const result = await executePayrollCommandLocally({
+          type: "payroll.getEmployees", tenantId, sucursalId: activeSucursalId,
+        });
+        if (result.type !== "payroll.employees") throw new Error("No se pudo leer la n?mina local.");
+        setEmployees(result.employees);
+        setSelectedEmployeeId((current) => current || (result.employees.find((e) => e.isActive) ?? result.employees[0])?.id || "");
+        return;
       }
 
       if (localEmployees.length === 0 && (await shouldReadLocalFirst(tenantId, ["nomina_empleados"]))) {
@@ -389,24 +376,7 @@ export function Nomina() {
               const firstActive = localEmployees.find((e) => e.isActive) ?? localEmployees[0];
               if (firstActive) setSelectedEmployeeId(firstActive.id);
             }
-            if (window.electronAPI?.executePayrollCommand) {
-              for (const emp of localEmployees) {
-                void executePayrollCommandLocally({
-                  type: "payroll.upsertEmployee",
-                  tenantId,
-                  sucursalId: activeSucursalId,
-                  employee: {
-                    id: emp.id,
-                    firstName: emp.firstName,
-                    lastName: emp.lastName,
-                    role: emp.role,
-                    baseSalaryCents: emp.baseSalaryCents,
-                    frequency: emp.frequency,
-                    isActive: emp.isActive,
-                  },
-                }).catch(() => {});
-              }
-            }
+
           }
         } catch { /* ignore fallback error */ }
       }
@@ -447,35 +417,11 @@ export function Nomina() {
           };
           employeeMap.set(cloudEmp.id, cloudEmp);
           // Sincronizar hacia SQLite local para que el repositorio local disponga del empleado
-          if (window.electronAPI?.executePayrollCommand) {
-            void executePayrollCommandLocally({
-              type: "payroll.upsertEmployee",
-              tenantId,
-              sucursalId: activeSucursalId,
-              employee: {
-                id: cloudEmp.id,
-                firstName: cloudEmp.firstName,
-                lastName: cloudEmp.lastName,
-                role: cloudEmp.role,
-                baseSalaryCents: cloudEmp.baseSalaryCents,
-                frequency: cloudEmp.frequency,
-                isActive: cloudEmp.isActive,
-              },
-            }).catch((e) => {
-              console.warn("[Nomina] Error mirroring employee to local SQLite:", e);
-            });
-          }
+
         }
       }
 
       const finalEmployees = Array.from(employeeMap.values());
-
-      // Sincronizar a Supabase los empleados locales existentes
-      for (const emp of localEmployees) {
-        void syncEmployeeToCloud(emp).catch((error) => {
-          console.warn("[Nomina] Error syncing employee to cloud:", error);
-        });
-      }
 
       setEmployees(finalEmployees);
       if (!selectedEmployeeId && finalEmployees.length > 0) {
@@ -495,23 +441,14 @@ export function Nomina() {
     setLoadingPayments(true);
     try {
       let localPayments: PayrollPaymentRecord[] = [];
-      if (window.electronAPI?.executePayrollCommand) {
-        try {
-          const result = await executePayrollCommandLocally({
-            type: "payroll.getPayments",
-            tenantId,
-            sucursalId: activeSucursalId,
-          });
-          if (result.type === "payroll.payments") {
-            localPayments = result.payments;
-            if (localPayments.length > 0) {
-              setPayments(localPayments);
-              setLoadingPayments(false);
-            }
-          }
-        } catch (e) {
-          console.warn("[Nomina] Error cargando pagos locales:", e);
-        }
+      if (isPayrollLocalStorageAvailable()) {
+        const result = await executePayrollCommandLocally({
+          type: "payroll.getPayments", tenantId, sucursalId: activeSucursalId,
+        });
+        if (result.type !== "payroll.payments") throw new Error("No se pudo leer la n?mina local.");
+        setPayments(result.payments);
+        
+        return;
       }
 
       if (localPayments.length === 0 && (await shouldReadLocalFirst(tenantId, ["nomina_pagos"]))) {
@@ -641,6 +578,16 @@ export function Nomina() {
     }
   }, [activeTab, tenantId, activeSucursalId, loadPayments]);
 
+  useEffect(() => {
+    if (!tenantId || !isPayrollLocalStorageAvailable()) return;
+    void window.electronAPI?.triggerSync?.().catch(console.warn);
+    return window.electronAPI?.onLocalDataUpdated?.((updatedTenantId) => {
+      if (updatedTenantId !== tenantId) return;
+      void loadEmployees();
+      void loadPayments();
+    });
+  }, [tenantId, loadEmployees, loadPayments]);
+
   // Fetch payment calculation context in real-time
   useEffect(() => {
     setPaymentContext(null);
@@ -657,28 +604,7 @@ export function Nomina() {
         };
         let context: PayrollPaymentContext | null = null;
         if (isPayrollLocalStorageAvailable()) {
-          try {
-            context = await getLocalPaymentContext(tenantId, activeSucursalId, payload);
-          } catch (localErr) {
-            // Si el empleado no estaba registrado localmente, asegurar su registro en SQLite y reintentar
-            if (window.electronAPI?.executePayrollCommand && selectedEmployee) {
-              await executePayrollCommandLocally({
-                type: "payroll.upsertEmployee",
-                tenantId,
-                sucursalId: activeSucursalId,
-                employee: {
-                  id: selectedEmployee.id,
-                  firstName: selectedEmployee.firstName,
-                  lastName: selectedEmployee.lastName,
-                  role: selectedEmployee.role,
-                  baseSalaryCents: selectedEmployee.baseSalaryCents,
-                  frequency: selectedEmployee.frequency,
-                  isActive: selectedEmployee.isActive,
-                },
-              }).catch(() => {});
-              context = await getLocalPaymentContext(tenantId, activeSucursalId, payload).catch(() => null);
-            }
-          }
+          context = await getLocalPaymentContext(tenantId, activeSucursalId, payload);
         }
         if (!context) {
           context = await getPayrollPaymentContextFromCloud(supabase as never, selectedEmployee, payload);
@@ -921,13 +847,6 @@ export function Nomina() {
     }
     // 5.91% de ley aplicado estrictamente al salario del período de pago (quincena, semana o mes)
     const tssCents = Math.round(paymentContext.periodSalaryCents * 0.0591);
-    const periodName =
-      selectedFrequency === "biweekly"
-        ? "quincena"
-        : selectedFrequency === "weekly"
-        ? "semana"
-        : "mes";
-
     setAdjustments((current) => [
       ...current,
       {
@@ -1013,12 +932,6 @@ export function Nomina() {
         });
       } else {
         await deletePayrollPaymentInCloud(supabase as never, paymentToAnnull.id);
-      }
-
-      // Reconciliar en Supabase si estamos online
-      if (navigator.onLine && !(await isDesktopCloudUnavailable().catch(() => true))) {
-        await supabase.from("gastos").delete().eq("payroll_payment_id", paymentToAnnull.id);
-        await supabase.from("nomina_pagos").delete().eq("id", paymentToAnnull.id);
       }
 
       setPayments((curr) => curr.filter((item) => item.id !== paymentToAnnull.id));

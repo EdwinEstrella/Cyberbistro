@@ -1,11 +1,15 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { DurableOperation, PullBatch, ServerChange, ServerSyncClient } from "./syncWorker";
 
-/** Cloud tables pulled into SQLite, with the column used as the incremental cursor. */
-const PULL_TABLES: ReadonlyArray<{ table: string; cursorColumn: string }> = [
-  { table: "gasto_categorias", cursorColumn: "updated_at" },
-  { table: "gastos", cursorColumn: "updated_at" },
-  { table: "customers", cursorColumn: "updated_at" },
+/** Payroll children have neither tenant_id nor updated_at: scope via the employee join.
+ * Complete snapshots also reconcile hard deletes and recover rows missed by old cursors. */
+const PULL_TABLES = [
+  { table: "nomina_empleados", localTable: "payroll_employees", child: false },
+  { table: "nomina_pagos", localTable: "payroll_payments", child: true },
+  { table: "nomina_ajustes", localTable: "payroll_cloud_adjustments", child: true },
+  { table: "gasto_categorias", localTable: "gasto_categorias", child: false },
+  { table: "gastos", localTable: "gastos", child: false },
+  { table: "customers", localTable: "customers", child: false },
 ];
 const PULL_PAGE_SIZE = 500;
 
@@ -164,37 +168,33 @@ export class PayrollSyncClient implements ServerSyncClient {
   async pull(input: { tenantId: string; cursor: string | null }): Promise<PullBatch> {
     const client: any = await this.clientPromise;
     const changes: ServerChange[] = [];
-    let maxCursor = input.cursor;
-
-    for (const { table, cursorColumn } of PULL_TABLES) {
-      let query = client
-        .from(table)
-        .select("*")
-        .eq("tenant_id", input.tenantId)
-        .order(cursorColumn, { ascending: true })
-        .limit(PULL_PAGE_SIZE);
-      if (input.cursor) {
-        query = query.gt(cursorColumn, input.cursor);
-      }
-
-      const { data, error } = await query;
-      if (error) {
-        throw new Error(`Pull failed for ${table}: ${error.message}`);
-      }
-
-      for (const row of (Array.isArray(data) ? data : [])) {
-        if (!row || typeof row !== "object" || row.id == null) continue;
-        changes.push({ tableName: table, rowId: String(row.id), payload: row as Record<string, unknown>, deleted: false });
-        const updatedAt = typeof row[cursorColumn] === "string" ? (row[cursorColumn] as string) : null;
-        if (updatedAt && (!maxCursor || updatedAt > maxCursor)) {
-          maxCursor = updatedAt;
+    for (const { table, localTable, child } of PULL_TABLES) {
+      let afterId: string | null = null;
+      while (true) {
+        let query = client.from(table)
+          .select(child ? "*, nomina_empleados!inner(tenant_id,sucursal_id)" : "*")
+          .eq(child ? "nomina_empleados.tenant_id" : "tenant_id", input.tenantId)
+          .order("id", { ascending: true })
+          .limit(PULL_PAGE_SIZE);
+        if (afterId) query = query.gt("id", afterId);
+        const { data, error } = await query;
+        if (error) throw new Error(`Pull failed for ${table}: ${error.message}`);
+        if (!Array.isArray(data)) throw new Error(`Invalid pull response for ${table}`);
+        if (data.length === 0) break;
+        for (const row of data) {
+          if (!row || typeof row.id !== "string" || (afterId && row.id <= afterId)) {
+            throw new Error(`Invalid pull page for ${table}`);
+          }
+          const parent = Array.isArray(row.nomina_empleados) ? row.nomina_empleados[0] : row.nomina_empleados;
+          if ((child ? parent?.tenant_id : row.tenant_id) !== input.tenantId) {
+            throw new Error(`Tenant mismatch in pull for ${table}`);
+          }
+          changes.push({ tableName: localTable, rowId: row.id, payload: row, deleted: false });
+          afterId = row.id;
         }
       }
     }
-
-    // Keep the previous cursor when nothing changed; only fall back to "now" on a
-    // first-ever pull that returned no rows (empty tenant), so we never skip data.
-    return { cursor: maxCursor ?? new Date().toISOString(), changes };
+    return { cursor: new Date().toISOString(), changes, snapshotTables: PULL_TABLES.map(({ localTable }) => localTable) };
   }
 
   private async deleteRemote(operation: DurableOperation): Promise<PushResponse> {
@@ -335,12 +335,13 @@ function mapPaymentPayload(operation: DurableOperation, payload: Record<string, 
     empleado_id: requireString(payload.employeeId, "payroll_payments.employeeId"),
     periodo: requireString(payload.period, "payroll_payments.period"),
     monto_base: requireNumber(payload.periodSalaryCents ?? payload.baseSalaryCents, "payroll_payments.periodSalaryCents"),
-    total_bonos: delta > 0 ? delta : 0,
-    total_descuentos: delta < 0 ? Math.abs(delta) : 0,
+    total_bonos: payload.totalBonusesCents ?? (delta > 0 ? delta : 0),
+    total_descuentos: payload.totalDiscountsCents ?? (delta < 0 ? Math.abs(delta) : 0),
     monto_neto: requireNumber(payload.totalDueCents, "payroll_payments.totalDueCents"),
     monto_pagado: requireNumber(payload.paymentAmountCents, "payroll_payments.paymentAmountCents"),
     monto_pendiente: requireNumber(payload.pendingCents, "payroll_payments.pendingCents"),
     gasto_id: payload.gastoId ?? null,
+    ...(payload.createdAt ? { created_at: requireString(payload.createdAt, "payroll_payments.createdAt") } : {}),
   };
 }
 
@@ -363,6 +364,7 @@ function mapPayrollExpensePayload(operation: DurableOperation, payload: Record<s
     id: operation.rowId,
     tenant_id: operation.tenantId,
     descripcion: requireString(payload.description, "gastos.description", { fallback: `Payroll payment ${payrollPaymentId}` }),
+    sucursal_id: operation.branchId ?? null,
     monto: centsToAmount(amountCents),
     metodo_pago: mapExpensePaymentMethod(requireString(payload.paymentMethod, "gastos.paymentMethod")),
     fecha_gasto: requireString(payload.recordedAt, "gastos.recordedAt"),

@@ -186,6 +186,14 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
       unit_cost REAL NOT NULL CHECK (unit_cost >= 0),
       FOREIGN KEY (compra_id, tenant_id, sucursal_id) REFERENCES compras (id, tenant_id, sucursal_id)
     ) STRICT;
+    -- Remote adjustments belong to employees, not payments. Keep their original
+    -- contract instead of inventing a payment association during download.
+    CREATE TABLE IF NOT EXISTS payroll_cloud_adjustments (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL REFERENCES tenants(id),
+      employee_id TEXT NOT NULL,
+      payload_json TEXT NOT NULL
+    ) STRICT;
     CREATE TABLE IF NOT EXISTS payroll_employees (
       id TEXT PRIMARY KEY,
       tenant_id TEXT NOT NULL REFERENCES tenants(id),

@@ -2,9 +2,10 @@ import type { DatabaseSync } from "node:sqlite";
 import { DurableSyncStore, DurableOperation, DurableOperationStatus, DurableOperationKind, PullBatch } from "./syncWorker";
 import { applyCloudExpenseRows, applyCloudExpenseCategoryRows, applyCloudCustomerRows, applyCloudDeletes } from "./cloudApply";
 import { createHash } from "node:crypto";
+import { applyCloudPayrollEmployees, applyCloudPayrollPayments, applyCloudPayrollAdjustments } from "./payrollCloudApply";
 
 /** Tables whose cloud→local pull is implemented (Camino B, stage 1). */
-const PULLABLE_TABLES = new Set(["gastos", "gasto_categorias", "customers"]);
+const PULLABLE_TABLES = new Set(["gastos", "gasto_categorias", "customers", "payroll_employees", "payroll_payments", "payroll_cloud_adjustments"]);
 
 function hashCanonical(value: unknown): string {
   return createHash("sha256").update(canonical(value)).digest("hex");
@@ -37,6 +38,7 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
       UPDATE sync_outbox
       SET status = 'pending', error_json = NULL
       WHERE tenant_id = ?
+        AND status = 'syncing'
         AND (
           table_name IN ('payroll_employees', 'payroll_payments', 'payroll_payment_adjustments', 'gasto_categorias', 'customers', 'cierres_operativos')
           OR (
@@ -215,11 +217,21 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
   applyPull(batch: PullBatch): void {
     if (!this.active) return;
 
-    // Group changes by table so each mapper runs once per table.
+    // Snapshot imports are retried in full, so pending/conflicted local rows can
+    // be protected without moving a timestamp cursor past their remote changes.
     const upsertsByTable = new Map<string, Array<Record<string, unknown>>>();
     const deletesByTable = new Map<string, string[]>();
+    const snapshotIds = new Map<string, Set<string>>();
+    for (const table of batch.snapshotTables ?? []) {
+      if (!PULLABLE_TABLES.has(table)) throw new Error(`Unsupported snapshot table: ${table}`);
+      snapshotIds.set(table, new Set());
+    }
     for (const change of batch.changes ?? []) {
       if (!PULLABLE_TABLES.has(change.tableName)) continue;
+      if (change.payload?.tenant_id != null && change.payload.tenant_id !== this.tenantId) throw new Error("Pull tenant mismatch");
+      if (change.payload?.id != null && change.payload.id !== change.rowId) throw new Error("Pull row ID mismatch");
+      if (!change.deleted) snapshotIds.get(change.tableName)?.add(change.rowId);
+      if (this.hasPendingWrite(change.tableName, change.rowId)) continue;
       if (change.deleted) {
         const ids = deletesByTable.get(change.tableName) ?? [];
         ids.push(change.rowId);
@@ -235,6 +247,12 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
     // advances the cursor past changes that were not applied.
     this.db.exec("BEGIN IMMEDIATE;");
     try {
+      const employees = upsertsByTable.get("payroll_employees");
+      if (employees?.length) applyCloudPayrollEmployees(this.db, this.tenantId, employees);
+      const payments = upsertsByTable.get("payroll_payments");
+      if (payments?.length) applyCloudPayrollPayments(this.db, this.tenantId, payments);
+      const adjustments = upsertsByTable.get("payroll_cloud_adjustments");
+      if (adjustments?.length) applyCloudPayrollAdjustments(this.db, this.tenantId, adjustments);
       const expenseCats = upsertsByTable.get("gasto_categorias");
       if (expenseCats?.length) applyCloudExpenseCategoryRows(this.db, this.tenantId, expenseCats);
       const expenses = upsertsByTable.get("gastos");
@@ -242,8 +260,28 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
       const customers = upsertsByTable.get("customers");
       if (customers?.length) applyCloudCustomerRows(this.db, this.tenantId, customers);
 
-      for (const [tableName, ids] of deletesByTable) {
-        applyCloudDeletes(this.db, tableName, ids);
+      // Only remove IDs acknowledged in a previous snapshot. Old, unsynced local
+      // data is never treated as a remote deletion merely because it is absent.
+      for (const [table, ids] of snapshotIds) {
+        const previous = this.db.prepare("SELECT cursor FROM sync_state WHERE key=?")
+          .get(`${this.tenantId}:snapshot:${table}`) as { cursor: string } | undefined;
+        const previousIds: string[] = previous ? JSON.parse(previous.cursor) : [];
+        const deleted = deletesByTable.get(table) ?? [];
+        for (const id of previousIds) if (!ids.has(id)) deleted.push(id);
+        deletesByTable.set(table, deleted);
+      }
+      for (const table of ["gastos", "payroll_cloud_adjustments", "payroll_payments", "payroll_employees", "gasto_categorias", "customers"]) {
+        for (const id of deletesByTable.get(table) ?? []) {
+          if (this.hasPendingWrite(table, id) || !applyCloudDeletes(this.db, table, [id], this.tenantId)) {
+            snapshotIds.get(table)?.add(id);
+          }
+        }
+      }
+      for (const [table, ids] of snapshotIds) {
+        this.db.prepare(`INSERT INTO sync_state (key, tenant_id, table_name, phase, cursor, completed, row_count, updated_at)
+          VALUES (?, ?, ?, 'incremental', ?, 1, ?, CURRENT_TIMESTAMP)
+          ON CONFLICT(key) DO UPDATE SET cursor=excluded.cursor, row_count=excluded.row_count, updated_at=CURRENT_TIMESTAMP`)
+          .run(`${this.tenantId}:snapshot:${table}`, this.tenantId, table, JSON.stringify([...ids]), ids.size);
       }
 
       const appliedCount = batch.changes?.length ?? 0;
@@ -270,6 +308,12 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
 
   private pullCursorKey(): string {
     return `${this.tenantId}:pull`;
+  }
+
+  private hasPendingWrite(table: string, id: string): boolean {
+    const outboxTable = table === "payroll_cloud_adjustments" ? "payroll_payment_adjustments" : table;
+    return Boolean(this.db.prepare("SELECT 1 FROM sync_outbox WHERE tenant_id=? AND table_name=? AND row_id=? LIMIT 1")
+      .get(this.tenantId, outboxTable, id));
   }
 }
 

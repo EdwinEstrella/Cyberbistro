@@ -728,18 +728,6 @@ export function buildNominaReceiptHtml(
   const deduccionesItems = (data.ajustesDetalle || []).filter((aj) => aj.tipo === "deduccion");
   const adicionalesItems = (data.ajustesDetalle || []).filter((aj) => aj.tipo === "adicion");
 
-  const ajustesRows = (data.ajustesDetalle || [])
-    .map((aj) => {
-      const isDeduccion = aj.tipo === "deduccion";
-      const sign = isDeduccion ? "-" : "+";
-      return `
-      <tr class="fdo-item-sub">
-        <td style="width:65%">${escapeHtml(aj.descripcion)}</td>
-        <td style="width:35%;text-align:right;font-weight:600">${sign} ${rd(aj.monto, tenant)}</td>
-      </tr>`;
-    })
-    .join("");
-
   const body = `
   ${headerBlock(tenant)}
   <div class="divider"></div>

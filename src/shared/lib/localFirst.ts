@@ -607,6 +607,7 @@ export const FULL_REFRESH_ON_SYNC_TABLES = [
   "cierres_operativos",
   "nomina_pagos",
   "nomina_ajustes",
+  "nomina_empleados",
 ] as const satisfies readonly LocalFirstMirrorTable[];
 
 export function isLocalFirstEnabled(): boolean {
@@ -2519,14 +2520,49 @@ async function pullFullTableRows(
   return rows;
 }
 
-function replaceStoreRows(db: IDBDatabase, storeName: string, rows: readonly object[]): Promise<void> {
+/** Merge cloud rows and the cursor in the same transaction as the outbox read.
+ * A write made while the HTTP request was in flight must win over its response. */
+export function applyMirrorPull(
+  db: IDBDatabase,
+  tenantId: string,
+  storeName: LocalFirstMirrorTable,
+  rows: Record<string, unknown>[],
+  state: SyncStateRow,
+  replace: boolean,
+): Promise<void> {
+  if (state.tenant_id !== tenantId) throw new Error("Pull tenant mismatch");
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(storeName, "readwrite");
+    const tx = db.transaction([storeName, "sync_outbox", "sync_state", "local_fiscal_outbox"], "readwrite");
     const store = tx.objectStore(storeName);
-    store.clear();
-    for (const row of rows) store.put(row);
+    const pendingRequest = tx.objectStore("sync_outbox").getAll();
+    const localRequest = store.getAll();
+    const fiscalRequest = tx.objectStore("local_fiscal_outbox").getAll();
+    let ready = 0;
+    const merge = () => {
+      if (++ready !== 3) return;
+      const pendingIds = new Set<string>((pendingRequest.result as SyncOutboxEntry[])
+        .filter((entry) => entry.table_name === storeName && entry.status !== "synced")
+        .map((entry) => entry.row_id));
+      for (const job of fiscalRequest.result as LocalFiscalOutboxEntry[]) {
+        if (storeName === "facturas") pendingIds.add(job.factura_id);
+        if (storeName === "ecf_documents" && job.ecf_document_id) pendingIds.add(job.ecf_document_id);
+      }
+      const key = resolveMirrorStoreKeyPath(storeName);
+      if (replace) store.clear();
+      for (const row of rows) if (!pendingIds.has(String(row[key]))) store.put(row);
+      if (replace) {
+        for (const row of localRequest.result as Record<string, unknown>[]) {
+          if (pendingIds.has(String(row[key]))) store.put(row);
+        }
+      }
+      tx.objectStore("sync_state").put(state);
+    };
+    pendingRequest.onsuccess = merge;
+    localRequest.onsuccess = merge;
+    fiscalRequest.onsuccess = merge;
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error ?? new Error(`No se pudo reemplazar ${storeName}.`));
+    tx.onabort = () => reject(tx.error ?? new Error(`Se canceló la descarga de ${storeName}.`));
   });
 }
 
@@ -2537,15 +2573,14 @@ export async function refreshFullTableMirror(
   const rows = await pullFullTableRows(tenantId, tableName);
   const db = await openLocalFirstDbForSync(tenantId);
   try {
-    await replaceStoreRows(db, tableName, rows);
-    await putOne(db, "sync_state", createSyncStateRow({
+    await applyMirrorPull(db, tenantId, tableName, rows, createSyncStateRow({
       tenantId,
       tableName,
       phase: "incremental",
       cursor: encodeIncrementalCursor({ updated_at: new Date().toISOString(), id: "" }),
       completed: true,
       rowCount: rows.length,
-    }));
+    }), true);
     return rows.length;
   } finally {
     db.close();
@@ -2564,21 +2599,18 @@ export async function pullIncrementalChangesForTable(
 
     while (!completed) {
       const { rows, newCursor } = await pullIncrementalChanges(tenantId, tableName, sinceCursor);
-      if (rows.length > 0) {
-        await putMany(db, tableName, rows);
-        pulled += rows.length;
-      }
+      pulled += rows.length;
       sinceCursor = newCursor;
       completed = rows.length < PAGE_SIZE;
 
-      await putOne(db, "sync_state", createSyncStateRow({
+      await applyMirrorPull(db, tenantId, tableName, rows, createSyncStateRow({
         tenantId,
         tableName,
         phase: "incremental",
         cursor: encodeIncrementalCursor(newCursor),
         completed,
         rowCount: pulled,
-      }));
+      }), false);
     }
     return pulled;
   } finally {
@@ -2592,21 +2624,30 @@ export async function syncIncremental(tenantId: string): Promise<{ tablesUpdated
   }
   let tablesUpdated = 0;
   let rowsPulled = 0;
+  const failures: string[] = [];
   for (const tableName of LOCAL_FIRST_MIRROR_TABLES) {
-    if (await hasPendingLocalWrites(tenantId, [tableName])) continue;
-    const pulled = (FULL_REFRESH_ON_SYNC_TABLES as readonly LocalFirstMirrorTable[]).includes(tableName)
-      ? await refreshFullTableMirror(tenantId, tableName)
-      : await pullIncrementalChangesForTable(tenantId, tableName);
-    if (pulled > 0) {
+    try {
+      // A periodic full reconciliation catches hard deletes and tables whose
+      // backend doesn't maintain updated_at. Other turns remain incremental.
+      const key = `${tenantId}:${tableName}`;
+      const full = (FULL_REFRESH_ON_SYNC_TABLES as readonly LocalFirstMirrorTable[]).includes(tableName)
+        || Date.now() - (lastFullReconciliation.get(key) ?? 0) >= 5 * 60_000;
+      const pulled = full ? await refreshFullTableMirror(tenantId, tableName)
+        : await pullIncrementalChangesForTable(tenantId, tableName);
+      if (full) lastFullReconciliation.set(key, Date.now());
       tablesUpdated++;
       rowsPulled += pulled;
+    } catch (error) {
+      failures.push(`${tableName}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  if (rowsPulled > 0) {
-    notifyLocalMirrorUpdated(tenantId);
-  }
+  // An empty full snapshot can remove the final row: that must refresh screens too.
+  if (tablesUpdated > 0) notifyLocalMirrorUpdated(tenantId);
+  if (failures.length) throw new Error(`No se pudieron descargar algunas tablas: ${failures.join("; ")}`);
   return { tablesUpdated, rowsPulled };
 }
+
+const lastFullReconciliation = new Map<string, number>();
 
 export function notifyLocalMirrorUpdated(tenantId: string, tableName?: LocalFirstMirrorTable): void {
   if (typeof window !== "undefined") {
@@ -2687,15 +2728,18 @@ export function getTenantReadFilter(
 }
 
 async function pullTablePage(tableName: LocalFirstMirrorTable, tenantId: string, offset: number) {
+  const employeeChild = tableName === "nomina_pagos" || tableName === "nomina_ajustes";
   let query = supabase
     .from(tableName)
-    .select("*")
+    .select(employeeChild ? "*, nomina_empleados!inner(tenant_id)" : "*")
     .order("id", { ascending: true })
     .range(offset, offset + PAGE_SIZE - 1) as any;
 
   const tenantReadFilter = getTenantReadFilter(tableName, tenantId);
   if (tenantReadFilter) {
     query = query.eq(tenantReadFilter.column, tenantReadFilter.value);
+  } else if (employeeChild) {
+    query = query.eq("nomina_empleados.tenant_id", tenantId);
   }
 
   return query;

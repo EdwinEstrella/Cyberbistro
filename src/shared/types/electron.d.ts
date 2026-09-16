@@ -103,6 +103,7 @@ export interface ElectronAPI {
   syncCloudCustomers?: (customers: unknown[]) => Promise<{ ok: true }>;
   getSyncDiagnosticReport?: (tenantId?: string) => Promise<{ ok: true; data: any }>;
   triggerSync?: () => Promise<{ ok: true }>;
+  onLocalDataUpdated?: (callback: (tenantId: string) => void) => () => void;
   retryFailedSyncErrors?: (tenantId?: string) => Promise<{ ok: true; data: { count: number } }>;
   importLegacyIndexedDb?: (payload: unknown) => Promise<{ ok: true; data: { tenantId: string; importedRows: number; recoveredOutbox: number } }>;
   close: () => void;

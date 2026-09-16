@@ -90,6 +90,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   syncCloudCustomers: (customers: unknown[]) => ipcRenderer.invoke('customers:sync-cloud', customers),
   getSyncDiagnosticReport: (tenantId?: string) => ipcRenderer.invoke('sync:get-diagnostic-report', tenantId),
   triggerSync: () => ipcRenderer.invoke('sync:trigger'),
+  onLocalDataUpdated: (callback: (tenantId: string) => void) => {
+    const listener = (_event: unknown, tenantId: string) => callback(tenantId);
+    ipcRenderer.on('local-data-updated', listener);
+    return () => ipcRenderer.removeListener('local-data-updated', listener);
+  },
   retryFailedSyncErrors: (tenantId?: string) => ipcRenderer.invoke('sync:retry-errors', tenantId),
   importLegacyIndexedDb: (payload: unknown) => ipcRenderer.invoke('tenant-store:import-indexeddb', payload),
   close: () => {
