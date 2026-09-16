@@ -541,6 +541,10 @@ export function Gastos() {
               // Keep the legacy IndexedDB mirror consistent so the union read
               // does not resurrect the deleted row.
               await deleteLocalMirrorRow(tenantId, "gastos", gasto.id).catch(() => undefined);
+              // Cloud deletion (gastos + any linked payroll payment) is handled
+              // by the durable outbox — no direct Supabase call. Nudge a push so
+              // the removal propagates promptly instead of waiting for the poll.
+              void window.electronAPI.triggerSync?.().catch(() => undefined);
             } else {
               await enqueueLocalWrite({
                 tenantId: tenantId!,
@@ -549,14 +553,6 @@ export function Gastos() {
                 op: "delete",
                 deviceId: await getDeviceId(),
               });
-            }
-
-            if (navigator.onLine && !(await isDesktopCloudUnavailable().catch(() => true))) {
-              await supabase.from("gastos").delete().eq("id", gasto.id);
-              const payrollPaymentId = (gasto as any).payroll_payment_id;
-              if (payrollPaymentId) {
-                await supabase.from("nomina_pagos").delete().eq("id", payrollPaymentId);
-              }
             }
 
             setGastos((current) => current.filter((g) => g.id !== gasto.id));

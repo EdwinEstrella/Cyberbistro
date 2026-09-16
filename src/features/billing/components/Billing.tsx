@@ -7,6 +7,7 @@ import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { readLocalExpenses, readLocalExpenseCategories } from "../../gastos/lib/expensesLocal";
+import { listCustomers } from "../../clientes/lib/customers";
 import { cacheLogoFromUrl } from "../../../shared/lib/logoCache";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { canUseFeature } from "../../../shared/lib/planFeatures";
@@ -411,7 +412,7 @@ export function Billing() {
           ? supabase.from("cxp_pagos").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
           : supabase.from("cxp_pagos").select("*").eq("tenant_id", tenantId).is("sucursal_id", null),
       useLocalCustomers
-        ? { data: await readLocalMirror<any>(tenantId, "customers"), error: null }
+        ? { data: await listCustomers(tenantId), error: null }
         : supabase.from("customers").select("id, name").eq("tenant_id", tenantId),
       useLocalProveedores
         ? { data: await readLocalMirror<any>(tenantId, "proveedores"), error: null }

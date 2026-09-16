@@ -1,5 +1,4 @@
 import { enqueueLocalWrite, readLocalMirror, getDeviceId } from "../../../shared/lib/localFirst";
-import { executePayablesCommandLocally } from "../../../shared/lib/payablesUiAdapter";
 
 export interface PaymentInput {
   tenantId: string;
@@ -103,20 +102,11 @@ export async function registrarPagoCxP(input: PaymentInput): Promise<{ pagoId: s
     providerName = foundProv.nombre;
   }
 
-  // 3. If in Desktop Electron runtime, execute through SQLite repository
-  if (typeof window !== "undefined" && window.electronAPI?.executePayablesCommand) {
-    try {
-      await executePayablesCommandLocally({
-        type: "payables.payment.record",
-        paymentId: pagoId,
-        payableId: cuentaPagarId,
-        amount: monto,
-        paymentMethod: metodoPago,
-      });
-    } catch (e) {
-      console.warn("Desktop SQLite payables command failed, falling back to localFirst enqueue:", e);
-    }
-  }
+  // Cuentas por pagar viven en el motor local-first (IndexedDB) y de ahí
+  // sincronizan a la nube. La ruta SQLite quedó vestigial (nadie la lee y sus
+  // filas de outbox nunca se drenaban), así que no se escribe aquí para evitar
+  // acumular basura atascada. La migración completa a SQLite se hará como
+  // vertical propio cuando corresponda.
 
   // 4. Enqueue payment insert
   await enqueueLocalWrite({

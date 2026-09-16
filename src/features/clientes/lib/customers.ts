@@ -5,6 +5,7 @@ import {
   getDeviceId,
   readLocalMirror,
   shouldReadLocalFirst,
+  deleteLocalMirrorRow,
 } from "../../../shared/lib/localFirst";
 
 export interface Customer {
@@ -68,125 +69,109 @@ export function customerMatchesSearch(customer: Customer, rawQuery: string) {
   return Boolean(queryDigits) && documentDigits.includes(queryDigits);
 }
 
-export async function listCustomers(tenantId: string): Promise<Customer[]> {
-  let localList: Customer[] = [];
+function getElectronAPI(): Window["electronAPI"] | undefined {
+  return typeof window !== "undefined" ? window.electronAPI : undefined;
+}
 
-  // 1. Read SQLite immediately
-  if (window.electronAPI?.listCustomers) {
+/** Normalizes a customer row from SQLite, the IndexedDB mirror, or the cloud. */
+function mapCustomerRecord(c: Record<string, unknown>, tenantId: string): Customer {
+  return {
+    id: String(c.id),
+    tenant_id: (c.tenant_id as string) ?? tenantId,
+    name: c.name as string,
+    phone: (c.phone as string) ?? null,
+    email: (c.email as string) ?? null,
+    document_id: (c.document_id as string) ?? null,
+    address: (c.address as string) ?? null,
+    notes: (c.notes as string) ?? null,
+    created_at: (c.created_at as string) ?? null,
+    updated_at: (c.updated_at as string) ?? null,
+    deleted_at: (c.deleted_at as string) ?? null,
+  };
+}
+
+async function fetchCloudCustomers(tenantId: string): Promise<Customer[]> {
+  const { data, error } = await supabase
+    .from("customers")
+    .select("*")
+    .eq("tenant_id", tenantId)
+    .is("deleted_at", null)
+    .order("name", { ascending: true });
+  if (error || !Array.isArray(data)) return [];
+  return data.map((c: any) => mapCustomerRecord(c, tenantId));
+}
+
+/** Background cloud → SQLite reconciliation; never throws into the caller. */
+async function reconcileCustomersFromCloud(tenantId: string): Promise<void> {
+  try {
+    const mappedCloud = await fetchCloudCustomers(tenantId);
+    const api = getElectronAPI();
+    if (mappedCloud.length > 0 && api?.syncCloudCustomers) {
+      void api.syncCloudCustomers(mappedCloud).catch(() => {});
+    }
+  } catch (e) {
+    console.warn("[Customers] Background cloud sync skipped:", e);
+  }
+}
+
+export async function listCustomers(tenantId: string): Promise<Customer[]> {
+  const api = getElectronAPI();
+  const byId = new Map<string, Customer>();
+
+  // 1. SQLite (authoritative).
+  let sqliteAvailable = false;
+  if (api?.listCustomers) {
     try {
-      const response = await window.electronAPI.listCustomers();
+      const response = await api.listCustomers();
       if (response?.ok && Array.isArray(response.data)) {
-        localList = (response.data as any[])
-          .map((c) => ({
-            id: c.id,
-            tenant_id: c.tenant_id ?? tenantId,
-            name: c.name,
-            phone: c.phone ?? null,
-            email: c.email ?? null,
-            document_id: c.document_id ?? null,
-            address: c.address ?? null,
-            notes: c.notes ?? null,
-            created_at: c.created_at ?? null,
-            updated_at: c.updated_at ?? null,
-            deleted_at: c.deleted_at ?? null,
-          }))
-          .filter((c) => !c.deleted_at)
-          .sort((a, b) => a.name.localeCompare(b.name));
+        sqliteAvailable = true;
+        for (const c of response.data as Array<Record<string, unknown>>) {
+          const row = mapCustomerRecord(c, tenantId);
+          byId.set(row.id, row);
+        }
       }
     } catch (e) {
       console.warn("[Customers] Error querying SQLite customers, falling back:", e);
     }
   }
 
-  // 2. If SQLite is empty, check IndexedDB legacy mirror to recover any local customers
-  if (localList.length === 0 && (await shouldReadLocalFirst(tenantId, ["customers"]))) {
+  // 2. IndexedDB mirror (bridge/fallback). Union: only add ids SQLite lacks so
+  //    legacy customers still living only in IndexedDB are not lost.
+  const useMirror = sqliteAvailable ? true : await shouldReadLocalFirst(tenantId, ["customers"]).catch(() => false);
+  if (useMirror) {
     try {
-      const rows = await readLocalMirror<Customer>(tenantId, "customers");
-      const valid = rows
-        .filter((customer) => customer.tenant_id === tenantId && !customer.deleted_at)
-        .sort((a, b) => a.name.localeCompare(b.name));
-      if (valid.length > 0) {
-        localList = valid;
-        if (window.electronAPI?.syncCloudCustomers) {
-          void window.electronAPI.syncCloudCustomers(valid).catch(() => {});
-        }
+      const rows = await readLocalMirror<Record<string, unknown>>(tenantId, "customers");
+      for (const c of rows) {
+        if (c.tenant_id !== tenantId) continue;
+        const id = String(c.id);
+        if (!byId.has(id)) byId.set(id, mapCustomerRecord(c, tenantId));
       }
     } catch (e) {
       console.warn("[Customers] Error reading IndexedDB fallback:", e);
     }
   }
 
-  // 3. Sync from cloud in the background or if local is empty (WhatsApp style reconciliation)
+  const localList = Array.from(byId.values())
+    .filter((c) => !c.deleted_at)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  // 3. Cloud reconciliation (WhatsApp-style): background when we already have
+  //    local rows; synchronous only when local is empty (first load).
+  const online = typeof navigator === "undefined" ? true : navigator.onLine;
   const cloudDown = await isDesktopCloudUnavailable();
-  if (!navigator.onLine || cloudDown) {
+  if (!online || cloudDown) {
     return localList;
   }
 
   if (localList.length > 0) {
-    void (async () => {
-      try {
-        const { data: cloudCustomers, error } = await supabase
-          .from("customers")
-          .select("*")
-          .eq("tenant_id", tenantId)
-          .is("deleted_at", null)
-          .order("name", { ascending: true });
-
-        if (!error && cloudCustomers && cloudCustomers.length > 0) {
-          const mappedCloud: Customer[] = cloudCustomers.map((c: any) => ({
-            id: c.id,
-            tenant_id: c.tenant_id,
-            name: c.name,
-            phone: c.phone ?? null,
-            email: c.email ?? null,
-            document_id: c.document_id ?? null,
-            address: c.address ?? null,
-            notes: c.notes ?? null,
-            created_at: c.created_at ?? null,
-            updated_at: c.updated_at ?? null,
-            deleted_at: c.deleted_at ?? null,
-          }));
-
-          if (window.electronAPI?.syncCloudCustomers) {
-            void window.electronAPI.syncCloudCustomers(mappedCloud).catch(() => {});
-          }
-        }
-      } catch (e) {
-        console.warn("[Customers] Background cloud sync skipped:", e);
-      }
-    })();
-
+    void reconcileCustomersFromCloud(tenantId);
     return localList;
   }
 
   try {
-    const { data: cloudCustomers, error } = await supabase
-      .from("customers")
-      .select("*")
-      .eq("tenant_id", tenantId)
-      .is("deleted_at", null)
-      .order("name", { ascending: true });
-
-    if (!error && cloudCustomers && cloudCustomers.length > 0) {
-      const mappedCloud: Customer[] = cloudCustomers.map((c: any) => ({
-        id: c.id,
-        tenant_id: c.tenant_id,
-        name: c.name,
-        phone: c.phone ?? null,
-        email: c.email ?? null,
-        document_id: c.document_id ?? null,
-        address: c.address ?? null,
-        notes: c.notes ?? null,
-        created_at: c.created_at ?? null,
-        updated_at: c.updated_at ?? null,
-        deleted_at: c.deleted_at ?? null,
-      }));
-
-      // Mirror into local SQLite permanently
-      if (window.electronAPI?.syncCloudCustomers) {
-        void window.electronAPI.syncCloudCustomers(mappedCloud).catch(() => {});
-      }
-
+    const mappedCloud = await fetchCloudCustomers(tenantId);
+    if (mappedCloud.length > 0) {
+      if (api?.syncCloudCustomers) void api.syncCloudCustomers(mappedCloud).catch(() => {});
       return mappedCloud;
     }
   } catch (e) {
@@ -272,6 +257,9 @@ export async function softDeleteCustomer(tenantId: string, customerId: string): 
       type: "customer.delete",
       id: customerId,
     });
+    // Keep the legacy IndexedDB mirror consistent so the union read does not
+    // resurrect a customer deleted in SQLite.
+    await deleteLocalMirrorRow(tenantId, "customers", customerId).catch(() => undefined);
   } else {
     await enqueueLocalWrite({
       tenantId,

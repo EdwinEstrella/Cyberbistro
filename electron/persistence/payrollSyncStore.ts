@@ -86,8 +86,13 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
             table_name IN ('payroll_employees', 'payroll_payments', 'payroll_payment_adjustments', 'gasto_categorias', 'customers', 'cierres_operativos')
             OR (
               table_name = 'gastos'
-              AND json_valid(payload_json) = 1
-              AND json_extract(payload_json, '$.expenseType') IN ('payroll', 'operational')
+              AND (
+                operation = 'delete'
+                OR (
+                  json_valid(payload_json) = 1
+                  AND json_extract(payload_json, '$.expenseType') IN ('payroll', 'operational')
+                )
+              )
             )
           )
         ORDER BY rowid ASC
@@ -119,7 +124,7 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
           continue;
         }
 
-        if (!isClaimablePayrollRow(row.table_name, payloadResult.value)) {
+        if (!isClaimablePayrollRow(row.table_name, payloadResult.value, row.operation)) {
           continue;
         }
 
@@ -212,9 +217,13 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
   }
 }
 
-function isClaimablePayrollRow(tableName: string, payload: unknown): boolean {
+function isClaimablePayrollRow(tableName: string, payload: unknown, op: string): boolean {
   if (tableName === "gasto_categorias" || tableName === "customers") return true;
   if (tableName !== "gastos") return true;
+  // Deletions carry no expenseType semantics worth gating on: a gasto removed
+  // locally (any type, including 'purchase') must also be removed in the cloud
+  // through the durable outbox instead of a direct Supabase call.
+  if (op === "delete") return true;
   if (!payload || typeof payload !== "object") return false;
   const expenseType = (payload as Record<string, unknown>).expenseType;
   return expenseType === "payroll" || expenseType === "operational";

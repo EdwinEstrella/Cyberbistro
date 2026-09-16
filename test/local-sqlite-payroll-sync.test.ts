@@ -69,6 +69,28 @@ describe("local sqlite payroll sync store", () => {
     expect(syncingPayroll.map(r => r.id)).toEqual(["outbox-3", "outbox-4"]);
   });
 
+  it("claims gastos deletes of any expense type but never their purchase upserts", () => {
+    // A purchase expense created via Compras (IndexedDB) must NOT be re-pushed as an upsert.
+    db.prepare(`
+      INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run("purchase-upsert", tenantId, "branch-1", "gastos", "gasto-1", "upsert", JSON.stringify({ expenseType: "purchase" }), "pending");
+
+    // But deleting that same expense locally must propagate to the cloud through the outbox.
+    db.prepare(`
+      INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run("purchase-delete", tenantId, "branch-1", "gastos", "gasto-1", "delete", JSON.stringify({ id: "gasto-1", expenseType: "purchase" }), "pending");
+
+    const claims = store.claim(Date.now());
+    expect(claims.map(c => c.id)).toEqual(["purchase-delete"]);
+    expect(claims[0].op).toBe("delete");
+
+    const upsertRow = db.prepare("SELECT status, error_json FROM sync_outbox WHERE id = 'purchase-upsert'").get() as any;
+    expect(upsertRow.status).toBe("pending");
+    expect(upsertRow.error_json).toBeNull();
+  });
+
   it("deletes rows on successful ack (synced)", () => {
     db.prepare(`
       INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status)
