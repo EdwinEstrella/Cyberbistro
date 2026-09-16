@@ -268,4 +268,45 @@ describe("local sqlite payroll sync store", () => {
     const row = db.prepare("SELECT * FROM sync_outbox WHERE id = 'cycle-close'").get();
     expect(row).toBeUndefined();
   });
+
+  describe("applyPull (cloud → SQLite, bidirectional)", () => {
+    it("upserts pulled rows into their tables and advances the cursor atomically", () => {
+      store.applyPull({
+        cursor: "2026-09-15T10:00:00.000Z",
+        changes: [
+          { tableName: "gasto_categorias", rowId: "cat-1", deleted: false, payload: { nombre: "Servicios", activa: true, color: "#38bdf8" } },
+          { tableName: "customers", rowId: "cust-1", deleted: false, payload: { name: "Ana", phone: "809" } },
+          { tableName: "gastos", rowId: "exp-1", deleted: false, payload: { monto: 150, descripcion: "Luz", metodo_pago: "efectivo", fecha_gasto: "2026-09-14T00:00:00.000Z", category_id: "cat-1" } },
+        ],
+      });
+
+      const cat = db.prepare("SELECT name, active FROM gasto_categorias WHERE id = 'cat-1'").get() as any;
+      expect(cat).toMatchObject({ name: "Servicios", active: 1 });
+      const cust = db.prepare("SELECT name FROM customers WHERE id = 'cust-1'").get() as any;
+      expect(cust?.name).toBe("Ana");
+      const exp = db.prepare("SELECT amount, description FROM gastos WHERE id = 'exp-1'").get() as any;
+      expect(exp).toMatchObject({ amount: 150, description: "Luz" });
+
+      expect(store.getCursor()).toBe("2026-09-15T10:00:00.000Z");
+    });
+
+    it("applies tombstones (deleted rows) from the cloud", () => {
+      store.applyPull({ cursor: "c1", changes: [{ tableName: "customers", rowId: "cust-del", deleted: false, payload: { name: "Borrar" } }] });
+      expect(db.prepare("SELECT 1 FROM customers WHERE id = 'cust-del'").get()).toBeDefined();
+
+      store.applyPull({ cursor: "c2", changes: [{ tableName: "customers", rowId: "cust-del", deleted: true, payload: {} }] });
+      expect(db.prepare("SELECT 1 FROM customers WHERE id = 'cust-del'").get()).toBeUndefined();
+      expect(store.getCursor()).toBe("c2");
+    });
+
+    it("ignores changes for tables whose pull is not yet implemented", () => {
+      store.applyPull({ cursor: "c3", changes: [{ tableName: "compras", rowId: "compra-1", deleted: false, payload: { total: 999 } }] });
+      // Cursor still advances; unknown table is simply skipped without error.
+      expect(store.getCursor()).toBe("c3");
+    });
+
+    it("starts with a null cursor before any pull", () => {
+      expect(store.getCursor()).toBeNull();
+    });
+  });
 });
