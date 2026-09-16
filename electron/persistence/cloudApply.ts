@@ -186,10 +186,17 @@ export function applyCloudDeletes(
     if (tableName === "payroll_payments") {
       // A retained expense may still be pending locally; keep its parent.
       if (db.prepare("SELECT 1 FROM gastos WHERE payroll_payment_id=?").get(id)) { complete = false; continue; }
+      if (db.prepare(`SELECT 1 FROM payroll_payment_adjustments a JOIN sync_outbox o
+        ON o.row_id=a.id AND o.tenant_id=a.tenant_id AND o.table_name='payroll_payment_adjustments'
+        WHERE a.payment_id=? LIMIT 1`).get(id)) { complete = false; continue; }
       db.prepare("DELETE FROM payroll_payment_adjustments WHERE payment_id=?").run(id);
     }
     if (tableName === "payroll_employees" && db.prepare("SELECT 1 FROM payroll_payments WHERE employee_id=?").get(id)) { complete = false; continue; }
     if (tableName === "gasto_categorias" && db.prepare("SELECT 1 FROM gastos WHERE category_id=?").get(id)) { complete = false; continue; }
+    if (tableName === "customers" && db.prepare("SELECT 1 FROM cuentas_cobrar WHERE customer_id=?").get(id)) { complete = false; continue; }
+    if (tableName === "payroll_cloud_adjustments") {
+      if (tenantId) db.prepare("DELETE FROM payroll_payment_adjustments WHERE id=? AND tenant_id=?").run(id, tenantId);
+    }
     if (tenantId) stmt.run(id, tenantId); else stmt.run(id);
   }
   return complete;

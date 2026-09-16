@@ -13,18 +13,27 @@ function makeCloud(data: Record<string, Row[]>, cap = 500) {
   const client = { from(table: string) {
     let afterId = "", limit = cap, tenant: string | null = null;
     const builder: any = {
+      upsert: async (payload: Row) => {
+        const rows = data[table] ??= [];
+        const existing = rows.find(row => row.id === payload.id);
+        if (existing) Object.assign(existing, payload);
+        else rows.push({ created_at: "2026-09-15T00:00:00Z", ...payload });
+        return { error: null };
+      },
       select: () => builder,
       eq: (column: string, value: string) => { queries.push({ table, column, value }); tenant = value; return builder; },
       order: () => builder,
       limit: (value: number) => { limit = Math.min(cap, value); return builder; },
       gt: (column: string, value: string) => { expect(column).toBe("id"); afterId = value; return builder; },
       then: (resolve: (result: unknown) => void) => resolve({
-        data: (data[table] ?? []).filter(row => row.id > afterId && (row.tenant_id ?? row.nomina_empleados?.tenant_id) === tenant)
+        data: (data[table] ?? []).map(row => row.empleado_id && !row.nomina_empleados
+          ? { ...row, nomina_empleados: data.nomina_empleados?.find(emp => emp.id === row.empleado_id) } : row)
+          .filter(row => row.id > afterId && (row.tenant_id ?? row.nomina_empleados?.tenant_id) === tenant)
           .sort((a, b) => a.id < b.id ? -1 : 1).slice(0, limit),
         error: failures.has(table) ? { message: "offline" } : null,
       }),
     };
-    return builder;
+    return { upsert: builder.upsert, select: () => builder };
   }};
   return { client: client as never, queries, failures };
 }
@@ -118,5 +127,40 @@ describe("bidirectional SQLite cloud imports", () => {
     db.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status, error_json) VALUES ('bad-1', ?, 'branch-1', 'payroll_employees', 'emp-1', 'upsert', '{}', 'pending', ?)").run(TENANT, JSON.stringify({ retryable: false, reason: "conflict" }));
     store = new SQLitePayrollSyncStore(db, TENANT);
     expect(store.claim(Date.now())).toEqual([]);
+  });
+
+  it("round-trips a payment from one SQLite device to another with the same IDs, dates, branch and separate bonus/discount totals", async () => {
+    const data: Record<string, Row[]> = {};
+    const cloud = makeCloud(data);
+    const repo = new PayrollRepository(db);
+    const employeeId = repo.upsertEmployee(TENANT, "branch-1", { firstName: "Ana", lastName: "Perez", role: "Caja", baseSalaryCents: 100000, frequency: "monthly", isActive: true });
+    const created = repo.createPayment(TENANT, "branch-1", { employeeId, period: "2026-09", frequency: "monthly", paymentAmountCents: 60000,
+      paymentDate: "2026-09-03", receiptSnapshot: "{}", adjustments: [
+        { kind: "bonus", type: "Extra", scope: "currentPayment", amountCents: 1000, note: "Turno" },
+        { kind: "discount", type: "Uniforme", scope: "currentPayment", amountCents: 500, note: "Camisa" },
+      ] });
+    const worker = new DurableSyncWorker(store, new PayrollSyncClient(cloud.client), TENANT);
+    expect((await worker.push()).pushed).toBe(5);
+    expect(data.nomina_pagos).toHaveLength(1);
+    expect(data.nomina_pagos[0]).toMatchObject({ id: created.paymentId, total_bonos: 1000, total_descuentos: 500, created_at: "2026-09-03T00:00:00.000Z" });
+    const other = new DatabaseSync(":memory:");
+    try {
+      initializeTenantSchema(other, TENANT);
+      const destination = new DurableSyncWorker(new SQLitePayrollSyncStore(other, TENANT), new PayrollSyncClient(cloud.client), TENANT);
+      await destination.pull(); await destination.pull();
+      const payments = new PayrollRepository(other).getPayments(TENANT, "branch-1");
+      expect(payments).toHaveLength(1);
+      expect(payments[0]).toMatchObject({ id: created.paymentId, amountPaidCents: 60000, createdAt: "2026-09-03T00:00:00.000Z" });
+      expect(other.prepare("SELECT id, sucursal_id FROM gastos").get()).toEqual({ id: created.expenseId, sucursal_id: "branch-1" });
+      expect((await destination.push()).pushed).toBe(0);
+    } finally { other.close(); }
+  });
+
+  it("does not show another branch's downloaded employees when the requested branch is empty", async () => {
+    await pull(makeCloud({ nomina_empleados: [employee({ sucursal_id: "branch-2" })] }));
+    const repo = new PayrollRepository(db);
+    expect(repo.getEmployees(TENANT, "branch-1")).toEqual([]);
+    expect(() => repo.getPaymentContext(TENANT, "branch-1", { employeeId: "emp-1", period: "2026-09", frequency: "monthly", adjustments: [] }))
+      .toThrow("Employee not found");
   });
 });

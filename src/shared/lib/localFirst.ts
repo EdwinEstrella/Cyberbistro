@@ -2618,7 +2618,16 @@ export async function pullIncrementalChangesForTable(
   }
 }
 
-export async function syncIncremental(tenantId: string): Promise<{ tablesUpdated: number; rowsPulled: number }> {
+const mirrorSyncInFlight = new Map<string, Promise<{ tablesUpdated: number; rowsPulled: number }>>();
+export function syncIncremental(tenantId: string): Promise<{ tablesUpdated: number; rowsPulled: number }> {
+  const existing = mirrorSyncInFlight.get(tenantId);
+  if (existing) return existing;
+  const run = runMirrorSync(tenantId).finally(() => mirrorSyncInFlight.delete(tenantId));
+  mirrorSyncInFlight.set(tenantId, run);
+  return run;
+}
+
+async function runMirrorSync(tenantId: string): Promise<{ tablesUpdated: number; rowsPulled: number }> {
   if (isDesktopRuntime() && !(await isCloudAvailableForDesktop())) {
     return { tablesUpdated: 0, rowsPulled: 0 };
   }
@@ -2631,6 +2640,7 @@ export async function syncIncremental(tenantId: string): Promise<{ tablesUpdated
       // backend doesn't maintain updated_at. Other turns remain incremental.
       const key = `${tenantId}:${tableName}`;
       const full = (FULL_REFRESH_ON_SYNC_TABLES as readonly LocalFirstMirrorTable[]).includes(tableName)
+        || tablesWithoutUpdateCursor.has(tableName)
         || Date.now() - (lastFullReconciliation.get(key) ?? 0) >= 5 * 60_000;
       const pulled = full ? await refreshFullTableMirror(tenantId, tableName)
         : await pullIncrementalChangesForTable(tenantId, tableName);
@@ -2638,6 +2648,14 @@ export async function syncIncremental(tenantId: string): Promise<{ tablesUpdated
       tablesUpdated++;
       rowsPulled += pulled;
     } catch (error) {
+      if (error instanceof Error && /updated_at/i.test(error.message)) {
+        try {
+          rowsPulled += await refreshFullTableMirror(tenantId, tableName);
+          tablesWithoutUpdateCursor.add(tableName);
+          tablesUpdated++;
+          continue;
+        } catch (fallbackError) { error = fallbackError; }
+      }
       failures.push(`${tableName}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -2648,6 +2666,7 @@ export async function syncIncremental(tenantId: string): Promise<{ tablesUpdated
 }
 
 const lastFullReconciliation = new Map<string, number>();
+const tablesWithoutUpdateCursor = new Set<string>();
 
 export function notifyLocalMirrorUpdated(tenantId: string, tableName?: LocalFirstMirrorTable): void {
   if (typeof window !== "undefined") {
