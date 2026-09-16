@@ -726,16 +726,44 @@ if (gotTheLock) {
       if (!store) throw new Error('Tenant store is unavailable')
       return new CashPurchaseRepository({ store, branchId: 'main-process-default' })
     } })
-    registerReceivablesRepositoryIpc({ ipcMain, isTrustedSender, getRepository: () => {
-      const store = getStore()
-      if (!store) throw new Error('Tenant store is unavailable')
-      return new ReceivablesRepository({ store, branchId: 'main-process-default' })
-    } })
-    registerPayablesRepositoryIpc({ ipcMain, isTrustedSender, getRepository: () => {
-      const store = getStore()
-      if (!store) throw new Error('Tenant store is unavailable')
-      return new PayablesRepository({ store, branchId: 'main-process-default' })
-    } })
+    registerReceivablesRepositoryIpc({
+      ipcMain,
+      isTrustedSender,
+      getRepository: () => {
+        const store = getStore()
+        if (!store) throw new Error('Tenant store is unavailable')
+        return new ReceivablesRepository({ store, branchId: 'main-process-default' })
+      },
+      listCuentasCobrar: (filter) => {
+        const store = getStore((filter as { tenantId?: string })?.tenantId)
+        if (!store) return []
+        return store.listCuentasCobrar(filter)
+      },
+      listCxcPagos: (filter) => {
+        const store = getStore((filter as { tenantId?: string })?.tenantId)
+        if (!store) return []
+        return store.listCxcPagos(filter)
+      },
+    })
+    registerPayablesRepositoryIpc({
+      ipcMain,
+      isTrustedSender,
+      getRepository: () => {
+        const store = getStore()
+        if (!store) throw new Error('Tenant store is unavailable')
+        return new PayablesRepository({ store, branchId: 'main-process-default' })
+      },
+      listCuentasPagar: (filter) => {
+        const store = getStore((filter as { tenantId?: string })?.tenantId)
+        if (!store) return []
+        return store.listCuentasPagar(filter)
+      },
+      listCxpPagos: (filter) => {
+        const store = getStore((filter as { tenantId?: string })?.tenantId)
+        if (!store) return []
+        return store.listCxpPagos(filter)
+      },
+    })
     registerExpenseRepositoryIpc({
       ipcMain,
       isTrustedSender,

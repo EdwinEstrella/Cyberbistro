@@ -8,6 +8,7 @@ import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { readLocalInvoices } from "../lib/invoicesLocal";
 import { readLocalCierres } from "../../cierre/lib/cierresLocal";
+import { readLocalCuentasCobrar, readLocalCuentasPagar, readLocalCxcPagos, readLocalCxpPagos } from "../lib/accountsLocal";
 import { readLocalExpenses, readLocalExpenseCategories } from "../../gastos/lib/expensesLocal";
 import { listCustomers } from "../../clientes/lib/customers";
 import { cacheLogoFromUrl } from "../../../shared/lib/logoCache";
@@ -394,22 +395,22 @@ export function Billing() {
           ? supabase.from("gasto_categorias").select("id, nombre, color").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
           : supabase.from("gasto_categorias").select("id, nombre, color").eq("tenant_id", tenantId).is("sucursal_id", null),
       useLocalCxc
-        ? { data: await readLocalMirror<any>(tenantId, "cuentas_cobrar").then(r => r.filter(c => !c.sucursal_id || c.sucursal_id === activeSucursalId)), error: null }
+        ? { data: await readLocalCuentasCobrar(tenantId, { sucursalId: activeSucursalId || undefined }), error: null }
         : activeSucursalId
           ? supabase.from("cuentas_cobrar").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
           : supabase.from("cuentas_cobrar").select("*").eq("tenant_id", tenantId).is("sucursal_id", null),
       useLocalCxc
-        ? { data: await readLocalMirror<any>(tenantId, "cxc_pagos").then(r => r.filter(p => !p.sucursal_id || p.sucursal_id === activeSucursalId)), error: null }
+        ? { data: await readLocalCxcPagos(tenantId, { sucursalId: activeSucursalId || undefined }), error: null }
         : activeSucursalId
           ? supabase.from("cxc_pagos").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
           : supabase.from("cxc_pagos").select("*").eq("tenant_id", tenantId).is("sucursal_id", null),
       useLocalCxp
-        ? { data: await readLocalMirror<any>(tenantId, "cuentas_pagar").then(r => r.filter(c => !c.sucursal_id || c.sucursal_id === activeSucursalId)), error: null }
+        ? { data: await readLocalCuentasPagar(tenantId, { sucursalId: activeSucursalId || undefined }), error: null }
         : activeSucursalId
           ? supabase.from("cuentas_pagar").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
           : supabase.from("cuentas_pagar").select("*").eq("tenant_id", tenantId).is("sucursal_id", null),
       useLocalCxp
-        ? { data: await readLocalMirror<any>(tenantId, "cxp_pagos").then(r => r.filter(p => !p.sucursal_id || p.sucursal_id === activeSucursalId)), error: null }
+        ? { data: await readLocalCxpPagos(tenantId, { sucursalId: activeSucursalId || undefined }), error: null }
         : activeSucursalId
           ? supabase.from("cxp_pagos").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
           : supabase.from("cxp_pagos").select("*").eq("tenant_id", tenantId).is("sucursal_id", null),

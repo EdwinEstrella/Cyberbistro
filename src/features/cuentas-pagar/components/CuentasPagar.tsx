@@ -3,6 +3,7 @@ import { RefreshCw, DollarSign, FileText, CheckCircle, Clock, Eye } from "lucide
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
+import { readLocalCuentasPagar, readLocalCxpPagos } from "../../billing/lib/accountsLocal";
 import { supabase } from "../../../shared/lib/supabase";
 import { RegistrarPagoCxPModal } from "./RegistrarPagoCxPModal";
 import { DetalleCuentaPagarModal } from "./DetalleCuentaPagarModal";
@@ -108,8 +109,8 @@ export function CuentasPagar() {
       let ciclosData: any[] = [];
 
       if (useLocal) {
-        cuentasData = await readLocalMirror<CuentaPagarRow>(tenantId, "cuentas_pagar");
-        pagosData = await readLocalMirror<CxpPagoRow>(tenantId, "cxp_pagos");
+        cuentasData = (await readLocalCuentasPagar(tenantId)) as unknown as CuentaPagarRow[];
+        pagosData = (await readLocalCxpPagos(tenantId)) as unknown as CxpPagoRow[];
         proveedoresData = await readLocalMirror<ProveedorRow>(tenantId, "proveedores");
         comprasData = await readLocalMirror<CompraRow>(tenantId, "compras");
         ciclosData = await readLocalMirror<any>(tenantId, "cierres_operativos");

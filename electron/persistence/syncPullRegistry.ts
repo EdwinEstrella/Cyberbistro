@@ -37,6 +37,14 @@ export const SYNC_PULL_TABLES: readonly SyncPullTable[] = [
   // Not hard-deleted via pull: invoice deletion is audited, never a silent
   // snapshot-absence removal.
   { remoteTable: "facturas", localTable: "facturas", child: false, deletable: false },
+  // Accounts receivable/payable + their payments for the finance analytics
+  // (por cobrar / por pagar). Accounts MUST precede their payments so the
+  // payment foreign keys resolve within a single pull batch. Not hard-deleted
+  // via pull. cloud monto_pagado is mapped to local monto_pendiente on apply.
+  { remoteTable: "cuentas_cobrar", localTable: "cuentas_cobrar", child: false, deletable: false },
+  { remoteTable: "cxc_pagos", localTable: "cxc_pagos", child: false, deletable: false },
+  { remoteTable: "cuentas_pagar", localTable: "cuentas_pagar", child: false, deletable: false },
+  { remoteTable: "cxp_pagos", localTable: "cxp_pagos", child: false, deletable: false },
 ] as const;
 
 /** Local table names whose cloud→local pull is implemented. */

@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { DurableSyncStore, DurableOperation, DurableOperationStatus, DurableOperationKind, PullBatch } from "./syncWorker";
-import { applyCloudExpenseRows, applyCloudExpenseCategoryRows, applyCloudCustomerRows, applyCloudOperationalCycleRows, applyCloudFacturaRows, applyCloudDeletes } from "./cloudApply";
+import { applyCloudExpenseRows, applyCloudExpenseCategoryRows, applyCloudCustomerRows, applyCloudOperationalCycleRows, applyCloudFacturaRows, applyCloudReceivableRows, applyCloudPayableRows, applyCloudCxcPagoRows, applyCloudCxpPagoRows, applyCloudDeletes } from "./cloudApply";
 import { createHash } from "node:crypto";
 import { applyCloudPayrollEmployees, applyCloudPayrollPayments, applyCloudPayrollAdjustments } from "./payrollCloudApply";
 import { SYNC_PULL_TABLES, SYNC_PULLABLE_LOCAL_TABLES, SYNC_PULL_DELETE_ORDER } from "./syncPullRegistry";
@@ -17,6 +17,10 @@ const PULL_APPLIERS: Record<string, CloudRowApplier> = {
   customers: applyCloudCustomerRows,
   cierres_operativos: applyCloudOperationalCycleRows,
   facturas: applyCloudFacturaRows,
+  cuentas_cobrar: applyCloudReceivableRows,
+  cxc_pagos: applyCloudCxcPagoRows,
+  cuentas_pagar: applyCloudPayableRows,
+  cxp_pagos: applyCloudCxpPagoRows,
 };
 
 /** Tables whose cloud→local pull is implemented, declared once in the registry. */

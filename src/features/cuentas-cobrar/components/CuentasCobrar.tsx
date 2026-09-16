@@ -3,6 +3,7 @@ import { RefreshCw, DollarSign, FileText, CheckCircle, Clock, Eye } from "lucide
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
+import { readLocalCuentasCobrar, readLocalCxcPagos } from "../../billing/lib/accountsLocal";
 import { listCustomers } from "../../clientes/lib/customers";
 import { supabase } from "../../../shared/lib/supabase";
 import { RegistrarPagoCxCModal } from "./RegistrarPagoCxCModal";
@@ -109,8 +110,8 @@ export function CuentasCobrar() {
       let ciclosData: any[] = [];
 
       if (useLocal) {
-        cuentasData = await readLocalMirror<CuentaCobrarRow>(tenantId, "cuentas_cobrar");
-        pagosData = await readLocalMirror<CxcPagoRow>(tenantId, "cxc_pagos");
+        cuentasData = (await readLocalCuentasCobrar(tenantId)) as unknown as CuentaCobrarRow[];
+        pagosData = (await readLocalCxcPagos(tenantId)) as unknown as CxcPagoRow[];
         // Customers are authoritative in SQLite (see Clientes migration); read
         // via the unified helper so new customers appear here too.
         customersData = (await listCustomers(tenantId)) as unknown as CustomerRow[];

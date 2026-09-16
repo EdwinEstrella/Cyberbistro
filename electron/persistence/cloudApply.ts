@@ -310,6 +310,185 @@ export function applyCloudFacturaRows(
   }
 }
 
+/**
+ * Cloud receivables/payables carry `monto_pagado` and a feminine `estado`
+ * (pagada/vencida); the local STRICT tables store `monto_pendiente` and a
+ * masculine `estado` (CHECK pendiente/parcial/pagado/vencido). This maps the
+ * cloud estado onto the local domain, deriving from the amounts when the cloud
+ * value is absent or unrecognized so the CHECK never rejects a pulled row.
+ */
+function mapCuentaEstadoToLocal(cloudEstado: unknown, montoTotal: number, montoPendiente: number): string {
+  const e = String(cloudEstado ?? "").toLowerCase();
+  if (e === "pagada" || e === "pagado") return "pagado";
+  if (e === "vencida" || e === "vencido") return "vencido";
+  if (e === "parcial") return "parcial";
+  if (e === "pendiente") return "pendiente";
+  if (montoPendiente <= 0 && montoTotal > 0) return "pagado";
+  if (montoPendiente < montoTotal) return "parcial";
+  return "pendiente";
+}
+
+function cloudAmount(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+/** Applies cloud accounts receivable into the local mirror (monto_pagado→monto_pendiente). */
+export function applyCloudReceivableRows(
+  db: DatabaseSync,
+  tenantId: string,
+  rows: Array<Record<string, unknown>>,
+  defaultBranchId = "main-process-default",
+): void {
+  const ensureBranch = db.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)");
+  const ensureCustomer = db.prepare("INSERT OR IGNORE INTO customers (id, tenant_id, name) VALUES (?, ?, 'Cliente')");
+  const facturaExists = db.prepare("SELECT 1 FROM facturas WHERE id = ? AND tenant_id = ?");
+  ensureBranch.run(defaultBranchId, tenantId, "Principal");
+  const stmt = db.prepare(`
+    INSERT INTO cuentas_cobrar (id, tenant_id, sucursal_id, factura_id, customer_id, monto_total, monto_pendiente, estado, fecha_vencimiento)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      sucursal_id = excluded.sucursal_id,
+      factura_id = excluded.factura_id,
+      customer_id = excluded.customer_id,
+      monto_total = excluded.monto_total,
+      monto_pendiente = excluded.monto_pendiente,
+      estado = excluded.estado,
+      fecha_vencimiento = excluded.fecha_vencimiento
+  `);
+  for (const c of rows) {
+    if (!c || typeof c !== "object" || !c.id || !c.customer_id) continue;
+    if (hasPendingCloudWrite(db, tenantId, "cuentas_cobrar", String(c.id))) continue;
+    const branchId = typeof c.sucursal_id === "string" && c.sucursal_id.trim() ? c.sucursal_id.trim() : defaultBranchId;
+    ensureBranch.run(branchId, tenantId, "Principal");
+    ensureCustomer.run(String(c.customer_id), tenantId);
+    const montoTotal = cloudAmount(c.monto_total);
+    const montoPendiente = Math.max(0, montoTotal - cloudAmount(c.monto_pagado));
+    const facturaId = c.factura_id && facturaExists.get(String(c.factura_id), tenantId) ? String(c.factura_id) : null;
+    stmt.run(
+      String(c.id),
+      tenantId,
+      branchId,
+      facturaId,
+      String(c.customer_id),
+      montoTotal,
+      montoPendiente,
+      mapCuentaEstadoToLocal(c.estado, montoTotal, montoPendiente),
+      c.fecha_vencimiento ? String(c.fecha_vencimiento) : null,
+    );
+  }
+}
+
+/** Applies cloud accounts payable into the local mirror (monto_pagado→monto_pendiente). */
+export function applyCloudPayableRows(
+  db: DatabaseSync,
+  tenantId: string,
+  rows: Array<Record<string, unknown>>,
+  defaultBranchId = "main-process-default",
+): void {
+  const ensureBranch = db.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)");
+  const ensureProveedor = db.prepare("INSERT OR IGNORE INTO proveedores (id, tenant_id, name) VALUES (?, ?, 'Proveedor')");
+  const compraExists = db.prepare("SELECT 1 FROM compras WHERE id = ? AND tenant_id = ?");
+  ensureBranch.run(defaultBranchId, tenantId, "Principal");
+  const stmt = db.prepare(`
+    INSERT INTO cuentas_pagar (id, tenant_id, sucursal_id, compra_id, proveedor_id, monto_total, monto_pendiente, estado, fecha_vencimiento)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      sucursal_id = excluded.sucursal_id,
+      compra_id = excluded.compra_id,
+      proveedor_id = excluded.proveedor_id,
+      monto_total = excluded.monto_total,
+      monto_pendiente = excluded.monto_pendiente,
+      estado = excluded.estado,
+      fecha_vencimiento = excluded.fecha_vencimiento
+  `);
+  for (const c of rows) {
+    if (!c || typeof c !== "object" || !c.id || !c.proveedor_id) continue;
+    if (hasPendingCloudWrite(db, tenantId, "cuentas_pagar", String(c.id))) continue;
+    const branchId = typeof c.sucursal_id === "string" && c.sucursal_id.trim() ? c.sucursal_id.trim() : defaultBranchId;
+    ensureBranch.run(branchId, tenantId, "Principal");
+    ensureProveedor.run(String(c.proveedor_id), tenantId);
+    const montoTotal = cloudAmount(c.monto_total);
+    const montoPendiente = Math.max(0, montoTotal - cloudAmount(c.monto_pagado));
+    const compraId = c.compra_id && compraExists.get(String(c.compra_id), tenantId) ? String(c.compra_id) : null;
+    stmt.run(
+      String(c.id),
+      tenantId,
+      branchId,
+      compraId,
+      String(c.proveedor_id),
+      montoTotal,
+      montoPendiente,
+      mapCuentaEstadoToLocal(c.estado, montoTotal, montoPendiente),
+      c.fecha_vencimiento ? String(c.fecha_vencimiento) : null,
+    );
+  }
+}
+
+/** Applies cloud receivable payments; skips a payment whose parent account is not local yet. */
+export function applyCloudCxcPagoRows(
+  db: DatabaseSync,
+  tenantId: string,
+  rows: Array<Record<string, unknown>>,
+  defaultBranchId = "main-process-default",
+): void {
+  applyCloudPagoRows(db, tenantId, rows, "cxc_pagos", "cuenta_cobrar_id", "cuentas_cobrar", defaultBranchId);
+}
+
+/** Applies cloud payable payments; skips a payment whose parent account is not local yet. */
+export function applyCloudCxpPagoRows(
+  db: DatabaseSync,
+  tenantId: string,
+  rows: Array<Record<string, unknown>>,
+  defaultBranchId = "main-process-default",
+): void {
+  applyCloudPagoRows(db, tenantId, rows, "cxp_pagos", "cuenta_pagar_id", "cuentas_pagar", defaultBranchId);
+}
+
+function applyCloudPagoRows(
+  db: DatabaseSync,
+  tenantId: string,
+  rows: Array<Record<string, unknown>>,
+  table: "cxc_pagos" | "cxp_pagos",
+  parentColumn: "cuenta_cobrar_id" | "cuenta_pagar_id",
+  parentTable: "cuentas_cobrar" | "cuentas_pagar",
+  defaultBranchId: string,
+): void {
+  const ensureBranch = db.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)");
+  ensureBranch.run(defaultBranchId, tenantId, "Principal");
+  const parentExists = db.prepare(`SELECT 1 FROM ${parentTable} WHERE id = ? AND tenant_id = ?`);
+  const stmt = db.prepare(`
+    INSERT INTO ${table} (id, tenant_id, sucursal_id, ${parentColumn}, monto, metodo_pago, fecha_pago)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      sucursal_id = excluded.sucursal_id,
+      ${parentColumn} = excluded.${parentColumn},
+      monto = excluded.monto,
+      metodo_pago = excluded.metodo_pago,
+      fecha_pago = excluded.fecha_pago
+  `);
+  for (const p of rows) {
+    if (!p || typeof p !== "object" || !p.id || !p[parentColumn]) continue;
+    if (hasPendingCloudWrite(db, tenantId, table, String(p.id))) continue;
+    const parentId = String(p[parentColumn]);
+    // A payment whose account has not been pulled yet would violate the FK.
+    if (!parentExists.get(parentId, tenantId)) continue;
+    const monto = Number(p.monto);
+    if (!Number.isFinite(monto) || monto <= 0) continue;
+    const branchId = typeof p.sucursal_id === "string" && p.sucursal_id.trim() ? p.sucursal_id.trim() : defaultBranchId;
+    ensureBranch.run(branchId, tenantId, "Principal");
+    stmt.run(
+      String(p.id),
+      tenantId,
+      branchId,
+      parentId,
+      monto,
+      typeof p.metodo_pago === "string" && p.metodo_pago ? p.metodo_pago : "efectivo",
+      p.fecha_pago ? String(p.fecha_pago) : new Date().toISOString(),
+    );
+  }
+}
+
 function hasPendingCloudWrite(db: DatabaseSync, tenantId: string, table: string, id: string): boolean {
   return Boolean(db.prepare("SELECT 1 FROM sync_outbox WHERE tenant_id=? AND table_name=? AND row_id=? LIMIT 1")
     .get(tenantId, table, id));

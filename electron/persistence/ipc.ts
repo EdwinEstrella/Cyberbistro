@@ -27,7 +27,11 @@ export const CASH_PURCHASE_REPOSITORY_EXECUTE_CHANNEL = "cash-purchase-repositor
 export const PAYROLL_REPOSITORY_EXECUTE_CHANNEL = "payroll-repository:execute";
 export const PAYROLL_SYNC_ACCESS_TOKEN_CHANNEL = "payroll-sync:set-access-token";
 export const RECEIVABLES_REPOSITORY_EXECUTE_CHANNEL = "receivables-repository:execute";
+export const RECEIVABLES_LIST_CHANNEL = "receivables:list";
+export const CXC_PAGOS_LIST_CHANNEL = "cxc-pagos:list";
 export const PAYABLES_REPOSITORY_EXECUTE_CHANNEL = "payables-repository:execute";
+export const PAYABLES_LIST_CHANNEL = "payables:list";
+export const CXP_PAGOS_LIST_CHANNEL = "cxp-pagos:list";
 export const EXPENSE_REPOSITORY_EXECUTE_CHANNEL = "expense-repository:execute";
 export const EXPENSES_LIST_CHANNEL = "expenses:list";
 export const EXPENSES_SYNC_CLOUD_CHANNEL = "expenses:sync-cloud";
@@ -148,7 +152,13 @@ export function registerSavedAccountIpc(input: {
   });
 }
 
-export function registerReceivablesRepositoryIpc(input: { ipcMain: ReceivablesRepositoryIpcMain; isTrustedSender: (event: { senderId: number }) => boolean; getRepository: () => { execute(command: ReceivablesCommand): ReceivablesRepositoryResult } }): void {
+export function registerReceivablesRepositoryIpc(input: {
+  ipcMain: ReceivablesRepositoryIpcMain;
+  isTrustedSender: (event: { senderId: number }) => boolean;
+  getRepository: () => { execute(command: ReceivablesCommand): ReceivablesRepositoryResult };
+  listCuentasCobrar?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Array<Record<string, unknown>>;
+  listCxcPagos?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Array<Record<string, unknown>>;
+}): void {
   input.ipcMain.removeHandler(RECEIVABLES_REPOSITORY_EXECUTE_CHANNEL);
   input.ipcMain.handle(RECEIVABLES_REPOSITORY_EXECUTE_CHANNEL, async (event, payload) => {
     if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
@@ -156,15 +166,45 @@ export function registerReceivablesRepositoryIpc(input: { ipcMain: ReceivablesRe
     if (!command) throw new Error("Invalid receivables command");
     return { ok: true, data: input.getRepository().execute(command) };
   });
+
+  input.ipcMain.removeHandler(RECEIVABLES_LIST_CHANNEL);
+  input.ipcMain.handle(RECEIVABLES_LIST_CHANNEL, async (event, filter) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    return { ok: true, data: input.listCuentasCobrar?.(filter as { tenantId?: string; sucursalId?: string; limit?: number }) ?? [] };
+  });
+
+  input.ipcMain.removeHandler(CXC_PAGOS_LIST_CHANNEL);
+  input.ipcMain.handle(CXC_PAGOS_LIST_CHANNEL, async (event, filter) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    return { ok: true, data: input.listCxcPagos?.(filter as { tenantId?: string; sucursalId?: string; limit?: number }) ?? [] };
+  });
 }
 
-export function registerPayablesRepositoryIpc(input: { ipcMain: PayablesRepositoryIpcMain; isTrustedSender: (event: { senderId: number }) => boolean; getRepository: () => { execute(command: PayablesCommand): PayablesRepositoryResult } }): void {
+export function registerPayablesRepositoryIpc(input: {
+  ipcMain: PayablesRepositoryIpcMain;
+  isTrustedSender: (event: { senderId: number }) => boolean;
+  getRepository: () => { execute(command: PayablesCommand): PayablesRepositoryResult };
+  listCuentasPagar?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Array<Record<string, unknown>>;
+  listCxpPagos?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Array<Record<string, unknown>>;
+}): void {
   input.ipcMain.removeHandler(PAYABLES_REPOSITORY_EXECUTE_CHANNEL);
   input.ipcMain.handle(PAYABLES_REPOSITORY_EXECUTE_CHANNEL, async (event, payload) => {
     if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
     const command = parsePayablesCommand(payload);
     if (!command) throw new Error("Invalid payables command");
     return { ok: true, data: input.getRepository().execute(command) };
+  });
+
+  input.ipcMain.removeHandler(PAYABLES_LIST_CHANNEL);
+  input.ipcMain.handle(PAYABLES_LIST_CHANNEL, async (event, filter) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    return { ok: true, data: input.listCuentasPagar?.(filter as { tenantId?: string; sucursalId?: string; limit?: number }) ?? [] };
+  });
+
+  input.ipcMain.removeHandler(CXP_PAGOS_LIST_CHANNEL);
+  input.ipcMain.handle(CXP_PAGOS_LIST_CHANNEL, async (event, filter) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    return { ok: true, data: input.listCxpPagos?.(filter as { tenantId?: string; sucursalId?: string; limit?: number }) ?? [] };
   });
 }
 

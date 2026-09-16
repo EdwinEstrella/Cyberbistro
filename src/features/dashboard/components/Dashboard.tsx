@@ -11,7 +11,7 @@ async function hasOpenCycle(tenantId: string, sucursalId: string | null): Promis
     const snapshot = await getLocalFirstStatusSnapshot(tenantId);
     const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
     if (localMode) {
-      const cycles = await readLocalMirror<{ id: string; closed_at: string | null; sucursal_id?: string | null }>(tenantId, "cierres_operativos");
+      const cycles = await readLocalCierres(tenantId, { sucursalId });
       return cycles.some(c => !c.closed_at && (c.sucursal_id === sucursalId || !c.sucursal_id));
     }
   } catch { /* fall through to online */ }
@@ -60,6 +60,7 @@ import { calculateInvoiceTotals } from "../../../shared/lib/billingTotals";
 import { type FiscalMode } from "../../../shared/lib/fiscalTypes";
 import { resolveActiveFiscalMode, runFiscalEngine, buildEcfDocumentWrites } from "../../../shared/lib/fiscalEngine";
 import { getLocalFirstStatusSnapshot, readLocalMirror, readLocalOutbox, enqueueLocalWrite, getDeviceId, writeLocalMirrorRow, shouldReadLocalFirst, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, type LocalFirstWrite } from "../../../shared/lib/localFirst";
+import { readLocalCierres } from "../../cierre/lib/cierresLocal";
 import { commitCheckout } from "../../../shared/lib/checkoutCommit";
 import { getNextFacturaNumber } from "../../../shared/lib/invoiceNumber";
 import { writePosMutationLocalFirst } from "../../pos/lib/localFirstMutations";

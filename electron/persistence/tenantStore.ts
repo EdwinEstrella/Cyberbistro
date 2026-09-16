@@ -385,6 +385,53 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     ).all(this.tenantId, limit) as Array<Record<string, unknown>>;
   }
 
+  listCuentasCobrar(filter?: { sucursalId?: string; limit?: number }): Array<Record<string, unknown>> {
+    const limit = filter?.limit ?? 2000;
+    const columns = "id, tenant_id, sucursal_id, factura_id, customer_id, monto_total, monto_pendiente, (monto_total - monto_pendiente) AS monto_pagado, estado, fecha_vencimiento";
+    if (filter?.sucursalId) {
+      return this.database.prepare(
+        `SELECT ${columns} FROM cuentas_cobrar WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id = 'main-process-default') LIMIT ?`
+      ).all(this.tenantId, filter.sucursalId, limit) as Array<Record<string, unknown>>;
+    }
+    return this.database.prepare(
+      `SELECT ${columns} FROM cuentas_cobrar WHERE tenant_id = ? LIMIT ?`
+    ).all(this.tenantId, limit) as Array<Record<string, unknown>>;
+  }
+
+  listCuentasPagar(filter?: { sucursalId?: string; limit?: number }): Array<Record<string, unknown>> {
+    const limit = filter?.limit ?? 2000;
+    const columns = "id, tenant_id, sucursal_id, compra_id, proveedor_id, monto_total, monto_pendiente, (monto_total - monto_pendiente) AS monto_pagado, estado, fecha_vencimiento";
+    if (filter?.sucursalId) {
+      return this.database.prepare(
+        `SELECT ${columns} FROM cuentas_pagar WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id = 'main-process-default') LIMIT ?`
+      ).all(this.tenantId, filter.sucursalId, limit) as Array<Record<string, unknown>>;
+    }
+    return this.database.prepare(
+      `SELECT ${columns} FROM cuentas_pagar WHERE tenant_id = ? LIMIT ?`
+    ).all(this.tenantId, limit) as Array<Record<string, unknown>>;
+  }
+
+  listCxcPagos(filter?: { sucursalId?: string; limit?: number }): Array<Record<string, unknown>> {
+    return this.listPagos("cxc_pagos", "cuenta_cobrar_id", filter);
+  }
+
+  listCxpPagos(filter?: { sucursalId?: string; limit?: number }): Array<Record<string, unknown>> {
+    return this.listPagos("cxp_pagos", "cuenta_pagar_id", filter);
+  }
+
+  private listPagos(table: "cxc_pagos" | "cxp_pagos", parentColumn: string, filter?: { sucursalId?: string; limit?: number }): Array<Record<string, unknown>> {
+    const limit = filter?.limit ?? 5000;
+    const columns = `id, tenant_id, sucursal_id, ${parentColumn}, monto, metodo_pago, fecha_pago`;
+    if (filter?.sucursalId) {
+      return this.database.prepare(
+        `SELECT ${columns} FROM ${table} WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id = 'main-process-default') ORDER BY fecha_pago DESC LIMIT ?`
+      ).all(this.tenantId, filter.sucursalId, limit) as Array<Record<string, unknown>>;
+    }
+    return this.database.prepare(
+      `SELECT ${columns} FROM ${table} WHERE tenant_id = ? ORDER BY fecha_pago DESC LIMIT ?`
+    ).all(this.tenantId, limit) as Array<Record<string, unknown>>;
+  }
+
   syncCloudExpenseCategories(categories: Array<Record<string, unknown>>): void {
     this.database.exec("BEGIN IMMEDIATE;");
     try {
