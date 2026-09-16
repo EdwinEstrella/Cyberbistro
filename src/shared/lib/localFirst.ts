@@ -867,13 +867,33 @@ function compareOutboxEntriesByCreatedAtThenId(a: SyncOutboxEntry, b: SyncOutbox
   return a.id.localeCompare(b.id);
 }
 
+/**
+ * Rows that carry a factura_id (consumos paid at checkout, cuentas_cobrar for
+ * fiado, ecf_documents) FK-reference facturas. If the referencing row is
+ * dispatched before its invoice insert has synced, PostgreSQL rejects it with
+ * 23503 (foreign_key_violation → HTTP 409) and the row (e.g. a consumo's
+ * estado='pagado') never persists — which reopened paid tables. Treat the
+ * invoice as a dependency, like a purchase header.
+ */
+function getFacturaDependencyId(entry: SyncOutboxEntry): string | null {
+  if (entry.table_name === "facturas") return null;
+  const facturaId = entry.payload?.["factura_id"];
+  return typeof facturaId === "string" && facturaId.length > 0 ? facturaId : null;
+}
+
 export function selectProcessableOutboxEntries(entries: readonly SyncOutboxEntry[], nowMs = Date.now()): SyncOutboxEntry[] {
   const entriesByPurchaseId = new Map<string, SyncOutboxEntry[]>();
+  const facturaInsertsById = new Map<string, SyncOutboxEntry[]>();
   for (const entry of entries) {
-    if (entry.table_name !== "compras") continue;
-    const matches = entriesByPurchaseId.get(entry.row_id) ?? [];
-    matches.push(entry);
-    entriesByPurchaseId.set(entry.row_id, matches);
+    if (entry.table_name === "compras") {
+      const matches = entriesByPurchaseId.get(entry.row_id) ?? [];
+      matches.push(entry);
+      entriesByPurchaseId.set(entry.row_id, matches);
+    } else if (entry.table_name === "facturas") {
+      const matches = facturaInsertsById.get(entry.row_id) ?? [];
+      matches.push(entry);
+      facturaInsertsById.set(entry.row_id, matches);
+    }
   }
 
   return [...entries]
@@ -883,6 +903,13 @@ export function selectProcessableOutboxEntries(entries: readonly SyncOutboxEntry
       if (!compraId) return true;
       // A local purchase header must be confirmed before its RLS-protected children.
       return !(entriesByPurchaseId.get(compraId) ?? []).some((parent) => parent.status !== "synced");
+    })
+    .filter((entry) => {
+      const facturaId = getFacturaDependencyId(entry);
+      if (!facturaId) return true;
+      // A local invoice must be confirmed in the cloud before rows that FK it,
+      // so the consumo's estado='pagado' + factura_id update is never 409'd.
+      return !(facturaInsertsById.get(facturaId) ?? []).some((parent) => parent.status !== "synced");
     })
     .sort(compareOutboxEntriesByCreatedAtThenId);
 }

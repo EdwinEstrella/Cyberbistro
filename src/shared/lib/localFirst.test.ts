@@ -817,6 +817,27 @@ describe("localFirst", () => {
     expect(selectProcessableOutboxEntries([{ ...parent, status: "synced" }, accountPayableUpdate]).map((entry) => entry.id)).toEqual(["cxp-update"]);
   });
 
+  it("no despacha el update de un consumo (estado pagado + factura_id) hasta que su factura esté confirmada", () => {
+    // Reproduces the mesa-reopen bug: the consumo PATCH carrying factura_id must
+    // not be sent before the invoice insert, or PostgreSQL rejects it (23503 → 409).
+    const factura = {
+      ...createSyncOutboxEntry({ tenantId: "tenant-1", tableName: "facturas", rowId: "factura-1", op: "insert", payload: { id: "factura-1" }, deviceId: "dev1" }),
+      id: "factura",
+      created_at: "2026-01-01T00:00:00.000Z",
+    };
+    const consumoPagado = {
+      ...createSyncOutboxEntry({ tenantId: "tenant-1", tableName: "consumos", rowId: "consumo-1", op: "update", payload: { estado: "pagado", factura_id: "factura-1" }, deviceId: "dev1" }),
+      id: "consumo",
+      created_at: "2026-01-01T00:00:00.000Z",
+    };
+
+    // Even if the sort tiebreak would put the consumo first, it is deferred.
+    expect(selectProcessableOutboxEntries([consumoPagado, factura]).map((entry) => entry.id)).toEqual(["factura"]);
+    expect(selectProcessableOutboxEntries([{ ...factura, status: "synced" }, consumoPagado]).map((entry) => entry.id)).toEqual(["consumo"]);
+    // A consumo whose factura is already in the cloud (not in the batch) is not blocked.
+    expect(selectProcessableOutboxEntries([consumoPagado]).map((entry) => entry.id)).toEqual(["consumo"]);
+  });
+
   it("deriva la dependencia de compra de la fila local para updates de fiscal y CxP", () => {
     for (const tableName of ["compra_fiscal", "cuentas_pagar"] as const) {
       const entry = createSyncOutboxEntry({
