@@ -4,7 +4,8 @@ import { supabase } from "../../../shared/lib/supabase";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { isDesktopCloudUnavailable } from "../../../shared/lib/cloudAvailability";
-import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst, writeLocalMirrorRow } from "../../../shared/lib/localFirst";
+import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst, writeLocalMirrorRow, deleteLocalMirrorRow } from "../../../shared/lib/localFirst";
+import { readLocalExpenses, readLocalExpenseCategories } from "../lib/expensesLocal";
 import { ConfirmModal } from "../../../shared/components/ConfirmModal";
 
 interface CategoriaGasto {
@@ -152,77 +153,36 @@ export function Gastos() {
       let localCats: CategoriaGasto[] = [];
       let localGastos: GastoRow[] = [];
 
-      // 1. Read local SQLite immediately
-      if (window.electronAPI?.listExpenses && window.electronAPI?.listExpenseCategories) {
-        try {
-          const [catsRes, expRes] = await Promise.all([
-            window.electronAPI.listExpenseCategories(),
-            window.electronAPI.listExpenses({ tenantId, sucursalId: activeSucursalId || undefined, limit: 80 }),
-          ]);
-          if (catsRes?.ok && Array.isArray(catsRes.data)) {
-            localCats = catsRes.data.map((c: any) => ({
-              id: c.id,
-              nombre: c.nombre ?? c.name,
-              descripcion: c.descripcion ?? c.description ?? null,
-              color: c.color ?? "#ff906d",
-              activa: Boolean(c.activa ?? c.active ?? true),
-            })).filter((c) => c.activa);
-          }
-          if (expRes?.ok && Array.isArray(expRes.data)) {
-            localGastos = expRes.data.map((g: any) => ({
-              id: g.id,
-              tenant_id: g.tenant_id,
-              category_id: g.category_id,
-              cycle_id: g.cycle_id,
-              descripcion: g.description ?? g.descripcion,
-              description: g.description ?? g.descripcion,
-              proveedor: g.supplier ?? g.proveedor,
-              monto: g.amount ?? (g.amount_cents ? g.amount_cents / 100 : 0),
-              amount: g.amount ?? (g.amount_cents ? g.amount_cents / 100 : 0),
-              metodo_pago: g.payment_method ?? g.metodo_pago,
-              fecha_gasto: g.expense_date ?? g.fecha_gasto,
-              notas: g.notes ?? g.notas,
-            }));
-          }
-          if (localCats.length > 0) setCategorias(localCats);
-          if (localGastos.length > 0) setGastos(localGastos);
-        } catch (e) {
-          console.warn("[Gastos] SQLite load failed, falling back:", e);
-        }
-      }
-
-      // 2. If SQLite has no categories or expenses, check IndexedDB legacy mirror to recover previous offline data
-      if (localCats.length === 0 || localGastos.length === 0) {
-        try {
-          const [useLocalCats, useLocalG] = await Promise.all([
-            shouldReadLocalFirst(tenantId, ["gasto_categorias"]),
-            shouldReadLocalFirst(tenantId, ["gastos"]),
-          ]);
-          if (localCats.length === 0 && useLocalCats) {
-            const idbCats = await readLocalMirror<CategoriaGasto>(tenantId, "gasto_categorias");
-            const activeIdbCats = idbCats.filter((c) => c.activa);
-            if (activeIdbCats.length > 0) {
-              localCats = activeIdbCats;
-              setCategorias(localCats);
-              if (window.electronAPI?.syncCloudExpenseCategories) {
-                void window.electronAPI.syncCloudExpenseCategories(idbCats).catch(() => {});
-              }
-            }
-          }
-          if (localGastos.length === 0 && useLocalG) {
-            const idbGastos = await readLocalMirror<GastoRow>(tenantId, "gastos");
-            const validGastos = idbGastos.sort((a, b) => new Date(getGastoFecha(b)).getTime() - new Date(getGastoFecha(a)).getTime());
-            if (validGastos.length > 0) {
-              localGastos = validGastos.slice(0, 80);
-              setGastos(localGastos);
-              if (window.electronAPI?.syncCloudExpenses) {
-                void window.electronAPI.syncCloudExpenses(idbGastos, activeSucursalId || undefined).catch(() => {});
-              }
-            }
-          }
-        } catch (idbErr) {
-          console.warn("[Gastos] IndexedDB recovery error:", idbErr);
-        }
+      // 1 + 2. Read from the unified local source: SQLite (authoritative) unioned
+      // with the legacy IndexedDB mirror (bridge, so purchase expenses still
+      // living only in IndexedDB during the migration are not lost).
+      try {
+        const [cats, exps] = await Promise.all([
+          readLocalExpenseCategories(tenantId, { sucursalId: activeSucursalId || undefined }),
+          readLocalExpenses(tenantId, { sucursalId: activeSucursalId || undefined, limit: 80 }),
+        ]);
+        localCats = cats.map((c) => ({ id: c.id, nombre: c.nombre, descripcion: c.descripcion, color: c.color, activa: c.activa }));
+        localGastos = exps.map((g) => ({
+          id: g.id,
+          tenant_id: g.tenant_id ?? tenantId,
+          category_id: g.category_id,
+          cycle_id: g.cycle_id,
+          descripcion: g.descripcion,
+          description: g.description,
+          proveedor: g.proveedor,
+          monto: g.monto,
+          amount: g.amount,
+          expense_type: g.expense_type ?? undefined,
+          payroll_payment_id: g.payroll_payment_id ?? null,
+          compra_id: g.compra_id ?? null,
+          metodo_pago: g.metodo_pago,
+          fecha_gasto: g.fecha_gasto,
+          notas: g.notas,
+        }));
+        if (localCats.length > 0) setCategorias(localCats);
+        if (localGastos.length > 0) setGastos(localGastos);
+      } catch (e) {
+        console.warn("[Gastos] Local expense load failed:", e);
       }
 
       // 3. Background Cloud Reconciliation (mirroring all cloud categories and expenses permanently into SQLite)
@@ -260,6 +220,9 @@ export function Gastos() {
                 proveedor: g.proveedor || g.supplier,
                 monto: g.monto ?? g.amount ?? (g.amount_cents ? g.amount_cents / 100 : 0),
                 amount: g.monto ?? g.amount ?? (g.amount_cents ? g.amount_cents / 100 : 0),
+                expense_type: g.expense_type ?? undefined,
+                payroll_payment_id: g.payroll_payment_id ?? null,
+                compra_id: g.compra_id ?? null,
                 metodo_pago: g.metodo_pago || g.payment_method,
                 fecha_gasto: g.fecha_gasto || g.expense_date,
                 notas: g.notas || g.notes,
@@ -405,9 +368,9 @@ export function Gastos() {
     setMessage("");
     try {
       let hasExpenses = false;
-      const useLocalGastos = await shouldReadLocalFirst(tenantId, ["gastos"]);
+      const useLocalGastos = Boolean(window.electronAPI?.listExpenses) || await shouldReadLocalFirst(tenantId, ["gastos"]);
       if (useLocalGastos) {
-        const localGastos = await readLocalMirror<GastoRow>(tenantId, "gastos");
+        const localGastos = await readLocalExpenses(tenantId);
         hasExpenses = localGastos.some(g => g.category_id === cat.id);
       } else {
         const { count, error } = await supabase
@@ -575,6 +538,9 @@ export function Gastos() {
                 type: "expense.delete",
                 id: gasto.id,
               });
+              // Keep the legacy IndexedDB mirror consistent so the union read
+              // does not resurrect the deleted row.
+              await deleteLocalMirrorRow(tenantId, "gastos", gasto.id).catch(() => undefined);
             } else {
               await enqueueLocalWrite({
                 tenantId: tenantId!,

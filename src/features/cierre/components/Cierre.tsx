@@ -6,6 +6,7 @@ import { buildCierreDiaReceiptHtml } from "../../../shared/lib/receiptTemplates"
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
+import { readLocalExpenses, readLocalExpenseCategories } from "../../gastos/lib/expensesLocal";
 import { isDesktopRuntime, isCloudAvailableForDesktop } from "../../../shared/lib/cloudAvailability";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { calculateExpectedCashDrawer, sumCashExpenses } from "../../../shared/lib/cycleCash";
@@ -218,7 +219,7 @@ export function Cierre() {
           ? readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos").then(rows => rows.filter(c => c.sucursal_id === activeSucursalId || !c.sucursal_id))
           : supabase.from("cierres_operativos").select("*").eq("tenant_id", tenantId).or(activeSucursalId ? `sucursal_id.eq.${activeSucursalId},sucursal_id.is.null` : `sucursal_id.is.null`).is("closed_at", null).order("opened_at", { ascending: false }).limit(1).then(r => ({ data: r.data, error: r.error })),
         useLocalCategorias
-          ? readLocalMirror<GastoCategoriaRow & { sucursal_id?: string | null }>(tenantId, "gasto_categorias").then(rows => rows.filter(c => c.sucursal_id === activeSucursalId || !c.sucursal_id))
+          ? readLocalExpenseCategories(tenantId, { sucursalId: activeSucursalId || undefined })
           : supabase.from("gasto_categorias").select("id, nombre").eq("tenant_id", tenantId).or(activeSucursalId ? `sucursal_id.eq.${activeSucursalId},sucursal_id.is.null` : `sucursal_id.is.null`).then(r => ({ data: r.data, error: r.error })),
       ]);
 
@@ -263,37 +264,14 @@ export function Cierre() {
             }
             return query.order("created_at", { ascending: false }).then(r => r.data ?? []);
           }),
-          shouldReadLocalFirst(tenantId, ["gastos"]).then(async (useLocal) => {
-            if (window.electronAPI?.listExpenses) {
-              try {
-                const res = await window.electronAPI.listExpenses({ tenantId, sucursalId: activeSucursalId || undefined, limit: 200 });
-                if (res?.ok && Array.isArray(res.data)) {
-                  const mapped = res.data.map((g: any) => ({
-                    id: g.id,
-                    tenant_id: g.tenant_id,
-                    category_id: g.category_id,
-                    cycle_id: g.cycle_id,
-                    descripcion: g.description ?? g.descripcion,
-                    description: g.description ?? g.descripcion,
-                    proveedor: g.supplier ?? g.proveedor,
-                    monto: g.amount ?? (g.amount_cents ? g.amount_cents / 100 : 0),
-                    amount: g.amount ?? (g.amount_cents ? g.amount_cents / 100 : 0),
-                    metodo_pago: g.payment_method ?? g.metodo_pago,
-                    fecha_gasto: g.expense_date ?? g.fecha_gasto,
-                  }));
-                  return mapped.filter((g: any) => g.cycle_id === sel.id && (g.sucursal_id === activeSucursalId || !g.sucursal_id));
-                }
-              } catch (e) {
-                console.warn("[Cierre] Error listing expenses from desktop SQLite:", e);
-              }
+          (async () => {
+            if (window.electronAPI?.listExpenses || await shouldReadLocalFirst(tenantId, ["gastos"])) {
+              return readLocalExpenses(tenantId, { sucursalId: activeSucursalId || undefined, cycleId: sel.id });
             }
-            if (useLocal) {
-              return readLocalMirror<GastoRow & { sucursal_id?: string | null }>(tenantId, "gastos").then(gs => gs.filter(g => g.cycle_id === sel.id && (g.sucursal_id === activeSucursalId || !g.sucursal_id)));
-            }
-            return activeSucursalId 
+            return activeSucursalId
               ? supabase.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, metodo_pago, fecha_gasto").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).eq("cycle_id", sel.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? [])
               : supabase.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, metodo_pago, fecha_gasto").eq("tenant_id", tenantId).is("sucursal_id", null).eq("cycle_id", sel.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? []);
-          }),
+          })(),
           shouldReadLocalFirst(tenantId, ["cxc_pagos"]).then(useLocal => useLocal
             ? readLocalMirror<any>(tenantId, "cxc_pagos").then(ps => ps.filter(p => p.cycle_id === sel.id && (p.sucursal_id === activeSucursalId || !p.sucursal_id)))
             : activeSucursalId
@@ -516,7 +494,7 @@ export function Cierre() {
     }
 
     const useLocalFacturas = await shouldReadLocalFirst(tenantId, ["facturas"]);
-    const useLocalGastos = await shouldReadLocalFirst(tenantId, ["gastos"]);
+    const useLocalGastos = Boolean(window.electronAPI?.listExpenses) || await shouldReadLocalFirst(tenantId, ["gastos"]);
     const useLocalTenants = await shouldReadLocalFirst(tenantId, ["tenants"]);
     const useLocalCxc = await shouldReadLocalFirst(tenantId, ["cxc_pagos"]);
     const now = new Date().toISOString();
@@ -526,7 +504,7 @@ export function Cierre() {
         ? readLocalMirror<FacturaRow & { sucursal_id?: string | null }>(tenantId, "facturas").then(fs => fs.filter(f => f.sucursal_id === activeSucursalId || !f.sucursal_id))
         : supabase.from("facturas").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("created_at", { ascending: false }).then(r => r.data ?? []),
       useLocalGastos
-        ? readLocalMirror<GastoRow & { sucursal_id?: string | null }>(tenantId, "gastos").then(gs => gs.filter(g => g.cycle_id === currentCycle.id && (g.sucursal_id === activeSucursalId || !g.sucursal_id)))
+        ? readLocalExpenses(tenantId, { sucursalId: activeSucursalId || undefined, cycleId: currentCycle.id })
         : supabase.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, metodo_pago, fecha_gasto").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).eq("cycle_id", currentCycle.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? []),
       useLocalCxc
         ? readLocalMirror<any>(tenantId, "cxc_pagos").then(ps => ps.filter(p => p.cycle_id === currentCycle.id && (p.sucursal_id === activeSucursalId || !p.sucursal_id)))

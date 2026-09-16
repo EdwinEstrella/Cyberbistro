@@ -2410,6 +2410,24 @@ export async function readLocalMirrorRow<T = Record<string, unknown>>(
   }
 }
 
+/**
+ * Removes a single row from the legacy IndexedDB mirror. Used during the
+ * IndexedDB→SQLite migration so a row deleted in SQLite does not linger in the
+ * mirror and reappear via union reads. Safe no-op if the row is absent.
+ */
+export async function deleteLocalMirrorRow(
+  tenantId: string,
+  tableName: LocalFirstMirrorTable,
+  rowId: string
+): Promise<void> {
+  const db = await openLocalFirstDbForSync(tenantId);
+  try {
+    await deleteOne(db, tableName, rowId);
+  } finally {
+    db.close();
+  }
+}
+
 async function getIncrementalCursor(
   db: IDBDatabase,
   tenantId: string,
@@ -2628,6 +2646,15 @@ function putMany(db: IDBDatabase, storeName: string, rows: readonly object[]): P
 
 function putOne(db: IDBDatabase, storeName: string, row: object): Promise<void> {
   return putMany(db, storeName, [row]);
+}
+
+function deleteOne(db: IDBDatabase, storeName: string, key: IDBValidKey): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(storeName, "readwrite");
+    tx.objectStore(storeName).delete(key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error(`No se pudo borrar la fila de ${storeName}.`));
+  });
 }
 
 function getAllSyncStates(db: IDBDatabase): Promise<SyncStateRow[]> {

@@ -6,6 +6,7 @@ import { buildCierreDiaReceiptHtml, buildFacturaReceiptHtml } from "../../../sha
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
+import { readLocalExpenses, readLocalExpenseCategories } from "../../gastos/lib/expensesLocal";
 import { cacheLogoFromUrl } from "../../../shared/lib/logoCache";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { canUseFeature } from "../../../shared/lib/planFeatures";
@@ -380,12 +381,12 @@ export function Billing() {
           ? supabase.from("cierres_operativos").select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at, efectivo_inicial").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("opened_at", { ascending: false })
           : supabase.from("cierres_operativos").select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at, efectivo_inicial").eq("tenant_id", tenantId).is("sucursal_id", null).order("opened_at", { ascending: false }),
       useLocalExpenses
-        ? { data: await readLocalMirror<Expense & { sucursal_id?: string | null }>(tenantId, "gastos").then(r => r.filter(g => !g.sucursal_id || g.sucursal_id === activeSucursalId).sort((a, b) => new Date(b.fecha_gasto || 0).getTime() - new Date(a.fecha_gasto || 0).getTime())), error: null }
+        ? { data: await readLocalExpenses(tenantId, { sucursalId: activeSucursalId || undefined, limit: 1000 }), error: null }
         : activeSucursalId
           ? supabase.from("gastos").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("fecha_gasto", { ascending: false })
           : supabase.from("gastos").select("*").eq("tenant_id", tenantId).is("sucursal_id", null).order("fecha_gasto", { ascending: false }),
       useLocalExpenseCategories
-        ? { data: await readLocalMirror<ExpenseCategory & { sucursal_id?: string | null }>(tenantId, "gasto_categorias").then(r => r.filter(c => !c.sucursal_id || c.sucursal_id === activeSucursalId)), error: null }
+        ? { data: await readLocalExpenseCategories(tenantId, { sucursalId: activeSucursalId || undefined }), error: null }
         : activeSucursalId
           ? supabase.from("gasto_categorias").select("id, nombre, color").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
           : supabase.from("gasto_categorias").select("id, nombre, color").eq("tenant_id", tenantId).is("sucursal_id", null),
