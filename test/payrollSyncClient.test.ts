@@ -187,6 +187,16 @@ describe("PayrollSyncClient", () => {
     await expect(client.push(employeeOperation)).rejects.toThrow("Upsert failed: Network error");
   });
 
+  it("does not acknowledge a uniqueness conflict with another remote row", async () => {
+    repository.upsertEmployee("tenant-1", "branch-1", { firstName: "Ana", lastName: "Conflict", role: "Caja",
+      baseSalaryCents: 100000, frequency: "monthly", isActive: true });
+    fakeSdk.nextUpsertError = { code: "23505", message: "duplicate key violates employee identity" };
+    const [operation] = store.claim(Date.now());
+    const response = await client.push(operation);
+    expect(response.result).toBeUndefined();
+    expect(response.conflict?.reason).toContain("duplicate key");
+  });
+
   it("classifies unsupported local payloads and remote structural failures as permanent", async () => {
     repository.upsertEmployee("tenant-1", "branch-1", {
       firstName: "Wendy",
@@ -367,9 +377,10 @@ function createFakeSdk() {
 function readPostMigrationGastosColumns(): string[] {
   const baseSchema = readFileSync(path.join(process.cwd(), "sql", "cloudix_gastos.sql"), "utf8");
   const payrollMigration = readFileSync(path.join(process.cwd(), "supabase", "migrations", "20260829160000_add-payroll-schema.sql"), "utf8");
+  const branchMigration = readFileSync(path.join(process.cwd(), "supabase", "migrations", "20260524180000_add-sucursal-to-operational-tables.sql"), "utf8");
   const columns = new Set<string>(extractCreateTableColumns(baseSchema, "public.gastos"));
 
-  for (const column of extractAlterTableColumns(payrollMigration, "public.gastos")) {
+  for (const column of [...extractAlterTableColumns(branchMigration, "public.gastos"), ...extractAlterTableColumns(payrollMigration, "public.gastos")]) {
     columns.add(column);
   }
 
@@ -390,7 +401,7 @@ function extractCreateTableColumns(sql: string, tableName: string): string[] {
 }
 
 function extractAlterTableColumns(sql: string, tableName: string): string[] {
-  const match = sql.match(new RegExp(`ALTER TABLE IF EXISTS ${escapeRegExp(tableName)}([\\s\\S]*?);`, "i"));
+  const match = sql.match(new RegExp(`ALTER TABLE (?:IF EXISTS )?${escapeRegExp(tableName)}([\\s\\S]*?);`, "i"));
   if (!match) {
     throw new Error(`ALTER TABLE block not found for ${tableName}`);
   }

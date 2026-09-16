@@ -29,7 +29,7 @@ export class PayrollRepository {
   constructor(private readonly db: DatabaseSync) {}
 
   public getEmployees(tenantId: string, sucursalId: string): PayrollEmployee[] {
-    let rows = this.db
+    const rows = this.db
       .prepare(
         `
           SELECT id, first_name, last_name, role, base_salary_cents, frequency, is_active
@@ -39,19 +39,6 @@ export class PayrollRepository {
         `,
       )
       .all(tenantId, sucursalId) as PayrollEmployeeRow[];
-
-    if (rows.length === 0) {
-      rows = this.db
-        .prepare(
-          `
-            SELECT id, first_name, last_name, role, base_salary_cents, frequency, is_active
-            FROM payroll_employees
-            WHERE tenant_id = ?
-            ORDER BY first_name, last_name
-          `,
-        )
-        .all(tenantId) as PayrollEmployeeRow[];
-    }
 
     return rows.map(mapEmployeeRow);
   }
@@ -220,7 +207,7 @@ export class PayrollRepository {
             `
               UPDATE payroll_employees
               SET is_active = 0, updated_at = CURRENT_TIMESTAMP
-              WHERE id = ? AND tenant_id = ?
+              WHERE id = ? AND tenant_id = ? AND sucursal_id = 'main-process-default'
             `,
           )
           .run(employeeId, tenantId);
@@ -507,7 +494,7 @@ export class PayrollRepository {
           `
             SELECT id, first_name, last_name, role, base_salary_cents, frequency, is_active
             FROM payroll_employees
-            WHERE id = ? AND tenant_id = ?
+            WHERE id = ? AND tenant_id = ? AND sucursal_id = 'main-process-default'
           `,
         )
         .get(employeeId, tenantId) as PayrollEmployeeRow | undefined;

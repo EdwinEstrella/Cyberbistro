@@ -200,6 +200,11 @@ async function getThermalPrintWindow(): Promise<BrowserWindow> {
         nodeIntegration: false,
         contextIsolation: true,
         sandbox: false,
+        // This window is always hidden (show: false). Chromium throttles
+        // requestAnimationFrame/timers in hidden windows (~1 Hz), which made the
+        // double-rAF "wait for paint" before printing take ~1–2 s per receipt.
+        // Disabling background throttling keeps it at full speed so printing is fast.
+        backgroundThrottling: false,
       },
   })
   thermalPrintWindow = printWin

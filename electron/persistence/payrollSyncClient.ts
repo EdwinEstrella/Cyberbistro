@@ -445,7 +445,9 @@ function classifyRemoteError(error: MutationError, tableName: string, operation:
   const message = error.message;
 
   if (code === "23505" || message.toLowerCase().includes("duplicate key") || message.toLowerCase().includes("already exists")) {
-    return { result: { synced: true, id: tableName, note: "already synced", code } };
+    // upsert(id) already handles a retry of the same ID. Any remaining unique
+    // violation may refer to another row and is not an acknowledgement.
+    return { conflict: { reason: `Remote ${operation} conflict for ${tableName}: ${message}` } };
   }
 
   if (isPermanentRemoteError(code)) {
