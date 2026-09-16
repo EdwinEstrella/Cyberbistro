@@ -117,11 +117,13 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
     CREATE TABLE IF NOT EXISTS cierres_operativos (
       id TEXT PRIMARY KEY,
       tenant_id TEXT NOT NULL REFERENCES tenants(id),
-      sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
+      sucursal_id TEXT REFERENCES sucursales(id),
       business_day TEXT NOT NULL,
       opening_cash REAL NOT NULL CHECK (opening_cash >= 0),
       state TEXT NOT NULL CHECK (state IN ('open', 'closed')),
-      closed_at TEXT
+      closed_at TEXT,
+      cycle_number INTEGER,
+      opened_at TEXT
     ) STRICT;
     CREATE TABLE IF NOT EXISTS facturas (
       id TEXT PRIMARY KEY,
@@ -567,6 +569,29 @@ function migrateLegacyPayrollSchema(database: DatabaseSync): void {
     `, `
       INSERT INTO gastos (id, tenant_id, sucursal_id, compra_id, payroll_payment_id, expense_type, payment_method, amount, amount_cents, local_status, description, expense_date, created_at)
       SELECT id, tenant_id, sucursal_id, compra_id, payroll_payment_id, expense_type, payment_method, amount, amount_cents, local_status, description, datetime('now'), datetime('now')
+      FROM __old_table__;
+    `);
+  });
+
+  // Cloud cierres_operativos rows carry cycle_number/opened_at and may have a null
+  // sucursal_id; the local table gains those columns and a nullable branch so the
+  // cloud→local pull can mirror cycles 1:1 for analytics grouping ("por ciclo").
+  ensureTableShape(database, "cierres_operativos", (columns) => columns.includes("cycle_number") && columns.includes("opened_at"), () => {
+    recreateTable(database, "cierres_operativos", `
+      CREATE TABLE cierres_operativos (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id),
+        sucursal_id TEXT REFERENCES sucursales(id),
+        business_day TEXT NOT NULL,
+        opening_cash REAL NOT NULL CHECK (opening_cash >= 0),
+        state TEXT NOT NULL CHECK (state IN ('open', 'closed')),
+        closed_at TEXT,
+        cycle_number INTEGER,
+        opened_at TEXT
+      ) STRICT;
+    `, `
+      INSERT INTO cierres_operativos (id, tenant_id, sucursal_id, business_day, opening_cash, state, closed_at)
+      SELECT id, tenant_id, sucursal_id, business_day, opening_cash, state, closed_at
       FROM __old_table__;
     `);
   });

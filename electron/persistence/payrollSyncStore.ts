@@ -1,11 +1,25 @@
 import type { DatabaseSync } from "node:sqlite";
 import { DurableSyncStore, DurableOperation, DurableOperationStatus, DurableOperationKind, PullBatch } from "./syncWorker";
-import { applyCloudExpenseRows, applyCloudExpenseCategoryRows, applyCloudCustomerRows, applyCloudDeletes } from "./cloudApply";
+import { applyCloudExpenseRows, applyCloudExpenseCategoryRows, applyCloudCustomerRows, applyCloudOperationalCycleRows, applyCloudDeletes } from "./cloudApply";
 import { createHash } from "node:crypto";
 import { applyCloudPayrollEmployees, applyCloudPayrollPayments, applyCloudPayrollAdjustments } from "./payrollCloudApply";
+import { SYNC_PULL_TABLES, SYNC_PULLABLE_LOCAL_TABLES, SYNC_PULL_DELETE_ORDER } from "./syncPullRegistry";
 
-/** Tables whose cloud→local pull is implemented (Camino B, stage 1). */
-const PULLABLE_TABLES = new Set(["gastos", "gasto_categorias", "customers", "payroll_employees", "payroll_payments", "payroll_cloud_adjustments"]);
+type CloudRowApplier = (db: DatabaseSync, tenantId: string, rows: Array<Record<string, unknown>>) => void;
+
+/** Maps each pullable local table to the function that persists its cloud rows. */
+const PULL_APPLIERS: Record<string, CloudRowApplier> = {
+  payroll_employees: applyCloudPayrollEmployees,
+  payroll_payments: applyCloudPayrollPayments,
+  payroll_cloud_adjustments: applyCloudPayrollAdjustments,
+  gasto_categorias: applyCloudExpenseCategoryRows,
+  gastos: applyCloudExpenseRows,
+  customers: applyCloudCustomerRows,
+  cierres_operativos: applyCloudOperationalCycleRows,
+};
+
+/** Tables whose cloud→local pull is implemented, declared once in the registry. */
+const PULLABLE_TABLES = SYNC_PULLABLE_LOCAL_TABLES;
 
 function hashCanonical(value: unknown): string {
   return createHash("sha256").update(canonical(value)).digest("hex");
@@ -247,18 +261,10 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
     // advances the cursor past changes that were not applied.
     this.db.exec("BEGIN IMMEDIATE;");
     try {
-      const employees = upsertsByTable.get("payroll_employees");
-      if (employees?.length) applyCloudPayrollEmployees(this.db, this.tenantId, employees);
-      const payments = upsertsByTable.get("payroll_payments");
-      if (payments?.length) applyCloudPayrollPayments(this.db, this.tenantId, payments);
-      const adjustments = upsertsByTable.get("payroll_cloud_adjustments");
-      if (adjustments?.length) applyCloudPayrollAdjustments(this.db, this.tenantId, adjustments);
-      const expenseCats = upsertsByTable.get("gasto_categorias");
-      if (expenseCats?.length) applyCloudExpenseCategoryRows(this.db, this.tenantId, expenseCats);
-      const expenses = upsertsByTable.get("gastos");
-      if (expenses?.length) applyCloudExpenseRows(this.db, this.tenantId, expenses);
-      const customers = upsertsByTable.get("customers");
-      if (customers?.length) applyCloudCustomerRows(this.db, this.tenantId, customers);
+      for (const table of SYNC_PULL_TABLES) {
+        const rows = upsertsByTable.get(table.localTable);
+        if (rows?.length) PULL_APPLIERS[table.localTable]?.(this.db, this.tenantId, rows);
+      }
 
       // Only remove IDs acknowledged in a previous snapshot. Old, unsynced local
       // data is never treated as a remote deletion merely because it is absent.
@@ -270,7 +276,7 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
         for (const id of previousIds) if (!ids.has(id)) deleted.push(id);
         deletesByTable.set(table, deleted);
       }
-      for (const table of ["gastos", "payroll_cloud_adjustments", "payroll_payments", "payroll_employees", "gasto_categorias", "customers"]) {
+      for (const table of SYNC_PULL_DELETE_ORDER) {
         for (const id of deletesByTable.get(table) ?? []) {
           if (this.hasPendingWrite(table, id) || !applyCloudDeletes(this.db, table, [id], this.tenantId)) {
             snapshotIds.get(table)?.add(id);

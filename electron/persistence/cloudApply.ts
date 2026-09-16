@@ -165,6 +165,49 @@ export function applyCloudCustomerRows(
   }
 }
 
+/**
+ * Applies cloud operational cycles into the local mirror, mapping the cloud shape
+ * (efectivo_inicial, closed_at-derived open/closed state) onto the local columns
+ * and preserving cycle_number/opened_at so analytics can group "por ciclo".
+ */
+export function applyCloudOperationalCycleRows(
+  db: DatabaseSync,
+  tenantId: string,
+  cycles: Array<Record<string, unknown>>,
+): void {
+  const ensureBranch = db.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)");
+  const stmt = db.prepare(`
+    INSERT INTO cierres_operativos (id, tenant_id, sucursal_id, business_day, opening_cash, state, closed_at, cycle_number, opened_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      sucursal_id = excluded.sucursal_id,
+      business_day = excluded.business_day,
+      opening_cash = excluded.opening_cash,
+      state = excluded.state,
+      closed_at = excluded.closed_at,
+      cycle_number = excluded.cycle_number,
+      opened_at = excluded.opened_at
+  `);
+  for (const c of cycles) {
+    if (!c || typeof c !== "object" || !c.id || !c.business_day) continue;
+    if (hasPendingCloudWrite(db, tenantId, "cierres_operativos", String(c.id))) continue;
+    const sucursalId = c.sucursal_id ? String(c.sucursal_id) : null;
+    if (sucursalId) ensureBranch.run(sucursalId, tenantId, "Principal");
+    const closedAt = c.closed_at ? String(c.closed_at) : null;
+    stmt.run(
+      String(c.id),
+      tenantId,
+      sucursalId,
+      String(c.business_day),
+      Number(c.efectivo_inicial ?? 0),
+      closedAt ? "closed" : "open",
+      closedAt,
+      c.cycle_number != null ? Number(c.cycle_number) : null,
+      c.opened_at ? String(c.opened_at) : null,
+    );
+  }
+}
+
 function hasPendingCloudWrite(db: DatabaseSync, tenantId: string, table: string, id: string): boolean {
   return Boolean(db.prepare("SELECT 1 FROM sync_outbox WHERE tenant_id=? AND table_name=? AND row_id=? LIMIT 1")
     .get(tenantId, table, id));

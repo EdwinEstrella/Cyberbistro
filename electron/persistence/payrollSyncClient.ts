@@ -1,16 +1,15 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { DurableOperation, PullBatch, ServerChange, ServerSyncClient } from "./syncWorker";
+import { SYNC_PULL_TABLES } from "./syncPullRegistry";
 
-/** Payroll children have neither tenant_id nor updated_at: scope via the employee join.
+/** Cloud→local pull tables, from the shared registry (single source of truth).
+ * Children have neither tenant_id nor updated_at: scope via the employee join.
  * Complete snapshots also reconcile hard deletes and recover rows missed by old cursors. */
-const PULL_TABLES = [
-  { table: "nomina_empleados", localTable: "payroll_employees", child: false },
-  { table: "nomina_pagos", localTable: "payroll_payments", child: true },
-  { table: "nomina_ajustes", localTable: "payroll_cloud_adjustments", child: true },
-  { table: "gasto_categorias", localTable: "gasto_categorias", child: false },
-  { table: "gastos", localTable: "gastos", child: false },
-  { table: "customers", localTable: "customers", child: false },
-];
+const PULL_TABLES = SYNC_PULL_TABLES.map((entry) => ({
+  table: entry.remoteTable,
+  localTable: entry.localTable,
+  child: entry.child,
+}));
 const PULL_PAGE_SIZE = 500;
 
 type MutationError = {
