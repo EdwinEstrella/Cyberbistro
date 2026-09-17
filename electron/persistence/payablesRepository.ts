@@ -8,6 +8,9 @@ export type PayablesCommand =
       compraId?: string;
       totalAmount: number;
       dueDate?: string;
+      sucursalId?: string | null;
+      fechaEmision?: string;
+      observacion?: string | null;
     }
   | {
       type: "payables.payment.record";
@@ -15,6 +18,21 @@ export type PayablesCommand =
       payableId: string;
       amount: number;
       paymentMethod: string;
+      sucursalId?: string | null;
+      cycleId?: string | null;
+      notas?: string | null;
+      usuarioId?: string | null;
+      fechaPago?: string;
+      // When present, the settlement is also recorded as an operational expense in
+      // the SAME transaction, so the cierre sees the cash-out atomically with the
+      // payment (a payables payment is money leaving the drawer).
+      expense?: {
+        id: string;
+        categoryId?: string | null;
+        description: string;
+        supplier?: string | null;
+        notes?: string | null;
+      };
     };
 
 export type PayablesRepositoryResult = {

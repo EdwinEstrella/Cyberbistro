@@ -1,4 +1,33 @@
 import { enqueueLocalWrite, readLocalMirror, getDeviceId } from "../../../shared/lib/localFirst";
+import { executePayablesCommandLocally } from "../../../shared/lib/payablesUiAdapter";
+
+/** True on desktop where both the SQLite payables and expense bridges exist. */
+function hasSqlitePayables(): boolean {
+  return typeof window !== "undefined"
+    && Boolean(window.electronAPI?.executePayablesCommand)
+    && Boolean(window.electronAPI?.executeExpenseCommand);
+}
+
+/** Resolves (or creates) the automatic "Compras" expense category in SQLite. */
+async function resolveComprasCategoryIdSqlite(): Promise<string | null> {
+  try {
+    const res = await window.electronAPI?.listExpenseCategories?.();
+    const cats = res?.ok && Array.isArray(res.data) ? res.data : [];
+    const found = cats.find((c) => String((c as { nombre?: unknown }).nombre ?? "").trim().toLowerCase() === "compras");
+    if (found) return String((found as { id: unknown }).id);
+    const id = crypto.randomUUID();
+    await window.electronAPI!.executeExpenseCommand!({
+      type: "expense.category.create",
+      id,
+      name: "Compras",
+      description: "Categoría automática para registrar compras de insumos",
+      color: "#ff906d",
+    });
+    return id;
+  } catch {
+    return null;
+  }
+}
 
 export interface PaymentInput {
   tenantId: string;
@@ -33,23 +62,22 @@ export async function registrarPagoCxP(input: PaymentInput): Promise<{ pagoId: s
   }>(tenantId, "cuentas_pagar");
 
   const debt = cuentasPagar.find(c => c.id === cuentaPagarId);
-  if (!debt) {
+  // On desktop the payable may live only in SQLite; the SQLite command validates
+  // the balance authoritatively there. On web the mirror is the source of truth.
+  if (!debt && !hasSqlitePayables()) {
     throw new Error("La cuenta por pagar no existe.");
   }
 
-  const total = Number(debt.monto_total) || 0;
-  const pagado = Number(debt.monto_pagado) || 0;
+  const total = Number(debt?.monto_total) || 0;
+  const pagado = Number(debt?.monto_pagado) || 0;
   const balance = Number((total - pagado).toFixed(2));
-
-  if (monto > balance) {
+  if (debt && monto > balance) {
     throw new Error(`El monto del pago (${monto}) excede el balance pendiente (${balance}).`);
   }
+  const nuevoPagado = Number((pagado + monto).toFixed(2));
+  const fullyPaid = debt ? nuevoPagado >= total : false;
 
   // Every settlement is part of the active operating cycle.
-  let activeCycleId = "";
-  let comprasCategoryId = "";
-  let providerName = "Proveedor";
-
   const activeCycleRows = await readLocalMirror<{
     id: string;
     closed_at: string | null;
@@ -62,13 +90,55 @@ export async function registrarPagoCxP(input: PaymentInput): Promise<{ pagoId: s
   if (!activeCycle) {
     throw new Error("No hay un ciclo operativo abierto para registrar un pago de cuenta por pagar.");
   }
-  activeCycleId = activeCycle.id;
+  const activeCycleId = activeCycle.id;
 
-  const categories = await readLocalMirror<{
-    id: string;
-    nombre: string;
-    activa: boolean;
-  }>(tenantId, "gasto_categorias");
+  // Provider name is display-only on the expense; best-effort from the mirror.
+  const providers = await readLocalMirror<{ id: string; nombre: string }>(tenantId, "proveedores");
+  const providerName = (debt && providers.find(p => p.id === debt.proveedor_id)?.nombre) || "Proveedor";
+  const descripcion = `Abono Cuenta Pagar - Ref ID: ${cuentaPagarId.slice(0, 8)}`;
+  const gastoNotes = notas || "Abono registrado a cuenta por pagar.";
+
+  // Desktop: SQLite is the single engine. One atomic command inserts the
+  // cxp_pago, updates the debt, and records the operational expense together;
+  // its outbox pushes the cxp_pago (the cloud trigger recomputes the debt
+  // balance) and the gasto. Falling back to IndexedDB after a rejection is safe
+  // because the command commits all-or-nothing (no partial or duplicate writes).
+  if (hasSqlitePayables()) {
+    try {
+      const comprasCategoryId = await resolveComprasCategoryIdSqlite();
+      await executePayablesCommandLocally({
+        type: "payables.payment.record",
+        paymentId: pagoId,
+        payableId: cuentaPagarId,
+        amount: monto,
+        paymentMethod: metodoPago,
+        sucursalId,
+        cycleId: activeCycleId,
+        notas: notas || null,
+        usuarioId,
+        fechaPago,
+        expense: {
+          id: crypto.randomUUID(),
+          categoryId: comprasCategoryId,
+          description: descripcion,
+          supplier: providerName,
+          notes: gastoNotes,
+        },
+      });
+      await markCompraFiscalPaidIfNeeded({ tenantId, deviceId, fullyPaid, compraId: debt?.compra_id ?? null, fechaPago });
+      return { pagoId };
+    } catch (error) {
+      console.warn("[CxP] SQLite payment path failed, falling back to IndexedDB:", error);
+    }
+  }
+
+  // IndexedDB fallback (web). Requires the debt in the mirror to compute state.
+  if (!debt) {
+    throw new Error("La cuenta por pagar no existe.");
+  }
+
+  let comprasCategoryId = "";
+  const categories = await readLocalMirror<{ id: string; nombre: string; activa: boolean }>(tenantId, "gasto_categorias");
   const foundCat = categories.find(c => c.activa && c.nombre.trim().toLowerCase() === "compras");
   if (foundCat) {
     comprasCategoryId = foundCat.id;
@@ -93,22 +163,6 @@ export async function registrarPagoCxP(input: PaymentInput): Promise<{ pagoId: s
     });
   }
 
-  const providers = await readLocalMirror<{
-    id: string;
-    nombre: string;
-  }>(tenantId, "proveedores");
-  const foundProv = providers.find(p => p.id === debt.proveedor_id);
-  if (foundProv) {
-    providerName = foundProv.nombre;
-  }
-
-  // Cuentas por pagar viven en el motor local-first (IndexedDB) y de ahí
-  // sincronizan a la nube. La ruta SQLite quedó vestigial (nadie la lee y sus
-  // filas de outbox nunca se drenaban), así que no se escribe aquí para evitar
-  // acumular basura atascada. La migración completa a SQLite se hará como
-  // vertical propio cuando corresponda.
-
-  // 4. Enqueue payment insert
   await enqueueLocalWrite({
     tenantId,
     tableName: "cxp_pagos",
@@ -130,10 +184,7 @@ export async function registrarPagoCxP(input: PaymentInput): Promise<{ pagoId: s
     deviceId,
   });
 
-  // 5. Enqueue debt update
-  const nuevoPagado = Number((pagado + monto).toFixed(2));
-  const nuevoEstado = nuevoPagado >= total ? "pagada" : "parcial";
-
+  const nuevoEstado = fullyPaid ? "pagada" : "parcial";
   await enqueueLocalWrite({
     tenantId,
     tableName: "cuentas_pagar",
@@ -147,7 +198,6 @@ export async function registrarPagoCxP(input: PaymentInput): Promise<{ pagoId: s
     deviceId,
   });
 
-  // 5. Record the actual payment as an expense for every payment method.
   const gastoId = crypto.randomUUID();
   await enqueueLocalWrite({
     tenantId,
@@ -160,12 +210,12 @@ export async function registrarPagoCxP(input: PaymentInput): Promise<{ pagoId: s
       sucursal_id: sucursalId,
       category_id: comprasCategoryId || null,
       cycle_id: activeCycleId || null,
-      descripcion: `Abono Cuenta Pagar - Ref ID: ${cuentaPagarId.slice(0, 8)}`,
+      descripcion,
       proveedor: providerName,
       monto,
       metodo_pago: metodoPago,
       fecha_gasto: fechaPago,
-      notas: notas || "Abono registrado a cuenta por pagar.",
+      notas: gastoNotes,
       created_by_auth_user_id: usuarioId,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -173,20 +223,23 @@ export async function registrarPagoCxP(input: PaymentInput): Promise<{ pagoId: s
     deviceId,
   });
 
-  if (nuevoEstado === "pagada" && debt.compra_id) {
-    const fiscalRows = await readLocalMirror<{ id: string; compra_id: string }>(tenantId, "compra_fiscal");
-    const fiscal = fiscalRows.find((row) => row.compra_id === debt.compra_id);
-    if (fiscal) {
-      await enqueueLocalWrite({
-        tenantId,
-        tableName: "compra_fiscal",
-        rowId: fiscal.id,
-        op: "update",
-        payload: { fecha_pago: fechaPago.slice(0, 10), updated_at: fechaPago },
-        deviceId,
-      });
-    }
-  }
+  await markCompraFiscalPaidIfNeeded({ tenantId, deviceId, fullyPaid, compraId: debt.compra_id, fechaPago });
 
   return { pagoId };
+}
+
+async function markCompraFiscalPaidIfNeeded(input: { tenantId: string; deviceId: string; fullyPaid: boolean; compraId: string | null; fechaPago: string }): Promise<void> {
+  const { tenantId, deviceId, fullyPaid, compraId, fechaPago } = input;
+  if (!fullyPaid || !compraId) return;
+  const fiscalRows = await readLocalMirror<{ id: string; compra_id: string }>(tenantId, "compra_fiscal");
+  const fiscal = fiscalRows.find((row) => row.compra_id === compraId);
+  if (!fiscal) return;
+  await enqueueLocalWrite({
+    tenantId,
+    tableName: "compra_fiscal",
+    rowId: fiscal.id,
+    op: "update",
+    payload: { fecha_pago: fechaPago.slice(0, 10), updated_at: fechaPago },
+    deviceId,
+  });
 }

@@ -862,6 +862,7 @@ export function MesaCloseAccountModal({
       const cxcId = crypto.randomUUID();
       const dueDate = new Date();
       dueDate.setDate(dueDate.getDate() + 30); // 30 days default
+      const initialCash = Number(cashReceived.amount ?? 0);
       checkoutWrites.push({
         tenantId,
         tableName: "cuentas_cobrar",
@@ -874,7 +875,7 @@ export function MesaCloseAccountModal({
           factura_id: localFacturaId,
           customer_id: selectedCustomer.id,
           monto_total: total,
-          monto_pagado: cashReceived.amount ?? 0.00,
+          monto_pagado: initialCash,
           fecha_emision: now,
           fecha_vencimiento: dueDate.toISOString(),
           estado: "pendiente",
@@ -884,6 +885,35 @@ export function MesaCloseAccountModal({
         },
         deviceId,
       });
+      // Record the fiado down-payment as a cxc_pago so the debt balance is a
+      // complete ledger. The cloud trigger recomputes monto_pagado from the SUM
+      // of cxc_pagos, so without this row a later collection would drop the
+      // down-payment from the balance. cycle_id is NULL on purpose: this cash is
+      // already part of the invoice, and the cierre attributes cash to a cycle by
+      // cxc_pagos.cycle_id — a cycle id here would double-count it in the drawer.
+      if (initialCash > 0) {
+        const initialPagoId = crypto.randomUUID();
+        checkoutWrites.push({
+          tenantId,
+          tableName: "cxc_pagos",
+          rowId: initialPagoId,
+          op: "insert",
+          payload: {
+            id: initialPagoId,
+            tenant_id: tenantId,
+            sucursal_id: activeSucursalId,
+            cuenta_cobrar_id: cxcId,
+            monto: initialCash,
+            metodo_pago: "efectivo",
+            fecha_pago: now,
+            cycle_id: null,
+            created_by_auth_user_id: null,
+            notas: "Adelanto inicial recibido con la factura",
+            created_at: now,
+          },
+          deviceId,
+        });
+      }
     }
 
     if (ncfPart?.ecfType) {

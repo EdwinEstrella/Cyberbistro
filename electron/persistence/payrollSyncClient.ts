@@ -276,6 +276,13 @@ function mapDeleteOperation(operation: DurableOperation):
   if (operation.tableName === "cuentas_cobrar") {
     return { ok: true, remoteTable: "cuentas_cobrar" };
   }
+  // Deleting a cxp_pago fires the cloud trigger to recompute the payable balance.
+  if (operation.tableName === "cxp_pagos") {
+    return { ok: true, remoteTable: "cxp_pagos" };
+  }
+  if (operation.tableName === "cuentas_pagar") {
+    return { ok: true, remoteTable: "cuentas_pagar" };
+  }
 
   const remoteTable = PAYROLL_TABLES[operation.tableName];
   if (!remoteTable) {
@@ -308,6 +315,10 @@ function mapOperation(operation: DurableOperation):
         return { ok: true, remoteTable: "cuentas_cobrar", payload: mapReceivablePayload(operation, operation.payload) };
       case "cxc_pagos":
         return { ok: true, remoteTable: "cxc_pagos", payload: mapReceivablePaymentPayload(operation, operation.payload) };
+      case "cuentas_pagar":
+        return { ok: true, remoteTable: "cuentas_pagar", payload: mapPayablePayload(operation, operation.payload) };
+      case "cxp_pagos":
+        return { ok: true, remoteTable: "cxp_pagos", payload: mapPayablePaymentPayload(operation, operation.payload) };
       case "gastos": {
         if (operation.payload.expenseType === "payroll") {
           const tableResult = mapPayrollExpenseTable(operation);
@@ -497,6 +508,40 @@ function mapReceivablePaymentPayload(operation: DurableOperation, payload: Recor
     cuenta_cobrar_id: requireString(payload.receivableId, "cxc_pagos.receivableId"),
     monto: requireNumber(payload.amount, "cxc_pagos.amount"),
     metodo_pago: requireString(payload.paymentMethod, "cxc_pagos.paymentMethod"),
+    ...(payload.fechaPago ? { fecha_pago: String(payload.fechaPago) } : {}),
+    ...(payload.notas ? { notas: String(payload.notas) } : {}),
+    ...(payload.cycleId ? { cycle_id: String(payload.cycleId) } : {}),
+    ...(payload.usuarioId ? { created_by_auth_user_id: String(payload.usuarioId) } : {}),
+  };
+}
+
+// Payables mirror of the receivables mappers. cuentas_pagar.monto_pagado/estado
+// are cloud-derived by the cxp_pagos trigger, so create sends only fixed fields.
+function mapPayablePayload(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
+  const dueDate = typeof payload.dueDate === "string" && payload.dueDate.trim()
+    ? payload.dueDate
+    : defaultDueDate(payload.fechaEmision);
+  return {
+    id: operation.rowId,
+    tenant_id: operation.tenantId,
+    sucursal_id: operation.branchId ?? (payload.sucursalId ? String(payload.sucursalId) : null),
+    compra_id: payload.compraId ? String(payload.compraId) : null,
+    proveedor_id: requireString(payload.supplierId, "cuentas_pagar.supplierId"),
+    monto_total: requireNumber(payload.totalAmount, "cuentas_pagar.totalAmount"),
+    fecha_vencimiento: dueDate,
+    ...(payload.fechaEmision ? { fecha_emision: String(payload.fechaEmision) } : {}),
+    ...(payload.observacion ? { observacion: String(payload.observacion) } : {}),
+  };
+}
+
+function mapPayablePaymentPayload(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: operation.rowId,
+    tenant_id: operation.tenantId,
+    sucursal_id: operation.branchId ?? (payload.sucursalId ? String(payload.sucursalId) : null),
+    cuenta_pagar_id: requireString(payload.payableId, "cxp_pagos.payableId"),
+    monto: requireNumber(payload.amount, "cxp_pagos.amount"),
+    metodo_pago: requireString(payload.paymentMethod, "cxp_pagos.paymentMethod"),
     ...(payload.fechaPago ? { fecha_pago: String(payload.fechaPago) } : {}),
     ...(payload.notas ? { notas: String(payload.notas) } : {}),
     ...(payload.cycleId ? { cycle_id: String(payload.cycleId) } : {}),

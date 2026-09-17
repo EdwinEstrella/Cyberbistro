@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { registrarPagoCxP } from "./accountsPayableService";
 import { enqueueLocalWrite, readLocalMirror } from "../../../shared/lib/localFirst";
 
@@ -228,6 +228,71 @@ describe("accountsPayableService", () => {
       metodo_pago: "transferencia",
       sucursal_id: "suc-1",
       cycle_id: "cycle-active-456",
+    });
+  });
+
+  describe("SQLite desktop path", () => {
+    const executePayablesCommand = vi.fn();
+    const executeExpenseCommand = vi.fn();
+    const listExpenseCategories = vi.fn();
+    beforeEach(() => {
+      executePayablesCommand.mockReset();
+      executeExpenseCommand.mockReset();
+      listExpenseCategories.mockReset();
+      executePayablesCommand.mockResolvedValue({ data: { commitId: "c1", localStatus: "committed", syncStatus: "pending" } });
+      executeExpenseCommand.mockResolvedValue({ data: {} });
+      listExpenseCategories.mockResolvedValue({ ok: true, data: [{ id: "cat-compras", nombre: "Compras", activa: true }] });
+      (globalThis as any).window = { electronAPI: { executePayablesCommand, executeExpenseCommand, listExpenseCategories } };
+    });
+    afterEach(() => {
+      delete (globalThis as any).window;
+    });
+
+    it("routes payment + expense through one atomic SQLite command, no IndexedDB writes", async () => {
+      const result = await registrarPagoCxP({
+        tenantId: mockTenantId,
+        sucursalId: "suc-1",
+        usuarioId: "user-1",
+        cuentaPagarId: "debt-123",
+        monto: 20.0,
+        metodoPago: "efectivo",
+      });
+
+      expect(result.pagoId).toBeDefined();
+      expect(executePayablesCommand).toHaveBeenCalledTimes(1);
+      const cmd = executePayablesCommand.mock.calls[0][0];
+      expect(cmd).toMatchObject({
+        type: "payables.payment.record",
+        payableId: "debt-123",
+        amount: 20.0,
+        paymentMethod: "efectivo",
+        cycleId: "cycle-active-456",
+      });
+      // The settlement carries its expense so the cierre sees the cash-out atomically.
+      expect(cmd.expense).toBeDefined();
+      expect(cmd.expense.categoryId).toBe("cat-compras");
+      expect(cmd.expense.supplier).toBe("Distribuidora Nacional");
+      // Category already existed → no create; and nothing went to IndexedDB.
+      expect(executeExpenseCommand).not.toHaveBeenCalled();
+      expect(enqueueLocalWrite).not.toHaveBeenCalled();
+    });
+
+    it("falls back to IndexedDB when the SQLite command rejects", async () => {
+      executePayablesCommand.mockRejectedValueOnce(new Error("Cuenta por pagar no encontrada."));
+      const result = await registrarPagoCxP({
+        tenantId: mockTenantId,
+        sucursalId: "suc-1",
+        usuarioId: "user-1",
+        cuentaPagarId: "debt-123",
+        monto: 20.0,
+        metodoPago: "transferencia",
+      });
+
+      expect(result.pagoId).toBeDefined();
+      const payCall = vi.mocked(enqueueLocalWrite).mock.calls.find(c => c[0].tableName === "cxp_pagos");
+      const gastoCall = vi.mocked(enqueueLocalWrite).mock.calls.find(c => c[0].tableName === "gastos");
+      expect(payCall).toBeDefined();
+      expect(gastoCall).toBeDefined();
     });
   });
 });

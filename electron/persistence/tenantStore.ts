@@ -329,9 +329,9 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
       if (command.type === "payables.create") {
         this.database.prepare("INSERT OR IGNORE INTO proveedores (id, tenant_id, name) VALUES (?, ?, ?)").run(command.supplierId, this.tenantId, "Proveedor");
         this.database.prepare(`
-          INSERT INTO cuentas_pagar (id, tenant_id, sucursal_id, compra_id, proveedor_id, monto_total, monto_pendiente, estado, fecha_vencimiento)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 'pendiente', ?)
-        `).run(command.id, this.tenantId, branchId, command.compraId ?? null, command.supplierId, command.totalAmount, command.totalAmount, command.dueDate ?? null);
+          INSERT INTO cuentas_pagar (id, tenant_id, sucursal_id, compra_id, proveedor_id, monto_total, monto_pendiente, estado, fecha_vencimiento, fecha_emision, observacion)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'pendiente', ?, ?, ?)
+        `).run(command.id, this.tenantId, branchId, command.compraId ?? null, command.supplierId, command.totalAmount, command.totalAmount, command.dueDate ?? null, command.fechaEmision ?? null, command.observacion ?? null);
         this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, ?, ?, 'upsert', ?, 'pending')")
           .run(`${commitId}:cxp-create`, this.tenantId, branchId, "cuentas_pagar", command.id, JSON.stringify(command));
       } else if (command.type === "payables.payment.record") {
@@ -343,14 +343,49 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
         const newPending = row.monto_pendiente - command.amount;
         const newStatus = newPending === 0 ? "pagado" : "parcial";
         this.database.prepare(`
-          INSERT INTO cxp_pagos (id, tenant_id, sucursal_id, cuenta_pagar_id, monto, metodo_pago)
-          VALUES (?, ?, ?, ?, ?, ?)
-        `).run(command.paymentId, this.tenantId, branchId, command.payableId, command.amount, command.paymentMethod);
+          INSERT INTO cxp_pagos (id, tenant_id, sucursal_id, cuenta_pagar_id, monto, metodo_pago, fecha_pago, notas, cycle_id, created_by_auth_user_id)
+          VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), ?, ?, ?)
+        `).run(command.paymentId, this.tenantId, branchId, command.payableId, command.amount, command.paymentMethod, command.fechaPago ?? null, command.notas ?? null, command.cycleId ?? null, command.usuarioId ?? null);
         this.database.prepare(`
           UPDATE cuentas_pagar SET monto_pendiente = ?, estado = ? WHERE id = ? AND tenant_id = ?
         `).run(newPending, newStatus, command.payableId, this.tenantId);
         this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, ?, ?, 'upsert', ?, 'pending')")
           .run(`${commitId}:cxp-payment`, this.tenantId, branchId, "cxp_pagos", command.paymentId, JSON.stringify(command));
+        // A payables settlement is money leaving the drawer: record it as an
+        // operational expense in the SAME transaction (atomic with the payment),
+        // mirroring the shape executeExpenseCommand writes so the cierre and the
+        // gasto push mapper treat it identically.
+        if (command.expense) {
+          const exp = command.expense;
+          if (exp.categoryId) {
+            this.database.prepare("INSERT OR IGNORE INTO gasto_categorias (id, tenant_id, name, color, active) VALUES (?, ?, 'General', '#ff906d', 1)").run(exp.categoryId, this.tenantId);
+          }
+          const expenseDate = command.fechaPago ?? new Date().toISOString();
+          this.database.prepare(`
+            INSERT INTO gastos (
+              id, tenant_id, sucursal_id, category_id, cycle_id,
+              expense_type, payment_method, amount, local_status,
+              description, supplier, notes, expense_date
+            ) VALUES (?, ?, ?, ?, ?, 'operational', ?, ?, 'pending_sync', ?, ?, ?, ?)
+          `).run(exp.id, this.tenantId, branchId, exp.categoryId ?? null, command.cycleId ?? null, command.paymentMethod, command.amount, exp.description, exp.supplier ?? null, exp.notes ?? null, expenseDate);
+          this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, ?, ?, 'upsert', ?, 'pending')").run(
+            `${commitId}:cxp-expense`, this.tenantId, branchId, "gastos", exp.id,
+            JSON.stringify({
+              id: exp.id,
+              tenantId: this.tenantId,
+              sucursalId: branchId,
+              categoryId: exp.categoryId ?? null,
+              cycleId: command.cycleId ?? null,
+              description: exp.description,
+              supplier: exp.supplier ?? null,
+              amount: command.amount,
+              paymentMethod: command.paymentMethod,
+              expenseDate,
+              notes: exp.notes ?? null,
+              expenseType: "operational",
+            }),
+          );
+        }
       }
       this.database.exec("COMMIT;");
     } catch (error) {
@@ -417,7 +452,7 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
 
   listCuentasPagar(filter?: { sucursalId?: string; limit?: number }): Array<Record<string, unknown>> {
     const limit = filter?.limit ?? 2000;
-    const columns = "id, tenant_id, sucursal_id, compra_id, proveedor_id, monto_total, monto_pendiente, (monto_total - monto_pendiente) AS monto_pagado, estado, fecha_vencimiento";
+    const columns = "id, tenant_id, sucursal_id, compra_id, proveedor_id, monto_total, monto_pendiente, (monto_total - monto_pendiente) AS monto_pagado, estado, fecha_vencimiento, fecha_emision, observacion";
     if (filter?.sucursalId) {
       return this.database.prepare(
         `SELECT ${columns} FROM cuentas_pagar WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id = 'main-process-default') LIMIT ?`
@@ -439,9 +474,8 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
   private listPagos(table: "cxc_pagos" | "cxp_pagos", parentColumn: string, filter?: { sucursalId?: string; limit?: number }): Array<Record<string, unknown>> {
     const limit = filter?.limit ?? 5000;
     const baseColumns = `id, tenant_id, sucursal_id, ${parentColumn}, monto, metodo_pago, fecha_pago`;
-    const columns = table === "cxc_pagos"
-      ? `${baseColumns}, notas, cycle_id, created_by_auth_user_id`
-      : baseColumns;
+    // Both cxc_pagos and cxp_pagos carry notas/cycle_id/created_by after schema evolution.
+    const columns = `${baseColumns}, notas, cycle_id, created_by_auth_user_id`;
     if (filter?.sucursalId) {
       return this.database.prepare(
         `SELECT ${columns} FROM ${table} WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id = 'main-process-default') ORDER BY fecha_pago DESC LIMIT ?`

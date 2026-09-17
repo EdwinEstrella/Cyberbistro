@@ -471,8 +471,8 @@ export function applyCloudPayableRows(
   const compraExists = db.prepare("SELECT 1 FROM compras WHERE id = ? AND tenant_id = ?");
   ensureBranch.run(defaultBranchId, tenantId, "Principal");
   const stmt = db.prepare(`
-    INSERT INTO cuentas_pagar (id, tenant_id, sucursal_id, compra_id, proveedor_id, monto_total, monto_pendiente, estado, fecha_vencimiento)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO cuentas_pagar (id, tenant_id, sucursal_id, compra_id, proveedor_id, monto_total, monto_pendiente, estado, fecha_vencimiento, fecha_emision, observacion)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       sucursal_id = excluded.sucursal_id,
       compra_id = excluded.compra_id,
@@ -480,7 +480,9 @@ export function applyCloudPayableRows(
       monto_total = excluded.monto_total,
       monto_pendiente = excluded.monto_pendiente,
       estado = excluded.estado,
-      fecha_vencimiento = excluded.fecha_vencimiento
+      fecha_vencimiento = excluded.fecha_vencimiento,
+      fecha_emision = excluded.fecha_emision,
+      observacion = excluded.observacion
   `);
   for (const c of rows) {
     if (!c || typeof c !== "object" || !c.id || !c.proveedor_id) continue;
@@ -501,6 +503,8 @@ export function applyCloudPayableRows(
       montoPendiente,
       mapCuentaEstadoToLocal(c.estado, montoTotal, montoPendiente),
       c.fecha_vencimiento ? String(c.fecha_vencimiento) : null,
+      c.fecha_emision ? String(c.fecha_emision) : null,
+      c.observacion ? String(c.observacion) : null,
     );
   }
 }
@@ -537,10 +541,10 @@ function applyCloudPagoRows(
   const ensureBranch = db.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)");
   ensureBranch.run(defaultBranchId, tenantId, "Principal");
   const parentExists = db.prepare(`SELECT 1 FROM ${parentTable} WHERE id = ? AND tenant_id = ?`);
-  // Only cxc_pagos carries notas/cycle_id/created_by_auth_user_id locally. cycle_id
-  // is load-bearing: the cierre attributes a pulled cash collection to the open
-  // cycle by it, so dropping it here would desync another device's cash count.
-  const extended = table === "cxc_pagos";
+  // Both cxc_pagos and cxp_pagos carry notas/cycle_id/created_by_auth_user_id after
+  // schema evolution. cycle_id is load-bearing for cxc (the cierre attributes a
+  // pulled cash collection to the open cycle by it); kept for both for parity.
+  const extended = table === "cxc_pagos" || table === "cxp_pagos";
   const stmt = db.prepare(extended ? `
     INSERT INTO ${table} (id, tenant_id, sucursal_id, ${parentColumn}, monto, metodo_pago, fecha_pago, notas, cycle_id, created_by_auth_user_id)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

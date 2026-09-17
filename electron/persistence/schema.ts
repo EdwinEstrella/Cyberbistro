@@ -398,6 +398,7 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
   ensureCierresSchemaEvolution(database);
   ensureComprasSchemaEvolution(database);
   ensureReceivablesSchemaEvolution(database);
+  ensurePayablesSchemaEvolution(database);
   database.exec(`
     CREATE INDEX IF NOT EXISTS idx_payroll_payments_employee_period ON payroll_payments (tenant_id, sucursal_id, employee_id, period);
     CREATE INDEX IF NOT EXISTS idx_payroll_adjustments_payment ON payroll_payment_adjustments (payment_id);
@@ -498,6 +499,26 @@ function ensureReceivablesSchemaEvolution(database: DatabaseSync): void {
     for (const [name, type] of [["notas", "TEXT"], ["cycle_id", "TEXT"], ["created_by_auth_user_id", "TEXT"]] as const) {
       if (!cxcPagos.includes(name)) {
         database.exec(`ALTER TABLE cxc_pagos ADD COLUMN ${name} ${type};`);
+      }
+    }
+  }
+}
+
+/** Payables mirror of ensureReceivablesSchemaEvolution (cuentas_pagar / cxp_pagos). */
+function ensurePayablesSchemaEvolution(database: DatabaseSync): void {
+  const cuentasPagar = getTableColumns(database, "cuentas_pagar");
+  if (cuentasPagar.length > 0) {
+    for (const [name, type] of [["fecha_emision", "TEXT"], ["observacion", "TEXT"]] as const) {
+      if (!cuentasPagar.includes(name)) {
+        database.exec(`ALTER TABLE cuentas_pagar ADD COLUMN ${name} ${type};`);
+      }
+    }
+  }
+  const cxpPagos = getTableColumns(database, "cxp_pagos");
+  if (cxpPagos.length > 0) {
+    for (const [name, type] of [["notas", "TEXT"], ["cycle_id", "TEXT"], ["created_by_auth_user_id", "TEXT"]] as const) {
+      if (!cxpPagos.includes(name)) {
+        database.exec(`ALTER TABLE cxp_pagos ADD COLUMN ${name} ${type};`);
       }
     }
   }
