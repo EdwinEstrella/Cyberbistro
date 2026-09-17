@@ -25,6 +25,7 @@ export const CIERRES_LIST_CHANNEL = "cierres:list";
 export const FISCAL_SALES_REPOSITORY_EXECUTE_CHANNEL = "sales-fiscal-repository:execute";
 export const FACTURAS_LIST_CHANNEL = "facturas:list";
 export const FACTURAS_RESERVE_NUMBERS_CHANNEL = "facturas:reserve-numbers";
+export const FACTURAS_NUMBER_FLOOR_CHANNEL = "facturas:number-floor";
 export const FACTURAS_DELETE_LOCAL_CHANNEL = "facturas:delete-local";
 export const CASH_PURCHASE_REPOSITORY_EXECUTE_CHANNEL = "cash-purchase-repository:execute";
 export const PAYROLL_REPOSITORY_EXECUTE_CHANNEL = "payroll-repository:execute";
@@ -343,6 +344,7 @@ export function registerSalesFiscalRepositoryIpc(input: {
   getRepository: () => { execute(command: SalesFiscalCommand): SalesFiscalRepositoryResult };
   listInvoices?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Array<Record<string, unknown>>;
   reserveInvoiceNumbers?: (input: { tenantId?: string; count: number }) => number[];
+  getInvoiceNumberFloor?: (input: { tenantId?: string }) => number;
   deleteInvoiceLocal?: (input: { tenantId?: string; invoiceId: string }) => void;
 }): void {
   input.ipcMain.removeHandler(FISCAL_SALES_REPOSITORY_EXECUTE_CHANNEL);
@@ -380,6 +382,17 @@ export function registerSalesFiscalRepositoryIpc(input: {
     if (!input.deleteInvoiceLocal) throw new Error("Local invoice deletion is unavailable");
     input.deleteInvoiceLocal({ tenantId: request.tenantId as string | undefined, invoiceId: request.invoiceId });
     return { ok: true };
+  });
+
+  input.ipcMain.removeHandler(FACTURAS_NUMBER_FLOOR_CHANNEL);
+  input.ipcMain.handle(FACTURAS_NUMBER_FLOOR_CHANNEL, async (event, payload) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    const request = payload as { tenantId?: unknown } | null;
+    if (!request || (request.tenantId !== undefined && typeof request.tenantId !== "string")) {
+      throw new Error("Invalid invoice number floor request");
+    }
+    if (!input.getInvoiceNumberFloor) throw new Error("Invoice number floor is unavailable");
+    return { ok: true, data: input.getInvoiceNumberFloor({ tenantId: request.tenantId as string | undefined }) };
   });
 }
 

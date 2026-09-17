@@ -462,13 +462,42 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     }
   }
 
+  getInvoiceNumberFloor(): number {
+    const invoiceMax = this.database.prepare(
+      "SELECT COALESCE(MAX(numero_factura), 0) AS max_number FROM facturas WHERE tenant_id = ?"
+    ).get(this.tenantId) as { max_number: number } | undefined;
+    const counter = this.database.prepare(
+      "SELECT next_number FROM invoice_number_counters WHERE tenant_id = ?"
+    ).get(this.tenantId) as { next_number: number } | undefined;
+    const floor = Math.max(Number(invoiceMax?.max_number ?? 0) + 1, Number(counter?.next_number ?? 1));
+    if (!Number.isSafeInteger(floor) || floor < 1) throw new Error("Invalid local invoice number floor");
+    return floor;
+  }
+
   deleteInvoiceAndTraces(invoiceId: string): void {
     if (!invoiceId) throw new Error("Invalid invoice id");
     this.database.exec("BEGIN IMMEDIATE;");
     try {
+      const invoice = this.database.prepare(
+        "SELECT sucursal_id FROM facturas WHERE id = ? AND tenant_id = ?"
+      ).get(invoiceId, this.tenantId) as { sucursal_id: string | null } | undefined;
+      if (!invoice) {
+        this.database.exec("COMMIT;");
+        return;
+      }
       this.database.prepare("DELETE FROM fiscal_outbox WHERE factura_id = ? AND tenant_id = ?").run(invoiceId, this.tenantId);
       this.database.prepare("DELETE FROM ecf_documents WHERE factura_id = ? AND tenant_id = ?").run(invoiceId, this.tenantId);
       this.database.prepare("DELETE FROM facturas WHERE id = ? AND tenant_id = ?").run(invoiceId, this.tenantId);
+      this.database.prepare(`
+        INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status)
+        VALUES (?, ?, ?, 'facturas', ?, 'delete', ?, 'pending')
+      `).run(
+        crypto.randomUUID(),
+        this.tenantId,
+        invoice.sucursal_id ?? "",
+        invoiceId,
+        JSON.stringify({ id: invoiceId, tenant_id: this.tenantId })
+      );
       this.database.exec("COMMIT;");
     } catch (error) {
       this.database.exec("ROLLBACK;");

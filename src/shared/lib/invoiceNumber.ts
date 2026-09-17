@@ -23,10 +23,11 @@ function validateReservedNumbers(value: unknown, count: number): number[] {
   return valid;
 }
 
-async function reserveFromCloud(tenantId: string, count: number): Promise<number[]> {
-  const { data, error } = await supabase.rpc("cloudix_reserve_invoice_numbers", {
+async function reserveFromCloud(tenantId: string, count: number, minimumNumber: number): Promise<number[]> {
+  const { data, error } = await supabase.rpc("cloudix_reserve_invoice_numbers_v2", {
     p_tenant_id: tenantId,
     p_count: count,
+    p_minimum_number: minimumNumber,
   });
   if (error) throw new Error(error.message || "No se pudo reservar la secuencia de factura.");
   const row = Array.isArray(data) ? data[0] : data;
@@ -55,7 +56,17 @@ export async function getNextFacturaNumbers(tenantId: string, count = 1): Promis
   const cloudUnavailable = isDesktop && await isDesktopCloudUnavailable();
   const online = typeof navigator !== "undefined" && navigator.onLine;
 
-  if (online && !cloudUnavailable) return reserveFromCloud(tenantId, count);
+  if (online && !cloudUnavailable) {
+    let minimumNumber = 1;
+    if (isDesktop) {
+      const getFloor = window.electronAPI?.getInvoiceNumberFloor;
+      if (!getFloor) throw new Error("No se puede reconciliar la secuencia local de facturas.");
+      const result = await getFloor({ tenantId });
+      minimumNumber = toValidInvoiceNumber(result?.data) ?? 0;
+      if (minimumNumber < 1) throw new Error("La secuencia local de facturas es inválida.");
+    }
+    return reserveFromCloud(tenantId, count, minimumNumber);
+  }
   if (isDesktop) return reserveFromDesktop(tenantId, count);
   throw new Error("No se puede facturar sin conexión porque no hay una secuencia local autorizada.");
 }

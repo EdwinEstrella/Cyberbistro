@@ -726,6 +726,11 @@ if (gotTheLock) {
         if (!store) throw new Error('Tenant store is unavailable')
         return store.reserveInvoiceNumbers(request.count)
       },
+      getInvoiceNumberFloor: (request) => {
+        const store = getStore(request.tenantId)
+        if (!store) throw new Error('Tenant store is unavailable')
+        return store.getInvoiceNumberFloor()
+      },
       deleteInvoiceLocal: (request) => {
         const store = getStore(request.tenantId)
         if (!store) throw new Error('Tenant store is unavailable')

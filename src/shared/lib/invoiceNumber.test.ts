@@ -26,9 +26,10 @@ describe("invoice number reservation", () => {
     } as never);
 
     await expect(getNextFacturaNumbers("tenant-1", 3)).resolves.toEqual([5756, 5757, 5758]);
-    expect(supabase.rpc).toHaveBeenCalledWith("cloudix_reserve_invoice_numbers", {
+    expect(supabase.rpc).toHaveBeenCalledWith("cloudix_reserve_invoice_numbers_v2", {
       p_tenant_id: "tenant-1",
       p_count: 3,
+      p_minimum_number: 1,
     });
   });
 
@@ -46,5 +47,22 @@ describe("invoice number reservation", () => {
     await expect(getNextFacturaNumbers("tenant-1", 2)).resolves.toEqual([5756, 5757]);
     expect(reserveInvoiceNumbers).toHaveBeenCalledWith({ tenantId: "tenant-1", count: 2 });
     expect(supabase.rpc).not.toHaveBeenCalled();
+  });
+
+  it("advances the cloud counter above pending offline desktop numbers before allocating online", async () => {
+    const getInvoiceNumberFloor = vi.fn().mockResolvedValue({ ok: true, data: 5758 });
+    vi.stubGlobal("window", { electronAPI: { getInvoiceNumberFloor } });
+    vi.mocked(supabase.rpc).mockResolvedValue({
+      data: [{ first_number: 5758, last_number: 5758 }],
+      error: null,
+    } as never);
+
+    await expect(getNextFacturaNumber("tenant-1")).resolves.toBe(5758);
+    expect(getInvoiceNumberFloor).toHaveBeenCalledWith({ tenantId: "tenant-1" });
+    expect(supabase.rpc).toHaveBeenCalledWith("cloudix_reserve_invoice_numbers_v2", {
+      p_tenant_id: "tenant-1",
+      p_count: 1,
+      p_minimum_number: 5758,
+    });
   });
 });

@@ -98,6 +98,7 @@ export interface ElectronAPI {
   listExpenses?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
   listInvoices?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
   reserveInvoiceNumbers?: (request: { tenantId: string; count: number }) => Promise<{ ok: true; data: number[] }>;
+  getInvoiceNumberFloor?: (request: { tenantId: string }) => Promise<{ ok: true; data: number }>;
   deleteInvoiceLocal?: (request: { tenantId: string; invoiceId: string }) => Promise<{ ok: true }>;
   listCierres?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
   listCuentasCobrar?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
