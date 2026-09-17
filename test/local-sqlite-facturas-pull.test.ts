@@ -93,4 +93,36 @@ describe("Facturas cloud→SQLite pull", () => {
     expect(row.sucursal_id).toBe("main-process-default");
     expect(typeof row.items).toBe("string");
   });
+
+  it("saves a local invoice directly to SQLite and enqueues sync_outbox upsert", () => {
+    const s = setup();
+    s.saveInvoice(cloudInvoice({ id: "fac-local-1", numero_factura: 101 }));
+
+    const rows = s.listInvoices();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe("fac-local-1");
+    expect(rows[0].numero_factura).toBe(101);
+
+    const outbox = s.readLocalOutbox();
+    const outboxRow = outbox.find((o) => o.rowId === "fac-local-1");
+    expect(outboxRow).toBeDefined();
+    expect(outboxRow?.tableName).toBe("facturas");
+    expect(outboxRow?.operation).toBe("upsert");
+    expect(outboxRow?.status).toBe("pending");
+  });
+
+  it("deletes a local invoice from SQLite and enqueues sync_outbox delete", () => {
+    const s = setup();
+    s.saveInvoice(cloudInvoice({ id: "fac-del-1" }));
+    expect(s.listInvoices()).toHaveLength(1);
+
+    s.deleteInvoiceAndTraces("fac-del-1");
+    expect(s.listInvoices()).toHaveLength(0);
+
+    const outbox = s.readLocalOutbox();
+    const deleteOutboxRow = outbox.find((o) => o.rowId === "fac-del-1" && o.operation === "delete");
+    expect(deleteOutboxRow).toBeDefined();
+    expect(deleteOutboxRow?.tableName).toBe("facturas");
+    expect(deleteOutboxRow?.status).toBe("pending");
+  });
 });

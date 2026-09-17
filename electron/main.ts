@@ -736,6 +736,11 @@ if (gotTheLock) {
         if (!store) throw new Error('Tenant store is unavailable')
         store.deleteInvoiceAndTraces(request.invoiceId)
       },
+      saveInvoiceLocal: (invoice) => {
+        const store = getStore((invoice as { tenant_id?: string })?.tenant_id)
+        if (!store) throw new Error('Tenant store is unavailable')
+        store.saveInvoice(invoice)
+      },
     })
     registerCashPurchaseRepositoryIpc({ ipcMain, isTrustedSender, getRepository: () => {
       const store = getStore()

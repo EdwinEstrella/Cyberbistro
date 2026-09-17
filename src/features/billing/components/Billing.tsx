@@ -6,7 +6,7 @@ import { buildCierreDiaReceiptHtml, buildFacturaReceiptHtml } from "../../../sha
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
-import { readLocalInvoices } from "../lib/invoicesLocal";
+import { readLocalInvoices, deleteLocalInvoice } from "../lib/invoicesLocal";
 import { readLocalCierres } from "../../cierre/lib/cierresLocal";
 import { readLocalCuentasCobrar, readLocalCuentasPagar, readLocalCxcPagos, readLocalCxpPagos } from "../lib/accountsLocal";
 import { readLocalExpenses, readLocalExpenseCategories } from "../../gastos/lib/expensesLocal";
@@ -1152,22 +1152,8 @@ export function Billing() {
           })
         );
 
-        // 3. Queue deletion of invoice
-        writes.push(
-          enqueueLocalWrite({
-            tenantId,
-            tableName: "facturas",
-            rowId: inv.id,
-            op: "delete",
-            payload: { id: inv.id },
-            deviceId
-          })
-        );
-
         await Promise.all(writes);
-        if (window.electronAPI?.deleteInvoiceLocal) {
-          await window.electronAPI.deleteInvoiceLocal({ tenantId, invoiceId: inv.id });
-        }
+        await deleteLocalInvoice(tenantId, inv.id);
 
         setInvoiceModal((open) => (open?.id === inv.id ? null : open));
         await loadBillingData();

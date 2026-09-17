@@ -474,6 +474,103 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     return floor;
   }
 
+  saveInvoice(invoice: Record<string, unknown>): void {
+    const id = String(invoice.id);
+    if (!id) throw new Error("Invalid invoice id");
+    const branchId = typeof invoice.sucursal_id === "string" && invoice.sucursal_id.trim()
+      ? invoice.sucursal_id.trim()
+      : "main-process-default";
+
+    this.database.exec("BEGIN IMMEDIATE;");
+    try {
+      this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(branchId, this.tenantId, "Principal");
+
+      const stmt = this.database.prepare(`
+        INSERT INTO facturas (
+          id, tenant_id, sucursal_id, fiscal_mode, total, local_status,
+          numero_factura, mesa_numero, cliente_nombre, metodo_pago, estado,
+          subtotal, itbis, propina, moneda, items, notas, ncf, ncf_tipo,
+          cliente_rnc, customer_id, created_at, updated_at, pagada_at
+        ) VALUES (?, ?, ?, ?, ?, 'pending_sync', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          sucursal_id = excluded.sucursal_id,
+          fiscal_mode = excluded.fiscal_mode,
+          total = excluded.total,
+          numero_factura = excluded.numero_factura,
+          mesa_numero = excluded.mesa_numero,
+          cliente_nombre = excluded.cliente_nombre,
+          metodo_pago = excluded.metodo_pago,
+          estado = excluded.estado,
+          subtotal = excluded.subtotal,
+          itbis = excluded.itbis,
+          propina = excluded.propina,
+          moneda = excluded.moneda,
+          items = excluded.items,
+          notas = excluded.notas,
+          ncf = excluded.ncf,
+          ncf_tipo = excluded.ncf_tipo,
+          cliente_rnc = excluded.cliente_rnc,
+          customer_id = excluded.customer_id,
+          created_at = excluded.created_at,
+          updated_at = excluded.updated_at,
+          pagada_at = excluded.pagada_at
+      `);
+
+      const rawTotal = Number(invoice.total ?? 0);
+      const total = Number.isFinite(rawTotal) && rawTotal >= 0 ? rawTotal : 0;
+      const fiscalMode = typeof invoice.fiscal_mode === "string" ? invoice.fiscal_mode : "internal_receipt";
+      const items = invoice.items == null ? null : (typeof invoice.items === "string" ? invoice.items : JSON.stringify(invoice.items));
+      const str = (v: unknown): string | null => (v != null && String(v).length > 0 ? String(v) : null);
+      const num = (v: unknown): number | null => {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      };
+
+      stmt.run(
+        id,
+        this.tenantId,
+        branchId,
+        fiscalMode,
+        total,
+        num(invoice.numero_factura),
+        num(invoice.mesa_numero),
+        str(invoice.cliente_nombre),
+        str(invoice.metodo_pago),
+        str(invoice.estado) ?? "pagada",
+        num(invoice.subtotal) ?? 0,
+        num(invoice.itbis) ?? 0,
+        num(invoice.propina) ?? 0,
+        str(invoice.moneda) ?? "DOP",
+        items,
+        str(invoice.notas),
+        str(invoice.ncf),
+        str(invoice.ncf_tipo),
+        str(invoice.cliente_rnc),
+        str(invoice.customer_id),
+        str(invoice.created_at) ?? new Date().toISOString(),
+        str(invoice.updated_at) ?? new Date().toISOString(),
+        str(invoice.pagada_at)
+      );
+
+      const commitId = crypto.randomUUID();
+      this.database.prepare(`
+        INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status)
+        VALUES (?, ?, ?, 'facturas', ?, 'upsert', ?, 'pending')
+      `).run(
+        commitId,
+        this.tenantId,
+        branchId,
+        id,
+        JSON.stringify(invoice)
+      );
+
+      this.database.exec("COMMIT;");
+    } catch (error) {
+      this.database.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
   deleteInvoiceAndTraces(invoiceId: string): void {
     if (!invoiceId) throw new Error("Invalid invoice id");
     this.database.exec("BEGIN IMMEDIATE;");

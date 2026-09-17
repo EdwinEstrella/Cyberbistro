@@ -331,6 +331,81 @@ describe("PayrollSyncClient", () => {
     expect(eq).toHaveBeenCalledWith("id", "cycle-1");
     expect(response.result).toMatchObject({ deleted: true });
   });
+
+  it("pushes facturas upsert to public.facturas with full mapped columns", async () => {
+    const response = await client.push({
+      id: "fac-op-1",
+      tenantId: "tenant-1",
+      branchId: "branch-1",
+      tableName: "facturas",
+      rowId: "fac-1",
+      op: "upsert",
+      payload: {
+        id: "fac-1",
+        tenant_id: "tenant-1",
+        sucursal_id: "branch-1",
+        numero_factura: 101,
+        mesa_numero: 4,
+        cliente_nombre: "Juan Perez",
+        metodo_pago: "efectivo",
+        estado: "pagada",
+        subtotal: 500,
+        itbis: 90,
+        propina: 50,
+        total: 640,
+        moneda: "DOP",
+        items: [{ name: "Burger", qty: 1 }],
+        notas: "Sin cebolla",
+        ncf: "B0200000001",
+        ncf_tipo: "B02",
+        cliente_rnc: "101010101",
+      },
+      payloadHash: "hash",
+      sequence: 0,
+      deviceId: "device",
+      status: "syncing",
+      leaseUntil: 0,
+      result: null,
+    });
+
+    expect(fakeSdk.from).toHaveBeenCalledWith("facturas");
+    expect(fakeSdk.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "fac-1",
+        tenant_id: "tenant-1",
+        sucursal_id: "branch-1",
+        numero_factura: 101,
+        mesa_numero: 4,
+        cliente_nombre: "Juan Perez",
+        total: 640,
+        ncf: "B0200000001",
+      }),
+      { onConflict: "id" }
+    );
+    expect(response.result).toMatchObject({ synced: true, remoteTable: "facturas" });
+  });
+
+  it("pushes facturas delete to public.facturas", async () => {
+    const response = await client.push({
+      id: "fac-del-op",
+      tenantId: "tenant-1",
+      branchId: "branch-1",
+      tableName: "facturas",
+      rowId: "fac-to-delete",
+      op: "delete",
+      payload: { id: "fac-to-delete" },
+      payloadHash: "hash",
+      sequence: 0,
+      deviceId: "device",
+      status: "syncing",
+      leaseUntil: 0,
+      result: null,
+    });
+
+    expect(fakeSdk.from).toHaveBeenCalledWith("facturas");
+    expect(fakeSdk.eq).toHaveBeenCalledWith("id", "fac-to-delete");
+    expect(response.result).toMatchObject({ deleted: true, remoteTable: "facturas" });
+  });
 });
 
 function createFakeSdk() {

@@ -298,6 +298,9 @@ function mapDeleteOperation(operation: DurableOperation):
   if (operation.tableName === "cuentas_pagar") {
     return { ok: true, remoteTable: "cuentas_pagar" };
   }
+  if (operation.tableName === "facturas") {
+    return { ok: true, remoteTable: "facturas" };
+  }
 
   const remoteTable = PAYROLL_TABLES[operation.tableName];
   if (!remoteTable) {
@@ -338,6 +341,8 @@ function mapOperation(operation: DurableOperation):
         return { ok: true, remoteTable: "cuentas_pagar", payload: mapPayablePayload(operation, operation.payload) };
       case "cxp_pagos":
         return { ok: true, remoteTable: "cxp_pagos", payload: mapPayablePaymentPayload(operation, operation.payload) };
+      case "facturas":
+        return { ok: true, remoteTable: "facturas", payload: mapFacturaPayload(operation, operation.payload) };
       case "gastos": {
         if (operation.payload.expenseType === "payroll") {
           const tableResult = mapPayrollExpenseTable(operation);
@@ -706,5 +711,47 @@ function unsupportedValue(field: string, value: unknown): never {
 
 function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function mapFacturaPayload(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
+  const str = (v: unknown): string | null => (v != null && String(v).length > 0 ? String(v) : null);
+  const num = (v: unknown): number | null => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  let items = payload.items;
+  if (typeof items === "string") {
+    try {
+      items = JSON.parse(items);
+    } catch {
+      items = [];
+    }
+  }
+  if (!Array.isArray(items)) items = [];
+
+  const row: Record<string, unknown> = {
+    id: operation.rowId,
+    tenant_id: operation.tenantId,
+    sucursal_id: str(payload.sucursal_id) ?? str(payload.sucursalId),
+    numero_factura: num(payload.numero_factura) ?? num(payload.numeroFactura),
+    mesa_numero: num(payload.mesa_numero) ?? num(payload.mesaNumero) ?? 0,
+    cliente_nombre: str(payload.cliente_nombre) ?? str(payload.clienteNombre),
+    metodo_pago: str(payload.metodo_pago) ?? str(payload.metodoPago) ?? "efectivo",
+    estado: str(payload.estado) ?? "pagada",
+    subtotal: num(payload.subtotal) ?? 0,
+    itbis: num(payload.itbis) ?? 0,
+    propina: num(payload.propina) ?? 0,
+    total: num(payload.total) ?? 0,
+    moneda: str(payload.moneda) ?? "DOP",
+    items,
+    notas: str(payload.notas),
+    created_at: str(payload.created_at) ?? new Date().toISOString(),
+    updated_at: str(payload.updated_at) ?? new Date().toISOString(),
+    pagada_at: str(payload.pagada_at),
+  };
+  if (payload.ncf) row.ncf = str(payload.ncf);
+  if (payload.ncf_tipo || payload.ncfTipo) row.ncf_tipo = str(payload.ncf_tipo ?? payload.ncfTipo);
+  if (payload.cliente_rnc || payload.clienteRnc) row.cliente_rnc = str(payload.cliente_rnc ?? payload.clienteRnc);
+  return row;
 }
 

@@ -27,6 +27,7 @@ export const FACTURAS_LIST_CHANNEL = "facturas:list";
 export const FACTURAS_RESERVE_NUMBERS_CHANNEL = "facturas:reserve-numbers";
 export const FACTURAS_NUMBER_FLOOR_CHANNEL = "facturas:number-floor";
 export const FACTURAS_DELETE_LOCAL_CHANNEL = "facturas:delete-local";
+export const FACTURAS_SAVE_LOCAL_CHANNEL = "facturas:save-local";
 export const CASH_PURCHASE_REPOSITORY_EXECUTE_CHANNEL = "cash-purchase-repository:execute";
 export const PAYROLL_REPOSITORY_EXECUTE_CHANNEL = "payroll-repository:execute";
 export const PAYROLL_SYNC_ACCESS_TOKEN_CHANNEL = "payroll-sync:set-access-token";
@@ -346,6 +347,7 @@ export function registerSalesFiscalRepositoryIpc(input: {
   reserveInvoiceNumbers?: (input: { tenantId?: string; count: number }) => number[];
   getInvoiceNumberFloor?: (input: { tenantId?: string }) => number;
   deleteInvoiceLocal?: (input: { tenantId?: string; invoiceId: string }) => void;
+  saveInvoiceLocal?: (invoice: Record<string, unknown>) => void;
 }): void {
   input.ipcMain.removeHandler(FISCAL_SALES_REPOSITORY_EXECUTE_CHANNEL);
   input.ipcMain.handle(FISCAL_SALES_REPOSITORY_EXECUTE_CHANNEL, async (event, payload) => {
@@ -393,6 +395,17 @@ export function registerSalesFiscalRepositoryIpc(input: {
     }
     if (!input.getInvoiceNumberFloor) throw new Error("Invoice number floor is unavailable");
     return { ok: true, data: input.getInvoiceNumberFloor({ tenantId: request.tenantId as string | undefined }) };
+  });
+
+  input.ipcMain.removeHandler(FACTURAS_SAVE_LOCAL_CHANNEL);
+  input.ipcMain.handle(FACTURAS_SAVE_LOCAL_CHANNEL, async (event, payload) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    if (!payload || typeof payload !== "object" || !(payload as Record<string, unknown>).id) {
+      throw new Error("Invalid local invoice payload");
+    }
+    if (!input.saveInvoiceLocal) throw new Error("Local invoice saving is unavailable");
+    input.saveInvoiceLocal(payload as Record<string, unknown>);
+    return { ok: true };
   });
 }
 
