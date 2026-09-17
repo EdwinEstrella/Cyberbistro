@@ -29,7 +29,23 @@ async function reserveFromCloud(tenantId: string, count: number, minimumNumber: 
     p_count: count,
     p_minimum_number: minimumNumber,
   });
-  if (error) throw new Error(error.message || "No se pudo reservar la secuencia de factura.");
+  if (error) {
+    if (error.code === "PGRST202" || error.message?.includes("cloudix_reserve_invoice_numbers_v2")) {
+      const fallback = await supabase.rpc("cloudix_reserve_invoice_numbers", {
+        p_tenant_id: tenantId,
+        p_count: count,
+      });
+      if (fallback.error) throw new Error(fallback.error.message || "No se pudo reservar la secuencia de factura.");
+      const fallbackRow = Array.isArray(fallback.data) ? fallback.data[0] : fallback.data;
+      const fFirst = toValidInvoiceNumber((fallbackRow as { first_number?: unknown } | null)?.first_number);
+      const fLast = toValidInvoiceNumber((fallbackRow as { last_number?: unknown } | null)?.last_number);
+      if (fFirst == null || fLast == null || fLast !== fFirst + count - 1) {
+        throw new Error("La reserva remota devolvió un rango de facturas inválido.");
+      }
+      return Array.from({ length: count }, (_, index) => fFirst + index);
+    }
+    throw new Error(error.message || "No se pudo reservar la secuencia de factura.");
+  }
   const row = Array.isArray(data) ? data[0] : data;
   const first = toValidInvoiceNumber((row as { first_number?: unknown } | null)?.first_number);
   const last = toValidInvoiceNumber((row as { last_number?: unknown } | null)?.last_number);
