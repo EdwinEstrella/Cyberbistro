@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw, DollarSign, FileText, CheckCircle, Clock, Eye } from "lucide-react";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { useSucursal } from "../../../app/context/SucursalContext";
-import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
+import { shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { readLocalCuentasCobrar, readLocalCxcPagos } from "../../billing/lib/accountsLocal";
 import { readLocalInvoices } from "../../billing/lib/invoicesLocal";
 import { readLocalCierres } from "../../cierre/lib/cierresLocal";
