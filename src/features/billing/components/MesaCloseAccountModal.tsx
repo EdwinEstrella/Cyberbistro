@@ -445,7 +445,8 @@ export function MesaCloseAccountModal({
     const normalizedClientRnc = clientRnc.trim() || selectedCustomer?.document_id?.trim() || "";
     if (
       ncfFiscalActive &&
-      (solicitaComprobante || ncfTypeRequiresClientRnc(selectedNcfType)) &&
+      solicitaComprobante &&
+      ncfTypeRequiresClientRnc(selectedNcfType) &&
       normalizedClientRnc === ""
     ) {
       alert("Debes indicar el RNC del cliente para emitir comprobante fiscal.");
@@ -472,7 +473,12 @@ export function MesaCloseAccountModal({
 
       const reservedFiscalByPerson = new Map<number, Awaited<ReturnType<typeof runFiscalEngine>>>();
 
-      if (fiscalMode !== "internal_receipt") {
+      const defaultFiscalCode = fiscalMode === "dgii_ecf" ? "E32" : "B02";
+      const canEmitDefaultConsumo = isNcfTypeActive(ncfTiposActivos, defaultFiscalCode);
+      const shouldRunFiscal = fiscalMode !== "internal_receipt" && (solicitaComprobante || canEmitDefaultConsumo);
+
+      if (shouldRunFiscal) {
+        const targetNcfType = solicitaComprobante ? selectedNcfType : defaultFiscalCode;
         for (const personIndex of order) {
           const facturaId = localFacturaIds.get(personIndex)!;
           const numFactura = numeroFacturas.get(personIndex)!;
@@ -485,7 +491,7 @@ export function MesaCloseAccountModal({
               facturaId,
               numeroFactura: numFactura,
               clientRnc: normalizedClientRnc || (selectedCustomer?.document_id || ""),
-              preferredNcfType: selectedNcfType,
+              preferredNcfType: targetNcfType,
               deviceId,
             });
           } catch (err) {
@@ -752,7 +758,8 @@ export function MesaCloseAccountModal({
     const normalizedClientRnc = clientRnc.trim() || selectedCustomer?.document_id?.trim() || "";
     if (
       ncfFiscalActive &&
-      (solicitaComprobante || ncfTypeRequiresClientRnc(selectedNcfType)) &&
+      solicitaComprobante &&
+      ncfTypeRequiresClientRnc(selectedNcfType) &&
       normalizedClientRnc === ""
     ) {
       alert("Debes indicar el RNC del cliente para emitir comprobante fiscal.");
@@ -787,7 +794,12 @@ export function MesaCloseAccountModal({
     const now = new Date().toISOString();
 
     let ncfPart: Awaited<ReturnType<typeof runFiscalEngine>> = null;
-    if (fiscalMode !== "internal_receipt") {
+    const defaultFiscalCode = fiscalMode === "dgii_ecf" ? "E32" : "B02";
+    const canEmitDefaultConsumo = isNcfTypeActive(ncfTiposActivos, defaultFiscalCode);
+    const shouldRunFiscal = fiscalMode !== "internal_receipt" && (solicitaComprobante || canEmitDefaultConsumo);
+
+    if (shouldRunFiscal) {
+      const targetNcfType = solicitaComprobante ? selectedNcfType : defaultFiscalCode;
       try {
         ncfPart = await runFiscalEngine({
           tenantId,
@@ -796,7 +808,7 @@ export function MesaCloseAccountModal({
           facturaId: localFacturaId,
           numeroFactura: nextFacturaNumber,
           clientRnc: normalizedClientRnc,
-          preferredNcfType: selectedNcfType,
+          preferredNcfType: targetNcfType,
           deviceId,
         });
       } catch (err) {

@@ -1131,7 +1131,8 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
     const normalizedClientRnc = takeoutClientRnc.trim() || takeoutCustomer?.document_id?.trim() || "";
     if (
       tenantNcfFiscalActive &&
-      (solicitaComprobante || ncfTypeRequiresClientRnc(selectedNcfType)) &&
+      solicitaComprobante &&
+      ncfTypeRequiresClientRnc(selectedNcfType) &&
       normalizedClientRnc === ""
     ) {
       alert("Debes indicar el RNC del cliente para emitir comprobante fiscal.");
@@ -1226,7 +1227,12 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
     }
 
     let ncfPart: Awaited<ReturnType<typeof runFiscalEngine>> = null;
-    if (tenantId && fiscalMode !== "internal_receipt") {
+    const defaultFiscalCode = fiscalMode === "dgii_ecf" ? "E32" : "B02";
+    const canEmitDefaultConsumo = isNcfTypeActive(ncfTiposActivos, defaultFiscalCode);
+    const shouldRunFiscal = tenantId && fiscalMode !== "internal_receipt" && (solicitaComprobante || canEmitDefaultConsumo);
+
+    if (shouldRunFiscal) {
+      const targetNcfType = solicitaComprobante ? selectedNcfType : defaultFiscalCode;
       try {
         ncfPart = await runFiscalEngine({
           tenantId,
@@ -1235,7 +1241,7 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
           facturaId: localFacturaId,
           numeroFactura,
           clientRnc: takeoutClientRnc || (takeoutCustomer?.document_id || ""),
-          preferredNcfType: selectedNcfType,
+          preferredNcfType: targetNcfType,
           deviceId: await getDeviceId(),
         });
       } catch (err) {
