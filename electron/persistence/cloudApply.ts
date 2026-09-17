@@ -311,6 +311,82 @@ export function applyCloudFacturaRows(
 }
 
 /**
+ * Applies cloud purchases into the local SQLite mirror. The local `compras` table
+ * is a cash-only stub (payment_method CHECK = 'cash'); the real method/invoice/
+ * date fields live in the columns added by `ensureComprasSchemaEvolution`, so the
+ * legacy `payment_method` is pinned to 'cash' and the real method goes to
+ * `metodo_pago`. Proveedor and sucursal FKs are ensured before insert. A row with
+ * a pending local write is skipped so an unsynced local edit is never clobbered.
+ */
+export function applyCloudCompraRows(
+  db: DatabaseSync,
+  tenantId: string,
+  compras: Array<Record<string, unknown>>,
+  defaultBranchId = "main-process-default",
+): void {
+  const ensureBranch = db.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)");
+  const ensureProveedor = db.prepare("INSERT OR IGNORE INTO proveedores (id, tenant_id, name) VALUES (?, ?, ?)");
+  ensureBranch.run(defaultBranchId, tenantId, "Principal");
+  const stmt = db.prepare(`
+    INSERT INTO compras (
+      id, tenant_id, sucursal_id, proveedor_id, payment_method, total, local_status,
+      numero_factura, tipo_pago, metodo_pago, monto_pagado, fecha_compra, cycle_id, estado, observacion, usuario_id
+    ) VALUES (?, ?, ?, ?, 'cash', ?, 'committed', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      sucursal_id = excluded.sucursal_id,
+      proveedor_id = excluded.proveedor_id,
+      total = excluded.total,
+      numero_factura = excluded.numero_factura,
+      tipo_pago = excluded.tipo_pago,
+      metodo_pago = excluded.metodo_pago,
+      monto_pagado = excluded.monto_pagado,
+      fecha_compra = excluded.fecha_compra,
+      cycle_id = excluded.cycle_id,
+      estado = excluded.estado,
+      observacion = excluded.observacion,
+      usuario_id = excluded.usuario_id
+  `);
+  const str = (value: unknown): string | null => {
+    if (value === null || value === undefined) return null;
+    const s = String(value);
+    return s.length > 0 ? s : null;
+  };
+  const real = (value: unknown): number | null => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  };
+  for (const c of compras) {
+    if (!c || typeof c !== "object" || !c.id) continue;
+    if (hasPendingCloudWrite(db, tenantId, "compras", String(c.id))) continue;
+    const branchId = typeof c.sucursal_id === "string" && c.sucursal_id.trim() ? c.sucursal_id.trim() : defaultBranchId;
+    ensureBranch.run(branchId, tenantId, "Principal");
+    const proveedorId = typeof c.proveedor_id === "string" && c.proveedor_id.trim() ? c.proveedor_id.trim() : null;
+    if (!proveedorId) continue; // proveedor_id is NOT NULL locally; skip malformed rows.
+    ensureProveedor.run(proveedorId, tenantId, "Proveedor");
+
+    const rawTotal = Number(c.total ?? 0);
+    const total = Number.isFinite(rawTotal) && rawTotal >= 0 ? rawTotal : 0;
+
+    stmt.run(
+      String(c.id),
+      tenantId,
+      branchId,
+      proveedorId,
+      total,
+      str(c.numero_factura),
+      str(c.tipo_pago),
+      str(c.metodo_pago),
+      real(c.monto_pagado),
+      str(c.fecha_compra),
+      str(c.cycle_id),
+      str(c.estado),
+      str(c.observacion),
+      str(c.usuario_id),
+    );
+  }
+}
+
+/**
  * Cloud receivables/payables carry `monto_pagado` and a feminine `estado`
  * (pagada/vencida); the local STRICT tables store `monto_pendiente` and a
  * masculine `estado` (CHECK pendiente/parcial/pagado/vencido). This maps the

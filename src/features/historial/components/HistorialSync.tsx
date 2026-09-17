@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
+  ArrowDownCircle,
   ArrowUpCircle,
   CheckCircle2,
   Clock,
+  CloudDownload,
   Database,
   HardDrive,
   Layers,
@@ -17,6 +19,7 @@ import { supabase } from "../../../shared/lib/supabase";
 import {
   exportLegacyIndexedDbImportPayload,
   importLegacyIndexedDbThroughDesktop,
+  readLocalMirror,
 } from "../../../shared/lib/localFirst";
 import { resolveSyncHealth } from "../lib/syncHealth";
 
@@ -50,6 +53,18 @@ interface PendingQueueItem {
   status: string;
 }
 
+interface PullStateGlobal {
+  lastPullAt: string | null;
+  lastBatchCount: number;
+  cursor: string | null;
+}
+
+interface PullStateTableItem {
+  table: string;
+  mirroredRows: number;
+  lastPullAt: string | null;
+}
+
 interface DiagnosticReport {
   tenantId: string;
   databasePath: string;
@@ -58,6 +73,66 @@ interface DiagnosticReport {
   outboxSummary: OutboxSummaryItem[];
   recentErrors: SyncErrorItem[];
   pendingQueue: PendingQueueItem[];
+  pullState?: {
+    global: PullStateGlobal | null;
+    perTable: PullStateTableItem[];
+  };
+}
+
+/** Tables whose cloud name matches the local name, so a direct count comparison
+ * (cloud vs local) approximates "pending to download". Payroll (nomina_*) is
+ * intentionally excluded because its remote names differ. */
+const CLOUD_COMPARABLE_TABLES = [
+  "cierres_operativos", "facturas", "gastos", "gasto_categorias", "customers",
+  "cuentas_cobrar", "cxc_pagos", "cuentas_pagar", "cxp_pagos", "compras",
+];
+
+/** Head-count each comparable cloud table for the tenant. A table that errors is
+ * recorded as -1 so callers can tell "0 rows" apart from "could not verify". */
+async function fetchCloudCounts(tenantId: string): Promise<Record<string, number>> {
+  const entries = await Promise.all(
+    CLOUD_COMPARABLE_TABLES.map(async (table) => {
+      try {
+        const { count, error } = await supabase
+          .from(table)
+          .select("id", { count: "exact", head: true })
+          .eq("tenant_id", tenantId);
+        return [table, error ? -1 : count ?? 0] as const;
+      } catch {
+        return [table, -1] as const;
+      }
+    }),
+  );
+  return Object.fromEntries(entries);
+}
+
+/** Count rows in the IndexedDB mirror for each comparable table. Tables not yet
+ * migrated to SQLite (e.g. compras) still live here, so "local presence" must
+ * consider this engine too, or the monitor falsely reports rows as missing. */
+async function fetchMirrorCounts(tenantId: string): Promise<Record<string, number>> {
+  const entries = await Promise.all(
+    CLOUD_COMPARABLE_TABLES.map(async (table) => {
+      try {
+        const rows = await readLocalMirror<Record<string, unknown>>(tenantId, table as never);
+        return [table, Array.isArray(rows) ? rows.length : 0] as const;
+      } catch {
+        return [table, 0] as const;
+      }
+    }),
+  );
+  return Object.fromEntries(entries);
+}
+
+function formatRelativeTime(iso: string | null | undefined): string {
+  if (!iso) return "Nunca";
+  const then = new Date(iso.includes("T") ? iso : iso.replace(" ", "T") + "Z").getTime();
+  if (Number.isNaN(then)) return String(iso);
+  const secs = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (secs < 10) return "Hace instantes";
+  if (secs < 60) return `Hace ${secs}s`;
+  if (secs < 3600) return `Hace ${Math.floor(secs / 60)} min`;
+  if (secs < 86400) return `Hace ${Math.floor(secs / 3600)} h`;
+  return `Hace ${Math.floor(secs / 86400)} d`;
 }
 
 export function HistorialSync() {
@@ -67,8 +142,11 @@ export function HistorialSync() {
   const [syncing, setSyncing] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [migrating, setMigrating] = useState(false);
-  const [activeTab, setActiveTab] = useState<"resumen" | "errores" | "tablas" | "cola" | "migracion">("resumen");
+  const [activeTab, setActiveTab] = useState<"resumen" | "bajada" | "errores" | "tablas" | "cola" | "migracion">("resumen");
   const [selectedError, setSelectedError] = useState<SyncErrorItem | null>(null);
+  const [cloudCounts, setCloudCounts] = useState<Record<string, number> | null>(null);
+  const [mirrorCounts, setMirrorCounts] = useState<Record<string, number>>({});
+  const [comparing, setComparing] = useState(false);
   const [cloudStatus, setCloudStatus] = useState<"checking" | "online" | "offline">("checking");
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [message, setMessage] = useState<string>("");
@@ -112,6 +190,15 @@ export function HistorialSync() {
         }
       }
       await checkCloudHealth();
+      // Verify the download side against the cloud each poll so "Salud del
+      // Sistema" cannot claim "al día con la nube" without having checked it.
+      // Local presence spans BOTH engines (SQLite + IndexedDB mirror) so a table
+      // still living in IndexedDB (e.g. compras) is not falsely reported missing.
+      if (tenantId) {
+        const [cloud, mirror] = await Promise.all([fetchCloudCounts(tenantId), fetchMirrorCounts(tenantId)]);
+        setCloudCounts(cloud);
+        setMirrorCounts(mirror);
+      }
     } catch (e: any) {
       setMessage(`Error al consultar diagnóstico: ${e.message}`);
     } finally {
@@ -191,12 +278,53 @@ export function HistorialSync() {
     }
   };
 
+  const compareWithCloud = useCallback(async () => {
+    if (!tenantId) {
+      setMessage("Se requiere estar autenticado para comparar con la nube.");
+      return;
+    }
+    setComparing(true);
+    setMessage("");
+    try {
+      const [cloud, mirror] = await Promise.all([fetchCloudCounts(tenantId), fetchMirrorCounts(tenantId)]);
+      setCloudCounts(cloud);
+      setMirrorCounts(mirror);
+    } catch (e: any) {
+      setCloudCounts(null);
+      setMessage(`Error comparando con la nube: ${e.message}`);
+    } finally {
+      setComparing(false);
+    }
+  }, [tenantId]);
+
+  // The goal is SQLite as the single source of truth, so the comparison is
+  // strictly SQLite vs cloud: "Pendiente ↓" is what SQLite still needs to hold
+  // what the cloud has. The IndexedDB column stays only as informational context
+  // (where the data currently lives) and never feeds the pending math or health.
+  const sqliteCountFor = useCallback(
+    (table: string) => report?.tableCounts.find((t) => t.table === table)?.count ?? 0,
+    [report],
+  );
+
   const totalPending = useMemo(() => {
     if (!report?.outboxSummary) return 0;
     return report.outboxSummary
       .filter((s) => s.status === "pending" || s.status === "syncing")
       .reduce((acc, curr) => acc + curr.count, 0);
   }, [report]);
+
+  const totalPendingDownload = useMemo(() => {
+    if (!cloudCounts) return null;
+    // Honest verification: if ANY comparable table could not be read from the
+    // cloud, the download side is not fully verified → report null, never 0.
+    let sum = 0;
+    for (const table of CLOUD_COMPARABLE_TABLES) {
+      const cloud = cloudCounts[table];
+      if (typeof cloud !== "number" || cloud < 0) return null;
+      sum += Math.max(cloud - sqliteCountFor(table), 0);
+    }
+    return sum;
+  }, [cloudCounts, sqliteCountFor]);
 
   const totalErrors = useMemo(() => {
     if (!report?.recentErrors) return 0;
@@ -208,7 +336,7 @@ export function HistorialSync() {
     return report.tableCounts.reduce((acc, curr) => acc + curr.count, 0);
   }, [report]);
 
-  const syncHealth = resolveSyncHealth(totalPending, totalErrors);
+  const syncHealth = resolveSyncHealth({ pendingUpload: totalPending, blocked: totalErrors, pendingDownload: totalPendingDownload });
 
   return (
     <div className="flex-1 bg-background p-4 sm:p-8 lg:p-10 overflow-y-auto min-h-0 text-foreground">
@@ -294,16 +422,16 @@ export function HistorialSync() {
               {syncHealth.tone === "healthy" ? (
                 <CheckCircle2 className="size-4 text-emerald-500" />
               ) : (
-                <AlertCircle className={`size-4 ${syncHealth.tone === "blocked" ? "text-rose-500" : "text-amber-500"}`} />
+                <AlertCircle className={`size-4 ${syncHealth.tone === "blocked" ? "text-rose-500" : syncHealth.tone === "unknown" ? "text-slate-400" : "text-amber-500"}`} />
               )}
             </div>
             <div className="mt-3 flex items-baseline gap-2">
-              <span className={`text-2xl font-bold font-['Space_Grotesk'] ${syncHealth.tone === "healthy" ? "text-emerald-500" : syncHealth.tone === "blocked" ? "text-rose-500" : "text-amber-500"}`}>
+              <span className={`text-2xl font-bold font-['Space_Grotesk'] ${syncHealth.tone === "healthy" ? "text-emerald-500" : syncHealth.tone === "blocked" ? "text-rose-500" : syncHealth.tone === "unknown" ? "text-slate-400" : "text-amber-500"}`}>
                 {syncHealth.label}
               </span>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              {syncHealth.tone === "blocked" ? `${totalErrors} operación(es) requieren intervención` : totalPending === 0 ? "Todo al día con la nube" : `${totalPending} operaciones esperando subida`}
+              {syncHealth.detail}
             </p>
           </div>
 
@@ -373,6 +501,17 @@ export function HistorialSync() {
             }`}
           >
             Resumen General
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("bajada")}
+            className={`px-4 py-3 text-xs font-bold uppercase tracking-wider transition-colors border-b-2 cursor-pointer flex items-center gap-2 ${
+              activeTab === "bajada"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <ArrowDownCircle size={13} /> Bajada (Pull)
           </button>
           <button
             type="button"
@@ -488,6 +627,102 @@ export function HistorialSync() {
                   <dd className="font-mono mt-1 text-foreground">SQLite WAL (Write-Ahead Logging) con verificación de llaves foráneas</dd>
                 </div>
               </dl>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "bajada" && (
+          <div className="flex flex-col gap-6">
+            {/* Global pull status + compare action */}
+            <div className="rounded-[20px] border border-black/10 dark:border-white/10 bg-card p-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">
+                <h3 className="font-['Space_Grotesk'] text-lg font-bold flex items-center gap-2">
+                  <ArrowDownCircle className="size-5 text-sky-500" />
+                  Descarga desde la nube (Pull)
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => void compareWithCloud()}
+                  disabled={comparing}
+                  className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-2.5 text-xs font-bold text-sky-500 hover:bg-sky-500/20 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 shrink-0"
+                >
+                  <CloudDownload size={14} className={comparing ? "animate-pulse" : ""} />
+                  {comparing ? "Comparando..." : "Comparar con la nube"}
+                </button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                <div className="p-4 rounded-xl border border-black/5 dark:border-white/5 bg-muted/20">
+                  <div className="text-muted-foreground font-bold uppercase text-[10px]">Última bajada</div>
+                  <div className="mt-2 font-bold text-sm font-['Space_Grotesk'] text-foreground">
+                    {formatRelativeTime(report?.pullState?.global?.lastPullAt)}
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    {report?.pullState?.global?.lastBatchCount ?? 0} fila(s) en el último lote
+                  </p>
+                </div>
+                <div className="p-4 rounded-xl border border-black/5 dark:border-white/5 bg-muted/20">
+                  <div className="text-muted-foreground font-bold uppercase text-[10px]">Pendiente por bajar (aprox.)</div>
+                  <div className={`mt-2 font-bold text-sm font-['Space_Grotesk'] ${totalPendingDownload && totalPendingDownload > 0 ? "text-amber-500" : "text-emerald-500"}`}>
+                    {totalPendingDownload === null ? "Sin comparar" : `${totalPendingDownload} fila(s)`}
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    {totalPendingDownload === null ? "Tocá \"Comparar con la nube\"" : "Estimado: nube − SQLite por tabla (lo que falta migrar)"}
+                  </p>
+                </div>
+                <div className="p-4 rounded-xl border border-black/5 dark:border-white/5 bg-muted/20">
+                  <div className="text-muted-foreground font-bold uppercase text-[10px]">Cursor de sincronización</div>
+                  <div className="mt-2 font-mono text-[11px] text-foreground break-all">
+                    {report?.pullState?.global?.cursor ?? "Sin cursor (pull completo pendiente)"}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Per-table cloud vs local comparison */}
+            <div className="rounded-[20px] border border-black/10 dark:border-white/10 bg-card p-6">
+              <h3 className="font-['Space_Grotesk'] text-lg font-bold mb-4 flex items-center gap-2">
+                <Layers className="size-5 text-sky-500" />
+                Local vs. Nube por tabla
+              </h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="border-b border-black/10 dark:border-white/10 text-muted-foreground font-bold uppercase text-[10px]">
+                    <tr>
+                      <th className="py-2.5 px-3">Tabla</th>
+                      <th className="py-2.5 px-3 text-right">SQLite</th>
+                      <th className="py-2.5 px-3 text-right">IndexedDB</th>
+                      <th className="py-2.5 px-3 text-right">Nube</th>
+                      <th className="py-2.5 px-3 text-right">Pendiente ↓</th>
+                      <th className="py-2.5 px-3">Última bajada</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-black/5 dark:divide-white/5 font-mono">
+                    {CLOUD_COMPARABLE_TABLES.map((table) => {
+                      const sqliteCount = sqliteCountFor(table);
+                      const mirrorCount = mirrorCounts[table] ?? 0;
+                      const cloud = cloudCounts?.[table];
+                      const cloudKnown = typeof cloud === "number" && cloud >= 0;
+                      const pending = cloudKnown ? Math.max((cloud as number) - sqliteCount, 0) : null;
+                      const lastPull = report?.pullState?.perTable.find((t) => t.table === table)?.lastPullAt ?? null;
+                      return (
+                        <tr key={table} className="hover:bg-muted/30 transition-colors">
+                          <td className="py-2.5 px-3 font-bold text-foreground">{table}</td>
+                          <td className="py-2.5 px-3 text-right">{sqliteCount}</td>
+                          <td className="py-2.5 px-3 text-right text-muted-foreground">{mirrorCount}</td>
+                          <td className="py-2.5 px-3 text-right">{cloudKnown ? cloud : cloudCounts ? "error" : "—"}</td>
+                          <td className={`py-2.5 px-3 text-right font-bold ${pending && pending > 0 ? "text-amber-500" : pending === 0 ? "text-emerald-500" : "text-muted-foreground"}`}>
+                            {pending === null ? "—" : pending}
+                          </td>
+                          <td className="py-2.5 px-3 text-muted-foreground">{formatRelativeTime(lastPull)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <p className="mt-3 text-[11px] text-muted-foreground">
+                "Pendiente ↓" = <span className="font-semibold">nube − SQLite</span>: lo que le falta a SQLite para igualar la nube (o sea, lo que queda por migrar a SQLite). La columna <span className="font-semibold">IndexedDB</span> es solo informativa — muestra dónde vive el dato hoy — y no entra en el cálculo. Detalle real del flujo en la consola del proceso principal (<span className="font-mono">[sync↓]</span> / <span className="font-mono">[sync↑]</span>).
+              </p>
             </div>
           </div>
         )}

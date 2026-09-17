@@ -16,6 +16,7 @@ import { useSucursal } from "../../../app/context/SucursalContext";
 import { canUseFeature } from "../../../shared/lib/planFeatures";
 import { calculateExpectedCashDrawer, isCashPaymentMethod, sumCashExpenses } from "../../../shared/lib/cycleCash";
 import { getFiscalPendingPresentation } from "../../../shared/lib/salesFiscalUiAdapter";
+import { writeCyclePrinted } from "../../cierre/lib/cierresWrites";
 // useTheme removed
 import {
   Dialog,
@@ -1080,13 +1081,14 @@ export function Billing() {
 
       const res = await printThermalHtml(html, { printType: "sales" });
       if (res.ok) {
-        await enqueueLocalWrite({
+        // Single-engine cycle write: SQLite on desktop (which also pushes to
+        // cloud), IndexedDB on web. A direct enqueueLocalWrite here wrote
+        // printed_at to IndexedDB, but desktop excludes cierres from the
+        // IndexedDB push, so the printed state never reached the cloud.
+        await writeCyclePrinted({
           tenantId,
-          tableName: "cierres_operativos",
-          rowId: entry.cycle.id,
-          op: "update",
-          payload: { printed_at: new Date().toISOString() },
-          deviceId: await getDeviceId(),
+          cycleId: entry.cycle.id,
+          printedAtIso: new Date().toISOString(),
         });
         await loadBillingData();
       } else if (res.error) {

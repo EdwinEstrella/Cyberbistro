@@ -129,7 +129,7 @@ export function useLocalFirstBootstrap(tenantId: string | null, accessValidated 
               ...next,
               message:
                 next.status === "history_complete"
-                  ? "Historial completo disponible offline."
+                  ? "Historial disponible offline."
                   : `Subidas ${outboxPushed}, descargadas ${pullResult.rowsPulled} filas.`,
             });
           } catch (err) {
@@ -278,7 +278,7 @@ export function useLocalFirstBootstrap(tenantId: string | null, accessValidated 
               ...next,
               message:
                 next.status === "history_complete"
-                  ? "Historial completo disponible offline."
+                  ? "Historial disponible offline."
                   : "Listo para operar. Historial completo sincronizando en background.",
             });
           },

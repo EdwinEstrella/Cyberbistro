@@ -96,6 +96,16 @@ const RD = (n: number) => "RD$ " + n.toLocaleString("es-DO", { minimumFractionDi
 const ITBIS_RATE = 0.18;
 const MAX_EFECTIVO_INICIAL = 9999999999.99;
 
+/** Best-effort: push the just-written cycle to Supabase now instead of waiting
+ * for the 30s scheduler, so open/close/print reflect in the cloud immediately. */
+function triggerImmediateSync(): void {
+  try {
+    void window.electronAPI?.triggerSync?.();
+  } catch {
+    /* best-effort; the scheduler will still pick it up */
+  }
+}
+
 
 function getCycleStartIso(cycle: Pick<CierreOperativoRow, "opened_at" | "created_at">): string {
   return new Date(cycle.created_at).getTime() < new Date(cycle.opened_at).getTime()
@@ -132,6 +142,7 @@ export function Cierre() {
   const [loadError, setLoadError] = useState("");
   const [printing, setPrinting] = useState(false);
   const [printMsg, setPrintMsg] = useState("");
+  const [printWarn, setPrintWarn] = useState(false);
   const [globalHasOpenCycle, setGlobalHasOpenCycle] = useState(false);
   const [showInitialCashModal, setShowInitialCashModal] = useState(false);
   const [initialCashInput, setInitialCashInput] = useState("0");
@@ -358,7 +369,7 @@ export function Cierre() {
 
   async function handleStartCycle(efectivoInicial: number) {
     if (!tenantId || !activeSucursalId || globalHasOpenCycle) return;
-    setStartingCycle(true); setPrintMsg("");
+    setStartingCycle(true); setPrintMsg(""); setPrintWarn(false);
     try {
       const useLocalCiclos = await shouldReadLocalFirst(tenantId, ["cierres_operativos"]);
 
@@ -444,6 +455,7 @@ export function Cierre() {
 
       setFecha(businessDay);
       setPrintMsg(`Ciclo #${num} iniciado.`);
+      triggerImmediateSync();
       await cargar();
     } catch (error) {
       setPrintMsg(error instanceof Error ? error.message : "No se pudo iniciar el ciclo.");
@@ -469,7 +481,7 @@ export function Cierre() {
 
   async function handleCerrarCiclo() {
     if (!tenantId || !currentCycle || currentCycle.closed_at) return;
-    setPrinting(true); setPrintMsg("");
+    setPrinting(true); setPrintMsg(""); setPrintWarn(false);
 
     // Validación inteligente de mesas/consumos pendientes de cobro antes de cerrar el ciclo
     const isOnline = navigator.onLine;
@@ -540,6 +552,7 @@ export function Cierre() {
     if (pag.length === 0 && cxcCiclo.length === 0) {
       await writeCycleDiscard({ tenantId, cycleId: currentCycle.id });
       setPrintMsg(`Ciclo #${currentCycle.cycle_number} descartado porque no tuvo ventas. Puedes iniciarlo de nuevo.`);
+      triggerImmediateSync();
       setPrinting(false);
       await cargar();
       return;
@@ -548,6 +561,7 @@ export function Cierre() {
     // Single-engine write (see cycle open): the cycle's whole lifecycle stays on
     // one engine to avoid the double cloud push that caused ghost/duplicate cycles.
     await writeCycleClose({ tenantId, cycleId: currentCycle.id, closedAtIso: now, closedByAuthUserId: user?.id ?? null });
+    triggerImmediateSync();
     setPrintMsg("Ciclo cerrado.");
 
     let tenantData: any = null;
@@ -583,7 +597,17 @@ export function Cierre() {
         }),
       }, paperWidthMm);
       const res = await printThermalHtml(html, { printType: "sales" });
-      if (res.ok) await writeCyclePrinted({ tenantId, cycleId: currentCycle.id, printedAtIso: now });
+      if (res.ok) {
+        await writeCyclePrinted({ tenantId, cycleId: currentCycle.id, printedAtIso: now });
+        triggerImmediateSync();
+        setPrintMsg("Ciclo cerrado e impreso.");
+      } else {
+        // The cycle IS closed; only the Z print did not complete (cancelled at the
+        // dialog, no printer, or a driver error). Say so explicitly — printed_at
+        // stays NULL on purpose, and silence would look like a sync failure.
+        setPrintWarn(true);
+        setPrintMsg(`Ciclo cerrado, pero la impresión NO se completó${res.error ? `: ${res.error}` : " (cancelada o sin impresora)"}. El ciclo quedó sin marcar como impreso; podés reimprimir el reporte Z.`);
+      }
     }
     setPrinting(false); await cargar();
   }
@@ -613,7 +637,7 @@ export function Cierre() {
         </div>
 
         {(loadError || printMsg) && (
-           <div className={`p-4 rounded-xl border ${loadError ? 'bg-destructive/10 border-destructive/20 text-destructive' : 'bg-green-500/10 border-green-500/20 text-green-600 dark:text-green-400'} text-sm font-medium animate-in fade-in slide-in-from-top-2`}>{loadError || printMsg}</div>
+           <div className={`p-4 rounded-xl border ${loadError ? 'bg-destructive/10 border-destructive/20 text-destructive' : printWarn ? 'bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400' : 'bg-green-500/10 border-green-500/20 text-green-600 dark:text-green-400'} text-sm font-medium animate-in fade-in slide-in-from-top-2`}>{loadError || printMsg}</div>
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] gap-6">

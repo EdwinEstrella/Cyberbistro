@@ -15,7 +15,7 @@ function labelForStatus(status: LocalFirstStatus): string {
     case "ready_history_syncing":
       return "Descargando historial";
     case "history_complete":
-      return "Historial offline listo";
+      return "Historial listo";
     case "offline":
       return "Modo sin internet";
     case "syncing":

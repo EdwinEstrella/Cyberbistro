@@ -742,12 +742,16 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     outboxSummary: Array<{ tableName: string; status: string; count: number; errorCount: number }>;
     recentErrors: Array<{ id: string; tableName: string; rowId: string; operation: string; status: string; errorJson: string | null; payloadJson: string }>;
     pendingQueue: Array<{ id: string; tableName: string; rowId: string; operation: string; status: string }>;
+    pullState: {
+      global: { lastPullAt: string | null; lastBatchCount: number; cursor: string | null } | null;
+      perTable: Array<{ table: string; mirroredRows: number; lastPullAt: string | null }>;
+    };
   } {
     const tableNames = [
       "customers", "gastos", "gasto_categorias", "payroll_employees", "payroll_payments",
       "payroll_payment_adjustments", "compras", "detalles_compra", "movimientos_inventario",
       "cuentas_cobrar", "cxc_pagos", "cuentas_pagar", "cxp_pagos", "platos", "menu_categories",
-      "sucursales", "comandas", "consumos", "facturas", "mesas_estado"
+      "sucursales", "comandas", "consumos", "facturas", "cierres_operativos", "ecf_documents", "mesas_estado"
     ];
 
     const tableCounts: Array<{ table: string; count: number }> = [];
@@ -785,6 +789,28 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
       LIMIT 50
     `).all(this.tenantId) as Array<{ id: string; tableName: string; rowId: string; operation: string; status: string }>;
 
+    // Download (cloud → local) visibility from sync_state. The '__pull__' row is
+    // the global pull cursor (last batch size + when); every other row is a
+    // per-table snapshot with the mirrored row count and its last pull time.
+    let pullState: {
+      global: { lastPullAt: string | null; lastBatchCount: number; cursor: string | null } | null;
+      perTable: Array<{ table: string; mirroredRows: number; lastPullAt: string | null }>;
+    } = { global: null, perTable: [] };
+    try {
+      const globalRow = this.database.prepare(
+        "SELECT cursor, row_count AS rowCount, updated_at AS updatedAt FROM sync_state WHERE tenant_id = ? AND table_name = '__pull__' LIMIT 1"
+      ).get(this.tenantId) as { cursor: string | null; rowCount: number; updatedAt: string } | undefined;
+      const perTable = this.database.prepare(
+        "SELECT table_name AS table, row_count AS mirroredRows, updated_at AS lastPullAt FROM sync_state WHERE tenant_id = ? AND table_name != '__pull__' ORDER BY updated_at DESC"
+      ).all(this.tenantId) as Array<{ table: string; mirroredRows: number; lastPullAt: string | null }>;
+      pullState = {
+        global: globalRow ? { lastPullAt: globalRow.updatedAt, lastBatchCount: globalRow.rowCount, cursor: globalRow.cursor } : null,
+        perTable,
+      };
+    } catch {
+      // sync_state may not exist yet on a fresh DB; leave the empty default.
+    }
+
     return {
       tenantId: this.tenantId,
       databasePath: this.databasePath,
@@ -793,6 +819,7 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
       outboxSummary,
       recentErrors,
       pendingQueue,
+      pullState,
     };
   }
 

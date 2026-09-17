@@ -396,6 +396,7 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
   ensureSyncOutboxSchemaEvolution(database);
   ensureFacturasSchemaEvolution(database);
   ensureCierresSchemaEvolution(database);
+  ensureComprasSchemaEvolution(database);
   database.exec(`
     CREATE INDEX IF NOT EXISTS idx_payroll_payments_employee_period ON payroll_payments (tenant_id, sucursal_id, employee_id, period);
     CREATE INDEX IF NOT EXISTS idx_payroll_adjustments_payment ON payroll_payment_adjustments (payment_id);
@@ -461,6 +462,29 @@ function ensureCierresSchemaEvolution(database: DatabaseSync): void {
   for (const [name, type] of [["printed_at", "TEXT"], ["created_at", "TEXT"]] as const) {
     if (!columns.includes(name)) {
       database.exec(`ALTER TABLE cierres_operativos ADD COLUMN ${name} ${type};`);
+    }
+  }
+}
+
+/**
+ * The original SQLite `compras` table was a cash-only stub (payment_method CHECK
+ * = 'cash', no invoice/date/method fields). Cloud→SQLite pull needs the full
+ * purchase shape, so these columns are added additively (nullable) to existing
+ * databases — the same low-risk pattern as facturas. The legacy `payment_method`
+ * column keeps its 'cash' CHECK; pulled rows set it to 'cash' and carry the real
+ * method in the new `metodo_pago` column, so no data-carrying rebuild is needed.
+ */
+function ensureComprasSchemaEvolution(database: DatabaseSync): void {
+  const columns = getTableColumns(database, "compras");
+  if (columns.length === 0) return;
+  const additions = [
+    ["numero_factura", "TEXT"], ["tipo_pago", "TEXT"], ["metodo_pago", "TEXT"],
+    ["monto_pagado", "REAL"], ["fecha_compra", "TEXT"], ["cycle_id", "TEXT"],
+    ["estado", "TEXT"], ["observacion", "TEXT"], ["usuario_id", "TEXT"],
+  ] as const;
+  for (const [name, type] of additions) {
+    if (!columns.includes(name)) {
+      database.exec(`ALTER TABLE compras ADD COLUMN ${name} ${type};`);
     }
   }
 }

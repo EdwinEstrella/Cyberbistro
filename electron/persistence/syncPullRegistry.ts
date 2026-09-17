@@ -37,6 +37,9 @@ export const SYNC_PULL_TABLES: readonly SyncPullTable[] = [
   // Not hard-deleted via pull: invoice deletion is audited, never a silent
   // snapshot-absence removal.
   { remoteTable: "facturas", localTable: "facturas", child: false, deletable: false },
+  // Purchases download for the compras module and finance analytics. Not
+  // hard-deleted via pull: a purchase absent from a snapshot page survives.
+  { remoteTable: "compras", localTable: "compras", child: false, deletable: false },
   // Accounts receivable/payable + their payments for the finance analytics
   // (por cobrar / por pagar). Accounts MUST precede their payments so the
   // payment foreign keys resolve within a single pull batch. Not hard-deleted

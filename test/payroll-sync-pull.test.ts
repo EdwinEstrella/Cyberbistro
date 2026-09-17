@@ -99,11 +99,16 @@ describe("bidirectional SQLite cloud imports", () => {
     expect(db.prepare("SELECT * FROM payroll_employees").all()).toEqual([]);
     expect(db.prepare("SELECT id FROM customers").all()).toEqual([{ id: "legacy-local" }]);
   });
-  it("does not apply partial HTTP snapshots on failure", async () => {
-    const cloud = makeCloud({ nomina_empleados: [employee()] }); cloud.failures.add("gastos");
-    await expect(pull(cloud)).rejects.toThrow("Pull failed for gastos");
-    expect(store.getCursor()).toBeNull();
-    expect(db.prepare("SELECT * FROM payroll_employees").all()).toEqual([]);
+  it("skips only the failing table and still applies the tables that downloaded cleanly", async () => {
+    const cloud = makeCloud({ nomina_empleados: [employee()], customers: [{ id: "cust-1", tenant_id: TENANT, name: "Ana" }] });
+    cloud.failures.add("gastos");
+    // One bad table must not abort the whole pull (that is what left SQLite empty).
+    await pull(cloud);
+    expect(db.prepare("SELECT id FROM payroll_employees").all()).toEqual([{ id: "emp-1" }]);
+    expect(db.prepare("SELECT id FROM customers").all()).toEqual([{ id: "cust-1" }]);
+    // The failing table applied nothing (no partial snapshot) and retries next pull.
+    expect(db.prepare("SELECT * FROM gastos").all()).toEqual([]);
+    expect(store.getCursor()).not.toBeNull();
   });
   it("rolls back rows and cursor if payroll mapping fails", async () => {
     const cloud = makeCloud({ nomina_empleados: [employee()], nomina_pagos: [payment({ monto_pagado: -1 })] });

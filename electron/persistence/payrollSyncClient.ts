@@ -172,33 +172,47 @@ export class PayrollSyncClient implements ServerSyncClient {
   async pull(input: { tenantId: string; cursor: string | null }): Promise<PullBatch> {
     const client: any = await this.clientPromise;
     const changes: ServerChange[] = [];
+    const snapshotTables: string[] = [];
+    // Per-table isolation: one table failing (RLS, a missing embed, a transient
+    // network error) must NOT abort the whole download and leave SQLite empty.
+    // Each table is buffered and only committed when its full pagination
+    // succeeds, so a failing table applies nothing (no partial snapshot, no false
+    // deletes) while every healthy table still downloads and retries next pull.
     for (const { table, localTable, child } of PULL_TABLES) {
-      let afterId: string | null = null;
-      while (true) {
-        let query = client.from(table)
-          .select(child ? "*, nomina_empleados!inner(tenant_id,sucursal_id)" : "*")
-          .eq(child ? "nomina_empleados.tenant_id" : "tenant_id", input.tenantId)
-          .order("id", { ascending: true })
-          .limit(PULL_PAGE_SIZE);
-        if (afterId) query = query.gt("id", afterId);
-        const { data, error } = await query;
-        if (error) throw new Error(`Pull failed for ${table}: ${error.message}`);
-        if (!Array.isArray(data)) throw new Error(`Invalid pull response for ${table}`);
-        if (data.length === 0) break;
-        for (const row of data) {
-          if (!row || typeof row.id !== "string" || (afterId && row.id <= afterId)) {
-            throw new Error(`Invalid pull page for ${table}`);
+      const tableChanges: ServerChange[] = [];
+      try {
+        let afterId: string | null = null;
+        while (true) {
+          let query = client.from(table)
+            .select(child ? "*, nomina_empleados!inner(tenant_id,sucursal_id)" : "*")
+            .eq(child ? "nomina_empleados.tenant_id" : "tenant_id", input.tenantId)
+            .order("id", { ascending: true })
+            .limit(PULL_PAGE_SIZE);
+          if (afterId) query = query.gt("id", afterId);
+          const { data, error } = await query;
+          if (error) throw new Error(`Pull failed for ${table}: ${error.message}`);
+          if (!Array.isArray(data)) throw new Error(`Invalid pull response for ${table}`);
+          if (data.length === 0) break;
+          for (const row of data) {
+            if (!row || typeof row.id !== "string" || (afterId && row.id <= afterId)) {
+              throw new Error(`Invalid pull page for ${table}`);
+            }
+            const parent = Array.isArray(row.nomina_empleados) ? row.nomina_empleados[0] : row.nomina_empleados;
+            if ((child ? parent?.tenant_id : row.tenant_id) !== input.tenantId) {
+              throw new Error(`Tenant mismatch in pull for ${table}`);
+            }
+            tableChanges.push({ tableName: localTable, rowId: row.id, payload: row, deleted: false });
+            afterId = row.id;
           }
-          const parent = Array.isArray(row.nomina_empleados) ? row.nomina_empleados[0] : row.nomina_empleados;
-          if ((child ? parent?.tenant_id : row.tenant_id) !== input.tenantId) {
-            throw new Error(`Tenant mismatch in pull for ${table}`);
-          }
-          changes.push({ tableName: localTable, rowId: row.id, payload: row, deleted: false });
-          afterId = row.id;
         }
+        changes.push(...tableChanges);
+        snapshotTables.push(localTable);
+      } catch (error) {
+        // Skip only this table; it stays behind and retries on the next pull.
+        console.warn(`[sync↓] tabla ${table} no se pudo bajar (se omite, se reintenta): ${error instanceof Error ? error.message : "error"}`);
       }
     }
-    return { cursor: new Date().toISOString(), changes, snapshotTables: PULL_TABLES.map(({ localTable }) => localTable) };
+    return { cursor: new Date().toISOString(), changes, snapshotTables };
   }
 
   private async deleteRemote(operation: DurableOperation): Promise<PushResponse> {

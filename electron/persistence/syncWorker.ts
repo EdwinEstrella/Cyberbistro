@@ -74,10 +74,13 @@ export class DurableSyncWorker {
   async push(nowMs = Date.now()): Promise<{ pushed: number; conflicted: number }> {
     let pushed = 0;
     let conflicted = 0;
-    for (const operation of this.store.claim(nowMs)) {
+    const claimed = this.store.claim(nowMs);
+    for (const operation of claimed) {
+      const tag = `${operation.tableName} ${operation.rowId} (${operation.op})`;
       if (operation.tenantId !== this.tenantId) {
         this.store.settle(operation.id, "not_retryable", { reason: "Tenant mismatch" });
         conflicted++;
+        console.warn(`[sync↑] ${tag} → BLOQUEADO: tenant mismatch`);
         continue;
       }
       try {
@@ -85,18 +88,25 @@ export class DurableSyncWorker {
         if (response.permanent) {
           this.store.settle(operation.id, "not_retryable", { ...response.permanent, retryable: false });
           conflicted++;
+          console.warn(`[sync↑] ${tag} → BLOQUEADO: ${String(response.permanent.reason)}`);
           continue;
         }
         if (response.conflict || MANUAL_CONFLICT_TABLES.has(operation.tableName) && response.result?.["conflict"] === true) {
           this.store.settle(operation.id, "conflicted", response.conflict ?? response.result ?? { reason: "Manual conflict resolution required" });
           conflicted++;
+          console.warn(`[sync↑] ${tag} → CONFLICTO (requiere intervención)`);
           continue;
         }
         this.store.settle(operation.id, "synced", response.result ?? {});
         pushed++;
+        console.log(`[sync↑] ${tag} → subido a la nube`);
       } catch (error) {
         this.store.settle(operation.id, "pending", { reason: error instanceof Error ? error.message : "Cloud push failed" });
+        console.warn(`[sync↑] ${tag} → reintenta luego: ${error instanceof Error ? error.message : "push failed"}`);
       }
+    }
+    if (claimed.length > 0) {
+      console.log(`[sync↑] resumen: ${pushed} subido(s), ${conflicted} con problema, de ${claimed.length} en cola`);
     }
     return { pushed, conflicted };
   }
@@ -105,6 +115,12 @@ export class DurableSyncWorker {
     const batch = await this.server.pull({ tenantId: this.tenantId, cursor: this.store.getCursor() });
     // Store implementations MUST commit rows/tombstones and cursor in one transaction.
     this.store.applyPull(batch);
+    if (batch.changes.length > 0) {
+      const byTable = new Map<string, number>();
+      for (const change of batch.changes) byTable.set(change.tableName, (byTable.get(change.tableName) ?? 0) + 1);
+      const detail = [...byTable.entries()].map(([table, count]) => `${table}:${count}`).join(", ");
+      console.log(`[sync↓] bajaron ${batch.changes.length} cambio(s) de la nube (${detail})`);
+    }
     return batch.changes.length;
   }
 }
