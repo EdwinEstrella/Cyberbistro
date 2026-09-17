@@ -460,7 +460,6 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     try {
       this.database.prepare("DELETE FROM fiscal_outbox WHERE factura_id = ? AND tenant_id = ?").run(invoiceId, this.tenantId);
       this.database.prepare("DELETE FROM ecf_documents WHERE factura_id = ? AND tenant_id = ?").run(invoiceId, this.tenantId);
-      this.database.prepare("DELETE FROM consumos WHERE factura_id = ? AND tenant_id = ?").run(invoiceId, this.tenantId);
       this.database.prepare("DELETE FROM facturas WHERE id = ? AND tenant_id = ?").run(invoiceId, this.tenantId);
       this.database.exec("COMMIT;");
     } catch (error) {

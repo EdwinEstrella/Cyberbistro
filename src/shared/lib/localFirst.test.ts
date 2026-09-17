@@ -238,8 +238,8 @@ describe("localFirst", () => {
       deviceId: "dev1",
     });
     const result3 = resolveConflictForTable("facturas", entryDelete, serverRowNewer);
-    expect(result3.resolution).toBe("skip");
-    expect(result3.reason).toContain("audit");
+    expect(result3.resolution).toBe("local_wins");
+    expect(result3.reason).toContain("administrativa");
   });
 
   it("ajusta payload de ciclo preservando id y cambiando solo cycle_number", () => {
