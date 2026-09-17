@@ -31,16 +31,16 @@ describe("tenant-pinned orders, kitchen, and operational cycles", () => {
     registerOrdersRepositoryIpc({ ipcMain, isTrustedSender: (event) => event.senderId === 7, getRepository: () => ({ execute: (command: unknown) => { executed.push(command); return { commitId: "c2-1", localStatus: "committed", syncStatus: "pending" }; } }) });
     const handler = handlers.get(ORDERS_REPOSITORY_EXECUTE_CHANNEL);
 
-    await expect(handler?.({ senderId: 7 }, { type: "orders.cycle.open", id: "cycle-1", businessDay: "2026-08-09", openingCash: 100, cycleNumber: 1 })).resolves.toEqual({ ok: true, data: { commitId: "c2-1", localStatus: "committed", syncStatus: "pending" } });
-    await expect(handler?.({ senderId: 7 }, { type: "orders.cycle.open", id: "cycle-2", businessDay: "2026-08-09", openingCash: 100, cycleNumber: 2, tenantId: "tenant-b" })).rejects.toThrow("Invalid orders command");
-    await expect(handler?.({ senderId: 8 }, { type: "orders.cycle.open", id: "cycle-3", businessDay: "2026-08-09", openingCash: 100, cycleNumber: 3 })).rejects.toThrow("Untrusted IPC sender");
-    expect(executed).toEqual([{ type: "orders.cycle.open", id: "cycle-1", businessDay: "2026-08-09", openingCash: 100, cycleNumber: 1 }]);
+    await expect(handler?.({ senderId: 7 }, { type: "orders.cycle.open", id: "cycle-1", businessDay: "2026-08-09", openingCash: 100, cycleNumber: 1, openedAt: "2026-08-09T10:00:00.000Z" })).resolves.toEqual({ ok: true, data: { commitId: "c2-1", localStatus: "committed", syncStatus: "pending" } });
+    await expect(handler?.({ senderId: 7 }, { type: "orders.cycle.open", id: "cycle-2", businessDay: "2026-08-09", openingCash: 100, cycleNumber: 2, openedAt: "2026-08-09T10:00:00.000Z", tenantId: "tenant-b" })).rejects.toThrow("Invalid orders command");
+    await expect(handler?.({ senderId: 8 }, { type: "orders.cycle.open", id: "cycle-3", businessDay: "2026-08-09", openingCash: 100, cycleNumber: 3, openedAt: "2026-08-09T10:00:00.000Z" })).rejects.toThrow("Untrusted IPC sender");
+    expect(executed).toEqual([{ type: "orders.cycle.open", id: "cycle-1", businessDay: "2026-08-09", openingCash: 100, cycleNumber: 1, openedAt: "2026-08-09T10:00:00.000Z" }]);
   });
 
   it("keeps table, order, kitchen, and cycle rows isolated between tenant stores", () => {
     withStores(({ tenantA, tenantB, ordersA }) => {
       ordersA.execute({ type: "orders.table.set-state", tableId: "table-1", tableNumber: 1, state: "occupied" });
-      ordersA.execute({ type: "orders.cycle.open", id: "cycle-a", businessDay: "2026-08-09", openingCash: 25, cycleNumber: 1 });
+      ordersA.execute({ type: "orders.cycle.open", id: "cycle-a", businessDay: "2026-08-09", openingCash: 25, cycleNumber: 1, openedAt: "2026-08-09T10:00:00.000Z" });
       tenantB.executeOrdersCommand({ command: { type: "orders.table.set-state", tableId: "table-1", tableNumber: 1, state: "free" }, commitId: "tenant-b-table", branchId: "branch-b" });
 
       expect(tenantA.readOrderRows("mesas_estado")).toEqual([{ id: "table-1", tableNumber: 1, state: "occupied" }]);
@@ -75,8 +75,8 @@ describe("tenant-pinned orders, kitchen, and operational cycles", () => {
       expect(() => ordersA.execute({ type: "orders.kitchen.advance", orderId: "order-1", nextState: "ready" })).toThrow("Invalid kitchen transition");
       ordersA.execute({ type: "orders.kitchen.advance", orderId: "order-1", nextState: "preparing" });
       ordersA.execute({ type: "orders.kitchen.advance", orderId: "order-1", nextState: "ready" });
-      ordersA.execute({ type: "orders.cycle.open", id: "cycle-1", businessDay: "2026-08-09", openingCash: 25, cycleNumber: 1 });
-      expect(() => ordersA.execute({ type: "orders.cycle.open", id: "cycle-2", businessDay: "2026-08-09", openingCash: 0, cycleNumber: 2 })).toThrow("Open cycle already exists");
+      ordersA.execute({ type: "orders.cycle.open", id: "cycle-1", businessDay: "2026-08-09", openingCash: 25, cycleNumber: 1, openedAt: "2026-08-09T10:00:00.000Z" });
+      expect(() => ordersA.execute({ type: "orders.cycle.open", id: "cycle-2", businessDay: "2026-08-09", openingCash: 0, cycleNumber: 2, openedAt: "2026-08-09T11:00:00.000Z" })).toThrow("Open cycle already exists");
 
       tenantA.markOutboxSyncingForRecovery("order-1");
       tenantA.recoverStaleSyncingOperations();
@@ -87,7 +87,7 @@ describe("tenant-pinned orders, kitchen, and operational cycles", () => {
 
   it("does not enqueue a cycle close when the local update changed no open cycle", () => {
     withStores(({ tenantA, ordersA }) => {
-      ordersA.execute({ type: "orders.cycle.close", id: "missing-cycle" });
+      ordersA.execute({ type: "orders.cycle.close", id: "missing-cycle", closedAt: "2026-08-09T18:00:00.000Z" });
       expect(tenantA.readLocalOutbox().filter((entry) => entry.tableName === "cierres_operativos")).toEqual([]);
     });
   });

@@ -5,9 +5,10 @@ import { useAuth } from "../../../shared/hooks/useAuth";
 import { buildCierreDiaReceiptHtml } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
-import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
+import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { readLocalExpenses, readLocalExpenseCategories } from "../../gastos/lib/expensesLocal";
 import { readLocalCierres } from "../lib/cierresLocal";
+import { writeCycleOpen, writeCycleClose, writeCycleDiscard, writeCyclePrinted } from "../lib/cierresWrites";
 import { isDesktopRuntime, isCloudAvailableForDesktop } from "../../../shared/lib/cloudAvailability";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { calculateExpectedCashDrawer, sumCashExpenses } from "../../../shared/lib/cycleCash";
@@ -320,8 +321,8 @@ export function Cierre() {
     if (authLoading || !tenantId || !activeSucursalId) return;
     shouldReadLocalFirst(tenantId, ["cierres_operativos"]).then(useLocal => {
       if (useLocal) {
-        return readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos").then(rows =>
-          sortByOpenedAtDesc(rows.filter(c => (c.sucursal_id === activeSucursalId || !c.sucursal_id) && !c.closed_at))
+        return readLocalCierres(tenantId, { sucursalId: activeSucursalId }).then(rows =>
+          sortByOpenedAtDesc((rows as unknown as CierreOperativoRow[]).filter(c => !c.closed_at))
         );
       }
       return supabase
@@ -362,8 +363,8 @@ export function Cierre() {
       const useLocalCiclos = await shouldReadLocalFirst(tenantId, ["cierres_operativos"]);
 
       if (useLocalCiclos) {
-        const allCycles = await readLocalMirror<CierreOperativoRow>(tenantId, "cierres_operativos");
-        const openCycle = sortByOpenedAtDesc(allCycles.filter(c => !c.closed_at && c.sucursal_id === activeSucursalId))[0] ?? null;
+        const allCycles = (await readLocalCierres(tenantId, { sucursalId: activeSucursalId })) as unknown as CierreOperativoRow[];
+        const openCycle = sortByOpenedAtDesc(allCycles.filter(c => !c.closed_at))[0] ?? null;
         if (openCycle) {
           setFecha(toYmd(openCycle.business_day));
           setPrintMsg(`Ya existe un ciclo abierto (#${openCycle.cycle_number}). No voy a crear otro.`);
@@ -424,22 +425,21 @@ export function Cierre() {
       const num = Math.max(localMax, cloudMax) + 1;
 
       const localCycleId = crypto.randomUUID();
-      const openedAt = new Date();
-      const openedAtIso = openedAt.toISOString();
+      const openedAtIso = new Date().toISOString();
       const businessDay = todayYmd();
 
-      // Operational cycles are written through a single engine (IndexedDB) to
-      // avoid the double cloud push that produced duplicate/ghost cycles. The
-      // SQLite cycle path was an incomplete stub (no cycle_number/opened_at) and
-      // is intentionally not used here; a full cierres→SQLite migration is a
-      // separate vertical (needs schema expansion).
-      await enqueueLocalWrite({
+      // Single-engine write: SQLite on desktop (source of truth + Supabase
+      // creator), IndexedDB on web. Writing both engines is what produced
+      // duplicate/ghost cycles, so cierresWrites keeps every open on one engine.
+      await writeCycleOpen({
         tenantId,
-        tableName: "cierres_operativos",
-        rowId: localCycleId,
-        op: "insert",
-        payload: { id: localCycleId, tenant_id: tenantId, sucursal_id: activeSucursalId, business_day: businessDay, cycle_number: num, efectivo_inicial: efectivoInicial, opened_by_auth_user_id: user?.id, opened_at: openedAtIso, created_at: openedAtIso, closed_at: null },
-        deviceId: await getDeviceId(),
+        sucursalId: activeSucursalId,
+        cycleId: localCycleId,
+        cycleNumber: num,
+        businessDay,
+        openedAtIso,
+        efectivoInicial,
+        openedByAuthUserId: user?.id ?? null,
       });
 
       setFecha(businessDay);
@@ -537,19 +537,17 @@ export function Cierre() {
     const totalGastosEfectivoCiclo = sumCashExpenses(gastosCiclo);
     const pag = facturasCiclo.filter((f: any) => f.estado === "pagada");
 
-    const deviceId = await getDeviceId();
-
     if (pag.length === 0 && cxcCiclo.length === 0) {
-      await enqueueLocalWrite({ tenantId, tableName: "cierres_operativos", rowId: currentCycle.id, op: "delete", deviceId });
+      await writeCycleDiscard({ tenantId, cycleId: currentCycle.id });
       setPrintMsg(`Ciclo #${currentCycle.cycle_number} descartado porque no tuvo ventas. Puedes iniciarlo de nuevo.`);
       setPrinting(false);
       await cargar();
       return;
     }
 
-    // Single-engine write (see cycle open): no SQLite dual-write to avoid the
-    // double cloud push that caused ghost/duplicate cycles.
-    await enqueueLocalWrite({ tenantId, tableName: "cierres_operativos", rowId: currentCycle.id, op: "update", payload: { closed_at: now, closed_by_auth_user_id: user?.id ?? null }, deviceId });
+    // Single-engine write (see cycle open): the cycle's whole lifecycle stays on
+    // one engine to avoid the double cloud push that caused ghost/duplicate cycles.
+    await writeCycleClose({ tenantId, cycleId: currentCycle.id, closedAtIso: now, closedByAuthUserId: user?.id ?? null });
     setPrintMsg("Ciclo cerrado.");
 
     let tenantData: any = null;
@@ -585,7 +583,7 @@ export function Cierre() {
         }),
       }, paperWidthMm);
       const res = await printThermalHtml(html, { printType: "sales" });
-      if (res.ok) await enqueueLocalWrite({ tenantId, tableName: "cierres_operativos", rowId: currentCycle.id, op: "update", payload: { printed_at: now }, deviceId });
+      if (res.ok) await writeCyclePrinted({ tenantId, cycleId: currentCycle.id, printedAtIso: now });
     }
     setPrinting(false); await cargar();
   }

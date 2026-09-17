@@ -1806,8 +1806,14 @@ export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: nu
   let pushed = 0;
   let failed = 0;
   try {
+    // On desktop the SQLite engine owns operational cycles end-to-end (local
+    // write + Supabase push). The IndexedDB outbox must never push cierres too,
+    // or two creators would race and reintroduce the duplicate-cycle bug. Web has
+    // no SQLite engine, so it keeps IndexedDB as its single cycle engine.
+    const skipCierresOnDesktop = isDesktopRuntime();
     const pending = await getPendingOutboxEntries(db);
     for (const entry of pending) {
+      if (skipCierresOnDesktop && entry.table_name === "cierres_operativos") continue;
       const leaseAcquired = await tryAcquireOutboxEntryLease(db, entry);
       if (!leaseAcquired) continue;
 

@@ -53,7 +53,7 @@ describe("DesktopRepository", () => {
       });
       expect(store.readFoundationRecord("record-1")).toEqual({ id: "record-1", value: "safe" });
       expect(store.readLocalOutbox()).toEqual([{
-        id: "commit-1", tenantId: "tenant-a", branchId: "branch-main", tableName: "foundation_records", rowId: "record-1", status: "pending",
+        id: "commit-1", tenantId: "tenant-a", branchId: "branch-main", tableName: "foundation_records", rowId: "record-1", operation: "upsert", status: "pending",
       }]);
       store.close();
     } finally {

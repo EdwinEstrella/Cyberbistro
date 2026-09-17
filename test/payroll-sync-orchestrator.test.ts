@@ -186,6 +186,7 @@ describe('PayrollSyncOrchestrator Lifecycle', () => {
             branchId: 'branch-1',
             tableName: 'payroll_employees',
             rowId: 'tenant-a-outbox-row',
+            operation: 'upsert',
             status: 'pending',
           },
         ]);
@@ -250,6 +251,7 @@ describe('PayrollSyncOrchestrator Lifecycle', () => {
             branchId: 'branch-1',
             tableName: 'payroll_employees',
             rowId: 'tenant-a-close-outbox-row',
+            operation: 'upsert',
             status: 'pending',
           },
         ]);

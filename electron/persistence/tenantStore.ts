@@ -60,10 +60,10 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     return this.database.prepare("SELECT id, status FROM imported_outbox ORDER BY id").all() as Array<{ id: string; status: string }>;
   }
 
-  readLocalOutbox(): Array<{ id: string; tenantId: string; branchId: string; tableName: string; rowId: string; status: string }> {
-    return this.database.prepare("SELECT id, tenant_id, branch_id, table_name, row_id, status FROM sync_outbox ORDER BY id").all().map((row) => {
-      const value = row as { id: string; tenant_id: string; branch_id: string; table_name: string; row_id: string; status: string };
-      return { id: value.id, tenantId: value.tenant_id, branchId: value.branch_id, tableName: value.table_name, rowId: value.row_id, status: value.status };
+  readLocalOutbox(): Array<{ id: string; tenantId: string; branchId: string; tableName: string; rowId: string; operation: string; status: string }> {
+    return this.database.prepare("SELECT id, tenant_id, branch_id, table_name, row_id, operation, status FROM sync_outbox ORDER BY id").all().map((row) => {
+      const value = row as { id: string; tenant_id: string; branch_id: string; table_name: string; row_id: string; operation: string; status: string };
+      return { id: value.id, tenantId: value.tenant_id, branchId: value.branch_id, tableName: value.table_name, rowId: value.row_id, operation: value.operation, status: value.status };
     });
   }
 
@@ -85,7 +85,7 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
       mesas_estado: "SELECT id, table_number AS tableNumber, state FROM mesas_estado ORDER BY id",
       comandas: "SELECT id, mesa_id AS tableId, mesa_numero AS tableNumber, state FROM comandas ORDER BY id",
       consumos: "SELECT id, comanda_id AS orderId, quantity, state, subtotal FROM consumos ORDER BY id",
-      cierres_operativos: "SELECT id, business_day AS businessDay, opening_cash AS openingCash, state FROM cierres_operativos ORDER BY id",
+      cierres_operativos: "SELECT id, business_day AS businessDay, opening_cash AS openingCash, state, cycle_number AS cycleNumber, opened_at AS openedAt, closed_at AS closedAt, printed_at AS printedAt FROM cierres_operativos ORDER BY id",
     } as const;
     return this.database.prepare(queryByTable[tableName]).all() as Array<Record<string, unknown>>;
   }
@@ -186,7 +186,7 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     const { command, commitId, branchId } = input;
     this.database.exec("BEGIN IMMEDIATE;");
     try {
-      const outbox = (tableName: string, rowId: string, payload: unknown, suffix: string) => this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, ?, ?, 'upsert', ?, 'pending')").run(`${commitId}:${suffix}`, this.tenantId, branchId, tableName, rowId, JSON.stringify(payload));
+      const outbox = (tableName: string, rowId: string, payload: unknown, suffix: string, operation: "upsert" | "delete" = "upsert") => this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')").run(`${commitId}:${suffix}`, this.tenantId, branchId, tableName, rowId, operation, JSON.stringify(payload));
       switch (command.type) {
         case "orders.table.set-state":
           this.database.prepare("INSERT INTO mesas_estado (id, tenant_id, sucursal_id, table_number, state) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET table_number = excluded.table_number, state = excluded.state").run(command.tableId, this.tenantId, branchId, command.tableNumber, command.state);
@@ -219,15 +219,32 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
         case "orders.cycle.open": {
           const existing = this.database.prepare("SELECT id FROM cierres_operativos WHERE tenant_id = ? AND sucursal_id = ? AND state = 'open' LIMIT 1").get(this.tenantId, branchId);
           if (existing) throw new Error("Open cycle already exists");
-          this.database.prepare("INSERT INTO cierres_operativos (id, tenant_id, sucursal_id, business_day, opening_cash, state, closed_at) VALUES (?, ?, ?, ?, ?, 'open', NULL)").run(command.id, this.tenantId, branchId, command.businessDay, command.openingCash);
+          // Rich cycle shape: cycle_number/opened_at mirror the cloud row so the
+          // SQLite writer (now the single engine) can create the Supabase cycle on
+          // push. created_at is aligned to opened_at for deterministic ordering.
+          this.database.prepare("INSERT INTO cierres_operativos (id, tenant_id, sucursal_id, business_day, opening_cash, state, closed_at, cycle_number, opened_at, created_at) VALUES (?, ?, ?, ?, ?, 'open', NULL, ?, ?, ?)").run(command.id, this.tenantId, branchId, command.businessDay, command.openingCash, command.cycleNumber, command.openedAt, command.openedAt);
           outbox("cierres_operativos", command.id, command, "cycle-open");
           break;
         }
         case "orders.cycle.close":
           {
-            const result = this.database.prepare("UPDATE cierres_operativos SET state = 'closed', closed_at = datetime('now') WHERE id = ? AND tenant_id = ? AND state = 'open'").run(command.id, this.tenantId);
+            const result = this.database.prepare("UPDATE cierres_operativos SET state = 'closed', closed_at = ? WHERE id = ? AND tenant_id = ? AND state = 'open'").run(command.closedAt, command.id, this.tenantId);
             // Never create a close event without one local state transition.
             if (Number(result.changes) === 1) outbox("cierres_operativos", command.id, command, "cycle-close");
+          }
+          break;
+        case "orders.cycle.mark-printed":
+          {
+            const result = this.database.prepare("UPDATE cierres_operativos SET printed_at = ? WHERE id = ? AND tenant_id = ?").run(command.printedAt, command.id, this.tenantId);
+            if (Number(result.changes) === 1) outbox("cierres_operativos", command.id, command, "cycle-printed");
+          }
+          break;
+        case "orders.cycle.discard":
+          {
+            // Discard an empty cycle: remove it locally and enqueue a delete so the
+            // Supabase row created on open is removed, freeing the cycle number.
+            const result = this.database.prepare("DELETE FROM cierres_operativos WHERE id = ? AND tenant_id = ? AND state = 'open'").run(command.id, this.tenantId);
+            if (Number(result.changes) === 1) outbox("cierres_operativos", command.id, command, "cycle-discard", "delete");
           }
           break;
       }

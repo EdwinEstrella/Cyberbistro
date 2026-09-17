@@ -257,65 +257,79 @@ describe("PayrollSyncClient", () => {
     await expect(client.push(payment as DurableOperation)).rejects.toThrow("Upsert failed: Not authorized");
   });
 
-  it("reconciles a legacy close only when its exact remote id is already closed", async () => {
-    const from = vi.fn(() => ({
-      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: "cycle-1", tenant_id: "tenant-1", closed_at: "2026-09-15T12:00:00Z" }, error: null }) }) }),
-    }));
+  it("creates the cloud cycle on open (SQLite is the single cloud creator)", async () => {
+    const upsert = vi.fn(async () => ({ error: null }));
+    const from = vi.fn(() => ({ upsert }));
+    const cycleClient = new PayrollSyncClient({ from } as never);
+    const response = await cycleClient.push({
+      id: "open-1", tenantId: "tenant-1", branchId: "branch-1", tableName: "cierres_operativos", rowId: "cycle-1", op: "upsert",
+      payload: { type: "orders.cycle.open", id: "cycle-1", businessDay: "2026-09-15", openingCash: 1000, cycleNumber: 5, openedAt: "2026-09-15T10:00:00.000Z" },
+      payloadHash: "hash", sequence: 0, deviceId: "device", status: "syncing", leaseUntil: 0, result: null,
+    });
+    expect(upsert).toHaveBeenCalledWith(
+      { id: "cycle-1", tenant_id: "tenant-1", sucursal_id: "branch-1", business_day: "2026-09-15", cycle_number: 5, efectivo_inicial: 1000, opened_at: "2026-09-15T10:00:00.000Z", created_at: "2026-09-15T10:00:00.000Z", closed_at: null },
+      { onConflict: "id" },
+    );
+    expect(response.result).toMatchObject({ synced: true, remoteTable: "cierres_operativos" });
+  });
+
+  it("updates closed_at on the existing cloud cycle on close (never a partial upsert → no 23502)", async () => {
+    const select = vi.fn(async () => ({ data: [{ id: "cycle-1" }], error: null }));
+    const eq = vi.fn(() => ({ select }));
+    const update = vi.fn(() => ({ eq }));
+    const from = vi.fn(() => ({ update }));
     const cycleClient = new PayrollSyncClient({ from } as never);
     const response = await cycleClient.push({
       id: "close-1", tenantId: "tenant-1", branchId: "branch-1", tableName: "cierres_operativos", rowId: "cycle-1", op: "upsert",
-      payload: { type: "orders.cycle.close", id: "cycle-1" }, payloadHash: "hash", sequence: 0, deviceId: "device", status: "syncing", leaseUntil: 0, result: null,
+      payload: { type: "orders.cycle.close", id: "cycle-1", closedAt: "2026-09-15T18:00:00.000Z" },
+      payloadHash: "hash", sequence: 0, deviceId: "device", status: "syncing", leaseUntil: 0, result: null,
     });
-    expect(response.result).toMatchObject({ reconciled: true, audit: "remote_cycle_already_closed" });
+    expect(update).toHaveBeenCalledWith({ closed_at: "2026-09-15T18:00:00.000Z" });
+    expect(eq).toHaveBeenCalledWith("id", "cycle-1");
+    expect(response.result).toMatchObject({ synced: true });
   });
 
-  it("blocks a legacy close when its exact remote row is absent", async () => {
-    const from = vi.fn(() => ({
-      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
-    }));
+  it("updates printed_at on the existing cloud cycle on mark-printed", async () => {
+    const select = vi.fn(async () => ({ data: [{ id: "cycle-1" }], error: null }));
+    const eq = vi.fn(() => ({ select }));
+    const update = vi.fn(() => ({ eq }));
+    const from = vi.fn(() => ({ update }));
     const cycleClient = new PayrollSyncClient({ from } as never);
     const response = await cycleClient.push({
+      id: "print-1", tenantId: "tenant-1", branchId: "branch-1", tableName: "cierres_operativos", rowId: "cycle-1", op: "upsert",
+      payload: { type: "orders.cycle.mark-printed", id: "cycle-1", printedAt: "2026-09-15T18:31:00.000Z" },
+      payloadHash: "hash", sequence: 0, deviceId: "device", status: "syncing", leaseUntil: 0, result: null,
+    });
+    expect(update).toHaveBeenCalledWith({ printed_at: "2026-09-15T18:31:00.000Z" });
+    expect(eq).toHaveBeenCalledWith("id", "cycle-1");
+    expect(response.result).toMatchObject({ synced: true });
+  });
+
+  it("retries the close when its cloud cycle does not exist yet (scheduler ordering, not a permanent drop)", async () => {
+    const select = vi.fn(async () => ({ data: [], error: null }));
+    const eq = vi.fn(() => ({ select }));
+    const update = vi.fn(() => ({ eq }));
+    const from = vi.fn(() => ({ update }));
+    const cycleClient = new PayrollSyncClient({ from } as never);
+    await expect(cycleClient.push({
       id: "close-1", tenantId: "tenant-1", branchId: "branch-1", tableName: "cierres_operativos", rowId: "cycle-1", op: "upsert",
-      payload: { type: "orders.cycle.close", id: "cycle-1" }, payloadHash: "hash", sequence: 0, deviceId: "device", status: "syncing", leaseUntil: 0, result: null,
-    });
-    expect(response.permanent).toMatchObject({ category: "cycle_close_requires_intervention", retryable: false });
+      payload: { type: "orders.cycle.close", id: "cycle-1", closedAt: "2026-09-15T18:00:00.000Z" },
+      payloadHash: "hash", sequence: 0, deviceId: "device", status: "syncing", leaseUntil: 0, result: null,
+    })).rejects.toThrow(/not present remotely yet/);
   });
 
-  it("reconciles cycle-open when exact matching open remote row already exists", async () => {
-    const from = vi.fn(() => ({
-      select: () => ({
-        eq: () => ({
-          maybeSingle: async () => ({
-            data: {
-              id: "cycle-1",
-              tenant_id: "tenant-1",
-              business_day: "2026-09-15",
-              cycle_number: 1,
-              efectivo_inicial: 1000,
-              closed_at: null,
-            },
-            error: null,
-          }),
-        }),
-      }),
-    }));
+  it("deletes the cloud cycle on discard", async () => {
+    const eq = vi.fn(async () => ({ error: null }));
+    const del = vi.fn(() => ({ eq }));
+    const from = vi.fn(() => ({ delete: del }));
     const cycleClient = new PayrollSyncClient({ from } as never);
     const response = await cycleClient.push({
-      id: "open-1",
-      tenantId: "tenant-1",
-      branchId: "main-process-default",
-      tableName: "cierres_operativos",
-      rowId: "cycle-1",
-      op: "upsert",
-      payload: { type: "orders.cycle.open", id: "cycle-1", businessDay: "2026-09-15", openingCash: 1000 },
-      payloadHash: "hash",
-      sequence: 0,
-      deviceId: "device",
-      status: "syncing",
-      leaseUntil: 0,
-      result: null,
+      id: "discard-1", tenantId: "tenant-1", branchId: "branch-1", tableName: "cierres_operativos", rowId: "cycle-1", op: "delete",
+      payload: { type: "orders.cycle.discard", id: "cycle-1" }, payloadHash: "hash", sequence: 0, deviceId: "device", status: "syncing", leaseUntil: 0, result: null,
     });
-    expect(response.result).toMatchObject({ reconciled: true, audit: "remote_cycle_matches_exact_id" });
+    expect(del).toHaveBeenCalled();
+    expect(eq).toHaveBeenCalledWith("id", "cycle-1");
+    expect(response.result).toMatchObject({ deleted: true });
   });
 });
 

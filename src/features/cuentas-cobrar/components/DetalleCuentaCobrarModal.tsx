@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { X, Receipt, DollarSign, Calendar, Info } from "lucide-react";
-import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
+import { shouldReadLocalFirst } from "../../../shared/lib/localFirst";
+import { readLocalCxcPagos } from "../../billing/lib/accountsLocal";
 import { supabase } from "../../../shared/lib/supabase";
 
 interface CuentaCobrarRow {
@@ -80,7 +81,7 @@ export function DetalleCuentaCobrarModal({
         let data: CxcPagoRow[] = [];
 
         if (useLocal) {
-          const allPagos = await readLocalMirror<CxcPagoRow>(currentTenantId, "cxc_pagos");
+          const allPagos = (await readLocalCxcPagos(currentTenantId)) as unknown as CxcPagoRow[];
           data = allPagos.filter(d => d.cuenta_cobrar_id === currentCuenta.id);
         } else {
           const res = await supabase

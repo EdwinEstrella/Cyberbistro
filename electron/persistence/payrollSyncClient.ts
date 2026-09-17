@@ -19,6 +19,11 @@ type MutationError = {
 
 type RemoteMutationBuilder = {
   upsert(payload: Record<string, unknown>, options: { onConflict: string }): Promise<{ error: MutationError | null }>;
+  update(payload: Record<string, unknown>): {
+    eq(column: string, value: string): {
+      select(): Promise<{ data: unknown[] | null; error: MutationError | null }>;
+    };
+  };
   delete(): {
     eq(column: string, value: string): Promise<{ error: MutationError | null }>;
   };
@@ -107,43 +112,61 @@ export class PayrollSyncClient implements ServerSyncClient {
   }
 
   private async pushOperationalCycle(operation: DurableOperation): Promise<PushResponse> {
-    const client: any = await this.clientPromise;
-    const remote = await client.from("cierres_operativos")
-      .select("id,tenant_id,business_day,cycle_number,efectivo_inicial,closed_at")
-      .eq("id", operation.rowId)
-      .maybeSingle();
-    if (remote.error) throw new Error(`Operational cycle lookup failed: ${remote.error.message}`);
+    // SQLite is the single writer of operational cycles: it creates, closes,
+    // prints, and discards the Supabase row directly. IndexedDB no longer pushes
+    // cierres (see pushOutboxToServer), so there is exactly one cloud creator and
+    // the historical duplicate-cycle path cannot reopen.
+    const tableClient = await this.getTableClient("cierres_operativos");
+    const payload = (operation.payload ?? {}) as Record<string, unknown>;
 
-    const payload = operation.payload ?? {};
-    if (payload.type === "orders.cycle.close") {
-      if (remote.data && remote.data.tenant_id === operation.tenantId && remote.data.closed_at) {
-        return { result: { synced: true, reconciled: true, audit: "remote_cycle_already_closed", id: operation.rowId } };
+    if (operation.op === "delete" || payload.type === "orders.cycle.discard") {
+      const { error } = await tableClient.delete().eq("id", operation.rowId);
+      if (error) {
+        if (error.code === "PGRST116" || error.message.toLowerCase().includes("not found")) {
+          return { result: { deleted: true, note: "already absent", remoteTable: "cierres_operativos" } };
+        }
+        return classifyRemoteError(error, operation.tableName, "delete");
       }
-      return { permanent: permanentReason(
-        remote.data ? "Operational close diverges from the remote cycle and requires intervention" : "Operational close has no exact remote cycle to reconcile",
-        "cycle_close_requires_intervention",
-        operation.tableName,
-      ) };
+      return { result: { deleted: true, remoteTable: "cierres_operativos" } };
     }
 
-    if (remote.data) {
-      const tenantMatches = remote.data.tenant_id === operation.tenantId;
-      const isOpen = remote.data.closed_at === null;
-      const dayMatches = !payload.businessDay || remote.data.business_day === payload.businessDay;
-      const cashMatches = payload.openingCash == null || Number(remote.data.efectivo_inicial) === payload.openingCash;
-      if (tenantMatches && isOpen && dayMatches && cashMatches) {
-        return { result: { synced: true, reconciled: true, audit: "remote_cycle_matches_exact_id", id: operation.rowId } };
+    // Open creates the full cloud row (all NOT NULL columns present), so an
+    // upsert is safe. Close/print only touch one column: they MUST be an UPDATE,
+    // never a partial upsert — a partial upsert forms an INSERT tuple missing the
+    // NOT NULL business_day/cycle_number and Postgres rejects it with 23502
+    // BEFORE the ON CONFLICT resolves, which classifyRemoteError treats as a
+    // permanent (non-retrying) failure and silently drops the close.
+    if (payload.type === "orders.cycle.open") {
+      let row: Record<string, unknown>;
+      try {
+        row = mapOperationalCycleOpenRow(operation, payload);
+      } catch (error) {
+        return { permanent: permanentReason(error instanceof Error ? error.message : "Malformed operational cycle payload", "malformed_payload", operation.tableName) };
       }
-      return { permanent: permanentReason("Operational cycle open diverges from the exact remote row and requires intervention", "cycle_open_diverged", operation.tableName) };
+      const { error } = await tableClient.upsert(row, { onConflict: "id" });
+      if (error) return classifyRemoteError(error, operation.tableName, "upsert");
+      return { result: { synced: true, id: operation.rowId, remoteTable: "cierres_operativos" } };
     }
 
-    // IndexedDB owns operational cycles. A legacy SQLite outbox entry can
-    // acknowledge an existing exact ID, but must never create another cycle.
-    return { permanent: permanentReason(
-      "Legacy SQLite cycle has no exact remote row; reconcile through the operational cycle writer",
-      "legacy_cycle_writer_disabled",
-      operation.tableName,
-    ) };
+    if (payload.type === "orders.cycle.close" || payload.type === "orders.cycle.mark-printed") {
+      let patch: Record<string, unknown>;
+      try {
+        patch = mapOperationalCyclePatch(payload);
+      } catch (error) {
+        return { permanent: permanentReason(error instanceof Error ? error.message : "Malformed operational cycle payload", "malformed_payload", operation.tableName) };
+      }
+      const { data, error } = await tableClient.update(patch).eq("id", operation.rowId).select();
+      if (error) return classifyRemoteError(error, operation.tableName, "update");
+      if (!Array.isArray(data) || data.length === 0) {
+        // The cloud row does not exist yet: the open push is scheduled but has not
+        // landed (close is pushed by the scheduler, not immediately). Retry so the
+        // close/print applies once the open row is present, instead of vanishing.
+        throw new Error(`Operational cycle ${operation.rowId} is not present remotely yet; retrying after its open push lands`);
+      }
+      return { result: { synced: true, id: operation.rowId, remoteTable: "cierres_operativos" } };
+    }
+
+    return { permanent: permanentReason(`Unsupported operational cycle command: ${String(payload.type)}`, "unsupported_cycle_command", operation.tableName) };
   }
 
   async pull(input: { tenantId: string; cursor: string | null }): Promise<PullBatch> {
@@ -382,6 +405,29 @@ function mapCategoryPayload(operation: DurableOperation, payload: Record<string,
   };
 }
 
+function mapOperationalCycleOpenRow(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
+  const openedAt = requireString(payload.openedAt, "cierres_operativos.openedAt");
+  return {
+    id: operation.rowId,
+    tenant_id: operation.tenantId,
+    sucursal_id: operation.branchId ?? null,
+    business_day: requireString(payload.businessDay, "cierres_operativos.businessDay"),
+    cycle_number: requireNumber(payload.cycleNumber, "cierres_operativos.cycleNumber"),
+    efectivo_inicial: requireNumber(payload.openingCash, "cierres_operativos.openingCash"),
+    opened_at: openedAt,
+    created_at: openedAt,
+    closed_at: null,
+  };
+}
+
+/** UPDATE patch (id is the filter, never in the SET) for close/print. */
+function mapOperationalCyclePatch(payload: Record<string, unknown>): Record<string, unknown> {
+  if (payload.type === "orders.cycle.close") {
+    return { closed_at: requireString(payload.closedAt, "cierres_operativos.closedAt") };
+  }
+  return { printed_at: requireString(payload.printedAt, "cierres_operativos.printedAt") };
+}
+
 function mapCustomerPayload(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
   return {
     id: operation.rowId,
@@ -421,7 +467,7 @@ function mapFrequency(value: string, tableName: string): string {
   unsupportedValue(`${tableName}.frequency`, value);
 }
 
-function classifyRemoteError(error: MutationError, tableName: string, operation: "upsert" | "delete"): PushResponse {
+function classifyRemoteError(error: MutationError, tableName: string, operation: "upsert" | "update" | "delete"): PushResponse {
   const code = error.code ?? "unknown";
   const message = error.message;
 
