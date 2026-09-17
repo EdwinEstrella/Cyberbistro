@@ -19,6 +19,7 @@ export const TENANT_STORE_ACTIVATE_CHANNEL = "tenant-store:activate";
 export const TENANT_STORE_IMPORT_CHANNEL = "tenant-store:import-indexeddb";
 export const DESKTOP_REPOSITORY_EXECUTE_CHANNEL = "desktop-repository:execute";
 export const CATALOG_REPOSITORY_EXECUTE_CHANNEL = "catalog-repository:execute";
+export const CATALOG_LIST_CHANNEL = "catalog:list";
 export const ORDERS_REPOSITORY_EXECUTE_CHANNEL = "orders-repository:execute";
 export const CIERRES_LIST_CHANNEL = "cierres:list";
 export const FISCAL_SALES_REPOSITORY_EXECUTE_CHANNEL = "sales-fiscal-repository:execute";
@@ -380,6 +381,7 @@ export function registerCatalogRepositoryIpc(input: {
   ipcMain: CatalogRepositoryIpcMain;
   isTrustedSender: (event: { senderId: number }) => boolean;
   getRepository: () => { execute(command: CatalogCommand): CatalogRepositoryResult };
+  listCatalog?: () => { platos: Array<Record<string, unknown>>; menuCategories: Array<Record<string, unknown>> };
 }): void {
   input.ipcMain.removeHandler(CATALOG_REPOSITORY_EXECUTE_CHANNEL);
   input.ipcMain.handle(CATALOG_REPOSITORY_EXECUTE_CHANNEL, async (event, payload) => {
@@ -387,6 +389,12 @@ export function registerCatalogRepositoryIpc(input: {
     const command = parseCatalogCommand(payload);
     if (!command) throw new Error("Invalid catalog command");
     return { ok: true, data: input.getRepository().execute(command) };
+  });
+
+  input.ipcMain.removeHandler(CATALOG_LIST_CHANNEL);
+  input.ipcMain.handle(CATALOG_LIST_CHANNEL, async (event) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    return { ok: true, data: input.listCatalog?.() ?? { platos: [], menuCategories: [] } };
   });
 }
 

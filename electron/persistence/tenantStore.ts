@@ -72,8 +72,8 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
       sucursales: "SELECT id, name FROM sucursales ORDER BY id",
       customers: "SELECT id, name FROM customers ORDER BY id",
       proveedores: "SELECT id, name FROM proveedores ORDER BY id",
-      menu_categories: "SELECT id, name FROM menu_categories ORDER BY id",
-      platos: "SELECT id, name, category_id AS categoryId FROM platos ORDER BY id",
+      menu_categories: "SELECT id, nombre AS name FROM menu_categories ORDER BY id",
+      platos: "SELECT id, nombre AS name, categoria AS categoryId FROM platos ORDER BY id",
       productos_inventario: "SELECT id, name, unit FROM productos_inventario ORDER BY id",
       recetas: "SELECT id, plato_id AS platoId, inventory_product_id AS inventoryProductId, quantity FROM recetas ORDER BY id",
     } as const;
@@ -678,6 +678,16 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     ).all(this.tenantId) as Array<Record<string, unknown>>;
   }
 
+  listCatalog(): { platos: Array<Record<string, unknown>>; menuCategories: Array<Record<string, unknown>> } {
+    const platos = this.database.prepare(
+      "SELECT id, tenant_id, sucursal_id, nombre, precio, categoria, disponible, va_a_cocina, created_at, updated_at, deleted_at FROM platos WHERE tenant_id = ? AND deleted_at IS NULL ORDER BY nombre ASC"
+    ).all(this.tenantId) as Array<Record<string, unknown>>;
+    const menuCategories = this.database.prepare(
+      "SELECT id, tenant_id, nombre, color, sort_order, sucursal_id FROM menu_categories WHERE tenant_id = ? ORDER BY sort_order ASC, nombre ASC"
+    ).all(this.tenantId) as Array<Record<string, unknown>>;
+    return { platos, menuCategories };
+  }
+
   syncCloudCustomers(customers: Array<Record<string, unknown>>): void {
     this.database.exec("BEGIN IMMEDIATE;");
     try {
@@ -886,9 +896,9 @@ function catalogDefinition(command: CatalogCommand, tenantId: string): { tableNa
     case "catalog.supplier.upsert":
       return { tableName: "proveedores", sql: "INSERT INTO proveedores (id, tenant_id, name) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name", values: [command.id, tenantId, command.name] };
     case "catalog.category.upsert":
-      return { tableName: "menu_categories", sql: "INSERT INTO menu_categories (id, tenant_id, name) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name", values: [command.id, tenantId, command.name] };
+      return { tableName: "menu_categories", sql: "INSERT INTO menu_categories (id, tenant_id, nombre) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET nombre = excluded.nombre", values: [command.id, tenantId, command.name] };
     case "catalog.product.upsert":
-      return { tableName: "platos", sql: "INSERT INTO platos (id, tenant_id, category_id, name) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET category_id = excluded.category_id, name = excluded.name", values: [command.id, tenantId, command.categoryId, command.name] };
+      return { tableName: "platos", sql: "INSERT INTO platos (id, tenant_id, nombre, categoria) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET nombre = excluded.nombre, categoria = excluded.categoria", values: [command.id, tenantId, command.name, command.categoryId] };
     case "catalog.inventory-product.upsert":
       return { tableName: "productos_inventario", sql: "INSERT INTO productos_inventario (id, tenant_id, name, unit) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, unit = excluded.unit", values: [command.id, tenantId, command.name, command.unit] };
     case "catalog.recipe.upsert":

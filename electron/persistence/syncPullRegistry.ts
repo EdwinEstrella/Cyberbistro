@@ -48,6 +48,9 @@ export const SYNC_PULL_TABLES: readonly SyncPullTable[] = [
   { remoteTable: "cxc_pagos", localTable: "cxc_pagos", child: false, deletable: false },
   { remoteTable: "cuentas_pagar", localTable: "cuentas_pagar", child: false, deletable: false },
   { remoteTable: "cxp_pagos", localTable: "cxp_pagos", child: false, deletable: false },
+  // Catálogo (menú) download for the carta/dashboard local-first read cutover.
+  { remoteTable: "menu_categories", localTable: "menu_categories", child: false, deletable: true },
+  { remoteTable: "platos", localTable: "platos", child: false, deletable: true },
 ] as const;
 
 /** Local table names whose cloud→local pull is implemented. */
@@ -66,4 +69,6 @@ export const SYNC_PULL_DELETE_ORDER: readonly string[] = [
   "payroll_employees",
   "gasto_categorias",
   "customers",
+  "platos",
+  "menu_categories",
 ];

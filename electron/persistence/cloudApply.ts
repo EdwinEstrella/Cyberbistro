@@ -166,6 +166,94 @@ export function applyCloudCustomerRows(
 }
 
 /**
+ * Applies cloud menu categories into the local mirror. Cloud rows carry an
+ * opaque UUID id, a display name, color, sort order, and an optional branch
+ * scope. A row with a pending local write is skipped so an unsynced local
+ * edit is never clobbered.
+ */
+export function applyCloudMenuCategoryRows(
+  db: DatabaseSync,
+  tenantId: string,
+  categories: Array<Record<string, unknown>>,
+): void {
+  const stmt = db.prepare(`
+    INSERT INTO menu_categories (id, tenant_id, nombre, color, sort_order, sucursal_id)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      nombre = excluded.nombre,
+      color = excluded.color,
+      sort_order = excluded.sort_order,
+      sucursal_id = excluded.sucursal_id
+  `);
+  for (const c of categories) {
+    if (!c || typeof c !== "object" || !c.id || !c.nombre) continue;
+    if (hasPendingCloudWrite(db, tenantId, "menu_categories", String(c.id))) continue;
+    stmt.run(
+      String(c.id),
+      tenantId,
+      String(c.nombre),
+      c.color ? String(c.color) : null,
+      c.sort_order != null ? Number(c.sort_order) : null,
+      c.sucursal_id ? String(c.sucursal_id) : null,
+    );
+  }
+}
+
+function toIntFlag(value: unknown): number {
+  if (typeof value === "boolean") return value ? 1 : 0;
+  if (typeof value === "number") return value === 1 ? 1 : 0;
+  if (typeof value === "string") return value.trim().toLowerCase() === "true" || value.trim() === "1" ? 1 : 0;
+  return 0;
+}
+
+/**
+ * Applies cloud dishes (platos) into the local mirror. Cloud ids are integers
+ * (including negative temp ids assigned client-side before a real insert), so
+ * they are coerced to their string form for the TEXT primary key. `categoria`
+ * is a plain category name carried on the row, not a foreign key. A row with a
+ * pending local write is skipped so an unsynced local edit is never clobbered.
+ */
+export function applyCloudPlatoRows(
+  db: DatabaseSync,
+  tenantId: string,
+  platos: Array<Record<string, unknown>>,
+): void {
+  const stmt = db.prepare(`
+    INSERT INTO platos (id, tenant_id, sucursal_id, nombre, precio, categoria, disponible, va_a_cocina, created_at, updated_at, deleted_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      sucursal_id = excluded.sucursal_id,
+      nombre = excluded.nombre,
+      precio = excluded.precio,
+      categoria = excluded.categoria,
+      disponible = excluded.disponible,
+      va_a_cocina = excluded.va_a_cocina,
+      created_at = excluded.created_at,
+      updated_at = excluded.updated_at,
+      deleted_at = excluded.deleted_at
+  `);
+  for (const p of platos) {
+    if (!p || typeof p !== "object" || !p.id || !p.nombre) continue;
+    const id = String(p.id);
+    if (hasPendingCloudWrite(db, tenantId, "platos", id)) continue;
+    const rawPrecio = Number(p.precio);
+    stmt.run(
+      id,
+      tenantId,
+      p.sucursal_id ? String(p.sucursal_id) : null,
+      String(p.nombre),
+      Number.isFinite(rawPrecio) ? rawPrecio : null,
+      p.categoria ? String(p.categoria) : null,
+      toIntFlag(p.disponible),
+      toIntFlag(p.va_a_cocina),
+      p.created_at ? String(p.created_at) : null,
+      p.updated_at ? String(p.updated_at) : null,
+      p.deleted_at ? String(p.deleted_at) : null,
+    );
+  }
+}
+
+/**
  * Applies cloud operational cycles into the local mirror, mapping the cloud shape
  * (efectivo_inicial, closed_at-derived open/closed state) onto the local columns
  * and preserving cycle_number/opened_at so analytics can group "por ciclo".
@@ -610,7 +698,7 @@ export function applyCloudDeletes(
   tenantId?: string,
 ): boolean {
   if (ids.length === 0) return true;
-  const allowed = new Set(["gastos", "gasto_categorias", "customers", "payroll_employees", "payroll_payments", "payroll_cloud_adjustments"]);
+  const allowed = new Set(["gastos", "gasto_categorias", "customers", "payroll_employees", "payroll_payments", "payroll_cloud_adjustments", "platos", "menu_categories"]);
   if (!allowed.has(tableName)) return false;
   const stmt = db.prepare(`DELETE FROM ${tableName} WHERE id = ?${tenantId ? " AND tenant_id = ?" : ""}`);
   let complete = true;

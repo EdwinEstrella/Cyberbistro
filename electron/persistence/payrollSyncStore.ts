@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { DurableSyncStore, DurableOperation, DurableOperationStatus, DurableOperationKind, PullBatch } from "./syncWorker";
-import { applyCloudExpenseRows, applyCloudExpenseCategoryRows, applyCloudCustomerRows, applyCloudOperationalCycleRows, applyCloudFacturaRows, applyCloudCompraRows, applyCloudReceivableRows, applyCloudPayableRows, applyCloudCxcPagoRows, applyCloudCxpPagoRows, applyCloudDeletes } from "./cloudApply";
+import { applyCloudExpenseRows, applyCloudExpenseCategoryRows, applyCloudCustomerRows, applyCloudOperationalCycleRows, applyCloudFacturaRows, applyCloudCompraRows, applyCloudReceivableRows, applyCloudPayableRows, applyCloudCxcPagoRows, applyCloudCxpPagoRows, applyCloudDeletes, applyCloudMenuCategoryRows, applyCloudPlatoRows } from "./cloudApply";
 import { createHash } from "node:crypto";
 import { applyCloudPayrollEmployees, applyCloudPayrollPayments, applyCloudPayrollAdjustments } from "./payrollCloudApply";
 import { SYNC_PULL_TABLES, SYNC_PULLABLE_LOCAL_TABLES, SYNC_PULL_DELETE_ORDER } from "./syncPullRegistry";
@@ -22,6 +22,8 @@ const PULL_APPLIERS: Record<string, CloudRowApplier> = {
   cxc_pagos: applyCloudCxcPagoRows,
   cuentas_pagar: applyCloudPayableRows,
   cxp_pagos: applyCloudCxpPagoRows,
+  platos: applyCloudPlatoRows,
+  menu_categories: applyCloudMenuCategoryRows,
 };
 
 /** Tables whose cloud→local pull is implemented, declared once in the registry. */
@@ -249,7 +251,11 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
     for (const change of batch.changes ?? []) {
       if (!PULLABLE_TABLES.has(change.tableName)) continue;
       if (change.payload?.tenant_id != null && change.payload.tenant_id !== this.tenantId) throw new Error("Pull tenant mismatch");
-      if (change.payload?.id != null && change.payload.id !== change.rowId) throw new Error("Pull row ID mismatch");
+      // rowId is normalized to string form; a cloud integer id (e.g. platos)
+      // arrives as a number in the payload, so compare stringwise (identity for
+      // the uuid tables) to keep the transport-integrity check without a false
+      // type mismatch.
+      if (change.payload?.id != null && String(change.payload.id) !== change.rowId) throw new Error("Pull row ID mismatch");
       if (!change.deleted) snapshotIds.get(change.tableName)?.add(change.rowId);
       if (this.hasPendingWrite(change.tableName, change.rowId)) continue;
       if (change.deleted) {

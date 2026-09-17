@@ -181,28 +181,37 @@ export class PayrollSyncClient implements ServerSyncClient {
     for (const { table, localTable, child } of PULL_TABLES) {
       const tableChanges: ServerChange[] = [];
       try {
-        let afterId: string | null = null;
+        let afterId: string | number | null = null;
         while (true) {
           let query = client.from(table)
             .select(child ? "*, nomina_empleados!inner(tenant_id,sucursal_id)" : "*")
             .eq(child ? "nomina_empleados.tenant_id" : "tenant_id", input.tenantId)
             .order("id", { ascending: true })
             .limit(PULL_PAGE_SIZE);
-          if (afterId) query = query.gt("id", afterId);
+          if (afterId != null) query = query.gt("id", afterId);
           const { data, error } = await query;
           if (error) throw new Error(`Pull failed for ${table}: ${error.message}`);
           if (!Array.isArray(data)) throw new Error(`Invalid pull response for ${table}`);
           if (data.length === 0) break;
           for (const row of data) {
-            if (!row || typeof row.id !== "string" || (afterId && row.id <= afterId)) {
+            // Most cloud tables use UUID string ids, but some (e.g. platos) use
+            // integer ids that PostgREST serializes as JSON numbers. Accept both
+            // and keep the strictly-increasing keyset-pagination guard type-correct
+            // (afterId always holds the same-typed previous id, so the comparison
+            // is numeric for numbers and lexicographic for strings, matching the
+            // ascending "id" order). String(rawId) normalizes the outbound rowId so
+            // it matches the local TEXT primary key for delete reconciliation.
+            const rawId = row?.id;
+            const idKind = typeof rawId;
+            if (!row || (idKind !== "string" && idKind !== "number") || (afterId != null && rawId <= afterId)) {
               throw new Error(`Invalid pull page for ${table}`);
             }
             const parent = Array.isArray(row.nomina_empleados) ? row.nomina_empleados[0] : row.nomina_empleados;
             if ((child ? parent?.tenant_id : row.tenant_id) !== input.tenantId) {
               throw new Error(`Tenant mismatch in pull for ${table}`);
             }
-            tableChanges.push({ tableName: localTable, rowId: row.id, payload: row, deleted: false });
-            afterId = row.id;
+            tableChanges.push({ tableName: localTable, rowId: String(rawId), payload: row, deleted: false });
+            afterId = rawId;
           }
         }
         changes.push(...tableChanges);

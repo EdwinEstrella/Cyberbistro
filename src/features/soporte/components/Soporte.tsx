@@ -20,6 +20,7 @@ import {
   readLocalMirror,
   shouldReadLocalFirst,
 } from "../../../shared/lib/localFirst";
+import { readLocalPlatos, readLocalMenuCategories } from "../lib/catalogLocal";
 import {
   countActiveUsersByRole,
   extractTenantUserLimitConfig,
@@ -111,10 +112,10 @@ async function loadCartaData(tenantId: string, sucursalId: string): Promise<{
   const useLocalRead = await shouldReadLocalFirst(tenantId, ["platos", "menu_categories"]);
   if (useLocalRead) {
     const [platos, categories] = await Promise.all([
-      readLocalMirror<Plato>(tenantId, "platos"),
-      readLocalMirror<MenuCategoryRow>(tenantId, "menu_categories"),
+      readLocalPlatos(tenantId),
+      readLocalMenuCategories(tenantId),
     ]);
-    const localData = normalizeCartaData(tenantId, sucursalId, platos, categories);
+    const localData = normalizeCartaData(tenantId, sucursalId, platos as unknown as Plato[], categories as unknown as MenuCategoryRow[]);
     if (localData.platos.length > 0 || !navigator.onLine) {
       return localData;
     }
@@ -138,10 +139,10 @@ async function loadCartaData(tenantId: string, sucursalId: string): Promise<{
 
   if (platosRes.error || categoriesRes.error) {
     const [platos, categories] = await Promise.all([
-      readLocalMirror<Plato>(tenantId, "platos").catch(() => []),
-      readLocalMirror<MenuCategoryRow>(tenantId, "menu_categories").catch(() => []),
+      readLocalPlatos(tenantId).catch(() => []),
+      readLocalMenuCategories(tenantId).catch(() => []),
     ]);
-    return normalizeCartaData(tenantId, sucursalId, platos, categories);
+    return normalizeCartaData(tenantId, sucursalId, platos as unknown as Plato[], categories as unknown as MenuCategoryRow[]);
   }
 
   return {

@@ -37,13 +37,23 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
     CREATE TABLE IF NOT EXISTS menu_categories (
       id TEXT PRIMARY KEY,
       tenant_id TEXT NOT NULL REFERENCES tenants(id),
-      name TEXT NOT NULL
+      nombre TEXT NOT NULL,
+      color TEXT,
+      sort_order INTEGER,
+      sucursal_id TEXT
     ) STRICT;
     CREATE TABLE IF NOT EXISTS platos (
       id TEXT PRIMARY KEY,
       tenant_id TEXT NOT NULL REFERENCES tenants(id),
-      category_id TEXT NOT NULL REFERENCES menu_categories(id),
-      name TEXT NOT NULL
+      sucursal_id TEXT,
+      nombre TEXT NOT NULL,
+      precio REAL,
+      categoria TEXT,
+      disponible INTEGER,
+      va_a_cocina INTEGER,
+      created_at TEXT,
+      updated_at TEXT,
+      deleted_at TEXT
     ) STRICT;
     CREATE TABLE IF NOT EXISTS productos_inventario (
       id TEXT PRIMARY KEY,
@@ -723,6 +733,48 @@ function migrateLegacyPayrollSchema(database: DatabaseSync): void {
       INSERT INTO cierres_operativos (id, tenant_id, sucursal_id, business_day, opening_cash, state, closed_at)
       SELECT id, tenant_id, sucursal_id, business_day, opening_cash, state, closed_at
       FROM __old_table__;
+    `);
+  });
+
+  // The original menu_categories/platos skeleton (id TEXT PK, name TEXT, platos
+  // FK'd to a category id) predates the cloud→SQLite pull cutover. The cloud
+  // shape carries menu_categories.nombre/color/sort_order/sucursal_id and
+  // platos.nombre/precio/categoria (a category NAME string, not a FK) plus
+  // disponible/va_a_cocina flags, so both tables are recreated into that shape.
+  ensureTableShape(database, "menu_categories", (columns) => columns.includes("nombre") && columns.includes("color"), () => {
+    recreateTable(database, "menu_categories", `
+      CREATE TABLE menu_categories (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id),
+        nombre TEXT NOT NULL,
+        color TEXT,
+        sort_order INTEGER,
+        sucursal_id TEXT
+      ) STRICT;
+    `, `
+      INSERT INTO menu_categories (id, tenant_id, nombre)
+      SELECT id, tenant_id, name FROM __old_table__;
+    `);
+  });
+
+  ensureTableShape(database, "platos", (columns) => columns.includes("nombre") && columns.includes("precio"), () => {
+    recreateTable(database, "platos", `
+      CREATE TABLE platos (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id),
+        sucursal_id TEXT,
+        nombre TEXT NOT NULL,
+        precio REAL,
+        categoria TEXT,
+        disponible INTEGER,
+        va_a_cocina INTEGER,
+        created_at TEXT,
+        updated_at TEXT,
+        deleted_at TEXT
+      ) STRICT;
+    `, `
+      INSERT INTO platos (id, tenant_id, nombre)
+      SELECT id, tenant_id, name FROM __old_table__;
     `);
   });
 }

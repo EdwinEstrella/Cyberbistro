@@ -61,6 +61,7 @@ import { type FiscalMode } from "../../../shared/lib/fiscalTypes";
 import { resolveActiveFiscalMode, runFiscalEngine, buildEcfDocumentWrites } from "../../../shared/lib/fiscalEngine";
 import { getLocalFirstStatusSnapshot, readLocalMirror, readLocalOutbox, enqueueLocalWrite, getDeviceId, writeLocalMirrorRow, shouldReadLocalFirst, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, type LocalFirstWrite } from "../../../shared/lib/localFirst";
 import { readLocalCierres } from "../../cierre/lib/cierresLocal";
+import { readLocalPlatos, readLocalMenuCategories } from "../../soporte/lib/catalogLocal";
 import { commitCheckout } from "../../../shared/lib/checkoutCommit";
 import { getNextFacturaNumber } from "../../../shared/lib/invoiceNumber";
 import { writePosMutationLocalFirst } from "../../pos/lib/localFirstMutations";
@@ -271,7 +272,7 @@ export function Dashboard() {
  
       let [platosData, categoriasData, estadosData, consumosData, cantidadMesas] = await Promise.all([
         useLocalRead
-          ? readLocalMirror<Plato>(tenantId, "platos").then(rows => rows.filter(r => !r.sucursal_id || r.sucursal_id === activeSucursalId))
+          ? readLocalPlatos(tenantId).then(rows => (rows as unknown as Plato[]).filter(r => !r.sucursal_id || r.sucursal_id === activeSucursalId))
           : supabase
               .from("platos")
               .select("*")
@@ -281,7 +282,7 @@ export function Dashboard() {
               .order("categoria")
               .then(r => r.data ?? []),
         useLocalRead
-          ? readLocalMirror<MenuCategoryRow>(tenantId, "menu_categories").then(rows => rows.filter(r => !r.sucursal_id || r.sucursal_id === activeSucursalId))
+          ? readLocalMenuCategories(tenantId).then(rows => (rows as unknown as MenuCategoryRow[]).filter(r => !r.sucursal_id || r.sucursal_id === activeSucursalId))
           : supabase
               .from("menu_categories")
               .select("id, tenant_id, nombre, color, sort_order")

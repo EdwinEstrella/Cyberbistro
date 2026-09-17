@@ -73,6 +73,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveDeviceSessionPreference: (preference: unknown) => ipcRenderer.invoke('device-session:save-preference', preference),
   getDeviceSessionPreference: (identity: unknown) => ipcRenderer.invoke('device-session:read-preference', identity),
   executeCatalogCommand: (command: unknown) => ipcRenderer.invoke('catalog-repository:execute', command),
+  listCatalog: () => ipcRenderer.invoke('catalog:list'),
   executeOrdersCommand: (command: unknown) => ipcRenderer.invoke('orders-repository:execute', command),
   executeSalesFiscalCommand: (command: unknown) => ipcRenderer.invoke('sales-fiscal-repository:execute', command),
   executeCashPurchaseCommand: (command: unknown) => ipcRenderer.invoke('cash-purchase-repository:execute', command),

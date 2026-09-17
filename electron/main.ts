@@ -692,6 +692,7 @@ if (gotTheLock) {
         if (!store) throw new Error('Tenant store is unavailable')
         return new CatalogRepository({ store, branchId: 'main-process-default' })
       },
+      listCatalog: () => getStore()?.listCatalog() ?? { platos: [], menuCategories: [] },
     })
     registerOrdersRepositoryIpc({
       ipcMain,
