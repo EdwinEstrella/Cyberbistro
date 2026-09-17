@@ -55,12 +55,12 @@ describe("tenant-pinned catalog SQLite", () => {
       expect(() => catalogA.execute({ type: "catalog.recipe.upsert", id: "recipe-1", platoId: "missing-plato", inventoryProductId: "missing-stock", quantity: 1 })).toThrow();
       expect(tenantA.readCatalogRows("recetas")).toEqual([]);
 
-      catalogA.execute({ type: "catalog.category.upsert", id: "category-1", name: "Meals" });
-      catalogA.execute({ type: "catalog.product.upsert", id: "product-1", name: "Burger", categoryId: "category-1" });
+      catalogA.execute({ type: "catalog.category.upsert", id: "category-1", nombre: "Meals", color: "#ff906d", sortOrder: 0, sucursalId: "branch-a" });
+      catalogA.execute({ type: "catalog.product.upsert", id: "product-1", sucursalId: "branch-a", nombre: "Burger", precio: 10, categoria: "category-1", disponible: true, va_a_cocina: true });
       catalogA.execute({ type: "catalog.inventory-product.upsert", id: "stock-1", name: "Beef", unit: "kg" });
       catalogA.execute({ type: "catalog.recipe.upsert", id: "recipe-1", platoId: "product-1", inventoryProductId: "stock-1", quantity: 0.25 });
 
-      catalogA.execute({ type: "catalog.product.upsert", id: "product-1", name: "Updated Burger", categoryId: "category-1" });
+      catalogA.execute({ type: "catalog.product.upsert", id: "product-1", sucursalId: "branch-a", nombre: "Updated Burger", precio: 12, categoria: "category-1", disponible: true, va_a_cocina: true });
       expect(tenantA.readCatalogRows("platos")).toEqual([{ id: "product-1", name: "Updated Burger", categoryId: "category-1" }]);
       expect(tenantA.readCatalogRows("recetas")).toEqual([{ id: "recipe-1", platoId: "product-1", inventoryProductId: "stock-1", quantity: 0.25 }]);
     });

@@ -87,9 +87,26 @@ const CLOUD_COMPARABLE_TABLES = [
   "cuentas_cobrar", "cxc_pagos", "cuentas_pagar", "cxp_pagos", "compras",
 ];
 
-/** Head-count each comparable cloud table for the tenant. A table that errors is
- * recorded as -1 so callers can tell "0 rows" apart from "could not verify". */
-async function fetchCloudCounts(tenantId: string): Promise<Record<string, number>> {
+/** Per-table cloud counts via a single authorized-once RPC. PostgREST
+ * `count=exact` re-evaluates the OR-combined RLS SELECT policies per row, and on
+ * large tables (facturas) that scan crosses the authenticated statement_timeout
+ * (8s) and returns an error. `cloudix_tenant_table_counts` checks tenant access
+ * once, then counts through the tenant index — one round trip, milliseconds. */
+async function fetchCloudCountsViaRpc(tenantId: string): Promise<Record<string, number> | null> {
+  const { data, error } = await supabase.rpc("cloudix_tenant_table_counts", { p_tenant_id: tenantId });
+  if (error || !Array.isArray(data)) return null;
+  const counts: Record<string, number> = {};
+  for (const row of data as Array<{ tabla: string; total: number | string }>) {
+    counts[row.tabla] = Number(row.total) || 0;
+  }
+  return counts;
+}
+
+/** Legacy fallback: head-count each comparable cloud table individually. Kept so
+ * the monitor still works if the RPC has not been deployed yet. A table that
+ * errors is recorded as -1 so callers can tell "0 rows" apart from "could not
+ * verify". */
+async function fetchCloudCountsPerTable(tenantId: string): Promise<Record<string, number>> {
   const entries = await Promise.all(
     CLOUD_COMPARABLE_TABLES.map(async (table) => {
       try {
@@ -104,6 +121,14 @@ async function fetchCloudCounts(tenantId: string): Promise<Record<string, number
     }),
   );
   return Object.fromEntries(entries);
+}
+
+/** Head-count each comparable cloud table for the tenant. Prefers the fast RPC and
+ * falls back to per-table counts when it is unavailable. */
+async function fetchCloudCounts(tenantId: string): Promise<Record<string, number>> {
+  const viaRpc = await fetchCloudCountsViaRpc(tenantId);
+  if (viaRpc) return viaRpc;
+  return fetchCloudCountsPerTable(tenantId);
 }
 
 /** Count rows in the IndexedDB mirror for each comparable table. Tables not yet

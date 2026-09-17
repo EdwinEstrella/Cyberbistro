@@ -160,7 +160,7 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     try {
       this.database.prepare(definition.sql).run(...definition.values);
       this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-        .run(input.commitId, this.tenantId, input.branchId, definition.tableName, input.command.id, "upsert", JSON.stringify(input.command), "pending");
+        .run(input.commitId, this.tenantId, input.branchId, definition.tableName, input.command.id, definition.operation, JSON.stringify(input.command), "pending");
       this.database.exec("COMMIT;");
     } catch (error) {
       this.database.exec("ROLLBACK;");
@@ -887,22 +887,55 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
   }
 }
 
-function catalogDefinition(command: CatalogCommand, tenantId: string): { tableName: string; sql: string; values: unknown[] } {
+function catalogDefinition(command: CatalogCommand, tenantId: string): { tableName: string; sql: string; values: unknown[]; operation: "upsert" | "delete" } {
   switch (command.type) {
     case "catalog.branch.upsert":
-      return { tableName: "sucursales", sql: "INSERT INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name", values: [command.id, tenantId, command.name] };
+      return { tableName: "sucursales", operation: "upsert", sql: "INSERT INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name", values: [command.id, tenantId, command.name] };
     case "catalog.customer.upsert":
-      return { tableName: "customers", sql: "INSERT INTO customers (id, tenant_id, name) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name", values: [command.id, tenantId, command.name] };
+      return { tableName: "customers", operation: "upsert", sql: "INSERT INTO customers (id, tenant_id, name) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name", values: [command.id, tenantId, command.name] };
     case "catalog.supplier.upsert":
-      return { tableName: "proveedores", sql: "INSERT INTO proveedores (id, tenant_id, name) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name", values: [command.id, tenantId, command.name] };
+      return { tableName: "proveedores", operation: "upsert", sql: "INSERT INTO proveedores (id, tenant_id, name) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name", values: [command.id, tenantId, command.name] };
     case "catalog.category.upsert":
-      return { tableName: "menu_categories", sql: "INSERT INTO menu_categories (id, tenant_id, nombre) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET nombre = excluded.nombre", values: [command.id, tenantId, command.name] };
+      return {
+        tableName: "menu_categories",
+        operation: "upsert",
+        sql: `
+          INSERT INTO menu_categories (id, tenant_id, nombre, color, sort_order, sucursal_id)
+          VALUES (?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            nombre = excluded.nombre,
+            color = excluded.color,
+            sort_order = excluded.sort_order,
+            sucursal_id = excluded.sucursal_id
+        `,
+        values: [command.id, tenantId, command.nombre, command.color, command.sortOrder, command.sucursalId],
+      };
+    case "catalog.category.delete":
+      return { tableName: "menu_categories", operation: "delete", sql: "DELETE FROM menu_categories WHERE id = ? AND tenant_id = ?", values: [command.id, tenantId] };
     case "catalog.product.upsert":
-      return { tableName: "platos", sql: "INSERT INTO platos (id, tenant_id, nombre, categoria) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET nombre = excluded.nombre, categoria = excluded.categoria", values: [command.id, tenantId, command.name, command.categoryId] };
+      return {
+        tableName: "platos",
+        operation: "upsert",
+        sql: `
+          INSERT INTO platos (id, tenant_id, sucursal_id, nombre, precio, categoria, disponible, va_a_cocina, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+          ON CONFLICT(id) DO UPDATE SET
+            sucursal_id = excluded.sucursal_id,
+            nombre = excluded.nombre,
+            precio = excluded.precio,
+            categoria = excluded.categoria,
+            disponible = excluded.disponible,
+            va_a_cocina = excluded.va_a_cocina,
+            updated_at = datetime('now')
+        `,
+        values: [command.id, tenantId, command.sucursalId, command.nombre, command.precio, command.categoria, Number(command.disponible), Number(command.va_a_cocina)],
+      };
+    case "catalog.product.delete":
+      return { tableName: "platos", operation: "delete", sql: "DELETE FROM platos WHERE id = ? AND tenant_id = ?", values: [command.id, tenantId] };
     case "catalog.inventory-product.upsert":
-      return { tableName: "productos_inventario", sql: "INSERT INTO productos_inventario (id, tenant_id, name, unit) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, unit = excluded.unit", values: [command.id, tenantId, command.name, command.unit] };
+      return { tableName: "productos_inventario", operation: "upsert", sql: "INSERT INTO productos_inventario (id, tenant_id, name, unit) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, unit = excluded.unit", values: [command.id, tenantId, command.name, command.unit] };
     case "catalog.recipe.upsert":
-      return { tableName: "recetas", sql: "INSERT INTO recetas (id, tenant_id, plato_id, inventory_product_id, quantity) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET plato_id = excluded.plato_id, inventory_product_id = excluded.inventory_product_id, quantity = excluded.quantity", values: [command.id, tenantId, command.platoId, command.inventoryProductId, command.quantity] };
+      return { tableName: "recetas", operation: "upsert", sql: "INSERT INTO recetas (id, tenant_id, plato_id, inventory_product_id, quantity) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET plato_id = excluded.plato_id, inventory_product_id = excluded.inventory_product_id, quantity = excluded.quantity", values: [command.id, tenantId, command.platoId, command.inventoryProductId, command.quantity] };
   }
 }
 

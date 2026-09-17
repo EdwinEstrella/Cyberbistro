@@ -277,6 +277,12 @@ function mapDeleteOperation(operation: DurableOperation):
   if (operation.tableName === "customers") {
     return { ok: true, remoteTable: "customers" };
   }
+  if (operation.tableName === "platos") {
+    return { ok: true, remoteTable: "platos" };
+  }
+  if (operation.tableName === "menu_categories") {
+    return { ok: true, remoteTable: "menu_categories" };
+  }
   // Deleting a cxc_pago fires the cloud trigger, which recomputes the parent
   // cuentas_cobrar balance from the remaining payments — no parent update needed.
   if (operation.tableName === "cxc_pagos") {
@@ -320,6 +326,10 @@ function mapOperation(operation: DurableOperation):
         return { ok: true, remoteTable: "gasto_categorias", payload: mapCategoryPayload(operation, operation.payload) };
       case "customers":
         return { ok: true, remoteTable: "customers", payload: mapCustomerPayload(operation, operation.payload) };
+      case "platos":
+        return { ok: true, remoteTable: "platos", payload: mapPlatoPayload(operation, operation.payload) };
+      case "menu_categories":
+        return { ok: true, remoteTable: "menu_categories", payload: mapMenuCategoryPayload(operation, operation.payload) };
       case "cuentas_cobrar":
         return { ok: true, remoteTable: "cuentas_cobrar", payload: mapReceivablePayload(operation, operation.payload) };
       case "cxc_pagos":
@@ -488,6 +498,34 @@ function mapCustomerPayload(operation: DurableOperation, payload: Record<string,
   };
 }
 
+// platos.id is a client-chosen plain integer (no cloud serial/identity), so the
+// negative temp id created on the desktop is permanent on both sides forever —
+// there is no id reconciliation step. The local TEXT primary key is coerced back
+// to a number here because the cloud column is a plain integer.
+function mapPlatoPayload(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: Number(operation.rowId),
+    tenant_id: operation.tenantId,
+    sucursal_id: requireString(payload.sucursalId, "platos.sucursalId"),
+    nombre: requireString(payload.nombre, "platos.nombre"),
+    precio: requireNumber(payload.precio, "platos.precio"),
+    categoria: requireString(payload.categoria, "platos.categoria"),
+    disponible: coerceBoolean(payload.disponible, "platos.disponible"),
+    va_a_cocina: coerceBoolean(payload.va_a_cocina, "platos.va_a_cocina"),
+  };
+}
+
+function mapMenuCategoryPayload(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: operation.rowId,
+    tenant_id: operation.tenantId,
+    nombre: requireString(payload.nombre, "menu_categories.nombre"),
+    color: payload.color ? String(payload.color) : null,
+    sort_order: typeof payload.sortOrder === "number" ? payload.sortOrder : null,
+    sucursal_id: requireString(payload.sucursalId, "menu_categories.sucursalId"),
+  };
+}
+
 // The receivables outbox rows carry the ReceivablesCommand (camelCase), not a
 // table row. monto_pagado/estado on cuentas_cobrar are cloud-derived by the
 // cxc_pagos trigger, so a create only sends the debt's fixed fields and every
@@ -644,6 +682,13 @@ function requireBoolean(value: unknown, field: string): boolean {
   if (typeof value === "boolean") {
     return value;
   }
+  unsupportedValue(field, value);
+}
+
+// Accepts a real boolean or the 0/1 SQLite INTEGER encoding of one.
+function coerceBoolean(value: unknown, field: string): boolean {
+  if (typeof value === "boolean") return value;
+  if (value === 1 || value === 0) return value === 1;
   unsupportedValue(field, value);
 }
 

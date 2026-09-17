@@ -62,7 +62,7 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
       WHERE tenant_id = ?
         AND status = 'syncing'
         AND (
-          table_name IN ('payroll_employees', 'payroll_payments', 'payroll_payment_adjustments', 'gasto_categorias', 'customers', 'cierres_operativos')
+          table_name IN ('payroll_employees', 'payroll_payments', 'payroll_payment_adjustments', 'gasto_categorias', 'customers', 'cierres_operativos', 'platos', 'menu_categories')
           OR (
             table_name = 'gastos'
             AND (
@@ -111,7 +111,7 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
             OR COALESCE(json_extract(error_json, '$.retryable'), 1) = 1
           )
           AND (
-            table_name IN ('payroll_employees', 'payroll_payments', 'payroll_payment_adjustments', 'gasto_categorias', 'customers', 'cierres_operativos')
+            table_name IN ('payroll_employees', 'payroll_payments', 'payroll_payment_adjustments', 'gasto_categorias', 'customers', 'cierres_operativos', 'platos', 'menu_categories')
             OR (
               table_name = 'gastos'
               AND (
@@ -342,7 +342,7 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
 }
 
 function isClaimablePayrollRow(tableName: string, payload: unknown, op: string): boolean {
-  if (tableName === "gasto_categorias" || tableName === "customers") return true;
+  if (tableName === "gasto_categorias" || tableName === "customers" || tableName === "platos" || tableName === "menu_categories") return true;
   if (tableName !== "gastos") return true;
   // Deletions carry no expenseType semantics worth gating on: a gasto removed
   // locally (any type, including 'purchase') must also be removed in the cloud

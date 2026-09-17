@@ -482,8 +482,23 @@ function parseCatalogCommand(payload: unknown): CatalogCommand | null {
   const command = payload as Record<string, unknown>;
   const isString = (key: string) => typeof command[key] === "string" && (command[key] as string).length > 0 && (command[key] as string).length <= 256;
   const hasOnly = (...keys: string[]) => Object.keys(command).length === keys.length && Object.keys(command).every((key) => keys.includes(key));
-  if (["catalog.branch.upsert", "catalog.customer.upsert", "catalog.supplier.upsert", "catalog.category.upsert"].includes(String(command.type)) && hasOnly("type", "id", "name") && isString("id") && isString("name")) return command as CatalogCommand;
-  if (command.type === "catalog.product.upsert" && hasOnly("type", "id", "name", "categoryId") && isString("id") && isString("name") && isString("categoryId")) return command as CatalogCommand;
+  if (["catalog.branch.upsert", "catalog.customer.upsert", "catalog.supplier.upsert"].includes(String(command.type)) && hasOnly("type", "id", "name") && isString("id") && isString("name")) return command as CatalogCommand;
+  if (
+    command.type === "catalog.category.upsert" &&
+    hasOnly("type", "id", "nombre", "color", "sortOrder", "sucursalId") &&
+    isString("id") && isString("nombre") && isString("color") && isString("sucursalId") &&
+    Number.isInteger(command.sortOrder) && (command.sortOrder as number) >= 0
+  ) return command as CatalogCommand;
+  if (command.type === "catalog.category.delete" && hasOnly("type", "id") && isString("id")) return command as CatalogCommand;
+  if (
+    command.type === "catalog.product.upsert" &&
+    Object.keys(command).every((key) => ["type", "id", "tenantId", "sucursalId", "nombre", "precio", "categoria", "disponible", "va_a_cocina"].includes(key)) &&
+    isString("id") && isString("sucursalId") && isString("nombre") && isString("categoria") &&
+    (command.tenantId === undefined || isString("tenantId")) &&
+    typeof command.precio === "number" && Number.isFinite(command.precio) && command.precio >= 0 &&
+    typeof command.disponible === "boolean" && typeof command.va_a_cocina === "boolean"
+  ) return command as CatalogCommand;
+  if (command.type === "catalog.product.delete" && hasOnly("type", "id") && isString("id")) return command as CatalogCommand;
   if (command.type === "catalog.inventory-product.upsert" && hasOnly("type", "id", "name", "unit") && isString("id") && isString("name") && isString("unit")) return command as CatalogCommand;
   if (command.type === "catalog.recipe.upsert" && hasOnly("type", "id", "platoId", "inventoryProductId", "quantity") && isString("id") && isString("platoId") && isString("inventoryProductId") && typeof command.quantity === "number" && Number.isFinite(command.quantity) && command.quantity > 0) return command as CatalogCommand;
   return null;
