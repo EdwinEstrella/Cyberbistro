@@ -7,6 +7,7 @@ import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { readLocalExpenses, readLocalExpenseCategories } from "../../gastos/lib/expensesLocal";
+import { readLocalCxcPagos } from "../../billing/lib/accountsLocal";
 import { readLocalCierres } from "../lib/cierresLocal";
 import { writeCycleOpen, writeCycleClose, writeCycleDiscard, writeCyclePrinted } from "../lib/cierresWrites";
 import { isDesktopRuntime, isCloudAvailableForDesktop } from "../../../shared/lib/cloudAvailability";
@@ -284,11 +285,17 @@ export function Cierre() {
               ? supabase.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, metodo_pago, fecha_gasto").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).eq("cycle_id", sel.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? [])
               : supabase.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, metodo_pago, fecha_gasto").eq("tenant_id", tenantId).is("sucursal_id", null).eq("cycle_id", sel.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? []);
           })(),
-          shouldReadLocalFirst(tenantId, ["cxc_pagos"]).then(useLocal => useLocal
-            ? readLocalMirror<any>(tenantId, "cxc_pagos").then(ps => ps.filter(p => p.cycle_id === sel.id && (p.sucursal_id === activeSucursalId || !p.sucursal_id)))
-            : activeSucursalId
+          (async () => {
+            // SQLite-first union (desktop) so cobros written to SQLite are counted;
+            // falls back to the IndexedDB mirror, then the cloud on web.
+            if (window.electronAPI?.listCxcPagos || await shouldReadLocalFirst(tenantId, ["cxc_pagos"])) {
+              const ps = await readLocalCxcPagos(tenantId, { sucursalId: activeSucursalId || undefined });
+              return ps.filter(p => p.cycle_id === sel.id);
+            }
+            return activeSucursalId
               ? supabase.from("cxc_pagos").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).eq("cycle_id", sel.id).then(r => r.data ?? [])
-              : supabase.from("cxc_pagos").select("*").eq("tenant_id", tenantId).is("sucursal_id", null).eq("cycle_id", sel.id).then(r => r.data ?? [])),
+              : supabase.from("cxc_pagos").select("*").eq("tenant_id", tenantId).is("sucursal_id", null).eq("cycle_id", sel.id).then(r => r.data ?? []);
+          })(),
         ]);
 
         const allFacturas = (factData as FacturaRow[] | null) ?? [];
@@ -527,7 +534,7 @@ export function Cierre() {
     const useLocalFacturas = await shouldReadLocalFirst(tenantId, ["facturas"]);
     const useLocalGastos = Boolean(window.electronAPI?.listExpenses) || await shouldReadLocalFirst(tenantId, ["gastos"]);
     const useLocalTenants = await shouldReadLocalFirst(tenantId, ["tenants"]);
-    const useLocalCxc = await shouldReadLocalFirst(tenantId, ["cxc_pagos"]);
+    const useLocalCxc = Boolean(window.electronAPI?.listCxcPagos) || await shouldReadLocalFirst(tenantId, ["cxc_pagos"]);
     const now = new Date().toISOString();
 
     const [facturasAll, gastosAll, cxcAll] = await Promise.all([
@@ -538,7 +545,7 @@ export function Cierre() {
         ? readLocalExpenses(tenantId, { sucursalId: activeSucursalId || undefined, cycleId: currentCycle.id })
         : supabase.from("gastos").select("id, category_id, cycle_id, descripcion, proveedor, monto, metodo_pago, fecha_gasto").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).eq("cycle_id", currentCycle.id).order("fecha_gasto", { ascending: true }).then(r => r.data ?? []),
       useLocalCxc
-        ? readLocalMirror<any>(tenantId, "cxc_pagos").then(ps => ps.filter(p => p.cycle_id === currentCycle.id && (p.sucursal_id === activeSucursalId || !p.sucursal_id)))
+        ? readLocalCxcPagos(tenantId, { sucursalId: activeSucursalId || undefined }).then(ps => ps.filter(p => p.cycle_id === currentCycle.id))
         : supabase.from("cxc_pagos").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).eq("cycle_id", currentCycle.id).then(r => r.data ?? []),
     ]);
 

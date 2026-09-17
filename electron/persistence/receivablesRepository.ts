@@ -8,6 +8,9 @@ export type ReceivablesCommand =
       facturaId?: string;
       totalAmount: number;
       dueDate?: string;
+      sucursalId?: string | null;
+      fechaEmision?: string;
+      observacion?: string | null;
     }
   | {
       type: "receivables.payment.record";
@@ -15,6 +18,11 @@ export type ReceivablesCommand =
       receivableId: string;
       amount: number;
       paymentMethod: string;
+      sucursalId?: string | null;
+      cycleId?: string | null;
+      notas?: string | null;
+      usuarioId?: string | null;
+      fechaPago?: string;
     };
 
 export type ReceivablesRepositoryResult = {

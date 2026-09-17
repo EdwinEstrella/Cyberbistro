@@ -421,8 +421,8 @@ export function applyCloudReceivableRows(
   const facturaExists = db.prepare("SELECT 1 FROM facturas WHERE id = ? AND tenant_id = ?");
   ensureBranch.run(defaultBranchId, tenantId, "Principal");
   const stmt = db.prepare(`
-    INSERT INTO cuentas_cobrar (id, tenant_id, sucursal_id, factura_id, customer_id, monto_total, monto_pendiente, estado, fecha_vencimiento)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO cuentas_cobrar (id, tenant_id, sucursal_id, factura_id, customer_id, monto_total, monto_pendiente, estado, fecha_vencimiento, fecha_emision, observacion)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       sucursal_id = excluded.sucursal_id,
       factura_id = excluded.factura_id,
@@ -430,7 +430,9 @@ export function applyCloudReceivableRows(
       monto_total = excluded.monto_total,
       monto_pendiente = excluded.monto_pendiente,
       estado = excluded.estado,
-      fecha_vencimiento = excluded.fecha_vencimiento
+      fecha_vencimiento = excluded.fecha_vencimiento,
+      fecha_emision = excluded.fecha_emision,
+      observacion = excluded.observacion
   `);
   for (const c of rows) {
     if (!c || typeof c !== "object" || !c.id || !c.customer_id) continue;
@@ -451,6 +453,8 @@ export function applyCloudReceivableRows(
       montoPendiente,
       mapCuentaEstadoToLocal(c.estado, montoTotal, montoPendiente),
       c.fecha_vencimiento ? String(c.fecha_vencimiento) : null,
+      c.fecha_emision ? String(c.fecha_emision) : null,
+      c.observacion ? String(c.observacion) : null,
     );
   }
 }
@@ -533,7 +537,23 @@ function applyCloudPagoRows(
   const ensureBranch = db.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)");
   ensureBranch.run(defaultBranchId, tenantId, "Principal");
   const parentExists = db.prepare(`SELECT 1 FROM ${parentTable} WHERE id = ? AND tenant_id = ?`);
-  const stmt = db.prepare(`
+  // Only cxc_pagos carries notas/cycle_id/created_by_auth_user_id locally. cycle_id
+  // is load-bearing: the cierre attributes a pulled cash collection to the open
+  // cycle by it, so dropping it here would desync another device's cash count.
+  const extended = table === "cxc_pagos";
+  const stmt = db.prepare(extended ? `
+    INSERT INTO ${table} (id, tenant_id, sucursal_id, ${parentColumn}, monto, metodo_pago, fecha_pago, notas, cycle_id, created_by_auth_user_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      sucursal_id = excluded.sucursal_id,
+      ${parentColumn} = excluded.${parentColumn},
+      monto = excluded.monto,
+      metodo_pago = excluded.metodo_pago,
+      fecha_pago = excluded.fecha_pago,
+      notas = excluded.notas,
+      cycle_id = excluded.cycle_id,
+      created_by_auth_user_id = excluded.created_by_auth_user_id
+  ` : `
     INSERT INTO ${table} (id, tenant_id, sucursal_id, ${parentColumn}, monto, metodo_pago, fecha_pago)
     VALUES (?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
@@ -553,7 +573,7 @@ function applyCloudPagoRows(
     if (!Number.isFinite(monto) || monto <= 0) continue;
     const branchId = typeof p.sucursal_id === "string" && p.sucursal_id.trim() ? p.sucursal_id.trim() : defaultBranchId;
     ensureBranch.run(branchId, tenantId, "Principal");
-    stmt.run(
+    const baseArgs: Array<string | number | null> = [
       String(p.id),
       tenantId,
       branchId,
@@ -561,7 +581,15 @@ function applyCloudPagoRows(
       monto,
       typeof p.metodo_pago === "string" && p.metodo_pago ? p.metodo_pago : "efectivo",
       p.fecha_pago ? String(p.fecha_pago) : new Date().toISOString(),
-    );
+    ];
+    if (extended) {
+      baseArgs.push(
+        p.notas != null ? String(p.notas) : null,
+        p.cycle_id != null ? String(p.cycle_id) : null,
+        p.created_by_auth_user_id != null ? String(p.created_by_auth_user_id) : null,
+      );
+    }
+    stmt.run(...baseArgs);
   }
 }
 

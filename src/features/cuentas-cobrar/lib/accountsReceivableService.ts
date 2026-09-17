@@ -1,4 +1,10 @@
 import { enqueueLocalWrite, readLocalMirror, getDeviceId } from "../../../shared/lib/localFirst";
+import { executeReceivablesCommandLocally } from "../../../shared/lib/receivablesUiAdapter";
+
+/** True on desktop where the SQLite receivables bridge is available. */
+function hasSqliteReceivables(): boolean {
+  return typeof window !== "undefined" && Boolean(window.electronAPI?.executeReceivablesCommand);
+}
 
 export interface PaymentInput {
   tenantId: string;
@@ -32,16 +38,19 @@ export async function registrarPagoCxC(input: PaymentInput): Promise<{ pagoId: s
   }>(tenantId, "cuentas_cobrar");
 
   const debt = cuentasCobrar.find(c => c.id === cuentaCobrarId);
-  if (!debt) {
+  // On desktop the debt may live only in SQLite (not mirrored to IndexedDB); in
+  // that case the SQLite command validates the balance authoritatively below.
+  if (!debt && !hasSqliteReceivables()) {
     throw new Error("La cuenta por cobrar no existe.");
   }
 
-  const total = Number(debt.monto_total) || 0;
-  const pagado = Number(debt.monto_pagado) || 0;
-  const balance = Number((total - pagado).toFixed(2));
-
-  if (monto > balance) {
-    throw new Error(`El monto del pago (${monto}) excede el balance pendiente (${balance}).`);
+  if (debt) {
+    const total = Number(debt.monto_total) || 0;
+    const pagado = Number(debt.monto_pagado) || 0;
+    const balance = Number((total - pagado).toFixed(2));
+    if (monto > balance) {
+      throw new Error(`El monto del pago (${monto}) excede el balance pendiente (${balance}).`);
+    }
   }
 
   // 2. Active cycle validation for cash payments
@@ -65,13 +74,40 @@ export async function registrarPagoCxC(input: PaymentInput): Promise<{ pagoId: s
     activeCycleId = activeCycle.id;
   }
 
-  // Cuentas por cobrar viven en el motor local-first (IndexedDB) y de ahí
-  // sincronizan a la nube. La ruta SQLite quedó vestigial (nadie la lee y sus
-  // filas de outbox nunca se drenaban), así que no se escribe aquí para evitar
-  // acumular basura atascada. La migración completa a SQLite se hará como
-  // vertical propio cuando corresponda.
+  // 3. Write the payment. On desktop, SQLite is the local-first engine: the
+  // command inserts the cxc_pago and updates the local debt balance, and its
+  // outbox pushes ONLY the cxc_pago — the cloud trigger recomputes the debt
+  // balance from the sum of payments, so we never send a competing balance
+  // update. Falls back to the IndexedDB engine on web or if SQLite rejects it
+  // (e.g. the debt has not been pulled into SQLite yet).
+  if (hasSqliteReceivables()) {
+    try {
+      await executeReceivablesCommandLocally({
+        type: "receivables.payment.record",
+        paymentId: pagoId,
+        receivableId: cuentaCobrarId,
+        amount: monto,
+        paymentMethod: metodoPago,
+        sucursalId,
+        cycleId: activeCycleId || null,
+        notas: notas || null,
+        usuarioId,
+        fechaPago,
+      });
+      return { pagoId };
+    } catch (error) {
+      console.warn("[CxC] SQLite payment path failed, falling back to IndexedDB:", error);
+    }
+  }
 
-  // 4. Enqueue payment insert in local mirror
+  // 4. IndexedDB fallback. Requires the debt in the mirror to compute the new
+  // balance; guarded above so this only runs on web where the mirror is truth.
+  if (!debt) {
+    throw new Error("La cuenta por cobrar no existe.");
+  }
+  const total = Number(debt.monto_total) || 0;
+  const pagado = Number(debt.monto_pagado) || 0;
+
   await enqueueLocalWrite({
     tenantId,
     tableName: "cxc_pagos",
@@ -93,7 +129,6 @@ export async function registrarPagoCxC(input: PaymentInput): Promise<{ pagoId: s
     deviceId,
   });
 
-  // 5. Enqueue debt update in local mirror
   const nuevoPagado = Number((pagado + monto).toFixed(2));
   const nuevoEstado = nuevoPagado >= total ? "pagada" : "parcial";
 

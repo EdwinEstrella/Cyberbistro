@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { registrarPagoCxC } from "./accountsReceivableService";
 import { enqueueLocalWrite, readLocalMirror } from "../../../shared/lib/localFirst";
 
@@ -142,5 +142,61 @@ describe("accountsReceivableService", () => {
         metodoPago: "efectivo",
       })
     ).rejects.toThrow("No hay un ciclo operativo abierto para registrar un pago en efectivo.");
+  });
+
+  describe("SQLite desktop path", () => {
+    const executeReceivablesCommand = vi.fn();
+    beforeEach(() => {
+      executeReceivablesCommand.mockReset();
+      executeReceivablesCommand.mockResolvedValue({ data: { commitId: "c1", localStatus: "committed", syncStatus: "pending" } });
+      (globalThis as any).window = { electronAPI: { executeReceivablesCommand } };
+    });
+    afterEach(() => {
+      delete (globalThis as any).window;
+    });
+
+    it("routes the payment through the SQLite command and does not enqueue IndexedDB writes", async () => {
+      const result = await registrarPagoCxC({
+        tenantId: mockTenantId,
+        sucursalId: "suc-1",
+        usuarioId: "user-1",
+        cuentaCobrarId: "debt-123",
+        monto: 20.0,
+        metodoPago: "efectivo",
+      });
+
+      expect(result.pagoId).toBeDefined();
+      expect(executeReceivablesCommand).toHaveBeenCalledTimes(1);
+      const cmd = executeReceivablesCommand.mock.calls[0][0];
+      expect(cmd).toMatchObject({
+        type: "receivables.payment.record",
+        receivableId: "debt-123",
+        amount: 20.0,
+        paymentMethod: "efectivo",
+        cycleId: "cycle-active-456", // cash payment carries the open cycle
+        usuarioId: "user-1",
+      });
+      expect(cmd.paymentId).toBe(result.pagoId);
+      expect(enqueueLocalWrite).not.toHaveBeenCalled();
+    });
+
+    it("falls back to IndexedDB when the SQLite command rejects", async () => {
+      executeReceivablesCommand.mockRejectedValueOnce(new Error("Cuenta por cobrar no encontrada."));
+      const result = await registrarPagoCxC({
+        tenantId: mockTenantId,
+        sucursalId: "suc-1",
+        usuarioId: "user-1",
+        cuentaCobrarId: "debt-123",
+        monto: 20.0,
+        metodoPago: "transferencia",
+      });
+
+      expect(result.pagoId).toBeDefined();
+      const payCall = vi.mocked(enqueueLocalWrite).mock.calls.find(c => c[0].tableName === "cxc_pagos");
+      const debtCall = vi.mocked(enqueueLocalWrite).mock.calls.find(c => c[0].tableName === "cuentas_cobrar");
+      expect(payCall).toBeDefined();
+      expect(debtCall).toBeDefined();
+      expect((debtCall?.[0] as any)?.payload?.monto_pagado).toBe(60.0);
+    });
   });
 });

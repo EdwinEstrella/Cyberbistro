@@ -291,9 +291,9 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
       if (command.type === "receivables.create") {
         this.database.prepare("INSERT OR IGNORE INTO customers (id, tenant_id, name) VALUES (?, ?, ?)").run(command.customerId, this.tenantId, "Cliente");
         this.database.prepare(`
-          INSERT INTO cuentas_cobrar (id, tenant_id, sucursal_id, factura_id, customer_id, monto_total, monto_pendiente, estado, fecha_vencimiento)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 'pendiente', ?)
-        `).run(command.id, this.tenantId, branchId, command.facturaId ?? null, command.customerId, command.totalAmount, command.totalAmount, command.dueDate ?? null);
+          INSERT INTO cuentas_cobrar (id, tenant_id, sucursal_id, factura_id, customer_id, monto_total, monto_pendiente, estado, fecha_vencimiento, fecha_emision, observacion)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'pendiente', ?, ?, ?)
+        `).run(command.id, this.tenantId, branchId, command.facturaId ?? null, command.customerId, command.totalAmount, command.totalAmount, command.dueDate ?? null, command.fechaEmision ?? null, command.observacion ?? null);
         this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, ?, ?, 'upsert', ?, 'pending')")
           .run(`${commitId}:cxc-create`, this.tenantId, branchId, "cuentas_cobrar", command.id, JSON.stringify(command));
       } else if (command.type === "receivables.payment.record") {
@@ -305,9 +305,9 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
         const newPending = row.monto_pendiente - command.amount;
         const newStatus = newPending === 0 ? "pagado" : "parcial";
         this.database.prepare(`
-          INSERT INTO cxc_pagos (id, tenant_id, sucursal_id, cuenta_cobrar_id, monto, metodo_pago)
-          VALUES (?, ?, ?, ?, ?, ?)
-        `).run(command.paymentId, this.tenantId, branchId, command.receivableId, command.amount, command.paymentMethod);
+          INSERT INTO cxc_pagos (id, tenant_id, sucursal_id, cuenta_cobrar_id, monto, metodo_pago, fecha_pago, notas, cycle_id, created_by_auth_user_id)
+          VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), ?, ?, ?)
+        `).run(command.paymentId, this.tenantId, branchId, command.receivableId, command.amount, command.paymentMethod, command.fechaPago ?? null, command.notas ?? null, command.cycleId ?? null, command.usuarioId ?? null);
         this.database.prepare(`
           UPDATE cuentas_cobrar SET monto_pendiente = ?, estado = ? WHERE id = ? AND tenant_id = ?
         `).run(newPending, newStatus, command.receivableId, this.tenantId);
@@ -404,7 +404,7 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
 
   listCuentasCobrar(filter?: { sucursalId?: string; limit?: number }): Array<Record<string, unknown>> {
     const limit = filter?.limit ?? 2000;
-    const columns = "id, tenant_id, sucursal_id, factura_id, customer_id, monto_total, monto_pendiente, (monto_total - monto_pendiente) AS monto_pagado, estado, fecha_vencimiento";
+    const columns = "id, tenant_id, sucursal_id, factura_id, customer_id, monto_total, monto_pendiente, (monto_total - monto_pendiente) AS monto_pagado, estado, fecha_vencimiento, fecha_emision, observacion";
     if (filter?.sucursalId) {
       return this.database.prepare(
         `SELECT ${columns} FROM cuentas_cobrar WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id = 'main-process-default') LIMIT ?`
@@ -438,7 +438,10 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
 
   private listPagos(table: "cxc_pagos" | "cxp_pagos", parentColumn: string, filter?: { sucursalId?: string; limit?: number }): Array<Record<string, unknown>> {
     const limit = filter?.limit ?? 5000;
-    const columns = `id, tenant_id, sucursal_id, ${parentColumn}, monto, metodo_pago, fecha_pago`;
+    const baseColumns = `id, tenant_id, sucursal_id, ${parentColumn}, monto, metodo_pago, fecha_pago`;
+    const columns = table === "cxc_pagos"
+      ? `${baseColumns}, notas, cycle_id, created_by_auth_user_id`
+      : baseColumns;
     if (filter?.sucursalId) {
       return this.database.prepare(
         `SELECT ${columns} FROM ${table} WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id = 'main-process-default') ORDER BY fecha_pago DESC LIMIT ?`

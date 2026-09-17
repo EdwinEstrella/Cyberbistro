@@ -397,6 +397,7 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
   ensureFacturasSchemaEvolution(database);
   ensureCierresSchemaEvolution(database);
   ensureComprasSchemaEvolution(database);
+  ensureReceivablesSchemaEvolution(database);
   database.exec(`
     CREATE INDEX IF NOT EXISTS idx_payroll_payments_employee_period ON payroll_payments (tenant_id, sucursal_id, employee_id, period);
     CREATE INDEX IF NOT EXISTS idx_payroll_adjustments_payment ON payroll_payment_adjustments (payment_id);
@@ -474,6 +475,34 @@ function ensureCierresSchemaEvolution(database: DatabaseSync): void {
  * column keeps its 'cash' CHECK; pulled rows set it to 'cash' and carry the real
  * method in the new `metodo_pago` column, so no data-carrying rebuild is needed.
  */
+/**
+ * The original SQLite receivables tables were skeletons sized only for the
+ * command path. Full local-first parity with the cloud/IndexedDB shape (and the
+ * CXC/cierre UIs) needs the emission date and note on the debt, and the note,
+ * operational cycle, and author on each payment. Added additively (nullable,
+ * TEXT — valid under STRICT) so existing databases evolve without a rebuild.
+ * `cycle_id` on payments is load-bearing: the cierre attributes cash CXC
+ * collections to the open cycle by matching it.
+ */
+function ensureReceivablesSchemaEvolution(database: DatabaseSync): void {
+  const cuentasCobrar = getTableColumns(database, "cuentas_cobrar");
+  if (cuentasCobrar.length > 0) {
+    for (const [name, type] of [["fecha_emision", "TEXT"], ["observacion", "TEXT"]] as const) {
+      if (!cuentasCobrar.includes(name)) {
+        database.exec(`ALTER TABLE cuentas_cobrar ADD COLUMN ${name} ${type};`);
+      }
+    }
+  }
+  const cxcPagos = getTableColumns(database, "cxc_pagos");
+  if (cxcPagos.length > 0) {
+    for (const [name, type] of [["notas", "TEXT"], ["cycle_id", "TEXT"], ["created_by_auth_user_id", "TEXT"]] as const) {
+      if (!cxcPagos.includes(name)) {
+        database.exec(`ALTER TABLE cxc_pagos ADD COLUMN ${name} ${type};`);
+      }
+    }
+  }
+}
+
 function ensureComprasSchemaEvolution(database: DatabaseSync): void {
   const columns = getTableColumns(database, "compras");
   if (columns.length === 0) return;
