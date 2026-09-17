@@ -8,6 +8,7 @@ import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { readLocalExpenses, readLocalExpenseCategories } from "../../gastos/lib/expensesLocal";
 import { readLocalCxcPagos } from "../../billing/lib/accountsLocal";
+import { readLocalInvoices } from "../../billing/lib/invoicesLocal";
 import { readLocalCierres } from "../lib/cierresLocal";
 import { writeCycleOpen, writeCycleClose, writeCycleDiscard, writeCyclePrinted } from "../lib/cierresWrites";
 import { isDesktopRuntime, isCloudAvailableForDesktop } from "../../../shared/lib/cloudAvailability";
@@ -259,9 +260,10 @@ export function Cierre() {
 
       if (sel) {
         const [factData, gastosData, cxcData] = await Promise.all([
-          shouldReadLocalFirst(tenantId, ["facturas"]).then(useLocal => {
+          shouldReadLocalFirst(tenantId, ["facturas"]).then(async (useLocal) => {
             if (useLocal) {
-              return readLocalMirror<FacturaRow & { sucursal_id?: string | null }>(tenantId, "facturas").then(fs => fs.filter(f => f.sucursal_id === activeSucursalId || !f.sucursal_id));
+              const invs = await readLocalInvoices(tenantId, { sucursalId: activeSucursalId || undefined });
+              return invs as unknown as FacturaRow[];
             }
             const cycleStartMs = new Date(getCycleStartIso(sel)).getTime();
             const minCreatedAt = new Date(cycleStartMs - 12 * 60 * 60 * 1000).toISOString();
@@ -539,7 +541,7 @@ export function Cierre() {
 
     const [facturasAll, gastosAll, cxcAll] = await Promise.all([
       useLocalFacturas
-        ? readLocalMirror<FacturaRow & { sucursal_id?: string | null }>(tenantId, "facturas").then(fs => fs.filter(f => f.sucursal_id === activeSucursalId || !f.sucursal_id))
+        ? readLocalInvoices(tenantId, { sucursalId: activeSucursalId || undefined }).then(fs => fs as unknown as FacturaRow[])
         : supabase.from("facturas").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("created_at", { ascending: false }).then(r => r.data ?? []),
       useLocalGastos
         ? readLocalExpenses(tenantId, { sucursalId: activeSucursalId || undefined, cycleId: currentCycle.id })

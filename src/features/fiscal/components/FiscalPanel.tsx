@@ -4,6 +4,7 @@ import { supabase } from "../../../shared/lib/supabase";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { reenqueueEcfDocument } from "../lib/reenqueueEcfDocument";
 import { getLocalFirstStatusSnapshot, readLocalMirror } from "../../../shared/lib/localFirst";
+import { readLocalInvoices } from "../../billing/lib/invoicesLocal";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
@@ -96,7 +97,7 @@ export function FiscalPanel() {
         const allTenants = await readLocalMirror<any>(tenantId, "tenants").catch(() => []);
         tenant = allTenants.find((t: any) => t.id === tenantId);
         if (!factura) {
-          const allFacturas = await readLocalMirror<any>(tenantId, "facturas").catch(() => []);
+          const allFacturas = await readLocalInvoices(tenantId).catch(() => []);
           factura = allFacturas.find((f: any) => f.id === doc.factura_id);
         }
       } else {

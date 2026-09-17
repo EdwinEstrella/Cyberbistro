@@ -51,7 +51,7 @@ export async function readLocalInvoices(
       const res = await api.listInvoices({
         tenantId,
         sucursalId: sucursalId || undefined,
-        limit: limit ?? 500,
+        limit: typeof limit === "number" && limit > 0 ? limit : undefined,
       });
       if (res?.ok && Array.isArray(res.data)) {
         sqliteAvailable = true;

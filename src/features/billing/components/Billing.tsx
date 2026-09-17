@@ -291,6 +291,29 @@ function getEcfStatusDisplay(status: string) {
   }
 }
 
+async function fetchAllCloudInvoices(
+  tenantId: string,
+  sucursalId?: string | null
+): Promise<{ data: Invoice[]; error: unknown }> {
+  const all: Invoice[] = [];
+  const pageSize = 1000;
+  let from = 0;
+  while (true) {
+    let query = supabase.from("facturas").select("*").eq("tenant_id", tenantId);
+    if (sucursalId) {
+      query = query.or(`sucursal_id.eq.${sucursalId},sucursal_id.is.null`);
+    }
+    query = query.order("created_at", { ascending: false }).range(from, from + pageSize - 1);
+    const { data, error } = await query;
+    if (error) return { data: all, error };
+    if (!data || data.length === 0) break;
+    all.push(...(data as Invoice[]));
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return { data: all, error: null };
+}
+
 export function Billing() {
   const { tenantId, loading: authLoading, rol, plan } = useAuth();
   const { activeSucursalId } = useSucursal();
@@ -376,10 +399,8 @@ export function Billing() {
       ecfRes
     ] = await Promise.all([
       useLocalInvoices
-        ? { data: (await readLocalInvoices(tenantId, { sucursalId: activeSucursalId || undefined, limit: 1000 })) as unknown as Invoice[], error: null }
-        : activeSucursalId
-          ? supabase.from("facturas").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("created_at", { ascending: false })
-          : supabase.from("facturas").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
+        ? { data: (await readLocalInvoices(tenantId, { sucursalId: activeSucursalId || undefined })) as unknown as Invoice[], error: null }
+        : fetchAllCloudInvoices(tenantId, activeSucursalId || undefined),
       useLocalCycles
         ? { data: (await readLocalCierres(tenantId, { sucursalId: activeSucursalId || undefined })) as unknown as CierreOperativoRow[], error: null }
         : activeSucursalId

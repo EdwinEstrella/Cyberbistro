@@ -413,15 +413,23 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
   }
 
   listInvoices(filter?: { sucursalId?: string; limit?: number }): Array<Record<string, unknown>> {
-    const limit = filter?.limit ?? 500;
+    const hasLimit = typeof filter?.limit === "number" && filter.limit > 0;
     if (filter?.sucursalId) {
-      return this.database.prepare(
-        "SELECT * FROM facturas WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id = 'main-process-default') ORDER BY created_at DESC LIMIT ?"
-      ).all(this.tenantId, filter.sucursalId, limit) as Array<Record<string, unknown>>;
+      const sql = hasLimit
+        ? "SELECT * FROM facturas WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id = 'main-process-default') ORDER BY created_at DESC LIMIT ?"
+        : "SELECT * FROM facturas WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id = 'main-process-default') ORDER BY created_at DESC";
+      return (hasLimit
+        ? this.database.prepare(sql).all(this.tenantId, filter.sucursalId, filter.limit)
+        : this.database.prepare(sql).all(this.tenantId, filter.sucursalId)
+      ) as Array<Record<string, unknown>>;
     }
-    return this.database.prepare(
-      "SELECT * FROM facturas WHERE tenant_id = ? ORDER BY created_at DESC LIMIT ?"
-    ).all(this.tenantId, limit) as Array<Record<string, unknown>>;
+    const sql = hasLimit
+      ? "SELECT * FROM facturas WHERE tenant_id = ? ORDER BY created_at DESC LIMIT ?"
+      : "SELECT * FROM facturas WHERE tenant_id = ? ORDER BY created_at DESC";
+    return (hasLimit
+      ? this.database.prepare(sql).all(this.tenantId, filter.limit)
+      : this.database.prepare(sql).all(this.tenantId)
+    ) as Array<Record<string, unknown>>;
   }
 
   reserveInvoiceNumbers(count: number): number[] {

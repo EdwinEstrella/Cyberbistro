@@ -4,6 +4,8 @@ import { useAuth } from "../../../shared/hooks/useAuth";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { readLocalCuentasCobrar, readLocalCxcPagos } from "../../billing/lib/accountsLocal";
+import { readLocalInvoices } from "../../billing/lib/invoicesLocal";
+import { readLocalCierres } from "../../cierre/lib/cierresLocal";
 import { listCustomers } from "../../clientes/lib/customers";
 import { supabase } from "../../../shared/lib/supabase";
 import { RegistrarPagoCxCModal } from "./RegistrarPagoCxCModal";
@@ -115,8 +117,8 @@ export function CuentasCobrar() {
         // Customers are authoritative in SQLite (see Clientes migration); read
         // via the unified helper so new customers appear here too.
         customersData = (await listCustomers(tenantId)) as unknown as CustomerRow[];
-        facturasData = await readLocalMirror<FacturaRow>(tenantId, "facturas");
-        ciclosData = await readLocalMirror<any>(tenantId, "cierres_operativos");
+        facturasData = (await readLocalInvoices(tenantId)) as unknown as FacturaRow[];
+        ciclosData = await readLocalCierres(tenantId);
       } else {
         const [cRes, paRes, cuRes, fRes, cyRes] = await Promise.all([
           supabase.from("cuentas_cobrar").select("*").eq("tenant_id", tenantId),
