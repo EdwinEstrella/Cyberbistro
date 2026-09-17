@@ -22,7 +22,7 @@ import { calculateInvoiceTotals } from "../../../shared/lib/billingTotals";
 import { type FiscalMode } from "../../../shared/lib/fiscalTypes";
 import { resolveActiveFiscalMode, runFiscalEngine, buildEcfDocumentWrites } from "../../../shared/lib/fiscalEngine";
 import { getDeviceId, getLocalFirstStatusSnapshot, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, readLocalMirror, readLocalOutbox, type LocalFirstWrite } from "../../../shared/lib/localFirst";
-import { getNextFacturaNumber } from "../../../shared/lib/invoiceNumber";
+import { getNextFacturaNumber, getNextFacturaNumbers } from "../../../shared/lib/invoiceNumber";
 import { commitCheckout } from "../../../shared/lib/checkoutCommit";
 import { isDesktopCloudUnavailable } from "../../../shared/lib/cloudAvailability";
 import { useSucursal } from "../../../app/context/SucursalContext";
@@ -331,8 +331,13 @@ export function MesaCloseAccountModal({
       setNcfFiscalActive(mode !== "internal_receipt");
       setNcfTiposActivos(settings?.ncfTiposActivos ?? {});
 
-      const initialNcf = normalizeNcfTypeForFiscalMode("B02", mode);
-      setSelectedNcfType(initialNcf);
+      const activeMap = settings?.ncfTiposActivos ?? {};
+      const preferred = normalizeNcfTypeForFiscalMode("B02", mode);
+      const firstActive = NCF_TIPO_OPCIONES.find((option) =>
+        (mode === "dgii_ecf" ? option.codigo.startsWith("E") : option.codigo.startsWith("B")) &&
+        isNcfTypeActive(activeMap, option.codigo)
+      );
+      setSelectedNcfType(isNcfTypeActive(activeMap, preferred) ? preferred : (firstActive?.codigo ?? preferred));
       setSolicitaComprobante(false);
     });
 
@@ -456,13 +461,13 @@ export function MesaCloseAccountModal({
     const deferredNcfIncrements: Array<{ tipoCodigo: string; usedSequence: number }> = [];
     const deviceId = await getDeviceId();
     try {
-      let nextFacturaNumber = await getNextFacturaNumber(tenantId);
+      const reservedFacturaNumbers = await getNextFacturaNumbers(tenantId, order.length);
 
       const localFacturaIds = new Map<number, string>();
       const numeroFacturas = new Map<number, number>();
-      for (const personIndex of order) {
+      for (const [reservationIndex, personIndex] of order.entries()) {
         localFacturaIds.set(personIndex, crypto.randomUUID());
-        numeroFacturas.set(personIndex, nextFacturaNumber++);
+        numeroFacturas.set(personIndex, reservedFacturaNumbers[reservationIndex]);
       }
 
       const reservedFiscalByPerson = new Map<number, Awaited<ReturnType<typeof runFiscalEngine>>>();
@@ -485,10 +490,6 @@ export function MesaCloseAccountModal({
             });
           } catch (err) {
             alert(err instanceof Error ? err.message : "No se pudo procesar la facturación fiscal. No se emitió la factura.");
-            return;
-          }
-          if (!ncfPart) {
-            alert("No se pudo procesar la facturación fiscal. No se emitió la factura.");
             return;
           }
           reservedFiscalByPerson.set(personIndex, ncfPart);
@@ -530,7 +531,7 @@ export function MesaCloseAccountModal({
           pagada_at: paymentMethod === "fiado" ? null : now,
           monto_recibido: null,
           cambio_devuelto: null,
-          fiscal_mode: fiscalMode,
+          fiscal_mode: ncfPart ? fiscalMode : "internal_receipt",
           fiscal_status: ncfPart?.ecfType ? "pending_offline" : null,
           fiscal_document_id: ecfDocumentId,
           created_at: now,
@@ -803,11 +804,6 @@ export function MesaCloseAccountModal({
         setCharging(false);
         return;
       }
-      if (!ncfPart) {
-        alert("No se pudo procesar la facturación fiscal. No se emitió la factura.");
-        setCharging(false);
-        return;
-      }
     }
 
     const ecfDocumentId = ncfPart?.ecfType ? crypto.randomUUID() : null;
@@ -826,7 +822,7 @@ export function MesaCloseAccountModal({
       monto_recibido: cashReceived.amount,
       cambio_devuelto: cashReceived.change,
       pagada_at: paymentMethod === "fiado" ? null : now,
-      fiscal_mode: fiscalMode,
+      fiscal_mode: ncfPart ? fiscalMode : "internal_receipt",
       fiscal_status: ncfPart?.ecfType ? "pending_offline" : null,
       fiscal_document_id: ecfDocumentId,
       created_at: now,
@@ -1370,9 +1366,7 @@ export function MesaCloseAccountModal({
                       {NCF_TIPO_OPCIONES.filter(o => {
                         const modeMatch = fiscalMode === "dgii_ecf" ? o.codigo.startsWith("E") : fiscalMode === "ncf_legacy" ? o.codigo.startsWith("B") : false;
                         if (!modeMatch) return false;
-                        // Only show comprobante types the business left enabled (the
-                        // currently-selected one always stays visible).
-                        return isNcfTypeActive(ncfTiposActivos, o.codigo) || o.codigo === selectedNcfType;
+                        return isNcfTypeActive(ncfTiposActivos, o.codigo);
                       }).map((opcion) => (
                         <option key={opcion.codigo} value={opcion.codigo} className="bg-[#111] text-zinc-300">
                           {opcion.codigo} - {opcion.descripcion.replace(`${opcion.codigo} - `, "")}

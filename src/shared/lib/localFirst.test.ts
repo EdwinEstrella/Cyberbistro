@@ -588,7 +588,7 @@ describe("localFirst", () => {
     expect(consumoGuardrail.shouldWriteServer).toBe(true);
   });
 
-  it("bloquea delete de facturas y deja metadata de auditoría", () => {
+  it("sincroniza el delete administrativo de facturas", () => {
     const facturaDelete = createSyncOutboxEntry({
       tenantId: "tenant-1",
       tableName: "facturas",
@@ -598,8 +598,8 @@ describe("localFirst", () => {
     });
 
     const guardrail = resolveOutboxConflictGuardrail("tenant-1", facturaDelete, { id: "f-1" });
-    expect(guardrail.action).toBe("skip_with_audit_error");
-    expect(guardrail.shouldWriteServer).toBe(false);
+    expect(guardrail.action).toBe("apply_local_write");
+    expect(guardrail.shouldWriteServer).toBe(true);
     expect(guardrail.reason).toContain("factura");
   });
 

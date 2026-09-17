@@ -1243,11 +1243,6 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
         setCharging(false);
         return;
       }
-      if (!ncfPart) {
-        alert("No se pudo procesar la facturación fiscal. No se emitió la factura.");
-        setCharging(false);
-        return;
-      }
     }
 
     const ecfDocumentId = ncfPart?.ecfType ? crypto.randomUUID() : null;

@@ -25,6 +25,7 @@ export const CIERRES_LIST_CHANNEL = "cierres:list";
 export const FISCAL_SALES_REPOSITORY_EXECUTE_CHANNEL = "sales-fiscal-repository:execute";
 export const FACTURAS_LIST_CHANNEL = "facturas:list";
 export const FACTURAS_RESERVE_NUMBERS_CHANNEL = "facturas:reserve-numbers";
+export const FACTURAS_DELETE_LOCAL_CHANNEL = "facturas:delete-local";
 export const CASH_PURCHASE_REPOSITORY_EXECUTE_CHANNEL = "cash-purchase-repository:execute";
 export const PAYROLL_REPOSITORY_EXECUTE_CHANNEL = "payroll-repository:execute";
 export const PAYROLL_SYNC_ACCESS_TOKEN_CHANNEL = "payroll-sync:set-access-token";
@@ -342,6 +343,7 @@ export function registerSalesFiscalRepositoryIpc(input: {
   getRepository: () => { execute(command: SalesFiscalCommand): SalesFiscalRepositoryResult };
   listInvoices?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Array<Record<string, unknown>>;
   reserveInvoiceNumbers?: (input: { tenantId?: string; count: number }) => number[];
+  deleteInvoiceLocal?: (input: { tenantId?: string; invoiceId: string }) => void;
 }): void {
   input.ipcMain.removeHandler(FISCAL_SALES_REPOSITORY_EXECUTE_CHANNEL);
   input.ipcMain.handle(FISCAL_SALES_REPOSITORY_EXECUTE_CHANNEL, async (event, payload) => {
@@ -366,6 +368,18 @@ export function registerSalesFiscalRepositoryIpc(input: {
     }
     if (!input.reserveInvoiceNumbers) throw new Error("Invoice number reservation is unavailable");
     return { ok: true, data: input.reserveInvoiceNumbers({ tenantId: request.tenantId as string | undefined, count: Number(request.count) }) };
+  });
+
+  input.ipcMain.removeHandler(FACTURAS_DELETE_LOCAL_CHANNEL);
+  input.ipcMain.handle(FACTURAS_DELETE_LOCAL_CHANNEL, async (event, payload) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    const request = payload as { tenantId?: unknown; invoiceId?: unknown } | null;
+    if (!request || (request.tenantId !== undefined && typeof request.tenantId !== "string") || typeof request.invoiceId !== "string" || request.invoiceId.length === 0) {
+      throw new Error("Invalid local invoice deletion request");
+    }
+    if (!input.deleteInvoiceLocal) throw new Error("Local invoice deletion is unavailable");
+    input.deleteInvoiceLocal({ tenantId: request.tenantId as string | undefined, invoiceId: request.invoiceId });
+    return { ok: true };
   });
 }
 

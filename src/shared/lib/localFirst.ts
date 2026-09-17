@@ -1342,7 +1342,7 @@ export function resolveConflictForTable(
   switch (tableName) {
     case "facturas": {
       if (localEntry.op === "delete") {
-        return { resolution: "skip", reason: "Delete de factura requiere auditoria; no se sincroniza automaticamente." };
+        return { resolution: "local_wins", reason: "Eliminación administrativa de factura pendiente de sincronización." };
       }
       return { resolution: "local_wins", reason: "Sin conflicto en factura." };
     }

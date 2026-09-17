@@ -379,42 +379,42 @@ export function Billing() {
         ? { data: (await readLocalInvoices(tenantId, { sucursalId: activeSucursalId || undefined, limit: 1000 })) as unknown as Invoice[], error: null }
         : activeSucursalId
           ? supabase.from("facturas").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("created_at", { ascending: false })
-          : supabase.from("facturas").select("*").eq("tenant_id", tenantId).is("sucursal_id", null).order("created_at", { ascending: false }),
+          : supabase.from("facturas").select("*").eq("tenant_id", tenantId).order("created_at", { ascending: false }),
       useLocalCycles
         ? { data: (await readLocalCierres(tenantId, { sucursalId: activeSucursalId || undefined })) as unknown as CierreOperativoRow[], error: null }
         : activeSucursalId
           ? supabase.from("cierres_operativos").select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at, efectivo_inicial").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("opened_at", { ascending: false })
-          : supabase.from("cierres_operativos").select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at, efectivo_inicial").eq("tenant_id", tenantId).is("sucursal_id", null).order("opened_at", { ascending: false }),
+          : supabase.from("cierres_operativos").select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at, efectivo_inicial").eq("tenant_id", tenantId).order("opened_at", { ascending: false }),
       useLocalExpenses
         ? { data: await readLocalExpenses(tenantId, { sucursalId: activeSucursalId || undefined, limit: 1000 }), error: null }
         : activeSucursalId
           ? supabase.from("gastos").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("fecha_gasto", { ascending: false })
-          : supabase.from("gastos").select("*").eq("tenant_id", tenantId).is("sucursal_id", null).order("fecha_gasto", { ascending: false }),
+          : supabase.from("gastos").select("*").eq("tenant_id", tenantId).order("fecha_gasto", { ascending: false }),
       useLocalExpenseCategories
         ? { data: await readLocalExpenseCategories(tenantId, { sucursalId: activeSucursalId || undefined }), error: null }
         : activeSucursalId
           ? supabase.from("gasto_categorias").select("id, nombre, color").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
-          : supabase.from("gasto_categorias").select("id, nombre, color").eq("tenant_id", tenantId).is("sucursal_id", null),
+          : supabase.from("gasto_categorias").select("id, nombre, color").eq("tenant_id", tenantId),
       useLocalCxc
         ? { data: await readLocalCuentasCobrar(tenantId, { sucursalId: activeSucursalId || undefined }), error: null }
         : activeSucursalId
           ? supabase.from("cuentas_cobrar").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
-          : supabase.from("cuentas_cobrar").select("*").eq("tenant_id", tenantId).is("sucursal_id", null),
+          : supabase.from("cuentas_cobrar").select("*").eq("tenant_id", tenantId),
       useLocalCxc
         ? { data: await readLocalCxcPagos(tenantId, { sucursalId: activeSucursalId || undefined }), error: null }
         : activeSucursalId
           ? supabase.from("cxc_pagos").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
-          : supabase.from("cxc_pagos").select("*").eq("tenant_id", tenantId).is("sucursal_id", null),
+          : supabase.from("cxc_pagos").select("*").eq("tenant_id", tenantId),
       useLocalCxp
         ? { data: await readLocalCuentasPagar(tenantId, { sucursalId: activeSucursalId || undefined }), error: null }
         : activeSucursalId
           ? supabase.from("cuentas_pagar").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
-          : supabase.from("cuentas_pagar").select("*").eq("tenant_id", tenantId).is("sucursal_id", null),
+          : supabase.from("cuentas_pagar").select("*").eq("tenant_id", tenantId),
       useLocalCxp
         ? { data: await readLocalCxpPagos(tenantId, { sucursalId: activeSucursalId || undefined }), error: null }
         : activeSucursalId
           ? supabase.from("cxp_pagos").select("*").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
-          : supabase.from("cxp_pagos").select("*").eq("tenant_id", tenantId).is("sucursal_id", null),
+          : supabase.from("cxp_pagos").select("*").eq("tenant_id", tenantId),
       useLocalCustomers
         ? { data: await listCustomers(tenantId), error: null }
         : supabase.from("customers").select("id, name").eq("tenant_id", tenantId),
@@ -1144,6 +1144,9 @@ export function Billing() {
         );
 
         await Promise.all(writes);
+        if (window.electronAPI?.deleteInvoiceLocal) {
+          await window.electronAPI.deleteInvoiceLocal({ tenantId, invoiceId: inv.id });
+        }
 
         setInvoiceModal((open) => (open?.id === inv.id ? null : open));
         await loadBillingData();

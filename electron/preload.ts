@@ -85,6 +85,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   listExpenses: (filter?: unknown) => ipcRenderer.invoke('expenses:list', filter),
   listInvoices: (filter?: unknown) => ipcRenderer.invoke('facturas:list', filter),
   reserveInvoiceNumbers: (request: unknown) => ipcRenderer.invoke('facturas:reserve-numbers', request),
+  deleteInvoiceLocal: (request: unknown) => ipcRenderer.invoke('facturas:delete-local', request),
   listCierres: (filter?: unknown) => ipcRenderer.invoke('cierres:list', filter),
   listCuentasCobrar: (filter?: unknown) => ipcRenderer.invoke('receivables:list', filter),
   listCxcPagos: (filter?: unknown) => ipcRenderer.invoke('cxc-pagos:list', filter),

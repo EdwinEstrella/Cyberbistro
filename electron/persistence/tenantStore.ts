@@ -454,6 +454,21 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     }
   }
 
+  deleteInvoiceAndTraces(invoiceId: string): void {
+    if (!invoiceId) throw new Error("Invalid invoice id");
+    this.database.exec("BEGIN IMMEDIATE;");
+    try {
+      this.database.prepare("DELETE FROM fiscal_outbox WHERE factura_id = ? AND tenant_id = ?").run(invoiceId, this.tenantId);
+      this.database.prepare("DELETE FROM ecf_documents WHERE factura_id = ? AND tenant_id = ?").run(invoiceId, this.tenantId);
+      this.database.prepare("DELETE FROM consumos WHERE factura_id = ? AND tenant_id = ?").run(invoiceId, this.tenantId);
+      this.database.prepare("DELETE FROM facturas WHERE id = ? AND tenant_id = ?").run(invoiceId, this.tenantId);
+      this.database.exec("COMMIT;");
+    } catch (error) {
+      this.database.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
   listCierres(filter?: { sucursalId?: string; limit?: number }): Array<Record<string, unknown>> {
     const limit = filter?.limit ?? 500;
     const columns = "id, tenant_id, sucursal_id, business_day, opening_cash AS efectivo_inicial, state, closed_at, cycle_number, opened_at, printed_at, created_at";
