@@ -12,6 +12,7 @@ import {
   DEFAULT_NCF_B_CODE,
   ncfTypeRequiresClientRnc,
   isNcfTypeCode,
+  isNcfTypeActive,
   normalizeNcfTypeForFiscalMode,
   type NcfTypeCode,
   NCF_TIPO_OPCIONES,
@@ -247,6 +248,7 @@ export function MesaCloseAccountModal({
   const [ncfFiscalActive, setNcfFiscalActive] = useState(false);
   const [solicitaComprobante, setSolicitaComprobante] = useState(false);
   const [selectedNcfType, setSelectedNcfType] = useState<NcfTypeCode>(DEFAULT_NCF_B_CODE);
+  const [ncfTiposActivos, setNcfTiposActivos] = useState<Record<string, boolean>>({});
   const [fiscalMode, setFiscalMode] = useState<FiscalMode>("internal_receipt");
   const [certificateId, setCertificateId] = useState<string | null>(null);
 
@@ -327,6 +329,7 @@ export function MesaCloseAccountModal({
       setFiscalMode(mode);
       setCertificateId(certId);
       setNcfFiscalActive(mode !== "internal_receipt");
+      setNcfTiposActivos(settings?.ncfTiposActivos ?? {});
 
       const initialNcf = normalizeNcfTypeForFiscalMode("B02", mode);
       setSelectedNcfType(initialNcf);
@@ -1333,10 +1336,14 @@ export function MesaCloseAccountModal({
                     onClick={() => {
                       const next = !solicitaComprobante;
                       setSolicitaComprobante(next);
-                      if (next) {
-                        setSelectedNcfType(fiscalMode === "dgii_ecf" ? "E31" : "B01");
+                      const preferred = next ? (fiscalMode === "dgii_ecf" ? "E31" : "B01") : (fiscalMode === "dgii_ecf" ? "E32" : "B02");
+                      if (isNcfTypeActive(ncfTiposActivos, preferred)) {
+                        setSelectedNcfType(preferred as NcfTypeCode);
                       } else {
-                        setSelectedNcfType(fiscalMode === "dgii_ecf" ? "E32" : "B02");
+                        const firstActive = NCF_TIPO_OPCIONES.find(o =>
+                          (fiscalMode === "dgii_ecf" ? o.codigo.startsWith("E") : o.codigo.startsWith("B")) &&
+                          isNcfTypeActive(ncfTiposActivos, o.codigo));
+                        if (firstActive) setSelectedNcfType(firstActive.codigo as NcfTypeCode);
                       }
                     }}
                     className={`relative h-[28px] w-[50px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${solicitaComprobante ? "bg-[#ff906d]" : "bg-[#222]"}`}
@@ -1361,9 +1368,11 @@ export function MesaCloseAccountModal({
                       className="w-full rounded-[14px] border border-white/20 bg-[#0a0a0a] px-4 py-3.5 font-['Inter',sans-serif] text-zinc-300 text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors cursor-pointer h-auto shadow-sm"
                     >
                       {NCF_TIPO_OPCIONES.filter(o => {
-                        if (fiscalMode === "dgii_ecf") return o.codigo.startsWith("E");
-                        if (fiscalMode === "ncf_legacy") return o.codigo.startsWith("B");
-                        return false;
+                        const modeMatch = fiscalMode === "dgii_ecf" ? o.codigo.startsWith("E") : fiscalMode === "ncf_legacy" ? o.codigo.startsWith("B") : false;
+                        if (!modeMatch) return false;
+                        // Only show comprobante types the business left enabled (the
+                        // currently-selected one always stays visible).
+                        return isNcfTypeActive(ncfTiposActivos, o.codigo) || o.codigo === selectedNcfType;
                       }).map((opcion) => (
                         <option key={opcion.codigo} value={opcion.codigo} className="bg-[#111] text-zinc-300">
                           {opcion.codigo} - {opcion.descripcion.replace(`${opcion.codigo} - `, "")}

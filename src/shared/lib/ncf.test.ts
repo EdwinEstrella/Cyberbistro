@@ -4,10 +4,27 @@ import {
   buildTenantNcfUpdatePayload,
   construirCadenaNcf,
   esCodigoNcfValido,
+  isNcfTypeActive,
   ncfTypeRequiresClientRnc,
+  normalizeNcfActiveMap,
   normalizeNcfTypeForFiscalMode,
   prepareNcfForFacturaInsert,
 } from "./ncf";
+
+describe("ncf tipos activos", () => {
+  it("un tipo está activo salvo que esté explícitamente en false", () => {
+    expect(isNcfTypeActive({}, "B01")).toBe(true); // mapa vacío = todos activos
+    expect(isNcfTypeActive(null, "B02")).toBe(true);
+    expect(isNcfTypeActive({ B01: false }, "B01")).toBe(false);
+    expect(isNcfTypeActive({ B01: false }, "B02")).toBe(true); // otro tipo sigue activo
+    expect(isNcfTypeActive({ B01: true }, "B01")).toBe(true);
+  });
+
+  it("normalizeNcfActiveMap descarta códigos inválidos y normaliza a booleanos", () => {
+    expect(normalizeNcfActiveMap({ b01: false, "E31": true, "xx": false })).toEqual({ B01: false, E31: true });
+    expect(normalizeNcfActiveMap("no-objeto")).toEqual({});
+  });
+});
 
 describe("ncf", () => {
   it("esCodigoNcfValido acepta B01 y E32", () => {

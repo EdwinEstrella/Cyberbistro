@@ -49,6 +49,8 @@ import {
   construirCadenaNcf,
   etiquetaTipoNcf,
   isNcfBCode,
+  isNcfTypeActive,
+  normalizeNcfActiveMap,
   NCF_B_TIPO_OPCIONES,
   NCF_E_TIPO_OPCIONES,
   type NcfBCode,
@@ -74,6 +76,7 @@ interface Config {
   ncf_tipo_default: string;
   ncf_secuencia_siguiente: number;
   ncf_secuencias_por_tipo: Record<string, number>;
+  ncf_tipos_activos: Record<string, boolean>;
 }
 
 const CURRENCY_OPTIONS: Array<{ code: Config["currency_code"]; label: string }> = [
@@ -185,6 +188,7 @@ export function Ajustes() {
     ncf_tipo_default: DEFAULT_NCF_B_CODE,
     ncf_secuencia_siguiente: 1,
     ncf_secuencias_por_tipo: buildBSequenceMapFromRow(null),
+    ncf_tipos_activos: {},
   });
   const [thermalPreviewNonce, setThermalPreviewNonce] = useState(0);
   const [thermalPreviewKind, setThermalPreviewKind] = useState<ThermalPreviewKind>("factura");
@@ -196,7 +200,7 @@ export function Ajustes() {
 
   const TENANT_FIELDS_BASE = "nombre_negocio, rnc, logo_url, logo_size_px, logo_offset_x, logo_offset_y, menu_url, direccion, telefono";
   const TENANT_FIELDS_CURRENCY = "moneda";
-  const TENANT_FIELDS_NCF = `itbis_cobro_por_defecto, propina_cobro_por_defecto, ncf_fiscal_activo, fiscal_mode, fiscal_mode_fallback, ecf_environment, ncf_tipo_default, ncf_secuencia_siguiente, ncf_secuencias_por_tipo, ${NCF_B_SEQUENCE_FIELDS_SELECT}`;
+  const TENANT_FIELDS_NCF = `itbis_cobro_por_defecto, propina_cobro_por_defecto, ncf_fiscal_activo, fiscal_mode, fiscal_mode_fallback, ecf_environment, ncf_tipo_default, ncf_secuencia_siguiente, ncf_secuencias_por_tipo, ncf_tipos_activos, ${NCF_B_SEQUENCE_FIELDS_SELECT}`;
 
   useEffect(() => {
     if (authLoading || !tenantId) { if (!authLoading) setLoading(false); return; }
@@ -244,6 +248,7 @@ export function Ajustes() {
           ncf_tipo_default: defaultType,
           ncf_secuencia_siguiente: ncfSequences[defaultType] ?? 1,
           ncf_secuencias_por_tipo: ncfSequences,
+          ncf_tipos_activos: normalizeNcfActiveMap(data.ncf_tipos_activos),
         });
       }
       // Proactively cache logo for offline printing
@@ -277,6 +282,7 @@ export function Ajustes() {
       fiscal_mode_fallback: config.fiscal_mode_fallback,
       ecf_environment: config.ecf_environment,
       ...ncfUpdate,
+      ncf_tipos_activos: config.ncf_tipos_activos,
       updated_at: new Date().toISOString()
     };
     
@@ -562,16 +568,23 @@ export function Ajustes() {
                       Secuencias Configuradas por Tipo {config.fiscal_mode === "dgii_ecf" ? "E" : "B"}
                     </span>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {(config.fiscal_mode === "dgii_ecf" ? NCF_E_TIPO_OPCIONES : NCF_B_TIPO_OPCIONES).map(o => (
-                        <div key={o.codigo} className="bg-background rounded-[16px] border border-black/5 dark:border-white/5 p-4 flex flex-col gap-3 hover:border-primary/20 transition-colors">
-                           <div className="flex justify-between items-center">
+                      {(config.fiscal_mode === "dgii_ecf" ? NCF_E_TIPO_OPCIONES : NCF_B_TIPO_OPCIONES).map(o => {
+                        const isDefault = o.codigo === config.ncf_tipo_default;
+                        const active = isDefault || isNcfTypeActive(config.ncf_tipos_activos, o.codigo);
+                        return (
+                        <div key={o.codigo} className={`bg-background rounded-[16px] border border-black/5 dark:border-white/5 p-4 flex flex-col gap-3 transition-colors ${active ? "hover:border-primary/20" : "opacity-60"}`}>
+                           <div className="flex justify-between items-center gap-2">
                              <span className="font-bold font-['Space_Grotesk'] text-foreground text-lg">{o.codigo}</span>
-                             <span className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">{o.codigo === config.ncf_tipo_default ? "Predeterminado" : "Disponible"}</span>
+                             <label className="flex items-center gap-2 cursor-pointer" title={isDefault ? "El tipo predeterminado siempre está activo" : "Activar o desactivar la emisión de este comprobante"}>
+                               <span className={`text-[10px] uppercase font-bold tracking-widest ${isDefault ? "text-primary" : active ? "text-green-600 dark:text-green-400" : "text-muted-foreground"}`}>{isDefault ? "Predeterminado" : active ? "Activo" : "Apagado"}</span>
+                               <input type="checkbox" checked={active} disabled={isDefault} onChange={e => setConfig(p => ({ ...p, ncf_tipos_activos: { ...p.ncf_tipos_activos, [o.codigo]: e.target.checked } }))} className="size-4 rounded accent-primary disabled:opacity-60 cursor-pointer" />
+                             </label>
                            </div>
-                           <input type="number" min="1" value={config.ncf_secuencias_por_tipo[o.codigo] || 1} onChange={e => setConfig(p => ({ ...p, ncf_secuencias_por_tipo: { ...p.ncf_secuencias_por_tipo, [o.codigo]: Math.max(1, parseInt(e.target.value) || 1) } }))} className="bg-muted/30 border border-black/10 dark:border-white/10 rounded-xl px-4 py-3 font-mono text-foreground font-bold outline-none focus:border-primary/50 transition-all" />
+                           <input type="number" min="1" disabled={!active} value={config.ncf_secuencias_por_tipo[o.codigo] || 1} onChange={e => setConfig(p => ({ ...p, ncf_secuencias_por_tipo: { ...p.ncf_secuencias_por_tipo, [o.codigo]: Math.max(1, parseInt(e.target.value) || 1) } }))} className="bg-muted/30 border border-black/10 dark:border-white/10 rounded-xl px-4 py-3 font-mono text-foreground font-bold outline-none focus:border-primary/50 transition-all disabled:opacity-50" />
                            <span className="text-[11px] text-muted-foreground/80 leading-relaxed">{o.codigo} - {o.descripcion}</span>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 </div>

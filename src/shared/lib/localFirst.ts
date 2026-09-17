@@ -1329,7 +1329,7 @@ const SAFE_TENANT_KEYS = new Set([
   "nombre_negocio", "rnc", "logo_url", "logo_size_px", "logo_offset_x", "logo_offset_y", "menu_url", "direccion", "telefono", "moneda",
   "itbis_cobro_por_defecto", "propina_cobro_por_defecto",
   "fiscal_mode", "fiscal_mode_fallback", "ecf_environment",
-  "ncf_fiscal_activo", "ncf_tipo_default", "ncf_secuencia_siguiente", "ncf_secuencias_por_tipo",
+  "ncf_fiscal_activo", "ncf_tipo_default", "ncf_secuencia_siguiente", "ncf_secuencias_por_tipo", "ncf_tipos_activos",
   "ncf_b01_secuencia_siguiente", "ncf_b02_secuencia_siguiente", "ncf_b14_secuencia_siguiente", "ncf_b15_secuencia_siguiente", "ncf_b16_secuencia_siguiente", "ncf_b17_secuencia_siguiente",
   "cantidad_mesas", "payment_day_of_month", "updated_at"
 ]);
@@ -1936,7 +1936,19 @@ export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: nu
         if (entry.op === "insert") {
           result = await runTrackedCloudOperation(() => supabase.from(entry.table_name).insert([serverPayload as Record<string, unknown>]).select("id") as any);
         } else if (entry.op === "update") {
-          result = await runTrackedCloudOperation(() => supabase.from(entry.table_name).update(serverPayload as Record<string, unknown>).eq("id", entry.row_id).select("id") as any);
+          if (entry.table_name === "tenants") {
+            // Tenant settings sync through a SECURITY DEFINER RPC so any active
+            // member can save them; the admin-only UPDATE RLS silently affects 0
+            // rows for non-admins (or broken admin mappings), which never syncs.
+            const rpcRes = await runTrackedCloudOperation(() => supabase.rpc("update_tenant_settings", {
+              p_tenant_id: entry.row_id,
+              p_settings: serverPayload as Record<string, unknown>,
+            }) as any);
+            // The RPC returns the tenant id on success; normalize to the {id} ack shape.
+            result = rpcRes?.error ? rpcRes : { data: rpcRes?.data ? [{ id: rpcRes.data }] : [], error: null };
+          } else {
+            result = await runTrackedCloudOperation(() => supabase.from(entry.table_name).update(serverPayload as Record<string, unknown>).eq("id", entry.row_id).select("id") as any);
+          }
         } else if (entry.op === "upsert") {
           result = await runTrackedCloudOperation(() => supabase.from(entry.table_name).upsert(serverPayload as Record<string, unknown>, { onConflict: resolveUpsertConflictTarget(entry.table_name) }).select("id") as any);
         } else if (entry.op === "delete") {

@@ -2,7 +2,7 @@ import { supabase } from "./supabase";
 import { isCloudAvailabilityFailure, isDesktopCloudUnavailable, recordCloudFailure, recordCloudSuccess } from "./cloudAvailability";
 import { readLocalMirror } from "./localFirst";
 import { normalizeFiscalMode, type FiscalMode } from "./fiscalTypes";
-import { DEFAULT_NCF_B_CODE, esCodigoNcfValido, type NcfTypeCode } from "./ncf";
+import { DEFAULT_NCF_B_CODE, esCodigoNcfValido, normalizeNcfActiveMap, type NcfActiveMap, type NcfTypeCode } from "./ncf";
 
 export interface TenantBillingSettingsRow {
   fiscal_mode?: string | null;
@@ -21,6 +21,7 @@ export interface TenantBillingSettingsRow {
   ecf_issuer_provincia?: string | null;
   ecf_issuer_actividad_economica?: string | null;
   ecf_issuer_correo_emisor?: string | null;
+  ncf_tipos_activos?: unknown;
 }
 
 export interface TenantBillingSettings {
@@ -39,10 +40,11 @@ export interface TenantBillingSettings {
   ecfIssuerProvincia?: string | null;
   ecfIssuerActividadEconomica?: string | null;
   ecfIssuerCorreoEmisor?: string | null;
+  ncfTiposActivos?: NcfActiveMap;
 }
 
 const TENANT_BILLING_SETTINGS_SELECT =
-  "fiscal_mode, ncf_fiscal_activo, ncf_tipo_default, itbis_cobro_por_defecto, propina_cobro_por_defecto, fiscal_mode_fallback, ecf_environment, rnc, nombre_negocio, direccion, ecf_issuer_sucursal, ecf_issuer_municipio, ecf_issuer_provincia, ecf_issuer_actividad_economica, ecf_issuer_correo_emisor";
+  "fiscal_mode, ncf_fiscal_activo, ncf_tipo_default, ncf_tipos_activos, itbis_cobro_por_defecto, propina_cobro_por_defecto, fiscal_mode_fallback, ecf_environment, rnc, nombre_negocio, direccion, ecf_issuer_sucursal, ecf_issuer_municipio, ecf_issuer_provincia, ecf_issuer_actividad_economica, ecf_issuer_correo_emisor";
 
 export function normalizeTenantBillingSettings(
   row: TenantBillingSettingsRow | null | undefined
@@ -67,6 +69,7 @@ export function normalizeTenantBillingSettings(
     ecfIssuerProvincia: row?.ecf_issuer_provincia,
     ecfIssuerActividadEconomica: row?.ecf_issuer_actividad_economica,
     ecfIssuerCorreoEmisor: row?.ecf_issuer_correo_emisor,
+    ncfTiposActivos: normalizeNcfActiveMap(row?.ncf_tipos_activos),
   };
 }
 

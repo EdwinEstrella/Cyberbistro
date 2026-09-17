@@ -171,6 +171,33 @@ export function normalizeNcfSequenceMap(rawMap: unknown): NcfSequenceMap {
   return normalized;
 }
 
+export type NcfActiveMap = Record<string, boolean>;
+
+/** Normalizes a per-type active map. Only explicit `false` disables a type. */
+export function normalizeNcfActiveMap(raw: unknown): NcfActiveMap {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: NcfActiveMap = {};
+  for (const [rawCode, rawValue] of Object.entries(raw as Record<string, unknown>)) {
+    const code = normalizeCode(rawCode);
+    if (esCodigoNcfValido(code)) {
+      out[code] = rawValue !== false;
+    }
+  }
+  return out;
+}
+
+/**
+ * A comprobante type is active unless it is explicitly disabled (`false`) in the
+ * map. Missing keys / empty map = active, so existing tenants keep every type on
+ * and the POS behaviour is unchanged until the user turns one off.
+ */
+export function isNcfTypeActive(activeMap: unknown, tipoCodigo: string | null | undefined): boolean {
+  const code = normalizeCode(tipoCodigo);
+  if (!esCodigoNcfValido(code)) return false;
+  const map = normalizeNcfActiveMap(activeMap);
+  return map[code] !== false;
+}
+
 export function buildDefaultBSequenceMap(): Record<NcfBCode, number> {
   return {
     B01: DEFAULT_NCF_SEQUENCE,
