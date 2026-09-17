@@ -424,6 +424,36 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     ).all(this.tenantId, limit) as Array<Record<string, unknown>>;
   }
 
+  reserveInvoiceNumbers(count: number): number[] {
+    if (!Number.isSafeInteger(count) || count < 1 || count > 100) {
+      throw new Error("Invalid invoice number reservation count");
+    }
+
+    this.database.exec("BEGIN IMMEDIATE;");
+    try {
+      const invoiceMax = this.database.prepare(
+        "SELECT COALESCE(MAX(numero_factura), 0) AS max_number FROM facturas WHERE tenant_id = ?"
+      ).get(this.tenantId) as { max_number: number } | undefined;
+      const counter = this.database.prepare(
+        "SELECT next_number FROM invoice_number_counters WHERE tenant_id = ?"
+      ).get(this.tenantId) as { next_number: number } | undefined;
+      const first = Math.max(Number(invoiceMax?.max_number ?? 0) + 1, Number(counter?.next_number ?? 1));
+      if (!Number.isSafeInteger(first) || first < 1 || first + count - 1 > Number.MAX_SAFE_INTEGER) {
+        throw new Error("Invoice number range is exhausted");
+      }
+      this.database.prepare(`
+        INSERT INTO invoice_number_counters (tenant_id, next_number)
+        VALUES (?, ?)
+        ON CONFLICT(tenant_id) DO UPDATE SET next_number = excluded.next_number
+      `).run(this.tenantId, first + count);
+      this.database.exec("COMMIT;");
+      return Array.from({ length: count }, (_, index) => first + index);
+    } catch (error) {
+      this.database.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
   listCierres(filter?: { sucursalId?: string; limit?: number }): Array<Record<string, unknown>> {
     const limit = filter?.limit ?? 500;
     const columns = "id, tenant_id, sucursal_id, business_day, opening_cash AS efectivo_inicial, state, closed_at, cycle_number, opened_at, printed_at, created_at";

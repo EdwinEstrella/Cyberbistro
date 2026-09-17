@@ -41,6 +41,7 @@ describe("fiscalEngine", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    vi.mocked(loadTenantBillingSettings).mockResolvedValue({ ncfTiposActivos: {} } as any);
   });
 
   const validEcfSettings = {
@@ -245,6 +246,87 @@ describe("fiscalEngine", () => {
         ecfType: "32",
       });
       expect(resolveNcfForNewInvoiceLocalFirst).toHaveBeenCalledWith("tenant-1", "E32");
+    });
+
+    it("returns null (no NCF) when the legacy consumo type is turned off", async () => {
+      vi.mocked(loadTenantBillingSettings).mockResolvedValueOnce({
+        ncfTiposActivos: { B02: false },
+      } as any);
+
+      const result = await runFiscalEngine({
+        tenantId: "tenant-1",
+        activeMode: "ncf_legacy",
+        certificateId: null,
+        facturaId: "invoice-1",
+        numeroFactura: 11,
+        preferredNcfType: "B02",
+        deviceId: "device-1",
+      });
+
+      expect(result).toBeNull();
+      expect(resolveNcfForNewInvoiceLocalFirst).not.toHaveBeenCalled();
+    });
+
+    it("fails closed when the active-type configuration cannot be loaded", async () => {
+      vi.mocked(loadTenantBillingSettings).mockResolvedValueOnce(null);
+
+      await expect(runFiscalEngine({
+        tenantId: "tenant-1",
+        activeMode: "ncf_legacy",
+        certificateId: null,
+        facturaId: "invoice-1",
+        numeroFactura: 11,
+        preferredNcfType: "B02",
+        deviceId: "device-1",
+      })).rejects.toThrow("No se pudo validar la configuración de tipos NCF.");
+
+      expect(resolveNcfForNewInvoiceLocalFirst).not.toHaveBeenCalled();
+    });
+
+    it("returns null (no NCF) when the e-CF consumo type E32 is turned off", async () => {
+      vi.mocked(loadTenantBillingSettings).mockResolvedValueOnce({
+        ncfTiposActivos: { E32: false },
+      } as any);
+
+      const result = await runFiscalEngine({
+        tenantId: "tenant-1",
+        activeMode: "dgii_ecf",
+        certificateId: "cert-uuid",
+        facturaId: "invoice-1",
+        numeroFactura: 12,
+        clientRnc: "",
+        deviceId: "device-1",
+      });
+
+      expect(result).toBeNull();
+      expect(resolveNcfForNewInvoiceLocalFirst).not.toHaveBeenCalled();
+    });
+
+    it("still emits an active type even if another type is off", async () => {
+      vi.mocked(loadTenantBillingSettings).mockResolvedValueOnce({
+        ncfTiposActivos: { B02: false },
+      } as any);
+      vi.mocked(resolveNcfForNewInvoiceLocalFirst).mockResolvedValueOnce({
+        ncf: "B0100000002",
+        ncf_tipo: "B01",
+        tipoCodigo: "B01",
+        usedSequence: 2,
+        sequenceReservedAtomically: true,
+        reservationSource: "remote_rpc",
+      });
+
+      const result = await runFiscalEngine({
+        tenantId: "tenant-1",
+        activeMode: "ncf_legacy",
+        certificateId: null,
+        facturaId: "invoice-1",
+        numeroFactura: 13,
+        preferredNcfType: "B01",
+        deviceId: "device-1",
+      });
+
+      expect(result?.tipoCodigo).toBe("B01");
+      expect(resolveNcfForNewInvoiceLocalFirst).toHaveBeenCalledWith("tenant-1", "B01");
     });
 
     it("handles resolveActiveFiscalMode online query error without blocking pending e-CF sales", async () => {

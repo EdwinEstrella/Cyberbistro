@@ -70,6 +70,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   executeExpenseCommand: (command) => ipcRenderer.invoke('expense-repository:execute', command),
   listExpenses: (filter) => ipcRenderer.invoke('expenses:list', filter),
   listInvoices: (filter) => ipcRenderer.invoke('facturas:list', filter),
+  reserveInvoiceNumbers: (request) => ipcRenderer.invoke('facturas:reserve-numbers', request),
   listCierres: (filter) => ipcRenderer.invoke('cierres:list', filter),
   listCuentasCobrar: (filter) => ipcRenderer.invoke('receivables:list', filter),
   listCxcPagos: (filter) => ipcRenderer.invoke('cxc-pagos:list', filter),

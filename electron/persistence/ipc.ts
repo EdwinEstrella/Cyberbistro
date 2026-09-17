@@ -24,6 +24,7 @@ export const ORDERS_REPOSITORY_EXECUTE_CHANNEL = "orders-repository:execute";
 export const CIERRES_LIST_CHANNEL = "cierres:list";
 export const FISCAL_SALES_REPOSITORY_EXECUTE_CHANNEL = "sales-fiscal-repository:execute";
 export const FACTURAS_LIST_CHANNEL = "facturas:list";
+export const FACTURAS_RESERVE_NUMBERS_CHANNEL = "facturas:reserve-numbers";
 export const CASH_PURCHASE_REPOSITORY_EXECUTE_CHANNEL = "cash-purchase-repository:execute";
 export const PAYROLL_REPOSITORY_EXECUTE_CHANNEL = "payroll-repository:execute";
 export const PAYROLL_SYNC_ACCESS_TOKEN_CHANNEL = "payroll-sync:set-access-token";
@@ -340,6 +341,7 @@ export function registerSalesFiscalRepositoryIpc(input: {
   isTrustedSender: (event: { senderId: number }) => boolean;
   getRepository: () => { execute(command: SalesFiscalCommand): SalesFiscalRepositoryResult };
   listInvoices?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Array<Record<string, unknown>>;
+  reserveInvoiceNumbers?: (input: { tenantId?: string; count: number }) => number[];
 }): void {
   input.ipcMain.removeHandler(FISCAL_SALES_REPOSITORY_EXECUTE_CHANNEL);
   input.ipcMain.handle(FISCAL_SALES_REPOSITORY_EXECUTE_CHANNEL, async (event, payload) => {
@@ -353,6 +355,17 @@ export function registerSalesFiscalRepositoryIpc(input: {
   input.ipcMain.handle(FACTURAS_LIST_CHANNEL, async (event, filter) => {
     if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
     return { ok: true, data: input.listInvoices?.(filter as { tenantId?: string; sucursalId?: string; limit?: number }) ?? [] };
+  });
+
+  input.ipcMain.removeHandler(FACTURAS_RESERVE_NUMBERS_CHANNEL);
+  input.ipcMain.handle(FACTURAS_RESERVE_NUMBERS_CHANNEL, async (event, payload) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    const request = payload as { tenantId?: unknown; count?: unknown } | null;
+    if (!request || (request.tenantId !== undefined && typeof request.tenantId !== "string") || !Number.isSafeInteger(request.count) || Number(request.count) < 1 || Number(request.count) > 100) {
+      throw new Error("Invalid invoice number reservation request");
+    }
+    if (!input.reserveInvoiceNumbers) throw new Error("Invoice number reservation is unavailable");
+    return { ok: true, data: input.reserveInvoiceNumbers({ tenantId: request.tenantId as string | undefined, count: Number(request.count) }) };
   });
 }
 

@@ -49,6 +49,7 @@ import {
 } from "../../../shared/lib/invoiceNcf";
 import {
   DEFAULT_NCF_B_CODE,
+  isNcfTypeActive,
   isNcfTypeCode,
   normalizeNcfTypeForFiscalMode,
   NCF_TIPO_OPCIONES,
@@ -187,6 +188,7 @@ export function Dashboard() {
   const [tenantNcfFiscalActive, setTenantNcfFiscalActive] = useState(false);
   const [solicitaComprobante, setSolicitaComprobante] = useState(false);
   const [selectedNcfType, setSelectedNcfType] = useState<NcfTypeCode>(DEFAULT_NCF_B_CODE);
+  const [ncfTiposActivos, setNcfTiposActivos] = useState<Record<string, boolean>>({});
   const [fiscalMode, setFiscalMode] = useState<FiscalMode>("internal_receipt");
   const [certificateId, setCertificateId] = useState<string | null>(null);
 
@@ -218,9 +220,15 @@ export function Dashboard() {
       setFiscalMode(mode);
       setCertificateId(certId);
       setTenantNcfFiscalActive(mode !== "internal_receipt");
+      const activeMap = settings?.ncfTiposActivos ?? {};
+      setNcfTiposActivos(activeMap);
 
-      const initialNcf = normalizeNcfTypeForFiscalMode("B02", mode);
-      setSelectedNcfType(initialNcf);
+      const preferred = normalizeNcfTypeForFiscalMode("B02", mode);
+      const firstActive = NCF_TIPO_OPCIONES.find((option) =>
+        (mode === "dgii_ecf" ? option.codigo.startsWith("E") : option.codigo.startsWith("B")) &&
+        isNcfTypeActive(activeMap, option.codigo)
+      );
+      setSelectedNcfType(isNcfTypeActive(activeMap, preferred) ? preferred : (firstActive?.codigo ?? preferred));
       setSolicitaComprobante(false);
     });
 
@@ -1208,7 +1216,14 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
 
     const localFacturaId = crypto.randomUUID();
     const nowIso = new Date().toISOString();
-    const numeroFactura = await getNextFacturaNumber(tenantId);
+    let numeroFactura: number;
+    try {
+      numeroFactura = await getNextFacturaNumber(tenantId);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "No se pudo reservar el número de factura.");
+      setCharging(false);
+      return;
+    }
 
     let ncfPart: Awaited<ReturnType<typeof runFiscalEngine>> = null;
     if (tenantId && fiscalMode !== "internal_receipt") {
@@ -1252,7 +1267,7 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
       cambio_devuelto: isFiado ? null : cashReceived.change,
       created_at: nowIso,
       pagada_at: isFiado ? null : nowIso,
-      fiscal_mode: fiscalMode,
+      fiscal_mode: ncfPart ? fiscalMode : "internal_receipt",
       fiscal_status: ncfPart?.ecfType ? "pending_offline" : null,
       fiscal_document_id: ecfDocumentId,
       mesa_numero: 0,
@@ -2250,11 +2265,13 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                           onClick={() => {
                             const next = !solicitaComprobante;
                             setSolicitaComprobante(next);
-                            if (next) {
-                              setSelectedNcfType(fiscalMode === "dgii_ecf" ? "E31" : "B01");
-                            } else {
-                              setSelectedNcfType(fiscalMode === "dgii_ecf" ? "E32" : "B02");
-                            }
+                            const preferred = next ? (fiscalMode === "dgii_ecf" ? "E31" : "B01") : (fiscalMode === "dgii_ecf" ? "E32" : "B02");
+                            const fallback = NCF_TIPO_OPCIONES.find((option) =>
+                              (fiscalMode === "dgii_ecf" ? option.codigo.startsWith("E") : option.codigo.startsWith("B")) &&
+                              isNcfTypeActive(ncfTiposActivos, option.codigo)
+                            );
+                            if (isNcfTypeActive(ncfTiposActivos, preferred)) setSelectedNcfType(preferred);
+                            else if (fallback) setSelectedNcfType(fallback.codigo);
                           }}
                           className={`relative h-[28px] w-[50px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${solicitaComprobante ? "bg-[#ff906d]" : "bg-[#222]"}`}
                         >
@@ -2283,7 +2300,7 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                                 if (fiscalMode === "dgii_ecf") return o.codigo.startsWith("E");
                                 if (fiscalMode === "ncf_legacy") return o.codigo.startsWith("B");
                                 return false;
-                              }).map((opcion) => (
+                              }).filter((option) => isNcfTypeActive(ncfTiposActivos, option.codigo)).map((opcion) => (
                                 <SelectItem key={opcion.codigo} value={opcion.codigo}>
                                   {opcion.codigo} - {opcion.descripcion.replace(`${opcion.codigo} - `, "")}
                                 </SelectItem>

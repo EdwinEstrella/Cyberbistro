@@ -721,6 +721,11 @@ if (gotTheLock) {
         if (!store) return []
         return store.listInvoices(filter)
       },
+      reserveInvoiceNumbers: (request) => {
+        const store = getStore(request.tenantId)
+        if (!store) throw new Error('Tenant store is unavailable')
+        return store.reserveInvoiceNumbers(request.count)
+      },
     })
     registerCashPurchaseRepositoryIpc({ ipcMain, isTrustedSender, getRepository: () => {
       const store = getStore()

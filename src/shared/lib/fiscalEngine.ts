@@ -3,6 +3,7 @@ import { resolveNcfForNewInvoiceLocalFirst, enqueueLocalWrite, type LocalFirstWr
 import { type FiscalMode } from "./fiscalTypes";
 import { supabase } from "./supabase";
 import { type TenantBillingSettings, loadTenantBillingSettings } from "./tenantBillingSettings";
+import { isNcfTypeActive } from "./ncf";
 
 export async function resolveActiveFiscalMode(
   tenantId: string,
@@ -82,7 +83,25 @@ export async function runFiscalEngine(args: {
     return null;
   }
 
+  // Honor the per-type "active" switch (tenants.ncf_tipos_activos). A comprobante
+  // type the tenant turned off must NOT be emitted: the sale falls back to a
+  // non-fiscal receipt (no NCF) instead of stamping the disabled type. This is the
+  // single choke point for every checkout (takeout + mesa) and both engines —
+  // loadTenantBillingSettings reads the local mirror when offline, so the rule
+  // holds online and local. Fail closed when configuration is unavailable.
+  const settings = await loadTenantBillingSettings(args.tenantId);
+  if (!settings) {
+    throw new Error("No se pudo validar la configuración de tipos NCF.");
+  }
+  const activeMap = settings?.ncfTiposActivos;
+
   if (args.activeMode === "ncf_legacy") {
+    const effectiveType =
+      args.preferredNcfType?.trim().toUpperCase() || settings?.defaultNcfType || "B02";
+    if (!isNcfTypeActive(activeMap, effectiveType)) {
+      return null;
+    }
+
     const ncfPart = await resolveNcfForNewInvoiceLocalFirst(args.tenantId, args.preferredNcfType);
     if (!ncfPart) {
       throw new Error("No se pudo reservar NCF fiscal.");
@@ -101,6 +120,10 @@ export async function runFiscalEngine(args: {
     const clientRncTrimmed = args.clientRnc?.trim() || "";
     const ecfType = clientRncTrimmed !== "" ? "31" : "32";
     const typeCode = `E${ecfType}`;
+
+    if (!isNcfTypeActive(activeMap, typeCode)) {
+      return null;
+    }
 
     const ncfPart = await resolveNcfForNewInvoiceLocalFirst(args.tenantId, typeCode);
     if (!ncfPart) {

@@ -143,6 +143,10 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
       total REAL NOT NULL CHECK (total >= 0),
       local_status TEXT NOT NULL CHECK (local_status IN ('committed', 'pending_sync'))
     ) STRICT;
+    CREATE TABLE IF NOT EXISTS invoice_number_counters (
+      tenant_id TEXT PRIMARY KEY REFERENCES tenants(id),
+      next_number INTEGER NOT NULL CHECK (next_number > 0)
+    ) STRICT;
     CREATE TABLE IF NOT EXISTS ecf_documents (
       id TEXT PRIMARY KEY,
       tenant_id TEXT NOT NULL REFERENCES tenants(id),
