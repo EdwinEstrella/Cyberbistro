@@ -69,7 +69,7 @@ import { getNextFacturaNumber } from "../../../shared/lib/invoiceNumber";
 import { writePosMutationLocalFirst } from "../../pos/lib/localFirstMutations";
 import { cacheLogoFromUrl } from "../../../shared/lib/logoCache";
 import { normalizeTenantRol } from "../../../shared/lib/roleNav";
-import { isDesktopCloudUnavailable } from "../../../shared/lib/cloudAvailability";
+import { isDesktopCloudUnavailable, isDesktopRuntime } from "../../../shared/lib/cloudAvailability";
 import { CustomerSelect } from "../../clientes/components/CustomerSelect";
 import type { Customer } from "../../clientes/lib/customers";
 import { ConfirmModal } from "../../../shared/components/ConfirmModal";

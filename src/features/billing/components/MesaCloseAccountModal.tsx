@@ -25,7 +25,7 @@ import { getDeviceId, getLocalFirstStatusSnapshot, LOCAL_NCF_RESERVED_PAYLOAD_FL
 import { getNextFacturaNumber, getNextFacturaNumbers } from "../../../shared/lib/invoiceNumber";
 import { commitCheckout } from "../../../shared/lib/checkoutCommit";
 import { readLocalConsumos } from "../../../shared/lib/ordersLocal";
-import { isDesktopCloudUnavailable } from "../../../shared/lib/cloudAvailability";
+import { isDesktopCloudUnavailable, isDesktopRuntime } from "../../../shared/lib/cloudAvailability";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { CustomerSelect } from "../../clientes/components/CustomerSelect";
 import type { Customer } from "../../clientes/lib/customers";
