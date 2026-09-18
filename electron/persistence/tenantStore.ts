@@ -681,22 +681,28 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
       `SELECT * FROM comandas WHERE tenant_id = ?${activeFilter} ORDER BY created_at ASC`
     ).all(this.tenantId) as Array<Record<string, unknown>>;
   }
-
   saveComanda(comanda: Record<string, unknown>): void {
     const id = String(comanda.id);
     const branchId = typeof comanda.sucursal_id === "string" && comanda.sucursal_id.trim() ? comanda.sucursal_id.trim() : "main-process-default";
     const itemsStr = comanda.items == null ? null : (typeof comanda.items === "string" ? comanda.items : JSON.stringify(comanda.items));
+    const estado = comanda.estado ? String(comanda.estado) : "pendiente";
+    const state = estado === "entregado" ? "delivered" : estado === "listo" ? "ready" : estado === "en_preparacion" ? "preparing" : "pending";
+    const mesaNum = comanda.mesa_numero != null && Number(comanda.mesa_numero) > 0 ? Number(comanda.mesa_numero) : 1;
+    const mesaId = comanda.mesa_id ? String(comanda.mesa_id) : String(mesaNum);
+
     this.database.exec("BEGIN IMMEDIATE;");
     try {
       this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(branchId, this.tenantId, "Principal");
+      this.database.prepare("INSERT OR IGNORE INTO mesas_estado (id, tenant_id, sucursal_id, table_number, state) VALUES (?, ?, ?, ?, 'free')").run(mesaId, this.tenantId, branchId, mesaNum);
       this.database.prepare(`
-        INSERT INTO comandas (id, tenant_id, sucursal_id, numero_comanda, mesa_id, mesa_numero, estado, items, notas, creado_por, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO comandas (id, tenant_id, sucursal_id, numero_comanda, mesa_id, mesa_numero, state, estado, items, notas, creado_por, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           sucursal_id = excluded.sucursal_id,
           numero_comanda = excluded.numero_comanda,
           mesa_id = excluded.mesa_id,
           mesa_numero = excluded.mesa_numero,
+          state = excluded.state,
           estado = excluded.estado,
           items = excluded.items,
           notas = excluded.notas,
@@ -707,9 +713,10 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
         this.tenantId,
         branchId,
         comanda.numero_comanda != null ? Number(comanda.numero_comanda) : null,
-        comanda.mesa_id ? String(comanda.mesa_id) : null,
-        comanda.mesa_numero != null ? Number(comanda.mesa_numero) : null,
-        comanda.estado ? String(comanda.estado) : "pendiente",
+        mesaId,
+        mesaNum,
+        state,
+        estado,
         itemsStr,
         comanda.notas ? String(comanda.notas) : null,
         comanda.creado_por ? String(comanda.creado_por) : null,
@@ -768,28 +775,39 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
   saveConsumo(consumo: Record<string, unknown>): void {
     const id = String(consumo.id);
     const branchId = typeof consumo.sucursal_id === "string" && consumo.sucursal_id.trim() ? consumo.sucursal_id.trim() : "main-process-default";
-    const cant = Number(consumo.cantidad);
+    const cant = Number(consumo.cantidad ?? consumo.quantity);
     const cantidad = Number.isFinite(cant) && cant > 0 ? Math.round(cant) : 1;
-    const precio = Number(consumo.precio_unitario);
+    const precio = Number(consumo.precio_unitario ?? consumo.unit_price);
     const precioUnitario = Number.isFinite(precio) && precio >= 0 ? precio : 0;
     const sub = Number(consumo.subtotal);
     const subtotal = Number.isFinite(sub) && sub >= 0 ? sub : cantidad * precioUnitario;
+    const itemName = consumo.nombre ? String(consumo.nombre) : (consumo.name ? String(consumo.name) : "Item");
+    const estado = consumo.estado ? String(consumo.estado) : "pendiente";
+    const state = estado === "pagado" || estado === "entregado" ? "delivered" : estado === "listo" ? "ready" : "sent_to_kitchen";
+    const comandaId = consumo.comanda_id ? String(consumo.comanda_id) : null;
 
     this.database.exec("BEGIN IMMEDIATE;");
     try {
       this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(branchId, this.tenantId, "Principal");
+      if (comandaId) {
+        this.database.prepare("INSERT OR IGNORE INTO comandas (id, tenant_id, sucursal_id, mesa_id, mesa_numero, state) VALUES (?, ?, ?, '1', 1, 'pending')").run(comandaId, this.tenantId, branchId);
+      }
       this.database.prepare(`
-        INSERT INTO consumos (id, tenant_id, sucursal_id, comanda_id, plato_id, nombre, cantidad, precio_unitario, subtotal, tipo, estado, factura_id, mesa_numero, created_by_auth_user_id, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO consumos (id, tenant_id, sucursal_id, comanda_id, plato_id, name, nombre, quantity, cantidad, unit_price, precio_unitario, subtotal, tipo, state, estado, factura_id, mesa_numero, created_by_auth_user_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           sucursal_id = excluded.sucursal_id,
           comanda_id = excluded.comanda_id,
           plato_id = excluded.plato_id,
+          name = excluded.name,
           nombre = excluded.nombre,
+          quantity = excluded.quantity,
           cantidad = excluded.cantidad,
+          unit_price = excluded.unit_price,
           precio_unitario = excluded.precio_unitario,
           subtotal = excluded.subtotal,
           tipo = excluded.tipo,
+          state = excluded.state,
           estado = excluded.estado,
           factura_id = excluded.factura_id,
           mesa_numero = excluded.mesa_numero,
@@ -799,14 +817,18 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
         id,
         this.tenantId,
         branchId,
-        consumo.comanda_id ? String(consumo.comanda_id) : null,
+        comandaId,
         consumo.plato_id != null ? String(consumo.plato_id) : null,
-        consumo.nombre ? String(consumo.nombre) : (consumo.name ? String(consumo.name) : "Item"),
+        itemName,
+        itemName,
         cantidad,
+        cantidad,
+        precioUnitario,
         precioUnitario,
         subtotal,
         consumo.tipo ? String(consumo.tipo) : "plato",
-        consumo.estado ? String(consumo.estado) : "pendiente",
+        state,
+        estado,
         consumo.factura_id ? String(consumo.factura_id) : null,
         consumo.mesa_numero != null ? Number(consumo.mesa_numero) : null,
         consumo.created_by_auth_user_id ? String(consumo.created_by_auth_user_id) : null,

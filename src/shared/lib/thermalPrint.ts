@@ -56,6 +56,7 @@ function openBrowserPrint(html: string): void {
   iframe.style.visibility = "hidden";
 
   let cleaned = false;
+  let printed = false;
   const cleanup = () => {
     if (cleaned) return;
     cleaned = true;
@@ -64,11 +65,19 @@ function openBrowserPrint(html: string): void {
   };
 
   iframe.onload = () => {
+    if (printed) return;
     const win = iframe.contentWindow;
     if (!win) {
       cleanup();
       return;
     }
+    // Ignore about:blank initialization load before srcdoc renders
+    if (!win.document.body || win.document.body.innerHTML.trim() === "") {
+      return;
+    }
+    printed = true;
+    iframe.onload = null;
+
     // Give images (logo) a beat to paint before printing. Mobile needs longer.
     setTimeout(() => {
       try {
@@ -84,10 +93,9 @@ function openBrowserPrint(html: string): void {
     }, isMobile ? 700 : 250);
   };
 
-  document.body.appendChild(iframe);
-  // srcdoc renders the full receipt document and fires `onload` reliably, unlike
-  // document.write into a detached iframe.
+  // Set srcdoc before appendChild to avoid initial about:blank navigation
   iframe.srcdoc = html;
+  document.body.appendChild(iframe);
 }
 
 export interface PrintThermalResult {

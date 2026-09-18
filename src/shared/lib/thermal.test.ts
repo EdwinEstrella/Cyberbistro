@@ -118,4 +118,25 @@ describe("Thermal Printer Settings & Routing", () => {
     expect(enqueueThermalPrint({ id: "invoice-1", label: "Factura #1", print })).toBe(true);
     expect(enqueueThermalPrint({ id: "invoice-1", label: "Factura #1", print })).toBe(false);
   });
+
+  it("renders into iframe with srcdoc set before append in web runtime", async () => {
+    delete (global.window as any).electronAPI;
+    const appendChild = vi.fn();
+    const createElement = vi.fn().mockReturnValue({
+      setAttribute: vi.fn(),
+      style: {},
+    });
+    global.document = {
+      createElement,
+      body: { appendChild },
+    } as any;
+
+    await printThermalHtml("<div>Receipt HTML</div>");
+
+    expect(createElement).toHaveBeenCalledWith("iframe");
+    expect(appendChild).toHaveBeenCalled();
+    const createdIframe = appendChild.mock.calls[0][0] as HTMLIFrameElement;
+    expect(createdIframe.srcdoc).toBe("<div>Receipt HTML</div>");
+    delete (global as any).document;
+  });
 });
