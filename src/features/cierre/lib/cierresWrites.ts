@@ -34,7 +34,7 @@ export interface OpenCycleInput {
 
 export async function writeCycleOpen(input: OpenCycleInput): Promise<void> {
   if (hasSqliteCycles()) {
-    await openOperatingCycle(input.cycleId, input.businessDay, input.efectivoInicial, input.cycleNumber, input.openedAtIso);
+    await openOperatingCycle(input.cycleId, input.businessDay, input.efectivoInicial, input.cycleNumber, input.openedAtIso, input.sucursalId);
     return;
   }
   await enqueueLocalWrite({
