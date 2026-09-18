@@ -101,16 +101,16 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
       id TEXT PRIMARY KEY,
       tenant_id TEXT NOT NULL REFERENCES tenants(id),
       sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
-      mesa_id TEXT NOT NULL REFERENCES mesas_estado(id),
-      mesa_numero INTEGER NOT NULL CHECK (mesa_numero > 0),
+      mesa_id TEXT REFERENCES mesas_estado(id),
+      mesa_numero INTEGER CHECK (mesa_numero > 0),
       state TEXT NOT NULL CHECK (state IN ('pending', 'preparing', 'ready', 'delivered'))
     ) STRICT;
     CREATE TABLE IF NOT EXISTS consumos (
       id TEXT PRIMARY KEY,
       tenant_id TEXT NOT NULL REFERENCES tenants(id),
       sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
-      comanda_id TEXT NOT NULL REFERENCES comandas(id),
-      plato_id TEXT NOT NULL REFERENCES platos(id),
+      comanda_id TEXT REFERENCES comandas(id),
+      plato_id TEXT,
       name TEXT NOT NULL,
       quantity INTEGER NOT NULL CHECK (quantity > 0),
       unit_price REAL NOT NULL CHECK (unit_price >= 0),
@@ -784,9 +784,55 @@ function migrateLegacyPayrollSchema(database: DatabaseSync): void {
   });
 }
 
+function isColumnNullable(database: DatabaseSync, tableName: string, columnName: string): boolean {
+  const info = database.prepare(`PRAGMA table_info(${tableName});`).all() as Array<{ name: string; notnull: number }>;
+  const col = info.find((c) => c.name === columnName);
+  return col ? col.notnull === 0 : true;
+}
+
 function ensureSalonCocinaSchemaEvolution(database: DatabaseSync): void {
   const comandaCols = getTableColumns(database, "comandas");
-  if (comandaCols.length > 0) {
+  if (comandaCols.length > 0 && !isColumnNullable(database, "comandas", "mesa_id")) {
+    recreateTable(database, "comandas", `
+      CREATE TABLE comandas (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id),
+        sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
+        mesa_id TEXT REFERENCES mesas_estado(id),
+        mesa_numero INTEGER CHECK (mesa_numero > 0),
+        state TEXT NOT NULL CHECK (state IN ('pending', 'preparing', 'ready', 'delivered'))
+      ) STRICT;
+    `, `
+      INSERT INTO comandas (id, tenant_id, sucursal_id, mesa_id, mesa_numero, state)
+      SELECT id, tenant_id, sucursal_id, mesa_id, mesa_numero, state
+      FROM __old_table__;
+    `);
+  }
+
+  const consumoCols = getTableColumns(database, "consumos");
+  if (consumoCols.length > 0 && !isColumnNullable(database, "consumos", "comanda_id")) {
+    recreateTable(database, "consumos", `
+      CREATE TABLE consumos (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id),
+        sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
+        comanda_id TEXT REFERENCES comandas(id),
+        plato_id TEXT,
+        name TEXT NOT NULL,
+        quantity INTEGER NOT NULL CHECK (quantity > 0),
+        unit_price REAL NOT NULL CHECK (unit_price >= 0),
+        subtotal REAL NOT NULL CHECK (subtotal >= 0),
+        state TEXT NOT NULL
+      ) STRICT;
+    `, `
+      INSERT INTO consumos (id, tenant_id, sucursal_id, comanda_id, plato_id, name, quantity, unit_price, subtotal, state)
+      SELECT id, tenant_id, sucursal_id, comanda_id, plato_id, name, quantity, unit_price, subtotal, state
+      FROM __old_table__;
+    `);
+  }
+
+  const updatedComandaCols = getTableColumns(database, "comandas");
+  if (updatedComandaCols.length > 0) {
     const comandaAdditions = [
       ["numero_comanda", "INTEGER"],
       ["estado", "TEXT"],
@@ -797,14 +843,14 @@ function ensureSalonCocinaSchemaEvolution(database: DatabaseSync): void {
       ["updated_at", "TEXT"],
     ] as const;
     for (const [col, type] of comandaAdditions) {
-      if (!comandaCols.includes(col)) {
+      if (!updatedComandaCols.includes(col)) {
         database.exec(`ALTER TABLE comandas ADD COLUMN ${col} ${type};`);
       }
     }
   }
 
-  const consumoCols = getTableColumns(database, "consumos");
-  if (consumoCols.length > 0) {
+  const updatedConsumoCols = getTableColumns(database, "consumos");
+  if (updatedConsumoCols.length > 0) {
     const consumoAdditions = [
       ["nombre", "TEXT"],
       ["cantidad", "INTEGER"],
@@ -818,7 +864,7 @@ function ensureSalonCocinaSchemaEvolution(database: DatabaseSync): void {
       ["updated_at", "TEXT"],
     ] as const;
     for (const [col, type] of consumoAdditions) {
-      if (!consumoCols.includes(col)) {
+      if (!updatedConsumoCols.includes(col)) {
         database.exec(`ALTER TABLE consumos ADD COLUMN ${col} ${type};`);
       }
     }

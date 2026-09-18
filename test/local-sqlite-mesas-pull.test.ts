@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DatabaseSync } from "node:sqlite";
 import { initializeTenantSchema } from "../electron/persistence/schema";
-import { applyCloudMesasEstadoRows, applyCloudComandaRows } from "../electron/persistence/cloudApply";
+import { applyCloudMesasEstadoRows, applyCloudComandaRows, applyCloudConsumoRows } from "../electron/persistence/cloudApply";
 
 const TENANT = "tenant-mesas-test";
 
@@ -52,5 +52,67 @@ describe("mesas_estado and comandas cloud→local pull", () => {
       mesa_numero: 1,
       state: "preparing",
     });
+  });
+
+  it("applies cloud consumos with null comanda_id and null plato_id without constraint errors", () => {
+    applyCloudConsumoRows(db, TENANT, [
+      {
+        id: "consumo-orphan-1",
+        tenant_id: TENANT,
+        sucursal_id: "branch-1",
+        comanda_id: null,
+        plato_id: null,
+        nombre: "Agua Dasani",
+        cantidad: 2,
+        precio_unitario: 50,
+        subtotal: 100,
+        tipo: "bebida",
+        estado: "entregado",
+      },
+    ]);
+
+    const consumos = db.prepare("SELECT * FROM consumos WHERE tenant_id = ?").all(TENANT) as Array<Record<string, unknown>>;
+    expect(consumos).toHaveLength(1);
+    expect(consumos[0]).toMatchObject({
+      id: "consumo-orphan-1",
+      comanda_id: null,
+      plato_id: null,
+      name: "Agua Dasani",
+      quantity: 2,
+      unit_price: 50,
+      subtotal: 100,
+    });
+  });
+
+  it("migrates legacy consumos with NOT NULL comanda_id on schema evolution", () => {
+    const legacyDb = new DatabaseSync(":memory:");
+    initializeTenantSchema(legacyDb, TENANT);
+    legacyDb.exec("PRAGMA foreign_keys = OFF;");
+    legacyDb.exec(`
+      CREATE TABLE consumos_legacy (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        sucursal_id TEXT NOT NULL,
+        comanda_id TEXT NOT NULL,
+        plato_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        quantity INTEGER NOT NULL,
+        unit_price REAL NOT NULL,
+        subtotal REAL NOT NULL,
+        state TEXT NOT NULL
+      );
+      DROP TABLE consumos;
+      ALTER TABLE consumos_legacy RENAME TO consumos;
+      PRAGMA foreign_keys = ON;
+    `);
+
+    const beforeInfo = legacyDb.prepare("PRAGMA table_info(consumos);").all() as Array<{ name: string; notnull: number }>;
+    expect(beforeInfo.find((c) => c.name === "comanda_id")?.notnull).toBe(1);
+
+    initializeTenantSchema(legacyDb, TENANT);
+
+    const afterInfo = legacyDb.prepare("PRAGMA table_info(consumos);").all() as Array<{ name: string; notnull: number }>;
+    expect(afterInfo.find((c) => c.name === "comanda_id")?.notnull).toBe(0);
+    legacyDb.close();
   });
 });
