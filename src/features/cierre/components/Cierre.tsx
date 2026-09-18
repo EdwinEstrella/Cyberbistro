@@ -371,10 +371,16 @@ export function Cierre() {
       void cargar();
     };
     window.addEventListener("local-mirror-updated", onMirrorUpdated);
+    const unbind = window.electronAPI?.onLocalDataUpdated?.((updatedTenantId) => {
+      if (!updatedTenantId || updatedTenantId === tenantId) {
+        void cargar();
+      }
+    });
     return () => {
       window.removeEventListener("local-mirror-updated", onMirrorUpdated);
+      unbind?.();
     };
-  }, [cargar]);
+  }, [cargar, tenantId]);
 
   async function handleStartCycle(efectivoInicial: number) {
     if (!tenantId || !activeSucursalId || globalHasOpenCycle) return;

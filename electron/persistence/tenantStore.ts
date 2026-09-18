@@ -615,6 +615,225 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     ).all(this.tenantId, limit) as Array<Record<string, unknown>>;
   }
 
+  listMesasEstado(sucursalId?: string): Array<Record<string, unknown>> {
+    if (sucursalId) {
+      return this.database.prepare(
+        "SELECT * FROM mesas_estado WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id = 'main-process-default' OR sucursal_id IS NULL) ORDER BY table_number ASC"
+      ).all(this.tenantId, sucursalId) as Array<Record<string, unknown>>;
+    }
+    return this.database.prepare(
+      "SELECT * FROM mesas_estado WHERE tenant_id = ? ORDER BY table_number ASC"
+    ).all(this.tenantId) as Array<Record<string, unknown>>;
+  }
+
+  saveMesaEstado(mesaEstado: Record<string, unknown>): void {
+    const id = String(mesaEstado.id);
+    const branchId = typeof mesaEstado.sucursal_id === "string" && mesaEstado.sucursal_id.trim() ? mesaEstado.sucursal_id.trim() : "main-process-default";
+    const stateStr = mesaEstado.state == null ? null : (typeof mesaEstado.state === "string" ? mesaEstado.state : JSON.stringify(mesaEstado.state));
+    this.database.exec("BEGIN IMMEDIATE;");
+    try {
+      this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(branchId, this.tenantId, "Principal");
+      this.database.prepare(`
+        INSERT INTO mesas_estado (id, tenant_id, sucursal_id, table_number, state, updated_at)
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(id) DO UPDATE SET
+          sucursal_id = excluded.sucursal_id,
+          table_number = excluded.table_number,
+          state = excluded.state,
+          updated_at = CURRENT_TIMESTAMP
+      `).run(id, this.tenantId, branchId, mesaEstado.table_number != null ? Number(mesaEstado.table_number) : null, stateStr);
+      this.database.prepare(`
+        INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status)
+        VALUES (?, ?, ?, 'mesas_estado', ?, 'upsert', ?, 'pending')
+      `).run(crypto.randomUUID(), this.tenantId, branchId, id, JSON.stringify(mesaEstado));
+      this.database.exec("COMMIT;");
+    } catch (error) {
+      this.database.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
+  listCocinaEstado(sucursalId?: string): Array<Record<string, unknown>> {
+    if (sucursalId) {
+      return this.database.prepare(
+        "SELECT * FROM cocina_estado WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id = 'main-process-default' OR sucursal_id IS NULL) LIMIT 1"
+      ).all(this.tenantId, sucursalId) as Array<Record<string, unknown>>;
+    }
+    return this.database.prepare(
+      "SELECT * FROM cocina_estado WHERE tenant_id = ? LIMIT 1"
+    ).all(this.tenantId) as Array<Record<string, unknown>>;
+  }
+
+  listComandas(filter?: { sucursalId?: string; activeOnly?: boolean }): Array<Record<string, unknown>> {
+    const activeFilter = filter?.activeOnly ? " AND estado IN ('pendiente', 'en_preparacion', 'listo')" : "";
+    if (filter?.sucursalId) {
+      return this.database.prepare(
+        `SELECT * FROM comandas WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id = 'main-process-default' OR sucursal_id IS NULL)${activeFilter} ORDER BY created_at ASC`
+      ).all(this.tenantId, filter.sucursalId) as Array<Record<string, unknown>>;
+    }
+    return this.database.prepare(
+      `SELECT * FROM comandas WHERE tenant_id = ?${activeFilter} ORDER BY created_at ASC`
+    ).all(this.tenantId) as Array<Record<string, unknown>>;
+  }
+
+  saveComanda(comanda: Record<string, unknown>): void {
+    const id = String(comanda.id);
+    const branchId = typeof comanda.sucursal_id === "string" && comanda.sucursal_id.trim() ? comanda.sucursal_id.trim() : "main-process-default";
+    const itemsStr = comanda.items == null ? null : (typeof comanda.items === "string" ? comanda.items : JSON.stringify(comanda.items));
+    this.database.exec("BEGIN IMMEDIATE;");
+    try {
+      this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(branchId, this.tenantId, "Principal");
+      this.database.prepare(`
+        INSERT INTO comandas (id, tenant_id, sucursal_id, numero_comanda, mesa_id, mesa_numero, estado, items, notas, creado_por, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          sucursal_id = excluded.sucursal_id,
+          numero_comanda = excluded.numero_comanda,
+          mesa_id = excluded.mesa_id,
+          mesa_numero = excluded.mesa_numero,
+          estado = excluded.estado,
+          items = excluded.items,
+          notas = excluded.notas,
+          creado_por = excluded.creado_por,
+          updated_at = excluded.updated_at
+      `).run(
+        id,
+        this.tenantId,
+        branchId,
+        comanda.numero_comanda != null ? Number(comanda.numero_comanda) : null,
+        comanda.mesa_id ? String(comanda.mesa_id) : null,
+        comanda.mesa_numero != null ? Number(comanda.mesa_numero) : null,
+        comanda.estado ? String(comanda.estado) : "pendiente",
+        itemsStr,
+        comanda.notas ? String(comanda.notas) : null,
+        comanda.creado_por ? String(comanda.creado_por) : null,
+        comanda.created_at ? String(comanda.created_at) : new Date().toISOString(),
+        comanda.updated_at ? String(comanda.updated_at) : new Date().toISOString(),
+      );
+      this.database.prepare(`
+        INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status)
+        VALUES (?, ?, ?, 'comandas', ?, 'upsert', ?, 'pending')
+      `).run(crypto.randomUUID(), this.tenantId, branchId, id, JSON.stringify(comanda));
+      this.database.exec("COMMIT;");
+    } catch (error) {
+      this.database.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
+  deleteComanda(comandaId: string): void {
+    this.database.exec("BEGIN IMMEDIATE;");
+    try {
+      const comanda = this.database.prepare("SELECT sucursal_id FROM comandas WHERE id = ? AND tenant_id = ?").get(comandaId, this.tenantId) as { sucursal_id: string | null } | undefined;
+      this.database.prepare("DELETE FROM comandas WHERE id = ? AND tenant_id = ?").run(comandaId, this.tenantId);
+      this.database.prepare(`
+        INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status)
+        VALUES (?, ?, ?, 'comandas', ?, 'delete', ?, 'pending')
+      `).run(crypto.randomUUID(), this.tenantId, comanda?.sucursal_id ?? "", comandaId, JSON.stringify({ id: comandaId }));
+      this.database.exec("COMMIT;");
+    } catch (error) {
+      this.database.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
+  listConsumos(filter?: { sucursalId?: string; comandaId?: string; mesaNumero?: number; unpaidOnly?: boolean }): Array<Record<string, unknown>> {
+    let sql = "SELECT * FROM consumos WHERE tenant_id = ?";
+    const params: unknown[] = [this.tenantId];
+    if (filter?.sucursalId) {
+      sql += " AND (sucursal_id = ? OR sucursal_id = 'main-process-default' OR sucursal_id IS NULL)";
+      params.push(filter.sucursalId);
+    }
+    if (filter?.comandaId) {
+      sql += " AND comanda_id = ?";
+      params.push(filter.comandaId);
+    }
+    if (filter?.mesaNumero != null) {
+      sql += " AND mesa_numero = ?";
+      params.push(filter.mesaNumero);
+    }
+    if (filter?.unpaidOnly) {
+      sql += " AND estado != 'pagado'";
+    }
+    sql += " ORDER BY created_at ASC";
+    return this.database.prepare(sql).all(...params) as Array<Record<string, unknown>>;
+  }
+
+  saveConsumo(consumo: Record<string, unknown>): void {
+    const id = String(consumo.id);
+    const branchId = typeof consumo.sucursal_id === "string" && consumo.sucursal_id.trim() ? consumo.sucursal_id.trim() : "main-process-default";
+    const cant = Number(consumo.cantidad);
+    const cantidad = Number.isFinite(cant) && cant > 0 ? Math.round(cant) : 1;
+    const precio = Number(consumo.precio_unitario);
+    const precioUnitario = Number.isFinite(precio) && precio >= 0 ? precio : 0;
+    const sub = Number(consumo.subtotal);
+    const subtotal = Number.isFinite(sub) && sub >= 0 ? sub : cantidad * precioUnitario;
+
+    this.database.exec("BEGIN IMMEDIATE;");
+    try {
+      this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(branchId, this.tenantId, "Principal");
+      this.database.prepare(`
+        INSERT INTO consumos (id, tenant_id, sucursal_id, comanda_id, plato_id, nombre, cantidad, precio_unitario, subtotal, tipo, estado, factura_id, mesa_numero, created_by_auth_user_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          sucursal_id = excluded.sucursal_id,
+          comanda_id = excluded.comanda_id,
+          plato_id = excluded.plato_id,
+          nombre = excluded.nombre,
+          cantidad = excluded.cantidad,
+          precio_unitario = excluded.precio_unitario,
+          subtotal = excluded.subtotal,
+          tipo = excluded.tipo,
+          estado = excluded.estado,
+          factura_id = excluded.factura_id,
+          mesa_numero = excluded.mesa_numero,
+          created_by_auth_user_id = excluded.created_by_auth_user_id,
+          updated_at = excluded.updated_at
+      `).run(
+        id,
+        this.tenantId,
+        branchId,
+        consumo.comanda_id ? String(consumo.comanda_id) : null,
+        consumo.plato_id != null ? String(consumo.plato_id) : null,
+        consumo.nombre ? String(consumo.nombre) : (consumo.name ? String(consumo.name) : "Item"),
+        cantidad,
+        precioUnitario,
+        subtotal,
+        consumo.tipo ? String(consumo.tipo) : "plato",
+        consumo.estado ? String(consumo.estado) : "pendiente",
+        consumo.factura_id ? String(consumo.factura_id) : null,
+        consumo.mesa_numero != null ? Number(consumo.mesa_numero) : null,
+        consumo.created_by_auth_user_id ? String(consumo.created_by_auth_user_id) : null,
+        consumo.created_at ? String(consumo.created_at) : new Date().toISOString(),
+        consumo.updated_at ? String(consumo.updated_at) : new Date().toISOString(),
+      );
+      this.database.prepare(`
+        INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status)
+        VALUES (?, ?, ?, 'consumos', ?, 'upsert', ?, 'pending')
+      `).run(crypto.randomUUID(), this.tenantId, branchId, id, JSON.stringify(consumo));
+      this.database.exec("COMMIT;");
+    } catch (error) {
+      this.database.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
+  deleteConsumo(consumoId: string): void {
+    this.database.exec("BEGIN IMMEDIATE;");
+    try {
+      const consumo = this.database.prepare("SELECT sucursal_id FROM consumos WHERE id = ? AND tenant_id = ?").get(consumoId, this.tenantId) as { sucursal_id: string | null } | undefined;
+      this.database.prepare("DELETE FROM consumos WHERE id = ? AND tenant_id = ?").run(consumoId, this.tenantId);
+      this.database.prepare(`
+        INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status)
+        VALUES (?, ?, ?, 'consumos', ?, 'delete', ?, 'pending')
+      `).run(crypto.randomUUID(), this.tenantId, consumo?.sucursal_id ?? "", consumoId, JSON.stringify({ id: consumoId }));
+      this.database.exec("COMMIT;");
+    } catch (error) {
+      this.database.exec("ROLLBACK;");
+      throw error;
+    }
+  }
+
   listCuentasCobrar(filter?: { sucursalId?: string; limit?: number }): Array<Record<string, unknown>> {
     const limit = filter?.limit ?? 2000;
     const columns = "id, tenant_id, sucursal_id, factura_id, customer_id, monto_total, monto_pendiente, (monto_total - monto_pendiente) AS monto_pagado, estado, fecha_vencimiento, fecha_emision, observacion";

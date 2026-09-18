@@ -617,6 +617,202 @@ export function applyCloudCxpPagoRows(
   applyCloudPagoRows(db, tenantId, rows, "cxp_pagos", "cuenta_pagar_id", "cuentas_pagar", defaultBranchId);
 }
 
+export function applyCloudMesasEstadoRows(
+  db: DatabaseSync,
+  tenantId: string,
+  rows: Array<Record<string, unknown>>,
+  defaultBranchId = "main-process-default",
+): void {
+  const ensureBranch = db.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)");
+  ensureBranch.run(defaultBranchId, tenantId, "Principal");
+  const stmt = db.prepare(`
+    INSERT INTO mesas_estado (id, tenant_id, sucursal_id, table_number, state, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      sucursal_id = excluded.sucursal_id,
+      table_number = excluded.table_number,
+      state = excluded.state,
+      updated_at = excluded.updated_at
+  `);
+  for (const m of rows) {
+    if (!m || typeof m !== "object" || !m.id) continue;
+    if (hasPendingCloudWrite(db, tenantId, "mesas_estado", String(m.id))) continue;
+    const branchId = typeof m.sucursal_id === "string" && m.sucursal_id.trim() ? m.sucursal_id.trim() : defaultBranchId;
+    ensureBranch.run(branchId, tenantId, "Principal");
+    const stateStr = m.state == null ? null : (typeof m.state === "string" ? m.state : JSON.stringify(m.state));
+    stmt.run(
+      String(m.id),
+      tenantId,
+      branchId,
+      m.table_number != null ? Number(m.table_number) : null,
+      stateStr,
+      m.created_at ? String(m.created_at) : new Date().toISOString(),
+      m.updated_at ? String(m.updated_at) : new Date().toISOString(),
+    );
+  }
+}
+
+export function applyCloudCocinaEstadoRows(
+  db: DatabaseSync,
+  tenantId: string,
+  rows: Array<Record<string, unknown>>,
+  defaultBranchId = "main-process-default",
+): void {
+  const ensureBranch = db.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)");
+  ensureBranch.run(defaultBranchId, tenantId, "Principal");
+  const stmt = db.prepare(`
+    INSERT INTO cocina_estado (id, tenant_id, sucursal_id, is_open)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      sucursal_id = excluded.sucursal_id,
+      is_open = excluded.is_open
+  `);
+  for (const c of rows) {
+    if (!c || typeof c !== "object" || !c.id) continue;
+    if (hasPendingCloudWrite(db, tenantId, "cocina_estado", String(c.id))) continue;
+    const branchId = typeof c.sucursal_id === "string" && c.sucursal_id.trim() ? c.sucursal_id.trim() : defaultBranchId;
+    ensureBranch.run(branchId, tenantId, "Principal");
+    stmt.run(
+      String(c.id),
+      tenantId,
+      branchId,
+      c.is_open === 1 || c.is_open === true ? 1 : 0
+    );
+  }
+}
+
+export function applyCloudComandaRows(
+  db: DatabaseSync,
+  tenantId: string,
+  rows: Array<Record<string, unknown>>,
+  defaultBranchId = "main-process-default",
+): void {
+  const ensureBranch = db.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)");
+  ensureBranch.run(defaultBranchId, tenantId, "Principal");
+  const stmt = db.prepare(`
+    INSERT INTO comandas (id, tenant_id, sucursal_id, numero_comanda, mesa_id, mesa_numero, state, estado, items, notas, creado_por, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      sucursal_id = excluded.sucursal_id,
+      numero_comanda = excluded.numero_comanda,
+      mesa_id = excluded.mesa_id,
+      mesa_numero = excluded.mesa_numero,
+      state = excluded.state,
+      estado = excluded.estado,
+      items = excluded.items,
+      notas = excluded.notas,
+      creado_por = excluded.creado_por,
+      updated_at = excluded.updated_at
+  `);
+  const stateMap: Record<string, string> = {
+    pendiente: "pending",
+    en_preparacion: "preparing",
+    listo: "ready",
+    entregado: "delivered",
+  };
+  for (const c of rows) {
+    if (!c || typeof c !== "object" || !c.id) continue;
+    if (hasPendingCloudWrite(db, tenantId, "comandas", String(c.id))) continue;
+    const branchId = typeof c.sucursal_id === "string" && c.sucursal_id.trim() ? c.sucursal_id.trim() : defaultBranchId;
+    ensureBranch.run(branchId, tenantId, "Principal");
+    const itemsStr = c.items == null ? null : (typeof c.items === "string" ? c.items : JSON.stringify(c.items));
+    const estado = c.estado ? String(c.estado) : "pendiente";
+    const state = stateMap[estado] || "pending";
+    stmt.run(
+      String(c.id),
+      tenantId,
+      branchId,
+      c.numero_comanda != null ? Number(c.numero_comanda) : null,
+      c.mesa_id ? String(c.mesa_id) : null,
+      c.mesa_numero != null ? Number(c.mesa_numero) : null,
+      state,
+      estado,
+      itemsStr,
+      c.notas ? String(c.notas) : null,
+      c.creado_por ? String(c.creado_por) : null,
+      c.created_at ? String(c.created_at) : new Date().toISOString(),
+      c.updated_at ? String(c.updated_at) : new Date().toISOString(),
+    );
+  }
+}
+
+export function applyCloudConsumoRows(
+  db: DatabaseSync,
+  tenantId: string,
+  rows: Array<Record<string, unknown>>,
+  defaultBranchId = "main-process-default",
+): void {
+  const ensureBranch = db.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)");
+  ensureBranch.run(defaultBranchId, tenantId, "Principal");
+  const stmt = db.prepare(`
+    INSERT INTO consumos (id, tenant_id, sucursal_id, comanda_id, plato_id, name, nombre, quantity, cantidad, unit_price, precio_unitario, subtotal, tipo, state, estado, factura_id, mesa_numero, created_by_auth_user_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      sucursal_id = excluded.sucursal_id,
+      comanda_id = excluded.comanda_id,
+      plato_id = excluded.plato_id,
+      name = excluded.name,
+      nombre = excluded.nombre,
+      quantity = excluded.quantity,
+      cantidad = excluded.cantidad,
+      unit_price = excluded.unit_price,
+      precio_unitario = excluded.precio_unitario,
+      subtotal = excluded.subtotal,
+      tipo = excluded.tipo,
+      state = excluded.state,
+      estado = excluded.estado,
+      factura_id = excluded.factura_id,
+      mesa_numero = excluded.mesa_numero,
+      created_by_auth_user_id = excluded.created_by_auth_user_id,
+      updated_at = excluded.updated_at
+  `);
+  const stateMap: Record<string, string> = {
+    pendiente: "sent_to_kitchen",
+    en_preparacion: "sent_to_kitchen",
+    listo: "ready",
+    entregado: "delivered",
+    pagado: "delivered",
+  };
+  for (const c of rows) {
+    if (!c || typeof c !== "object" || !c.id) continue;
+    if (hasPendingCloudWrite(db, tenantId, "consumos", String(c.id))) continue;
+    const branchId = typeof c.sucursal_id === "string" && c.sucursal_id.trim() ? c.sucursal_id.trim() : defaultBranchId;
+    ensureBranch.run(branchId, tenantId, "Principal");
+    const cant = Number(c.cantidad ?? c.quantity);
+    const cantidad = Number.isFinite(cant) && cant > 0 ? Math.round(cant) : 1;
+    const precio = Number(c.precio_unitario ?? c.unit_price);
+    const precioUnitario = Number.isFinite(precio) && precio >= 0 ? precio : 0;
+    const sub = Number(c.subtotal);
+    const subtotal = Number.isFinite(sub) && sub >= 0 ? sub : cantidad * precioUnitario;
+    const itemName = c.nombre ? String(c.nombre) : (c.name ? String(c.name) : "Item");
+    const estado = c.estado ? String(c.estado) : "pendiente";
+    const state = stateMap[estado] || "sent_to_kitchen";
+
+    stmt.run(
+      String(c.id),
+      tenantId,
+      branchId,
+      c.comanda_id ? String(c.comanda_id) : null,
+      c.plato_id != null ? String(c.plato_id) : null,
+      itemName,
+      itemName,
+      cantidad,
+      cantidad,
+      precioUnitario,
+      precioUnitario,
+      subtotal,
+      c.tipo ? String(c.tipo) : "plato",
+      state,
+      estado,
+      c.factura_id ? String(c.factura_id) : null,
+      c.mesa_numero != null ? Number(c.mesa_numero) : null,
+      c.created_by_auth_user_id ? String(c.created_by_auth_user_id) : null,
+      c.created_at ? String(c.created_at) : new Date().toISOString(),
+      c.updated_at ? String(c.updated_at) : new Date().toISOString(),
+    );
+  }
+}
+
 function applyCloudPagoRows(
   db: DatabaseSync,
   tenantId: string,
@@ -698,7 +894,20 @@ export function applyCloudDeletes(
   tenantId?: string,
 ): boolean {
   if (ids.length === 0) return true;
-  const allowed = new Set(["gastos", "gasto_categorias", "customers", "payroll_employees", "payroll_payments", "payroll_cloud_adjustments", "platos", "menu_categories"]);
+  const allowed = new Set([
+    "gastos",
+    "gasto_categorias",
+    "customers",
+    "payroll_employees",
+    "payroll_payments",
+    "payroll_cloud_adjustments",
+    "platos",
+    "menu_categories",
+    "mesas_estado",
+    "cocina_estado",
+    "comandas",
+    "consumos",
+  ]);
   if (!allowed.has(tableName)) return false;
   const stmt = db.prepare(`DELETE FROM ${tableName} WHERE id = ?${tenantId ? " AND tenant_id = ?" : ""}`);
   let complete = true;

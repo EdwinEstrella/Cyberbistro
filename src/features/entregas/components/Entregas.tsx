@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../../../shared/lib/supabase";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { normalizeTenantRol } from "../../../shared/lib/roleNav";
-import { enqueueLocalWrite, getDeviceId, readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
+import { readLocalConsumos, saveLocalConsumo, readLocalComandas } from "../../../shared/lib/ordersLocal";
+import { readLocalPlatos } from "../../soporte/lib/catalogLocal";
 
 
 interface MesaConPedido {
@@ -40,12 +41,11 @@ export function Entregas() {
     if (!tenantId) { setMesasConPedido([]); if (!soft) setLoading(false); return; }
     if (!soft) setLoading(true);
     let consumos: any[] = [];
-    if (await shouldReadLocalFirst(tenantId, ["consumos"])) {
-      consumos = (await readLocalMirror<any>(tenantId, "consumos"))
-        .filter(c => c.tenant_id === tenantId && c.estado !== "pagado")
+    try {
+      consumos = (await readLocalConsumos(tenantId, { unpaidOnly: true }))
         .filter(c => !isCamarera || !user?.id || c.created_by_auth_user_id === user.id)
-        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-    } else {
+        .sort((a, b) => new Date(String(a.created_at)).getTime() - new Date(String(b.created_at)).getTime());
+    } catch {
       let consumosQuery = supabase
         .from("consumos")
         .select("*")
@@ -60,26 +60,12 @@ export function Entregas() {
     }
     if (!consumos?.length) { setMesasConPedido([]); if (!soft) setLoading(false); return; }
     
-    const platoIds = [...new Set(consumos.map((c: any) => c.plato_id))];
-    const comandaIds = [...new Set(consumos.map((c: any) => c.comanda_id).filter(Boolean))];
-    const [useLocalPlatos, useLocalComandas] = await Promise.all([
-      shouldReadLocalFirst(tenantId, ["platos"]),
-      shouldReadLocalFirst(tenantId, ["comandas"]),
+    const [allPlatos, allComandas] = await Promise.all([
+      readLocalPlatos(tenantId).catch(() => []),
+      readLocalComandas(tenantId).catch(() => []),
     ]);
-    const [platosRes, comandasRes] = await Promise.all([
-      platoIds.length > 0
-        ? useLocalPlatos
-          ? readLocalMirror<any>(tenantId, "platos").then(rows => ({ data: rows.filter(p => platoIds.includes(p.id)) }))
-          : supabase.from("platos").select("id, va_a_cocina").in("id", platoIds)
-        : Promise.resolve({ data: [] }),
-      comandaIds.length > 0
-        ? useLocalComandas
-          ? readLocalMirror<any>(tenantId, "comandas").then(rows => ({ data: rows.filter(c => comandaIds.includes(c.id)) }))
-          : supabase.from("comandas").select("id, estado").in("id", comandaIds)
-        : Promise.resolve({ data: [] }),
-    ]);
-    const platoMap = new Map(platosRes.data?.map((p: any) => [p.id, p.va_a_cocina]));
-    const comandaEstadoById = new Map(comandasRes.data?.map((c: any) => [c.id, c.estado]));
+    const platoMap = new Map(allPlatos.map((p: any) => [p.id, p.va_a_cocina]));
+    const comandaEstadoById = new Map(allComandas.map((c: any) => [c.id, c.estado]));
     const mesasMap = new Map<string, MesaConPedido>();
 
     for (const row of consumos as any[]) {
@@ -102,10 +88,17 @@ export function Entregas() {
     return () => clearInterval(t);
   }, [authLoading, tenantId, loadEntregas]);
 
+  useEffect(() => {
+    return window.electronAPI?.onLocalDataUpdated?.((updatedTenantId) => {
+      if (!updatedTenantId || updatedTenantId === tenantId) {
+        void loadEntregas({ soft: true });
+      }
+    });
+  }, [tenantId, loadEntregas]);
+
   async function marcarEntregado(id: string) {
     if (!tenantId) return;
-    const payload = { estado: "entregado", updated_at: new Date().toISOString() };
-    await enqueueLocalWrite({ tenantId, tableName: "consumos", rowId: id, op: "update", payload, authUserId: user?.id ?? null, deviceId: await getDeviceId() });
+    await saveLocalConsumo(tenantId, { id, estado: "entregado", updated_at: new Date().toISOString() });
     loadEntregas({ soft: true });
   }
 

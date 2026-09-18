@@ -38,13 +38,25 @@ export class TenantRealtimeSubscriptionManager {
           });
         }),
       };
+
+      channel.on('postgres_changes', { event: '*', schema: 'public' }, (payload) => {
+        const current = this.channels.get(topic);
+        if (!current) return;
+        for (const handlerMap of current.consumers.values()) {
+          handlerMap['postgres_changes']?.(payload);
+          handlerMap['*']?.(payload);
+        }
+      });
+
       this.channels.set(topic, entry);
     }
 
     const token = Symbol(topic);
     entry.consumers.set(token, handlers);
     for (const [event, handler] of Object.entries(handlers)) {
-      entry.channel.on('broadcast', { event }, handler);
+      if (event !== 'postgres_changes' && event !== '*') {
+        entry.channel.on('broadcast', { event }, handler);
+      }
     }
 
     let released = false;
@@ -62,6 +74,13 @@ export class TenantRealtimeSubscriptionManager {
         }
       },
     };
+  }
+
+  broadcast(topic: string, event: string, payload: unknown): void {
+    const entry = this.channels.get(topic);
+    if (entry) {
+      void entry.channel.send({ type: 'broadcast', event, payload });
+    }
   }
 }
 

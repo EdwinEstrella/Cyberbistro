@@ -22,6 +22,15 @@ export const CATALOG_REPOSITORY_EXECUTE_CHANNEL = "catalog-repository:execute";
 export const CATALOG_LIST_CHANNEL = "catalog:list";
 export const ORDERS_REPOSITORY_EXECUTE_CHANNEL = "orders-repository:execute";
 export const CIERRES_LIST_CHANNEL = "cierres:list";
+export const MESAS_LIST_CHANNEL = "mesas:list";
+export const MESAS_SAVE_CHANNEL = "mesas:save";
+export const COCINA_STATUS_CHANNEL = "cocina:status";
+export const COMANDAS_LIST_CHANNEL = "comandas:list";
+export const COMANDAS_SAVE_CHANNEL = "comandas:save";
+export const COMANDAS_DELETE_CHANNEL = "comandas:delete";
+export const CONSUMOS_LIST_CHANNEL = "consumos:list";
+export const CONSUMOS_SAVE_CHANNEL = "consumos:save";
+export const CONSUMOS_DELETE_CHANNEL = "consumos:delete";
 export const FISCAL_SALES_REPOSITORY_EXECUTE_CHANNEL = "sales-fiscal-repository:execute";
 export const FACTURAS_LIST_CHANNEL = "facturas:list";
 export const FACTURAS_RESERVE_NUMBERS_CHANNEL = "facturas:reserve-numbers";
@@ -414,6 +423,15 @@ export function registerOrdersRepositoryIpc(input: {
   isTrustedSender: (event: { senderId: number }) => boolean;
   getRepository: () => { execute(command: OrdersCommand): OrdersRepositoryResult };
   listCierres?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Array<Record<string, unknown>>;
+  listMesasEstado?: (filter?: { tenantId?: string; sucursalId?: string }) => Array<Record<string, unknown>>;
+  saveMesaEstado?: (payload: Record<string, unknown>) => void;
+  listCocinaEstado?: (filter?: { tenantId?: string; sucursalId?: string }) => Array<Record<string, unknown>>;
+  listComandas?: (filter?: { tenantId?: string; sucursalId?: string; activeOnly?: boolean }) => Array<Record<string, unknown>>;
+  saveComanda?: (payload: Record<string, unknown>) => void;
+  deleteComanda?: (payload: { tenantId?: string; comandaId: string }) => void;
+  listConsumos?: (filter?: { tenantId?: string; sucursalId?: string; comandaId?: string; mesaNumero?: number; unpaidOnly?: boolean }) => Array<Record<string, unknown>>;
+  saveConsumo?: (payload: Record<string, unknown>) => void;
+  deleteConsumo?: (payload: { tenantId?: string; consumoId: string }) => void;
 }): void {
   input.ipcMain.removeHandler(ORDERS_REPOSITORY_EXECUTE_CHANNEL);
   input.ipcMain.handle(ORDERS_REPOSITORY_EXECUTE_CHANNEL, async (event, payload) => {
@@ -427,6 +445,78 @@ export function registerOrdersRepositoryIpc(input: {
   input.ipcMain.handle(CIERRES_LIST_CHANNEL, async (event, filter) => {
     if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
     return { ok: true, data: input.listCierres?.(filter as { tenantId?: string; sucursalId?: string; limit?: number }) ?? [] };
+  });
+
+  input.ipcMain.removeHandler(MESAS_LIST_CHANNEL);
+  input.ipcMain.handle(MESAS_LIST_CHANNEL, async (event, filter) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    return { ok: true, data: input.listMesasEstado?.(filter as { tenantId?: string; sucursalId?: string }) ?? [] };
+  });
+
+  input.ipcMain.removeHandler(MESAS_SAVE_CHANNEL);
+  input.ipcMain.handle(MESAS_SAVE_CHANNEL, async (event, payload) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    if (!payload || typeof payload !== "object" || !(payload as Record<string, unknown>).id) {
+      throw new Error("Invalid mesa estado payload");
+    }
+    input.saveMesaEstado?.(payload as Record<string, unknown>);
+    return { ok: true };
+  });
+
+  input.ipcMain.removeHandler(COCINA_STATUS_CHANNEL);
+  input.ipcMain.handle(COCINA_STATUS_CHANNEL, async (event, filter) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    return { ok: true, data: input.listCocinaEstado?.(filter as { tenantId?: string; sucursalId?: string }) ?? [] };
+  });
+
+  input.ipcMain.removeHandler(COMANDAS_LIST_CHANNEL);
+  input.ipcMain.handle(COMANDAS_LIST_CHANNEL, async (event, filter) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    return { ok: true, data: input.listComandas?.(filter as { tenantId?: string; sucursalId?: string; activeOnly?: boolean }) ?? [] };
+  });
+
+  input.ipcMain.removeHandler(COMANDAS_SAVE_CHANNEL);
+  input.ipcMain.handle(COMANDAS_SAVE_CHANNEL, async (event, payload) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    if (!payload || typeof payload !== "object" || !(payload as Record<string, unknown>).id) {
+      throw new Error("Invalid comanda payload");
+    }
+    input.saveComanda?.(payload as Record<string, unknown>);
+    return { ok: true };
+  });
+
+  input.ipcMain.removeHandler(COMANDAS_DELETE_CHANNEL);
+  input.ipcMain.handle(COMANDAS_DELETE_CHANNEL, async (event, payload) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    const req = payload as { tenantId?: string; comandaId?: string } | null;
+    if (!req?.comandaId) throw new Error("Invalid comanda deletion request");
+    input.deleteComanda?.(req as { tenantId?: string; comandaId: string });
+    return { ok: true };
+  });
+
+  input.ipcMain.removeHandler(CONSUMOS_LIST_CHANNEL);
+  input.ipcMain.handle(CONSUMOS_LIST_CHANNEL, async (event, filter) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    return { ok: true, data: input.listConsumos?.(filter as { tenantId?: string; sucursalId?: string; comandaId?: string; mesaNumero?: number; unpaidOnly?: boolean }) ?? [] };
+  });
+
+  input.ipcMain.removeHandler(CONSUMOS_SAVE_CHANNEL);
+  input.ipcMain.handle(CONSUMOS_SAVE_CHANNEL, async (event, payload) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    if (!payload || typeof payload !== "object" || !(payload as Record<string, unknown>).id) {
+      throw new Error("Invalid consumo payload");
+    }
+    input.saveConsumo?.(payload as Record<string, unknown>);
+    return { ok: true };
+  });
+
+  input.ipcMain.removeHandler(CONSUMOS_DELETE_CHANNEL);
+  input.ipcMain.handle(CONSUMOS_DELETE_CHANNEL, async (event, payload) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    const req = payload as { tenantId?: string; consumoId?: string } | null;
+    if (!req?.consumoId) throw new Error("Invalid consumo deletion request");
+    input.deleteConsumo?.(req as { tenantId?: string; consumoId: string });
+    return { ok: true };
   });
 }
 

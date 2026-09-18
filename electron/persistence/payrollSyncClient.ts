@@ -301,6 +301,18 @@ function mapDeleteOperation(operation: DurableOperation):
   if (operation.tableName === "facturas") {
     return { ok: true, remoteTable: "facturas" };
   }
+  if (operation.tableName === "mesas_estado") {
+    return { ok: true, remoteTable: "mesas_estado" };
+  }
+  if (operation.tableName === "cocina_estado") {
+    return { ok: true, remoteTable: "cocina_estado" };
+  }
+  if (operation.tableName === "comandas") {
+    return { ok: true, remoteTable: "comandas" };
+  }
+  if (operation.tableName === "consumos") {
+    return { ok: true, remoteTable: "consumos" };
+  }
 
   const remoteTable = PAYROLL_TABLES[operation.tableName];
   if (!remoteTable) {
@@ -343,6 +355,14 @@ function mapOperation(operation: DurableOperation):
         return { ok: true, remoteTable: "cxp_pagos", payload: mapPayablePaymentPayload(operation, operation.payload) };
       case "facturas":
         return { ok: true, remoteTable: "facturas", payload: mapFacturaPayload(operation, operation.payload) };
+      case "mesas_estado":
+        return { ok: true, remoteTable: "mesas_estado", payload: mapMesasEstadoPayload(operation, operation.payload) };
+      case "cocina_estado":
+        return { ok: true, remoteTable: "cocina_estado", payload: mapCocinaEstadoPayload(operation, operation.payload) };
+      case "comandas":
+        return { ok: true, remoteTable: "comandas", payload: mapComandaPayload(operation, operation.payload) };
+      case "consumos":
+        return { ok: true, remoteTable: "consumos", payload: mapConsumoPayload(operation, operation.payload) };
       case "gastos": {
         if (operation.payload.expenseType === "payroll") {
           const tableResult = mapPayrollExpenseTable(operation);
@@ -753,5 +773,95 @@ function mapFacturaPayload(operation: DurableOperation, payload: Record<string, 
   if (payload.ncf_tipo || payload.ncfTipo) row.ncf_tipo = str(payload.ncf_tipo ?? payload.ncfTipo);
   if (payload.cliente_rnc || payload.clienteRnc) row.cliente_rnc = str(payload.cliente_rnc ?? payload.clienteRnc);
   return row;
+}
+
+function mapMesasEstadoPayload(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
+  const str = (v: unknown) => (v != null && String(v).length > 0 ? String(v) : null);
+  const num = (v: unknown) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  let state = payload.state;
+  if (typeof state === "string") {
+    try {
+      state = JSON.parse(state);
+    } catch {
+      /* string state */
+    }
+  }
+  return {
+    id: operation.rowId,
+    tenant_id: operation.tenantId,
+    sucursal_id: str(payload.sucursal_id) ?? str(payload.sucursalId),
+    table_number: num(payload.table_number) ?? num(payload.tableNumber),
+    state: typeof state === "object" && state !== null ? state : (str(state) ?? "libre"),
+  };
+}
+
+function mapCocinaEstadoPayload(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
+  const str = (v: unknown) => (v != null && String(v).length > 0 ? String(v) : null);
+  return {
+    id: operation.rowId,
+    tenant_id: operation.tenantId,
+    sucursal_id: str(payload.sucursal_id) ?? str(payload.sucursalId),
+    is_open: payload.is_open === 1 || payload.is_open === true || payload.isOpen === true,
+  };
+}
+
+function mapComandaPayload(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
+  const str = (v: unknown) => (v != null && String(v).length > 0 ? String(v) : null);
+  const num = (v: unknown) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  let items = payload.items;
+  if (typeof items === "string") {
+    try {
+      items = JSON.parse(items);
+    } catch {
+      items = [];
+    }
+  }
+  if (!Array.isArray(items)) items = [];
+  return {
+    id: operation.rowId,
+    tenant_id: operation.tenantId,
+    sucursal_id: str(payload.sucursal_id) ?? str(payload.sucursalId),
+    numero_comanda: num(payload.numero_comanda) ?? num(payload.numeroComanda) ?? 1,
+    mesa_id: str(payload.mesa_id) ?? str(payload.mesaId),
+    mesa_numero: num(payload.mesa_numero) ?? num(payload.mesaNumero),
+    estado: str(payload.estado) ?? "pendiente",
+    items,
+    notas: str(payload.notas),
+    creado_por: str(payload.creado_por) ?? str(payload.creadoPor),
+    created_at: str(payload.created_at) ?? new Date().toISOString(),
+    updated_at: str(payload.updated_at) ?? new Date().toISOString(),
+  };
+}
+
+function mapConsumoPayload(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
+  const str = (v: unknown) => (v != null && String(v).length > 0 ? String(v) : null);
+  const num = (v: unknown) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  return {
+    id: operation.rowId,
+    tenant_id: operation.tenantId,
+    sucursal_id: str(payload.sucursal_id) ?? str(payload.sucursalId),
+    comanda_id: str(payload.comanda_id) ?? str(payload.comandaId),
+    plato_id: num(payload.plato_id) ?? num(payload.platoId) ?? 0,
+    nombre: str(payload.nombre) ?? str(payload.name) ?? "Item",
+    cantidad: num(payload.cantidad) ?? num(payload.quantity) ?? 1,
+    precio_unitario: num(payload.precio_unitario) ?? num(payload.precioUnitario) ?? num(payload.unit_price) ?? 0,
+    subtotal: num(payload.subtotal) ?? 0,
+    tipo: str(payload.tipo) ?? "plato",
+    estado: str(payload.estado) ?? "pendiente",
+    factura_id: str(payload.factura_id) ?? str(payload.facturaId),
+    mesa_numero: num(payload.mesa_numero) ?? num(payload.mesaNumero),
+    created_by_auth_user_id: str(payload.created_by_auth_user_id) ?? str(payload.createdByAuthUserId),
+    created_at: str(payload.created_at) ?? new Date().toISOString(),
+    updated_at: str(payload.updated_at) ?? new Date().toISOString(),
+  };
 }
 

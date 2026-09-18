@@ -5,7 +5,8 @@ import { useCocinaRealtimeSync } from "../useCocinaRealtimeSync";
 import { buildComandaReceiptHtml, type TenantReceiptInfo } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
-import { enqueueLocalWrite, getDeviceId, isLocalFirstEnabled, readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
+import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
+import { readLocalCocinaEstado, saveLocalCocinaEstado, readLocalComandas, saveLocalComanda, deleteLocalComanda, readLocalConsumos, saveLocalConsumo } from "../../../shared/lib/ordersLocal";
 import { useSucursal } from "../../../app/context/SucursalContext";
 
 
@@ -120,19 +121,15 @@ export function Cocina() {
     async function load() {
       await ensureAuthSessionFresh();
 
-      const [useLocalEstado, useLocalComandas, useLocalTenant] = await Promise.all([
-        shouldReadLocalFirst(tid, ["cocina_estado"]),
-        shouldReadLocalFirst(tid, ["comandas"]),
-        shouldReadLocalFirst(tid, ["tenants"]),
-      ]);
-      const [estadoRes, comandasRes, tenantRes] = await Promise.all([
-        useLocalEstado ? readLocalMirror<any>(tid, "cocina_estado").then(data => ({ data: data.filter((row: any) => row.sucursal_id === activeSucursalId) })) : supabase.from("cocina_estado").select("*").eq("tenant_id", tid).eq("sucursal_id", activeSucursalId).limit(1),
-        useLocalComandas ? readLocalMirror<Comanda & { tenant_id?: string; sucursal_id?: string | null }>(tid, "comandas").then(data => ({ data: data.filter(c => c.tenant_id === tid && c.sucursal_id === activeSucursalId && ["pendiente", "en_preparacion", "listo"].includes(c.estado)).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()) })) : supabase.from("comandas").select("*").eq("tenant_id", tid).eq("sucursal_id", activeSucursalId).in("estado", ["pendiente", "en_preparacion", "listo"]).order("created_at", { ascending: true }),
+      const useLocalTenant = await shouldReadLocalFirst(tid, ["tenants"]);
+      const [estadoData, comandasData, tenantRes] = await Promise.all([
+        readLocalCocinaEstado(tid, activeSucursalId),
+        readLocalComandas(tid, { sucursalId: activeSucursalId, activeOnly: true }),
         useLocalTenant ? readLocalMirror<any>(tid, "tenants").then(data => ({ data: data.find(t => t.id === tid) ?? null })) : supabase.from("tenants").select("nombre_negocio, rnc, direccion, telefono, logo_url, moneda, logo_size_px, logo_offset_x, logo_offset_y").eq("id", tid).maybeSingle(),
       ]);
       if (cancelled) return;
-      if (estadoRes.data?.[0]) setCocinaActiva(estadoRes.data[0].activa);
-      if (comandasRes.data) setComandas(comandasRes.data as Comanda[]);
+      if (estadoData) setCocinaActiva((estadoData as any).is_open === 1 || (estadoData as any).is_open === true || (estadoData as any).activa === true);
+      if (comandasData) setComandas(comandasData as unknown as Comanda[]);
       if (tenantRes.data) {
         const t = tenantRes.data as any;
         tenantReceiptRef.current = { nombre_negocio: t.nombre_negocio, rnc: t.rnc, direccion: t.direccion, telefono: t.telefono, logo_url: t.logo_url, moneda: t.moneda ?? null, logo_size_px: t.logo_size_px, logo_offset_x: t.logo_offset_x, logo_offset_y: t.logo_offset_y };
@@ -142,15 +139,28 @@ export function Cocina() {
     load(); return () => { cancelled = true; };
   }, [authLoading, tenantId, activeSucursalId]);
 
+  useEffect(() => {
+    if (!tenantId) return;
+    const tid = tenantId;
+    return window.electronAPI?.onLocalDataUpdated?.((updatedTenantId) => {
+      if (!updatedTenantId || updatedTenantId === tid) {
+        void (async () => {
+          const [estadoData, comandasData] = await Promise.all([
+            readLocalCocinaEstado(tid, activeSucursalId),
+            readLocalComandas(tid, { sucursalId: activeSucursalId, activeOnly: true }),
+          ]);
+          if (estadoData) setCocinaActiva((estadoData as any).is_open === 1 || (estadoData as any).is_open === true || (estadoData as any).activa === true);
+          if (comandasData) setComandas(comandasData as unknown as Comanda[]);
+        })();
+      }
+    });
+  }, [tenantId, activeSucursalId]);
+
   async function toggleCocina() {
     if (!tenantId) return;
     setToggling(true);
     const newActiva = !cocinaActiva;
-    const now = new Date().toISOString();
-    const localExisting = (await readLocalMirror<any>(tenantId, "cocina_estado").catch(() => [])).find((row: any) => row.tenant_id === tenantId && row.sucursal_id === activeSucursalId);
-    const rowId = localExisting?.id ?? crypto.randomUUID();
-    const payload = { id: rowId, activa: newActiva, changed_at: now, updated_at: now, tenant_id: tenantId, sucursal_id: activeSucursalId };
-    await enqueueLocalWrite({ tenantId, tableName: "cocina_estado", rowId, op: "upsert", payload, deviceId: await getDeviceId() });
+    await saveLocalCocinaEstado(tenantId, activeSucursalId || "main-process-default", newActiva);
     setCocinaActiva(newActiva);
     setToggling(false);
   }
@@ -158,27 +168,21 @@ export function Cocina() {
   async function advanceComanda(id: string, nextEstado: Comanda["estado"]) {
     if (!tenantId) return;
     const now = new Date().toISOString();
-    const deviceId = await getDeviceId();
     
     if (nextEstado === "entregado") {
-      await enqueueLocalWrite({ tenantId, tableName: "comandas", rowId: id, op: "delete", payload: {}, deviceId });
+      await deleteLocalComanda(tenantId, id);
     } else {
-      const updateComanda = { estado: nextEstado, updated_at: now };
-      await enqueueLocalWrite({ tenantId, tableName: "comandas", rowId: id, op: "update", payload: updateComanda, deviceId });
+      const existing = comandas.find((c) => c.id === id);
+      await saveLocalComanda(tenantId, { ...existing, id, estado: nextEstado, updated_at: now, sucursal_id: activeSucursalId });
     }
 
     if (nextEstado === "listo") {
-      const consumos = isLocalFirstEnabled()
-        ? await readLocalMirror<any>(tenantId, "consumos")
-        : ((await supabase
-            .from("consumos")
-            .select("id, tenant_id, comanda_id, estado")
-            .eq("tenant_id", tenantId)
-            .eq("comanda_id", id)
-            .eq("estado", "enviado_cocina")).data ?? []);
-      await Promise.all(consumos
-        .filter((c: any) => c.comanda_id === id && c.tenant_id === tenantId && c.estado === "enviado_cocina")
-        .map((c: any) => enqueueLocalWrite({ tenantId, tableName: "consumos", rowId: c.id, op: "update", payload: { estado: "listo", updated_at: now }, deviceId })));
+      const consumos = await readLocalConsumos(tenantId, { comandaId: id });
+      await Promise.all(
+        consumos
+          .filter((c: any) => c.comanda_id === id)
+          .map((c: any) => saveLocalConsumo(tenantId, { ...c, estado: "listo", updated_at: now }))
+      );
     }
     if (nextEstado === "entregado") setComandas(prev => prev.filter(c => c.id !== id));
     else setComandas(prev => prev.map(c => c.id === id ? { ...c, estado: nextEstado } : c));

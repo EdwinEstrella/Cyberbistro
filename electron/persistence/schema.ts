@@ -413,6 +413,7 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
   ensureComprasSchemaEvolution(database);
   ensureReceivablesSchemaEvolution(database);
   ensurePayablesSchemaEvolution(database);
+  ensureSalonCocinaSchemaEvolution(database);
   database.exec(`
     CREATE INDEX IF NOT EXISTS idx_payroll_payments_employee_period ON payroll_payments (tenant_id, sucursal_id, employee_id, period);
     CREATE INDEX IF NOT EXISTS idx_payroll_adjustments_payment ON payroll_payment_adjustments (payment_id);
@@ -781,6 +782,60 @@ function migrateLegacyPayrollSchema(database: DatabaseSync): void {
       SELECT id, tenant_id, name FROM __old_table__;
     `);
   });
+}
+
+function ensureSalonCocinaSchemaEvolution(database: DatabaseSync): void {
+  const comandaCols = getTableColumns(database, "comandas");
+  if (comandaCols.length > 0) {
+    const comandaAdditions = [
+      ["numero_comanda", "INTEGER"],
+      ["estado", "TEXT"],
+      ["items", "TEXT"],
+      ["notas", "TEXT"],
+      ["creado_por", "TEXT"],
+      ["created_at", "TEXT"],
+      ["updated_at", "TEXT"],
+    ] as const;
+    for (const [col, type] of comandaAdditions) {
+      if (!comandaCols.includes(col)) {
+        database.exec(`ALTER TABLE comandas ADD COLUMN ${col} ${type};`);
+      }
+    }
+  }
+
+  const consumoCols = getTableColumns(database, "consumos");
+  if (consumoCols.length > 0) {
+    const consumoAdditions = [
+      ["nombre", "TEXT"],
+      ["cantidad", "INTEGER"],
+      ["precio_unitario", "REAL"],
+      ["tipo", "TEXT"],
+      ["estado", "TEXT"],
+      ["factura_id", "TEXT"],
+      ["mesa_numero", "INTEGER"],
+      ["created_by_auth_user_id", "TEXT"],
+      ["created_at", "TEXT"],
+      ["updated_at", "TEXT"],
+    ] as const;
+    for (const [col, type] of consumoAdditions) {
+      if (!consumoCols.includes(col)) {
+        database.exec(`ALTER TABLE consumos ADD COLUMN ${col} ${type};`);
+      }
+    }
+  }
+
+  const mesaCols = getTableColumns(database, "mesas_estado");
+  if (mesaCols.length > 0) {
+    const mesaAdditions = [
+      ["created_at", "TEXT"],
+      ["updated_at", "TEXT"],
+    ] as const;
+    for (const [col, type] of mesaAdditions) {
+      if (!mesaCols.includes(col)) {
+        database.exec(`ALTER TABLE mesas_estado ADD COLUMN ${col} ${type};`);
+      }
+    }
+  }
 }
 
 function ensureTableShape(

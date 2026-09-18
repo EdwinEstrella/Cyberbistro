@@ -102,6 +102,15 @@ export interface ElectronAPI {
   deleteInvoiceLocal?: (request: { tenantId: string; invoiceId: string }) => Promise<{ ok: true }>;
   saveInvoiceLocal?: (invoice: Record<string, unknown>) => Promise<{ ok: true }>;
   listCierres?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
+  listMesasEstado?: (filter?: { tenantId?: string; sucursalId?: string }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
+  saveMesaEstado?: (payload: Record<string, unknown>) => Promise<{ ok: true }>;
+  listCocinaEstado?: (filter?: { tenantId?: string; sucursalId?: string }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
+  listComandas?: (filter?: { tenantId?: string; sucursalId?: string; activeOnly?: boolean }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
+  saveComanda?: (payload: Record<string, unknown>) => Promise<{ ok: true }>;
+  deleteComanda?: (payload: { tenantId?: string; comandaId: string }) => Promise<{ ok: true }>;
+  listConsumos?: (filter?: { tenantId?: string; sucursalId?: string; comandaId?: string; mesaNumero?: number; unpaidOnly?: boolean }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
+  saveConsumo?: (payload: Record<string, unknown>) => Promise<{ ok: true }>;
+  deleteConsumo?: (payload: { tenantId?: string; consumoId: string }) => Promise<{ ok: true }>;
   listCuentasCobrar?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
   listCxcPagos?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
   listCuentasPagar?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;

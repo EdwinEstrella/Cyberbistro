@@ -499,6 +499,14 @@ export function Billing() {
   }, [authLoading, loadBillingData]);
 
   useEffect(() => {
+    return window.electronAPI?.onLocalDataUpdated?.((updatedTenantId) => {
+      if (!updatedTenantId || updatedTenantId === tenantId) {
+        void loadBillingData();
+      }
+    });
+  }, [tenantId, loadBillingData]);
+
+  useEffect(() => {
     setCurrentPage(1);
   }, [statusFilter, methodFilter, dateFrom, dateTo, view]);
 

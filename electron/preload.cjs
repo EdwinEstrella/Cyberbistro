@@ -75,6 +75,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteInvoiceLocal: (request) => ipcRenderer.invoke('facturas:delete-local', request),
   saveInvoiceLocal: (invoice) => ipcRenderer.invoke('facturas:save-local', invoice),
   listCierres: (filter) => ipcRenderer.invoke('cierres:list', filter),
+  listMesasEstado: (filter) => ipcRenderer.invoke('mesas:list', filter),
+  saveMesaEstado: (payload) => ipcRenderer.invoke('mesas:save', payload),
+  listCocinaEstado: (filter) => ipcRenderer.invoke('cocina:status', filter),
+  listComandas: (filter) => ipcRenderer.invoke('comandas:list', filter),
+  saveComanda: (payload) => ipcRenderer.invoke('comandas:save', payload),
+  deleteComanda: (payload) => ipcRenderer.invoke('comandas:delete', payload),
+  listConsumos: (filter) => ipcRenderer.invoke('consumos:list', filter),
+  saveConsumo: (payload) => ipcRenderer.invoke('consumos:save', payload),
+  deleteConsumo: (payload) => ipcRenderer.invoke('consumos:delete', payload),
   listCuentasCobrar: (filter) => ipcRenderer.invoke('receivables:list', filter),
   listCxcPagos: (filter) => ipcRenderer.invoke('cxc-pagos:list', filter),
   listCuentasPagar: (filter) => ipcRenderer.invoke('payables:list', filter),
@@ -87,6 +96,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   syncCloudCustomers: (customers) => ipcRenderer.invoke('customers:sync-cloud', customers),
   getSyncDiagnosticReport: (tenantId) => ipcRenderer.invoke('sync:get-diagnostic-report', tenantId),
   triggerSync: () => ipcRenderer.invoke('sync:trigger'),
+  onLocalDataUpdated: (callback) => {
+    const listener = (_, tenantId) => callback(tenantId);
+    ipcRenderer.on('local-data-updated', listener);
+    return () => ipcRenderer.removeListener('local-data-updated', listener);
+  },
   retryFailedSyncErrors: (tenantId) => ipcRenderer.invoke('sync:retry-errors', tenantId),
   importLegacyIndexedDb: (payload) => ipcRenderer.invoke('tenant-store:import-indexeddb', payload),
   close: () => {

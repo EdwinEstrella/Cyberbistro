@@ -6,7 +6,7 @@ import type { MesaConfig } from "../config/mesas";
 import { loadCantidadMesas } from "../../../shared/lib/tenantMesasSettings";
 import { estadoLabels, type MesaEstadoVisual } from "../config/estadoTheme";
 import { TableMesaCard } from "./TableMesaCard";
-import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
+import { readLocalMesasEstado, saveLocalMesaEstado, readLocalConsumos } from "../../../shared/lib/ordersLocal";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { buildMesaEstadoUpsertPayload, buildTablesForConfiguredCount } from "../lib/tableState";
 
@@ -102,13 +102,11 @@ export function Tables() {
 
   const refreshDeudaPorMesa = useCallback(async () => {
     if (!tenantId || !activeSucursalId) { setDeudaPorMesa({}); return; }
-    const useLocalConsumos = await shouldReadLocalFirst(tenantId, ["consumos"]);
     
     let data;
-    if (useLocalConsumos) {
-      const consumos = await readLocalMirror<any>(tenantId, "consumos");
-      data = consumos.filter((c: any) => c.estado !== "pagado" && c.sucursal_id === activeSucursalId);
-    } else {
+    try {
+      data = await readLocalConsumos(tenantId, { sucursalId: activeSucursalId, unpaidOnly: true });
+    } catch {
       const res = await supabase.from("consumos").select("mesa_numero, subtotal").eq("tenant_id", tenantId).eq("sucursal_id", activeSucursalId).neq("estado", "pagado");
       if (res.error) { setDeudaPorMesa({}); return; }
       data = res.data;
@@ -130,17 +128,12 @@ export function Tables() {
     setLoading(true);
     
     Promise.all([
-      shouldReadLocalFirst(tenantId, ["mesas_estado"]),
-      shouldReadLocalFirst(tenantId, ["consumos"]),
-    ]).then(([useLocalMesas, useLocalConsumos]) => {
-      Promise.all([
-        useLocalMesas ? readLocalMirror<any>(tenantId, "mesas_estado").then(r => ({ data: r.filter((m: any) => m.sucursal_id === activeSucursalId) })) : supabase.from("mesas_estado").select("*").eq("tenant_id", tenantId).eq("sucursal_id", activeSucursalId),
-        useLocalConsumos ? readLocalMirror<any>(tenantId, "consumos").then(r => ({ data: r.filter((c: any) => c.estado !== "pagado" && c.sucursal_id === activeSucursalId) })) : supabase.from("consumos").select("mesa_numero, subtotal").eq("tenant_id", tenantId).eq("sucursal_id", activeSucursalId).neq("estado", "pagado"),
-        loadCantidadMesas(tenantId)
-      ]).then(([estadosRes, consumosPendRes, cantidadMesas]) => {
-        setMesas(buildTablesForConfiguredCount({ cantidadMesas, estadosRows: estadosRes.data as any[] | null, pendingConsumptionRows: consumosPendRes.data as any[] | null }));
-        setLoading(false); refreshDeudaPorMesa();
-      });
+      readLocalMesasEstado(tenantId, activeSucursalId),
+      readLocalConsumos(tenantId, { sucursalId: activeSucursalId, unpaidOnly: true }),
+      loadCantidadMesas(tenantId)
+    ]).then(([estadosRows, consumosPendRows, cantidadMesas]) => {
+      setMesas(buildTablesForConfiguredCount({ cantidadMesas, estadosRows: estadosRows as any[] | null, pendingConsumptionRows: consumosPendRows as any[] | null }));
+      setLoading(false); refreshDeudaPorMesa();
     });
   }, [authLoading, tenantId, activeSucursalId, refreshDeudaPorMesa]);
 
@@ -148,6 +141,14 @@ export function Tables() {
     if (!tenantId) return;
     const tick = setInterval(() => void refreshDeudaPorMesa(), 20000);
     return () => clearInterval(tick);
+  }, [tenantId, refreshDeudaPorMesa]);
+
+  useEffect(() => {
+    return window.electronAPI?.onLocalDataUpdated?.((updatedTenantId) => {
+      if (!updatedTenantId || updatedTenantId === tenantId) {
+        void refreshDeudaPorMesa();
+      }
+    });
   }, [tenantId, refreshDeudaPorMesa]);
 
   const selectedMesa = useMemo(() => mesas.find(m => m.id === selectedId) ?? null, [mesas, selectedId]);
@@ -158,12 +159,10 @@ export function Tables() {
     const tid = tenantId;
     let cancelled = false;
     async function load() {
-      const useLocalConsumos = await shouldReadLocalFirst(tid, ["consumos"]);
       let data;
-      if (useLocalConsumos) {
-        const consumos = await readLocalMirror<ConsumoPanelRow>(tid, "consumos");
-        data = consumos.filter(c => c.mesa_numero === selectedMesa!.numero && c.estado !== "pagado" && c.sucursal_id === activeSucursalId).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      } else {
+      try {
+        data = await readLocalConsumos(tid, { sucursalId: activeSucursalId, mesaNumero: selectedMesa!.numero, unpaidOnly: true });
+      } catch {
         const { data: resData } = await supabase.from("consumos").select("*").eq("tenant_id", tid).eq("sucursal_id", activeSucursalId).eq("mesa_numero", selectedMesa!.numero).neq("estado", "pagado").order("created_at", { ascending: false });
         data = resData;
       }
@@ -186,10 +185,9 @@ export function Tables() {
     const newSpanFilas = isVertical ? parent.span_filas + child.span_filas : parent.span_filas;
     const newHijos = [...parent.fusion_hijos, childId];
     
-    const deviceId = await getDeviceId();
     await Promise.all([
-      enqueueLocalWrite({ tenantId, tableName: "mesas_estado", op: "upsert", rowId: parentId.toString(), payload: buildMesaEstadoUpsertPayload({ id: parentId, tenantId, sucursalId: activeSucursalId, state: { span_columnas: newSpanCols, span_filas: newSpanFilas, fusion_hijos: newHijos } }), deviceId }),
-      enqueueLocalWrite({ tenantId, tableName: "mesas_estado", op: "upsert", rowId: childId.toString(), payload: buildMesaEstadoUpsertPayload({ id: childId, tenantId, sucursalId: activeSucursalId, state: { fusionada: true, fusion_padre_id: parentId } }), deviceId })
+      saveLocalMesaEstado(tenantId, buildMesaEstadoUpsertPayload({ id: parentId, tenantId, sucursalId: activeSucursalId, state: { span_columnas: newSpanCols, span_filas: newSpanFilas, fusion_hijos: newHijos } })),
+      saveLocalMesaEstado(tenantId, buildMesaEstadoUpsertPayload({ id: childId, tenantId, sucursalId: activeSucursalId, state: { fusionada: true, fusion_padre_id: parentId } }))
     ]);
     
     setMesas(prev => prev.map(m => m.id === parentId ? { ...m, span_columnas: newSpanCols, span_filas: newSpanFilas, fusion_hijos: newHijos } : (m.id === childId ? { ...m, fusionada: true, fusion_padre_id: parentId } : m)));
@@ -201,12 +199,11 @@ export function Tables() {
     const parent = mesas.find(m => m.id === parentId)!;
     const childIds = parent.fusion_hijos;
     
-    const deviceId = await getDeviceId();
     const writes = [
-      enqueueLocalWrite({ tenantId, tableName: "mesas_estado", op: "upsert", rowId: parentId.toString(), payload: buildMesaEstadoUpsertPayload({ id: parentId, tenantId, sucursalId: activeSucursalId, state: { span_columnas: 1, span_filas: 1, fusion_hijos: [] } }), deviceId })
+      saveLocalMesaEstado(tenantId, buildMesaEstadoUpsertPayload({ id: parentId, tenantId, sucursalId: activeSucursalId, state: { span_columnas: 1, span_filas: 1, fusion_hijos: [] } }))
     ];
     for (const cid of childIds) {
-      writes.push(enqueueLocalWrite({ tenantId, tableName: "mesas_estado", op: "upsert", rowId: cid.toString(), payload: buildMesaEstadoUpsertPayload({ id: cid, tenantId, sucursalId: activeSucursalId, state: { fusionada: false, fusion_padre_id: null } }), deviceId }));
+      writes.push(saveLocalMesaEstado(tenantId, buildMesaEstadoUpsertPayload({ id: cid, tenantId, sucursalId: activeSucursalId, state: { fusionada: false, fusion_padre_id: null } })));
     }
     await Promise.all(writes);
     

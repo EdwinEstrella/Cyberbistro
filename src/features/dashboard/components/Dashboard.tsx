@@ -63,6 +63,7 @@ import { resolveActiveFiscalMode, runFiscalEngine, buildEcfDocumentWrites } from
 import { getLocalFirstStatusSnapshot, readLocalMirror, readLocalOutbox, enqueueLocalWrite, getDeviceId, writeLocalMirrorRow, shouldReadLocalFirst, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, type LocalFirstWrite } from "../../../shared/lib/localFirst";
 import { readLocalCierres } from "../../cierre/lib/cierresLocal";
 import { readLocalPlatos, readLocalMenuCategories } from "../../soporte/lib/catalogLocal";
+import { readLocalMesasEstado, readLocalConsumos } from "../../../shared/lib/ordersLocal";
 import { commitCheckout } from "../../../shared/lib/checkoutCommit";
 import { getNextFacturaNumber } from "../../../shared/lib/invoiceNumber";
 import { writePosMutationLocalFirst } from "../../pos/lib/localFirstMutations";
@@ -300,7 +301,7 @@ export function Dashboard() {
               .order("nombre")
               .then(r => r.data ?? []),
         useLocalRead
-          ? readLocalMirror<any>(tenantId, "mesas_estado").then(rows => rows.filter(r => !r.sucursal_id || r.sucursal_id === activeSucursalId))
+          ? readLocalMesasEstado(tenantId, activeSucursalId).then(rows => rows.filter(r => !r.sucursal_id || r.sucursal_id === activeSucursalId))
           : supabase
               .from("mesas_estado")
               .select("*")
@@ -308,7 +309,7 @@ export function Dashboard() {
               .eq("sucursal_id", activeSucursalId)
               .then(r => r.data ?? []),
         useLocalOpenConsumos
-          ? readLocalMirror<{ mesa_numero: number | null; subtotal: number; estado?: string; sucursal_id?: string | null }>(tenantId, "consumos")
+          ? readLocalConsumos(tenantId, { sucursalId: activeSucursalId, unpaidOnly: true })
               .then(rows => rows.filter(row => row.estado !== "pagado" && (!row.sucursal_id || row.sucursal_id === activeSucursalId)))
           : supabase
               .from("consumos")

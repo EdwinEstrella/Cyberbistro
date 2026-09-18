@@ -8,7 +8,8 @@ import { buildComandaReceiptHtml } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { normalizeTenantRol } from "../../../shared/lib/roleNav";
-import { enqueueLocalWrite, getDeviceId, isLocalFirstEnabled, readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
+import { getDeviceId } from "../../../shared/lib/localFirst";
+import { readLocalConsumos, saveLocalConsumo, deleteLocalConsumo, readLocalComandas, saveLocalComanda, deleteLocalComanda } from "../../../shared/lib/ordersLocal";
 import { ConfirmModal } from "../../../shared/components/ConfirmModal";
 import { writePosMutationLocalFirst } from "../../pos/lib/localFirstMutations";
 import { useSucursal } from "../../../app/context/SucursalContext";
@@ -48,6 +49,8 @@ interface MesaConsumoRow {
   estado: string;
   created_at: string;
   created_by_auth_user_id: string | null;
+  mesa_numero?: number | null;
+  sucursal_id?: string | null;
 }
 
 interface TenantUserLite {
@@ -178,23 +181,16 @@ export function Camarera() {
     setLoading(true);
     const loadOpenConsumos = async () => {
       try {
-        if (await shouldReadLocalFirst(tenantId, ["consumos"])) {
-          return {
-            data: (await readLocalMirror<MesaConsumoRow & { mesa_numero: number | null; sucursal_id?: string | null }>(tenantId, "consumos"))
-              .filter((row) => row.estado !== "pagado" && row.sucursal_id === activeSucursalId),
-            error: null,
-          };
-        }
-      } catch {
-        // Si IndexedDB falla, seguimos con servidor.
+        const rows = await readLocalConsumos(tenantId, { sucursalId: activeSucursalId, unpaidOnly: true });
+        return {
+          data: (rows as unknown as MesaConsumoRow[])
+            .filter((row) => row.estado !== "pagado" && (!row.sucursal_id || row.sucursal_id === activeSucursalId)),
+          error: null,
+        };
+      } catch (err) {
+        return { data: [], error: err };
       }
-      return supabase
-        .from("consumos")
-        .select("mesa_numero, subtotal, created_by_auth_user_id")
-        .eq("tenant_id", tenantId)
-        .eq("sucursal_id", activeSucursalId)
-        .neq("estado", "pagado");
-     };
+    };
 
     Promise.all([
       supabase
@@ -262,17 +258,15 @@ export function Camarera() {
       return;
     }
     try {
-      if (await shouldReadLocalFirst(tenantId, ["consumos"])) {
-        const rows = await readLocalMirror<MesaConsumoRow & { mesa_numero: number | null; sucursal_id?: string | null }>(tenantId, "consumos");
-        setMesaConsumos(
-          rows
-            .filter((row) => Number(row.mesa_numero) === mesaNumero && row.estado !== "pagado" && row.sucursal_id === activeSucursalId)
-            .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
-        );
-        return;
-      }
+      const rows = await readLocalConsumos(tenantId, { sucursalId: activeSucursalId, mesaNumero, unpaidOnly: true });
+      setMesaConsumos(
+        (rows as unknown as MesaConsumoRow[])
+          .filter((row) => Number(row.mesa_numero) === mesaNumero && row.estado !== "pagado" && (!row.sucursal_id || row.sucursal_id === activeSucursalId))
+          .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+      );
+      return;
     } catch {
-      // Si IndexedDB falla, seguimos con servidor.
+      // Si falla, seguimos con servidor.
     }
     const { data, error } = await supabase
       .from("consumos")
@@ -289,6 +283,14 @@ export function Camarera() {
     }
     setMesaConsumos(data as MesaConsumoRow[]);
   }, [tenantId, activeSucursalId]);
+
+  useEffect(() => {
+    return window.electronAPI?.onLocalDataUpdated?.((updatedTenantId) => {
+      if (!updatedTenantId || updatedTenantId === tenantId) {
+        if (selectedMesaNumero) void loadSelectedMesaConsumos(selectedMesaNumero);
+      }
+    });
+  }, [tenantId, selectedMesaNumero, loadSelectedMesaConsumos]);
 
   useEffect(() => {
     void loadSelectedMesaConsumos(selectedMesaNumero);
@@ -467,17 +469,13 @@ export function Camarera() {
     ];
 
     try {
-      const deviceId = await getDeviceId();
       for (const consumo of consumosToInsert) {
         const rowId = (consumo as { id?: string }).id ?? crypto.randomUUID();
-        await enqueueLocalWrite({
-          tenantId,
-          tableName: "consumos",
-          rowId,
-          op: "insert",
-          payload: { ...consumo, id: rowId },
-          authUserId: user?.id ?? null,
-          deviceId,
+        await saveLocalConsumo(tenantId, {
+          ...consumo,
+          id: rowId,
+          sucursal_id: activeSucursalId,
+          created_by_auth_user_id: user?.id ?? null,
         });
       }
     } catch (error) {
@@ -516,77 +514,31 @@ export function Camarera() {
       setDeletingConsumoId(group.key);
       setMessage("");
 
-    const deviceId = await getDeviceId();
-    const useLocalState = isLocalFirstEnabled();
     for (const consumoId of group.ids) {
-      await enqueueLocalWrite({
-        tenantId,
-        tableName: "consumos",
-        rowId: consumoId,
-        op: "delete",
-        payload: {
-          id: consumoId,
-          tenant_id: tenantId,
-          mesa_numero: selectedMesa.numero,
-          comanda_id: group.comandaIds[0] ?? null,
-          created_by_auth_user_id: group.ownerId,
-        },
-        authUserId: user?.id ?? null,
-        deviceId,
-      });
+      await deleteLocalConsumo(tenantId, consumoId);
     }
 
     for (const comandaId of group.comandaIds) {
-      const remaining = useLocalState
-        ? (await readLocalMirror<any>(tenantId, "consumos"))
-            .filter((row: any) => row.tenant_id === tenantId && row.comanda_id === comandaId && row.estado !== "pagado" && !group.ids.includes(row.id))
-            .map((row: any) => ({ id: row.id }))
-        : ((await supabase
-            .from("consumos")
-            .select("id")
-            .eq("tenant_id", tenantId)
-            .eq("comanda_id", comandaId)
-            .neq("estado", "pagado")).data ?? []);
+      const remaining = (await readLocalConsumos(tenantId, { comandaId, unpaidOnly: true }))
+        .filter((row: any) => !group.ids.includes(row.id));
 
       if (!remaining || remaining.length === 0) {
-          await enqueueLocalWrite({
-            tenantId,
-            tableName: "comandas",
-            rowId: comandaId,
-            op: "delete",
-            payload: { id: comandaId },
-            authUserId: user?.id ?? null,
-            deviceId,
-          });
+        await deleteLocalComanda(tenantId, comandaId);
       } else {
         const qtyToRemove = group.rows
           .filter((row) => row.comanda_id === comandaId)
           .reduce((sum, row) => sum + Number(row.cantidad), 0);
-        const comanda = useLocalState
-          ? (await readLocalMirror<any>(tenantId, "comandas")).find((row: any) => row.id === comandaId && row.tenant_id === tenantId)
-          : (await supabase
-              .from("comandas")
-              .select("items")
-              .eq("id", comandaId)
-              .eq("tenant_id", tenantId)
-              .maybeSingle()).data;
-        const items = Array.isArray((comanda as { items?: unknown } | null)?.items)
-          ? ([...((comanda as { items: Array<{ nombre?: string; cantidad?: number; precio?: number }> }).items)] as Array<{ nombre?: string; cantidad?: number; precio?: number }>)
-          : [];
+        const comandas = await readLocalComandas(tenantId);
+        const comanda = comandas.find((row: any) => row.id === comandaId);
+        const items = Array.isArray(comanda?.items) ? [...(comanda.items as any[])] : [];
         const idx = items.findIndex((item) => item.nombre === group.nombre && Number(item.precio) === Number(group.precio_unitario));
         if (idx >= 0) {
           const currentQty = Number(items[idx].cantidad || 0);
           if (currentQty <= qtyToRemove) items.splice(idx, 1);
           else items[idx] = { ...items[idx], cantidad: currentQty - qtyToRemove };
-          await enqueueLocalWrite({
-            tenantId,
-            tableName: "comandas",
-            rowId: comandaId,
-            op: "update",
-            payload: { items },
-            authUserId: user?.id ?? null,
-            deviceId,
-          });
+          if (comanda) {
+            await saveLocalComanda(tenantId, { ...comanda, items });
+          }
         }
       }
     }

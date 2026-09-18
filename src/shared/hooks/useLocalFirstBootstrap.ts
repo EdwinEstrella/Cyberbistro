@@ -108,6 +108,8 @@ export function useLocalFirstBootstrap(tenantId: string | null, accessValidated 
           console.warn("Error enviando outbox a la nube:", outboxErr);
         }
 
+        void window.electronAPI?.triggerSync?.().catch(() => undefined);
+
         if (snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing") {
           const licenseValidation = await revalidateLicenseOnReconnect(validatedTenantId);
           if (!canContinue()) return;

@@ -8,6 +8,7 @@ export class PayrollSyncOrchestrator {
   private store: SQLitePayrollSyncStore | null = null;
   private intervalId: NodeJS.Timeout | null = null;
   private isSyncing = false;
+  private hasPendingSync = false;
   private stopRequested = false;
   private accessToken: string | null = null;
   private client: ServerSyncClient | null = null;

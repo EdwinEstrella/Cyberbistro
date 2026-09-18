@@ -24,6 +24,7 @@ import { resolveActiveFiscalMode, runFiscalEngine, buildEcfDocumentWrites } from
 import { getDeviceId, getLocalFirstStatusSnapshot, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, readLocalMirror, readLocalOutbox, type LocalFirstWrite } from "../../../shared/lib/localFirst";
 import { getNextFacturaNumber, getNextFacturaNumbers } from "../../../shared/lib/invoiceNumber";
 import { commitCheckout } from "../../../shared/lib/checkoutCommit";
+import { readLocalConsumos } from "../../../shared/lib/ordersLocal";
 import { isDesktopCloudUnavailable } from "../../../shared/lib/cloudAvailability";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { CustomerSelect } from "../../clientes/components/CustomerSelect";
@@ -111,12 +112,8 @@ async function loadTableConsumption(
       (await isDesktopCloudUnavailable());
 
     if (shouldTrustLocal) {
-      const localRows = await readLocalMirror<MesaConsumoRow>(tenantId, "consumos");
+      const localRows = (await readLocalConsumos(tenantId, { sucursalId, mesaNumero })) as unknown as MesaConsumoRow[];
       const mesaRows = localRows
-        // Match the mesa grid's occupancy rule (Dashboard): a consumo with a null
-        // sucursal_id belongs to the active branch's table. If the modal filtered
-        // it out (strict ===), the grid kept counting it as pending and the table
-        // never closed after charging.
         .filter((row) => row.mesa_numero === mesaNumero && (!row.sucursal_id || row.sucursal_id === sucursalId))
         .sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
       const localPendingRows = mesaRows.filter((row) => row.estado !== "pagado");

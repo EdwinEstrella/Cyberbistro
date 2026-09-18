@@ -508,6 +508,9 @@ function AppLayoutContent() {
         INSERT_digital_order: handleDigitalOrderInsert,
         UPDATE_digital_order: handleDigitalOrderEvent,
         DELETE_digital_order: handleDigitalOrderEvent,
+        postgres_changes: () => {
+          void window.electronAPI?.triggerSync?.();
+        },
       });
       void registration.ready.catch((e: unknown) => console.warn("[AppLayout] Realtime connect failed:", e));
     })();

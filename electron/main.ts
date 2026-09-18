@@ -684,13 +684,24 @@ if (gotTheLock) {
       decrypt: (ciphertext) => safeStorage.decryptString(Buffer.from(ciphertext)),
     })
 
+    const triggerSyncAfterLocalWrite = () => {
+      tenantStoreController?.payrollSync.triggerSync().catch(console.error);
+    };
+
     registerCatalogRepositoryIpc({
       ipcMain,
       isTrustedSender,
       getRepository: () => {
         const store = getStore()
         if (!store) throw new Error('Tenant store is unavailable')
-        return new CatalogRepository({ store, branchId: 'main-process-default' })
+        const repo = new CatalogRepository({ store, branchId: 'main-process-default' })
+        return {
+          execute: (command) => {
+            const res = repo.execute(command)
+            triggerSyncAfterLocalWrite()
+            return res
+          }
+        }
       },
       listCatalog: () => getStore()?.listCatalog() ?? { platos: [], menuCategories: [] },
     })
@@ -700,12 +711,69 @@ if (gotTheLock) {
       getRepository: () => {
         const store = getStore()
         if (!store) throw new Error('Tenant store is unavailable')
-        return new OrdersRepository({ store, branchId: 'main-process-default' })
+        const repo = new OrdersRepository({ store, branchId: 'main-process-default' })
+        return {
+          execute: (command) => {
+            const res = repo.execute(command)
+            triggerSyncAfterLocalWrite()
+            return res
+          }
+        }
       },
       listCierres: (filter) => {
         const store = getStore((filter as { tenantId?: string })?.tenantId)
         if (!store) return []
         return store.listCierres(filter)
+      },
+      listMesasEstado: (filter) => {
+        const store = getStore((filter as { tenantId?: string })?.tenantId)
+        if (!store) return []
+        return store.listMesasEstado(filter?.sucursalId)
+      },
+      saveMesaEstado: (payload) => {
+        const store = getStore((payload as { tenant_id?: string })?.tenant_id)
+        if (!store) throw new Error('Tenant store is unavailable')
+        store.saveMesaEstado(payload)
+        triggerSyncAfterLocalWrite()
+      },
+      listCocinaEstado: (filter) => {
+        const store = getStore((filter as { tenantId?: string })?.tenantId)
+        if (!store) return []
+        return store.listCocinaEstado(filter?.sucursalId)
+      },
+      listComandas: (filter) => {
+        const store = getStore((filter as { tenantId?: string })?.tenantId)
+        if (!store) return []
+        return store.listComandas(filter)
+      },
+      saveComanda: (payload) => {
+        const store = getStore((payload as { tenant_id?: string })?.tenant_id)
+        if (!store) throw new Error('Tenant store is unavailable')
+        store.saveComanda(payload)
+        triggerSyncAfterLocalWrite()
+      },
+      deleteComanda: (req) => {
+        const store = getStore(req.tenantId)
+        if (!store) throw new Error('Tenant store is unavailable')
+        store.deleteComanda(req.comandaId)
+        triggerSyncAfterLocalWrite()
+      },
+      listConsumos: (filter) => {
+        const store = getStore((filter as { tenantId?: string })?.tenantId)
+        if (!store) return []
+        return store.listConsumos(filter)
+      },
+      saveConsumo: (payload) => {
+        const store = getStore((payload as { tenant_id?: string })?.tenant_id)
+        if (!store) throw new Error('Tenant store is unavailable')
+        store.saveConsumo(payload)
+        triggerSyncAfterLocalWrite()
+      },
+      deleteConsumo: (req) => {
+        const store = getStore(req.tenantId)
+        if (!store) throw new Error('Tenant store is unavailable')
+        store.deleteConsumo(req.consumoId)
+        triggerSyncAfterLocalWrite()
       },
     })
     registerSalesFiscalRepositoryIpc({
@@ -714,7 +782,14 @@ if (gotTheLock) {
       getRepository: () => {
         const store = getStore()
         if (!store) throw new Error('Tenant store is unavailable')
-        return new SalesFiscalRepository({ store, branchId: 'main-process-default' })
+        const repo = new SalesFiscalRepository({ store, branchId: 'main-process-default' })
+        return {
+          execute: (command) => {
+            const res = repo.execute(command)
+            triggerSyncAfterLocalWrite()
+            return res
+          }
+        }
       },
       listInvoices: (filter) => {
         const store = getStore((filter as { tenantId?: string })?.tenantId)
@@ -735,17 +810,26 @@ if (gotTheLock) {
         const store = getStore(request.tenantId)
         if (!store) throw new Error('Tenant store is unavailable')
         store.deleteInvoiceAndTraces(request.invoiceId)
+        triggerSyncAfterLocalWrite()
       },
       saveInvoiceLocal: (invoice) => {
         const store = getStore((invoice as { tenant_id?: string })?.tenant_id)
         if (!store) throw new Error('Tenant store is unavailable')
         store.saveInvoice(invoice)
+        triggerSyncAfterLocalWrite()
       },
     })
     registerCashPurchaseRepositoryIpc({ ipcMain, isTrustedSender, getRepository: () => {
       const store = getStore()
       if (!store) throw new Error('Tenant store is unavailable')
-      return new CashPurchaseRepository({ store, branchId: 'main-process-default' })
+      const repo = new CashPurchaseRepository({ store, branchId: 'main-process-default' })
+      return {
+        execute: (command) => {
+          const res = repo.execute(command)
+          triggerSyncAfterLocalWrite()
+          return res
+        }
+      }
     } })
     registerReceivablesRepositoryIpc({
       ipcMain,
@@ -753,7 +837,14 @@ if (gotTheLock) {
       getRepository: () => {
         const store = getStore()
         if (!store) throw new Error('Tenant store is unavailable')
-        return new ReceivablesRepository({ store, branchId: 'main-process-default' })
+        const repo = new ReceivablesRepository({ store, branchId: 'main-process-default' })
+        return {
+          execute: (command) => {
+            const res = repo.execute(command)
+            triggerSyncAfterLocalWrite()
+            return res
+          }
+        }
       },
       listCuentasCobrar: (filter) => {
         const store = getStore((filter as { tenantId?: string })?.tenantId)
@@ -772,7 +863,14 @@ if (gotTheLock) {
       getRepository: () => {
         const store = getStore()
         if (!store) throw new Error('Tenant store is unavailable')
-        return new PayablesRepository({ store, branchId: 'main-process-default' })
+        const repo = new PayablesRepository({ store, branchId: 'main-process-default' })
+        return {
+          execute: (command) => {
+            const res = repo.execute(command)
+            triggerSyncAfterLocalWrite()
+            return res
+          }
+        }
       },
       listCuentasPagar: (filter) => {
         const store = getStore((filter as { tenantId?: string })?.tenantId)
@@ -791,7 +889,14 @@ if (gotTheLock) {
       getRepository: () => {
         const store = getStore()
         if (!store) throw new Error('Tenant store is unavailable')
-        return new ExpenseRepository({ store, branchId: 'main-process-default' })
+        const repo = new ExpenseRepository({ store, branchId: 'main-process-default' })
+        return {
+          execute: (command) => {
+            const res = repo.execute(command)
+            triggerSyncAfterLocalWrite()
+            return res
+          }
+        }
       },
       listExpenses: (filter) => {
         const store = getStore((filter as any)?.tenantId)
@@ -816,7 +921,14 @@ if (gotTheLock) {
       getRepository: () => {
         const store = getStore()
         if (!store) throw new Error('Tenant store is unavailable')
-        return new CustomerRepository({ store, branchId: 'main-process-default' })
+        const repo = new CustomerRepository({ store, branchId: 'main-process-default' })
+        return {
+          execute: (command) => {
+            const res = repo.execute(command)
+            triggerSyncAfterLocalWrite()
+            return res
+          }
+        }
       },
       listCustomers: () => {
         const store = getStore()
