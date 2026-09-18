@@ -767,9 +767,9 @@ export function applyCloudConsumoRows(
       precio_unitario = excluded.precio_unitario,
       subtotal = excluded.subtotal,
       tipo = excluded.tipo,
-      state = excluded.state,
-      estado = excluded.estado,
-      factura_id = excluded.factura_id,
+      state = CASE WHEN consumos.estado = 'pagado' THEN consumos.state ELSE excluded.state END,
+      estado = CASE WHEN consumos.estado = 'pagado' THEN 'pagado' ELSE excluded.estado END,
+      factura_id = COALESCE(consumos.factura_id, excluded.factura_id),
       mesa_numero = excluded.mesa_numero,
       created_by_auth_user_id = excluded.created_by_auth_user_id,
       updated_at = excluded.updated_at

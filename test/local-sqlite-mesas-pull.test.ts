@@ -84,6 +84,47 @@ describe("mesas_estado and comandas cloud→local pull", () => {
     });
   });
 
+  it("does not revert locally paid consumos back to pendiente on cloud pull", () => {
+    // 1. Locally, cashier charged the table and marked consumo as pagado
+    applyCloudConsumoRows(db, TENANT, [
+      {
+        id: "consumo-paid-1",
+        tenant_id: TENANT,
+        sucursal_id: "branch-1",
+        nombre: "Hamburguesa Clásica",
+        cantidad: 1,
+        precio_unitario: 350,
+        subtotal: 350,
+        estado: "pagado",
+        factura_id: "fac-123",
+      },
+    ]);
+
+    const before = db.prepare("SELECT estado, factura_id FROM consumos WHERE id = 'consumo-paid-1'").get() as { estado: string; factura_id: string };
+    expect(before.estado).toBe("pagado");
+    expect(before.factura_id).toBe("fac-123");
+
+    // 2. Outdated cloud pull arrives with estado = pendiente and no factura_id
+    applyCloudConsumoRows(db, TENANT, [
+      {
+        id: "consumo-paid-1",
+        tenant_id: TENANT,
+        sucursal_id: "branch-1",
+        nombre: "Hamburguesa Clásica",
+        cantidad: 1,
+        precio_unitario: 350,
+        subtotal: 350,
+        estado: "pendiente",
+        factura_id: null,
+      },
+    ]);
+
+    // 3. Local paid state must be preserved
+    const after = db.prepare("SELECT estado, factura_id FROM consumos WHERE id = 'consumo-paid-1'").get() as { estado: string; factura_id: string };
+    expect(after.estado).toBe("pagado");
+    expect(after.factura_id).toBe("fac-123");
+  });
+
   it("migrates legacy consumos with NOT NULL comanda_id on schema evolution", () => {
     const legacyDb = new DatabaseSync(":memory:");
     initializeTenantSchema(legacyDb, TENANT);
