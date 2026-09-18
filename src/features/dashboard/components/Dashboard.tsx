@@ -586,27 +586,25 @@ export function Dashboard() {
     async (mesaNumero: number): Promise<Consumo[]> => {
       if (!tenantId || !activeSucursalId) return [];
       try {
-        const outbox = await readLocalOutbox(tenantId);
-        const hasPendingMesaConsumos = outbox.some((entry) => {
-          if (entry.table_name !== "consumos") return false;
-          if (entry.status !== "pending" && entry.status !== "syncing" && entry.status !== "error") return false;
-          const payloadMesa = Number((entry.payload as { mesa_numero?: unknown } | null)?.mesa_numero);
-          return payloadMesa === mesaNumero;
+        const localRows = await readLocalConsumos(tenantId, {
+          sucursalId: activeSucursalId,
+          mesaNumero,
+          unpaidOnly: true,
         });
-        if (!navigator.onLine || hasPendingMesaConsumos) {
-          const rows = await readLocalMirror<Consumo>(tenantId, "consumos");
-          return rows
-            .filter((row) => Number(row.mesa_numero) === mesaNumero && row.estado !== "pagado" && row.sucursal_id === activeSucursalId)
-            .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+        if (localRows && (localRows.length > 0 || isDesktopRuntime())) {
+          return localRows
+            .filter((row) => Number(row.mesa_numero) === mesaNumero && (!row.sucursal_id || row.sucursal_id === activeSucursalId || row.sucursal_id === "main-process-default"))
+            .filter((row) => row.estado !== "pagado")
+            .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at))) as unknown as Consumo[];
         }
-      } catch {
-        // Si IndexedDB no está disponible, caemos al servidor.
+      } catch (err) {
+        console.warn("[Dashboard] Error leyendo consumos locales:", err);
       }
       const { data, error } = await supabase
          .from("consumos")
          .select("*")
          .eq("tenant_id", tenantId)
-         .eq("sucursal_id", activeSucursalId)
+         .or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`)
          .eq("mesa_numero", mesaNumero)
          .neq("estado", "pagado")
          .order("created_at", { ascending: true });
@@ -2033,8 +2031,16 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
               id: parseInt(selectedMesa.id, 10),
               estado: "libre",
               tenant_id: tenantId,
+              sucursal_id: activeSucursalId,
               updated_at: new Date().toISOString(),
             };
+            if (window.electronAPI?.saveMesaEstado) {
+              await window.electronAPI.saveMesaEstado({
+                ...freeMesaRow,
+                table_number: selectedMesa.numero,
+                state: "free",
+              });
+            }
             await writeLocalMirrorRow(tenantId, "mesas_estado", freeMesaRow);
             await writePosMutationLocalFirst({
               tenantId,

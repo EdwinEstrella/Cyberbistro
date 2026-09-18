@@ -118,28 +118,13 @@ async function loadTableConsumption(
       (typeof navigator !== "undefined" && !navigator.onLine) ||
       (await isDesktopCloudUnavailable());
 
-    if (shouldTrustLocal) {
-      const localRows = (await readLocalConsumos(tenantId, { sucursalId, mesaNumero })) as unknown as MesaConsumoRow[];
-      const mesaRows = localRows
-        .filter((row) => row.mesa_numero === mesaNumero && (!row.sucursal_id || row.sucursal_id === sucursalId))
-        .sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
-      const localPendingRows = mesaRows.filter((row) => row.estado !== "pagado");
-
-      if ((typeof navigator !== "undefined" && !navigator.onLine) || (await isDesktopCloudUnavailable())) {
-        return localPendingRows;
-      }
-
-      const mesaRowIds = new Set(mesaRows.map((row) => row.id));
-      const outbox = await readLocalOutbox(tenantId);
-      const hasPendingMesaWrites = outbox.some((entry) => {
-        if (entry.status !== "pending" && entry.status !== "syncing" && entry.status !== "error") return false;
-        if (entry.table_name !== "consumos") return false;
-        if (mesaRowIds.has(entry.row_id)) return true;
-        return Number(entry.payload?.mesa_numero) === mesaNumero && (!entry.payload?.sucursal_id || entry.payload?.sucursal_id === sucursalId);
-      });
-
-      if (hasPendingMesaWrites) {
-        return localPendingRows;
+    if (isDesktopRuntime() || shouldTrustLocal) {
+      const localRows = (await readLocalConsumos(tenantId, { sucursalId, mesaNumero, unpaidOnly: true })) as unknown as MesaConsumoRow[];
+      if (localRows && (localRows.length > 0 || isDesktopRuntime())) {
+        return localRows
+          .filter((row) => Number(row.mesa_numero) === mesaNumero && (!row.sucursal_id || row.sucursal_id === sucursalId || row.sucursal_id === "main-process-default"))
+          .filter((row) => row.estado !== "pagado")
+          .sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
       }
     }
   } catch {
@@ -623,6 +608,7 @@ export function MesaCloseAccountModal({
             rowId: consumo.id,
             op: "update",
             payload: {
+              ...consumo,
               mesa_numero: consumo.mesa_numero ?? mesaNumero,
               estado: "pagado",
               factura_id: localFacturaId,
@@ -953,6 +939,7 @@ export function MesaCloseAccountModal({
         rowId: consumo.id,
         op: "update",
         payload: {
+          ...consumo,
           mesa_numero: consumo.mesa_numero ?? mesaNumero,
           estado: "pagado",
           factura_id: localFacturaId,

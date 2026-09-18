@@ -774,17 +774,41 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
 
   saveConsumo(consumo: Record<string, unknown>): void {
     const id = String(consumo.id);
-    const branchId = typeof consumo.sucursal_id === "string" && consumo.sucursal_id.trim() ? consumo.sucursal_id.trim() : "main-process-default";
-    const cant = Number(consumo.cantidad ?? consumo.quantity);
+    const existing = this.database.prepare("SELECT * FROM consumos WHERE id = ? AND tenant_id = ?").get(id, this.tenantId) as Record<string, unknown> | undefined;
+
+    const branchId = typeof consumo.sucursal_id === "string" && consumo.sucursal_id.trim()
+      ? consumo.sucursal_id.trim()
+      : (typeof existing?.sucursal_id === "string" && existing.sucursal_id.trim() ? existing.sucursal_id.trim() : "main-process-default");
+
+    const rawCant = consumo.cantidad ?? consumo.quantity ?? existing?.cantidad ?? existing?.quantity;
+    const cant = Number(rawCant);
     const cantidad = Number.isFinite(cant) && cant > 0 ? Math.round(cant) : 1;
-    const precio = Number(consumo.precio_unitario ?? consumo.unit_price);
+
+    const rawPrecio = consumo.precio_unitario ?? consumo.unit_price ?? existing?.precio_unitario ?? existing?.unit_price;
+    const precio = Number(rawPrecio);
     const precioUnitario = Number.isFinite(precio) && precio >= 0 ? precio : 0;
-    const sub = Number(consumo.subtotal);
+
+    const rawSub = consumo.subtotal ?? existing?.subtotal;
+    const sub = Number(rawSub);
     const subtotal = Number.isFinite(sub) && sub >= 0 ? sub : cantidad * precioUnitario;
-    const itemName = consumo.nombre ? String(consumo.nombre) : (consumo.name ? String(consumo.name) : "Item");
-    const estado = consumo.estado ? String(consumo.estado) : "pendiente";
+
+    const itemName = consumo.nombre
+      ? String(consumo.nombre)
+      : (consumo.name
+        ? String(consumo.name)
+        : (existing?.nombre
+          ? String(existing.nombre)
+          : (existing?.name ? String(existing.name) : "Item")));
+
+    const estado = consumo.estado ? String(consumo.estado) : (existing?.estado ? String(existing.estado) : "pendiente");
     const state = estado === "pagado" || estado === "entregado" ? "delivered" : estado === "listo" ? "ready" : "sent_to_kitchen";
-    const comandaId = consumo.comanda_id ? String(consumo.comanda_id) : null;
+    const comandaId = consumo.comanda_id ? String(consumo.comanda_id) : (existing?.comanda_id ? String(existing.comanda_id) : null);
+    const platoId = consumo.plato_id != null ? String(consumo.plato_id) : (existing?.plato_id != null ? String(existing.plato_id) : null);
+    const facturaId = consumo.factura_id ? String(consumo.factura_id) : (existing?.factura_id ? String(existing.factura_id) : null);
+    const mesaNumero = consumo.mesa_numero != null ? Number(consumo.mesa_numero) : (existing?.mesa_numero != null ? Number(existing.mesa_numero) : null);
+    const createdBy = consumo.created_by_auth_user_id ? String(consumo.created_by_auth_user_id) : (existing?.created_by_auth_user_id ? String(existing.created_by_auth_user_id) : null);
+    const createdAt = existing?.created_at ? String(existing.created_at) : (consumo.created_at ? String(consumo.created_at) : new Date().toISOString());
+    const updatedAt = new Date().toISOString();
 
     this.database.exec("BEGIN IMMEDIATE;");
     try {
@@ -818,7 +842,7 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
         this.tenantId,
         branchId,
         comandaId,
-        consumo.plato_id != null ? String(consumo.plato_id) : null,
+        platoId,
         itemName,
         itemName,
         cantidad,
@@ -826,19 +850,41 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
         precioUnitario,
         precioUnitario,
         subtotal,
-        consumo.tipo ? String(consumo.tipo) : "plato",
+        consumo.tipo ? String(consumo.tipo) : (existing?.tipo ? String(existing.tipo) : "plato"),
         state,
         estado,
-        consumo.factura_id ? String(consumo.factura_id) : null,
-        consumo.mesa_numero != null ? Number(consumo.mesa_numero) : null,
-        consumo.created_by_auth_user_id ? String(consumo.created_by_auth_user_id) : null,
-        consumo.created_at ? String(consumo.created_at) : new Date().toISOString(),
-        consumo.updated_at ? String(consumo.updated_at) : new Date().toISOString(),
+        facturaId,
+        mesaNumero,
+        createdBy,
+        createdAt,
+        updatedAt,
       );
+      const fullConsumo = {
+        id,
+        tenant_id: this.tenantId,
+        sucursal_id: branchId,
+        comanda_id: comandaId,
+        plato_id: platoId,
+        nombre: itemName,
+        name: itemName,
+        cantidad,
+        quantity: cantidad,
+        precio_unitario: precioUnitario,
+        unit_price: precioUnitario,
+        subtotal,
+        tipo: consumo.tipo ? String(consumo.tipo) : (existing?.tipo ? String(existing.tipo) : "plato"),
+        state,
+        estado,
+        factura_id: facturaId,
+        mesa_numero: mesaNumero,
+        created_by_auth_user_id: createdBy,
+        created_at: createdAt,
+        updated_at: updatedAt,
+      };
       this.database.prepare(`
         INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status)
         VALUES (?, ?, ?, 'consumos', ?, 'upsert', ?, 'pending')
-      `).run(crypto.randomUUID(), this.tenantId, branchId, id, JSON.stringify(consumo));
+      `).run(crypto.randomUUID(), this.tenantId, branchId, id, JSON.stringify(fullConsumo));
       this.database.exec("COMMIT;");
     } catch (error) {
       this.database.exec("ROLLBACK;");

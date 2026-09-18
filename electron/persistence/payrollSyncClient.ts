@@ -849,10 +849,12 @@ function mapConsumoPayload(operation: DurableOperation, payload: Record<string, 
     const n = Number(v);
     return Number.isFinite(n) ? n : null;
   };
+  const rawBranch = str(payload.sucursal_id) ?? str(payload.sucursalId);
+  const branchId = rawBranch && rawBranch !== "main-process-default" ? rawBranch : null;
   return {
     id: operation.rowId,
     tenant_id: operation.tenantId,
-    sucursal_id: str(payload.sucursal_id) ?? str(payload.sucursalId),
+    sucursal_id: branchId,
     comanda_id: str(payload.comanda_id) ?? str(payload.comandaId),
     plato_id: num(payload.plato_id) ?? num(payload.platoId) ?? 0,
     nombre: str(payload.nombre) ?? str(payload.name) ?? "Item",
