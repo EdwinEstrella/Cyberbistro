@@ -43,7 +43,7 @@ describe("cierresWrites — single engine per runtime", () => {
       await writeCycleDiscard({ tenantId: "tenant-1", cycleId: "cycle-1" });
       await writeCyclePrinted({ tenantId: "tenant-1", cycleId: "cycle-1", printedAtIso: "2026-09-16T18:01:00.000Z" });
 
-      expect(adapter.openOperatingCycle).toHaveBeenCalledWith("cycle-1", "2026-09-16", 500, 5, "2026-09-16T10:00:00.000Z");
+      expect(adapter.openOperatingCycle).toHaveBeenCalledWith("cycle-1", "2026-09-16", 500, 5, "2026-09-16T10:00:00.000Z", "branch-1");
       expect(adapter.closeOperatingCycle).toHaveBeenCalledWith("cycle-1", "2026-09-16T18:00:00.000Z");
       expect(adapter.discardOperatingCycle).toHaveBeenCalledWith("cycle-1");
       expect(adapter.markOperatingCyclePrinted).toHaveBeenCalledWith("cycle-1", "2026-09-16T18:01:00.000Z");

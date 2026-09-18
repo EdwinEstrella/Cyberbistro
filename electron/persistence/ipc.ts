@@ -656,7 +656,18 @@ function parseOrdersCommand(payload: unknown): OrdersCommand | null {
   if (command.type === "orders.table.set-state" && only("type", "tableId", "tableNumber", "state") && text("tableId") && Number.isInteger(command.tableNumber) && (command.tableNumber as number) > 0 && ["free", "occupied"].includes(String(command.state))) return command as OrdersCommand;
   if (command.type === "orders.kitchen.set-open" && only("type", "id", "isOpen") && text("id") && typeof command.isOpen === "boolean") return command as OrdersCommand;
   if (command.type === "orders.kitchen.advance" && only("type", "orderId", "nextState") && text("orderId") && ["preparing", "ready", "delivered"].includes(String(command.nextState))) return command as OrdersCommand;
-  if (command.type === "orders.cycle.open" && only("type", "id", "businessDay", "openingCash", "cycleNumber", "openedAt") && text("id") && /^\d{4}-\d{2}-\d{2}$/.test(String(command.businessDay)) && money("openingCash") && Number.isInteger(command.cycleNumber) && (command.cycleNumber as number) > 0 && text("openedAt")) return command as OrdersCommand;
+  if (
+    command.type === "orders.cycle.open" &&
+    (only("type", "id", "businessDay", "openingCash", "cycleNumber", "openedAt") ||
+      only("type", "id", "businessDay", "openingCash", "cycleNumber", "openedAt", "sucursalId")) &&
+    text("id") &&
+    /^\d{4}-\d{2}-\d{2}$/.test(String(command.businessDay)) &&
+    money("openingCash") &&
+    Number.isInteger(command.cycleNumber) &&
+    (command.cycleNumber as number) > 0 &&
+    text("openedAt") &&
+    (command.sucursalId === undefined || command.sucursalId === null || text("sucursalId"))
+  ) return command as OrdersCommand;
   if (command.type === "orders.cycle.close" && only("type", "id", "closedAt") && text("id") && text("closedAt")) return command as OrdersCommand;
   if (command.type === "orders.cycle.mark-printed" && only("type", "id", "printedAt") && text("id") && text("printedAt")) return command as OrdersCommand;
   if (command.type === "orders.cycle.discard" && only("type", "id") && text("id")) return command as OrdersCommand;

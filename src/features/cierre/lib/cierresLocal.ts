@@ -80,7 +80,7 @@ export async function readLocalCierres(
   if (sucursalId) {
     rows = rows.filter((row) => {
       const branch = row.sucursal_id;
-      return !branch || branch === sucursalId;
+      return !branch || branch === sucursalId || branch === "main-process-default";
     });
   }
   rows.sort((a, b) => (Number(b.cycle_number) || 0) - (Number(a.cycle_number) || 0));

@@ -625,6 +625,7 @@ export function applyCloudMesasEstadoRows(
 ): void {
   const ensureBranch = db.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)");
   ensureBranch.run(defaultBranchId, tenantId, "Principal");
+  const deleteDuplicateTable = db.prepare("DELETE FROM mesas_estado WHERE tenant_id = ? AND sucursal_id = ? AND table_number = ? AND id <> ?");
   const stmt = db.prepare(`
     INSERT INTO mesas_estado (id, tenant_id, sucursal_id, table_number, state, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -639,12 +640,16 @@ export function applyCloudMesasEstadoRows(
     if (hasPendingCloudWrite(db, tenantId, "mesas_estado", String(m.id))) continue;
     const branchId = typeof m.sucursal_id === "string" && m.sucursal_id.trim() ? m.sucursal_id.trim() : defaultBranchId;
     ensureBranch.run(branchId, tenantId, "Principal");
-    const stateStr = m.state == null ? null : (typeof m.state === "string" ? m.state : JSON.stringify(m.state));
+    const tableNum = m.table_number != null ? Number(m.table_number) : (Number.isFinite(Number(m.id)) ? Number(m.id) : null);
+    if (!tableNum || tableNum <= 0) continue;
+    const rawState = typeof m.state === "string" ? m.state : (typeof m.estado === "string" ? m.estado : "");
+    const stateStr = (rawState === "occupied" || rawState === "ocupada") ? "occupied" : "free";
+    deleteDuplicateTable.run(tenantId, branchId, tableNum, String(m.id));
     stmt.run(
       String(m.id),
       tenantId,
       branchId,
-      m.table_number != null ? Number(m.table_number) : null,
+      tableNum,
       stateStr,
       m.created_at ? String(m.created_at) : new Date().toISOString(),
       m.updated_at ? String(m.updated_at) : new Date().toISOString(),
@@ -718,13 +723,16 @@ export function applyCloudComandaRows(
     const itemsStr = c.items == null ? null : (typeof c.items === "string" ? c.items : JSON.stringify(c.items));
     const estado = c.estado ? String(c.estado) : "pendiente";
     const state = stateMap[estado] || "pending";
+    const mesaNum = c.mesa_numero != null && Number(c.mesa_numero) > 0 ? Number(c.mesa_numero) : 1;
+    const mesaId = c.mesa_id ? String(c.mesa_id) : String(mesaNum);
+    db.prepare("INSERT OR IGNORE INTO mesas_estado (id, tenant_id, sucursal_id, table_number, state) VALUES (?, ?, ?, ?, 'free')").run(mesaId, tenantId, branchId, mesaNum);
     stmt.run(
       String(c.id),
       tenantId,
       branchId,
       c.numero_comanda != null ? Number(c.numero_comanda) : null,
-      c.mesa_id ? String(c.mesa_id) : null,
-      c.mesa_numero != null ? Number(c.mesa_numero) : null,
+      mesaId,
+      mesaNum,
       state,
       estado,
       itemsStr,
@@ -778,6 +786,9 @@ export function applyCloudConsumoRows(
     if (hasPendingCloudWrite(db, tenantId, "consumos", String(c.id))) continue;
     const branchId = typeof c.sucursal_id === "string" && c.sucursal_id.trim() ? c.sucursal_id.trim() : defaultBranchId;
     ensureBranch.run(branchId, tenantId, "Principal");
+    if (c.comanda_id) {
+      db.prepare("INSERT OR IGNORE INTO comandas (id, tenant_id, sucursal_id, mesa_id, mesa_numero, state) VALUES (?, ?, ?, '1', 1, 'pending')").run(String(c.comanda_id), tenantId, branchId);
+    }
     const cant = Number(c.cantidad ?? c.quantity);
     const cantidad = Number.isFinite(cant) && cant > 0 ? Math.round(cant) : 1;
     const precio = Number(c.precio_unitario ?? c.unit_price);

@@ -29,6 +29,10 @@ vi.mock("../src/shared/lib/localFirst", () => ({
   enqueueLocalWrite: vi.fn(),
 }));
 
+vi.mock("../src/shared/lib/tenantBillingSettings", () => ({
+  loadTenantBillingSettings: vi.fn().mockResolvedValue({ ncfTiposActivos: {} }),
+}));
+
 // Mock Supabase client
 vi.mock("../src/shared/lib/supabase", () => {
   const queryChain = {

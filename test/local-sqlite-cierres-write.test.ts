@@ -61,4 +61,28 @@ describe("operational cycle SQLite write engine (single-engine cierres)", () => 
       expect(outbox.some((e) => e.operation === "delete" && e.rowId === "cycle-1")).toBe(true);
     });
   });
+
+  it("assigns explicit sucursalId when provided on cycle open", () => {
+    withStore(({ tenant, orders }) => {
+      orders.execute({
+        type: "orders.cycle.open",
+        id: "cycle-custom-branch",
+        businessDay: "2026-09-18",
+        openingCash: 1500,
+        cycleNumber: 8,
+        openedAt: "2026-09-18T10:00:00.000Z",
+        sucursalId: "branch-custom",
+      });
+
+      const rows = tenant.listCierres({ sucursalId: "branch-custom" });
+      expect(rows).toEqual([
+        expect.objectContaining({
+          id: "cycle-custom-branch",
+          sucursal_id: "branch-custom",
+          efectivo_inicial: 1500,
+          cycle_number: 8,
+        }),
+      ]);
+    });
+  });
 });

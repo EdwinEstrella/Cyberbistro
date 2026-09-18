@@ -40,4 +40,23 @@ describe("TenantStore.listCierres", () => {
     // The raw local column is not leaked under its storage name.
     expect(latest.opening_cash).toBeUndefined();
   });
+
+  it("matches cycles with sucursal_id = 'main-process-default' or null when filtering by a specific branch", () => {
+    const s = setup();
+    const db = s.getDatabase();
+    db.prepare("INSERT INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run("branch-real", tenantId, "Branch Real");
+    db.prepare("INSERT INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run("main-process-default", tenantId, "Default");
+
+    applyCloudOperationalCycleRows(db, tenantId, [
+      { id: "c-default", tenant_id: tenantId, sucursal_id: "main-process-default", business_day: "2026-09-18", cycle_number: 108, efectivo_inicial: 500, opened_at: "2026-09-18T08:00:00Z", created_at: "2026-09-18T08:00:00Z" },
+      { id: "c-null", tenant_id: tenantId, sucursal_id: null, business_day: "2026-09-18", cycle_number: 107, efectivo_inicial: 0, opened_at: "2026-09-18T07:00:00Z", created_at: "2026-09-18T07:00:00Z" },
+      { id: "c-other", tenant_id: tenantId, sucursal_id: "branch-other", business_day: "2026-09-18", cycle_number: 106, efectivo_inicial: 0, opened_at: "2026-09-18T06:00:00Z", created_at: "2026-09-18T06:00:00Z" },
+    ]);
+
+    const rows = s.listCierres({ sucursalId: "branch-real" });
+    const ids = rows.map((r) => (r as Record<string, unknown>).id);
+    expect(ids).toContain("c-default");
+    expect(ids).toContain("c-null");
+    expect(ids).not.toContain("c-other");
+  });
 });

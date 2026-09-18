@@ -29,6 +29,7 @@ import { isDesktopCloudUnavailable } from "../../../shared/lib/cloudAvailability
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { CustomerSelect } from "../../clientes/components/CustomerSelect";
 import type { Customer } from "../../clientes/lib/customers";
+import { readLocalCierres } from "../../cierre/lib/cierresLocal";
 
 const ITBIS = 0.18;
 
@@ -36,11 +37,17 @@ const ITBIS = 0.18;
 async function hasOpenCycle(tenantId: string, sucursalId: string | null): Promise<boolean> {
   if (!sucursalId) return false;
   try {
+    const cycles = await readLocalCierres(tenantId, { sucursalId });
+    if (cycles.length > 0) {
+      return cycles.some(c => !c.closed_at && (c.sucursal_id === sucursalId || !c.sucursal_id || c.sucursal_id === "main-process-default"));
+    }
+  } catch { /* fall through */ }
+  try {
     const snapshot = await getLocalFirstStatusSnapshot(tenantId);
     const localMode = snapshot.status === "history_complete" || snapshot.status === "ready_history_syncing";
     if (localMode) {
       const cycles = await readLocalMirror<{ id: string; closed_at: string | null; sucursal_id?: string | null }>(tenantId, "cierres_operativos");
-      return cycles.some(c => !c.closed_at && (c.sucursal_id === sucursalId || !c.sucursal_id));
+      return cycles.some(c => !c.closed_at && (c.sucursal_id === sucursalId || !c.sucursal_id || c.sucursal_id === "main-process-default"));
     }
   } catch { /* fall through to online */ }
   const { data, error } = await supabase
@@ -52,7 +59,7 @@ async function hasOpenCycle(tenantId: string, sucursalId: string | null): Promis
     console.warn("Error checking open cycle:", error);
     return false;
   }
-  return (data && (data as any[]).some(c => c.sucursal_id === sucursalId || !c.sucursal_id));
+  return (data && (data as any[]).some(c => c.sucursal_id === sucursalId || !c.sucursal_id || c.sucursal_id === "main-process-default"));
 }
 
 

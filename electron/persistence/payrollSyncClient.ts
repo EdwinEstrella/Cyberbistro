@@ -488,10 +488,14 @@ function mapCategoryPayload(operation: DurableOperation, payload: Record<string,
 
 function mapOperationalCycleOpenRow(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
   const openedAt = requireString(payload.openedAt, "cierres_operativos.openedAt");
+  const rawBranch = typeof payload.sucursalId === "string" && payload.sucursalId.trim()
+    ? payload.sucursalId.trim()
+    : (typeof payload.branchId === "string" && payload.branchId.trim() ? payload.branchId.trim() : operation.branchId);
+  const branchId = rawBranch && rawBranch !== "main-process-default" ? rawBranch : null;
   return {
     id: operation.rowId,
     tenant_id: operation.tenantId,
-    sucursal_id: operation.branchId ?? null,
+    sucursal_id: branchId,
     business_day: requireString(payload.businessDay, "cierres_operativos.businessDay"),
     cycle_number: requireNumber(payload.cycleNumber, "cierres_operativos.cycleNumber"),
     efectivo_inicial: requireNumber(payload.openingCash, "cierres_operativos.openingCash"),

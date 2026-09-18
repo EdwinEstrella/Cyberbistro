@@ -217,13 +217,19 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
           break;
         }
         case "orders.cycle.open": {
-          const existing = this.database.prepare("SELECT id FROM cierres_operativos WHERE tenant_id = ? AND sucursal_id = ? AND state = 'open' LIMIT 1").get(this.tenantId, branchId);
+          const rawBranch = typeof (command as any).sucursalId === "string" && (command as any).sucursalId.trim()
+            ? (command as any).sucursalId.trim()
+            : branchId;
+          if (rawBranch && rawBranch !== "main-process-default") {
+            this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(rawBranch, this.tenantId, "Principal");
+          }
+          const existing = this.database.prepare("SELECT id FROM cierres_operativos WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id = 'main-process-default' OR sucursal_id IS NULL) AND state = 'open' LIMIT 1").get(this.tenantId, rawBranch);
           if (existing) throw new Error("Open cycle already exists");
           // Rich cycle shape: cycle_number/opened_at mirror the cloud row so the
           // SQLite writer (now the single engine) can create the Supabase cycle on
           // push. created_at is aligned to opened_at for deterministic ordering.
-          this.database.prepare("INSERT INTO cierres_operativos (id, tenant_id, sucursal_id, business_day, opening_cash, state, closed_at, cycle_number, opened_at, created_at) VALUES (?, ?, ?, ?, ?, 'open', NULL, ?, ?, ?)").run(command.id, this.tenantId, branchId, command.businessDay, command.openingCash, command.cycleNumber, command.openedAt, command.openedAt);
-          outbox("cierres_operativos", command.id, command, "cycle-open");
+          this.database.prepare("INSERT INTO cierres_operativos (id, tenant_id, sucursal_id, business_day, opening_cash, state, closed_at, cycle_number, opened_at, created_at) VALUES (?, ?, ?, ?, ?, 'open', NULL, ?, ?, ?)").run(command.id, this.tenantId, rawBranch, command.businessDay, command.openingCash, command.cycleNumber, command.openedAt, command.openedAt);
+          outbox("cierres_operativos", command.id, { ...command, branchId: rawBranch }, "cycle-open");
           break;
         }
         case "orders.cycle.close":
@@ -607,7 +613,7 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     const columns = "id, tenant_id, sucursal_id, business_day, opening_cash AS efectivo_inicial, state, closed_at, cycle_number, opened_at, printed_at, created_at";
     if (filter?.sucursalId) {
       return this.database.prepare(
-        `SELECT ${columns} FROM cierres_operativos WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id IS NULL) ORDER BY cycle_number DESC LIMIT ?`
+        `SELECT ${columns} FROM cierres_operativos WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id = 'main-process-default' OR sucursal_id IS NULL) ORDER BY cycle_number DESC LIMIT ?`
       ).all(this.tenantId, filter.sucursalId, limit) as Array<Record<string, unknown>>;
     }
     return this.database.prepare(
