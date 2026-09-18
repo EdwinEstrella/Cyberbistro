@@ -10,6 +10,7 @@ import { readLocalExpenses, readLocalExpenseCategories } from "../../gastos/lib/
 import { readLocalCxcPagos } from "../../billing/lib/accountsLocal";
 import { readLocalInvoices } from "../../billing/lib/invoicesLocal";
 import { readLocalCierres } from "../lib/cierresLocal";
+import { readLocalConsumos } from "../../../shared/lib/ordersLocal";
 import { writeCycleOpen, writeCycleClose, writeCycleDiscard, writeCyclePrinted } from "../lib/cierresWrites";
 import { isDesktopRuntime, isCloudAvailableForDesktop } from "../../../shared/lib/cloudAvailability";
 import { useSucursal } from "../../../app/context/SucursalContext";
@@ -504,7 +505,33 @@ export function Cierre() {
 
     let pend: any[] = [];
     try {
-      if (cloudAvailable) {
+      if (isDesktopRuntime()) {
+        triggerImmediateSync();
+        const localUnpaid = await readLocalConsumos(tenantId, { sucursalId: activeSucursalId, unpaidOnly: true });
+        const localPendingRows = localUnpaid.filter(
+          (c) => (!c.sucursal_id || c.sucursal_id === activeSucursalId || c.sucursal_id === "main-process-default") && c.estado !== "pagado"
+        );
+
+        if (cloudAvailable) {
+          const res = await supabase
+            .from("consumos")
+            .select("id, sucursal_id, estado")
+            .eq("tenant_id", tenantId)
+            .neq("estado", "pagado");
+          if (!res.error && res.data) {
+            const localAll = await readLocalConsumos(tenantId, { sucursalId: activeSucursalId });
+            const localPaidIds = new Set(localAll.filter((c) => c.estado === "pagado").map((c) => String(c.id)));
+            const cloudPending = (res.data as any[]).filter(
+              (c) => (c.sucursal_id === activeSucursalId || !c.sucursal_id) && !localPaidIds.has(String(c.id))
+            );
+            pend = [...localPendingRows, ...cloudPending.filter((c) => !localPendingRows.some((lp) => String(lp.id) === String(c.id)))];
+          } else {
+            pend = localPendingRows;
+          }
+        } else {
+          pend = localPendingRows;
+        }
+      } else if (cloudAvailable) {
         // VPS ONLINE: Consultamos de manera obligatoria y en tiempo real directamente al servidor
         // para enterarnos instantáneamente de cualquier comanda agregada por los meseros desde la versión web.
         const res = await supabase
