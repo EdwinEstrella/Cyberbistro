@@ -22,7 +22,12 @@ import {
   writeLocalMirrorRow,
   deleteLocalMirrorRow,
 } from "../../../shared/lib/localFirst";
-import { saveCatalogCommandLocally } from "../../../shared/lib/catalogUiAdapter";
+import {
+  writePlatoUpsert,
+  writePlatoDelete,
+  writeCategoryUpsert,
+  writeCategoryDelete,
+} from "../lib/catalogWrites";
 import { readLocalPlatos, readLocalMenuCategories } from "../lib/catalogLocal";
 import {
   countActiveUsersByRole,
@@ -235,15 +240,14 @@ function CartaPanel() {
       sort_order: menuCategories.length,
       sucursal_id: activeSucursalId,
     };
-    await saveCatalogCommandLocally({
-      type: "catalog.category.upsert",
+    await writeCategoryUpsert({
+      tenantId,
+      sucursalId: activeSucursalId,
       id: row.id,
       nombre: row.nombre,
       color: row.color,
       sortOrder: row.sort_order,
-      sucursalId: activeSucursalId,
-    });
-    await writeLocalMirrorRow(tenantId, "menu_categories", { ...row });
+    }, true);
     setMenuCategories((prev) => [...prev, row]);
     return row;
   }
@@ -284,17 +288,16 @@ function CartaPanel() {
         sucursal_id: activeSucursalId,
       };
       try {
-        await saveCatalogCommandLocally({
-          type: "catalog.product.upsert",
-          id: String(localId),
+        await writePlatoUpsert({
+          tenantId,
           sucursalId: activeSucursalId,
+          id: localId,
           nombre: payload.nombre,
           precio: payload.precio,
           categoria: payload.categoria,
           disponible: payload.disponible,
           va_a_cocina: payload.va_a_cocina,
-        });
-        await writeLocalMirrorRow(tenantId, "platos", payload);
+        }, true);
         setPlatos((prev) => [...prev, payload as Plato]);
         setMode(null);
         setSelectedId(null);
@@ -314,22 +317,16 @@ function CartaPanel() {
       };
       const sucursalIdForPlato = selected?.sucursal_id ?? activeSucursalId;
       try {
-        await saveCatalogCommandLocally({
-          type: "catalog.product.upsert",
-          id: String(selectedId),
+        await writePlatoUpsert({
+          tenantId,
           sucursalId: sucursalIdForPlato,
+          id: selectedId,
           nombre: payload.nombre,
           precio: payload.precio,
           categoria: payload.categoria,
           disponible: payload.disponible,
           va_a_cocina: payload.va_a_cocina,
-        });
-        await writeLocalMirrorRow(tenantId, "platos", {
-          id: selectedId,
-          tenant_id: tenantId,
-          sucursal_id: sucursalIdForPlato,
-          ...payload,
-        });
+        }, false);
       } catch (err: any) {
         console.error("Error al actualizar plato:", err);
         setError(`Error: ${err.message || "No se pudo actualizar el plato"}`);
@@ -350,8 +347,7 @@ function CartaPanel() {
     
     showConfirm(`¿Estás seguro de eliminar "${plato.nombre}"? Esta acción no se puede deshacer.`, async () => {
       try {
-        await saveCatalogCommandLocally({ type: "catalog.product.delete", id: String(id) });
-        await deleteLocalMirrorRow(tenantId!, "platos", String(id));
+        await writePlatoDelete(tenantId!, id);
       } catch (deletePlatoError: any) {
         alert(`Error al eliminar el plato: ${deletePlatoError.message}`);
         return;
@@ -600,15 +596,14 @@ function CategoriasPanel() {
       sucursal_id: activeSucursalId,
     };
     try {
-      await saveCatalogCommandLocally({
-        type: "catalog.category.upsert",
+      await writeCategoryUpsert({
+        tenantId,
+        sucursalId: activeSucursalId,
         id: row.id,
         nombre: row.nombre,
         color: row.color,
         sortOrder: row.sort_order,
-        sucursalId: activeSucursalId,
-      });
-      await writeLocalMirrorRow(tenantId, "menu_categories", { ...row });
+      }, true);
     } catch (insertError: any) {
       setError(insertError?.message || "No se pudo crear la categoria.");
       return null;
@@ -647,15 +642,14 @@ function CategoriasPanel() {
         ? { ...current, nombre, color: categoryColorDraft }
         : { id: editingCategoryId, tenant_id: tenantId, nombre, color: categoryColorDraft, sort_order: menuCategories.length, sucursal_id: sucursalIdForCategory };
       try {
-        await saveCatalogCommandLocally({
-          type: "catalog.category.upsert",
+        await writeCategoryUpsert({
+          tenantId,
+          sucursalId: sucursalIdForCategory,
           id: editingCategoryId,
           nombre,
           color: categoryColorDraft,
           sortOrder: updatedCategory.sort_order,
-          sucursalId: sucursalIdForCategory,
-        });
-        await writeLocalMirrorRow(tenantId, "menu_categories", { ...updatedCategory });
+        }, false);
       } catch (updateError: any) {
         setError(updateError?.message || "No se pudo actualizar la categoria.");
         setSaving(false);
@@ -667,17 +661,16 @@ function CategoriasPanel() {
             .filter((plato) => plato.categoria === current.nombre)
             .map(async (plato) => {
               const updatedPlato = { ...plato, categoria: nombre };
-              await saveCatalogCommandLocally({
-                type: "catalog.product.upsert",
-                id: String(plato.id),
+              await writePlatoUpsert({
+                tenantId,
                 sucursalId: plato.sucursal_id ?? sucursalIdForCategory,
+                id: plato.id,
                 nombre: plato.nombre,
                 precio: plato.precio,
                 categoria: nombre,
                 disponible: plato.disponible,
                 va_a_cocina: plato.va_a_cocina,
-              });
-              await writeLocalMirrorRow(tenantId, "platos", updatedPlato);
+              }, false);
             }));
         } catch (platosError: any) {
           setError(`Categoria guardada, pero no se pudieron actualizar los platos: ${platosError.message}`);
@@ -703,8 +696,7 @@ function CategoriasPanel() {
     
     const executeDelete = async () => {
       try {
-        await saveCatalogCommandLocally({ type: "catalog.category.delete", id: category.id });
-        await deleteLocalMirrorRow(tenantId!, "menu_categories", category.id);
+        await writeCategoryDelete(tenantId!, category.id);
         setMenuCategories((prev) => prev.filter((c) => c.id !== category.id));
       } catch (err: any) {
         setError(err.message);
@@ -723,17 +715,16 @@ function CategoriasPanel() {
             .filter((plato) => plato.categoria === category.nombre)
             .map(async (plato) => {
               const updatedPlato = { ...plato, categoria: "General" };
-              await saveCatalogCommandLocally({
-                type: "catalog.product.upsert",
-                id: String(plato.id),
+              await writePlatoUpsert({
+                tenantId,
                 sucursalId: plato.sucursal_id ?? category.sucursal_id ?? activeSucursalId ?? "",
+                id: plato.id,
                 nombre: plato.nombre,
                 precio: plato.precio,
                 categoria: "General",
                 disponible: plato.disponible,
                 va_a_cocina: plato.va_a_cocina,
-              });
-              await writeLocalMirrorRow(tenantId, "platos", updatedPlato);
+              }, false);
             }));
         } catch (platosError: any) {
           setError(platosError.message);
