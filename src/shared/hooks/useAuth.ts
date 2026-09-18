@@ -259,7 +259,14 @@ function extractUserFromAuthPayload(data: unknown): User | null {
 
 function syncSdkSession(data: unknown): void {
   const accessToken = extractAccessTokenFromPayload(data);
-  if (accessToken) void window.electronAPI?.setPayrollSyncAccessToken?.(accessToken).catch(() => undefined);
+  if (accessToken) {
+    void window.electronAPI?.setPayrollSyncAccessToken?.(accessToken).catch(() => undefined);
+    // Authenticate the Realtime socket with the user JWT. Without this the
+    // socket connects as `anon`, and RLS silently filters out postgres_changes
+    // for tenant tables, so cloud→local pulls fall back to the 30s poll. With
+    // the token set, change events arrive immediately and trigger a pull.
+    void Promise.resolve(supabase.realtime.setAuth(accessToken)).catch(() => undefined);
+  }
 }
 
 function clearSessionShared(): void {
@@ -275,6 +282,9 @@ function clearSessionShared(): void {
     });
   });
   void window.electronAPI?.setPayrollSyncAccessToken?.(null).catch(() => undefined);
+  // Drop the Realtime socket back to the anon key so it stops receiving
+  // tenant change events after logout.
+  void Promise.resolve(supabase.realtime.setAuth(null)).catch(() => undefined);
   patchSharedState({ user: null, tenantUser: null, tenantAccessDeniedReason: null, accessValidationState: 'anonymous', loading: false });
 }
 
