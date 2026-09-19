@@ -248,6 +248,57 @@ describe("fiscalEngine", () => {
       expect(resolveNcfForNewInvoiceLocalFirst).toHaveBeenCalledWith("tenant-1", "E32");
     });
 
+    it("resolves sequence for dgii_ecf mode with explicit preferredNcfType E32 even if clientRnc is present", async () => {
+      vi.mocked(resolveNcfForNewInvoiceLocalFirst).mockResolvedValueOnce({
+        ncf: "E3200000047",
+        ncf_tipo: "E32 - Factura de consumo electronica",
+        tipoCodigo: "E32",
+        usedSequence: 47,
+        sequenceReservedAtomically: true,
+        reservationSource: "remote_rpc",
+      });
+
+      const result = await runFiscalEngine({
+        tenantId: "tenant-1",
+        activeMode: "dgii_ecf",
+        certificateId: "cert-uuid",
+        facturaId: "invoice-1",
+        numeroFactura: 47,
+        clientRnc: "130862346",
+        preferredNcfType: "E32",
+        deviceId: "device-1",
+      });
+
+      expect(result?.tipoCodigo).toBe("E32");
+      expect(result?.ecfType).toBe("32");
+      expect(resolveNcfForNewInvoiceLocalFirst).toHaveBeenCalledWith("tenant-1", "E32");
+    });
+
+    it("maps legacy preferredNcfType B02 to E32 in dgii_ecf mode", async () => {
+      vi.mocked(resolveNcfForNewInvoiceLocalFirst).mockResolvedValueOnce({
+        ncf: "E3200000048",
+        ncf_tipo: "E32 - Factura de consumo electronica",
+        tipoCodigo: "E32",
+        usedSequence: 48,
+        sequenceReservedAtomically: true,
+        reservationSource: "remote_rpc",
+      });
+
+      const result = await runFiscalEngine({
+        tenantId: "tenant-1",
+        activeMode: "dgii_ecf",
+        certificateId: "cert-uuid",
+        facturaId: "invoice-1",
+        numeroFactura: 48,
+        preferredNcfType: "B02",
+        deviceId: "device-1",
+      });
+
+      expect(result?.tipoCodigo).toBe("E32");
+      expect(result?.ecfType).toBe("32");
+      expect(resolveNcfForNewInvoiceLocalFirst).toHaveBeenCalledWith("tenant-1", "E32");
+    });
+
     it("returns null (no NCF) when the legacy consumo type is turned off", async () => {
       vi.mocked(loadTenantBillingSettings).mockResolvedValueOnce({
         ncfTiposActivos: { B02: false },

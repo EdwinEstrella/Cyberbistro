@@ -3,7 +3,7 @@ import { resolveNcfForNewInvoiceLocalFirst, enqueueLocalWrite, type LocalFirstWr
 import { type FiscalMode } from "./fiscalTypes";
 import { supabase } from "./supabase";
 import { type TenantBillingSettings, loadTenantBillingSettings } from "./tenantBillingSettings";
-import { isNcfTypeActive } from "./ncf";
+import { isNcfTypeActive, normalizeNcfTypeForFiscalMode } from "./ncf";
 
 export async function resolveActiveFiscalMode(
   tenantId: string,
@@ -102,7 +102,7 @@ export async function runFiscalEngine(args: {
       return null;
     }
 
-    const ncfPart = await resolveNcfForNewInvoiceLocalFirst(args.tenantId, args.preferredNcfType);
+    const ncfPart = await resolveNcfForNewInvoiceLocalFirst(args.tenantId, effectiveType);
     if (!ncfPart) {
       throw new Error("No se pudo reservar NCF fiscal.");
     }
@@ -117,9 +117,16 @@ export async function runFiscalEngine(args: {
   }
 
   if (args.activeMode === "dgii_ecf") {
-    const clientRncTrimmed = args.clientRnc?.trim() || "";
-    const ecfType = clientRncTrimmed !== "" ? "31" : "32";
-    const typeCode = `E${ecfType}`;
+    let typeCode: string;
+    let ecfType: string;
+    if (args.preferredNcfType && args.preferredNcfType.trim() !== "") {
+      typeCode = normalizeNcfTypeForFiscalMode(args.preferredNcfType as any, "dgii_ecf");
+      ecfType = typeCode.startsWith("E") ? typeCode.slice(1) : typeCode;
+    } else {
+      const clientRncTrimmed = args.clientRnc?.trim() || "";
+      ecfType = clientRncTrimmed !== "" ? "31" : "32";
+      typeCode = `E${ecfType}`;
+    }
 
     if (!isNcfTypeActive(activeMap, typeCode)) {
       return null;

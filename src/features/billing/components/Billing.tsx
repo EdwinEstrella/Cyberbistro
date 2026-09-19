@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { ChevronDown, Eye, Printer, Trash2, TrendingUp, DollarSign, RefreshCw, FileText, Activity, Calendar } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { ChevronDown, Eye, Printer, Trash2, TrendingUp, DollarSign, RefreshCw, FileText, Activity, Calendar, Search, X } from "lucide-react";
 import { supabase } from "../../../shared/lib/supabase";
 import { useAuth, ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
-import { buildCierreDiaReceiptHtml, buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
+import { buildCierreDiaReceiptHtml, buildFacturaReceiptHtml, buildInvoicesRangeReportHtml, buildCyclesRangeReportHtml, type ReportPaperFormat } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
-import { printThermalHtml } from "../../../shared/lib/thermalPrint";
+import { printThermalHtml, printReportHtml } from "../../../shared/lib/thermalPrint";
 import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { readLocalInvoices, deleteLocalInvoice } from "../lib/invoicesLocal";
 import { readLocalCierres } from "../../cierre/lib/cierresLocal";
@@ -293,7 +293,9 @@ function getEcfStatusDisplay(status: string) {
 
 async function fetchAllCloudInvoices(
   tenantId: string,
-  sucursalId?: string | null
+  sucursalId?: string | null,
+  isoFrom?: string,
+  isoTo?: string
 ): Promise<{ data: Invoice[]; error: unknown }> {
   const all: Invoice[] = [];
   const pageSize = 1000;
@@ -303,6 +305,8 @@ async function fetchAllCloudInvoices(
     if (sucursalId) {
       query = query.or(`sucursal_id.eq.${sucursalId},sucursal_id.is.null`);
     }
+    if (isoFrom) query = query.gte("created_at", isoFrom);
+    if (isoTo) query = query.lte("created_at", isoTo);
     query = query.order("created_at", { ascending: false }).range(from, from + pageSize - 1);
     const { data, error } = await query;
     if (error) return { data: all, error };
@@ -312,6 +316,34 @@ async function fetchAllCloudInvoices(
     from += pageSize;
   }
   return { data: all, error: null };
+}
+
+/** Local YYYY-MM-DD for a Date (avoids the UTC shift of toISOString). */
+function toYmd(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/** Applies an inclusive business_day range to a cierres_operativos query builder. */
+function applyCyclesDateRange<T>(query: T, from?: string, to?: string): T {
+  let q = query as unknown as {
+    gte: (col: string, v: string) => typeof q;
+    lte: (col: string, v: string) => typeof q;
+  };
+  if (from) q = q.gte("business_day", from);
+  if (to) q = q.lte("business_day", to);
+  return q as unknown as T;
+}
+
+/** [firstDayOfCurrentMonth, today] as YYYY-MM-DD — the default analytics window. */
+function currentMonthRange(): { from: string; to: string } {
+  const now = new Date();
+  return {
+    from: toYmd(new Date(now.getFullYear(), now.getMonth(), 1)),
+    to: toYmd(now),
+  };
 }
 
 export function Billing() {
@@ -330,8 +362,25 @@ export function Billing() {
   const [methodFilter, setMethodFilter] = useState<string>("todos");
   const [invoiceModal, setInvoiceModal] = useState<Invoice | null>(null);
   // deletingInvoiceId removed
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  // Default the analytics window to the current month so the initial load only
+  // pulls this month's rows (lighter query). The user widens it via Desde/Hasta.
+  const [dateFrom, setDateFrom] = useState(() => currentMonthRange().from);
+  const [dateTo, setDateTo] = useState(() => currentMonthRange().to);
+  // Refs let loadBillingData read the latest range without re-creating the
+  // callback on every keystroke — reload is triggered explicitly by "Filtrar".
+  const dateFromRef = useRef(dateFrom);
+  const dateToRef = useRef(dateTo);
+  useEffect(() => {
+    dateFromRef.current = dateFrom;
+    dateToRef.current = dateTo;
+  }, [dateFrom, dateTo]);
+
+  // Specific-invoice search: escapes the current month window and looks across
+  // the whole history by invoice number or NCF. `searchResults === null` means
+  // the normal range-scoped view is shown.
+  const [invoiceSearch, setInvoiceSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<Invoice[] | null>(null);
+  const [searching, setSearching] = useState(false);
   const [expandedCycleId, setExpandedCycleId] = useState<string | null>(null);
 
   // Cuentas por Cobrar & Pagar Pro States
@@ -362,6 +411,14 @@ export function Billing() {
 
     // Revalidación asíncrona en segundo plano sin bloquear analítica
     void ensureAuthSessionFresh();
+
+    // Active analytics window (read fresh from refs so "Filtrar" always uses the
+    // latest Desde/Hasta). Invoices filter on the ISO-UTC created_at column;
+    // cycles filter on their calendar business_day.
+    const rangeFrom = dateFromRef.current || undefined;
+    const rangeTo = dateToRef.current || undefined;
+    const isoFrom = rangeFrom ? new Date(`${rangeFrom}T00:00:00`).toISOString() : undefined;
+    const isoTo = rangeTo ? new Date(`${rangeTo}T23:59:59.999`).toISOString() : undefined;
 
     const [
       useLocalInvoices,
@@ -399,13 +456,13 @@ export function Billing() {
       ecfRes
     ] = await Promise.all([
       useLocalInvoices
-        ? { data: (await readLocalInvoices(tenantId, { sucursalId: activeSucursalId || undefined })) as unknown as Invoice[], error: null }
-        : fetchAllCloudInvoices(tenantId, activeSucursalId || undefined),
+        ? { data: (await readLocalInvoices(tenantId, { sucursalId: activeSucursalId || undefined, dateFrom: rangeFrom, dateTo: rangeTo })) as unknown as Invoice[], error: null }
+        : fetchAllCloudInvoices(tenantId, activeSucursalId || undefined, isoFrom, isoTo),
       useLocalCycles
-        ? { data: (await readLocalCierres(tenantId, { sucursalId: activeSucursalId || undefined })) as unknown as CierreOperativoRow[], error: null }
+        ? { data: (await readLocalCierres(tenantId, { sucursalId: activeSucursalId || undefined, dateFrom: rangeFrom, dateTo: rangeTo })) as unknown as CierreOperativoRow[], error: null }
         : activeSucursalId
-          ? supabase.from("cierres_operativos").select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at, efectivo_inicial").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("opened_at", { ascending: false })
-          : supabase.from("cierres_operativos").select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at, efectivo_inicial").eq("tenant_id", tenantId).order("opened_at", { ascending: false }),
+          ? applyCyclesDateRange(supabase.from("cierres_operativos").select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at, efectivo_inicial").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`), rangeFrom, rangeTo).order("opened_at", { ascending: false })
+          : applyCyclesDateRange(supabase.from("cierres_operativos").select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at, efectivo_inicial").eq("tenant_id", tenantId), rangeFrom, rangeTo).order("opened_at", { ascending: false }),
       useLocalExpenses
         ? { data: await readLocalExpenses(tenantId, { sucursalId: activeSucursalId || undefined, limit: 1000 }), error: null }
         : activeSucursalId
@@ -508,7 +565,7 @@ export function Billing() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [statusFilter, methodFilter, dateFrom, dateTo, view]);
+  }, [statusFilter, methodFilter, dateFrom, dateTo, view, searchResults]);
 
   const filteredInvoices = useMemo(() => {
     let filtered = invoices;
@@ -526,6 +583,47 @@ export function Billing() {
     }
     return filtered;
   }, [invoices, statusFilter, methodFilter, dateFrom, dateTo]);
+
+  const runInvoiceSearch = useCallback(async () => {
+    const raw = invoiceSearch.trim();
+    if (!tenantId || !raw) {
+      setSearchResults(null);
+      return;
+    }
+    setSearching(true);
+    try {
+      const useLocal = await shouldReadLocalFirst(tenantId, ["facturas"]).catch(() => false);
+      const all = useLocal
+        ? ((await readLocalInvoices(tenantId, { sucursalId: activeSucursalId || undefined })) as unknown as Invoice[])
+        : (await fetchAllCloudInvoices(tenantId, activeSucursalId || undefined)).data;
+      const term = raw.toLowerCase();
+      const numTerm = raw.replace(/^#/, "").replace(/^0+/, "");
+      const matches = all.filter((inv) => {
+        const num = String(inv.numero_factura);
+        if (numTerm && (num.includes(numTerm) || String(inv.numero_factura).padStart(4, "0").includes(numTerm))) return true;
+        if (inv.ncf && inv.ncf.toLowerCase().includes(term)) return true;
+        return false;
+      });
+      setSearchResults(matches);
+    } catch (error) {
+      console.warn("[Billing] búsqueda de factura falló:", error);
+      setSearchResults([]);
+    } finally {
+      setSearching(false);
+    }
+  }, [tenantId, activeSucursalId, invoiceSearch]);
+
+  const clearInvoiceSearch = useCallback(() => {
+    setInvoiceSearch("");
+    setSearchResults(null);
+  }, []);
+
+  // What the facturas table paginates: search results when active, else the
+  // range-scoped filtered list.
+  const displayInvoices = useMemo(
+    () => searchResults ?? filteredInvoices,
+    [searchResults, filteredInvoices]
+  );
 
   const finanzasData = useMemo(() => {
     const cxcActivas = cuentasCobrar.filter((c) => c.estado !== "pagada");
@@ -834,18 +932,18 @@ export function Billing() {
   const itemsPerPage = 10;
   const totalPages = useMemo(() => {
     if (view === "facturas") {
-      return Math.ceil(filteredInvoices.length / itemsPerPage);
+      return Math.ceil(displayInvoices.length / itemsPerPage);
     } else if (view === "finanzas") {
       return Math.ceil(filteredTransacciones.length / itemsPerPage);
     }
     return 1;
-  }, [view, filteredInvoices.length, filteredTransacciones.length]);
+  }, [view, displayInvoices.length, filteredTransacciones.length]);
 
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
   const pageData = useMemo(
-    () => (view === "facturas" ? filteredInvoices.slice(startIndex, endIndex) : []),
-    [view, filteredInvoices, startIndex, endIndex]
+    () => (view === "facturas" ? displayInvoices.slice(startIndex, endIndex) : []),
+    [view, displayInvoices, startIndex, endIndex]
   );
 
   const transaccionesPageData = useMemo(
@@ -1127,6 +1225,101 @@ export function Billing() {
     [tenantId, loadBillingData]
   );
 
+  const buildRangeLabel = useCallback((): string => {
+    const fmt = (ymd: string) => {
+      const [y, m, d] = ymd.split("-");
+      return d && m && y ? `${d}/${m}/${y}` : ymd;
+    };
+    if (dateFrom && dateTo) return `Del ${fmt(dateFrom)} al ${fmt(dateTo)}`;
+    if (dateFrom) return `Desde ${fmt(dateFrom)}`;
+    if (dateTo) return `Hasta ${fmt(dateTo)}`;
+    return "Todo el historial";
+  }, [dateFrom, dateTo]);
+
+  /**
+   * Prints the current range as a report. `facturas` uses the filtered invoice
+   * list; `ciclos` uses the filtered cycle summaries — so the report matches
+   * exactly what the Desde/Hasta window shows. A4 goes to a regular printer
+   * (system dialog); thermal goes to the configured roll printer.
+   */
+  const printRangeReport = useCallback(
+    async (entity: "facturas" | "ciclos", format: ReportPaperFormat) => {
+      if (!tenantId) return;
+
+      let tenant: any = null;
+      try {
+        if (!navigator.onLine) {
+          const localTenants = await readLocalMirror<any>(tenantId, "tenants");
+          tenant = localTenants.find((t) => t.id === tenantId) ?? null;
+        } else {
+          const { data } = await supabase
+            .from("tenants")
+            .select("nombre_negocio, rnc, direccion, telefono, logo_url, logo_size_px, logo_offset_x, logo_offset_y")
+            .eq("id", tenantId)
+            .single();
+          tenant = data;
+        }
+      } catch {
+        const localTenants = await readLocalMirror<any>(tenantId, "tenants").catch(() => []);
+        tenant = localTenants.find((t) => t.id === tenantId) ?? null;
+      }
+
+      const tenantInfo = {
+        nombre_negocio: tenant?.nombre_negocio ?? null,
+        rnc: tenant?.rnc ?? null,
+        direccion: tenant?.direccion ?? null,
+        telefono: tenant?.telefono ?? null,
+        logo_url: tenant?.logo_url ?? null,
+        logo_size_px: tenant?.logo_size_px,
+        logo_offset_x: tenant?.logo_offset_x,
+        logo_offset_y: tenant?.logo_offset_y,
+        moneda: (tenant as any)?.currency_code,
+      };
+      if (tenantInfo.logo_url) void cacheLogoFromUrl(tenantInfo.logo_url);
+
+      const paperWidthMm = getThermalPrintSettings().paperWidthMm;
+      const rangeLabel = buildRangeLabel();
+
+      const html =
+        entity === "facturas"
+          ? buildInvoicesRangeReportHtml(
+              tenantInfo,
+              {
+                rangeLabel,
+                invoices: filteredInvoices.map((inv) => ({
+                  numero_factura: inv.numero_factura,
+                  created_at: inv.created_at,
+                  ncf: inv.ncf ?? null,
+                  metodo_pago: inv.metodo_pago,
+                  estado: inv.estado,
+                  total: Number(inv.total) || 0,
+                })),
+              },
+              format,
+              paperWidthMm
+            )
+          : buildCyclesRangeReportHtml(
+              tenantInfo,
+              {
+                rangeLabel,
+                cycles: filteredCycleSummaries.map((c) => ({
+                  cycle_number: c.cycle.cycle_number,
+                  business_day: c.cycle.business_day,
+                  totalSold: c.totalSold,
+                  totalExpenses: c.totalExpenses,
+                  netTotal: c.netTotal,
+                })),
+              },
+              format,
+              paperWidthMm
+            );
+
+      const res = format === "thermal" ? await printThermalHtml(html, { printType: "sales" }) : printReportHtml(html);
+      if (!res.ok && res.error) console.warn("Impresión reporte:", res.error);
+    },
+    [tenantId, filteredInvoices, filteredCycleSummaries, buildRangeLabel]
+  );
+
   const deleteInvoiceAndTraces = useCallback(
     async (inv: Invoice) => {
       if (!tenantId) return;
@@ -1303,6 +1496,43 @@ export function Billing() {
 
           {/* Horizontal Filter Bar Card */}
           <div className="bg-card rounded-[20px] border border-black/10 dark:border-white/5 p-4 sm:p-5 shadow-sm">
+            {view === "facturas" && (
+              <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+                <div className="relative flex-1">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                  <input
+                    type="text"
+                    value={invoiceSearch}
+                    onChange={(e) => setInvoiceSearch(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") void runInvoiceSearch(); }}
+                    placeholder="Buscar factura específica (N.º o NCF) en todo el historial…"
+                    className="w-full bg-muted/60 rounded-xl border border-black/5 dark:border-white/5 pl-9 pr-3 py-2 font-['Inter',sans-serif] text-foreground text-[13px] outline-none focus:border-primary transition-colors h-[38px]"
+                  />
+                </div>
+                <button
+                  onClick={() => void runInvoiceSearch()}
+                  disabled={searching || !invoiceSearch.trim()}
+                  className="bg-primary text-primary-foreground rounded-xl px-5 py-2.5 font-bold uppercase text-[11px] tracking-widest hover:opacity-90 transition-all border-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 h-[38px] shrink-0"
+                >
+                  <Search size={12} className="shrink-0" />
+                  {searching ? "Buscando…" : "Buscar"}
+                </button>
+                {searchResults !== null && (
+                  <button
+                    onClick={clearInvoiceSearch}
+                    className="bg-muted/60 text-foreground rounded-xl px-4 py-2.5 font-bold uppercase text-[11px] tracking-widest hover:bg-muted transition-all border border-black/5 dark:border-white/5 cursor-pointer flex items-center justify-center gap-2 h-[38px] shrink-0"
+                  >
+                    <X size={12} className="shrink-0" />
+                    Limpiar
+                  </button>
+                )}
+              </div>
+            )}
+            {view === "facturas" && searchResults !== null && (
+              <div className="mb-4 rounded-xl bg-primary/10 border border-primary/20 px-4 py-2.5 text-[12px] font-medium text-foreground">
+                Mostrando {searchResults.length} resultado{searchResults.length === 1 ? "" : "s"} de búsqueda (ignora el rango de fechas). Limpiá la búsqueda para volver al filtro por período.
+              </div>
+            )}
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div className={`flex-1 grid grid-cols-1 sm:grid-cols-2 ${view === "facturas" ? "lg:grid-cols-4" : view === "finanzas" ? "lg:grid-cols-3" : "lg:grid-cols-2"} gap-4`}>
                 <div className="flex flex-col gap-1.5">
@@ -1360,13 +1590,36 @@ export function Billing() {
                 )}
               </div>
 
-              <button
-                onClick={() => void loadBillingData()}
-                className="bg-primary text-primary-foreground rounded-xl px-6 py-2.5 font-bold uppercase text-[11px] tracking-widest hover:opacity-90 transition-all border-none cursor-pointer shadow-sm flex items-center justify-center gap-2 h-[38px] w-full lg:w-auto shrink-0"
-              >
-                <RefreshCw size={12} className="shrink-0" />
-                Filtrar
-              </button>
+              <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto shrink-0">
+                <button
+                  onClick={() => void loadBillingData()}
+                  className="bg-primary text-primary-foreground rounded-xl px-6 py-2.5 font-bold uppercase text-[11px] tracking-widest hover:opacity-90 transition-all border-none cursor-pointer shadow-sm flex items-center justify-center gap-2 h-[38px] w-full lg:w-auto shrink-0"
+                >
+                  <RefreshCw size={12} className="shrink-0" />
+                  Filtrar
+                </button>
+
+                {(view === "facturas" || view === "ciclos") && (
+                  <div className="flex items-stretch gap-2">
+                    <button
+                      onClick={() => void printRangeReport(view === "facturas" ? "facturas" : "ciclos", "a4")}
+                      title="Imprimir reporte en hoja A4"
+                      className="bg-muted/60 text-foreground rounded-xl px-4 py-2.5 font-bold uppercase text-[11px] tracking-widest hover:bg-muted transition-all border border-black/5 dark:border-white/5 cursor-pointer flex items-center justify-center gap-2 h-[38px] shrink-0"
+                    >
+                      <Printer size={12} className="shrink-0" />
+                      A4
+                    </button>
+                    <button
+                      onClick={() => void printRangeReport(view === "facturas" ? "facturas" : "ciclos", "thermal")}
+                      title="Imprimir reporte en impresora térmica"
+                      className="bg-muted/60 text-foreground rounded-xl px-4 py-2.5 font-bold uppercase text-[11px] tracking-widest hover:bg-muted transition-all border border-black/5 dark:border-white/5 cursor-pointer flex items-center justify-center gap-2 h-[38px] shrink-0"
+                    >
+                      <Printer size={12} className="shrink-0" />
+                      Térmica
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 

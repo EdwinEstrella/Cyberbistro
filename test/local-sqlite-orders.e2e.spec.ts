@@ -20,7 +20,11 @@ test("uses an isolated C2 profile and exposes no kitchen endpoint or raw IPC aut
       hasRawIpc: "ipcRenderer" in (window.electronAPI ?? {}),
       hasKitchenEndpoint: "discoverKitchenEndpoint" in (window.electronAPI ?? {}),
     }))).toEqual({ hasOrdersCommand: true, hasRawIpc: false, hasKitchenEndpoint: false });
-    await expect(page.evaluate(() => window.electronAPI?.executeOrdersCommand?.({ type: "orders.cycle.open", id: "forged", businessDay: "2026-08-09", openingCash: 0 }))).rejects.toThrow(/(Tenant store is unavailable|Untrusted IPC sender)/);
+    // A forged orders command from the renderer must be rejected. It is now
+    // refused by the stricter command validation ("Invalid orders command",
+    // since orders.cycle.open requires cycleNumber/openedAt) before it can ever
+    // reach the tenant store or trust check — the rejection is what matters.
+    await expect(page.evaluate(() => window.electronAPI?.executeOrdersCommand?.({ type: "orders.cycle.open", id: "forged", businessDay: "2026-08-09", openingCash: 0 }))).rejects.toThrow(/(Tenant store is unavailable|Untrusted IPC sender|Invalid orders command)/);
   } finally {
     await app.close();
     await rm(userDataDirectory, { recursive: true, force: true });

@@ -400,16 +400,32 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     }
   }
 
-  listExpenses(filter?: { sucursalId?: string; limit?: number }): Array<Record<string, unknown>> {
-    const limit = filter?.limit ?? 100;
+  listExpenses(filter?: {
+    sucursalId?: string;
+    limit?: number;
+    dateFrom?: string;
+    dateTo?: string;
+  }): Array<Record<string, unknown>> {
+    const conditions = ["tenant_id = ?"];
+    const params: Array<string | number> = [this.tenantId];
     if (filter?.sucursalId) {
-      return this.database.prepare(
-        "SELECT * FROM gastos WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id = 'main-process-default') ORDER BY expense_date DESC LIMIT ?"
-      ).all(this.tenantId, filter.sucursalId, limit) as Array<Record<string, unknown>>;
+      conditions.push("(sucursal_id = ? OR sucursal_id = 'main-process-default')");
+      params.push(filter.sucursalId);
     }
-    return this.database.prepare(
-      "SELECT * FROM gastos WHERE tenant_id = ? ORDER BY expense_date DESC LIMIT ?"
-    ).all(this.tenantId, limit) as Array<Record<string, unknown>>;
+    // expense_date can be a full ISO timestamp or a plain YYYY-MM-DD; compare on
+    // the calendar-day prefix so both shapes filter correctly with date-only bounds.
+    if (filter?.dateFrom) {
+      conditions.push("substr(expense_date, 1, 10) >= ?");
+      params.push(filter.dateFrom);
+    }
+    if (filter?.dateTo) {
+      conditions.push("substr(expense_date, 1, 10) <= ?");
+      params.push(filter.dateTo);
+    }
+    const limit = filter?.limit ?? 100;
+    const sql = `SELECT * FROM gastos WHERE ${conditions.join(" AND ")} ORDER BY expense_date DESC LIMIT ?`;
+    params.push(limit);
+    return this.database.prepare(sql).all(...params) as Array<Record<string, unknown>>;
   }
 
   listExpenseCategories(): Array<Record<string, unknown>> {
@@ -418,24 +434,35 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     ).all(this.tenantId) as Array<Record<string, unknown>>;
   }
 
-  listInvoices(filter?: { sucursalId?: string; limit?: number }): Array<Record<string, unknown>> {
-    const hasLimit = typeof filter?.limit === "number" && filter.limit > 0;
+  listInvoices(filter?: {
+    sucursalId?: string;
+    limit?: number;
+    dateFrom?: string;
+    dateTo?: string;
+  }): Array<Record<string, unknown>> {
+    const conditions = ["tenant_id = ?"];
+    const params: Array<string | number> = [this.tenantId];
     if (filter?.sucursalId) {
-      const sql = hasLimit
-        ? "SELECT * FROM facturas WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id = 'main-process-default') ORDER BY created_at DESC LIMIT ?"
-        : "SELECT * FROM facturas WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id = 'main-process-default') ORDER BY created_at DESC";
-      return (hasLimit
-        ? this.database.prepare(sql).all(this.tenantId, filter.sucursalId, filter.limit)
-        : this.database.prepare(sql).all(this.tenantId, filter.sucursalId)
-      ) as Array<Record<string, unknown>>;
+      conditions.push("(sucursal_id = ? OR sucursal_id = 'main-process-default')");
+      params.push(filter.sucursalId);
     }
-    const sql = hasLimit
-      ? "SELECT * FROM facturas WHERE tenant_id = ? ORDER BY created_at DESC LIMIT ?"
-      : "SELECT * FROM facturas WHERE tenant_id = ? ORDER BY created_at DESC";
-    return (hasLimit
-      ? this.database.prepare(sql).all(this.tenantId, filter.limit)
-      : this.database.prepare(sql).all(this.tenantId)
-    ) as Array<Record<string, unknown>>;
+    // dateFrom/dateTo are ISO-UTC bounds (the client already converted the
+    // calendar day into start/end-of-day timestamps), so a lexicographic
+    // comparison against the ISO-UTC created_at column is chronological.
+    if (filter?.dateFrom) {
+      conditions.push("created_at >= ?");
+      params.push(filter.dateFrom);
+    }
+    if (filter?.dateTo) {
+      conditions.push("created_at <= ?");
+      params.push(filter.dateTo);
+    }
+    let sql = `SELECT * FROM facturas WHERE ${conditions.join(" AND ")} ORDER BY created_at DESC`;
+    if (typeof filter?.limit === "number" && filter.limit > 0) {
+      sql += " LIMIT ?";
+      params.push(filter.limit);
+    }
+    return this.database.prepare(sql).all(...params) as Array<Record<string, unknown>>;
   }
 
   reserveInvoiceNumbers(count: number): number[] {
@@ -608,17 +635,33 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     }
   }
 
-  listCierres(filter?: { sucursalId?: string; limit?: number }): Array<Record<string, unknown>> {
-    const limit = filter?.limit ?? 500;
+  listCierres(filter?: {
+    sucursalId?: string;
+    limit?: number;
+    dateFrom?: string;
+    dateTo?: string;
+  }): Array<Record<string, unknown>> {
     const columns = "id, tenant_id, sucursal_id, business_day, opening_cash AS efectivo_inicial, state, closed_at, cycle_number, opened_at, printed_at, created_at";
+    const conditions = ["tenant_id = ?"];
+    const params: Array<string | number> = [this.tenantId];
     if (filter?.sucursalId) {
-      return this.database.prepare(
-        `SELECT ${columns} FROM cierres_operativos WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id = 'main-process-default' OR sucursal_id IS NULL) ORDER BY cycle_number DESC LIMIT ?`
-      ).all(this.tenantId, filter.sucursalId, limit) as Array<Record<string, unknown>>;
+      conditions.push("(sucursal_id = ? OR sucursal_id = 'main-process-default' OR sucursal_id IS NULL)");
+      params.push(filter.sucursalId);
     }
-    return this.database.prepare(
-      `SELECT ${columns} FROM cierres_operativos WHERE tenant_id = ? ORDER BY cycle_number DESC LIMIT ?`
-    ).all(this.tenantId, limit) as Array<Record<string, unknown>>;
+    // Cycles are scoped by their calendar business_day (YYYY-MM-DD), so the
+    // client passes plain date bounds here (not ISO-UTC timestamps).
+    if (filter?.dateFrom) {
+      conditions.push("business_day >= ?");
+      params.push(filter.dateFrom);
+    }
+    if (filter?.dateTo) {
+      conditions.push("business_day <= ?");
+      params.push(filter.dateTo);
+    }
+    const limit = filter?.limit ?? 500;
+    const sql = `SELECT ${columns} FROM cierres_operativos WHERE ${conditions.join(" AND ")} ORDER BY cycle_number DESC LIMIT ?`;
+    params.push(limit);
+    return this.database.prepare(sql).all(...params) as Array<Record<string, unknown>>;
   }
 
   listMesasEstado(sucursalId?: string): Array<Record<string, unknown>> {
@@ -738,6 +781,13 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     this.database.exec("BEGIN IMMEDIATE;");
     try {
       const comanda = this.database.prepare("SELECT sucursal_id FROM comandas WHERE id = ? AND tenant_id = ?").get(comandaId, this.tenantId) as { sucursal_id: string | null } | undefined;
+      // Clear the two local references to the comanda first, or the DELETE trips
+      // a foreign-key constraint: consumos.comanda_id is nullable (unlink — paid
+      // consumos are kept and belong to their factura now), while
+      // produccion_cocina.comanda_id is NOT NULL, so those kitchen-tracking rows
+      // are removed (they are local-only and obsolete once the order is closed).
+      this.database.prepare("UPDATE consumos SET comanda_id = NULL WHERE comanda_id = ? AND tenant_id = ?").run(comandaId, this.tenantId);
+      this.database.prepare("DELETE FROM produccion_cocina WHERE comanda_id = ? AND tenant_id = ?").run(comandaId, this.tenantId);
       this.database.prepare("DELETE FROM comandas WHERE id = ? AND tenant_id = ?").run(comandaId, this.tenantId);
       this.database.prepare(`
         INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status)
@@ -802,7 +852,12 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
 
     const estado = consumo.estado ? String(consumo.estado) : (existing?.estado ? String(existing.estado) : "pendiente");
     const state = estado === "pagado" || estado === "entregado" ? "delivered" : estado === "listo" ? "ready" : "sent_to_kitchen";
-    const comandaId = consumo.comanda_id ? String(consumo.comanda_id) : (existing?.comanda_id ? String(existing.comanda_id) : null);
+    // Distinguish "field absent" (keep the existing link) from "explicit null"
+    // (clear it): a paid consumo is intentionally unlinked from its comanda at
+    // checkout, and treating null as "keep" would leave a dead FK to push.
+    const comandaId = "comanda_id" in consumo
+      ? (consumo.comanda_id ? String(consumo.comanda_id) : null)
+      : (existing?.comanda_id ? String(existing.comanda_id) : null);
     const platoId = consumo.plato_id != null ? String(consumo.plato_id) : (existing?.plato_id != null ? String(existing.plato_id) : null);
     const facturaId = consumo.factura_id ? String(consumo.factura_id) : (existing?.factura_id ? String(existing.factura_id) : null);
     const mesaNumero = consumo.mesa_numero != null ? Number(consumo.mesa_numero) : (existing?.mesa_numero != null ? Number(existing.mesa_numero) : null);
@@ -1346,8 +1401,7 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
       UPDATE sync_outbox
       SET status = 'pending', error_json = NULL
       WHERE tenant_id = ?
-        AND (error_json IS NULL OR json_valid(error_json) = 0 OR COALESCE(json_extract(error_json, '$.retryable'), 1) = 1)
-        AND (error_json IS NOT NULL OR status = 'not_retryable')
+        AND (status IN ('not_retryable', 'conflicted') OR error_json IS NOT NULL)
     `).run(this.tenantId);
     return Number(result.changes);
   }

@@ -8,6 +8,24 @@ function getElectronAPI(): Window["electronAPI"] | undefined {
 export interface ReadInvoicesOptions {
   sucursalId?: string | null;
   limit?: number;
+  /** Inclusive start day (YYYY-MM-DD, local calendar). */
+  dateFrom?: string | null;
+  /** Inclusive end day (YYYY-MM-DD, local calendar). */
+  dateTo?: string | null;
+}
+
+/**
+ * Converts a local calendar day (YYYY-MM-DD) into the ISO-UTC start/end-of-day
+ * bounds used to filter the ISO-UTC `created_at` column. Mirrors the semantics
+ * the billing UI used for its in-memory date filter.
+ */
+function toIsoBounds(dateFrom?: string | null, dateTo?: string | null): {
+  from?: string;
+  to?: string;
+} {
+  const from = dateFrom ? new Date(`${dateFrom}T00:00:00`).toISOString() : undefined;
+  const to = dateTo ? new Date(`${dateTo}T23:59:59.999`).toISOString() : undefined;
+  return { from, to };
 }
 
 /**
@@ -37,6 +55,7 @@ export async function readLocalInvoices(
   options: ReadInvoicesOptions = {}
 ): Promise<Array<Record<string, unknown>>> {
   const { sucursalId, limit } = options;
+  const { from: isoFrom, to: isoTo } = toIsoBounds(options.dateFrom, options.dateTo);
   const api = getElectronAPI();
 
   // 1. Electron Desktop: SQLite (authoritative, zero IndexedDB).
@@ -46,6 +65,8 @@ export async function readLocalInvoices(
         tenantId,
         sucursalId: sucursalId || undefined,
         limit: typeof limit === "number" && limit > 0 ? limit : undefined,
+        dateFrom: isoFrom,
+        dateTo: isoTo,
       });
       if (res?.ok && Array.isArray(res.data)) {
         let rows = res.data.map((raw) => normalizeInvoice(raw as Record<string, unknown>));
@@ -71,6 +92,8 @@ export async function readLocalInvoices(
     if (sucursalId) {
       query = query.or(`sucursal_id.eq.${sucursalId},sucursal_id.is.null`);
     }
+    if (isoFrom) query = query.gte("created_at", isoFrom);
+    if (isoTo) query = query.lte("created_at", isoTo);
     query = query.order("created_at", { ascending: false });
     if (typeof limit === "number" && limit > 0) {
       query = query.limit(limit);

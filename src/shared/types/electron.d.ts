@@ -95,13 +95,13 @@ export interface ElectronAPI {
   executeReceivablesCommand?: (command: import("../../../electron/persistence/receivablesRepository").ReceivablesCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/receivablesRepository").ReceivablesRepositoryResult }>;
   executePayablesCommand?: (command: import("../../../electron/persistence/payablesRepository").PayablesCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/payablesRepository").PayablesRepositoryResult }>;
   executeExpenseCommand?: (command: import("../../../electron/persistence/expenseRepository").ExpenseCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/expenseRepository").ExpenseRepositoryResult }>;
-  listExpenses?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
-  listInvoices?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
+  listExpenses?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number; dateFrom?: string; dateTo?: string }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
+  listInvoices?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number; dateFrom?: string; dateTo?: string }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
   reserveInvoiceNumbers?: (request: { tenantId: string; count: number }) => Promise<{ ok: true; data: number[] }>;
   getInvoiceNumberFloor?: (request: { tenantId: string }) => Promise<{ ok: true; data: number }>;
   deleteInvoiceLocal?: (request: { tenantId: string; invoiceId: string }) => Promise<{ ok: true }>;
   saveInvoiceLocal?: (invoice: Record<string, unknown>) => Promise<{ ok: true }>;
-  listCierres?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
+  listCierres?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number; dateFrom?: string; dateTo?: string }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
   listMesasEstado?: (filter?: { tenantId?: string; sucursalId?: string }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
   saveMesaEstado?: (payload: Record<string, unknown>) => Promise<{ ok: true }>;
   listCocinaEstado?: (filter?: { tenantId?: string; sucursalId?: string }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;

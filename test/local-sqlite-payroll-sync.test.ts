@@ -69,6 +69,23 @@ describe("local sqlite payroll sync store", () => {
     expect(syncingPayroll.map(r => r.id)).toEqual(["outbox-3", "outbox-4"]);
   });
 
+  it("claims mesas_estado and consumos rows and transitions them to syncing", () => {
+    db.prepare(`
+      INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run("outbox-mesa", tenantId, "branch-1", "mesas_estado", "1", "upsert", JSON.stringify({ table_number: 1, state: "libre" }), "pending");
+
+    db.prepare(`
+      INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run("outbox-consumo", tenantId, "branch-1", "consumos", "c-1", "upsert", JSON.stringify({ nombre: "Hamburguesa", cantidad: 1 }), "pending");
+
+    const claims = store.claim(Date.now());
+    expect(claims).toHaveLength(2);
+    expect(claims.map(c => c.id)).toEqual(["outbox-mesa", "outbox-consumo"]);
+    expect(claims.every(c => c.status === "syncing")).toBe(true);
+  });
+
   it("claims gastos deletes of any expense type but never their purchase upserts", () => {
     // A purchase expense created via Compras (IndexedDB) must NOT be re-pushed as an upsert.
     db.prepare(`

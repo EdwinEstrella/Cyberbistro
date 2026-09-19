@@ -1,4 +1,5 @@
 import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
+import { supabase } from "../../../shared/lib/supabase";
 
 /** Safe accessor for the desktop bridge (undefined in web / test node env). */
 function getElectronAPI(): Window["electronAPI"] | undefined {
@@ -8,6 +9,10 @@ function getElectronAPI(): Window["electronAPI"] | undefined {
 export interface ReadCierresOptions {
   sucursalId?: string | null;
   limit?: number;
+  /** Inclusive start business day (YYYY-MM-DD). */
+  dateFrom?: string | null;
+  /** Inclusive end business day (YYYY-MM-DD). */
+  dateTo?: string | null;
 }
 
 /**
@@ -37,7 +42,7 @@ export async function readLocalCierres(
   tenantId: string,
   options: ReadCierresOptions = {}
 ): Promise<Array<Record<string, unknown>>> {
-  const { sucursalId, limit } = options;
+  const { sucursalId, limit, dateFrom, dateTo } = options;
   const byId = new Map<string, Record<string, unknown>>();
 
   let sqliteAvailable = false;
@@ -48,6 +53,8 @@ export async function readLocalCierres(
         tenantId,
         sucursalId: sucursalId || undefined,
         limit: limit ?? 500,
+        dateFrom: dateFrom || undefined,
+        dateTo: dateTo || undefined,
       });
       if (res?.ok && Array.isArray(res.data)) {
         sqliteAvailable = true;
@@ -76,11 +83,41 @@ export async function readLocalCierres(
     }
   }
 
+  if (byId.size === 0) {
+    try {
+      let q = supabase.from("cierres_operativos").select("*").eq("tenant_id", tenantId);
+      if (sucursalId) {
+        q = q.or(`sucursal_id.eq.${sucursalId},sucursal_id.is.null,sucursal_id.eq.main-process-default`);
+      }
+      const { data } = await q.order("opened_at", { ascending: false }).limit(limit ?? 100);
+      if (data && Array.isArray(data)) {
+        for (const raw of data) {
+          const row = normalizeCierre(raw);
+          if (!byId.has(String(row.id))) byId.set(String(row.id), row);
+        }
+      }
+    } catch (error) {
+      console.warn("[cierresLocal] Supabase fallback query failed:", error);
+    }
+  }
+
   let rows = Array.from(byId.values());
   if (sucursalId) {
     rows = rows.filter((row) => {
       const branch = row.sucursal_id;
       return !branch || branch === sucursalId || branch === "main-process-default";
+    });
+  }
+  // Scope by calendar business_day (YYYY-MM-DD); string compare is chronological.
+  // Applied to the mirror-union result too, since IndexedDB rows are not filtered
+  // by the SQLite query above.
+  if (dateFrom || dateTo) {
+    rows = rows.filter((row) => {
+      const day = typeof row.business_day === "string" ? row.business_day : "";
+      if (!day) return false;
+      if (dateFrom && day < dateFrom) return false;
+      if (dateTo && day > dateTo) return false;
+      return true;
     });
   }
   rows.sort((a, b) => (Number(b.cycle_number) || 0) - (Number(a.cycle_number) || 0));

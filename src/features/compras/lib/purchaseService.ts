@@ -1,4 +1,5 @@
 import { enqueueLocalWrite, readLocalMirror, getDeviceId } from "../../../shared/lib/localFirst";
+import { readLocalCierres } from "../../cierre/lib/cierresLocal";
 import { calculateCostPerFraction } from "../../../shared/lib/presentationUnits";
 
 export interface PurchaseItemInput {
@@ -168,24 +169,44 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
   let comprasCategoryId = "";
   let providerName = "Proveedor";
 
-  const activeCycleRows = await readLocalMirror<{
-    id: string;
-    closed_at: string | null;
-    sucursal_id: string | null;
-    opened_at: string;
-  }>(tenantId, "cierres_operativos");
+  const activeCycleRows = await readLocalCierres(tenantId, { sucursalId });
   const purchaseDay = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santo_Domingo" }).format(new Date(fechaCompraFinal));
-  const activeCycle = activeCycleRows
-    .filter(c => c.sucursal_id === sucursalId || !c.sucursal_id)
-    .filter(c => !fechaCompra || new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santo_Domingo" }).format(new Date(c.opened_at)) === purchaseDay)
-    .filter(c => Boolean(fechaCompra) || !c.closed_at)
-    .sort((a, b) => b.opened_at.localeCompare(a.opened_at))[0];
+  
+  // 1. Prioridad: Ciclo operativo actualmente abierto para esta sucursal
+  let activeCycle = activeCycleRows
+    .filter((c: any) => !c.closed_at && (!sucursalId || c.sucursal_id === sucursalId || !c.sucursal_id || c.sucursal_id === "main-process-default"))
+    .sort((a: any, b: any) => String(b.opened_at).localeCompare(String(a.opened_at)))[0];
+
+  // 2. Si no hay ciclo abierto para esta sucursal, buscar cualquier ciclo abierto del tenant
   if (!activeCycle) {
-    throw new Error(fechaCompra
-      ? "No hay un ciclo iniciado en la fecha de compra para registrar esta factura."
-      : "No hay un ciclo operativo abierto para registrar una compra.");
+    activeCycle = activeCycleRows
+      .filter((c: any) => !c.closed_at)
+      .sort((a: any, b: any) => String(b.opened_at).localeCompare(String(a.opened_at)))[0];
   }
-  activeCycleId = activeCycle.id;
+
+  // 3. Si no hay ciclo abierto, buscar ciclo histórico en la fecha de la factura
+  if (!activeCycle && fechaCompra) {
+    activeCycle = activeCycleRows
+      .filter((c: any) => !sucursalId || c.sucursal_id === sucursalId || !c.sucursal_id || c.sucursal_id === "main-process-default")
+      .filter((c: any) => {
+        const cycleDay = c.business_day || new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santo_Domingo" }).format(new Date(String(c.opened_at)));
+        return cycleDay === purchaseDay;
+      })
+      .sort((a: any, b: any) => String(b.opened_at).localeCompare(String(a.opened_at)))[0];
+  }
+
+  // 4. Fallback: usar el ciclo más reciente existente (permite compras históricas con cualquier fecha)
+  if (!activeCycle && activeCycleRows.length > 0) {
+    activeCycle = activeCycleRows
+      .filter((c: any) => !sucursalId || c.sucursal_id === sucursalId || !c.sucursal_id || c.sucursal_id === "main-process-default")
+      .sort((a: any, b: any) => String(b.opened_at).localeCompare(String(a.opened_at)))[0]
+      || activeCycleRows.sort((a: any, b: any) => String(b.opened_at).localeCompare(String(a.opened_at)))[0];
+  }
+
+  if (!activeCycle) {
+    throw new Error("No hay un ciclo operativo abierto para registrar una compra.");
+  }
+  activeCycleId = String(activeCycle.id);
 
   if (tipoPago === "contado" || tipoPago === "parcial") {
     if (!metodoPago) {

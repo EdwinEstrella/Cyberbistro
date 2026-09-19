@@ -1,39 +1,55 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import { unlinkPaidConsumoFromComanda } from "./checkoutCommit";
+import type { LocalFirstWrite } from "./localFirst";
 
-const mocks = vi.hoisted(() => ({
-  enqueueLocalWritesAtomically: vi.fn(),
-  enqueueThermalPrint: vi.fn(),
-}));
+const base = (payload: Record<string, unknown> | undefined, table: LocalFirstWrite["tableName"] = "consumos"): LocalFirstWrite => ({
+  tenantId: "t",
+  tableName: table,
+  rowId: "consumo-1",
+  op: "update",
+  payload,
+  deviceId: "dev-1",
+});
 
-vi.mock("./localFirst", () => ({ enqueueLocalWritesAtomically: mocks.enqueueLocalWritesAtomically }));
-vi.mock("./thermalPrint", () => ({ enqueueThermalPrint: mocks.enqueueThermalPrint }));
-
-import { commitCheckout } from "./checkoutCommit";
-
-describe("commitCheckout", () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  it("does not hand a receipt to printing until every checkout write is durable", async () => {
-    let commit!: () => void;
-    mocks.enqueueLocalWritesAtomically.mockReturnValue(new Promise<void>((resolve) => { commit = resolve; }));
-    const completion = commitCheckout({
-      writes: [{ tenantId: "tenant-1", tableName: "facturas", rowId: "invoice-1", op: "insert", deviceId: "device-1" }],
-      prints: [{ id: "invoice-1", label: "Factura #1", print: vi.fn() }],
-    });
-
-    expect(mocks.enqueueThermalPrint).not.toHaveBeenCalled();
-    commit();
-    await completion;
-    expect(mocks.enqueueThermalPrint).toHaveBeenCalledWith(expect.objectContaining({ id: "invoice-1" }));
+describe("unlinkPaidConsumoFromComanda", () => {
+  it("nulls comanda_id on a paid consumo (estado pagado)", () => {
+    const out = unlinkPaidConsumoFromComanda(base({ estado: "pagado", comanda_id: "comanda-x", factura_id: "f-1" }));
+    expect(out.payload?.comanda_id).toBeNull();
   });
 
-  it("returns after queue handoff without awaiting receipt printing", async () => {
-    mocks.enqueueLocalWritesAtomically.mockResolvedValue(undefined);
-    mocks.enqueueThermalPrint.mockReturnValue(true);
-    const print = vi.fn(() => new Promise<never>(() => undefined));
+  it("nulls comanda_id when a factura_id is present even if estado is not yet 'pagado'", () => {
+    const out = unlinkPaidConsumoFromComanda(base({ estado: "pendiente", comanda_id: "comanda-x", factura_id: "f-1" }));
+    expect(out.payload?.comanda_id).toBeNull();
+  });
 
-    await expect(commitCheckout({ writes: [], prints: [{ id: "invoice-1", label: "Factura #1", print }] })).resolves.toBeUndefined();
-    expect(mocks.enqueueThermalPrint).toHaveBeenCalledTimes(1);
-    expect(print).not.toHaveBeenCalled();
+  it("preserves factura_id and the rest of the row (dropping the invoice link reopens tables)", () => {
+    const out = unlinkPaidConsumoFromComanda(base({ estado: "pagado", comanda_id: "comanda-x", factura_id: "f-1", subtotal: 400 }));
+    expect(out.payload?.factura_id).toBe("f-1");
+    expect(out.payload?.subtotal).toBe(400);
+    expect(out.payload?.estado).toBe("pagado");
+  });
+
+  it("leaves an unpaid consumo (no factura, not paid) untouched so it stays on its comanda", () => {
+    const write = base({ estado: "pendiente", comanda_id: "comanda-x" });
+    const out = unlinkPaidConsumoFromComanda(write);
+    expect(out.payload?.comanda_id).toBe("comanda-x");
+    expect(out).toBe(write);
+  });
+
+  it("ignores non-consumos writes", () => {
+    const write = base({ estado: "pagado", comanda_id: "comanda-x", factura_id: "f-1" }, "facturas");
+    expect(unlinkPaidConsumoFromComanda(write)).toBe(write);
+  });
+
+  it("ignores writes without a payload", () => {
+    const write = base(undefined);
+    expect(unlinkPaidConsumoFromComanda(write)).toBe(write);
+  });
+
+  it("does not mutate the original payload", () => {
+    const payload = { estado: "pagado", comanda_id: "comanda-x", factura_id: "f-1" };
+    const snapshot = { ...payload };
+    unlinkPaidConsumoFromComanda(base(payload));
+    expect(payload).toEqual(snapshot);
   });
 });

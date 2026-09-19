@@ -56,3 +56,10 @@ fixtures/local-sync-postgres/.env
 
 # InsForge & AI agent skills
 .agents
+copia_masterb
+copia_masterb_device.sqlite
+copia_masterb_eventos.ndjson
+copia_masterb.sqlite
+# Playwright e2e output
+test-results/
+playwright-report/

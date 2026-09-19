@@ -19,8 +19,6 @@ import {
   getDeviceId,
   readLocalMirror,
   shouldReadLocalFirst,
-  writeLocalMirrorRow,
-  deleteLocalMirrorRow,
 } from "../../../shared/lib/localFirst";
 import {
   writePlatoUpsert,
@@ -660,7 +658,6 @@ function CategoriasPanel() {
           await Promise.all(platos
             .filter((plato) => plato.categoria === current.nombre)
             .map(async (plato) => {
-              const updatedPlato = { ...plato, categoria: nombre };
               await writePlatoUpsert({
                 tenantId,
                 sucursalId: plato.sucursal_id ?? sucursalIdForCategory,
@@ -714,7 +711,6 @@ function CategoriasPanel() {
           await Promise.all(platos
             .filter((plato) => plato.categoria === category.nombre)
             .map(async (plato) => {
-              const updatedPlato = { ...plato, categoria: "General" };
               await writePlatoUpsert({
                 tenantId,
                 sucursalId: plato.sucursal_id ?? category.sucursal_id ?? activeSucursalId ?? "",

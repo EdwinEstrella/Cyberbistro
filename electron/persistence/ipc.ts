@@ -226,7 +226,7 @@ export function registerExpenseRepositoryIpc(input: {
   ipcMain: ExpenseRepositoryIpcMain;
   isTrustedSender: (event: { senderId: number }) => boolean;
   getRepository: () => { execute(command: ExpenseCommand): ExpenseRepositoryResult };
-  listExpenses?: (filter?: { sucursalId?: string; limit?: number }) => Array<Record<string, unknown>>;
+  listExpenses?: (filter?: { sucursalId?: string; limit?: number; dateFrom?: string; dateTo?: string }) => Array<Record<string, unknown>>;
   listCategories?: () => Array<Record<string, unknown>>;
   syncCloudExpenses?: (expenses: Array<Record<string, unknown>>, branchId?: string) => void;
   syncCloudExpenseCategories?: (categories: Array<Record<string, unknown>>) => void;
@@ -352,7 +352,7 @@ export function registerSalesFiscalRepositoryIpc(input: {
   ipcMain: SalesFiscalRepositoryIpcMain;
   isTrustedSender: (event: { senderId: number }) => boolean;
   getRepository: () => { execute(command: SalesFiscalCommand): SalesFiscalRepositoryResult };
-  listInvoices?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Array<Record<string, unknown>>;
+  listInvoices?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number; dateFrom?: string; dateTo?: string }) => Array<Record<string, unknown>>;
   reserveInvoiceNumbers?: (input: { tenantId?: string; count: number }) => number[];
   getInvoiceNumberFloor?: (input: { tenantId?: string }) => number;
   deleteInvoiceLocal?: (input: { tenantId?: string; invoiceId: string }) => void;
@@ -369,7 +369,7 @@ export function registerSalesFiscalRepositoryIpc(input: {
   input.ipcMain.removeHandler(FACTURAS_LIST_CHANNEL);
   input.ipcMain.handle(FACTURAS_LIST_CHANNEL, async (event, filter) => {
     if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
-    return { ok: true, data: input.listInvoices?.(filter as { tenantId?: string; sucursalId?: string; limit?: number }) ?? [] };
+    return { ok: true, data: input.listInvoices?.(filter as { tenantId?: string; sucursalId?: string; limit?: number; dateFrom?: string; dateTo?: string }) ?? [] };
   });
 
   input.ipcMain.removeHandler(FACTURAS_RESERVE_NUMBERS_CHANNEL);
@@ -422,7 +422,7 @@ export function registerOrdersRepositoryIpc(input: {
   ipcMain: OrdersRepositoryIpcMain;
   isTrustedSender: (event: { senderId: number }) => boolean;
   getRepository: () => { execute(command: OrdersCommand): OrdersRepositoryResult };
-  listCierres?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Array<Record<string, unknown>>;
+  listCierres?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number; dateFrom?: string; dateTo?: string }) => Array<Record<string, unknown>>;
   listMesasEstado?: (filter?: { tenantId?: string; sucursalId?: string }) => Array<Record<string, unknown>>;
   saveMesaEstado?: (payload: Record<string, unknown>) => void;
   listCocinaEstado?: (filter?: { tenantId?: string; sucursalId?: string }) => Array<Record<string, unknown>>;
@@ -444,7 +444,7 @@ export function registerOrdersRepositoryIpc(input: {
   input.ipcMain.removeHandler(CIERRES_LIST_CHANNEL);
   input.ipcMain.handle(CIERRES_LIST_CHANNEL, async (event, filter) => {
     if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
-    return { ok: true, data: input.listCierres?.(filter as { tenantId?: string; sucursalId?: string; limit?: number }) ?? [] };
+    return { ok: true, data: input.listCierres?.(filter as { tenantId?: string; sucursalId?: string; limit?: number; dateFrom?: string; dateTo?: string }) ?? [] };
   });
 
   input.ipcMain.removeHandler(MESAS_LIST_CHANNEL);
