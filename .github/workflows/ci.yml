@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [ main, master ]
 
+# Placeholder Supabase config so module imports (supabase.ts) don't throw during
+# typecheck/test/build. CI never talks to a real project: tests use SQLite and
+# mocked HTTP. Real values live in the packaged desktop build, not here.
+env:
+  VITE_SUPABASE_URL: https://ci-placeholder.supabase.co
+  VITE_SUPABASE_PUBLISHABLE_KEY: ci-placeholder-publishable-key
+
 jobs:
   verify:
     name: Verify & Build
