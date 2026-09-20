@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from 'vite'
 import path from 'node:path'
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { builtinModules } from 'node:module'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import electron from 'vite-plugin-electron/simple'
@@ -22,7 +23,15 @@ const pkg = JSON.parse(
   fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8')
 ) as { version: string }
 
+const NODE_BUILTIN_SET = new Set([
+  ...builtinModules,
+  ...builtinModules.map((m) => `node:${m}`),
+  'node:sqlite',
+  'sqlite',
+])
+
 function shouldExternalizeElectronMainDependency(id: string) {
+  if (id.startsWith('node:') || NODE_BUILTIN_SET.has(id)) return true
   return ELECTRON_MAIN_EXTERNALS.some((pkgName) => id === pkgName || id.startsWith(`${pkgName}/`))
 }
 
@@ -94,6 +103,7 @@ export default defineConfig(async ({ mode }) => {
             }),
           ],
           build: {
+            target: 'node22',
             rollupOptions: {
               external(id) {
                 return shouldExternalizeElectronMainDependency(id)
