@@ -406,6 +406,262 @@ describe("PayrollSyncClient", () => {
     expect(fakeSdk.eq).toHaveBeenCalledWith("id", "fac-to-delete");
     expect(response.result).toMatchObject({ deleted: true, remoteTable: "facturas" });
   });
+
+  it("pushes mesas_estado with integer id and estado (no state or table_number column)", async () => {
+    const response = await client.push({
+      id: "mesa-op",
+      tenantId: "tenant-1",
+      branchId: "branch-1",
+      tableName: "mesas_estado",
+      rowId: "1",
+      op: "upsert",
+      payload: {
+        id: 1,
+        table_number: 1,
+        state: "free",
+        estado: "libre",
+        sucursal_id: "branch-1",
+        updated_at: "2026-09-19T10:00:00.000Z",
+      },
+      payloadHash: "hash",
+      sequence: 0,
+      deviceId: "device",
+      status: "syncing",
+      leaseUntil: 0,
+      result: null,
+    });
+
+    expect(fakeSdk.from).toHaveBeenCalledWith("mesas_estado");
+    expect(fakeSdk.upsert).toHaveBeenCalledWith(
+      {
+        id: 1,
+        tenant_id: "tenant-1",
+        sucursal_id: "branch-1",
+        estado: "libre",
+        updated_at: "2026-09-19T10:00:00.000Z",
+      },
+      { onConflict: "tenant_id,id" }
+    );
+    expect(response.result).toMatchObject({ synced: true, remoteTable: "mesas_estado" });
+  });
+
+  it("pushes partial consumos update without sending plato_id 0 to avoid foreign key failure", async () => {
+    const updateSelect = vi.fn(async () => ({ data: [{ id: "c-1" }], error: null }));
+    const updateEq = vi.fn(() => ({ select: updateSelect }));
+    const updateFn = vi.fn(() => ({ eq: updateEq }));
+    const fromWithUpdate = vi.fn(() => ({ update: updateFn }));
+    const updateClient = new PayrollSyncClient({ from: fromWithUpdate } as never);
+
+    const response = await updateClient.push({
+      id: "consumo-partial-op",
+      tenantId: "tenant-1",
+      branchId: "branch-1",
+      tableName: "consumos",
+      rowId: "c-1",
+      op: "upsert",
+      payload: {
+        id: "c-1",
+        mesa_numero: 1,
+        estado: "pagado",
+        factura_id: "fac-1",
+        updated_at: "2026-09-19T10:00:00.000Z",
+      },
+      payloadHash: "hash",
+      sequence: 0,
+      deviceId: "device",
+      status: "syncing",
+      leaseUntil: 0,
+      result: null,
+    });
+
+    expect(fromWithUpdate).toHaveBeenCalledWith("consumos");
+    expect(updateFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        estado: "pagado",
+        factura_id: "fac-1",
+        mesa_numero: 1,
+      })
+    );
+    expect(updateFn).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        plato_id: 0,
+      })
+    );
+    expect(response.result).toMatchObject({ synced: true, remoteTable: "consumos" });
+  });
+
+  it("retries consumos upsert with comanda_id null if foreign key fails", async () => {
+    let callCount = 0;
+    const upsertFn = vi.fn(async (payload: any) => {
+      callCount++;
+      if (callCount === 1) {
+        return { error: { message: 'violates foreign key constraint "consumos_comanda_id_fkey"', code: "23503" } };
+      }
+      return { error: null };
+    });
+    const fromWithFkError = vi.fn(() => ({ upsert: upsertFn }));
+    const fkClient = new PayrollSyncClient({ from: fromWithFkError } as never);
+
+    const response = await fkClient.push({
+      id: "consumo-fk-op",
+      tenantId: "tenant-1",
+      branchId: "branch-1",
+      tableName: "consumos",
+      rowId: "c-2",
+      op: "upsert",
+      payload: {
+        id: "c-2",
+        nombre: "Alitas",
+        plato_id: -1000000003,
+        comanda_id: "missing-comanda-id",
+        estado: "pagado",
+      },
+      payloadHash: "hash",
+      sequence: 0,
+      deviceId: "device",
+      status: "syncing",
+      leaseUntil: 0,
+      result: null,
+    });
+
+    expect(upsertFn).toHaveBeenCalledTimes(2);
+    expect(upsertFn).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        comanda_id: null,
+      }),
+      { onConflict: "id" }
+    );
+    expect(response.result).toMatchObject({ synced: true, remoteTable: "consumos" });
+  });
+
+  it("pushes purchases, purchase details, fiscal and movements to Supabase with proper table mapping", async () => {
+    const upsertFn = vi.fn().mockResolvedValue({ error: null });
+    const fromFn = vi.fn(() => ({ upsert: upsertFn }));
+    const syncClient = new PayrollSyncClient({ from: fromFn } as never);
+
+    // 1. Compra
+    const compraRes = await syncClient.push({
+      id: "op-compra-1",
+      tenantId: "tenant-1",
+      branchId: "branch-1",
+      tableName: "compras",
+      rowId: "compra-1",
+      op: "upsert",
+      payload: {
+        id: "compra-1",
+        numeroFactura: "B0100000001",
+        supplierId: "prov-1",
+        tipoPago: "contado",
+        metodoPago: "efectivo",
+        total: 1500,
+        montoPagado: 1500,
+        fechaCompra: "2026-09-19T20:00:00Z",
+      },
+      payloadHash: "h1",
+      sequence: 1,
+      deviceId: "dev-1",
+      status: "syncing",
+      leaseUntil: 0,
+      result: null,
+    });
+    expect(compraRes.result).toMatchObject({ synced: true, remoteTable: "compras" });
+    expect(fromFn).toHaveBeenCalledWith("compras");
+    expect(upsertFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "compra-1",
+        tenant_id: "tenant-1",
+        proveedor_id: "prov-1",
+        numero_factura: "B0100000001",
+        total: 1500,
+      }),
+      { onConflict: "id" }
+    );
+
+    // 2. Compra detalles
+    const detalleRes = await syncClient.push({
+      id: "op-det-1",
+      tenantId: "tenant-1",
+      branchId: "branch-1",
+      tableName: "compra_detalles",
+      rowId: "det-1",
+      op: "upsert",
+      payload: {
+        id: "det-1",
+        compraId: "compra-1",
+        productoId: "prod-1",
+        cantidad: 10,
+        costoUnitario: 150,
+        total: 1500,
+      },
+      payloadHash: "h2",
+      sequence: 2,
+      deviceId: "dev-1",
+      status: "syncing",
+      leaseUntil: 0,
+      result: null,
+    });
+    expect(detalleRes.result).toMatchObject({ synced: true, remoteTable: "compra_detalles" });
+    expect(fromFn).toHaveBeenCalledWith("compra_detalles");
+    expect(upsertFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "det-1",
+        compra_id: "compra-1",
+        producto_id: "prod-1",
+        total: 1500,
+      }),
+      { onConflict: "id" }
+    );
+
+    // 3. Compra fiscal
+    const fiscalRes = await syncClient.push({
+      id: "op-fisc-1",
+      tenantId: "tenant-1",
+      tableName: "compra_fiscal",
+      rowId: "fisc-1",
+      op: "upsert",
+      payload: {
+        id: "fisc-1",
+        compraId: "compra-1",
+        rncCedula: "131234567",
+        ncf: "B0100000001",
+        fechaComprobante: "2026-09-19",
+        montoBienes: 1500,
+        totalFacturado: 1500,
+        itbisFacturado: 270,
+      },
+      payloadHash: "h3",
+      sequence: 3,
+      deviceId: "dev-1",
+      status: "syncing",
+      leaseUntil: 0,
+      result: null,
+    });
+    expect(fiscalRes.result).toMatchObject({ synced: true, remoteTable: "compra_fiscal" });
+    expect(fromFn).toHaveBeenCalledWith("compra_fiscal");
+
+    // 4. Delete compra
+    const deleteEqFn = vi.fn().mockResolvedValue({ error: null });
+    const deleteFromFn = vi.fn(() => ({ delete: () => ({ eq: deleteEqFn }) }));
+    const deleteClient = new PayrollSyncClient({ from: deleteFromFn } as never);
+
+    const delRes = await deleteClient.push({
+      id: "op-del-1",
+      tenantId: "tenant-1",
+      tableName: "compras",
+      rowId: "compra-1",
+      op: "delete",
+      payload: null,
+      payloadHash: "h4",
+      sequence: 4,
+      deviceId: "dev-1",
+      status: "syncing",
+      leaseUntil: 0,
+      result: null,
+    });
+    expect(delRes.result).toMatchObject({ deleted: true, remoteTable: "compras" });
+    expect(deleteFromFn).toHaveBeenCalledWith("compras");
+    expect(deleteEqFn).toHaveBeenCalledWith("id", "compra-1");
+  });
 });
 
 function createFakeSdk() {
@@ -426,6 +682,11 @@ function createFakeSdk() {
       state.nextUpsertError = null;
       return result;
     },
+    update: () => ({
+      eq: () => ({
+        select: async () => ({ data: [], error: state.nextUpsertError }),
+      }),
+    }),
     delete: () => ({
       eq: async (...args: unknown[]) => {
         const result = await eq(...args);

@@ -63,7 +63,7 @@ import { resolveActiveFiscalMode, runFiscalEngine, buildEcfDocumentWrites } from
 import { getLocalFirstStatusSnapshot, readLocalMirror, readLocalOutbox, enqueueLocalWrite, getDeviceId, writeLocalMirrorRow, shouldReadLocalFirst, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, type LocalFirstWrite } from "../../../shared/lib/localFirst";
 import { readLocalCierres } from "../../cierre/lib/cierresLocal";
 import { readLocalPlatos, readLocalMenuCategories } from "../../soporte/lib/catalogLocal";
-import { readLocalMesasEstado, readLocalConsumos } from "../../../shared/lib/ordersLocal";
+import { readLocalMesasEstado, readLocalConsumos, saveLocalComanda, saveLocalConsumo, deleteLocalConsumo } from "../../../shared/lib/ordersLocal";
 import { commitCheckout } from "../../../shared/lib/checkoutCommit";
 import { getNextFacturaNumber } from "../../../shared/lib/invoiceNumber";
 import { writePosMutationLocalFirst } from "../../pos/lib/localFirstMutations";
@@ -678,22 +678,26 @@ export function Dashboard() {
         setDeletingConsumoId(consumoId);
 
         try {
-          await writePosMutationLocalFirst({
-            tenantId: tenantId!,
-            tableName: "consumos",
-            rowId: consumoId,
-            op: "delete",
-            payload: {
-              id: consumoId,
-              tenant_id: tenantId!,
-              sucursal_id: activeSucursalId!,
-              mesa_numero: consumo.mesa_numero,
-              comanda_id: consumo.comanda_id,
-              created_by_auth_user_id: consumo.created_by_auth_user_id ?? null,
-            },
-            authUserId: user?.id ?? null,
-            deviceId: await getDeviceId(),
-          });
+          if (isDesktopRuntime()) {
+            await deleteLocalConsumo(tenantId!, consumoId);
+          } else {
+            await writePosMutationLocalFirst({
+              tenantId: tenantId!,
+              tableName: "consumos",
+              rowId: consumoId,
+              op: "delete",
+              payload: {
+                id: consumoId,
+                tenant_id: tenantId!,
+                sucursal_id: activeSucursalId!,
+                mesa_numero: consumo.mesa_numero,
+                comanda_id: consumo.comanda_id,
+                created_by_auth_user_id: consumo.created_by_auth_user_id ?? null,
+              },
+              authUserId: user?.id ?? null,
+              deviceId: await getDeviceId(),
+            });
+          }
         } catch (error) {
           const message = error instanceof Error ? error.message : "Error desconocido";
           console.error("Error al eliminar consumo:", error);
@@ -809,15 +813,19 @@ export function Dashboard() {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
-      await enqueueLocalWrite({
-        tenantId: tid,
-        tableName: "comandas",
-        rowId: localComandaId,
-        op: "insert",
-        payload: comandaPayload,
-        authUserId: user?.id ?? null,
-        deviceId: await getDeviceId(),
-      });
+      if (isDesktopRuntime()) {
+        await saveLocalComanda(tid, comandaPayload);
+      } else {
+        await enqueueLocalWrite({
+          tenantId: tid,
+          tableName: "comandas",
+          rowId: localComandaId,
+          op: "insert",
+          payload: comandaPayload,
+          authUserId: user?.id ?? null,
+          deviceId: await getDeviceId(),
+        });
+      }
       const data: any = comandaPayload;
 
       comandaId = data?.id || localComandaId;
@@ -953,15 +961,19 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
     ];
 
     for (const consumo of consumosToInsert) {
-      await enqueueLocalWrite({
-        tenantId: tid,
-        tableName: "consumos",
-        rowId: consumo.id,
-        op: "insert",
-        payload: consumo,
-        authUserId: user?.id ?? null,
-        deviceId: await getDeviceId(),
-      });
+      if (isDesktopRuntime()) {
+        await saveLocalConsumo(tid, consumo);
+      } else {
+        await enqueueLocalWrite({
+          tenantId: tid,
+          tableName: "consumos",
+          rowId: consumo.id,
+          op: "insert",
+          payload: consumo,
+          authUserId: user?.id ?? null,
+          deviceId: await getDeviceId(),
+        });
+      }
     }
 
     // Limpiar SOLO el carrito (todo fue enviado)
@@ -971,9 +983,33 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
     setTimeout(() => setSentOk(false), 3000);
     setSending(false);
 
-    // Actualizar deuda de la mesa y refrescar cuenta en panel
+    // Actualizar deuda de la mesa y refrescar cuenta en panel inmediatamente
     const consumosActualizados = await loadTableConsumption(selectedMesa.numero);
     setMesaConsumos(consumosActualizados);
+    const deuda_pendiente = consumosActualizados.reduce((sum, row) => sum + Number(row.subtotal), 0);
+    const items_pendientes = consumosActualizados.length;
+    setMesas((prev) =>
+      prev.map((mesa) =>
+        mesa.id === selectedMesa.id
+          ? {
+              ...mesa,
+              estado: items_pendientes > 0 ? "ocupada" : "libre",
+              deuda_pendiente,
+              items_pendientes,
+            }
+          : mesa
+      )
+    );
+    setSelectedMesa((prev) =>
+      prev
+        ? {
+            ...prev,
+            estado: items_pendientes > 0 ? "ocupada" : "libre",
+            deuda_pendiente,
+            items_pendientes,
+          }
+        : null
+    );
     await refreshMesaDebt(selectedMesa.id, selectedMesa.numero);
   }
 
@@ -1226,12 +1262,10 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
     }
 
     let ncfPart: Awaited<ReturnType<typeof runFiscalEngine>> = null;
-    const defaultFiscalCode = fiscalMode === "dgii_ecf" ? "E32" : "B02";
-    const canEmitDefaultConsumo = isNcfTypeActive(ncfTiposActivos, defaultFiscalCode);
-    const shouldRunFiscal = tenantId && fiscalMode !== "internal_receipt" && (solicitaComprobante || canEmitDefaultConsumo);
+    const shouldRunFiscal = Boolean(tenantId && fiscalMode !== "internal_receipt" && solicitaComprobante);
 
     if (shouldRunFiscal) {
-      const targetNcfType = solicitaComprobante ? selectedNcfType : defaultFiscalCode;
+      const targetNcfType = selectedNcfType;
       try {
         ncfPart = await runFiscalEngine({
           tenantId,
@@ -1428,6 +1462,7 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
     });
 
     setCart([]);
+    setSolicitaComprobante(false);
     setTakeoutClientRnc("");
     setTakeoutCustomer(null);
     setTakeoutCustomerName("");
@@ -2262,7 +2297,10 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                       <div className="flex items-center justify-between gap-[10px] rounded-[14px] border border-white/20 bg-[#0a0a0a] px-4 py-3">
                         <div className="flex flex-col min-w-0">
                           <span className="font-['Inter',sans-serif] text-zinc-200 text-[13px] font-medium leading-tight">
-                            Solicita comprobante fiscal
+                            Comprobante fiscal (NCF / e-CF)
+                          </span>
+                          <span className="text-[11px] text-zinc-400 font-mono mt-0.5">
+                            {solicitaComprobante ? `Activo: ${selectedNcfType}` : "Desmarcado (recibo interno sin NCF)"}
                           </span>
                         </div>
                         <button
@@ -2273,13 +2311,15 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                           onClick={() => {
                             const next = !solicitaComprobante;
                             setSolicitaComprobante(next);
-                            const preferred = next ? (fiscalMode === "dgii_ecf" ? "E31" : "B01") : (fiscalMode === "dgii_ecf" ? "E32" : "B02");
-                            const fallback = NCF_TIPO_OPCIONES.find((option) =>
-                              (fiscalMode === "dgii_ecf" ? option.codigo.startsWith("E") : option.codigo.startsWith("B")) &&
-                              isNcfTypeActive(ncfTiposActivos, option.codigo)
-                            );
-                            if (isNcfTypeActive(ncfTiposActivos, preferred)) setSelectedNcfType(preferred);
-                            else if (fallback) setSelectedNcfType(fallback.codigo);
+                            if (next && !isNcfTypeActive(ncfTiposActivos, selectedNcfType)) {
+                              const preferred = fiscalMode === "dgii_ecf" ? "E32" : "B02";
+                              const fallback = NCF_TIPO_OPCIONES.find((option) =>
+                                (fiscalMode === "dgii_ecf" ? option.codigo.startsWith("E") : option.codigo.startsWith("B")) &&
+                                isNcfTypeActive(ncfTiposActivos, option.codigo)
+                              );
+                              if (isNcfTypeActive(ncfTiposActivos, preferred)) setSelectedNcfType(preferred as NcfTypeCode);
+                              else if (fallback) setSelectedNcfType(fallback.codigo as NcfTypeCode);
+                            }
                           }}
                           className={`relative h-[28px] w-[50px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${solicitaComprobante ? "bg-[#ff906d]" : "bg-[#222]"}`}
                         >
@@ -2290,8 +2330,31 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
                       {solicitaComprobante && (
                         <div className="flex flex-col gap-2 pt-1 border-t border-white/20 mt-1">
                           <label htmlFor="ncf-select" className="text-zinc-400 font-['Space_Grotesk',sans-serif] font-bold text-[11px] uppercase tracking-[1px] px-1">
-                            Tipo NCF
+                            Tipo NCF / e-CF
                           </label>
+                          <div className="flex flex-wrap gap-1.5 mb-1">
+                            {NCF_TIPO_OPCIONES.filter(o => {
+                              if (fiscalMode === "dgii_ecf") return o.codigo.startsWith("E");
+                              if (fiscalMode === "ncf_legacy") return o.codigo.startsWith("B");
+                              return false;
+                            }).filter((option) => isNcfTypeActive(ncfTiposActivos, option.codigo)).map((opcion) => {
+                              const isSelected = selectedNcfType === opcion.codigo;
+                              return (
+                                <button
+                                  key={opcion.codigo}
+                                  type="button"
+                                  onClick={() => setSelectedNcfType(opcion.codigo)}
+                                  className={`px-3 py-1 rounded-lg text-xs font-bold font-mono transition-colors border cursor-pointer ${
+                                    isSelected
+                                      ? "bg-[#ff906d] text-black border-[#ff906d]"
+                                      : "bg-zinc-800/80 text-zinc-300 border-white/10 hover:border-white/20"
+                                  }`}
+                                >
+                                  {opcion.codigo}
+                                </button>
+                              );
+                            })}
+                          </div>
                           <Select
                             value={selectedNcfType}
                             onValueChange={(val) =>

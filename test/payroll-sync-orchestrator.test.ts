@@ -131,6 +131,26 @@ describe('PayrollSyncOrchestrator Lifecycle', () => {
     expect(fakeClient.push).toHaveBeenCalled();
   });
 
+  it('queues another sync turn if triggered while syncing', async () => {
+    let pushCount = 0;
+    const fakeClient = {
+      push: vi.fn(async () => {
+        pushCount++;
+        if (pushCount === 1) {
+          insertPayrollOutboxRow(db, 'tenant-123', 'out-2');
+          void orchestrator.triggerSync();
+        }
+        return { result: {} };
+      }),
+      pull: vi.fn(),
+    };
+    orchestrator.start(db, 'tenant-123', fakeClient);
+    insertPayrollOutboxRow(db, 'tenant-123');
+
+    await orchestrator.triggerSync();
+    expect(fakeClient.push).toHaveBeenCalledTimes(2);
+  });
+
   it('requeues claimed rows, avoids late stale commits, and keeps timers bounded across tenant switch', async () => {
     const dataRoot = mkdtempSync(join(tmpdir(), 'cloudix-payroll-sync-'));
     const deferredPush = createDeferred<{ result: Record<string, unknown> }>();

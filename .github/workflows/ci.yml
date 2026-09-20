@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [ main, master ]
 
+# Placeholder Supabase config so module imports (supabase.ts) don't throw during
+# typecheck/test/build. CI never talks to a real project: tests use SQLite and
+# mocked HTTP. Real values live in the packaged desktop build, not here.
+env:
+  VITE_SUPABASE_URL: https://ci-placeholder.supabase.co
+  VITE_SUPABASE_PUBLISHABLE_KEY: ci-placeholder-publishable-key
+
 jobs:
   verify:
     name: Verify & Build
@@ -32,3 +39,42 @@ jobs:
 
       - name: Build renderer and main process
         run: npm run build
+
+  e2e:
+    name: E2E (Windows)
+    runs-on: windows-latest
+    # Gate the (pricier) Windows e2e run behind the cheap Ubuntu checks: no point
+    # spending Windows minutes if typecheck/unit/build already failed.
+    needs: verify
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        # chromium: sync (mirror/outbox) specs. chrome channel: local-mirror-pull.
+        run: npx playwright install chromium chrome
+
+      - name: Build renderer and main process
+        run: npm run build
+
+      - name: Run end-to-end tests
+        run: npm run test:e2e
+
+      - name: Upload Playwright traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: test-results/**
+          if-no-files-found: ignore
+          retention-days: 7

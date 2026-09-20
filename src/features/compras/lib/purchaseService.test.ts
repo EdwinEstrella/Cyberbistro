@@ -1,12 +1,18 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { registrarCompra } from "./purchaseService";
 import { enqueueLocalWrite, readLocalMirror } from "../../../shared/lib/localFirst";
+import { readLocalCierres } from "../../cierre/lib/cierresLocal";
 
 // Mock localFirst functions
 vi.mock("../../../shared/lib/localFirst", () => ({
   readLocalMirror: vi.fn(),
+  shouldReadLocalFirst: vi.fn().mockResolvedValue(true),
   enqueueLocalWrite: vi.fn().mockResolvedValue(undefined),
   getDeviceId: vi.fn().mockResolvedValue("device-123"),
+}));
+
+vi.mock("../../cierre/lib/cierresLocal", () => ({
+  readLocalCierres: vi.fn(),
 }));
 
 describe("purchaseService", () => {
@@ -43,6 +49,14 @@ describe("purchaseService", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(readLocalCierres).mockResolvedValue([
+      {
+        id: "cycle-active-123",
+        closed_at: null,
+        sucursal_id: "suc-1",
+        opened_at: "2026-06-08T10:00:00Z",
+      },
+    ]);
     vi.mocked(readLocalMirror).mockImplementation(async (_tenantId, tableName) => {
       if (tableName === "productos_inventario") {
         return mockProducts as any;
@@ -178,12 +192,7 @@ describe("purchaseService", () => {
   });
 
   it("throws error if any purchase has no active cycle", async () => {
-    // Mock readLocalMirror to return no cycles
-    vi.mocked(readLocalMirror).mockImplementation(async (_tenantId, tableName) => {
-      if (tableName === "productos_inventario") return mockProducts as any;
-      if (tableName === "cierres_operativos") return [] as any;
-      return [] as any;
-    });
+    vi.mocked(readLocalCierres).mockResolvedValue([]);
 
     await expect(
       registrarCompra({
@@ -237,12 +246,7 @@ describe("purchaseService", () => {
   });
 
   it("requires an active cycle for credito purchases", async () => {
-    // Mock readLocalMirror to return no cycles
-    vi.mocked(readLocalMirror).mockImplementation(async (_tenantId, tableName) => {
-      if (tableName === "productos_inventario") return mockProducts as any;
-      if (tableName === "cierres_operativos") return [] as any;
-      return [] as any;
-    });
+    vi.mocked(readLocalCierres).mockResolvedValue([]);
 
     await expect(registrarCompra({
       tenantId: mockTenantId, sucursalId: "suc-1", usuarioId: "user-1", proveedorId: "prov-1", numeroFactura: "FAC-CRED", tipoPago: "credito",

@@ -148,6 +148,16 @@ export function Nomina() {
   const [employeeLoadError, setEmployeeLoadError] = useState("");
   const [paymentLoadError, setPaymentLoadError] = useState("");
   const [receiptSearchQuery, setReceiptSearchQuery] = useState("");
+  // Receipt history window defaults to the current month; a search escapes it
+  // and matches across all history.
+  const [receiptDateFrom, setReceiptDateFrom] = useState(() => {
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-01`;
+  });
+  const [receiptDateTo, setReceiptDateTo] = useState(() => {
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
+  });
   const [previewPayment, setPreviewPayment] = useState<PayrollPaymentRecord | null>(null);
   const [paymentToAnnull, setPaymentToAnnull] = useState<PayrollPaymentRecord | null>(null);
   const [annulling, setAnnulling] = useState(false);
@@ -562,16 +572,23 @@ export function Nomina() {
 
   // Filtered payments list (receipts history)
   const filteredPayments = useMemo(() => {
+    const q = receiptSearchQuery.toLowerCase().trim();
     return payments.filter((p) => {
-      const q = receiptSearchQuery.toLowerCase().trim();
-      if (!q) return true;
-      return (
-        p.employeeName.toLowerCase().includes(q) ||
-        p.employeeRole.toLowerCase().includes(q) ||
-        p.period.toLowerCase().includes(q)
-      );
+      if (q) {
+        // Search escapes the date range: match across the whole history.
+        return (
+          p.employeeName.toLowerCase().includes(q) ||
+          p.employeeRole.toLowerCase().includes(q) ||
+          p.period.toLowerCase().includes(q)
+        );
+      }
+      // No search: scope to the selected day range (default current month).
+      const day = (p.createdAt || "").slice(0, 10);
+      if (receiptDateFrom && day && day < receiptDateFrom) return false;
+      if (receiptDateTo && day && day > receiptDateTo) return false;
+      return true;
     });
-  }, [payments, receiptSearchQuery]);
+  }, [payments, receiptSearchQuery, receiptDateFrom, receiptDateTo]);
 
   // Open modal to create new employee
   function handleOpenNewEmployee() {
@@ -1717,7 +1734,26 @@ export function Nomina() {
               )}
             </div>
 
-            <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+            <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end">
+              <div className="flex items-center gap-2" title={receiptSearchQuery ? "La búsqueda ignora el rango de fechas" : "Rango de fechas del historial"}>
+                <input
+                  type="date"
+                  value={receiptDateFrom}
+                  onChange={(e) => setReceiptDateFrom(e.target.value)}
+                  disabled={Boolean(receiptSearchQuery.trim())}
+                  className="bg-[#131313] border border-[rgba(72,72,71,0.25)] focus:border-[#ff906d] rounded-[10px] px-2.5 py-2 text-[12px] text-white outline-none [color-scheme:dark] transition-colors disabled:opacity-40"
+                  aria-label="Desde"
+                />
+                <span className="text-[12px] text-[#adaaaa]">—</span>
+                <input
+                  type="date"
+                  value={receiptDateTo}
+                  onChange={(e) => setReceiptDateTo(e.target.value)}
+                  disabled={Boolean(receiptSearchQuery.trim())}
+                  className="bg-[#131313] border border-[rgba(72,72,71,0.25)] focus:border-[#ff906d] rounded-[10px] px-2.5 py-2 text-[12px] text-white outline-none [color-scheme:dark] transition-colors disabled:opacity-40"
+                  aria-label="Hasta"
+                />
+              </div>
               <span className="text-[12px] font-['Space_Grotesk',sans-serif] text-[#adaaaa]">
                 Total: <strong className="text-white">{filteredPayments.length}</strong> recibos
               </span>

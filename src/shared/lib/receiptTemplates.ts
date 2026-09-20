@@ -804,3 +804,214 @@ export function buildNominaReceiptHtml(
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Comprobante de Nómina - ${escapeHtml(data.empleadoNombre)}</title><style>${thermalStyles(paperWidthMm)}</style></head><body>${body}</body></html>`;
 }
 
+// ---------------------------------------------------------------------------
+// Range reports (facturas / ciclos) — A4 sheet or thermal roll.
+// ---------------------------------------------------------------------------
+
+export type ReportPaperFormat = "a4" | "thermal";
+
+export interface InvoicesReportRow {
+  numero_factura: number;
+  created_at: string;
+  ncf?: string | null;
+  metodo_pago?: string | null;
+  estado?: string | null;
+  total: number;
+}
+
+export interface CyclesReportRow {
+  cycle_number: number;
+  business_day: string;
+  totalSold: number;
+  totalExpenses: number;
+  netTotal: number;
+}
+
+function reportMethodLabel(m?: string | null): string {
+  switch ((m || "").toLowerCase()) {
+    case "efectivo":
+    case "cash":
+      return "Efectivo";
+    case "tarjeta":
+      return "Tarjeta";
+    case "digital":
+      return "Digital";
+    case "transferencia":
+      return "Transferencia";
+    default:
+      return m ? escapeHtml(m) : "—";
+  }
+}
+
+function reportEstadoLabel(e?: string | null): string {
+  switch ((e || "").toLowerCase()) {
+    case "pagada":
+      return "Pagada";
+    case "pendiente":
+      return "Pendiente";
+    case "cancelada":
+      return "Cancelada";
+    default:
+      return e ? escapeHtml(e) : "—";
+  }
+}
+
+/** A4 sheet styling for the tabular range reports (regular printer, not thermal). */
+function a4ReportStyles(): string {
+  return `
+    @page { size: A4; margin: 14mm; }
+    * { box-sizing: border-box; }
+    html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body { font-family: 'Inter', Arial, Helvetica, sans-serif; font-size: 12px; color: #111; background: #fff; margin: 0; }
+    .company { text-align: center; margin-bottom: 6px; }
+    .company h1 { font-size: 20px; margin: 0 0 2px; }
+    .company p { margin: 1px 0; font-size: 11px; color: #333; }
+    .company img { max-height: 60px; }
+    .report-title { text-align: center; font-size: 17px; font-weight: 700; margin: 8px 0 2px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .report-range { text-align: center; font-size: 12px; color: #444; margin: 0 0 12px; }
+    table.report { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    table.report th { background: #f3f4f6; text-align: left; padding: 7px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 2px solid #111; }
+    table.report th.r, table.report td.r { text-align: right; }
+    table.report td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; font-size: 12px; }
+    table.report tbody tr:nth-child(even) td { background: #fafafa; }
+    table.report tfoot td { font-weight: 700; border-top: 2px solid #111; background: #fff; }
+    .footer { text-align: center; font-size: 10px; color: #666; margin-top: 18px; }
+  `;
+}
+
+function reportGeneratedLine(): string {
+  return escapeHtml(new Date().toLocaleString("es-DO", { timeZone: "America/Santo_Domingo", hour12: true }));
+}
+
+export function buildInvoicesRangeReportHtml(
+  tenant: TenantReceiptInfo,
+  data: { rangeLabel: string; invoices: InvoicesReportRow[] },
+  format: ReportPaperFormat,
+  paperWidthMm: PaperWidthMm = 80
+): string {
+  const rows = data.invoices;
+  const total = rows.reduce((sum, r) => sum + (Number(r.total) || 0), 0);
+  const count = rows.length;
+  const title = "Reporte de Facturas";
+
+  if (format === "thermal") {
+    const lines = rows
+      .map((r) => {
+        const { date } = formatFacturaDateParts(r.created_at);
+        return `<tr class="item-row"><td class="fdo-item-name">#${String(r.numero_factura).padStart(4, "0")}</td><td style="text-align:right" class="fdo-item-name">${rdFixed(Number(r.total) || 0, tenant)}</td></tr>` +
+          `<tr class="fdo-item-sub"><td colspan="2">${date} · ${reportMethodLabel(r.metodo_pago)} · ${reportEstadoLabel(r.estado)}</td></tr>`;
+      })
+      .join("");
+    const body = `
+      ${headerBlock(tenant)}
+      <div class="double-divider"></div>
+      <h2>${title}</h2>
+      <p class="center" style="font-size:13px">${escapeHtml(data.rangeLabel)}</p>
+      <div class="divider"></div>
+      <table>${lines || `<tr><td class="center">Sin facturas en el rango</td></tr>`}</table>
+      <div class="double-divider"></div>
+      <table>
+        <tr class="total"><td>Facturas</td><td style="text-align:right">${count}</td></tr>
+        <tr class="total-xl"><td>Total</td><td style="text-align:right">${rdFixed(total, tenant)}</td></tr>
+      </table>
+      <div class="divider"></div>
+      <div class="footer">Cloudix OS — Generado ${reportGeneratedLine()}</div>
+    `;
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title><style>${thermalStyles(paperWidthMm)}</style></head><body>${body}</body></html>`;
+  }
+
+  const trs = rows
+    .map((r) => {
+      const { date, time } = formatFacturaDateParts(r.created_at);
+      return `<tr>
+        <td>#${String(r.numero_factura).padStart(4, "0")}</td>
+        <td>${date} ${time}</td>
+        <td>${r.ncf ? escapeHtml(r.ncf) : "—"}</td>
+        <td>${reportMethodLabel(r.metodo_pago)}</td>
+        <td>${reportEstadoLabel(r.estado)}</td>
+        <td class="r">${rdFixed(Number(r.total) || 0, tenant)}</td>
+      </tr>`;
+    })
+    .join("");
+  const body = `
+    <div class="company">${headerBlock(tenant)}</div>
+    <div class="report-title">${title}</div>
+    <div class="report-range">${escapeHtml(data.rangeLabel)}</div>
+    <table class="report">
+      <thead><tr><th>Factura</th><th>Fecha</th><th>NCF</th><th>Método</th><th>Estado</th><th class="r">Total</th></tr></thead>
+      <tbody>${trs || `<tr><td colspan="6" style="text-align:center">Sin facturas en el rango</td></tr>`}</tbody>
+      <tfoot><tr><td colspan="5">Total (${count} facturas)</td><td class="r">${rdFixed(total, tenant)}</td></tr></tfoot>
+    </table>
+    <div class="footer">Cloudix OS — Generado ${reportGeneratedLine()}</div>
+  `;
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title><style>${a4ReportStyles()}</style></head><body>${body}</body></html>`;
+}
+
+export function buildCyclesRangeReportHtml(
+  tenant: TenantReceiptInfo,
+  data: { rangeLabel: string; cycles: CyclesReportRow[] },
+  format: ReportPaperFormat,
+  paperWidthMm: PaperWidthMm = 80
+): string {
+  const rows = data.cycles;
+  const totalSold = rows.reduce((sum, r) => sum + (Number(r.totalSold) || 0), 0);
+  const totalExpenses = rows.reduce((sum, r) => sum + (Number(r.totalExpenses) || 0), 0);
+  const totalNet = rows.reduce((sum, r) => sum + (Number(r.netTotal) || 0), 0);
+  const count = rows.length;
+  const title = "Reporte de Ciclos";
+
+  if (format === "thermal") {
+    const lines = rows
+      .map((r) => {
+        return `<tr class="item-row"><td class="fdo-item-name" colspan="2">Ciclo #${r.cycle_number} · ${escapeHtml(r.business_day)}</td></tr>` +
+          `<tr class="fdo-item-sub"><td>Vendido</td><td style="text-align:right">${rdFixed(Number(r.totalSold) || 0, tenant)}</td></tr>` +
+          `<tr class="fdo-item-sub"><td>Gastos</td><td style="text-align:right">${rdFixed(Number(r.totalExpenses) || 0, tenant)}</td></tr>` +
+          `<tr class="fdo-item-sub"><td>Neto</td><td style="text-align:right">${rdFixed(Number(r.netTotal) || 0, tenant)}</td></tr>`;
+      })
+      .join("");
+    const body = `
+      ${headerBlock(tenant)}
+      <div class="double-divider"></div>
+      <h2>${title}</h2>
+      <p class="center" style="font-size:13px">${escapeHtml(data.rangeLabel)}</p>
+      <div class="divider"></div>
+      <table>${lines || `<tr><td class="center">Sin ciclos en el rango</td></tr>`}</table>
+      <div class="double-divider"></div>
+      <table>
+        <tr class="total"><td>Ciclos</td><td style="text-align:right">${count}</td></tr>
+        <tr class="total"><td>Vendido</td><td style="text-align:right">${rdFixed(totalSold, tenant)}</td></tr>
+        <tr class="total"><td>Gastos</td><td style="text-align:right">${rdFixed(totalExpenses, tenant)}</td></tr>
+        <tr class="total-xl"><td>Neto</td><td style="text-align:right">${rdFixed(totalNet, tenant)}</td></tr>
+      </table>
+      <div class="divider"></div>
+      <div class="footer">Cloudix OS — Generado ${reportGeneratedLine()}</div>
+    `;
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title><style>${thermalStyles(paperWidthMm)}</style></head><body>${body}</body></html>`;
+  }
+
+  const trs = rows
+    .map((r) => {
+      return `<tr>
+        <td>#${r.cycle_number}</td>
+        <td>${escapeHtml(r.business_day)}</td>
+        <td class="r">${rdFixed(Number(r.totalSold) || 0, tenant)}</td>
+        <td class="r">${rdFixed(Number(r.totalExpenses) || 0, tenant)}</td>
+        <td class="r">${rdFixed(Number(r.netTotal) || 0, tenant)}</td>
+      </tr>`;
+    })
+    .join("");
+  const body = `
+    <div class="company">${headerBlock(tenant)}</div>
+    <div class="report-title">${title}</div>
+    <div class="report-range">${escapeHtml(data.rangeLabel)}</div>
+    <table class="report">
+      <thead><tr><th>Ciclo</th><th>Día</th><th class="r">Vendido</th><th class="r">Gastos</th><th class="r">Neto</th></tr></thead>
+      <tbody>${trs || `<tr><td colspan="5" style="text-align:center">Sin ciclos en el rango</td></tr>`}</tbody>
+      <tfoot><tr><td colspan="2">Total (${count} ciclos)</td><td class="r">${rdFixed(totalSold, tenant)}</td><td class="r">${rdFixed(totalExpenses, tenant)}</td><td class="r">${rdFixed(totalNet, tenant)}</td></tr></tfoot>
+    </table>
+    <div class="footer">Cloudix OS — Generado ${reportGeneratedLine()}</div>
+  `;
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title><style>${a4ReportStyles()}</style></head><body>${body}</body></html>`;
+}
+
+

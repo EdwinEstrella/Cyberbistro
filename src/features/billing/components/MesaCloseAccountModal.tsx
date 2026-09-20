@@ -21,7 +21,7 @@ import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSett
 import { calculateInvoiceTotals } from "../../../shared/lib/billingTotals";
 import { type FiscalMode } from "../../../shared/lib/fiscalTypes";
 import { resolveActiveFiscalMode, runFiscalEngine, buildEcfDocumentWrites } from "../../../shared/lib/fiscalEngine";
-import { getDeviceId, getLocalFirstStatusSnapshot, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, readLocalMirror, readLocalOutbox, type LocalFirstWrite } from "../../../shared/lib/localFirst";
+import { getDeviceId, getLocalFirstStatusSnapshot, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, readLocalMirror, type LocalFirstWrite } from "../../../shared/lib/localFirst";
 import { getNextFacturaNumber, getNextFacturaNumbers } from "../../../shared/lib/invoiceNumber";
 import { commitCheckout } from "../../../shared/lib/checkoutCommit";
 import { readLocalConsumos } from "../../../shared/lib/ordersLocal";
@@ -462,12 +462,10 @@ export function MesaCloseAccountModal({
 
       const reservedFiscalByPerson = new Map<number, Awaited<ReturnType<typeof runFiscalEngine>>>();
 
-      const defaultFiscalCode = fiscalMode === "dgii_ecf" ? "E32" : "B02";
-      const canEmitDefaultConsumo = isNcfTypeActive(ncfTiposActivos, defaultFiscalCode);
-      const shouldRunFiscal = fiscalMode !== "internal_receipt" && (solicitaComprobante || canEmitDefaultConsumo);
+      const shouldRunFiscal = Boolean(fiscalMode !== "internal_receipt" && solicitaComprobante);
 
       if (shouldRunFiscal) {
-        const targetNcfType = solicitaComprobante ? selectedNcfType : defaultFiscalCode;
+        const targetNcfType = selectedNcfType;
         for (const personIndex of order) {
           const facturaId = localFacturaIds.get(personIndex)!;
           const numFactura = numeroFacturas.get(personIndex)!;
@@ -784,12 +782,10 @@ export function MesaCloseAccountModal({
     const now = new Date().toISOString();
 
     let ncfPart: Awaited<ReturnType<typeof runFiscalEngine>> = null;
-    const defaultFiscalCode = fiscalMode === "dgii_ecf" ? "E32" : "B02";
-    const canEmitDefaultConsumo = isNcfTypeActive(ncfTiposActivos, defaultFiscalCode);
-    const shouldRunFiscal = fiscalMode !== "internal_receipt" && (solicitaComprobante || canEmitDefaultConsumo);
+    const shouldRunFiscal = Boolean(fiscalMode !== "internal_receipt" && solicitaComprobante);
 
     if (shouldRunFiscal) {
-      const targetNcfType = solicitaComprobante ? selectedNcfType : defaultFiscalCode;
+      const targetNcfType = selectedNcfType;
       try {
         ncfPart = await runFiscalEngine({
           tenantId,
@@ -1324,7 +1320,10 @@ export function MesaCloseAccountModal({
                 <div className="flex items-center justify-between gap-[10px] rounded-[14px] border border-white/20 bg-[#0a0a0a] px-4 py-3">
                   <div className="flex flex-col min-w-0">
                     <span className="font-['Inter',sans-serif] text-zinc-200 text-[13px] font-medium leading-tight">
-                      Solicita comprobante fiscal
+                      Comprobante fiscal (NCF / e-CF)
+                    </span>
+                    <span className="text-[11px] text-zinc-400 font-mono mt-0.5">
+                      {solicitaComprobante ? `Activo: ${selectedNcfType}` : "Desmarcado (recibo interno sin NCF)"}
                     </span>
                   </div>
                   <button
@@ -1335,14 +1334,12 @@ export function MesaCloseAccountModal({
                     onClick={() => {
                       const next = !solicitaComprobante;
                       setSolicitaComprobante(next);
-                      const preferred = next ? (fiscalMode === "dgii_ecf" ? "E31" : "B01") : (fiscalMode === "dgii_ecf" ? "E32" : "B02");
-                      if (isNcfTypeActive(ncfTiposActivos, preferred)) {
-                        setSelectedNcfType(preferred as NcfTypeCode);
-                      } else {
+                      if (next && !isNcfTypeActive(ncfTiposActivos, selectedNcfType)) {
+                        const preferred = fiscalMode === "dgii_ecf" ? "E32" : "B02";
                         const firstActive = NCF_TIPO_OPCIONES.find(o =>
                           (fiscalMode === "dgii_ecf" ? o.codigo.startsWith("E") : o.codigo.startsWith("B")) &&
                           isNcfTypeActive(ncfTiposActivos, o.codigo));
-                        if (firstActive) setSelectedNcfType(firstActive.codigo as NcfTypeCode);
+                        setSelectedNcfType(isNcfTypeActive(ncfTiposActivos, preferred) ? (preferred as NcfTypeCode) : (firstActive?.codigo as NcfTypeCode ?? preferred as NcfTypeCode));
                       }
                     }}
                     className={`relative h-[28px] w-[50px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${solicitaComprobante ? "bg-[#ff906d]" : "bg-[#222]"}`}
@@ -1354,8 +1351,31 @@ export function MesaCloseAccountModal({
                 {solicitaComprobante && (
                   <div className="flex flex-col gap-2 pt-1 border-t border-white/20 mt-1">
                     <label htmlFor="ncf-select" className="text-zinc-400 font-['Space_Grotesk',sans-serif] font-bold text-[11px] uppercase tracking-[1px] px-1">
-                      Tipo NCF
+                      Tipo NCF / e-CF
                     </label>
+                    <div className="flex flex-wrap gap-1.5 mb-1">
+                      {NCF_TIPO_OPCIONES.filter(o => {
+                        const modeMatch = fiscalMode === "dgii_ecf" ? o.codigo.startsWith("E") : fiscalMode === "ncf_legacy" ? o.codigo.startsWith("B") : false;
+                        if (!modeMatch) return false;
+                        return isNcfTypeActive(ncfTiposActivos, o.codigo);
+                      }).map((opcion) => {
+                        const isSelected = selectedNcfType === opcion.codigo;
+                        return (
+                          <button
+                            key={opcion.codigo}
+                            type="button"
+                            onClick={() => setSelectedNcfType(opcion.codigo as NcfTypeCode)}
+                            className={`px-3 py-1 rounded-lg text-xs font-bold font-mono transition-colors border cursor-pointer ${
+                              isSelected
+                                ? "bg-[#ff906d] text-black border-[#ff906d]"
+                                : "bg-zinc-800/80 text-zinc-300 border-white/10 hover:border-white/20"
+                            }`}
+                          >
+                            {opcion.codigo}
+                          </button>
+                        );
+                      })}
+                    </div>
                     <select
                       id="ncf-select"
                       value={selectedNcfType}

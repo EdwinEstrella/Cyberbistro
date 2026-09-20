@@ -570,14 +570,14 @@ export function Ajustes() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       {(config.fiscal_mode === "dgii_ecf" ? NCF_E_TIPO_OPCIONES : NCF_B_TIPO_OPCIONES).map(o => {
                         const isDefault = o.codigo === config.ncf_tipo_default;
-                        const active = isDefault || isNcfTypeActive(config.ncf_tipos_activos, o.codigo);
+                        const active = isNcfTypeActive(config.ncf_tipos_activos, o.codigo);
                         return (
                         <div key={o.codigo} className={`bg-background rounded-[16px] border border-black/5 dark:border-white/5 p-4 flex flex-col gap-3 transition-colors ${active ? "hover:border-primary/20" : "opacity-60"}`}>
                            <div className="flex justify-between items-center gap-2">
                              <span className="font-bold font-['Space_Grotesk'] text-foreground text-lg">{o.codigo}</span>
-                             <label className="flex items-center gap-2 cursor-pointer" title={isDefault ? "El tipo predeterminado siempre está activo" : "Activar o desactivar la emisión de este comprobante"}>
-                               <span className={`text-[10px] uppercase font-bold tracking-widest ${isDefault ? "text-primary" : active ? "text-green-600 dark:text-green-400" : "text-muted-foreground"}`}>{isDefault ? "Predeterminado" : active ? "Activo" : "Apagado"}</span>
-                               <input type="checkbox" checked={active} disabled={isDefault} onChange={e => setConfig(p => ({ ...p, ncf_tipos_activos: { ...p.ncf_tipos_activos, [o.codigo]: e.target.checked } }))} className="size-4 rounded accent-primary disabled:opacity-60 cursor-pointer" />
+                             <label className="flex items-center gap-2 cursor-pointer" title="Activar o desactivar la emisión de este comprobante">
+                               <span className={`text-[10px] uppercase font-bold tracking-widest ${active ? (isDefault ? "text-primary" : "text-green-600 dark:text-green-400") : "text-muted-foreground"}`}>{active ? (isDefault ? "Predeterminado" : "Activo") : "Apagado"}</span>
+                               <input type="checkbox" checked={active} onChange={e => setConfig(p => ({ ...p, ncf_tipos_activos: { ...p.ncf_tipos_activos, [o.codigo]: e.target.checked } }))} className="size-4 rounded accent-primary cursor-pointer" />
                              </label>
                            </div>
                            <input type="number" min="1" disabled={!active} value={config.ncf_secuencias_por_tipo[o.codigo] || 1} onChange={e => setConfig(p => ({ ...p, ncf_secuencias_por_tipo: { ...p.ncf_secuencias_por_tipo, [o.codigo]: Math.max(1, parseInt(e.target.value) || 1) } }))} className="bg-muted/30 border border-black/10 dark:border-white/10 rounded-xl px-4 py-3 font-mono text-foreground font-bold outline-none focus:border-primary/50 transition-all disabled:opacity-50" />

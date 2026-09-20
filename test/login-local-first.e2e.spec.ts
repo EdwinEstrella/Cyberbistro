@@ -32,7 +32,8 @@ test("exposes the local-first login controls through semantic selectors", async 
     await expect(page.getByLabel("Correo")).toBeVisible();
     await expect(page.getByLabel("Contraseña")).toBeVisible();
     await expect(page.getByRole("checkbox", { name: /recordar/i })).not.toBeChecked();
-    await expect(page.getByRole("status", { name: "Modo local" })).toHaveText(/local/i);
+    // Note: the former "Modo local" status badge was removed from the login UI;
+    // the only role="status" now is the conditional post-support notice.
     await expect(page.getByRole("button", { name: "Iniciar Sesión" })).toBeEnabled();
 
     const rememberMe = page.getByRole("checkbox", { name: /recordar/i });

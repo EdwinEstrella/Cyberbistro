@@ -57,27 +57,37 @@ export class PayrollSyncOrchestrator {
   }
 
   public async triggerSync(): Promise<void> {
-    if (!this.worker || this.isSyncing || this.stopRequested) return;
+    if (!this.worker || this.stopRequested) return;
+
+    if (this.isSyncing) {
+      this.hasPendingSync = true;
+      return;
+    }
 
     this.isSyncing = true;
-    const worker = this.worker;
-    const tenantId = this.tenantId;
     try {
-      // Push (local → cloud) and pull (cloud → local) run each turn. A failure in
-      // one direction must not block the other, so they are isolated.
-      try {
-        await worker.push();
-      } catch (err) {
-        console.error("[PayrollSyncOrchestrator] push error:", err);
-      }
-      try {
-        if (!this.stopRequested && this.worker === worker) {
-          await worker.pull();
-          if (!this.stopRequested && this.worker === worker) this.onPullApplied?.(tenantId);
+      do {
+        this.hasPendingSync = false;
+        const worker = this.worker;
+        const tenantId = this.tenantId;
+        if (!worker || this.stopRequested) break;
+
+        // Push (local → cloud) and pull (cloud → local) run each turn. A failure in
+        // one direction must not block the other, so they are isolated.
+        try {
+          await worker.push();
+        } catch (err) {
+          console.error("[PayrollSyncOrchestrator] push error:", err);
         }
-      } catch (err) {
-        console.error("[PayrollSyncOrchestrator] pull error:", err);
-      }
+        try {
+          if (!this.stopRequested && this.worker === worker) {
+            await worker.pull();
+            if (!this.stopRequested && this.worker === worker) this.onPullApplied?.(tenantId);
+          }
+        } catch (err) {
+          console.error("[PayrollSyncOrchestrator] pull error:", err);
+        }
+      } while (this.hasPendingSync && !this.stopRequested && this.worker);
     } finally {
       this.isSyncing = false;
     }

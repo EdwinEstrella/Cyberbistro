@@ -884,6 +884,28 @@ function getFacturaDependencyId(entry: SyncOutboxEntry): string | null {
   return typeof facturaId === "string" && facturaId.length > 0 ? facturaId : null;
 }
 
+/**
+ * Recovery payload for a consumo the cloud rejected with a foreign-key
+ * violation. When a mesa is charged the comanda is deleted, but the paid
+ * consumo update may still carry that comanda_id; once the comanda is gone from
+ * the cloud PostgreSQL rejects the consumo with consumos_comanda_id_fkey. The
+ * paid consumo belongs to its factura now, so it can be re-pushed with
+ * comanda_id nulled. Returns null when no recovery applies.
+ *
+ * factura_id is NEVER nulled here: dropping the invoice link is exactly what
+ * reopens paid tables (see the mesa-close regression), so a factura FK is left
+ * to the dependency-ordering/retry path instead.
+ */
+export function planConsumoForeignKeyRecovery(
+  tableName: string,
+  errorMessage: string,
+  serverPayload: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
+  if (tableName !== "consumos" || !serverPayload) return null;
+  if (!errorMessage.includes("consumos_comanda_id_fkey")) return null;
+  return { ...serverPayload, comanda_id: null };
+}
+
 export function selectProcessableOutboxEntries(entries: readonly SyncOutboxEntry[], nowMs = Date.now()): SyncOutboxEntry[] {
   const entriesByPurchaseId = new Map<string, SyncOutboxEntry[]>();
   const facturaInsertsById = new Map<string, SyncOutboxEntry[]>();
@@ -1956,6 +1978,27 @@ export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: nu
         }
         if (result?.error) {
           const reason = result.error.message || "Error en sync.";
+          // Orphaned-comanda safety net (mirrors the SQLite push path): a paid
+          // consumo whose comanda was already deleted in the cloud is re-pushed
+          // once with comanda_id nulled instead of getting stuck pending forever.
+          const consumoFkRecovery = planConsumoForeignKeyRecovery(entry.table_name, reason, serverPayload as Record<string, unknown> | null);
+          if (consumoFkRecovery) {
+            const retryResult = entry.op === "update"
+              ? await runTrackedCloudOperation(() => supabase.from("consumos").update(consumoFkRecovery).eq("id", entry.row_id).select("id") as any)
+              : await runTrackedCloudOperation(() => supabase.from("consumos").upsert(consumoFkRecovery, { onConflict: resolveUpsertConflictTarget("consumos") }).select("id") as any);
+            if (!retryResult?.error) {
+              await applyLocalMirrorWrite({
+                tenantId,
+                tableName: "consumos",
+                rowId: entry.row_id,
+                op: entry.op,
+                payload: consumoFkRecovery,
+              }).catch(() => undefined);
+              await updateOutboxEntryStatus(db, entry.id, "synced");
+              pushed++;
+              continue;
+            }
+          }
           const isPurchaseInsert = entry.op === "insert" && PURCHASE_OUTBOX_TABLES.has(entry.table_name);
           const purchaseResolution = resolvePurchaseOutboxInsertFailure(
             entry,
@@ -2667,7 +2710,7 @@ export async function pullIncrementalChangesForTable(
 }
 
 const mirrorSyncInFlight = new Map<string, Promise<{ tablesUpdated: number; rowsPulled: number }>>();
-const SYNC_WATCHDOG_MS = 90_000;
+const SYNC_WATCHDOG_MS = 180_000;
 export function syncIncremental(tenantId: string): Promise<{ tablesUpdated: number; rowsPulled: number }> {
   const existing = mirrorSyncInFlight.get(tenantId);
   if (existing) return existing;

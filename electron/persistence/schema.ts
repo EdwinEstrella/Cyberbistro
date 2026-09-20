@@ -882,6 +882,32 @@ function ensureSalonCocinaSchemaEvolution(database: DatabaseSync): void {
       }
     }
   }
+
+  // Repair a dangling comanda FK left by an older recreate of `comandas` that ran
+  // before legacy_alter_table was enabled: renaming `comandas` rewrote the FK of
+  // produccion_cocina to point at comandas__legacy_migration, which was then
+  // dropped. `consumos` self-heals via its own recreate above, but
+  // produccion_cocina is never recreated elsewhere, so any DELETE that touches it
+  // (e.g. deleting a comanda at checkout) failed with
+  // "no such table: comandas__legacy_migration". Recreate it with the correct FK,
+  // keeping only rows whose comanda still exists (it is local, transient kitchen
+  // state, so orphans are safe to drop).
+  if (getTableColumns(database, "produccion_cocina").length > 0 && hasDanglingForeignKey(database, "produccion_cocina")) {
+    recreateTable(database, "produccion_cocina", `
+      CREATE TABLE produccion_cocina (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id),
+        sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
+        comanda_id TEXT NOT NULL REFERENCES comandas(id),
+        state TEXT NOT NULL CHECK (state IN ('pending', 'preparing', 'ready', 'delivered'))
+      ) STRICT;
+    `, `
+      INSERT INTO produccion_cocina (id, tenant_id, sucursal_id, comanda_id, state)
+      SELECT id, tenant_id, sucursal_id, comanda_id, state
+      FROM __old_table__
+      WHERE comanda_id IN (SELECT id FROM comandas);
+    `);
+  }
 }
 
 function ensureTableShape(
@@ -899,8 +925,26 @@ function getTableColumns(database: DatabaseSync, tableName: string): string[] {
   return (database.prepare(`PRAGMA table_info(${tableName});`).all() as Array<{ name: string }>).map((column) => column.name);
 }
 
+/** True when any foreign key of `tableName` references a table that no longer exists. */
+function hasDanglingForeignKey(database: DatabaseSync, tableName: string): boolean {
+  try {
+    const fks = database.prepare(`PRAGMA foreign_key_list(${tableName});`).all() as Array<{ table: string }>;
+    return fks.some((fk) => {
+      const exists = database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(fk.table);
+      return !exists;
+    });
+  } catch {
+    return false;
+  }
+}
+
 function recreateTable(database: DatabaseSync, tableName: string, createSql: string, copySql: string): void {
   const tempTableName = `${tableName}__legacy_migration`;
+  // legacy_alter_table MUST be ON: without it, RENAME TABLE rewrites the foreign
+  // keys of *other* tables to point at the temp name, and dropping the temp then
+  // leaves those children with a dangling FK (e.g. produccion_cocina pointing at
+  // comandas__legacy_migration). Both pragmas must be set outside a transaction.
+  database.exec("PRAGMA legacy_alter_table = ON;");
   database.exec("PRAGMA foreign_keys = OFF;");
   database.exec("BEGIN IMMEDIATE;");
 
@@ -915,5 +959,6 @@ function recreateTable(database: DatabaseSync, tableName: string, createSql: str
     throw error;
   } finally {
     database.exec("PRAGMA foreign_keys = ON;");
+    database.exec("PRAGMA legacy_alter_table = OFF;");
   }
 }

@@ -33,6 +33,36 @@ const PULL_APPLIERS: Record<string, CloudRowApplier> = {
 /** Tables whose cloud→local pull is implemented, declared once in the registry. */
 const PULLABLE_TABLES = SYNC_PULLABLE_LOCAL_TABLES;
 
+/** Tables supported for local→cloud durable outbox sync claims. */
+const SUPPORTED_OUTBOX_TABLES = [
+  "payroll_employees",
+  "payroll_payments",
+  "payroll_payment_adjustments",
+  "gasto_categorias",
+  "customers",
+  "cierres_operativos",
+  "platos",
+  "menu_categories",
+  "facturas",
+  "cuentas_cobrar",
+  "cxc_pagos",
+  "cuentas_pagar",
+  "cxp_pagos",
+  "mesas_estado",
+  "cocina_estado",
+  "comandas",
+  "consumos",
+  "compras",
+  "detalles_compra",
+  "compra_detalles",
+  "compra_fiscal",
+  "movimientos_inventario",
+  "inventario_movimientos",
+  "proveedores",
+] as const;
+
+const SUPPORTED_TABLES_SQL = SUPPORTED_OUTBOX_TABLES.map((t) => `'${t}'`).join(", ");
+
 function hashCanonical(value: unknown): string {
   return createHash("sha256").update(canonical(value)).digest("hex");
 }
@@ -66,7 +96,7 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
       WHERE tenant_id = ?
         AND status = 'syncing'
         AND (
-          table_name IN ('payroll_employees', 'payroll_payments', 'payroll_payment_adjustments', 'gasto_categorias', 'customers', 'cierres_operativos', 'platos', 'menu_categories')
+          table_name IN (${SUPPORTED_TABLES_SQL})
           OR (
             table_name = 'gastos'
             AND (
@@ -115,7 +145,7 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
             OR COALESCE(json_extract(error_json, '$.retryable'), 1) = 1
           )
           AND (
-            table_name IN ('payroll_employees', 'payroll_payments', 'payroll_payment_adjustments', 'gasto_categorias', 'customers', 'cierres_operativos', 'platos', 'menu_categories', 'facturas')
+            table_name IN (${SUPPORTED_TABLES_SQL})
             OR (
               table_name = 'gastos'
               AND (

@@ -15,6 +15,7 @@ import {
   exportLegacyIndexedDbImportPayload,
   importLegacyIndexedDbThroughDesktop,
 } from "../lib/localFirst";
+import { syncIndexedDbComprasToSqlite } from "../../features/compras/lib/purchaseService";
 import {
   isCloudAvailabilityFailure,
   isDesktopRuntime,
@@ -139,6 +140,14 @@ export function useLocalFirstBootstrap(tenantId: string | null, accessValidated 
             const next = await getLocalFirstStatusSnapshot(validatedTenantId);
             if (!canContinue()) return;
             if (!isCloudAvailabilityFailure(err)) {
+              if (next.status === "history_complete" && /watchdog/i.test(String(err))) {
+                apply({
+                  ...next,
+                  status: "history_complete",
+                  message: "Historial disponible offline.",
+                });
+                return;
+              }
               apply({
                 status: "error",
                 message: err instanceof Error ? err.message : "No se pudo sincronizar con el servidor.",
@@ -242,6 +251,10 @@ export function useLocalFirstBootstrap(tenantId: string | null, accessValidated 
               console.warn("[Migration] Could not auto-import legacy IndexedDB:", importErr);
             }
           }
+        }
+
+        if (window.electronAPI?.executePurchaseCommand) {
+          void syncIndexedDbComprasToSqlite(validatedTenantId).catch(() => 0);
         }
 
         if (snapshot.status === "history_complete") {

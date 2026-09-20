@@ -923,6 +923,9 @@ export function applyCloudDeletes(
   const stmt = db.prepare(`DELETE FROM ${tableName} WHERE id = ?${tenantId ? " AND tenant_id = ?" : ""}`);
   let complete = true;
   for (const id of ids) {
+    if (tableName === "comandas") {
+      db.prepare("UPDATE consumos SET comanda_id = NULL WHERE comanda_id = ?").run(id);
+    }
     if (tableName === "payroll_payments") {
       // A retained expense may still be pending locally; keep its parent.
       if (db.prepare("SELECT 1 FROM gastos WHERE payroll_payment_id=?").get(id)) { complete = false; continue; }

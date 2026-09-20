@@ -104,6 +104,22 @@ export interface PrintThermalResult {
 }
 
 /**
+ * Prints arbitrary HTML through the system print dialog (regular printer, any
+ * paper size such as A4). Renders into a hidden same-origin iframe and calls
+ * print() — works both on the web and inside the Electron renderer, and lets
+ * the user pick the printer. Use this for A4 reports; use `printThermalHtml`
+ * for the thermal roll.
+ */
+export function printReportHtml(html: string): PrintThermalResult {
+  try {
+    openBrowserPrint(html);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/**
  * Impresión térmica: **ruta principal** en escritorio es Electron (`preload` → proceso principal → impresora).
  * Siempre abre el diálogo de impresión del sistema (no silencioso).
  * Si no hay `electronAPI` (p. ej. `vite` solo en el navegador para desarrollo), se usa un fallback con `window.print()`.

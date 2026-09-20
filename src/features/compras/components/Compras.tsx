@@ -7,9 +7,10 @@ import { ProveedorModal } from "./ProveedorModal";
 import { DetalleCompraModal } from "./DetalleCompraModal";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
+import { readLocalCierres } from "../../cierre/lib/cierresLocal";
 import { supabase } from "../../../shared/lib/supabase";
 import { filterRecordsWithNcf, generateFormato606, type CompraFiscal606 } from "../../contabilidad/lib/formato606";
-import { eliminarCompra } from "../lib/purchaseService";
+import { eliminarCompra, syncIndexedDbComprasToSqlite } from "../lib/purchaseService";
 import { ConfirmModal } from "../../../shared/components/ConfirmModal";
 
 export interface ProveedorRow {
@@ -75,7 +76,9 @@ export function Compras() {
   const [message, setMessage] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
   const [period606, setPeriod606] = useState(() => new Date().toISOString().slice(0, 7));
-  const [periodMode606, setPeriodMode606] = useState<"month" | "range" | "all">("all");
+  // Default to the current month (not "all") so Compras opens light; the
+  // Todas / Mes / Desde-Hasta control lets the user widen or pick a range.
+  const [periodMode606, setPeriodMode606] = useState<"month" | "range" | "all">("month");
   const [from606, setFrom606] = useState(() => `${new Date().toISOString().slice(0, 7)}-01`);
   const [to606, setTo606] = useState(() => new Date().toISOString().slice(0, 10));
   const [exporting606, setExporting606] = useState(false);
@@ -107,23 +110,49 @@ export function Compras() {
       let fiscalesData: CompraFiscal606[] = [];
 
       if (useLocal) {
-        comprasData = await readLocalMirror<CompraRow>(tenantId, "compras");
+        // Automatically bridge any legacy purchase living only in IndexedDB into SQLite
+        await syncIndexedDbComprasToSqlite(tenantId).catch(() => 0);
+
+        const api = typeof window !== "undefined" ? window.electronAPI : undefined;
+        let sqliteCompras: CompraRow[] = [];
+        if (api?.listCompras) {
+          try {
+            const res = await api.listCompras({ sucursalId: activeSucursalId || undefined });
+            if (res?.ok && Array.isArray(res.data)) {
+              sqliteCompras = res.data as unknown as CompraRow[];
+            }
+          } catch (e) {
+            console.warn("Error reading compras from SQLite:", e);
+          }
+        }
+
+        const mirrorCompras = await readLocalMirror<CompraRow>(tenantId, "compras").catch(() => []);
+        if (sqliteCompras.length > 0) {
+          const byId = new Map<string, CompraRow>(sqliteCompras.map(c => [c.id, c]));
+          for (const row of mirrorCompras) {
+            if (!byId.has(row.id)) byId.set(row.id, row);
+          }
+          comprasData = Array.from(byId.values());
+        } else {
+          comprasData = mirrorCompras;
+        }
+
         proveedoresData = await readLocalMirror<ProveedorRow>(tenantId, "proveedores");
         productosData = await readLocalMirror<ProductoRow>(tenantId, "productos_inventario");
-        ciclosData = await readLocalMirror<any>(tenantId, "cierres_operativos");
+        ciclosData = await readLocalCierres(tenantId, { sucursalId: activeSucursalId || undefined });
         fiscalesData = await readLocalMirror<CompraFiscal606>(tenantId, "compra_fiscal");
       } else {
-        const [cRes, pRes, iRes, cyRes, fRes] = await Promise.all([
+        const [cRes, pRes, iRes, cyRows, fRes] = await Promise.all([
           supabase.from("compras").select("*").eq("tenant_id", tenantId),
           supabase.from("proveedores").select("*").eq("tenant_id", tenantId),
           supabase.from("productos_inventario").select("*").eq("tenant_id", tenantId),
-          supabase.from("cierres_operativos").select("id, cycle_number, opened_at, closed_at, sucursal_id").eq("tenant_id", tenantId).is("closed_at", null).order("opened_at", { ascending: false }).limit(1),
+          readLocalCierres(tenantId, { sucursalId: activeSucursalId || undefined }),
           supabase.from("compra_fiscal").select("*").eq("tenant_id", tenantId)
         ]);
         comprasData = cRes.data || [];
         proveedoresData = pRes.data || [];
         productosData = iRes.data || [];
-        ciclosData = cyRes.data || [];
+        ciclosData = (cyRows || []) as any[];
         fiscalesData = (fRes.data || []) as CompraFiscal606[];
       }
 
@@ -133,9 +162,12 @@ export function Compras() {
       setProductos(productosData.filter(i => i.activo).sort((a, b) => a.nombre.localeCompare(b.nombre)));
       setFiscales(fiscalesData);
 
-      const activeCycle = useLocal
-        ? ciclosData.filter(c => !c.closed_at && (c.sucursal_id === activeSucursalId || !c.sucursal_id)).sort((a, b) => b.opened_at.localeCompare(a.opened_at))[0] ?? null
-        : ciclosData[0] ?? null;
+      const activeCycle = (ciclosData as any[])
+        .filter(c => !c.closed_at && (!c.sucursal_id || c.sucursal_id === activeSucursalId || c.sucursal_id === "main-process-default"))
+        .sort((a, b) => String(b.opened_at).localeCompare(String(a.opened_at)))[0]
+        || (ciclosData as any[]).find(c => !c.closed_at)
+        || (ciclosData as any[])[0]
+        || null;
       setCicloAbierto(activeCycle);
     } catch (err: any) {
       setMessage("Error al cargar datos: " + err.message);
@@ -147,6 +179,14 @@ export function Compras() {
   useEffect(() => {
     void cargarDatos();
   }, [cargarDatos]);
+
+  useEffect(() => {
+    return window.electronAPI?.onLocalDataUpdated?.((updatedTenantId) => {
+      if (!updatedTenantId || updatedTenantId === tenantId) {
+        void cargarDatos();
+      }
+    });
+  }, [cargarDatos, tenantId]);
 
   const proveedoresMap = useMemo(() => {
     return new Map(proveedores.map(p => [p.id, p]));

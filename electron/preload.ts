@@ -77,6 +77,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   executeOrdersCommand: (command: unknown) => ipcRenderer.invoke('orders-repository:execute', command),
   executeSalesFiscalCommand: (command: unknown) => ipcRenderer.invoke('sales-fiscal-repository:execute', command),
   executeCashPurchaseCommand: (command: unknown) => ipcRenderer.invoke('cash-purchase-repository:execute', command),
+  executePurchaseCommand: (command: unknown) => ipcRenderer.invoke('cash-purchase-repository:execute', command),
+  listCompras: (filter?: unknown) => ipcRenderer.invoke('compras:list', filter),
   executePayrollCommand: (command: unknown) => ipcRenderer.invoke('payroll-repository:execute', command),
   setPayrollSyncAccessToken: (accessToken: unknown) => ipcRenderer.invoke('payroll-sync:set-access-token', accessToken === null ? null : { accessToken }),
   executeReceivablesCommand: (command: unknown) => ipcRenderer.invoke('receivables-repository:execute', command),

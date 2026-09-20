@@ -57,6 +57,16 @@ export interface ReadExpensesOptions {
   sucursalId?: string | null;
   cycleId?: string | null;
   limit?: number;
+  /** Inclusive start day (YYYY-MM-DD, by the expense's recorded date). */
+  dateFrom?: string | null;
+  /** Inclusive end day (YYYY-MM-DD, by the expense's recorded date). */
+  dateTo?: string | null;
+}
+
+/** Calendar-day prefix (YYYY-MM-DD) of an expense date, ISO or plain. */
+function expenseDay(value: unknown): string {
+  const s = typeof value === "string" ? value : "";
+  return s.slice(0, 10);
 }
 
 function toNumber(...values: unknown[]): number {
@@ -146,7 +156,7 @@ export async function readLocalExpenses(
   tenantId: string,
   options: ReadExpensesOptions = {}
 ): Promise<NormalizedExpense[]> {
-  const { sucursalId, cycleId, limit } = options;
+  const { sucursalId, cycleId, limit, dateFrom, dateTo } = options;
   const byId = new Map<string, NormalizedExpense>();
 
   // 1. SQLite (authoritative).
@@ -158,6 +168,8 @@ export async function readLocalExpenses(
         tenantId,
         sucursalId: sucursalId || undefined,
         limit: limit ?? 500,
+        dateFrom: dateFrom || undefined,
+        dateTo: dateTo || undefined,
       });
       if (res?.ok && Array.isArray(res.data)) {
         sqliteAvailable = true;
@@ -189,6 +201,17 @@ export async function readLocalExpenses(
 
   let rows = Array.from(byId.values()).filter((row) => belongsToSucursal(row.sucursal_id, sucursalId));
   if (cycleId) rows = rows.filter((row) => row.cycle_id === cycleId);
+  // Day-range filter (YYYY-MM-DD): covers IndexedDB mirror rows and the web path,
+  // and is a safety net over the SQLite query.
+  if (dateFrom || dateTo) {
+    rows = rows.filter((row) => {
+      const day = expenseDay(row.fecha_gasto);
+      if (!day) return false;
+      if (dateFrom && day < dateFrom) return false;
+      if (dateTo && day > dateTo) return false;
+      return true;
+    });
+  }
   rows.sort((a, b) => new Date(b.fecha_gasto).getTime() - new Date(a.fecha_gasto).getTime());
   return typeof limit === "number" ? rows.slice(0, limit) : rows;
 }

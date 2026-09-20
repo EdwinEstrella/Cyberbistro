@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Plus, ReceiptText, RefreshCw, Sparkles, Tag, Trash2, WalletCards } from "lucide-react";
 import { supabase } from "../../../shared/lib/supabase";
 import { useAuth } from "../../../shared/hooks/useAuth";
@@ -105,6 +105,29 @@ function formatDateTime(iso: string): string {
   return dateTimeFormatter.format(new Date(iso));
 }
 
+/** Local YYYY-MM-DD for a Date (avoids the UTC shift of toISOString). */
+function toYmd(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/** [firstDayOfCurrentMonth, today] as YYYY-MM-DD — the default expense window. */
+function currentMonthRange(): { from: string; to: string } {
+  const now = new Date();
+  return {
+    from: toYmd(new Date(now.getFullYear(), now.getMonth(), 1)),
+    to: toYmd(now),
+  };
+}
+
+/** Day after a YYYY-MM-DD, for an exclusive upper bound on a date/timestamp column. */
+function nextDayYmd(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return toYmd(new Date(y, (m || 1) - 1, (d || 1) + 1));
+}
+
 export function Gastos() {
   const { tenantId, user, loading: authLoading } = useAuth();
   const { activeSucursalId } = useSucursal();
@@ -114,6 +137,17 @@ export function Gastos() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  // Expense window defaults to the current month so the list only pulls this
+  // month's rows. Read fresh via refs so "Filtrar" reloads without re-creating
+  // `cargar` on every keystroke.
+  const [dateFrom, setDateFrom] = useState(() => currentMonthRange().from);
+  const [dateTo, setDateTo] = useState(() => currentMonthRange().to);
+  const dateFromRef = useRef(dateFrom);
+  const dateToRef = useRef(dateTo);
+  useEffect(() => {
+    dateFromRef.current = dateFrom;
+    dateToRef.current = dateTo;
+  }, [dateFrom, dateTo]);
   const [categoriaForm, setCategoriaForm] = useState({ nombre: "", descripcion: "", color: "#ff906d" });
   const [gastoForm, setGastoForm] = useState({
     descripcion: "",
@@ -145,6 +179,10 @@ export function Gastos() {
     setLoading(true);
     setMessage("");
 
+    // Active window (fresh from refs so "Filtrar" always uses the latest range).
+    const rangeFrom = dateFromRef.current || undefined;
+    const rangeTo = dateToRef.current || undefined;
+
     try {
       if (window.electronAPI?.activateTenant) {
         await window.electronAPI.activateTenant(tenantId).catch(() => undefined);
@@ -159,7 +197,7 @@ export function Gastos() {
       try {
         const [cats, exps] = await Promise.all([
           readLocalExpenseCategories(tenantId, { sucursalId: activeSucursalId || undefined }),
-          readLocalExpenses(tenantId, { sucursalId: activeSucursalId || undefined, limit: 80 }),
+          readLocalExpenses(tenantId, { sucursalId: activeSucursalId || undefined, limit: 1000, dateFrom: rangeFrom, dateTo: rangeTo }),
         ]);
         localCats = cats.map((c) => ({ id: c.id, nombre: c.nombre, descripcion: c.descripcion, color: c.color, activa: c.activa }));
         localGastos = exps.map((g) => ({
@@ -192,7 +230,14 @@ export function Gastos() {
           try {
             const [cloudCatsRes, cloudGastosRes] = await Promise.all([
               supabase.from("gasto_categorias").select("id, nombre, descripcion, color, activa").eq("tenant_id", tenantId).order("nombre", { ascending: true }),
-              supabase.from("gastos").select("*").eq("tenant_id", tenantId).order("fecha_gasto", { ascending: false }).limit(80),
+              (() => {
+                let q = supabase.from("gastos").select("*").eq("tenant_id", tenantId);
+                if (rangeFrom) q = q.gte("fecha_gasto", rangeFrom);
+                // Exclusive upper bound at the day after `to` works for both a
+                // date column and a timestamp column.
+                if (rangeTo) q = q.lt("fecha_gasto", nextDayYmd(rangeTo));
+                return q.order("fecha_gasto", { ascending: false }).limit(1000);
+              })(),
             ]);
 
             if (!cloudCatsRes.error && Array.isArray(cloudCatsRes.data) && cloudCatsRes.data.length > 0) {
@@ -232,7 +277,7 @@ export function Gastos() {
                 const unmergedLocal = prevLocal.filter((local) => !cloudIds.has(String(local.id)));
                 return [...unmergedLocal, ...mappedCloudGastos].sort(
                   (a, b) => new Date(getGastoFecha(b)).getTime() - new Date(getGastoFecha(a)).getTime()
-                ).slice(0, 80);
+                ).slice(0, 1000);
               });
               if (window.electronAPI?.syncCloudExpenses) {
                 void window.electronAPI.syncCloudExpenses(cloudGastosRes.data, activeSucursalId || undefined).catch(() => {});
@@ -727,15 +772,37 @@ export function Gastos() {
           </div>
 
           <div className="rounded-[24px] border border-black/10 dark:border-white/10 bg-card shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between gap-4 border-b border-border px-6 py-5">
-              <div>
-                <h2 className="font-['Space_Grotesk',sans-serif] text-xl font-bold text-foreground">Historial de gastos</h2>
-                <p className="text-xs text-muted-foreground">Últimos registros del negocio.</p>
+            <div className="flex flex-col gap-4 border-b border-border px-6 py-5">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h2 className="font-['Space_Grotesk',sans-serif] text-xl font-bold text-foreground">Historial de gastos</h2>
+                  <p className="text-xs text-muted-foreground">Mostrando el rango seleccionado (por defecto, el mes actual).</p>
+                </div>
               </div>
-              <button onClick={() => void cargar()} className="inline-flex items-center gap-2 rounded-xl bg-muted px-4 py-2.5 text-xs font-bold uppercase tracking-widest text-foreground hover:bg-black/5 dark:hover:bg-white/10">
-                <RefreshCw size={15} />
-                Actualizar
-              </button>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Desde</span>
+                  <input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="rounded-xl border border-border bg-muted px-3 py-2 text-sm text-foreground outline-none focus:border-primary h-[40px]"
+                  />
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Hasta</span>
+                  <input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="rounded-xl border border-border bg-muted px-3 py-2 text-sm text-foreground outline-none focus:border-primary h-[40px]"
+                  />
+                </label>
+                <button onClick={() => void cargar()} className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-xs font-bold uppercase tracking-widest text-primary-foreground hover:opacity-90 h-[40px]">
+                  <RefreshCw size={15} />
+                  Filtrar
+                </button>
+              </div>
             </div>
             <div className="divide-y divide-border">
               {gastos.length === 0 ? (
