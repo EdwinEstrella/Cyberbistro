@@ -8,7 +8,7 @@ import {
   type PayrollCommand,
 } from "../../src/shared/lib/payrollContracts";
 import type { SalesFiscalCommand, SalesFiscalRepositoryResult } from "./salesFiscalRepository";
-import type { CashPurchaseCommand, CashPurchaseRepositoryResult } from "./cashPurchaseRepository";
+import type { PurchaseCommand, CashPurchaseCommand, CashPurchaseRepositoryResult, PurchaseRepositoryResult } from "./cashPurchaseRepository";
 import type { ReceivablesCommand, ReceivablesRepositoryResult } from "./receivablesRepository";
 import type { PayablesCommand, PayablesRepositoryResult } from "./payablesRepository";
 import type { ExpenseCommand, ExpenseRepositoryResult } from "./expenseRepository";
@@ -38,6 +38,8 @@ export const FACTURAS_NUMBER_FLOOR_CHANNEL = "facturas:number-floor";
 export const FACTURAS_DELETE_LOCAL_CHANNEL = "facturas:delete-local";
 export const FACTURAS_SAVE_LOCAL_CHANNEL = "facturas:save-local";
 export const CASH_PURCHASE_REPOSITORY_EXECUTE_CHANNEL = "cash-purchase-repository:execute";
+export const PURCHASE_REPOSITORY_EXECUTE_CHANNEL = "purchase-repository:execute";
+export const COMPRAS_LIST_CHANNEL = "compras:list";
 export const PAYROLL_REPOSITORY_EXECUTE_CHANNEL = "payroll-repository:execute";
 export const PAYROLL_SYNC_ACCESS_TOKEN_CHANNEL = "payroll-sync:set-access-token";
 export const RECEIVABLES_REPOSITORY_EXECUTE_CHANNEL = "receivables-repository:execute";
@@ -226,7 +228,7 @@ export function registerExpenseRepositoryIpc(input: {
   ipcMain: ExpenseRepositoryIpcMain;
   isTrustedSender: (event: { senderId: number }) => boolean;
   getRepository: () => { execute(command: ExpenseCommand): ExpenseRepositoryResult };
-  listExpenses?: (filter?: { sucursalId?: string; limit?: number }) => Array<Record<string, unknown>>;
+  listExpenses?: (filter?: { sucursalId?: string; limit?: number; dateFrom?: string; dateTo?: string }) => Array<Record<string, unknown>>;
   listCategories?: () => Array<Record<string, unknown>>;
   syncCloudExpenses?: (expenses: Array<Record<string, unknown>>, branchId?: string) => void;
   syncCloudExpenseCategories?: (categories: Array<Record<string, unknown>>) => void;
@@ -338,13 +340,29 @@ export function registerPayrollSyncAccessTokenIpc(input: {
   });
 }
 
-export function registerCashPurchaseRepositoryIpc(input: { ipcMain: CashPurchaseRepositoryIpcMain; isTrustedSender: (event: { senderId: number }) => boolean; getRepository: () => { execute(command: CashPurchaseCommand): CashPurchaseRepositoryResult } }): void {
-  input.ipcMain.removeHandler(CASH_PURCHASE_REPOSITORY_EXECUTE_CHANNEL);
-  input.ipcMain.handle(CASH_PURCHASE_REPOSITORY_EXECUTE_CHANNEL, async (event, payload) => {
+export function registerCashPurchaseRepositoryIpc(input: {
+  ipcMain: CashPurchaseRepositoryIpcMain;
+  isTrustedSender: (event: { senderId: number }) => boolean;
+  getRepository: () => { execute(command: PurchaseCommand): PurchaseRepositoryResult };
+  listCompras?: (filter?: { sucursalId?: string; limit?: number; dateFrom?: string; dateTo?: string }) => Array<Record<string, unknown>>;
+}): void {
+  const handlePurchase = async (event: { senderId: number }, payload: unknown) => {
     if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
-    const command = parseCashPurchaseCommand(payload);
+    const command = parsePurchaseCommand(payload);
     if (!command) throw new Error("Invalid cash purchase command");
     return { ok: true, data: input.getRepository().execute(command) };
+  };
+
+  input.ipcMain.removeHandler(CASH_PURCHASE_REPOSITORY_EXECUTE_CHANNEL);
+  input.ipcMain.handle(CASH_PURCHASE_REPOSITORY_EXECUTE_CHANNEL, handlePurchase);
+
+  input.ipcMain.removeHandler(PURCHASE_REPOSITORY_EXECUTE_CHANNEL);
+  input.ipcMain.handle(PURCHASE_REPOSITORY_EXECUTE_CHANNEL, handlePurchase);
+
+  input.ipcMain.removeHandler(COMPRAS_LIST_CHANNEL);
+  input.ipcMain.handle(COMPRAS_LIST_CHANNEL, async (event, filter) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    return { ok: true, data: input.listCompras?.(filter as any) ?? [] };
   });
 }
 
@@ -352,7 +370,7 @@ export function registerSalesFiscalRepositoryIpc(input: {
   ipcMain: SalesFiscalRepositoryIpcMain;
   isTrustedSender: (event: { senderId: number }) => boolean;
   getRepository: () => { execute(command: SalesFiscalCommand): SalesFiscalRepositoryResult };
-  listInvoices?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Array<Record<string, unknown>>;
+  listInvoices?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number; dateFrom?: string; dateTo?: string }) => Array<Record<string, unknown>>;
   reserveInvoiceNumbers?: (input: { tenantId?: string; count: number }) => number[];
   getInvoiceNumberFloor?: (input: { tenantId?: string }) => number;
   deleteInvoiceLocal?: (input: { tenantId?: string; invoiceId: string }) => void;
@@ -369,7 +387,7 @@ export function registerSalesFiscalRepositoryIpc(input: {
   input.ipcMain.removeHandler(FACTURAS_LIST_CHANNEL);
   input.ipcMain.handle(FACTURAS_LIST_CHANNEL, async (event, filter) => {
     if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
-    return { ok: true, data: input.listInvoices?.(filter as { tenantId?: string; sucursalId?: string; limit?: number }) ?? [] };
+    return { ok: true, data: input.listInvoices?.(filter as { tenantId?: string; sucursalId?: string; limit?: number; dateFrom?: string; dateTo?: string }) ?? [] };
   });
 
   input.ipcMain.removeHandler(FACTURAS_RESERVE_NUMBERS_CHANNEL);
@@ -422,7 +440,7 @@ export function registerOrdersRepositoryIpc(input: {
   ipcMain: OrdersRepositoryIpcMain;
   isTrustedSender: (event: { senderId: number }) => boolean;
   getRepository: () => { execute(command: OrdersCommand): OrdersRepositoryResult };
-  listCierres?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number }) => Array<Record<string, unknown>>;
+  listCierres?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number; dateFrom?: string; dateTo?: string }) => Array<Record<string, unknown>>;
   listMesasEstado?: (filter?: { tenantId?: string; sucursalId?: string }) => Array<Record<string, unknown>>;
   saveMesaEstado?: (payload: Record<string, unknown>) => void;
   listCocinaEstado?: (filter?: { tenantId?: string; sucursalId?: string }) => Array<Record<string, unknown>>;
@@ -444,7 +462,7 @@ export function registerOrdersRepositoryIpc(input: {
   input.ipcMain.removeHandler(CIERRES_LIST_CHANNEL);
   input.ipcMain.handle(CIERRES_LIST_CHANNEL, async (event, filter) => {
     if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
-    return { ok: true, data: input.listCierres?.(filter as { tenantId?: string; sucursalId?: string; limit?: number }) ?? [] };
+    return { ok: true, data: input.listCierres?.(filter as { tenantId?: string; sucursalId?: string; limit?: number; dateFrom?: string; dateTo?: string }) ?? [] };
   });
 
   input.ipcMain.removeHandler(MESAS_LIST_CHANNEL);
@@ -683,6 +701,26 @@ function parseSalesFiscalCommand(payload: unknown): SalesFiscalCommand | null {
   if (Object.keys(command).length !== keys.length || !Object.keys(command).every((key) => keys.includes(key))) return null;
   if (command.type !== "sales.fiscal.create" || !text("invoiceId") || !text("fiscalIntentId") || !text("documentType") || !["internal_receipt", "ncf_legacy", "dgii_ecf"].includes(String(command.fiscalMode)) || typeof command.total !== "number" || !Number.isFinite(command.total) || command.total < 0) return null;
   return command as SalesFiscalCommand;
+}
+
+function parsePurchaseCommand(payload: unknown): PurchaseCommand | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const command = payload as Record<string, unknown>;
+  if (command.type === "purchase.cash.create") {
+    return parseCashPurchaseCommand(payload);
+  }
+  if (command.type === "purchase.create") {
+    if (typeof command.id !== "string" || !command.id.trim()) return null;
+    if (typeof command.supplierId !== "string" || !command.supplierId.trim()) return null;
+    if (typeof command.total !== "number" || !Number.isFinite(command.total) || command.total < 0) return null;
+    if (!Array.isArray(command.items)) return null;
+    return command as unknown as PurchaseCommand;
+  }
+  if (command.type === "purchase.delete") {
+    if (typeof command.purchaseId !== "string" || !command.purchaseId.trim()) return null;
+    return command as unknown as PurchaseCommand;
+  }
+  return null;
 }
 
 function parseCashPurchaseCommand(payload: unknown): CashPurchaseCommand | null {

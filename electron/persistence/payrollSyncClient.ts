@@ -102,10 +102,42 @@ export class PayrollSyncClient implements ServerSyncClient {
     }
 
     const tableClient = await this.getTableClient(mapped.remoteTable);
-    const { error } = await tableClient.upsert(mapped.payload, { onConflict: "id" });
+    let error: MutationError | null = null;
+    if (operation.op === "update" || mapped.isPartial) {
+      const updateResult = await tableClient.update(mapped.payload).eq("id", operation.rowId).select();
+      error = updateResult.error;
+    } else {
+      const onConflict = mapped.remoteTable === "mesas_estado" ? "tenant_id,id" : "id";
+      const upsertResult = await tableClient.upsert(mapped.payload, { onConflict });
+      error = upsertResult.error;
+    }
 
     if (error) {
-      return classifyRemoteError(error, operation.tableName, "upsert");
+      if (operation.tableName === "consumos" && (error.message.includes("consumos_comanda_id_fkey") || error.message.includes("consumos_factura_id_fkey"))) {
+        const fallbackPayload = { ...mapped.payload };
+        let currentError: MutationError | null = error;
+        for (let attempt = 0; attempt < 2 && currentError; attempt++) {
+          if (currentError.message.includes("consumos_comanda_id_fkey")) fallbackPayload.comanda_id = null;
+          if (currentError.message.includes("consumos_factura_id_fkey")) fallbackPayload.factura_id = null;
+          const retryResult = operation.op === "update" || mapped.isPartial
+            ? await tableClient.update(fallbackPayload).eq("id", operation.rowId).select()
+            : await tableClient.upsert(fallbackPayload, { onConflict: "id" });
+          if (!retryResult.error) {
+            return { result: { synced: true, id: operation.rowId, remoteTable: mapped.remoteTable } };
+          }
+          currentError = retryResult.error;
+        }
+      }
+      if ((operation.tableName === "compras" || operation.tableName === "inventario_movimientos") && error.message.includes("_usuario_id_fkey")) {
+        const fallbackPayload = { ...mapped.payload, usuario_id: null };
+        const retryResult = operation.op === "update" || mapped.isPartial
+          ? await tableClient.update(fallbackPayload).eq("id", operation.rowId).select()
+          : await tableClient.upsert(fallbackPayload, { onConflict: "id" });
+        if (!retryResult.error) {
+          return { result: { synced: true, id: operation.rowId, remoteTable: mapped.remoteTable } };
+        }
+      }
+      return classifyRemoteError(error, operation.tableName, operation.op === "update" || mapped.isPartial ? "update" : "upsert");
     }
 
     return { result: { synced: true, id: operation.rowId, remoteTable: mapped.remoteTable } };
@@ -313,6 +345,21 @@ function mapDeleteOperation(operation: DurableOperation):
   if (operation.tableName === "consumos") {
     return { ok: true, remoteTable: "consumos" };
   }
+  if (operation.tableName === "compras") {
+    return { ok: true, remoteTable: "compras" };
+  }
+  if (operation.tableName === "detalles_compra" || operation.tableName === "compra_detalles") {
+    return { ok: true, remoteTable: "compra_detalles" };
+  }
+  if (operation.tableName === "compra_fiscal") {
+    return { ok: true, remoteTable: "compra_fiscal" };
+  }
+  if (operation.tableName === "movimientos_inventario" || operation.tableName === "inventario_movimientos") {
+    return { ok: true, remoteTable: "inventario_movimientos" };
+  }
+  if (operation.tableName === "proveedores") {
+    return { ok: true, remoteTable: "proveedores" };
+  }
 
   const remoteTable = PAYROLL_TABLES[operation.tableName];
   if (!remoteTable) {
@@ -323,7 +370,7 @@ function mapDeleteOperation(operation: DurableOperation):
 }
 
 function mapOperation(operation: DurableOperation):
-  | { ok: true; remoteTable: string; payload: Record<string, unknown> }
+  | { ok: true; remoteTable: string; payload: Record<string, unknown>; isPartial?: boolean }
   | { ok: false; error: Record<string, unknown> & { reason: string; retryable: false } } {
   if (!operation.payload || typeof operation.payload !== "object") {
     return { ok: false, error: permanentReason("Missing payload for payroll sync upsert", "missing_payload", operation.tableName) };
@@ -361,8 +408,10 @@ function mapOperation(operation: DurableOperation):
         return { ok: true, remoteTable: "cocina_estado", payload: mapCocinaEstadoPayload(operation, operation.payload) };
       case "comandas":
         return { ok: true, remoteTable: "comandas", payload: mapComandaPayload(operation, operation.payload) };
-      case "consumos":
-        return { ok: true, remoteTable: "consumos", payload: mapConsumoPayload(operation, operation.payload) };
+      case "consumos": {
+        const mapped = mapConsumoPayload(operation, operation.payload);
+        return { ok: true, remoteTable: "consumos", payload: mapped.payload, isPartial: mapped.isPartial };
+      }
       case "gastos": {
         if (operation.payload.expenseType === "payroll") {
           const tableResult = mapPayrollExpenseTable(operation);
@@ -373,6 +422,18 @@ function mapOperation(operation: DurableOperation):
         }
         return { ok: true, remoteTable: "gastos", payload: mapGeneralExpensePayload(operation, operation.payload) };
       }
+      case "compras":
+        return { ok: true, remoteTable: "compras", payload: mapCompraPayload(operation, operation.payload) };
+      case "detalles_compra":
+      case "compra_detalles":
+        return { ok: true, remoteTable: "compra_detalles", payload: mapCompraDetallePayload(operation, operation.payload) };
+      case "compra_fiscal":
+        return { ok: true, remoteTable: "compra_fiscal", payload: mapCompraFiscalPayload(operation, operation.payload) };
+      case "movimientos_inventario":
+      case "inventario_movimientos":
+        return { ok: true, remoteTable: "inventario_movimientos", payload: mapInventarioMovimientoPayload(operation, operation.payload) };
+      case "proveedores":
+        return { ok: true, remoteTable: "proveedores", payload: mapProveedorPayload(operation, operation.payload) };
       default:
         return { ok: false, error: permanentReason(`Unsupported payroll sync table: ${operation.tableName}`, "unsupported_table", operation.tableName) };
     }
@@ -632,6 +693,147 @@ function defaultDueDate(fechaEmision: unknown): string {
   return d.toISOString();
 }
 
+function mapCompraPayload(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
+  const sucursalId = operation.branchId ?? (payload.sucursal_id ?? payload.sucursalId ? String(payload.sucursal_id ?? payload.sucursalId) : null);
+  const proveedorId = payload.proveedor_id ?? payload.proveedorId ?? payload.supplierId;
+  const numeroFactura = payload.numero_factura ?? payload.numeroFactura;
+  const tipoPago = payload.tipo_pago ?? payload.tipoPago ?? "contado";
+  const metodoPago = payload.metodo_pago ?? payload.metodoPago ?? payload.payment_method ?? payload.paymentMethod ?? null;
+  const rawTotal = payload.total ?? (typeof payload.quantity === "number" && typeof payload.unitCost === "number" ? payload.quantity * payload.unitCost : 0);
+  const total = Number(rawTotal) || 0;
+  const montoPagado = payload.monto_pagado ?? payload.montoPagado ?? (tipoPago === "contado" ? total : 0);
+  const fechaCompra = payload.fecha_compra ?? payload.fechaCompra ?? new Date().toISOString();
+  const estado = payload.estado ?? "completada";
+  const observacion = payload.observacion ?? null;
+  const usuarioId = payload.usuario_id ?? payload.usuarioId ?? null;
+  const cycleId = payload.cycle_id ?? payload.cycleId ?? null;
+
+  return {
+    id: operation.rowId,
+    tenant_id: operation.tenantId,
+    ...(sucursalId && sucursalId !== "main-process-default" ? { sucursal_id: sucursalId } : {}),
+    ...(proveedorId ? { proveedor_id: String(proveedorId) } : {}),
+    ...(numeroFactura ? { numero_factura: String(numeroFactura) } : {}),
+    tipo_pago: String(tipoPago),
+    ...(metodoPago ? { metodo_pago: String(metodoPago) } : {}),
+    monto_pagado: Number(montoPagado) || 0,
+    fecha_compra: String(fechaCompra),
+    total,
+    estado: String(estado),
+    ...(observacion ? { observacion: String(observacion) } : {}),
+    ...(usuarioId ? { usuario_id: String(usuarioId) } : {}),
+    ...(cycleId ? { cycle_id: String(cycleId) } : {}),
+  };
+}
+
+function mapCompraDetallePayload(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
+  const compraId = payload.compra_id ?? payload.compraId;
+  const productoId = payload.producto_id ?? payload.productoId ?? payload.inventory_product_id ?? payload.inventoryProductId;
+  const cantidad = payload.cantidad ?? payload.quantity ?? 0;
+  const costoUnitario = payload.costo_unitario ?? payload.costoUnitario ?? payload.unit_cost ?? payload.unitCost ?? 0;
+  const total = payload.total ?? payload.subtotal ?? (Number(cantidad) * Number(costoUnitario)) ?? 0;
+
+  return {
+    id: operation.rowId,
+    tenant_id: operation.tenantId,
+    compra_id: requireString(compraId, "compra_detalles.compra_id"),
+    producto_id: requireString(productoId, "compra_detalles.producto_id"),
+    cantidad: Number(cantidad) || 0,
+    costo_unitario: Number(costoUnitario) || 0,
+    total: Number(total) || 0,
+  };
+}
+
+function mapCompraFiscalPayload(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
+  const compraId = payload.compra_id ?? payload.compraId;
+  const rncCedula = payload.rnc_cedula ?? payload.rncCedula ?? "";
+  const tipoIdentificacion = payload.tipo_identificacion ?? payload.tipoIdentificacion ?? (String(rncCedula).length === 9 ? "1" : "2");
+  const tipoBienServicio = payload.tipo_bien_servicio ?? payload.tipoBienServicio ?? "09";
+  const ncf = payload.ncf ?? "";
+  const ncfModificado = payload.ncf_modificado ?? payload.ncfModificado ?? null;
+  const fechaComprobante = payload.fecha_comprobante ?? payload.fechaComprobante ?? new Date().toISOString().slice(0, 10);
+  const fechaPago = payload.fecha_pago ?? payload.fechaPago ?? null;
+  const montoServicios = payload.monto_servicios ?? payload.montoServicios ?? 0;
+  const montoBienes = payload.monto_bienes ?? payload.montoBienes ?? 0;
+  const totalFacturado = payload.total_facturado ?? payload.totalFacturado ?? (Number(montoServicios) + Number(montoBienes));
+  const itbisFacturado = payload.itbis_facturado ?? payload.itbisFacturado ?? 0;
+  const itbisRetenido = payload.itbis_retenido ?? payload.itbisRetenido ?? 0;
+  const formaPago = payload.forma_pago ?? payload.formaPago ?? "01";
+
+  return {
+    id: operation.rowId,
+    tenant_id: operation.tenantId,
+    compra_id: requireString(compraId, "compra_fiscal.compra_id"),
+    rnc_cedula: String(rncCedula),
+    tipo_identificacion: String(tipoIdentificacion),
+    tipo_bien_servicio: String(tipoBienServicio),
+    ncf: String(ncf),
+    ncf_modificado: ncfModificado ? String(ncfModificado) : null,
+    fecha_comprobante: String(fechaComprobante),
+    fecha_pago: fechaPago ? String(fechaPago) : null,
+    monto_servicios: Number(montoServicios) || 0,
+    monto_bienes: Number(montoBienes) || 0,
+    total_facturado: Number(totalFacturado) || 0,
+    itbis_facturado: Number(itbisFacturado) || 0,
+    itbis_retenido: Number(itbisRetenido) || 0,
+    itbis_proporcionalidad: Number(payload.itbis_proporcionalidad ?? payload.itbisProporcionalidad) || 0,
+    itbis_costo: Number(payload.itbis_costo ?? payload.itbisCosto ?? itbisFacturado) || 0,
+    itbis_adelantar: Number(payload.itbis_adelantar ?? payload.itbisAdelantar) || 0,
+    itbis_percibido: Number(payload.itbis_percibido ?? payload.itbisPercibido) || 0,
+    tipo_retencion_isr: (payload.tipo_retencion_isr ?? payload.tipoRetencionIsr) ? String(payload.tipo_retencion_isr ?? payload.tipoRetencionIsr) : null,
+    retencion_isr: Number(payload.retencion_isr ?? payload.retencionIsr) || 0,
+    isr_percibido: Number(payload.isr_percibido ?? payload.isrPercibido) || 0,
+    impuesto_selectivo: Number(payload.impuesto_selectivo ?? payload.impuestoSelectivo) || 0,
+    otros_impuestos: Number(payload.otros_impuestos ?? payload.otrosImpuestos) || 0,
+    propina_legal: Number(payload.propina_legal ?? payload.propinaLegal) || 0,
+    forma_pago: String(formaPago),
+  };
+}
+
+function mapInventarioMovimientoPayload(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
+  const productoId = payload.producto_id ?? payload.productoId ?? payload.inventory_product_id ?? payload.inventoryProductId;
+  const tipo = payload.tipo ?? payload.movement_type ?? "entrada";
+  const cantidad = payload.cantidad ?? payload.quantity ?? 0;
+  const stockAntes = payload.stock_antes ?? payload.stockAntes ?? 0;
+  const stockDespues = payload.stock_despues ?? payload.stockDespues ?? cantidad;
+  const costoUnitario = payload.costo_unitario ?? payload.unit_cost ?? payload.unitCost ?? 0;
+  const motivo = payload.motivo ?? payload.reason ?? "Ingreso por compra";
+  const referencia = payload.referencia ?? payload.reference ?? null;
+  const fecha = payload.fecha ?? payload.created_at ?? new Date().toISOString();
+  const usuarioId = payload.usuario_id ?? payload.usuarioId ?? null;
+  const sucursalId = operation.branchId ?? (payload.sucursal_id ?? payload.sucursalId ? String(payload.sucursal_id ?? payload.sucursalId) : null);
+
+  return {
+    id: operation.rowId,
+    tenant_id: operation.tenantId,
+    ...(sucursalId && sucursalId !== "main-process-default" ? { sucursal_id: sucursalId } : {}),
+    producto_id: requireString(productoId, "inventario_movimientos.producto_id"),
+    tipo: String(tipo) === "purchase_receipt" ? "entrada" : String(tipo),
+    cantidad: Number(cantidad) || 0,
+    stock_antes: Number(stockAntes) || 0,
+    stock_despues: Number(stockDespues) || 0,
+    costo_unitario: Number(costoUnitario) || 0,
+    ...(motivo ? { motivo: String(motivo) } : {}),
+    ...(referencia ? { referencia: String(referencia) } : {}),
+    fecha: String(fecha),
+    ...(usuarioId ? { usuario_id: String(usuarioId) } : {}),
+  };
+}
+
+function mapProveedorPayload(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
+  const nombre = payload.nombre ?? payload.name ?? "Proveedor";
+  return {
+    id: operation.rowId,
+    tenant_id: operation.tenantId,
+    nombre: String(nombre),
+    ...(payload.rnc ? { rnc: String(payload.rnc) } : {}),
+    ...(payload.telefono ? { telefono: String(payload.telefono) } : {}),
+    ...(payload.email ? { email: String(payload.email) } : {}),
+    ...(payload.direccion ? { direccion: String(payload.direccion) } : {}),
+    activo: payload.activo !== undefined ? Boolean(payload.activo) : true,
+  };
+}
+
 function mapPayrollExpenseTable(operation: DurableOperation):
   | { ok: true; remoteTable: string }
   | { ok: false; error: Record<string, unknown> & { reason: string; retryable: false } } {
@@ -785,20 +987,24 @@ function mapMesasEstadoPayload(operation: DurableOperation, payload: Record<stri
     const n = Number(v);
     return Number.isFinite(n) ? n : null;
   };
-  let state = payload.state;
-  if (typeof state === "string") {
-    try {
-      state = JSON.parse(state);
-    } catch {
-      /* string state */
-    }
+  const tableId = num(operation.rowId) ?? num(payload.id) ?? num(payload.table_number) ?? num(payload.tableNumber);
+  if (tableId == null) {
+    throw new Error("Invalid mesa id: expected integer table number");
   }
+  const rawState = typeof payload.state === "string" ? payload.state : (typeof payload.estado === "string" ? payload.estado : "");
+  const estadoStr = (rawState === "occupied" || rawState === "ocupada") ? "ocupada" : "libre";
+  const rawBranch = str(payload.sucursal_id) ?? str(payload.sucursalId);
+  const branchId = rawBranch && rawBranch !== "main-process-default" ? rawBranch : null;
   return {
-    id: operation.rowId,
+    id: tableId,
     tenant_id: operation.tenantId,
-    sucursal_id: str(payload.sucursal_id) ?? str(payload.sucursalId),
-    table_number: num(payload.table_number) ?? num(payload.tableNumber),
-    state: typeof state === "object" && state !== null ? state : (str(state) ?? "libre"),
+    sucursal_id: branchId,
+    estado: estadoStr,
+    updated_at: str(payload.updated_at) ?? new Date().toISOString(),
+    ...(payload.fusionada !== undefined ? { fusionada: Boolean(payload.fusionada) } : {}),
+    ...(payload.fusion_padre_id !== undefined ? { fusion_padre_id: num(payload.fusion_padre_id) } : {}),
+    ...(payload.span_filas !== undefined ? { span_filas: num(payload.span_filas) ?? 1 } : {}),
+    ...(payload.span_columnas !== undefined ? { span_columnas: num(payload.span_columnas) ?? 1 } : {}),
   };
 }
 
@@ -843,7 +1049,7 @@ function mapComandaPayload(operation: DurableOperation, payload: Record<string, 
   };
 }
 
-function mapConsumoPayload(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
+function mapConsumoPayload(operation: DurableOperation, payload: Record<string, unknown>): { payload: Record<string, unknown>; isPartial: boolean } {
   const str = (v: unknown) => (v != null && String(v).length > 0 ? String(v) : null);
   const num = (v: unknown) => {
     const n = Number(v);
@@ -851,23 +1057,53 @@ function mapConsumoPayload(operation: DurableOperation, payload: Record<string, 
   };
   const rawBranch = str(payload.sucursal_id) ?? str(payload.sucursalId);
   const branchId = rawBranch && rawBranch !== "main-process-default" ? rawBranch : null;
+
+  const platoId = num(payload.plato_id) ?? num(payload.platoId);
+  const isPartial = operation.op === "update" || (payload.nombre == null && payload.name == null && (platoId == null || platoId === 0));
+
+  if (isPartial) {
+    const patch: Record<string, unknown> = {
+      updated_at: str(payload.updated_at) ?? new Date().toISOString(),
+    };
+    if (payload.estado != null) patch.estado = String(payload.estado);
+    if (payload.factura_id != null || payload.facturaId != null) {
+      patch.factura_id = str(payload.factura_id) ?? str(payload.facturaId);
+    }
+    if (payload.mesa_numero != null || payload.mesaNumero != null) {
+      patch.mesa_numero = num(payload.mesa_numero) ?? num(payload.mesaNumero);
+    }
+    if (branchId) patch.sucursal_id = branchId;
+    if (payload.cantidad != null || payload.quantity != null) {
+      patch.cantidad = num(payload.cantidad) ?? num(payload.quantity);
+    }
+    if (payload.precio_unitario != null || payload.precioUnitario != null || payload.unit_price != null) {
+      patch.precio_unitario = num(payload.precio_unitario) ?? num(payload.precioUnitario) ?? num(payload.unit_price);
+    }
+    if (payload.subtotal != null) patch.subtotal = num(payload.subtotal);
+    if (platoId != null && platoId !== 0) patch.plato_id = platoId;
+    return { payload: patch, isPartial: true };
+  }
+
   return {
-    id: operation.rowId,
-    tenant_id: operation.tenantId,
-    sucursal_id: branchId,
-    comanda_id: str(payload.comanda_id) ?? str(payload.comandaId),
-    plato_id: num(payload.plato_id) ?? num(payload.platoId) ?? 0,
-    nombre: str(payload.nombre) ?? str(payload.name) ?? "Item",
-    cantidad: num(payload.cantidad) ?? num(payload.quantity) ?? 1,
-    precio_unitario: num(payload.precio_unitario) ?? num(payload.precioUnitario) ?? num(payload.unit_price) ?? 0,
-    subtotal: num(payload.subtotal) ?? 0,
-    tipo: str(payload.tipo) ?? "plato",
-    estado: str(payload.estado) ?? "pendiente",
-    factura_id: str(payload.factura_id) ?? str(payload.facturaId),
-    mesa_numero: num(payload.mesa_numero) ?? num(payload.mesaNumero),
-    created_by_auth_user_id: str(payload.created_by_auth_user_id) ?? str(payload.createdByAuthUserId),
-    created_at: str(payload.created_at) ?? new Date().toISOString(),
-    updated_at: str(payload.updated_at) ?? new Date().toISOString(),
+    payload: {
+      id: operation.rowId,
+      tenant_id: operation.tenantId,
+      sucursal_id: branchId,
+      comanda_id: str(payload.comanda_id) ?? str(payload.comandaId),
+      plato_id: platoId ?? 0,
+      nombre: str(payload.nombre) ?? str(payload.name) ?? "Item",
+      cantidad: num(payload.cantidad) ?? num(payload.quantity) ?? 1,
+      precio_unitario: num(payload.precio_unitario) ?? num(payload.precioUnitario) ?? num(payload.unit_price) ?? 0,
+      subtotal: num(payload.subtotal) ?? 0,
+      tipo: str(payload.tipo) ?? "plato",
+      estado: str(payload.estado) ?? "pendiente",
+      factura_id: str(payload.factura_id) ?? str(payload.facturaId),
+      mesa_numero: num(payload.mesa_numero) ?? num(payload.mesaNumero),
+      created_by_auth_user_id: str(payload.created_by_auth_user_id) ?? str(payload.createdByAuthUserId),
+      created_at: str(payload.created_at) ?? new Date().toISOString(),
+      updated_at: str(payload.updated_at) ?? new Date().toISOString(),
+    },
+    isPartial: false,
   };
 }
 

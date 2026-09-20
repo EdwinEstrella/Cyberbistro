@@ -22,6 +22,7 @@ import {
   readLocalMirror,
 } from "../../../shared/lib/localFirst";
 import { resolveSyncHealth } from "../lib/syncHealth";
+import { syncIndexedDbComprasToSqlite } from "../../compras/lib/purchaseService";
 
 interface OutboxSummaryItem {
   tableName: string;
@@ -185,6 +186,7 @@ export function HistorialSync() {
     if (tenantId) {
       const key = `cloudix_sqlite_imported_v1_${tenantId}`;
       setMigrationStatus({ completed: localStorage.getItem(key) === "true" });
+      void syncIndexedDbComprasToSqlite(tenantId).catch(() => 0);
     }
   }, [tenantId]);
 
@@ -243,6 +245,9 @@ export function HistorialSync() {
     setSyncing(true);
     setMessage("");
     try {
+      if (tenantId) {
+        await syncIndexedDbComprasToSqlite(tenantId).catch(() => 0);
+      }
       if (window.electronAPI?.triggerSync) {
         await window.electronAPI.triggerSync();
         setMessage("Sincronización disparada exitosamente.");

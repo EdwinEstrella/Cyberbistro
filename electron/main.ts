@@ -819,18 +819,27 @@ if (gotTheLock) {
         triggerSyncAfterLocalWrite()
       },
     })
-    registerCashPurchaseRepositoryIpc({ ipcMain, isTrustedSender, getRepository: () => {
-      const store = getStore()
-      if (!store) throw new Error('Tenant store is unavailable')
-      const repo = new CashPurchaseRepository({ store, branchId: 'main-process-default' })
-      return {
-        execute: (command) => {
-          const res = repo.execute(command)
-          triggerSyncAfterLocalWrite()
-          return res
+    registerCashPurchaseRepositoryIpc({
+      ipcMain,
+      isTrustedSender,
+      getRepository: () => {
+        const store = getStore()
+        if (!store) throw new Error('Tenant store is unavailable')
+        const repo = new CashPurchaseRepository({ store, branchId: 'main-process-default' })
+        return {
+          execute: (command) => {
+            const res = repo.execute(command)
+            triggerSyncAfterLocalWrite()
+            return res
+          }
         }
+      },
+      listCompras: (filter) => {
+        const store = tenantStoreController?.getActiveStore()
+        if (!store) return []
+        return store.listCompras(filter)
       }
-    } })
+    })
     registerReceivablesRepositoryIpc({
       ipcMain,
       isTrustedSender,
