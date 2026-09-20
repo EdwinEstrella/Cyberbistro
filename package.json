@@ -76,6 +76,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts",
+    "test:e2e": "playwright test",
     "fiscal-worker": "npx tsx worker/fiscal/runFiscalWorker.ts"
   },
   "devDependencies": {

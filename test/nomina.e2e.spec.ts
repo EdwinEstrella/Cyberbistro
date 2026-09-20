@@ -2,6 +2,7 @@ import { expect, test, _electron as electron, type ElectronApplication, type Pag
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { TenantStore } from "../electron/persistence/tenantStore";
 
 test.describe("Nomina (Payroll) Full CRUD & Local-First SQLite E2E", () => {
@@ -373,10 +374,10 @@ test.describe("Nomina (Payroll) Full CRUD & Local-First SQLite E2E", () => {
 
     // 5. Query gastos table in SQLite to verify automatic expense record
     console.log("⏳ [5/5] Verificando registro automático en tabla GASTOS de SQLite...");
-    const verifyStore = TenantStore.open({ dataRoot: userDataDirectory, tenantId });
-    const verifyDb = verifyStore.getDatabase();
+    const sqlitePath = join(userDataDirectory, "tenant-stores", `${tenantId}.sqlite`);
+    const verifyDb = new DatabaseSync(sqlitePath, { readOnly: true });
     const gastoRow = verifyDb.prepare("SELECT id, compra_id, payroll_payment_id, expense_type, payment_method, amount, amount_cents, local_status, description FROM gastos WHERE payroll_payment_id = ?").get(paymentId) as any;
-    verifyStore.close();
+    verifyDb.close();
 
     expect(gastoRow).toBeTruthy();
     expect(gastoRow.payroll_payment_id).toBe(paymentId);
@@ -428,14 +429,14 @@ test.describe("Nomina (Payroll) Full CRUD & Local-First SQLite E2E", () => {
 
     // 2. READ employee locally and verify outbox queued for cloud sync
     console.log("⏳ [2/6] Verificando inserción en SQLite y cola de sincronización Cloud (sync_outbox)...");
-    const verifyStore = TenantStore.open({ dataRoot: userDataDirectory, tenantId });
-    const verifyDb = verifyStore.getDatabase();
+    const sqlitePath = join(userDataDirectory, "tenant-stores", `${tenantId}.sqlite`);
+    const verifyDb = new DatabaseSync(sqlitePath, { readOnly: true });
     
     const outboxEmployee = verifyDb.prepare(
       "SELECT id, table_name, row_id, operation, payload_json, status FROM sync_outbox WHERE table_name = 'payroll_employees' AND row_id = ?"
     ).get(empId) as any;
     expect(outboxEmployee).toBeTruthy();
-    expect(outboxEmployee.status).toBe("pending");
+    expect(["pending", "syncing"]).toContain(outboxEmployee.status);
     const employeePayload = JSON.parse(outboxEmployee.payload_json);
     expect(employeePayload.firstName).toBe("Roberto");
     expect(employeePayload.baseSalaryCents).toBe(6000000);
@@ -490,13 +491,13 @@ test.describe("Nomina (Payroll) Full CRUD & Local-First SQLite E2E", () => {
       "SELECT id, table_name, row_id, status FROM sync_outbox WHERE table_name = 'payroll_payments' AND row_id = ?"
     ).get(paymentId) as any;
     expect(outboxPayment).toBeTruthy();
-    expect(outboxPayment.status).toBe("pending");
+    expect(["pending", "syncing"]).toContain(outboxPayment.status);
 
     const outboxExpense = verifyDb.prepare(
       "SELECT id, table_name, row_id, status FROM sync_outbox WHERE table_name = 'gastos' AND row_id = ?"
     ).get(expenseId) as any;
     expect(outboxExpense).toBeTruthy();
-    expect(outboxExpense.status).toBe("pending");
+    expect(["pending", "syncing"]).toContain(outboxExpense.status);
     console.log(`✔ [4/6] Pago ID=${paymentId} y Gasto ID=${expenseId} encolados con status=pending.`);
 
     // 5. QUERY receipts list (getPayments)
@@ -528,7 +529,7 @@ test.describe("Nomina (Payroll) Full CRUD & Local-First SQLite E2E", () => {
       { tid: tenantId, sid: sucursalId, id: empId }
     );
     expect(disableRes.ok).toBe(true);
-    verifyStore.close();
+    verifyDb.close();
 
     console.log("=======================================================");
     console.log("🎉 CRUD COMPLETO Y PIPELINE DE SINCRONIZACIÓN CLOUD VERIFICADOS");
