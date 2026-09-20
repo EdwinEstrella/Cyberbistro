@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 import { isDesktopCloudUnavailable, registerCloudAnonKey, registerCloudBaseUrl } from './cloudAvailability';
 
-const url = import.meta.env.VITE_SUPABASE_URL?.trim();
-const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
+const url = import.meta.env?.VITE_SUPABASE_URL?.trim() || process.env?.VITE_SUPABASE_URL?.trim() || process.env?.SUPABASE_URL?.trim() || 'https://ci-placeholder.supabase.co';
+const publishableKey = import.meta.env?.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() || process.env?.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() || process.env?.SUPABASE_PUBLISHABLE_KEY?.trim() || 'ci-placeholder-publishable-key';
 
 if (!url || !publishableKey) {
   throw new Error('Missing VITE_SUPABASE_URL or VITE_SUPABASE_PUBLISHABLE_KEY. Configure both before starting Cloudix.');

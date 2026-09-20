@@ -5,6 +5,7 @@ import { enqueueLocalWrite, readLocalMirror } from "../../../shared/lib/localFir
 // Mock localFirst functions
 vi.mock("../../../shared/lib/localFirst", () => ({
   readLocalMirror: vi.fn(),
+  shouldReadLocalFirst: vi.fn().mockResolvedValue(true),
   enqueueLocalWrite: vi.fn().mockResolvedValue(undefined),
   getDeviceId: vi.fn().mockResolvedValue("device-123"),
 }));
