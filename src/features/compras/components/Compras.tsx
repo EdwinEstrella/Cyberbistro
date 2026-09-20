@@ -10,7 +10,7 @@ import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/local
 import { readLocalCierres } from "../../cierre/lib/cierresLocal";
 import { supabase } from "../../../shared/lib/supabase";
 import { filterRecordsWithNcf, generateFormato606, type CompraFiscal606 } from "../../contabilidad/lib/formato606";
-import { eliminarCompra } from "../lib/purchaseService";
+import { eliminarCompra, syncIndexedDbComprasToSqlite } from "../lib/purchaseService";
 import { ConfirmModal } from "../../../shared/components/ConfirmModal";
 
 export interface ProveedorRow {
@@ -110,7 +110,33 @@ export function Compras() {
       let fiscalesData: CompraFiscal606[] = [];
 
       if (useLocal) {
-        comprasData = await readLocalMirror<CompraRow>(tenantId, "compras");
+        // Automatically bridge any legacy purchase living only in IndexedDB into SQLite
+        await syncIndexedDbComprasToSqlite(tenantId).catch(() => 0);
+
+        const api = typeof window !== "undefined" ? window.electronAPI : undefined;
+        let sqliteCompras: CompraRow[] = [];
+        if (api?.listCompras) {
+          try {
+            const res = await api.listCompras({ sucursalId: activeSucursalId || undefined });
+            if (res?.ok && Array.isArray(res.data)) {
+              sqliteCompras = res.data as unknown as CompraRow[];
+            }
+          } catch (e) {
+            console.warn("Error reading compras from SQLite:", e);
+          }
+        }
+
+        const mirrorCompras = await readLocalMirror<CompraRow>(tenantId, "compras").catch(() => []);
+        if (sqliteCompras.length > 0) {
+          const byId = new Map<string, CompraRow>(sqliteCompras.map(c => [c.id, c]));
+          for (const row of mirrorCompras) {
+            if (!byId.has(row.id)) byId.set(row.id, row);
+          }
+          comprasData = Array.from(byId.values());
+        } else {
+          comprasData = mirrorCompras;
+        }
+
         proveedoresData = await readLocalMirror<ProveedorRow>(tenantId, "proveedores");
         productosData = await readLocalMirror<ProductoRow>(tenantId, "productos_inventario");
         ciclosData = await readLocalCierres(tenantId, { sucursalId: activeSucursalId || undefined });
@@ -153,6 +179,14 @@ export function Compras() {
   useEffect(() => {
     void cargarDatos();
   }, [cargarDatos]);
+
+  useEffect(() => {
+    return window.electronAPI?.onLocalDataUpdated?.((updatedTenantId) => {
+      if (!updatedTenantId || updatedTenantId === tenantId) {
+        void cargarDatos();
+      }
+    });
+  }, [cargarDatos, tenantId]);
 
   const proveedoresMap = useMemo(() => {
     return new Map(proveedores.map(p => [p.id, p]));

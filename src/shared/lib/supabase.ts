@@ -31,7 +31,14 @@ const customFetch: typeof fetch = async (input, init) => {
 };
 
 export const supabase = createClient(url, publishableKey, {
-  auth: { autoRefreshToken: true, persistSession: true, detectSessionInUrl: false },
+  // autoRefreshToken MUST stay false: this app owns refresh-token rotation
+  // manually (useAuth stores the token under the legacy `supabase_refresh_token`
+  // key and renews it on an interval / focus / visibility, and before PostgREST
+  // ops via ensureAuthSessionFresh). If the SDK also auto-refreshes, it rotates
+  // the token behind the app's back WITHOUT updating that key, leaving a stale
+  // token that the next manual refresh sends -> GoTrue 400 "Refresh Token Not
+  // Found" -> the session is cleared and the user is logged out at random.
+  auth: { autoRefreshToken: false, persistSession: true, detectSessionInUrl: false },
   global: { fetch: customFetch },
 });
 

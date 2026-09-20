@@ -115,8 +115,21 @@ export class PayrollSyncClient implements ServerSyncClient {
     if (error) {
       if (operation.tableName === "consumos" && (error.message.includes("consumos_comanda_id_fkey") || error.message.includes("consumos_factura_id_fkey"))) {
         const fallbackPayload = { ...mapped.payload };
-        if (error.message.includes("consumos_comanda_id_fkey")) fallbackPayload.comanda_id = null;
-        if (error.message.includes("consumos_factura_id_fkey")) fallbackPayload.factura_id = null;
+        let currentError: MutationError | null = error;
+        for (let attempt = 0; attempt < 2 && currentError; attempt++) {
+          if (currentError.message.includes("consumos_comanda_id_fkey")) fallbackPayload.comanda_id = null;
+          if (currentError.message.includes("consumos_factura_id_fkey")) fallbackPayload.factura_id = null;
+          const retryResult = operation.op === "update" || mapped.isPartial
+            ? await tableClient.update(fallbackPayload).eq("id", operation.rowId).select()
+            : await tableClient.upsert(fallbackPayload, { onConflict: "id" });
+          if (!retryResult.error) {
+            return { result: { synced: true, id: operation.rowId, remoteTable: mapped.remoteTable } };
+          }
+          currentError = retryResult.error;
+        }
+      }
+      if ((operation.tableName === "compras" || operation.tableName === "inventario_movimientos") && error.message.includes("_usuario_id_fkey")) {
+        const fallbackPayload = { ...mapped.payload, usuario_id: null };
         const retryResult = operation.op === "update" || mapped.isPartial
           ? await tableClient.update(fallbackPayload).eq("id", operation.rowId).select()
           : await tableClient.upsert(fallbackPayload, { onConflict: "id" });
@@ -332,6 +345,21 @@ function mapDeleteOperation(operation: DurableOperation):
   if (operation.tableName === "consumos") {
     return { ok: true, remoteTable: "consumos" };
   }
+  if (operation.tableName === "compras") {
+    return { ok: true, remoteTable: "compras" };
+  }
+  if (operation.tableName === "detalles_compra" || operation.tableName === "compra_detalles") {
+    return { ok: true, remoteTable: "compra_detalles" };
+  }
+  if (operation.tableName === "compra_fiscal") {
+    return { ok: true, remoteTable: "compra_fiscal" };
+  }
+  if (operation.tableName === "movimientos_inventario" || operation.tableName === "inventario_movimientos") {
+    return { ok: true, remoteTable: "inventario_movimientos" };
+  }
+  if (operation.tableName === "proveedores") {
+    return { ok: true, remoteTable: "proveedores" };
+  }
 
   const remoteTable = PAYROLL_TABLES[operation.tableName];
   if (!remoteTable) {
@@ -394,6 +422,18 @@ function mapOperation(operation: DurableOperation):
         }
         return { ok: true, remoteTable: "gastos", payload: mapGeneralExpensePayload(operation, operation.payload) };
       }
+      case "compras":
+        return { ok: true, remoteTable: "compras", payload: mapCompraPayload(operation, operation.payload) };
+      case "detalles_compra":
+      case "compra_detalles":
+        return { ok: true, remoteTable: "compra_detalles", payload: mapCompraDetallePayload(operation, operation.payload) };
+      case "compra_fiscal":
+        return { ok: true, remoteTable: "compra_fiscal", payload: mapCompraFiscalPayload(operation, operation.payload) };
+      case "movimientos_inventario":
+      case "inventario_movimientos":
+        return { ok: true, remoteTable: "inventario_movimientos", payload: mapInventarioMovimientoPayload(operation, operation.payload) };
+      case "proveedores":
+        return { ok: true, remoteTable: "proveedores", payload: mapProveedorPayload(operation, operation.payload) };
       default:
         return { ok: false, error: permanentReason(`Unsupported payroll sync table: ${operation.tableName}`, "unsupported_table", operation.tableName) };
     }
@@ -651,6 +691,147 @@ function defaultDueDate(fechaEmision: unknown): string {
   const d = Number.isNaN(base.getTime()) ? new Date() : base;
   d.setDate(d.getDate() + 30);
   return d.toISOString();
+}
+
+function mapCompraPayload(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
+  const sucursalId = operation.branchId ?? (payload.sucursal_id ?? payload.sucursalId ? String(payload.sucursal_id ?? payload.sucursalId) : null);
+  const proveedorId = payload.proveedor_id ?? payload.proveedorId ?? payload.supplierId;
+  const numeroFactura = payload.numero_factura ?? payload.numeroFactura;
+  const tipoPago = payload.tipo_pago ?? payload.tipoPago ?? "contado";
+  const metodoPago = payload.metodo_pago ?? payload.metodoPago ?? payload.payment_method ?? payload.paymentMethod ?? null;
+  const rawTotal = payload.total ?? (typeof payload.quantity === "number" && typeof payload.unitCost === "number" ? payload.quantity * payload.unitCost : 0);
+  const total = Number(rawTotal) || 0;
+  const montoPagado = payload.monto_pagado ?? payload.montoPagado ?? (tipoPago === "contado" ? total : 0);
+  const fechaCompra = payload.fecha_compra ?? payload.fechaCompra ?? new Date().toISOString();
+  const estado = payload.estado ?? "completada";
+  const observacion = payload.observacion ?? null;
+  const usuarioId = payload.usuario_id ?? payload.usuarioId ?? null;
+  const cycleId = payload.cycle_id ?? payload.cycleId ?? null;
+
+  return {
+    id: operation.rowId,
+    tenant_id: operation.tenantId,
+    ...(sucursalId && sucursalId !== "main-process-default" ? { sucursal_id: sucursalId } : {}),
+    ...(proveedorId ? { proveedor_id: String(proveedorId) } : {}),
+    ...(numeroFactura ? { numero_factura: String(numeroFactura) } : {}),
+    tipo_pago: String(tipoPago),
+    ...(metodoPago ? { metodo_pago: String(metodoPago) } : {}),
+    monto_pagado: Number(montoPagado) || 0,
+    fecha_compra: String(fechaCompra),
+    total,
+    estado: String(estado),
+    ...(observacion ? { observacion: String(observacion) } : {}),
+    ...(usuarioId ? { usuario_id: String(usuarioId) } : {}),
+    ...(cycleId ? { cycle_id: String(cycleId) } : {}),
+  };
+}
+
+function mapCompraDetallePayload(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
+  const compraId = payload.compra_id ?? payload.compraId;
+  const productoId = payload.producto_id ?? payload.productoId ?? payload.inventory_product_id ?? payload.inventoryProductId;
+  const cantidad = payload.cantidad ?? payload.quantity ?? 0;
+  const costoUnitario = payload.costo_unitario ?? payload.costoUnitario ?? payload.unit_cost ?? payload.unitCost ?? 0;
+  const total = payload.total ?? payload.subtotal ?? (Number(cantidad) * Number(costoUnitario)) ?? 0;
+
+  return {
+    id: operation.rowId,
+    tenant_id: operation.tenantId,
+    compra_id: requireString(compraId, "compra_detalles.compra_id"),
+    producto_id: requireString(productoId, "compra_detalles.producto_id"),
+    cantidad: Number(cantidad) || 0,
+    costo_unitario: Number(costoUnitario) || 0,
+    total: Number(total) || 0,
+  };
+}
+
+function mapCompraFiscalPayload(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
+  const compraId = payload.compra_id ?? payload.compraId;
+  const rncCedula = payload.rnc_cedula ?? payload.rncCedula ?? "";
+  const tipoIdentificacion = payload.tipo_identificacion ?? payload.tipoIdentificacion ?? (String(rncCedula).length === 9 ? "1" : "2");
+  const tipoBienServicio = payload.tipo_bien_servicio ?? payload.tipoBienServicio ?? "09";
+  const ncf = payload.ncf ?? "";
+  const ncfModificado = payload.ncf_modificado ?? payload.ncfModificado ?? null;
+  const fechaComprobante = payload.fecha_comprobante ?? payload.fechaComprobante ?? new Date().toISOString().slice(0, 10);
+  const fechaPago = payload.fecha_pago ?? payload.fechaPago ?? null;
+  const montoServicios = payload.monto_servicios ?? payload.montoServicios ?? 0;
+  const montoBienes = payload.monto_bienes ?? payload.montoBienes ?? 0;
+  const totalFacturado = payload.total_facturado ?? payload.totalFacturado ?? (Number(montoServicios) + Number(montoBienes));
+  const itbisFacturado = payload.itbis_facturado ?? payload.itbisFacturado ?? 0;
+  const itbisRetenido = payload.itbis_retenido ?? payload.itbisRetenido ?? 0;
+  const formaPago = payload.forma_pago ?? payload.formaPago ?? "01";
+
+  return {
+    id: operation.rowId,
+    tenant_id: operation.tenantId,
+    compra_id: requireString(compraId, "compra_fiscal.compra_id"),
+    rnc_cedula: String(rncCedula),
+    tipo_identificacion: String(tipoIdentificacion),
+    tipo_bien_servicio: String(tipoBienServicio),
+    ncf: String(ncf),
+    ncf_modificado: ncfModificado ? String(ncfModificado) : null,
+    fecha_comprobante: String(fechaComprobante),
+    fecha_pago: fechaPago ? String(fechaPago) : null,
+    monto_servicios: Number(montoServicios) || 0,
+    monto_bienes: Number(montoBienes) || 0,
+    total_facturado: Number(totalFacturado) || 0,
+    itbis_facturado: Number(itbisFacturado) || 0,
+    itbis_retenido: Number(itbisRetenido) || 0,
+    itbis_proporcionalidad: Number(payload.itbis_proporcionalidad ?? payload.itbisProporcionalidad) || 0,
+    itbis_costo: Number(payload.itbis_costo ?? payload.itbisCosto ?? itbisFacturado) || 0,
+    itbis_adelantar: Number(payload.itbis_adelantar ?? payload.itbisAdelantar) || 0,
+    itbis_percibido: Number(payload.itbis_percibido ?? payload.itbisPercibido) || 0,
+    tipo_retencion_isr: (payload.tipo_retencion_isr ?? payload.tipoRetencionIsr) ? String(payload.tipo_retencion_isr ?? payload.tipoRetencionIsr) : null,
+    retencion_isr: Number(payload.retencion_isr ?? payload.retencionIsr) || 0,
+    isr_percibido: Number(payload.isr_percibido ?? payload.isrPercibido) || 0,
+    impuesto_selectivo: Number(payload.impuesto_selectivo ?? payload.impuestoSelectivo) || 0,
+    otros_impuestos: Number(payload.otros_impuestos ?? payload.otrosImpuestos) || 0,
+    propina_legal: Number(payload.propina_legal ?? payload.propinaLegal) || 0,
+    forma_pago: String(formaPago),
+  };
+}
+
+function mapInventarioMovimientoPayload(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
+  const productoId = payload.producto_id ?? payload.productoId ?? payload.inventory_product_id ?? payload.inventoryProductId;
+  const tipo = payload.tipo ?? payload.movement_type ?? "entrada";
+  const cantidad = payload.cantidad ?? payload.quantity ?? 0;
+  const stockAntes = payload.stock_antes ?? payload.stockAntes ?? 0;
+  const stockDespues = payload.stock_despues ?? payload.stockDespues ?? cantidad;
+  const costoUnitario = payload.costo_unitario ?? payload.unit_cost ?? payload.unitCost ?? 0;
+  const motivo = payload.motivo ?? payload.reason ?? "Ingreso por compra";
+  const referencia = payload.referencia ?? payload.reference ?? null;
+  const fecha = payload.fecha ?? payload.created_at ?? new Date().toISOString();
+  const usuarioId = payload.usuario_id ?? payload.usuarioId ?? null;
+  const sucursalId = operation.branchId ?? (payload.sucursal_id ?? payload.sucursalId ? String(payload.sucursal_id ?? payload.sucursalId) : null);
+
+  return {
+    id: operation.rowId,
+    tenant_id: operation.tenantId,
+    ...(sucursalId && sucursalId !== "main-process-default" ? { sucursal_id: sucursalId } : {}),
+    producto_id: requireString(productoId, "inventario_movimientos.producto_id"),
+    tipo: String(tipo) === "purchase_receipt" ? "entrada" : String(tipo),
+    cantidad: Number(cantidad) || 0,
+    stock_antes: Number(stockAntes) || 0,
+    stock_despues: Number(stockDespues) || 0,
+    costo_unitario: Number(costoUnitario) || 0,
+    ...(motivo ? { motivo: String(motivo) } : {}),
+    ...(referencia ? { referencia: String(referencia) } : {}),
+    fecha: String(fecha),
+    ...(usuarioId ? { usuario_id: String(usuarioId) } : {}),
+  };
+}
+
+function mapProveedorPayload(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
+  const nombre = payload.nombre ?? payload.name ?? "Proveedor";
+  return {
+    id: operation.rowId,
+    tenant_id: operation.tenantId,
+    nombre: String(nombre),
+    ...(payload.rnc ? { rnc: String(payload.rnc) } : {}),
+    ...(payload.telefono ? { telefono: String(payload.telefono) } : {}),
+    ...(payload.email ? { email: String(payload.email) } : {}),
+    ...(payload.direccion ? { direccion: String(payload.direccion) } : {}),
+    activo: payload.activo !== undefined ? Boolean(payload.activo) : true,
+  };
 }
 
 function mapPayrollExpenseTable(operation: DurableOperation):

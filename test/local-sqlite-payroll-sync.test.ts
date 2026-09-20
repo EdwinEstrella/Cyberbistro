@@ -24,7 +24,7 @@ describe("local sqlite payroll sync store", () => {
     db.prepare(`
       INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run("outbox-1", tenantId, "branch-1", "compras", "compra-1", "upsert", JSON.stringify({}), "pending");
+    `).run("outbox-1", tenantId, "branch-1", "unsupported_table", "row-1", "upsert", JSON.stringify({}), "pending");
 
     expect(store.claim(Date.now())).toEqual([]);
 
@@ -38,7 +38,7 @@ describe("local sqlite payroll sync store", () => {
     db.prepare(`
       INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run("outbox-1", tenantId, "branch-1", "compras", "compra-1", "upsert", JSON.stringify({}), "pending");
+    `).run("outbox-1", tenantId, "branch-1", "unsupported_table", "row-1", "upsert", JSON.stringify({}), "pending");
 
     db.prepare(`
       INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status)

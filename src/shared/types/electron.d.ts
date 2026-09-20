@@ -89,7 +89,9 @@ export interface ElectronAPI {
   listCatalog?: () => Promise<{ ok: true; data: { platos: Array<Record<string, unknown>>; menuCategories: Array<Record<string, unknown>> } }>;
   executeOrdersCommand?: (command: import("../lib/ordersContracts").OrdersCommand) => Promise<{ ok: true; data: import("../lib/ordersContracts").OrdersRepositoryResult }>;
   executeSalesFiscalCommand?: (command: import("../../../electron/persistence/salesFiscalRepository").SalesFiscalCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/salesFiscalRepository").SalesFiscalRepositoryResult }>;
-  executeCashPurchaseCommand?: (command: import("../../../electron/persistence/cashPurchaseRepository").CashPurchaseCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/cashPurchaseRepository").CashPurchaseRepositoryResult }>;
+  executeCashPurchaseCommand?: (command: import("../../../electron/persistence/cashPurchaseRepository").PurchaseCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/cashPurchaseRepository").PurchaseRepositoryResult }>;
+  executePurchaseCommand?: (command: import("../../../electron/persistence/cashPurchaseRepository").PurchaseCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/cashPurchaseRepository").PurchaseRepositoryResult }>;
+  listCompras?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number; dateFrom?: string; dateTo?: string }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
   executePayrollCommand?: (command: import("../lib/payrollContracts").PayrollCommand) => Promise<{ ok: true; data: import("../lib/payrollContracts").PayrollRepositoryResult }>;
   setPayrollSyncAccessToken?: (accessToken: string | null) => Promise<{ ok: true }>;
   executeReceivablesCommand?: (command: import("../../../electron/persistence/receivablesRepository").ReceivablesCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/receivablesRepository").ReceivablesRepositoryResult }>;

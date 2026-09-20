@@ -2710,7 +2710,7 @@ export async function pullIncrementalChangesForTable(
 }
 
 const mirrorSyncInFlight = new Map<string, Promise<{ tablesUpdated: number; rowsPulled: number }>>();
-const SYNC_WATCHDOG_MS = 90_000;
+const SYNC_WATCHDOG_MS = 180_000;
 export function syncIncremental(tenantId: string): Promise<{ tablesUpdated: number; rowsPulled: number }> {
   const existing = mirrorSyncInFlight.get(tenantId);
   if (existing) return existing;

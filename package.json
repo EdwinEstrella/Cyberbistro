@@ -1,6 +1,6 @@
 {
   "name": "cloudix",
-  "version": "12.1.25",
+  "version": "12.1.26",
   "description": "Cloudix Desktop App",
   "author": "Edwin",
   "main": "dist-electron/main.js",
@@ -76,8 +76,10 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts",
-    "test:e2e": "playwright test",
-    "test:e2e:build": "npm run build && playwright test",
+    "test:e2e": "playwright test --project=local",
+    "test:e2e:build": "npm run build && playwright test --project=local",
+    "test:e2e:cloud": "playwright test --project=cloud",
+    "test:e2e:cloud:build": "npm run build && playwright test --project=cloud",
     "fiscal-worker": "npx tsx worker/fiscal/runFiscalWorker.ts"
   },
   "devDependencies": {

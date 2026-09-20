@@ -52,6 +52,13 @@ const SUPPORTED_OUTBOX_TABLES = [
   "cocina_estado",
   "comandas",
   "consumos",
+  "compras",
+  "detalles_compra",
+  "compra_detalles",
+  "compra_fiscal",
+  "movimientos_inventario",
+  "inventario_movimientos",
+  "proveedores",
 ] as const;
 
 const SUPPORTED_TABLES_SQL = SUPPORTED_OUTBOX_TABLES.map((t) => `'${t}'`).join(", ");

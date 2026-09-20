@@ -32,7 +32,20 @@ export interface PurchaseInput {
   isFiscal?: boolean;
 }
 
+function hasSqlitePurchases(): boolean {
+  return typeof window !== "undefined" && Boolean(window.electronAPI?.executePurchaseCommand);
+}
+
 export async function eliminarCompra(tenantId: string, compraId: string, _usuarioId: string | null): Promise<void> {
+  if (hasSqlitePurchases()) {
+    await window.electronAPI!.executePurchaseCommand!({
+      type: "purchase.delete",
+      purchaseId: compraId,
+      usuarioId: _usuarioId,
+    });
+    return;
+  }
+
   const deviceId = await getDeviceId();
 
   // 1. Obtener la compra
@@ -146,6 +159,19 @@ export async function eliminarCompra(tenantId: string, compraId: string, _usuari
     payload: { id: compraId },
     deviceId
   });
+
+  const api = typeof window !== "undefined" ? window.electronAPI : undefined;
+  if (api?.executePurchaseCommand) {
+    try {
+      await api.executePurchaseCommand({
+        type: "purchase.delete",
+        purchaseId: compraId,
+        usuarioId: _usuarioId,
+      });
+    } catch (err) {
+      console.warn("Error deleting purchase in SQLite:", err);
+    }
+  }
 }
 export async function registrarCompra(input: PurchaseInput): Promise<{ compraId: string }> {
   const { tenantId, sucursalId, usuarioId, proveedorId, numeroFactura, tipoPago, metodoPago, montoPagado, items, observacion, itbisFacturado = 0, itbisRetenido = 0, retencionIsr = 0, impuestoSelectivo = 0, otrosImpuestos = 0, propinaLegal = 0, montoBienes = 0, montoServicios = 0, tipoBienServicio = "09", fechaCompra, isFiscal = true } = input;
@@ -332,6 +358,72 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
       throw new Error("El monto pagado no puede ser mayor o igual al total a pagar de la compra.");
     }
     resolvedMontoPagado = montoPagado;
+  }
+
+  if (hasSqlitePurchases()) {
+    await window.electronAPI!.executePurchaseCommand!({
+      type: "purchase.create",
+      id: compraId,
+      supplierId: proveedorId || "",
+      providerName,
+      numeroFactura,
+      tipoPago,
+      metodoPago: metodoPago || null,
+      montoPagado: resolvedMontoPagado,
+      fechaCompra: fechaCompraFinal,
+      total: granTotal,
+      cycleId: activeCycleId,
+      estado: "completada",
+      observacion: observacion || null,
+      usuarioId,
+      sucursalId,
+      items: processedItems.map(item => ({
+        id: crypto.randomUUID(),
+        productoId: item.producto_id,
+        cantidad: item.cantidadBase,
+        costoUnitario: item.costoBase,
+        total: item.itemTotal,
+        movimientoId: crypto.randomUUID(),
+        stockAntes: item.stockActual,
+        stockDespues: item.nuevoStock,
+      })),
+      fiscal: isFiscal ? {
+        id: crypto.randomUUID(),
+        rncCedula: providerRnc,
+        tipoIdentificacion: providerRnc.length === 9 ? "1" : "2",
+        tipoBienServicio: tipoBienServicio || "09",
+        ncf: numeroFactura.trim().toUpperCase(),
+        fechaComprobante: fechaCompraFinal.slice(0, 10),
+        fechaPago: tipoPago === "credito" ? null : fechaCompraFinal.slice(0, 10),
+        montoServicios: montoServicios || 0,
+        montoBienes: montoBienes || totalCompra,
+        totalFacturado: (montoServicios || 0) + (montoBienes || totalCompra),
+        itbisFacturado: itbisFacturado || 0,
+        itbisRetenido: itbisRetenido || 0,
+        formaPago: tipoPago === "credito" ? "04" : metodoPago === "efectivo" ? "01" : metodoPago === "tarjeta" ? "03" : "02",
+        retencionIsr: retencionIsr || 0,
+        impuestoSelectivo: impuestoSelectivo || 0,
+        otrosImpuestos: otrosImpuestos || 0,
+        propinaLegal: propinaLegal || 0,
+      } : null,
+      expense: ((tipoPago === "contado" || tipoPago === "parcial") && resolvedMontoPagado > 0) ? {
+        id: crypto.randomUUID(),
+        categoryId: comprasCategoryId || null,
+        amount: resolvedMontoPagado,
+        paymentMethod: metodoPago || "cash",
+        description: `Compra insumos - Factura: ${numeroFactura || "S/N"}`,
+        notes: `Factura: ${numeroFactura || "S/N"} | ID: ${compraId}`,
+        expenseDate: fechaCompraFinal,
+        cycleId: activeCycleId,
+      } : null,
+      payable: ((tipoPago === "credito" || tipoPago === "parcial") && (totalAPagar - resolvedMontoPagado) > 0) ? {
+        id: crypto.randomUUID(),
+        totalAmount: totalAPagar - resolvedMontoPagado,
+        fechaEmision: fechaCompraFinal.slice(0, 10),
+        observacion: observacion || `Registrada automáticamente desde Módulo de Compras (ID: ${compraId})`,
+      } : null,
+    });
+    return { compraId };
   }
 
   // 2. Enqueue Local Write for Cabecera de Compra
@@ -613,5 +705,89 @@ export async function actualizarDatosFiscalesCompra(
       },
       deviceId
     });
+  }
+}
+
+/**
+ * Automatically bridges any purchase that lives only in IndexedDB (legacy local-first)
+ * into SQLite so it gets persisted in SQLite and pushed to Supabase by the durable worker.
+ */
+export async function syncIndexedDbComprasToSqlite(tenantId: string): Promise<number> {
+  const api = typeof window !== "undefined" ? window.electronAPI : undefined;
+  if (!api?.listCompras || !api?.executePurchaseCommand) return 0;
+
+  try {
+    const [sqliteRes, idbCompras, idbDetalles, idbFiscales] = await Promise.all([
+      api.listCompras(),
+      readLocalMirror<any>(tenantId, "compras").catch(() => []),
+      readLocalMirror<any>(tenantId, "compra_detalles").catch(() => []),
+      readLocalMirror<any>(tenantId, "compra_fiscal").catch(() => []),
+    ]);
+
+    if (!sqliteRes?.ok || !Array.isArray(sqliteRes.data)) return 0;
+    const sqliteIds = new Set(sqliteRes.data.map((c: any) => String(c.id)));
+
+    let migrated = 0;
+    for (const c of idbCompras) {
+      const cid = String(c.id);
+      if (!sqliteIds.has(cid)) {
+        const items = idbDetalles
+          .filter((d: any) => String(d.compra_id) === cid)
+          .map((d: any) => ({
+            id: String(d.id),
+            productoId: String(d.producto_id || d.productoId),
+            cantidad: Number(d.cantidad) || 1,
+            costoUnitario: Number(d.costo_unitario) || 0,
+            total: Number(d.total) || 0,
+          }));
+
+        const fiscal = idbFiscales.find((f: any) => String(f.compra_id) === cid);
+
+        await api.executePurchaseCommand({
+          type: "purchase.create",
+          id: cid,
+          supplierId: c.proveedor_id || "",
+          numeroFactura: c.numero_factura || null,
+          tipoPago: c.tipo_pago || "contado",
+          metodoPago: c.metodo_pago || null,
+          montoPagado: Number(c.monto_pagado) || 0,
+          fechaCompra: c.fecha_compra || new Date().toISOString(),
+          total: Number(c.total) || 0,
+          cycleId: c.cycle_id || null,
+          estado: c.estado || "completada",
+          observacion: c.observacion || null,
+          usuarioId: null, // Let Supabase trigger resolve or keep null
+          sucursalId: c.sucursal_id || null,
+          items: items.length > 0 ? items : [{
+            id: crypto.randomUUID(),
+            productoId: "item-general",
+            cantidad: 1,
+            costoUnitario: Number(c.total) || 0,
+            total: Number(c.total) || 0,
+          }],
+          fiscal: fiscal ? {
+            id: String(fiscal.id),
+            rncCedula: fiscal.rnc_cedula || "",
+            tipoIdentificacion: fiscal.tipo_identificacion || "1",
+            tipoBienServicio: fiscal.tipo_bien_servicio || "09",
+            ncf: fiscal.ncf || "",
+            ncfModificado: fiscal.ncf_modificado || null,
+            fechaComprobante: fiscal.fecha_comprobante || (c.fecha_compra || "").slice(0, 10),
+            fechaPago: fiscal.fecha_pago || null,
+            montoServicios: Number(fiscal.monto_servicios) || 0,
+            montoBienes: Number(fiscal.monto_bienes) || Number(c.total) || 0,
+            totalFacturado: Number(fiscal.total_facturado) || Number(c.total) || 0,
+            itbisFacturado: Number(fiscal.itbis_facturado) || 0,
+            itbisRetenido: Number(fiscal.itbis_retenido) || 0,
+            formaPago: fiscal.forma_pago || "01",
+          } : null,
+        });
+        migrated++;
+      }
+    }
+    return migrated;
+  } catch (err) {
+    console.warn("Error syncing IndexedDB compras to SQLite:", err);
+    return 0;
   }
 }
