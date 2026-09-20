@@ -758,13 +758,7 @@ export async function syncIndexedDbComprasToSqlite(tenantId: string): Promise<nu
           observacion: c.observacion || null,
           usuarioId: null, // Let Supabase trigger resolve or keep null
           sucursalId: c.sucursal_id || null,
-          items: items.length > 0 ? items : [{
-            id: crypto.randomUUID(),
-            productoId: "item-general",
-            cantidad: 1,
-            costoUnitario: Number(c.total) || 0,
-            total: Number(c.total) || 0,
-          }],
+          items,
           fiscal: fiscal ? {
             id: String(fiscal.id),
             rncCedula: fiscal.rnc_cedula || "",

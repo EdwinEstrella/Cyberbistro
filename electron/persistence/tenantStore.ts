@@ -693,6 +693,13 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
 
   ensureComprasOutboxIntegrity(): void {
     try {
+      this.database.prepare(`
+        DELETE FROM sync_outbox
+        WHERE tenant_id = ?
+          AND table_name IN ('compra_detalles', 'detalles_compra')
+          AND payload_json LIKE '%item-general%'
+      `).run(this.tenantId);
+
       const unqueuedCompras = this.database.prepare(`
         SELECT c.* FROM compras c
         WHERE c.tenant_id = ?
@@ -1714,6 +1721,13 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
   }
 
   retryFailedOutboxOperations(): number {
+    this.database.prepare(`
+      DELETE FROM sync_outbox
+      WHERE tenant_id = ?
+        AND table_name IN ('compra_detalles', 'detalles_compra')
+        AND payload_json LIKE '%item-general%'
+    `).run(this.tenantId);
+
     const result = this.database.prepare(`
       UPDATE sync_outbox
       SET status = 'pending', error_json = NULL
