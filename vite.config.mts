@@ -54,8 +54,8 @@ function copyPreload() {
 // Este archivo .mts fuerza ESM solo para la config de Vite (plugins como @tailwindcss/vite).
 export default defineConfig(async ({ mode }) => {
   const env = loadEnv(mode, __dirname, 'VITE_')
-  const supabaseUrl = env.VITE_SUPABASE_URL?.trim()
-  const supabasePublishableKey = env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim()
+  const supabaseUrl = env.VITE_SUPABASE_URL?.trim() || process.env.VITE_SUPABASE_URL?.trim() || 'https://ci-placeholder.supabase.co'
+  const supabasePublishableKey = env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() || process.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() || 'ci-placeholder-publishable-key'
 
   if (!supabaseUrl || !supabasePublishableKey) {
     throw new Error('VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY are required to build Cloudix.')
