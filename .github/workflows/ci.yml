@@ -42,6 +42,22 @@ jobs:
     runs-on: windows-latest
     needs: verify
 
+    # Real backend + test accounts for the login-driven specs. Override the
+    # workflow-level placeholder so the renderer is built against the real
+    # Supabase project and the specs can authenticate. Journey/unlinked specs
+    # skip themselves when their credentials are absent.
+    env:
+      VITE_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.E2E_SUPABASE_PUBLISHABLE_KEY }}
+      CYBERBISTRO_TEST_EMAIL: ${{ secrets.CYBERBISTRO_TEST_EMAIL }}
+      CYBERBISTRO_TEST_PASSWORD: ${{ secrets.CYBERBISTRO_TEST_PASSWORD }}
+      CYBERBISTRO_E2E_EMAIL: ${{ secrets.CYBERBISTRO_E2E_EMAIL }}
+      CYBERBISTRO_E2E_PASSWORD: ${{ secrets.CYBERBISTRO_E2E_PASSWORD }}
+      CYBERBISTRO_E2E_PRODUCT: ${{ secrets.CYBERBISTRO_E2E_PRODUCT }}
+      CYBERBISTRO_E2E_MESA: ${{ secrets.CYBERBISTRO_E2E_MESA }}
+      CYBERBISTRO_UNLINKED_E2E_EMAIL: ${{ secrets.CYBERBISTRO_UNLINKED_E2E_EMAIL }}
+      CYBERBISTRO_UNLINKED_E2E_PASSWORD: ${{ secrets.CYBERBISTRO_UNLINKED_E2E_PASSWORD }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
