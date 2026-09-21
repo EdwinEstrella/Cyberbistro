@@ -2,6 +2,14 @@ import { FormEvent, useEffect, useState } from "react";
 import { Edit } from "lucide-react";
 import { actualizarDatosFiscalesCompra } from "../lib/purchaseService";
 import type { CompraRow, ProveedorRow } from "./Compras";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../../shared/ui/select";
+import { DateTimePicker } from "../../../shared/ui/date-picker";
 
 interface EditarCompraFiscalModalProps {
   isOpen: boolean;
@@ -95,17 +103,21 @@ export function EditarCompraFiscalModal({
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.8px] font-semibold">Proveedor *</label>
-            <select
-              required
+            <Select
               value={formData.proveedor_id}
-              onChange={(e) => setFormData(prev => ({ ...prev, proveedor_id: e.target.value }))}
-              className="bg-[#111] border border-[rgba(72,72,71,0.4)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors cursor-pointer"
+              onValueChange={(val) => setFormData(prev => ({ ...prev, proveedor_id: val }))}
             >
-              <option value="">Selecciona proveedor</option>
-              {proveedores.map(p => (
-                <option key={p.id} value={p.id}>{p.nombre} ({p.rnc || "S/RNC"})</option>
-              ))}
-            </select>
+              <SelectTrigger className="bg-[#111] border border-[rgba(72,72,71,0.4)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors cursor-pointer h-[40px]">
+                <SelectValue placeholder="Selecciona proveedor" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.4)] text-white">
+                {proveedores.map(p => (
+                  <SelectItem key={p.id} value={p.id} className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">
+                    {p.nombre} ({p.rnc || "S/RNC"})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -122,12 +134,11 @@ export function EditarCompraFiscalModal({
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.8px] font-semibold">Fecha de Factura *</label>
-              <input
-                type="datetime-local"
-                required
+              <DateTimePicker
                 value={formData.fecha_compra}
-                onChange={(e) => setFormData(prev => ({ ...prev, fecha_compra: e.target.value }))}
-                className="bg-[#111] border border-[rgba(72,72,71,0.4)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors [color-scheme:dark]"
+                onChange={(val) => setFormData(prev => ({ ...prev, fecha_compra: val }))}
+                placeholder="Seleccionar fecha y hora"
+                className="bg-[#111] border border-[rgba(72,72,71,0.4)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] h-[40px]"
               />
             </div>
           </div>

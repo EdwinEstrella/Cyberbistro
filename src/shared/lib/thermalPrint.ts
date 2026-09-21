@@ -48,20 +48,23 @@ function openBrowserPrint(html: string): void {
   const iframe = document.createElement("iframe");
   iframe.setAttribute("aria-hidden", "true");
   iframe.style.position = "fixed";
-  iframe.style.right = "0";
-  iframe.style.bottom = "0";
-  iframe.style.width = "0";
-  iframe.style.height = "0";
-  iframe.style.border = "0";
-  iframe.style.visibility = "hidden";
+  iframe.style.left = "-9999px";
+  iframe.style.top = "-9999px";
+  iframe.style.width = "420px";
+  iframe.style.height = "600px";
+  iframe.style.border = "none";
+  iframe.style.opacity = "0";
 
   let cleaned = false;
   let printed = false;
   const cleanup = () => {
     if (cleaned) return;
     cleaned = true;
-    // Delay removal so the browser can finish handing the job to the print dialog.
-    setTimeout(() => iframe.remove(), 1000);
+    setTimeout(() => {
+      try {
+        iframe.remove();
+      } catch {}
+    }, 1000);
   };
 
   iframe.onload = () => {
@@ -71,29 +74,23 @@ function openBrowserPrint(html: string): void {
       cleanup();
       return;
     }
-    // Ignore about:blank initialization load before srcdoc renders
-    if (!win.document.body || win.document.body.innerHTML.trim() === "") {
-      return;
-    }
     printed = true;
     iframe.onload = null;
 
-    // Give images (logo) a beat to paint before printing. Mobile needs longer.
+    // Give images (logo) a beat to paint before printing.
     setTimeout(() => {
       try {
         win.focus();
         win.addEventListener("afterprint", cleanup, { once: true });
         win.print();
-        // Safety net in case afterprint never fires (some browsers).
         setTimeout(cleanup, 60000);
       } catch (err) {
         console.warn("thermalPrint: fallo al imprimir en el navegador", err);
         cleanup();
       }
-    }, isMobile ? 700 : 250);
+    }, isMobile ? 500 : 150);
   };
 
-  // Set srcdoc before appendChild to avoid initial about:blank navigation
   iframe.srcdoc = html;
   document.body.appendChild(iframe);
 }

@@ -37,12 +37,12 @@ export const SYNC_PULL_TABLES: readonly SyncPullTable[] = [
   // Not hard-deleted via pull: invoice deletion is audited, never a silent
   // snapshot-absence removal.
   { remoteTable: "facturas", localTable: "facturas", child: false, deletable: false },
-  // Purchases download for the compras module and finance analytics. Not
-  // hard-deleted via pull: a purchase absent from a snapshot page survives.
-  { remoteTable: "compras", localTable: "compras", child: false, deletable: false },
+  // Purchases download for the compras module and finance analytics.
+  // Reconciles remote deletions when a purchase is cancelled or deleted in web.
+  { remoteTable: "compras", localTable: "compras", child: false, deletable: true },
   // Fiscal (606) headers download so a SQLite-only fiscal edit has a local row.
   // MUST follow compras: the local FK requires the parent purchase first.
-  { remoteTable: "compra_fiscal", localTable: "compra_fiscal", child: false, deletable: false },
+  { remoteTable: "compra_fiscal", localTable: "compra_fiscal", child: false, deletable: true },
   // Accounts receivable/payable + their payments for the finance analytics
   // (por cobrar / por pagar). Accounts MUST precede their payments so the
   // payment foreign keys resolve within a single pull batch. Not hard-deleted
@@ -54,6 +54,8 @@ export const SYNC_PULL_TABLES: readonly SyncPullTable[] = [
   // Catálogo (menú) download for the carta/dashboard local-first read cutover.
   { remoteTable: "menu_categories", localTable: "menu_categories", child: false, deletable: true },
   { remoteTable: "platos", localTable: "platos", child: false, deletable: true },
+  { remoteTable: "productos_inventario", localTable: "productos_inventario", child: false, deletable: true },
+  { remoteTable: "recetas", localTable: "recetas", child: false, deletable: true },
   // Salón y Cocina (mesas, cocina, comandas, consumos)
   { remoteTable: "mesas_estado", localTable: "mesas_estado", child: false, deletable: true },
   { remoteTable: "cocina_estado", localTable: "cocina_estado", child: false, deletable: true },
@@ -75,12 +77,16 @@ export const SYNC_PULL_DELETE_ORDER: readonly string[] = [
   "comandas",
   "mesas_estado",
   "cocina_estado",
+  "compra_fiscal",
+  "compras",
   "gastos",
   "payroll_cloud_adjustments",
   "payroll_payments",
   "payroll_employees",
   "gasto_categorias",
   "customers",
+  "recetas",
+  "productos_inventario",
   "platos",
   "menu_categories",
 ];

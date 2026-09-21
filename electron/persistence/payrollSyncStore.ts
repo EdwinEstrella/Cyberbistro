@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { DurableSyncStore, DurableOperation, DurableOperationStatus, DurableOperationKind, PullBatch } from "./syncWorker";
-import { applyCloudExpenseRows, applyCloudExpenseCategoryRows, applyCloudCustomerRows, applyCloudOperationalCycleRows, applyCloudFacturaRows, applyCloudCompraRows, applyCloudCompraFiscalRows, applyCloudReceivableRows, applyCloudPayableRows, applyCloudCxcPagoRows, applyCloudCxpPagoRows, applyCloudDeletes, applyCloudMenuCategoryRows, applyCloudPlatoRows, applyCloudMesasEstadoRows, applyCloudCocinaEstadoRows, applyCloudComandaRows, applyCloudConsumoRows } from "./cloudApply";
+import { applyCloudExpenseRows, applyCloudExpenseCategoryRows, applyCloudCustomerRows, applyCloudOperationalCycleRows, applyCloudFacturaRows, applyCloudCompraRows, applyCloudCompraFiscalRows, applyCloudReceivableRows, applyCloudPayableRows, applyCloudCxcPagoRows, applyCloudCxpPagoRows, applyCloudDeletes, applyCloudMenuCategoryRows, applyCloudPlatoRows, applyCloudInventoryProductRows, applyCloudRecipeRows, applyCloudMesasEstadoRows, applyCloudCocinaEstadoRows, applyCloudComandaRows, applyCloudConsumoRows } from "./cloudApply";
 import { createHash } from "node:crypto";
 import { applyCloudPayrollEmployees, applyCloudPayrollPayments, applyCloudPayrollAdjustments } from "./payrollCloudApply";
 import { SYNC_PULL_TABLES, SYNC_PULLABLE_LOCAL_TABLES, SYNC_PULL_DELETE_ORDER } from "./syncPullRegistry";
@@ -25,6 +25,8 @@ const PULL_APPLIERS: Record<string, CloudRowApplier> = {
   cxp_pagos: applyCloudCxpPagoRows,
   platos: applyCloudPlatoRows,
   menu_categories: applyCloudMenuCategoryRows,
+  productos_inventario: applyCloudInventoryProductRows,
+  recetas: applyCloudRecipeRows,
   mesas_estado: applyCloudMesasEstadoRows,
   cocina_estado: applyCloudCocinaEstadoRows,
   comandas: applyCloudComandaRows,
@@ -59,6 +61,7 @@ const SUPPORTED_OUTBOX_TABLES = [
   "compra_fiscal",
   "movimientos_inventario",
   "inventario_movimientos",
+  "productos_inventario",
   "proveedores",
 ] as const;
 

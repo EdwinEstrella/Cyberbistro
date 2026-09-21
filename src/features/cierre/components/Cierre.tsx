@@ -15,6 +15,7 @@ import { writeCycleOpen, writeCycleClose, writeCycleDiscard, writeCyclePrinted }
 import { isDesktopRuntime, isCloudAvailableForDesktop } from "../../../shared/lib/cloudAvailability";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { calculateExpectedCashDrawer, sumCashExpenses } from "../../../shared/lib/cycleCash";
+import { DatePicker } from "../../../shared/ui/date-picker";
 
 type FacturaEstado = "pagada" | "pendiente" | "cancelada";
 
@@ -154,16 +155,15 @@ export function Cierre() {
   const hasOpenCycle = currentCycle != null && currentCycle.closed_at == null;
 
   const resumen = useMemo(() => {
-    const pagadas = facturas.filter(f => f.estado === "pagada");
-    const totalPagadoInvoices = pagadas.reduce((s, f) => s + Number(f.total), 0);
-    const subtotalPagado = pagadas.reduce((s, f) => s + Number(f.subtotal), 0);
-    const itbisPagado = pagadas.reduce((s, f) => s + Number(f.itbis), 0);
-    const propinaPagado = pagadas.reduce((s, f) => s + Number(f.propina ?? 0), 0);
+    const totalFacturas = facturas.reduce((s, f) => s + Number(f.total), 0);
+    const subtotal = facturas.reduce((s, f) => s + Number(f.subtotal), 0);
+    const itbis = facturas.reduce((s, f) => s + Number(f.itbis), 0);
+    const propina = facturas.reduce((s, f) => s + Number(f.propina ?? 0), 0);
     const totalCxc = cxcPagos.reduce((s, p) => s + Number(p.monto), 0);
-    const totalPagado = totalPagadoInvoices + totalCxc;
+    const totalPagado = totalFacturas + totalCxc;
 
     const porMetodoMap = new Map<string, { cantidad: number; total: number }>();
-    for (const f of pagadas) {
+    for (const f of facturas) {
       const k = f.metodo_pago || "otro";
       const cur = porMetodoMap.get(k) ?? { cantidad: 0, total: 0 };
       cur.cantidad += 1; cur.total += Number(f.total); porMetodoMap.set(k, cur);
@@ -173,7 +173,14 @@ export function Cierre() {
       const cur = porMetodoMap.get(k) ?? { cantidad: 0, total: 0 };
       cur.cantidad += 1; cur.total += Number(p.monto); porMetodoMap.set(k, cur);
     }
-    return { pagadas, pendientes: facturas.filter(f => f.estado === "pendiente"), totalPagado, subtotalPagado, itbisPagado, propinaPagado, totalPendiente: facturas.filter(f => f.estado === "pendiente").reduce((s, f) => s + Number(f.total), 0), porMetodo: [...porMetodoMap.entries()].map(([etiqueta, v]) => ({ etiqueta: etiquetaMetodo(etiqueta), ...v })).sort((a, b) => b.total - a.total), ticketPromedioPagado: pagadas.length > 0 ? totalPagadoInvoices / pagadas.length : 0 };
+    return {
+      facturas,
+      totalPagado,
+      subtotalPagado: subtotal,
+      itbisPagado: itbis,
+      propinaPagado: propina,
+      porMetodo: [...porMetodoMap.entries()].map(([etiqueta, v]) => ({ etiqueta: etiquetaMetodo(etiqueta), ...v })).sort((a, b) => b.total - a.total),
+    };
   }, [facturas, cxcPagos]);
 
   const resumenCuentasAbiertas = useMemo(() => {
@@ -228,7 +235,7 @@ export function Cierre() {
           ? (readLocalCierres(tenantId, { sucursalId: activeSucursalId || undefined }) as unknown as Promise<CierreOperativoRow[]>)
           : supabase.from("cierres_operativos").select("*").eq("tenant_id", tenantId).or(activeSucursalId ? `sucursal_id.eq.${activeSucursalId},sucursal_id.is.null` : `sucursal_id.is.null`).eq("business_day", toYmd(fecha)).order("cycle_number", { ascending: false }).then(r => ({ data: r.data, error: r.error })),
         useLocalConsumos
-          ? readLocalMirror<ConsumoAbiertoRow & { sucursal_id?: string | null; created_at?: string }>(tenantId, "consumos").then(rows => rows.filter(c => c.sucursal_id === activeSucursalId || !c.sucursal_id))
+          ? readLocalConsumos(tenantId, { sucursalId: activeSucursalId || undefined, unpaidOnly: true }).then(rows => rows.filter(c => c.sucursal_id === activeSucursalId || !c.sucursal_id) as unknown as ConsumoAbiertoRow[])
           : supabase.from("consumos").select("mesa_numero, subtotal, estado, created_at").eq("tenant_id", tenantId).or(activeSucursalId ? `sucursal_id.eq.${activeSucursalId},sucursal_id.is.null` : `sucursal_id.is.null`).neq("estado", "pagado").then(r => ({ data: r.data, error: r.error })),
         useLocalCiclos
           ? (readLocalCierres(tenantId, { sucursalId: activeSucursalId || undefined }) as unknown as Promise<CierreOperativoRow[]>)
@@ -545,16 +552,14 @@ export function Cierre() {
         // Filtramos para la sucursal de esta caja (o si sucursal_id es nulo)
         pend = (res.data ?? []).filter((c: any) => c.sucursal_id === activeSucursalId || !c.sucursal_id);
       } else {
-        // VPS OFFLINE: Nos fiamos de la IndexedDB local del espejo local, filtrando por la sucursal activa
-        const allConsumos = await readLocalMirror<ConsumoAbiertoRow & { sucursal_id?: string | null }>(tenantId, "consumos");
+        const allConsumos = await readLocalConsumos(tenantId, { sucursalId: activeSucursalId || undefined, unpaidOnly: true });
         pend = allConsumos.filter(
           c => c.estado !== "pagado" && (c.sucursal_id === activeSucursalId || !c.sucursal_id)
         );
       }
     } catch (err) {
       console.error("Error validando consumos pendientes:", err);
-      // Fallback seguro a local mirror en caso de fallo de red
-      const allConsumos = await readLocalMirror<ConsumoAbiertoRow & { sucursal_id?: string | null }>(tenantId, "consumos");
+      const allConsumos = await readLocalConsumos(tenantId, { sucursalId: activeSucursalId || undefined, unpaidOnly: true });
       pend = allConsumos.filter(
         c => c.estado !== "pagado" && (c.sucursal_id === activeSucursalId || !c.sucursal_id)
       );
@@ -627,9 +632,9 @@ export function Cierre() {
       const { paperWidthMm } = getThermalPrintSettings();
       const html = buildCierreDiaReceiptHtml(tenantData as any, {
         fechaOperacion: ymdToLongLabel(fecha), cicloNumero: currentCycle.cycle_number, generadoEn: formatCycleDateTime(now), generadoAtIso: now, abiertoAtIso: getCycleStartIso(currentCycle), cerradoAtIso: now,
-        facturasPagadas: pag.length, facturasPendientes: facturasCiclo.filter((f: any) => f.estado === "pendiente").length,
-        totalPagado: totalPag, subtotalPagado: pag.reduce((s: number, f: any) => s + Number(f.subtotal), 0), itbisPagado: pag.reduce((s: number, f: any) => s + Number(f.itbis), 0), propinaPagado: pag.reduce((s: number, f: any) => s + Number(f.propina ?? 0), 0),
-        porMetodo: [...metMap.values()].sort((a, b) => b.total - a.total), ticketPromedioPagado: pag.length ? pag.reduce((s: number, f: any) => s + Number(f.total), 0) / pag.length : 0,
+        facturasPagadas: facturasCiclo.length,
+        totalPagado: totalPag, subtotalPagado: facturasCiclo.reduce((s: number, f: any) => s + Number(f.subtotal), 0), itbisPagado: facturasCiclo.reduce((s: number, f: any) => s + Number(f.itbis), 0), propinaPagado: facturasCiclo.reduce((s: number, f: any) => s + Number(f.propina ?? 0), 0),
+        porMetodo: [...metMap.values()].sort((a, b) => b.total - a.total),
         gastosTotal: totalGastosCiclo, gastosCantidad: gastosCiclo.length, netoOperativo: totalPag - totalGastosCiclo,
         efectivoInicial: Number(currentCycle.efectivo_inicial ?? 0),
         cajaEsperada: calculateExpectedCashDrawer({
@@ -668,7 +673,12 @@ export function Cierre() {
         <div className="bg-card/50 backdrop-blur-[6px] rounded-2xl border border-black/10 dark:border-white/5 p-5 flex flex-wrap items-end gap-5 justify-between shadow-sm">
            <div className="flex flex-wrap gap-4 items-end">
               <div className="flex flex-col gap-1.5"><label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">Día Operativo</label>
-                <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className="bg-muted rounded-xl border border-black/10 dark:border-white/10 px-4 py-2.5 font-['Inter'] text-foreground outline-none focus:border-primary transition-all" />
+                <DatePicker
+                  value={fecha}
+                  onChange={(val) => setFecha(val)}
+                  placeholder="Día Operativo"
+                  className="bg-muted rounded-xl border border-black/10 dark:border-white/10 px-4 py-2.5 font-['Inter'] text-foreground h-[42px] min-w-[170px]"
+                />
               </div>
               <button onClick={() => void cargar()} className="bg-muted text-foreground px-6 py-2.5 rounded-xl font-bold uppercase text-[11px] tracking-widest border border-border hover:bg-black/5 dark:hover:bg-white/10 transition-all cursor-pointer">Actualizar</button>
            </div>
@@ -712,7 +722,7 @@ export function Cierre() {
         <div className="grid grid-cols-2 lg:grid-cols-7 gap-4">
             {[
               { label: "Total Cobrado", val: RD(resumen.totalPagado), color: "text-green-600 dark:text-green-400" },
-              { label: "Facturas", val: resumen.pagadas.length, color: "text-foreground" },
+              { label: "Facturas", val: resumen.facturas.length, color: "text-foreground" },
                { label: "Gastos", val: RD(resumenGastos.total), color: "text-primary" },
               { label: "Propina legal", val: RD(resumen.propinaPagado), color: "text-foreground" },
               { label: "Neto", val: RD(resumenGastos.neto), color: resumenGastos.neto >= 0 ? "text-green-600 dark:text-green-400" : "text-destructive" },

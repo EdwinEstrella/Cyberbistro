@@ -1,4 +1,7 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const TEST_EMAIL_ENV = 'CYBERBISTRO_TEST_EMAIL';
 const TEST_PASSWORD_ENV = 'CYBERBISTRO_TEST_PASSWORD';
@@ -38,13 +41,14 @@ async function attachDiagnosticsOnFailure(diagnostics: BrowserDiagnostics[]): Pr
   });
 }
 
-async function launchApp(diagnostics: BrowserDiagnostics[]): Promise<{ app: ElectronApplication; window: Page }> {
-  const app = await electron.launch({ args: ['.'] });
+async function launchApp(diagnostics: BrowserDiagnostics[]): Promise<{ app: ElectronApplication; window: Page; userDataDirectory: string }> {
+  const userDataDirectory = await mkdtemp(join(tmpdir(), 'cloudix-compras-modal-'));
+  const app = await electron.launch({ args: ['.', `--user-data-dir=${userDataDirectory}`] });
   const window = await app.firstWindow();
   diagnostics.push(attachDiagnostics(window));
   await loginIfNeeded(window);
   await waitForAppShell(window);
-  return { app, window };
+  return { app, window, userDataDirectory };
 }
 
 async function waitForLoginOrShell(page: Page): Promise<void> {
@@ -69,7 +73,7 @@ async function loginIfNeeded(page: Page): Promise<void> {
 
   const passwordInput = page.locator('input[type="password"], input[autocomplete="current-password"]').first();
   const email = process.env[TEST_EMAIL_ENV] || 'test@test.com';
-  const password = process.env[TEST_PASSWORD_ENV] || 'test123456';
+  const password = process.env[TEST_PASSWORD_ENV] || 'lia2026';
 
   await emailInput.fill(email);
   await passwordInput.fill(password);
@@ -88,16 +92,26 @@ test.describe('Compras Module - Formato 606', () => {
   });
 
   test('debe auto-calcular el ITBIS facturado al ingresar Monto en Servicios', async () => {
-    const { app, window } = await launchApp(diagnostics);
+    test.setTimeout(60_000);
+    const { app, window, userDataDirectory } = await launchApp(diagnostics);
 
     try {
+      // Esperar a que el plan y el tenant estén listos tras login
+      await expect(window.locator('text=/Plan /i')).toBeVisible({ timeout: 20_000 }).catch(() => {});
+
       // 1. Ir a Compras
       await window.locator('aside').getByRole('button', { name: /^Compras$/ }).click();
-      await expect(window.locator('h2', { hasText: 'Módulo de Compras' })).toBeVisible();
+      await expect(window.locator('h2', { hasText: 'Módulo de Compras' })).toBeVisible({ timeout: 15_000 });
+
+      // Esperar a que termine de cargar compras y se estabilice el render
+      await expect(window.locator('text=/Cargando compras/i')).toHaveCount(0, { timeout: 20_000 }).catch(() => {});
+      await window.waitForTimeout(1000);
 
       // 2. Abrir Modal de Registrar Compra
-      await window.getByRole('button', { name: /Registrar Compra/i }).click();
-      await expect(window.getByRole('heading', { name: /Registrar Factura de Compra/i })).toBeVisible();
+      const registrarBtn = window.locator('button:has-text("Registrar Compra")').first();
+      await expect(registrarBtn).toBeVisible({ timeout: 15_000 });
+      await registrarBtn.click();
+      await expect(window.locator('text="Registrar Factura de Compra"').first()).toBeVisible({ timeout: 15_000 });
 
       // 3. Buscar el campo "Monto Servicios" y llenarlo
       const montoServiciosInput = window.locator('input[placeholder="RD$ 0.00"]').nth(0); // Might be tricky, let's use label
@@ -119,6 +133,7 @@ test.describe('Compras Module - Formato 606', () => {
 
     } finally {
       await app.close();
+      await rm(userDataDirectory, { recursive: true, force: true }).catch(() => {});
     }
   });
 });

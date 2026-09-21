@@ -45,12 +45,38 @@ import {
   type LocalLicenseCache,
   type LocalWriteMode,
   type SyncOutboxEntry,
+  enqueueLocalWrite,
+  enqueueLocalWritesAtomically,
+  bootstrapLocalFirstPhase,
+  deleteLocalTenantDatabase,
+  getLocalDeviceSession,
+  getLocalFirstStatusSnapshot,
+  loadLicenseCache,
+  pushOutboxToServer,
+  readLocalMirror,
+  readLocalOutbox,
+  saveLicenseCache,
+  saveLocalDeviceSession,
+  syncIncremental,
+  syncLanEdge,
+  writeLocalMirrorRow,
+  processInvoiceInventoryDeduction,
 } from "./localFirst";
 
 describe("localFirst", () => {
   it("mantiene tablas mirror y metadata sin inventar entidades de negocio", () => {
-    expect(LOCAL_FIRST_MIRROR_TABLES).toContain("comandas");
-    expect(LOCAL_FIRST_MIRROR_TABLES).toContain("facturas");
+    expect(LOCAL_FIRST_MIRROR_TABLES).not.toContain("comandas");
+    expect(LOCAL_FIRST_MIRROR_TABLES).not.toContain("mesas_estado");
+    expect(LOCAL_FIRST_MIRROR_TABLES).not.toContain("consumos");
+    expect(LOCAL_FIRST_MIRROR_TABLES).not.toContain("facturas");
+    expect(LOCAL_FIRST_IMMEDIATE_TABLES).not.toContain("facturas");
+    expect(LOCAL_FIRST_IMMEDIATE_TABLES).not.toContain("comandas");
+    expect(LOCAL_FIRST_IMMEDIATE_TABLES).not.toContain("mesas_estado");
+    expect(LOCAL_FIRST_IMMEDIATE_TABLES).not.toContain("consumos");
+    expect(LOCAL_FIRST_HISTORY_TABLES).not.toContain("facturas");
+    expect(LOCAL_FIRST_HISTORY_TABLES).not.toContain("comandas");
+    expect(LOCAL_FIRST_HISTORY_TABLES).not.toContain("mesas_estado");
+    expect(LOCAL_FIRST_HISTORY_TABLES).not.toContain("consumos");
     expect(LOCAL_FIRST_MIRROR_TABLES).toContain("ecf_documents");
     expect(LOCAL_FIRST_MIRROR_TABLES).toContain("fiscal_outbox");
     expect(LOCAL_FIRST_MIRROR_TABLES).not.toContain("ecf_certificate_metadata");
@@ -79,7 +105,6 @@ describe("localFirst", () => {
         "tenants",
         "tenant_users",
         "platos",
-        "mesas_estado",
         "cocina_estado",
         "ecf_documents",
         "fiscal_outbox",
@@ -171,7 +196,8 @@ describe("localFirst", () => {
   it("expone mensaje cuando una consulta histórica aún puede estar incompleta", () => {
     expect(getHistoricalSyncIncompleteMessage("ready_history_syncing")).toContain("historial antiguo");
     expect(getHistoricalSyncIncompleteMessage("history_complete")).toBeNull();
-    expect(isLocalFirstMirrorTable("consumos")).toBe(true);
+    expect(isLocalFirstMirrorTable("platos")).toBe(true);
+    expect(isLocalFirstMirrorTable("consumos")).toBe(false);
     expect(isLocalFirstMirrorTable("orders")).toBe(false);
   });
 
@@ -402,6 +428,7 @@ describe("localFirst", () => {
       local_device_session: sessionRows,
     };
     let deleteDatabaseCalled = false;
+    let openDatabaseCalled = false;
 
     globalThis.localStorage = {
       getItem: (key: string) => key === "cloudix_last_tenant_id" ? "tenant-1" : null,
@@ -413,6 +440,7 @@ describe("localFirst", () => {
     } as Storage;
     globalThis.indexedDB = {
       open: () => {
+        openDatabaseCalled = true;
         const request: any = {};
         queueMicrotask(() => {
           const transaction: any = {
@@ -421,11 +449,13 @@ describe("localFirst", () => {
             }),
           };
           request.result = {
-            transaction: () => transaction,
+            transaction: () => {
+              queueMicrotask(() => transaction.oncomplete?.());
+              return transaction;
+            },
             close: () => undefined,
           };
           request.onsuccess?.();
-          queueMicrotask(() => transaction.oncomplete?.());
         });
         return request;
       },
@@ -442,9 +472,112 @@ describe("localFirst", () => {
       expect(stores.facturas.has("sale-1")).toBe(true);
       expect(stores.sync_outbox.has("outbox-1")).toBe(true);
       expect(stores.local_fiscal_outbox.has("fiscal-1")).toBe(true);
+      expect(openDatabaseCalled).toBe(true);
       expect(deleteDatabaseCalled).toBe(false);
     } finally {
       globalThis.localStorage = originalStorage;
+      globalThis.indexedDB = originalIndexedDb;
+    }
+  });
+
+  it("keeps Desktop on SQLite/localStorage without touching IndexedDB", async () => {
+    const originalWindow = globalThis.window;
+    const originalStorage = globalThis.localStorage;
+    const originalIndexedDb = globalThis.indexedDB;
+    const storage = new Map<string, string>();
+    let openCalls = 0;
+    let deleteCalls = 0;
+
+    globalThis.window = { electronAPI: {} } as Window & typeof globalThis;
+    globalThis.localStorage = {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => { storage.set(key, value); },
+      removeItem: (key: string) => { storage.delete(key); },
+      clear: () => storage.clear(),
+      key: (index: number) => [...storage.keys()][index] ?? null,
+      get length() { return storage.size; },
+    } as Storage;
+    globalThis.indexedDB = {
+      open: () => {
+        openCalls += 1;
+        throw new Error("Desktop must not open IndexedDB");
+      },
+      deleteDatabase: () => {
+        deleteCalls += 1;
+        throw new Error("Desktop must not delete IndexedDB");
+      },
+    } as unknown as IDBFactory;
+
+    try {
+      await saveLocalDeviceSession("tenant-1", "user-1", "user@example.com", { rol: "admin" });
+      expect(await getLocalDeviceSession("tenant-1")).toMatchObject({ tenant_id: "tenant-1", user_id: "user-1" });
+
+      const savedLicense = await saveLicenseCache("tenant-1", true, true);
+      expect(await loadLicenseCache("tenant-1")).toEqual(savedLicense);
+
+      await expect(readLocalMirror("tenant-1", "sucursales")).resolves.toEqual([]);
+      await expect(readLocalOutbox("tenant-1")).resolves.toEqual([]);
+      await expect(getLocalFirstStatusSnapshot("tenant-1")).resolves.toEqual({
+        status: "history_complete",
+        completedHistoryTables: 0,
+        totalHistoryTables: 0,
+      });
+      await expect(bootstrapLocalFirstPhase({ tenantId: "tenant-1", phase: "minimum", tables: ["sucursales"] })).resolves.toBeUndefined();
+      await expect(syncIncremental("tenant-1")).resolves.toEqual({ tablesUpdated: 0, rowsPulled: 0 });
+      await expect(syncLanEdge("tenant-1")).resolves.toEqual({ applied: 0 });
+      await expect(pushOutboxToServer("tenant-1")).resolves.toEqual({ pushed: 0, failed: 0 });
+      await expect(writeLocalMirrorRow("tenant-1", "sucursales", { id: "branch-1" })).rejects.toThrow("SQLite persistence bridge");
+      await expect(processInvoiceInventoryDeduction("tenant-1", { items: [{ plato_id: 1, cantidad: 1 }] }, "user-1", "device-1")).resolves.toBeUndefined();
+
+      await deleteLocalTenantDatabase("tenant-1");
+      expect(openCalls).toBe(0);
+      expect(deleteCalls).toBe(0);
+    } finally {
+      if (originalWindow === undefined) delete (globalThis as { window?: Window }).window;
+      else globalThis.window = originalWindow;
+      globalThis.localStorage = originalStorage;
+      globalThis.indexedDB = originalIndexedDb;
+    }
+  });
+
+  it.each(["error", "blocked"] as const)("does not reopen Web IndexedDB when recovery deletion is %s", async (outcome) => {
+    const originalWindow = globalThis.window;
+    const originalIndexedDb = globalThis.indexedDB;
+    let openCalls = 0;
+    let deleteCalls = 0;
+
+    globalThis.window = undefined as unknown as Window & typeof globalThis;
+    globalThis.indexedDB = {
+      open: () => {
+        openCalls += 1;
+        const request: any = {};
+        queueMicrotask(() => {
+          request.error = new DOMException("Internal error", "UnknownError");
+          request.onerror?.();
+        });
+        return request;
+      },
+      deleteDatabase: () => {
+        deleteCalls += 1;
+        const request: any = {};
+        queueMicrotask(() => {
+          if (outcome === "blocked") request.onblocked?.();
+          else {
+            request.error = new DOMException("delete failed", "UnknownError");
+            request.onerror?.();
+          }
+        });
+        return request;
+      },
+    } as unknown as IDBFactory;
+
+    try {
+      await expect(saveLicenseCache(`tenant-recovery-${outcome}`, true, true)).rejects.toThrow();
+      expect(openCalls).toBe(1);
+      expect(deleteCalls).toBe(1);
+    } finally {
+      if (originalWindow === undefined) delete (globalThis as { window?: Window }).window;
+      else globalThis.window = originalWindow;
       globalThis.indexedDB = originalIndexedDb;
     }
   });
@@ -1058,5 +1191,72 @@ describe("localFirst", () => {
 
     const resultCxp = resolveConflictForTable("cxp_pagos", entryCxp, { id: "cxp-pago-1" });
     expect(resultCxp.resolution).toBe("server_wins");
+  });
+
+  it("rechaza escribir facturas en IndexedDB vía enqueueLocalWrite", async () => {
+    await expect(
+      enqueueLocalWrite({
+        tenantId: "tenant-1",
+        tableName: "facturas" as any,
+        rowId: "f-1",
+        op: "insert",
+        payload: { id: "f-1" },
+        deviceId: "dev-1",
+      })
+    ).rejects.toThrow("cannot be written to IndexedDB");
+  });
+
+  it("rechaza escribir comandas en IndexedDB vía enqueueLocalWrite", async () => {
+    await expect(
+      enqueueLocalWrite({
+        tenantId: "tenant-1",
+        tableName: "comandas" as any,
+        rowId: "c-1",
+        op: "insert",
+        payload: { id: "c-1" },
+        deviceId: "dev-1",
+      })
+    ).rejects.toThrow("cannot be written to IndexedDB");
+  });
+
+  it("rechaza escribir mesas_estado en IndexedDB vía enqueueLocalWrite", async () => {
+    await expect(
+      enqueueLocalWrite({
+        tenantId: "tenant-1",
+        tableName: "mesas_estado" as any,
+        rowId: "m-1",
+        op: "insert",
+        payload: { id: "m-1" },
+        deviceId: "dev-1",
+      })
+    ).rejects.toThrow("cannot be written to IndexedDB");
+  });
+
+  it("rechaza escribir consumos en IndexedDB vía enqueueLocalWrite", async () => {
+    await expect(
+      enqueueLocalWrite({
+        tenantId: "tenant-1",
+        tableName: "consumos" as any,
+        rowId: "c-1",
+        op: "insert",
+        payload: { id: "c-1" },
+        deviceId: "dev-1",
+      })
+    ).rejects.toThrow("cannot be written to IndexedDB");
+  });
+
+  it("rechaza encolar facturas, comandas, mesas o consumos en IndexedDB vía enqueueLocalWritesAtomically", async () => {
+    await expect(
+      enqueueLocalWritesAtomically([
+        {
+          tenantId: "tenant-1",
+          tableName: "consumos" as any,
+          rowId: "c-1",
+          op: "insert",
+          payload: { id: "c-1" },
+          deviceId: "dev-1",
+        },
+      ])
+    ).rejects.toThrow("cannot be enqueued in IndexedDB");
   });
 });

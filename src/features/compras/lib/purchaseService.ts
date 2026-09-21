@@ -37,139 +37,83 @@ function hasSqlitePurchases(): boolean {
 }
 
 export async function eliminarCompra(tenantId: string, compraId: string, _usuarioId: string | null): Promise<void> {
-  if (hasSqlitePurchases()) {
-    await window.electronAPI!.executePurchaseCommand!({
-      type: "purchase.delete",
-      purchaseId: compraId,
-      usuarioId: _usuarioId,
-    });
-    return;
-  }
-
   const deviceId = await getDeviceId();
 
-  // 1. Obtener la compra
-  const compras = await readLocalMirror<{ id: string; sucursal_id: string; fecha_compra: string }>(tenantId, "compras");
-  const compra = compras.find(c => c.id === compraId);
-  if (!compra) throw new Error("La compra no existe o ya fue eliminada.");
+  // 1. Obtener movimientos y detalles para revertir el stock
+  const [detalles, movimientos, productos] = await Promise.all([
+    readLocalMirror<{ id: string; compra_id: string; producto_id: string; cantidad: number }>(tenantId, "compra_detalles").catch(() => []),
+    readLocalMirror<{ id: string; producto_id: string; cantidad: number; referencia: string }>(tenantId, "inventario_movimientos").catch(() => []),
+    readLocalMirror<{ id: string; stock_actual: number }>(tenantId, "productos_inventario").catch(() => []),
+  ]);
 
-  // 2. Obtener movimientos de inventario asociados para revertir el stock
-  const movimientos = await readLocalMirror<{
-    id: string;
-    producto_id: string;
-    cantidad: number;
-    referencia: string;
-  }>(tenantId, "inventario_movimientos");
-  
-  const movsCompra = movimientos.filter(m => m.referencia === `Compra: ${compraId}`);
+  const detallesCompra = detalles.filter(d => d.compra_id === compraId);
+  const movsCompra = movimientos.filter(m => m.referencia === `Compra: ${compraId}` || (m.referencia && m.referencia.includes(compraId)));
+
+  const stockReversionMap = new Map<string, number>();
+  if (detallesCompra.length > 0) {
+    for (const d of detallesCompra) {
+      stockReversionMap.set(d.producto_id, (stockReversionMap.get(d.producto_id) || 0) + Number(d.cantidad));
+    }
+  } else if (movsCompra.length > 0) {
+    for (const m of movsCompra) {
+      stockReversionMap.set(m.producto_id, (stockReversionMap.get(m.producto_id) || 0) + Number(m.cantidad));
+    }
+  }
 
   // Revertir el stock en productos_inventario
-  const productos = await readLocalMirror<{ id: string; stock_actual: number }>(tenantId, "productos_inventario");
-  
-  for (const mov of movsCompra) {
-    const prod = productos.find(p => p.id === mov.producto_id);
+  for (const [prodId, qty] of stockReversionMap.entries()) {
+    const prod = productos.find(p => p.id === prodId);
     if (prod) {
-      const nuevoStock = Number(prod.stock_actual) - Number(mov.cantidad);
+      const nuevoStock = Math.max(0, Number(prod.stock_actual) - Number(qty));
       await enqueueLocalWrite({
         tenantId,
         tableName: "productos_inventario",
         rowId: prod.id,
         op: "update",
         payload: {
-          stock_actual: Math.max(0, nuevoStock),
+          stock_actual: nuevoStock,
           updated_at: new Date().toISOString()
         },
         deviceId
-      });
+      }).catch((e) => console.warn("Error revirtiendo stock:", e));
     }
-
-    // Borrar el movimiento original para que el historial cuadre con el nuevo stock
-    await enqueueLocalWrite({
-      tenantId,
-      tableName: "inventario_movimientos",
-      rowId: mov.id,
-      op: "delete",
-      payload: { id: mov.id },
-      deviceId
-    });
   }
 
-  // 3. Borrar los detalles de la compra
-  const detalles = await readLocalMirror<{ id: string; compra_id: string }>(tenantId, "compra_detalles");
-  const detallesCompra = detalles.filter(d => d.compra_id === compraId);
+  // 2. Limpiar registros relacionados en el espejo local
+  for (const mov of movsCompra) {
+    await enqueueLocalWrite({ tenantId, tableName: "inventario_movimientos", rowId: mov.id, op: "delete", payload: { id: mov.id }, deviceId }).catch(() => {});
+  }
   for (const d of detallesCompra) {
-    await enqueueLocalWrite({
-      tenantId,
-      tableName: "compra_detalles",
-      rowId: d.id,
-      op: "delete",
-      payload: { id: d.id },
-      deviceId
-    });
+    await enqueueLocalWrite({ tenantId, tableName: "compra_detalles", rowId: d.id, op: "delete", payload: { id: d.id }, deviceId }).catch(() => {});
   }
-
-  // 4. Borrar registro fiscal
-  const fiscales = await readLocalMirror<{ compra_id: string; id: string }>(tenantId, "compra_fiscal");
+  const fiscales = await readLocalMirror<{ compra_id: string; id: string }>(tenantId, "compra_fiscal").catch(() => []);
   const fiscal = fiscales.find(f => f.compra_id === compraId);
   if (fiscal) {
-    await enqueueLocalWrite({
-      tenantId,
-      tableName: "compra_fiscal",
-      rowId: fiscal.id,
-      op: "delete",
-      payload: { id: fiscal.id },
-      deviceId
-    });
+    await enqueueLocalWrite({ tenantId, tableName: "compra_fiscal", rowId: fiscal.id, op: "delete", payload: { id: fiscal.id }, deviceId }).catch(() => {});
   }
-
-  // 5. Borrar CxP
-  const cxpList = await readLocalMirror<{ compra_id: string; id: string }>(tenantId, "cuentas_pagar");
+  const cxpList = await readLocalMirror<{ compra_id: string; id: string }>(tenantId, "cuentas_pagar").catch(() => []);
   const cxp = cxpList.find(c => c.compra_id === compraId);
   if (cxp) {
-    await enqueueLocalWrite({
-      tenantId,
-      tableName: "cuentas_pagar",
-      rowId: cxp.id,
-      op: "delete",
-      payload: { id: cxp.id },
-      deviceId
-    });
+    await enqueueLocalWrite({ tenantId, tableName: "cuentas_pagar", rowId: cxp.id, op: "delete", payload: { id: cxp.id }, deviceId }).catch(() => {});
   }
-
-  // 6. Borrar Gasto asociado (si aplica)
-  const gastos = await readLocalMirror<{ id: string; notas: string | null }>(tenantId, "gastos");
+  const gastos = await readLocalMirror<{ id: string; notas: string | null }>(tenantId, "gastos").catch(() => []);
   const gasto = gastos.find(g => g.notas && g.notas.includes(`ID: ${compraId}`));
   if (gasto) {
-    await enqueueLocalWrite({
-      tenantId,
-      tableName: "gastos",
-      rowId: gasto.id,
-      op: "delete",
-      payload: { id: gasto.id },
-      deviceId
-    });
+    await enqueueLocalWrite({ tenantId, tableName: "gastos", rowId: gasto.id, op: "delete", payload: { id: gasto.id }, deviceId }).catch(() => {});
   }
+  await enqueueLocalWrite({ tenantId, tableName: "compras", rowId: compraId, op: "delete", payload: { id: compraId }, deviceId }).catch(() => {});
 
-  // 7. Borrar la compra
-  await enqueueLocalWrite({
-    tenantId,
-    tableName: "compras",
-    rowId: compraId,
-    op: "delete",
-    payload: { id: compraId },
-    deviceId
-  });
-
-  const api = typeof window !== "undefined" ? window.electronAPI : undefined;
-  if (api?.executePurchaseCommand) {
+  // 3. Ejecutar comando en SQLite si opera bajo Desktop
+  if (hasSqlitePurchases()) {
     try {
-      await api.executePurchaseCommand({
+      await window.electronAPI!.executePurchaseCommand!({
         type: "purchase.delete",
         purchaseId: compraId,
         usuarioId: _usuarioId,
       });
     } catch (err) {
-      console.warn("Error deleting purchase in SQLite:", err);
+      console.warn("Error eliminando compra en SQLite:", err);
+      throw err;
     }
   }
 }
@@ -423,6 +367,22 @@ export async function registrarCompra(input: PurchaseInput): Promise<{ compraId:
         observacion: observacion || `Registrada automáticamente desde Módulo de Compras (ID: ${compraId})`,
       } : null,
     });
+
+    for (const item of processedItems) {
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "productos_inventario",
+        rowId: item.producto_id,
+        op: "update",
+        payload: {
+          stock_actual: item.nuevoStock,
+          costo_promedio: item.nuevoCostoPromedio,
+          updated_at: new Date().toISOString(),
+        },
+        deviceId,
+      }).catch((e) => console.warn("Error actualizando stock de producto:", e));
+    }
+
     return { compraId };
   }
 
@@ -731,6 +691,11 @@ export async function syncIndexedDbComprasToSqlite(tenantId: string): Promise<nu
   const api = typeof window !== "undefined" ? window.electronAPI : undefined;
   if (!api?.listCompras || !api?.executePurchaseCommand) return 0;
 
+  const migrationKey = `cloudix_compras_idb_migrated_${tenantId}`;
+  if (typeof localStorage !== "undefined" && localStorage.getItem(migrationKey)) {
+    return 0;
+  }
+
   try {
     const [sqliteRes, idbCompras, idbDetalles, idbFiscales] = await Promise.all([
       api.listCompras(),
@@ -793,6 +758,9 @@ export async function syncIndexedDbComprasToSqlite(tenantId: string): Promise<nu
         });
         migrated++;
       }
+    }
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(migrationKey, "true");
     }
     return migrated;
   } catch (err) {

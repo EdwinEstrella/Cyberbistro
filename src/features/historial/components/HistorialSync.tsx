@@ -138,6 +138,9 @@ async function fetchCloudCounts(tenantId: string): Promise<Record<string, number
 async function fetchMirrorCounts(tenantId: string): Promise<Record<string, number>> {
   const entries = await Promise.all(
     CLOUD_COMPARABLE_TABLES.map(async (table) => {
+      if (table === "facturas") {
+        return [table, 0] as const;
+      }
       try {
         const rows = await readLocalMirror<Record<string, unknown>>(tenantId, table as never);
         return [table, Array.isArray(rows) ? rows.length : 0] as const;

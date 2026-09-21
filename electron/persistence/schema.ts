@@ -59,14 +59,32 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
       id TEXT PRIMARY KEY,
       tenant_id TEXT NOT NULL REFERENCES tenants(id),
       name TEXT NOT NULL,
-      unit TEXT NOT NULL
+      unit TEXT NOT NULL,
+      sucursal_id TEXT,
+      nombre TEXT,
+      categoria TEXT,
+      unidad_base TEXT,
+      unidad_compra TEXT,
+      contenido_por_unidad_compra REAL,
+      stock_actual REAL NOT NULL DEFAULT 0,
+      stock_minimo REAL NOT NULL DEFAULT 0,
+      costo_promedio REAL NOT NULL DEFAULT 0,
+      costo_unidad_compra REAL,
+      activo INTEGER,
+      created_at TEXT,
+      updated_at TEXT
     ) STRICT;
     CREATE TABLE IF NOT EXISTS recetas (
       id TEXT PRIMARY KEY,
       tenant_id TEXT NOT NULL REFERENCES tenants(id),
       plato_id TEXT NOT NULL REFERENCES platos(id),
       inventory_product_id TEXT NOT NULL REFERENCES productos_inventario(id),
-      quantity REAL NOT NULL CHECK (quantity > 0)
+      quantity REAL NOT NULL CHECK (quantity > 0),
+      sucursal_id TEXT,
+      insumo_id TEXT,
+      cantidad REAL,
+      created_at TEXT,
+      updated_at TEXT
     ) STRICT;
     CREATE TABLE IF NOT EXISTS foundation_records (
       id TEXT PRIMARY KEY,
@@ -153,14 +171,24 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
       sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
       factura_id TEXT NOT NULL UNIQUE REFERENCES facturas(id),
       document_type TEXT NOT NULL,
-      status TEXT NOT NULL CHECK (status IN ('pending_sync', 'pending_processing'))
+      status TEXT NOT NULL CHECK (status IN ('pending_sync', 'pending_processing')),
+      certificate_metadata_id TEXT,
+      created_at TEXT,
+      updated_at TEXT
     ) STRICT;
     CREATE TABLE IF NOT EXISTS fiscal_outbox (
       id TEXT PRIMARY KEY,
       tenant_id TEXT NOT NULL REFERENCES tenants(id),
       sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
       factura_id TEXT NOT NULL REFERENCES facturas(id),
-      status TEXT NOT NULL CHECK (status IN ('pending', 'syncing'))
+      ecf_document_id TEXT,
+      operation TEXT,
+      status TEXT NOT NULL CHECK (status IN ('pending', 'syncing')),
+      attempts INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at TEXT,
+      idempotency_key TEXT,
+      created_at TEXT,
+      updated_at TEXT
     ) STRICT;
     CREATE TABLE IF NOT EXISTS ecf_sequence_allocations (
       id TEXT PRIMARY KEY,
@@ -201,6 +229,21 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
       quantity REAL NOT NULL CHECK (quantity > 0),
       unit_cost REAL NOT NULL CHECK (unit_cost >= 0),
       FOREIGN KEY (compra_id, tenant_id, sucursal_id) REFERENCES compras (id, tenant_id, sucursal_id)
+    ) STRICT;
+    CREATE TABLE IF NOT EXISTS inventario_movimientos (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL REFERENCES tenants(id),
+      sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
+      producto_id TEXT NOT NULL REFERENCES productos_inventario(id),
+      tipo TEXT NOT NULL,
+      cantidad REAL NOT NULL CHECK (cantidad > 0),
+      stock_antes REAL NOT NULL,
+      stock_despues REAL NOT NULL,
+      costo_unitario REAL NOT NULL DEFAULT 0,
+      motivo TEXT,
+      referencia TEXT,
+      fecha TEXT NOT NULL,
+      usuario_id TEXT
     ) STRICT;
     -- Remote adjustments belong to employees, not payments. Keep their original
     -- contract instead of inventing a payment association during download.
@@ -405,6 +448,8 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
     CREATE INDEX IF NOT EXISTS idx_payroll_payments_employee_period ON payroll_payments (tenant_id, sucursal_id, employee_id, period);
     CREATE INDEX IF NOT EXISTS idx_payroll_adjustments_payment ON payroll_payment_adjustments (payment_id);
     CREATE INDEX IF NOT EXISTS idx_gastos_payroll_payment ON gastos (payroll_payment_id);
+    CREATE INDEX IF NOT EXISTS idx_ecf_documents_pending ON ecf_documents (tenant_id, sucursal_id, status);
+    CREATE INDEX IF NOT EXISTS idx_fiscal_outbox_pending ON fiscal_outbox (tenant_id, sucursal_id, status);
   `);
   migrateLegacyPayrollSchema(database);
   ensureSyncOutboxSchemaEvolution(database);
@@ -415,12 +460,82 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
   ensureReceivablesSchemaEvolution(database);
   ensurePayablesSchemaEvolution(database);
   ensureSalonCocinaSchemaEvolution(database);
+  ensureInventorySchemaEvolution(database);
+  ensureFiscalCheckoutSchemaEvolution(database);
   database.exec(`
     CREATE INDEX IF NOT EXISTS idx_payroll_payments_employee_period ON payroll_payments (tenant_id, sucursal_id, employee_id, period);
     CREATE INDEX IF NOT EXISTS idx_payroll_adjustments_payment ON payroll_payment_adjustments (payment_id);
     CREATE INDEX IF NOT EXISTS idx_gastos_payroll_payment ON gastos (payroll_payment_id);
   `);
   database.exec("UPDATE sync_outbox SET status = 'pending' WHERE status = 'syncing';");
+}
+
+function ensureInventorySchemaEvolution(database: DatabaseSync): void {
+  const productColumns = getTableColumns(database, "productos_inventario");
+  const productAdditions = [
+    ["sucursal_id", "TEXT"], ["nombre", "TEXT"], ["categoria", "TEXT"],
+    ["unidad_base", "TEXT"], ["unidad_compra", "TEXT"], ["contenido_por_unidad_compra", "REAL"],
+    ["stock_actual", "REAL NOT NULL DEFAULT 0"], ["stock_minimo", "REAL NOT NULL DEFAULT 0"],
+    ["costo_promedio", "REAL NOT NULL DEFAULT 0"], ["costo_unidad_compra", "REAL"],
+    ["activo", "INTEGER"], ["created_at", "TEXT"], ["updated_at", "TEXT"],
+  ] as const;
+  for (const [column, definition] of productAdditions) {
+    if (!productColumns.includes(column)) database.exec(`ALTER TABLE productos_inventario ADD COLUMN ${column} ${definition};`);
+  }
+
+  const recipeColumns = getTableColumns(database, "recetas");
+  const recipeAdditions = [
+    ["sucursal_id", "TEXT"], ["insumo_id", "TEXT"], ["cantidad", "REAL"],
+    ["created_at", "TEXT"], ["updated_at", "TEXT"],
+  ] as const;
+  for (const [column, definition] of recipeAdditions) {
+    if (!recipeColumns.includes(column)) database.exec(`ALTER TABLE recetas ADD COLUMN ${column} ${definition};`);
+  }
+}
+
+function ensureFiscalCheckoutSchemaEvolution(database: DatabaseSync): void {
+  const ecfColumns = getTableColumns(database, "ecf_documents");
+  if (!ecfColumns.includes("certificate_metadata_id")) {
+    recreateTable(database, "ecf_documents", `
+      CREATE TABLE ecf_documents (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id),
+        sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
+        factura_id TEXT NOT NULL UNIQUE REFERENCES facturas(id),
+        document_type TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending_sync', 'pending_processing')),
+        certificate_metadata_id TEXT,
+        created_at TEXT,
+        updated_at TEXT
+      ) STRICT;
+    `, `
+      INSERT INTO ecf_documents (id, tenant_id, sucursal_id, factura_id, document_type, status)
+      SELECT id, tenant_id, sucursal_id, factura_id, document_type, status FROM __old_table__;
+    `);
+  }
+
+  const outboxColumns = getTableColumns(database, "fiscal_outbox");
+  if (!outboxColumns.includes("ecf_document_id")) {
+    recreateTable(database, "fiscal_outbox", `
+      CREATE TABLE fiscal_outbox (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL REFERENCES tenants(id),
+        sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
+        factura_id TEXT NOT NULL REFERENCES facturas(id),
+        ecf_document_id TEXT,
+        operation TEXT,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'syncing')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at TEXT,
+        idempotency_key TEXT,
+        created_at TEXT,
+        updated_at TEXT
+      ) STRICT;
+    `, `
+      INSERT INTO fiscal_outbox (id, tenant_id, sucursal_id, factura_id, status)
+      SELECT id, tenant_id, sucursal_id, factura_id, status FROM __old_table__;
+    `);
+  }
 }
 
 function ensureSyncOutboxSchemaEvolution(database: DatabaseSync): void {

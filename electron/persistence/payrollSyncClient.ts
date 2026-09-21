@@ -269,6 +269,10 @@ export class PayrollSyncClient implements ServerSyncClient {
             .eq(child ? "nomina_empleados.tenant_id" : "tenant_id", input.tenantId)
             .order("id", { ascending: true })
             .limit(PULL_PAGE_SIZE);
+          if (table === "comandas" && typeof (query as any).gte === "function") {
+            const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+            query = (query as any).gte("created_at", threeDaysAgo);
+          }
           if (afterId != null) query = query.gt("id", afterId);
           const { data, error } = await query;
           if (error) throw new Error(`Pull failed for ${table}: ${error.message}`);
@@ -361,6 +365,9 @@ function mapDeleteOperation(operation: DurableOperation):
   if (operation.tableName === "platos") {
     return { ok: true, remoteTable: "platos" };
   }
+  if (operation.tableName === "productos_inventario") {
+    return { ok: true, remoteTable: "productos_inventario" };
+  }
   if (operation.tableName === "menu_categories") {
     return { ok: true, remoteTable: "menu_categories" };
   }
@@ -439,6 +446,8 @@ function mapOperation(operation: DurableOperation):
         return { ok: true, remoteTable: "customers", payload: mapCustomerPayload(operation, operation.payload) };
       case "platos":
         return { ok: true, remoteTable: "platos", payload: mapPlatoPayload(operation, operation.payload) };
+      case "productos_inventario":
+        return { ok: true, remoteTable: "productos_inventario", payload: mapInventoryProductStockPayload(operation, operation.payload), isPartial: true };
       case "menu_categories":
         return { ok: true, remoteTable: "menu_categories", payload: mapMenuCategoryPayload(operation, operation.payload) };
       case "cuentas_cobrar":
@@ -879,6 +888,15 @@ function mapInventarioMovimientoPayload(operation: DurableOperation, payload: Re
     ...(referencia ? { referencia: String(referencia) } : {}),
     fecha: String(fecha),
     ...(usuarioId ? { usuario_id: String(usuarioId) } : {}),
+  };
+}
+
+function mapInventoryProductStockPayload(_operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
+  const stock = Number(payload.stock_actual);
+  if (!Number.isFinite(stock)) throw new Error("productos_inventario.stock_actual must be a finite number");
+  return {
+    stock_actual: stock,
+    updated_at: payload.updated_at ? String(payload.updated_at) : new Date().toISOString(),
   };
 }
 

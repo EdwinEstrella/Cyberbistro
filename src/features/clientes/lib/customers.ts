@@ -7,6 +7,7 @@ import {
   shouldReadLocalFirst,
   deleteLocalMirrorRow,
 } from "../../../shared/lib/localFirst";
+import { readLocalInvoices } from "../../billing/lib/invoicesLocal";
 
 export interface Customer {
   id: string;
@@ -273,11 +274,11 @@ export async function softDeleteCustomer(tenantId: string, customerId: string): 
 }
 
 export async function listCustomerInvoices(tenantId: string, customerId: string) {
-  if (await shouldReadLocalFirst(tenantId, ["facturas"])) {
-    const rows = await readLocalMirror<{
+  const allInvoices = await readLocalInvoices(tenantId);
+  return allInvoices
+    .filter((invoice) => invoice.tenant_id === tenantId && invoice.customer_id === customerId)
+    .sort((a, b) => new Date(String(b.created_at ?? 0)).getTime() - new Date(String(a.created_at ?? 0)).getTime()) as Array<{
       id: string;
-      tenant_id: string;
-      customer_id?: string | null;
       numero_factura: number;
       total: number;
       estado: string;
@@ -286,32 +287,7 @@ export async function listCustomerInvoices(tenantId: string, customerId: string)
       pagada_at?: string | null;
       cliente_nombre?: string | null;
       cliente_rnc?: string | null;
-    }>(tenantId, "facturas");
-
-    return rows
-      .filter((invoice) => invoice.tenant_id === tenantId && invoice.customer_id === customerId)
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  }
-
-  const { data, error } = await supabase
-    .from("facturas")
-    .select("id, numero_factura, total, estado, metodo_pago, created_at, pagada_at, cliente_nombre, cliente_rnc")
-    .eq("tenant_id", tenantId)
-    .eq("customer_id", customerId)
-    .order("created_at", { ascending: false });
-
-  if (error) throw error;
-  return (data ?? []) as Array<{
-    id: string;
-    numero_factura: number;
-    total: number;
-    estado: string;
-    metodo_pago: string;
-    created_at: string;
-    pagada_at?: string | null;
-    cliente_nombre?: string | null;
-    cliente_rnc?: string | null;
-  }>;
+    }>;
 }
 
 export function summarizeCustomerInvoices(

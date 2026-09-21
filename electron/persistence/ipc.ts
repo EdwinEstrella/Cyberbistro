@@ -13,6 +13,7 @@ import type { ReceivablesCommand, ReceivablesRepositoryResult } from "./receivab
 import type { PayablesCommand, PayablesRepositoryResult } from "./payablesRepository";
 import type { ExpenseCommand, ExpenseRepositoryResult } from "./expenseRepository";
 import type { CustomerCommand, CustomerRepositoryResult } from "./customerRepository";
+import type { DesktopCheckoutCommand, DesktopCheckoutResult } from "../../src/shared/lib/checkoutContracts";
 
 export const TENANT_STORE_STATUS_CHANNEL = "tenant-store:status";
 export const TENANT_STORE_ACTIVATE_CHANNEL = "tenant-store:activate";
@@ -31,6 +32,7 @@ export const COMANDAS_DELETE_CHANNEL = "comandas:delete";
 export const CONSUMOS_LIST_CHANNEL = "consumos:list";
 export const CONSUMOS_SAVE_CHANNEL = "consumos:save";
 export const CONSUMOS_DELETE_CHANNEL = "consumos:delete";
+export const CHECKOUT_COMMIT_CHANNEL = "checkout:commit";
 export const FISCAL_SALES_REPOSITORY_EXECUTE_CHANNEL = "sales-fiscal-repository:execute";
 export const FACTURAS_LIST_CHANNEL = "facturas:list";
 export const FACTURAS_RESERVE_NUMBERS_CHANNEL = "facturas:reserve-numbers";
@@ -450,7 +452,22 @@ export function registerOrdersRepositoryIpc(input: {
   listConsumos?: (filter?: { tenantId?: string; sucursalId?: string; comandaId?: string; mesaNumero?: number; unpaidOnly?: boolean }) => Array<Record<string, unknown>>;
   saveConsumo?: (payload: Record<string, unknown>) => void;
   deleteConsumo?: (payload: { tenantId?: string; consumoId: string }) => void;
+  commitCheckout?: (command: DesktopCheckoutCommand) => DesktopCheckoutResult;
 }): void {
+  input.ipcMain.removeHandler(CHECKOUT_COMMIT_CHANNEL);
+  input.ipcMain.handle(CHECKOUT_COMMIT_CHANNEL, async (event, payload) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    const command = payload as DesktopCheckoutCommand | null;
+    if (!command || typeof command.tenantId !== "string" || !command.tenantId || !Array.isArray(command.writes)) {
+      throw new Error("Invalid checkout commit command");
+    }
+    if (command.writes.some((write) => !write || write.tenantId !== command.tenantId || typeof write.tableName !== "string" || typeof write.rowId !== "string" || typeof write.op !== "string")) {
+      throw new Error("Invalid checkout write");
+    }
+    if (!input.commitCheckout) throw new Error("Checkout commit is unavailable");
+    return { ok: true, data: input.commitCheckout(command) };
+  });
+
   input.ipcMain.removeHandler(ORDERS_REPOSITORY_EXECUTE_CHANNEL);
   input.ipcMain.handle(ORDERS_REPOSITORY_EXECUTE_CHANNEL, async (event, payload) => {
     if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
@@ -718,6 +735,12 @@ function parsePurchaseCommand(payload: unknown): PurchaseCommand | null {
   }
   if (command.type === "purchase.delete") {
     if (typeof command.purchaseId !== "string" || !command.purchaseId.trim()) return null;
+    return command as unknown as PurchaseCommand;
+  }
+  if (command.type === "purchase.updateFiscal") {
+    if (typeof command.purchaseId !== "string" || !command.purchaseId.trim()) return null;
+    if (typeof command.proveedorId !== "string" || !command.proveedorId.trim()) return null;
+    if (typeof command.numeroFactura !== "string") return null;
     return command as unknown as PurchaseCommand;
   }
   return null;

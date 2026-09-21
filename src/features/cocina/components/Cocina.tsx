@@ -20,6 +20,8 @@ interface ComandaItem {
 
 interface Comanda {
   id: string;
+  tenant_id?: string;
+  sucursal_id?: string | null;
   numero_comanda: number;
   mesa_id: string | null;
   mesa_numero: number | null;
@@ -43,19 +45,12 @@ export function Cocina() {
 
   const reloadComandas = useCallback(async () => {
     if (!tenantId) return;
-    if (await shouldReadLocalFirst(tenantId, ["comandas"])) {
-      const rows = await readLocalMirror<Comanda & { tenant_id?: string; sucursal_id?: string | null }>(tenantId, "comandas");
-      setComandas(rows.filter(c => c.tenant_id === tenantId && c.sucursal_id === activeSucursalId && ["pendiente", "en_preparacion", "listo"].includes(c.estado)).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
-      return;
-    }
-    const { data, error } = await supabase
-      .from("comandas")
-      .select("*")
-      .eq("tenant_id", tenantId)
-      .eq("sucursal_id", activeSucursalId)
-      .in("estado", ["pendiente", "en_preparacion", "listo"])
-      .order("created_at", { ascending: true });
-    if (!error && data) setComandas(data as Comanda[]);
+    const rows = await readLocalComandas(tenantId, { sucursalId: activeSucursalId, activeOnly: true });
+    setComandas(
+      (rows as unknown as Comanda[])
+        .filter(c => (!c.tenant_id || (c as any).tenant_id === tenantId) && (!c.sucursal_id || (c as any).sucursal_id === activeSucursalId) && ["pendiente", "en_preparacion", "listo"].includes(c.estado))
+        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+    );
   }, [tenantId, activeSucursalId]);
 
   const handleNewComanda = useCallback(
@@ -69,22 +64,8 @@ export function Cocina() {
       if (!tenantId) return;
 
       try {
-        let comanda: Comanda | null = null;
-        if (await shouldReadLocalFirst(tenantId, ["comandas"])) {
-          const rows = await readLocalMirror<Comanda & { tenant_id?: string; sucursal_id?: string | null }>(tenantId, "comandas");
-          comanda = rows.find(c => c.id === payload.id && c.tenant_id === tenantId) ?? null;
-        } else {
-          const { data, error } = await supabase
-            .from("comandas")
-            .select("*")
-            .eq("tenant_id", tenantId)
-            .eq("id", payload.id)
-            .maybeSingle();
-          if (!error && data) {
-            comanda = data as Comanda;
-          }
-        }
-
+        const rows = await readLocalComandas(tenantId, { sucursalId: activeSucursalId, activeOnly: true });
+        const comanda = (rows as unknown as Comanda[]).find(c => c.id === payload.id) ?? null;
         if (!comanda) return;
 
         const cSucursalId = (comanda as any).sucursal_id;

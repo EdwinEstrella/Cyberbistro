@@ -117,7 +117,6 @@ const SAMPLE_COMANDA_THERMAL: Parameters<typeof buildComandaReceiptHtml>[1] = {
 const SAMPLE_CIERRE_THERMAL_BASE: Omit<CierreDiaThermalData, "generadoEn" | "generadoAtIso"> = {
   fechaOperacion: "12/04/2026",
   facturasPagadas: 14,
-  facturasPendientes: 2,
   totalPagado: 12450.75,
   subtotalPagado: 10551.48,
   itbisPagado: 1899.27,
@@ -132,7 +131,6 @@ const SAMPLE_CIERRE_THERMAL_BASE: Omit<CierreDiaThermalData, "generadoEn" | "gen
     { etiqueta: "Tarjeta", cantidad: 5, total: 5250.75 },
     { etiqueta: "Digital", cantidad: 1, total: 1000 },
   ],
-  ticketPromedioPagado: 889.34,
 };
 
 const SAMPLE_NOMINA_THERMAL: NominaReceiptData = {

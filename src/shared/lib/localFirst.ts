@@ -9,11 +9,7 @@ export const LOCAL_FIRST_MIRROR_TABLES = [
   "tenant_users",
   "platos",
   "menu_categories",
-  "mesas_estado",
   "cocina_estado",
-  "comandas",
-  "consumos",
-  "facturas",
   "ecf_documents",
   "fiscal_outbox",
   "customers",
@@ -57,12 +53,8 @@ export const LOCAL_FIRST_IMMEDIATE_TABLES = [
   "tenant_users",
   "menu_categories",
   "platos",
-  "mesas_estado",
   "cocina_estado",
   "cierres_operativos",
-  "comandas",
-  "consumos",
-  "facturas",
   "ecf_documents",
   "fiscal_outbox",
   "customers",
@@ -84,15 +76,11 @@ export const LOCAL_FIRST_HISTORY_TABLES = [
   "tenant_users",
   "menu_categories",
   "platos",
-  "mesas_estado",
   "cocina_estado",
   "cierres_operativos",
-  "comandas",
-  "facturas",
   "ecf_documents",
   "fiscal_outbox",
   "customers",
-  "consumos",
   "gasto_categorias",
   "gastos",
   "sucursales",
@@ -147,6 +135,10 @@ export async function importLegacyIndexedDbThroughDesktop(payload: LegacyIndexed
 /** Reads only this tenant's legacy IndexedDB rows in fixed-size batches for main-process validation and activation. */
 export async function exportLegacyIndexedDbImportPayload(tenantId: string, chunkSize = 250): Promise<LegacyIndexedDbImportPayload> {
   if (!Number.isInteger(chunkSize) || chunkSize < 1 || chunkSize > 250) throw new Error("Invalid legacy export chunk size.");
+  if (isDesktopRuntime()) {
+    const chunks: LegacyIndexedDbImportPayload["chunks"] = [];
+    return { manifest: await buildLegacyIndexedDbManifest(tenantId, chunks), chunks };
+  }
   const db = await openLocalFirstDbForSync(tenantId);
   try {
     const chunks: LegacyIndexedDbImportPayload["chunks"] = [];
@@ -228,7 +220,7 @@ async function sha256(value: string): Promise<string> {
 export interface SyncStateRow {
   key: string;
   tenant_id: string;
-  table_name: LocalFirstMirrorTable;
+  table_name: LocalFirstMirrorTable | (string & {});
   phase: LocalFirstPhase;
   cursor: string | null;
   completed: boolean;
@@ -240,7 +232,7 @@ export interface SyncStateRow {
 export interface SyncOutboxEntry {
   id: string;
   tenant_id: string;
-  table_name: LocalFirstMirrorTable;
+  table_name: LocalFirstMirrorTable | (string & {});
   row_id: string;
   op: "insert" | "update" | "delete" | "upsert";
   payload: Record<string, unknown> | null;
@@ -274,7 +266,7 @@ export interface IncrementalCursor {
   id: string;
 }
 
-const COMPOSITE_UPSERT_CONFLICT_TABLES = new Set<LocalFirstMirrorTable>(["mesas_estado"]);
+const COMPOSITE_UPSERT_CONFLICT_TABLES = new Set<string>(["mesas_estado"]);
 const LOCAL_FIRST_PHASES = ["minimum", "history", "incremental"] as const satisfies readonly LocalFirstPhase[];
 const OPTIONAL_BACKEND_TABLES = new Set<LocalFirstMirrorTable>(["customers"]);
 export const LOCAL_NCF_RESERVED_PAYLOAD_FLAG = "__local_ncf_reserved";
@@ -298,7 +290,7 @@ function isMissingBackendTableError(tableName: LocalFirstMirrorTable, error: unk
 
 
 
-export function resolveMirrorStoreKeyPath(_tableName?: LocalFirstMirrorTable): "id" | "clave" {
+export function resolveMirrorStoreKeyPath(_tableName?: LocalFirstMirrorTable | "facturas" | "comandas" | "mesas_estado" | "consumos"): "id" | "clave" {
   return "id";
 }
 
@@ -306,11 +298,26 @@ function normalizeObjectStoreKeyPath(keyPath: IDBObjectStore["keyPath"]): string
   return typeof keyPath === "string" ? keyPath : null;
 }
 
-export function buildMirrorStoreResetSyncStateKeys(tenantId: string, tableName: LocalFirstMirrorTable): string[] {
+export function buildMirrorStoreResetSyncStateKeys(tenantId: string, tableName: LocalFirstMirrorTable | "facturas" | "comandas" | "mesas_estado" | "consumos"): string[] {
   return LOCAL_FIRST_PHASES.map((phase) => buildSyncStateKey(tenantId, tableName, phase));
 }
 
 function applyLocalFirstDbSchema(db: IDBDatabase, tx: IDBTransaction, tenantId: string): void {
+  // Proactively drop legacy facturas, comandas, mesas_estado, and consumos stores from IndexedDB if present.
+  // These are stored authoritatively in SQLite (desktop) or Supabase (web), never in IndexedDB.
+  if (db.objectStoreNames.contains("facturas")) {
+    db.deleteObjectStore("facturas");
+  }
+  if (db.objectStoreNames.contains("comandas")) {
+    db.deleteObjectStore("comandas");
+  }
+  if (db.objectStoreNames.contains("mesas_estado")) {
+    db.deleteObjectStore("mesas_estado");
+  }
+  if (db.objectStoreNames.contains("consumos")) {
+    db.deleteObjectStore("consumos");
+  }
+
   const recreatedMirrorTables: LocalFirstMirrorTable[] = [];
 
   for (const table of LOCAL_FIRST_MIRROR_TABLES) {
@@ -375,13 +382,13 @@ export function isRowAfterCursor(row: Record<string, unknown>, cursor: Increment
   return String(row["id"] ?? row["clave"] ?? "") > cursor.id;
 }
 
-export function resolveUpsertConflictTarget(tableName: LocalFirstMirrorTable): "id" | "tenant_id,id" {
-  return COMPOSITE_UPSERT_CONFLICT_TABLES.has(tableName) ? "tenant_id,id" : "id";
+export function resolveUpsertConflictTarget(tableName: LocalFirstMirrorTable | (string & {})): "id" | "tenant_id,id" {
+  return COMPOSITE_UPSERT_CONFLICT_TABLES.has(tableName as LocalFirstMirrorTable) ? "tenant_id,id" : "id";
 }
 
 export function buildServerWritePayload(
   tenantId: string,
-  tableName: LocalFirstMirrorTable,
+  tableName: LocalFirstMirrorTable | (string & {}),
   payload: Record<string, unknown>
 ): Record<string, unknown> {
   const serverPayload = Object.fromEntries(
@@ -492,7 +499,7 @@ export interface SyncErrorRow {
   id: string;
   outbox_id: string;
   tenant_id: string;
-  table_name: LocalFirstMirrorTable;
+  table_name: LocalFirstMirrorTable | (string & {});
   row_id: string;
   op: SyncOutboxEntry["op"];
   reason: string;
@@ -501,7 +508,7 @@ export interface SyncErrorRow {
   retry_status: SyncRetryStatus;
 }
 
-const PURCHASE_OUTBOX_TABLES = new Set<LocalFirstMirrorTable>([
+const PURCHASE_OUTBOX_TABLES = new Set<string>([
   "compras",
   "compra_fiscal",
   "compra_detalles",
@@ -595,7 +602,7 @@ export interface OutboxConflictGuardrail {
 }
 
 const PAGE_SIZE = 250;
-export const LOCAL_FIRST_DB_VERSION = 12;
+export const LOCAL_FIRST_DB_VERSION = 16;
 const SYNCING_STALE_MS = 5 * 60 * 1000;
 const MAX_TRANSIENT_SYNC_RETRIES = 4;
 const TRANSIENT_RETRY_BASE_MS = 1_000;
@@ -630,7 +637,7 @@ export function isLocalFirstMirrorTable(table: string): table is LocalFirstMirro
 
 export function buildSyncStateKey(
   tenantId: string,
-  tableName: LocalFirstMirrorTable,
+  tableName: LocalFirstMirrorTable | (string & {}),
   phase: LocalFirstPhase
 ): string {
   return `${tenantId}:${phase}:${tableName}`;
@@ -638,7 +645,7 @@ export function buildSyncStateKey(
 
 export function createSyncStateRow(args: {
   tenantId: string;
-  tableName: LocalFirstMirrorTable;
+  tableName: LocalFirstMirrorTable | (string & {});
   phase: LocalFirstPhase;
   cursor?: string | null;
   completed: boolean;
@@ -660,7 +667,7 @@ export function createSyncStateRow(args: {
 
 export function createSyncOutboxEntry(args: {
   tenantId: string;
-  tableName: LocalFirstMirrorTable;
+  tableName: LocalFirstMirrorTable | (string & {});
   rowId: string;
   op: SyncOutboxEntry["op"];
   payload?: Record<string, unknown> | null;
@@ -689,18 +696,42 @@ export function getLocalFirstDatabaseName(tenantId: string): string {
   return `cloudix-local-first-${tenantId}`;
 }
 
-function openLocalFirstDbForSync(tenantId: string): Promise<IDBDatabase> {
+function shouldUseIndexedDb(): boolean {
+  return !isDesktopRuntime();
+}
+
+function requestOpenDb(tenantId: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
+    if (!shouldUseIndexedDb()) {
+      reject(new Error("IndexedDB is disabled on Desktop. Use the SQLite persistence bridge instead."));
+      return;
+    }
     if (typeof indexedDB === "undefined") {
       reject(new Error("IndexedDB no está disponible en este entorno."));
       return;
     }
     const request = indexedDB.open(getLocalFirstDatabaseName(tenantId), LOCAL_FIRST_DB_VERSION);
-    request.onerror = () => reject(request.error ?? new Error("No se pudo abrir la DB local."));
+    let settled = false;
+    request.onerror = () => {
+      if (settled) return;
+      settled = true;
+      reject(request.error ?? new Error("No se pudo abrir la DB local."));
+    };
     // Another still-open connection (e.g. a second window) can block a version
     // upgrade indefinitely. Reject instead of hanging so callers/watchdogs retry.
-    request.onblocked = () => reject(new Error("IndexedDB bloqueada por otra conexión abierta."));
-    request.onsuccess = () => resolve(request.result);
+    request.onblocked = () => {
+      if (settled) return;
+      settled = true;
+      reject(new Error("IndexedDB bloqueada por otra conexión abierta."));
+    };
+    request.onsuccess = () => {
+      if (settled) {
+        request.result.close();
+        return;
+      }
+      settled = true;
+      resolve(request.result);
+    };
     request.onupgradeneeded = () => {
       const db = request.result;
       const tx = request.transaction;
@@ -708,6 +739,43 @@ function openLocalFirstDbForSync(tenantId: string): Promise<IDBDatabase> {
       applyLocalFirstDbSchema(db, tx, tenantId);
     };
   });
+}
+
+const indexedDbRecoveryInFlight = new Map<string, Promise<void>>();
+const indexedDbRecoveryAttempted = new Set<string>();
+
+async function recoverWebIndexedDbOnce(tenantId: string): Promise<void> {
+  const existing = indexedDbRecoveryInFlight.get(tenantId);
+  if (existing) return existing;
+  if (indexedDbRecoveryAttempted.has(tenantId)) {
+    throw new Error("IndexedDB recovery was already attempted for this tenant.");
+  }
+
+  indexedDbRecoveryAttempted.add(tenantId);
+  const recovery = new Promise<void>((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(getLocalFirstDatabaseName(tenantId));
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error ?? new Error("IndexedDB recovery deletion failed."));
+    request.onblocked = () => reject(new Error("IndexedDB recovery deletion was blocked by an open connection."));
+  }).finally(() => {
+    indexedDbRecoveryInFlight.delete(tenantId);
+  });
+  indexedDbRecoveryInFlight.set(tenantId, recovery);
+  return recovery;
+}
+
+async function openLocalFirstDbForSync(tenantId: string): Promise<IDBDatabase> {
+  try {
+    return await requestOpenDb(tenantId);
+  } catch (error) {
+    const isCorruptError =
+      error instanceof DOMException && (error.name === "UnknownError" || error.name === "VersionError") ||
+      String(error instanceof Error ? error.message : error).includes("Internal error");
+    if (!isCorruptError || !shouldUseIndexedDb() || typeof indexedDB === "undefined") throw error;
+
+    await recoverWebIndexedDbOnce(tenantId);
+    return requestOpenDb(tenantId);
+  }
 }
 
 async function reserveLocalNcfForNewInvoice(
@@ -753,7 +821,7 @@ export async function resolveNcfForNewInvoiceLocalFirst(
   tenantId: string,
   preferredType?: string | null
 ): Promise<ResolvedNcfForInvoice | null> {
-  if (isLocalFirstEnabled()) {
+  if (isLocalFirstEnabled() && shouldUseIndexedDb()) {
     return reserveLocalNcfForNewInvoice(tenantId, preferredType);
   }
 
@@ -1026,15 +1094,31 @@ async function writeDirectlyToServer(args: {
 
 export async function enqueueLocalWrite(args: {
   tenantId: string;
-  tableName: LocalFirstMirrorTable;
+  tableName: LocalFirstMirrorTable | "facturas" | "comandas" | "mesas_estado" | "consumos";
   rowId: string;
   op: SyncOutboxEntry["op"];
   payload?: Record<string, unknown> | null;
   authUserId?: string | null;
   deviceId: string;
 }): Promise<void> {
+  if (
+    (args.tableName as string) === "facturas" ||
+    (args.tableName as string) === "comandas" ||
+    (args.tableName as string) === "mesas_estado" ||
+    (args.tableName as string) === "consumos"
+  ) {
+    throw new Error(`${args.tableName} cannot be written to IndexedDB. Use SQLite/ordersLocal instead.`);
+  }
+  const mirrorArgs = { ...args, tableName: args.tableName as LocalFirstMirrorTable };
   const isOnline = typeof navigator === "undefined" || navigator.onLine;
   const isDesktop = isDesktopRuntime();
+  if (isDesktop) {
+    if (!isOnline || !(await isCloudAvailableForDesktop())) {
+      throw new Error(`${args.tableName} has no SQLite command route and the cloud is unavailable.`);
+    }
+    await writeDirectlyToServer(mirrorArgs);
+    return;
+  }
   const mode = resolveLocalWriteMode({
     isDesktop,
     isOnline,
@@ -1045,9 +1129,9 @@ export async function enqueueLocalWrite(args: {
       throw new Error("La versión web requiere conexión para escribir datos. Usá la app de escritorio para operar offline.");
     }
 
-    await writeDirectlyToServer(args);
+    await writeDirectlyToServer(mirrorArgs);
     if (isLocalFirstEnabled()) {
-      await applyLocalMirrorWrite(args);
+      await applyLocalMirrorWrite(mirrorArgs);
     }
     return;
   }
@@ -1061,27 +1145,21 @@ export async function enqueueLocalWrite(args: {
   }
 
   const entry = createSyncOutboxEntry({
-    tenantId: args.tenantId,
-    tableName: args.tableName,
-    rowId: args.rowId,
-    op: args.op,
-    payload: args.payload,
-    authUserId: args.authUserId,
-    deviceId: args.deviceId,
+    tenantId: mirrorArgs.tenantId,
+    tableName: mirrorArgs.tableName,
+    rowId: mirrorArgs.rowId,
+    op: mirrorArgs.op,
+    payload: mirrorArgs.payload,
+    authUserId: mirrorArgs.authUserId,
+    deviceId: mirrorArgs.deviceId,
   });
   // Mirror + outbox are committed in one IndexedDB transaction. A crash can no
   // longer leave visible data without a sync event, or an event without its data.
-  await writeLocalMutationAtomically(args, entry);
+  await writeLocalMutationAtomically(mirrorArgs, entry);
 
   void publishLanOutboxEntry(entry, true).catch((error) => {
     console.warn("Cloudix LAN Edge no recibió el cambio todavía:", error);
   });
-
-  if (args.tableName === "facturas" && args.op === "insert") {
-    void processInvoiceInventoryDeduction(args.tenantId, args.payload, args.authUserId, args.deviceId).catch((error) => {
-      console.error("Error calculating local inventory deduction:", error);
-    });
-  }
 
   if (isDesktop) {
     void isCloudAvailableForDesktop().then((available) => {
@@ -1146,7 +1224,7 @@ async function deferOutboxForDependency(db: IDBDatabase, entry: SyncOutboxEntry,
 
 export type LocalFirstWrite = {
   tenantId: string;
-  tableName: LocalFirstMirrorTable;
+  tableName: LocalFirstMirrorTable | "facturas" | "comandas" | "mesas_estado" | "consumos";
   rowId: string;
   op: SyncOutboxEntry["op"];
   payload?: Record<string, unknown> | null;
@@ -1161,14 +1239,30 @@ export type LocalFirstWrite = {
  */
 export async function enqueueLocalWritesAtomically(writes: readonly LocalFirstWrite[]): Promise<void> {
   if (writes.length === 0) return;
+  if (
+    writes.some(
+      (w) =>
+        (w.tableName as string) === "facturas" ||
+        (w.tableName as string) === "comandas" ||
+        (w.tableName as string) === "mesas_estado" ||
+        (w.tableName as string) === "consumos"
+    )
+  ) {
+    throw new Error("Facturas, comandas, mesas_estado, and consumos cannot be enqueued in IndexedDB. Use SQLite/ordersLocal instead.");
+  }
+  if (isDesktopRuntime()) {
+    for (const write of writes) await enqueueLocalWrite(write);
+    return;
+  }
 
-  const first = writes[0];
-  if (writes.some((write) => write.tenantId !== first.tenantId || write.deviceId !== first.deviceId)) {
+  const mirrorWrites = writes as Array<LocalFirstWrite & { tableName: LocalFirstMirrorTable }>;
+  const first = mirrorWrites[0];
+  if (mirrorWrites.some((write) => write.tenantId !== first.tenantId || write.deviceId !== first.deviceId)) {
     throw new Error("Las escrituras atómicas deben pertenecer al mismo tenant y dispositivo.");
   }
 
   const writeKeys = new Set<string>();
-  for (const write of writes) {
+  for (const write of mirrorWrites) {
     const key = `${write.tableName}:${write.rowId}:${write.op}`;
     if (writeKeys.has(key)) throw new Error(`La escritura local de checkout está duplicada: ${key}.`);
     writeKeys.add(key);
@@ -1178,7 +1272,7 @@ export async function enqueueLocalWritesAtomically(writes: readonly LocalFirstWr
   const isDesktop = isDesktopRuntime();
   const mode = resolveLocalWriteMode({ isDesktop, isOnline });
   if (mode === "web-server-first") {
-    for (const write of writes) await enqueueLocalWrite(write);
+    for (const write of mirrorWrites) await enqueueLocalWrite(write);
     return;
   }
 
@@ -1188,7 +1282,7 @@ export async function enqueueLocalWritesAtomically(writes: readonly LocalFirstWr
     if (!licenseCheck.valid) throw new Error(licenseCheck.reason || "Licencia offline inválida para operar.");
   }
 
-  const entries = writes.map((write) => createSyncOutboxEntry({
+  const entries = mirrorWrites.map((write) => createSyncOutboxEntry({
     tenantId: write.tenantId,
     tableName: write.tableName,
     rowId: write.rowId,
@@ -1197,13 +1291,13 @@ export async function enqueueLocalWritesAtomically(writes: readonly LocalFirstWr
     authUserId: write.authUserId,
     deviceId: write.deviceId,
   }));
-  const storeNames = [...new Set([...writes.map((write) => write.tableName), "sync_outbox"])];
+  const storeNames = [...new Set([...mirrorWrites.map((write) => write.tableName), "sync_outbox"])];
   const db = await openLocalFirstDbForSync(first.tenantId);
   try {
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(storeNames, "readwrite");
       const outboxStore = tx.objectStore("sync_outbox");
-      writes.forEach((write, index) => {
+      mirrorWrites.forEach((write, index) => {
         const mirrorStore = tx.objectStore(write.tableName);
         if (write.op === "delete") {
           mirrorStore.delete(write.rowId);
@@ -1238,13 +1332,6 @@ export async function enqueueLocalWritesAtomically(writes: readonly LocalFirstWr
     void publishLanOutboxEntry(entry, true).catch((error) => {
       console.warn("Cloudix LAN Edge no recibió el cambio todavía:", error);
     });
-  }
-  for (const write of writes) {
-    if (write.tableName === "facturas" && write.op === "insert") {
-      void processInvoiceInventoryDeduction(write.tenantId, write.payload, write.authUserId, write.deviceId).catch((error) => {
-        console.error("Error calculating local inventory deduction:", error);
-      });
-    }
   }
   if (isDesktop) {
     void isCloudAvailableForDesktop().then((available) => {
@@ -1335,7 +1422,7 @@ const SAFE_TENANT_KEYS = new Set([
 ]);
 
 export function resolveConflictForTable(
-  tableName: LocalFirstMirrorTable,
+  tableName: LocalFirstMirrorTable | (string & {}),
   localEntry: SyncOutboxEntry,
   serverRow: Record<string, unknown> | null
 ): ConflictResult {
@@ -1490,7 +1577,7 @@ async function persistSyncError(db: IDBDatabase, row: SyncErrorRow): Promise<voi
 
 export async function checkServerRowExists(
   _tenantId: string,
-  tableName: LocalFirstMirrorTable,
+  tableName: LocalFirstMirrorTable | (string & {}),
   rowId: string
 ): Promise<Record<string, unknown> | null> {
   const { data, error } = await runTrackedCloudOperation(() => supabase.from(tableName).select("*").eq("id", rowId).maybeSingle() as any);
@@ -1799,6 +1886,7 @@ async function isOutboxDependencyConfirmed(tenantId: string, entry: SyncOutboxEn
 const pushOutboxLocks = new Set<string>();
 
 export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: number; failed: number }> {
+  if (isDesktopRuntime()) return { pushed: 0, failed: 0 };
   if (isDesktopRuntime() && !(await isCloudAvailableForDesktop())) return { pushed: 0, failed: 0 };
   if (pushOutboxLocks.has(tenantId)) return { pushed: 0, failed: 0 };
   pushOutboxLocks.add(tenantId);
@@ -2011,7 +2099,7 @@ export async function pushOutboxToServer(tenantId: string): Promise<{ pushed: nu
           if (adjustedOutgoingPayload && serverPayload) {
             await applyLocalMirrorWrite({
               tenantId,
-              tableName: entry.table_name,
+              tableName: entry.table_name as LocalFirstMirrorTable,
               rowId: entry.row_id,
               op: entry.op,
               payload: serverPayload,
@@ -2081,18 +2169,26 @@ export async function saveLocalDeviceSession(
   email: string,
   tenantUserRow: Record<string, unknown> | object
 ): Promise<void> {
-  const db = await openLocalFirstDbForSync(tenantId);
+  const session: LocalDeviceSession = {
+    tenant_id: tenantId,
+    user_id: userId,
+    email,
+    created_at: new Date().toISOString(),
+    tenant_user_row: tenantUserRow as Record<string, unknown>,
+  };
   try {
-    const session: LocalDeviceSession = {
-      tenant_id: tenantId,
-      user_id: userId,
-      email,
-      created_at: new Date().toISOString(),
-      tenant_user_row: tenantUserRow as Record<string, unknown>,
-    };
-    await putOne(db, "local_device_session", session);
-  } finally {
-    db.close();
+    localStorage.setItem(`cloudix_session_${tenantId}`, JSON.stringify(session));
+  } catch {}
+  if (!shouldUseIndexedDb()) return;
+  try {
+    const db = await openLocalFirstDbForSync(tenantId);
+    try {
+      await putOne(db, "local_device_session", session);
+    } finally {
+      db.close();
+    }
+  } catch (err) {
+    console.warn("[localFirst] Non-blocking device session write to IndexedDB failed, preserved in localStorage:", err);
   }
 }
 
@@ -2107,28 +2203,44 @@ export function setLastTenantId(tenantId: string) {
 export async function getLocalDeviceSession(tenantId?: string): Promise<LocalDeviceSession | null> {
   const targetTenantId = tenantId ?? await getLastTenantId();
   if (!targetTenantId) return null;
-  const db = await openLocalFirstDbForSync(targetTenantId);
-  try {
-    return await getOneFromStore<LocalDeviceSession>(db, "local_device_session", targetTenantId);
-  } finally {
-    db.close();
+  if (shouldUseIndexedDb()) {
+    try {
+      const db = await openLocalFirstDbForSync(targetTenantId);
+      try {
+        const row = await getOneFromStore<LocalDeviceSession>(db, "local_device_session", targetTenantId);
+        if (row) return row;
+      } finally {
+        db.close();
+      }
+    } catch {}
   }
+  try {
+    const raw = localStorage.getItem(`cloudix_session_${targetTenantId}`);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return null;
 }
 
 export async function clearLocalDeviceSession(tenantId: string): Promise<void> {
-  const db = await openLocalFirstDbForSync(tenantId);
   try {
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction("local_device_session", "readwrite");
-      const store = tx.objectStore("local_device_session");
-      store.delete(tenantId);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
+    localStorage.removeItem(`cloudix_session_${tenantId}`);
+  } catch {}
+  if (!shouldUseIndexedDb()) return;
+  try {
+    const db = await openLocalFirstDbForSync(tenantId);
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction("local_device_session", "readwrite");
+        const store = tx.objectStore("local_device_session");
+        store.delete(tenantId);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    } finally {
+      db.close();
+    }
   } catch (error) {
     console.error("Error clearing local session:", error);
-  } finally {
-    db.close();
   }
 }
 
@@ -2140,6 +2252,7 @@ export async function invalidateLocalSessionContext(tenantId?: string | null): P
 }
 
 export async function getLocalTenantPaymentDay(tenantId: string): Promise<number | null> {
+  if (!shouldUseIndexedDb()) return null;
   const db = await openLocalFirstDbForSync(tenantId);
   try {
     const row = await getOneFromStore<Record<string, unknown>>(db, "tenants", tenantId);
@@ -2154,10 +2267,14 @@ export async function deleteLocalTenantDatabase(tenantId?: string | null): Promi
   const targetTenantId = tenantId ?? await getLastTenantId();
   if (!targetTenantId) return;
 
-  await new Promise<void>((resolve) => {
-    const request = indexedDB.deleteDatabase(getLocalFirstDatabaseName(targetTenantId));
-    request.onsuccess = request.onerror = request.onblocked = () => resolve();
-  });
+  if (shouldUseIndexedDb()) {
+    await new Promise<void>((resolve) => {
+      const request = indexedDB.deleteDatabase(getLocalFirstDatabaseName(targetTenantId));
+      request.onsuccess = request.onerror = request.onblocked = () => resolve();
+    });
+  }
+  localStorage.removeItem(`cloudix_session_${targetTenantId}`);
+  localStorage.removeItem(`cloudix_license_${targetTenantId}`);
   localStorage.removeItem("cloudix_last_tenant_id");
 }
 
@@ -2175,6 +2292,10 @@ export async function saveLicenseCache(
     validated_at: new Date().toISOString(),
     window_valid_until: new Date(Date.now() + OFFLINE_WINDOW_MS).toISOString(),
   };
+  if (!shouldUseIndexedDb()) {
+    localStorage.setItem(`cloudix_license_${tenantId}`, JSON.stringify(cache));
+    return cache;
+  }
   const db = await openLocalFirstDbForSync(tenantId);
   try {
     await putOne(db, "local_license_cache", cache);
@@ -2185,6 +2306,14 @@ export async function saveLicenseCache(
 }
 
 export async function loadLicenseCache(tenantId: string): Promise<LocalLicenseCache | null> {
+  if (!shouldUseIndexedDb()) {
+    try {
+      const raw = localStorage.getItem(`cloudix_license_${tenantId}`);
+      return raw ? JSON.parse(raw) as LocalLicenseCache : null;
+    } catch {
+      return null;
+    }
+  }
   const db = await openLocalFirstDbForSync(tenantId);
   try {
     return await getOneFromStore<LocalLicenseCache>(db, "local_license_cache", tenantId);
@@ -2308,6 +2437,9 @@ async function runTrackedCloudOperation(
 }
 
 function getAllFromStore<T>(db: IDBDatabase, storeName: string): Promise<T[]> {
+  if (!db.objectStoreNames.contains(storeName)) {
+    return Promise.resolve([]);
+  }
   return new Promise((resolve, reject) => {
     const tx = db.transaction(storeName, "readonly");
     const request = tx.objectStore(storeName).getAll();
@@ -2317,6 +2449,9 @@ function getAllFromStore<T>(db: IDBDatabase, storeName: string): Promise<T[]> {
 }
 
 function getOneFromStore<T>(db: IDBDatabase, storeName: string, key: IDBValidKey): Promise<T | null> {
+  if (!db.objectStoreNames.contains(storeName)) {
+    return Promise.resolve(null);
+  }
   return new Promise((resolve, reject) => {
     const tx = db.transaction(storeName, "readonly");
     const request = tx.objectStore(storeName).get(key);
@@ -2329,58 +2464,86 @@ export async function readLocalMirror<T = Record<string, unknown>>(
   tenantId: string,
   tableName: LocalFirstMirrorTable
 ): Promise<T[]> {
-  const db = await openLocalFirstDbForSync(tenantId);
-  try {
-    return await getAllFromStore<T>(db, tableName);
-  } finally {
-    db.close();
+  if (shouldUseIndexedDb()) {
+    try {
+      const db = await openLocalFirstDbForSync(tenantId);
+      try {
+        return await getAllFromStore<T>(db, tableName);
+      } finally {
+        db.close();
+      }
+    } catch (err) {
+      console.warn(`[localFirst] readLocalMirror failed for ${tableName}, falling back to cloud:`, err);
+    }
   }
+  try {
+    const tenantReadFilter = getTenantReadFilter(tableName, tenantId);
+    let query = supabase.from(tableName).select("*");
+    if (tenantReadFilter) {
+      query = query.eq(tenantReadFilter.column, tenantReadFilter.value);
+    }
+    const { data, error } = await query;
+    if (!error && Array.isArray(data)) return data as T[];
+  } catch {}
+  return [];
 }
 
 export async function readLocalOutbox<T = SyncOutboxEntry>(tenantId: string): Promise<T[]> {
-  const db = await openLocalFirstDbForSync(tenantId);
+  if (!shouldUseIndexedDb()) return [];
   try {
-    return await getAllFromStore<T>(db, "sync_outbox");
-  } finally {
-    db.close();
+    const db = await openLocalFirstDbForSync(tenantId);
+    try {
+      return await getAllFromStore<T>(db, "sync_outbox");
+    } finally {
+      db.close();
+    }
+  } catch {
+    return [];
   }
 }
 
 export async function syncLanEdge(tenantId: string): Promise<{ applied: number }> {
+  if (!shouldUseIndexedDb()) return { applied: 0 };
   if (!getLanEdgeBaseUrl()) return { applied: 0 };
-  let applied = 0;
-  let hasMore = true;
+  try {
+    let applied = 0;
+    let hasMore = true;
 
-  while (hasMore) {
-    const pulled = await pullLanOutboxEntries(tenantId);
-    for (const event of pulled.events) {
-      const entry = event.entry;
-      if (!entry || entry.tenant_id !== tenantId || !isLocalFirstMirrorTable(entry.table_name)) continue;
-      const mutation = {
-        tenantId,
-        tableName: entry.table_name,
-        rowId: entry.row_id,
-        op: entry.op,
-        payload: entry.payload,
-      };
-      if (event.replicate_to_cloud) {
-        await writeLocalMutationAtomically(mutation, entry);
-      } else {
-        await applyLocalMirrorWrite(mutation);
+    while (hasMore) {
+      const pulled = await pullLanOutboxEntries(tenantId);
+      for (const event of pulled.events) {
+        const entry = event.entry;
+        if (!entry || entry.tenant_id !== tenantId || !isLocalFirstMirrorTable(entry.table_name)) continue;
+        const mutation = {
+          tenantId,
+          tableName: entry.table_name,
+          rowId: entry.row_id,
+          op: entry.op,
+          payload: entry.payload,
+        };
+        if (event.replicate_to_cloud) {
+          await writeLocalMutationAtomically(mutation, entry);
+        } else {
+          await applyLocalMirrorWrite(mutation);
+        }
+        applied += 1;
       }
-      applied += 1;
+      commitLanEdgeCursor(tenantId, pulled.nextCursor);
+      hasMore = pulled.hasMore;
     }
-    commitLanEdgeCursor(tenantId, pulled.nextCursor);
-    hasMore = pulled.hasMore;
-  }
 
-  return { applied };
+    return { applied };
+  } catch (err) {
+    console.warn("[localFirst] syncLanEdge skipped due to offline or transient error:", err);
+    return { applied: 0 };
+  }
 }
 
 export async function publishLocalMirrorTableToLan(
   tenantId: string,
   tableName: LocalFirstMirrorTable,
 ): Promise<number> {
+  if (!shouldUseIndexedDb()) return 0;
   if (!getLanEdgeBaseUrl()) return 0;
   const rows = await readLocalMirror<Record<string, unknown>>(tenantId, tableName);
   const deviceId = await getDeviceId();
@@ -2411,7 +2574,7 @@ export async function publishLocalMirrorTableToLan(
 
 export async function hasPendingLocalWrites(
   tenantId: string,
-  tableNames?: readonly LocalFirstMirrorTable[]
+  tableNames?: readonly (LocalFirstMirrorTable | "facturas" | "comandas" | "mesas_estado" | "consumos")[]
 ): Promise<boolean> {
   const tableSet = tableNames ? new Set<string>(tableNames) : null;
   const outbox = await readLocalOutbox<SyncOutboxEntry>(tenantId);
@@ -2423,7 +2586,7 @@ export async function hasPendingLocalWrites(
 
 export async function shouldReadLocalFirst(
   tenantId: string,
-  tableNames?: readonly LocalFirstMirrorTable[]
+  tableNames?: readonly (LocalFirstMirrorTable | "facturas" | "comandas" | "mesas_estado" | "consumos")[]
 ): Promise<boolean> {
   void tenantId;
   void tableNames;
@@ -2438,6 +2601,9 @@ export async function writeLocalMirrorRow<T extends Record<string, unknown>>(
   tableName: LocalFirstMirrorTable,
   row: T
 ): Promise<void> {
+  if (!shouldUseIndexedDb()) {
+    throw new Error(`${tableName} cannot use IndexedDB on Desktop. Route this write through the SQLite persistence bridge.`);
+  }
   const db = await openLocalFirstDbForSync(tenantId);
   try {
     await putOne(db, tableName, row);
@@ -2451,12 +2617,21 @@ export async function readLocalMirrorRow<T = Record<string, unknown>>(
   tableName: LocalFirstMirrorTable,
   rowId: string
 ): Promise<T | null> {
-  const db = await openLocalFirstDbForSync(tenantId);
-  try {
-    return await getOneFromStore<T>(db, tableName, rowId);
-  } finally {
-    db.close();
+  if (shouldUseIndexedDb()) {
+    try {
+      const db = await openLocalFirstDbForSync(tenantId);
+      try {
+        return await getOneFromStore<T>(db, tableName, rowId);
+      } finally {
+        db.close();
+      }
+    } catch {}
   }
+  try {
+    const { data, error } = await supabase.from(tableName).select("*").eq("id", rowId).maybeSingle();
+    if (!error && data) return data as T;
+  } catch {}
+  return null;
 }
 
 /**
@@ -2469,6 +2644,7 @@ export async function deleteLocalMirrorRow(
   tableName: LocalFirstMirrorTable,
   rowId: string
 ): Promise<void> {
+  if (!shouldUseIndexedDb()) return;
   const db = await openLocalFirstDbForSync(tenantId);
   try {
     await deleteOne(db, tableName, rowId);
@@ -2592,7 +2768,6 @@ export function applyMirrorPull(
         .filter((entry) => entry.table_name === storeName && entry.status !== "synced")
         .map((entry) => entry.row_id));
       for (const job of fiscalRequest.result as LocalFiscalOutboxEntry[]) {
-        if (storeName === "facturas") pendingIds.add(job.factura_id);
         if (storeName === "ecf_documents" && job.ecf_document_id) pendingIds.add(job.ecf_document_id);
       }
       const key = resolveMirrorStoreKeyPath(storeName);
@@ -2618,6 +2793,7 @@ export async function refreshFullTableMirror(
   tenantId: string,
   tableName: LocalFirstMirrorTable
 ): Promise<number> {
+  if (!shouldUseIndexedDb()) return 0;
   const rows = await pullFullTableRows(tenantId, tableName);
   const db = await openLocalFirstDbForSync(tenantId);
   try {
@@ -2639,6 +2815,7 @@ export async function pullIncrementalChangesForTable(
   tenantId: string,
   tableName: LocalFirstMirrorTable
 ): Promise<number> {
+  if (!shouldUseIndexedDb()) return 0;
   const db = await openLocalFirstDbForSync(tenantId);
   let pulled = 0;
   try {
@@ -2669,6 +2846,7 @@ export async function pullIncrementalChangesForTable(
 const mirrorSyncInFlight = new Map<string, Promise<{ tablesUpdated: number; rowsPulled: number }>>();
 const SYNC_WATCHDOG_MS = 90_000;
 export function syncIncremental(tenantId: string): Promise<{ tablesUpdated: number; rowsPulled: number }> {
+  if (!shouldUseIndexedDb()) return Promise.resolve({ tablesUpdated: 0, rowsPulled: 0 });
   const existing = mirrorSyncInFlight.get(tenantId);
   if (existing) return existing;
   // Watchdog: a single run that hangs (e.g. a blocked IndexedDB open) must never
@@ -2738,25 +2916,7 @@ export function notifyLocalMirrorUpdated(tenantId: string, tableName?: LocalFirs
 }
 
 function openLocalFirstDb(tenantId: string): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    if (typeof indexedDB === "undefined") {
-      reject(new Error("IndexedDB no está disponible en este entorno."));
-      return;
-    }
-
-    const request = indexedDB.open(getLocalFirstDatabaseName(tenantId), LOCAL_FIRST_DB_VERSION);
-    request.onerror = () => reject(request.error ?? new Error("No se pudo abrir la DB local."));
-    // Another still-open connection (e.g. a second window) can block a version
-    // upgrade indefinitely. Reject instead of hanging so callers/watchdogs retry.
-    request.onblocked = () => reject(new Error("IndexedDB bloqueada por otra conexión abierta."));
-    request.onsuccess = () => resolve(request.result);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      const tx = request.transaction;
-      if (!tx) throw new Error("No se pudo acceder a la transacción de upgrade IndexedDB.");
-      applyLocalFirstDbSchema(db, tx, tenantId);
-    };
-  });
+  return openLocalFirstDbForSync(tenantId);
 }
 
 function putMany(db: IDBDatabase, storeName: string, rows: readonly object[]): Promise<void> {
@@ -2802,7 +2962,7 @@ function getSyncState(db: IDBDatabase, key: string): Promise<SyncStateRow | null
 }
 
 export function getTenantReadFilter(
-  tableName: LocalFirstMirrorTable,
+  tableName: LocalFirstMirrorTable | "facturas",
   tenantId: string
 ): { column: "tenant_id" | "id"; value: string } | null {
   // These child tables are tenant-scoped by their employee relation and RLS;
@@ -2836,6 +2996,7 @@ export async function bootstrapLocalFirstPhase(args: {
   onTableDone?: (tableName: LocalFirstMirrorTable, rows: number) => void;
   shouldContinue?: () => boolean;
 }): Promise<void> {
+  if (!shouldUseIndexedDb()) return;
   if (isDesktopRuntime() && !(await isCloudAvailableForDesktop())) {
     throw new Error("Backend no disponible para preparar datos locales.");
   }
@@ -2934,34 +3095,42 @@ export async function getLocalFirstStatusSnapshot(tenantId: string): Promise<{
   completedHistoryTables: number;
   totalHistoryTables: number;
 }> {
-  const db = await openLocalFirstDb(tenantId);
+  if (!shouldUseIndexedDb()) {
+    return { status: "history_complete", completedHistoryTables: 0, totalHistoryTables: 0 };
+  }
   try {
-    const states = await getAllSyncStates(db);
-    const validHistoryTables = new Set<string>(LOCAL_FIRST_HISTORY_TABLES);
-    const validImmediateTables = new Set<string>(LOCAL_FIRST_IMMEDIATE_TABLES);
+    const db = await openLocalFirstDb(tenantId);
+    try {
+      const states = await getAllSyncStates(db);
+      const validHistoryTables = new Set<string>(LOCAL_FIRST_HISTORY_TABLES);
+      const validImmediateTables = new Set<string>(LOCAL_FIRST_IMMEDIATE_TABLES);
 
-    const historyCompleted = new Set(
-      states
-        .filter((row) => row.phase === "history" && row.completed && validHistoryTables.has(row.table_name))
-        .map((row) => row.table_name)
-    );
-    const minimumCompleted = new Set(
-      states
-        .filter((row) => row.phase === "minimum" && row.completed && validImmediateTables.has(row.table_name))
-        .map((row) => row.table_name)
-    );
-    const totalHistoryTables = LOCAL_FIRST_HISTORY_TABLES.length;
-    const completedHistoryTables = Math.min(historyCompleted.size, totalHistoryTables);
+      const historyCompleted = new Set(
+        states
+          .filter((row) => row.phase === "history" && row.completed && validHistoryTables.has(row.table_name))
+          .map((row) => row.table_name)
+      );
+      const minimumCompleted = new Set(
+        states
+          .filter((row) => row.phase === "minimum" && row.completed && validImmediateTables.has(row.table_name))
+          .map((row) => row.table_name)
+      );
+      const totalHistoryTables = LOCAL_FIRST_HISTORY_TABLES.length;
+      const completedHistoryTables = Math.min(historyCompleted.size, totalHistoryTables);
 
-    if (completedHistoryTables >= totalHistoryTables) {
-      return { status: "history_complete", completedHistoryTables, totalHistoryTables };
+      if (completedHistoryTables >= totalHistoryTables) {
+        return { status: "history_complete", completedHistoryTables, totalHistoryTables };
+      }
+      if (minimumCompleted.size >= LOCAL_FIRST_IMMEDIATE_TABLES.length) {
+        return { status: "ready_history_syncing", completedHistoryTables, totalHistoryTables };
+      }
+      return { status: "bootstrapping_minimum", completedHistoryTables, totalHistoryTables };
+    } finally {
+      db.close();
     }
-    if (minimumCompleted.size >= LOCAL_FIRST_IMMEDIATE_TABLES.length) {
-      return { status: "ready_history_syncing", completedHistoryTables, totalHistoryTables };
-    }
-    return { status: "bootstrapping_minimum", completedHistoryTables, totalHistoryTables };
-  } finally {
-    db.close();
+  } catch (err) {
+    console.warn("[localFirst] getLocalFirstStatusSnapshot fallback:", err);
+    return { status: "history_complete", completedHistoryTables: 0, totalHistoryTables: 0 };
   }
 }
 
@@ -2975,12 +3144,13 @@ export function getHistoricalSyncIncompleteMessage(status: LocalFirstStatus): st
   return null;
 }
 
-async function processInvoiceInventoryDeduction(
+export async function processInvoiceInventoryDeduction(
   tenantId: string,
   payload: Record<string, unknown> | null | undefined,
   authUserId: string | null | undefined,
   deviceId: string
 ): Promise<void> {
+  if (!shouldUseIndexedDb()) return;
   if (!payload || !payload.items || !Array.isArray(payload.items)) return;
 
   const items = payload.items as Array<{

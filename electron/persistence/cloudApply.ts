@@ -253,6 +253,78 @@ export function applyCloudPlatoRows(
   }
 }
 
+export function applyCloudInventoryProductRows(
+  db: DatabaseSync,
+  tenantId: string,
+  products: Array<Record<string, unknown>>,
+): void {
+  const stmt = db.prepare(`
+    INSERT INTO productos_inventario
+      (id, tenant_id, name, unit, sucursal_id, nombre, categoria, unidad_base, unidad_compra,
+       contenido_por_unidad_compra, stock_actual, stock_minimo, costo_promedio, costo_unidad_compra,
+       activo, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name, unit = excluded.unit, sucursal_id = excluded.sucursal_id,
+      nombre = excluded.nombre, categoria = excluded.categoria, unidad_base = excluded.unidad_base,
+      unidad_compra = excluded.unidad_compra, contenido_por_unidad_compra = excluded.contenido_por_unidad_compra,
+      stock_actual = excluded.stock_actual, stock_minimo = excluded.stock_minimo,
+      costo_promedio = excluded.costo_promedio, costo_unidad_compra = excluded.costo_unidad_compra,
+      activo = excluded.activo, created_at = excluded.created_at, updated_at = excluded.updated_at
+  `);
+  for (const product of products) {
+    if (!product?.id) continue;
+    const id = String(product.id);
+    if (hasPendingCloudWrite(db, tenantId, "productos_inventario", id)) continue;
+    const name = String(product.nombre ?? product.name ?? "Product");
+    const unit = String(product.unidad_base ?? product.unit ?? "ud");
+    stmt.run(
+      id, tenantId, name, unit,
+      product.sucursal_id ? String(product.sucursal_id) : null,
+      name,
+      product.categoria ? String(product.categoria) : null,
+      unit,
+      product.unidad_compra ? String(product.unidad_compra) : null,
+      Number(product.contenido_por_unidad_compra ?? 0),
+      Number(product.stock_actual ?? 0),
+      Number(product.stock_minimo ?? 0),
+      Number(product.costo_promedio ?? 0),
+      product.costo_unidad_compra == null ? null : Number(product.costo_unidad_compra),
+      toIntFlag(product.activo ?? true),
+      product.created_at ? String(product.created_at) : null,
+      product.updated_at ? String(product.updated_at) : null,
+    );
+  }
+}
+
+export function applyCloudRecipeRows(
+  db: DatabaseSync,
+  tenantId: string,
+  recipes: Array<Record<string, unknown>>,
+): void {
+  const stmt = db.prepare(`
+    INSERT INTO recetas (id, tenant_id, plato_id, inventory_product_id, quantity, sucursal_id, insumo_id, cantidad, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      plato_id = excluded.plato_id, inventory_product_id = excluded.inventory_product_id,
+      quantity = excluded.quantity, sucursal_id = excluded.sucursal_id,
+      insumo_id = excluded.insumo_id, cantidad = excluded.cantidad,
+      created_at = excluded.created_at, updated_at = excluded.updated_at
+  `);
+  for (const recipe of recipes) {
+    if (!recipe?.id || !recipe.plato_id) continue;
+    const id = String(recipe.id);
+    if (hasPendingCloudWrite(db, tenantId, "recetas", id)) continue;
+    const productId = String(recipe.insumo_id ?? recipe.inventory_product_id ?? "");
+    const quantity = Number(recipe.cantidad ?? recipe.quantity ?? 0);
+    if (!productId || !Number.isFinite(quantity) || quantity <= 0) continue;
+    stmt.run(id, tenantId, String(recipe.plato_id), productId, quantity,
+      recipe.sucursal_id ? String(recipe.sucursal_id) : null, productId, quantity,
+      recipe.created_at ? String(recipe.created_at) : null,
+      recipe.updated_at ? String(recipe.updated_at) : null);
+  }
+}
+
 /**
  * Applies cloud operational cycles into the local mirror, mapping the cloud shape
  * (efectivo_inicial, closed_at-derived open/closed state) onto the local columns
@@ -985,11 +1057,28 @@ export function applyCloudDeletes(
     "cocina_estado",
     "comandas",
     "consumos",
+    "compra_fiscal",
+    "compras",
   ]);
   if (!allowed.has(tableName)) return false;
   const stmt = db.prepare(`DELETE FROM ${tableName} WHERE id = ?${tenantId ? " AND tenant_id = ?" : ""}`);
   let complete = true;
   for (const id of ids) {
+    if (tableName === "compras") {
+      if (tenantId) {
+        db.prepare("DELETE FROM detalles_compra WHERE compra_id = ? AND tenant_id = ?").run(id, tenantId);
+        db.prepare("DELETE FROM movimientos_inventario WHERE compra_id = ? AND tenant_id = ?").run(id, tenantId);
+        db.prepare("DELETE FROM compra_fiscal WHERE compra_id = ? AND tenant_id = ?").run(id, tenantId);
+        db.prepare("DELETE FROM cuentas_pagar WHERE compra_id = ? AND tenant_id = ?").run(id, tenantId);
+        db.prepare("DELETE FROM gastos WHERE compra_id = ? AND tenant_id = ?").run(id, tenantId);
+      } else {
+        db.prepare("DELETE FROM detalles_compra WHERE compra_id = ?").run(id);
+        db.prepare("DELETE FROM movimientos_inventario WHERE compra_id = ?").run(id);
+        db.prepare("DELETE FROM compra_fiscal WHERE compra_id = ?").run(id);
+        db.prepare("DELETE FROM cuentas_pagar WHERE compra_id = ?").run(id);
+        db.prepare("DELETE FROM gastos WHERE compra_id = ?").run(id);
+      }
+    }
     if (tableName === "payroll_payments") {
       // A retained expense may still be pending locally; keep its parent.
       if (db.prepare("SELECT 1 FROM gastos WHERE payroll_payment_id=?").get(id)) { complete = false; continue; }

@@ -63,9 +63,9 @@ describe("compras cloud→local pull", () => {
     expect(db.prepare("SELECT id FROM proveedores WHERE id = 'prov-1'").get()).toEqual({ id: "prov-1" });
   });
 
-  it("is not hard-deleted when absent from a later snapshot", async () => {
+  it("reconciles remote deletes when absent from a later snapshot", async () => {
     await pull(makeCloud({ compras: [cloudCompra({ id: "compra-2" })] }));
     await pull(makeCloud({ compras: [] }));
-    expect(db.prepare("SELECT id FROM compras WHERE id = 'compra-2'").get()).toEqual({ id: "compra-2" });
+    expect(db.prepare("SELECT id FROM compras WHERE id = 'compra-2'").get()).toBeUndefined();
   });
 });

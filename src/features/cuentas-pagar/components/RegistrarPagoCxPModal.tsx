@@ -1,5 +1,12 @@
 import { FormEvent, useEffect, useState } from "react";
 import { registrarPagoCxP } from "../lib/accountsPayableService";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../../shared/ui/select";
 
 interface CuentaPagarRow {
   id: string;
@@ -138,22 +145,25 @@ export function RegistrarPagoCxPModal({
             <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.5px]">
               Método de Pago *
             </label>
-            <select
-              required
+            <Select
               value={paymentForm.metodoPago}
-              onChange={(e) =>
+              onValueChange={(val) =>
                 setPaymentForm((prev) => ({
                   ...prev,
-                  metodoPago: e.target.value as any,
+                  metodoPago: val as any,
                 }))
               }
-              className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none"
             >
-              <option value="transferencia">Transferencia bancaria</option>
-              <option value="efectivo">Efectivo (Salida de Caja)</option>
-              <option value="tarjeta">Tarjeta de crédito</option>
-              <option value="digital">Pago digital / Otro</option>
-            </select>
+              <SelectTrigger className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none h-[40px]">
+                <SelectValue placeholder="Seleccionar método de pago" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.4)] text-white">
+                <SelectItem value="transferencia" className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">Transferencia bancaria</SelectItem>
+                <SelectItem value="efectivo" className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">Efectivo (Salida de Caja)</SelectItem>
+                <SelectItem value="tarjeta" className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">Tarjeta de crédito</SelectItem>
+                <SelectItem value="digital" className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">Pago digital / Otro</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           {paymentForm.metodoPago === "efectivo" && !cicloAbierto && (

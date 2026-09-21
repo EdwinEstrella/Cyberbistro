@@ -19,6 +19,13 @@ import { hydrateAuthStateAfterLogin, syncAuthClientAfterLogin, useAuth } from ".
 import { defaultRouteForRol } from "../../../shared/lib/roleNav";
 import { saveLocalDeviceSession } from "../../../shared/lib/localFirst";
 import { consumeRememberedLogin } from "../../../shared/lib/rememberLoginStorage";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../../shared/ui/select";
 
 const LOGIN_NOTICE_KEY = "cloudix_login_notice";
 const REFRESH_TOKEN_KEY = SUPABASE_REFRESH_TOKEN_STORAGE_KEY;
@@ -338,7 +345,9 @@ export function Login() {
           data.user.id,
           data.user.email ?? "",
           access.row
-        );
+        ).catch((err) => {
+          console.warn("[LoginForm] saveLocalDeviceSession non-blocking error:", err);
+        });
       }
 
       hydrateAuthStateAfterLogin(data.user, access.row);
@@ -459,10 +468,28 @@ export function Login() {
                       Cuenta guardada
                     </label>
                     <div className="flex gap-2">
-                      <select id="saved-login-account" value={savedAccountId} onChange={(event) => void selectSavedAccount(event.target.value)} className="min-w-0 flex-1 rounded-[8px] border border-[#484847] bg-[#131313] px-3 py-3 font-['Inter',sans-serif] text-[13px] text-white outline-none focus:border-[#ff906d]">
-                        <option value="">Elegí una cuenta</option>
-                        {savedAccounts.map((account) => <option key={account.id} value={account.id}>{account.email}{account.hasPassword ? "" : " (sin contraseña guardada)"}</option>)}
-                      </select>
+                      <Select
+                        value={savedAccountId}
+                        onValueChange={(val) => void selectSavedAccount(val)}
+                      >
+                        <SelectTrigger
+                          id="saved-login-account"
+                          className="min-w-0 flex-1 rounded-[8px] border border-[#484847] bg-[#131313] px-3 py-3 font-['Inter',sans-serif] text-[13px] text-white outline-none focus:border-[#ff906d] h-[44px]"
+                        >
+                          <SelectValue placeholder="Elegí una cuenta" />
+                        </SelectTrigger>
+                        <SelectContent className="rounded-[8px] border border-[#484847] bg-[#131313] text-white">
+                          {savedAccounts.map((account) => (
+                            <SelectItem
+                              key={account.id}
+                              value={account.id}
+                              className="focus:bg-[#222] focus:text-white cursor-pointer text-[13px]"
+                            >
+                              {account.email}{account.hasPassword ? "" : " (sin contraseña guardada)"}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <button type="button" disabled={!savedAccountId} onClick={() => savedAccountId && void deleteSavedAccount(savedAccountId)} aria-label="Eliminar cuenta guardada" className="rounded-[8px] border border-[#ff7346]/40 bg-[#ff7346]/10 px-3 text-[#ff906d] transition-colors hover:bg-[#ff7346]/20 disabled:cursor-not-allowed disabled:opacity-40">
                         <Trash2 size={16} aria-hidden="true" />
                       </button>

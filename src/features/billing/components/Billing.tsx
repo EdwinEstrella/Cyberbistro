@@ -5,8 +5,9 @@ import { useAuth, ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
 import { buildCierreDiaReceiptHtml, buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
-import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
+import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { readLocalInvoices, deleteLocalInvoice } from "../lib/invoicesLocal";
+import { readLocalConsumos, deleteLocalConsumo } from "../../../shared/lib/ordersLocal";
 import { readLocalCierres } from "../../cierre/lib/cierresLocal";
 import { readLocalCuentasCobrar, readLocalCuentasPagar, readLocalCxcPagos, readLocalCxpPagos } from "../lib/accountsLocal";
 import { readLocalExpenses, readLocalExpenseCategories } from "../../gastos/lib/expensesLocal";
@@ -32,6 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../../shared/ui/select";
+import { DatePicker } from "../../../shared/ui/date-picker";
 
 type InvoiceStatus = "pagada" | "pendiente" | "cancelada";
 type BillingView = "facturas" | "ciclos" | "finanzas";
@@ -133,12 +135,6 @@ interface CycleSummary {
   categoryBreakdown: { category: string; count: number; total: number }[];
   expenseCategoryBreakdown: { category: string; count: number; total: number; color?: string | null }[];
 }
-
-const statusConfig: Record<InvoiceStatus, { label: string; color: string; bg: string; shadow?: string }> = {
-  pagada: { label: "PAGADA", color: "#59ee50", bg: "rgba(89,238,80,0.1)", shadow: "0px 0px 15px 0px rgba(89,238,80,0.2)" },
-  pendiente: { label: "PENDIENTE", color: "#ff906d", bg: "rgba(255,144,109,0.1)" },
-  cancelada: { label: "CANCELADA", color: "#ff716c", bg: "rgba(255,113,108,0.1)" },
-};
 
 const RD = (n: number) =>
   "RD$ " + n.toLocaleString("es-DO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -326,7 +322,6 @@ export function Billing() {
   const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
-  const [statusFilter, setStatusFilter] = useState<string>("todos");
   const [methodFilter, setMethodFilter] = useState<string>("todos");
   const [invoiceModal, setInvoiceModal] = useState<Invoice | null>(null);
   // deletingInvoiceId removed
@@ -508,13 +503,10 @@ export function Billing() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [statusFilter, methodFilter, dateFrom, dateTo, view]);
+  }, [methodFilter, dateFrom, dateTo, view]);
 
   const filteredInvoices = useMemo(() => {
     let filtered = invoices;
-    if (statusFilter !== "todos") {
-      filtered = filtered.filter((inv) => inv.estado === statusFilter);
-    }
     if (methodFilter !== "todos") {
       filtered = filtered.filter((inv) => inv.metodo_pago === methodFilter);
     }
@@ -525,7 +517,7 @@ export function Billing() {
       filtered = filtered.filter((inv) => new Date(inv.created_at).getTime() <= new Date(dateTo + "T23:59:59").getTime());
     }
     return filtered;
-  }, [invoices, statusFilter, methodFilter, dateFrom, dateTo]);
+  }, [invoices, methodFilter, dateFrom, dateTo]);
 
   const finanzasData = useMemo(() => {
     const cxcActivas = cuentasCobrar.filter((c) => c.estado !== "pagada");
@@ -783,15 +775,14 @@ export function Billing() {
     });
   }, [cycleSummaries, dateFrom, dateTo]);
 
-  const { totalRevenue, paidCount, cancelledCount } = useMemo(() => {
+  const { totalRevenue, recentCount } = useMemo(() => {
     const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const recentInvoices = invoices.filter(
-      (inv) => new Date(inv.created_at) > last24h && inv.estado === "pagada"
+      (inv) => new Date(inv.created_at) > last24h
     );
     return {
-      totalRevenue: recentInvoices.reduce((sum, inv) => sum + inv.total, 0),
-      paidCount: invoices.filter((inv) => inv.estado === "pagada").length,
-      cancelledCount: invoices.filter((inv) => inv.estado === "cancelada").length,
+      totalRevenue: recentInvoices.reduce((sum, inv) => sum + Number(inv.total || 0), 0),
+      recentCount: recentInvoices.length,
     };
   }, [invoices]);
 
@@ -802,7 +793,7 @@ export function Billing() {
     weekStart.setHours(0, 0, 0, 0);
     weekStart.setDate(now.getDate() - now.getDay());
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-    const latestCycle = cycleSummaries[0] ?? null;
+    const latestCycle = cycleSummaries.find((c) => !c.cycle.closed_at) ?? cycleSummaries[0] ?? null;
 
     const paidInvoices = invoices.filter((inv) => inv.estado === "pagada");
     const salesLast24h = paidInvoices
@@ -894,58 +885,84 @@ export function Billing() {
         }
       ];
     }
+    if (view === "facturas") {
+      return [
+        {
+          label: "Ventas Total",
+          value: cycleKpis.latestCycleSales,
+          isMoney: true,
+          sub: cycleKpis.latestCycleLabel,
+          color: "text-green-600 dark:text-green-400",
+          icon: <DollarSign size={18} className="text-green-600 dark:text-green-400" />,
+          bgColor: "bg-green-500/10 dark:bg-green-500/20"
+        },
+        {
+          label: "Ingreso Total (24h)",
+          value: totalRevenue,
+          isMoney: true,
+          sub: `${recentCount} facturas últimas 24h`,
+          color: "text-foreground",
+          icon: <Activity size={18} className="text-primary" />,
+          bgColor: "bg-primary/10 dark:bg-primary/20"
+        },
+        {
+          label: "Total Facturas",
+          value: invoices.length,
+          isMoney: false,
+          sub: "En el sistema",
+          color: "text-foreground",
+          icon: <FileText size={18} className="text-blue-500" />,
+          bgColor: "bg-blue-500/10 dark:bg-blue-500/20"
+        }
+      ];
+    }
     return [
       {
-        label: view === "facturas" ? "Ingreso Total (24h)" : "Ventas Total",
-        value: (view === "facturas" ? totalRevenue : cycleKpis.latestCycleSales),
+        label: "Ventas Total",
+        value: cycleKpis.latestCycleSales,
         isMoney: true,
-        sub: view === "facturas" ? "Facturas recientes" : cycleKpis.latestCycleLabel,
+        sub: cycleKpis.latestCycleLabel,
         color: "text-green-600 dark:text-green-400",
         icon: <DollarSign size={18} className="text-green-600 dark:text-green-400" />,
         bgColor: "bg-green-500/10 dark:bg-green-500/20"
       },
       {
-        label: view === "facturas" ? "Ticket Promedio" : "Últimas 24 horas",
-        value: view === "facturas" ? (invoices.length > 0 ? invoices.reduce((s, i) => s + i.total, 0) / invoices.length : 0) : cycleKpis.netLast24h,
+        label: "Últimas 24 horas",
+        value: cycleKpis.netLast24h,
         isMoney: true,
-        sub: view === "facturas" ? `${invoices.length} totales` : "Últimas 24 horas",
+        sub: "Últimas 24 horas",
         color: "text-foreground",
         icon: <Activity size={18} className="text-primary" />,
         bgColor: "bg-primary/10 dark:bg-primary/20"
       },
       {
-        label: view === "facturas" ? "Facturas Pagadas" : "Semana actual",
-        value: view === "facturas" ? paidCount : cycleKpis.weekSales,
-        isMoney: view !== "facturas",
-        sub: view === "facturas" ? `${cancelledCount} canceladas` : "Semana actual",
+        label: "Semana actual",
+        value: cycleKpis.weekSales,
+        isMoney: true,
+        sub: "Semana actual",
         color: "text-foreground",
         icon: <TrendingUp size={18} className="text-pink-600 dark:text-pink-400" />,
         bgColor: "bg-pink-500/10 dark:bg-pink-500/20"
       },
       {
-        label: view === "facturas" ? "Total Facturas" : "Mes actual",
-        value: view === "facturas" ? invoices.length : cycleKpis.monthSales,
-        isMoney: view !== "facturas",
-        sub: view === "facturas" ? "En el sistema" : "Mes actual",
+        label: "Mes actual",
+        value: cycleKpis.monthSales,
+        isMoney: true,
+        sub: "Mes actual",
         color: "text-foreground",
         icon: <FileText size={18} className="text-blue-500" />,
         bgColor: "bg-blue-500/10 dark:bg-blue-500/20"
       }
     ];
-  }, [view, finanzasData, totalRevenue, cycleKpis, invoices, paidCount, cancelledCount]);
+  }, [view, finanzasData, totalRevenue, recentCount, cycleKpis, invoices]);
 
   const filteredStats = useMemo(() => {
-    const total = filteredInvoices
-      .filter((inv) => inv.estado === "pagada")
-      .reduce((sum, inv) => sum + inv.total, 0);
+    const total = filteredInvoices.reduce((sum, inv) => sum + Number(inv.total || 0), 0);
     const count = filteredInvoices.length;
-    const avg = count > 0 ? total / count : 0;
     
     const methodCounts: Record<string, number> = {};
     for (const inv of filteredInvoices) {
-      if (inv.estado === "pagada") {
-        methodCounts[inv.metodo_pago] = (methodCounts[inv.metodo_pago] || 0) + inv.total;
-      }
+      methodCounts[inv.metodo_pago] = (methodCounts[inv.metodo_pago] || 0) + Number(inv.total || 0);
     }
     
     let mainMethod = "Ninguno";
@@ -959,7 +976,7 @@ export function Billing() {
     
     const mainMethodLabel = mainMethod !== "Ninguno" ? getMethodDisplay(mainMethod).label : "Ninguno";
     
-    return { total, count, avg, mainMethodLabel };
+    return { total, count, mainMethodLabel };
   }, [filteredInvoices]);
 
   const printInvoice = useCallback(
@@ -1134,33 +1151,12 @@ export function Billing() {
       if (inv.tenant_id != null && inv.tenant_id !== tenantId) return;
 
       try {
-        const deviceId = await getDeviceId();
+        // 1. Fetch consumos to delete
+        const allConsumos = await readLocalConsumos(tenantId);
+        const consumosAsociados = allConsumos.filter((c: any) => c.factura_id === inv.id);
 
-        // 1. Fetch consumos to delete locally first
-        const useLocalConsumos = await shouldReadLocalFirst(tenantId, ["consumos"]);
-        
-        let consumosAsociados: any[] = [];
-        if (useLocalConsumos) {
-          const allConsumos = await readLocalMirror<any>(tenantId, "consumos");
-          consumosAsociados = allConsumos.filter((c: any) => c.factura_id === inv.id);
-        } else {
-          const { data } = await supabase.from("consumos").select("id").eq("tenant_id", tenantId).eq("factura_id", inv.id);
-          if (data) consumosAsociados = data;
-        }
-
-        // 2. Queue deletion of each consumo
-        const writes = consumosAsociados.map(c => 
-          enqueueLocalWrite({
-            tenantId,
-            tableName: "consumos",
-            rowId: c.id,
-            op: "delete",
-            payload: { id: c.id },
-            deviceId
-          })
-        );
-
-        await Promise.all(writes);
+        // 2. Delete each consumo via ordersLocal (SQLite on desktop, Supabase on web)
+        await Promise.all(consumosAsociados.map((c: any) => deleteLocalConsumo(tenantId, String(c.id))));
         await deleteLocalInvoice(tenantId, inv.id);
 
         setInvoiceModal((open) => (open?.id === inv.id ? null : open));
@@ -1197,14 +1193,14 @@ export function Billing() {
     return (
       <div className="flex-1 flex items-center justify-center">
         <span className="font-['Space_Grotesk',sans-serif] text-muted-foreground text-[16px]">
-          Cargando analiticas...
+          Cargando datos...
         </span>
       </div>
     );
   }
 
   // Define grid columns once to avoid duplication and syntax issues
-  const gridColsClass = "grid grid-cols-[80px_100px_1fr_100px_120px_120px_120px]";
+  const gridColsClass = "grid grid-cols-[90px_130px_1fr_130px_130px_110px]";
   return (
     <div className="flex-1 p-4 sm:p-6 lg:p-8 flex flex-col gap-6 w-full max-w-[1600px] mx-auto bg-background transition-colors duration-300">
       {/* Header Section */}
@@ -1246,7 +1242,7 @@ export function Billing() {
       </div>
 
       {/* KPI Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className={`grid grid-cols-1 sm:grid-cols-2 ${view === "facturas" ? "xl:grid-cols-3" : "xl:grid-cols-4"} gap-4`}>
         {kpiCards.map((kpi, i) => (
           <div key={i} className="bg-card rounded-[20px] border border-black/10 dark:border-white/5 p-5 flex justify-between items-start shadow-sm transition-all hover:shadow-md hover:border-black/15 dark:hover:border-white/10">
             <div className="flex flex-col gap-2 flex-1 min-w-0 pr-2">
@@ -1275,10 +1271,9 @@ export function Billing() {
             </div>
 
             {view === "facturas" && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 pt-4">
-                <div><span className="text-[11px] text-muted-foreground font-medium block">Monto Pagado</span><span className="font-['Space_Grotesk',sans-serif] font-bold text-[18px] text-green-600 dark:text-green-400">{RD(filteredStats.total)}</span></div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4">
+                <div><span className="text-[11px] text-muted-foreground font-medium block">Total Facturado</span><span className="font-['Space_Grotesk',sans-serif] font-bold text-[18px] text-green-600 dark:text-green-400">{RD(filteredStats.total)}</span></div>
                 <div><span className="text-[11px] text-muted-foreground font-medium block">Cantidad</span><span className="font-['Space_Grotesk',sans-serif] font-bold text-[18px] text-foreground">{filteredStats.count} facturas</span></div>
-                <div><span className="text-[11px] text-muted-foreground font-medium block">Ticket Promedio</span><span className="font-['Space_Grotesk',sans-serif] font-bold text-[18px] text-foreground">{RD(filteredStats.avg)}</span></div>
                 <div><span className="text-[11px] text-muted-foreground font-medium block">Método Principal</span><span className="font-['Space_Grotesk',sans-serif] font-bold text-[18px] text-primary">{filteredStats.mainMethodLabel}</span></div>
               </div>
             )}
@@ -1304,59 +1299,42 @@ export function Billing() {
           {/* Horizontal Filter Bar Card */}
           <div className="bg-card rounded-[20px] border border-black/10 dark:border-white/5 p-4 sm:p-5 shadow-sm">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-              <div className={`flex-1 grid grid-cols-1 sm:grid-cols-2 ${view === "facturas" ? "lg:grid-cols-4" : view === "finanzas" ? "lg:grid-cols-3" : "lg:grid-cols-2"} gap-4`}>
+              <div className={`flex-1 grid grid-cols-1 sm:grid-cols-2 ${view === "facturas" || view === "finanzas" ? "lg:grid-cols-3" : "lg:grid-cols-2"} gap-4`}>
                 <div className="flex flex-col gap-1.5">
                   <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider font-['Inter']">Desde</span>
-                  <input
-                    type="date"
+                  <DatePicker
                     value={dateFrom}
-                    onChange={(e) => setDateFrom(e.target.value)}
-                    className="w-full bg-muted/60 rounded-xl border border-black/5 dark:border-white/5 px-3 py-2 font-['Inter',sans-serif] text-foreground text-[13px] outline-none focus:border-primary transition-colors cursor-pointer h-[38px]"
+                    onChange={setDateFrom}
+                    placeholder="Desde"
+                    className="w-full bg-muted/60 rounded-xl border border-black/5 dark:border-white/5 h-[38px] text-[13px]"
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider font-['Inter']">Hasta</span>
-                  <input
-                    type="date"
+                  <DatePicker
                     value={dateTo}
-                    onChange={(e) => setDateTo(e.target.value)}
-                    className="w-full bg-muted/60 rounded-xl border border-black/5 dark:border-white/5 px-3 py-2 font-['Inter',sans-serif] text-foreground text-[13px] outline-none focus:border-primary transition-colors cursor-pointer h-[38px]"
+                    onChange={setDateTo}
+                    placeholder="Hasta"
+                    className="w-full bg-muted/60 rounded-xl border border-black/5 dark:border-white/5 h-[38px] text-[13px]"
                   />
                 </div>
 
                 {(view === "facturas" || view === "finanzas") && (
-                  <>
-                    {view === "facturas" && (
-                      <div className="flex flex-col gap-1.5">
-                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider font-['Inter']">Estado</span>
-                        <Select value={statusFilter} onValueChange={setStatusFilter}>
-                          <SelectTrigger className="w-full rounded-xl bg-muted/60 border border-black/5 dark:border-white/5 h-[38px]">
-                            <SelectValue placeholder="Estado" />
-                          </SelectTrigger>
-                          <SelectContent className="rounded-xl">
-                            <SelectItem value="todos">Todos los Estados</SelectItem>
-                            <SelectItem value="pagada">Pagadas</SelectItem>
-                            <SelectItem value="cancelada">Canceladas</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-                    <div className="flex flex-col gap-1.5">
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider font-['Inter']">Método</span>
-                      <Select value={methodFilter} onValueChange={setMethodFilter}>
-                        <SelectTrigger className="w-full rounded-xl bg-muted/60 border border-black/5 dark:border-white/5 h-[38px]">
-                          <SelectValue placeholder="Método" />
-                        </SelectTrigger>
-                        <SelectContent className="rounded-xl">
-                          <SelectItem value="todos">Todos los Métodos</SelectItem>
-                          <SelectItem value="efectivo">Efectivo</SelectItem>
-                          <SelectItem value="tarjeta">Tarjeta</SelectItem>
-                          <SelectItem value="digital">Digital</SelectItem>
-                          <SelectItem value="transferencia">Transferencia</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </>
+                  <div className="flex flex-col gap-1.5">
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider font-['Inter']">Método</span>
+                    <Select value={methodFilter} onValueChange={setMethodFilter}>
+                      <SelectTrigger className="w-full rounded-xl bg-muted/60 border border-black/5 dark:border-white/5 h-[38px]">
+                        <SelectValue placeholder="Método" />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl">
+                        <SelectItem value="todos">Todos los Métodos</SelectItem>
+                        <SelectItem value="efectivo">Efectivo</SelectItem>
+                        <SelectItem value="tarjeta">Tarjeta</SelectItem>
+                        <SelectItem value="digital">Digital</SelectItem>
+                        <SelectItem value="transferencia">Transferencia</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 )}
               </div>
 
@@ -1380,7 +1358,6 @@ export function Billing() {
                   </div>
                 ) : (
                   pageData.map((inv) => {
-                    const status = statusConfig[inv.estado];
                     const method = getMethodDisplay(inv.metodo_pago);
                     const date = new Date(inv.created_at);
                     return (
@@ -1409,11 +1386,7 @@ export function Billing() {
                           </div>
                         </div>
                         <div className="mt-3 flex items-center justify-between gap-3">
-                          <div className="flex flex-col gap-1">
-                            <div className="flex items-center gap-2 rounded-full border border-black/5 bg-muted/50 px-3 py-1 dark:border-white/5 w-fit">
-                              <div className="size-1.5 rounded-full" style={{ backgroundColor: status.color }} />
-                              <span className="text-[10px] font-bold uppercase" style={{ color: status.color }}>{status.label}</span>
-                            </div>
+                          <div>
                             {(() => {
                               const ecfDoc = ecfDocuments.get(inv.id);
                               if (!ecfDoc) return null;
@@ -1442,8 +1415,8 @@ export function Billing() {
               <div className="hidden md:block overflow-x-auto rounded-[20px] border border-black/10 dark:border-white/5 bg-card shadow-sm">
                 <div className="min-w-[1000px]">
                   <div className={`${gridColsClass} bg-muted/50 border-b border-black/10 dark:border-white/10 px-6 py-4`}>
-                    {["ID", "Fecha", "Mesa / Origen", "Método", "Estado", "Monto", "Acciones"].map((h, i) => (
-                      <div key={i} className={`font-['Inter',sans-serif] font-bold text-muted-foreground text-[11px] uppercase tracking-widest ${i >= 5 ? "text-right" : ""}`}>
+                    {["ID", "Fecha", "Mesa / Origen", "Método", "Monto", "Acciones"].map((h, i) => (
+                      <div key={i} className={`font-['Inter',sans-serif] font-bold text-muted-foreground text-[11px] uppercase tracking-widest ${i >= 4 ? "text-right" : ""}`}>
                         {h}
                       </div>
                     ))}
@@ -1454,12 +1427,21 @@ export function Billing() {
                       <div className="py-20 text-center text-muted-foreground font-['Inter']">No se encontraron facturas.</div>
                     ) : (
                       pageData.map((inv) => {
-                        const status = statusConfig[inv.estado];
                         const method = getMethodDisplay(inv.metodo_pago);
                         const date = new Date(inv.created_at);
                         return (
                           <div key={inv.id} className={`${gridColsClass} px-6 py-5 items-center hover:bg-muted/30 transition-colors group`}>
-                            <span className="font-['Space_Grotesk',sans-serif] font-bold text-foreground">#{String(inv.numero_factura).padStart(4, "0")}</span>
+                            <div className="flex flex-col">
+                              <span className="font-['Space_Grotesk',sans-serif] font-bold text-foreground">#{String(inv.numero_factura).padStart(4, "0")}</span>
+                              {(() => {
+                                const ecfDoc = ecfDocuments.get(inv.id);
+                                if (!ecfDoc) return null;
+                                const ecfDisplay = getEcfStatusDisplay(ecfDoc.status);
+                                return (
+                                  <span className="text-[10px] font-bold uppercase" style={{ color: ecfDisplay.color }}>{ecfDisplay.label}</span>
+                                );
+                              })()}
+                            </div>
                             <div className="flex flex-col text-[13px]">
                               <span className="text-foreground font-medium">{date.toLocaleDateString()}</span>
                               <span className="text-muted-foreground text-[11px]">{date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}</span>
@@ -1474,23 +1456,6 @@ export function Billing() {
                               </div>
                             </div>
                             <div><span className={`text-[10px] font-bold uppercase px-2 py-1 rounded ${method.pillClass}`}>{method.label}</span></div>
-                            <div>
-                               <div className="flex items-center gap-2 px-3 py-1 rounded-full border border-black/5 dark:border-white/5 w-fit bg-muted/50">
-                                  <div className="size-1.5 rounded-full" style={{ backgroundColor: status.color }} />
-                                  <span className="text-[10px] font-bold uppercase" style={{ color: status.color }}>{status.label}</span>
-                               </div>
-                               {(() => {
-                                 const ecfDoc = ecfDocuments.get(inv.id);
-                                 if (!ecfDoc) return null;
-                                 const ecfDisplay = getEcfStatusDisplay(ecfDoc.status);
-                                 return (
-                                   <div className="flex items-center gap-2 px-3 py-1 rounded-full border border-black/5 dark:border-white/5 w-fit mt-1.5" style={{ borderColor: ecfDisplay.color + "22", backgroundColor: ecfDisplay.bg }}>
-                                     <div className="size-1.5 rounded-full" style={{ backgroundColor: ecfDisplay.color }} />
-                                     <span className="text-[10px] font-bold uppercase" style={{ color: ecfDisplay.color }}>{ecfDisplay.label}</span>
-                                   </div>
-                                 );
-                               })()}
-                            </div>
                             <div className="text-right font-['Space_Grotesk',sans-serif] font-bold text-foreground text-[16px] tabular-nums">{RD(inv.total)}</div>
                             <div className="flex justify-end gap-2">
                               <button onClick={() => setInvoiceModal(inv)} className="size-8 rounded-lg bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/10 transition-all border-none cursor-pointer"><Eye size={16} /></button>

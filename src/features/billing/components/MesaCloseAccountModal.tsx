@@ -30,6 +30,13 @@ import { useSucursal } from "../../../app/context/SucursalContext";
 import { CustomerSelect } from "../../clientes/components/CustomerSelect";
 import type { Customer } from "../../clientes/lib/customers";
 import { readLocalCierres } from "../../cierre/lib/cierresLocal";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../../shared/ui/select";
 
 const ITBIS = 0.18;
 
@@ -1356,26 +1363,36 @@ export function MesaCloseAccountModal({
                     <label htmlFor="ncf-select" className="text-zinc-400 font-['Space_Grotesk',sans-serif] font-bold text-[11px] uppercase tracking-[1px] px-1">
                       Tipo NCF
                     </label>
-                    <select
-                      id="ncf-select"
+                    <Select
                       value={selectedNcfType}
-                      onChange={(e) =>
+                      onValueChange={(val) =>
                         setSelectedNcfType(
-                          isNcfTypeCode(e.target.value) ? e.target.value : DEFAULT_NCF_B_CODE
+                          isNcfTypeCode(val) ? val : DEFAULT_NCF_B_CODE
                         )
                       }
-                      className="w-full rounded-[14px] border border-white/20 bg-[#0a0a0a] px-4 py-3.5 font-['Inter',sans-serif] text-zinc-300 text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors cursor-pointer h-auto shadow-sm"
                     >
-                      {NCF_TIPO_OPCIONES.filter(o => {
-                        const modeMatch = fiscalMode === "dgii_ecf" ? o.codigo.startsWith("E") : fiscalMode === "ncf_legacy" ? o.codigo.startsWith("B") : false;
-                        if (!modeMatch) return false;
-                        return isNcfTypeActive(ncfTiposActivos, o.codigo);
-                      }).map((opcion) => (
-                        <option key={opcion.codigo} value={opcion.codigo} className="bg-[#111] text-zinc-300">
-                          {opcion.codigo} - {opcion.descripcion.replace(`${opcion.codigo} - `, "")}
-                        </option>
-                      ))}
-                    </select>
+                      <SelectTrigger
+                        id="ncf-select"
+                        className="w-full rounded-[14px] border border-white/20 bg-[#0a0a0a] px-4 py-3.5 font-['Inter',sans-serif] text-zinc-300 text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors cursor-pointer h-auto shadow-sm"
+                      >
+                        <SelectValue placeholder="Seleccionar NCF" />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl border border-white/20 bg-[#111] text-zinc-300">
+                        {NCF_TIPO_OPCIONES.filter(o => {
+                          const modeMatch = fiscalMode === "dgii_ecf" ? o.codigo.startsWith("E") : fiscalMode === "ncf_legacy" ? o.codigo.startsWith("B") : false;
+                          if (!modeMatch) return false;
+                          return isNcfTypeActive(ncfTiposActivos, o.codigo);
+                        }).map((opcion) => (
+                          <SelectItem
+                            key={opcion.codigo}
+                            value={opcion.codigo}
+                            className="focus:bg-[#222] focus:text-white text-zinc-300 cursor-pointer"
+                          >
+                            {opcion.codigo} - {opcion.descripcion.replace(`${opcion.codigo} - `, "")}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 )}
 

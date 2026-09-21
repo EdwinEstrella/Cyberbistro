@@ -1,6 +1,13 @@
 import { FormEvent, useState } from "react";
 import { enqueueLocalWrite, getDeviceId } from "../../../shared/lib/localFirst";
 import { calculateCostPerFraction, parentAndFractionsToTotal } from "../../../shared/lib/presentationUnits";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../../shared/ui/select";
 
 export const CATEGORIAS_INSUMO = ["Cocina / Cocina", "Insumo / Materia Prima", "Bebidas / Bar", "Desechables", "Otros"];
 export const UNIDADES_MEDIDA = ["ml", "g", "unidad", "oz", "libra", "litro", "galón"];
@@ -176,27 +183,37 @@ export function NewInsumoModal({
           <div className="grid grid-cols-2 gap-3 text-left">
             <div className="flex flex-col gap-1.5">
               <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.5px]">Categoría *</label>
-              <select
+              <Select
                 value={insumoForm.categoria}
-                onChange={(e) => setInsumoForm(prev => ({ ...prev, categoria: e.target.value }))}
-                className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors"
+                onValueChange={(val) => setInsumoForm(prev => ({ ...prev, categoria: val }))}
               >
-                {CATEGORIAS_INSUMO.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </select>
+                <SelectTrigger className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors h-[40px]">
+                  <SelectValue placeholder="Categoría" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.4)] text-white">
+                  {CATEGORIAS_INSUMO.map(cat => (
+                    <SelectItem key={cat} value={cat} className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">
+                      {cat}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="flex flex-col gap-1.5">
               <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.5px]">Presentación *</label>
-              <select
+              <Select
                 value={insumoForm.tipo_control}
-                onChange={(e) => setInsumoForm(prev => ({ ...prev, tipo_control: e.target.value as any }))}
-                className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors"
+                onValueChange={(val) => setInsumoForm(prev => ({ ...prev, tipo_control: val as any }))}
               >
-                <option value="simple">Simple (Unidad, gramos, etc.)</option>
-                <option value="fraccionado">Fraccionado (Caja, Galón, Saco)</option>
-              </select>
+                <SelectTrigger className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors h-[40px]">
+                  <SelectValue placeholder="Presentación" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.4)] text-white">
+                  <SelectItem value="simple" className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">Simple (Unidad, gramos, etc.)</SelectItem>
+                  <SelectItem value="fraccionado" className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">Fraccionado (Caja, Galón, Saco)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
@@ -216,15 +233,21 @@ export function NewInsumoModal({
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <label className="font-['Inter',sans-serif] text-[#ff906d] text-[10px] uppercase tracking-[0.5px]">Se fracciona en: *</label>
-                  <select
+                  <Select
                     value={insumoForm.unidad_base}
-                    onChange={(e) => setInsumoForm(prev => ({ ...prev, unidad_base: e.target.value }))}
-                    className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors"
+                    onValueChange={(val) => setInsumoForm(prev => ({ ...prev, unidad_base: val }))}
                   >
-                    {UNIDADES_MEDIDA.map(unit => (
-                      <option key={unit} value={unit}>{unit}</option>
-                    ))}
-                  </select>
+                    <SelectTrigger className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors h-[40px]">
+                      <SelectValue placeholder="Unidad base" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.4)] text-white">
+                      {UNIDADES_MEDIDA.map(unit => (
+                        <SelectItem key={unit} value={unit} className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">
+                          {unit}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
@@ -307,15 +330,21 @@ export function NewInsumoModal({
               <div className="grid grid-cols-2 gap-3 text-left">
                 <div className="flex flex-col gap-1.5">
                   <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.5px]">Unidad de Medida *</label>
-                  <select
+                  <Select
                     value={insumoForm.unidad_base}
-                    onChange={(e) => setInsumoForm(prev => ({ ...prev, unidad_base: e.target.value }))}
-                    className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors"
+                    onValueChange={(val) => setInsumoForm(prev => ({ ...prev, unidad_base: val }))}
                   >
-                    {UNIDADES_MEDIDA.map(unit => (
-                      <option key={unit} value={unit}>{unit}</option>
-                    ))}
-                  </select>
+                    <SelectTrigger className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors h-[40px]">
+                      <SelectValue placeholder="Unidad de medida" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.4)] text-white">
+                      {UNIDADES_MEDIDA.map(unit => (
+                        <SelectItem key={unit} value={unit} className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">
+                          {unit}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="flex flex-col gap-1.5">

@@ -12,6 +12,14 @@ import { supabase } from "../../../shared/lib/supabase";
 import { filterRecordsWithNcf, generateFormato606, type CompraFiscal606 } from "../../contabilidad/lib/formato606";
 import { eliminarCompra, syncIndexedDbComprasToSqlite } from "../lib/purchaseService";
 import { ConfirmModal } from "../../../shared/components/ConfirmModal";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../../shared/ui/select";
+import { DatePicker } from "../../../shared/ui/date-picker";
 
 export interface ProveedorRow {
   id: string;
@@ -114,7 +122,7 @@ export function Compras() {
         await syncIndexedDbComprasToSqlite(tenantId).catch(() => 0);
 
         const api = typeof window !== "undefined" ? window.electronAPI : undefined;
-        let sqliteCompras: CompraRow[] = [];
+        let sqliteCompras: CompraRow[] | null = null;
         if (api?.listCompras) {
           try {
             const res = await api.listCompras({ sucursalId: activeSucursalId || undefined });
@@ -126,15 +134,10 @@ export function Compras() {
           }
         }
 
-        const mirrorCompras = await readLocalMirror<CompraRow>(tenantId, "compras").catch(() => []);
-        if (sqliteCompras.length > 0) {
-          const byId = new Map<string, CompraRow>(sqliteCompras.map(c => [c.id, c]));
-          for (const row of mirrorCompras) {
-            if (!byId.has(row.id)) byId.set(row.id, row);
-          }
-          comprasData = Array.from(byId.values());
+        if (sqliteCompras !== null) {
+          comprasData = sqliteCompras;
         } else {
-          comprasData = mirrorCompras;
+          comprasData = await readLocalMirror<CompraRow>(tenantId, "compras").catch(() => []);
         }
 
         proveedoresData = await readLocalMirror<ProveedorRow>(tenantId, "proveedores");
@@ -219,6 +222,7 @@ export function Compras() {
   const filteredCompras = useMemo(() => {
     const { start, endStr } = dateRange;
     return compras.filter(c => {
+      if (c.estado === "anulada") return false;
       const inDate = c.fecha_compra >= start && c.fecha_compra < endStr;
       if (!inDate) return false;
       
@@ -271,6 +275,7 @@ export function Compras() {
     try {
       await eliminarCompra(tenantId, id, user?.id || null);
       setSuccessMsg("Compra anulada exitosamente. Se ha revertido el stock.");
+      setCompras((prev) => prev.filter((c) => c.id !== id));
       await cargarDatos();
     } catch (err: any) {
       setMessage("Error al anular compra: " + err.message);
@@ -361,21 +366,40 @@ export function Compras() {
           ) : periodMode606 === "month" ? (
             <div className="flex items-center gap-3 rounded-[10px] border border-[rgba(72,72,71,0.4)] bg-[#1a1a1a] px-4 py-2 shadow-sm">
               <span className="text-[10px] font-bold uppercase tracking-wider text-[#adaaaa]">Seleccionar mes:</span>
-              <select value={period606} onChange={(event) => setPeriod606(event.target.value)} className="bg-[#222] border border-[rgba(72,72,71,0.3)] rounded-lg px-2 py-1.5 text-[13px] font-semibold capitalize text-white outline-none cursor-pointer flex items-center justify-center transition-colors hover:border-[#ff906d]/50" aria-label="Seleccionar mes para Formato 606">
-                {monthOptions606.map((option) => <option key={option.value} value={option.value} className="bg-[#1a1a1a] text-white">{option.label}</option>)}
-              </select>
+              <Select value={period606} onValueChange={(val) => setPeriod606(val)}>
+                <SelectTrigger className="bg-[#222] border border-[rgba(72,72,71,0.3)] rounded-lg px-2 py-1.5 text-[13px] font-semibold capitalize text-white outline-none cursor-pointer h-[34px] min-w-[150px]">
+                  <SelectValue placeholder="Seleccionar mes" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.4)] text-white">
+                  {monthOptions606.map((option) => (
+                    <SelectItem key={option.value} value={option.value} className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer capitalize">
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           ) : (
             <div className="flex items-center gap-3 rounded-[10px] border border-[rgba(72,72,71,0.4)] bg-[#1a1a1a] px-4 py-2 text-[13px] font-medium text-white shadow-sm">
-              <label className="flex items-center gap-2">
+              <div className="flex items-center gap-2">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-[#adaaaa]">Desde:</span>
-                <input type="date" value={from606} onChange={(event) => setFrom606(event.target.value)} className="bg-[#222] border border-[rgba(72,72,71,0.3)] rounded-lg px-2 py-1.5 text-white outline-none cursor-pointer [color-scheme:dark] transition-colors hover:border-[#ff906d]/50" />
-              </label>
+                <DatePicker
+                  value={from606}
+                  onChange={(val) => setFrom606(val)}
+                  placeholder="Desde"
+                  className="bg-[#222] border border-[rgba(72,72,71,0.3)] rounded-lg px-2 py-1.5 text-white h-[34px] w-[140px]"
+                />
+              </div>
               <div className="w-px h-4 bg-[rgba(72,72,71,0.4)]"></div>
-              <label className="flex items-center gap-2">
+              <div className="flex items-center gap-2">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-[#adaaaa]">Hasta:</span>
-                <input type="date" value={to606} onChange={(event) => setTo606(event.target.value)} className="bg-[#222] border border-[rgba(72,72,71,0.3)] rounded-lg px-2 py-1.5 text-white outline-none cursor-pointer [color-scheme:dark] transition-colors hover:border-[#ff906d]/50" />
-              </label>
+                <DatePicker
+                  value={to606}
+                  onChange={(val) => setTo606(val)}
+                  placeholder="Hasta"
+                  className="bg-[#222] border border-[rgba(72,72,71,0.3)] rounded-lg px-2 py-1.5 text-white h-[34px] w-[140px]"
+                />
+              </div>
             </div>
           )}
           <div className="flex gap-2">

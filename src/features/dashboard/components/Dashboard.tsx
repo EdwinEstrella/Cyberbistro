@@ -61,7 +61,7 @@ import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSett
 import { calculateInvoiceTotals } from "../../../shared/lib/billingTotals";
 import { type FiscalMode } from "../../../shared/lib/fiscalTypes";
 import { resolveActiveFiscalMode, runFiscalEngine, buildEcfDocumentWrites } from "../../../shared/lib/fiscalEngine";
-import { getLocalFirstStatusSnapshot, readLocalMirror, readLocalOutbox, getDeviceId, writeLocalMirrorRow, shouldReadLocalFirst, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, type LocalFirstWrite } from "../../../shared/lib/localFirst";
+import { getLocalFirstStatusSnapshot, readLocalMirror, readLocalOutbox, getDeviceId, shouldReadLocalFirst, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, type LocalFirstWrite } from "../../../shared/lib/localFirst";
 import { readLocalCierres } from "../../cierre/lib/cierresLocal";
 import { readLocalPlatos, readLocalMenuCategories } from "../../soporte/lib/catalogLocal";
 import { readLocalMesasEstado, readLocalConsumos, saveLocalConsumo, saveLocalComanda, deleteLocalConsumo } from "../../../shared/lib/ordersLocal";
@@ -523,41 +523,19 @@ export function Dashboard() {
 
   async function syncMesaStateFromOpenAccount(mesaId: string, mesaNumero: number) {
     if (!tenantId || !activeSucursalId) return;
-    let useLocalConsumos = !navigator.onLine;
-    if (!useLocalConsumos) {
-      const outbox = await readLocalOutbox(tenantId).catch(() => []);
-      useLocalConsumos = outbox.some((entry) =>
-        entry.table_name === "consumos" &&
-        (entry.status === "pending" || entry.status === "syncing" || entry.status === "error")
-      );
-    }
-
-    if (useLocalConsumos) {
-      const rows = (await readLocalMirror<Consumo>(tenantId, "consumos"))
-        .filter((row) => Number(row.mesa_numero) === mesaNumero && row.estado !== "pagado" && row.sucursal_id === activeSucursalId);
-      const deuda_pendiente = rows.reduce((s, r) => s + Number(r.subtotal), 0);
-      const items_pendientes = rows.length;
-      const estado = items_pendientes > 0 ? "ocupada" : "libre";
-      setMesas((prev) =>
-        prev.map((m) =>
-          m.id === mesaId ? { ...m, estado, deuda_pendiente, items_pendientes } : m
-        )
-      );
-      return;
-    }
-    const { data, error } = await supabase
-      .from("consumos")
-      .select("subtotal")
-      .eq("tenant_id", tenantId)
-      .eq("sucursal_id", activeSucursalId)
-      .eq("mesa_numero", mesaNumero)
-      .neq("estado", "pagado");
-
-    if (error) return;
-    const rows = data ?? [];
-    const deuda_pendiente = rows.reduce((s, r) => s + Number((r as { subtotal: number }).subtotal), 0);
+    const rows = await readLocalConsumos(tenantId, {
+      sucursalId: activeSucursalId,
+      mesaNumero,
+      unpaidOnly: true,
+    });
+    const deuda_pendiente = rows.reduce((s, r) => s + Number(r.subtotal ?? 0), 0);
     const items_pendientes = rows.length;
     const estado = items_pendientes > 0 ? "ocupada" : "libre";
+    setMesas((prev) =>
+      prev.map((m) =>
+        m.id === mesaId ? { ...m, estado, deuda_pendiente, items_pendientes } : m
+      )
+    );
 
     const mesaEstadoRow = {
       id: parseInt(mesaId, 10),
@@ -1878,7 +1856,6 @@ export function Dashboard() {
                 state: "free",
               });
             }
-            await writeLocalMirrorRow(tenantId, "mesas_estado", freeMesaRow);
             await writePosMutationLocalFirst({
               tenantId,
               tableName: "mesas_estado",

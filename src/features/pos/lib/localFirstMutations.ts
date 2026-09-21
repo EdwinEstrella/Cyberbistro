@@ -1,8 +1,11 @@
 import { enqueueLocalWrite, type LocalFirstMirrorTable } from "../../../shared/lib/localFirst";
+import { saveLocalMesaEstado, saveLocalComanda, deleteLocalComanda } from "../../../shared/lib/ordersLocal";
+
+export type PosMutationTable = LocalFirstMirrorTable | "mesas_estado" | "comandas";
 
 interface LocalWriteArgs {
   tenantId: string;
-  tableName: LocalFirstMirrorTable;
+  tableName: PosMutationTable;
   rowId: string;
   op: "insert" | "update" | "upsert" | "delete";
   payload?: Record<string, unknown> | null;
@@ -11,7 +14,21 @@ interface LocalWriteArgs {
 }
 
 export async function writePosMutationLocalFirst(args: LocalWriteArgs): Promise<void> {
-  await enqueueLocalWrite(args);
+  if (args.tableName === "mesas_estado") {
+    if (args.payload) {
+      await saveLocalMesaEstado(args.tenantId, args.payload);
+    }
+    return;
+  }
+  if (args.tableName === "comandas") {
+    if (args.op === "delete") {
+      await deleteLocalComanda(args.tenantId, args.rowId);
+    } else if (args.payload) {
+      await saveLocalComanda(args.tenantId, args.payload);
+    }
+    return;
+  }
+  await enqueueLocalWrite(args as any);
 }
 
 export async function closeKitchenComandasForMesaLocalFirst(args: {

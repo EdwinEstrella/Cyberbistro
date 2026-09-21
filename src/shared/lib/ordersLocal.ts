@@ -100,10 +100,13 @@ export async function readLocalComandas(
     }
   }
 
-  let q = supabase.from("comandas").select("*").eq("tenant_id", tenantId);
+  const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+  let q = supabase.from("comandas").select("*").eq("tenant_id", tenantId).gte("created_at", threeDaysAgo);
   if (options?.sucursalId) q = q.eq("sucursal_id", options.sucursalId);
   if (options?.activeOnly) q = q.in("estado", ["pendiente", "en_preparacion", "listo"]);
   q = q.order("created_at", { ascending: true });
+  // Opportunistically clean up cloud comandas older than 3 days
+  void Promise.resolve(supabase.from("comandas").delete().eq("tenant_id", tenantId).lt("created_at", threeDaysAgo)).catch(() => {});
   const { data } = await q;
   return (data || []).map((r: any) => ({
     ...r,

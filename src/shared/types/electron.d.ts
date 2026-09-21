@@ -103,6 +103,7 @@ export interface ElectronAPI {
   getInvoiceNumberFloor?: (request: { tenantId: string }) => Promise<{ ok: true; data: number }>;
   deleteInvoiceLocal?: (request: { tenantId: string; invoiceId: string }) => Promise<{ ok: true }>;
   saveInvoiceLocal?: (invoice: Record<string, unknown>) => Promise<{ ok: true }>;
+  commitCheckout?: (command: import("../lib/checkoutContracts").DesktopCheckoutCommand) => Promise<{ ok: true; data: import("../lib/checkoutContracts").DesktopCheckoutResult }>;
   listCierres?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number; dateFrom?: string; dateTo?: string }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
   listMesasEstado?: (filter?: { tenantId?: string; sucursalId?: string }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
   saveMesaEstado?: (payload: Record<string, unknown>) => Promise<{ ok: true }>;

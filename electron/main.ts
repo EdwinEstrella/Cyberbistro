@@ -775,6 +775,13 @@ if (gotTheLock) {
         store.deleteConsumo(req.consumoId)
         triggerSyncAfterLocalWrite()
       },
+      commitCheckout: (command) => {
+        const store = getStore(command.tenantId)
+        if (!store) throw new Error('Tenant store is unavailable')
+        const result = store.commitCheckout(command)
+        triggerSyncAfterLocalWrite()
+        return result
+      },
     })
     registerSalesFiscalRepositoryIpc({
       ipcMain,

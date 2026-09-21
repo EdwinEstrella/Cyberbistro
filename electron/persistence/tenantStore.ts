@@ -14,8 +14,11 @@ import type { ReceivablesCommand, ReceivablesRepositoryStore } from "./receivabl
 import type { PayablesCommand, PayablesRepositoryStore } from "./payablesRepository";
 import type { ExpenseCommand, ExpenseRepositoryStore } from "./expenseRepository";
 import type { CustomerCommand, CustomerRepositoryStore } from "./customerRepository";
+import type { DesktopCheckoutCommand, DesktopCheckoutResult, DesktopCheckoutWrite } from "../../src/shared/lib/checkoutContracts";
 
 export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositoryStore, CashPurchaseRepositoryStore, ReceivablesRepositoryStore, PayablesRepositoryStore, ExpenseRepositoryStore, CustomerRepositoryStore {
+  private transactionDepth = 0;
+
   private constructor(
     private readonly database: DatabaseSync,
     private readonly databasePath: string,
@@ -42,6 +45,204 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
   getDatabasePath(): string { return this.databasePath; }
   getJournalMode(): string { return String(this.database.prepare("PRAGMA journal_mode;").get()?.journal_mode).toLowerCase(); }
   hasForeignKeysEnabled(): boolean { return this.database.prepare("PRAGMA foreign_keys;").get()?.foreign_keys === 1; }
+
+  private beginImmediateTransaction(): void {
+    if (this.transactionDepth === 0) this.database.exec("BEGIN IMMEDIATE;");
+    this.transactionDepth += 1;
+  }
+
+  private commitTransaction(): void {
+    if (this.transactionDepth <= 0) throw new Error("No active SQLite transaction");
+    this.transactionDepth -= 1;
+    if (this.transactionDepth === 0) this.database.exec("COMMIT;");
+  }
+
+  private rollbackTransaction(): void {
+    if (this.transactionDepth <= 0) return;
+    this.transactionDepth -= 1;
+    if (this.transactionDepth === 0) this.database.exec("ROLLBACK;");
+  }
+
+  commitCheckout(command: DesktopCheckoutCommand): DesktopCheckoutResult {
+    if (command.tenantId !== this.tenantId) throw new Error("Checkout tenant does not match the active SQLite store");
+    const allowedTables = new Set(["facturas", "consumos", "comandas", "mesas_estado", "cuentas_cobrar", "cxc_pagos", "ecf_documents", "fiscal_outbox"]);
+    for (const write of command.writes) {
+      if (write.tenantId !== this.tenantId || !allowedTables.has(write.tableName)) {
+        throw new Error(`Unsupported Desktop checkout write: ${write.tableName}`);
+      }
+    }
+
+    const movementIds: string[] = [];
+    this.beginImmediateTransaction();
+    try {
+      for (const write of command.writes.filter((item) => item.tableName === "facturas")) {
+        if (!write.payload || write.op === "delete") throw new Error("Checkout invoices require an upsert payload");
+        this.saveInvoice(write.payload);
+      }
+      for (const write of command.writes.filter((item) => item.tableName === "consumos")) this.applyCheckoutConsumo(write);
+      for (const write of command.writes.filter((item) => item.tableName === "comandas")) this.applyCheckoutComanda(write);
+      for (const write of command.writes.filter((item) => item.tableName === "mesas_estado")) {
+        if (!write.payload || write.op === "delete") throw new Error("Checkout mesa writes require an upsert payload");
+        this.saveMesaEstado({ ...write.payload, id: write.rowId });
+      }
+      movementIds.push(...this.applyCheckoutInventory(command.writes));
+      for (const write of command.writes.filter((item) => item.tableName === "cuentas_cobrar")) this.applyCheckoutReceivable(write);
+      for (const write of command.writes.filter((item) => item.tableName === "cxc_pagos")) this.applyCheckoutReceivablePayment(write);
+      for (const write of command.writes.filter((item) => item.tableName === "ecf_documents" || item.tableName === "fiscal_outbox")) this.applyCheckoutFiscalWrite(write);
+      this.commitTransaction();
+      return { localStatus: "committed", syncStatus: "pending", inventoryMovementIds: movementIds };
+    } catch (error) {
+      this.rollbackTransaction();
+      throw error;
+    }
+  }
+
+  private applyCheckoutConsumo(write: DesktopCheckoutWrite): void {
+    if (write.op === "delete") this.deleteConsumo(write.rowId);
+    else if (write.payload) this.saveConsumo({ ...write.payload, id: write.rowId });
+    else throw new Error("Checkout consumo writes require a payload");
+  }
+
+  private applyCheckoutComanda(write: DesktopCheckoutWrite): void {
+    if (write.op === "delete") this.deleteComanda(write.rowId);
+    else if (write.payload) this.saveComanda({ ...write.payload, id: write.rowId });
+    else throw new Error("Checkout comanda writes require a payload");
+  }
+
+  private applyCheckoutReceivable(write: DesktopCheckoutWrite): void {
+    if (!write.payload || write.op === "delete") throw new Error("Checkout receivable writes require an upsert payload");
+    const payload = write.payload;
+    const branchId = String(payload.sucursal_id ?? "main-process-default");
+    this.executeReceivablesCommand({
+      branchId,
+      commitId: crypto.randomUUID(),
+      command: {
+        type: "receivables.create",
+        id: write.rowId,
+        customerId: String(payload.customer_id ?? ""),
+        facturaId: payload.factura_id ? String(payload.factura_id) : undefined,
+        totalAmount: Number(payload.monto_total ?? 0),
+        dueDate: payload.fecha_vencimiento ? String(payload.fecha_vencimiento) : undefined,
+        sucursalId: branchId,
+        fechaEmision: payload.fecha_emision ? String(payload.fecha_emision) : undefined,
+        observacion: payload.observacion == null ? null : String(payload.observacion),
+      },
+    });
+  }
+
+  private applyCheckoutReceivablePayment(write: DesktopCheckoutWrite): void {
+    if (!write.payload || write.op === "delete") throw new Error("Checkout receivable payments require an upsert payload");
+    const payload = write.payload;
+    const branchId = String(payload.sucursal_id ?? "main-process-default");
+    this.executeReceivablesCommand({
+      branchId,
+      commitId: crypto.randomUUID(),
+      command: {
+        type: "receivables.payment.record",
+        paymentId: write.rowId,
+        receivableId: String(payload.cuenta_cobrar_id ?? ""),
+        amount: Number(payload.monto ?? 0),
+        paymentMethod: String(payload.metodo_pago ?? "efectivo"),
+        sucursalId: branchId,
+        cycleId: payload.cycle_id == null ? null : String(payload.cycle_id),
+        notas: payload.notas == null ? null : String(payload.notas),
+        usuarioId: payload.created_by_auth_user_id == null ? null : String(payload.created_by_auth_user_id),
+        fechaPago: payload.fecha_pago ? String(payload.fecha_pago) : undefined,
+      },
+    });
+  }
+
+  private applyCheckoutInventory(writes: readonly DesktopCheckoutWrite[]): string[] {
+    const deductions = new Map<string, { branchId: string; productId: string; quantity: number; invoiceId: string; reference: string; userId: string | null }>();
+    for (const write of writes.filter((item) => item.tableName === "facturas" && item.payload)) {
+      const invoice = write.payload!;
+      const branchId = String(invoice.sucursal_id ?? "main-process-default");
+      const rawItems = typeof invoice.items === "string" ? JSON.parse(invoice.items) : invoice.items;
+      if (!Array.isArray(rawItems)) continue;
+      for (const item of rawItems as Array<Record<string, unknown>>) {
+        const plateId = String(item.plato_id ?? item.id ?? "");
+        const itemQuantity = Number(item.cantidad ?? item.quantity ?? 0);
+        if (!plateId || !Number.isFinite(itemQuantity) || itemQuantity <= 0) continue;
+        const recipes = this.database.prepare(`
+          SELECT COALESCE(inventory_product_id, insumo_id) AS product_id,
+                 COALESCE(quantity, cantidad) AS recipe_quantity
+          FROM recetas
+          WHERE tenant_id = ? AND plato_id = ? AND (sucursal_id IS NULL OR sucursal_id = ?)
+        `).all(this.tenantId, plateId, branchId) as Array<{ product_id: string; recipe_quantity: number }>;
+        for (const recipe of recipes) {
+          const quantity = Number(recipe.recipe_quantity) * itemQuantity;
+          const key = `${branchId}\u0000${recipe.product_id}`;
+          const current = deductions.get(key);
+          deductions.set(key, {
+            branchId,
+            productId: recipe.product_id,
+            quantity: (current?.quantity ?? 0) + quantity,
+            invoiceId: write.rowId,
+            reference: `Invoice #${String(invoice.numero_factura ?? write.rowId)}`,
+            userId: write.authUserId ?? null,
+          });
+        }
+      }
+    }
+
+    const movementIds: string[] = [];
+    for (const deduction of deductions.values()) {
+      const product = this.database.prepare("SELECT stock_actual, costo_promedio FROM productos_inventario WHERE id = ? AND tenant_id = ?").get(deduction.productId, this.tenantId) as { stock_actual: number; costo_promedio: number } | undefined;
+      if (!product) throw new Error(`Inventory product ${deduction.productId} was not found`);
+      const before = Number(product.stock_actual ?? 0);
+      const after = before - deduction.quantity;
+      const timestamp = new Date().toISOString();
+      this.database.prepare("UPDATE productos_inventario SET stock_actual = ?, updated_at = ? WHERE id = ? AND tenant_id = ?").run(after, timestamp, deduction.productId, this.tenantId);
+      const movementId = crypto.randomUUID();
+      movementIds.push(movementId);
+      const movement = {
+        id: movementId,
+        tenant_id: this.tenantId,
+        sucursal_id: deduction.branchId,
+        producto_id: deduction.productId,
+        tipo: "salida",
+        cantidad: deduction.quantity,
+        stock_antes: before,
+        stock_despues: after,
+        costo_unitario: Number(product.costo_promedio ?? 0),
+        motivo: "Sale",
+        referencia: deduction.reference,
+        fecha: timestamp,
+        usuario_id: deduction.userId,
+      };
+      this.database.prepare(`INSERT INTO inventario_movimientos
+        (id, tenant_id, sucursal_id, producto_id, tipo, cantidad, stock_antes, stock_despues, costo_unitario, motivo, referencia, fecha, usuario_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(movement.id, movement.tenant_id, movement.sucursal_id, movement.producto_id, movement.tipo, movement.cantidad, movement.stock_antes, movement.stock_despues, movement.costo_unitario, movement.motivo, movement.referencia, movement.fecha, movement.usuario_id);
+      this.insertCheckoutOutbox(deduction.branchId, "productos_inventario", deduction.productId, "update", { id: deduction.productId, tenant_id: this.tenantId, stock_actual: after, updated_at: timestamp });
+      this.insertCheckoutOutbox(deduction.branchId, "inventario_movimientos", movementId, "upsert", movement);
+    }
+    return movementIds;
+  }
+
+  private insertCheckoutOutbox(branchId: string, tableName: string, rowId: string, operation: string, payload: Record<string, unknown>): void {
+    this.database.prepare(`INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`).run(crypto.randomUUID(), this.tenantId, branchId, tableName, rowId, operation, JSON.stringify(payload));
+  }
+
+  private applyCheckoutFiscalWrite(write: DesktopCheckoutWrite): void {
+    if (!write.payload || write.op === "delete") throw new Error("Checkout fiscal writes require an upsert payload");
+    const payload = write.payload;
+    const branchId = String(payload.sucursal_id ?? "main-process-default");
+    if (write.tableName === "ecf_documents") {
+      this.database.prepare(`INSERT INTO ecf_documents
+        (id, tenant_id, sucursal_id, factura_id, document_type, status, certificate_metadata_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET status = excluded.status, updated_at = excluded.updated_at`)
+        .run(write.rowId, this.tenantId, branchId, String(payload.factura_id), String(payload.ecf_type ?? payload.document_type ?? ""), String(payload.status ?? "pending_offline"), payload.certificate_metadata_id ?? null, payload.created_at ?? null, payload.updated_at ?? null);
+    } else {
+      this.database.prepare(`INSERT INTO fiscal_outbox
+        (id, tenant_id, sucursal_id, factura_id, ecf_document_id, operation, status, attempts, next_attempt_at, idempotency_key, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET status = excluded.status, attempts = excluded.attempts, updated_at = excluded.updated_at`)
+        .run(write.rowId, this.tenantId, branchId, String(payload.factura_id), payload.ecf_document_id ?? null, payload.operation ?? "submit", payload.status ?? "pending_sync", Number(payload.attempts ?? 0), payload.next_attempt_at ?? null, payload.idempotency_key ?? null, payload.created_at ?? null, payload.updated_at ?? null);
+    }
+  }
 
   writeFoundationRecord(id: string, value: string): void {
     this.database.prepare("INSERT INTO foundation_records (id, tenant_id, value) VALUES (?, ?, ?)").run(id, this.tenantId, value);
@@ -156,35 +357,35 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
 
   executeCatalogCommand(input: { command: CatalogCommand; commitId: string; branchId: string }): void {
     const definition = catalogDefinition(input.command, this.tenantId);
-    this.database.exec("BEGIN IMMEDIATE;");
+    this.beginImmediateTransaction();
     try {
       this.database.prepare(definition.sql).run(...definition.values);
       this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
         .run(input.commitId, this.tenantId, input.branchId, definition.tableName, input.command.id, definition.operation, JSON.stringify(input.command), "pending");
-      this.database.exec("COMMIT;");
+      this.commitTransaction();
     } catch (error) {
-      this.database.exec("ROLLBACK;");
+      this.rollbackTransaction();
       throw error;
     }
   }
 
   executeDesktopCommand(input: { command: DesktopCommand; commitId: string; branchId: string }): void {
-    this.database.exec("BEGIN IMMEDIATE;");
+    this.beginImmediateTransaction();
     try {
       const { command } = input;
       this.database.prepare("INSERT INTO foundation_records (id, tenant_id, value) VALUES (?, ?, ?)").run(command.id, this.tenantId, command.value);
       this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
         .run(input.commitId, this.tenantId, input.branchId, "foundation_records", command.id, "upsert", JSON.stringify({ id: command.id, value: command.value }), "pending");
-      this.database.exec("COMMIT;");
+      this.commitTransaction();
     } catch (error) {
-      this.database.exec("ROLLBACK;");
+      this.rollbackTransaction();
       throw error;
     }
   }
 
   executeOrdersCommand(input: { command: OrdersCommand; commitId: string; branchId: string }): void {
     const { command, commitId, branchId } = input;
-    this.database.exec("BEGIN IMMEDIATE;");
+    this.beginImmediateTransaction();
     try {
       const outbox = (tableName: string, rowId: string, payload: unknown, suffix: string, operation: "upsert" | "delete" = "upsert") => this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')").run(`${commitId}:${suffix}`, this.tenantId, branchId, tableName, rowId, operation, JSON.stringify(payload));
       switch (command.type) {
@@ -254,30 +455,30 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
           }
           break;
       }
-      this.database.exec("COMMIT;");
+      this.commitTransaction();
     } catch (error) {
-      this.database.exec("ROLLBACK;");
+      this.rollbackTransaction();
       throw error;
     }
   }
 
   executeSalesFiscalCommand(input: { command: SalesFiscalCommand; commitId: string; branchId: string }): void {
     const { command, commitId, branchId } = input;
-    this.database.exec("BEGIN IMMEDIATE;");
+    this.beginImmediateTransaction();
     try {
       this.database.prepare("INSERT INTO facturas (id, tenant_id, sucursal_id, fiscal_mode, total, local_status) VALUES (?, ?, ?, ?, ?, 'pending_sync')").run(command.invoiceId, this.tenantId, branchId, command.fiscalMode, command.total);
       if (command.fiscalMode === "dgii_ecf") this.database.prepare("INSERT INTO ecf_documents (id, tenant_id, sucursal_id, factura_id, document_type, status) VALUES (?, ?, ?, ?, ?, 'pending_sync')").run(command.fiscalIntentId, this.tenantId, branchId, command.invoiceId, command.documentType);
       this.database.prepare("INSERT INTO fiscal_outbox (id, tenant_id, sucursal_id, factura_id, status) VALUES (?, ?, ?, ?, 'pending')").run(commitId, this.tenantId, branchId, command.invoiceId);
-      this.database.exec("COMMIT;");
+      this.commitTransaction();
     } catch (error) {
-      this.database.exec("ROLLBACK;");
+      this.rollbackTransaction();
       throw error;
     }
   }
 
   executeCashPurchaseCommand(input: { command: PurchaseCommand; commitId: string; branchId: string }): void {
     const { command, commitId, branchId } = input;
-    this.database.exec("BEGIN IMMEDIATE;");
+    this.beginImmediateTransaction();
     try {
       this.database.prepare("INSERT OR IGNORE INTO tenants (id) VALUES (?)").run(this.tenantId);
       this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(branchId, this.tenantId, "Principal");
@@ -539,14 +740,41 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
           );
         }
       } else if (command.type === "purchase.delete") {
-        this.database.prepare("UPDATE compras SET estado = 'anulada' WHERE id = ? AND tenant_id = ?").run(command.purchaseId, this.tenantId);
-        this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, 'compras', ?, 'delete', ?, 'pending')").run(
-          `${commitId}:purchase-delete`,
-          this.tenantId,
-          branchId,
-          command.purchaseId,
-          JSON.stringify({ id: command.purchaseId })
-        );
+        const details = this.database.prepare("SELECT id FROM detalles_compra WHERE compra_id = ? AND tenant_id = ?").all(command.purchaseId, this.tenantId) as Array<{ id: string }>;
+        for (const d of details) {
+          this.database.prepare("DELETE FROM detalles_compra WHERE id = ?").run(d.id);
+          this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, 'compra_detalles', ?, 'delete', ?, 'pending')").run(
+            `${commitId}:detail-del:${d.id}`,
+            this.tenantId,
+            branchId,
+            d.id,
+            JSON.stringify({ id: d.id })
+          );
+        }
+
+        const movs = this.database.prepare("SELECT id FROM movimientos_inventario WHERE compra_id = ? AND tenant_id = ?").all(command.purchaseId, this.tenantId) as Array<{ id: string }>;
+        for (const m of movs) {
+          this.database.prepare("DELETE FROM movimientos_inventario WHERE id = ?").run(m.id);
+          this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, 'inventario_movimientos', ?, 'delete', ?, 'pending')").run(
+            `${commitId}:mov-del:${m.id}`,
+            this.tenantId,
+            branchId,
+            m.id,
+            JSON.stringify({ id: m.id })
+          );
+        }
+
+        const fiscals = this.database.prepare("SELECT id FROM compra_fiscal WHERE compra_id = ? AND tenant_id = ?").all(command.purchaseId, this.tenantId) as Array<{ id: string }>;
+        for (const f of fiscals) {
+          this.database.prepare("DELETE FROM compra_fiscal WHERE id = ?").run(f.id);
+          this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, 'compra_fiscal', ?, 'delete', ?, 'pending')").run(
+            `${commitId}:fiscal-del:${f.id}`,
+            this.tenantId,
+            branchId,
+            f.id,
+            JSON.stringify({ id: f.id })
+          );
+        }
 
         const payables = this.database.prepare("SELECT id FROM cuentas_pagar WHERE compra_id = ? AND tenant_id = ?").all(command.purchaseId, this.tenantId) as Array<{ id: string }>;
         for (const p of payables) {
@@ -571,6 +799,16 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
             JSON.stringify({ id: e.id })
           );
         }
+
+        // Una vez eliminadas todas las tablas hijas, eliminar la compra
+        this.database.prepare("DELETE FROM compras WHERE id = ? AND tenant_id = ?").run(command.purchaseId, this.tenantId);
+        this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, 'compras', ?, 'delete', ?, 'pending')").run(
+          `${commitId}:purchase-delete`,
+          this.tenantId,
+          branchId,
+          command.purchaseId,
+          JSON.stringify({ id: command.purchaseId })
+        );
       } else if (command.type === "purchase.updateFiscal") {
         // SQLite-only fiscal/supplier edit of an existing purchase, replacing the
         // legacy IndexedDB-mirror writes. Updates the purchase, its 606 fiscal row
@@ -670,13 +908,13 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
         ).run(`Compra - Factura ${command.numeroFactura.trim() || "S/N"}`, provName, command.fechaCompra, command.purchaseId, this.tenantId);
       }
 
-      this.database.exec("COMMIT;");
-    } catch (error) { this.database.exec("ROLLBACK;"); throw error; }
+      this.commitTransaction();
+    } catch (error) { this.rollbackTransaction(); throw error; }
   }
 
   executeReceivablesCommand(input: { command: ReceivablesCommand; commitId: string; branchId: string }): void {
     const { command, commitId, branchId } = input;
-    this.database.exec("BEGIN IMMEDIATE;");
+    this.beginImmediateTransaction();
     try {
       this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(branchId, this.tenantId, "Principal");
       if (command.type === "receivables.create") {
@@ -705,16 +943,16 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
         this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, ?, ?, 'upsert', ?, 'pending')")
           .run(`${commitId}:cxc-payment`, this.tenantId, branchId, "cxc_pagos", command.paymentId, JSON.stringify(command));
       }
-      this.database.exec("COMMIT;");
+      this.commitTransaction();
     } catch (error) {
-      this.database.exec("ROLLBACK;");
+      this.rollbackTransaction();
       throw error;
     }
   }
 
   executePayablesCommand(input: { command: PayablesCommand; commitId: string; branchId: string }): void {
     const { command, commitId, branchId } = input;
-    this.database.exec("BEGIN IMMEDIATE;");
+    this.beginImmediateTransaction();
     try {
       this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(branchId, this.tenantId, "Principal");
       if (command.type === "payables.create") {
@@ -778,9 +1016,9 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
           );
         }
       }
-      this.database.exec("COMMIT;");
+      this.commitTransaction();
     } catch (error) {
-      this.database.exec("ROLLBACK;");
+      this.rollbackTransaction();
       throw error;
     }
   }
@@ -791,7 +1029,7 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     dateFrom?: string;
     dateTo?: string;
   }): Array<Record<string, unknown>> {
-    const conditions = ["tenant_id = ?"];
+    const conditions = ["tenant_id = ?", "(estado IS NULL OR estado != 'anulada')"];
     const params: Array<string | number> = [this.tenantId];
     if (filter?.sucursalId) {
       conditions.push("(sucursal_id = ? OR sucursal_id = 'main-process-default')");
@@ -914,7 +1152,7 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
       throw new Error("Invalid invoice number reservation count");
     }
 
-    this.database.exec("BEGIN IMMEDIATE;");
+    this.beginImmediateTransaction();
     try {
       const invoiceMax = this.database.prepare(
         "SELECT COALESCE(MAX(numero_factura), 0) AS max_number FROM facturas WHERE tenant_id = ?"
@@ -931,10 +1169,10 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
         VALUES (?, ?)
         ON CONFLICT(tenant_id) DO UPDATE SET next_number = excluded.next_number
       `).run(this.tenantId, first + count);
-      this.database.exec("COMMIT;");
+      this.commitTransaction();
       return Array.from({ length: count }, (_, index) => first + index);
     } catch (error) {
-      this.database.exec("ROLLBACK;");
+      this.rollbackTransaction();
       throw error;
     }
   }
@@ -958,7 +1196,7 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
       ? invoice.sucursal_id.trim()
       : "main-process-default";
 
-    this.database.exec("BEGIN IMMEDIATE;");
+    this.beginImmediateTransaction();
     try {
       this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(branchId, this.tenantId, "Principal");
 
@@ -1041,22 +1279,22 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
         JSON.stringify(invoice)
       );
 
-      this.database.exec("COMMIT;");
+      this.commitTransaction();
     } catch (error) {
-      this.database.exec("ROLLBACK;");
+      this.rollbackTransaction();
       throw error;
     }
   }
 
   deleteInvoiceAndTraces(invoiceId: string): void {
     if (!invoiceId) throw new Error("Invalid invoice id");
-    this.database.exec("BEGIN IMMEDIATE;");
+    this.beginImmediateTransaction();
     try {
       const invoice = this.database.prepare(
         "SELECT sucursal_id FROM facturas WHERE id = ? AND tenant_id = ?"
       ).get(invoiceId, this.tenantId) as { sucursal_id: string | null } | undefined;
       if (!invoice) {
-        this.database.exec("COMMIT;");
+        this.commitTransaction();
         return;
       }
       this.database.prepare("DELETE FROM fiscal_outbox WHERE factura_id = ? AND tenant_id = ?").run(invoiceId, this.tenantId);
@@ -1072,9 +1310,9 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
         invoiceId,
         JSON.stringify({ id: invoiceId, tenant_id: this.tenantId })
       );
-      this.database.exec("COMMIT;");
+      this.commitTransaction();
     } catch (error) {
-      this.database.exec("ROLLBACK;");
+      this.rollbackTransaction();
       throw error;
     }
   }
@@ -1123,7 +1361,7 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     const id = String(mesaEstado.id);
     const branchId = typeof mesaEstado.sucursal_id === "string" && mesaEstado.sucursal_id.trim() ? mesaEstado.sucursal_id.trim() : "main-process-default";
     const stateStr = mesaEstado.state == null ? null : (typeof mesaEstado.state === "string" ? mesaEstado.state : JSON.stringify(mesaEstado.state));
-    this.database.exec("BEGIN IMMEDIATE;");
+    this.beginImmediateTransaction();
     try {
       this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(branchId, this.tenantId, "Principal");
       this.database.prepare(`
@@ -1139,9 +1377,9 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
         INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status)
         VALUES (?, ?, ?, 'mesas_estado', ?, 'upsert', ?, 'pending')
       `).run(crypto.randomUUID(), this.tenantId, branchId, id, JSON.stringify(mesaEstado));
-      this.database.exec("COMMIT;");
+      this.commitTransaction();
     } catch (error) {
-      this.database.exec("ROLLBACK;");
+      this.rollbackTransaction();
       throw error;
     }
   }
@@ -1157,16 +1395,33 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     ).all(this.tenantId) as Array<Record<string, unknown>>;
   }
 
-  listComandas(filter?: { sucursalId?: string; activeOnly?: boolean }): Array<Record<string, unknown>> {
+  purgeExpiredComandas(days = 3): number {
+    const minCreatedAt = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    const res = this.database.prepare(
+      "DELETE FROM comandas WHERE tenant_id = ? AND created_at < ?"
+    ).run(this.tenantId, minCreatedAt);
+    return res.changes;
+  }
+
+  listComandas(filter?: { sucursalId?: string; activeOnly?: boolean; maxAgeDays?: number }): Array<Record<string, unknown>> {
+    const days = filter?.maxAgeDays ?? 3;
+    const minCreatedAt = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    try {
+      this.database.prepare(
+        "DELETE FROM comandas WHERE tenant_id = ? AND created_at < ?"
+      ).run(this.tenantId, minCreatedAt);
+    } catch {
+      // non-blocking
+    }
     const activeFilter = filter?.activeOnly ? " AND estado IN ('pendiente', 'en_preparacion', 'listo')" : "";
     if (filter?.sucursalId) {
       return this.database.prepare(
-        `SELECT * FROM comandas WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id = 'main-process-default' OR sucursal_id IS NULL)${activeFilter} ORDER BY created_at ASC`
-      ).all(this.tenantId, filter.sucursalId) as Array<Record<string, unknown>>;
+        `SELECT * FROM comandas WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id = 'main-process-default' OR sucursal_id IS NULL) AND created_at >= ?${activeFilter} ORDER BY created_at ASC`
+      ).all(this.tenantId, filter.sucursalId, minCreatedAt) as Array<Record<string, unknown>>;
     }
     return this.database.prepare(
-      `SELECT * FROM comandas WHERE tenant_id = ?${activeFilter} ORDER BY created_at ASC`
-    ).all(this.tenantId) as Array<Record<string, unknown>>;
+      `SELECT * FROM comandas WHERE tenant_id = ? AND created_at >= ?${activeFilter} ORDER BY created_at ASC`
+    ).all(this.tenantId, minCreatedAt) as Array<Record<string, unknown>>;
   }
   saveComanda(comanda: Record<string, unknown>): void {
     const id = String(comanda.id);
@@ -1177,7 +1432,7 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     const mesaNum = comanda.mesa_numero != null && Number(comanda.mesa_numero) > 0 ? Number(comanda.mesa_numero) : 1;
     const mesaId = comanda.mesa_id ? String(comanda.mesa_id) : String(mesaNum);
 
-    this.database.exec("BEGIN IMMEDIATE;");
+    this.beginImmediateTransaction();
     try {
       this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(branchId, this.tenantId, "Principal");
       this.database.prepare("INSERT OR IGNORE INTO mesas_estado (id, tenant_id, sucursal_id, table_number, state) VALUES (?, ?, ?, ?, 'free')").run(mesaId, this.tenantId, branchId, mesaNum);
@@ -1214,15 +1469,15 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
         INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status)
         VALUES (?, ?, ?, 'comandas', ?, 'upsert', ?, 'pending')
       `).run(crypto.randomUUID(), this.tenantId, branchId, id, JSON.stringify(comanda));
-      this.database.exec("COMMIT;");
+      this.commitTransaction();
     } catch (error) {
-      this.database.exec("ROLLBACK;");
+      this.rollbackTransaction();
       throw error;
     }
   }
 
   deleteComanda(comandaId: string): void {
-    this.database.exec("BEGIN IMMEDIATE;");
+    this.beginImmediateTransaction();
     try {
       const comanda = this.database.prepare("SELECT sucursal_id FROM comandas WHERE id = ? AND tenant_id = ?").get(comandaId, this.tenantId) as { sucursal_id: string | null } | undefined;
       // Clear the two local references to the comanda first, or the DELETE trips
@@ -1237,9 +1492,9 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
         INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status)
         VALUES (?, ?, ?, 'comandas', ?, 'delete', ?, 'pending')
       `).run(crypto.randomUUID(), this.tenantId, comanda?.sucursal_id ?? "", comandaId, JSON.stringify({ id: comandaId }));
-      this.database.exec("COMMIT;");
+      this.commitTransaction();
     } catch (error) {
-      this.database.exec("ROLLBACK;");
+      this.rollbackTransaction();
       throw error;
     }
   }
@@ -1309,7 +1564,7 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     const createdAt = existing?.created_at ? String(existing.created_at) : (consumo.created_at ? String(consumo.created_at) : new Date().toISOString());
     const updatedAt = new Date().toISOString();
 
-    this.database.exec("BEGIN IMMEDIATE;");
+    this.beginImmediateTransaction();
     try {
       this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(branchId, this.tenantId, "Principal");
       if (comandaId) {
@@ -1384,15 +1639,15 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
         INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status)
         VALUES (?, ?, ?, 'consumos', ?, 'upsert', ?, 'pending')
       `).run(crypto.randomUUID(), this.tenantId, branchId, id, JSON.stringify(fullConsumo));
-      this.database.exec("COMMIT;");
+      this.commitTransaction();
     } catch (error) {
-      this.database.exec("ROLLBACK;");
+      this.rollbackTransaction();
       throw error;
     }
   }
 
   deleteConsumo(consumoId: string): void {
-    this.database.exec("BEGIN IMMEDIATE;");
+    this.beginImmediateTransaction();
     try {
       const consumo = this.database.prepare("SELECT sucursal_id FROM consumos WHERE id = ? AND tenant_id = ?").get(consumoId, this.tenantId) as { sucursal_id: string | null } | undefined;
       this.database.prepare("DELETE FROM consumos WHERE id = ? AND tenant_id = ?").run(consumoId, this.tenantId);
@@ -1400,9 +1655,9 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
         INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status)
         VALUES (?, ?, ?, 'consumos', ?, 'delete', ?, 'pending')
       `).run(crypto.randomUUID(), this.tenantId, consumo?.sucursal_id ?? "", consumoId, JSON.stringify({ id: consumoId }));
-      this.database.exec("COMMIT;");
+      this.commitTransaction();
     } catch (error) {
-      this.database.exec("ROLLBACK;");
+      this.rollbackTransaction();
       throw error;
     }
   }
@@ -1457,23 +1712,23 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
   }
 
   syncCloudExpenseCategories(categories: Array<Record<string, unknown>>): void {
-    this.database.exec("BEGIN IMMEDIATE;");
+    this.beginImmediateTransaction();
     try {
       applyCloudExpenseCategoryRows(this.database, this.tenantId, categories);
-      this.database.exec("COMMIT;");
+      this.commitTransaction();
     } catch (e) {
-      this.database.exec("ROLLBACK;");
+      this.rollbackTransaction();
       throw e;
     }
   }
 
   syncCloudExpenses(expenses: Array<Record<string, unknown>>, defaultBranchId = "main-process-default"): void {
-    this.database.exec("BEGIN IMMEDIATE;");
+    this.beginImmediateTransaction();
     try {
       applyCloudExpenseRows(this.database, this.tenantId, expenses, defaultBranchId);
-      this.database.exec("COMMIT;");
+      this.commitTransaction();
     } catch (e) {
-      this.database.exec("ROLLBACK;");
+      this.rollbackTransaction();
       throw e;
     }
   }
@@ -1481,7 +1736,7 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
   executeExpenseCommand(input: { command: ExpenseCommand; commitId: string; branchId: string }): void {
     const { command, commitId, branchId } = input;
     const targetBranch = (command.type === "expense.create" && (command as any).branchId) ? (command as any).branchId : branchId;
-    this.database.exec("BEGIN IMMEDIATE;");
+    this.beginImmediateTransaction();
     try {
       this.database.prepare("INSERT OR IGNORE INTO tenants (id) VALUES (?)").run(this.tenantId);
       this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(targetBranch, this.tenantId, "Principal");
@@ -1635,9 +1890,9 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
         }
       }
 
-      this.database.exec("COMMIT;");
+      this.commitTransaction();
     } catch (error) {
-      this.database.exec("ROLLBACK;");
+      this.rollbackTransaction();
       throw error;
     }
   }
@@ -1659,19 +1914,19 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
   }
 
   syncCloudCustomers(customers: Array<Record<string, unknown>>): void {
-    this.database.exec("BEGIN IMMEDIATE;");
+    this.beginImmediateTransaction();
     try {
       applyCloudCustomerRows(this.database, this.tenantId, customers);
-      this.database.exec("COMMIT;");
+      this.commitTransaction();
     } catch (e) {
-      this.database.exec("ROLLBACK;");
+      this.rollbackTransaction();
       throw e;
     }
   }
 
   executeCustomerCommand(input: { command: CustomerCommand; commitId: string; branchId: string }): void {
     const { command, commitId, branchId } = input;
-    this.database.exec("BEGIN IMMEDIATE;");
+    this.beginImmediateTransaction();
     try {
       this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(branchId, this.tenantId, "Principal");
 
@@ -1744,9 +1999,9 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
         }
       }
 
-      this.database.exec("COMMIT;");
+      this.commitTransaction();
     } catch (error) {
-      this.database.exec("ROLLBACK;");
+      this.rollbackTransaction();
       throw error;
     }
   }

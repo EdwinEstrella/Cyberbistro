@@ -1,6 +1,14 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Trash2, Plus } from "lucide-react";
 import { registrarCompra } from "../lib/purchaseService";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../../shared/ui/select";
+import { DateTimePicker } from "../../../shared/ui/date-picker";
 
 const RD = (n: number) =>
   "RD$ " + Number(n).toLocaleString("es-DO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -245,25 +253,28 @@ export function RegistrarCompraModal({
             </div>
             <div className="flex flex-col gap-1.5 md:col-span-1">
               <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.8px] font-semibold">Fecha de Factura *</label>
-              <input
-                type="datetime-local"
-                required
+              <DateTimePicker
                 value={compraForm.fecha_compra}
-                onChange={(e) => setCompraForm(prev => ({ ...prev, fecha_compra: e.target.value }))}
-                className="bg-[#111] border border-[rgba(72,72,71,0.4)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors [color-scheme:dark]"
+                onChange={(val) => setCompraForm(prev => ({ ...prev, fecha_compra: val }))}
+                placeholder="Seleccionar fecha y hora"
+                className="bg-[#111] border border-[rgba(72,72,71,0.4)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] h-[40px]"
               />
             </div>
             <div className="flex flex-col gap-1.5 md:col-span-1">
               <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.8px] font-semibold">Tipo de Pago *</label>
-              <select
+              <Select
                 value={compraForm.tipo_pago}
-                onChange={(e) => setCompraForm(prev => ({ ...prev, tipo_pago: e.target.value as any, metodo_pago: e.target.value === "credito" ? "" : "efectivo", monto_pagado: "" }))}
-                className="bg-[#111] border border-[rgba(72,72,71,0.4)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors cursor-pointer"
+                onValueChange={(val) => setCompraForm(prev => ({ ...prev, tipo_pago: val as any, metodo_pago: val === "credito" ? "" : "efectivo", monto_pagado: "" }))}
               >
-                <option value="contado">Contado</option>
-                <option value="parcial">Pago Parcial / Crédito</option>
-                <option value="credito">Crédito Puro</option>
-              </select>
+                <SelectTrigger className="bg-[#111] border border-[rgba(72,72,71,0.4)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors cursor-pointer h-[40px]">
+                  <SelectValue placeholder="Seleccionar tipo de pago" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.4)] text-white">
+                  <SelectItem value="contado" className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">Contado</SelectItem>
+                  <SelectItem value="parcial" className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">Pago Parcial / Crédito</SelectItem>
+                  <SelectItem value="credito" className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">Crédito Puro</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex flex-col gap-1.5 md:col-span-1">
               <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.8px] font-semibold">Número Factura / NCF *</label>
@@ -300,23 +311,27 @@ export function RegistrarCompraModal({
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5 text-left">
               <div className="flex flex-col gap-1.5 md:col-span-2">
                 <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.8px] font-semibold">Tipo Bien o Servicio</label>
-                <select
+                <Select
                   value={compraForm.tipo_bien_servicio}
-                  onChange={(e) => setCompraForm(prev => ({ ...prev, tipo_bien_servicio: e.target.value }))}
-                  className="bg-[#111] border border-[rgba(72,72,71,0.4)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors cursor-pointer"
+                  onValueChange={(val) => setCompraForm(prev => ({ ...prev, tipo_bien_servicio: val }))}
                 >
-                  <option value="01">01 - Gastos de Personal</option>
-                  <option value="02">02 - Gastos por Trabajos, Suministros y Servicios</option>
-                  <option value="03">03 - Arrendamientos</option>
-                  <option value="04">04 - Gastos de Activos Fijo</option>
-                  <option value="05">05 - Gastos de Representación</option>
-                  <option value="06">06 - Otras Deducciones Admitidas</option>
-                  <option value="07">07 - Gastos Financieros</option>
-                  <option value="08">08 - Gastos Extraordinarios</option>
-                  <option value="09">09 - Compras y Gastos que formaran parte del Costo de Venta</option>
-                  <option value="10">10 - Adquisiciones de Activos</option>
-                  <option value="11">11 - Gastos de Seguros</option>
-                </select>
+                  <SelectTrigger className="bg-[#111] border border-[rgba(72,72,71,0.4)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors cursor-pointer h-[40px]">
+                    <SelectValue placeholder="Seleccionar tipo" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.4)] text-white">
+                    <SelectItem value="01" className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">01 - Gastos de Personal</SelectItem>
+                    <SelectItem value="02" className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">02 - Gastos por Trabajos, Suministros y Servicios</SelectItem>
+                    <SelectItem value="03" className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">03 - Arrendamientos</SelectItem>
+                    <SelectItem value="04" className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">04 - Gastos de Activos Fijo</SelectItem>
+                    <SelectItem value="05" className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">05 - Gastos de Representación</SelectItem>
+                    <SelectItem value="06" className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">06 - Otras Deducciones Admitidas</SelectItem>
+                    <SelectItem value="07" className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">07 - Gastos Financieros</SelectItem>
+                    <SelectItem value="08" className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">08 - Gastos Extraordinarios</SelectItem>
+                    <SelectItem value="09" className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">09 - Compras y Gastos que formaran parte del Costo de Venta</SelectItem>
+                    <SelectItem value="10" className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">10 - Adquisiciones de Activos</SelectItem>
+                    <SelectItem value="11" className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">11 - Gastos de Seguros</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="flex flex-col gap-1.5">
                 <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[10px] uppercase tracking-[0.8px] font-semibold">Monto Servicios</label>
@@ -383,17 +398,20 @@ export function RegistrarCompraModal({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 shrink-0 border border-[rgba(255,144,109,0.15)] bg-[rgba(255,144,109,0.02)] p-4 rounded-xl text-left">
               <div className="flex flex-col gap-1.5">
                 <label className="font-['Inter',sans-serif] text-[#ff906d] text-[10px] uppercase tracking-[0.8px] font-semibold">Método de Pago *</label>
-                <select
-                  required
+                <Select
                   value={compraForm.metodo_pago}
-                  onChange={(e) => setCompraForm(prev => ({ ...prev, metodo_pago: e.target.value as any }))}
-                  className="bg-[#111] border border-[rgba(255,144,109,0.3)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors cursor-pointer"
+                  onValueChange={(val) => setCompraForm(prev => ({ ...prev, metodo_pago: val as any }))}
                 >
-                  <option value="efectivo">Efectivo</option>
-                  <option value="tarjeta">Tarjeta</option>
-                  <option value="transferencia">Transferencia</option>
-                  <option value="digital">Digital</option>
-                </select>
+                  <SelectTrigger className="bg-[#111] border border-[rgba(255,144,109,0.3)] rounded-[10px] px-3 py-2.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors cursor-pointer h-[40px]">
+                    <SelectValue placeholder="Seleccionar método" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#1a1a1a] border border-[rgba(255,144,109,0.3)] text-white">
+                    <SelectItem value="efectivo" className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">Efectivo</SelectItem>
+                    <SelectItem value="tarjeta" className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">Tarjeta</SelectItem>
+                    <SelectItem value="transferencia" className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">Transferencia</SelectItem>
+                    <SelectItem value="digital" className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">Digital</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               {isParcial && (
                 <div className="flex flex-col gap-1.5">
@@ -454,19 +472,21 @@ export function RegistrarCompraModal({
                     return (
                       <tr key={item.id} className="border-b border-[rgba(72,72,71,0.15)] last:border-b-0 hover:bg-[#151515] transition-colors group">
                         <td className="px-4 py-4 text-left align-top">
-                          <select
-                            required
+                          <Select
                             value={item.producto_id}
-                            onChange={(e) => updateRow(idx, "producto_id", e.target.value)}
-                            className="w-full bg-[#1c1c1c] border border-[rgba(72,72,71,0.4)] rounded-[8px] px-3 py-2.5 text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors shadow-sm"
+                            onValueChange={(val) => updateRow(idx, "producto_id", val)}
                           >
-                            <option value="">Selecciona insumo</option>
-                            {productos.map(p => (
-                              <option key={p.id} value={p.id}>
-                                {p.nombre} {p.mostrar_en_fracciones && p.contenido_por_unidad_compra ? `(${p.unidad_compra || 'Fracc.'} de ${p.contenido_por_unidad_compra} ${p.unidad_base})` : `(${p.unidad_base})`}
-                              </option>
-                            ))}
-                          </select>
+                            <SelectTrigger className="w-full bg-[#1c1c1c] border border-[rgba(72,72,71,0.4)] rounded-[8px] px-3 py-2 text-white text-[13px] outline-none focus:border-[#ff906d]/60 transition-colors shadow-sm h-[38px]">
+                              <SelectValue placeholder="Selecciona insumo" />
+                            </SelectTrigger>
+                            <SelectContent className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.4)] text-white max-h-[250px]">
+                              {productos.map(p => (
+                                <SelectItem key={p.id} value={p.id} className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer">
+                                  {p.nombre} {p.mostrar_en_fracciones && p.contenido_por_unidad_compra ? `(${p.unidad_compra || 'Fracc.'} de ${p.contenido_por_unidad_compra} ${p.unidad_base})` : `(${p.unidad_base})`}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                           {selectedProd && isFractional && item.cantidad && Number(item.cantidad) > 0 && (
                             <span className="text-[11px] text-[#ff906d] block mt-2 px-1 font-medium bg-[#ff906d]/10 w-fit rounded py-0.5 border border-[#ff906d]/20">
                               + {(Number(item.cantidad) * (selectedProd.contenido_por_unidad_compra || 0)).toLocaleString()} {selectedProd.unidad_base} al stock

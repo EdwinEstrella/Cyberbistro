@@ -7,6 +7,14 @@ import { isDesktopCloudUnavailable } from "../../../shared/lib/cloudAvailability
 import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst, deleteLocalMirrorRow } from "../../../shared/lib/localFirst";
 import { readLocalExpenses, readLocalExpenseCategories } from "../lib/expensesLocal";
 import { ConfirmModal } from "../../../shared/components/ConfirmModal";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../../shared/ui/select";
+import { DateTimePicker } from "../../../shared/ui/date-picker";
 
 interface CategoriaGasto {
   id: string;
@@ -633,28 +641,57 @@ export function Gastos() {
                     <span className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground">Monto</span>
                     <input type="number" min="0" step="0.01" value={gastoForm.monto} onChange={(e) => setGastoForm((f) => ({ ...f, monto: e.target.value }))} className="mt-1 w-full rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none focus:border-primary" placeholder="0.00" />
                   </label>
-                  <label className="block">
+                  <div className="block">
                     <span className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground">Método</span>
-                    <select value={gastoForm.metodo_pago} onChange={(e) => setGastoForm((f) => ({ ...f, metodo_pago: e.target.value }))} className="mt-1 w-full rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none focus:border-primary">
-                      {METODOS_PAGO.map((metodo) => <option key={metodo} value={metodo}>{metodo}</option>)}
-                    </select>
-                  </label>
+                    <Select
+                      value={gastoForm.metodo_pago}
+                      onValueChange={(val) => setGastoForm((f) => ({ ...f, metodo_pago: val }))}
+                    >
+                      <SelectTrigger className="mt-1 w-full rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none focus:border-primary h-[50px]">
+                        <SelectValue placeholder="Método" />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-xl border border-border bg-card text-foreground">
+                        {METODOS_PAGO.map((metodo) => (
+                          <SelectItem key={metodo} value={metodo} className="cursor-pointer">
+                            {metodo}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-                <label className="block">
+                <div className="block">
                   <span className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground">Categoría</span>
-                  <select value={gastoForm.category_id} onChange={(e) => setGastoForm((f) => ({ ...f, category_id: e.target.value }))} className="mt-1 w-full rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none focus:border-primary">
-                    <option value="">Sin categoría</option>
-                    {categorias.map((cat) => <option key={cat.id} value={cat.id}>{cat.nombre}</option>)}
-                  </select>
-                </label>
+                  <Select
+                    value={gastoForm.category_id || "none"}
+                    onValueChange={(val) => setGastoForm((f) => ({ ...f, category_id: val === "none" ? "" : val }))}
+                  >
+                    <SelectTrigger className="mt-1 w-full rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none focus:border-primary h-[50px]">
+                      <SelectValue placeholder="Sin categoría" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-xl border border-border bg-card text-foreground">
+                      <SelectItem value="none" className="cursor-pointer">Sin categoría</SelectItem>
+                      {categorias.map((cat) => (
+                        <SelectItem key={cat.id} value={cat.id} className="cursor-pointer">
+                          {cat.nombre}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <label className="block">
                   <span className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground">Proveedor opcional</span>
                   <input value={gastoForm.proveedor} onChange={(e) => setGastoForm((f) => ({ ...f, proveedor: e.target.value }))} className="mt-1 w-full rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none focus:border-primary" placeholder="Ej. Mercado Central" />
                 </label>
-                <label className="block">
+                <div className="block">
                   <span className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground">Fecha</span>
-                  <input type="datetime-local" value={gastoForm.fecha_gasto} onChange={(e) => setGastoForm((f) => ({ ...f, fecha_gasto: e.target.value }))} className="mt-1 w-full rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none focus:border-primary" />
-                </label>
+                  <DateTimePicker
+                    value={gastoForm.fecha_gasto}
+                    onChange={(val) => setGastoForm((f) => ({ ...f, fecha_gasto: val }))}
+                    placeholder="Fecha del gasto"
+                    className="mt-1 w-full rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none focus:border-primary h-[50px]"
+                  />
+                </div>
                 <label className="block">
                   <span className="text-[10px] uppercase tracking-widest font-bold text-muted-foreground">Notas</span>
                   <textarea value={gastoForm.notas} onChange={(e) => setGastoForm((f) => ({ ...f, notas: e.target.value }))} className="mt-1 min-h-[86px] w-full resize-none rounded-xl border border-border bg-muted px-4 py-3 text-foreground outline-none focus:border-primary" placeholder="Detalle interno, factura, responsable..." />

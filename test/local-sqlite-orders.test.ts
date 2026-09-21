@@ -91,4 +91,31 @@ describe("tenant-pinned orders, kitchen, and operational cycles", () => {
       expect(tenantA.readLocalOutbox().filter((entry) => entry.tableName === "cierres_operativos")).toEqual([]);
     });
   });
+
+  it("enforces 3-day retention policy on comandas by purging and excluding expired tickets", () => {
+    withStores(({ tenantA }) => {
+      const now = Date.now();
+      const oneDayAgo = new Date(now - 1 * 24 * 60 * 60 * 1000).toISOString();
+      const fourDaysAgo = new Date(now - 4 * 24 * 60 * 60 * 1000).toISOString();
+
+      tenantA.saveComanda({
+        id: "comanda-recent",
+        numero_comanda: 101,
+        mesa_numero: 1,
+        estado: "pendiente",
+        created_at: oneDayAgo,
+      });
+      tenantA.saveComanda({
+        id: "comanda-old",
+        numero_comanda: 102,
+        mesa_numero: 2,
+        estado: "pendiente",
+        created_at: fourDaysAgo,
+      });
+
+      const comandas = tenantA.listComandas();
+      expect(comandas.map((c) => c.id)).toEqual(["comanda-recent"]);
+      expect(comandas.some((c) => c.id === "comanda-old")).toBe(false);
+    });
+  });
 });

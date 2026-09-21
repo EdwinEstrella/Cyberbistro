@@ -8,6 +8,13 @@ import { useAuth } from "../../../shared/hooks/useAuth";
 import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { ConfirmModal } from "../../../shared/components/ConfirmModal";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../../shared/ui/select";
 
 interface InsumoRow {
   id: string;
@@ -880,16 +887,21 @@ export function Inventario() {
                       <form onSubmit={agregarIngrediente} className="flex flex-col gap-3">
                         <div className="flex flex-col gap-1.5">
                           <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[9.5px] uppercase tracking-[0.5px]">Materia Prima *</label>
-                          <select
+                          <Select
                             value={recetaForm.insumo_id}
-                            onChange={(e) => setRecetaForm(prev => ({ ...prev, insumo_id: e.target.value }))}
-                            className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[8px] px-3 py-2 font-['Inter',sans-serif] text-white text-[12px] outline-none"
+                            onValueChange={(val) => setRecetaForm(prev => ({ ...prev, insumo_id: val }))}
                           >
-                            <option value="">Selecciona ingrediente</option>
-                            {insumos.map(i => (
-                              <option key={i.id} value={i.id}>{i.nombre} ({i.unidad_base})</option>
-                            ))}
-                          </select>
+                            <SelectTrigger className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[8px] px-3 py-2 font-['Inter',sans-serif] text-white text-[12px] outline-none h-[38px]">
+                              <SelectValue placeholder="Selecciona ingrediente" />
+                            </SelectTrigger>
+                            <SelectContent className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.4)] text-white max-h-[220px]">
+                              {insumos.map(i => (
+                                <SelectItem key={i.id} value={i.id} className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer text-[12px]">
+                                  {i.nombre} ({i.unidad_base})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </div>
 
                         <div className="grid grid-cols-2 gap-2">
@@ -908,15 +920,21 @@ export function Inventario() {
 
                           <div className="flex flex-col gap-1.5">
                             <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[9.5px] uppercase tracking-[0.5px]">Medida *</label>
-                            <select
+                            <Select
                               value={recetaForm.unidad}
-                              onChange={(e) => setRecetaForm(prev => ({ ...prev, unidad: e.target.value }))}
-                              className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[8px] px-3 py-2 font-['Inter',sans-serif] text-white text-[12px] outline-none"
+                              onValueChange={(val) => setRecetaForm(prev => ({ ...prev, unidad: val }))}
                             >
-                              {UNIDADES_MEDIDA.map(u => (
-                                <option key={u} value={u}>{u}</option>
-                              ))}
-                            </select>
+                              <SelectTrigger className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[8px] px-3 py-2 font-['Inter',sans-serif] text-white text-[12px] outline-none h-[38px]">
+                                <SelectValue placeholder="Medida" />
+                              </SelectTrigger>
+                              <SelectContent className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.4)] text-white">
+                                {UNIDADES_MEDIDA.map(u => (
+                                  <SelectItem key={u} value={u} className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer text-[12px]">
+                                    {u}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           </div>
                         </div>
 
@@ -1011,16 +1029,21 @@ export function Inventario() {
                 <form onSubmit={crearMovimiento} className="flex flex-col gap-3">
                   <div className="flex flex-col gap-1.5">
                     <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[9.5px] uppercase tracking-[0.5px]">Materia Prima *</label>
-                    <select
+                    <Select
                       value={movimientoForm.producto_id}
-                      onChange={(e) => setMovimientoForm(prev => ({ ...prev, producto_id: e.target.value }))}
-                      className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[8px] px-3 py-2 font-['Inter',sans-serif] text-white text-[12.5px] outline-none"
+                      onValueChange={(val) => setMovimientoForm(prev => ({ ...prev, producto_id: val }))}
                     >
-                      <option value="">Selecciona insumo</option>
-                      {insumos.map(i => (
-                        <option key={i.id} value={i.id}>{i.nombre} ({i.stock_actual} {i.unidad_base} actual)</option>
-                      ))}
-                    </select>
+                      <SelectTrigger className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[8px] px-3 py-2 font-['Inter',sans-serif] text-white text-[12.5px] outline-none h-[38px]">
+                        <SelectValue placeholder="Selecciona insumo" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.4)] text-white max-h-[220px]">
+                        {insumos.map(i => (
+                          <SelectItem key={i.id} value={i.id} className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer text-[12.5px]">
+                            {i.nombre} ({i.stock_actual} {i.unidad_base} actual)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   <div className="flex flex-col gap-1.5">
@@ -1129,30 +1152,39 @@ export function Inventario() {
                 <form onSubmit={registrarCierreCocina} className="flex flex-col gap-3">
                   <div className="flex flex-col gap-1.5">
                     <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[9.5px] uppercase tracking-[0.5px]">Materia Prima *</label>
-                    <select
+                    <Select
                       value={cierreForm.producto_id}
-                      onChange={(e) => setCierreForm(prev => ({ ...prev, producto_id: e.target.value }))}
-                      className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[8px] px-3 py-2 font-['Inter',sans-serif] text-white text-[12.5px] outline-none"
+                      onValueChange={(val) => setCierreForm(prev => ({ ...prev, producto_id: val }))}
                     >
-                      <option value="">Selecciona insumo insumo</option>
-                      {insumos.map(i => (
-                        <option key={i.id} value={i.id}>{i.nombre} ({i.stock_actual} {i.unidad_base} actual)</option>
-                      ))}
-                    </select>
+                      <SelectTrigger className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[8px] px-3 py-2 font-['Inter',sans-serif] text-white text-[12.5px] outline-none h-[38px]">
+                        <SelectValue placeholder="Selecciona insumo" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.4)] text-white max-h-[220px]">
+                        {insumos.map(i => (
+                          <SelectItem key={i.id} value={i.id} className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer text-[12.5px]">
+                            {i.nombre} ({i.stock_actual} {i.unidad_base} actual)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   <div className="flex flex-col gap-1.5">
                     <label className="font-['Inter',sans-serif] text-[#adaaaa] text-[9.5px] uppercase tracking-[0.5px]">Estación / Área *</label>
-                    <select
+                    <Select
                       value={cierreForm.area}
-                      onChange={(e) => setCierreForm(prev => ({ ...prev, area: e.target.value }))}
-                      className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[8px] px-3 py-2 font-['Inter',sans-serif] text-white text-[12.5px] outline-none"
+                      onValueChange={(val) => setCierreForm(prev => ({ ...prev, area: val }))}
                     >
-                      <option value="Freidora #1">Freidora #1</option>
-                      <option value="Freidora #2">Freidora #2</option>
-                      <option value="Plancha / Caliente">Plancha / Caliente</option>
-                      <option value="Cocina General">Cocina General</option>
-                    </select>
+                      <SelectTrigger className="bg-[#111] border border-[rgba(72,72,71,0.3)] rounded-[8px] px-3 py-2 font-['Inter',sans-serif] text-white text-[12.5px] outline-none h-[38px]">
+                        <SelectValue placeholder="Estación / Área" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.4)] text-white">
+                        <SelectItem value="Freidora #1" className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer text-[12.5px]">Freidora #1</SelectItem>
+                        <SelectItem value="Freidora #2" className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer text-[12.5px]">Freidora #2</SelectItem>
+                        <SelectItem value="Plancha / Caliente" className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer text-[12.5px]">Plancha / Caliente</SelectItem>
+                        <SelectItem value="Cocina General" className="focus:bg-[#2a2a2a] focus:text-white cursor-pointer text-[12.5px]">Cocina General</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
 
                   <div className="flex flex-col gap-1.5">
