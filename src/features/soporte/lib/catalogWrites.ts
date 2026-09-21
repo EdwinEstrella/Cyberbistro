@@ -34,6 +34,8 @@ export async function writePlatoUpsert(input: WritePlatoUpsertInput, isNew: bool
   };
 
   if (hasSqliteCatalog()) {
+    // Desktop: SQLite is the single source of truth. The legacy IndexedDB
+    // mirror is no longer written here.
     await saveCatalogCommandLocally({
       type: "catalog.product.upsert",
       id: String(input.id),
@@ -45,6 +47,7 @@ export async function writePlatoUpsert(input: WritePlatoUpsertInput, isNew: bool
       va_a_cocina: input.va_a_cocina,
     });
   } else {
+    // Web: no SQLite engine, so the IndexedDB mirror stays the local store.
     await enqueueLocalWrite({
       tenantId: input.tenantId,
       tableName: "platos",
@@ -53,9 +56,8 @@ export async function writePlatoUpsert(input: WritePlatoUpsertInput, isNew: bool
       payload,
       deviceId: await getDeviceId(),
     });
+    await writeLocalMirrorRow(input.tenantId, "platos", payload);
   }
-
-  await writeLocalMirrorRow(input.tenantId, "platos", payload);
 }
 
 export async function writePlatoDelete(tenantId: string, id: number): Promise<void> {
@@ -69,8 +71,8 @@ export async function writePlatoDelete(tenantId: string, id: number): Promise<vo
       op: "delete",
       deviceId: await getDeviceId(),
     });
+    await deleteLocalMirrorRow(tenantId, "platos", String(id));
   }
-  await deleteLocalMirrorRow(tenantId, "platos", String(id));
 }
 
 export interface WriteCategoryUpsertInput {
@@ -110,9 +112,8 @@ export async function writeCategoryUpsert(input: WriteCategoryUpsertInput, isNew
       payload,
       deviceId: await getDeviceId(),
     });
+    await writeLocalMirrorRow(input.tenantId, "menu_categories", payload);
   }
-
-  await writeLocalMirrorRow(input.tenantId, "menu_categories", payload);
 }
 
 export async function writeCategoryDelete(tenantId: string, id: string): Promise<void> {
@@ -126,6 +127,6 @@ export async function writeCategoryDelete(tenantId: string, id: string): Promise
       op: "delete",
       deviceId: await getDeviceId(),
     });
+    await deleteLocalMirrorRow(tenantId, "menu_categories", id);
   }
-  await deleteLocalMirrorRow(tenantId, "menu_categories", id);
 }

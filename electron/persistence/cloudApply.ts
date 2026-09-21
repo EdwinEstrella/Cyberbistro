@@ -475,6 +475,73 @@ export function applyCloudCompraRows(
 }
 
 /**
+ * Applies cloud fiscal (606) headers into the local `compra_fiscal` mirror so a
+ * SQLite-only fiscal edit has a row to update. Skips rows whose parent purchase
+ * has not been pulled yet (FK) and rows with a pending local write.
+ */
+export function applyCloudCompraFiscalRows(
+  db: DatabaseSync,
+  tenantId: string,
+  rows: Array<Record<string, unknown>>,
+): void {
+  const compraExists = db.prepare("SELECT 1 FROM compras WHERE id = ? AND tenant_id = ?");
+  const stmt = db.prepare(`
+    INSERT INTO compra_fiscal (
+      id, tenant_id, compra_id, rnc_cedula, tipo_identificacion, tipo_bien_servicio, ncf, ncf_modificado,
+      fecha_comprobante, fecha_pago, monto_servicios, monto_bienes, total_facturado, itbis_facturado,
+      itbis_retenido, itbis_proporcionalidad, itbis_costo, itbis_adelantar, itbis_percibido,
+      tipo_retencion_isr, retencion_isr, isr_percibido, impuesto_selectivo, otros_impuestos, propina_legal, forma_pago
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      compra_id = excluded.compra_id,
+      rnc_cedula = excluded.rnc_cedula,
+      tipo_identificacion = excluded.tipo_identificacion,
+      tipo_bien_servicio = excluded.tipo_bien_servicio,
+      ncf = excluded.ncf,
+      ncf_modificado = excluded.ncf_modificado,
+      fecha_comprobante = excluded.fecha_comprobante,
+      fecha_pago = excluded.fecha_pago,
+      monto_servicios = excluded.monto_servicios,
+      monto_bienes = excluded.monto_bienes,
+      total_facturado = excluded.total_facturado,
+      itbis_facturado = excluded.itbis_facturado,
+      itbis_retenido = excluded.itbis_retenido,
+      itbis_proporcionalidad = excluded.itbis_proporcionalidad,
+      itbis_costo = excluded.itbis_costo,
+      itbis_adelantar = excluded.itbis_adelantar,
+      itbis_percibido = excluded.itbis_percibido,
+      tipo_retencion_isr = excluded.tipo_retencion_isr,
+      retencion_isr = excluded.retencion_isr,
+      isr_percibido = excluded.isr_percibido,
+      impuesto_selectivo = excluded.impuesto_selectivo,
+      otros_impuestos = excluded.otros_impuestos,
+      propina_legal = excluded.propina_legal,
+      forma_pago = excluded.forma_pago
+  `);
+  const str = (value: unknown): string | null => {
+    if (value === null || value === undefined) return null;
+    const s = String(value);
+    return s.length > 0 ? s : null;
+  };
+  const num = (value: unknown): number | null => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  };
+  for (const f of rows) {
+    if (!f || typeof f !== "object" || !f.id || !f.compra_id) continue;
+    if (hasPendingCloudWrite(db, tenantId, "compra_fiscal", String(f.id))) continue;
+    if (!compraExists.get(String(f.compra_id), tenantId)) continue; // FK parent not pulled yet.
+    stmt.run(
+      String(f.id), tenantId, String(f.compra_id), str(f.rnc_cedula), str(f.tipo_identificacion), str(f.tipo_bien_servicio),
+      str(f.ncf), str(f.ncf_modificado), str(f.fecha_comprobante), str(f.fecha_pago), num(f.monto_servicios), num(f.monto_bienes),
+      num(f.total_facturado), num(f.itbis_facturado), num(f.itbis_retenido), num(f.itbis_proporcionalidad), num(f.itbis_costo),
+      num(f.itbis_adelantar), num(f.itbis_percibido), str(f.tipo_retencion_isr), num(f.retencion_isr), num(f.isr_percibido),
+      num(f.impuesto_selectivo), num(f.otros_impuestos), num(f.propina_legal), str(f.forma_pago),
+    );
+  }
+}
+
+/**
  * Cloud receivables/payables carry `monto_pagado` and a feminine `estado`
  * (pagada/vencida); the local STRICT tables store `monto_pendiente` and a
  * masculine `estado` (CHECK pendiente/parcial/pagado/vencido). This maps the

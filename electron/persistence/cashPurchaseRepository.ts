@@ -91,7 +91,27 @@ export type PurchaseDeleteCommand = {
   usuarioId?: string | null;
 };
 
-export type PurchaseCommand = CashPurchaseCommand | FullPurchaseCreateCommand | PurchaseDeleteCommand;
+/**
+ * Edits the fiscal/supplier header of an existing purchase (SQLite-only path).
+ * Updates the purchase, its fiscal (606) row, its payable, and its linked
+ * expense in one transaction, replacing the legacy IndexedDB-mirror writes.
+ */
+export type PurchaseUpdateFiscalCommand = {
+  type: "purchase.updateFiscal";
+  purchaseId: string;
+  proveedorId: string;
+  providerName?: string;
+  providerRnc?: string;
+  numeroFactura: string;
+  fechaCompra: string;
+  observacion?: string | null;
+};
+
+export type PurchaseCommand =
+  | CashPurchaseCommand
+  | FullPurchaseCreateCommand
+  | PurchaseDeleteCommand
+  | PurchaseUpdateFiscalCommand;
 
 export type PurchaseRepositoryResult = { commitId: string; localStatus: "committed"; syncStatus: "pending" };
 export type CashPurchaseRepositoryResult = PurchaseRepositoryResult;

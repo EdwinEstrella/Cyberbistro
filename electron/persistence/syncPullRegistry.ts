@@ -40,6 +40,9 @@ export const SYNC_PULL_TABLES: readonly SyncPullTable[] = [
   // Purchases download for the compras module and finance analytics. Not
   // hard-deleted via pull: a purchase absent from a snapshot page survives.
   { remoteTable: "compras", localTable: "compras", child: false, deletable: false },
+  // Fiscal (606) headers download so a SQLite-only fiscal edit has a local row.
+  // MUST follow compras: the local FK requires the parent purchase first.
+  { remoteTable: "compra_fiscal", localTable: "compra_fiscal", child: false, deletable: false },
   // Accounts receivable/payable + their payments for the finance analytics
   // (por cobrar / por pagar). Accounts MUST precede their payments so the
   // payment foreign keys resolve within a single pull batch. Not hard-deleted

@@ -411,6 +411,7 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
   ensureFacturasSchemaEvolution(database);
   ensureCierresSchemaEvolution(database);
   ensureComprasSchemaEvolution(database);
+  ensureCompraFiscalTable(database);
   ensureReceivablesSchemaEvolution(database);
   ensurePayablesSchemaEvolution(database);
   ensureSalonCocinaSchemaEvolution(database);
@@ -537,6 +538,47 @@ function ensurePayablesSchemaEvolution(database: DatabaseSync): void {
       }
     }
   }
+}
+
+/**
+ * Local mirror of the fiscal (606) header for a purchase. Historically this
+ * lived only in the cloud (pushed via sync_outbox at purchase.create) and was
+ * never stored locally, so a SQLite-only fiscal edit had no local row to update.
+ * The table is additive and idempotent; columns mirror the cloud `compra_fiscal`
+ * table exactly so the pull applier and the outbox payload stay in lockstep.
+ */
+function ensureCompraFiscalTable(database: DatabaseSync): void {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS compra_fiscal (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL REFERENCES tenants(id),
+      compra_id TEXT NOT NULL UNIQUE REFERENCES compras(id),
+      rnc_cedula TEXT,
+      tipo_identificacion TEXT,
+      tipo_bien_servicio TEXT,
+      ncf TEXT,
+      ncf_modificado TEXT,
+      fecha_comprobante TEXT,
+      fecha_pago TEXT,
+      monto_servicios REAL,
+      monto_bienes REAL,
+      total_facturado REAL,
+      itbis_facturado REAL,
+      itbis_retenido REAL,
+      itbis_proporcionalidad REAL,
+      itbis_costo REAL,
+      itbis_adelantar REAL,
+      itbis_percibido REAL,
+      tipo_retencion_isr TEXT,
+      retencion_isr REAL,
+      isr_percibido REAL,
+      impuesto_selectivo REAL,
+      otros_impuestos REAL,
+      propina_legal REAL,
+      forma_pago TEXT
+    ) STRICT;
+    CREATE INDEX IF NOT EXISTS idx_compra_fiscal_compra ON compra_fiscal (compra_id);
+  `);
 }
 
 function ensureComprasSchemaEvolution(database: DatabaseSync): void {

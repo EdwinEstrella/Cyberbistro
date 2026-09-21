@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { DurableSyncStore, DurableOperation, DurableOperationStatus, DurableOperationKind, PullBatch } from "./syncWorker";
-import { applyCloudExpenseRows, applyCloudExpenseCategoryRows, applyCloudCustomerRows, applyCloudOperationalCycleRows, applyCloudFacturaRows, applyCloudCompraRows, applyCloudReceivableRows, applyCloudPayableRows, applyCloudCxcPagoRows, applyCloudCxpPagoRows, applyCloudDeletes, applyCloudMenuCategoryRows, applyCloudPlatoRows, applyCloudMesasEstadoRows, applyCloudCocinaEstadoRows, applyCloudComandaRows, applyCloudConsumoRows } from "./cloudApply";
+import { applyCloudExpenseRows, applyCloudExpenseCategoryRows, applyCloudCustomerRows, applyCloudOperationalCycleRows, applyCloudFacturaRows, applyCloudCompraRows, applyCloudCompraFiscalRows, applyCloudReceivableRows, applyCloudPayableRows, applyCloudCxcPagoRows, applyCloudCxpPagoRows, applyCloudDeletes, applyCloudMenuCategoryRows, applyCloudPlatoRows, applyCloudMesasEstadoRows, applyCloudCocinaEstadoRows, applyCloudComandaRows, applyCloudConsumoRows } from "./cloudApply";
 import { createHash } from "node:crypto";
 import { applyCloudPayrollEmployees, applyCloudPayrollPayments, applyCloudPayrollAdjustments } from "./payrollCloudApply";
 import { SYNC_PULL_TABLES, SYNC_PULLABLE_LOCAL_TABLES, SYNC_PULL_DELETE_ORDER } from "./syncPullRegistry";
@@ -18,6 +18,7 @@ const PULL_APPLIERS: Record<string, CloudRowApplier> = {
   cierres_operativos: applyCloudOperationalCycleRows,
   facturas: applyCloudFacturaRows,
   compras: applyCloudCompraRows,
+  compra_fiscal: applyCloudCompraFiscalRows,
   cuentas_cobrar: applyCloudReceivableRows,
   cxc_pagos: applyCloudCxcPagoRows,
   cuentas_pagar: applyCloudPayableRows,

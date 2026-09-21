@@ -48,7 +48,8 @@ describe("catalogWrites — desktop SQLite vs web IndexedDB", () => {
         va_a_cocina: true,
       });
       expect(localFirst.enqueueLocalWrite).not.toHaveBeenCalled();
-      expect(localFirst.writeLocalMirrorRow).toHaveBeenCalledWith("tenant-1", "platos", expect.objectContaining({ id: 10 }));
+      // Desktop is SQLite-only: the legacy IndexedDB mirror is not written.
+      expect(localFirst.writeLocalMirrorRow).not.toHaveBeenCalled();
     });
 
     it("routes plato delete through saveCatalogCommandLocally", async () => {
@@ -56,7 +57,8 @@ describe("catalogWrites — desktop SQLite vs web IndexedDB", () => {
 
       expect(adapter.saveCatalogCommandLocally).toHaveBeenCalledWith({ type: "catalog.product.delete", id: "10" });
       expect(localFirst.enqueueLocalWrite).not.toHaveBeenCalled();
-      expect(localFirst.deleteLocalMirrorRow).toHaveBeenCalledWith("tenant-1", "platos", "10");
+      // Desktop is SQLite-only: the legacy IndexedDB mirror is not touched.
+      expect(localFirst.deleteLocalMirrorRow).not.toHaveBeenCalled();
     });
   });
 

@@ -423,39 +423,62 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
 
         if (command.fiscal) {
           const fisc = command.fiscal;
+          const fiscalRow = {
+            id: fisc.id,
+            tenant_id: this.tenantId,
+            compra_id: command.id,
+            rnc_cedula: fisc.rncCedula,
+            tipo_identificacion: fisc.tipoIdentificacion || (fisc.rncCedula.length === 9 ? "1" : "2"),
+            tipo_bien_servicio: fisc.tipoBienServicio || "09",
+            ncf: fisc.ncf,
+            ncf_modificado: fisc.ncfModificado || null,
+            fecha_comprobante: fisc.fechaComprobante || fechaCompra.slice(0, 10),
+            fecha_pago: fisc.fechaPago || (command.tipoPago === "credito" ? null : fechaCompra.slice(0, 10)),
+            monto_servicios: fisc.montoServicios || 0,
+            monto_bienes: fisc.montoBienes || total,
+            total_facturado: fisc.totalFacturado || total,
+            itbis_facturado: fisc.itbisFacturado || 0,
+            itbis_retenido: fisc.itbisRetenido || 0,
+            itbis_proporcionalidad: 0,
+            itbis_costo: fisc.itbisFacturado || 0,
+            itbis_adelantar: 0,
+            itbis_percibido: 0,
+            tipo_retencion_isr: null as string | null,
+            retencion_isr: fisc.retencionIsr || 0,
+            isr_percibido: 0,
+            impuesto_selectivo: fisc.impuestoSelectivo || 0,
+            otros_impuestos: fisc.otrosImpuestos || 0,
+            propina_legal: fisc.propinaLegal || 0,
+            forma_pago: fisc.formaPago || "01",
+          };
+          // Local mirror so a later SQLite-only fiscal edit has a row to update.
+          this.database.prepare(`
+            INSERT INTO compra_fiscal (
+              id, tenant_id, compra_id, rnc_cedula, tipo_identificacion, tipo_bien_servicio, ncf, ncf_modificado,
+              fecha_comprobante, fecha_pago, monto_servicios, monto_bienes, total_facturado, itbis_facturado,
+              itbis_retenido, itbis_proporcionalidad, itbis_costo, itbis_adelantar, itbis_percibido,
+              tipo_retencion_isr, retencion_isr, isr_percibido, impuesto_selectivo, otros_impuestos, propina_legal, forma_pago
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              rnc_cedula = excluded.rnc_cedula,
+              tipo_identificacion = excluded.tipo_identificacion,
+              ncf = excluded.ncf,
+              fecha_comprobante = excluded.fecha_comprobante
+          `).run(
+            fiscalRow.id, fiscalRow.tenant_id, fiscalRow.compra_id, fiscalRow.rnc_cedula, fiscalRow.tipo_identificacion,
+            fiscalRow.tipo_bien_servicio, fiscalRow.ncf, fiscalRow.ncf_modificado, fiscalRow.fecha_comprobante,
+            fiscalRow.fecha_pago, fiscalRow.monto_servicios, fiscalRow.monto_bienes, fiscalRow.total_facturado,
+            fiscalRow.itbis_facturado, fiscalRow.itbis_retenido, fiscalRow.itbis_proporcionalidad, fiscalRow.itbis_costo,
+            fiscalRow.itbis_adelantar, fiscalRow.itbis_percibido, fiscalRow.tipo_retencion_isr, fiscalRow.retencion_isr,
+            fiscalRow.isr_percibido, fiscalRow.impuesto_selectivo, fiscalRow.otros_impuestos, fiscalRow.propina_legal,
+            fiscalRow.forma_pago
+          );
           this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, 'compra_fiscal', ?, 'upsert', ?, 'pending')").run(
             `${commitId}:fiscal`,
             this.tenantId,
             targetBranch,
             fisc.id,
-            JSON.stringify({
-              id: fisc.id,
-              tenant_id: this.tenantId,
-              compra_id: command.id,
-              rnc_cedula: fisc.rncCedula,
-              tipo_identificacion: fisc.tipoIdentificacion || (fisc.rncCedula.length === 9 ? "1" : "2"),
-              tipo_bien_servicio: fisc.tipoBienServicio || "09",
-              ncf: fisc.ncf,
-              ncf_modificado: fisc.ncfModificado || null,
-              fecha_comprobante: fisc.fechaComprobante || fechaCompra.slice(0, 10),
-              fecha_pago: fisc.fechaPago || (command.tipoPago === "credito" ? null : fechaCompra.slice(0, 10)),
-              monto_servicios: fisc.montoServicios || 0,
-              monto_bienes: fisc.montoBienes || total,
-              total_facturado: fisc.totalFacturado || total,
-              itbis_facturado: fisc.itbisFacturado || 0,
-              itbis_retenido: fisc.itbisRetenido || 0,
-              itbis_proporcionalidad: 0,
-              itbis_costo: fisc.itbisFacturado || 0,
-              itbis_adelantar: 0,
-              itbis_percibido: 0,
-              tipo_retencion_isr: null,
-              retencion_isr: fisc.retencionIsr || 0,
-              isr_percibido: 0,
-              impuesto_selectivo: fisc.impuestoSelectivo || 0,
-              otros_impuestos: fisc.otrosImpuestos || 0,
-              propina_legal: fisc.propinaLegal || 0,
-              forma_pago: fisc.formaPago || "01",
-            })
+            JSON.stringify(fiscalRow)
           );
         }
 
@@ -548,6 +571,103 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
             JSON.stringify({ id: e.id })
           );
         }
+      } else if (command.type === "purchase.updateFiscal") {
+        // SQLite-only fiscal/supplier edit of an existing purchase, replacing the
+        // legacy IndexedDB-mirror writes. Updates the purchase, its 606 fiscal row
+        // and its payable (all pushed via outbox) plus the linked local expense.
+        const provName = command.providerName || "Proveedor";
+        this.database.prepare("INSERT OR IGNORE INTO proveedores (id, tenant_id, name) VALUES (?, ?, ?)").run(command.proveedorId, this.tenantId, provName);
+
+        const compra = this.database.prepare(
+          "SELECT sucursal_id, total, tipo_pago, metodo_pago, monto_pagado, fecha_compra, cycle_id, estado, usuario_id FROM compras WHERE id = ? AND tenant_id = ?"
+        ).get(command.purchaseId, this.tenantId) as {
+          sucursal_id: string; total: number; tipo_pago: string | null; metodo_pago: string | null;
+          monto_pagado: number | null; fecha_compra: string | null; cycle_id: string | null;
+          estado: string | null; usuario_id: string | null;
+        } | undefined;
+        if (!compra) throw new Error(`La compra ${command.purchaseId} no existe.`);
+        const targetBranch = compra.sucursal_id || branchId;
+
+        // 1. Purchase header.
+        this.database.prepare(
+          "UPDATE compras SET proveedor_id = ?, numero_factura = ?, fecha_compra = ?, observacion = ? WHERE id = ? AND tenant_id = ?"
+        ).run(command.proveedorId, command.numeroFactura, command.fechaCompra, command.observacion ?? null, command.purchaseId, this.tenantId);
+        this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, 'compras', ?, 'upsert', ?, 'pending')").run(
+          `${commitId}:purchase`,
+          this.tenantId,
+          targetBranch,
+          command.purchaseId,
+          JSON.stringify({
+            id: command.purchaseId,
+            tenant_id: this.tenantId,
+            sucursal_id: targetBranch,
+            proveedor_id: command.proveedorId,
+            numero_factura: command.numeroFactura,
+            tipo_pago: compra.tipo_pago || "contado",
+            metodo_pago: compra.metodo_pago || null,
+            monto_pagado: compra.monto_pagado ?? 0,
+            fecha_compra: command.fechaCompra,
+            total: compra.total ?? 0,
+            cycle_id: compra.cycle_id || null,
+            estado: compra.estado || "completada",
+            observacion: command.observacion ?? null,
+            usuario_id: compra.usuario_id || null,
+          })
+        );
+
+        // 2. Fiscal (606) row, if present locally.
+        const fiscal = this.database.prepare("SELECT id FROM compra_fiscal WHERE compra_id = ? AND tenant_id = ?").get(command.purchaseId, this.tenantId) as { id: string } | undefined;
+        if (fiscal) {
+          const rnc = command.providerRnc || "";
+          const tipoIdentificacion = rnc.length === 9 ? "1" : "2";
+          this.database.prepare(
+            "UPDATE compra_fiscal SET rnc_cedula = ?, tipo_identificacion = ?, ncf = ?, fecha_comprobante = ? WHERE compra_id = ? AND tenant_id = ?"
+          ).run(rnc, tipoIdentificacion, command.numeroFactura.trim().toUpperCase(), command.fechaCompra.slice(0, 10), command.purchaseId, this.tenantId);
+          const updatedFiscal = this.database.prepare("SELECT * FROM compra_fiscal WHERE id = ? AND tenant_id = ?").get(fiscal.id, this.tenantId) as Record<string, unknown> | undefined;
+          if (updatedFiscal) {
+            this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, 'compra_fiscal', ?, 'upsert', ?, 'pending')").run(
+              `${commitId}:fiscal`,
+              this.tenantId,
+              targetBranch,
+              fiscal.id,
+              JSON.stringify(updatedFiscal)
+            );
+          }
+        }
+
+        // 3. Payable, if present locally.
+        const payable = this.database.prepare("SELECT id, proveedor_id, monto_total, fecha_vencimiento, fecha_emision FROM cuentas_pagar WHERE compra_id = ? AND tenant_id = ?").get(command.purchaseId, this.tenantId) as {
+          id: string; proveedor_id: string; monto_total: number; fecha_vencimiento: string | null; fecha_emision: string | null;
+        } | undefined;
+        if (payable) {
+          this.database.prepare(
+            "UPDATE cuentas_pagar SET proveedor_id = ?, fecha_emision = ?, observacion = ? WHERE id = ? AND tenant_id = ?"
+          ).run(command.proveedorId, command.fechaCompra, command.observacion ?? null, payable.id, this.tenantId);
+          this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, 'cuentas_pagar', ?, 'upsert', ?, 'pending')").run(
+            `${commitId}:payable`,
+            this.tenantId,
+            targetBranch,
+            payable.id,
+            JSON.stringify({
+              id: payable.id,
+              tenantId: this.tenantId,
+              sucursalId: targetBranch,
+              supplierId: command.proveedorId,
+              compraId: command.purchaseId,
+              totalAmount: payable.monto_total,
+              dueDate: payable.fecha_vencimiento || undefined,
+              fechaEmision: command.fechaCompra,
+              observacion: command.observacion ?? undefined,
+            })
+          );
+        }
+
+        // 4. Linked expense: local only. The compras-paid gasto is never pushed to
+        //    the cloud from SQLite (purchase.create enqueues no gastos outbox, and
+        //    there is no cloud trigger), so the edit stays local for read parity.
+        this.database.prepare(
+          "UPDATE gastos SET description = ?, supplier = ?, expense_date = ? WHERE compra_id = ? AND tenant_id = ?"
+        ).run(`Compra - Factura ${command.numeroFactura.trim() || "S/N"}`, provName, command.fechaCompra, command.purchaseId, this.tenantId);
       }
 
       this.database.exec("COMMIT;");

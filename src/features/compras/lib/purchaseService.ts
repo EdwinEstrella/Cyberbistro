@@ -626,13 +626,28 @@ export async function actualizarDatosFiscalesCompra(
   compraId: string,
   updates: { proveedorId: string; numeroFactura: string; fechaCompra: string; observacion: string }
 ): Promise<void> {
-  const deviceId = await getDeviceId();
-
-  // Obtener detalles del proveedor
+  // Provider identity. Reading proveedores still bridges the IndexedDB mirror
+  // until that table migrates to SQLite; the write below is SQLite-only.
   const providers = await readLocalMirror<{ id: string; nombre: string; rnc: string | null }>(tenantId, "proveedores");
   const prov = providers.find(p => p.id === updates.proveedorId);
   const providerName = prov?.nombre || "Proveedor Desconocido";
   const providerRnc = prov?.rnc?.replace(/\D/g, "") || "";
+
+  if (hasSqlitePurchases()) {
+    await window.electronAPI!.executePurchaseCommand!({
+      type: "purchase.updateFiscal",
+      purchaseId: compraId,
+      proveedorId: updates.proveedorId,
+      providerName,
+      providerRnc,
+      numeroFactura: updates.numeroFactura.trim(),
+      fechaCompra: updates.fechaCompra,
+      observacion: updates.observacion.trim(),
+    });
+    return;
+  }
+
+  const deviceId = await getDeviceId();
 
   // 1. Actualizar tabla compras
   await enqueueLocalWrite({

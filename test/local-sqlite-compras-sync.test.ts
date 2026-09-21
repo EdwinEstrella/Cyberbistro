@@ -98,6 +98,12 @@ describe("Compras SQLite local-first sync (Push & Query)", () => {
     expect(gasto).toBeTruthy();
     expect(gasto.amount).toBe(5000);
 
+    // Check compra_fiscal is now mirrored locally (not only pushed via outbox)
+    const fiscalLocal = db.prepare("SELECT * FROM compra_fiscal WHERE compra_id = 'compra-100'").get() as any;
+    expect(fiscalLocal).toBeTruthy();
+    expect(fiscalLocal.id).toBe("fisc-100");
+    expect(fiscalLocal.ncf).toBe("B0100001234");
+
     // Check sync_outbox
     const outboxRows = db.prepare("SELECT table_name, operation, status FROM sync_outbox WHERE tenant_id = ?").all(TENANT) as any[];
     expect(outboxRows.length).toBeGreaterThanOrEqual(4);
@@ -106,6 +112,86 @@ describe("Compras SQLite local-first sync (Push & Query)", () => {
     expect(tables).toContain("compra_detalles");
     expect(tables).toContain("inventario_movimientos");
     expect(tables).toContain("compra_fiscal");
+  });
+
+  it("purchase.updateFiscal edits the purchase, fiscal row and payable in SQLite (gasto stays local)", () => {
+    repo.execute({
+      type: "purchase.create",
+      id: "compra-edit",
+      supplierId: "prov-old",
+      providerName: "Proveedor Viejo",
+      numeroFactura: "B0100000001",
+      tipoPago: "parcial",
+      metodoPago: "efectivo",
+      montoPagado: 400,
+      fechaCompra: "2026-09-10T10:00:00Z",
+      total: 1000,
+      cycleId: "cycle-1",
+      items: [],
+      fiscal: {
+        id: "fisc-edit",
+        rncCedula: "101000001",
+        ncf: "B0100000001",
+        fechaComprobante: "2026-09-10",
+        montoBienes: 1000,
+        totalFacturado: 1000,
+      },
+      expense: {
+        id: "gasto-edit",
+        categoryId: "cat-compras",
+        amount: 400,
+        paymentMethod: "cash",
+        description: "Compra insumos - Factura: B0100000001",
+      },
+      payable: {
+        id: "cxp-edit",
+        totalAmount: 600,
+        fechaEmision: "2026-09-10",
+      },
+    });
+
+    db.prepare("INSERT OR IGNORE INTO proveedores (id, tenant_id, name) VALUES ('prov-new', ?, 'Proveedor Nuevo')").run(TENANT);
+
+    repo.execute({
+      type: "purchase.updateFiscal",
+      purchaseId: "compra-edit",
+      proveedorId: "prov-new",
+      providerName: "Proveedor Nuevo",
+      providerRnc: "130123456",
+      numeroFactura: "b0100000999",
+      fechaCompra: "2026-09-15T00:00:00Z",
+      observacion: "Corrección fiscal",
+    });
+
+    const compra = db.prepare("SELECT * FROM compras WHERE id = 'compra-edit'").get() as any;
+    expect(compra.proveedor_id).toBe("prov-new");
+    expect(compra.numero_factura).toBe("b0100000999");
+    expect(compra.fecha_compra).toBe("2026-09-15T00:00:00Z");
+    expect(compra.observacion).toBe("Corrección fiscal");
+    expect(compra.total).toBe(1000); // unchanged
+
+    const fiscal = db.prepare("SELECT * FROM compra_fiscal WHERE compra_id = 'compra-edit'").get() as any;
+    expect(fiscal.rnc_cedula).toBe("130123456");
+    expect(fiscal.tipo_identificacion).toBe("1"); // 9-digit RNC → "1"
+    expect(fiscal.ncf).toBe("B0100000999"); // uppercased
+    expect(fiscal.fecha_comprobante).toBe("2026-09-15");
+
+    const cxp = db.prepare("SELECT * FROM cuentas_pagar WHERE compra_id = 'compra-edit'").get() as any;
+    expect(cxp.proveedor_id).toBe("prov-new");
+    expect(cxp.monto_total).toBe(600); // unchanged
+
+    const gasto = db.prepare("SELECT * FROM gastos WHERE compra_id = 'compra-edit'").get() as any;
+    expect(gasto.supplier).toBe("Proveedor Nuevo");
+    expect(gasto.description).toBe("Compra - Factura b0100000999");
+
+    // Outbox: the edit re-pushes compras/compra_fiscal/cuentas_pagar, but never a
+    // gastos row (the compras gasto is local-only and has no cloud counterpart).
+    const editOutbox = db.prepare("SELECT DISTINCT table_name FROM sync_outbox WHERE id LIKE '%:%' AND row_id IN ('compra-edit','fisc-edit','cxp-edit','gasto-edit')").all() as any[];
+    const editTables = editOutbox.map(r => r.table_name);
+    expect(editTables).toContain("compras");
+    expect(editTables).toContain("compra_fiscal");
+    expect(editTables).toContain("cuentas_pagar");
+    expect(editTables).not.toContain("gastos");
   });
 
   it("lists purchases with listCompras ordered by date", () => {

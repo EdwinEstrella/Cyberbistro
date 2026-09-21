@@ -165,6 +165,33 @@ export class PayrollSyncClient implements ServerSyncClient {
     return { result: { synced: true, id: operation.rowId, remoteTable: mapped.remoteTable } };
   }
 
+  /**
+   * Bulk path: several same-table, non-partial upserts in one Supabase call.
+   * Returns `{ ok: false }` (never throwing on a mappable-but-mixed group) so the
+   * worker falls back to per-row {@link push} whenever the group is not cleanly
+   * batchable (a partial map, a mixed remote table, or a delete slipped in).
+   */
+  async pushBatch(operations: DurableOperation[]): Promise<{ ok: true } | { ok: false; error?: { message: string } }> {
+    if (operations.length === 0) return { ok: true };
+    if (operations.some((op) => op.op === "delete")) return { ok: false };
+
+    const mapped: Array<{ remoteTable: string; payload: Record<string, unknown> }> = [];
+    for (const operation of operations) {
+      const result = mapOperation(operation);
+      if (!result.ok || result.isPartial) return { ok: false };
+      mapped.push({ remoteTable: result.remoteTable, payload: result.payload });
+    }
+
+    const remoteTable = mapped[0].remoteTable;
+    if (mapped.some((m) => m.remoteTable !== remoteTable)) return { ok: false };
+
+    const onConflict = remoteTable === "mesas_estado" ? "tenant_id,id" : "id";
+    const tableClient = await this.getTableClient(remoteTable);
+    const { error } = await tableClient.upsert(mapped.map((m) => m.payload), { onConflict });
+    if (error) return { ok: false, error: { message: error.message } };
+    return { ok: true };
+  }
+
   private async pushOperationalCycle(operation: DurableOperation): Promise<PushResponse> {
     // SQLite is the single writer of operational cycles: it creates, closes,
     // prints, and discards the Supabase row directly. IndexedDB no longer pushes
