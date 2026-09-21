@@ -68,6 +68,7 @@ import { readLocalMesasEstado, readLocalConsumos, saveLocalConsumo, saveLocalCom
 import { commitCheckout } from "../../../shared/lib/checkoutCommit";
 import { getNextFacturaNumber } from "../../../shared/lib/invoiceNumber";
 import { writePosMutationLocalFirst } from "../../pos/lib/localFirstMutations";
+import { buildOrderWrites, persistOrderWrites, splitCartByDestination } from "../../pos/lib/orderWrites";
 import { cacheLogoFromUrl } from "../../../shared/lib/logoCache";
 import { normalizeTenantRol } from "../../../shared/lib/roleNav";
 import { isDesktopCloudUnavailable, isDesktopRuntime } from "../../../shared/lib/cloudAvailability";
@@ -745,16 +746,9 @@ export function Dashboard() {
     setKitchenClosed(false);
 
     // Separar items: cocina vs directo
-    const kitchenItems = cart.filter((i) => i.plato.va_a_cocina !== false);
-    const directItems = cart.filter((i) => i.plato.va_a_cocina === false);
+    const { kitchenItems } = splitCartByDestination(cart);
 
-    let comandaId: string | null = null;
-    // The kitchen comanda to print, if any. Printing (a Supabase tenant fetch +
-    // slow Windows printer enumeration) is deferred until AFTER the panel shows
-    // the order, so hitting "enviar" reflects the orange items instantly.
-    let comandaToPrint: Record<string, unknown> | null = null;
-
-    // Crear comanda para items de cocina
+    // Guardia de cocina cerrada (necesita red/estado): se queda en el componente.
     if (kitchenItems.length > 0) {
       let cocinaActiva = true;
       try {
@@ -780,80 +774,25 @@ export function Dashboard() {
         setSending(false);
         return;
       }
-
-      const items = kitchenItems.map((i) => ({
-        nombre: i.plato.nombre,
-        categoria: i.plato.categoria || "General",
-        cantidad: i.cantidad,
-        precio: i.plato.precio,
-      }));
-
-      const localComandaId = crypto.randomUUID();
-      const comandaPayload = {
-        id: localComandaId,
-        mesa_numero: selectedMesa.numero,
-        estado: "pendiente",
-        items,
-        notas: orderNotes.trim() || null,
-        tenant_id: tid,
-        sucursal_id: activeSucursalId,
-        creado_por: user?.id ?? null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-      // SQLite-local-first: the write lands in SQLite + sync_outbox in one
-      // transaction, so the panel's SQLite re-read sees the kitchen order
-      // immediately (orange) instead of waiting for a cloud round-trip.
-      await saveLocalComanda(tid, comandaPayload);
-      comandaId = localComandaId;
-      // Capture the comanda; it is printed after the panel refresh (below) so the
-      // orange items show immediately instead of waiting on the print pipeline.
-      comandaToPrint = comandaPayload;
     }
 
-    // Crear consumos para TODOS los items (cocina + directo)
-    const consumosToInsert = [
-      ...kitchenItems.map((i) => ({
-        id: crypto.randomUUID(),
-        mesa_numero: selectedMesa.numero,
-        tenant_id: tid,
-        sucursal_id: activeSucursalId,
-        comanda_id: comandaId,
-        plato_id: i.plato.id,
-        nombre: i.plato.nombre,
-        cantidad: i.cantidad,
-        precio_unitario: i.plato.precio,
-        subtotal: i.plato.precio * i.cantidad,
-        tipo: "cocina" as const,
-        estado: "enviado_cocina" as const,
-        created_by_auth_user_id: user?.id ?? null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })),
-      ...directItems.map((i) => ({
-        id: crypto.randomUUID(),
-        mesa_numero: selectedMesa.numero,
-        tenant_id: tid,
-        sucursal_id: activeSucursalId,
-        comanda_id: null,
-        plato_id: i.plato.id,
-        nombre: i.plato.nombre,
-        cantidad: i.cantidad,
-        precio_unitario: i.plato.precio,
-        subtotal: i.plato.precio * i.cantidad,
-        tipo: "directo" as const,
-        estado: "entregado" as const,
-        created_by_auth_user_id: user?.id ?? null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })),
-    ];
-
-    for (const consumo of consumosToInsert) {
-      // SQLite-local-first: same-transaction write + outbox, so the just-sent
-      // items show up on the next SQLite read below without a cloud round-trip.
-      await saveLocalConsumo(tid, consumo);
-    }
+    // Construir y persistir la orden por el camino SQLite local-first (write +
+    // outbox en una transacción). La comanda se imprime DESPUÉS del refresco del
+    // panel para que los items salgan en naranja al instante, sin esperar la red
+    // ni la impresora. Toda la lógica de armado está cubierta por orderWrites.test.
+    const orderWrites = buildOrderWrites(cart, {
+      tenantId: tid,
+      sucursalId: activeSucursalId,
+      mesaNumero: selectedMesa.numero,
+      userId: user?.id ?? null,
+      notes: orderNotes,
+    });
+    await persistOrderWrites(
+      { saveComanda: saveLocalComanda, saveConsumo: saveLocalConsumo },
+      tid,
+      orderWrites,
+    );
+    const comandaToPrint = orderWrites.comanda;
 
     // Limpiar SOLO el carrito (todo fue enviado)
     setCart([]);
