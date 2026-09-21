@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   saveLocalInvoice: vi.fn(),
   saveLocalConsumo: vi.fn(),
   deleteLocalComanda: vi.fn(),
+  executeReceivablesCommandLocally: vi.fn(),
 }));
 
 vi.mock("./localFirst", () => ({ enqueueLocalWritesAtomically: mocks.enqueueLocalWritesAtomically }));
@@ -15,6 +16,7 @@ vi.mock("./ordersLocal", () => ({
   saveLocalConsumo: mocks.saveLocalConsumo,
   deleteLocalComanda: mocks.deleteLocalComanda,
 }));
+vi.mock("./receivablesUiAdapter", () => ({ executeReceivablesCommandLocally: mocks.executeReceivablesCommandLocally }));
 
 import { commitCheckout } from "./checkoutCommit";
 
@@ -50,37 +52,68 @@ describe("commitCheckout", () => {
 
   describe("desktop SQLite path", () => {
     beforeEach(() => {
-      // Presence of saveInvoiceLocal is what routes the checkout through SQLite.
-      vi.stubGlobal("window", { electronAPI: { saveInvoiceLocal: vi.fn() } });
+      // Presence of saveInvoiceLocal routes the checkout through SQLite;
+      // executeReceivablesCommand additionally routes the fiado there.
+      vi.stubGlobal("window", { electronAPI: { saveInvoiceLocal: vi.fn(), executeReceivablesCommand: vi.fn() } });
       mocks.saveLocalInvoice.mockResolvedValue(undefined);
       mocks.saveLocalConsumo.mockResolvedValue(undefined);
       mocks.deleteLocalComanda.mockResolvedValue(undefined);
       mocks.enqueueLocalWritesAtomically.mockResolvedValue(undefined);
+      mocks.executeReceivablesCommandLocally.mockResolvedValue({ commitId: "c", localStatus: "committed", syncStatus: "pending" });
     });
     afterEach(() => vi.unstubAllGlobals());
 
-    const writes = [
+    const orderWrites = [
       { tenantId: "t1", tableName: "facturas", rowId: "f1", op: "insert", payload: { id: "f1", total: 500 }, deviceId: "d1" },
       { tenantId: "t1", tableName: "consumos", rowId: "c1", op: "update", payload: { estado: "pagado", factura_id: "f1" }, deviceId: "d1" },
       { tenantId: "t1", tableName: "comandas", rowId: "cm1", op: "delete", deviceId: "d1" },
-      { tenantId: "t1", tableName: "cuentas_cobrar", rowId: "cxc1", op: "insert", payload: { id: "cxc1" }, deviceId: "d1" },
+    ] as const;
+
+    const fiadoWrites = [
+      { tenantId: "t1", tableName: "cuentas_cobrar", rowId: "cxc1", op: "insert", payload: { id: "cxc1", customer_id: "cust1", factura_id: "f1", monto_total: 500, fecha_vencimiento: "2026-10-21", sucursal_id: "suc1", fecha_emision: "2026-09-21", observacion: "POS" }, deviceId: "d1" },
+      { tenantId: "t1", tableName: "cxc_pagos", rowId: "pago1", op: "insert", payload: { id: "pago1", cuenta_cobrar_id: "cxc1", monto: 200, metodo_pago: "efectivo", sucursal_id: "suc1", cycle_id: null, notas: "Adelanto", created_by_auth_user_id: "u1", fecha_pago: "2026-09-21" }, deviceId: "d1" },
     ] as const;
 
     it("routes factura → SQLite invoice, consumo → SQLite consumo, comanda delete → SQLite delete", async () => {
-      await commitCheckout({ writes: [...writes], prints: [] });
+      await commitCheckout({ writes: [...orderWrites], prints: [] });
 
       expect(mocks.saveLocalInvoice).toHaveBeenCalledWith({ id: "f1", total: 500 });
       expect(mocks.saveLocalConsumo).toHaveBeenCalledWith("t1", { estado: "pagado", factura_id: "f1", id: "c1" });
       expect(mocks.deleteLocalComanda).toHaveBeenCalledWith("t1", "cm1");
     });
 
-    it("keeps fiado (cuentas_cobrar) on the IndexedDB atomic path, not SQLite", async () => {
-      await commitCheckout({ writes: [...writes], prints: [] });
+    it("routes fiado to the SQLite receivables command, not IndexedDB", async () => {
+      await commitCheckout({ writes: [...orderWrites, ...fiadoWrites], prints: [] });
+
+      expect(mocks.executeReceivablesCommandLocally).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "receivables.create", id: "cxc1", customerId: "cust1", facturaId: "f1", totalAmount: 500 }),
+      );
+      expect(mocks.executeReceivablesCommandLocally).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "receivables.payment.record", paymentId: "pago1", receivableId: "cxc1", amount: 200 }),
+      );
+      expect(mocks.enqueueLocalWritesAtomically).not.toHaveBeenCalled();
+    });
+
+    it("creates the debt before recording its down-payment", async () => {
+      const order: string[] = [];
+      mocks.executeReceivablesCommandLocally.mockImplementation(async (cmd: { type: string }) => {
+        order.push(cmd.type);
+        return { commitId: "c", localStatus: "committed", syncStatus: "pending" };
+      });
+
+      await commitCheckout({ writes: [...fiadoWrites], prints: [] });
+
+      expect(order).toEqual(["receivables.create", "receivables.payment.record"]);
+    });
+
+    it("falls the fiado back to the IndexedDB atomic path if the SQLite command fails", async () => {
+      mocks.executeReceivablesCommandLocally.mockRejectedValue(new Error("debt not found"));
+
+      await commitCheckout({ writes: [...fiadoWrites], prints: [] });
 
       expect(mocks.enqueueLocalWritesAtomically).toHaveBeenCalledTimes(1);
-      const otherWrites = mocks.enqueueLocalWritesAtomically.mock.calls[0][0];
-      expect(otherWrites).toHaveLength(1);
-      expect(otherWrites[0]).toMatchObject({ tableName: "cuentas_cobrar" });
+      const fellBack = mocks.enqueueLocalWritesAtomically.mock.calls[0][0] as Array<{ tableName: string }>;
+      expect(fellBack.map((w) => w.tableName).sort()).toEqual(["cuentas_cobrar", "cxc_pagos"]);
     });
 
     it("saves the invoice before its paid consumo, and deletes the comanda last", async () => {
@@ -89,7 +122,7 @@ describe("commitCheckout", () => {
       mocks.saveLocalConsumo.mockImplementation(async () => { order.push("consumo"); });
       mocks.deleteLocalComanda.mockImplementation(async () => { order.push("comanda-delete"); });
 
-      await commitCheckout({ writes: [...writes], prints: [] });
+      await commitCheckout({ writes: [...orderWrites], prints: [] });
 
       expect(order).toEqual(["invoice", "consumo", "comanda-delete"]);
     });
