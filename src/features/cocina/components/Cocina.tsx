@@ -8,30 +8,9 @@ import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { readLocalCocinaEstado, saveLocalCocinaEstado, readLocalComandas, saveLocalComanda, deleteLocalComanda, readLocalConsumos, saveLocalConsumo } from "../../../shared/lib/ordersLocal";
 import { useSucursal } from "../../../app/context/SucursalContext";
+import { filterActiveComandas, comandaDedupKey, planAdvance, persistAdvance, KITCHEN_COLUMNS, type CocinaComanda } from "../lib/cocinaBoard";
 
-
-interface ComandaItem {
-  nombre: string;
-  cantidad: number;
-  precio: number;
-  categoria?: string;
-  notas?: string;
-}
-
-interface Comanda {
-  id: string;
-  tenant_id?: string;
-  sucursal_id?: string | null;
-  numero_comanda: number;
-  mesa_id: string | null;
-  mesa_numero: number | null;
-  estado: "pendiente" | "en_preparacion" | "listo" | "entregado";
-  items: ComandaItem[];
-  notas: string | null;
-  creado_por: string | null;
-  created_at: string;
-  updated_at?: string;
-}
+type Comanda = CocinaComanda;
 
 export function Cocina() {
   const { tenantId, loading: authLoading, tenantAccessValidated } = useAuth();
@@ -46,11 +25,7 @@ export function Cocina() {
   const reloadComandas = useCallback(async () => {
     if (!tenantId) return;
     const rows = await readLocalComandas(tenantId, { sucursalId: activeSucursalId, activeOnly: true });
-    setComandas(
-      (rows as unknown as Comanda[])
-        .filter(c => (!c.tenant_id || (c as any).tenant_id === tenantId) && (!c.sucursal_id || (c as any).sucursal_id === activeSucursalId) && ["pendiente", "en_preparacion", "listo"].includes(c.estado))
-        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-    );
+    setComandas(filterActiveComandas(rows as unknown as Comanda[], { tenantId, sucursalId: activeSucursalId }));
   }, [tenantId, activeSucursalId]);
 
   const handleNewComanda = useCallback(
@@ -73,8 +48,7 @@ export function Cocina() {
           return;
         }
 
-        const updatedAtTime = new Date(comanda.updated_at || comanda.created_at || new Date()).getTime();
-        const dedupKey = `${comanda.id}_${updatedAtTime}`;
+        const dedupKey = comandaDedupKey(comanda);
 
         if (printedRef.current.has(dedupKey)) {
           return;
@@ -149,22 +123,21 @@ export function Cocina() {
   async function advanceComanda(id: string, nextEstado: Comanda["estado"]) {
     if (!tenantId) return;
     const now = new Date().toISOString();
-    
-    if (nextEstado === "entregado") {
-      await deleteLocalComanda(tenantId, id);
-    } else {
-      const existing = comandas.find((c) => c.id === id);
-      await saveLocalComanda(tenantId, { ...existing, id, estado: nextEstado, updated_at: now, sucursal_id: activeSucursalId });
-    }
+    const existing = comandas.find((c) => c.id === id);
+    const plan = planAdvance(existing, id, nextEstado, { now, sucursalId: activeSucursalId });
 
-    if (nextEstado === "listo") {
-      const consumos = await readLocalConsumos(tenantId, { comandaId: id });
-      await Promise.all(
-        consumos
-          .filter((c: any) => c.comanda_id === id)
-          .map((c: any) => saveLocalConsumo(tenantId, { ...c, estado: "listo", updated_at: now }))
-      );
-    }
+    await persistAdvance(
+      {
+        saveComanda: (tid, c) => saveLocalComanda(tid, c as unknown as Record<string, unknown>),
+        deleteComanda: deleteLocalComanda,
+        readConsumos: (tid, { comandaId }) => readLocalConsumos(tid, { comandaId }),
+        saveConsumo: saveLocalConsumo,
+      },
+      tenantId,
+      id,
+      plan,
+    );
+
     if (nextEstado === "entregado") setComandas(prev => prev.filter(c => c.id !== id));
     else setComandas(prev => prev.map(c => c.id === id ? { ...c, estado: nextEstado } : c));
   }
@@ -176,11 +149,7 @@ export function Cocina() {
     await printThermalHtml(html, { printType: "kitchen" });
   };
 
-  const columns = [
-    { key: "pendiente" as const, title: "Pendientes", color: "#ff906d", next: "en_preparacion" as const, nextLabel: "Mover a preparación" },
-    { key: "en_preparacion" as const, title: "En Preparación", color: "#ffd06d", next: "listo" as const, nextLabel: "Listo para entrega" },
-    { key: "listo" as const, title: "Listos para entregar", color: "#59ee50", next: "entregado" as const, nextLabel: "Marcar entregado" },
-  ];
+  const columns = KITCHEN_COLUMNS;
 
   if (loading) return <div className="flex-1 flex items-center justify-center font-['Space_Grotesk'] text-muted-foreground">Cargando comandas...</div>;
 
