@@ -41,9 +41,15 @@ export function isDesktopRuntime(): boolean {
 
 export function isOfflineCapableRuntime(): boolean {
   if (typeof window === "undefined") return false;
+  // `window.location` can be absent when `window` is a partial stand-in (e.g. a
+  // desktop shell that only exposes `electronAPI`); guard it so offline
+  // detection degrades gracefully instead of throwing and being swallowed by a
+  // caller's catch, which would misclassify the cloud as available.
+  const location = (window as Window & { location?: Location }).location;
   const edgeHosted =
-    (window.location.protocol === "http:" || window.location.protocol === "https:") &&
-    window.location.port === "47821";
+    !!location &&
+    (location.protocol === "http:" || location.protocol === "https:") &&
+    location.port === "47821";
   return isDesktopRuntime() || edgeHosted || import.meta.env.VITE_ENABLE_WEB_LOCAL_FIRST === "true";
 }
 

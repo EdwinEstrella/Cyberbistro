@@ -1,6 +1,6 @@
 import { supabase } from "./supabase";
 import { incrementTenantNcfSequence, resolveNcfForNewInvoice, type ResolvedNcfForInvoice } from "./invoiceNcf";
-import { getCloudAvailabilitySnapshot, isCloudAvailabilityFailure, isCloudAvailableForDesktop, isDesktopRuntime, recordCloudFailure, recordCloudSuccess } from "./cloudAvailability";
+import { getCloudAvailabilitySnapshot, isCloudAvailabilityFailure, isCloudAvailableForDesktop, isDesktopCloudUnavailable, isDesktopRuntime, recordCloudFailure, recordCloudSuccess } from "./cloudAvailability";
 import { commitLanEdgeCursor, getLanEdgeBaseUrl, publishLanOutboxEntry, publishLanSnapshotEntries, pullLanOutboxEntries } from "./lanEdgeClient";
 import { buildTenantNcfUpdatePayload, DEFAULT_NCF_B_CODE, getNcfSequenceColumnName, isNcfBCode, prepareNcfForFacturaInsert, normalizeNcfSequenceMap, type TenantNcfRow } from "./ncf";
 
@@ -2475,6 +2475,12 @@ export async function readLocalMirror<T = Record<string, unknown>>(
     } catch (err) {
       console.warn(`[localFirst] readLocalMirror failed for ${tableName}, falling back to cloud:`, err);
     }
+  }
+  // On desktop the cloud is a sync/administration service, not an operational
+  // dependency: never block a mirror read on a cloud round-trip when the cloud
+  // is unavailable. Falls through to the cloud read only when it is reachable.
+  if (!shouldUseIndexedDb() && await isDesktopCloudUnavailable().catch(() => true)) {
+    return [];
   }
   try {
     const tenantReadFilter = getTenantReadFilter(tableName, tenantId);
