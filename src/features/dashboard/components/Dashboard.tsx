@@ -37,6 +37,7 @@ import {
 } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
+import { printKitchenComanda } from "../lib/printKitchenComanda";
 import { printLocalInvoiceReceipt } from "../../../shared/lib/localInvoiceReceipt";
 import { useTenantCurrency } from "../../../shared/hooks/useTenantCurrency";
 import { useTheme } from "../../../shared/context/ThemeContext";
@@ -60,10 +61,10 @@ import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSett
 import { calculateInvoiceTotals } from "../../../shared/lib/billingTotals";
 import { type FiscalMode } from "../../../shared/lib/fiscalTypes";
 import { resolveActiveFiscalMode, runFiscalEngine, buildEcfDocumentWrites } from "../../../shared/lib/fiscalEngine";
-import { getLocalFirstStatusSnapshot, readLocalMirror, readLocalOutbox, enqueueLocalWrite, getDeviceId, writeLocalMirrorRow, shouldReadLocalFirst, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, type LocalFirstWrite } from "../../../shared/lib/localFirst";
+import { getLocalFirstStatusSnapshot, readLocalMirror, readLocalOutbox, getDeviceId, writeLocalMirrorRow, shouldReadLocalFirst, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, type LocalFirstWrite } from "../../../shared/lib/localFirst";
 import { readLocalCierres } from "../../cierre/lib/cierresLocal";
 import { readLocalPlatos, readLocalMenuCategories } from "../../soporte/lib/catalogLocal";
-import { readLocalMesasEstado, readLocalConsumos } from "../../../shared/lib/ordersLocal";
+import { readLocalMesasEstado, readLocalConsumos, saveLocalConsumo, saveLocalComanda, deleteLocalConsumo } from "../../../shared/lib/ordersLocal";
 import { commitCheckout } from "../../../shared/lib/checkoutCommit";
 import { getNextFacturaNumber } from "../../../shared/lib/invoiceNumber";
 import { writePosMutationLocalFirst } from "../../pos/lib/localFirstMutations";
@@ -678,22 +679,9 @@ export function Dashboard() {
         setDeletingConsumoId(consumoId);
 
         try {
-          await writePosMutationLocalFirst({
-            tenantId: tenantId!,
-            tableName: "consumos",
-            rowId: consumoId,
-            op: "delete",
-            payload: {
-              id: consumoId,
-              tenant_id: tenantId!,
-              sucursal_id: activeSucursalId!,
-              mesa_numero: consumo.mesa_numero,
-              comanda_id: consumo.comanda_id,
-              created_by_auth_user_id: consumo.created_by_auth_user_id ?? null,
-            },
-            authUserId: user?.id ?? null,
-            deviceId: await getDeviceId(),
-          });
+          // SQLite-local-first delete + outbox, so the item leaves the panel's
+          // SQLite read immediately instead of reappearing until the next pull.
+          await deleteLocalConsumo(tenantId!, consumoId);
         } catch (error) {
           const message = error instanceof Error ? error.message : "Error desconocido";
           console.error("Error al eliminar consumo:", error);
@@ -761,6 +749,10 @@ export function Dashboard() {
     const directItems = cart.filter((i) => i.plato.va_a_cocina === false);
 
     let comandaId: string | null = null;
+    // The kitchen comanda to print, if any. Printing (a Supabase tenant fetch +
+    // slow Windows printer enumeration) is deferred until AFTER the panel shows
+    // the order, so hitting "enviar" reflects the orange items instantly.
+    let comandaToPrint: Record<string, unknown> | null = null;
 
     // Crear comanda para items de cocina
     if (kitchenItems.length > 0) {
@@ -809,109 +801,14 @@ export function Dashboard() {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
-      await enqueueLocalWrite({
-        tenantId: tid,
-        tableName: "comandas",
-        rowId: localComandaId,
-        op: "insert",
-        payload: comandaPayload,
-        authUserId: user?.id ?? null,
-        deviceId: await getDeviceId(),
-      });
-      const data: any = comandaPayload;
-
-      comandaId = data?.id || localComandaId;
-
-      if (data) {
-        let tenantRow: any = null;
-        try {
-          if (!navigator.onLine) {
-            const localTenants = await readLocalMirror<any>(tid, "tenants");
-            tenantRow = localTenants.find((t) => t.id === tid);
-          } else {
-            const { data: t, error } = await supabase
-              .from("tenants")
-              .select("nombre_negocio, rnc, direccion, telefono, logo_url, menu_url, moneda, logo_size_px, logo_offset_x, logo_offset_y")
-              .eq("id", tid)
-              .maybeSingle();
-            if (error) throw error;
-            tenantRow = t;
-          }
-        } catch {
-          const localTenants = await readLocalMirror<any>(tid, "tenants").catch(() => []);
-          tenantRow = localTenants.find((t) => t.id === tid);
-        }
-
-        if (!tenantRow) {
-          console.warn(
-            "Impresión comanda: datos del negocio no disponibles offline; usando encabezado mínimo."
-          );
-        }
-
-        const paperWidthMm = getThermalPrintSettings().paperWidthMm;
-        const tr = (tenantRow ?? {
-          nombre_negocio: "Comanda de cocina",
-          rnc: null,
-          direccion: null,
-          telefono: null,
-          logo_url: null,
-          moneda: "DOP",
-        }) as {
-          nombre_negocio: string | null;
-          rnc: string | null;
-          direccion: string | null;
-          telefono: string | null;
-          logo_url: string | null;
-          moneda?: string | null;
-          logo_size_px?: number;
-          logo_offset_x?: number;
-          logo_offset_y?: number;
-        };
-        const comandaHtml = buildComandaReceiptHtml(
-          {
-            nombre_negocio: tr.nombre_negocio,
-            rnc: tr.rnc,
-            direccion: tr.direccion,
-            telefono: tr.telefono,
-            logo_url: tr.logo_url,
-            moneda: tr.moneda ?? null,
-            logo_size_px: tr.logo_size_px,
-            logo_offset_x: tr.logo_offset_x,
-            logo_offset_y: tr.logo_offset_y,
-          },
-          {
-            id: data.id,
-            numero_comanda: (data as { numero_comanda?: number }).numero_comanda,
-            mesa_numero: data.mesa_numero,
-            items:
-              ((data as any).items as Array<{
-                nombre: string;
-                cantidad: number;
-                precio?: number;
-                categoria?: string;
-                notas?: string;
-              }>) || [],
-            notas: (data as any).notas || null,
-            created_at: data.created_at,
-          } as any,
-          paperWidthMm
-        );
-        const printSettings = getThermalPrintSettings();
-        if (printSettings.printComandas !== false) {
-          const printRes = await printThermalHtml(comandaHtml, { printType: "kitchen" });
-          if (!printRes.ok) {
-            const printError = printRes.error || "Windows no confirmó la impresión.";
-            console.warn("Impresión comanda:", printError);
-            alert(
-              `La comanda fue guardada correctamente, pero no pudo imprimirse en la impresora de cocina.
-
-${printError}
-
-Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
-            );
-          }
-        }
-      }
+      // SQLite-local-first: the write lands in SQLite + sync_outbox in one
+      // transaction, so the panel's SQLite re-read sees the kitchen order
+      // immediately (orange) instead of waiting for a cloud round-trip.
+      await saveLocalComanda(tid, comandaPayload);
+      comandaId = localComandaId;
+      // Capture the comanda; it is printed after the panel refresh (below) so the
+      // orange items show immediately instead of waiting on the print pipeline.
+      comandaToPrint = comandaPayload;
     }
 
     // Crear consumos para TODOS los items (cocina + directo)
@@ -953,15 +850,9 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
     ];
 
     for (const consumo of consumosToInsert) {
-      await enqueueLocalWrite({
-        tenantId: tid,
-        tableName: "consumos",
-        rowId: consumo.id,
-        op: "insert",
-        payload: consumo,
-        authUserId: user?.id ?? null,
-        deviceId: await getDeviceId(),
-      });
+      // SQLite-local-first: same-transaction write + outbox, so the just-sent
+      // items show up on the next SQLite read below without a cloud round-trip.
+      await saveLocalConsumo(tid, consumo);
     }
 
     // Limpiar SOLO el carrito (todo fue enviado)
@@ -971,10 +862,17 @@ Revisá que esté encendida, conectada por cable y sin trabajos pausados.`
     setTimeout(() => setSentOk(false), 3000);
     setSending(false);
 
-    // Actualizar deuda de la mesa y refrescar cuenta en panel
+    // Reflejar la cuenta en el panel de inmediato (lectura local SQLite).
     const consumosActualizados = await loadTableConsumption(selectedMesa.numero);
     setMesaConsumos(consumosActualizados);
-    await refreshMesaDebt(selectedMesa.id, selectedMesa.numero);
+
+    // Imprimir la comanda y refrescar la deuda de la mesa en segundo plano: ni la
+    // red (encabezado del negocio) ni la enumeración de impresoras de Windows
+    // deben demorar la aparición del pedido en la cuenta.
+    if (comandaToPrint) {
+      void printKitchenComanda(tid, comandaToPrint);
+    }
+    void refreshMesaDebt(selectedMesa.id, selectedMesa.numero);
   }
 
   async function openPaymentModal() {

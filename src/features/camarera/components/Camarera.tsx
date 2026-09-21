@@ -8,10 +8,8 @@ import { buildComandaReceiptHtml } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { normalizeTenantRol } from "../../../shared/lib/roleNav";
-import { getDeviceId } from "../../../shared/lib/localFirst";
 import { readLocalConsumos, saveLocalConsumo, deleteLocalConsumo, readLocalComandas, saveLocalComanda, deleteLocalComanda } from "../../../shared/lib/ordersLocal";
 import { ConfirmModal } from "../../../shared/components/ConfirmModal";
-import { writePosMutationLocalFirst } from "../../pos/lib/localFirstMutations";
 import { useSucursal } from "../../../app/context/SucursalContext";
 
 interface Plato {
@@ -392,15 +390,10 @@ export function Camarera() {
       };
 
       try {
-        await writePosMutationLocalFirst({
-          tenantId,
-          tableName: "comandas",
-          rowId: localComandaId,
-          op: "insert",
-          payload: comandaPayload,
-          authUserId: user?.id ?? null,
-          deviceId: await getDeviceId(),
-        });
+        // SQLite-local-first (matches the comanda update path below): write +
+        // outbox in one transaction so the kitchen screen's SQLite read shows
+        // the order immediately, without a cloud round-trip.
+        await saveLocalComanda(tenantId, comandaPayload);
       } catch (error) {
         setMessage(error instanceof Error ? error.message : "No se pudo crear la comanda.");
         setSending(false);
