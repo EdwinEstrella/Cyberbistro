@@ -79,9 +79,12 @@ test("POS sales journey persists the order and the invoice to SQLite", async () 
     const invoicesBefore = await countInvoices();
     const consumosBefore = await countConsumosForMesa();
 
-    // 3. Select the (free) table by its zero-padded number.
+    // 3. Select the table. The dropdown labels every mesa zero-padded to two
+    //    digits (e.g. "01"), so normalize whatever MESA was configured ("1" or
+    //    "01") to that format before matching.
+    const mesaLabel = String(Number(MESA)).padStart(2, "0");
     await mesaSelector.click();
-    await page.getByRole("button", { name: MESA, exact: true }).click();
+    await page.getByRole("button", { name: mesaLabel, exact: true }).click();
 
     // 4. Add a product (the whole card is clickable). Pin a specific KITCHEN dish
     //    via CYBERBISTRO_E2E_PRODUCT to also exercise the orange path; otherwise
