@@ -43,6 +43,9 @@ test("POS sales journey persists the order and the invoice to SQLite", async () 
     !hasJourneyConfig,
     "Set CYBERBISTRO_E2E_EMAIL and CYBERBISTRO_E2E_PASSWORD (linked test tenant) to run this journey.",
   );
+  // Real-backend login plus the full order/checkout flow needs more than the
+  // default 30s budget on CI.
+  test.setTimeout(90_000);
 
   const { app, page, userDataDirectory } = await launchApp();
   // Auto-dismiss native alerts (e.g. "no hay un ciclo operativo abierto") so a

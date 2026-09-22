@@ -24,7 +24,7 @@ test('login and logout focus stability test', async () => {
   const password = process.env.CYBERBISTRO_TEST_PASSWORD || 'lia2026';
 
   // Selectors
-  const logoutButton = window.locator('span:has-text("Cerrar Sesión")');
+  const logoutButton = window.locator('span:has-text("Cerrar Sesión")').first();
   const emailInput = window.locator('input[type="email"]');
 
   // Helper to perform logout using the custom modal
@@ -72,7 +72,7 @@ test('login and logout focus stability test', async () => {
 
     // Wait for the dashboard shell to mount, then reveal the sidebar so the logout control shows.
     const sidebarToggle = window.getByRole('button', { name: 'Mostrar barra lateral' });
-    await expect(logoutButton.or(sidebarToggle)).toBeVisible({ timeout: 15000 });
+    await expect(logoutButton.or(sidebarToggle).first()).toBeVisible({ timeout: 15000 });
     await revealSidebar();
     await expect(logoutButton).toBeVisible({ timeout: 15000 });
     console.log('[E2E Test] Logged in successfully. Waiting 2 seconds...');
