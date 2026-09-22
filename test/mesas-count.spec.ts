@@ -68,7 +68,11 @@ async function waitForLoginOrShell(page: Page): Promise<void> {
 async function revealSidebar(page: Page): Promise<void> {
   // The sidebar can start collapsed (narrow Electron window / responsive
   // layout); reveal it so the navigation buttons inside <aside> are reachable.
+  // Wait for the shell to mount first (the toggle or the Mesas nav), otherwise
+  // this may run before login settles and the toggle would not yet exist.
   const showSidebar = page.getByRole('button', { name: 'Mostrar barra lateral' });
+  const mesas = page.locator('aside').getByRole('button', { name: /^Mesas$/ });
+  await expect(showSidebar.or(mesas)).toBeVisible({ timeout: 20_000 });
   if (await showSidebar.isVisible().catch(() => false)) {
     await showSidebar.click();
   }

@@ -1,6 +1,7 @@
 import { test, expect, _electron as electron } from '@playwright/test';
 
 test('login and logout focus stability test', async () => {
+  test.setTimeout(60_000);
   // Launch the Electron application
   const electronApp = await electron.launch({
     args: ['.']
@@ -69,7 +70,9 @@ test('login and logout focus stability test', async () => {
     const loginButton = window.locator('button:has-text("Iniciar Sesión")');
     await loginButton.click();
 
-    // Wait for dashboard
+    // Wait for the dashboard shell to mount, then reveal the sidebar so the logout control shows.
+    const sidebarToggle = window.getByRole('button', { name: 'Mostrar barra lateral' });
+    await expect(logoutButton.or(sidebarToggle)).toBeVisible({ timeout: 15000 });
     await revealSidebar();
     await expect(logoutButton).toBeVisible({ timeout: 15000 });
     console.log('[E2E Test] Logged in successfully. Waiting 2 seconds...');
