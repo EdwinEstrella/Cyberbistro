@@ -65,7 +65,17 @@ async function waitForLoginOrShell(page: Page): Promise<void> {
   ]);
 }
 
+async function revealSidebar(page: Page): Promise<void> {
+  // The sidebar can start collapsed (narrow Electron window / responsive
+  // layout); reveal it so the navigation buttons inside <aside> are reachable.
+  const showSidebar = page.getByRole('button', { name: 'Mostrar barra lateral' });
+  if (await showSidebar.isVisible().catch(() => false)) {
+    await showSidebar.click();
+  }
+}
+
 async function waitForAppShell(page: Page): Promise<void> {
+  await revealSidebar(page);
   await expect(page.locator('aside').getByRole('button', { name: /^Mesas$/ })).toBeVisible({ timeout: 20_000 });
   await expect(page.locator('aside').getByRole('button', { name: /^Soporte$/ })).toBeVisible({ timeout: 20_000 });
 }
@@ -94,11 +104,13 @@ async function loginIfNeeded(page: Page): Promise<void> {
     throw new Error(`${TEST_PASSWORD_ENV} is required when the login password is not already filled.`);
   }
 
+  await revealSidebar(page);
   if (await page.locator('aside').getByRole('button', { name: /^Mesas$/ }).isVisible().catch(() => false)) {
     return;
   }
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
+    await revealSidebar(page);
     if (await page.locator('aside').getByRole('button', { name: /^Mesas$/ }).isVisible().catch(() => false)) {
       break;
     }
@@ -110,12 +122,13 @@ async function loginIfNeeded(page: Page): Promise<void> {
       }
     });
 
+    await revealSidebar(page);
     if (await page.locator('aside').getByRole('button', { name: /^Mesas$/ }).isVisible().catch(() => false)) {
       break;
     }
   }
 
-  await expect(page.locator('aside').getByRole('button', { name: /^Mesas$/ })).toBeVisible({ timeout: 20_000 });
+  await waitForAppShell(page);
 }
 
 async function openSupportMesasPanel(page: Page): Promise<void> {

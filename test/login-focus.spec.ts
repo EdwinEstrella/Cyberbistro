@@ -9,6 +9,19 @@ test('login and logout focus stability test', async () => {
   // Wait for the main window to open
   const window = await electronApp.firstWindow();
 
+  // The sidebar can start collapsed; reveal it so the logout control is reachable.
+  const revealSidebar = async () => {
+    const showSidebar = window.getByRole('button', { name: 'Mostrar barra lateral' });
+    if (await showSidebar.isVisible().catch(() => false)) {
+      await showSidebar.click();
+    }
+  };
+  await revealSidebar();
+
+  // Credentials come from CI secrets; there is no dev pre-fill in a production build.
+  const email = process.env.CYBERBISTRO_TEST_EMAIL || 'test@test.com';
+  const password = process.env.CYBERBISTRO_TEST_PASSWORD || 'lia2026';
+
   // Selectors
   const logoutButton = window.locator('span:has-text("Cerrar Sesión")');
   const emailInput = window.locator('input[type="email"]');
@@ -48,13 +61,16 @@ test('login and logout focus stability test', async () => {
     const passwordInput = window.locator('input[type="password"]');
     await expect(emailInput).toBeVisible();
     await expect(passwordInput).toBeVisible();
+    await emailInput.fill(email);
+    await passwordInput.fill(password);
     await window.waitForTimeout(1000); // Pause before clicking login
 
-    // Click Iniciar Sesión (credentials are pre-filled in dev)
+    // Click Iniciar Sesión
     const loginButton = window.locator('button:has-text("Iniciar Sesión")');
     await loginButton.click();
 
     // Wait for dashboard
+    await revealSidebar();
     await expect(logoutButton).toBeVisible({ timeout: 15000 });
     console.log('[E2E Test] Logged in successfully. Waiting 2 seconds...');
     await window.waitForTimeout(2000); // Pause on dashboard

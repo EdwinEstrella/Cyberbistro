@@ -59,7 +59,17 @@ async function waitForLoginOrShell(page: Page): Promise<void> {
   ]);
 }
 
+async function revealSidebar(page: Page): Promise<void> {
+  // The sidebar can start collapsed (narrow Electron window / responsive
+  // layout); reveal it so the navigation buttons inside <aside> are reachable.
+  const showSidebar = page.getByRole('button', { name: 'Mostrar barra lateral' });
+  if (await showSidebar.isVisible().catch(() => false)) {
+    await showSidebar.click();
+  }
+}
+
 async function waitForAppShell(page: Page): Promise<void> {
+  await revealSidebar(page);
   await expect(page.locator('aside').getByRole('button', { name: /^Mesas$/ })).toBeVisible({ timeout: 20_000 });
 }
 
