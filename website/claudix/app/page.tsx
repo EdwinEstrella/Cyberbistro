@@ -140,14 +140,14 @@ export default function LandingPage() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
               <PricingCard 
                 name="Básico"
-                price="40"
+                price="50"
                 color="oklch(0.72 0.12 160)"
                 features={[
                   "1 Sucursal Física",
                   "Punto de Venta (POS)",
                   "Control de Mesas",
                   "Comandas Digitales",
-                  "Hasta 5 Usuarios",
+                  "Hasta 3 Usuarios (+ Admin)",
                   "NCF y Facturación Fiscal",
                   "Soporte Estándar"
                 ]}
@@ -155,28 +155,33 @@ export default function LandingPage() {
               />
               <PricingCard 
                 name="Profesional"
-                price="80"
+                price="90"
                 color="var(--primary)"
                 highlighted
+                badge="Más Recomendado"
                 features={[
-                  "Hasta 3 Sucursales",
+                  "Hasta 2 Sucursales",
+                  "Hasta 5 Usuarios (+ Admin)",
+                  "Facturación Electrónica e-CF (DGII)",
                   "Inventario Avanzado (Recetas)",
                   "Cuentas por Pagar y Cobrar",
                   "Menú Digital con Pedidos QR",
                   "Módulo de Compras Insumos",
-                  "Usuarios Ilimitados",
                   "Soporte Prioritario"
                 ]}
                 delay={0.1}
               />
               <PricingCard 
                 name="Empresarial"
-                price="150"
+                price="175"
                 color="oklch(0.7 0.15 290)"
                 features={[
                   "Sucursales Ilimitadas",
-                  "Control Multi-Sede Centralizado",
+                  "Usuarios Ilimitados",
+                  "Todo Ilimitado",
+                  "Facturación Electrónica e-CF (DGII)",
                   "Todo lo del Plan Profesional",
+                  "Control Multi-Sede Centralizado",
                   "Integraciones vía API",
                   "Configuraciones Especiales",
                   "Seguridad Avanzada",
@@ -205,23 +210,25 @@ export default function LandingPage() {
                   <div>
                     <h4 className="text-xl font-bold mb-3 font-display">Plan Básico: Control Ágil</h4>
                     <p className="text-sm text-muted-foreground leading-relaxed">
-                      Ideal para cafés, cafeterías o food trucks que necesitan digitalizar su toma de pedidos y facturación. 
-                      Olvídate de las libretas de papel; el sistema organiza tus mesas y envía comandas al instante para un servicio más rápido.
+                      Ideal para cafés, cafeterías o food trucks pequeños que solo necesitan digitalizar comandas y facturación tradicional. 
+                      Incluye 1 sucursal y hasta 3 usuarios (+ admin).
                     </p>
                   </div>
                 </div>
               </AnimatedSection>
 
               <AnimatedSection delay={0.2}>
-                <div className="flex flex-col gap-6">
+                <div className="flex flex-col gap-6 p-6 rounded-2xl bg-primary/5 border border-primary/20 relative">
+                  <span className="absolute -top-3 right-6 bg-primary text-primary-foreground text-[10px] font-extrabold uppercase tracking-wider px-3 py-0.5 rounded-full shadow-sm">
+                    Recomendado
+                  </span>
                   <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
                     <ShieldCheck size={24} />
                   </div>
                   <div>
-                    <h4 className="text-xl font-bold mb-3 font-display">Plan Profesional: Gestión de Costos</h4>
+                    <h4 className="text-xl font-bold mb-3 font-display text-primary">Plan Profesional: El más Completo</h4>
                     <p className="text-sm text-muted-foreground leading-relaxed">
-                      Para restaurantes establecidos que buscan **rentabilidad real**. Al usar el sistema de Recetas, el stock se descuenta por cada mililitro o gramo vendido. 
-                      Sabrás exactamente cuánto te cuesta producir cada plato y controlarás tus deudas con proveedores (CXP) y clientes (CXC).
+                      <strong className="text-foreground">El plan recomendado para el 90% de los negocios gastronómicos.</strong> Incluye hasta 2 sucursales, 5 usuarios (+ admin) y <strong className="text-primary">Facturación Electrónica e-CF (DGII)</strong>. Con el sistema de recetas y costos sabrás exactamente tu ganancia por plato, además de menú digital QR, compras y control de CXC/CXP.
                     </p>
                   </div>
                 </div>
@@ -233,10 +240,9 @@ export default function LandingPage() {
                     <Globe size={24} />
                   </div>
                   <div>
-                    <h4 className="text-xl font-bold mb-3 font-display">Plan Empresarial: Visión Corporativa</h4>
+                    <h4 className="text-xl font-bold mb-3 font-display">Plan Empresarial: Todo Ilimitado</h4>
                     <p className="text-sm text-muted-foreground leading-relaxed">
-                      Si manejas una franquicia o múltiples locales, este plan centraliza toda tu información. 
-                      Compara el rendimiento de diferentes sedes desde un solo tablero y recibe soporte técnico dedicado para que tu operación nunca se detenga.
+                      Diseñado para cadenas grandes, franquicias y grupos que exigen **todo ilimitado** (sucursales y usuarios sin restricción), integraciones vía API y soporte prioritario 24/7.
                     </p>
                   </div>
                 </div>

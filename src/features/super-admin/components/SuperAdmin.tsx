@@ -289,11 +289,11 @@ export function SuperAdmin() {
   function updateTenantPlan(tenantId: string, plan: 'basico' | 'profesional' | 'empresarial') {
     let confirmMsg = `¿Cambiar el plan del restaurante a ${plan.toUpperCase()}?\n\n`;
     if (plan === 'basico') {
-      confirmMsg += 'Si se degrada a Básico, se ocultarán los módulos de inventario y sucursales (límite de 1 sucursal y 5 usuarios).';
+      confirmMsg += 'Si se degrada a Básico, se ocultarán los módulos de inventario y sucursales (límite de 1 sucursal y 3 usuarios + admin).';
     } else if (plan === 'profesional') {
-      confirmMsg += 'Se habilitará el inventario avanzado y el soporte de hasta 3 sucursales con usuarios ilimitados.';
+      confirmMsg += 'Se habilitará el inventario avanzado, facturación electrónica (e-CF) y el soporte de hasta 2 sucursales con 5 usuarios (+ admin).';
     } else {
-      confirmMsg += 'Se habilitará el soporte para sucursales ilimitadas, integraciones avanzadas y soporte corporativo 24/7.';
+      confirmMsg += 'Se habilitará el soporte para sucursales ilimitadas, usuarios ilimitados, integraciones avanzadas y soporte corporativo 24/7.';
     }
     
     showConfirm(confirmMsg, async () => {

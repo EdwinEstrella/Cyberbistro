@@ -1069,12 +1069,12 @@ function AppLayoutContent() {
                 )}
                 {upsellType === "sucursales" && plan === "profesional" && (
                   <>
-                    Llegaste al límite de 3 sucursales de tu Plan Profesional. La gestión de sucursales ilimitadas y soporte corporativo 24/7 está disponible exclusivamente en el <strong className="text-[#a78bfa] font-semibold">Plan Empresarial</strong>.
+                    Llegaste al límite de 2 sucursales de tu Plan Profesional. La gestión de sucursales ilimitadas y soporte corporativo 24/7 está disponible exclusivamente en el <strong className="text-[#a78bfa] font-semibold">Plan Empresarial</strong>.
                   </>
                 )}
                 {upsellType === "sucursales" && plan !== "profesional" && (
                   <>
-                    La gestión de múltiples sucursales (hasta 3 en Profesional, ilimitadas en Empresarial), control de stock y transferencias está disponible en nuestros <strong className="text-white font-semibold">Planes Superiores</strong>.
+                    La gestión de múltiples sucursales (hasta 2 en Profesional, ilimitadas en Empresarial), control de stock y transferencias está disponible en nuestros <strong className="text-white font-semibold">Planes Superiores</strong>.
                   </>
                 )}
               </p>
@@ -1170,7 +1170,7 @@ function AppLayoutContent() {
                   Agregar Sucursal
                 </h3>
                 <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[11px] uppercase tracking-[1px]">
-                  {plan === "profesional" ? `Plan Profesional (${sucursales.length}/3)` : "Plan Empresarial (Ilimitadas)"}
+                  {plan === "profesional" ? `Plan Profesional (${sucursales.length}/2)` : "Plan Empresarial (Ilimitadas)"}
                 </span>
               </div>
 

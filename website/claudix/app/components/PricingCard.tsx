@@ -3,12 +3,13 @@
 import { useRef, useEffect, useState } from "react";
 import { Check } from "lucide-react";
 
-export function PricingCard({ name, price, features, color, highlighted = false, delay = 0 }: { 
+export function PricingCard({ name, price, features, color, highlighted = false, badge, delay = 0 }: { 
   name: string; 
   price: string; 
   features: string[];
   color: string;
   highlighted?: boolean;
+  badge?: string;
   delay?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -54,7 +55,17 @@ export function PricingCard({ name, price, features, color, highlighted = false,
       )}
       
       <div className="relative z-10 flex flex-col flex-1">
-        <h4 className="text-sm font-semibold tracking-wider uppercase mb-6" style={{ color }}>{name}</h4>
+        <div className="flex items-center justify-between mb-6">
+          <h4 className="text-sm font-semibold tracking-wider uppercase" style={{ color }}>{name}</h4>
+          {badge && (
+            <span 
+              className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-full text-white shadow-md shadow-primary/20"
+              style={{ background: `linear-gradient(135deg, ${color}, oklch(0.82 0.14 60))` }}
+            >
+              {badge}
+            </span>
+          )}
+        </div>
         <div className="flex items-baseline gap-1 mb-8">
           <span className="text-sm font-medium text-muted-foreground">US$</span>
           <span className="text-5xl font-display font-900 tracking-tight" style={{ color }}>{price}</span>
@@ -83,7 +94,7 @@ export function PricingCard({ name, price, features, color, highlighted = false,
               border: highlighted ? 'none' : `1.5px solid color-mix(in oklch, ${color}, transparent 60%)`
             }}
           >
-            Seleccionar
+            {highlighted ? 'Elegir Plan Recomendado' : 'Seleccionar'}
           </button>
         </a>
       </div>

@@ -67,53 +67,81 @@ test("POS sales journey persists the order and the invoice to SQLite", async () 
 
   try {
     // 1. Login (Supabase-authenticated).
+    console.log("[JOURNEY] Step 1: Filling login form...");
     await page.getByLabel("Correo").fill(EMAIL!);
     await page.getByLabel("Contraseña").fill(PASSWORD!);
     await page.getByRole("button", { name: "Iniciar Sesión" }).click();
+    console.log("[JOURNEY] Step 1: Login submitted ✓");
 
     // 2. Wait for the POS. The mesa selector is only present once the tenant is
     //    loaded. If the account lands elsewhere, navigate to Ventas/POS first.
+    console.log("[JOURNEY] Step 2: Waiting for mesa selector...");
     const mesaSelector = page.getByRole("button", { name: /Seleccionar mesa|Mesa \d+/ });
     await expect(mesaSelector).toBeVisible({ timeout: 30_000 });
+    console.log("[JOURNEY] Step 2: Mesa selector visible ✓");
 
     const invoicesBefore = await countInvoices();
     const consumosBefore = await countConsumosForMesa();
+    console.log(`[JOURNEY] Baseline: ${invoicesBefore} invoices, ${consumosBefore} consumos for mesa ${MESA}`);
 
     // 3. Select the table. The dropdown labels every mesa zero-padded to two
     //    digits (e.g. "01"), so normalize whatever MESA was configured ("1" or
     //    "01") to that format before matching.
+    console.log("[JOURNEY] Step 3: Selecting mesa...");
     const mesaLabel = String(Number(MESA)).padStart(2, "0");
     await mesaSelector.click();
     await page.getByRole("button", { name: mesaLabel, exact: true }).click();
+    console.log(`[JOURNEY] Step 3: Mesa ${mesaLabel} selected ✓`);
 
     // 4. Add a product (the whole card is clickable). Pin a specific KITCHEN dish
     //    via CYBERBISTRO_E2E_PRODUCT to also exercise the orange path; otherwise
     //    the first card is used and only the SQLite write is asserted.
+    console.log("[JOURNEY] Step 4: Looking for product card...");
     const product = PRODUCT
       ? page.getByText(PRODUCT, { exact: false }).first()
       : page.locator("div.cursor-pointer.group").first();
     await expect(product).toBeVisible();
+    console.log("[JOURNEY] Step 4: Product card visible, clicking...");
     await product.click();
+    console.log("[JOURNEY] Step 4: Product added to cart ✓");
 
     // 5. Send to kitchen ("+ Agregar" in the cart section).
-    await page.getByRole("button", { name: "+ Agregar" }).click();
+    console.log("[JOURNEY] Step 5: Looking for '+ Agregar' button...");
+    const agregarBtn = page.getByRole("button", { name: "+ Agregar" });
+    const agregarVisible = await agregarBtn.isVisible().catch(() => false);
+    console.log(`[JOURNEY] Step 5: '+ Agregar' visible = ${agregarVisible}`);
+    if (!agregarVisible) {
+      // Dump the DOM state of all visible buttons for debugging
+      const buttons = await page.locator("button:visible").allTextContents();
+      console.log(`[JOURNEY] DEBUG: Visible buttons = ${JSON.stringify(buttons)}`);
+    }
+    await agregarBtn.click();
+    console.log("[JOURNEY] Step 5: Sent to kitchen ✓");
 
     // 6. Core assertion: the order reflects in SQLite immediately (any state),
     //    without a cloud round-trip — this is what the dual-engine bug broke.
+    console.log("[JOURNEY] Step 6: Polling consumos in SQLite...");
     await expect.poll(countConsumosForMesa, { timeout: 10_000 }).toBeGreaterThan(consumosBefore);
+    console.log("[JOURNEY] Step 6: Consumos in SQLite ✓");
     //    When a kitchen dish was sold, it also shows as the orange "enviado_cocina"
     //    line in the account panel.
     if ((await countConsumosSentToKitchen()) > 0) {
       await expect(page.getByText(/ENVIADO COCINA/i).first()).toBeVisible();
+      console.log("[JOURNEY] Step 6b: ENVIADO COCINA visible ✓");
     }
 
     // 7. Charge the table. "Cobrar" exists in both the mesa and takeout panels,
     //    so target the visible one; likewise the modal's confirm button.
+    console.log("[JOURNEY] Step 7: Clicking 'Cobrar'...");
     await page.locator("button:visible", { hasText: "Cobrar" }).first().click();
+    console.log("[JOURNEY] Step 7: Cobrar clicked, waiting for 'Confirmar Pago'...");
     await page.locator("button:visible", { hasText: "Confirmar Pago" }).first().click();
+    console.log("[JOURNEY] Step 7: Confirmar Pago clicked ✓");
 
     // 8. A new invoice must land in SQLite.
+    console.log("[JOURNEY] Step 8: Polling invoices in SQLite...");
     await expect.poll(countInvoices, { timeout: 15_000 }).toBeGreaterThan(invoicesBefore);
+    console.log("[JOURNEY] Step 8: Invoice in SQLite ✓ — JOURNEY PASSED!");
   } finally {
     await app.close();
     await rm(userDataDirectory, { recursive: true, force: true });

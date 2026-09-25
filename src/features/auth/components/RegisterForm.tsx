@@ -443,7 +443,7 @@ export function Register() {
                             </p>
                           </div>
                           <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#84cc16] text-[12px] whitespace-nowrap">
-                            $40/Mes
+                            $50/Mes
                           </div>
                         </div>
 
@@ -452,7 +452,7 @@ export function Register() {
                             <span className="text-[#84cc16] text-[11px]">✓</span> 1 Sucursal Única
                           </li>
                           <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-[#adaaaa]">
-                            <span className="text-[#84cc16] text-[11px]">✓</span> 5 Usuarios Máximo
+                            <span className="text-[#84cc16] text-[11px]">✓</span> 3 Usuarios (+ Admin)
                           </li>
                           <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-[#adaaaa]">
                             <span className="text-[#84cc16] text-[11px]">✓</span> Reportes Básicos
@@ -462,6 +462,9 @@ export function Register() {
                           </li>
                           <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-[#555] line-through">
                             ✗ Control de Inventario y Recetas
+                          </li>
+                          <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-[#555] line-through">
+                            ✗ Facturación Electrónica (e-CF)
                           </li>
                         </ul>
                       </div>
@@ -491,16 +494,16 @@ export function Register() {
                             </p>
                           </div>
                           <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#3b82f6] text-[12px] whitespace-nowrap">
-                            $80/Mes
+                            $90/Mes
                           </div>
                         </div>
 
                         <ul className="flex flex-col gap-1 mt-2.5 pl-0 list-none text-left">
                           <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
-                            <span className="text-[#3b82f6] text-[11px]">✓</span> <b>Hasta 3 Sucursales</b>
+                            <span className="text-[#3b82f6] text-[11px]">✓</span> <b>Hasta 2 Sucursales</b>
                           </li>
                           <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
-                            <span className="text-[#3b82f6] text-[11px]">✓</span> <b>Usuarios Ilimitados</b>
+                            <span className="text-[#3b82f6] text-[11px]">✓</span> <b>5 Usuarios (+ Admin)</b>
                           </li>
                           <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
                             <span className="text-[#3b82f6] text-[11px]">✓</span> <b>Inventario y Recetas</b>
@@ -535,7 +538,7 @@ export function Register() {
                             </p>
                           </div>
                           <div className="font-['Space_Grotesk',sans-serif] font-bold text-[#a78bfa] text-[12px] whitespace-nowrap">
-                            $150/Mes
+                            $175/Mes
                           </div>
                         </div>
 
@@ -544,7 +547,10 @@ export function Register() {
                             <span className="text-[#a78bfa] text-[11px]">✓</span> <b>Sucursales Ilimitadas</b>
                           </li>
                           <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
-                            <span className="text-[#a78bfa] text-[11px]">✓</span> <b>Integraciones Avanzadas</b>
+                            <span className="text-[#a78bfa] text-[11px]">✓</span> <b>Usuarios Ilimitados</b>
+                          </li>
+                          <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
+                            <span className="text-[#a78bfa] text-[11px]">✓</span> <b>Todo Ilimitado</b>
                           </li>
                           <li className="flex items-center gap-2 font-['Inter',sans-serif] text-[10.5px] text-white">
                             <span className="text-[#a78bfa] text-[11px]">✓</span> <b>Soporte 24/7 Corporativo</b>

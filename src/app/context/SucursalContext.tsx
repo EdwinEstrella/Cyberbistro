@@ -47,7 +47,7 @@ function defaultSucursalLimitForPlan(plan?: string | null): number | null {
     case "basico":
       return 1;
     case "profesional":
-      return 3;
+      return 2;
     case "empresarial":
       return null;
     default:
