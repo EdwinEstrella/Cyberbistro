@@ -7,7 +7,14 @@ import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { readLocalInvoices, deleteLocalInvoice } from "../lib/invoicesLocal";
-import { defaultInvoiceDateFrom, fetchCloudInvoicesInRange } from "../lib/invoicesCloud";
+import {
+  INVOICE_LIST_WINDOW_MS,
+  RECENT_CYCLES_LIMIT,
+  fetchCloudInvoicesInRange,
+  invoiceLoadStartIso,
+  localDayBoundsToIso,
+  pickRecentCycles,
+} from "../lib/invoicesCloud";
 import { readLocalConsumos, deleteLocalConsumo } from "../../../shared/lib/ordersLocal";
 import { readLocalCierres } from "../../cierre/lib/cierresLocal";
 import { readLocalCuentasCobrar, readLocalCuentasPagar, readLocalCxcPagos, readLocalCxpPagos } from "../lib/accountsLocal";
@@ -303,7 +310,7 @@ export function Billing() {
   const [methodFilter, setMethodFilter] = useState<string>("todos");
   const [invoiceModal, setInvoiceModal] = useState<Invoice | null>(null);
   // deletingInvoiceId removed
-  const [dateFrom, setDateFrom] = useState(() => defaultInvoiceDateFrom());
+  const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [expandedCycleId, setExpandedCycleId] = useState<string | null>(null);
 
@@ -315,6 +322,8 @@ export function Billing() {
   const [customers, setCustomers] = useState<any[]>([]);
   const [proveedores, setProveedores] = useState<any[]>([]);
 
+  // Loaded on entry, on filter changes and on the manual refresh button only —
+  // never on background sync events, so the screen does not reset while in use.
   const loadBillingData = useCallback(async () => {
     if (!tenantId) {
       setInvoices([]);
@@ -358,9 +367,32 @@ export function Billing() {
       shouldReadLocalFirst(tenantId, ["ecf_documents"]),
     ]);
 
+    // Without a Desde/Hasta range only the most recent cycles are loaded, and
+    // invoices back to the start of the oldest of them (so cycle totals are
+    // exact) — never the tenant's full history.
+    const hasDateRange = Boolean(dateFrom || dateTo);
+    const cycleColumns = "id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at, efectivo_inicial";
+    const cyclesRes: { data: CierreOperativoRow[] | null; error: unknown } = useLocalCycles
+      ? { data: (await readLocalCierres(tenantId, { sucursalId: activeSucursalId || undefined })) as unknown as CierreOperativoRow[], error: null }
+      : await (() => {
+          let query = supabase.from("cierres_operativos").select(cycleColumns).eq("tenant_id", tenantId);
+          if (activeSucursalId) query = query.or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`);
+          query = query.order("opened_at", { ascending: false });
+          return hasDateRange ? query : query.limit(RECENT_CYCLES_LIMIT);
+        })();
+    const loadedCycles = hasDateRange ? cyclesRes.data ?? [] : pickRecentCycles(cyclesRes.data ?? []);
+    const invoiceRange = hasDateRange
+      ? localDayBoundsToIso(dateFrom, dateTo)
+      : { fromIso: invoiceLoadStartIso(loadedCycles), toIso: undefined };
+    const inInvoiceRange = (inv: Invoice) => {
+      const at = new Date(inv.created_at).getTime();
+      if (invoiceRange.fromIso && at < new Date(invoiceRange.fromIso).getTime()) return false;
+      if (invoiceRange.toIso && at > new Date(invoiceRange.toIso).getTime()) return false;
+      return true;
+    };
+
     const [
       invoicesRes,
-      cyclesRes,
       expensesRes,
       expenseCategoriesRes,
       cxcRes,
@@ -372,13 +404,8 @@ export function Billing() {
       ecfRes
     ] = await Promise.all([
       useLocalInvoices
-        ? { data: (await readLocalInvoices(tenantId, { sucursalId: activeSucursalId || undefined })) as unknown as Invoice[], error: null }
-        : fetchCloudInvoicesInRange<Invoice>(supabase, tenantId, { sucursalId: activeSucursalId || undefined, dateFrom, dateTo }),
-      useLocalCycles
-        ? { data: (await readLocalCierres(tenantId, { sucursalId: activeSucursalId || undefined })) as unknown as CierreOperativoRow[], error: null }
-        : activeSucursalId
-          ? supabase.from("cierres_operativos").select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at, efectivo_inicial").eq("tenant_id", tenantId).or(`sucursal_id.eq.${activeSucursalId},sucursal_id.is.null`).order("opened_at", { ascending: false })
-          : supabase.from("cierres_operativos").select("id, business_day, cycle_number, opened_at, closed_at, printed_at, created_at, efectivo_inicial").eq("tenant_id", tenantId).order("opened_at", { ascending: false }),
+        ? { data: ((await readLocalInvoices(tenantId, { sucursalId: activeSucursalId || undefined })) as unknown as Invoice[]).filter(inInvoiceRange), error: null }
+        : fetchCloudInvoicesInRange<Invoice>(supabase, tenantId, { sucursalId: activeSucursalId || undefined, ...invoiceRange }),
       useLocalExpenses
         ? { data: await readLocalExpenses(tenantId, { sucursalId: activeSucursalId || undefined, limit: 1000 }), error: null }
         : activeSucursalId
@@ -437,11 +464,7 @@ export function Billing() {
       setEcfDocuments(new Map());
     }
 
-    if (!cyclesRes.error && cyclesRes.data) {
-      setCycles(cyclesRes.data as CierreOperativoRow[]);
-    } else {
-      setCycles([]);
-    }
+    setCycles(cyclesRes.error ? [] : loadedCycles);
 
     if (!expensesRes.error && expensesRes.data) {
       setExpenses(expensesRes.data as Expense[]);
@@ -472,14 +495,6 @@ export function Billing() {
   }, [authLoading, loadBillingData]);
 
   useEffect(() => {
-    return window.electronAPI?.onLocalDataUpdated?.((updatedTenantId) => {
-      if (!updatedTenantId || updatedTenantId === tenantId) {
-        void loadBillingData();
-      }
-    });
-  }, [tenantId, loadBillingData]);
-
-  useEffect(() => {
     setCurrentPage(1);
   }, [methodFilter, dateFrom, dateTo, view]);
 
@@ -487,6 +502,11 @@ export function Billing() {
     let filtered = invoices;
     if (methodFilter !== "todos") {
       filtered = filtered.filter((inv) => inv.metodo_pago === methodFilter);
+    }
+    if (!dateFrom && !dateTo) {
+      // Older loaded invoices only feed the cycle totals; the list shows 24h.
+      const since = Date.now() - INVOICE_LIST_WINDOW_MS;
+      filtered = filtered.filter((inv) => new Date(inv.created_at).getTime() >= since);
     }
     if (dateFrom) {
       filtered = filtered.filter((inv) => new Date(inv.created_at).getTime() >= new Date(dateFrom + "T00:00:00").getTime());
@@ -767,10 +787,6 @@ export function Billing() {
   const cycleKpis = useMemo(() => {
     const now = new Date();
     const last24h = now.getTime() - 24 * 60 * 60 * 1000;
-    const weekStart = new Date(now);
-    weekStart.setHours(0, 0, 0, 0);
-    weekStart.setDate(now.getDate() - now.getDay());
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
     const latestCycle = cycleSummaries.find((c) => !c.cycle.closed_at) ?? cycleSummaries[0] ?? null;
 
     const paidInvoices = invoices.filter((inv) => inv.estado === "pagada");
@@ -780,12 +796,10 @@ export function Billing() {
     const expensesLast24h = expenses
       .filter((expense) => new Date(expense.fecha_gasto).getTime() >= last24h)
       .reduce((sum, expense) => sum + Number(expense.monto), 0);
-    const weekSales = paidInvoices
-      .filter((inv) => new Date(inv.created_at).getTime() >= weekStart.getTime())
-      .reduce((sum, inv) => sum + inv.total, 0);
-    const monthSales = paidInvoices
-      .filter((inv) => new Date(inv.created_at).getTime() >= monthStart)
-      .reduce((sum, inv) => sum + inv.total, 0);
+    // Week/month totals would be partial (only recent invoices are loaded), so
+    // the KPIs summarize the loaded cycles, whose invoices are complete.
+    const loadedCyclesSales = cycleSummaries.reduce((sum, c) => sum + c.totalSold, 0);
+    const avgCycleSales = cycleSummaries.length > 0 ? loadedCyclesSales / cycleSummaries.length : 0;
 
     return {
       latestCycleSales: latestCycle?.totalSold ?? 0,
@@ -793,8 +807,9 @@ export function Billing() {
         ? `Ciclo #${latestCycle.cycle.cycle_number}`
         : "Sin ciclos",
       netLast24h: salesLast24h - expensesLast24h,
-      weekSales,
-      monthSales,
+      loadedCyclesSales,
+      avgCycleSales,
+      loadedCyclesCount: cycleSummaries.length,
     };
   }, [cycleSummaries, invoices, expenses]);
 
@@ -914,19 +929,19 @@ export function Billing() {
         bgColor: "bg-primary/10 dark:bg-primary/20"
       },
       {
-        label: "Semana actual",
-        value: cycleKpis.weekSales,
+        label: `Últimos ${cycleKpis.loadedCyclesCount} ciclos`,
+        value: cycleKpis.loadedCyclesSales,
         isMoney: true,
-        sub: "Semana actual",
+        sub: "Vendido en los ciclos cargados",
         color: "text-foreground",
         icon: <TrendingUp size={18} className="text-pink-600 dark:text-pink-400" />,
         bgColor: "bg-pink-500/10 dark:bg-pink-500/20"
       },
       {
-        label: "Mes actual",
-        value: cycleKpis.monthSales,
+        label: "Promedio por ciclo",
+        value: cycleKpis.avgCycleSales,
         isMoney: true,
-        sub: "Mes actual",
+        sub: "Vendido promedio por ciclo",
         color: "text-foreground",
         icon: <FileText size={18} className="text-blue-500" />,
         bgColor: "bg-blue-500/10 dark:bg-blue-500/20"
