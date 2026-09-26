@@ -568,7 +568,7 @@ function mapPayrollExpensePayload(operation: DurableOperation, payload: Record<s
     id: operation.rowId,
     tenant_id: operation.tenantId,
     descripcion: requireString(payload.description, "gastos.description", { fallback: `Payroll payment ${payrollPaymentId}` }),
-    sucursal_id: operation.branchId ?? null,
+    sucursal_id: resolveRemoteBranchId(operation, payload),
     monto: centsToAmount(amountCents),
     metodo_pago: mapExpensePaymentMethod(requireString(payload.paymentMethod, "gastos.paymentMethod")),
     fecha_gasto: requireString(payload.recordedAt, "gastos.recordedAt"),
@@ -685,7 +685,7 @@ function mapReceivablePayload(operation: DurableOperation, payload: Record<strin
   return {
     id: operation.rowId,
     tenant_id: operation.tenantId,
-    sucursal_id: operation.branchId ?? (payload.sucursalId ? String(payload.sucursalId) : null),
+    sucursal_id: resolveRemoteBranchId(operation, payload),
     factura_id: payload.facturaId ? String(payload.facturaId) : null,
     customer_id: requireString(payload.customerId, "cuentas_cobrar.customerId"),
     monto_total: requireNumber(payload.totalAmount, "cuentas_cobrar.totalAmount"),
@@ -699,7 +699,7 @@ function mapReceivablePaymentPayload(operation: DurableOperation, payload: Recor
   return {
     id: operation.rowId,
     tenant_id: operation.tenantId,
-    sucursal_id: operation.branchId ?? (payload.sucursalId ? String(payload.sucursalId) : null),
+    sucursal_id: resolveRemoteBranchId(operation, payload),
     cuenta_cobrar_id: requireString(payload.receivableId, "cxc_pagos.receivableId"),
     monto: requireNumber(payload.amount, "cxc_pagos.amount"),
     metodo_pago: requireString(payload.paymentMethod, "cxc_pagos.paymentMethod"),
@@ -719,7 +719,7 @@ function mapPayablePayload(operation: DurableOperation, payload: Record<string, 
   return {
     id: operation.rowId,
     tenant_id: operation.tenantId,
-    sucursal_id: operation.branchId ?? (payload.sucursalId ? String(payload.sucursalId) : null),
+    sucursal_id: resolveRemoteBranchId(operation, payload),
     compra_id: payload.compraId ? String(payload.compraId) : null,
     proveedor_id: requireString(payload.supplierId, "cuentas_pagar.supplierId"),
     monto_total: requireNumber(payload.totalAmount, "cuentas_pagar.totalAmount"),
@@ -733,7 +733,7 @@ function mapPayablePaymentPayload(operation: DurableOperation, payload: Record<s
   return {
     id: operation.rowId,
     tenant_id: operation.tenantId,
-    sucursal_id: operation.branchId ?? (payload.sucursalId ? String(payload.sucursalId) : null),
+    sucursal_id: resolveRemoteBranchId(operation, payload),
     cuenta_pagar_id: requireString(payload.payableId, "cxp_pagos.payableId"),
     monto: requireNumber(payload.amount, "cxp_pagos.amount"),
     metodo_pago: requireString(payload.paymentMethod, "cxp_pagos.paymentMethod"),
@@ -744,6 +744,21 @@ function mapPayablePaymentPayload(operation: DurableOperation, payload: Record<s
   };
 }
 
+const LOCAL_BRANCH_SENTINEL = "main-process-default";
+
+// The main process writes with branchId "main-process-default", a local-only
+// sentinel that is not a UUID. The renderer's real sucursal travels in the
+// payload, so it wins; the sentinel is never sent to the cloud (null instead).
+export function resolveRemoteBranchId(operation: DurableOperation, payload: Record<string, unknown>): string | null {
+  const candidates = [payload.sucursal_id, payload.sucursalId, operation.branchId];
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") continue;
+    const value = candidate.trim();
+    if (value && value !== LOCAL_BRANCH_SENTINEL) return value;
+  }
+  return null;
+}
+
 function defaultDueDate(fechaEmision: unknown): string {
   const base = typeof fechaEmision === "string" && fechaEmision.trim() ? new Date(fechaEmision) : new Date();
   const d = Number.isNaN(base.getTime()) ? new Date() : base;
@@ -752,7 +767,7 @@ function defaultDueDate(fechaEmision: unknown): string {
 }
 
 function mapCompraPayload(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
-  const sucursalId = operation.branchId ?? (payload.sucursal_id ?? payload.sucursalId ? String(payload.sucursal_id ?? payload.sucursalId) : null);
+  const sucursalId = resolveRemoteBranchId(operation, payload);
   const proveedorId = payload.proveedor_id ?? payload.proveedorId ?? payload.supplierId;
   const numeroFactura = payload.numero_factura ?? payload.numeroFactura;
   const tipoPago = payload.tipo_pago ?? payload.tipoPago ?? "contado";
@@ -769,7 +784,7 @@ function mapCompraPayload(operation: DurableOperation, payload: Record<string, u
   return {
     id: operation.rowId,
     tenant_id: operation.tenantId,
-    ...(sucursalId && sucursalId !== "main-process-default" ? { sucursal_id: sucursalId } : {}),
+    ...(sucursalId ? { sucursal_id: sucursalId } : {}),
     ...(proveedorId ? { proveedor_id: String(proveedorId) } : {}),
     ...(numeroFactura ? { numero_factura: String(numeroFactura) } : {}),
     tipo_pago: String(tipoPago),
@@ -872,12 +887,12 @@ function mapInventarioMovimientoPayload(operation: DurableOperation, payload: Re
   const referencia = payload.referencia ?? payload.reference ?? null;
   const fecha = payload.fecha ?? payload.created_at ?? new Date().toISOString();
   const usuarioId = payload.usuario_id ?? payload.usuarioId ?? null;
-  const sucursalId = operation.branchId ?? (payload.sucursal_id ?? payload.sucursalId ? String(payload.sucursal_id ?? payload.sucursalId) : null);
+  const sucursalId = resolveRemoteBranchId(operation, payload);
 
   return {
     id: operation.rowId,
     tenant_id: operation.tenantId,
-    ...(sucursalId && sucursalId !== "main-process-default" ? { sucursal_id: sucursalId } : {}),
+    ...(sucursalId ? { sucursal_id: sucursalId } : {}),
     producto_id: requireString(productoId, "inventario_movimientos.producto_id"),
     tipo: String(tipo) === "purchase_receipt" ? "entrada" : String(tipo),
     cantidad: Number(cantidad) || 0,
