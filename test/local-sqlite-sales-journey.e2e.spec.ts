@@ -1,4 +1,5 @@
 import { expect, test, _electron as electron, type ElectronApplication, type Page } from "@playwright/test";
+import { execFile } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -40,19 +41,30 @@ async function launchApp(): Promise<{ app: ElectronApplication; page: Page; user
 
 // Checkout prints the receipt. With no printer configured (CI runners) the
 // print is not silent, so Electron opens the native Windows print dialog, which
-// blocks a graceful app.close() forever. Fall back to killing the process.
+// blocks a graceful app.close() forever. Fall back to killing the process tree:
+// on Windows, killing only the main process leaves Chromium children (renderer,
+// GPU, the print dialog) alive, which keep the profile locked and steal
+// keyboard focus from the next test.
 async function closeApp(app: ElectronApplication): Promise<void> {
   let timer: NodeJS.Timeout | undefined;
   const timedOut = new Promise<"timeout">((resolve) => {
     timer = setTimeout(() => resolve("timeout"), 10_000);
   });
-  const result = await Promise.race([app.close().then(() => "closed" as const), timedOut]);
+  const closing = app.close().then(() => "closed" as const, () => "closed" as const);
+  const result = await Promise.race([closing, timedOut]);
   clearTimeout(timer);
   if (result === "closed") return;
+
   const child = app.process();
-  if (child.exitCode !== null) return;
+  if (child.pid === undefined || child.exitCode !== null) return;
   const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
-  child.kill();
+  if (process.platform === "win32") {
+    await new Promise<void>((resolve) => {
+      execFile("taskkill", ["/pid", String(child.pid), "/T", "/F"], () => resolve());
+    });
+  } else {
+    child.kill("SIGKILL");
+  }
   await exited;
 }
 
