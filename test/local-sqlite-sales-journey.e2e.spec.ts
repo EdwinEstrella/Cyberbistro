@@ -38,6 +38,24 @@ async function launchApp(): Promise<{ app: ElectronApplication; page: Page; user
   return { app, page: await app.firstWindow(), userDataDirectory };
 }
 
+// Checkout prints the receipt. With no printer configured (CI runners) the
+// print is not silent, so Electron opens the native Windows print dialog, which
+// blocks a graceful app.close() forever. Fall back to killing the process.
+async function closeApp(app: ElectronApplication): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  const timedOut = new Promise<"timeout">((resolve) => {
+    timer = setTimeout(() => resolve("timeout"), 10_000);
+  });
+  const result = await Promise.race([app.close().then(() => "closed" as const), timedOut]);
+  clearTimeout(timer);
+  if (result === "closed") return;
+  const child = app.process();
+  if (child.exitCode !== null) return;
+  const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+  child.kill();
+  await exited;
+}
+
 test("POS sales journey persists the order and the invoice to SQLite", async () => {
   test.skip(
     !hasJourneyConfig,
@@ -152,7 +170,8 @@ test("POS sales journey persists the order and the invoice to SQLite", async () 
     await expect.poll(countInvoices, { timeout: 15_000 }).toBeGreaterThan(invoicesBefore);
     console.log("[JOURNEY] Step 8: Invoice in SQLite ✓ — JOURNEY PASSED!");
   } finally {
-    await app.close();
-    await rm(userDataDirectory, { recursive: true, force: true });
+    await closeApp(app);
+    // Windows can hold SQLite file locks briefly after a forced kill.
+    await rm(userDataDirectory, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
   }
 });
