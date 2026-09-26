@@ -13,7 +13,7 @@ import { getLocalDeviceSession, setLastTenantId, saveLocalDeviceSession, saveLic
 import { isDesktopCloudUnavailable } from '../lib/cloudAvailability';
 import { AuthRefreshCoordinator, type AuthRefreshTrigger } from '../lib/authRefreshCoordinator';
 import { TenantAccessRealtimeOwner } from '../lib/tenantAccessRealtimeOwner';
-import { advanceTenantAccessGeneration } from '../lib/tenantAccessLifecycle';
+import { advanceTenantAccessGeneration, shouldKeepValidatedAccess } from '../lib/tenantAccessLifecycle';
 
 interface TenantUser {
   tenant_id: string;
@@ -107,6 +107,10 @@ function patchSharedState(patch: Partial<SharedAuthState>): void {
   notifySubscribers();
 }
 
+function isValidatedSession(): boolean {
+  return sharedState.accessValidationState === 'validated' && sharedState.tenantUser !== null;
+}
+
 function handleRealtimeTenantBlocked(tenantId: string): void {
   tenantAccessTenantId = tenantId;
   ensureTenantAccessRealtime(tenantId);
@@ -135,6 +139,10 @@ async function reconcileTenantAccessShared(reason: 'realtime' | 'fallback' | 'fo
     const resolution = await resolveTenantAccessForSession(user);
     if (requestGeneration !== tenantAccessGeneration) return;
     if (resolution.status !== 'active') {
+      if (shouldKeepValidatedAccess(resolution.status, isValidatedSession())) {
+        logAuth('tenant access reconciliation: cloud unavailable, validated session kept', { reason });
+        return;
+      }
       if (resolution.status === 'blocked' && resolution.tenantId) handleRealtimeTenantBlocked(resolution.tenantId);
       else if (resolution.status === 'truly_unlinked') {
         tenantAccessGeneration = advanceTenantAccessGeneration();
@@ -562,6 +570,8 @@ async function loadUserDataShared(opts?: { silent?: boolean; force?: boolean }):
           } else if (access.status === 'truly_unlinked') {
             clearTenantSessionCache();
             patchSharedState({ tenantUser: null, tenantAccessDeniedReason: 'unlinked', accessValidationState: 'denied' });
+          } else if (shouldKeepValidatedAccess(access.status, isValidatedSession())) {
+            logAuth('loadUserData: cloud unavailable, validated session kept');
           } else {
             patchSharedState({ tenantUser: null, tenantAccessDeniedReason: null, accessValidationState: 'pending' });
           }
