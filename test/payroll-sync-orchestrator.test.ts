@@ -131,6 +131,23 @@ describe('PayrollSyncOrchestrator Lifecycle', () => {
     expect(fakeClient.push).toHaveBeenCalled();
   });
 
+  it('notifies onPullApplied only when the pull brought changes', async () => {
+    const fakeClient = { push: vi.fn().mockResolvedValue({ result: {} }), pull: vi.fn() };
+    orchestrator.start(db, 'tenant-123', fakeClient);
+    const onPullApplied = vi.fn();
+    orchestrator.onPullApplied = onPullApplied;
+    const worker = (orchestrator as any).worker;
+
+    worker.pull = vi.fn().mockResolvedValue(0);
+    await orchestrator.triggerSync();
+    expect(onPullApplied).not.toHaveBeenCalled();
+
+    worker.pull = vi.fn().mockResolvedValue(3);
+    await orchestrator.triggerSync();
+    expect(onPullApplied).toHaveBeenCalledTimes(1);
+    expect(onPullApplied).toHaveBeenCalledWith('tenant-123');
+  });
+
   it('requeues claimed rows, avoids late stale commits, and keeps timers bounded across tenant switch', async () => {
     const dataRoot = mkdtempSync(join(tmpdir(), 'cloudix-payroll-sync-'));
     const deferredPush = createDeferred<{ result: Record<string, unknown> }>();

@@ -2181,6 +2181,13 @@ export class TenantStoreController {
       throw new Error("Invalid tenant identity");
     }
 
+    // The renderer re-activates the same tenant on every auth reconciliation
+    // (focus, realtime, token refresh). Reopening would close the database and
+    // restart sync mid-flight, so re-activating the open tenant is a no-op.
+    if (this.activeStore?.getTenantId() === tenantId && this.payrollSync.isRunning()) {
+      return this.activeStore;
+    }
+
     this.close();
     this.activeStore = TenantStore.open({ dataRoot: this.dataRoot, tenantId });
     this.activeStore.ensureComprasOutboxIntegrity();

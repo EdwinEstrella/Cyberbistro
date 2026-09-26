@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { TenantStoreController } from "../electron/persistence/tenantStore";
 import { buildLegacyImportManifest } from "../electron/persistence/importer";
 
@@ -34,6 +34,28 @@ describe("tenant SQLite lifecycle", () => {
       controller.close();
     } finally {
       rmSync(dataRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+    }
+  });
+
+  it("re-activating the already-open tenant keeps the same handle and does not restart sync", () => {
+    const dataRoot = mkdtempSync(join(tmpdir(), "cloudix-store-controller-"));
+    try {
+      const controller = new TenantStoreController(dataRoot);
+      const start = vi.spyOn(controller.payrollSync, "start").mockImplementation(() => undefined);
+      vi.spyOn(controller.payrollSync, "isRunning").mockReturnValue(true);
+
+      const first = controller.activate("tenant-a");
+      const second = controller.activate("tenant-a");
+
+      expect(second).toBe(first);
+      expect(start).toHaveBeenCalledTimes(1);
+
+      controller.activate("tenant-b");
+      expect(start).toHaveBeenCalledTimes(2);
+      expect(controller.getActiveStore()?.getTenantId()).toBe("tenant-b");
+      controller.close();
+    } finally {
+      try { rmSync(dataRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }); } catch { /* Windows may retain SQLite handles until process exit. */ }
     }
   });
 

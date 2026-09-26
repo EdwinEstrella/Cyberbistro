@@ -72,8 +72,10 @@ export class PayrollSyncOrchestrator {
       }
       try {
         if (!this.stopRequested && this.worker === worker) {
-          await worker.pull();
-          if (!this.stopRequested && this.worker === worker) this.onPullApplied?.(tenantId);
+          const applied = await worker.pull();
+          // Only notify the renderer when the pull actually changed local data;
+          // an empty pull every 30s would make every screen reload for nothing.
+          if (applied > 0 && !this.stopRequested && this.worker === worker) this.onPullApplied?.(tenantId);
         }
       } catch (err) {
         console.error("[PayrollSyncOrchestrator] pull error:", err);
