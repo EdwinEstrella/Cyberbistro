@@ -131,11 +131,20 @@ test("POS sales journey persists the order and the invoice to SQLite", async () 
     }
 
     // 7. Charge the table. "Cobrar" exists in both the mesa and takeout panels,
-    //    so target the visible one; likewise the modal's confirm button.
+    //    so target the visible one. Match the accessible name exactly: a
+    //    substring match also hits the "Cuentas por Cobrar" sidebar item.
     console.log("[JOURNEY] Step 7: Clicking 'Cobrar'...");
-    await page.locator("button:visible", { hasText: "Cobrar" }).first().click();
+    await page
+      .getByRole("button", { name: "Cobrar", exact: true })
+      .filter({ visible: true })
+      .first()
+      .click();
     console.log("[JOURNEY] Step 7: Cobrar clicked, waiting for 'Confirmar Pago'...");
-    await page.locator("button:visible", { hasText: "Confirmar Pago" }).first().click();
+    await page
+      .getByRole("button", { name: "Confirmar Pago", exact: true })
+      .filter({ visible: true })
+      .first()
+      .click();
     console.log("[JOURNEY] Step 7: Confirmar Pago clicked ✓");
 
     // 8. A new invoice must land in SQLite.
