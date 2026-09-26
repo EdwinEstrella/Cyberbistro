@@ -7,6 +7,7 @@ import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { readLocalInvoices, deleteLocalInvoice } from "../lib/invoicesLocal";
+import { defaultInvoiceDateFrom, fetchCloudInvoicesInRange } from "../lib/invoicesCloud";
 import { readLocalConsumos, deleteLocalConsumo } from "../../../shared/lib/ordersLocal";
 import { readLocalCierres } from "../../cierre/lib/cierresLocal";
 import { readLocalCuentasCobrar, readLocalCuentasPagar, readLocalCxcPagos, readLocalCxpPagos } from "../lib/accountsLocal";
@@ -287,29 +288,6 @@ function getEcfStatusDisplay(status: string) {
   }
 }
 
-async function fetchAllCloudInvoices(
-  tenantId: string,
-  sucursalId?: string | null
-): Promise<{ data: Invoice[]; error: unknown }> {
-  const all: Invoice[] = [];
-  const pageSize = 1000;
-  let from = 0;
-  while (true) {
-    let query = supabase.from("facturas").select("*").eq("tenant_id", tenantId);
-    if (sucursalId) {
-      query = query.or(`sucursal_id.eq.${sucursalId},sucursal_id.is.null`);
-    }
-    query = query.order("created_at", { ascending: false }).range(from, from + pageSize - 1);
-    const { data, error } = await query;
-    if (error) return { data: all, error };
-    if (!data || data.length === 0) break;
-    all.push(...(data as Invoice[]));
-    if (data.length < pageSize) break;
-    from += pageSize;
-  }
-  return { data: all, error: null };
-}
-
 export function Billing() {
   const { tenantId, loading: authLoading, rol, plan } = useAuth();
   const { activeSucursalId } = useSucursal();
@@ -325,7 +303,7 @@ export function Billing() {
   const [methodFilter, setMethodFilter] = useState<string>("todos");
   const [invoiceModal, setInvoiceModal] = useState<Invoice | null>(null);
   // deletingInvoiceId removed
-  const [dateFrom, setDateFrom] = useState("");
+  const [dateFrom, setDateFrom] = useState(() => defaultInvoiceDateFrom());
   const [dateTo, setDateTo] = useState("");
   const [expandedCycleId, setExpandedCycleId] = useState<string | null>(null);
 
@@ -395,7 +373,7 @@ export function Billing() {
     ] = await Promise.all([
       useLocalInvoices
         ? { data: (await readLocalInvoices(tenantId, { sucursalId: activeSucursalId || undefined })) as unknown as Invoice[], error: null }
-        : fetchAllCloudInvoices(tenantId, activeSucursalId || undefined),
+        : fetchCloudInvoicesInRange<Invoice>(supabase, tenantId, { sucursalId: activeSucursalId || undefined, dateFrom, dateTo }),
       useLocalCycles
         ? { data: (await readLocalCierres(tenantId, { sucursalId: activeSucursalId || undefined })) as unknown as CierreOperativoRow[], error: null }
         : activeSucursalId
@@ -486,7 +464,7 @@ export function Billing() {
 
     setCurrentPage(1);
     setLoading(false);
-  }, [tenantId, activeSucursalId]);
+  }, [tenantId, activeSucursalId, dateFrom, dateTo]);
 
   useEffect(() => {
     if (authLoading) return;
