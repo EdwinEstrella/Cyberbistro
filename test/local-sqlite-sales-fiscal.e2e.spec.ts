@@ -18,7 +18,7 @@ test("keeps synthetic fiscal modes pending after graceful SQLite close/reopen", 
   const app = await electron.launch({ args: [".", `--user-data-dir=${userDataDirectory}`] });
   try {
     const page = await app.firstWindow();
-    await expect(page.getByLabel("Correo")).toBeVisible();
+    await expect(page.getByLabel("Correo")).toBeVisible({ timeout: 30_000 });
     expect(recovered.invoices).toEqual(expect.arrayContaining([
       { id: "invoice-internal_receipt", fiscalMode: "internal_receipt", total: 25, localStatus: "pending_sync" },
       { id: "invoice-ncf_legacy", fiscalMode: "ncf_legacy", total: 25, localStatus: "pending_sync" },

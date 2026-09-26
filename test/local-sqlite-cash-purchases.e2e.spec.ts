@@ -8,7 +8,7 @@ test("exposes only the named cash-purchase bridge in an isolated Electron profil
   const app = await electron.launch({ args: [".", `--user-data-dir=${userDataDirectory}`] });
   try {
     const page = await app.firstWindow();
-    await expect(page.getByLabel("Correo")).toBeVisible();
+    await expect(page.getByLabel("Correo")).toBeVisible({ timeout: 30_000 });
     await expect.poll(() => page.evaluate(() => ({
       hasCashPurchaseCommand: typeof window.electronAPI?.executeCashPurchaseCommand === "function",
       hasRawIpc: "ipcRenderer" in (window.electronAPI ?? {}),

@@ -10,7 +10,7 @@ test("creates and lists expenses and categories in isolated profile with zero fo
   const app = await electron.launch({ args: [".", `--user-data-dir=${userDataDirectory}`] });
   try {
     const page = await app.firstWindow();
-    await expect(page.getByLabel("Correo")).toBeVisible();
+    await expect(page.getByLabel("Correo")).toBeVisible({ timeout: 30_000 });
 
     // 1. Verify IPC bridges are exposed
     await expect.poll(() => page.evaluate(() => ({

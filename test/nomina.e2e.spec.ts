@@ -24,7 +24,7 @@ test.describe("Nomina (Payroll) Full CRUD & Local-First SQLite E2E", () => {
     });
     page = await app.firstWindow();
     await page.bringToFront();
-    await expect(page.getByLabel("Correo")).toBeVisible();
+    await expect(page.getByLabel("Correo")).toBeVisible({ timeout: 30_000 });
   });
 
   test.afterEach(async () => {

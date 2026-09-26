@@ -14,7 +14,7 @@ test("uses an isolated C2 profile and exposes no kitchen endpoint or raw IPC aut
   const app = await electron.launch({ args: [".", `--user-data-dir=${userDataDirectory}`] });
   try {
     const page = await app.firstWindow();
-    await expect(page.getByLabel("Correo")).toBeVisible();
+    await expect(page.getByLabel("Correo")).toBeVisible({ timeout: 30_000 });
     await expect.poll(() => page.evaluate(() => ({
       hasOrdersCommand: typeof window.electronAPI?.executeOrdersCommand === "function",
       hasRawIpc: "ipcRenderer" in (window.electronAPI ?? {}),

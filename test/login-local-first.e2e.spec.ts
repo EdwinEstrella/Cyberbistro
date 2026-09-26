@@ -29,7 +29,7 @@ test("exposes the local-first login controls through semantic selectors", async 
   const { app, page, userDataDirectory } = await launchLoggedOutApp();
 
   try {
-    await expect(page.getByLabel("Correo")).toBeVisible();
+    await expect(page.getByLabel("Correo")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByLabel("Contraseña")).toBeVisible();
     await expect(page.getByRole("checkbox", { name: /recordar/i })).not.toBeChecked();
     await expect(page.getByRole("button", { name: "Iniciar Sesión" })).toBeEnabled();

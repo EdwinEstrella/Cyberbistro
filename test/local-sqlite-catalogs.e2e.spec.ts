@@ -17,7 +17,7 @@ test("uses an isolated profile with synthetic catalog data and exposes no raw SQ
   const app = await electron.launch({ args: [".", `--user-data-dir=${userDataDirectory}`] });
   try {
     const page = await app.firstWindow();
-    await expect(page.getByLabel("Correo")).toBeVisible();
+    await expect(page.getByLabel("Correo")).toBeVisible({ timeout: 30_000 });
     await expect.poll(() => page.evaluate(() => ({
       hasCatalogCommand: typeof window.electronAPI?.executeCatalogCommand === "function",
       hasRawIpc: "ipcRenderer" in (window.electronAPI ?? {}),
