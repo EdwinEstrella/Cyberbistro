@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { ChevronDown, Eye, Pencil, Printer, Trash2, TrendingUp, DollarSign, RefreshCw, FileText, Activity, Calendar } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { ChevronDown, Eye, Pencil, Printer, Trash2, TrendingUp, DollarSign, RefreshCw, FileText, Activity, Calendar, Search, X } from "lucide-react";
 import { supabase } from "../../../shared/lib/supabase";
 import { useAuth, ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
 import { buildCierreDiaReceiptHtml, buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
@@ -7,6 +7,8 @@ import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { readLocalInvoices, deleteLocalInvoice } from "../lib/invoicesLocal";
+import { searchInvoicesGlobal } from "../lib/invoicesSearch";
+import { INVOICE_SEARCH_LIMIT, filterOnlyWithNcf, normalizeInvoiceQuery } from "../lib/invoiceSearch";
 import { EditInvoiceHeaderModal } from "./EditInvoiceHeaderModal";
 import {
   INVOICE_LIST_WINDOW_MS,
@@ -316,6 +318,16 @@ export function Billing() {
   // deletingInvoiceId removed
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  // Free-text invoice search: global lookup that ignores Desde/Hasta and Método.
+  const [searchInput, setSearchInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [onlyWithNcf, setOnlyWithNcf] = useState(false);
+  const [searchRows, setSearchRows] = useState<Invoice[]>([]);
+  const [searchCapped, setSearchCapped] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState(false);
+  const [searchNonce, setSearchNonce] = useState(0);
+  const searchRequestId = useRef(0);
   const [expandedCycleId, setExpandedCycleId] = useState<string | null>(null);
 
   // Cuentas por Cobrar & Pagar Pro States
@@ -490,6 +502,7 @@ export function Billing() {
     setProveedores(proveedoresRes.data || []);
 
     setCurrentPage(1);
+    setSearchNonce((n) => n + 1); // re-run an active search after edits/deletes/refresh
     setLoading(false);
   }, [tenantId, activeSucursalId, dateFrom, dateTo]);
 
@@ -500,10 +513,53 @@ export function Billing() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [methodFilter, dateFrom, dateTo, view]);
+  }, [methodFilter, dateFrom, dateTo, view, searchQuery, onlyWithNcf]);
+
+  // Debounce the search box (300ms).
+  useEffect(() => {
+    const handle = setTimeout(() => setSearchQuery(normalizeInvoiceQuery(searchInput)), 300);
+    return () => clearTimeout(handle);
+  }, [searchInput]);
+
+  const searchActive = view === "facturas" && searchQuery !== "";
+
+  useEffect(() => {
+    const requestId = ++searchRequestId.current;
+    if (!tenantId || !searchActive) {
+      setSearchRows([]);
+      setSearchCapped(false);
+      setSearchLoading(false);
+      setSearchError(false);
+      return;
+    }
+    setSearchLoading(true);
+    setSearchError(false);
+    void (async () => {
+      try {
+        const res = await searchInvoicesGlobal(tenantId, searchQuery, {
+          sucursalId: activeSucursalId || undefined,
+          onlyWithNcf,
+        });
+        const hydrated = await hydrateInvoiceItemCategories(tenantId, res.rows as unknown as Invoice[]);
+        if (requestId !== searchRequestId.current) return;
+        setSearchRows(hydrated);
+        setSearchCapped(res.capped);
+      } catch (error) {
+        if (requestId !== searchRequestId.current) return;
+        console.warn("[Billing] Invoice search failed:", error);
+        setSearchRows([]);
+        setSearchCapped(false);
+        setSearchError(true);
+      } finally {
+        if (requestId === searchRequestId.current) setSearchLoading(false);
+      }
+    })();
+  }, [tenantId, activeSucursalId, searchActive, searchQuery, onlyWithNcf, searchNonce]);
 
   const filteredInvoices = useMemo(() => {
-    let filtered = invoices;
+    // An active search is a global lookup: it replaces the date/method-filtered list.
+    if (searchActive) return searchRows;
+    let filtered = filterOnlyWithNcf(invoices, onlyWithNcf);
     if (methodFilter !== "todos") {
       filtered = filtered.filter((inv) => inv.metodo_pago === methodFilter);
     }
@@ -519,7 +575,7 @@ export function Billing() {
       filtered = filtered.filter((inv) => new Date(inv.created_at).getTime() <= new Date(dateTo + "T23:59:59").getTime());
     }
     return filtered;
-  }, [invoices, methodFilter, dateFrom, dateTo]);
+  }, [invoices, methodFilter, dateFrom, dateTo, searchActive, searchRows, onlyWithNcf]);
 
   const finanzasData = useMemo(() => {
     const cxcActivas = cuentasCobrar.filter((c) => c.estado !== "pagada");
@@ -820,6 +876,14 @@ export function Billing() {
   const canDeleteInvoices = canDeleteInvoicesForRol(rol);
   const canEditInvoices = canEditInvoiceHeader(rol);
   const showSummaries = canViewBillingSummaries(rol);
+
+  const emptyInvoicesMessage = searchActive
+    ? searchLoading
+      ? "Buscando facturas..."
+      : searchError
+        ? "No se pudo completar la búsqueda."
+        : `No se encontraron facturas para "${searchQuery}"`
+    : "No se encontraron facturas.";
 
   const itemsPerPage = 10;
   const totalPages = useMemo(() => {
@@ -1305,6 +1369,53 @@ export function Billing() {
           <div className="bg-card rounded-[20px] border border-black/10 dark:border-white/5 p-4 sm:p-5 shadow-sm">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div className={`flex-1 grid grid-cols-1 sm:grid-cols-2 ${view === "facturas" || view === "finanzas" ? "lg:grid-cols-3" : "lg:grid-cols-2"} gap-4`}>
+                {view === "facturas" && (
+                  <div className="flex flex-col gap-1.5 sm:col-span-2 lg:col-span-3">
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider font-['Inter']">Buscar</span>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                      <div className="relative flex-1">
+                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                        <input
+                          type="text"
+                          value={searchInput}
+                          onChange={(e) => setSearchInput(e.target.value)}
+                          placeholder="Buscar por número, NCF, cliente, RNC o notas"
+                          aria-label="Buscar facturas"
+                          className="w-full bg-muted/60 rounded-xl border border-black/5 dark:border-white/5 h-[38px] text-[13px] pl-9 pr-9 text-foreground placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-primary/30"
+                        />
+                        {searchInput && (
+                          <button
+                            type="button"
+                            title="Limpiar búsqueda"
+                            aria-label="Limpiar búsqueda"
+                            onClick={() => { setSearchInput(""); setSearchQuery(""); }}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 size-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground bg-transparent border-none cursor-pointer"
+                          >
+                            <X size={14} />
+                          </button>
+                        )}
+                      </div>
+                      <label className="flex items-center gap-2 text-[13px] font-medium text-foreground cursor-pointer select-none shrink-0">
+                        <input
+                          type="checkbox"
+                          checked={onlyWithNcf}
+                          onChange={(e) => setOnlyWithNcf(e.target.checked)}
+                          className="size-4 accent-primary cursor-pointer"
+                        />
+                        Solo con NCF
+                      </label>
+                    </div>
+                    {searchActive && (
+                      <span className="text-[12px] text-muted-foreground" role="status">
+                        {searchLoading
+                          ? "Buscando..."
+                          : searchError
+                            ? "No se pudo completar la búsqueda."
+                            : `${searchRows.length} resultado(s)${searchCapped ? ` · mostrando los primeros ${INVOICE_SEARCH_LIMIT}` : ""}`}
+                      </span>
+                    )}
+                  </div>
+                )}
                 <div className="flex flex-col gap-1.5">
                   <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider font-['Inter']">Desde</span>
                   <DatePicker
@@ -1359,7 +1470,7 @@ export function Billing() {
               <div className="md:hidden flex flex-col gap-3">
                 {pageData.length === 0 ? (
                   <div className="rounded-[20px] border border-black/10 bg-card p-8 text-center text-sm text-muted-foreground dark:border-white/5">
-                    No se encontraron facturas.
+                    {emptyInvoicesMessage}
                   </div>
                 ) : (
                   pageData.map((inv) => {
@@ -1430,7 +1541,7 @@ export function Billing() {
 
                   <div className="divide-y divide-black/5 dark:divide-white/5">
                     {pageData.length === 0 ? (
-                      <div className="py-20 text-center text-muted-foreground font-['Inter']">No se encontraron facturas.</div>
+                      <div className="py-20 text-center text-muted-foreground font-['Inter']">{emptyInvoicesMessage}</div>
                     ) : (
                       pageData.map((inv) => {
                         const method = getMethodDisplay(inv.metodo_pago);
