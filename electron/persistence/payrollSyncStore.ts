@@ -33,6 +33,14 @@ const PULL_APPLIERS: Record<string, CloudRowApplier> = {
   consumos: applyCloudConsumoRows,
 };
 
+interface PullTableFailure {
+  message: string;
+  rowId: string | null;
+}
+
+/** Upper bound on rows re-applied one by one to find the failing row id. */
+const MAX_FAILING_ROW_PROBE = 5000;
+
 /** Tables whose cloud→local pull is implemented, declared once in the registry. */
 const PULLABLE_TABLES = SYNC_PULLABLE_LOCAL_TABLES;
 
@@ -308,17 +316,39 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
     }
 
     // Rows AND cursor must commit atomically so an interrupted pull never
-    // advances the cursor past changes that were not applied.
+    // advances the cursor past changes that were not applied. Each table is
+    // isolated in its own SAVEPOINT so one bad row cannot roll back every other
+    // table: a failing table is rolled back alone and recorded, the rest commit.
     this.db.exec("BEGIN IMMEDIATE;");
     try {
+      const failed = new Map<string, PullTableFailure>();
+      const attempted = new Set<string>();
+
       for (const table of SYNC_PULL_TABLES) {
         const rows = upsertsByTable.get(table.localTable);
-        if (rows?.length) PULL_APPLIERS[table.localTable]?.(this.db, this.tenantId, rows);
+        if (!rows?.length) continue;
+        attempted.add(table.localTable);
+        const applier = PULL_APPLIERS[table.localTable];
+        if (!applier) continue;
+        const failure = this.runIsolated(table.localTable, () => applier(this.db, this.tenantId, rows), () => this.locateFailingRow(applier, rows));
+        if (failure) failed.set(table.localTable, failure);
+      }
+
+      // Client-side download failures (timeout, RLS, network): recorded like
+      // applier failures. Such a table is absent from snapshotTables, so its
+      // snapshot and rows stay untouched.
+      for (const { table, message } of batch.failedTables ?? []) {
+        if (!PULLABLE_TABLES.has(table) || failed.has(table)) continue;
+        failed.set(table, { message: `No se pudo descargar de la nube: ${message}`.slice(0, 500), rowId: null });
       }
 
       // Only remove IDs acknowledged in a previous snapshot. Old, unsynced local
       // data is never treated as a remote deletion merely because it is absent.
+      // A table that failed to apply is skipped entirely: reconciling deletes
+      // against a snapshot we could not apply would delete rows by mistake.
       for (const [table, ids] of snapshotIds) {
+        attempted.add(table);
+        if (failed.has(table)) continue;
         const previous = this.db.prepare("SELECT cursor FROM sync_state WHERE key=?")
           .get(`${this.tenantId}:snapshot:${table}`) as { cursor: string } | undefined;
         const previousIds: string[] = previous ? JSON.parse(previous.cursor) : [];
@@ -327,17 +357,39 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
         deletesByTable.set(table, deleted);
       }
       for (const table of SYNC_PULL_DELETE_ORDER) {
-        for (const id of deletesByTable.get(table) ?? []) {
-          if (this.hasPendingWrite(table, id) || !applyCloudDeletes(this.db, table, [id], this.tenantId)) {
-            snapshotIds.get(table)?.add(id);
+        if (failed.has(table)) continue;
+        const ids = deletesByTable.get(table) ?? [];
+        if (ids.length === 0) continue;
+        attempted.add(table);
+        const failure = this.runIsolated(table, () => {
+          for (const id of ids) {
+            if (this.hasPendingWrite(table, id) || !applyCloudDeletes(this.db, table, [id], this.tenantId)) {
+              snapshotIds.get(table)?.add(id);
+            }
           }
-        }
+        }, () => null);
+        if (failure) failed.set(table, failure);
       }
       for (const [table, ids] of snapshotIds) {
+        if (failed.has(table)) continue;
         this.db.prepare(`INSERT INTO sync_state (key, tenant_id, table_name, phase, cursor, completed, row_count, updated_at)
           VALUES (?, ?, ?, 'incremental', ?, 1, ?, CURRENT_TIMESTAMP)
           ON CONFLICT(key) DO UPDATE SET cursor=excluded.cursor, row_count=excluded.row_count, updated_at=CURRENT_TIMESTAMP`)
           .run(`${this.tenantId}:snapshot:${table}`, this.tenantId, table, JSON.stringify([...ids]), ids.size);
+      }
+
+      // Persist per-table outcome: failures are recorded, tables that applied
+      // cleanly in this pull have any earlier failure cleared.
+      for (const table of attempted) {
+        if (failed.has(table)) continue;
+        this.db.prepare("DELETE FROM sync_pull_errors WHERE tenant_id = ? AND table_name = ?").run(this.tenantId, table);
+      }
+      for (const [table, failure] of failed) {
+        console.error(`[sync↓] tabla ${table} falló al aplicar la bajada${failure.rowId ? ` (fila ${failure.rowId})` : ""}: ${failure.message}`);
+        this.db.prepare(`INSERT INTO sync_pull_errors (tenant_id, table_name, message, row_id, occurred_at)
+          VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+          ON CONFLICT(tenant_id, table_name) DO UPDATE SET message=excluded.message, row_id=excluded.row_id, occurred_at=CURRENT_TIMESTAMP`)
+          .run(this.tenantId, table, failure.message, failure.rowId);
       }
 
       const appliedCount = batch.changes?.length ?? 0;
@@ -355,6 +407,50 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
       this.db.exec("ROLLBACK;");
       throw err;
     }
+  }
+
+  /**
+   * Runs one table's work inside a SAVEPOINT. On error the savepoint is rolled
+   * back (the outer transaction stays usable) and the failure is returned
+   * instead of thrown, so other tables can still commit.
+   */
+  private runIsolated(table: string, work: () => void, locate: () => string | null): PullTableFailure | null {
+    const savepoint = `pull_${table.replace(/[^A-Za-z0-9_]/g, "_")}`;
+    this.db.exec(`SAVEPOINT ${savepoint};`);
+    try {
+      work();
+      this.db.exec(`RELEASE ${savepoint};`);
+      return null;
+    } catch (err) {
+      this.db.exec(`ROLLBACK TO ${savepoint};`);
+      let rowId: string | null = null;
+      try { rowId = locate(); } catch { /* diagnostic only */ }
+      this.db.exec(`ROLLBACK TO ${savepoint};`);
+      this.db.exec(`RELEASE ${savepoint};`);
+      const message = err instanceof Error ? err.message : String(err);
+      return { message: message.slice(0, 500), rowId };
+    }
+  }
+
+  /**
+   * Diagnostic only, run after a table failed and was rolled back: re-applies
+   * the rows cumulatively (so parents earlier in the batch are present) and
+   * returns the first row the applier rejects. The caller rolls everything back.
+   */
+  private locateFailingRow(applier: CloudRowApplier, rows: Array<Record<string, unknown>>): string | null {
+    const limit = Math.min(rows.length, MAX_FAILING_ROW_PROBE);
+    for (let i = 0; i < limit; i++) {
+      this.db.exec("SAVEPOINT pull_probe;");
+      try {
+        applier(this.db, this.tenantId, [rows[i]]);
+        this.db.exec("RELEASE pull_probe;");
+      } catch {
+        this.db.exec("ROLLBACK TO pull_probe;");
+        this.db.exec("RELEASE pull_probe;");
+        return rows[i].id == null ? null : String(rows[i].id);
+      }
+    }
+    return null;
   }
 
   getCursor(): string | null {

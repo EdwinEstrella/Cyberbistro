@@ -2084,7 +2084,7 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     pendingQueue: Array<{ id: string; tableName: string; rowId: string; operation: string; status: string }>;
     pullState: {
       global: { lastPullAt: string | null; lastBatchCount: number; cursor: string | null } | null;
-      perTable: Array<{ table: string; mirroredRows: number; lastPullAt: string | null }>;
+      perTable: Array<{ table: string; mirroredRows: number; lastPullAt: string | null; lastError: SyncPullTableError | null }>;
     };
   } {
     const tableNames = [
@@ -2134,15 +2134,24 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     // per-table snapshot with the mirrored row count and its last pull time.
     let pullState: {
       global: { lastPullAt: string | null; lastBatchCount: number; cursor: string | null } | null;
-      perTable: Array<{ table: string; mirroredRows: number; lastPullAt: string | null }>;
+      perTable: Array<{ table: string; mirroredRows: number; lastPullAt: string | null; lastError: SyncPullTableError | null }>;
     } = { global: null, perTable: [] };
     try {
       const globalRow = this.database.prepare(
         "SELECT cursor, row_count AS rowCount, updated_at AS updatedAt FROM sync_state WHERE tenant_id = ? AND table_name = '__pull__' LIMIT 1"
       ).get(this.tenantId) as { cursor: string | null; rowCount: number; updatedAt: string } | undefined;
-      const perTable = this.database.prepare(
-        "SELECT table_name AS table, row_count AS mirroredRows, updated_at AS lastPullAt FROM sync_state WHERE tenant_id = ? AND table_name != '__pull__' ORDER BY updated_at DESC"
+      const snapshotRows = this.database.prepare(
+        "SELECT table_name AS \"table\", row_count AS mirroredRows, updated_at AS lastPullAt FROM sync_state WHERE tenant_id = ? AND table_name != '__pull__' ORDER BY updated_at DESC"
       ).all(this.tenantId) as Array<{ table: string; mirroredRows: number; lastPullAt: string | null }>;
+      const errorRows = this.database.prepare(
+        "SELECT table_name AS \"table\", message, row_id AS rowId, occurred_at AS occurredAt FROM sync_pull_errors WHERE tenant_id = ?"
+      ).all(this.tenantId) as Array<{ table: string; message: string; rowId: string | null; occurredAt: string }>;
+      const errorsByTable = new Map(errorRows.map((e) => [e.table, { message: e.message, rowId: e.rowId, occurredAt: e.occurredAt }]));
+      const perTable = snapshotRows.map((row) => ({ ...row, lastError: errorsByTable.get(row.table) ?? null }));
+      // A table that failed on its very first pull has no snapshot row yet.
+      for (const [table, lastError] of errorsByTable) {
+        if (!perTable.some((row) => row.table === table)) perTable.push({ table, mirroredRows: 0, lastPullAt: null, lastError });
+      }
       pullState = {
         global: globalRow ? { lastPullAt: globalRow.updatedAt, lastBatchCount: globalRow.rowCount, cursor: globalRow.cursor } : null,
         perTable,
@@ -2161,6 +2170,13 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
       pendingQueue,
       pullState,
     };
+  }
+
+  /** id → updated_at for tables the monitor compares content-wise against the cloud. */
+  listRowVersions(table: string): Array<{ id: string; updatedAt: string | null }> {
+    if (!ROW_VERSION_TABLES.has(table)) throw new Error(`Unsupported table for row versions: ${table}`);
+    return this.database.prepare(`SELECT id, updated_at AS updatedAt FROM ${table} WHERE tenant_id = ?`)
+      .all(this.tenantId) as Array<{ id: string; updatedAt: string | null }>;
   }
 
   retryFailedOutboxOperations(): number {
@@ -2238,6 +2254,15 @@ function catalogDefinition(command: CatalogCommand, tenantId: string): { tableNa
   }
 }
 
+/** Local tables whose id/updated_at pairs may be exposed for the cloud content comparison. */
+const ROW_VERSION_TABLES: ReadonlySet<string> = new Set(["facturas"]);
+
+export interface SyncPullTableError {
+  message: string;
+  rowId: string | null;
+  occurredAt: string;
+}
+
 export class TenantStoreController {
   private activeStore: TenantStore | null = null;
   public readonly payrollSync = new PayrollSyncOrchestrator();
@@ -2295,6 +2320,14 @@ export class TenantStoreController {
     }
     if (!store) return null;
     return store.getSyncDiagnosticReport();
+  }
+
+  listRowVersions(tenantId: string | undefined, table: string): Array<{ id: string; updatedAt: string | null }> {
+    let store = this.activeStore;
+    if (tenantId && (!store || store.getTenantId() !== tenantId)) {
+      store = this.activate(tenantId);
+    }
+    return store ? store.listRowVersions(table) : [];
   }
 
   retryFailedOutboxOperations(tenantId?: string): number {

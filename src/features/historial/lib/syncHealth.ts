@@ -18,6 +18,12 @@ export interface SyncHealthInput {
    * about both directions, so it can only be made after the cloud was checked.
    */
   pendingDownload: number | null;
+  /** Tables whose last cloud->local apply failed (recorded by the pull). */
+  pullErrorTables?: number;
+  /** True when the global pull has never completed on this device. */
+  pullNeverCompleted?: boolean;
+  /** True when the cloud is reachable (a never-completed pull only matters online). */
+  online?: boolean;
 }
 
 export function resolveSyncHealth(input: SyncHealthInput): SyncHealth {
@@ -25,6 +31,14 @@ export function resolveSyncHealth(input: SyncHealthInput): SyncHealth {
 
   if (blocked > 0) {
     return { label: "Bloqueado", tone: "blocked", detail: `${blocked} operación(es) requieren intervención` };
+  }
+
+  const pullErrorTables = input.pullErrorTables ?? 0;
+  if (pullErrorTables > 0) {
+    return { label: "Bajada con errores", tone: "blocked", detail: `${pullErrorTables} tabla(s) no pudieron bajar de la nube` };
+  }
+  if (input.pullNeverCompleted && input.online) {
+    return { label: "Bajada nunca completada", tone: "attention", detail: "La nube responde pero esta PC jamás completó una bajada" };
   }
 
   const hasDownloadPending = typeof pendingDownload === "number" && pendingDownload > 0;

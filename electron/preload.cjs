@@ -100,6 +100,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   syncCloudCustomers: (customers) => ipcRenderer.invoke('customers:sync-cloud', customers),
   getSyncDiagnosticReport: (tenantId) => ipcRenderer.invoke('sync:get-diagnostic-report', tenantId),
   triggerSync: () => ipcRenderer.invoke('sync:trigger'),
+  getLocalRowVersions: (tenantId, table) => ipcRenderer.invoke('sync:get-local-row-versions', tenantId, table),
+  openLogsFolder: () => ipcRenderer.invoke('sync:open-logs-folder'),
   onLocalDataUpdated: (callback) => {
     const listener = (_, tenantId) => callback(tenantId);
     ipcRenderer.on('local-data-updated', listener);

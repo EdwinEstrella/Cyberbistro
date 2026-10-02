@@ -4,10 +4,11 @@ import type { NativeImage } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import log from 'electron-log'
 import { setupAutoUpdater } from './autoUpdater'
 import { startLanEdgeServer, type LanEdgeServerHandle } from './lanEdgeServer'
 import { ThermalPrintQueue } from './thermalPrintQueue'
-import { registerCashPurchaseRepositoryIpc, registerCatalogRepositoryIpc, registerDesktopRepositoryIpc, registerOrdersRepositoryIpc, registerSalesFiscalRepositoryIpc, registerTenantStoreIpc, registerPayrollRepositoryIpc, registerPayrollSyncAccessTokenIpc, registerReceivablesRepositoryIpc, registerPayablesRepositoryIpc, registerSavedAccountIpc, registerExpenseRepositoryIpc, registerCustomerRepositoryIpc, SYNC_DIAGNOSTICS_REPORT_CHANNEL, SYNC_TRIGGER_CHANNEL, SYNC_RETRY_ERRORS_CHANNEL } from './persistence/ipc'
+import { registerCashPurchaseRepositoryIpc, registerCatalogRepositoryIpc, registerDesktopRepositoryIpc, registerOrdersRepositoryIpc, registerSalesFiscalRepositoryIpc, registerTenantStoreIpc, registerPayrollRepositoryIpc, registerPayrollSyncAccessTokenIpc, registerReceivablesRepositoryIpc, registerPayablesRepositoryIpc, registerSavedAccountIpc, registerExpenseRepositoryIpc, registerCustomerRepositoryIpc, SYNC_DIAGNOSTICS_REPORT_CHANNEL, SYNC_TRIGGER_CHANNEL, SYNC_RETRY_ERRORS_CHANNEL, SYNC_ROW_VERSIONS_CHANNEL, SYNC_OPEN_LOGS_CHANNEL } from './persistence/ipc'
 import { PayrollRepository } from './persistence/payrollRepository'
 import { PayrollSyncClient, type PayrollAuthorizationContext } from './persistence/payrollSyncClient'
 import type { PayrollCommand } from '../src/shared/lib/payrollContracts'
@@ -22,6 +23,12 @@ import { PayablesRepository } from './persistence/payablesRepository'
 import { ExpenseRepository } from './persistence/expenseRepository'
 import { CustomerRepository } from './persistence/customerRepository'
 import { DeviceAccountDirectory } from './persistence/deviceAccountDirectory'
+
+// Persist main-process output (sync pull/push errors included) to a rotating
+// file so production problems are diagnosable. Never log tokens or credentials.
+log.transports.file.level = 'info'
+log.transports.file.maxSize = 5 * 1024 * 1024
+Object.assign(console, log.functions)
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const CERTIFICATION_PORTAL_URL = 'https://ecf.dgii.gov.do/certecf/portalcertificacion/Login?ReturnUrl=%2Fcertecf%2Fportalcertificacion'
@@ -665,6 +672,18 @@ if (gotTheLock) {
       if (!isTrustedSender(event)) throw new Error("Untrusted IPC sender");
       await tenantStoreController?.payrollSync.triggerSync();
       return { ok: true };
+    });
+
+    ipcMain.handle(SYNC_ROW_VERSIONS_CHANNEL, async (event, tenantId: string | undefined, table: string) => {
+      if (!isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+      return { ok: true, data: tenantStoreController?.listRowVersions(tenantId, table) ?? [] };
+    });
+
+    ipcMain.handle(SYNC_OPEN_LOGS_CHANNEL, async (event) => {
+      if (!isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+      const logPath = log.transports.file.getFile().path;
+      shell.showItemInFolder(logPath);
+      return { ok: true, path: logPath };
     });
 
     ipcMain.handle(SYNC_RETRY_ERRORS_CHANNEL, async (event, tenantId?: string) => {

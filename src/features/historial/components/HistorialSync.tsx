@@ -22,6 +22,7 @@ import {
   readLocalMirror,
 } from "../../../shared/lib/localFirst";
 import { resolveSyncHealth } from "../lib/syncHealth";
+import { CONTENT_COMPARABLE_TABLES, countPendingContent, type CloudRowVersion } from "../lib/pendingContent";
 import { syncIndexedDbComprasToSqlite } from "../../compras/lib/purchaseService";
 
 interface OutboxSummaryItem {
@@ -60,10 +61,17 @@ interface PullStateGlobal {
   cursor: string | null;
 }
 
+interface PullTableError {
+  message: string;
+  rowId: string | null;
+  occurredAt: string;
+}
+
 interface PullStateTableItem {
   table: string;
   mirroredRows: number;
   lastPullAt: string | null;
+  lastError?: PullTableError | null;
 }
 
 interface DiagnosticReport {
@@ -152,6 +160,47 @@ async function fetchMirrorCounts(tenantId: string): Promise<Record<string, numbe
   return Object.fromEntries(entries);
 }
 
+const CONTENT_PAGE_SIZE = 1000;
+
+/** Cloud id/updated_at pairs for a tenant, keyset-paginated by id. Returns null
+ * when any page fails so the caller reports "could not verify" instead of 0. */
+async function fetchCloudRowVersions(tenantId: string, table: string): Promise<CloudRowVersion[] | null> {
+  const rows: CloudRowVersion[] = [];
+  let lastId: string | null = null;
+  for (;;) {
+    let query = supabase.from(table).select("id, updated_at").eq("tenant_id", tenantId).order("id", { ascending: true }).limit(CONTENT_PAGE_SIZE);
+    if (lastId !== null) query = query.gt("id", lastId);
+    const { data, error } = await query;
+    if (error || !Array.isArray(data)) return null;
+    for (const row of data as Array<{ id: string | number; updated_at: string | null }>) {
+      rows.push({ id: String(row.id), updated_at: row.updated_at ?? null });
+    }
+    if (data.length < CONTENT_PAGE_SIZE) return rows;
+    lastId = String((data[data.length - 1] as { id: string | number }).id);
+  }
+}
+
+/** Per-table count of rows missing locally or newer in the cloud (by updated_at). */
+async function fetchPendingContent(tenantId: string): Promise<Record<string, number>> {
+  const result: Record<string, number> = {};
+  for (const table of CONTENT_COMPARABLE_TABLES) {
+    try {
+      const [cloudRows, local] = await Promise.all([
+        fetchCloudRowVersions(tenantId, table),
+        window.electronAPI?.getLocalRowVersions?.(tenantId, table),
+      ]);
+      if (!cloudRows || !local?.ok) {
+        result[table] = -1;
+        continue;
+      }
+      result[table] = countPendingContent(cloudRows, local.data).total;
+    } catch {
+      result[table] = -1;
+    }
+  }
+  return result;
+}
+
 function formatRelativeTime(iso: string | null | undefined): string {
   if (!iso) return "Nunca";
   const then = new Date(iso.includes("T") ? iso : iso.replace(" ", "T") + "Z").getTime();
@@ -176,6 +225,7 @@ export function HistorialSync() {
   const [cloudCounts, setCloudCounts] = useState<Record<string, number> | null>(null);
   const [mirrorCounts, setMirrorCounts] = useState<Record<string, number>>({});
   const [comparing, setComparing] = useState(false);
+  const [pendingContent, setPendingContent] = useState<Record<string, number> | null>(null);
   const [cloudStatus, setCloudStatus] = useState<"checking" | "online" | "offline">("checking");
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [message, setMessage] = useState<string>("");
@@ -319,9 +369,10 @@ export function HistorialSync() {
     setComparing(true);
     setMessage("");
     try {
-      const [cloud, mirror] = await Promise.all([fetchCloudCounts(tenantId), fetchMirrorCounts(tenantId)]);
+      const [cloud, mirror, content] = await Promise.all([fetchCloudCounts(tenantId), fetchMirrorCounts(tenantId), fetchPendingContent(tenantId)]);
       setCloudCounts(cloud);
       setMirrorCounts(mirror);
+      setPendingContent(content);
     } catch (e: any) {
       setCloudCounts(null);
       setMessage(`Error comparando con la nube: ${e.message}`);
@@ -346,6 +397,17 @@ export function HistorialSync() {
       .reduce((acc, curr) => acc + curr.count, 0);
   }, [report]);
 
+  // Count gap (cloud - SQLite) plus, where both sides carry updated_at and the
+  // user compared with the cloud, rows whose cloud copy is newer or missing.
+  const pendingFor = useCallback(
+    (table: string, cloud: number) => {
+      const byCount = Math.max(cloud - sqliteCountFor(table), 0);
+      const byContent = pendingContent?.[table];
+      return typeof byContent === "number" && byContent >= 0 ? Math.max(byCount, byContent) : byCount;
+    },
+    [pendingContent, sqliteCountFor],
+  );
+
   const totalPendingDownload = useMemo(() => {
     if (!cloudCounts) return null;
     // Honest verification: if ANY comparable table could not be read from the
@@ -354,10 +416,15 @@ export function HistorialSync() {
     for (const table of CLOUD_COMPARABLE_TABLES) {
       const cloud = cloudCounts[table];
       if (typeof cloud !== "number" || cloud < 0) return null;
-      sum += Math.max(cloud - sqliteCountFor(table), 0);
+      sum += pendingFor(table, cloud);
     }
     return sum;
-  }, [cloudCounts, sqliteCountFor]);
+  }, [cloudCounts, pendingFor]);
+
+  const pullErrors = useMemo(
+    () => (report?.pullState?.perTable ?? []).filter((t) => t.lastError).map((t) => ({ table: t.table, ...(t.lastError as PullTableError) })),
+    [report],
+  );
 
   const totalErrors = useMemo(() => {
     if (!report?.recentErrors) return 0;
@@ -369,7 +436,11 @@ export function HistorialSync() {
     return report.tableCounts.reduce((acc, curr) => acc + curr.count, 0);
   }, [report]);
 
-  const syncHealth = resolveSyncHealth({ pendingUpload: totalPending, blocked: totalErrors, pendingDownload: totalPendingDownload });
+  const syncHealth = resolveSyncHealth({ pendingUpload: totalPending, blocked: totalErrors, pendingDownload: totalPendingDownload,
+    pullErrorTables: pullErrors.length,
+    pullNeverCompleted: report !== null && !report?.pullState?.global,
+    online: cloudStatus === "online",
+  });
 
   return (
     <div className="flex-1 bg-background p-4 sm:p-8 lg:p-10 overflow-y-auto min-h-0 text-foreground">
@@ -556,9 +627,9 @@ export function HistorialSync() {
             }`}
           >
             Errores & Conflictos
-            {totalErrors > 0 && (
+            {totalErrors + pullErrors.length > 0 && (
               <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-rose-500/20 text-rose-500">
-                {totalErrors}
+                {totalErrors + pullErrors.length}
               </span>
             )}
           </button>
@@ -682,6 +753,15 @@ export function HistorialSync() {
                   <CloudDownload size={14} className={comparing ? "animate-pulse" : ""} />
                   {comparing ? "Comparando..." : "Comparar con la nube"}
                 </button>
+                {window.electronAPI?.openLogsFolder && (
+                  <button
+                    type="button"
+                    onClick={() => void window.electronAPI?.openLogsFolder?.()}
+                    className="rounded-xl border border-black/10 dark:border-white/10 bg-muted/40 px-4 py-2.5 text-xs font-bold text-foreground hover:bg-muted/60 transition-all cursor-pointer shrink-0"
+                  >
+                    Abrir carpeta de logs
+                  </button>
+                )}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
                 <div className="p-4 rounded-xl border border-black/5 dark:border-white/5 bg-muted/20">
@@ -735,18 +815,27 @@ export function HistorialSync() {
                       const mirrorCount = mirrorCounts[table] ?? 0;
                       const cloud = cloudCounts?.[table];
                       const cloudKnown = typeof cloud === "number" && cloud >= 0;
-                      const pending = cloudKnown ? Math.max((cloud as number) - sqliteCount, 0) : null;
+                      const pending = cloudKnown ? pendingFor(table, cloud as number) : null;
+                      const pullError = report?.pullState?.perTable.find((t) => t.table === table)?.lastError ?? null;
                       const lastPull = report?.pullState?.perTable.find((t) => t.table === table)?.lastPullAt ?? null;
                       return (
                         <tr key={table} className="hover:bg-muted/30 transition-colors">
-                          <td className="py-2.5 px-3 font-bold text-foreground">{table}</td>
+                          <td className="py-2.5 px-3 font-bold text-foreground">
+                            {table}
+                            {pullError && (
+                              <div className="mt-1 font-normal text-[10px] text-rose-500 break-words max-w-[260px]" title={pullError.message}>
+                                <AlertCircle size={10} className="inline mr-1" />
+                                Error de bajada{pullError.rowId ? ` (fila ${pullError.rowId})` : ""}: {pullError.message}
+                              </div>
+                            )}
+                          </td>
                           <td className="py-2.5 px-3 text-right">{sqliteCount}</td>
                           <td className="py-2.5 px-3 text-right text-muted-foreground">{mirrorCount}</td>
                           <td className="py-2.5 px-3 text-right">{cloudKnown ? cloud : cloudCounts ? "error" : "—"}</td>
                           <td className={`py-2.5 px-3 text-right font-bold ${pending && pending > 0 ? "text-amber-500" : pending === 0 ? "text-emerald-500" : "text-muted-foreground"}`}>
                             {pending === null ? "—" : pending}
                           </td>
-                          <td className="py-2.5 px-3 text-muted-foreground">{formatRelativeTime(lastPull)}</td>
+                          <td className={`py-2.5 px-3 ${pullError ? "text-rose-500" : "text-muted-foreground"}`}>{formatRelativeTime(lastPull)}</td>
                         </tr>
                       );
                     })}
@@ -777,6 +866,40 @@ export function HistorialSync() {
                 </button>
               )}
             </div>
+
+            {pullErrors.length > 0 && (
+              <div className="mb-6 rounded-xl border border-rose-500/30 bg-rose-500/5 p-4">
+                <h4 className="text-sm font-bold text-rose-500 mb-3 flex items-center gap-2">
+                  <ArrowDownCircle className="size-4" />
+                  Errores de bajada ({pullErrors.length})
+                </h4>
+                <p className="text-[11px] text-muted-foreground mb-3">
+                  Estas tablas no pudieron aplicar los datos de la nube. El resto de las tablas sí se descargó. Se reintenta en cada sincronización.
+                </p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="border-b border-black/10 dark:border-white/10 text-muted-foreground font-bold uppercase text-[10px]">
+                      <tr>
+                        <th className="py-2 px-3">Tabla</th>
+                        <th className="py-2 px-3">ID Registro</th>
+                        <th className="py-2 px-3">Motivo</th>
+                        <th className="py-2 px-3">Cuándo</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-black/5 dark:divide-white/5 font-mono">
+                      {pullErrors.map((e) => (
+                        <tr key={e.table}>
+                          <td className="py-2 px-3 font-bold text-rose-500">{e.table}</td>
+                          <td className="py-2 px-3 text-muted-foreground break-all max-w-[160px]">{e.rowId ?? "—"}</td>
+                          <td className="py-2 px-3 text-foreground break-all max-w-[420px]">{e.message}</td>
+                          <td className="py-2 px-3 text-muted-foreground">{formatRelativeTime(e.occurredAt)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
             {report?.recentErrors && report.recentErrors.length > 0 ? (
               <div className="overflow-x-auto">

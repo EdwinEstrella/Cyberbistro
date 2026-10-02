@@ -1,6 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { resolveSyncHealth } from "./syncHealth";
 
+describe("resolveSyncHealth - pull failures", () => {
+  it("is never healthy while a table failed to pull", () => {
+    const health = resolveSyncHealth({ pendingUpload: 0, blocked: 0, pendingDownload: 0, pullErrorTables: 1 });
+    expect(health.tone).toBe("blocked");
+    expect(health.label).not.toContain("Saludable");
+  });
+
+  it("is not healthy when the pull never completed while online", () => {
+    const health = resolveSyncHealth({ pendingUpload: 0, blocked: 0, pendingDownload: 0, pullNeverCompleted: true, online: true });
+    expect(health.tone).toBe("attention");
+  });
+
+  it("ignores a missing first pull while offline", () => {
+    expect(resolveSyncHealth({ pendingUpload: 0, blocked: 0, pendingDownload: 0, pullNeverCompleted: true, online: false }).label).toBe("100% Saludable");
+  });
+});
+
 describe("resolveSyncHealth", () => {
   it("does not report healthy while upload work is pending", () => {
     expect(resolveSyncHealth({ pendingUpload: 1, blocked: 0, pendingDownload: 0 })).toMatchObject({ tone: "attention", label: "Subida pendiente" });

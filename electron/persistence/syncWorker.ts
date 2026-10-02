@@ -31,6 +31,8 @@ export interface PullBatch {
   changes: ServerChange[];
   /** Complete, tenant-scoped snapshots; absent previously downloaded IDs are deletions. */
   snapshotTables?: string[];
+  /** Tables whose cloud download failed client-side (local table name). Never snapshotted. */
+  failedTables?: Array<{ table: string; message: string }>;
 }
 
 export interface DurableSyncStore {

@@ -423,6 +423,14 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
       error_message TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     ) STRICT;
+    CREATE TABLE IF NOT EXISTS sync_pull_errors (
+      tenant_id TEXT NOT NULL REFERENCES tenants(id),
+      table_name TEXT NOT NULL,
+      message TEXT NOT NULL,
+      row_id TEXT,
+      occurred_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (tenant_id, table_name)
+    ) STRICT;
     CREATE TABLE IF NOT EXISTS local_device_session (
       tenant_id TEXT PRIMARY KEY REFERENCES tenants(id),
       session_json TEXT NOT NULL,

@@ -254,6 +254,7 @@ export class PayrollSyncClient implements ServerSyncClient {
     const client: any = await this.clientPromise;
     const changes: ServerChange[] = [];
     const snapshotTables: string[] = [];
+    const failedTables: Array<{ table: string; message: string }> = [];
     // Per-table isolation: one table failing (RLS, a missing embed, a transient
     // network error) must NOT abort the whole download and leave SQLite empty.
     // Each table is buffered and only committed when its full pagination
@@ -303,10 +304,12 @@ export class PayrollSyncClient implements ServerSyncClient {
         snapshotTables.push(localTable);
       } catch (error) {
         // Skip only this table; it stays behind and retries on the next pull.
-        console.warn(`[sync↓] tabla ${table} no se pudo bajar (se omite, se reintenta): ${error instanceof Error ? error.message : "error"}`);
+        const message = error instanceof Error ? error.message : "error";
+        console.warn(`[sync↓] tabla ${table} no se pudo bajar (se omite, se reintenta): ${message}`);
+        failedTables.push({ table: localTable, message });
       }
     }
-    return { cursor: new Date().toISOString(), changes, snapshotTables };
+    return { cursor: new Date().toISOString(), changes, snapshotTables, failedTables };
   }
 
   private async deleteRemote(operation: DurableOperation): Promise<PushResponse> {

@@ -110,11 +110,39 @@ describe("bidirectional SQLite cloud imports", () => {
     expect(db.prepare("SELECT * FROM gastos").all()).toEqual([]);
     expect(store.getCursor()).not.toBeNull();
   });
-  it("rolls back rows and cursor if payroll mapping fails", async () => {
+  it("isolates a payroll mapping failure to its own table and records it", async () => {
     const cloud = makeCloud({ nomina_empleados: [employee()], nomina_pagos: [payment({ monto_pagado: -1 })] });
-    await expect(pull(cloud)).rejects.toThrow("Invalid cloud payroll amount");
-    expect(db.prepare("SELECT * FROM payroll_employees").all()).toEqual([]);
-    expect(store.getCursor()).toBeNull();
+    await pull(cloud);
+    // The failing table is rolled back alone; independent tables still apply.
+    expect(db.prepare("SELECT * FROM payroll_payments").all()).toEqual([]);
+    expect(db.prepare("SELECT id FROM payroll_employees").all()).toEqual([{ id: "emp-1" }]);
+    expect(db.prepare("SELECT table_name, message, row_id FROM sync_pull_errors").all()).toEqual([
+      { table_name: "payroll_payments", message: expect.stringContaining("Invalid cloud payroll amount"), row_id: "pay-1" },
+    ]);
+  });
+  it("reports a client-side download failure in failedTables while other tables still download", async () => {
+    const cloud = makeCloud({ customers: [{ id: "cust-1", tenant_id: TENANT, name: "Ana" }], facturas: [{ id: "fac-1", tenant_id: TENANT }] });
+    cloud.failures.add("facturas");
+    const batch = await new PayrollSyncClient(cloud.client).pull({ tenantId: TENANT, cursor: null });
+    expect(batch.failedTables).toEqual([{ table: "facturas", message: expect.stringContaining("offline") }]);
+    expect(batch.snapshotTables).not.toContain("facturas");
+    expect(batch.snapshotTables).toContain("customers");
+    expect(batch.changes.some(c => c.tableName === "customers")).toBe(true);
+  });
+  it("records failedTables in sync_pull_errors without touching the snapshot, then clears on success", async () => {
+    const cloud = makeCloud({ customers: [{ id: "cust-1", tenant_id: TENANT, name: "Ana" }], facturas: [] });
+    await pull(cloud);
+    const snapshot = () => db.prepare("SELECT cursor FROM sync_state WHERE key = ?").get(`${TENANT}:snapshot:facturas`);
+    const before = snapshot();
+    cloud.failures.add("facturas");
+    await pull(cloud);
+    expect(db.prepare("SELECT table_name, message, row_id FROM sync_pull_errors").all()).toEqual([
+      { table_name: "facturas", message: expect.stringContaining("No se pudo descargar de la nube"), row_id: null },
+    ]);
+    expect(snapshot()).toEqual(before);
+    cloud.failures.delete("facturas");
+    await pull(cloud);
+    expect(db.prepare("SELECT count(*) n FROM sync_pull_errors").get()).toEqual({ n: 0 });
   });
   it("isolates employee child rows by tenant", async () => {
     const cloud = makeCloud({ nomina_empleados: [employee()], nomina_pagos: [payment({ nomina_empleados: { tenant_id: "other" } })] });
