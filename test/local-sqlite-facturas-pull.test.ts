@@ -83,6 +83,40 @@ describe("Facturas cloud→SQLite pull", () => {
     expect((rows[0] as Record<string, unknown>).estado).toBe("cancelada");
   });
 
+  it("brings down a header edited on the web (ncf, client, notes) without touching items or totals", () => {
+    const s = setup();
+    const db = s.getDatabase();
+
+    applyCloudFacturaRows(db, tenantId, [cloudInvoice()]);
+    applyCloudFacturaRows(db, tenantId, [cloudInvoice({
+      ncf: "B0100000210",
+      ncf_tipo: "B01 - Factura con validez fiscal / ITBIS (consumo)",
+      cliente_nombre: "Cliente Corregido",
+      cliente_rnc: "101142162",
+      notas: "Corregido desde la web",
+      updated_at: "2026-10-02T12:00:00.000Z",
+    })]);
+
+    const row = s.listInvoices()[0] as Record<string, unknown>;
+    expect(row.ncf).toBe("B0100000210");
+    expect(row.cliente_nombre).toBe("Cliente Corregido");
+    expect(row.cliente_rnc).toBe("101142162");
+    expect(row.notas).toBe("Corregido desde la web");
+    expect(row.total).toBe(1280);
+    expect(JSON.parse(String(row.items))).toHaveLength(1);
+  });
+
+  it("does not clobber a header edit that is still pending upload", () => {
+    const s = setup();
+    const db = s.getDatabase();
+
+    applyCloudFacturaRows(db, tenantId, [cloudInvoice()]);
+    s.updateInvoiceHeader("fac-1", { ncf: "B0100000300", ncf_tipo: "B01 - Factura con validez fiscal / ITBIS (consumo)" });
+    applyCloudFacturaRows(db, tenantId, [cloudInvoice({ ncf: "B0100000001" })]);
+
+    expect((s.listInvoices()[0] as Record<string, unknown>).ncf).toBe("B0100000300");
+  });
+
   it("maps a null cloud sucursal onto the default branch and stores items as JSON", () => {
     const s = setup();
     const db = s.getDatabase();

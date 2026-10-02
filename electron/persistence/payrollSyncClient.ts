@@ -459,6 +459,9 @@ function mapOperation(operation: DurableOperation):
       case "cxp_pagos":
         return { ok: true, remoteTable: "cxp_pagos", payload: mapPayablePaymentPayload(operation, operation.payload) };
       case "facturas":
+        if (operation.op === "update") {
+          return { ok: true, remoteTable: "facturas", payload: mapFacturaHeaderUpdatePayload(operation.payload), isPartial: true };
+        }
         return { ok: true, remoteTable: "facturas", payload: mapFacturaPayload(operation, operation.payload) };
       case "mesas_estado":
         return { ok: true, remoteTable: "mesas_estado", payload: mapMesasEstadoPayload(operation, operation.payload) };
@@ -1032,6 +1035,19 @@ function unsupportedValue(field: string, value: unknown): never {
 
 function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+/** Partial facturas update: only the editable header columns, never items or amounts. */
+const FACTURA_HEADER_UPDATE_FIELDS = ["ncf", "ncf_tipo", "cliente_nombre", "cliente_rnc", "notas", "updated_at"] as const;
+function mapFacturaHeaderUpdatePayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const row: Record<string, unknown> = {};
+  for (const key of FACTURA_HEADER_UPDATE_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(payload, key)) {
+      const value = payload[key];
+      row[key] = value == null || String(value).length === 0 ? null : String(value);
+    }
+  }
+  return row;
 }
 
 function mapFacturaPayload(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {

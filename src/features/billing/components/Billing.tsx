@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { ChevronDown, Eye, Printer, Trash2, TrendingUp, DollarSign, RefreshCw, FileText, Activity, Calendar } from "lucide-react";
+import { ChevronDown, Eye, Pencil, Printer, Trash2, TrendingUp, DollarSign, RefreshCw, FileText, Activity, Calendar } from "lucide-react";
 import { supabase } from "../../../shared/lib/supabase";
 import { useAuth, ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
 import { buildCierreDiaReceiptHtml, buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
@@ -7,6 +7,7 @@ import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { readLocalInvoices, deleteLocalInvoice } from "../lib/invoicesLocal";
+import { EditInvoiceHeaderModal } from "./EditInvoiceHeaderModal";
 import {
   INVOICE_LIST_WINDOW_MS,
   RECENT_CYCLES_LIMIT,
@@ -26,6 +27,7 @@ import { canUseFeature } from "../../../shared/lib/planFeatures";
 import { calculateExpectedCashDrawer, isCashPaymentMethod, sumCashExpenses } from "../../../shared/lib/cycleCash";
 import { getFiscalPendingPresentation } from "../../../shared/lib/salesFiscalUiAdapter";
 import { writeCyclePrinted } from "../../cierre/lib/cierresWrites";
+import { canDeleteInvoices as canDeleteInvoicesForRol, canEditInvoiceHeader, canViewBillingSummaries } from "../../../shared/lib/roleNav";
 // useTheme removed
 import {
   Dialog,
@@ -76,6 +78,7 @@ interface Invoice {
   ncf_tipo?: string | null;
   cliente_nombre?: string | null;
   cliente_rnc?: string | null;
+  fiscal_mode?: string | null;
 }
 
 interface CierreOperativoRow {
@@ -309,6 +312,7 @@ export function Billing() {
   const [currentPage, setCurrentPage] = useState(1);
   const [methodFilter, setMethodFilter] = useState<string>("todos");
   const [invoiceModal, setInvoiceModal] = useState<Invoice | null>(null);
+  const [editInvoice, setEditInvoice] = useState<Invoice | null>(null);
   // deletingInvoiceId removed
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -813,7 +817,9 @@ export function Billing() {
     };
   }, [cycleSummaries, invoices, expenses]);
 
-  const canDeleteInvoices = rol === "admin";
+  const canDeleteInvoices = canDeleteInvoicesForRol(rol);
+  const canEditInvoices = canEditInvoiceHeader(rol);
+  const showSummaries = canViewBillingSummaries(rol);
 
   const itemsPerPage = 10;
   const totalPages = useMemo(() => {
@@ -1199,8 +1205,9 @@ export function Billing() {
       {/* Header Section */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-black/5 dark:border-white/5 pb-5">
         <h1 className="font-['Space_Grotesk',sans-serif] text-foreground text-[26px] sm:text-[34px] font-bold leading-none tracking-tight">
-          Facturas y ciclos
+          {showSummaries ? "Facturas y ciclos" : "Facturas"}
         </h1>
+        {showSummaries && (
         <div className="bg-muted p-1 rounded-xl border border-black/5 dark:border-white/5 flex items-center gap-1 w-full sm:w-auto shrink-0">
           <button
             type="button"
@@ -1232,9 +1239,11 @@ export function Billing() {
             </button>
           )}
         </div>
+        )}
       </div>
 
       {/* KPI Cards Grid */}
+      {showSummaries && (
       <div className={`grid grid-cols-1 sm:grid-cols-2 ${view === "facturas" ? "xl:grid-cols-3" : "xl:grid-cols-4"} gap-4`}>
         {kpiCards.map((kpi, i) => (
           <div key={i} className="bg-card rounded-[20px] border border-black/10 dark:border-white/5 p-5 flex justify-between items-start shadow-sm transition-all hover:shadow-md hover:border-black/15 dark:hover:border-white/10">
@@ -1251,10 +1260,12 @@ export function Billing() {
           </div>
         ))}
       </div>
+      )}
 
       {/* Main Content */}
       <div className="flex flex-col gap-6">
         <div className="flex flex-col gap-6">
+          {showSummaries && (
           <div className="bg-card rounded-[20px] border border-black/10 dark:border-white/5 p-5 shadow-sm">
             <div className="flex items-center gap-2 pb-4 border-b border-black/5 dark:border-white/5">
               <TrendingUp size={16} className="text-green-600 dark:text-green-400" />
@@ -1288,6 +1299,7 @@ export function Billing() {
               </div>
             )}
           </div>
+          )}
 
           {/* Horizontal Filter Bar Card */}
           <div className="bg-card rounded-[20px] border border-black/10 dark:border-white/5 p-4 sm:p-5 shadow-sm">
@@ -1395,6 +1407,7 @@ export function Billing() {
                           <div className="flex gap-2">
                             <button onClick={() => setInvoiceModal(inv)} className="size-9 rounded-lg bg-muted flex items-center justify-center text-muted-foreground border-none cursor-pointer"><Eye size={16} /></button>
                             <button onClick={() => void printInvoice(inv)} className="size-9 rounded-lg bg-muted flex items-center justify-center text-muted-foreground border-none cursor-pointer"><Printer size={16} /></button>
+                            {canEditInvoices && <button title="Editar encabezado" aria-label="Editar encabezado" onClick={() => setEditInvoice(inv)} className="size-9 rounded-lg bg-muted flex items-center justify-center text-muted-foreground border-none cursor-pointer"><Pencil size={16} /></button>}
                             {canDeleteInvoices && <button onClick={() => void deleteInvoiceAndTraces(inv)} className="size-9 rounded-lg bg-muted flex items-center justify-center text-destructive/70 border-none cursor-pointer"><Trash2 size={16} /></button>}
                           </div>
                         </div>
@@ -1453,6 +1466,7 @@ export function Billing() {
                             <div className="flex justify-end gap-2">
                               <button onClick={() => setInvoiceModal(inv)} className="size-8 rounded-lg bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/10 transition-all border-none cursor-pointer"><Eye size={16} /></button>
                               <button onClick={() => void printInvoice(inv)} className="size-8 rounded-lg bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/10 transition-all border-none cursor-pointer"><Printer size={16} /></button>
+                              {canEditInvoices && <button title="Editar encabezado" aria-label="Editar encabezado" onClick={() => setEditInvoice(inv)} className="size-8 rounded-lg bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-black/5 dark:hover:bg-white/10 transition-all border-none cursor-pointer"><Pencil size={16} /></button>}
                               {canDeleteInvoices && <button onClick={() => void deleteInvoiceAndTraces(inv)} className="size-8 rounded-lg bg-muted flex items-center justify-center text-destructive/60 hover:text-destructive hover:bg-destructive/10 transition-all border-none cursor-pointer"><Trash2 size={16} /></button>}
                             </div>
                           </div>
@@ -1937,6 +1951,16 @@ export function Billing() {
             )}
         </div>
       </div>
+
+      <EditInvoiceHeaderModal
+        invoice={editInvoice}
+        tenantId={tenantId ?? null}
+        onClose={() => setEditInvoice(null)}
+        onSaved={async () => {
+          setInvoiceModal(null);
+          await loadBillingData();
+        }}
+      />
 
       <Dialog open={invoiceModal !== null} onOpenChange={(open) => !open && setInvoiceModal(null)}>
         <DialogContent className="max-h-[85vh] overflow-y-auto border-black/10 dark:border-white/10 bg-card text-foreground sm:max-w-lg">

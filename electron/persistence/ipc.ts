@@ -15,6 +15,11 @@ import type { ExpenseCommand, ExpenseRepositoryResult } from "./expenseRepositor
 import type { CustomerCommand, CustomerRepositoryResult } from "./customerRepository";
 import type { DesktopCheckoutCommand, DesktopCheckoutResult } from "../../src/shared/lib/checkoutContracts";
 
+export type InvoiceHeaderUpdateResult =
+  | { ok: true; changed: boolean }
+  | { ok: false; reason: "not_found" }
+  | { ok: false; reason: "ncf_duplicate"; numeroFactura: number | null };
+
 export const TENANT_STORE_STATUS_CHANNEL = "tenant-store:status";
 export const TENANT_STORE_ACTIVATE_CHANNEL = "tenant-store:activate";
 export const TENANT_STORE_IMPORT_CHANNEL = "tenant-store:import-indexeddb";
@@ -39,6 +44,7 @@ export const FACTURAS_RESERVE_NUMBERS_CHANNEL = "facturas:reserve-numbers";
 export const FACTURAS_NUMBER_FLOOR_CHANNEL = "facturas:number-floor";
 export const FACTURAS_DELETE_LOCAL_CHANNEL = "facturas:delete-local";
 export const FACTURAS_SAVE_LOCAL_CHANNEL = "facturas:save-local";
+export const FACTURAS_UPDATE_HEADER_CHANNEL = "facturas:update-header";
 export const CASH_PURCHASE_REPOSITORY_EXECUTE_CHANNEL = "cash-purchase-repository:execute";
 export const PURCHASE_REPOSITORY_EXECUTE_CHANNEL = "purchase-repository:execute";
 export const COMPRAS_LIST_CHANNEL = "compras:list";
@@ -377,6 +383,7 @@ export function registerSalesFiscalRepositoryIpc(input: {
   getInvoiceNumberFloor?: (input: { tenantId?: string }) => number;
   deleteInvoiceLocal?: (input: { tenantId?: string; invoiceId: string }) => void;
   saveInvoiceLocal?: (invoice: Record<string, unknown>) => void;
+  updateInvoiceHeaderLocal?: (input: { tenantId?: string; invoiceId: string; changes: Record<string, unknown> }) => InvoiceHeaderUpdateResult;
 }): void {
   input.ipcMain.removeHandler(FISCAL_SALES_REPOSITORY_EXECUTE_CHANNEL);
   input.ipcMain.handle(FISCAL_SALES_REPOSITORY_EXECUTE_CHANNEL, async (event, payload) => {
@@ -435,6 +442,26 @@ export function registerSalesFiscalRepositoryIpc(input: {
     if (!input.saveInvoiceLocal) throw new Error("Local invoice saving is unavailable");
     input.saveInvoiceLocal(payload as Record<string, unknown>);
     return { ok: true };
+  });
+
+  input.ipcMain.removeHandler(FACTURAS_UPDATE_HEADER_CHANNEL);
+  input.ipcMain.handle(FACTURAS_UPDATE_HEADER_CHANNEL, async (event, payload) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    const request = payload as { tenantId?: unknown; invoiceId?: unknown; changes?: unknown } | null;
+    if (
+      !request ||
+      (request.tenantId !== undefined && typeof request.tenantId !== "string") ||
+      typeof request.invoiceId !== "string" || request.invoiceId.length === 0 ||
+      !request.changes || typeof request.changes !== "object" || Array.isArray(request.changes)
+    ) {
+      throw new Error("Invalid invoice header update request");
+    }
+    if (!input.updateInvoiceHeaderLocal) throw new Error("Local invoice header update is unavailable");
+    return input.updateInvoiceHeaderLocal({
+      tenantId: request.tenantId as string | undefined,
+      invoiceId: request.invoiceId,
+      changes: request.changes as Record<string, unknown>,
+    });
   });
 }
 

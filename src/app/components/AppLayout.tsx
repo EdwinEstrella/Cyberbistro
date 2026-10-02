@@ -156,7 +156,7 @@ function filterMainNavForRol(rol: string | null): readonly SidebarSection[] {
   } else if (normalized === "cocina") {
     filtered = sidebarSections.map((s) => filterSectionItems(s, ["/cocina"]));
   } else if (normalized === "cajera") {
-    const allow = ["/dashboard", "/clientes", "/tables", "/gastos", "/nomina", "/cierre", "/cuentas-pagar", "/cuentas-cobrar", "/pedidos", "/fiscal", "/fiscal/activacion", "/historial"];
+    const allow = ["/dashboard", "/billing", "/clientes", "/tables", "/gastos", "/nomina", "/cierre", "/cuentas-pagar", "/cuentas-cobrar", "/pedidos", "/fiscal", "/fiscal/activacion", "/historial"];
     filtered = sidebarSections.map((s) => filterSectionItems(s, allow));
   } else if (normalized === "mesero") {
     const allow = ["/camarera", "/entregas"];

@@ -8,6 +8,7 @@ import { PayrollSyncOrchestrator } from "./payrollSyncOrchestrator";
 import type { DesktopCommand, DesktopRepositoryStore } from "../../src/shared/lib/desktopRepository";
 import type { CatalogCommand } from "../../src/shared/lib/catalogContracts";
 import type { OrdersCommand } from "../../src/shared/lib/ordersContracts";
+import type { InvoiceHeaderUpdateResult } from "./ipc";
 import type { SalesFiscalCommand, SalesFiscalRepositoryStore } from "./salesFiscalRepository";
 import type { PurchaseCommand, CashPurchaseCommand, CashPurchaseRepositoryStore } from "./cashPurchaseRepository";
 import type { ReceivablesCommand, ReceivablesRepositoryStore } from "./receivablesRepository";
@@ -1280,6 +1281,73 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
       );
 
       this.commitTransaction();
+    } catch (error) {
+      this.rollbackTransaction();
+      throw error;
+    }
+  }
+
+  /**
+   * Updates only the editable header columns of an existing invoice and enqueues
+   * a partial 'update' outbox entry (id + changed fields + updated_at), so line
+   * items and amounts are never re-pushed. Rejects an NCF already used by another
+   * invoice of this tenant.
+   */
+  updateInvoiceHeader(invoiceId: string, changes: Record<string, unknown>): InvoiceHeaderUpdateResult {
+    if (!invoiceId) throw new Error("Invalid invoice id");
+    const fields = (["ncf", "ncf_tipo", "cliente_nombre", "cliente_rnc", "notas"] as const).filter((key) =>
+      Object.prototype.hasOwnProperty.call(changes, key)
+    );
+    const clean = (value: unknown): string | null => {
+      if (value == null) return null;
+      const text = String(value).trim();
+      return text.length > 0 ? text : null;
+    };
+
+    this.beginImmediateTransaction();
+    try {
+      const existing = this.database.prepare(
+        "SELECT sucursal_id FROM facturas WHERE id = ? AND tenant_id = ?"
+      ).get(invoiceId, this.tenantId) as { sucursal_id: string | null } | undefined;
+      if (!existing) {
+        this.commitTransaction();
+        return { ok: false, reason: "not_found" };
+      }
+      if (fields.length === 0) {
+        this.commitTransaction();
+        return { ok: true, changed: false };
+      }
+
+      const values: Record<string, string | null> = {};
+      for (const key of fields) values[key] = clean(changes[key]);
+
+      if (values.ncf) {
+        const clash = this.database.prepare(
+          "SELECT numero_factura FROM facturas WHERE tenant_id = ? AND ncf = ? AND id <> ? LIMIT 1"
+        ).get(this.tenantId, values.ncf, invoiceId) as { numero_factura: number | null } | undefined;
+        if (clash) {
+          this.commitTransaction();
+          return { ok: false, reason: "ncf_duplicate", numeroFactura: clash.numero_factura ?? null };
+        }
+      }
+
+      const updatedAt = new Date().toISOString();
+      const setSql = [...fields.map((key) => `${key} = ?`), "updated_at = ?", "local_status = 'pending_sync'"].join(", ");
+      this.database.prepare(`UPDATE facturas SET ${setSql} WHERE id = ? AND tenant_id = ?`)
+        .run(...fields.map((key) => values[key]), updatedAt, invoiceId, this.tenantId);
+
+      this.database.prepare(`
+        INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status)
+        VALUES (?, ?, ?, 'facturas', ?, 'update', ?, 'pending')
+      `).run(
+        crypto.randomUUID(),
+        this.tenantId,
+        existing.sucursal_id ?? "main-process-default",
+        invoiceId,
+        JSON.stringify({ id: invoiceId, tenant_id: this.tenantId, ...values, updated_at: updatedAt })
+      );
+      this.commitTransaction();
+      return { ok: true, changed: true };
     } catch (error) {
       this.rollbackTransaction();
       throw error;

@@ -123,3 +123,69 @@ export async function deleteLocalInvoice(
     throw new Error(`Failed to delete invoice in cloud: ${error.message}`);
   }
 }
+
+export class InvoiceNcfDuplicateError extends Error {
+  constructor(ncf: string, numeroFactura: number | null | undefined) {
+    super(`El NCF ${ncf} ya está asignado a la factura${numeroFactura != null ? ` #${numeroFactura}` : " de otro registro"}.`);
+    this.name = "InvoiceNcfDuplicateError";
+  }
+}
+
+/** Looks for another cloud invoice of the tenant using this NCF. Returns null when none or when the check cannot run. */
+async function findCloudNcfClash(
+  tenantId: string,
+  invoiceId: string,
+  ncf: string
+): Promise<{ numero_factura: number | null } | null> {
+  try {
+    const { data, error } = await supabase
+      .from("facturas")
+      .select("id, numero_factura")
+      .eq("tenant_id", tenantId)
+      .eq("ncf", ncf)
+      .neq("id", invoiceId)
+      .limit(1);
+    if (error || !Array.isArray(data) || data.length === 0) return null;
+    return { numero_factura: (data[0] as { numero_factura?: number | null }).numero_factura ?? null };
+  } catch {
+    return null; // offline: do not block the cashier, the local check still applies
+  }
+}
+
+/**
+ * Updates only the editable header fields of an invoice (never items or amounts).
+ * Desktop: SQLite + partial outbox 'update' (synced to the cloud by the sync engine).
+ * Web: direct Supabase update. Throws InvoiceNcfDuplicateError when the NCF is taken.
+ */
+export async function updateInvoiceHeader(
+  tenantId: string,
+  invoiceId: string,
+  changes: Record<string, unknown>
+): Promise<void> {
+  if (Object.keys(changes).length === 0) return;
+  const newNcf = typeof changes.ncf === "string" && changes.ncf ? changes.ncf : null;
+
+  if (newNcf) {
+    const clash = await findCloudNcfClash(tenantId, invoiceId, newNcf);
+    if (clash) throw new InvoiceNcfDuplicateError(newNcf, clash.numero_factura);
+  }
+
+  const api = getElectronAPI();
+  if (api?.updateInvoiceHeaderLocal) {
+    const res = await api.updateInvoiceHeaderLocal({ tenantId, invoiceId, changes });
+    if (!res.ok) {
+      if (res.reason === "ncf_duplicate") throw new InvoiceNcfDuplicateError(newNcf ?? "", res.numeroFactura);
+      throw new Error("La factura no existe en este equipo.");
+    }
+    return;
+  }
+
+  const { error } = await supabase
+    .from("facturas")
+    .update({ ...changes, updated_at: new Date().toISOString() })
+    .eq("id", invoiceId)
+    .eq("tenant_id", tenantId);
+  if (error) {
+    throw new Error(`No se pudo actualizar la factura en la nube: ${error.message}`);
+  }
+}

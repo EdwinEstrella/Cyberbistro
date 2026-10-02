@@ -14,6 +14,8 @@ const VENTA_PATHS = ["/dashboard", "/tables"] as const;
 export const CIERRE_PATH = "/cierre";
 export const GASTOS_PATH = "/gastos";
 export const NOMINA_PATH = "/nomina";
+/** Analíticas / facturas emitidas. */
+export const BILLING_PATH = "/billing";
 
 /**
  * Canonicaliza roles legacy para evitar duplicados operativos:
@@ -68,6 +70,7 @@ export function isAppRouteAllowed(rol: string | null, pathname: string): boolean
     if (pathname === CIERRE_PATH) return true;
     if (pathname === GASTOS_PATH) return true;
     if (pathname === NOMINA_PATH) return true;
+    if (pathname === BILLING_PATH) return true;
     return false;
   }
   if (normalized === "mesero") {
@@ -77,6 +80,25 @@ export function isAppRouteAllowed(rol: string | null, pathname: string): boolean
     return ["/billing", "/inventario", "/gastos", NOMINA_PATH, "/compras", "/cuentas-pagar", "/cuentas-cobrar", "/fiscal"].includes(pathname);
   }
   return pathname === "/dashboard";
+}
+
+/** Only the owner (admin) may delete issued invoices. */
+export function canDeleteInvoices(rol: string | null): boolean {
+  return normalizeTenantRol(rol) === "admin";
+}
+
+/** Admin and sales (cajera) may correct an invoice header (NCF, client, notes). */
+export function canEditInvoiceHeader(rol: string | null): boolean {
+  const normalized = normalizeTenantRol(rol);
+  return normalized === "admin" || normalized === "cajera";
+}
+
+/**
+ * Sales (cajera) sees only the invoice list in Analíticas: no cycles, finance
+ * tab, KPI cards or revenue summaries.
+ */
+export function canViewBillingSummaries(rol: string | null): boolean {
+  return normalizeTenantRol(rol) !== "cajera";
 }
 
 export function showAjustesInSidebar(rol: string | null): boolean {

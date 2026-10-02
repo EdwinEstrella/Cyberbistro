@@ -825,6 +825,13 @@ if (gotTheLock) {
         store.saveInvoice(invoice)
         triggerSyncAfterLocalWrite()
       },
+      updateInvoiceHeaderLocal: (request) => {
+        const store = getStore(request.tenantId)
+        if (!store) throw new Error('Tenant store is unavailable')
+        const result = store.updateInvoiceHeader(request.invoiceId, request.changes)
+        if (result.ok && result.changed) triggerSyncAfterLocalWrite()
+        return result
+      },
     })
     registerCashPurchaseRepositoryIpc({
       ipcMain,

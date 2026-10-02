@@ -128,6 +128,21 @@ describe("getRoleGuardDecision", () => {
     }
   });
 
+  it("ventas y cajera pueden abrir analíticas", () => {
+    for (const rol of ["ventas", "cajera"] as const) {
+      expect(
+        getRoleGuardDecision({
+          loading: false,
+          isAuthenticated: true,
+          userExists: true,
+          tenantId: "tenant-1",
+          rol,
+          pathname: "/billing",
+        })
+      ).toEqual({ type: "allow" });
+    }
+  });
+
   it("cajera puede abrir nómina", () => {
     expect(
       getRoleGuardDecision({
