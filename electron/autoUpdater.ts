@@ -84,10 +84,37 @@ async function checkForUpdatesWithRetry(send: (channel: string, payload?: unknow
   }
 }
 
+const RELEASES_OWNER = 'EdwinEstrella'
+const RELEASES_REPO = 'Cyberbistro'
+
+/**
+ * Feed for a private GitHub repo: with a read-only token electron-updater reads
+ * releases through the authenticated GitHub API. Without a token (local/dev
+ * builds) the packaged public feed from app-update.yml is kept.
+ */
+export function buildPrivateReleasesFeed(token: string | undefined | null) {
+  const trimmed = token?.trim()
+  if (!trimmed) return null
+  return {
+    provider: 'github' as const,
+    owner: RELEASES_OWNER,
+    repo: RELEASES_REPO,
+    private: true,
+    token: trimmed,
+    releaseType: 'release' as const,
+    vPrefixedTagName: true,
+  }
+}
+
 export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null) {
   autoUpdater.logger = log
   autoUpdater.logger.transports.file.level = 'info'
   autoUpdater.autoDownload = true
+  const privateFeed = buildPrivateReleasesFeed(process.env.CLOUDIX_UPDATE_TOKEN)
+  if (privateFeed) {
+    autoUpdater.setFeedURL(privateFeed)
+    log.info('autoUpdater: using authenticated GitHub releases feed')
+  }
   if (process.platform === 'win32' && !process.env.CSC_LINK && !process.env.WIN_CSC_LINK) {
     autoUpdater.verifyUpdateCodeSignature = false
   }

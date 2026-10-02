@@ -94,6 +94,9 @@ export default defineConfig(async ({ mode }) => {
             'process.env.SUPABASE_PUBLISHABLE_KEY': JSON.stringify(supabasePublishableKey),
             'process.env.VITE_SUPABASE_URL': JSON.stringify(supabaseUrl),
             'process.env.VITE_SUPABASE_PUBLISHABLE_KEY': JSON.stringify(supabasePublishableKey),
+            // Read-only token for the private releases feed. Main process ONLY:
+            // never add it to the renderer `define` below.
+            'process.env.CLOUDIX_UPDATE_TOKEN': JSON.stringify(process.env.CLOUDIX_UPDATE_TOKEN?.trim() || ''),
           },
           plugins: [
             notBundle({

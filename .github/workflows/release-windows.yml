@@ -37,6 +37,9 @@ jobs:
       - name: Build & publish to GitHub Releases
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Fine-grained read-only (Contents: read) token for this repo, embedded in
+          # the main process so installed apps can update from a private repo.
+          CLOUDIX_UPDATE_TOKEN: ${{ secrets.CLOUDIX_UPDATE_TOKEN }}
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
         run: npm run release:win
