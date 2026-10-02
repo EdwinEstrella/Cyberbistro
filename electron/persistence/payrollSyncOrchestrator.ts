@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import log from "electron-log";
 import { DurableSyncWorker, type ServerSyncClient } from "./syncWorker";
 import { SQLitePayrollSyncStore } from "./payrollSyncStore";
 import { PayrollSyncClient } from "./payrollSyncClient";
@@ -69,6 +70,7 @@ export class PayrollSyncOrchestrator {
         await worker.push();
       } catch (err) {
         console.error("[PayrollSyncOrchestrator] push error:", err);
+        log.error("[sync] push error:", err instanceof Error ? err.message : String(err));
       }
       try {
         if (!this.stopRequested && this.worker === worker) {
@@ -79,6 +81,7 @@ export class PayrollSyncOrchestrator {
         }
       } catch (err) {
         console.error("[PayrollSyncOrchestrator] pull error:", err);
+        log.error("[sync] pull error:", err instanceof Error ? err.message : String(err));
       }
     } finally {
       this.isSyncing = false;

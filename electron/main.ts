@@ -24,11 +24,11 @@ import { ExpenseRepository } from './persistence/expenseRepository'
 import { CustomerRepository } from './persistence/customerRepository'
 import { DeviceAccountDirectory } from './persistence/deviceAccountDirectory'
 
-// Persist main-process output (sync pull/push errors included) to a rotating
-// file so production problems are diagnosable. Never log tokens or credentials.
+// Rotating log file for production diagnostics. The global console is NOT
+// replaced (that hung the main process on CI runners); sync errors are written
+// to the file explicitly by the sync orchestrator. Never log tokens.
 log.transports.file.level = 'info'
 log.transports.file.maxSize = 5 * 1024 * 1024
-Object.assign(console, log.functions)
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const CERTIFICATION_PORTAL_URL = 'https://ecf.dgii.gov.do/certecf/portalcertificacion/Login?ReturnUrl=%2Fcertecf%2Fportalcertificacion'
