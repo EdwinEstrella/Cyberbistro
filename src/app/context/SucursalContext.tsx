@@ -9,6 +9,7 @@ import {
 import { useAuth } from "../../shared/hooks/useAuth";
 import { readLocalMirror, shouldReadLocalFirst, enqueueLocalWrite, getDeviceId } from "../../shared/lib/localFirst";
 import { supabase } from "../../shared/lib/supabase";
+import { resolveWithLastKnownList } from "../../shared/lib/lastKnownCache";
 import { canCommitTenantAsyncState } from "../../shared/lib/tenantAccessGuard";
 
 export interface Sucursal {
@@ -39,6 +40,9 @@ export type SucursalContextValue = {
 
 const SucursalContext = createContext<SucursalContextValue | null>(null);
 
+const SUCURSALES_CACHE = "sucursales";
+const RETRY_MAX_ATTEMPTS = 5;
+const RETRY_DELAY_MS = 5000;
 const STORAGE_KEY = "cloudix_active_sucursal_id";
 const scopedStorageKey = (tenantId: string) => `${STORAGE_KEY}:${tenantId}`;
 
@@ -72,6 +76,8 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
   const [activeSucursalId, setActiveSucursalIdState] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const accessGeneration = useRef(0);
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryAttempts = useRef(0);
 
   function isCurrentAccess(generation: number, expectedTenantId: string): boolean {
     return canCommitTenantAsyncState({
@@ -115,6 +121,7 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    let retryNeeded = false;
     try {
       let data: any[] = [];
       const useLocal = await shouldReadLocalFirst(expectedTenantId, ["sucursales"]);
@@ -152,6 +159,11 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
         }
       }
 
+      // Cloud blip: the desktop reads sucursales from the cloud and gets [] when offline.
+      // Fall back to the last non-empty list so the POS keeps a branch to sell from.
+      data = resolveWithLastKnownList(SUCURSALES_CACHE, expectedTenantId, data);
+      retryNeeded = data.length === 0;
+
        const allowedBranchIds = tenantUser?.allowedBranchIds ?? [];
        const isAdmin = tenantUser?.rol === "admin";
        const activeList = (data.filter((s) => s.activa !== false) as Sucursal[])
@@ -179,10 +191,37 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
         setActiveSucursalIdState(null);
       }
     } catch (err) {
-      if (isCurrentAccess(generation, expectedTenantId)) console.error("Error loading sucursales in context:", err);
+      if (isCurrentAccess(generation, expectedTenantId)) {
+        console.error("Error loading sucursales in context:", err);
+        retryNeeded = true;
+      }
     } finally {
-      if (isCurrentAccess(generation, expectedTenantId)) setLoading(false);
+      if (isCurrentAccess(generation, expectedTenantId)) {
+        setLoading(false);
+        scheduleRetry(generation, retryNeeded);
+      }
     }
+  }
+
+  // Bounded self-heal: while no sucursal could be loaded, retry a few times so the
+  // screen recovers on its own once the network is back. Cancelled by the effect
+  // cleanup (accessGeneration bump) on unmount or tenant change.
+  function scheduleRetry(generation: number, needed: boolean) {
+    if (retryTimer.current) {
+      clearTimeout(retryTimer.current);
+      retryTimer.current = null;
+    }
+    if (!needed) {
+      retryAttempts.current = 0;
+      return;
+    }
+    if (retryAttempts.current >= RETRY_MAX_ATTEMPTS) return;
+    retryAttempts.current += 1;
+    retryTimer.current = setTimeout(() => {
+      retryTimer.current = null;
+      if (generation !== accessGeneration.current) return;
+      void refreshSucursales(generation);
+    }, RETRY_DELAY_MS);
   }
 
   async function loadTenantSucursalLimit(): Promise<TenantSucursalLimitRow | null> {
@@ -341,6 +380,7 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
   // Reload sucursales when tenant or authentication changes
   useEffect(() => {
     const generation = ++accessGeneration.current;
+    retryAttempts.current = 0;
     if (!tenantId || !isAuthenticated || !tenantAccessValidated) {
       setSucursales([]);
       setActiveSucursalIdState(null);
@@ -350,6 +390,10 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
     }
     return () => {
       accessGeneration.current += 1;
+      if (retryTimer.current) {
+        clearTimeout(retryTimer.current);
+        retryTimer.current = null;
+      }
     };
   }, [tenantId, isAuthenticated, tenantAccessValidated, tenantUser, user]);
 

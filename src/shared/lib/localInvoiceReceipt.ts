@@ -2,6 +2,8 @@ import { buildFacturaReceiptHtml } from "./receiptTemplates";
 import { readLocalMirror } from "./localFirst";
 import { cacheLogoFromUrl } from "./logoCache";
 import { supabase } from "./supabase";
+import { describeError } from "./errorMessage";
+import { loadLastKnown, saveLastKnown } from "./lastKnownCache";
 import { getThermalPrintSettings } from "./thermalStorage";
 import { printThermalHtml, type PrintThermalResult } from "./thermalPrint";
 
@@ -19,19 +21,40 @@ type ReceiptTenant = {
   logo_offset_y?: number | null;
 };
 
+const RECEIPT_TENANT_CACHE = "receipt_tenant";
+
 export async function loadReceiptTenantForPrint(tenantId: string): Promise<ReceiptTenant | null> {
   const localTenants = await readLocalMirror<ReceiptTenant & { id: string }>(tenantId, "tenants").catch(() => []);
   const localTenant = localTenants.find((tenant) => tenant.id === tenantId);
-  if (localTenant) return localTenant;
+  if (localTenant) {
+    saveLastKnown(RECEIPT_TENANT_CACHE, tenantId, localTenant);
+    return localTenant;
+  }
 
   // A remote read is only a recovery path when the local tenant mirror is absent.
-  const { data, error } = await supabase
-    .from("tenants")
-    .select("nombre_negocio, rnc, direccion, telefono, logo_url, menu_url, moneda, ecf_environment, logo_size_px, logo_offset_x, logo_offset_y")
-    .eq("id", tenantId)
-    .maybeSingle();
-  if (error) throw error;
-  return data as ReceiptTenant | null;
+  let remoteError: unknown = null;
+  try {
+    const { data, error } = await supabase
+      .from("tenants")
+      .select("nombre_negocio, rnc, direccion, telefono, logo_url, menu_url, moneda, ecf_environment, logo_size_px, logo_offset_x, logo_offset_y")
+      .eq("id", tenantId)
+      .maybeSingle();
+    if (error) remoteError = error;
+    else if (data) {
+      saveLastKnown(RECEIPT_TENANT_CACHE, tenantId, data);
+      return data as ReceiptTenant;
+    }
+  } catch (e) {
+    remoteError = e;
+  }
+
+  // Cloud unreachable (or tenant missing): reuse the last tenant info we printed with.
+  const cached = loadLastKnown<ReceiptTenant>(RECEIPT_TENANT_CACHE, tenantId);
+  if (cached) return cached;
+  if (remoteError) {
+    throw new Error(describeError(remoteError, "No se pudo leer la información del negocio."));
+  }
+  return null;
 }
 
 async function loadLocalEcfDocument(tenantId: string, facturaId: string): Promise<Record<string, unknown> | null> {
@@ -82,6 +105,6 @@ export async function printLocalInvoiceReceipt(args: {
 
     return printThermalHtml(html, { printType: "sales" });
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    return { ok: false, error: describeError(error, "Error de impresión.") };
   }
 }

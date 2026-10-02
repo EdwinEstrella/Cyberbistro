@@ -54,4 +54,55 @@ describe("printLocalInvoiceReceipt", () => {
     expect(mocks.printThermalHtml).toHaveBeenCalledWith("<html>receipt</html>", { printType: "sales" });
     expect(mocks.supabaseFrom).not.toHaveBeenCalled();
   });
+
+  describe("cloud unavailable", () => {
+    const factura = { id: "invoice-1", numero_factura: 7 };
+    const tenantRow = {
+      nombre_negocio: "Cached Bistro", rnc: "1", direccion: "d", telefono: "t", logo_url: null,
+    };
+    const store = new Map<string, string>();
+    const KEY = (t: string) => `cloudix_last_known:receipt_tenant:${t}`;
+    function remote(result: unknown) {
+      mocks.supabaseFrom.mockReturnValue({
+        select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve(result) }) }),
+      });
+    }
+
+    beforeEach(() => {
+      store.clear();
+      vi.stubGlobal("localStorage", {
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => void store.set(k, v),
+      });
+      mocks.readLocalMirror.mockImplementation(() => Promise.resolve([]));
+    });
+
+    it("uses the cached tenant when the remote read errors", async () => {
+      store.set(KEY("tenant-1"), JSON.stringify(tenantRow));
+      remote({ data: null, error: { message: "Failed to fetch" } });
+      const result = await printLocalInvoiceReceipt({ tenantId: "tenant-1", factura, numeroFactura: 7 });
+      expect(result).toEqual({ ok: true });
+      expect(mocks.buildFacturaReceiptHtml).toHaveBeenCalledWith(
+        expect.objectContaining({ nombre_negocio: "Cached Bistro" }), expect.anything(), 7, 80);
+    });
+
+    it("saves a successful remote tenant for later use", async () => {
+      remote({ data: tenantRow, error: null });
+      await printLocalInvoiceReceipt({ tenantId: "tenant-1", factura, numeroFactura: 7 });
+      expect(store.get(KEY("tenant-1"))).toContain("Cached Bistro");
+    });
+
+    it("reports a readable message (not [object Object]) when there is no cache", async () => {
+      remote({ data: null, error: { message: "Failed to fetch" } });
+      const result = await printLocalInvoiceReceipt({ tenantId: "tenant-1", factura, numeroFactura: 7 });
+      expect(result).toEqual({ ok: false, error: "Failed to fetch" });
+    });
+
+    it("does not use another tenant cache", async () => {
+      store.set(KEY("other"), JSON.stringify(tenantRow));
+      remote({ data: null, error: { message: "offline" } });
+      const result = await printLocalInvoiceReceipt({ tenantId: "tenant-1", factura, numeroFactura: 7 });
+      expect(result.ok).toBe(false);
+    });
+  });
 });
