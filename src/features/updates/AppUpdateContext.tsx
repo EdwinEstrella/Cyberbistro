@@ -4,11 +4,13 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { toast } from "sonner";
 import type { UpdateInfoPayload, UpdateStatePayload } from "@/shared/types/electron";
+import { decideBellAction } from "./bellAction";
 
 export type AppUpdatePhase =
   | "idle"
@@ -47,6 +49,8 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
   const [downloadPercent, setDownloadPercent] = useState<number | null>(null);
   const [errorDetail, setErrorDetail] = useState("");
   const [isUpdateCardVisible, setIsUpdateCardVisible] = useState(false);
+  /** True while a check started from the bell is pending, so its result gets a toast. */
+  const manualCheckRef = useRef(false);
 
   const hasUpdateBellAlert =
     phase === "available" || phase === "downloading" || phase === "ready" || phase === "error";
@@ -86,12 +90,24 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
   }, [setPhaseState]);
 
   const showUpdateBellToast = useCallback(() => {
-    if (!hasUpdateBellAlert) {
+    const action = decideBellAction({
+      hasUpdateBellAlert,
+      phase,
+      canCheck: Boolean(window.electronAPI?.checkForUpdates),
+    });
+    if (action === "open_card") {
+      setIsUpdateCardVisible(true);
+      return;
+    }
+    if (action === "wait") return;
+    if (action === "unsupported") {
       toast.info("No hay actualizaciones pendientes en este momento.");
       return;
     }
-    setIsUpdateCardVisible(true);
-  }, [hasUpdateBellAlert]);
+    manualCheckRef.current = true;
+    toast.info("Buscando actualizaciones...");
+    checkForUpdates();
+  }, [hasUpdateBellAlert, phase, checkForUpdates]);
 
   const openUpdateCard = useCallback(() => {
     setIsUpdateCardVisible(true);
@@ -143,12 +159,20 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
         setPhaseState("checking", { percent: 0 });
       },
       onUpdateAvailable: (info: UpdateInfoPayload) => {
+        if (manualCheckRef.current) {
+          manualCheckRef.current = false;
+          setIsUpdateCardVisible(true);
+        }
         setPhaseState("available", {
           version: info?.version ?? remoteVersion,
           percent: 0,
         });
       },
       onUpdateNotAvailable: () => {
+        if (manualCheckRef.current) {
+          manualCheckRef.current = false;
+          toast.success("Ya tenés la última versión.");
+        }
         if (phase !== "ready" && phase !== "downloading") {
           setPhaseState("idle", { percent: 0 });
         }
@@ -174,6 +198,10 @@ export function AppUpdateProvider({ children }: { children: ReactNode }) {
             : payload && typeof payload === "object" && "error" in payload
             ? String((payload as { error?: string }).error ?? "").trim()
             : "";
+        if (manualCheckRef.current) {
+          manualCheckRef.current = false;
+          setIsUpdateCardVisible(true);
+        }
         setPhase((prev) => {
           if (prev === "ready") return prev;
           return "error";
