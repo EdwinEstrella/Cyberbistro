@@ -34,4 +34,10 @@ describe("normalizeTenantBillingSettings", () => {
     expect(normalizeTenantBillingSettings(null).defaultPropinaEnabled).toBe(false);
     expect(normalizeTenantBillingSettings({ propina_cobro_por_defecto: true }).defaultPropinaEnabled).toBe(true);
   });
+
+  it("defaults itbisIncluded to false and maps itbis_incluido_en_precio when present", () => {
+    expect(normalizeTenantBillingSettings(null).itbisIncluded).toBe(false);
+    expect(normalizeTenantBillingSettings({}).itbisIncluded).toBe(false);
+    expect(normalizeTenantBillingSettings({ itbis_incluido_en_precio: true }).itbisIncluded).toBe(true);
+  });
 });
