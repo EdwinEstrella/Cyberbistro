@@ -271,7 +271,7 @@ test('mesas count can be increased, reduced, and restored', async () => {
     throw error;
   } finally {
     if (electronApp) {
-      window = electronApp.windows()[0] ?? window;
+      window = await mainWindow(electronApp).catch(() => window);
 
       if (window && originalCount !== undefined) {
         try {
