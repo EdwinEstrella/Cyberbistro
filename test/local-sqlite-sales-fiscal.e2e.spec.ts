@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TenantStore } from "../electron/persistence/tenantStore";
+import { mainWindow } from "./support/electronMainWindow";
 
 test("keeps synthetic fiscal modes pending after graceful SQLite close/reopen", async () => {
   const userDataDirectory = await mkdtemp(join(tmpdir(), "cloudix-sales-fiscal-e2e-"));
@@ -17,7 +18,7 @@ test("keeps synthetic fiscal modes pending after graceful SQLite close/reopen", 
   reopened.close();
   const app = await electron.launch({ args: [".", `--user-data-dir=${userDataDirectory}`] });
   try {
-    const page = await app.firstWindow();
+    const page = await mainWindow(app);
     await expect(page.getByLabel("Correo")).toBeVisible({ timeout: 30_000 });
     expect(recovered.invoices).toEqual(expect.arrayContaining([
       { id: "invoice-internal_receipt", fiscalMode: "internal_receipt", total: 25, localStatus: "pending_sync" },

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { TenantStore } from "../electron/persistence/tenantStore";
+import { mainWindow } from "./support/electronMainWindow";
 
 test.describe("Nomina (Payroll) Full CRUD & Local-First SQLite E2E", () => {
   let userDataDirectory: string;
@@ -22,7 +23,7 @@ test.describe("Nomina (Payroll) Full CRUD & Local-First SQLite E2E", () => {
     app = await electron.launch({
       args: [".", `--user-data-dir=${userDataDirectory}`],
     });
-    page = await app.firstWindow();
+    page = await mainWindow(app);
     await page.bringToFront();
     await expect(page.getByLabel("Correo")).toBeVisible({ timeout: 30_000 });
   });

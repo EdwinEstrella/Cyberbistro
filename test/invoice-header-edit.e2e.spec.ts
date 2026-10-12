@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { TenantStore } from "../electron/persistence/tenantStore";
+import { mainWindow } from "./support/electronMainWindow";
 
 /**
  * Invoice header edit through the real IPC surface (`facturas:update-header`).
@@ -86,7 +87,7 @@ function readState(dataRoot: string): { facturas: Row[]; outbox: Row[] } {
 
 async function launch(dataRoot: string): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({ args: [".", `--user-data-dir=${dataRoot}`] });
-  const page = await app.firstWindow();
+  const page = await mainWindow(app);
   await expect(page.getByLabel("Correo")).toBeVisible({ timeout: 30_000 });
   await expect.poll(() => page.evaluate(() => typeof window.electronAPI?.updateInvoiceHeaderLocal)).toBe("function");
   const activated = await page.evaluate((tid) => window.electronAPI!.activateTenant!(tid), TENANT_ID);
