@@ -114,6 +114,9 @@ async function setItbisIncluded(page: Page, value: boolean): Promise<boolean> {
   await reloadToPos(page);
   await openAjustes(page);
   await expect(page.getByLabel("ITBIS incluido en el precio")).toBeChecked({ checked: value, timeout: 15_000 });
+  // Leave the page on the POS so callers can select a mesa right away.
+  await page.evaluate(() => { window.location.hash = "/"; });
+  await expect(mesaSelector(page)).toBeVisible({ timeout: 30_000 });
   return previous;
 }
 
