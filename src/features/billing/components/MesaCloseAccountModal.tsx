@@ -103,6 +103,8 @@ export interface MesaCloseAccountModalProps {
   itbisRate?: number;
   /** Cobra 10% de propina legal sobre el subtotal para este cobro. */
   propinaEnabled?: boolean;
+  /** Los precios del menú ya incluyen ITBIS (base = precio / 1.18). */
+  itbisIncluded?: boolean;
   onItbisChange?: (enabled: boolean) => void;
   onPropinaChange?: (enabled: boolean) => void;
   initialNcfType?: NcfTypeCode | null;
@@ -156,7 +158,8 @@ async function groupConsumosForFactura(
   consumos: MesaConsumoRow[],
   itbisRate: number,
   propinaEnabled: boolean,
-  sucursalId: string | null
+  sucursalId: string | null,
+  itbisIncluded = false
 ) {
   const plateIds = [...new Set(consumos.map((consumo) => consumo.plato_id))];
   const categoriaPorPlato = new Map<number, string>();
@@ -214,8 +217,8 @@ async function groupConsumosForFactura(
     >
   );
   const facturaItems = Object.values(groupedItems);
-  const subtotal = consumos.reduce((sum, c) => sum + Number(c.subtotal), 0);
-  const { itbis, propina, total } = calculateInvoiceTotals({ subtotal, itbisRate, propinaEnabled });
+  const grossSubtotal = consumos.reduce((sum, c) => sum + Number(c.subtotal), 0);
+  const { subtotal, itbis, propina, total } = calculateInvoiceTotals({ subtotal: grossSubtotal, itbisRate, propinaEnabled, itbisIncluded });
   return { facturaItems, subtotal, itbis, propina, total };
 }
 
@@ -226,6 +229,7 @@ export function MesaCloseAccountModal({
   mesaNumero,
   itbisRate = ITBIS,
   propinaEnabled = false,
+  itbisIncluded = false,
   onItbisChange,
   onPropinaChange,
   initialNcfType = null,
@@ -374,7 +378,7 @@ export function MesaCloseAccountModal({
 
   function calculateTotals() {
     const subtotal = mesaConsumos.reduce((sum, c) => sum + Number(c.subtotal), 0);
-    return calculateInvoiceTotals({ subtotal, itbisRate, propinaEnabled });
+    return calculateInvoiceTotals({ subtotal, itbisRate, propinaEnabled, itbisIncluded });
   }
 
   function parseOptionalCashReceived(total: number, isFiado: boolean = false): { amount: number | null; change: number | null } | null {
@@ -507,7 +511,8 @@ export function MesaCloseAccountModal({
           consumosToInvoice,
           itbisRate,
           propinaEnabled,
-          activeSucursalId
+          activeSucursalId,
+          itbisIncluded
         );
 
         const ncfPart = reservedFiscalByPerson.get(personIndex) ?? null;
@@ -689,7 +694,8 @@ export function MesaCloseAccountModal({
         mesaConsumos,
         itbisRate,
         propinaEnabled,
-        activeSucursalId
+        activeSucursalId,
+        itbisIncluded
       );
 
       const precuentaFactura = {
@@ -775,7 +781,8 @@ export function MesaCloseAccountModal({
       consumosToBill,
       itbisRate,
       propinaEnabled,
-      activeSucursalId
+      activeSucursalId,
+      itbisIncluded
     );
     const isFiado = paymentMethod === "fiado";
     const cashReceived =
@@ -1211,7 +1218,7 @@ export function MesaCloseAccountModal({
                     const rows = splitGroups.get(p) ?? [];
                     if (rows.length === 0) return null;
                     const st = rows.reduce((s, c) => s + Number(c.subtotal), 0);
-                    const { total } = calculateInvoiceTotals({ subtotal: st, itbisRate, propinaEnabled });
+                    const { total } = calculateInvoiceTotals({ subtotal: st, itbisRate, propinaEnabled, itbisIncluded });
                     return (
                       <div key={p} className="flex justify-between items-center gap-4 bg-zinc-900/30 rounded-lg p-2 border border-zinc-900/50">
                         <span className="font-['Space_Grotesk',sans-serif] font-bold text-zinc-300 text-[12px]">
@@ -1282,7 +1289,7 @@ export function MesaCloseAccountModal({
               </div>
               <div className="flex justify-between items-center relative z-10">
                 <span className="font-['Inter',sans-serif] text-zinc-500 text-[13px]">
-                  {itbisRate > 0 ? "ITBIS (18%)" : "ITBIS (no incluido)"}
+                  {itbisRate > 0 ? (itbisIncluded ? "ITBIS 18% (incluido)" : "ITBIS (18%)") : "ITBIS (no incluido)"}
                 </span>
                 <span className="font-['Space_Grotesk',sans-serif] font-bold text-zinc-300 text-[14px]">{RD(calcItbis)}</span>
               </div>

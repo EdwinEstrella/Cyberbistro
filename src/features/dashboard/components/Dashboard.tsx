@@ -188,6 +188,7 @@ export function Dashboard() {
   const [cartItbisEnabled, setCartItbisEnabled] = useState(false);
   /** Por defecto sin propina legal; se activa desde Ajustes o por cobro. */
   const [cartPropinaEnabled, setCartPropinaEnabled] = useState(false);
+  const [itbisIncluded, setItbisIncluded] = useState(false);
   const [tenantNcfFiscalActive, setTenantNcfFiscalActive] = useState(false);
   const [solicitaComprobante, setSolicitaComprobante] = useState(false);
   const [selectedNcfType, setSelectedNcfType] = useState<NcfTypeCode>(DEFAULT_NCF_B_CODE);
@@ -218,6 +219,7 @@ export function Dashboard() {
 
       setCartItbisEnabled(settings?.defaultItbisEnabled ?? false);
       setCartPropinaEnabled(settings?.defaultPropinaEnabled ?? false);
+      setItbisIncluded(settings?.itbisIncluded ?? false);
       const isOnline = navigator.onLine;
       const { mode, certificateId: certId } = await resolveActiveFiscalMode(tenantId, settings, isOnline);
       setFiscalMode(mode);
@@ -475,6 +477,7 @@ export function Dashboard() {
     subtotal: cartSubtotal,
     itbisRate: billItbisRate,
     propinaEnabled: cartPropinaEnabled,
+    itbisIncluded,
   });
 
   const cuentaSubtotal = mesaConsumos.reduce((s, c) => s + Number(c.subtotal), 0);
@@ -484,6 +487,7 @@ export function Dashboard() {
     subtotal: panelBillSubtotal,
     itbisRate: billItbisRate,
     propinaEnabled: cartPropinaEnabled,
+    itbisIncluded,
   });
 
   const hasCartItems = cart.length > 0;
@@ -689,7 +693,7 @@ export function Dashboard() {
   function calculateTakeoutTotals() {
     const subtotal = cart.reduce((sum, i) => sum + i.plato.precio * i.cantidad, 0);
     const rate = cartItbisEnabled ? ITBIS : 0;
-    return calculateInvoiceTotals({ subtotal, itbisRate: rate, propinaEnabled: cartPropinaEnabled });
+    return calculateInvoiceTotals({ subtotal, itbisRate: rate, propinaEnabled: cartPropinaEnabled, itbisIncluded });
   }
 
   function parseOptionalCashReceived(total: number, isFiado: boolean = false): { amount: number | null; change: number | null } | null {
@@ -885,9 +889,9 @@ export function Dashboard() {
       );
 
       const facturaItems = Object.values(groupedItems);
-      const subtotal = consumosToBill.reduce((sum, c) => sum + Number(c.subtotal), 0);
+      const grossSubtotal = consumosToBill.reduce((sum, c) => sum + Number(c.subtotal), 0);
       const rate = cartItbisEnabled ? ITBIS : 0;
-      const { itbis, propina, total } = calculateInvoiceTotals({ subtotal, itbisRate: rate, propinaEnabled: cartPropinaEnabled });
+      const { subtotal, itbis, propina, total } = calculateInvoiceTotals({ subtotal: grossSubtotal, itbisRate: rate, propinaEnabled: cartPropinaEnabled, itbisIncluded });
 
       const precuentaFactura = {
         items: facturaItems,
@@ -1016,9 +1020,9 @@ export function Dashboard() {
 
     const facturaItems = Object.values(groupedItems);
 
-    const subtotal = consumosToBill.reduce((sum, c) => sum + Number(c.subtotal), 0);
+    const grossSubtotal = consumosToBill.reduce((sum, c) => sum + Number(c.subtotal), 0);
     const rate = cartItbisEnabled ? ITBIS : 0;
-    const { itbis, propina, total } = calculateInvoiceTotals({ subtotal, itbisRate: rate, propinaEnabled: cartPropinaEnabled });
+    const { subtotal, itbis, propina, total } = calculateInvoiceTotals({ subtotal: grossSubtotal, itbisRate: rate, propinaEnabled: cartPropinaEnabled, itbisIncluded });
     const isFiado = paymentMethod === "fiado";
     const cashReceived =
       paymentMethod === "efectivo" || isFiado
@@ -1830,6 +1834,7 @@ export function Dashboard() {
           mesaNumero={selectedMesa.numero}
           itbisRate={billItbisRate}
           propinaEnabled={cartPropinaEnabled}
+          itbisIncluded={itbisIncluded}
           onItbisChange={setCartItbisEnabled}
           onPropinaChange={setCartPropinaEnabled}
           initialNcfType={tenantNcfFiscalActive ? selectedNcfType : null}
@@ -2022,7 +2027,7 @@ export function Dashboard() {
                     </div>
                     <div className="flex justify-between items-center relative z-10">
                       <span className="font-['Inter',sans-serif] text-zinc-500 text-[13px]">
-                        {cartItbisEnabled ? "ITBIS (18%)" : "ITBIS (no incluido)"}
+                        {cartItbisEnabled ? (itbisIncluded ? "ITBIS 18% (incluido)" : "ITBIS (18%)") : "ITBIS (no incluido)"}
                       </span>
                       <span className="font-['Space_Grotesk',sans-serif] font-bold text-zinc-300 text-[14px]">{formatMoney(calcItbis)}</span>
                     </div>

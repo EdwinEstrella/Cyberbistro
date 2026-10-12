@@ -15,6 +15,8 @@ import { writeCycleOpen, writeCycleClose, writeCycleDiscard, writeCyclePrinted }
 import { isDesktopRuntime, isCloudAvailableForDesktop } from "../../../shared/lib/cloudAvailability";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { calculateExpectedCashDrawer, sumCashExpenses } from "../../../shared/lib/cycleCash";
+import { calculateInvoiceTotals } from "../../../shared/lib/billingTotals";
+import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
 import { DatePicker } from "../../../shared/ui/date-picker";
 
 type FacturaEstado = "pagada" | "pendiente" | "cancelada";
@@ -142,6 +144,7 @@ export function Cierre() {
   const [consumosAbiertos, setConsumosAbiertos] = useState<ConsumoAbiertoRow[]>([]);
   const [cxcPagos, setCxcPagos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [itbisIncluded, setItbisIncluded] = useState(false);
   const [startingCycle, setStartingCycle] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [printing, setPrinting] = useState(false);
@@ -185,10 +188,20 @@ export function Cierre() {
 
   const resumenCuentasAbiertas = useMemo(() => {
     const subtotal = consumosAbiertos.reduce((s, r) => s + Number(r.subtotal), 0);
+    const estimate = calculateInvoiceTotals({ subtotal, itbisRate: ITBIS_RATE, propinaEnabled: false, itbisIncluded });
     const mesaMap = new Map<number, number>();
     for (const r of consumosAbiertos) { const mn = Number(r.mesa_numero) || 0; mesaMap.set(mn, (mesaMap.get(mn) ?? 0) + Number(r.subtotal)); }
-    return { lineas: consumosAbiertos.length, mesasDistintas: mesaMap.size, subtotal, itbisEst: subtotal * ITBIS_RATE, totalEst: subtotal * (1 + ITBIS_RATE), porMesa: [...mesaMap.entries()].map(([mesa, st]) => ({ mesa, subtotal: st })).sort((a, b) => b.subtotal - a.subtotal) };
-  }, [consumosAbiertos]);
+    return { lineas: consumosAbiertos.length, mesasDistintas: mesaMap.size, subtotal: estimate.subtotal, itbisEst: estimate.itbis, totalEst: estimate.total, porMesa: [...mesaMap.entries()].map(([mesa, st]) => ({ mesa, subtotal: st })).sort((a, b) => b.subtotal - a.subtotal) };
+  }, [consumosAbiertos, itbisIncluded]);
+
+  useEffect(() => {
+    if (!tenantId) return;
+    let cancelled = false;
+    void loadTenantBillingSettings(tenantId).then((settings) => {
+      if (!cancelled) setItbisIncluded(settings?.itbisIncluded ?? false);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [tenantId]);
 
   const categoriaGastoPorId = useMemo(() => new Map(gastoCategorias.map((cat) => [cat.id, cat.nombre])), [gastoCategorias]);
 
