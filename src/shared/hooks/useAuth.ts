@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { SUPABASE_REFRESH_TOKEN_STORAGE_KEY } from '../lib/supabaseAuthStorage';
+import { signOutThisDevice } from '../lib/signOutThisDevice';
 import {
   readTenantSessionCache,
   writeTenantSessionCache,
@@ -825,7 +826,7 @@ export function useAuth() {
     }
 
     try {
-      const { error } = await supabase.auth.signOut();
+      const { error } = await signOutThisDevice();
       if (error) console.error('Error signing out:', error);
     } catch (e) {
       console.error('Exception signing out:', e);

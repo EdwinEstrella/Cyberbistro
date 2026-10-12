@@ -10,6 +10,7 @@ import {
   formatSupabaseConnectivityError,
 } from "../../../shared/lib/supabase";
 import { SUPABASE_REFRESH_TOKEN_STORAGE_KEY } from "../../../shared/lib/supabaseAuthStorage";
+import { signOutThisDevice } from "../../../shared/lib/signOutThisDevice";
 import {
   BLOCKED_ACCOUNT_MESSAGE,
   UNLINKED_ACCOUNT_MESSAGE,
@@ -334,7 +335,7 @@ export function Login() {
       const access = await resolveTenantAccessForSession(data.user);
       if (access.status !== "active") {
         setError(access.status === "blocked" ? BLOCKED_ACCOUNT_MESSAGE : UNLINKED_ACCOUNT_MESSAGE);
-        await supabase.auth.signOut();
+        await signOutThisDevice();
         setIsLoading(false);
         return;
       }
