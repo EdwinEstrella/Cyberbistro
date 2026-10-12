@@ -4,6 +4,9 @@ import type { FiscalWorkerSnapshot } from "./types";
 
 const transformer = new Transformer();
 
+const DEFAULT_ITBIS_RATE = 0.18;
+const INCLUSIVE_DETECTION_TOLERANCE = 0.05;
+
 export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date): string {
   const payload: any = snapshot.invoicePayload;
   const factura = payload.factura || {};
@@ -67,7 +70,14 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
   assertValidMoney("itbis", itbis);
   assertValidMoney("total", total);
   assertTotalsBalance({ subtotal, itbis, total });
-  const itbisRate = subtotal > 0 ? (itbis / subtotal) : 0.18;
+  const itbisRate = subtotal > 0 ? (itbis / subtotal) : DEFAULT_ITBIS_RATE;
+
+  // Tenants with ITBIS-included pricing store menu prices on the lines while the header holds the
+  // base/ITBIS split, so line subtotals sum to subtotal + itbis instead of subtotal.
+  const itbisIncluded = isItbisIncludedInvoice(items.map((item: any) => Number(item.subtotal || 0)), subtotal, itbis);
+  const inclusiveLines = itbisIncluded
+    ? splitInclusiveLines(items.map((item: any) => Number(item.subtotal || 0)), DEFAULT_ITBIS_RATE, subtotal, itbis)
+    : null;
 
   // Comprador Strict Validation for E31 (Crédito Fiscal)
   let compradorRnc = factura.cliente_rnc?.trim();
@@ -131,9 +141,14 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
   // 2. DetallesItems
   const detallesItems = {
     Item: items.map((item: any, index: number) => {
+      const inclusiveLine = inclusiveLines?.[index];
       const itemSubtotal = Number(item.subtotal || 0);
-      const itemItbis = itemSubtotal * itbisRate;
-      const itemTotal = itemSubtotal + itemItbis;
+      const itemItbis = inclusiveLine ? inclusiveLine.itbis : itemSubtotal * itbisRate;
+      const itemTotal = inclusiveLine ? inclusiveLine.base : itemSubtotal + itemItbis;
+      const quantity = Number(item.cantidad || 0);
+      const unitPrice = inclusiveLine
+        ? (quantity > 0 ? roundCurrency(inclusiveLine.base / quantity) : inclusiveLine.base)
+        : item.precio_unitario;
 
       return {
         NumeroLinea: index + 1,
@@ -146,12 +161,12 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
         IndicadorFacturacion: itemItbis > 0 ? 1 : 0, // 1: Gravado
         NombreItem: item.nombre,
         CantidadItem: item.cantidad,
-        PrecioUnitarioItem: item.precio_unitario,
+        PrecioUnitarioItem: unitPrice,
         DescuentoMonto: 0,
         TablaImpuestos: {
           Impuesto: {
             TipoImpuesto: 1, // ITBIS
-            TasaImpuesto: Math.round(itbisRate * 100),
+            TasaImpuesto: Math.round((inclusiveLine ? DEFAULT_ITBIS_RATE : itbisRate) * 100),
             MontoImpuesto: Number(itemItbis.toFixed(2)),
           },
         },
@@ -175,6 +190,51 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
   const xml = transformer.json2xml(ecfObject);
   assertMinimumEcfXml(xml);
   return xml;
+}
+
+/**
+ * Detects invoices issued with ITBIS-included pricing: line subtotals carry the menu (gross) price,
+ * so they add up to subtotal + itbis rather than to the header subtotal.
+ */
+export function isItbisIncludedInvoice(lineSubtotals: number[], subtotal: number, itbis: number): boolean {
+  if (!(itbis > 0) || lineSubtotals.length === 0) return false;
+  const sum = lineSubtotals.reduce((acc, value) => acc + value, 0);
+  return (
+    Math.abs(sum - (subtotal + itbis)) <= INCLUSIVE_DETECTION_TOLERANCE &&
+    Math.abs(sum - subtotal) > INCLUSIVE_DETECTION_TOLERANCE
+  );
+}
+
+/**
+ * Splits gross line amounts into base + ITBIS. The rounding residual is absorbed by the last line
+ * so the lines add up exactly to the header subtotal and ITBIS.
+ */
+export function splitInclusiveLines(
+  grossLines: number[],
+  rate: number,
+  headerSubtotal: number,
+  headerItbis: number
+): Array<{ base: number; itbis: number }> {
+  const lines: Array<{ base: number; itbis: number }> = [];
+  let baseSoFar = 0;
+  let itbisSoFar = 0;
+
+  grossLines.forEach((gross, index) => {
+    if (index === grossLines.length - 1) {
+      lines.push({
+        base: roundCurrency(headerSubtotal - baseSoFar),
+        itbis: roundCurrency(headerItbis - itbisSoFar),
+      });
+      return;
+    }
+    const base = roundCurrency(gross / (1 + rate));
+    const lineItbis = roundCurrency(gross - base);
+    baseSoFar += base;
+    itbisSoFar += lineItbis;
+    lines.push({ base, itbis: lineItbis });
+  });
+
+  return lines;
 }
 
 function mapPaymentMethod(method: string): number {
