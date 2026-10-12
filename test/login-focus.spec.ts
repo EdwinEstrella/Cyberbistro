@@ -1,4 +1,5 @@
 import { test, expect, _electron as electron } from '@playwright/test';
+import { mainWindow } from "./support/electronMainWindow";
 
 test('login and logout focus stability test', async () => {
   test.setTimeout(60_000);
@@ -8,7 +9,7 @@ test('login and logout focus stability test', async () => {
   });
 
   // Wait for the main window to open
-  const window = await electronApp.firstWindow();
+  const window = await mainWindow(electronApp);
 
   // The sidebar can start collapsed; reveal it so the logout control is reachable.
   const revealSidebar = async () => {

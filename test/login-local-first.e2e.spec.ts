@@ -2,6 +2,7 @@ import { expect, test, _electron as electron, type ElectronApplication, type Pag
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { mainWindow } from "./support/electronMainWindow";
 
 const UNLINKED_E2E_EMAIL = process.env.CYBERBISTRO_UNLINKED_E2E_EMAIL;
 const UNLINKED_E2E_PASSWORD = process.env.CYBERBISTRO_UNLINKED_E2E_PASSWORD;
@@ -17,7 +18,7 @@ async function launchLoggedOutApp(): Promise<{
     args: [".", `--user-data-dir=${userDataDirectory}`],
   });
 
-  return { app, page: await app.firstWindow(), userDataDirectory };
+  return { app, page: await mainWindow(app), userDataDirectory };
 }
 
 async function closeApp(app: ElectronApplication, userDataDirectory: string): Promise<void> {

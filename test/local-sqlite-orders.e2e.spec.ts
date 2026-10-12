@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TenantStore } from "../electron/persistence/tenantStore";
+import { mainWindow } from "./support/electronMainWindow";
 
 test("uses an isolated C2 profile and exposes no kitchen endpoint or raw IPC authority", async () => {
   const userDataDirectory = await mkdtemp(join(tmpdir(), "cloudix-orders-e2e-"));
@@ -13,7 +14,7 @@ test("uses an isolated C2 profile and exposes no kitchen endpoint or raw IPC aut
 
   const app = await electron.launch({ args: [".", `--user-data-dir=${userDataDirectory}`] });
   try {
-    const page = await app.firstWindow();
+    const page = await mainWindow(app);
     await expect(page.getByLabel("Correo")).toBeVisible({ timeout: 30_000 });
     await expect.poll(() => page.evaluate(() => ({
       hasOrdersCommand: typeof window.electronAPI?.executeOrdersCommand === "function",

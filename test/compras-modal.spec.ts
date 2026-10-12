@@ -2,6 +2,7 @@ import { test, expect, _electron as electron, type ElectronApplication, type Pag
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { mainWindow } from "./support/electronMainWindow";
 
 const TEST_EMAIL_ENV = 'CYBERBISTRO_TEST_EMAIL';
 const TEST_PASSWORD_ENV = 'CYBERBISTRO_TEST_PASSWORD';
@@ -44,7 +45,7 @@ async function attachDiagnosticsOnFailure(diagnostics: BrowserDiagnostics[]): Pr
 async function launchApp(diagnostics: BrowserDiagnostics[]): Promise<{ app: ElectronApplication; window: Page; userDataDirectory: string }> {
   const userDataDirectory = await mkdtemp(join(tmpdir(), 'cloudix-compras-modal-'));
   const app = await electron.launch({ args: ['.', `--user-data-dir=${userDataDirectory}`] });
-  const window = await app.firstWindow();
+  const window = await mainWindow(app);
   diagnostics.push(attachDiagnostics(window));
   await loginIfNeeded(window);
   await waitForAppShell(window);

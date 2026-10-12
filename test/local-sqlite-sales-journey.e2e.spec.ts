@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { mainWindow } from "./support/electronMainWindow";
 
 /**
  * Real end-to-end sales journey: login → send to kitchen → assert the consumo
@@ -36,7 +37,7 @@ const hasJourneyConfig = Boolean(EMAIL && PASSWORD);
 async function launchApp(): Promise<{ app: ElectronApplication; page: Page; userDataDirectory: string }> {
   const userDataDirectory = await mkdtemp(join(tmpdir(), "cloudix-journey-"));
   const app = await electron.launch({ args: [".", `--user-data-dir=${userDataDirectory}`] });
-  return { app, page: await app.firstWindow(), userDataDirectory };
+  return { app, page: await mainWindow(app), userDataDirectory };
 }
 
 // Checkout prints the receipt. With no printer configured (CI runners) the

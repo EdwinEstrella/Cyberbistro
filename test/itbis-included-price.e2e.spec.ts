@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { mainWindow } from "./support/electronMainWindow";
 
 /**
  * ITBIS included in price, end to end: the tenant setting "ITBIS incluido en el
@@ -146,7 +147,7 @@ test("ITBIS included in price: checkout split matches the setting and the persis
 
   const userDataDirectory = await mkdtemp(join(tmpdir(), "cloudix-itbis-included-"));
   const app = await electron.launch({ args: [".", `--user-data-dir=${userDataDirectory}`] });
-  const page = await app.firstWindow();
+  const page = await mainWindow(app);
   page.on("dialog", (dialog) => void dialog.dismiss().catch(() => undefined));
   let originalIncluded: boolean | undefined;
 

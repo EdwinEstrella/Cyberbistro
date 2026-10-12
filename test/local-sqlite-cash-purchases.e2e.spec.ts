@@ -2,12 +2,13 @@ import { expect, test, _electron as electron } from "@playwright/test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { mainWindow } from "./support/electronMainWindow";
 
 test("exposes only the named cash-purchase bridge in an isolated Electron profile", async () => {
   const userDataDirectory = await mkdtemp(join(tmpdir(), "cloudix-cash-purchases-e2e-"));
   const app = await electron.launch({ args: [".", `--user-data-dir=${userDataDirectory}`] });
   try {
-    const page = await app.firstWindow();
+    const page = await mainWindow(app);
     await expect(page.getByLabel("Correo")).toBeVisible({ timeout: 30_000 });
     await expect.poll(() => page.evaluate(() => ({
       hasCashPurchaseCommand: typeof window.electronAPI?.executeCashPurchaseCommand === "function",

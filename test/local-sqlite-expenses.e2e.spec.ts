@@ -2,6 +2,7 @@ import { expect, test, _electron as electron } from "@playwright/test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { mainWindow } from "./support/electronMainWindow";
 
 test("creates and lists expenses and categories in isolated profile with zero foreign key constraint errors", async () => {
   const userDataDirectory = await mkdtemp(join(tmpdir(), "cloudix-expenses-e2e-"));
@@ -9,7 +10,7 @@ test("creates and lists expenses and categories in isolated profile with zero fo
 
   const app = await electron.launch({ args: [".", `--user-data-dir=${userDataDirectory}`] });
   try {
-    const page = await app.firstWindow();
+    const page = await mainWindow(app);
     await expect(page.getByLabel("Correo")).toBeVisible({ timeout: 30_000 });
 
     // 1. Verify IPC bridges are exposed
