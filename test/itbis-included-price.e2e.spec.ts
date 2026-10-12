@@ -15,10 +15,11 @@ import { mainWindow } from "./support/electronMainWindow";
  * local-sqlite-sales-journey.e2e.spec.ts:
  *   - CYBERBISTRO_E2E_EMAIL / CYBERBISTRO_E2E_PASSWORD → linked account.
  *   - CYBERBISTRO_E2E_PRODUCT → optional product name (first card otherwise).
- *   - CYBERBISTRO_E2E_MESA (default "01") → a table that is FREE at start.
+ *   - CYBERBISTRO_E2E_MESA (default "01") → the table used. Leftover items on it
+ *     are tolerated: P is the whole mesa menu total, and the final charge clears it.
  *   - An OPEN operational cycle.
  *
- * Price-agnostic: the menu price P is read from the checkout modal, so the
+ * Price-agnostic: the menu total P of the mesa is read from the checkout modal, so the
  * assertions hold for any product price (P = 100 gives 84.75 / 15.25 / 100):
  *   ON : subtotal = round2(P / 1.18), itbis = P - subtotal, total = P,
  *        with propina: propina = round2(P * 0.10), total = P + propina.
@@ -74,6 +75,22 @@ async function login(page: Page): Promise<void> {
 }
 
 const mesaSelector = (page: Page) => page.getByRole("button", { name: /Seleccionar mesa|Mesa \d+/ });
+
+/**
+ * A fresh profile starts empty and the first cloud pull lands seconds after
+ * login. Leftover consumos on the shared test mesa (e.g. from an earlier failed
+ * run) would then appear between the OFF and ON phases and change P mid-test.
+ * Wait for that first pull, then reload so both phases read the same mesa.
+ */
+async function waitForInitialPull(page: Page): Promise<void> {
+  await expect.poll(
+    () => page.evaluate(() =>
+      window.electronAPI!.getSyncDiagnosticReport!().then((r) => Boolean(r?.data?.pullState?.global?.lastPullAt)),
+    ),
+    { timeout: 60_000, message: "initial cloud pull did not complete" },
+  ).toBe(true);
+  await reloadToPos(page);
+}
 
 /**
  * Reload the renderer so Dashboard re-reads the tenant billing settings. The
@@ -162,6 +179,7 @@ test("ITBIS included in price: checkout split matches the setting and the persis
   try {
     await login(page);
     await expect(mesaSelector(page)).toBeVisible({ timeout: 30_000 });
+    await waitForInitialPull(page);
     const invoicesBefore = await page.evaluate(() => window.electronAPI!.listInvoices!({}).then((r) => r.data.length));
 
     // ---- Setting OFF: classic behavior (no regression) ----
