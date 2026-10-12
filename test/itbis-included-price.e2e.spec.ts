@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mainWindow } from "./support/electronMainWindow";
+import { settleLoginOrShell } from "./support/authSettle";
 
 /**
  * ITBIS included in price, end to end: the tenant setting "ITBIS incluido en el
@@ -100,9 +101,7 @@ async function waitForInitialPull(page: Page): Promise<void> {
 async function reloadToPos(page: Page): Promise<void> {
   await page.evaluate(() => { window.location.hash = "/"; });
   await page.reload();
-  const email = page.getByLabel("Correo");
-  await expect(email.or(mesaSelector(page)).first()).toBeVisible({ timeout: 30_000 });
-  if (await email.isVisible().catch(() => false)) await login(page);
+  if ((await settleLoginOrShell(page, mesaSelector(page))) === "login") await login(page);
   await expect(mesaSelector(page)).toBeVisible({ timeout: 30_000 });
 }
 

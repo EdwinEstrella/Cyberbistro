@@ -1,5 +1,6 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
 import { mainWindow } from "./support/electronMainWindow";
+import { settleLoginOrShell } from "./support/authSettle";
 
 const TEST_EMAIL_ENV = 'CYBERBISTRO_TEST_EMAIL';
 const TEST_PASSWORD_ENV = 'CYBERBISTRO_TEST_PASSWORD';
@@ -58,14 +59,6 @@ function tableButton(page: Page, tableNumber: number) {
   });
 }
 
-async function waitForLoginOrShell(page: Page): Promise<void> {
-  await Promise.race([
-    page.locator('input[type="email"]').first().waitFor({ state: 'visible', timeout: 20_000 }),
-    page.locator('aside').getByRole('button', { name: /^Mesas$/ }).waitFor({ state: 'visible', timeout: 20_000 }),
-    page.locator('button:has-text("Cerrar Sesión")').first().waitFor({ state: 'visible', timeout: 20_000 }),
-  ]);
-}
-
 async function revealSidebar(page: Page): Promise<void> {
   // Best-effort: if the collapsed-sidebar toggle is currently showing, open it.
   // Safe to call before login (the toggle simply is not there yet → no-op).
@@ -87,12 +80,14 @@ async function waitForAppShell(page: Page): Promise<void> {
 }
 
 async function loginIfNeeded(page: Page): Promise<void> {
-  await waitForLoginOrShell(page);
-
-  const emailInput = page.locator('input[type="email"]').first();
-  if (!(await emailInput.isVisible().catch(() => false))) {
+  const shell = page.locator('aside').getByRole('button', { name: /^Mesas$/ })
+    .or(page.getByRole('button', { name: 'Mostrar barra lateral' }))
+    .or(page.locator('button:has-text("Cerrar Sesión")'));
+  if ((await settleLoginOrShell(page, shell)) === 'shell') {
     return;
   }
+
+  const emailInput = page.locator('input[type="email"]').first();
 
   const passwordInput = page.locator('input[type="password"], input[autocomplete="current-password"]').first();
   const email = process.env[TEST_EMAIL_ENV];
