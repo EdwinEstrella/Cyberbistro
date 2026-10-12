@@ -1414,7 +1414,7 @@ export interface ConflictResult {
 
 const SAFE_TENANT_KEYS = new Set([
   "nombre_negocio", "rnc", "logo_url", "logo_size_px", "logo_offset_x", "logo_offset_y", "menu_url", "direccion", "telefono", "moneda",
-  "itbis_cobro_por_defecto", "propina_cobro_por_defecto",
+  "itbis_cobro_por_defecto", "propina_cobro_por_defecto", "itbis_incluido_en_precio",
   "fiscal_mode", "fiscal_mode_fallback", "ecf_environment",
   "ncf_fiscal_activo", "ncf_tipo_default", "ncf_secuencia_siguiente", "ncf_secuencias_por_tipo", "ncf_tipos_activos",
   "ncf_b01_secuencia_siguiente", "ncf_b02_secuencia_siguiente", "ncf_b14_secuencia_siguiente", "ncf_b15_secuencia_siguiente", "ncf_b16_secuencia_siguiente", "ncf_b17_secuencia_siguiente",

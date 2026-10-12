@@ -68,6 +68,7 @@ interface Config {
   telefono: string;
   currency_code: "DOP" | "ARS";
   itbis_cobro_por_defecto: boolean;
+  itbis_incluido_en_precio: boolean;
   propina_cobro_por_defecto: boolean;
   ncf_fiscal_activo: boolean;
   fiscal_mode: "internal_receipt" | "ncf_legacy" | "dgii_ecf";
@@ -178,6 +179,7 @@ export function Ajustes() {
     telefono: "",
     currency_code: "DOP",
     itbis_cobro_por_defecto: false,
+    itbis_incluido_en_precio: false,
     propina_cobro_por_defecto: false,
     ncf_fiscal_activo: false,
     fiscal_mode: "internal_receipt",
@@ -198,7 +200,7 @@ export function Ajustes() {
 
   const TENANT_FIELDS_BASE = "nombre_negocio, rnc, logo_url, logo_size_px, logo_offset_x, logo_offset_y, menu_url, direccion, telefono";
   const TENANT_FIELDS_CURRENCY = "moneda";
-  const TENANT_FIELDS_NCF = `itbis_cobro_por_defecto, propina_cobro_por_defecto, ncf_fiscal_activo, fiscal_mode, fiscal_mode_fallback, ecf_environment, ncf_tipo_default, ncf_secuencia_siguiente, ncf_secuencias_por_tipo, ncf_tipos_activos, ${NCF_B_SEQUENCE_FIELDS_SELECT}`;
+  const TENANT_FIELDS_NCF = `itbis_cobro_por_defecto, itbis_incluido_en_precio, propina_cobro_por_defecto, ncf_fiscal_activo, fiscal_mode, fiscal_mode_fallback, ecf_environment, ncf_tipo_default, ncf_secuencia_siguiente, ncf_secuencias_por_tipo, ncf_tipos_activos, ${NCF_B_SEQUENCE_FIELDS_SELECT}`;
 
   useEffect(() => {
     if (authLoading || !tenantId) { if (!authLoading) setLoading(false); return; }
@@ -217,7 +219,11 @@ export function Ajustes() {
           data = res.data;
         }
       } else {
-        const res = await supabase.from("tenants").select(`${TENANT_FIELDS_BASE}, ${TENANT_FIELDS_CURRENCY}, ${TENANT_FIELDS_NCF}`).eq("id", tenantId).maybeSingle();
+        let res = await supabase.from("tenants").select(`${TENANT_FIELDS_BASE}, ${TENANT_FIELDS_CURRENCY}, ${TENANT_FIELDS_NCF}`).eq("id", tenantId).maybeSingle();
+        if (res.error) {
+          // The cloud may not have itbis_incluido_en_precio yet: retry without it.
+          res = await supabase.from("tenants").select(`${TENANT_FIELDS_BASE}, ${TENANT_FIELDS_CURRENCY}, ${TENANT_FIELDS_NCF.replace(" itbis_incluido_en_precio,", "")}`).eq("id", tenantId).maybeSingle();
+        }
         if (res.error) console.error(res.error.message);
         data = res.data;
       }
@@ -238,6 +244,7 @@ export function Ajustes() {
           telefono: data.telefono ?? "",
           currency_code: (data.moneda || "DOP") as any,
           itbis_cobro_por_defecto: Boolean(data.itbis_cobro_por_defecto),
+          itbis_incluido_en_precio: Boolean(data.itbis_incluido_en_precio),
           propina_cobro_por_defecto: Boolean(data.propina_cobro_por_defecto),
           ncf_fiscal_activo: Boolean(data.ncf_fiscal_activo) || data.fiscal_mode === "ncf_legacy" || data.fiscal_mode === "dgii_ecf",
           fiscal_mode: data.fiscal_mode || "internal_receipt",
@@ -275,6 +282,7 @@ export function Ajustes() {
       telefono: config.telefono?.trim() || null,
       moneda: config.currency_code,
       itbis_cobro_por_defecto: config.itbis_cobro_por_defecto,
+      itbis_incluido_en_precio: config.itbis_incluido_en_precio,
       propina_cobro_por_defecto: config.propina_cobro_por_defecto,
       fiscal_mode: config.fiscal_mode,
       fiscal_mode_fallback: config.fiscal_mode_fallback,
@@ -485,6 +493,13 @@ export function Ajustes() {
               <label className="flex items-center gap-3 cursor-pointer group">
                 <input type="checkbox" checked={config.itbis_cobro_por_defecto} onChange={e => setConfig(p => ({ ...p, itbis_cobro_por_defecto: e.target.checked }))} className="size-4 rounded accent-primary" />
                 <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">Cobrar ITBIS por defecto</span>
+              </label>
+              <label className="flex items-start gap-3 cursor-pointer group">
+                <input type="checkbox" checked={config.itbis_incluido_en_precio} onChange={e => setConfig(p => ({ ...p, itbis_incluido_en_precio: e.target.checked }))} className="mt-0.5 size-4 rounded accent-primary" />
+                <span className="flex flex-col">
+                  <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">ITBIS incluido en el precio</span>
+                  <span className="text-xs text-muted-foreground">El precio del producto ya incluye el ITBIS (ej. 100 = 84.75 + 15.25 ITBIS).</span>
+                </span>
               </label>
               <label className="flex items-center gap-3 cursor-pointer group">
                 <input type="checkbox" checked={config.propina_cobro_por_defecto} onChange={e => setConfig(p => ({ ...p, propina_cobro_por_defecto: e.target.checked }))} className="size-4 rounded accent-primary" />

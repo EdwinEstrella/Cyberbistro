@@ -10,6 +10,7 @@ export interface TenantBillingSettingsRow {
   ncf_tipo_default?: string | null;
   itbis_cobro_por_defecto?: boolean | null;
   propina_cobro_por_defecto?: boolean | null;
+  itbis_incluido_en_precio?: boolean | null;
   fiscal_mode_fallback?: string | null;
   ecf_environment?: string | null;
   rnc?: string | null;
@@ -30,6 +31,8 @@ export interface TenantBillingSettings {
   defaultNcfType: NcfTypeCode;
   defaultItbisEnabled: boolean;
   defaultPropinaEnabled?: boolean;
+  /** Menu prices already include ITBIS (base = price / (1 + rate)). */
+  itbisIncluded?: boolean;
   fiscalModeFallback?: FiscalMode | null;
   ecfEnvironment?: string | null;
   rnc?: string | null;
@@ -43,8 +46,10 @@ export interface TenantBillingSettings {
   ncfTiposActivos?: NcfActiveMap;
 }
 
-const TENANT_BILLING_SETTINGS_SELECT =
+const TENANT_BILLING_SETTINGS_SELECT_LEGACY =
   "fiscal_mode, ncf_fiscal_activo, ncf_tipo_default, ncf_tipos_activos, itbis_cobro_por_defecto, propina_cobro_por_defecto, fiscal_mode_fallback, ecf_environment, rnc, nombre_negocio, direccion, ecf_issuer_sucursal, ecf_issuer_municipio, ecf_issuer_provincia, ecf_issuer_actividad_economica, ecf_issuer_correo_emisor";
+
+const TENANT_BILLING_SETTINGS_SELECT = `${TENANT_BILLING_SETTINGS_SELECT_LEGACY}, itbis_incluido_en_precio`;
 
 export function normalizeTenantBillingSettings(
   row: TenantBillingSettingsRow | null | undefined
@@ -59,6 +64,7 @@ export function normalizeTenantBillingSettings(
       : DEFAULT_NCF_B_CODE,
     defaultItbisEnabled: Boolean(row?.itbis_cobro_por_defecto),
     defaultPropinaEnabled: Boolean(row?.propina_cobro_por_defecto),
+    itbisIncluded: Boolean(row?.itbis_incluido_en_precio),
     fiscalModeFallback: normalizeFiscalMode(row?.fiscal_mode_fallback, false),
     ecfEnvironment: row?.ecf_environment || "certification",
     rnc: row?.rnc,
@@ -95,6 +101,15 @@ export async function loadTenantBillingSettings(
     .select(TENANT_BILLING_SETTINGS_SELECT)
     .eq("id", tenantId)
     .maybeSingle();
+
+  if (res.error) {
+    // The cloud may not have the newest column yet: retry without it before degrading further.
+    res = await supabase
+      .from("tenants")
+      .select(TENANT_BILLING_SETTINGS_SELECT_LEGACY)
+      .eq("id", tenantId)
+      .maybeSingle();
+  }
 
   if (res.error) {
     res = await supabase
