@@ -75,8 +75,13 @@ async function login(page: Page): Promise<void> {
 
 const mesaSelector = (page: Page) => page.getByRole("button", { name: /Seleccionar mesa|Mesa \d+/ });
 
-/** Reload the renderer so Dashboard re-reads the tenant billing settings. */
+/**
+ * Reload the renderer so Dashboard re-reads the tenant billing settings. The
+ * hash route survives a reload, so go back to "/" first: Login redirects an
+ * authenticated session to its default (POS) route.
+ */
 async function reloadToPos(page: Page): Promise<void> {
+  await page.evaluate(() => { window.location.hash = "/"; });
   await page.reload();
   const email = page.getByLabel("Correo");
   await expect(email.or(mesaSelector(page)).first()).toBeVisible({ timeout: 30_000 });

@@ -215,7 +215,7 @@ test('tenant fiscal settings can be saved and persisted after navigation', async
     throw error;
   } finally {
     if (electronApp) {
-      window = electronApp.windows()[0] ?? window;
+      window = await mainWindow(electronApp).catch(() => window);
       if (window && (originalFiscalMode !== undefined || originalB01Sequence !== undefined)) {
         try {
           await openAjustesModule(window);
