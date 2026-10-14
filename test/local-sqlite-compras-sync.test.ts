@@ -194,6 +194,40 @@ describe("Compras SQLite local-first sync (Push & Query)", () => {
     expect(editTables).not.toContain("gastos");
   });
 
+  it("purchase.delete removes a credit purchase whose payable already has payments", () => {
+    repo.execute({
+      type: "purchase.create",
+      id: "compra-paid",
+      supplierId: "prov-1",
+      providerName: "Distribuidora Central",
+      numeroFactura: "B0100000777",
+      tipoPago: "credito",
+      metodoPago: "efectivo",
+      montoPagado: 0,
+      fechaCompra: "2026-08-01T10:00:00Z",
+      total: 1000,
+      cycleId: "cycle-1",
+      items: [],
+      payable: {
+        id: "cxp-paid",
+        totalAmount: 1000,
+        fechaEmision: "2026-08-01",
+      },
+    });
+    db.prepare(
+      "INSERT INTO cxp_pagos (id, tenant_id, sucursal_id, cuenta_pagar_id, monto, metodo_pago) VALUES ('pago-1', ?, 'branch-1', 'cxp-paid', 400, 'efectivo')"
+    ).run(TENANT);
+
+    expect(() => repo.execute({ type: "purchase.delete", purchaseId: "compra-paid" })).not.toThrow();
+
+    expect(db.prepare("SELECT id FROM compras WHERE id = 'compra-paid'").get()).toBeUndefined();
+    expect(db.prepare("SELECT id FROM cuentas_pagar WHERE id = 'cxp-paid'").get()).toBeUndefined();
+    expect(db.prepare("SELECT id FROM cxp_pagos WHERE id = 'pago-1'").get()).toBeUndefined();
+    // The cloud cascades cxp_pagos on cuentas_pagar delete, so no payment delete is pushed.
+    const pushedPaymentDelete = db.prepare("SELECT id FROM sync_outbox WHERE table_name = 'cxp_pagos' AND operation = 'delete'").get();
+    expect(pushedPaymentDelete).toBeUndefined();
+  });
+
   it("lists purchases with listCompras ordered by date", () => {
     store.executeCashPurchaseCommand({
       command: {

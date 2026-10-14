@@ -779,6 +779,9 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
 
         const payables = this.database.prepare("SELECT id FROM cuentas_pagar WHERE compra_id = ? AND tenant_id = ?").all(command.purchaseId, this.tenantId) as Array<{ id: string }>;
         for (const p of payables) {
+          // Payments reference the payable; the cloud cascades them
+          // (cxp_pagos ON DELETE CASCADE), so only clear them locally.
+          this.database.prepare("DELETE FROM cxp_pagos WHERE cuenta_pagar_id = ? AND tenant_id = ?").run(p.id, this.tenantId);
           this.database.prepare("DELETE FROM cuentas_pagar WHERE id = ?").run(p.id);
           this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, 'cuentas_pagar', ?, 'delete', ?, 'pending')").run(
             `${commitId}:payable-del:${p.id}`,
