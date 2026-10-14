@@ -19,7 +19,6 @@ import { ConfirmModal } from "../../shared/components/ConfirmModal";
 // Exported for other components that might need direct access, though window.alert works too
 export let globalShowAlert: (msg: string, title?: string, variant?: "info" | "danger" | "primary") => void = () => {};
 import { RoleGuard } from "./RoleGuard";
-import { useAppUpdate } from "../../features/updates/AppUpdateContext";
 import { LocalFirstStatusBadge } from "../../shared/components/LocalFirstStatusBadge";
 import { useLocalFirstBootstrap } from "../../shared/hooks/useLocalFirstBootstrap";
 import { getPaymentAlert, getPaymentAlertStorageKey } from "../../shared/lib/paymentDate";
@@ -362,7 +361,6 @@ function AppLayoutContent() {
   const navigate = useNavigate();
   const routerLocation = useLocation();
   const { rol, signOut, tenantId, plan, loading, tenantAccessValidated } = useAuth();
-  const { hasUpdateBellAlert, showUpdateBellToast } = useAppUpdate();
   const currentTenantIdRef = useRef(tenantId);
   currentTenantIdRef.current = tenantId;
   const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
@@ -961,22 +959,16 @@ function AppLayoutContent() {
                   onClick={() => {
                     if (visiblePendingOrdersCount > 0) {
                       navigate("/pedidos");
-                    } else {
-                      showUpdateBellToast();
                     }
                   }}
                   title={
                      visiblePendingOrdersCount > 0
                        ? `Tenés ${visiblePendingOrdersCount} pedido(s) pendiente(s)`
-                      : hasUpdateBellAlert
-                      ? "Hay una actualización de la app"
                       : "Notificaciones"
                   }
                   aria-label={
                      visiblePendingOrdersCount > 0
                        ? `Tenés ${visiblePendingOrdersCount} pedido(s) pendiente(s). Tocá para ver detalles.`
-                      : hasUpdateBellAlert
-                      ? "Hay una actualización disponible. Tocá para ver detalles."
                       : "Notificaciones"
                   }
                   className="relative w-[16px] h-[20px] shrink-0 border-none bg-transparent p-0 cursor-pointer"
@@ -989,7 +981,7 @@ function AppLayoutContent() {
                   >
                     <path
                       d={svgPaths.p28252700}
-                       fill={visiblePendingOrdersCount > 0 ? "#ef4444" : hasUpdateBellAlert ? "#ff906d" : "#ADAAAA"}
+                       fill={visiblePendingOrdersCount > 0 ? "#ef4444" : "#ADAAAA"}
                     />
                   </svg>
                    {visiblePendingOrdersCount > 0 ? (
@@ -998,11 +990,6 @@ function AppLayoutContent() {
                     >
                        {visiblePendingOrdersCount}
                     </span>
-                  ) : hasUpdateBellAlert ? (
-                    <span
-                      className="absolute top-[-4px] right-[-6px] size-[9px] rounded-full bg-[#ffb020] shadow-[0_0_10px_rgba(255,176,32,0.85)] pointer-events-none motion-safe:animate-pulse"
-                      aria-hidden
-                    />
                   ) : null}
                 </button>
               </div>
