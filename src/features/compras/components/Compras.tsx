@@ -12,6 +12,7 @@ import { supabase } from "../../../shared/lib/supabase";
 import { filterRecordsWithNcf, generateFormato606, type CompraFiscal606 } from "../../contabilidad/lib/formato606";
 import { eliminarCompra, syncIndexedDbComprasToSqlite } from "../lib/purchaseService";
 import { ConfirmModal } from "../../../shared/components/ConfirmModal";
+import { buildDeletePurchaseMessage, findPurchasePayments, type PurchasePayment } from "../lib/purchasePayments";
 import {
   Select,
   SelectContent,
@@ -99,7 +100,11 @@ export function Compras() {
   const [editingProveedor, setEditingProveedor] = useState<ProveedorRow | null>(null);
   const [selectedCompraForDetail, setSelectedCompraForDetail] = useState<CompraRow | null>(null);
   const [editingCompraFiscal, setEditingCompraFiscal] = useState<CompraRow | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<{ open: boolean; id: string }>({ open: false, id: "" });
+  const [confirmDelete, setConfirmDelete] = useState<{ open: boolean; id: string; payments: PurchasePayment[] }>({
+    open: false,
+    id: "",
+    payments: [],
+  });
 
 
 
@@ -269,6 +274,14 @@ export function Compras() {
     setShowProveedorModal(true);
   }
 
+  function openDeleteConfirm(id: string) {
+    setConfirmDelete({ open: true, id, payments: [] });
+    if (!tenantId) return;
+    void findPurchasePayments(tenantId, id).then((payments) => {
+      setConfirmDelete((prev) => (prev.open && prev.id === id ? { ...prev, payments } : prev));
+    });
+  }
+
   async function handleEliminarCompra(id: string) {
     if (!tenantId) return;
     setLoading(true);
@@ -281,7 +294,7 @@ export function Compras() {
       setMessage("Error al anular compra: " + err.message);
     } finally {
       setLoading(false);
-      setConfirmDelete({ open: false, id: "" });
+      setConfirmDelete({ open: false, id: "", payments: [] });
     }
   }
   async function exportFormato606(format: 'txt' | 'csv' = 'txt') {
@@ -582,7 +595,7 @@ export function Compras() {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => setConfirmDelete({ open: true, id: row.id })}
+                                  onClick={() => openDeleteConfirm(row.id)}
                                   className="bg-transparent border-none text-[#adaaaa] hover:text-red-500 cursor-pointer p-1 transition-colors"
                                   title="Anular Compra (Revertir Stock)"
                                 >
@@ -741,10 +754,10 @@ export function Compras() {
 
       <ConfirmModal
         open={confirmDelete.open}
-        title="¿Anular y Revertir Compra?"
-        message="Esta acción es irreversible. Se eliminará la factura, la cuenta por pagar y se restará automáticamente del inventario la cantidad de insumos que entraron con esta compra."
+        title={confirmDelete.payments.length > 0 ? "Esta compra tiene pagos registrados" : "¿Anular y Revertir Compra?"}
+        message={buildDeletePurchaseMessage(confirmDelete.payments)}
         onConfirm={() => void handleEliminarCompra(confirmDelete.id)}
-        onCancel={() => setConfirmDelete({ open: false, id: "" })}
+        onCancel={() => setConfirmDelete({ open: false, id: "", payments: [] })}
         confirmLabel="Sí, Anular Compra"
         variant="danger"
       />
