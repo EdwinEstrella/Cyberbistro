@@ -4,7 +4,9 @@ import svgPaths from "../../../imports/svg-h2gjocs89h";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import type { Sucursal } from "../../../app/context/SucursalContext";
 import { SUPER_ADMIN_ROLE } from "../../../shared/lib/superAdmin";
-import { Printer } from "lucide-react";
+import { Printer, RefreshCw } from "lucide-react";
+import { useAppUpdateOptional } from "../../updates/AppUpdateContext";
+import { getUpdateButtonState } from "../../updates/updateButtonState";
 import { getThermalPrintSettings, saveThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { ConfirmModal } from "../../../shared/components/ConfirmModal";
 
@@ -37,6 +39,14 @@ export function TitleBar({
   const [isMaximized, setIsMaximized] = useState(false);
   
   const { plan, isAuthenticated, rol } = useAuth();
+  const appUpdate = useAppUpdateOptional();
+  const updateButton = appUpdate
+    ? getUpdateButtonState({
+        phase: appUpdate.phase,
+        downloadPercent: appUpdate.downloadPercent,
+        hasAlert: appUpdate.hasUpdateBellAlert,
+      })
+    : null;
   const activeSucursalId = branchContext?.activeSucursalId ?? null;
   const setActiveSucursalId = branchContext?.setActiveSucursalId;
   const sucursales = branchContext?.sucursales ?? [];
@@ -386,6 +396,33 @@ export function TitleBar({
         className="flex items-center h-full gap-1"
         style={{ WebkitAppRegion: 'no-drag' as any }}
       >
+        {/* App update button */}
+        {Boolean(window.electronAPI) && appUpdate && updateButton && (
+          <button
+            type="button"
+            onClick={() => appUpdate.showUpdateBellToast()}
+            className="relative h-full px-3 flex items-center justify-center hover:bg-sidebar-accent border-none bg-transparent cursor-pointer transition-all gap-1.5"
+            title={updateButton.title}
+            aria-label={updateButton.title}
+          >
+            <RefreshCw
+              size={13}
+              className={`${updateButton.tone === "accent" ? "text-[#ff906d]" : "text-[#ADAAAA] hover:text-[#ff906d]"} transition-colors ${updateButton.spinning ? "animate-spin" : ""}`}
+            />
+            {updateButton.label && (
+              <span className="font-['Space_Grotesk',sans-serif] text-[10px] text-[#ff906d] font-bold uppercase tracking-[-0.2px]">
+                {updateButton.label}
+              </span>
+            )}
+            {updateButton.showDot && (
+              <span
+                className="absolute top-[10px] right-[6px] size-[7px] rounded-full bg-[#ffb020] shadow-[0_0_8px_rgba(255,176,32,0.85)] pointer-events-none motion-safe:animate-pulse"
+                aria-hidden
+              />
+            )}
+          </button>
+        )}
+
         {/* Printer Selection Dropdown */}
         {Boolean(window.electronAPI) && isAuthenticated && (
           <div className="relative h-full flex items-center">
