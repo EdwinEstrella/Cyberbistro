@@ -23,6 +23,8 @@ Deleting an old credit purchase must work and must warn the user when the purcha
 - [x] T2 — Payments warning on purchase delete. Route: delegated writer (writer trigger: Compras.tsx + new lib + test). Evidence: tsc OK, vitest 813 passed. Commit `d3e7f2c`.
 - [x] T3 — Update button in TitleBar. Route: delegated writer (same worker; TitleBar.tsx + AppLayout.tsx). Evidence: tsc OK, vitest 818 passed (parent spot check re-ran both). Commit `6188bd9`.
 
+- [x] T4 — When the update is downloaded, the title bar button reads "Reiniciar sistema" and installs on click (user request: visible outside POS, one click). Route: inline (mechanical, 3 small files). Evidence: tsc OK, vitest 819 passed. Commit `455dc7c`.
+
 ## Acceptance criteria
 - Deleting a purchase with payments shows a warning naming the payment count, total, and dates; confirming deletes it without error.
 - Deleting a purchase without payments shows the existing message.
