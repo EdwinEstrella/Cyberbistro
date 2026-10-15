@@ -588,7 +588,7 @@ function mapGeneralExpensePayload(operation: DurableOperation, payload: Record<s
   return {
     id: operation.rowId,
     tenant_id: operation.tenantId,
-    sucursal_id: payload.sucursalId ? String(payload.sucursalId) : null,
+    sucursal_id: resolveRemoteBranchId(operation, payload),
     category_id: payload.categoryId ? String(payload.categoryId) : null,
     cycle_id: payload.cycleId ? String(payload.cycleId) : null,
     descripcion: typeof payload.description === "string" ? payload.description : "Gasto operacional",

@@ -6,6 +6,8 @@ import { ReceivablesRepository } from "../electron/persistence/receivablesReposi
 import { PayrollSyncClient, resolveRemoteBranchId } from "../electron/persistence/payrollSyncClient";
 import { SQLitePayrollSyncStore } from "../electron/persistence/payrollSyncStore";
 import { DurableSyncWorker } from "../electron/persistence/syncWorker";
+import { ExpenseRepository } from "../electron/persistence/expenseRepository";
+import { applyCloudCompraRows } from "../electron/persistence/cloudApply";
 
 const TENANT = "tenant-branch-sentinel";
 const SENTINEL = "main-process-default";
@@ -93,5 +95,52 @@ describe("cxc payment push with the main-process branch sentinel", () => {
     const upserts = await pushAndCapture();
     expect(upserts.cxc_pagos?.[0]?.sucursal_id).toBeNull();
     expect(JSON.stringify(upserts)).not.toContain(SENTINEL);
+  });
+
+  it("never sends the sentinel as sucursal_id for a general expense", async () => {
+    const expenses = new ExpenseRepository({ store, branchId: SENTINEL });
+    expenses.execute({
+      type: "expense.create",
+      id: "gasto-1",
+      branchId: SENTINEL,
+      description: "Gas",
+      amount: 100,
+      paymentMethod: "cash",
+    } as any);
+
+    const upserts = await pushAndCapture();
+    expect(upserts.gastos?.[0]?.sucursal_id).toBeNull();
+    expect(JSON.stringify(upserts)).not.toContain(SENTINEL);
+  });
+});
+
+describe("cloud compra pull over a local compra with the sentinel branch", () => {
+  let db: DatabaseSync;
+
+  beforeEach(() => {
+    db = new DatabaseSync(":memory:");
+    initializeTenantSchema(db, TENANT);
+    db.prepare("INSERT OR IGNORE INTO tenants (id) VALUES (?)").run(TENANT);
+    db.prepare("INSERT INTO sucursales (id, tenant_id, name) VALUES (?, ?, 'Principal')").run(SENTINEL, TENANT);
+    db.prepare("INSERT INTO proveedores (id, tenant_id, name) VALUES ('prov-1', ?, 'Proveedor')").run(TENANT);
+    db.prepare(
+      "INSERT INTO compras (id, tenant_id, sucursal_id, proveedor_id, payment_method, total, local_status) VALUES ('compra-1', ?, ?, 'prov-1', 'cash', 50, 'committed')"
+    ).run(TENANT, SENTINEL);
+    db.prepare(
+      "INSERT INTO gastos (id, tenant_id, sucursal_id, compra_id, expense_type, payment_method, amount, local_status) VALUES ('gasto-c1', ?, ?, 'compra-1', 'purchase', 'cash', 50, 'committed')"
+    ).run(TENANT, SENTINEL);
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it("applies the cloud row without re-homing the compra away from its child rows", () => {
+    expect(() =>
+      applyCloudCompraRows(db, TENANT, [{ id: "compra-1", sucursal_id: REAL_BRANCH, proveedor_id: "prov-1", total: 75 }])
+    ).not.toThrow();
+    const row = db.prepare("SELECT sucursal_id, total FROM compras WHERE id = 'compra-1'").get() as any;
+    expect(row.sucursal_id).toBe(SENTINEL);
+    expect(row.total).toBe(75);
   });
 });

@@ -477,6 +477,9 @@ export function applyCloudFacturaRows(
  * legacy `payment_method` is pinned to 'cash' and the real method goes to
  * `metodo_pago`. Proveedor and sucursal FKs are ensured before insert. A row with
  * a pending local write is skipped so an unsynced local edit is never clobbered.
+ * An existing row keeps its local sucursal_id: gastos and movimientos_inventario
+ * reference (compra_id, tenant_id, sucursal_id), so re-homing the compra (e.g.
+ * sentinel -> real branch) would orphan them and fail the FK.
  */
 export function applyCloudCompraRows(
   db: DatabaseSync,
@@ -493,7 +496,6 @@ export function applyCloudCompraRows(
       numero_factura, tipo_pago, metodo_pago, monto_pagado, fecha_compra, cycle_id, estado, observacion, usuario_id
     ) VALUES (?, ?, ?, ?, 'cash', ?, 'committed', ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
-      sucursal_id = excluded.sucursal_id,
       proveedor_id = excluded.proveedor_id,
       total = excluded.total,
       numero_factura = excluded.numero_factura,
