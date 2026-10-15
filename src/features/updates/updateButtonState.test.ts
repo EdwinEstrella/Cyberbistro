@@ -22,9 +22,16 @@ describe("getUpdateButtonState", () => {
     expect(getUpdateButtonState({ phase: "downloading", downloadPercent: 140, hasAlert: true }).label).toBe("100%");
   });
 
-  it("labels the button Instalar when ready", () => {
+  it("labels the button Reiniciar sistema and installs directly when ready", () => {
     const s = getUpdateButtonState({ phase: "ready", downloadPercent: 100, hasAlert: true });
-    expect(s.label).toBe("Instalar");
+    expect(s.label).toBe("Reiniciar sistema");
     expect(s.showDot).toBe(true);
+    expect(s.action).toBe("install");
+  });
+
+  it("keeps the bell flow for every phase that is not ready", () => {
+    for (const phase of ["idle", "checking", "available", "downloading", "error"] as const) {
+      expect(getUpdateButtonState({ phase, downloadPercent: 0, hasAlert: phase !== "idle" }).action).toBe("open");
+    }
   });
 });
