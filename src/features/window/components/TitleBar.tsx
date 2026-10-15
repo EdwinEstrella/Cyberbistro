@@ -400,7 +400,7 @@ export function TitleBar({
         {Boolean(window.electronAPI) && appUpdate && updateButton && (
           <button
             type="button"
-            onClick={() => appUpdate.showUpdateBellToast()}
+            onClick={() => (updateButton.action === "install" ? appUpdate.installUpdate() : appUpdate.showUpdateBellToast())}
             className="relative h-full px-3 flex items-center justify-center hover:bg-sidebar-accent border-none bg-transparent cursor-pointer transition-all gap-1.5"
             title={updateButton.title}
             aria-label={updateButton.title}
