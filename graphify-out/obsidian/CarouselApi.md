@@ -1,0 +1,17 @@
+---
+source_file: "src/shared/ui/carousel.tsx"
+type: "code"
+community: "Shared Ui Carousel"
+location: "L12"
+tags:
+  - graphify/code
+  - graphify/EXTRACTED
+  - community/Shared_Ui_Carousel
+---
+
+# CarouselApi
+
+## Connections
+- [[carousel.tsx]] - `contains` [EXTRACTED]
+
+#graphify/code #graphify/EXTRACTED #community/Shared_Ui_Carousel

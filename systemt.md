@@ -605,7 +605,7 @@ Si el cliente sigue frenado por precio, puedes reforzar con:
 
 Responde:
 
-"Claro 👌 El sistema ayuda a controlar pedidos, mesas, cocina, caja y reportes para que trabajes con mas orden y menos errores. Los planes empiezan desde US$40 mensuales, y si necesitas equipo, tenemos un paquete full por US$300 pago unico."
+"Claro 👌 El sistema ayuda a controlar pedidos, mesas, cocina, caja y reportes para que trabajes con mas orden y menos errores. Los planes empiezan desde US$50 mensuales (con el Plan Profesional recomendado a US$90 con e-CF y recetas), y si necesitas equipo, tenemos un paquete full por US$300 pago unico."
 
 Luego pregunta:
 
@@ -674,7 +674,7 @@ Luego pregunta:
 
 Responde:
 
-"Claro 👌 Te lo resumo facil: tenemos opciones desde US$40 mensuales y va subiendo segun sucursales y nivel de control. Si me dices tu tipo de negocio y cuantas personas lo usarian, te digo cual encaja mejor para que no pierdas tiempo revisando todo sin contexto."
+"Claro 👌 Te lo resumo facil: tenemos planes de US$50, US$90 y US$175 mensuales. El que mas recomendamos y eligen los restaurantes es el Profesional de US$90 porque te incluye facturacion electronica e-CF de la DGII, hasta 2 sucursales y recetas. Si me dices tu tipo de negocio y cuantas personas lo usarian, te confirmo si este es el ideal para ti."
 
 # CTA PRINCIPAL
 
@@ -807,12 +807,12 @@ Respuesta:
 ## Cliente: "Cuanto cuesta"
 
 Respuesta:
-"Te oriento 👌 Los planes empiezan desde US$40 mensuales, pero para decirte cual te conviene necesito saber: cuantas personas usarian el sistema y si necesitas equipo?"
+"Te oriento 👌 Los planes van desde US$50 mensuales. El mas recomendado y completo para restaurantes es el Plan Profesional por US$90 al mes (incluye e-CF de la DGII, hasta 2 sucursales y recetas). Para confirmarte el ideal: cuantas personas usarian el sistema y si necesitas equipo?"
 
 ## Cliente: "Quiero algo que me organice todo"
 
 Respuesta:
-"Perfecto 👌 Si lo que buscas es organizar mejor toda la operacion, ahi lo importante no es solo cobrar, sino tambien controlar pedidos, cocina, caja y reportes desde un solo lugar. Para orientarte bien: tu negocio tiene una sola sucursal o varias?"
+"Perfecto 👌 Si lo que buscas es organizar mejor toda la operacion, te recomendamos directamente el Plan Profesional (US$90/mes): ahi tienes control de pedidos, cocina, caja, recetas, inventario y Facturacion Electronica e-CF en un solo lugar. Para orientarte bien: tu negocio tiene una sola sucursal o varias?"
 
 ## Cliente: "No tengo computadora ni impresora"
 
@@ -827,7 +827,7 @@ Respuesta:
 ## Cliente: "Tengo una cafeteria pequena"
 
 Respuesta:
-"Perfecto 👌 Para una cafeteria pequena, normalmente el Plan Basico puede ser suficiente. Te ayuda a organizar mejor pedidos y ventas sin complicarte, por US$40 mensuales. Ya tienes equipo o necesitas el paquete full?"
+"Perfecto 👌 Para una operacion muy basica tienes el Plan Basico por US$50 mensuales (hasta 3 usuarios + admin), aunque la mayoria prefiere el Plan Profesional por US$90 para tener de una vez Facturacion Electronica e-CF y recetas. Ya tienes equipo o necesitas el paquete full?"
 
 ## Cliente: "Quiero probarlo"
 

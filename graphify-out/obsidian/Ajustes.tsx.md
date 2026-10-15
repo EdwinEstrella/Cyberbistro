@@ -1,0 +1,88 @@
+---
+source_file: "src/features/ajustes/components/Ajustes.tsx"
+type: "code"
+community: "Ajustes"
+location: "L1"
+tags:
+  - graphify/code
+  - graphify/EXTRACTED
+  - community/Ajustes
+---
+
+# Ajustes.tsx
+
+## Connections
+- [[Ajustes()]] - `contains` [EXTRACTED]
+- [[AppDesktopUpdateCard()]] - `contains` [EXTRACTED]
+- [[AppUpdateContext.tsx]] - `imports_from` [EXTRACTED]
+- [[CURRENCY_OPTIONS]] - `contains` [EXTRACTED]
+- [[CertificateUploader()]] - `imports` [EXTRACTED]
+- [[CertificateUploader.tsx]] - `imports_from` [EXTRACTED]
+- [[CierreDiaThermalData]] - `imports` [EXTRACTED]
+- [[Config]] - `contains` [EXTRACTED]
+- [[DEFAULT_NCF_B_CODE]] - `imports` [EXTRACTED]
+- [[Field()]] - `contains` [EXTRACTED]
+- [[NCF_B_SEQUENCE_FIELDS_SELECT]] - `imports` [EXTRACTED]
+- [[NCF_B_TIPO_OPCIONES]] - `imports` [EXTRACTED]
+- [[NCF_E_TIPO_OPCIONES]] - `imports` [EXTRACTED]
+- [[NcfBCode]] - `imports` [EXTRACTED]
+- [[NominaReceiptData]] - `imports` [EXTRACTED]
+- [[PaperWidthMm]] - `imports` [EXTRACTED]
+- [[SAMPLE_CIERRE_THERMAL_BASE]] - `contains` [EXTRACTED]
+- [[SAMPLE_COMANDA_THERMAL]] - `contains` [EXTRACTED]
+- [[SAMPLE_FACTURA_THERMAL_PREVIEW]] - `contains` [EXTRACTED]
+- [[SAMPLE_NOMINA_THERMAL]] - `contains` [EXTRACTED]
+- [[Select()]] - `imports` [EXTRACTED]
+- [[SelectContent()]] - `imports` [EXTRACTED]
+- [[SelectItem()]] - `imports` [EXTRACTED]
+- [[SelectTrigger()]] - `imports` [EXTRACTED]
+- [[SelectValue()]] - `imports` [EXTRACTED]
+- [[THERMAL_PREVIEW_TABS]] - `contains` [EXTRACTED]
+- [[TenantReceiptInfo]] - `imports` [EXTRACTED]
+- [[ThermalPreviewKind]] - `contains` [EXTRACTED]
+- [[ThermalPrintSettingsCard()]] - `contains` [EXTRACTED]
+- [[ajustesindex.ts]] - `re_exports` [EXTRACTED]
+- [[buildBSequenceMapFromRow()]] - `imports` [EXTRACTED]
+- [[buildCierreDiaReceiptHtml()]] - `imports` [EXTRACTED]
+- [[buildComandaReceiptHtml()]] - `imports` [EXTRACTED]
+- [[buildFacturaReceiptHtml()]] - `imports` [EXTRACTED]
+- [[buildNominaReceiptHtml()]] - `imports` [EXTRACTED]
+- [[buildSplitTicketHtml()]] - `imports` [EXTRACTED]
+- [[buildTenantNcfUpdatePayload()]] - `imports` [EXTRACTED]
+- [[buildThermalSplitLineHtml()]] - `imports` [EXTRACTED]
+- [[cacheLogoFromUrl()]] - `imports` [EXTRACTED]
+- [[canUseFeature()]] - `imports` [EXTRACTED]
+- [[construirCadenaNcf()]] - `imports` [EXTRACTED]
+- [[enqueueLocalWrite()]] - `imports` [EXTRACTED]
+- [[ensureAuthSessionFresh()]] - `imports` [EXTRACTED]
+- [[etiquetaTipoNcf()]] - `imports` [EXTRACTED]
+- [[getDeviceId()]] - `imports` [EXTRACTED]
+- [[getThermalPrintSettings()]] - `imports` [EXTRACTED]
+- [[isNcfBCode()]] - `imports` [EXTRACTED]
+- [[isNcfTypeActive()]] - `imports` [EXTRACTED]
+- [[localFirst.ts]] - `imports_from` [EXTRACTED]
+- [[logoCache.ts]] - `imports_from` [EXTRACTED]
+- [[ncf.ts]] - `imports_from` [EXTRACTED]
+- [[normalizeNcfActiveMap()]] - `imports` [EXTRACTED]
+- [[planFeatures.ts]] - `imports_from` [EXTRACTED]
+- [[printThermalHtml()]] - `imports` [EXTRACTED]
+- [[readLocalMirror()]] - `imports` [EXTRACTED]
+- [[receiptTemplates.ts]] - `imports_from` [EXTRACTED]
+- [[ref_react]] - `imports_from` [EXTRACTED]
+- [[ref_shared_types_electron]] - `imports_from` [EXTRACTED]
+- [[refreshLogoCache()]] - `imports` [EXTRACTED]
+- [[saveTenantLogoUrl()]] - `imports` [EXTRACTED]
+- [[saveThermalPrintSettings()]] - `imports` [EXTRACTED]
+- [[select.tsx]] - `imports_from` [EXTRACTED]
+- [[sharedlibsupabase.ts]] - `imports_from` [EXTRACTED]
+- [[shouldReadLocalFirst()]] - `imports` [EXTRACTED]
+- [[supabase_2]] - `imports` [EXTRACTED]
+- [[tenantLogoStorage.ts]] - `imports_from` [EXTRACTED]
+- [[thermalPrint.ts]] - `imports_from` [EXTRACTED]
+- [[thermalStorage.ts]] - `imports_from` [EXTRACTED]
+- [[uploadTenantLogoFile()]] - `imports` [EXTRACTED]
+- [[useAppUpdate()]] - `imports` [EXTRACTED]
+- [[useAuth()]] - `imports` [EXTRACTED]
+- [[useAuth.ts]] - `imports_from` [EXTRACTED]
+
+#graphify/code #graphify/EXTRACTED #community/Ajustes

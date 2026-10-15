@@ -1,0 +1,18 @@
+---
+source_file: "src/features/ajustes/components/Ajustes.tsx"
+type: "code"
+community: "Ajustes"
+location: "L323"
+tags:
+  - graphify/code
+  - graphify/EXTRACTED
+  - community/Ajustes
+---
+
+# handlePrintTest()
+
+## Connections
+- [[Ajustes()]] - `contains` [EXTRACTED]
+- [[printThermalHtml()]] - `calls` [EXTRACTED]
+
+#graphify/code #graphify/EXTRACTED #community/Ajustes

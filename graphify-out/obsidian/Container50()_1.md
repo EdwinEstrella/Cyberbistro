@@ -1,0 +1,20 @@
+---
+source_file: "src/imports/GestionDeMesas.tsx"
+type: "code"
+community: "Imports Gestiondemesas [C116]"
+location: "L1198"
+tags:
+  - graphify/code
+  - graphify/EXTRACTED
+  - community/Imports_Gestiondemesas_C116
+---
+
+# Container50()
+
+## Connections
+- [[Container51()_1]] - `calls` [EXTRACTED]
+- [[Container52()_1]] - `calls` [EXTRACTED]
+- [[GestionDeMesas.tsx]] - `contains` [EXTRACTED]
+- [[HeaderTopAppBarShell()_1]] - `calls` [EXTRACTED]
+
+#graphify/code #graphify/EXTRACTED #community/Imports_Gestiondemesas_C116

@@ -1,0 +1,221 @@
+---
+type: community
+members: 176
+---
+
+# Electron Persistence Ipc
+
+**Members:** 176 nodes
+
+## Members
+- [[dot-constructor()]] - code - electron/persistence/cashPurchaseRepository.ts
+- [[dot-enqueue()]] - code - electron/thermalPrintQueue.ts
+- [[dot-execute()]] - code - electron/persistence/cashPurchaseRepository.ts
+- [[dot-executeCashPurchaseCommand()]] - code - electron/persistence/cashPurchaseRepository.ts
+- [[dot-handle()_9]] - code - electron/persistence/ipc.ts
+- [[dot-handle()_2]] - code - electron/persistence/ipc.ts
+- [[dot-handle()_1]] - code - electron/persistence/ipc.ts
+- [[dot-handle()_10]] - code - electron/persistence/ipc.ts
+- [[dot-handle()]] - code - electron/persistence/ipc.ts
+- [[dot-handle()_11]] - code - electron/persistence/ipc.ts
+- [[dot-handle()_4]] - code - electron/persistence/ipc.ts
+- [[dot-removeHandler()_9]] - code - electron/persistence/ipc.ts
+- [[dot-removeHandler()_2]] - code - electron/persistence/ipc.ts
+- [[dot-removeHandler()_1]] - code - electron/persistence/ipc.ts
+- [[dot-removeHandler()_10]] - code - electron/persistence/ipc.ts
+- [[dot-removeHandler()]] - code - electron/persistence/ipc.ts
+- [[dot-removeHandler()_11]] - code - electron/persistence/ipc.ts
+- [[dot-removeHandler()_4]] - code - electron/persistence/ipc.ts
+- [[CASH_PURCHASE_REPOSITORY_EXECUTE_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[CATALOG_LIST_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[CHECKOUT_COMMIT_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[CIERRES_LIST_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[COCINA_STATUS_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[COMANDAS_DELETE_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[COMANDAS_LIST_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[COMANDAS_SAVE_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[COMPRAS_LIST_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[CONSUMOS_DELETE_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[CONSUMOS_LIST_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[CONSUMOS_SAVE_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[CUSTOMERS_SYNC_CLOUD_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[CXC_PAGOS_LIST_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[CXP_PAGOS_LIST_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[CashPurchaseCommand]] - code - electron/persistence/cashPurchaseRepository.ts
+- [[CashPurchaseRepository]] - code - electron/persistence/cashPurchaseRepository.ts
+- [[CashPurchaseRepositoryIpcMain]] - code - electron/persistence/ipc.ts
+- [[CashPurchaseRepositoryResult]] - code - electron/persistence/cashPurchaseRepository.ts
+- [[CashPurchaseRepositoryStore]] - code - electron/persistence/cashPurchaseRepository.ts
+- [[DEVICE_SESSION_PREFERENCE_READ_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[DEVICE_SESSION_PREFERENCE_SAVE_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[DeviceSessionPreference]] - code - electron/persistence/deviceAccountDirectory.ts
+- [[ECF_ENVIRONMENTS]] - code - electron/main.ts
+- [[EXPENSES_LIST_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[EXPENSES_SYNC_CLOUD_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[EXPENSE_CATEGORIES_LIST_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[EXPENSE_CATEGORIES_SYNC_CLOUD_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[EXPENSE_REPOSITORY_EXECUTE_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[EcfCertificateValidationResponse]] - code - electron/main.ts
+- [[ExpenseCommand]] - code - electron/persistence/expenseRepository.ts
+- [[ExpenseRepositoryIpcMain]] - code - electron/persistence/ipc.ts
+- [[ExpenseRepositoryResult]] - code - electron/persistence/expenseRepository.ts
+- [[FACTURAS_DELETE_LOCAL_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[FACTURAS_LIST_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[FACTURAS_NUMBER_FLOOR_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[FACTURAS_RESERVE_NUMBERS_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[FACTURAS_SAVE_LOCAL_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[FACTURAS_UPDATE_HEADER_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[FullPurchaseCreateCommand]] - code - electron/persistence/cashPurchaseRepository.ts
+- [[Handler]] - code - test/desktop-ipc-guard.test.ts
+- [[MESAS_LIST_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[MESAS_SAVE_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[PAYABLES_LIST_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[PAYABLES_REPOSITORY_EXECUTE_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[PAYROLL_ADJUSTMENT_KINDS]] - code - src/shared/lib/payrollContracts.ts
+- [[PAYROLL_ADJUSTMENT_SCOPES]] - code - src/shared/lib/payrollContracts.ts
+- [[PAYROLL_FREQUENCIES]] - code - src/shared/lib/payrollContracts.ts
+- [[PAYROLL_REPOSITORY_EXECUTE_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[PAYROLL_SYNC_ACCESS_TOKEN_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[PURCHASE_REPOSITORY_EXECUTE_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[PayablesRepositoryIpcMain]] - code - electron/persistence/ipc.ts
+- [[PayrollAuthorizationContext]] - code - electron/persistence/ipc.ts
+- [[PayrollAuthorizationContext_1]] - code - electron/persistence/payrollSyncClient.ts
+- [[PayrollRepositoryIpcMain]] - code - electron/persistence/ipc.ts
+- [[PrintThermalOptions]] - code - electron/main.ts
+- [[PrintThermalResponse]] - code - electron/main.ts
+- [[PurchaseCommand]] - code - electron/persistence/cashPurchaseRepository.ts
+- [[PurchaseDeleteCommand]] - code - electron/persistence/cashPurchaseRepository.ts
+- [[PurchaseExpenseInput]] - code - electron/persistence/cashPurchaseRepository.ts
+- [[PurchaseFiscalInput]] - code - electron/persistence/cashPurchaseRepository.ts
+- [[PurchaseItemInput]] - code - electron/persistence/cashPurchaseRepository.ts
+- [[PurchasePayableInput]] - code - electron/persistence/cashPurchaseRepository.ts
+- [[PurchaseRepositoryResult]] - code - electron/persistence/cashPurchaseRepository.ts
+- [[PurchaseUpdateFiscalCommand]] - code - electron/persistence/cashPurchaseRepository.ts
+- [[RECEIVABLES_LIST_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[RECEIVABLES_REPOSITORY_EXECUTE_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[ReceivablesRepositoryIpcMain]] - code - electron/persistence/ipc.ts
+- [[RncLookupResponse]] - code - electron/main.ts
+- [[SAVED_ACCOUNTS_CREDENTIAL_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[SAVED_ACCOUNTS_DELETE_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[SAVED_ACCOUNTS_LIST_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[SAVED_ACCOUNTS_SAVE_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[SYNC_DIAGNOSTICS_REPORT_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[SYNC_OPEN_LOGS_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[SYNC_RETRY_ERRORS_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[SYNC_ROW_VERSIONS_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[SYNC_TRIGGER_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[SavedAccountDirectory]] - code - electron/persistence/ipc.ts
+- [[SavedAccountIpcMain]] - code - electron/persistence/ipc.ts
+- [[SavedAccountMetadata]] - code - electron/persistence/deviceAccountDirectory.ts
+- [[TENANT_STORE_ACTIVATE_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[TENANT_STORE_IMPORT_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[TENANT_STORE_STATUS_CHANNEL]] - code - electron/persistence/ipc.ts
+- [[TenantStoreIpcMain]] - code - electron/persistence/ipc.ts
+- [[ThermalPrintQueue_1]] - code - electron/thermalPrintQueue.ts
+- [[__dirname]] - code - electron/main.ts
+- [[applyWindowsTaskbarIdentity()]] - code - electron/main.ts
+- [[authorizePayrollCommand()]] - code - electron/persistence/ipc.ts
+- [[cashPurchaseRepository.ts]] - code - electron/persistence/cashPurchaseRepository.ts
+- [[createIpcHarness()]] - code - test/desktop-ipc-guard.test.ts
+- [[createJwt()]] - code - test/desktop-ipc-guard.test.ts
+- [[createWindow()]] - code - electron/main.ts
+- [[desktop-ipc-guard.test.ts]] - code - test/desktop-ipc-guard.test.ts
+- [[device-account-directory.test.ts]] - code - test/device-account-directory.test.ts
+- [[deviceAccountDirectory.ts]] - code - electron/persistence/deviceAccountDirectory.ts
+- [[discardThermalPrintWindow()]] - code - electron/main.ts
+- [[expenseRepository.ts]] - code - electron/persistence/expenseRepository.ts
+- [[focusMainWindowForTextInput()]] - code - electron/main.ts
+- [[getManifestTenantId()]] - code - electron/persistence/ipc.ts
+- [[getThermalPrintWindow()]] - code - electron/main.ts
+- [[gotTheLock]] - code - electron/main.ts
+- [[handle()]] - code - test/device-account-directory.test.ts
+- [[ipc.ts]] - code - electron/persistence/ipc.ts
+- [[isCents()]] - code - electron/persistence/ipc.ts
+- [[isEcfCertificatePayload()]] - code - electron/main.ts
+- [[isExactObject()]] - code - electron/persistence/ipc.ts
+- [[isNonEmptyText()]] - code - electron/persistence/ipc.ts
+- [[isPayrollFrequency()]] - code - electron/persistence/ipc.ts
+- [[isValidAdjustment()]] - code - electron/persistence/ipc.ts
+- [[isValidPaymentContextPayload()]] - code - electron/persistence/ipc.ts
+- [[isValidPayrollEmployee()]] - code - electron/persistence/ipc.ts
+- [[isValidPayrollPeriod()]] - code - electron/persistence/ipc.ts
+- [[loadWindowIconImage()]] - code - electron/main.ts
+- [[local-sqlite-cash-purchases.test.ts]] - code - test/local-sqlite-cash-purchases.test.ts
+- [[local-sqlite-expenses.test.ts]] - code - test/local-sqlite-expenses.test.ts
+- [[lookupBusinessRnc()]] - code - electron/main.ts
+- [[main.ts]] - code - electron/main.ts
+- [[parseCashPurchaseCommand()]] - code - electron/persistence/ipc.ts
+- [[parseCatalogCommand()]] - code - electron/persistence/ipc.ts
+- [[parseCustomerCommand()]] - code - electron/persistence/ipc.ts
+- [[parseDesktopCommand()]] - code - electron/persistence/ipc.ts
+- [[parseExpenseCommand()]] - code - electron/persistence/ipc.ts
+- [[parseId()]] - code - electron/persistence/ipc.ts
+- [[parseOrdersCommand()]] - code - electron/persistence/ipc.ts
+- [[parsePayablesCommand()]] - code - electron/persistence/ipc.ts
+- [[parsePayrollCommand()]] - code - electron/persistence/ipc.ts
+- [[parsePayrollSyncAccessToken()]] - code - electron/persistence/ipc.ts
+- [[parsePurchaseCommand()]] - code - electron/persistence/ipc.ts
+- [[parseReceivablesCommand()]] - code - electron/persistence/ipc.ts
+- [[parseSalesFiscalCommand()]] - code - electron/persistence/ipc.ts
+- [[parseSavedAccount()]] - code - electron/persistence/ipc.ts
+- [[parseSessionIdentity()]] - code - electron/persistence/ipc.ts
+- [[parseSessionPreference()]] - code - electron/persistence/ipc.ts
+- [[parseTenantIdentity()]] - code - electron/persistence/ipc.ts
+- [[printHtmlToThermal()]] - code - electron/main.ts
+- [[purchase]] - code - test/local-sqlite-cash-purchases.test.ts
+- [[registerCashPurchaseRepositoryIpc()]] - code - electron/persistence/ipc.ts
+- [[registerCatalogRepositoryIpc()]] - code - electron/persistence/ipc.ts
+- [[registerCustomerRepositoryIpc()]] - code - electron/persistence/ipc.ts
+- [[registerDesktopRepositoryIpc()]] - code - electron/persistence/ipc.ts
+- [[registerExpenseRepositoryIpc()]] - code - electron/persistence/ipc.ts
+- [[registerOrdersRepositoryIpc()]] - code - electron/persistence/ipc.ts
+- [[registerPayablesRepositoryIpc()]] - code - electron/persistence/ipc.ts
+- [[registerPayrollRepositoryIpc()]] - code - electron/persistence/ipc.ts
+- [[registerPayrollSyncAccessTokenIpc()]] - code - electron/persistence/ipc.ts
+- [[registerReceivablesRepositoryIpc()]] - code - electron/persistence/ipc.ts
+- [[registerSalesFiscalRepositoryIpc()]] - code - electron/persistence/ipc.ts
+- [[registerSavedAccountIpc()]] - code - electron/persistence/ipc.ts
+- [[registerTenantStoreIpc()]] - code - electron/persistence/ipc.ts
+- [[removeHandler()]] - code - test/device-account-directory.test.ts
+- [[resolveWindowIconPath()]] - code - electron/main.ts
+- [[thermalPrintQueue]] - code - electron/main.ts
+- [[thermalPrintQueue.test.ts]] - code - test/thermalPrintQueue.test.ts
+- [[thermalPrintQueue.ts]] - code - electron/thermalPrintQueue.ts
+- [[validateAndStoreEcfCertificate()]] - code - electron/main.ts
+- [[windowsTaskbarRelaunchIcon()]] - code - electron/main.ts
+- [[withStore()]] - code - test/local-sqlite-cash-purchases.test.ts
+
+## Live Query (requires Dataview plugin)
+
+```dataview
+TABLE source_file, type FROM #community/Electron_Persistence_Ipc
+SORT file.name ASC
+```
+
+## Connections to other communities
+- 40 edges to [[_COMMUNITY_Shared Types Electrond]]
+- 19 edges to [[_COMMUNITY_Test Compras-crud]]
+- 18 edges to [[_COMMUNITY_Electron Persistence Syncworker]]
+- 9 edges to [[_COMMUNITY_Electron Persistence Catalogrepository]]
+- 9 edges to [[_COMMUNITY_Electron Persistence Ordersrepository]]
+- 9 edges to [[_COMMUNITY_Electron Persistence Salesfiscalrepository]]
+- 8 edges to [[_COMMUNITY_Electron Persistence Importer]]
+- 6 edges to [[_COMMUNITY_Shared Lib Payrollcontracts]]
+- 6 edges to [[_COMMUNITY_Electron Persistence Tenantstore]]
+- 5 edges to [[_COMMUNITY_Electron Persistence Deviceaccountdirectory]]
+- 4 edges to [[_COMMUNITY_Electron Autoupdaterts Autoupdater]]
+- 3 edges to [[_COMMUNITY_Electron Lanedgeserverts Lanedgeserver]]
+- 3 edges to [[_COMMUNITY_Electron Persistence Payrollsyncclient]]
+- 2 edges to [[_COMMUNITY_Nomina (Nomina)]]
+- 1 edge to [[_COMMUNITY_Electron Persistence Payrollrepository]]
+- 1 edge to [[_COMMUNITY_Fiscal Dgiiadapters]]
+- 1 edge to [[_COMMUNITY_Scripts Build-icon]]
+- 1 edge to [[_COMMUNITY_Gastos]]
+- 1 edge to [[_COMMUNITY_Electron Persistence Cloudapply]]
+
+## Top bridge nodes
+- [[main.ts]] - degree 81, connects to 16 communities
+- [[ipc.ts]] - degree 159, connects to 8 communities
+- [[local-sqlite-expenses.test.ts]] - degree 19, connects to 7 communities
+- [[local-sqlite-cash-purchases.test.ts]] - degree 14, connects to 3 communities
+- [[deviceAccountDirectory.ts]] - degree 11, connects to 3 communities

@@ -1,0 +1,20 @@
+---
+source_file: "src/shared/lib/roleNav.ts"
+type: "code"
+community: "Shared Lib Rolenav"
+location: "L62"
+tags:
+  - graphify/code
+  - graphify/EXTRACTED
+  - community/Shared_Lib_Rolenav
+---
+
+# isAppRouteAllowed()
+
+## Connections
+- [[getRoleGuardDecision()]] - `calls` [EXTRACTED]
+- [[normalizeTenantRol()]] - `calls` [EXTRACTED]
+- [[roleGuardDecision.ts]] - `imports` [EXTRACTED]
+- [[roleNav.ts]] - `contains` [EXTRACTED]
+
+#graphify/code #graphify/EXTRACTED #community/Shared_Lib_Rolenav

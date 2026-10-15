@@ -1,0 +1,18 @@
+---
+source_file: "electron/persistence/payrollSyncStore.ts"
+type: "code"
+community: "Electron Persistence Cloudapply"
+location: "L499"
+tags:
+  - graphify/code
+  - graphify/EXTRACTED
+  - community/Electron_Persistence_Cloudapply
+---
+
+# normalizeStoredResult()
+
+## Connections
+- [[dot-settle()]] - `calls` [EXTRACTED]
+- [[payrollSyncStore.ts]] - `contains` [EXTRACTED]
+
+#graphify/code #graphify/EXTRACTED #community/Electron_Persistence_Cloudapply
