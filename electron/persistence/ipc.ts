@@ -797,6 +797,10 @@ function parseReceivablesCommand(payload: unknown): ReceivablesCommand | null {
     if (typeof command.amount !== "number" || !Number.isFinite(command.amount) || command.amount <= 0) return null;
     return command as ReceivablesCommand;
   }
+  if (command.type === "receivables.payment.void") {
+    if (!text("paymentId")) return null;
+    return { type: command.type, paymentId: command.paymentId as string };
+  }
   return null;
 }
 
@@ -813,6 +817,10 @@ function parsePayablesCommand(payload: unknown): PayablesCommand | null {
     if (!text("paymentId") || !text("payableId") || !text("paymentMethod")) return null;
     if (typeof command.amount !== "number" || !Number.isFinite(command.amount) || command.amount <= 0) return null;
     return command as PayablesCommand;
+  }
+  if (command.type === "payables.payment.void") {
+    if (!text("paymentId")) return null;
+    return { type: command.type, paymentId: command.paymentId as string };
   }
   return null;
 }

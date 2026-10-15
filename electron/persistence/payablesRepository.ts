@@ -33,20 +33,31 @@ export type PayablesCommand =
         supplier?: string | null;
         notes?: string | null;
       };
+    }
+  | {
+      // Hard-deletes one payment, gives its amount back to the payable and removes
+      // the expense that settlement created.
+      type: "payables.payment.void";
+      paymentId: string;
     };
+
+export type PayablesCommandOutcome = {
+  // payables.payment.void only: false when no expense could be tied to the payment.
+  expenseRemoved?: boolean;
+};
 
 export type PayablesRepositoryResult = {
   commitId: string;
   localStatus: "committed";
   syncStatus: "pending";
-};
+} & PayablesCommandOutcome;
 
 export interface PayablesRepositoryStore {
   executePayablesCommand(input: {
     command: PayablesCommand;
     commitId: string;
     branchId: string;
-  }): void;
+  }): PayablesCommandOutcome | void;
 }
 
 export class PayablesRepository {
@@ -60,11 +71,11 @@ export class PayablesRepository {
 
   execute(command: PayablesCommand): PayablesRepositoryResult {
     const commitId = this.input.createCommitId?.() ?? randomUUID();
-    this.input.store.executePayablesCommand({
+    const outcome = this.input.store.executePayablesCommand({
       command,
       commitId,
       branchId: this.input.branchId,
     });
-    return { commitId, localStatus: "committed", syncStatus: "pending" };
+    return { commitId, localStatus: "committed", syncStatus: "pending", ...(outcome ?? {}) };
   }
 }
