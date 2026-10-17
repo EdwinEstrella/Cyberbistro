@@ -53,6 +53,28 @@ describe("e-CF certificate cloud custody migration", () => {
     expect(edgeFunction.slice(start, end)).not.toContain("throw");
   });
 
+  it("removes the just-uploaded object when validation fails, never the stored certificate", () => {
+    const helper = edgeFunction.indexOf("const rejectUpload");
+    const parse = edgeFunction.indexOf("new P12Reader(passphrase)");
+    const body = edgeFunction.slice(helper, parse);
+    expect(helper).toBeGreaterThan(-1);
+    expect(helper).toBeLessThan(parse);
+    expect(body).toContain(".remove([storagePath])");
+    expect(body).toContain("storagePath.startsWith(`${tenantId}/`)");
+    expect(body).toContain("storagePath !== currentRef");
+    expect(body).not.toContain("remove([currentRef");
+    // Non-fatal: the cleanup is wrapped and the original error code is always thrown afterwards.
+    expect(body).toContain("catch {");
+    expect(body).toMatch(/throw new HttpError\(400, message, code\);\s*\};/);
+  });
+
+  it("rejects wrong password, invalid file and expired certificates through the cleanup", () => {
+    for (const code of ["WRONG_PASSWORD", "INVALID_FILE", "CERTIFICATE_EXPIRED"]) {
+      expect(edgeFunction).toMatch(new RegExp(`return await rejectUpload\\([^)]*"${code}"\\)`));
+      expect(edgeFunction).not.toMatch(new RegExp(`throw new HttpError\\(400, [^)]*"${code}"\\)`));
+    }
+  });
+
   it("returns machine-readable error codes the UI maps to actions", () => {
     for (const code of ["WRONG_PASSWORD", "INVALID_FILE", "CERTIFICATE_EXPIRED", "FORBIDDEN", "SAVE_FAILED"]) {
       expect(edgeFunction).toContain(`"${code}"`);

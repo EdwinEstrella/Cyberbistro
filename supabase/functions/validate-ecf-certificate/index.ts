@@ -117,6 +117,28 @@ serve(async (req) => {
     const bytes = new Uint8Array(await fileData.arrayBuffer());
     let binary = "";
     for (const byte of bytes) binary += String.fromCharCode(byte);
+    // A rejected upload is removed so it does not linger in the bucket. Only objects in this
+    // tenant's folder are deleted, and never the object the metadata currently points to (the
+    // stored certificate). Failure to delete is non-fatal and the original error is still returned.
+    const rejectUpload = async (message: string, code: string): Promise<never> => {
+      try {
+        const { data: current } = await admin
+          .from("ecf_certificate_metadata")
+          .select("storage_ref")
+          .eq("tenant_id", tenantId)
+          .eq("environment", environment)
+          .maybeSingle();
+        const currentRef = typeof current?.storage_ref === "string" ? current.storage_ref : null;
+        if (storagePath.startsWith(`${tenantId}/`) && storagePath !== currentRef) {
+          const { error: cleanupError } = await admin.storage.from("fiscal_certificates").remove([storagePath]);
+          if (cleanupError) console.warn("validate-ecf-certificate: could not delete the rejected upload.");
+        }
+      } catch {
+        console.warn("validate-ecf-certificate: could not delete the rejected upload.");
+      }
+      throw new HttpError(400, message, code);
+    };
+
     let certInfo: ReturnType<P12Reader["getCertificateInfoFromBase64"]>;
     try {
       certInfo = new P12Reader(passphrase).getCertificateInfoFromBase64(btoa(binary));
@@ -124,15 +146,15 @@ serve(async (req) => {
       // Never echo parser details: they may include file internals. Classify only.
       const text = parseError instanceof Error ? parseError.message : "";
       if (/mac could not be verified|invalid password|passphrase|password/i.test(text)) {
-        throw new HttpError(400, "La contraseña del certificado es incorrecta.", "WRONG_PASSWORD");
+        return await rejectUpload("La contraseña del certificado es incorrecta.", "WRONG_PASSWORD");
       }
-      throw new HttpError(400, "El archivo no es un certificado .p12 válido.", "INVALID_FILE");
+      return await rejectUpload("El archivo no es un certificado .p12 válido.", "INVALID_FILE");
     }
     if (!certInfo.subject || !certInfo.validTo) {
-      throw new HttpError(400, "El archivo no es un certificado .p12 válido.", "INVALID_FILE");
+      return await rejectUpload("El archivo no es un certificado .p12 válido.", "INVALID_FILE");
     }
     if (new Date() > new Date(certInfo.validTo)) {
-      throw new HttpError(400, "El certificado digital se encuentra vencido.", "CERTIFICATE_EXPIRED");
+      return await rejectUpload("El certificado digital se encuentra vencido.", "CERTIFICATE_EXPIRED");
     }
 
     const encryptedPassphrase = await encryptPassphrase(passphrase, requiredEnv("ECF_ENCRYPTION_KEY"));
