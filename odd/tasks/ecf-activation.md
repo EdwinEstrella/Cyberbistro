@@ -124,3 +124,4 @@ T4.
   MIGRATION FILE NOT APPLIED: supabase/migrations/20261017140000_add_tenants_ecf_secuencias_rangos.sql (additive, idempotent). Apply before deploying the app build or the ranges write stays pending in the outbox.
   Follow-up (not done): enforce `end` inside cloudix_reserve_ecf (RPC currently ignores the end) - needs a separate authorized SQL change.
 - Checks (T1c follow-ups + T2 + T3): `npm run typecheck`: pass; `npm test`: 153 files passed, 1 skipped, 913 tests passed (2 skipped).
+- 2026-10-17: migration 20261017140000_add_tenants_ecf_secuencias_rangos APPLIED to production with user approval. Verified: jsonb NOT NULL default '{}', 4/4 tenants have '{}', authenticated has SELECT/UPDATE on the column (wizard write path works).
