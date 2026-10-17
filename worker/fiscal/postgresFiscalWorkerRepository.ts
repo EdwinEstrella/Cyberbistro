@@ -134,6 +134,20 @@ export class PostgresFiscalWorkerRepository implements FiscalWorkerRepository {
     });
   }
 
+  async recordCertificateFailure(target: { tenantId: string; certificateId: string }, code: string): Promise<void> {
+    await this.options.db.query(
+      `UPDATE public.ecf_certificate_metadata SET last_validation_error = $3 WHERE id = $1 AND tenant_id = $2`,
+      [target.certificateId, target.tenantId, code]
+    );
+  }
+
+  async clearCertificateFailure(target: { tenantId: string; certificateId: string }): Promise<void> {
+    await this.options.db.query(
+      `UPDATE public.ecf_certificate_metadata SET last_validation_error = NULL WHERE id = $1 AND tenant_id = $2 AND last_validation_error IS NOT NULL`,
+      [target.certificateId, target.tenantId]
+    );
+  }
+
   async recordAudit(event: FiscalAuditEvent): Promise<void> {
     await this.options.db.query(
       `
