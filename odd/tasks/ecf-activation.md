@@ -77,6 +77,15 @@ RDD: off (default). Delivery strategy: ask-on-risk.
   when readiness passes (cert ready in cloud, issuer complete, ranges set, plan allows);
   pure readiness function shared with Ajustes; tests.
 
+- [x] T5 Enforce authorized e-NCF range (user decision 2026-10-17: "hay que bloquear"):
+  migration replacing `cloudix_reserve_ecf(uuid,text)` (based on the LIVE prod definition) to read
+  `tenants.ecf_secuencias_rangos`; no range for the type → `ECF_RANGE_NOT_CONFIGURED`; next > end →
+  `ECF_RANGE_EXHAUSTED`; next < start → start from `start`. Client (`src/shared/lib/invoiceNcf.ts`
+  and any offline/local reservation path) enforces the same and maps both codes to clear Spanish
+  messages with the action (request new range at DGII, load it in Activación). Also gate Ajustes
+  `handleSave` with the shared readiness check when saving `dgii_ecf` (T4 follow-up).
+  No tenant uses dgii_ecf in prod today (3 ncf_legacy, 1 internal_receipt), so strict mode is safe.
+
 ## Acceptance
 - After wizard completion, tenant row has fiscal_mode `dgii_ecf`, complete issuer fields, ranges.
 - `ecf_certificate_metadata` row has storage_ref + password_encrypted; worker
@@ -129,3 +138,8 @@ T5 (RPC enforces range end; separate authorized SQL change).
   Pure `src/shared/lib/ecfActivationReadiness.ts` (plan via canUseFeature(plan,'dgii_ecf'), environment, issuer, certificate health for the selected env, >=1 valid persisted range) + `src/features/fiscal/lib/loadEcfReadiness.ts` (reads persisted state). Wizard and Ajustes selector both use it.
   Activation payload: fiscal_mode='dgii_ecf', ecf_environment, ncf_fiscal_activo=true (cloudix_reserve_ecf raises unless true; Ajustes load already derives true for dgii_ecf), updated_at. Deactivation: fiscal_mode = tenant fiscal_mode_fallback (internal_receipt|ncf_legacy), ncf_fiscal_activo = (fallback==='ncf_legacy').
   Fiscal modes in code: internal_receipt | ncf_legacy | dgii_ecf. Open: semantics of ncf_fiscal_activo when deactivating are derived from Ajustes' load rule, not confirmed by product.
+- 2026-10-17: T5 done (1d0a9f1, 8015fbd). Checks: `npm run typecheck`: pass; `npm test`: 156 files passed, 1 skipped, 948 tests passed (2 skipped).
+  MIGRATION FILE NOT APPLIED: supabase/migrations/20261017150000_enforce_ecf_sequence_range.sql (based on live prod definition; apply only after user approval, then verify with a live call).
+  Client: pure `src/shared/lib/ecfRangeErrors.ts` (typed `EcfRangeError`, RPC error mapping, `enforceEcfRangeLocally`); `invoiceNcf.ts` throws the typed error (checkout alerts err.message, no fiscal-mode fallback) and no longer uses the legacy
+  read+increment path for e-CF. Offline: IndexedDB mirror reservation (`buildLocalTenantNcfReservation`) enforces the same range from the mirrored `ecf_secuencias_rangos`; SQLite `FiscalSequenceRepository.allocate` has no callers (not enforced).
+  Ajustes `handleSave` runs the shared readiness loader when saving `dgii_ecf` and blocks with the same reasons (pure `ecfSaveBlockMessage`).
