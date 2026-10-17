@@ -79,7 +79,7 @@ strategy before opening PRs.
 - [x] T1 Spike: in Docker `supabase/edge-runtime:v1.74.0`, prove which XML-signing/verification
   stack loads and works (npm:dgii-ecf vs npm:xml-crypto + npm:node-forge/@xmldom); reproduce and
   explain the `module is not defined` failure of `validate-ecf-certificate`.
-- [ ] T2 Migration: seeds/tokens, received e-CF, received approvals tables (+ storage refs) with
+- [x] T2 Migration: seeds/tokens, received e-CF, received approvals tables (+ storage refs) with
   RLS and lockdown; migration test.
 - [ ] T3 `supabase/functions/ecf-receptor`: routing by `/{rnc}/fe/...`, tenant lookup by RNC,
   seed issue/validate, short-lived token, reception with signed ARECF, ACECF intake; pure logic
@@ -110,5 +110,18 @@ strategy before opening PRs.
     production failure is the stale Insforge stub (see Infrastructure), not `npm:dgii-ecf`. Follow-up:
     deploy the repo version of `validate-ecf-certificate` (and set `ECF_ENCRYPTION_KEY`).
 
+- 2026-10-17 T2 DONE: `supabase/migrations/20261017160000_ecf_receptor.sql` (tables
+  `ecf_receptor_seeds`, `ecf_receptor_tokens` (hash only), `ecf_received_documents`,
+  `ecf_received_approvals`; RLS on; client roles revoked, tenant read of non-XML columns only;
+  RPCs `ecf_receptor_resolve_tenant(rnc)` digits-only and unique-or-nothing, `ecf_receptor_purge_expired()`,
+  both service_role only). Received XML is stored in table columns (no storage bucket) - decision
+  for simplicity; revisit if XML size becomes a concern. Verified against a throwaway
+  `postgres:16-alpine` container with stub tenants/tenant_users/auth.uid: applied twice without
+  error (idempotent); RNC `133-488-485` resolves from `133488485`; an RNC shared by 2 tenants returns 0
+  rows. Tests: `test/ecf-receptor-migration.test.ts` (7). Note: `tenants.ecf_environment` is not
+  defined in repo migrations, so the RPC does not use it; the function reads it at runtime.
+  Pre-existing/unrelated failure: `test/local-sync-protocol.test.ts` (needs docker compose via
+  `scripts/local-sync-postgres.ps1`; fails in this environment).
+
 ## Next step
-T2 migration.
+T3 edge function.
