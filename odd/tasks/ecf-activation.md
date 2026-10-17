@@ -64,6 +64,12 @@ RDD: off (default). Delivery strategy: ask-on-risk.
   the user whether to request a new certificate, re-enter the password, or contact support;
   pure function + tests; (c) remove dead Electron IPC `validateEcfCertificate` (main + preload)
   and its local safeStorage copy.
+- [ ] T1c Worker writes certificate failure reason to `last_validation_error` (so health banner
+  shows signing failures); edge function deletes the just-uploaded object when validation fails.
+- [ ] T1d Security lockdown: migration `20261017130000_ecf_certificate_metadata_lockdown.sql`
+  revokes table-level client grants (prod had anon/authenticated INSERT/SELECT/UPDATE/DELETE, so
+  password_encrypted was readable and is_ready writable from the browser); authenticated keeps
+  SELECT on non-secret columns. Client code only selects safe columns and never writes (verified).
 - [ ] T2 Issuer data: wizard step 1 persists all `ecf_issuer_*` fields required by
   fiscalEngine; validation mirrors fiscalEngine requirements (shared helper); tests.
 - [ ] T3 e-NCF ranges: persist start and end per type; tests.
@@ -95,3 +101,4 @@ RDD: off (default). Delivery strategy: ask-on-risk.
 
 ## Next step
 T2.
+- 2026-10-17: migration 20261017120000_ecf_certificate_cloud_custody APPLIED to production (cloudix-db.azokia.com) with user approval; verified columns storage_ref/password_encrypted, unique index, storage INSERT policy, bucket private. Found client table grants too broad → T1d lockdown migration written, pending approval.
