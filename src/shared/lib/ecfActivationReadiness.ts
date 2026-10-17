@@ -130,13 +130,39 @@ export function describeActivationSuccess(environment: EcfEnvironmentId): string
   return `Facturación electrónica activada en ${ECF_ENVIRONMENT_LABELS[environment]}. La emisión real a la DGII depende de que el servicio fiscal (worker) esté desplegado y en ejecución.`;
 }
 
+export type EcfSaveGateDecision = "allow" | "allow_with_warning" | "block";
+
+export interface EcfSaveGate {
+  decision: EcfSaveGateDecision;
+  /** Spanish text for the block error or the non-blocking warning; null on plain allow. */
+  message: string | null;
+}
+
 /**
- * Message that blocks an Ajustes save which persists `dgii_ecf`, or null when the save may go on.
- * Uses the same readiness result (and reasons) as the mode selector.
+ * Decides whether an Ajustes save may go on given the e-CF readiness.
+ * - Not saving `dgii_ecf`: allow (readiness is irrelevant).
+ * - Switching INTO `dgii_ecf` (previous persisted mode differs): block when not ready or when the
+ *   readiness could not be read (fail closed).
+ * - Already on `dgii_ecf`: never block (an expired certificate must not stop a logo change);
+ *   warn with the reasons when not ready, and stay silent when the read itself failed.
  */
-export function ecfSaveBlockMessage(fiscalMode: unknown, result: EcfReadinessResult | null): string | null {
-  if (fiscalMode !== "dgii_ecf") return null;
-  if (!result) return "No se pudo verificar la configuración e-CF. Intentá de nuevo.";
-  if (result.ready) return null;
-  return `No se puede guardar con facturación electrónica activa. ${formatReadinessIssues(result)}`;
+export function decideEcfSaveGate(args: {
+  previousMode: unknown;
+  nextMode: unknown;
+  /** Readiness result, or null when it could not be read. */
+  readiness: EcfReadinessResult | null;
+}): EcfSaveGate {
+  const { previousMode, nextMode, readiness } = args;
+  if (nextMode !== "dgii_ecf") return { decision: "allow", message: null };
+  const switchingIn = previousMode !== "dgii_ecf";
+  if (switchingIn) {
+    if (!readiness) return { decision: "block", message: "No se pudo verificar la configuración e-CF. Intentá de nuevo." };
+    if (readiness.ready) return { decision: "allow", message: null };
+    return { decision: "block", message: `No se puede activar la facturación electrónica. ${formatReadinessIssues(readiness)}` };
+  }
+  if (!readiness || readiness.ready) return { decision: "allow", message: null };
+  return {
+    decision: "allow_with_warning",
+    message: `Configuración guardada, pero la facturación electrónica tiene pendientes. ${formatReadinessIssues(readiness)}`,
+  };
 }

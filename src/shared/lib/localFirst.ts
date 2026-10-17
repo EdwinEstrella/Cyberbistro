@@ -3,7 +3,7 @@ import { incrementTenantNcfSequence, resolveNcfForNewInvoice, type ResolvedNcfFo
 import { getCloudAvailabilitySnapshot, isCloudAvailabilityFailure, isCloudAvailableForDesktop, isDesktopCloudUnavailable, isDesktopRuntime, recordCloudFailure, recordCloudSuccess } from "./cloudAvailability";
 import { commitLanEdgeCursor, getLanEdgeBaseUrl, publishLanOutboxEntry, publishLanSnapshotEntries, pullLanOutboxEntries } from "./lanEdgeClient";
 import { buildTenantNcfUpdatePayload, DEFAULT_NCF_B_CODE, getNcfSequenceColumnName, isNcfBCode, ncfPayloadFromReservedSequence, prepareNcfForFacturaInsert, normalizeNcfSequenceMap, type TenantNcfRow } from "./ncf";
-import { enforceEcfRangeLocally } from "./ecfRangeErrors";
+import { ecfRangeTerminalMessage, enforceEcfRangeLocally } from "./ecfRangeErrors";
 
 export const LOCAL_FIRST_MIRROR_TABLES = [
   "tenants",
@@ -1828,6 +1828,9 @@ async function adjustFacturaPayloadForServer(
   try {
     resolved = await resolveNcfForNewInvoice(tenantId, preferredType);
   } catch (err) {
+    // Missing/exhausted e-NCF range cannot fix itself by retrying: terminal, keep the clear message.
+    const rangeMessage = ecfRangeTerminalMessage(err);
+    if (rangeMessage) return { reason: rangeMessage, retryStatus: "not_retryable" };
     return {
       reason: err instanceof Error ? err.message : "No se pudo reservar un NCF disponible para reintentar.",
       retryStatus: "retryable",

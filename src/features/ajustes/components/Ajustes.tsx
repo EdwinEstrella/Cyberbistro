@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "../../../shared/lib/supabase";
 import { canUseFeature } from "../../../shared/lib/planFeatures";
-import { ecfSaveBlockMessage, formatReadinessIssues } from "../../../shared/lib/ecfActivationReadiness";
+import { decideEcfSaveGate, formatReadinessIssues } from "../../../shared/lib/ecfActivationReadiness";
 import { loadEcfActivationReadiness } from "../../fiscal/lib/loadEcfReadiness";
 import {
   Select,
@@ -197,7 +197,9 @@ export function Ajustes() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [printingTest, setPrintingTest] = useState(false);
-  const [saveMessage, setSaveMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [saveMessage, setSaveMessage] = useState<{ type: "success" | "error" | "warning"; text: string } | null>(null);
+  // Fiscal mode as last loaded/saved: the e-CF readiness gate only applies when switching into dgii_ecf.
+  const [persistedFiscalMode, setPersistedFiscalMode] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const TENANT_FIELDS_BASE = "nombre_negocio, rnc, logo_url, logo_size_px, logo_offset_x, logo_offset_y, menu_url, direccion, telefono";
@@ -234,6 +236,7 @@ export function Ajustes() {
       if (data) {
         const defaultType: NcfBCode = isNcfBCode(data.ncf_tipo_default) ? data.ncf_tipo_default : DEFAULT_NCF_B_CODE;
         const ncfSequences = buildBSequenceMapFromRow(data);
+        setPersistedFiscalMode(data.fiscal_mode || "internal_receipt");
         setConfig({
           nombre_empresa: data.nombre_negocio ?? "",
           rnc: data.rnc ?? "",
@@ -271,20 +274,22 @@ export function Ajustes() {
     if (!tenantId) return;
     setSaving(true);
     setSaveMessage(null);
+    let warning: string | null = null;
     if (config.fiscal_mode === "dgii_ecf") {
-      // Same shared readiness check as the mode selector; fail closed when it cannot be read.
+      // Same shared readiness check as the mode selector; blocks only when switching into dgii_ecf.
       let loaded: Awaited<ReturnType<typeof loadEcfActivationReadiness>> | null = null;
       try {
         loaded = await loadEcfActivationReadiness({ tenantId, plan, environment: config.ecf_environment });
       } catch {
         loaded = null;
       }
-      const blocked = ecfSaveBlockMessage(config.fiscal_mode, loaded?.result ?? null);
-      if (blocked) {
-        setSaveMessage({ type: "error", text: blocked });
+      const gate = decideEcfSaveGate({ previousMode: persistedFiscalMode, nextMode: config.fiscal_mode, readiness: loaded?.result ?? null });
+      if (gate.decision === "block") {
+        setSaveMessage({ type: "error", text: gate.message ?? "No se puede guardar." });
         setSaving(false);
         return;
       }
+      if (gate.decision === "allow_with_warning") warning = gate.message;
     }
     const ncfUpdate = buildTenantNcfUpdatePayload(config.ncf_fiscal_activo, config.ncf_tipo_default, config.ncf_secuencias_por_tipo, config.ncf_secuencias_por_tipo);
     const payload = {
@@ -318,7 +323,8 @@ export function Ajustes() {
         payload,
         deviceId: await getDeviceId(),
       });
-      setSaveMessage({ type: "success", text: "Configuración guardada." });
+      setPersistedFiscalMode(config.fiscal_mode);
+      setSaveMessage(warning ? { type: "warning", text: warning } : { type: "success", text: "Configuración guardada." });
     } catch (error) {
       console.error(error);
       setSaveMessage({ type: "error", text: error instanceof Error ? error.message : "No se pudo guardar la configuración." });
@@ -636,7 +642,7 @@ export function Ajustes() {
           </section>
 
           {saveMessage && (
-            <div className={`rounded-xl border p-4 text-sm font-medium ${saveMessage.type === "error" ? "border-destructive/20 bg-destructive/10 text-destructive" : "border-green-500/20 bg-green-500/10 text-green-600 dark:text-green-400"}`}>
+            <div className={`rounded-xl border p-4 text-sm font-medium ${saveMessage.type === "error" ? "border-destructive/20 bg-destructive/10 text-destructive" : saveMessage.type === "warning" ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400" : "border-green-500/20 bg-green-500/10 text-green-600 dark:text-green-400"}`}>
               {saveMessage.text}
             </div>
           )}

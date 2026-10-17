@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { EcfRangeError, enforceEcfRangeLocally, mapEcfRangeRpcError } from "../src/shared/lib/ecfRangeErrors";
-import { ecfSaveBlockMessage } from "../src/shared/lib/ecfActivationReadiness";
+import { EcfRangeError, ecfRangeTerminalMessage, enforceEcfRangeLocally, mapEcfRangeRpcError } from "../src/shared/lib/ecfRangeErrors";
+import { decideEcfSaveGate } from "../src/shared/lib/ecfActivationReadiness";
 import { buildLocalTenantNcfReservation } from "../src/shared/lib/localFirst";
 
 describe("mapEcfRangeRpcError", () => {
@@ -67,15 +67,54 @@ describe("buildLocalTenantNcfReservation (e-CF)", () => {
   });
 });
 
-describe("ecfSaveBlockMessage", () => {
+describe("decideEcfSaveGate", () => {
   const notReady = { ready: false, missing: [{ code: "CERTIFICATE", message: "Falta el certificado." }] } as never;
-  it("only gates dgii_ecf", () => {
-    expect(ecfSaveBlockMessage("internal_receipt", null)).toBeNull();
-    expect(ecfSaveBlockMessage("ncf_legacy", notReady)).toBeNull();
+  const ready = { ready: true, missing: [] } as never;
+  it("ignores readiness when not saving dgii_ecf", () => {
+    expect(decideEcfSaveGate({ previousMode: "dgii_ecf", nextMode: "ncf_legacy", readiness: notReady }).decision).toBe("allow");
+    expect(decideEcfSaveGate({ previousMode: "internal_receipt", nextMode: "internal_receipt", readiness: null }).decision).toBe("allow");
   });
-  it("blocks with the shared reasons, or fails closed when unreadable", () => {
-    expect(ecfSaveBlockMessage("dgii_ecf", notReady)).toContain("Falta el certificado.");
-    expect(ecfSaveBlockMessage("dgii_ecf", null)).toContain("No se pudo verificar");
-    expect(ecfSaveBlockMessage("dgii_ecf", { ready: true, missing: [] } as never)).toBeNull();
+  it("blocks switching into dgii_ecf when not ready, with the shared reasons", () => {
+    const gate = decideEcfSaveGate({ previousMode: "ncf_legacy", nextMode: "dgii_ecf", readiness: notReady });
+    expect(gate.decision).toBe("block");
+    expect(gate.message).toContain("Falta el certificado.");
+  });
+  it("fails closed when switching in and readiness cannot be read (also with unknown previous mode)", () => {
+    expect(decideEcfSaveGate({ previousMode: "internal_receipt", nextMode: "dgii_ecf", readiness: null }).decision).toBe("block");
+    expect(decideEcfSaveGate({ previousMode: null, nextMode: "dgii_ecf", readiness: null }).decision).toBe("block");
+  });
+  it("allows switching in when ready", () => {
+    expect(decideEcfSaveGate({ previousMode: "internal_receipt", nextMode: "dgii_ecf", readiness: ready })).toEqual({ decision: "allow", message: null });
+  });
+  it("never blocks when already on dgii_ecf; warns with reasons when not ready", () => {
+    const gate = decideEcfSaveGate({ previousMode: "dgii_ecf", nextMode: "dgii_ecf", readiness: notReady });
+    expect(gate.decision).toBe("allow_with_warning");
+    expect(gate.message).toContain("Falta el certificado.");
+  });
+  it("allows silently when already on dgii_ecf and ready or unreadable", () => {
+    expect(decideEcfSaveGate({ previousMode: "dgii_ecf", nextMode: "dgii_ecf", readiness: ready }).decision).toBe("allow");
+    expect(decideEcfSaveGate({ previousMode: "dgii_ecf", nextMode: "dgii_ecf", readiness: null }).decision).toBe("allow");
+  });
+});
+
+describe("ecfRangeTerminalMessage", () => {
+  it("classifies the typed error and keeps its message", () => {
+    const err = new EcfRangeError("ECF_RANGE_EXHAUSTED", "E31", 100);
+    expect(ecfRangeTerminalMessage(err)).toBe(err.message);
+  });
+  it("detects a plain Error that kept the Spanish text of a range error", () => {
+    const original = new EcfRangeError("ECF_RANGE_NOT_CONFIGURED", "E32");
+    expect(ecfRangeTerminalMessage(new Error(original.message + " ECF_RANGE_NOT_CONFIGURED"))).toBeTruthy();
+  });
+  it("detects serialized errors by code and maps them to the friendly message", () => {
+    expect(ecfRangeTerminalMessage({ code: "ECF_RANGE_EXHAUSTED", details: "E31:100" })).toContain("Se agotó el rango autorizado de E31 (hasta 100)");
+    expect(ecfRangeTerminalMessage("ECF_RANGE_NOT_CONFIGURED")).toContain("No hay un rango autorizado");
+    expect(ecfRangeTerminalMessage({ message: "P0001 ECF_RANGE_EXHAUSTED", details: "E32" })).toContain("E32");
+  });
+  it("returns null for other errors", () => {
+    expect(ecfRangeTerminalMessage(new Error("network down"))).toBeNull();
+    expect(ecfRangeTerminalMessage(null)).toBeNull();
+    expect(ecfRangeTerminalMessage(undefined)).toBeNull();
+    expect(ecfRangeTerminalMessage("timeout")).toBeNull();
   });
 });
