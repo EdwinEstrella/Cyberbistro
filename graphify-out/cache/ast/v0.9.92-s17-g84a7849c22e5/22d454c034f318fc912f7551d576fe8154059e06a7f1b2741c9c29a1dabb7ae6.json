@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_supabase_migrations_20260911200000_harden_certificate_function_and_registration_sql", "label": "20260911200000_harden_certificate_function_and_registration.sql", "file_type": "code", "source_file": "supabase/migrations/20260911200000_harden_certificate_function_and_registration.sql", "source_location": null}], "edges": []}
