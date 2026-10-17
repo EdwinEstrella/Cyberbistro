@@ -66,7 +66,7 @@ RDD: off (default). Delivery strategy: ask-on-risk.
   and its local safeStorage copy.
 - [ ] T1c Worker writes certificate failure reason to `last_validation_error` (so health banner
   shows signing failures); edge function deletes the just-uploaded object when validation fails.
-- [ ] T1d Security lockdown: migration `20261017130000_ecf_certificate_metadata_lockdown.sql`
+- [x] T1d Security lockdown: migration `20261017130000_ecf_certificate_metadata_lockdown.sql`
   revokes table-level client grants (prod had anon/authenticated INSERT/SELECT/UPDATE/DELETE, so
   password_encrypted was readable and is_ready writable from the browser); authenticated keeps
   SELECT on non-secret columns. Client code only selects safe columns and never writes (verified).
@@ -102,3 +102,4 @@ RDD: off (default). Delivery strategy: ask-on-risk.
 ## Next step
 T2.
 - 2026-10-17: migration 20261017120000_ecf_certificate_cloud_custody APPLIED to production (cloudix-db.azokia.com) with user approval; verified columns storage_ref/password_encrypted, unique index, storage INSERT policy, bucket private. Found client table grants too broad → T1d lockdown migration written, pending approval.
+- 2026-10-17: T1d lockdown migration APPLIED to production with user approval. Verified: no table grants for anon/authenticated; authenticated cannot SELECT password_encrypted/storage_ref nor INSERT/UPDATE/DELETE; can SELECT app columns; service_role keeps full access. Live test as role authenticated: app select ok, read password blocked, update is_ready blocked.
