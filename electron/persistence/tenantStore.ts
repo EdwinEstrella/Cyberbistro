@@ -12,7 +12,7 @@ import type { InvoiceHeaderUpdateResult } from "./ipc";
 import type { SalesFiscalCommand, SalesFiscalRepositoryStore } from "./salesFiscalRepository";
 import type { PurchaseCommand, CashPurchaseCommand, CashPurchaseRepositoryStore } from "./cashPurchaseRepository";
 import type { ReceivablesCommand, ReceivablesRepositoryStore } from "./receivablesRepository";
-import type { PayablesCommand, PayablesRepositoryStore } from "./payablesRepository";
+import type { PayablesCommand, PayablesCommandOutcome, PayablesRepositoryStore } from "./payablesRepository";
 import type { ExpenseCommand, ExpenseRepositoryStore } from "./expenseRepository";
 import type { CustomerCommand, CustomerRepositoryStore } from "./customerRepository";
 import type { DesktopCheckoutCommand, DesktopCheckoutResult, DesktopCheckoutWrite } from "../../src/shared/lib/checkoutContracts";
@@ -946,6 +946,15 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
         `).run(newPending, newStatus, command.receivableId, this.tenantId);
         this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, ?, ?, 'upsert', ?, 'pending')")
           .run(`${commitId}:cxc-payment`, this.tenantId, branchId, "cxc_pagos", command.paymentId, JSON.stringify(command));
+      } else if (command.type === "receivables.payment.void") {
+        const payment = this.database.prepare("SELECT cuenta_cobrar_id, monto FROM cxc_pagos WHERE id = ? AND tenant_id = ?")
+          .get(command.paymentId, this.tenantId) as { cuenta_cobrar_id: string; monto: number } | undefined;
+        if (!payment) throw new Error(`El pago ${command.paymentId} no existe.`);
+        this.restoreAccountBalanceAfterVoid("cuentas_cobrar", payment.cuenta_cobrar_id, payment.monto);
+        this.database.prepare("DELETE FROM cxc_pagos WHERE id = ? AND tenant_id = ?").run(command.paymentId, this.tenantId);
+        // The cloud recompute trigger on cxc_pagos restores the receivable balance on
+        // DELETE, so only the payment delete is pushed (no cuentas_cobrar upsert).
+        this.enqueueVoidDelete(`${commitId}:cxc-payment-void`, branchId, "cxc_pagos", command.paymentId);
       }
       this.commitTransaction();
     } catch (error) {
@@ -954,8 +963,25 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     }
   }
 
-  executePayablesCommand(input: { command: PayablesCommand; commitId: string; branchId: string }): void {
+  /** Adds a voided payment amount back to an account and recomputes its estado. */
+  private restoreAccountBalanceAfterVoid(table: "cuentas_cobrar" | "cuentas_pagar", accountId: string, amount: number): void {
+    const account = this.database.prepare(`SELECT monto_total, monto_pendiente FROM ${table} WHERE id = ? AND tenant_id = ?`)
+      .get(accountId, this.tenantId) as { monto_total: number; monto_pendiente: number } | undefined;
+    if (!account) return;
+    const restored = Math.min(account.monto_total, Math.round((account.monto_pendiente + amount) * 100) / 100);
+    const estado = restored >= account.monto_total ? "pendiente" : "parcial";
+    this.database.prepare(`UPDATE ${table} SET monto_pendiente = ?, estado = ? WHERE id = ? AND tenant_id = ?`)
+      .run(restored, estado, accountId, this.tenantId);
+  }
+
+  private enqueueVoidDelete(outboxId: string, branchId: string, tableName: string, rowId: string): void {
+    this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, ?, ?, 'delete', ?, 'pending')")
+      .run(outboxId, this.tenantId, branchId, tableName, rowId, JSON.stringify({ id: rowId }));
+  }
+
+  executePayablesCommand(input: { command: PayablesCommand; commitId: string; branchId: string }): PayablesCommandOutcome | void {
     const { command, commitId, branchId } = input;
+    let outcome: PayablesCommandOutcome | undefined;
     this.beginImmediateTransaction();
     try {
       this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(branchId, this.tenantId, "Principal");
@@ -998,9 +1024,9 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
             INSERT INTO gastos (
               id, tenant_id, sucursal_id, category_id, cycle_id,
               expense_type, payment_method, amount, local_status,
-              description, supplier, notes, expense_date
-            ) VALUES (?, ?, ?, ?, ?, 'operational', ?, ?, 'pending_sync', ?, ?, ?, ?)
-          `).run(exp.id, this.tenantId, branchId, exp.categoryId ?? null, command.cycleId ?? null, command.paymentMethod, command.amount, exp.description, exp.supplier ?? null, exp.notes ?? null, expenseDate);
+              description, supplier, notes, expense_date, cxp_pago_id
+            ) VALUES (?, ?, ?, ?, ?, 'operational', ?, ?, 'pending_sync', ?, ?, ?, ?, ?)
+          `).run(exp.id, this.tenantId, branchId, exp.categoryId ?? null, command.cycleId ?? null, command.paymentMethod, command.amount, exp.description, exp.supplier ?? null, exp.notes ?? null, expenseDate, command.paymentId);
           this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, ?, ?, 'upsert', ?, 'pending')").run(
             `${commitId}:cxp-expense`, this.tenantId, branchId, "gastos", exp.id,
             JSON.stringify({
@@ -1019,12 +1045,83 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
             }),
           );
         }
+      } else if (command.type === "payables.payment.void") {
+        outcome = this.voidPayablePayment(command.paymentId, commitId, branchId);
       }
       this.commitTransaction();
+      return outcome;
     } catch (error) {
       this.rollbackTransaction();
       throw error;
     }
+  }
+
+  /**
+   * Voids one payable payment inside the caller's transaction: restores the
+   * payable balance, removes the expense the settlement created, clears the
+   * purchase's fiscal payment date and queues the cloud deletes.
+   */
+  private voidPayablePayment(paymentId: string, commitId: string, branchId: string): PayablesCommandOutcome {
+    const payment = this.database.prepare("SELECT id, cuenta_pagar_id, monto, cycle_id, fecha_pago FROM cxp_pagos WHERE id = ? AND tenant_id = ?")
+      .get(paymentId, this.tenantId) as { id: string; cuenta_pagar_id: string; monto: number; cycle_id: string | null; fecha_pago: string } | undefined;
+    if (!payment) throw new Error(`El pago ${paymentId} no existe.`);
+
+    this.restoreAccountBalanceAfterVoid("cuentas_pagar", payment.cuenta_pagar_id, payment.monto);
+    this.database.prepare("DELETE FROM cxp_pagos WHERE id = ? AND tenant_id = ?").run(paymentId, this.tenantId);
+    // The cloud recompute trigger on cxp_pagos restores the payable balance on
+    // DELETE, so only the payment delete is pushed (no cuentas_pagar upsert).
+    this.enqueueVoidDelete(`${commitId}:cxp-payment-void`, branchId, "cxp_pagos", paymentId);
+
+    const expenseId = this.findExpenseOfPayablePayment(payment);
+    if (expenseId) {
+      this.database.prepare("DELETE FROM gastos WHERE id = ? AND tenant_id = ?").run(expenseId, this.tenantId);
+      this.enqueueVoidDelete(`${commitId}:cxp-expense-void`, branchId, "gastos", expenseId);
+    }
+
+    // A voided payment leaves the payable unpaid again, so the purchase's 606
+    // payment date no longer holds. Pushed even when the local copy is already
+    // empty: the date may only exist in the cloud row.
+    const account = this.database.prepare("SELECT compra_id FROM cuentas_pagar WHERE id = ? AND tenant_id = ?")
+      .get(payment.cuenta_pagar_id, this.tenantId) as { compra_id: string | null } | undefined;
+    if (account?.compra_id) {
+      const fiscal = this.database.prepare("SELECT id FROM compra_fiscal WHERE compra_id = ? AND tenant_id = ?")
+        .get(account.compra_id, this.tenantId) as { id: string } | undefined;
+      if (fiscal) {
+        this.database.prepare("UPDATE compra_fiscal SET fecha_pago = NULL WHERE id = ? AND tenant_id = ?").run(fiscal.id, this.tenantId);
+        const row = this.database.prepare("SELECT * FROM compra_fiscal WHERE id = ? AND tenant_id = ?").get(fiscal.id, this.tenantId) as Record<string, unknown>;
+        this.database.prepare("INSERT INTO sync_outbox (id, tenant_id, branch_id, table_name, row_id, operation, payload_json, status) VALUES (?, ?, ?, 'compra_fiscal', ?, 'upsert', ?, 'pending')")
+          .run(`${commitId}:cxp-fiscal-void`, this.tenantId, branchId, fiscal.id, JSON.stringify(row));
+      }
+    }
+    return { expenseRemoved: Boolean(expenseId) };
+  }
+
+  /**
+   * Finds the expense a payable payment created: the explicit cxp_pago_id link
+   * first; otherwise (payments recorded before the link existed) an unlinked
+   * expense with the settlement description, the same amount and cycle, closest
+   * in time to the payment.
+   */
+  private findExpenseOfPayablePayment(payment: { id: string; cuenta_pagar_id: string; monto: number; cycle_id: string | null; fecha_pago: string }): string | null {
+    const linked = this.database.prepare("SELECT id FROM gastos WHERE cxp_pago_id = ? AND tenant_id = ?")
+      .get(payment.id, this.tenantId) as { id: string } | undefined;
+    if (linked) return linked.id;
+
+    const prefix = `Abono Cuenta Pagar - Ref ID: ${payment.cuenta_pagar_id.slice(0, 8)}`;
+    const candidates = this.database.prepare(`
+      SELECT id, expense_date, created_at FROM gastos
+      WHERE tenant_id = ? AND cxp_pago_id IS NULL AND expense_type = 'operational'
+        AND substr(description, 1, ?) = ? AND ABS(amount - ?) < 0.005
+        AND (? IS NULL OR cycle_id = ?)
+    `).all(this.tenantId, prefix.length, prefix, payment.monto, payment.cycle_id, payment.cycle_id) as Array<{ id: string; expense_date: string; created_at: string }>;
+    const paidAt = Date.parse(payment.fecha_pago);
+    let best: { id: string; distance: number } | null = null;
+    for (const candidate of candidates) {
+      const at = Date.parse(candidate.expense_date || candidate.created_at);
+      const distance = Number.isFinite(paidAt) && Number.isFinite(at) ? Math.abs(at - paidAt) : Number.MAX_SAFE_INTEGER;
+      if (!best || distance < best.distance) best = { id: candidate.id, distance };
+    }
+    return best?.id ?? null;
   }
 
   listCompras(filter?: {

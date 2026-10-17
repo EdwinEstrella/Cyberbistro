@@ -320,6 +320,7 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
       notes TEXT,
       expense_date TEXT NOT NULL DEFAULT (datetime('now')),
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      cxp_pago_id TEXT,
       CHECK (amount IS NULL OR amount >= 0),
       CHECK (amount_cents IS NULL OR amount_cents >= 0),
       FOREIGN KEY (compra_id, tenant_id, sucursal_id) REFERENCES compras (id, tenant_id, sucursal_id)
@@ -652,6 +653,15 @@ function ensurePayablesSchemaEvolution(database: DatabaseSync): void {
         database.exec(`ALTER TABLE cuentas_pagar ADD COLUMN ${name} ${type};`);
       }
     }
+  }
+  // Local-only link from a payable settlement to the expense it created, so a
+  // voided payment can remove exactly its own expense. Never pushed to the cloud.
+  const gastos = getTableColumns(database, "gastos");
+  if (gastos.length > 0 && !gastos.includes("cxp_pago_id")) {
+    database.exec("ALTER TABLE gastos ADD COLUMN cxp_pago_id TEXT;");
+  }
+  if (gastos.length > 0) {
+    database.exec("CREATE INDEX IF NOT EXISTS idx_gastos_cxp_pago ON gastos (cxp_pago_id);");
   }
   const cxpPagos = getTableColumns(database, "cxp_pagos");
   if (cxpPagos.length > 0) {

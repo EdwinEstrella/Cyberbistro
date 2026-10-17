@@ -23,6 +23,11 @@ export type ReceivablesCommand =
       notas?: string | null;
       usuarioId?: string | null;
       fechaPago?: string;
+    }
+  | {
+      // Hard-deletes one payment and gives its amount back to the receivable.
+      type: "receivables.payment.void";
+      paymentId: string;
     };
 
 export type ReceivablesRepositoryResult = {
