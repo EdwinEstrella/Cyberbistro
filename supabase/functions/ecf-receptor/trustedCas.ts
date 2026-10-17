@@ -313,7 +313,7 @@ export const BUILT_IN_TRUSTED_CAS: readonly TrustedCa[] = [
   {
     name: "Digito Root CA (root)",
     source: "http://pki.digito.do/CAs/DigitoRootCA.crt",
-    operator: "Digito Group, listed by INDOTEL",
+    operator: "Digito Financial Technology Group, INDOTEL Res. 115-2025",
     sha256: "a855459dccb649db801d52b5fdf63988e98ad3970f7c6c345116223a688896bb",
     pem: [
       "-----BEGIN CERTIFICATE-----",

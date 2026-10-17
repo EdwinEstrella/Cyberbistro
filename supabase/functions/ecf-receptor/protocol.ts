@@ -60,31 +60,75 @@ export interface CertificateNameAttribute {
   value: unknown;
 }
 
+export interface SubjectIdentities {
+  /** Company RNCs vouched for by the CA: organizationIdentifier (2.5.4.97) `VATDO-<9|11 digits>`. */
+  companyIds: string[];
+  /** Person documents: serialNumber (2.5.4.5) `IDCDO-<9|11 digits>`. */
+  personIds: string[];
+  /** Raw serialNumber text (informational only, never used for binding). */
+  serial: string | null;
+}
+
 /**
- * RNC / cedula numbers a subscriber certificate asserts. Dominican certification entities encode them as
- * ETSI EN 319 412-1 identifiers: organizationIdentifier (2.5.4.97) `VATDO-<RNC>`, serialNumber (2.5.4.5)
- * `IDCDO-<cedula>`, or as free text such as `RNC 130222509` in O/OU/CN. Only 9 (RNC) or 11 (cedula)
- * digit numbers are accepted.
+ * Identifiers a subscriber certificate asserts, read ONLY from the exact ETSI EN 319 412-1 encodings (matched by
+ * OID, prefix required) in a subject whose countryName (2.5.4.6) is `DO`. Names, organizations and unit names are
+ * never read: anyone can choose those when requesting a certificate.
+ *
+ * CA evidence (see odd/tasks/ecf-receptor.md, T7): the DGII / e-invoicing profiles of Viafirma ("Procedimientos
+ * Tributarios", VIAFIRMA-PI-DGII) and Digifirma ("Certificado Facturacion Electronica") are issued to a PERSON and
+ * carry name, cedula/passport and email only, so most real signer certificates have no company identifier.
  */
-export function extractSubjectIdentifiers(attributes: readonly CertificateNameAttribute[]): string[] {
-  const found = new Set<string>();
+export function extractSubjectIdentities(attributes: readonly CertificateNameAttribute[]): SubjectIdentities {
+  const result: SubjectIdentities = { companyIds: [], personIds: [], serial: null };
+  const rawSerial = attributes.find((attribute) => attribute.type === "2.5.4.5" && typeof attribute.value === "string");
+  if (rawSerial) result.serial = String(rawSerial.value).trim().slice(0, 64) || null;
+  const countries = attributes.filter((attribute) => attribute.type === "2.5.4.6").map((attribute) => attribute.value);
+  if (countries.length === 0 || countries.some((country) => country !== "DO")) return result;
+  const company = new Set<string>();
+  const person = new Set<string>();
   for (const attribute of attributes) {
     if (typeof attribute.value !== "string") continue;
-    const value = attribute.value.trim();
-    const key = attribute.type ?? attribute.shortName ?? attribute.name ?? "";
-    const isOrgId = key === "2.5.4.97" || attribute.name === "organizationIdentifier";
-    const isSerial = key === "2.5.4.5" || attribute.shortName === "serialNumber" || attribute.name === "serialNumber";
-    if (isOrgId || isSerial) {
-      const match = value.match(/^(?:VATDO|IDCDO|RNC|DO)?[-:\s]*(\d{9}|\d{11})$/i);
-      if (match) found.add(match[1]);
-      continue;
-    }
-    if (["O", "OU", "CN"].includes(attribute.shortName ?? "") || ["organizationName", "organizationalUnitName", "commonName"].includes(attribute.name ?? "")) {
-      const match = value.match(/\bRNC[\s:#-]*(\d{9}|\d{11})\b/i);
-      if (match) found.add(match[1]);
+    if (attribute.type === "2.5.4.97") {
+      const match = attribute.value.match(/^VATDO-(\d{9}|\d{11})$/);
+      if (match) company.add(match[1]);
+    } else if (attribute.type === "2.5.4.5") {
+      const match = attribute.value.match(/^IDCDO-(\d{9}|\d{11})$/);
+      if (match) person.add(match[1]);
     }
   }
-  return [...found];
+  result.companyIds = [...company];
+  result.personIds = [...person];
+  return result;
+}
+
+/** All asserted numbers (company and person), digits only. */
+export function extractSubjectIdentifiers(attributes: readonly CertificateNameAttribute[]): string[] {
+  const identities = extractSubjectIdentities(attributes);
+  return [...new Set([...identities.companyIds, ...identities.personIds])];
+}
+
+/** Compact, prefixed form stored on tokens and documents: `VATDO-<rnc>` / `IDCDO-<id>`. */
+export function encodeSubjectIds(identities: Pick<SubjectIdentities, "companyIds" | "personIds">): string[] {
+  return [...identities.companyIds.map((id) => `VATDO-${id}`), ...identities.personIds.map((id) => `IDCDO-${id}`)];
+}
+
+export function decodeSubjectIds(encoded: readonly string[]): Pick<SubjectIdentities, "companyIds" | "personIds"> {
+  const pick = (prefix: string) => encoded.filter((entry) => entry.startsWith(`${prefix}-`)).map((entry) => entry.slice(prefix.length + 1));
+  return { companyIds: pick("VATDO"), personIds: pick("IDCDO") };
+}
+
+export type SignerBinding = "bound" | "unbound" | "violation";
+
+/**
+ * Relation between a signer certificate and the RNC a document claims to act for:
+ *  - bound:     the certificate vouches for that RNC (company identifier, or a person whose cedula is the RNC);
+ *  - violation: the certificate vouches for a DIFFERENT company (CA-vetted) -> reject;
+ *  - unbound:   the certificate names no company (person-only DGII profile) -> accept, but flag for the tenant.
+ */
+export function bindSigner(ids: Pick<SubjectIdentities, "companyIds" | "personIds">, rnc: string): SignerBinding {
+  const target = digitsOnly(rnc);
+  if (ids.companyIds.length > 0) return ids.companyIds.includes(target) ? "bound" : "violation";
+  return ids.personIds.includes(target) ? "bound" : "unbound";
 }
 
 export function escapeXml(value: string): string {
@@ -145,10 +189,29 @@ export function tagText(xml: string, tag: string): string | null {
   return match ? decodeXmlText(match[1].trim()) : null;
 }
 
+/**
+ * DTDs/entities, comments, CDATA and processing instructions (other than a leading XML declaration) have no
+ * place in DGII documents and enable parser differentials, so they are rejected before any field is read.
+ */
+export function hasForbiddenXml(xml: string): boolean {
+  if (/<!DOCTYPE|<!ENTITY|<!--|<!\[CDATA\[/i.test(xml)) return true;
+  const withoutDeclaration = xml.replace(/^\uFEFF?\s*<\?xml\s[^>]*\?>/, "");
+  return withoutDeclaration.includes("<?");
+}
+
+export function countTag(xml: string, tag: string): number {
+  return (xml.match(new RegExp(`<${tag}[\\s>/]`, "g")) ?? []).length;
+}
+
+/** Text of `<tag>` only when the element occurs exactly once in the document. */
+export function singleTagText(xml: string, tag: string): string | null {
+  return countTag(xml, tag) === 1 ? tagText(xml, tag) : null;
+}
+
 /** Seed value (`<valor>`) of a signed SemillaModel document, or null when the shape is wrong. */
 export function extractSeedValue(signedSeedXml: string): string | null {
-  if (!/<SemillaModel[\s>]/.test(signedSeedXml)) return null;
-  const valor = tagText(signedSeedXml, "valor");
+  if (hasForbiddenXml(signedSeedXml) || !/<SemillaModel[\s>]/.test(signedSeedXml)) return null;
+  const valor = singleTagText(signedSeedXml, "valor");
   return valor && valor.length >= 16 && valor.length <= 512 ? valor : null;
 }
 
@@ -185,19 +248,24 @@ export async function generateSeedValueFor(rnc: string, secret: string, now: Dat
   return toBase64(out);
 }
 
-export type SeedCheck = { ok: true; expiresAt: Date } | { ok: false };
+/** `id` is the SHA-256 of the decoded seed bytes: the single-use key, independent of the text encoding. */
+export type SeedCheck = { ok: true; expiresAt: Date; id: string } | { ok: false };
 
 export async function checkSeedValue(valor: string, rnc: string, secret: string, now: Date): Promise<SeedCheck> {
   try {
     if (!/^[A-Za-z0-9+/]{75}=$/.test(valor)) return { ok: false };
     const bytes = Uint8Array.from(atob(valor), (c) => c.charCodeAt(0));
     if (bytes.length !== 56) return { ok: false };
+    // Several base64 texts decode to the same bytes (non-zero padding bits): accept only the canonical one.
+    if (toBase64(bytes) !== valor) return { ok: false };
     const payload = bytes.slice(0, 24);
     const mac = bytes.slice(24);
     const valid = await crypto.subtle.verify("HMAC", await hmacKey(secret, "verify"), mac, seedMacInput(rnc, payload));
     if (!valid) return { ok: false };
     const expiresAt = new Date(Number(new DataView(payload.buffer).getBigUint64(16)));
-    return expiresAt > now ? { ok: true, expiresAt } : { ok: false };
+    if (expiresAt <= now) return { ok: false };
+    const id = toHex(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)));
+    return { ok: true, expiresAt, id };
   } catch {
     return { ok: false };
   }
@@ -253,11 +321,11 @@ export interface EcfFields {
 }
 
 export function extractEcfFields(xml: string): EcfFields | null {
-  if (!/<ECF[\s>]/.test(xml)) return null;
-  const tipoEcf = tagText(xml, "TipoeCF");
-  const encf = tagText(xml, "eNCF");
-  const rncEmisor = tagText(xml, "RNCEmisor");
-  const rncComprador = tagText(xml, "RNCComprador");
+  if (hasForbiddenXml(xml) || !/<ECF[\s>]/.test(xml)) return null;
+  const tipoEcf = singleTagText(xml, "TipoeCF");
+  const encf = singleTagText(xml, "eNCF");
+  const rncEmisor = singleTagText(xml, "RNCEmisor");
+  const rncComprador = singleTagText(xml, "RNCComprador");
   if (!tipoEcf || !encf || !rncEmisor || !rncComprador) return null;
   if (!/^E\d{12}$/.test(encf) || !/^\d{2}$/.test(tipoEcf)) return null;
   return { tipoEcf, encf, rncEmisor: digitsOnly(rncEmisor), rncComprador: digitsOnly(rncComprador) };
@@ -325,13 +393,14 @@ export interface AcecfFields {
 
 /** ACECF Estado: 1 = approved, 2 = rejected. */
 export function extractAcecfFields(xml: string): AcecfFields | null {
-  if (!/<ACECF[\s>]/.test(xml)) return null;
-  const rncEmisor = tagText(xml, "RNCEmisor");
-  const rncComprador = tagText(xml, "RNCComprador");
-  const encf = tagText(xml, "eNCF");
-  const estadoText = tagText(xml, "Estado");
+  if (hasForbiddenXml(xml) || !/<ACECF[\s>]/.test(xml)) return null;
+  const rncEmisor = singleTagText(xml, "RNCEmisor");
+  const rncComprador = singleTagText(xml, "RNCComprador");
+  const encf = singleTagText(xml, "eNCF");
+  const estadoText = singleTagText(xml, "Estado");
   if (!rncEmisor || !rncComprador || !encf || !estadoText) return null;
   if (!/^E\d{12}$/.test(encf) || !/^[12]$/.test(estadoText)) return null;
+  if (countTag(xml, "DetalleMotivoRechazo") > 1) return null;
   const detalle = tagText(xml, "DetalleMotivoRechazo");
   return {
     rncEmisor: digitsOnly(rncEmisor),

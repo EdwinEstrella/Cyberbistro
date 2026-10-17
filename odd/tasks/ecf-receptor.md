@@ -91,6 +91,9 @@ strategy before opening PRs.
   limit, unbounded writes, tenant oracles; notes: RNC normalization, env guard).
 
 
+- [x] T7 Final scoped correction: strict identity extraction, canonical seeds, approvals per buyer, migration
+  dedupe, strict XML, soft RNC binding for person-only DGII certificates.
+
 ## Progress
 - 2026-10-17: infra created and verified (see Infrastructure). Branch `feat/ecf-receptor`.
 
@@ -198,12 +201,58 @@ strategy before opening PRs.
     gets a seed and fails login identically to a bad login; 6 MB -> 413, 40 KB seed -> 413. The real `index.ts`
     also boots (seed 200 without DB, no-token 401). Not exercised: real Supabase/PostgREST, Kong/Cloudflare, DGII.
 
+- 2026-10-17 T7 DONE (final scoped correction after re-verification of 6b214d9).
+  - A. Identity extraction is strict: only organizationIdentifier `VATDO-<9|11>` and serialNumber `IDCDO-<9|11>`
+    (prefix exact, by OID) in a subject with C=DO; O/OU/CN "RNC n" heuristics removed (no bundled CA policy needs them).
+  - RNC-binding decision (coordinator evidence + my own check of the CA pages, 2026-10-17):
+    * Viafirma "Procedimientos Tributarios" (profile VIAFIRMA-PI-DGII): https://www.viafirma.do/certificado-procesos-tributarios/
+      "emitidos a personas individuales vinculadas a empresas ... facturacion electronica de la DGII"; properties: nombre
+      completo, numero de cedula o pasaporte, correo. https://www.viafirma.do/informacion-general-de-cada-perfil-de-certificado/
+      "Emitido a nombre de una persona fisica/natural, sin vinculo directo a empresa o institucion. El vinculo se establece
+      por informacion en la DGII." Policy CP-VIAFIRMA-DO-PI-SW (https://www.viafirma.do/download/doc/CP-VIAFIRMA-DO-PI-SW.pdf,
+      sec. 7.1.2): Serial Number = <CEDULA O PASAPORTE> (unprefixed), no company field; the form (ra.viafirma.do) collects person
+      data only (its RNC field is for billing).
+    * Digifirma "Certificado Facturacion Electronica": https://digi.camarasantodomingo.do/solicitud-en-linea/certificado-facturacion-electronica/
+      "emitidos a personas individuales vinculadas a empresas"; properties: nombre, documento de identidad, correo, pais.
+      Its policy (https://digi.camarasantodomingo.do/assets/documents/politicas/politica-de-certificacion.pdf, certificate
+      profiles) does define organizationIdentifier `VATDO-` = company and serialNumber `IDCDO-` = signer for the
+      "pertenencia a empresa"/representative profiles, but the e-invoicing product lists no company property.
+    * Conclusion: no policy proves the company RNC is CA-vetted in the DGII signer profiles. Hard RNC binding would reject
+      legitimate senders. Implemented: company id present (`VATDO-`) -> must equal the document RNC (else reject);
+      person-only / no identifier -> accept on chain trust + signature and set `signer_rnc_mismatch` (ARECF Estado 0), record
+      `signer_ids` and raw `signer_serial` on the document/approval; token subject is the person and is not required to equal
+      RNCEmisor. Login no longer requires an identifier. OPEN DECISION: per-issuer allow-list of signer documents.
+  - B. Seeds: `checkSeedValue` rejects non-canonical base64 (decode, re-encode, compare) and returns `id` = SHA-256 of the
+    decoded bytes, which is the single-use key (`consumeSeed`). Tested with the 4 equivalent spellings (unit + handler + Docker).
+  - C. Approvals unique on (tenant, emisor, eNCF, comprador); store upsert conflict target updated; a different buyer never
+    replaces another approval (test).
+  - D. Hardening migration deletes duplicate rejected rows (keeps the earliest) before the partial unique index; verified on
+    throwaway postgres:16-alpine with legacy duplicate rejected rows and duplicate approvals (applied twice, ON_ERROR_STOP).
+    New columns signer_ids / signer_serial / signer_rnc_mismatch; only `signer_rnc_mismatch` is granted to tenants.
+  - Notes: (1) key fields extracted only when they occur exactly once; DOCTYPE/ENTITY, comments, CDATA and stray processing
+    instructions rejected (also in signature verification). Rejected-document echo is bounded (digits<=11, eNCF pattern).
+    (2) at most 5 embedded certificates per signature. (5) `ECF_RECEPTOR_SEED_SECRET` is now REQUIRED (no fallback to other
+    secrets; fail closed 503) and documented in the runbook. (7) Digito Root CA checked: valid 2026-06-22..2046-06-17,
+    RSA 4096 SHA-256, CA:TRUE, identical fingerprint over HTTP and HTTPS, operator authorized by INDOTEL Res. 115-2025 (listed
+    on the INDOTEL page); kept, with a test pinning validity and key size.
+  - Evidence: `npm run typecheck` clean; vitest suites for the receptor: protocol, handler, trust, both migrations all green
+    (see final totals in the task report). Docker (`supabase/edge-runtime:v1.74.0`, throwaway CA via
+    `ECF_RECEPTOR_TRUSTED_CA_PEMS`, real dgii-ecf RestApi client): trusted emitter token + ARECF Estado 0; resubmission code 3;
+    seed replay 401 and its 3 non-canonical spellings 401; self-signed cert claiming the RNC no token; trusted cert for another
+    company -> token but 403; forged self-signed e-CF code 2; person-only trusted cert -> token + Estado 0 (flag set server-side);
+    signer vouching for another company code 2; ACECF real buyer 200 / self-signed 400 / non-buyer 403; unknown RNC gets a seed
+    and fails login identically; DOCTYPE document code 1; 40 KB seed body 413. Not asserted in Docker: >5 MB bodies (unit
+    tested; behind the edge-runtime proxy an early reply to a client still uploading can stall instead of replying 413, so the
+    runbook asks Cloudflare to block bodies over 5 MB).
+
 ## Open decisions for the user
+- RNC representation (T7): person-only signer certificates are accepted and flagged `signer_rnc_mismatch`; decide whether
+  to add a per-issuer allow-list of signer cedulas (or require a company identifier once a CA issues one).
 - Trust list completeness: ABA, OGTIC, Lleidanet and Thomas Signe CA certificates were not obtainable from a primary
   source (JS-only pages / global roots); provide the PEMs (or confirm the DR intermediates) to add them. Confirm
   with DGII whether its certification-environment sender certificate chains to one of the trusted CAs.
-- Certificates that state no RNC/cedula in organizationIdentifier, serialNumber or O/OU/CN text cannot log in; confirm
-  with real certificates from the CAs that tenants use (Viafirma company certificates in particular).
+- Confirm with real DGII signer certificates (Viafirma PI-DGII, Digifirma e-CF) what their subject contains; the code
+  handles both the person-only and the `VATDO-` company encodings.
 - Revocation (OCSP/CRL) is not checked.
 - Trust model for incoming signatures (CA chain / DGII cert pinning) - currently integrity + validity only.
 - ACECF acknowledgement body and error body shapes are not DGII-verified.

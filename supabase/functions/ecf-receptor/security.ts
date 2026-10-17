@@ -6,7 +6,7 @@ import { P12Reader, Signature } from "npm:dgii-ecf@1.8.0";
 import { SignedXml } from "npm:xml-crypto@6.1.2";
 import { DOMParser } from "npm:@xmldom/xmldom@0.8.12";
 import forge from "npm:node-forge@1.3.1";
-import { extractSubjectIdentifiers } from "./protocol.ts";
+import { extractSubjectIdentities, hasForbiddenXml, type SubjectIdentities } from "./protocol.ts";
 
 export interface SigningMaterial {
   key: string;
@@ -17,9 +17,13 @@ export interface VerifyResult {
   valid: boolean;
   /** Short, non-sensitive reason when invalid (for logs only). */
   reason?: string;
-  /** RNC / cedula numbers asserted by the (trusted) signer certificate. Empty unless valid. */
-  identifiers: string[];
+  /** Identities asserted by the (trusted) signer certificate. Empty unless valid. */
+  companyIds: string[];
+  personIds: string[];
+  serial: string | null;
 }
+
+const NO_IDENTITY: Pick<SubjectIdentities, "companyIds" | "personIds" | "serial"> = { companyIds: [], personIds: [], serial: null };
 
 export interface XmlSecurity {
   readSigningMaterial(p12Bytes: Uint8Array, passphrase: string): SigningMaterial;
@@ -29,6 +33,7 @@ export interface XmlSecurity {
 
 const DSIG_NS = "http://www.w3.org/2000/09/xmldsig#";
 const MAX_CHAIN_DEPTH = 4;
+const MAX_EMBEDDED_CERTIFICATES = 5;
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -126,8 +131,9 @@ export function createXmlSecurity(options: { trustedCaPems: readonly string[] })
   const anchors = parseCertificates(options.trustedCaPems);
 
   function verify(xml: string, now: Date): VerifyResult {
-    const fail = (reason: string): VerifyResult => ({ valid: false, reason, identifiers: [] });
+    const fail = (reason: string): VerifyResult => ({ valid: false, reason, ...NO_IDENTITY });
     try {
+      if (hasForbiddenXml(xml)) return fail("forbidden XML construct");
       const doc = new DOMParser().parseFromString(xml, "text/xml");
       const signatures = doc.getElementsByTagNameNS(DSIG_NS, "Signature");
       if (signatures.length !== 1) return fail("expected exactly one Signature");
@@ -135,6 +141,7 @@ export function createXmlSecurity(options: { trustedCaPems: readonly string[] })
       const certNodes = signatureNode.getElementsByTagNameNS(DSIG_NS, "X509Certificate");
       const certs = Array.from({ length: certNodes.length }, (_, index) => certNodes[index].textContent?.trim() ?? "").filter(Boolean);
       if (certs.length === 0) return fail("missing X509Certificate");
+      if (certs.length > MAX_EMBEDDED_CERTIFICATES) return fail("too many embedded certificates");
       const leafPem = pemFromBase64Der(certs[0]);
       const leaf = forge.pki.certificateFromPem(leafPem);
       const extras = certs.slice(1).map((base64) => forge.pki.certificateFromPem(pemFromBase64Der(base64)));
@@ -147,7 +154,7 @@ export function createXmlSecurity(options: { trustedCaPems: readonly string[] })
       const references = verifier.getReferences();
       if (references.length !== 1 || (references[0].uri ?? "") !== "") return fail("reference must cover the whole document");
       if (!verifier.checkSignature(xml)) return fail("signature mismatch");
-      return { valid: true, identifiers: extractSubjectIdentifiers(attributesOf(leaf)) };
+      return { valid: true, ...extractSubjectIdentities(attributesOf(leaf)) };
     } catch {
       return fail("verification error");
     }

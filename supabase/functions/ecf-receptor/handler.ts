@@ -3,10 +3,13 @@
 import { decryptPassphrase, NotConfiguredError } from "./custody.ts";
 import {
   buildArecfXml,
+  bindSigner,
   checkSeedValue,
   createSeedXml,
   decideReception,
+  decodeSubjectIds,
   digitsOnly,
+  encodeSubjectIds,
   extractAcecfFields,
   extractEcfFields,
   extractSeedValue,
@@ -17,7 +20,7 @@ import {
   parseBearerToken,
   parseReceptorPath,
   sha256Hex,
-  tagText,
+  singleTagText,
   validateApproval,
   type ReceptionDecision,
 } from "./protocol.ts";
@@ -40,6 +43,11 @@ export interface ReceivedDocumentRow {
   xml: string | null;
   xmlSha256: string;
   arecfXml: string;
+  /** Identities the document's signer certificate asserts (`VATDO-`/`IDCDO-` prefixed) and its raw serial. */
+  signerIds: string[];
+  signerSerial: string | null;
+  /** True when the signer certificate names no company and the document's RNC could not be tied to it. */
+  signerRncMismatch: boolean;
 }
 
 export interface ReceivedApprovalRow {
@@ -50,11 +58,14 @@ export interface ReceivedApprovalRow {
   estado: number;
   detalleMotivoRechazo: string | null;
   xml: string;
+  signerIds: string[];
+  signerSerial: string | null;
+  signerRncMismatch: boolean;
 }
 
 export interface TokenInfo {
   tenantId: string;
-  /** RNC / cedula numbers the token holder's certificate asserted when it authenticated. */
+  /** Identities the token holder's certificate asserted when it authenticated (`VATDO-`/`IDCDO-` prefixed). */
   subjectIds: string[];
 }
 
@@ -200,12 +211,11 @@ async function handleValidateSeed(req: Request, rnc: string, deps: ReceptorDeps)
   if (!seed.ok) return reject("seed");
   const verification = deps.security.verify(signedSeed, now);
   if (!verification.valid) return reject(verification.reason ?? "signature");
-  if (verification.identifiers.length === 0) return reject("no_rnc_in_certificate");
   const tenantId = await deps.store.resolveTenant(rnc);
   if (!tenantId) return reject("tenant");
-  if (!(await deps.store.consumeSeed(tenantId, await sha256Hex(valor), seed.expiresAt, now))) return reject("replay");
+  if (!(await deps.store.consumeSeed(tenantId, seed.id, seed.expiresAt, now))) return reject("replay");
   const issued = await issueToken(now);
-  await deps.store.createToken(tenantId, issued.hash, issued.expiresAt, verification.identifiers);
+  await deps.store.createToken(tenantId, issued.hash, issued.expiresAt, encodeSubjectIds(verification));
   return json(issued.response);
 }
 
@@ -214,15 +224,23 @@ async function handleReception(req: Request, rnc: string, deps: ReceptorDeps): P
   const document = await readXmlPayload(req);
   const now = deps.now();
   const fields = extractEcfFields(document);
-  // The authenticated party may only deliver documents it issued.
-  if (fields && !subjectIds.includes(fields.rncEmisor)) {
+  // A token whose certificate vouches for ANOTHER company may not deliver for this issuer.
+  const tokenBinding = fields ? bindSigner(decodeSubjectIds(subjectIds), fields.rncEmisor) : "bound";
+  if (tokenBinding === "violation") {
     throw new HttpError(403, "The token holder is not the issuer of this document.", "FORBIDDEN");
   }
   const verification = fields ? deps.security.verify(document, now) : null;
-  // The document signature must come from a trusted certificate that also asserts the issuer RNC.
-  const signatureValid = !!fields && !!verification?.valid && verification.identifiers.includes(fields.rncEmisor);
-  const emisorRnc = fields?.rncEmisor ?? digitsOnly(tagText(document, "RNCEmisor") ?? "");
-  const encf = fields?.encf ?? tagText(document, "eNCF") ?? "";
+  // Same rule for the document signature. A person-only certificate (the usual DGII profile) names no company:
+  // the document is accepted on chain trust + signature validity and flagged `signerRncMismatch` for the tenant.
+  const docBinding = fields && verification?.valid ? bindSigner(verification, fields.rncEmisor) : null;
+  const signatureValid = !!fields && !!verification?.valid && docBinding !== "violation";
+  const signerRncMismatch = tokenBinding === "unbound" || docBinding === "unbound";
+  const signerIds = verification?.valid ? encodeSubjectIds(verification) : [];
+  const signerSerial = verification?.valid ? verification.serial : null;
+  // Rejected documents are echoed in the ARECF: only well-formed values may be reflected.
+  const looseEncf = singleTagText(document, "eNCF") ?? "";
+  const emisorRnc = fields?.rncEmisor ?? digitsOnly(singleTagText(document, "RNCEmisor") ?? "").slice(0, 11);
+  const encf = fields?.encf ?? (/^E\d{12}$/.test(looseEncf) ? looseEncf : "");
   const isDuplicate = fields !== null ? await deps.store.hasAcceptedDocument(tenantId, fields.rncEmisor, fields.encf) : false;
   const xmlSha256 = await sha256Hex(document);
 
@@ -234,7 +252,7 @@ async function handleReception(req: Request, rnc: string, deps: ReceptorDeps): P
       row: {
         tenantId,
         emisorRnc,
-        compradorRnc: fields?.rncComprador ?? digitsOnly(tagText(document, "RNCComprador") ?? ""),
+        compradorRnc: fields?.rncComprador ?? digitsOnly(singleTagText(document, "RNCComprador") ?? "").slice(0, 11),
         encf,
         tipoEcf: fields?.tipoEcf ?? null,
         estado: decision.estado === "0" ? 0 : 1,
@@ -242,6 +260,9 @@ async function handleReception(req: Request, rnc: string, deps: ReceptorDeps): P
         xml: decision.estado === "0" ? document : null,
         xmlSha256,
         arecfXml: arecf,
+        signerIds,
+        signerSerial,
+        signerRncMismatch: decision.estado === "0" && signerRncMismatch,
       },
     };
   };
@@ -259,12 +280,14 @@ async function handleApproval(req: Request, rnc: string, deps: ReceptorDeps): Pr
   const { tenantId, subjectIds } = await requireToken(req, rnc, deps);
   const document = await readXmlPayload(req);
   const fields = extractAcecfFields(document);
-  // The approval is issued by the buyer of the original e-CF: its certificate must assert RNCComprador.
-  if (fields && !subjectIds.includes(fields.rncComprador)) {
+  // The approval is issued by the buyer of the original e-CF (RNCComprador); see the reception comments.
+  const tokenBinding = fields ? bindSigner(decodeSubjectIds(subjectIds), fields.rncComprador) : "bound";
+  if (tokenBinding === "violation") {
     throw new HttpError(403, "The token holder is not the signer of this approval.", "FORBIDDEN");
   }
   const verification = fields ? deps.security.verify(document, deps.now()) : null;
-  const signatureValid = !!fields && !!verification?.valid && verification.identifiers.includes(fields.rncComprador);
+  const docBinding = fields && verification?.valid ? bindSigner(verification, fields.rncComprador) : null;
+  const signatureValid = !!fields && !!verification?.valid && docBinding !== "violation";
   const validation = validateApproval(fields, signatureValid, rnc);
   if (!validation.ok || !fields) {
     throw new HttpError(400, validation.ok ? "Invalid ACECF." : validation.message, validation.ok ? "SPECIFICATION" : validation.code);
@@ -277,6 +300,9 @@ async function handleApproval(req: Request, rnc: string, deps: ReceptorDeps): Pr
     estado: fields.estado,
     detalleMotivoRechazo: fields.detalleMotivoRechazo,
     xml: document,
+    signerIds: verification?.valid ? encodeSubjectIds(verification) : [],
+    signerSerial: verification?.valid ? verification.serial : null,
+    signerRncMismatch: tokenBinding === "unbound" || docBinding === "unbound",
   });
   return json({ message: "Commercial approval received.", encf: fields.encf });
 }

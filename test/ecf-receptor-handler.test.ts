@@ -79,7 +79,7 @@ class MemoryStore implements ReceptorStore {
     return "inserted" as const;
   }
   async upsertApproval(row: ReceivedApprovalRow) {
-    this.approvals.set(`${row.emisorRnc}|${row.encf}`, row);
+    this.approvals.set(`${row.emisorRnc}|${row.encf}|${row.compradorRnc}`, row);
   }
   async loadCertificate() {
     return this.certificate;
@@ -172,7 +172,7 @@ describe("authentication flow", () => {
     const body = await first.json();
     expect(Object.keys(body).sort()).toEqual(["expedido", "expira", "token"]);
     const stored = store.tokens.get(await sha256Hex(body.token));
-    expect(stored?.subjectIds).toEqual([EMITTER_RNC]);
+    expect(stored?.subjectIds).toEqual([`VATDO-${EMITTER_RNC}`]);
 
     const replay = await exchange(store, signedSeed);
     expect(replay.status).toBe(401);
@@ -197,13 +197,21 @@ describe("authentication flow", () => {
     expect(store.tokens.size).toBe(0);
   });
 
-  it("rejects a certificate issued by an untrusted CA, and one with no RNC", async () => {
+  it("rejects a certificate issued by an untrusted CA", async () => {
     const store = await freshStore();
     const untrusted = createTestCertificate({ ca: otherCa, rnc: EMITTER_RNC });
     expect((await exchange(store, sign(await fetchSeed(store), "SemillaModel", untrusted))).status).toBe(401);
-    const noRnc = createTestCertificate({ ca });
-    expect((await exchange(store, sign(await fetchSeed(store), "SemillaModel", noRnc))).status).toBe(401);
     expect(store.tokens.size).toBe(0);
+  });
+
+  it("lets a trusted person-only certificate (usual DGII profile) log in, recording what it asserts", async () => {
+    const store = await freshStore();
+    const person = createTestCertificate({ ca, cedula: "00112345678" });
+    await login(store, person);
+    expect([...store.tokens.values()][0].subjectIds).toEqual(["IDCDO-00112345678"]);
+    const unprefixed = createTestCertificate({ ca, serial: "00112345678" }); // Viafirma policy encoding
+    await login(store, unprefixed);
+    expect([...store.tokens.values()][1].subjectIds).toEqual([]);
   });
 
   it("fails closed when the trust store is empty", async () => {
@@ -215,6 +223,20 @@ describe("authentication flow", () => {
     );
     expect(res.status).toBe(200);
     expect(empty.status).toBe(401);
+  });
+
+  it("rejects replaying a seed through a non-canonical base64 spelling", async () => {
+    const store = await freshStore();
+    const seedXml = await fetchSeed(store);
+    const valor = seedXml.match(/<valor>([^<]+)<\/valor>/)![1];
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const base = alphabet.indexOf(valor[74]) & ~3;
+    const spellings = [0, 1, 2, 3].map((low) => valor.slice(0, 74) + alphabet[base + low] + "=").filter((v) => v !== valor);
+    expect((await exchange(store, sign(seedXml, "SemillaModel"))).status).toBe(200);
+    for (const spelling of spellings) {
+      expect((await exchange(store, sign(seedXml.replace(valor, spelling), "SemillaModel"))).status).toBe(401);
+    }
+    expect(store.tokens.size).toBe(1);
   });
 
   it("rejects unknown, tampered, unsigned, expired and cross-taxpayer seeds", async () => {
@@ -417,6 +439,44 @@ describe("reception", () => {
     expect(store.documents).toHaveLength(0);
   });
 
+  it("accepts a person-only signer on chain trust + signature, flags the RNC mismatch and records the signer", async () => {
+    const store = await freshStore();
+    const person = createTestCertificate({ ca, cedula: "00112345678" });
+    const token = await login(store, person);
+    const body = await (await handleRequest(receive(token, sign(sampleEcf, "ECF", person)), makeDeps(store))).text();
+    expect(body).toContain("<Estado>0</Estado>");
+    expect(store.documents[0]).toMatchObject({ estado: 0, signerRncMismatch: true, signerIds: ["IDCDO-00112345678"], signerSerial: "IDCDO-00112345678" });
+  });
+
+  it("accepts and flags a signer certificate with no recognisable identifier, recording its raw serial", async () => {
+    const store = await freshStore();
+    const bare = createTestCertificate({ ca, serial: "00112345678" });
+    const token = await login(store, bare);
+    expect(await (await handleRequest(receive(token, sign(sampleEcf, "ECF", bare)), makeDeps(store))).text()).toContain("<Estado>0</Estado>");
+    expect(store.documents[0]).toMatchObject({ signerRncMismatch: true, signerIds: [], signerSerial: "00112345678" });
+  });
+
+  it("does not flag a company-bound signer, nor a persona fisica whose cedula is the issuer RNC", async () => {
+    const store = await freshStore();
+    const token = await login(store);
+    await handleRequest(receive(token, sign(sampleEcf, "ECF")), makeDeps(store));
+    expect(store.documents[0]).toMatchObject({ estado: 0, signerRncMismatch: false, signerIds: [`VATDO-${EMITTER_RNC}`] });
+    const store2 = await freshStore();
+    const natural = createTestCertificate({ ca, cedula: EMITTER_RNC });
+    const token2 = await login(store2, natural);
+    await handleRequest(receive(token2, sign(sampleEcf, "ECF", natural)), makeDeps(store2));
+    expect(store2.documents[0]).toMatchObject({ estado: 0, signerRncMismatch: false });
+  });
+
+  it("still rejects a signer whose certificate vouches for another company, even if the token is person-only", async () => {
+    const store = await freshStore();
+    const person = createTestCertificate({ ca, cedula: "00112345678" });
+    const token = await login(store, person);
+    const wrongCompany = createTestCertificate({ ca, rnc: "101010101" });
+    expect(await (await handleRequest(receive(token, sign(sampleEcf, "ECF", wrongCompany)), makeDeps(store))).text()).toContain("<CodigoMotivoNoRecibido>2</CodigoMotivoNoRecibido>");
+    expect(store.documents.every((d) => d.estado === 1 && !d.signerRncMismatch)).toBe(true);
+  });
+
   it("answers code 4 when RNCComprador is another taxpayer", async () => {
     const store = await freshStore();
     const token = await login(store);
@@ -432,6 +492,23 @@ describe("reception", () => {
     expect(store.documents).toHaveLength(1);
     expect(store.documents[0].xml).toBeNull();
     expect(store.documents[0].xmlSha256).toBe(await sha256Hex(broken));
+  });
+
+  it("answers code 1 for duplicated fields, DOCTYPE, comments and CDATA", async () => {
+    const store = await freshStore();
+    const token = await login(store);
+    // The signer library strips comments/CDATA while signing, so inject them into the already signed document.
+    const signed = sign(sampleEcf, "ECF");
+    const variants = [
+      sign(sampleEcf.replace("</Encabezado>", "<RNCEmisor>999999999</RNCEmisor></Encabezado>"), "ECF"),
+      signed.replace("<ECF>", "<ECF><!-- smuggled -->"),
+      signed.replace("<ECF>", "<ECF><![CDATA[x]]>"),
+      '<!DOCTYPE ECF [<!ENTITY e "x">]>' + signed,
+    ];
+    for (const variant of variants) {
+      expect(await (await handleRequest(receive(token, variant), makeDeps(store))).text()).toContain("<CodigoMotivoNoRecibido>1</CodigoMotivoNoRecibido>");
+    }
+    expect(store.documents.every((d) => d.estado === 1)).toBe(true);
   });
 
   it("matches RNCs written with separators", async () => {
@@ -490,6 +567,25 @@ describe("commercial approval", () => {
     const foreign = await handleRequest(approve(token, sign(acecf("111111111"), "ACECF")), makeDeps(store));
     expect((await foreign.json()).code).toBe("RNC_MISMATCH");
     expect(store.approvals.size).toBe(0);
+  });
+
+  it("never lets a different buyer replace an existing approval", async () => {
+    const store = await freshStore();
+    const token = await login(store);
+    const otherBuyer = createTestCertificate({ ca, rnc: "202020202" });
+    const otherToken = await login(store, otherBuyer);
+    expect((await handleRequest(approve(token, sign(acecf(TENANT_RNC, "1"), "ACECF")), makeDeps(store))).status).toBe(200);
+    expect((await handleRequest(approve(otherToken, sign(acecf(TENANT_RNC, "2", "202020202"), "ACECF", otherBuyer)), makeDeps(store))).status).toBe(200);
+    expect(store.approvals.size).toBe(2);
+    expect(store.approvals.get(`${TENANT_RNC}|E310000000007|${EMITTER_RNC}`)?.estado).toBe(1);
+  });
+
+  it("accepts a person-only buyer signature and flags it", async () => {
+    const store = await freshStore();
+    const person = createTestCertificate({ ca, cedula: "00112345678" });
+    const token = await login(store, person);
+    expect((await handleRequest(approve(token, sign(acecf(), "ACECF", person)), makeDeps(store))).status).toBe(200);
+    expect([...store.approvals.values()][0]).toMatchObject({ signerRncMismatch: true, signerIds: ["IDCDO-00112345678"] });
   });
 
   it("forbids an approval whose buyer is not the token holder", async () => {

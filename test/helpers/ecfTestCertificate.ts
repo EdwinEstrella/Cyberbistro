@@ -42,6 +42,10 @@ export interface CertificateOptions {
   ca?: TestCa;
   /** RNC asserted the way Dominican CAs do it: organizationIdentifier `VATDO-<rnc>`. */
   rnc?: string;
+  /** Person document asserted as serialNumber `IDCDO-<cedula>` (the usual DGII signer profile). */
+  cedula?: string;
+  /** Raw serialNumber text (e.g. an unprefixed cedula as in the Viafirma policy). */
+  serial?: string;
   /** Full subject, overriding the default (CN + rnc). */
   subject?: NameAttribute[];
   /** Mark the certificate itself as a CA (invalid as a signer). */
@@ -61,7 +65,10 @@ export function createTestCertificate(options: CertificateOptions = {}): TestCer
     options.subject ??
     [
       { name: "commonName", value: "Cloudix Test" },
+      { name: "countryName", value: "DO" },
       ...(options.rnc ? [{ type: "2.5.4.97", value: `VATDO-${options.rnc}` }] : []),
+      ...(options.cedula ? [{ type: "2.5.4.5", value: `IDCDO-${options.cedula}` }] : []),
+      ...(options.serial ? [{ type: "2.5.4.5", value: options.serial }] : []),
     ];
   cert.setSubject(subject as forge.pki.CertificateField[]);
   cert.setIssuer(options.ca ? options.ca.cert.subject.attributes : (subject as forge.pki.CertificateField[]));

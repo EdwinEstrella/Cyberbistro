@@ -12,9 +12,17 @@ describe("ecf receptor hardening migration", () => {
     expect(code).toMatch(/UNIQUE INDEX IF NOT EXISTS ecf_received_documents_rejected_uidx[\s\S]*\(tenant_id, xml_sha256, motivo_no_recibido\) WHERE estado = 1/);
   });
 
-  it("allows one approval per tenant, emisor and eNCF after removing older duplicates", () => {
+  it("deletes existing duplicate rejected rows before creating their unique index", () => {
+    const del = code.indexOf("DELETE FROM public.ecf_received_documents");
+    expect(del).toBeGreaterThan(-1);
+    expect(del).toBeLessThan(code.indexOf("ecf_received_documents_rejected_uidx"));
+    expect(code).toContain("(a.received_at, a.id) > (b.received_at, b.id)");
+  });
+
+  it("keys approvals by buyer too, after removing older duplicates", () => {
     expect(code.indexOf("DELETE FROM public.ecf_received_approvals")).toBeLessThan(code.indexOf("ecf_received_approvals_uidx"));
-    expect(code).toMatch(/UNIQUE INDEX IF NOT EXISTS ecf_received_approvals_uidx[\s\S]*\(tenant_id, emisor_rnc, encf\)/);
+    expect(code).toContain("AND a.comprador_rnc = b.comprador_rnc");
+    expect(code).toMatch(/UNIQUE INDEX IF NOT EXISTS ecf_received_approvals_uidx[\s\S]*\(tenant_id, emisor_rnc, encf, comprador_rnc\)/);
   });
 
   it("schedules the purge only when pg_cron exists and never creates the extension", () => {
@@ -24,7 +32,13 @@ describe("ecf receptor hardening migration", () => {
     expect(code).toContain("RAISE NOTICE");
   });
 
-  it("grants nothing to client roles", () => {
-    expect(code).not.toMatch(/\bGRANT\b/i);
+  it("adds signer evidence columns and exposes only the mismatch flag to tenants", () => {
+    for (const table of ["ecf_received_documents", "ecf_received_approvals"]) {
+      expect(code).toMatch(new RegExp(`ALTER TABLE public\\.${table}[\\s\\S]*?signer_rnc_mismatch boolean NOT NULL DEFAULT false`));
+      expect(code).toContain(`GRANT SELECT (signer_rnc_mismatch) ON public.${table} TO authenticated`);
+    }
+    const grants = code.match(/\bGRANT\b[^;]*;/gi) ?? [];
+    expect(grants).toHaveLength(2);
+    expect(grants.join(" ")).not.toMatch(/signer_ids|signer_serial|INSERT|UPDATE|DELETE/);
   });
 });

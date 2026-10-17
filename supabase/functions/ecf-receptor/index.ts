@@ -42,13 +42,9 @@ Deno.serve((req) => {
     security,
     now: () => new Date(),
     encryptionKey: () => Deno.env.get("ECF_ENCRYPTION_KEY"),
-    // Seeds are HMAC-authenticated with a server-only secret. Prefer a dedicated one; fall back to the
-    // encryption key, then the service role key. The value is only used as HMAC keying material.
-    seedSecret: () =>
-      Deno.env.get("ECF_RECEPTOR_SEED_SECRET")?.trim() ||
-      Deno.env.get("ECF_ENCRYPTION_KEY")?.trim() ||
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.trim() ||
-      undefined,
+    // Seeds are HMAC-authenticated with a dedicated server-only secret. Required: without it the
+    // receptor answers 503 (fail closed) instead of deriving keys from unrelated secrets.
+    seedSecret: () => Deno.env.get("ECF_RECEPTOR_SEED_SECRET")?.trim() || undefined,
     // Never log payloads, certificates or secrets: event names and short codes only.
     log: (event, detail) => console.warn(`ecf-receptor: ${event}`, detail ?? {}),
   });

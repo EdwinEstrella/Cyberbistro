@@ -5,7 +5,12 @@ import {
   checkSeedValue,
   createSeedXml,
   digitsOnly,
+  bindSigner,
+  decodeSubjectIds,
+  encodeSubjectIds,
   extractSubjectIdentifiers,
+  extractSubjectIdentities,
+  hasForbiddenXml,
   generateSeedValueFor,
   decideReception,
   escapeXml,
@@ -83,6 +88,23 @@ describe("seed and token", () => {
     expect(valor).not.toBe(await generateSeedValueFor("133488485", "secret", now));
   });
 
+  it("accepts one canonical encoding per seed and returns the same single-use id for it", async () => {
+    const valor = await generateSeedValueFor("133488485", "secret", now);
+    const ok = await checkSeedValue(valor, "133488485", "secret", now);
+    expect(ok.ok && ok.id).toMatch(/^[0-9a-f]{64}$/);
+    // 56 bytes leave 2 spare bits in the last base64 character: 4 texts decode to the same bytes.
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const base = alphabet.indexOf(valor[74]) & ~3;
+    const variants = [0, 1, 2, 3].map((low) => valor.slice(0, 74) + alphabet[base + low] + "=");
+    expect(variants).toContain(valor);
+    const results = await Promise.all(variants.map((variant) => checkSeedValue(variant, "133488485", "secret", now)));
+    expect(results.filter((result) => result.ok)).toHaveLength(1);
+    // Other textual variants of the same bytes are rejected too.
+    expect((await checkSeedValue(valor.slice(0, -1), "133488485", "secret", now)).ok).toBe(false);
+    expect((await checkSeedValue(valor.replace(/\+/g, "-").replace(/\//g, "_"), "133488485", "secret", now)).ok).toBe(valor.includes("+") || valor.includes("/") ? false : true);
+    expect((await checkSeedValue(" " + valor, "133488485", "secret", now)).ok).toBe(false);
+  });
+
   it("extracts the seed value from a signed seed and rejects other documents", () => {
     const signed = `<SemillaModel><valor>${"B".repeat(32)}</valor><fecha>x</fecha><Signature/></SemillaModel>`;
     expect(extractSeedValue(signed)).toBe("B".repeat(32));
@@ -112,28 +134,93 @@ describe("seed and token", () => {
 const ecf = (over: Partial<Record<string, string>> = {}) => `<ECF><Encabezado><IdDoc><TipoeCF>${over.tipo ?? "31"}</TipoeCF><eNCF>${over.encf ?? "E310000000007"}</eNCF></IdDoc><Emisor><RNCEmisor>${over.emisor ?? "131880738"}</RNCEmisor></Emisor><Comprador><RNCComprador>${over.comprador ?? "133488485"}</RNCComprador></Comprador></Encabezado></ECF>`;
 
 describe("certificate identifiers", () => {
-  const attrs = (...items: [string, string][]) => items.map(([type, value]) => ({ type, value }));
+  const C = { type: "2.5.4.6", value: "DO" };
+  const attrs = (...items: [string, string][]) => [C, ...items.map(([type, value]) => ({ type, value }))];
 
-  it("reads ETSI organizationIdentifier and serialNumber encodings used by Dominican CAs", () => {
+  it("reads only the exact ETSI encodings: organizationIdentifier VATDO- and serialNumber IDCDO-", () => {
     expect(extractSubjectIdentifiers(attrs(["2.5.4.97", "VATDO-130862346"], ["2.5.4.5", "IDCDO-00112345678"]))).toEqual(["130862346", "00112345678"]);
-    expect(extractSubjectIdentifiers(attrs(["2.5.4.5", "40212345678"]))).toEqual(["40212345678"]);
   });
 
-  it("reads RNC embedded in O/OU/CN text", () => {
-    expect(extractSubjectIdentifiers([{ shortName: "O", value: "ACME SRL - RNC 131880738" }])).toEqual(["131880738"]);
-    expect(extractSubjectIdentifiers([{ shortName: "CN", value: "Juan RNC: 131880738" }])).toEqual(["131880738"]);
+  it("requires the prefix, the right attribute and the exact shape", () => {
+    expect(extractSubjectIdentifiers(attrs(["2.5.4.5", "40212345678"]))).toEqual([]);
+    expect(extractSubjectIdentifiers(attrs(["2.5.4.97", "130862346"]))).toEqual([]);
+    expect(extractSubjectIdentifiers(attrs(["2.5.4.97", "IDCDO-130862346"]))).toEqual([]);
+    expect(extractSubjectIdentifiers(attrs(["2.5.4.5", "VATDO-00112345678"]))).toEqual([]);
+    expect(extractSubjectIdentifiers(attrs(["2.5.4.97", "vatdo-130862346"]))).toEqual([]);
+    expect(extractSubjectIdentifiers(attrs(["2.5.4.97", "VATDO-130862346 "]))).toEqual([]);
+    expect(extractSubjectIdentifiers(attrs(["2.5.4.97", "VATDO-123"], ["2.5.4.5", "PA1234567"]))).toEqual([]);
   });
 
-  it("ignores passports, wrong lengths and unrelated attributes", () => {
-    expect(extractSubjectIdentifiers(attrs(["2.5.4.5", "PA1234567"], ["2.5.4.97", "VATDO-123"], ["2.5.4.6", "DO"]))).toEqual([]);
-    expect(extractSubjectIdentifiers([{ shortName: "L", value: "RNC 131880738" }])).toEqual([]);
-    expect(extractSubjectIdentifiers([{ shortName: "CN", value: "no number here" }])).toEqual([]);
+  it("never trusts free text in O/OU/CN (attacker-chosen names)", () => {
+    expect(extractSubjectIdentifiers([C, { type: "2.5.4.10", shortName: "O", value: "ACME SRL - RNC 131880738" }])).toEqual([]);
+    expect(extractSubjectIdentifiers([C, { type: "2.5.4.3", shortName: "CN", value: "Juan RNC: 131880738" }])).toEqual([]);
+    expect(extractSubjectIdentifiers([C, { type: "2.5.4.11", shortName: "OU", value: "RNC 131880738" }])).toEqual([]);
+    expect(extractSubjectIdentifiers([C, { shortName: "organizationIdentifier", value: "VATDO-131880738" }])).toEqual([]);
+  });
+
+  it("requires countryName DO", () => {
+    const id: [string, string] = ["2.5.4.97", "VATDO-131880738"];
+    expect(extractSubjectIdentifiers([{ type: "2.5.4.97", value: id[1] }])).toEqual([]);
+    expect(extractSubjectIdentifiers([{ type: "2.5.4.6", value: "ES" }, { type: "2.5.4.97", value: id[1] }])).toEqual([]);
+    expect(extractSubjectIdentifiers([{ type: "2.5.4.6", value: "DO" }, { type: "2.5.4.6", value: "ES" }, { type: "2.5.4.97", value: id[1] }])).toEqual([]);
+    expect(extractSubjectIdentifiers(attrs(id))).toEqual(["131880738"]);
+  });
+
+  it("separates company identifiers from person documents and keeps the raw serial for information", () => {
+    const identities = extractSubjectIdentities([C, { type: "2.5.4.97", value: "VATDO-131880738" }, { type: "2.5.4.5", value: "IDCDO-00112345678" }]);
+    expect(identities).toEqual({ companyIds: ["131880738"], personIds: ["00112345678"], serial: "IDCDO-00112345678" });
+    // Viafirma policy: unprefixed cedula -> nothing to bind on, but the serial is still recorded.
+    expect(extractSubjectIdentities([C, { type: "2.5.4.5", value: "00112345678" }])).toEqual({ companyIds: [], personIds: [], serial: "00112345678" });
+    expect(extractSubjectIdentities([{ type: "2.5.4.5", value: "00112345678" }]).personIds).toEqual([]);
+  });
+
+  it("binds a signer to an RNC: company id decides when present; person-only certificates are flagged, not rejected", () => {
+    expect(bindSigner({ companyIds: ["131880738"], personIds: [] }, "131-88073-8")).toBe("bound");
+    expect(bindSigner({ companyIds: ["131880738"], personIds: ["00112345678"] }, "999999999")).toBe("violation");
+    expect(bindSigner({ companyIds: [], personIds: ["00112345678"] }, "00112345678")).toBe("bound"); // persona fisica: RNC = cedula
+    expect(bindSigner({ companyIds: [], personIds: ["00112345678"] }, "131880738")).toBe("unbound");
+    expect(bindSigner({ companyIds: [], personIds: [] }, "131880738")).toBe("unbound");
+  });
+
+  it("round-trips the prefixed form stored on tokens", () => {
+    const ids = { companyIds: ["131880738"], personIds: ["00112345678"] };
+    expect(encodeSubjectIds(ids)).toEqual(["VATDO-131880738", "IDCDO-00112345678"]);
+    expect(decodeSubjectIds(encodeSubjectIds(ids))).toEqual(ids);
+    expect(decodeSubjectIds([])).toEqual({ companyIds: [], personIds: [] });
   });
 
   it("normalizes RNCs to digits", () => {
     expect(digitsOnly("1-33-48848-5")).toBe("133488485");
     expect(extractEcfFields(ecf({ emisor: "131-88073-8", comprador: "130 862 346" }))).toMatchObject({ rncEmisor: "131880738", rncComprador: "130862346" });
     expect(decideReception({ fields: extractEcfFields(ecf({ comprador: "133-488-485" })), signatureValid: true, tenantRnc: "133488485", isDuplicate: false })).toEqual({ estado: "0" });
+  });
+});
+
+describe("strict XML field extraction", () => {
+  it("requires exactly one occurrence of each field", () => {
+    const dup = ecf().replace("</Encabezado>", "<RNCEmisor>999999999</RNCEmisor></Encabezado>");
+    expect(extractEcfFields(dup)).toBeNull();
+    expect(extractEcfFields(ecf().replace("</Encabezado>", "<eNCF>E310000000099</eNCF></Encabezado>"))).toBeNull();
+    expect(extractEcfFields(ecf().replace("</Encabezado>", "<RNCComprador>1</RNCComprador></Encabezado>"))).toBeNull();
+    expect(extractEcfFields(ecf())).not.toBeNull();
+  });
+
+  it("rejects DOCTYPE, entities, comments, CDATA and stray processing instructions", () => {
+    const withBody = (extra: string) => ecf().replace("<ECF>", `<ECF>${extra}`);
+    for (const extra of ["<!-- x -->", "<![CDATA[x]]>", "<?php x ?>"]) expect(extractEcfFields(withBody(extra)), extra).toBeNull();
+    expect(extractEcfFields('<!DOCTYPE ECF [<!ENTITY a "b">]>' + ecf())).toBeNull();
+    expect(extractEcfFields('<?xml version="1.0" encoding="utf-8"?>' + ecf())).not.toBeNull();
+    expect(hasForbiddenXml('<?xml version="1.0"?><?xml version="1.0"?><a/>')).toBe(true);
+    expect(extractSeedValue("<SemillaModel><!-- c --><valor>" + "A".repeat(32) + "</valor></SemillaModel>")).toBeNull();
+    expect(extractSeedValue("<SemillaModel><valor>" + "A".repeat(32) + "</valor><valor>" + "B".repeat(32) + "</valor></SemillaModel>")).toBeNull();
+  });
+
+  it("applies the same rules to the ACECF", () => {
+    const base = `<ACECF><DetalleAprobacionComercial><RNCEmisor>133488485</RNCEmisor><eNCF>E310000000007</eNCF><RNCComprador>131880738</RNCComprador><Estado>1</Estado></DetalleAprobacionComercial></ACECF>`;
+    expect(extractAcecfFields(base)).not.toBeNull();
+    expect(extractAcecfFields(base.replace("</ACECF>", "<Estado>2</Estado></ACECF>"))).toBeNull();
+    expect(extractAcecfFields(base.replace("<ACECF>", "<ACECF><!-- c -->"))).toBeNull();
+    expect(extractAcecfFields(base.replace("</ACECF>", "<DetalleMotivoRechazo>a</DetalleMotivoRechazo><DetalleMotivoRechazo>b</DetalleMotivoRechazo></ACECF>"))).toBeNull();
   });
 });
 

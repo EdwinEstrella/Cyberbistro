@@ -66,7 +66,7 @@ v1.74.0 image: workers are cached per function). First cold start downloads `npm
 | `SUPABASE_SERVICE_ROLE_KEY` | receptor, validator | Already defined |
 | `ECF_ENCRYPTION_KEY` | receptor, validator | **Currently NOT defined on the VPS.** Same value as the fiscal worker, format `ecf-v1:<base64url 32 bytes>` |
 | `SUPABASE_PUBLISHABLE_KEY` | validator only | Used by `validate-ecf-certificate` |
-| `ECF_RECEPTOR_SEED_SECRET` | receptor (optional) | HMAC keying material for stateless seeds. Falls back to `ECF_ENCRYPTION_KEY`, then `SUPABASE_SERVICE_ROLE_KEY` (only ever hashed; never returned or logged) |
+| `ECF_RECEPTOR_SEED_SECRET` | receptor (**required**) | HMAC keying material for stateless seeds, e.g. `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`. No fallback to other secrets: without it seed issuance and the seed exchange answer `503 NOT_CONFIGURED` (fail closed) |
 | `ECF_RECEPTOR_TRUSTED_CA_PEMS` | receptor (optional) | Extra trusted CA certificates, PEM bundle (multi-line value). Use for DGII certification-environment CAs if they differ from the built-in list |
 
 Without `ECF_ENCRYPTION_KEY` the receptor still authenticates callers but answers reception with
@@ -90,12 +90,26 @@ in the caller's XML by itself:
    `supabase/functions/ecf-receptor/trustedCas.ts` plus `ECF_RECEPTOR_TRUSTED_CA_PEMS`. Self-signed certificates,
    CA certificates used as signers, expired links and unknown issuers are rejected. An empty trust store rejects
    everything (fail closed). Revocation (OCSP/CRL) is **not** checked.
-2. The signer certificate must assert an RNC / cedula (ETSI `organizationIdentifier` `VATDO-<rnc>`, `serialNumber`
-   `IDCDO-<cedula>`, or `RNC <digits>` in O/OU/CN). The numbers are stored on the token (`subject_rnc`).
-3. Reception: `RNCEmisor` of the e-CF must be one of the token's numbers (else 403), and the e-CF's own signature
-   certificate must chain to the trust store and assert that same RNC (else ARECF code 2).
-4. Commercial approval: `RNCComprador` of the ACECF (the buyer approving) must match the token and the ACECF
-   signature certificate; `RNCEmisor` must be the tenant.
+2. What the certificate says about the signer is read ONLY from the exact ETSI EN 319 412-1 identifiers, matched by
+   OID with a required prefix, in a subject whose `countryName` is `DO`: `organizationIdentifier` (2.5.4.97) =
+   `VATDO-<9|11 digits>` (a company vouched for by the CA) and `serialNumber` (2.5.4.5) = `IDCDO-<9|11 digits>` (a
+   person). Names, organizations and unit names are never read, because anyone can choose them when requesting a
+   certificate. What was found is stored on the token (`subject_rnc`) and on each received document (`signer_ids`,
+   plus the raw `signer_serial` for information).
+3. **The usual DGII signer certificate is a person certificate.** Viafirma's "Procedimientos Tributarios" profile
+   (`VIAFIRMA-PI-DGII`) and Digifirma's "Certificado Facturacion Electronica" are issued to an individual linked to a
+   company; their published properties are name, cedula/passport and email only, with the link to the company
+   established by DGII records (see the evidence in `odd/tasks/ecf-receptor.md`, T7). So the company RNC is normally
+   NOT in the certificate, and requiring it would reject every legitimate sender. The binding rule is therefore:
+   - the certificate names a company (`VATDO-`): the document's RNC (`RNCEmisor` for an e-CF, `RNCComprador` for an
+     ACECF) must be that company, otherwise reject (token: 403, document: ARECF code 2 / ACECF 400);
+   - the certificate names no company (person-only, or no recognised identifier): accept on chain trust + signature
+     validity and set `signer_rnc_mismatch = true` on the stored document/approval (the ARECF still says Estado 0),
+     unless the person's cedula equals the RNC (persona fisica), which is "bound".
+   **Consequence:** with person-only certificates the receptor can prove WHO signed (a person vetted by an
+   authorized CA) but not that this person represents the issuer RNC. Tenants must review flagged documents;
+   the open decision is whether to require an allow-list of signer documents per issuer.
+4. Commercial approval uses the same rules with `RNCComprador` as the signing party and `RNCEmisor` = the tenant.
 
 Built-in anchors (CA certificates downloaded from each operator's own site, as linked by INDOTEL's list of
 authorized certification entities, https://indotel.gob.do/firma-digital/entidades-de-certificacion/ ; SHA-256
@@ -106,7 +120,7 @@ fingerprints are pinned by `test/ecf-receptor-trust.test.ts`):
 | Avansi / Viafirma Dominicana | Avansi Certificacion (root), Avansi Certificados Digitales, Viafirma Qualified Certificates | https://cps.viafirma.do/ |
 | Camara de Comercio y Produccion de Santo Domingo (Digifirma) | Digifirma CA Raiz, Digifirma CA Subordinada 1 | https://digi.camarasantodomingo.do/informacion-adicional/certificados-raiz/ |
 | Novosit (NovoFirma) | Novosit CA1 (its global Uanataca root is deliberately not trusted) | https://novofirma.com/RootCertificate |
-| Digito Group | Digito Root CA | http://pki.digito.do/CAs/DigitoRootCA.crt |
+| Digito Financial Technology Group | Digito Root CA (valid 2026-06-22 to 2046-06-17, RSA 4096, SHA-256; same fingerprint over HTTP and HTTPS; operator authorized by INDOTEL Res. 115-2025) | http://pki.digito.do/CAs/DigitoRootCA.crt |
 
 Authorized entities whose DR-specific CA certificates could not be obtained from a primary source and are NOT
 trusted yet: ABA (firmadigital.aba.org.do), OGTIC (ca.ogtic.gob.do), Lleidanet Dominicana (the Indenova root is
@@ -121,7 +135,7 @@ in certification tests is not covered by the list above, add its CA through `ECF
 The function is public. Seeds are stateless (no database write on GET), but every request still costs CPU.
 Recommended Cloudflare rules for `cloudix-ecf.azokia.com`: 30 req/min per IP on `*/fe/autenticacion/*`,
 120 req/min per IP on `*/fe/recepcion/*` and `*/fe/aprobacioncomercial/*`, block methods other than GET/POST,
-and a request body limit of 6 MB. Allow-list DGII's source addresses once DGII publishes them.
+and block requests with a body larger than 5 MB (content-length rule): behind the edge runtime proxy a server-side 413 for a client that is still uploading may stall instead of replying cleanly. Allow-list DGII's source addresses once DGII publishes them.
 
 ## 7. Related, out of scope here
 
@@ -165,7 +179,13 @@ where `host` is `https://cloudix-ecf.azokia.com/{rnc}`. The reception response m
 - Revocation of signer certificates (OCSP/CRL) is not checked.
 - The ACECF acknowledgement body (`{"message","encf"}`) is not a DGII-specified shape.
 - Rate limiting is not applied in the function; see section 6.
-- A subscriber certificate that does not state the RNC/cedula in one of the encodings above cannot authenticate
-  (fail closed). If a CA issues company certificates in another encoding, extend `extractSubjectIdentifiers`.
+- Most real signer certificates are person-only (see section 5): documents they sign are accepted but flagged
+  `signer_rnc_mismatch`; the receptor cannot tell whether the signer is authorized to act for the claimed RNC.
+- Viafirma/Avansi's policy places an UNPREFIXED cedula/passport in `serialNumber`; it is recorded in
+  `signer_serial` but never used for binding.
+- Incoming XML with DTDs, entities, comments, CDATA or processing instructions, repeated key fields (`RNCEmisor`,
+  `RNCComprador`, `eNCF`, `Estado`) or more than 5 embedded certificates is rejected.
+- Seeds are single use per decoded value (a non-canonical base64 spelling of a used seed is rejected).
+- Commercial approvals are unique per (tenant, issuer, eNCF, buyer); a different buyer never overwrites another one.
 - Consumed seeds and expired tokens are kept until `select public.ecf_receptor_purge_expired()` runs (daily via
   pg_cron when available).

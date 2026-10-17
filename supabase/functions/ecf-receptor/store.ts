@@ -86,6 +86,9 @@ export function createSupabaseStore(supabaseUrl: string, serviceRoleKey: string)
         xml: row.xml,
         xml_sha256: row.xmlSha256,
         arecf_xml: row.arecfXml,
+        signer_ids: row.signerIds.join(",") || null,
+        signer_serial: row.signerSerial,
+        signer_rnc_mismatch: row.signerRncMismatch,
       });
       if (error?.code === "23505") return "duplicate";
       if (error) fail("insertDocument");
@@ -102,9 +105,12 @@ export function createSupabaseStore(supabaseUrl: string, serviceRoleKey: string)
           estado: row.estado,
           detalle_motivo_rechazo: row.detalleMotivoRechazo,
           xml: row.xml,
+          signer_ids: row.signerIds.join(",") || null,
+          signer_serial: row.signerSerial,
+          signer_rnc_mismatch: row.signerRncMismatch,
           received_at: new Date().toISOString(),
         },
-        { onConflict: "tenant_id,emisor_rnc,encf" },
+        { onConflict: "tenant_id,emisor_rnc,encf,comprador_rnc" },
       );
       if (error) fail("upsertApproval");
     },
