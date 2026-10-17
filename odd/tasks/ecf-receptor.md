@@ -85,7 +85,7 @@ strategy before opening PRs.
   seed issue/validate, short-lived token, reception with signed ARECF, ACECF intake; pure logic
   extracted and unit-tested; `config.toml` `verify_jwt = false` for this function.
 - [x] T4 ActivationPanel: real base `cloudix-ecf.azokia.com/{rnc}`; tests.
-- [ ] T5 Deployment doc (Dokploy file mounts, required env, migration order) — deploy itself
+- [x] T5 Deployment doc (Dokploy file mounts, required env, migration order) — deploy itself
   needs user OK.
 
 ## Progress
@@ -151,5 +151,17 @@ strategy before opening PRs.
   typecheck clean; `npm test`: 163 files passed, 1 failed (pre-existing `local-sync-protocol`, needs docker
   compose; fails identically without my changes).
 
+- 2026-10-17 T5 DONE: `docs/ecf-receptor-deployment.md` (request path, migration, host-dir deployment via
+  `docker cp`, env names incl. missing `ECF_ENCRYPTION_KEY`, VERIFY_JWT implications, validate stub follow-up,
+  curl smoke tests, known limits) linked from `supabase/README.md`. Docs only; checked by readback.
+
+## Open decisions for the user
+- Trust model for incoming signatures (CA chain / DGII cert pinning) - currently integrity + validity only.
+- ACECF acknowledgement body and error body shapes are not DGII-verified.
+- Authorization to apply the migration, set `ECF_ENCRYPTION_KEY`, copy the function dir and deploy the repo
+  `validate-ecf-certificate` on the VPS.
+- Delivery: forecast well above 400 authored lines -> choose chain strategy (`stacked-to-main` or
+  `feature-branch-chain`) before opening PRs.
+
 ## Next step
-T5 deployment doc.
+User review; then authorized deployment following the runbook.
