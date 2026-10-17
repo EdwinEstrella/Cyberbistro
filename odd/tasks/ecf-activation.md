@@ -73,7 +73,7 @@ RDD: off (default). Delivery strategy: ask-on-risk.
 - [x] T2 Issuer data: wizard step 1 persists all `ecf_issuer_*` fields required by
   fiscalEngine; validation mirrors fiscalEngine requirements (shared helper); tests.
 - [x] T3 e-NCF ranges: persist start and end per type; tests.
-- [ ] T4 Activation: `activateElectronicBilling()` writes `fiscal_mode='dgii_ecf'` (+ environment)
+- [x] T4 Activation: `activateElectronicBilling()` writes `fiscal_mode='dgii_ecf'` (+ environment)
   when readiness passes (cert ready in cloud, issuer complete, ranges set, plan allows);
   pure readiness function shared with Ajustes; tests.
 
@@ -100,7 +100,7 @@ RDD: off (default). Delivery strategy: ask-on-risk.
   Deploy: redeploy `validate-ecf-certificate` after applying the T1 migration (unchanged).
 
 ## Next step
-T4.
+T5 (RPC enforces range end; separate authorized SQL change).
 - 2026-10-17: migration 20261017120000_ecf_certificate_cloud_custody APPLIED to production (cloudix-db.azokia.com) with user approval; verified columns storage_ref/password_encrypted, unique index, storage INSERT policy, bucket private. Found client table grants too broad → T1d lockdown migration written, pending approval.
 - 2026-10-17: T1d lockdown migration APPLIED to production with user approval. Verified: no table grants for anon/authenticated; authenticated cannot SELECT password_encrypted/storage_ref nor INSERT/UPDATE/DELETE; can SELECT app columns; service_role keeps full access. Live test as role authenticated: app select ok, read password blocked, update is_ready blocked.
 - 2026-10-17: T1c done. Checks: `npm run typecheck`: pass; `npm test`: 150 files passed, 883 tests passed (2 skipped).
@@ -125,3 +125,7 @@ T4.
   Follow-up (not done): enforce `end` inside cloudix_reserve_ecf (RPC currently ignores the end) - needs a separate authorized SQL change.
 - Checks (T1c follow-ups + T2 + T3): `npm run typecheck`: pass; `npm test`: 153 files passed, 1 skipped, 913 tests passed (2 skipped).
 - 2026-10-17: migration 20261017140000_add_tenants_ecf_secuencias_rangos APPLIED to production with user approval. Verified: jsonb NOT NULL default '{}', 4/4 tenants have '{}', authenticated has SELECT/UPDATE on the column (wizard write path works).
+- 2026-10-17: T4 done. Checks: `npm run typecheck`: pass; `npm test`: 154 files passed, 1 skipped, 933 tests passed (2 skipped).
+  Pure `src/shared/lib/ecfActivationReadiness.ts` (plan via canUseFeature(plan,'dgii_ecf'), environment, issuer, certificate health for the selected env, >=1 valid persisted range) + `src/features/fiscal/lib/loadEcfReadiness.ts` (reads persisted state). Wizard and Ajustes selector both use it.
+  Activation payload: fiscal_mode='dgii_ecf', ecf_environment, ncf_fiscal_activo=true (cloudix_reserve_ecf raises unless true; Ajustes load already derives true for dgii_ecf), updated_at. Deactivation: fiscal_mode = tenant fiscal_mode_fallback (internal_receipt|ncf_legacy), ncf_fiscal_activo = (fallback==='ncf_legacy').
+  Fiscal modes in code: internal_receipt | ncf_legacy | dgii_ecf. Open: semantics of ncf_fiscal_activo when deactivating are derived from Ajustes' load rule, not confirmed by product.
