@@ -16,6 +16,7 @@ import {
   type EcfReadinessResult,
 } from "../../../shared/lib/ecfActivationReadiness";
 import { loadEcfActivationReadiness } from "../lib/loadEcfReadiness";
+import { buildReceptorUrls } from "../lib/receptorUrls";
 
 type EcfEnvironment = "test" | "certification" | "production";
 
@@ -91,6 +92,7 @@ export function ActivationPanel() {
   const issuerValidation = validateEcfIssuer(issuerInput);
   const contactMissing = [!company.phone.trim() && "teléfono", !company.email.trim() && "correo electrónico"].filter(Boolean) as string[];
   const companyReady = issuerValidation.complete && contactMissing.length === 0;
+  const receptorUrls = buildReceptorUrls(company.rnc);
 
   useEffect(() => {
     if (!tenantId) return;
@@ -822,9 +824,9 @@ export function ActivationPanel() {
                 {certificationStep === 7 && (
                   <div className="mt-4 flex flex-col gap-4">
                     <div className="rounded-xl border border-border bg-muted/10 p-5">
-                      <UrlCopyField label="SERVICIO DE AUTENTICACIÓN" url={`https://api.cloudix.com/rnc_${company.rnc || "EMISOR"}/fe/autenticacion/api/[semilla|ValidacionCertificado]`} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Autenticación copiada al portapapeles."); }} />
-                      <UrlCopyField label="SERVICIO DE RECEPCIÓN *" url={`https://api.cloudix.com/rnc_${company.rnc || "EMISOR"}/fe/recepcion/api/ecf`} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Recepción copiada al portapapeles."); }} />
-                      <UrlCopyField label="SERVICIO DE APROBACIÓN COMERCIAL *" url={`https://api.cloudix.com/rnc_${company.rnc || "EMISOR"}/fe/aprobacioncomercial/api/ecf`} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Aprobación Comercial copiada al portapapeles."); }} />
+                      <UrlCopyField label="SERVICIO DE AUTENTICACIÓN" url={receptorUrls.authentication} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Autenticación copiada al portapapeles."); }} />
+                      <UrlCopyField label="SERVICIO DE RECEPCIÓN *" url={receptorUrls.reception} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Recepción copiada al portapapeles."); }} />
+                      <UrlCopyField label="SERVICIO DE APROBACIÓN COMERCIAL *" url={receptorUrls.approval} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Aprobación Comercial copiada al portapapeles."); }} />
                     </div>
 
                     <button type="button" onClick={() => setMessage("Configuración de URLs guardada para el diseño.")} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#1e293b] px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-900">
@@ -900,9 +902,9 @@ export function ActivationPanel() {
                 {certificationStep === 12 && (
                   <div className="mt-4 flex flex-col gap-4">
                     <div className="rounded-xl border border-border bg-muted/10 p-5">
-                      <UrlCopyField label="SERVICIO DE AUTENTICACIÓN" url={`https://api.cloudix.com/rnc_${company.rnc || "EMISOR"}/fe/autenticacion/api/[semilla|ValidacionCertificado]`} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Autenticación copiada al portapapeles."); }} />
-                      <UrlCopyField label="SERVICIO DE RECEPCIÓN *" url={`https://api.cloudix.com/rnc_${company.rnc || "EMISOR"}/fe/recepcion/api/ecf`} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Recepción copiada al portapapeles."); }} />
-                      <UrlCopyField label="SERVICIO DE APROBACIÓN COMERCIAL *" url={`https://api.cloudix.com/rnc_${company.rnc || "EMISOR"}/fe/aprobacioncomercial/api/ecf`} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Aprobación Comercial copiada al portapapeles."); }} />
+                      <UrlCopyField label="SERVICIO DE AUTENTICACIÓN" url={receptorUrls.authentication} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Autenticación copiada al portapapeles."); }} />
+                      <UrlCopyField label="SERVICIO DE RECEPCIÓN *" url={receptorUrls.reception} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Recepción copiada al portapapeles."); }} />
+                      <UrlCopyField label="SERVICIO DE APROBACIÓN COMERCIAL *" url={receptorUrls.approval} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Aprobación Comercial copiada al portapapeles."); }} />
                     </div>
 
                     <button type="button" onClick={() => setMessage("Configuración de URLs guardada para producción en el diseño.")} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#1e293b] px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-900">

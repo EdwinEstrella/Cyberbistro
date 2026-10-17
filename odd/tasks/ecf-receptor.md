@@ -84,7 +84,7 @@ strategy before opening PRs.
 - [x] T3 `supabase/functions/ecf-receptor`: routing by `/{rnc}/fe/...`, tenant lookup by RNC,
   seed issue/validate, short-lived token, reception with signed ARECF, ACECF intake; pure logic
   extracted and unit-tested; `config.toml` `verify_jwt = false` for this function.
-- [ ] T4 ActivationPanel: real base `cloudix-ecf.azokia.com/{rnc}`; tests.
+- [x] T4 ActivationPanel: real base `cloudix-ecf.azokia.com/{rnc}`; tests.
 - [ ] T5 Deployment doc (Dokploy file mounts, required env, migration order) — deploy itself
   needs user OK.
 
@@ -145,5 +145,11 @@ strategy before opening PRs.
   `SUPABASE_URL`. NOT exercised locally: real Supabase (RPC `ecf_receptor_resolve_tenant`, storage download
   of the .p12, PostgREST insert/23505 mapping), Kong/Dokploy/Cloudflare path rewriting, DGII itself.
 
+- 2026-10-17 T4 DONE: `src/features/fiscal/lib/receptorUrls.ts` (single host constant
+  `ECF_RECEPTOR_BASE_URL`, `buildReceptorUrls`) + `receptorUrls.test.ts` (4); the 6 placeholder
+  `api.cloudix.com/rnc_...` URLs in `ActivationPanel.tsx` now use it (no `rnc_` prefix, digits only).
+  typecheck clean; `npm test`: 163 files passed, 1 failed (pre-existing `local-sync-protocol`, needs docker
+  compose; fails identically without my changes).
+
 ## Next step
-T4 ActivationPanel URLs.
+T5 deployment doc.
