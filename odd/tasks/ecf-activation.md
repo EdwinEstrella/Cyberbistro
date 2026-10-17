@@ -70,9 +70,9 @@ RDD: off (default). Delivery strategy: ask-on-risk.
   revokes table-level client grants (prod had anon/authenticated INSERT/SELECT/UPDATE/DELETE, so
   password_encrypted was readable and is_ready writable from the browser); authenticated keeps
   SELECT on non-secret columns. Client code only selects safe columns and never writes (verified).
-- [ ] T2 Issuer data: wizard step 1 persists all `ecf_issuer_*` fields required by
+- [x] T2 Issuer data: wizard step 1 persists all `ecf_issuer_*` fields required by
   fiscalEngine; validation mirrors fiscalEngine requirements (shared helper); tests.
-- [ ] T3 e-NCF ranges: persist start and end per type; tests.
+- [x] T3 e-NCF ranges: persist start and end per type; tests.
 - [ ] T4 Activation: `activateElectronicBilling()` writes `fiscal_mode='dgii_ecf'` (+ environment)
   when readiness passes (cert ready in cloud, issuer complete, ranges set, plan allows);
   pure readiness function shared with Ajustes; tests.
@@ -100,7 +100,7 @@ RDD: off (default). Delivery strategy: ask-on-risk.
   Deploy: redeploy `validate-ecf-certificate` after applying the T1 migration (unchanged).
 
 ## Next step
-T2.
+T4.
 - 2026-10-17: migration 20261017120000_ecf_certificate_cloud_custody APPLIED to production (cloudix-db.azokia.com) with user approval; verified columns storage_ref/password_encrypted, unique index, storage INSERT policy, bucket private. Found client table grants too broad → T1d lockdown migration written, pending approval.
 - 2026-10-17: T1d lockdown migration APPLIED to production with user approval. Verified: no table grants for anon/authenticated; authenticated cannot SELECT password_encrypted/storage_ref nor INSERT/UPDATE/DELETE; can SELECT app columns; service_role keeps full access. Live test as role authenticated: app select ok, read password blocked, update is_ready blocked.
 - 2026-10-17: T1c done. Checks: `npm run typecheck`: pass; `npm test`: 150 files passed, 883 tests passed (2 skipped).
@@ -109,3 +109,18 @@ T2.
   write failures are logged and never change the job outcome; DGII/invoice errors never touch the row. Edge function: `rejectUpload` removes the
   just-uploaded object on WRONG_PASSWORD/INVALID_FILE/CERTIFICATE_EXPIRED (tenant folder only, never the currently stored ref, non-fatal).
   Deploy: redeploy `validate-ecf-certificate`; restart the fiscal worker.
+- 2026-10-17: T1c follow-ups done (bb18e1b): edge function removes the just-uploaded object on SAVE_FAILED (tenant folder only, never the stored ref, non-fatal);
+  worker records retryable certificate errors only from attempt 5 (`certificateFailureAttemptThreshold`, default 5) because the worker has NO hard retry cap
+  (retryable jobs retry indefinitely), so "terminal" never occurs for them; non-retryable errors still write immediately. Deploy: redeploy edge function; restart worker.
+- 2026-10-17: T2 done (ada1578, UI in b499024). Shared pure helper `src/shared/lib/ecfIssuerRequirements.ts` (required fields, RNC 9/11 digits, email format, Spanish messages)
+  used by `fiscalEngine.isEcfIssuerConfigComplete` and ActivationPanel. ROOT CAUSE of the regression found: `SAFE_TENANT_KEYS` in localFirst lacked `email` and all `ecf_issuer_*`,
+  so any tenants update containing them was resolved `server_wins` and silently dropped; added them (+ test). Wizard step 1 again has the 5 technical issuer inputs and persists
+  them (RNC saved as digits only). Behavior change: fiscalEngine now also rejects a malformed RNC/email (falls back to fiscal_mode_fallback) instead of only checking non-empty.
+- 2026-10-17: T3 done (b499024). Range shape: keep `ncf_secuencias_por_tipo` as the numeric next-number map (read by cloudix_reserve_ecf which casts to integer, by normalizeNcfSequenceMap
+  which drops non-numeric/unknown keys, and rewritten whole by Ajustes) and add NEW column `tenants.ecf_secuencias_rangos jsonb` = {E31:{start,end}}; used = next - start (single counter).
+  A key inside the existing jsonb was rejected because Ajustes saves would erase it. Wizard writes the two columns as two separate local writes so a column deploy lag cannot block counters;
+  the load reads bounds in a separate query and ignores errors (legacy fallback start=next, size 1000). Pure `src/shared/lib/ecfSequenceRanges.ts` (restore/validate/build payload; errors:
+  start<1, end<start, next outside range, exhausted; warning when <10% remains) + tests.
+  MIGRATION FILE NOT APPLIED: supabase/migrations/20261017140000_add_tenants_ecf_secuencias_rangos.sql (additive, idempotent). Apply before deploying the app build or the ranges write stays pending in the outbox.
+  Follow-up (not done): enforce `end` inside cloudix_reserve_ecf (RPC currently ignores the end) - needs a separate authorized SQL change.
+- Checks (T1c follow-ups + T2 + T3): `npm run typecheck`: pass; `npm test`: 153 files passed, 1 skipped, 913 tests passed (2 skipped).
