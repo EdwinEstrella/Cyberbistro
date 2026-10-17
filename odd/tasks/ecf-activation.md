@@ -86,6 +86,13 @@ RDD: off (default). Delivery strategy: ask-on-risk.
   `handleSave` with the shared readiness check when saving `dgii_ecf` (T4 follow-up).
   No tenant uses dgii_ecf in prod today (3 ncf_legacy, 1 internal_receipt), so strict mode is safe.
 
+- [x] T6 Follow-ups (user-authorized 2026-10-17): (a) Ajustes `handleSave` runs the e-CF readiness
+  check only when switching INTO `dgii_ecf` (previous persisted mode != dgii_ecf), so unrelated
+  edits (logo, etc.) are never blocked; when already on dgii_ecf and readiness fails, show a
+  non-blocking warning with the reasons. (b) Range errors (`ECF_RANGE_NOT_CONFIGURED` /
+  `ECF_RANGE_EXHAUSTED`) in the local-first reservation retry path (localFirst.ts ~L1803) are
+  terminal, not retryable, and surface the clear message.
+
 ## Acceptance
 - After wizard completion, tenant row has fiscal_mode `dgii_ecf`, complete issuer fields, ranges.
 - `ecf_certificate_metadata` row has storage_ref + password_encrypted; worker
@@ -144,3 +151,6 @@ T5 (RPC enforces range end; separate authorized SQL change).
   read+increment path for e-CF. Offline: IndexedDB mirror reservation (`buildLocalTenantNcfReservation`) enforces the same range from the mirrored `ecf_secuencias_rangos`; SQLite `FiscalSequenceRepository.allocate` has no callers (not enforced).
   Ajustes `handleSave` runs the shared readiness loader when saving `dgii_ecf` and blocks with the same reasons (pure `ecfSaveBlockMessage`).
 - 2026-10-17: migration 20261017150000_enforce_ecf_sequence_range APPLIED to production with user approval. Verified: definition has both codes, SECURITY DEFINER kept, EXECUTE now only authenticated/service_role/project_admin/postgres (PUBLIC+anon removed — they previously had it; harmless since fn rejects no-auth). Live rolled-back test as authenticated member: no range -> ECF_RANGE_NOT_CONFIGURED; range 100-102 -> 100,101,102 then ECF_RANGE_EXHAUSTED, counter stays 103. Post-check: no residual test data.
+- 2026-10-17: T6 done (c6af071, ac66755). Checks: `npm run typecheck`: pass; `npm test`: 156 files passed, 1 skipped, 956 tests passed (2 skipped).
+  (a) pure `decideEcfSaveGate` (replaces `ecfSaveBlockMessage`) returns {decision: allow|allow_with_warning|block, message}; Ajustes tracks `persistedFiscalMode` (set on load and after a successful save); block only when switching into dgii_ecf (fail closed if unreadable), warning toast (amber) when already on dgii_ecf and not ready.
+  (b) `ecfRangeTerminalMessage` (instance, `code`, or code text in message/string) used in the `adjustFacturaPayloadForServer` reservation catch -> `retryStatus: 'not_retryable'` (existing outbox convention), message preserved.
