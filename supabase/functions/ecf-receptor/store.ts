@@ -25,42 +25,40 @@ export function createSupabaseStore(supabaseUrl: string, serviceRoleKey: string)
       return typeof row?.tenant_id === "string" ? row.tenant_id : null;
     },
 
-    async createSeed(tenantId, hash, expiresAt) {
-      const { error } = await db
-        .from("ecf_receptor_seeds")
-        .insert({ tenant_id: tenantId, seed_hash: hash, expires_at: expiresAt.toISOString() });
-      if (error) fail("createSeed");
-    },
-
-    async consumeSeed(tenantId, hash, now) {
-      const { data, error } = await db
-        .from("ecf_receptor_seeds")
-        .update({ consumed_at: now.toISOString() })
-        .eq("tenant_id", tenantId)
-        .eq("seed_hash", hash)
-        .is("consumed_at", null)
-        .gt("expires_at", now.toISOString())
-        .select("id");
+    async consumeSeed(tenantId, hash, expiresAt, now) {
+      // Insert-as-consumed: the unique seed_hash makes a second use fail atomically.
+      const { error } = await db.from("ecf_receptor_seeds").insert({
+        tenant_id: tenantId,
+        seed_hash: hash,
+        expires_at: expiresAt.toISOString(),
+        consumed_at: now.toISOString(),
+      });
+      if (error?.code === "23505") return false;
       if (error) fail("consumeSeed");
-      return Array.isArray(data) && data.length === 1;
+      return true;
     },
 
-    async createToken(tenantId, hash, expiresAt) {
-      const { error } = await db
-        .from("ecf_receptor_tokens")
-        .insert({ tenant_id: tenantId, token_hash: hash, expires_at: expiresAt.toISOString() });
+    async createToken(tenantId, hash, expiresAt, subjectIds) {
+      const { error } = await db.from("ecf_receptor_tokens").insert({
+        tenant_id: tenantId,
+        token_hash: hash,
+        expires_at: expiresAt.toISOString(),
+        subject_rnc: subjectIds.join(","),
+      });
       if (error) fail("createToken");
     },
 
-    async findTokenTenant(hash, now) {
+    async findToken(hash, now) {
       const { data, error } = await db
         .from("ecf_receptor_tokens")
-        .select("tenant_id")
+        .select("tenant_id, subject_rnc")
         .eq("token_hash", hash)
         .gt("expires_at", now.toISOString())
         .maybeSingle();
-      if (error) fail("findTokenTenant");
-      return typeof data?.tenant_id === "string" ? data.tenant_id : null;
+      if (error) fail("findToken");
+      if (typeof data?.tenant_id !== "string") return null;
+      const subjectIds = typeof data.subject_rnc === "string" ? data.subject_rnc.split(",").filter(Boolean) : [];
+      return { tenantId: data.tenant_id, subjectIds };
     },
 
     async hasAcceptedDocument(tenantId, emisorRnc, encf) {
@@ -86,6 +84,7 @@ export function createSupabaseStore(supabaseUrl: string, serviceRoleKey: string)
         estado: row.estado,
         motivo_no_recibido: row.motivoNoRecibido,
         xml: row.xml,
+        xml_sha256: row.xmlSha256,
         arecf_xml: row.arecfXml,
       });
       if (error?.code === "23505") return "duplicate";
@@ -93,17 +92,21 @@ export function createSupabaseStore(supabaseUrl: string, serviceRoleKey: string)
       return "inserted";
     },
 
-    async insertApproval(row: ReceivedApprovalRow) {
-      const { error } = await db.from("ecf_received_approvals").insert({
-        tenant_id: row.tenantId,
-        emisor_rnc: row.emisorRnc,
-        comprador_rnc: row.compradorRnc,
-        encf: row.encf,
-        estado: row.estado,
-        detalle_motivo_rechazo: row.detalleMotivoRechazo,
-        xml: row.xml,
-      });
-      if (error) fail("insertApproval");
+    async upsertApproval(row: ReceivedApprovalRow) {
+      const { error } = await db.from("ecf_received_approvals").upsert(
+        {
+          tenant_id: row.tenantId,
+          emisor_rnc: row.emisorRnc,
+          comprador_rnc: row.compradorRnc,
+          encf: row.encf,
+          estado: row.estado,
+          detalle_motivo_rechazo: row.detalleMotivoRechazo,
+          xml: row.xml,
+          received_at: new Date().toISOString(),
+        },
+        { onConflict: "tenant_id,emisor_rnc,encf" },
+      );
+      if (error) fail("upsertApproval");
     },
 
     async loadCertificate(tenantId): Promise<StoredCertificate | null> {

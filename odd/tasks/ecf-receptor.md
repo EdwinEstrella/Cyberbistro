@@ -87,6 +87,9 @@ strategy before opening PRs.
 - [x] T4 ActivationPanel: real base `cloudix-ecf.azokia.com/{rnc}`; tests.
 - [x] T5 Deployment doc (Dokploy file mounts, required env, migration order) — deploy itself
   needs user OK.
+- [x] T6 Security hardening from independent verification (blocker: open authentication; should-fix: size
+  limit, unbounded writes, tenant oracles; notes: RNC normalization, env guard).
+
 
 ## Progress
 - 2026-10-17: infra created and verified (see Infrastructure). Branch `feat/ecf-receptor`.
@@ -126,7 +129,7 @@ strategy before opening PRs.
 - 2026-10-17 T3 DONE. `supabase/functions/ecf-receptor/`: `protocol.ts` (pure: routing, seed/token, ARECF/ACECF
   rules), `custody.ts` (AES-GCM passphrase decrypt, fail-closed `NotConfiguredError`), `security.ts`
   (npm:dgii-ecf@1.8.0 signing + npm:xml-crypto@6.1.2 verification, requires exactly one Signature whose
-  single Reference has empty URI, cert validity checked, NO CA chain check), `handler.ts` (DI flow),
+  single Reference has empty URI, cert validity checked; no CA chain check - SUPERSEDED by T6), `handler.ts` (DI flow),
   `store.ts` (service-role Supabase), `index.ts`; `[functions.ecf-receptor] verify_jwt = false`;
   `vitest.config.ts` maps `npm:pkg@ver` imports to node_modules so edge code is tested from Node.
   Contract decisions: seed 5 min single-use (hash stored, atomic consume), token 1 h opaque random
@@ -155,7 +158,53 @@ strategy before opening PRs.
   `docker cp`, env names incl. missing `ECF_ENCRYPTION_KEY`, VERIFY_JWT implications, validate stub follow-up,
   curl smoke tests, known limits) linked from `supabase/README.md`. Docs only; checked by readback.
 
+- 2026-10-17 T6 DONE (independent verification verdict was "not safe to deploy"; all items addressed).
+  - BLOCKER 1a chain of trust: `security.ts` `createXmlSecurity({trustedCaPems})` + `chainsToAnchors` verify the
+    signer certificate chains to an anchor (roots or intermediates), reject self-signed, CA-as-signer, expired
+    links, unknown issuer; empty trust store rejects everything. Built-in anchors in `trustedCas.ts` (literal PEM,
+    SHA-256 pinned in `test/ecf-receptor-trust.test.ts`), extra anchors via `ECF_RECEPTOR_TRUSTED_CA_PEMS`.
+    Sources (INDOTEL list https://indotel.gob.do/firma-digital/entidades-de-certificacion/ -> each operator):
+    Avansi/Viafirma https://cps.viafirma.do/{AVANSICERTIFICACION,AVANSICERTIFICADOSDIGITALES,VIAFIRMAQUALIFIEDCERTIFICATES}.crt;
+    Digifirma https://digi.camarasantodomingo.do/assets/documents/certificado-raiz/{digifirma-ca-raiz,digifirma-ca-subordinada-1}.crt;
+    Novosit https://novofirma.com/img/Certificates/NOVOSIT_CA1.crt (its Uanataca global root deliberately NOT trusted);
+    Digito http://pki.digito.do/CAs/DigitoRootCA.crt. Not obtained from a primary source, so NOT trusted: ABA, OGTIC,
+    Lleidanet (global Indenova root), Thomas Signe. Test suite proves Avansi root->sub and Digifirma root->sub
+    signatures verify (authenticity evidence).
+  - DGII certification environment: DGII process docs only require a certificate from an authorized trust service
+    provider; no evidence of a separate test CA. Documented; env trust list covers it if needed.
+  - BLOCKER 1b RNC binding: `extractSubjectIdentifiers` reads ETSI `organizationIdentifier` (VATDO-<rnc>),
+    `serialNumber` (IDCDO-<cedula>) and `RNC <n>` text (Digifirma CP: organizationIdentifier = company, serialNumber =
+    signer cedula; Viafirma CP: serialNumber = cedula/passport). Stored on the token (`subject_rnc`, comma separated).
+    Reception: RNCEmisor must be in the token ids (403) AND the e-CF signature cert must chain + assert it (else
+    code 2). Approval: ACECF RNCComprador (the approving buyer) must match token and signature cert; RNCEmisor =
+    tenant. A certificate with no recognised RNC encoding cannot authenticate (fail closed).
+  - Should-fix 2: body read through a streaming byte counter (413 beyond 5 MB; 16 KB for the seed exchange).
+  - Should-fix 3: seeds are now stateless HMAC (no DB write on GET); `ecf_receptor_seeds` only records consumed
+    seeds; rejected receptions store hash+reason only (no XML) and identical repeats collapse (unique index);
+    approvals upsert per (tenant, emisor, eNCF); migration `20261017170000_ecf_receptor_hardening.sql` also
+    schedules `ecf_receptor_purge_expired` via pg_cron when installed (guarded), else documented.
+  - Should-fix 4: unknown RNC gets a normal seed; every login/token failure is the same 401 body; method checks
+    precede tenant lookups; token and tenant resolved together so unknown-RNC == bad token.
+  - Notes: RNCs normalised to digits everywhere; `index.ts` env guard wrapped in try.
+  - Evidence: migration applied (160000 then 170000, twice) on throwaway postgres:16-alpine incl. data
+    migration/dedupe and rejected-row collapse. `npm run typecheck` clean. `npm test`: 165 files passed, 1 failed
+    (`local-sync-protocol`, pre-existing, needs docker compose); 1058 tests passed. New/updated suites:
+    protocol 38, handler 28, trust 8, hardening migration 4, migration 7.
+  - Docker (`supabase/edge-runtime:v1.74.0`) end to end with a throwaway root CA injected through
+    `ECF_RECEPTOR_TRUSTED_CA_PEMS` and the real `dgii-ecf` RestApi client: trusted-chain emitter obtains a token and
+    gets a signed ARECF Estado 0; resubmission -> 3; seed replay -> 401; self-signed cert claiming the emitter RNC
+    -> 401 (no token); trusted cert with another RNC -> token but 403 on delivery; forged self-signed e-CF -> code
+    2; ACECF from the real buyer 200, from a self-signed cert 400, from a non-buyer token holder 403; unknown RNC
+    gets a seed and fails login identically to a bad login; 6 MB -> 413, 40 KB seed -> 413. The real `index.ts`
+    also boots (seed 200 without DB, no-token 401). Not exercised: real Supabase/PostgREST, Kong/Cloudflare, DGII.
+
 ## Open decisions for the user
+- Trust list completeness: ABA, OGTIC, Lleidanet and Thomas Signe CA certificates were not obtainable from a primary
+  source (JS-only pages / global roots); provide the PEMs (or confirm the DR intermediates) to add them. Confirm
+  with DGII whether its certification-environment sender certificate chains to one of the trusted CAs.
+- Certificates that state no RNC/cedula in organizationIdentifier, serialNumber or O/OU/CN text cannot log in; confirm
+  with real certificates from the CAs that tenants use (Viafirma company certificates in particular).
+- Revocation (OCSP/CRL) is not checked.
 - Trust model for incoming signatures (CA chain / DGII cert pinning) - currently integrity + validity only.
 - ACECF acknowledgement body and error body shapes are not DGII-verified.
 - Authorization to apply the migration, set `ECF_ENCRYPTION_KEY`, copy the function dir and deploy the repo

@@ -25,6 +25,7 @@ const SERVICE_SUFFIXES: Record<string, ReceptorService> = {
 export const SEED_TTL_SECONDS = 300;
 export const TOKEN_TTL_SECONDS = 3600;
 export const MAX_XML_BYTES = 5 * 1024 * 1024;
+export const MAX_SEED_BYTES = 16 * 1024;
 
 /** Digits only, 9 (company) or 11 (individual) long. Accepts the legacy `rnc_` prefix. */
 export function normalizeRnc(value: string): string | null {
@@ -45,6 +46,45 @@ export function parseReceptorPath(pathname: string): ParsedReceptorPath | null {
   if (!rnc) return null;
   const service = SERVICE_SUFFIXES[segments.slice(1).join("/").toLowerCase()];
   return service ? { rnc, service } : null;
+}
+
+/** Digits only; DGII documents and certificates write RNCs with or without separators. */
+export function digitsOnly(value: string): string {
+  return value.replace(/\D/g, "");
+}
+
+export interface CertificateNameAttribute {
+  type?: string;
+  shortName?: string;
+  name?: string;
+  value: unknown;
+}
+
+/**
+ * RNC / cedula numbers a subscriber certificate asserts. Dominican certification entities encode them as
+ * ETSI EN 319 412-1 identifiers: organizationIdentifier (2.5.4.97) `VATDO-<RNC>`, serialNumber (2.5.4.5)
+ * `IDCDO-<cedula>`, or as free text such as `RNC 130222509` in O/OU/CN. Only 9 (RNC) or 11 (cedula)
+ * digit numbers are accepted.
+ */
+export function extractSubjectIdentifiers(attributes: readonly CertificateNameAttribute[]): string[] {
+  const found = new Set<string>();
+  for (const attribute of attributes) {
+    if (typeof attribute.value !== "string") continue;
+    const value = attribute.value.trim();
+    const key = attribute.type ?? attribute.shortName ?? attribute.name ?? "";
+    const isOrgId = key === "2.5.4.97" || attribute.name === "organizationIdentifier";
+    const isSerial = key === "2.5.4.5" || attribute.shortName === "serialNumber" || attribute.name === "serialNumber";
+    if (isOrgId || isSerial) {
+      const match = value.match(/^(?:VATDO|IDCDO|RNC|DO)?[-:\s]*(\d{9}|\d{11})$/i);
+      if (match) found.add(match[1]);
+      continue;
+    }
+    if (["O", "OU", "CN"].includes(attribute.shortName ?? "") || ["organizationName", "organizationalUnitName", "commonName"].includes(attribute.name ?? "")) {
+      const match = value.match(/\bRNC[\s:#-]*(\d{9}|\d{11})\b/i);
+      if (match) found.add(match[1]);
+    }
+  }
+  return [...found];
 }
 
 export function escapeXml(value: string): string {
@@ -82,10 +122,6 @@ export function formatAcuseDateTime(now: Date): string {
   return `${p(d.getUTCDate())}-${p(d.getUTCMonth() + 1)}-${d.getUTCFullYear()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`;
 }
 
-export function generateSeedValue(): string {
-  return toBase64(crypto.getRandomValues(new Uint8Array(64)));
-}
-
 export function buildSeedXml(valor: string, now: Date): string {
   return `<?xml version="1.0" encoding="utf-8"?>
 <SemillaModel xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
@@ -116,16 +152,59 @@ export function extractSeedValue(signedSeedXml: string): string | null {
   return valor && valor.length >= 16 && valor.length <= 512 ? valor : null;
 }
 
-export interface SeedRecord {
-  hash: string;
-  expiresAt: Date;
+const SEED_LABEL = "ecf-receptor-seed-v1";
+
+async function hmacKey(secret: string, usage: "sign" | "verify"): Promise<CryptoKey> {
+  const material = new TextEncoder().encode(`${SEED_LABEL}:${secret}`);
+  const keyBytes = new Uint8Array(await crypto.subtle.digest("SHA-256", material));
+  return await crypto.subtle.importKey("raw", keyBytes, { name: "HMAC", hash: "SHA-256" }, false, [usage]);
 }
 
-export async function createSeed(now: Date, valor = generateSeedValue()): Promise<{ xml: string; record: SeedRecord }> {
-  return {
-    xml: buildSeedXml(valor, now),
-    record: { hash: await sha256Hex(valor), expiresAt: new Date(now.getTime() + SEED_TTL_SECONDS * 1000) },
-  };
+function seedMacInput(rnc: string, payload: Uint8Array): Uint8Array {
+  const prefix = new TextEncoder().encode(`${rnc}|`);
+  const joined = new Uint8Array(prefix.length + payload.length);
+  joined.set(prefix);
+  joined.set(payload, prefix.length);
+  return joined;
+}
+
+/**
+ * Stateless seed value: nonce(16) | expiry ms (8, big endian) | HMAC-SHA256(secret, rnc | nonce | expiry),
+ * base64. Issuing a seed writes nothing to the database, so unauthenticated GETs cannot grow storage and
+ * a seed for an unknown taxpayer is indistinguishable from a real one. Single use is enforced when the
+ * seed is consumed after a successful signature check.
+ */
+export async function generateSeedValueFor(rnc: string, secret: string, now: Date): Promise<string> {
+  const payload = new Uint8Array(24);
+  crypto.getRandomValues(payload.subarray(0, 16));
+  new DataView(payload.buffer).setBigUint64(16, BigInt(now.getTime() + SEED_TTL_SECONDS * 1000));
+  const mac = new Uint8Array(await crypto.subtle.sign("HMAC", await hmacKey(secret, "sign"), seedMacInput(rnc, payload)));
+  const out = new Uint8Array(payload.length + mac.length);
+  out.set(payload);
+  out.set(mac, payload.length);
+  return toBase64(out);
+}
+
+export type SeedCheck = { ok: true; expiresAt: Date } | { ok: false };
+
+export async function checkSeedValue(valor: string, rnc: string, secret: string, now: Date): Promise<SeedCheck> {
+  try {
+    if (!/^[A-Za-z0-9+/]{75}=$/.test(valor)) return { ok: false };
+    const bytes = Uint8Array.from(atob(valor), (c) => c.charCodeAt(0));
+    if (bytes.length !== 56) return { ok: false };
+    const payload = bytes.slice(0, 24);
+    const mac = bytes.slice(24);
+    const valid = await crypto.subtle.verify("HMAC", await hmacKey(secret, "verify"), mac, seedMacInput(rnc, payload));
+    if (!valid) return { ok: false };
+    const expiresAt = new Date(Number(new DataView(payload.buffer).getBigUint64(16)));
+    return expiresAt > now ? { ok: true, expiresAt } : { ok: false };
+  } catch {
+    return { ok: false };
+  }
+}
+
+export async function createSeedXml(rnc: string, secret: string, now: Date): Promise<string> {
+  return buildSeedXml(await generateSeedValueFor(rnc, secret, now), now);
 }
 
 export interface IssuedToken {
@@ -181,7 +260,7 @@ export function extractEcfFields(xml: string): EcfFields | null {
   const rncComprador = tagText(xml, "RNCComprador");
   if (!tipoEcf || !encf || !rncEmisor || !rncComprador) return null;
   if (!/^E\d{12}$/.test(encf) || !/^\d{2}$/.test(tipoEcf)) return null;
-  return { tipoEcf, encf, rncEmisor, rncComprador };
+  return { tipoEcf, encf, rncEmisor: digitsOnly(rncEmisor), rncComprador: digitsOnly(rncComprador) };
 }
 
 export type ReceptionDecision =
@@ -202,7 +281,7 @@ export function decideReception(input: ReceptionInput): ReceptionDecision {
     return { estado: "1", codigo: NoReceivedCode.SpecificationError };
   }
   if (!input.signatureValid) return { estado: "1", codigo: NoReceivedCode.InvalidSignature };
-  if (fields.rncComprador !== input.tenantRnc) return { estado: "1", codigo: NoReceivedCode.BuyerRncMismatch };
+  if (fields.rncComprador !== digitsOnly(input.tenantRnc)) return { estado: "1", codigo: NoReceivedCode.BuyerRncMismatch };
   if (input.isDuplicate) return { estado: "1", codigo: NoReceivedCode.Duplicate };
   return { estado: "0" };
 }
@@ -255,8 +334,8 @@ export function extractAcecfFields(xml: string): AcecfFields | null {
   if (!/^E\d{12}$/.test(encf) || !/^[12]$/.test(estadoText)) return null;
   const detalle = tagText(xml, "DetalleMotivoRechazo");
   return {
-    rncEmisor,
-    rncComprador,
+    rncEmisor: digitsOnly(rncEmisor),
+    rncComprador: digitsOnly(rncComprador),
     encf,
     estado: Number(estadoText),
     detalleMotivoRechazo: detalle ? detalle.slice(0, 500) : null,
@@ -271,7 +350,7 @@ export type ApprovalValidation =
 export function validateApproval(fields: AcecfFields | null, signatureValid: boolean, tenantRnc: string): ApprovalValidation {
   if (!fields) return { ok: false, code: "SPECIFICATION", message: "ACECF does not match the expected format." };
   if (!signatureValid) return { ok: false, code: "SIGNATURE", message: "ACECF digital signature is invalid." };
-  if (fields.rncEmisor !== tenantRnc) {
+  if (fields.rncEmisor !== digitsOnly(tenantRnc)) {
     return { ok: false, code: "RNC_MISMATCH", message: "RNCEmisor does not match this taxpayer." };
   }
   return { ok: true };

@@ -3,12 +3,15 @@
 import { decryptPassphrase, NotConfiguredError } from "./custody.ts";
 import {
   buildArecfXml,
-  createSeed,
+  checkSeedValue,
+  createSeedXml,
   decideReception,
+  digitsOnly,
   extractAcecfFields,
   extractEcfFields,
   extractSeedValue,
   issueToken,
+  MAX_SEED_BYTES,
   MAX_XML_BYTES,
   NoReceivedCode,
   parseBearerToken,
@@ -33,7 +36,9 @@ export interface ReceivedDocumentRow {
   tipoEcf: string | null;
   estado: 0 | 1;
   motivoNoRecibido: number | null;
-  xml: string;
+  /** Full XML is kept only for accepted documents; rejected submissions keep the hash only. */
+  xml: string | null;
+  xmlSha256: string;
   arecfXml: string;
 }
 
@@ -47,17 +52,23 @@ export interface ReceivedApprovalRow {
   xml: string;
 }
 
+export interface TokenInfo {
+  tenantId: string;
+  /** RNC / cedula numbers the token holder's certificate asserted when it authenticated. */
+  subjectIds: string[];
+}
+
 export interface ReceptorStore {
   /** Tenant id for an RNC, or null when unknown or shared by several tenants. */
   resolveTenant(rnc: string): Promise<string | null>;
-  createSeed(tenantId: string, hash: string, expiresAt: Date): Promise<void>;
-  /** Atomically marks an unused, unexpired seed as consumed. */
-  consumeSeed(tenantId: string, hash: string, now: Date): Promise<boolean>;
-  createToken(tenantId: string, hash: string, expiresAt: Date): Promise<void>;
-  findTokenTenant(hash: string, now: Date): Promise<string | null>;
+  /** Records a seed as used (single use). Returns false when it was already consumed. */
+  consumeSeed(tenantId: string, hash: string, expiresAt: Date, now: Date): Promise<boolean>;
+  createToken(tenantId: string, hash: string, expiresAt: Date, subjectIds: string[]): Promise<void>;
+  findToken(hash: string, now: Date): Promise<TokenInfo | null>;
   hasAcceptedDocument(tenantId: string, emisorRnc: string, encf: string): Promise<boolean>;
   insertDocument(row: ReceivedDocumentRow): Promise<"inserted" | "duplicate">;
-  insertApproval(row: ReceivedApprovalRow): Promise<void>;
+  /** Latest approval wins per (tenant, emisor, eNCF). */
+  upsertApproval(row: ReceivedApprovalRow): Promise<void>;
   loadCertificate(tenantId: string): Promise<StoredCertificate | null>;
 }
 
@@ -72,6 +83,8 @@ export interface ReceptorDeps {
   security: ReceptorSecurity;
   now(): Date;
   encryptionKey(): string | undefined;
+  /** Keying material for stateless seeds (never logged or returned). */
+  seedSecret(): string | undefined;
   log(event: string, detail?: Record<string, string | number>): void;
 }
 
@@ -89,37 +102,67 @@ function xml(body: string, status = 200): Response {
   return new Response(body, { status, headers: { "content-type": "application/xml; charset=utf-8" } });
 }
 
-/** Multipart `xml` file (the DGII client contract) or a raw XML body. */
-async function readXmlPayload(req: Request): Promise<string> {
+async function readLimited(req: Request, max: number): Promise<Uint8Array> {
   const declared = Number(req.headers.get("content-length") ?? "0");
-  if (declared > MAX_XML_BYTES) throw new HttpError(413, "Payload too large.", "PAYLOAD_TOO_LARGE");
-  const contentType = (req.headers.get("content-type") ?? "").toLowerCase();
+  if (declared > max) throw new HttpError(413, "Payload too large.", "PAYLOAD_TOO_LARGE");
+  if (!req.body) return new Uint8Array();
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      await reader.cancel().catch(() => undefined);
+      throw new HttpError(413, "Payload too large.", "PAYLOAD_TOO_LARGE");
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
+}
+
+/** Multipart `xml` file (the DGII client contract) or a raw XML body, capped while streaming. */
+async function readXmlPayload(req: Request, max = MAX_XML_BYTES): Promise<string> {
+  const bytes = await readLimited(req, max);
+  const contentType = req.headers.get("content-type") ?? "";
   let text: string;
   try {
-    if (contentType.includes("multipart/form-data")) {
-      const form = await req.formData();
+    if (contentType.toLowerCase().includes("multipart/form-data")) {
+      const form = await new Response(bytes, { headers: { "content-type": contentType } }).formData();
       const part = form.get("xml") ?? Array.from(form.values()).find((value) => typeof value !== "string");
       if (part === null || part === undefined) throw new HttpError(400, "Missing xml file.", "INVALID_REQUEST");
       text = typeof part === "string" ? part : await part.text();
     } else {
-      text = await req.text();
+      text = new TextDecoder().decode(bytes);
     }
   } catch (error) {
     if (error instanceof HttpError) throw error;
     throw new HttpError(400, "Could not read the request body.", "INVALID_REQUEST");
   }
   if (!text.trim()) throw new HttpError(400, "Empty XML payload.", "INVALID_REQUEST");
-  if (new TextEncoder().encode(text).byteLength > MAX_XML_BYTES) {
-    throw new HttpError(413, "Payload too large.", "PAYLOAD_TOO_LARGE");
-  }
-  return text.replace(/^﻿/, "");
+  return text.replace(/^\uFEFF/, "");
 }
 
-async function requireToken(req: Request, tenantId: string, deps: ReceptorDeps): Promise<void> {
+const AUTH_FAILED = () => new HttpError(401, "Authentication failed.", "UNAUTHENTICATED");
+
+/**
+ * Bearer token must exist, be unexpired and belong to the tenant resolved from the path. Every failure
+ * (including an unknown RNC) is the same 401, so the response does not reveal whether a taxpayer exists.
+ */
+async function requireToken(req: Request, rnc: string, deps: ReceptorDeps): Promise<TokenInfo> {
   const token = parseBearerToken(req.headers.get("authorization"));
-  if (!token) throw new HttpError(401, "Bearer token required.", "UNAUTHENTICATED");
-  const owner = await deps.store.findTokenTenant(await sha256Hex(token), deps.now());
-  if (owner !== tenantId) throw new HttpError(401, "Invalid or expired token.", "UNAUTHENTICATED");
+  if (!token) throw AUTH_FAILED();
+  const info = await deps.store.findToken(await sha256Hex(token), deps.now());
+  const tenantId = await deps.store.resolveTenant(rnc);
+  if (!info || !tenantId || info.tenantId !== tenantId) throw AUTH_FAILED();
+  return info;
 }
 
 async function signWithTenantCertificate(deps: ReceptorDeps, tenantId: string, document: string, root: string): Promise<string> {
@@ -129,65 +172,82 @@ async function signWithTenantCertificate(deps: ReceptorDeps, tenantId: string, d
   return deps.security.sign(deps.security.readSigningMaterial(stored.p12Bytes, passphrase), document, root);
 }
 
-async function handleSeed(req: Request, tenantId: string, deps: ReceptorDeps): Promise<Response> {
-  if (req.method !== "GET") throw new HttpError(405, "Method not allowed.", "METHOD_NOT_ALLOWED");
-  const now = deps.now();
-  const seed = await createSeed(now);
-  await deps.store.createSeed(tenantId, seed.record.hash, seed.record.expiresAt);
-  return xml(seed.xml);
+function requireSeedSecret(deps: ReceptorDeps): string {
+  const secret = deps.seedSecret();
+  if (!secret) throw new NotConfiguredError("Seed secret is not configured.");
+  return secret;
 }
 
-async function handleValidateSeed(req: Request, tenantId: string, deps: ReceptorDeps): Promise<Response> {
-  if (req.method !== "POST") throw new HttpError(405, "Method not allowed.", "METHOD_NOT_ALLOWED");
-  const signedSeed = await readXmlPayload(req);
+function requireMethod(req: Request, method: "GET" | "POST"): void {
+  if (req.method !== method) throw new HttpError(405, "Method not allowed.", "METHOD_NOT_ALLOWED");
+}
+
+/** Seeds are stateless and tenant-agnostic: issuing one touches no storage and reveals nothing about the RNC. */
+async function handleSeed(rnc: string, deps: ReceptorDeps): Promise<Response> {
+  return xml(await createSeedXml(rnc, requireSeedSecret(deps), deps.now()));
+}
+
+async function handleValidateSeed(req: Request, rnc: string, deps: ReceptorDeps): Promise<Response> {
+  const signedSeed = await readXmlPayload(req, MAX_SEED_BYTES);
   const now = deps.now();
+  const reject = (reason: string): never => {
+    deps.log("seed_rejected", { reason });
+    throw AUTH_FAILED();
+  };
   const valor = extractSeedValue(signedSeed);
-  if (!valor) throw new HttpError(400, "Signed seed has an unexpected format.", "INVALID_SEED");
+  if (!valor) return reject("shape");
+  const seed = await checkSeedValue(valor, rnc, requireSeedSecret(deps), now);
+  if (!seed.ok) return reject("seed");
   const verification = deps.security.verify(signedSeed, now);
-  if (!verification.valid) {
-    deps.log("seed_signature_rejected", { reason: verification.reason ?? "unknown" });
-    throw new HttpError(401, "Seed signature is invalid.", "INVALID_SIGNATURE");
-  }
-  if (!(await deps.store.consumeSeed(tenantId, await sha256Hex(valor), now))) {
-    throw new HttpError(401, "Seed is unknown, expired or already used.", "INVALID_SEED");
-  }
+  if (!verification.valid) return reject(verification.reason ?? "signature");
+  if (verification.identifiers.length === 0) return reject("no_rnc_in_certificate");
+  const tenantId = await deps.store.resolveTenant(rnc);
+  if (!tenantId) return reject("tenant");
+  if (!(await deps.store.consumeSeed(tenantId, await sha256Hex(valor), seed.expiresAt, now))) return reject("replay");
   const issued = await issueToken(now);
-  await deps.store.createToken(tenantId, issued.hash, issued.expiresAt);
+  await deps.store.createToken(tenantId, issued.hash, issued.expiresAt, verification.identifiers);
   return json(issued.response);
 }
 
-async function handleReception(req: Request, tenantId: string, tenantRnc: string, deps: ReceptorDeps): Promise<Response> {
-  if (req.method !== "POST") throw new HttpError(405, "Method not allowed.", "METHOD_NOT_ALLOWED");
-  await requireToken(req, tenantId, deps);
+async function handleReception(req: Request, rnc: string, deps: ReceptorDeps): Promise<Response> {
+  const { tenantId, subjectIds } = await requireToken(req, rnc, deps);
   const document = await readXmlPayload(req);
   const now = deps.now();
   const fields = extractEcfFields(document);
-  const signatureValid = fields !== null && deps.security.verify(document, now).valid;
-  const emisorRnc = fields?.rncEmisor ?? tagText(document, "RNCEmisor") ?? "";
+  // The authenticated party may only deliver documents it issued.
+  if (fields && !subjectIds.includes(fields.rncEmisor)) {
+    throw new HttpError(403, "The token holder is not the issuer of this document.", "FORBIDDEN");
+  }
+  const verification = fields ? deps.security.verify(document, now) : null;
+  // The document signature must come from a trusted certificate that also asserts the issuer RNC.
+  const signatureValid = !!fields && !!verification?.valid && verification.identifiers.includes(fields.rncEmisor);
+  const emisorRnc = fields?.rncEmisor ?? digitsOnly(tagText(document, "RNCEmisor") ?? "");
   const encf = fields?.encf ?? tagText(document, "eNCF") ?? "";
   const isDuplicate = fields !== null ? await deps.store.hasAcceptedDocument(tenantId, fields.rncEmisor, fields.encf) : false;
+  const xmlSha256 = await sha256Hex(document);
 
   const respond = async (decision: ReceptionDecision): Promise<{ arecf: string; row: ReceivedDocumentRow }> => {
-    const unsigned = buildArecfXml({ rncEmisor: emisorRnc, rncComprador: tenantRnc, encf, decision, now });
+    const unsigned = buildArecfXml({ rncEmisor: emisorRnc, rncComprador: rnc, encf, decision, now });
     const arecf = await signWithTenantCertificate(deps, tenantId, unsigned, "ARECF");
     return {
       arecf,
       row: {
         tenantId,
         emisorRnc,
-        compradorRnc: fields?.rncComprador ?? tagText(document, "RNCComprador") ?? "",
+        compradorRnc: fields?.rncComprador ?? digitsOnly(tagText(document, "RNCComprador") ?? ""),
         encf,
         tipoEcf: fields?.tipoEcf ?? null,
         estado: decision.estado === "0" ? 0 : 1,
         motivoNoRecibido: decision.estado === "1" ? Number(decision.codigo) : null,
-        xml: document,
+        xml: decision.estado === "0" ? document : null,
+        xmlSha256,
         arecfXml: arecf,
       },
     };
   };
 
-  let result = await respond(decideReception({ fields, signatureValid, tenantRnc, isDuplicate }));
-  if ((await deps.store.insertDocument(result.row)) === "duplicate") {
+  let result = await respond(decideReception({ fields, signatureValid, tenantRnc: rnc, isDuplicate }));
+  if ((await deps.store.insertDocument(result.row)) === "duplicate" && result.row.estado === 0) {
     // Lost a race with a concurrent identical submission: answer "duplicate" and keep an audit row.
     result = await respond({ estado: "1", codigo: NoReceivedCode.Duplicate });
     await deps.store.insertDocument(result.row);
@@ -195,17 +255,21 @@ async function handleReception(req: Request, tenantId: string, tenantRnc: string
   return xml(result.arecf);
 }
 
-async function handleApproval(req: Request, tenantId: string, tenantRnc: string, deps: ReceptorDeps): Promise<Response> {
-  if (req.method !== "POST") throw new HttpError(405, "Method not allowed.", "METHOD_NOT_ALLOWED");
-  await requireToken(req, tenantId, deps);
+async function handleApproval(req: Request, rnc: string, deps: ReceptorDeps): Promise<Response> {
+  const { tenantId, subjectIds } = await requireToken(req, rnc, deps);
   const document = await readXmlPayload(req);
   const fields = extractAcecfFields(document);
-  const signatureValid = fields !== null && deps.security.verify(document, deps.now()).valid;
-  const validation = validateApproval(fields, signatureValid, tenantRnc);
+  // The approval is issued by the buyer of the original e-CF: its certificate must assert RNCComprador.
+  if (fields && !subjectIds.includes(fields.rncComprador)) {
+    throw new HttpError(403, "The token holder is not the signer of this approval.", "FORBIDDEN");
+  }
+  const verification = fields ? deps.security.verify(document, deps.now()) : null;
+  const signatureValid = !!fields && !!verification?.valid && verification.identifiers.includes(fields.rncComprador);
+  const validation = validateApproval(fields, signatureValid, rnc);
   if (!validation.ok || !fields) {
     throw new HttpError(400, validation.ok ? "Invalid ACECF." : validation.message, validation.ok ? "SPECIFICATION" : validation.code);
   }
-  await deps.store.insertApproval({
+  await deps.store.upsertApproval({
     tenantId,
     emisorRnc: fields.rncEmisor,
     compradorRnc: fields.rncComprador,
@@ -221,17 +285,20 @@ export async function handleRequest(req: Request, deps: ReceptorDeps): Promise<R
   try {
     const route = parseReceptorPath(new URL(req.url).pathname);
     if (!route) throw new HttpError(404, "Not found.", "NOT_FOUND");
-    const tenantId = await deps.store.resolveTenant(route.rnc);
-    if (!tenantId) throw new HttpError(404, "Taxpayer not found.", "TENANT_NOT_FOUND");
+    // Method checks come before any tenant lookup so they cannot be used as an RNC oracle.
     switch (route.service) {
       case "seed":
-        return await handleSeed(req, tenantId, deps);
+        requireMethod(req, "GET");
+        return await handleSeed(route.rnc, deps);
       case "validateSeed":
-        return await handleValidateSeed(req, tenantId, deps);
+        requireMethod(req, "POST");
+        return await handleValidateSeed(req, route.rnc, deps);
       case "reception":
-        return await handleReception(req, tenantId, route.rnc, deps);
+        requireMethod(req, "POST");
+        return await handleReception(req, route.rnc, deps);
       case "approval":
-        return await handleApproval(req, tenantId, route.rnc, deps);
+        requireMethod(req, "POST");
+        return await handleApproval(req, route.rnc, deps);
     }
   } catch (error) {
     if (error instanceof HttpError) return json({ error: error.message, code: error.code }, error.status);

@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   buildArecfXml,
   buildSeedXml,
-  createSeed,
+  checkSeedValue,
+  createSeedXml,
+  digitsOnly,
+  extractSubjectIdentifiers,
+  generateSeedValueFor,
   decideReception,
   escapeXml,
   extractAcecfFields,
@@ -58,19 +62,25 @@ describe("seed and token", () => {
   const now = new Date("2026-10-17T20:00:00.000Z");
 
   it("builds the SemillaModel shape the dgii-ecf client expects", async () => {
-    const { xml, record } = await createSeed(now, "A".repeat(40));
+    const xml = await createSeedXml("133488485", "secret", now);
     expect(xml).toContain('<SemillaModel xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">');
-    expect(xml).toContain(`<valor>${"A".repeat(40)}</valor>`);
+    expect(xml).toMatch(/<valor>[A-Za-z0-9+/]{75}=<\/valor>/);
     expect(xml).toContain("<fecha>2026-10-17T16:00:00.000-04:00</fecha>");
-    expect(record.hash).toBe(await sha256Hex("A".repeat(40)));
-    expect(record.expiresAt.getTime() - now.getTime()).toBe(300_000);
+    expect(buildSeedXml("<&>", now)).toContain("<valor>&lt;&amp;&gt;</valor>");
   });
 
-  it("generates unpredictable, distinct seeds and escapes the value", async () => {
-    const a = await createSeed(now);
-    const b = await createSeed(now);
-    expect(a.record.hash).not.toBe(b.record.hash);
-    expect(buildSeedXml("<&>", now)).toContain("<valor>&lt;&amp;&gt;</valor>");
+  it("issues stateless HMAC seeds bound to the RNC, secret and expiry", async () => {
+    const valor = await generateSeedValueFor("133488485", "secret", now);
+    const ok = await checkSeedValue(valor, "133488485", "secret", now);
+    expect(ok.ok && ok.expiresAt.getTime() - now.getTime()).toBe(300_000);
+    expect((await checkSeedValue(valor, "133488485", "secret", new Date(now.getTime() + 301_000))).ok).toBe(false);
+    expect((await checkSeedValue(valor, "130862346", "secret", now)).ok).toBe(false);
+    expect((await checkSeedValue(valor, "133488485", "other-secret", now)).ok).toBe(false);
+    const tampered = valor.slice(0, 20) + (valor[20] === "A" ? "B" : "A") + valor.slice(21);
+    expect((await checkSeedValue(tampered, "133488485", "secret", now)).ok).toBe(false);
+    expect((await checkSeedValue("A".repeat(75) + "=", "133488485", "secret", now)).ok).toBe(false);
+    expect((await checkSeedValue("short", "133488485", "secret", now)).ok).toBe(false);
+    expect(valor).not.toBe(await generateSeedValueFor("133488485", "secret", now));
   });
 
   it("extracts the seed value from a signed seed and rejects other documents", () => {
@@ -100,6 +110,32 @@ describe("seed and token", () => {
 });
 
 const ecf = (over: Partial<Record<string, string>> = {}) => `<ECF><Encabezado><IdDoc><TipoeCF>${over.tipo ?? "31"}</TipoeCF><eNCF>${over.encf ?? "E310000000007"}</eNCF></IdDoc><Emisor><RNCEmisor>${over.emisor ?? "131880738"}</RNCEmisor></Emisor><Comprador><RNCComprador>${over.comprador ?? "133488485"}</RNCComprador></Comprador></Encabezado></ECF>`;
+
+describe("certificate identifiers", () => {
+  const attrs = (...items: [string, string][]) => items.map(([type, value]) => ({ type, value }));
+
+  it("reads ETSI organizationIdentifier and serialNumber encodings used by Dominican CAs", () => {
+    expect(extractSubjectIdentifiers(attrs(["2.5.4.97", "VATDO-130862346"], ["2.5.4.5", "IDCDO-00112345678"]))).toEqual(["130862346", "00112345678"]);
+    expect(extractSubjectIdentifiers(attrs(["2.5.4.5", "40212345678"]))).toEqual(["40212345678"]);
+  });
+
+  it("reads RNC embedded in O/OU/CN text", () => {
+    expect(extractSubjectIdentifiers([{ shortName: "O", value: "ACME SRL - RNC 131880738" }])).toEqual(["131880738"]);
+    expect(extractSubjectIdentifiers([{ shortName: "CN", value: "Juan RNC: 131880738" }])).toEqual(["131880738"]);
+  });
+
+  it("ignores passports, wrong lengths and unrelated attributes", () => {
+    expect(extractSubjectIdentifiers(attrs(["2.5.4.5", "PA1234567"], ["2.5.4.97", "VATDO-123"], ["2.5.4.6", "DO"]))).toEqual([]);
+    expect(extractSubjectIdentifiers([{ shortName: "L", value: "RNC 131880738" }])).toEqual([]);
+    expect(extractSubjectIdentifiers([{ shortName: "CN", value: "no number here" }])).toEqual([]);
+  });
+
+  it("normalizes RNCs to digits", () => {
+    expect(digitsOnly("1-33-48848-5")).toBe("133488485");
+    expect(extractEcfFields(ecf({ emisor: "131-88073-8", comprador: "130 862 346" }))).toMatchObject({ rncEmisor: "131880738", rncComprador: "130862346" });
+    expect(decideReception({ fields: extractEcfFields(ecf({ comprador: "133-488-485" })), signatureValid: true, tenantRnc: "133488485", isDuplicate: false })).toEqual({ estado: "0" });
+  });
+});
 
 describe("reception rules", () => {
   const base = { tenantRnc: "133488485", signatureValid: true, isDuplicate: false };
