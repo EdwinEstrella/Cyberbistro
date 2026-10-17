@@ -64,7 +64,7 @@ RDD: off (default). Delivery strategy: ask-on-risk.
   the user whether to request a new certificate, re-enter the password, or contact support;
   pure function + tests; (c) remove dead Electron IPC `validateEcfCertificate` (main + preload)
   and its local safeStorage copy.
-- [ ] T1c Worker writes certificate failure reason to `last_validation_error` (so health banner
+- [x] T1c Worker writes certificate failure reason to `last_validation_error` (so health banner
   shows signing failures); edge function deletes the just-uploaded object when validation fails.
 - [x] T1d Security lockdown: migration `20261017130000_ecf_certificate_metadata_lockdown.sql`
   revokes table-level client grants (prod had anon/authenticated INSERT/SELECT/UPDATE/DELETE, so
@@ -103,3 +103,9 @@ RDD: off (default). Delivery strategy: ask-on-risk.
 T2.
 - 2026-10-17: migration 20261017120000_ecf_certificate_cloud_custody APPLIED to production (cloudix-db.azokia.com) with user approval; verified columns storage_ref/password_encrypted, unique index, storage INSERT policy, bucket private. Found client table grants too broad → T1d lockdown migration written, pending approval.
 - 2026-10-17: T1d lockdown migration APPLIED to production with user approval. Verified: no table grants for anon/authenticated; authenticated cannot SELECT password_encrypted/storage_ref nor INSERT/UPDATE/DELETE; can SELECT app columns; service_role keeps full access. Live test as role authenticated: app select ok, read password blocked, update is_ready blocked.
+- 2026-10-17: T1c done. Checks: `npm run typecheck`: pass; `npm test`: 150 files passed, 883 tests passed (2 skipped).
+  Worker: pure `classifyCertificateFailure` (worker/fiscal/certificateFailure.ts) -> code written to `ecf_certificate_metadata.last_validation_error`
+  (by id + tenant_id) via optional repo methods `recordCertificateFailure` / `clearCertificateFailure` (clear only if non-null, after a successful signing);
+  write failures are logged and never change the job outcome; DGII/invoice errors never touch the row. Edge function: `rejectUpload` removes the
+  just-uploaded object on WRONG_PASSWORD/INVALID_FILE/CERTIFICATE_EXPIRED (tenant folder only, never the currently stored ref, non-fatal).
+  Deploy: redeploy `validate-ecf-certificate`; restart the fiscal worker.
