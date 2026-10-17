@@ -846,9 +846,9 @@
     "semantic_hash": "fef6a5484e081787b7f4f0e0dcae4beb"
   },
   "src/features/ajustes/components/Ajustes.tsx": {
-    "mtime": 1792256802.1096053,
-    "seen": 1792256860.3412232,
-    "ast_hash": "30a223c07ca0d2484588c82ff25e070d",
+    "mtime": 1792257462.8107111,
+    "seen": 1792257509.9339972,
+    "ast_hash": "77903574e9020e7284160998851194a6",
     "semantic_hash": ""
   },
   "src/features/ajustes/components/CertificateUploader.tsx": {
@@ -1902,9 +1902,9 @@
     "semantic_hash": ""
   },
   "src/shared/lib/localFirst.ts": {
-    "mtime": 1792256788.1733985,
-    "seen": 1792256860.3416228,
-    "ast_hash": "f8a071021008c0a59fdbd71ced5b6eab",
+    "mtime": 1792257473.897113,
+    "seen": 1792257509.9343278,
+    "ast_hash": "8032ea08bfbdd39249d2226f00bdec7a",
     "semantic_hash": ""
   },
   "src/shared/lib/localInvoiceReceipt.test.ts": {
@@ -6090,9 +6090,9 @@
     "semantic_hash": ""
   },
   "odd/tasks/ecf-activation.md": {
-    "mtime": 1792256558.6903007,
-    "seen": 1792256860.3428168,
-    "ast_hash": "5d4ad3e1a8803dd6ced78e094e4f437c",
+    "mtime": 1792257416.8563492,
+    "seen": 1792257509.9355023,
+    "ast_hash": "a5d804486e93f3696da61c1c912352c2",
     "semantic_hash": ""
   },
   "supabase/migrations/20261017120000_ecf_certificate_cloud_custody.sql": {
@@ -6180,15 +6180,15 @@
     "semantic_hash": ""
   },
   "src/shared/lib/ecfActivationReadiness.ts": {
-    "mtime": 1792256799.485451,
-    "seen": 1792256860.3415785,
-    "ast_hash": "2eaff7a282f4d620bb6b4f90c9f19a1a",
+    "mtime": 1792257462.8102067,
+    "seen": 1792257509.9342897,
+    "ast_hash": "5a4024cffc0beb2a86b77c9e78ab63d3",
     "semantic_hash": ""
   },
   "src/shared/lib/ecfRangeErrors.ts": {
-    "mtime": 1792256635.6723788,
-    "seen": 1792256860.3415866,
-    "ast_hash": "50f6935584f1ebcbfa42ac9749d09931",
+    "mtime": 1792257473.7890966,
+    "seen": 1792257509.934298,
+    "ast_hash": "949169496b082c2a27cd44b484f007da",
     "semantic_hash": ""
   },
   "supabase/migrations/20261017150000_enforce_ecf_sequence_range.sql": {
@@ -6204,9 +6204,9 @@
     "semantic_hash": ""
   },
   "test/ecf-range-errors.test.ts": {
-    "mtime": 1792256819.1431406,
-    "seen": 1792256860.3421128,
-    "ast_hash": "047fff6dcf17d96e16da170245e7102b",
+    "mtime": 1792257473.8982527,
+    "seen": 1792257509.9347124,
+    "ast_hash": "5a39662e727641020a1246e0d5b1a353",
     "semantic_hash": ""
   }
 }
