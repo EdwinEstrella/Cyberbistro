@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_supabase_migrations_20260611140000_create_fiscal_certificates_bucket_sql", "label": "20260611140000_create-fiscal-certificates-bucket.sql", "file_type": "code", "source_file": "supabase/migrations/20260611140000_create-fiscal-certificates-bucket.sql", "source_location": null}], "edges": []}

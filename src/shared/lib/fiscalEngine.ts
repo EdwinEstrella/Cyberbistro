@@ -4,6 +4,21 @@ import { type FiscalMode } from "./fiscalTypes";
 import { supabase } from "./supabase";
 import { type TenantBillingSettings, loadTenantBillingSettings } from "./tenantBillingSettings";
 import { isNcfTypeActive } from "./ncf";
+import { validateEcfIssuer } from "./ecfIssuerRequirements";
+
+/** True when every issuer field DGII requires is present and well formed (shared with the wizard). */
+export function isEcfIssuerConfigComplete(settings: TenantBillingSettings): boolean {
+  return validateEcfIssuer({
+    rnc: settings.rnc,
+    nombre: settings.nombre,
+    direccion: settings.direccion,
+    sucursal: settings.ecfIssuerSucursal,
+    municipio: settings.ecfIssuerMunicipio,
+    provincia: settings.ecfIssuerProvincia,
+    actividadEconomica: settings.ecfIssuerActividadEconomica,
+    correoEmisor: settings.ecfIssuerCorreoEmisor,
+  }).complete;
+}
 
 export async function resolveActiveFiscalMode(
   tenantId: string,
@@ -18,16 +33,7 @@ export async function resolveActiveFiscalMode(
     return { mode: settings.fiscalMode, certificateId: null };
   }
 
-  const isConfigComplete = Boolean(
-    settings.rnc?.trim() &&
-    settings.nombre?.trim() &&
-    settings.direccion?.trim() &&
-    settings.ecfIssuerSucursal?.trim() &&
-    settings.ecfIssuerMunicipio?.trim() &&
-    settings.ecfIssuerProvincia?.trim() &&
-    settings.ecfIssuerActividadEconomica?.trim() &&
-    settings.ecfIssuerCorreoEmisor?.trim()
-  );
+  const isConfigComplete = isEcfIssuerConfigComplete(settings);
 
   if (isOnline) {
     if (!isConfigComplete) {
