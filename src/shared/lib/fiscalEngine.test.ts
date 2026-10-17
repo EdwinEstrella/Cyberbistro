@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { resolveActiveFiscalMode, runFiscalEngine, enqueueEcfDocuments } from "./fiscalEngine";
+import { resolveActiveFiscalMode, runFiscalEngine, enqueueEcfDocuments, isEcfIssuerConfigComplete } from "./fiscalEngine";
 import { resolveNcfForNewInvoiceLocalFirst, enqueueLocalWrite } from "./localFirst";
 import { supabase } from "./supabase";
 import { loadTenantBillingSettings } from "./tenantBillingSettings";
@@ -60,6 +60,19 @@ describe("fiscalEngine", () => {
   };
 
   describe("resolveActiveFiscalMode", () => {
+    it("uses the shared issuer requirements: complete data passes, any gap or malformed value fails", () => {
+      expect(isEcfIssuerConfigComplete(validEcfSettings)).toBe(true);
+      expect(isEcfIssuerConfigComplete({ ...validEcfSettings, ecfIssuerProvincia: " " })).toBe(false);
+      expect(isEcfIssuerConfigComplete({ ...validEcfSettings, ecfIssuerCorreoEmisor: "sin-arroba" })).toBe(false);
+      expect(isEcfIssuerConfigComplete({ ...validEcfSettings, rnc: "123" })).toBe(false);
+    });
+
+    it("falls back when the issuer email is malformed even if every field is filled", async () => {
+      const settings = { ...validEcfSettings, ecfIssuerCorreoEmisor: "sin-arroba", fiscalModeFallback: "ncf_legacy" as const };
+      const result = await resolveActiveFiscalMode("tenant-1", settings, true);
+      expect(result).toEqual({ mode: "ncf_legacy", certificateId: null });
+    });
+
     it("returns internal_receipt if settings is null", async () => {
       const result = await resolveActiveFiscalMode("tenant-1", null, true);
       expect(result).toEqual({ mode: "internal_receipt", certificateId: null });

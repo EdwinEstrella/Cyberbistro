@@ -30,16 +30,6 @@ function isOpenCashDrawerPayload(v) {
   return true
 }
 
-function isEcfCertificatePayload(v) {
-  if (v === null || typeof v !== 'object') return false
-  return (
-    typeof v.tenantId === 'string' && /^[0-9a-f-]{36}$/i.test(v.tenantId) &&
-    typeof v.environment === 'string' && ['test', 'certification', 'production'].includes(v.environment) &&
-    typeof v.certificateBase64 === 'string' && v.certificateBase64.length > 0 && v.certificateBase64.length <= 20_000_000 &&
-    typeof v.passphrase === 'string' && v.passphrase.length > 0 && v.passphrase.length <= 1024
-  )
-}
-
 contextBridge.exposeInMainWorld('electronAPI', {
   minimize: () => {
     console.log('preload: minimize called')
@@ -141,12 +131,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('rnc:lookup', rnc)
   },
   openCertificationPortal: () => ipcRenderer.invoke('external:open-portal'),
-  validateEcfCertificate: (payload) => {
-    if (!isEcfCertificatePayload(payload)) {
-      return Promise.resolve({ data: null, error: 'Datos de certificado inválidos.' })
-    }
-    return ipcRenderer.invoke('ecf:validate-certificate', payload)
-  },
   checkForUpdates: () => {
     ipcRenderer.send('check-for-updates')
   },

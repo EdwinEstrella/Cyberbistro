@@ -146,6 +146,10 @@ export interface FiscalWorkerRepository {
     errorMessage: string | null;
   }>): Promise<void>;
   recordAudit(event: FiscalAuditEvent): Promise<void>;
+  /** Stores a short failure code in ecf_certificate_metadata.last_validation_error (by id + tenant). */
+  recordCertificateFailure?(target: { tenantId: string; certificateId: string }, code: string): Promise<void>;
+  /** Clears last_validation_error only when it is currently set. */
+  clearCertificateFailure?(target: { tenantId: string; certificateId: string }): Promise<void>;
   findNextRunnableJob?(now: string): Promise<string | null>;
   enqueueJob?(job: {
     tenantId: string;

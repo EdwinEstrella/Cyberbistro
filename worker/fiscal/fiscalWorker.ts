@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { getCodeSixDigitfromSignature } from "dgii-ecf";
-import { fiscalWorkerError, unknownToWorkerError } from "./errors";
+import { classifyCertificateFailure } from "./certificateFailure";
+import { fiscalWorkerError,unknownToWorkerError } from "./errors";
 import { createUnsignedEcfXml } from "./mapper";
 import type {
   CertificateCustody,
@@ -16,6 +17,9 @@ import type {
   XmlSignerAdapter,
 } from "./types";
 
+/** The worker has no hard retry cap; a retryable certificate error is recorded from this attempt on. */
+export const DEFAULT_CERTIFICATE_FAILURE_ATTEMPT_THRESHOLD = 5;
+
 export type ProcessJobResult =
   | { kind: "processed"; jobId: string; operation: FiscalOutboxOperation; status: EcfFiscalStatus }
   | { kind: "skipped"; reason: "already_done" | "locked"; jobId: string }
@@ -30,6 +34,8 @@ export class FiscalWorker {
       dgii: DgiiClientAdapter;
       workerId: string;
       now?: () => Date;
+      /** Retryable certificate errors are written to the certificate row only from this attempt on. */
+      certificateFailureAttemptThreshold?: number;
     }
   ) {}
 
@@ -53,6 +59,7 @@ export class FiscalWorker {
       return { kind: "processed", jobId: snapshot.job.id, operation: snapshot.job.operation, status };
     } catch (error) {
       const workerError = unknownToWorkerError(error, "FISCAL_WORKER_FAILED", true);
+      await this.recordCertificateFailure(snapshot, workerError);
       await this.failJob(snapshot, workerError);
       return { kind: "failed", jobId: snapshot.job.id, retryable: workerError.retryable, code: workerError.code };
     }
@@ -80,6 +87,7 @@ export class FiscalWorker {
       certificate: signingMaterial.value,
       environment: snapshot.certificate.environment,
     });
+    await this.clearCertificateFailure(snapshot.job.tenantId, certificateId);
     const xmlHash = createHash("sha256").update(signed.signedXml).digest("hex");
     const securityCode = this.resolveSecurityCode(signed.signedXml, xmlHash);
 
@@ -203,6 +211,31 @@ export class FiscalWorker {
     }
     if (snapshot.certificate && snapshot.certificate.tenantId !== tenantId) {
       throw fiscalWorkerError("TENANT_MISMATCH", "Fiscal certificate metadata does not belong to the outbox tenant.", false);
+    }
+  }
+
+  /** Best effort: a failure here is logged and never changes the job outcome. */
+  private async recordCertificateFailure(snapshot: FiscalWorkerSnapshot, error: FiscalWorkerError): Promise<void> {
+    const code = classifyCertificateFailure(error);
+    const certificateId = snapshot.document.certificateMetadataId ?? snapshot.certificate?.id ?? null;
+    if (!code || !certificateId || !this.deps.repository.recordCertificateFailure) return;
+    // A transient (retryable) failure such as a storage hiccup must not flag the certificate as broken
+    // while the job can still recover; only write it once the retries reach the threshold.
+    const threshold = this.deps.certificateFailureAttemptThreshold ?? DEFAULT_CERTIFICATE_FAILURE_ATTEMPT_THRESHOLD;
+    if (error.retryable && snapshot.job.attempts + 1 < threshold) return;
+    try {
+      await this.deps.repository.recordCertificateFailure({ tenantId: snapshot.job.tenantId, certificateId }, code);
+    } catch (writeError) {
+      console.error("[fiscal-worker] could not record certificate failure", { code, error: writeError instanceof Error ? writeError.name : "unknown" });
+    }
+  }
+
+  private async clearCertificateFailure(tenantId: string, certificateId: string): Promise<void> {
+    if (!this.deps.repository.clearCertificateFailure) return;
+    try {
+      await this.deps.repository.clearCertificateFailure({ tenantId, certificateId });
+    } catch (clearError) {
+      console.error("[fiscal-worker] could not clear certificate failure", { error: clearError instanceof Error ? clearError.name : "unknown" });
     }
   }
 

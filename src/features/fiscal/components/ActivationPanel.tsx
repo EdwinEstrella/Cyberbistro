@@ -6,6 +6,16 @@ import { NCF_E_TIPO_OPCIONES } from "../../../shared/lib/ncf";
 import { lookupBusinessByRnc } from "../../../shared/lib/dgiiRncLookup";
 import { CertificateUploader } from "../../ajustes/components/CertificateUploader";
 import { enqueueLocalWrite, getDeviceId } from "../../../shared/lib/localFirst";
+import { buildIssuerUpdatePayload, validateEcfIssuer, type EcfIssuerInput } from "../../../shared/lib/ecfIssuerRequirements";
+import { buildRangesSavePayload, restoreRanges, validateEcfRange } from "../../../shared/lib/ecfSequenceRanges";
+import {
+  buildActivationPayload,
+  buildDeactivationPayload,
+  describeActivationSuccess,
+  formatReadinessIssues,
+  type EcfReadinessResult,
+} from "../../../shared/lib/ecfActivationReadiness";
+import { loadEcfActivationReadiness } from "../lib/loadEcfReadiness";
 
 type EcfEnvironment = "test" | "certification" | "production";
 
@@ -44,7 +54,7 @@ const certificationSteps = [
 const certificationPortalUrl = "https://ecf.dgii.gov.do/certecf/portalcertificacion/Login?ReturnUrl=%2Fcertecf%2Fportalcertificacion";
 
 export function ActivationPanel() {
-  const { tenantId } = useAuth();
+  const { tenantId, plan } = useAuth();
   const [step, setStep] = useState(1);
   const [environment, setEnvironment] = useState<EcfEnvironment>("test");
   const [company, setCompany] = useState({
@@ -63,18 +73,42 @@ export function ActivationPanel() {
   const [fiscalActive, setFiscalActive] = useState(false);
   const [certificationStep, setCertificationStep] = useState(1);
   const [companyLookupLoading, setCompanyLookupLoading] = useState(false);
-  const [savedSequences, setSavedSequences] = useState<Record<string, number>>({});
+  const [savedNextRaw, setSavedNextRaw] = useState<unknown>({});
+  const [savedBoundsRaw, setSavedBoundsRaw] = useState<unknown>({});
+  const [readiness, setReadiness] = useState<EcfReadinessResult | null>(null);
+  const [readinessLoading, setReadinessLoading] = useState(false);
+
+  const issuerInput: EcfIssuerInput = {
+    rnc: company.rnc,
+    nombre: company.name,
+    direccion: company.address,
+    sucursal: company.sucursal,
+    municipio: company.municipio,
+    provincia: company.provincia,
+    actividadEconomica: company.actividad,
+    correoEmisor: company.issuerEmail,
+  };
+  const issuerValidation = validateEcfIssuer(issuerInput);
+  const contactMissing = [!company.phone.trim() && "teléfono", !company.email.trim() && "correo electrónico"].filter(Boolean) as string[];
+  const companyReady = issuerValidation.complete && contactMissing.length === 0;
 
   useEffect(() => {
     if (!tenantId) return;
+
+    // Range bounds live in a separate column; a failure here (e.g. column not deployed yet) must
+    // not block loading the rest of the company data, so it is read apart and errors are ignored.
+    const boundsPromise = Promise.resolve(
+      supabase.from("tenants").select("ecf_secuencias_rangos").eq("id", tenantId).maybeSingle()
+    ).then(({ data, error }) => (error ? null : (data?.ecf_secuencias_rangos ?? null))).catch(() => null);
 
     void supabase
       .from("tenants")
         .select("nombre_negocio, rnc, telefono, email, direccion, ecf_environment, ncf_secuencias_por_tipo, fiscal_mode, ecf_issuer_sucursal, ecf_issuer_municipio, ecf_issuer_provincia, ecf_issuer_actividad_economica, ecf_issuer_correo_emisor")
       .eq("id", tenantId)
       .maybeSingle()
-      .then(({ data, error }) => {
+      .then(async ({ data, error }) => {
         if (error || !data) return;
+        const bounds = await boundsPromise;
         setCompany({
           name: data.nombre_negocio ?? "",
           rnc: data.rnc ?? "",
@@ -88,17 +122,9 @@ export function ActivationPanel() {
           issuerEmail: data.ecf_issuer_correo_emisor ?? data.email ?? "",
         });
         setFiscalActive(data.fiscal_mode === "dgii_ecf");
-        const savedSequences = (data.ncf_secuencias_por_tipo ?? {}) as Record<string, unknown>;
-        setSavedSequences(Object.fromEntries(Object.entries(savedSequences).flatMap(([type, sequence]) => {
-          const value = Number(sequence);
-          return Number.isInteger(value) && value > 0 ? [[type, value]] : [];
-        })));
-        const fiscalSequences = Object.fromEntries(
-          NCF_E_TIPO_OPCIONES.flatMap((type) => {
-            const sequence = Number(savedSequences[type.codigo]);
-            return Number.isInteger(sequence) && sequence > 0 ? [[type.codigo, { start: sequence, end: sequence + 999, used: 0 }]] : [];
-          })
-        );
+        setSavedNextRaw(data.ncf_secuencias_por_tipo ?? {});
+        setSavedBoundsRaw(bounds ?? {});
+        const fiscalSequences = restoreRanges(NCF_E_TIPO_OPCIONES.map((type) => type.codigo), data.ncf_secuencias_por_tipo, bounds);
         if (Object.keys(fiscalSequences).length > 0) {
           setEcfSequences(fiscalSequences);
           setEnabledTypes(Object.keys(fiscalSequences));
@@ -125,9 +151,9 @@ export function ActivationPanel() {
 
   async function saveCompany() {
     if (!tenantId) return;
-    const required = [company.name, company.rnc, company.address, company.phone, company.email];
-    if (required.some((value) => !value.trim())) {
-      setMessage("Completá los datos fiscales del emisor antes de continuar.");
+    const problems = [issuerValidation.message, contactMissing.length > 0 ? `Falta completar: ${contactMissing.join(", ")}.` : ""].filter(Boolean);
+    if (problems.length > 0) {
+      setMessage(problems.join(" "));
       return;
     }
 
@@ -140,7 +166,9 @@ export function ActivationPanel() {
         rowId: tenantId,
         op: "update",
         payload: {
-          nombre_negocio: company.name.trim(), rnc: company.rnc.trim(), telefono: company.phone.trim() || null, email: company.email.trim() || null, direccion: company.address.trim(),
+          ...buildIssuerUpdatePayload(issuerInput),
+          telefono: company.phone.trim() || null,
+          email: company.email.trim() || null,
           updated_at: new Date().toISOString(),
         },
         deviceId: await getDeviceId(),
@@ -178,29 +206,39 @@ export function ActivationPanel() {
 
   async function saveSequences() {
     if (!tenantId || enabledTypes.length === 0) return;
+    const errors = enabledTypes.flatMap((type) => validateEcfRange(type, ecfSequences[type] ?? { start: 0, end: 0, used: 0 }).errors);
+    if (errors.length > 0) {
+      setMessage(errors.join(" "));
+      return;
+    }
     setSaving(true);
     setMessage("");
     try {
       const deviceId = await getDeviceId();
-      const nextSequences = { ...savedSequences };
-      for (const type of enabledTypes) {
-        const sequence = ecfSequences[type];
-        if (!sequence || !Number.isInteger(sequence.start) || !Number.isInteger(sequence.end) || sequence.start < 1 || sequence.end < sequence.start) {
-          throw new Error(`El rango de ${type} no es válido.`);
-        }
-        nextSequences[type] = sequence.start + sequence.used;
-      }
+      const payload = buildRangesSavePayload(enabledTypes, ecfSequences, savedNextRaw, savedBoundsRaw);
+      // Two writes on purpose: the next-number map is what the POS and reserve RPC read; the range
+      // bounds are separate so a deploy lag on that column can never block the counters.
       await enqueueLocalWrite({
         tenantId,
         tableName: "tenants",
         rowId: tenantId,
         op: "update",
-        payload: { ncf_secuencias_por_tipo: nextSequences, updated_at: new Date().toISOString() },
+        payload: { ncf_secuencias_por_tipo: payload.ncf_secuencias_por_tipo, updated_at: new Date().toISOString() },
         deviceId,
       });
-      setSavedSequences(nextSequences);
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "tenants",
+        rowId: tenantId,
+        op: "update",
+        payload: { ecf_secuencias_rangos: payload.ecf_secuencias_rangos, updated_at: new Date().toISOString() },
+        deviceId,
+      });
+      setSavedNextRaw(payload.ncf_secuencias_por_tipo);
+      setSavedBoundsRaw(payload.ecf_secuencias_rangos);
       setStep(4);
-      setMessage("Secuencias e-CF guardadas. La emisión continuará bloqueada hasta que la firma y el envío DGII estén disponibles.");
+      const warnings = enabledTypes.flatMap((type) => validateEcfRange(type, ecfSequences[type]).warnings);
+      setMessage(["Secuencias e-CF guardadas.", ...warnings].join(" "));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "No se pudieron guardar las secuencias e-CF.");
     } finally {
@@ -216,24 +254,75 @@ export function ActivationPanel() {
     setEcfSequences((current) => ({ ...current, [type]: current[type] || { start: 1, end: 1000, used: 0 } }));
   }
 
-  function activateElectronicBilling() {
-    const missing = [
-      !company.name && "datos de la empresa",
-      !company.rnc && "RNC del emisor",
-      !company.address && "dirección fiscal",
-      !company.phone && "teléfono",
-      !company.email && "correo electrónico",
-      !certificateReady && "certificado digital",
-      enabledTypes.length === 0 && "secuencias e-CF",
-    ].filter(Boolean);
-
-    if (missing.length > 0) {
-      setMessage(`Completá ${missing.join(", ")} antes de activar la facturación electrónica.`);
-      return;
+  async function refreshReadiness() {
+    if (!tenantId) return null;
+    setReadinessLoading(true);
+    try {
+      const loaded = await loadEcfActivationReadiness({ tenantId, plan, environment });
+      setReadiness(loaded.result);
+      return loaded;
+    } finally {
+      setReadinessLoading(false);
     }
+  }
 
-    setStep(5);
-    setMessage("Configuración persistida y validada. La emisión real permanece bloqueada hasta que el motor e-CF firme y entregue los documentos a la DGII.");
+  // Re-check the persisted state whenever the activation step is shown or the environment changes.
+  useEffect(() => {
+    if (step !== 4) return;
+    void refreshReadiness();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, environment, tenantId, plan, certificateReady]);
+
+  async function activateElectronicBilling() {
+    if (!tenantId) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      // Same shared check as Ajustes, re-read from persisted data right before writing.
+      const loaded = await refreshReadiness();
+      if (!loaded || !loaded.result.ready) {
+        setMessage(loaded ? formatReadinessIssues(loaded.result) : "No se pudo verificar la configuración.");
+        return;
+      }
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "tenants",
+        rowId: tenantId,
+        op: "update",
+        payload: buildActivationPayload(environment),
+        deviceId: await getDeviceId(),
+      });
+      setFiscalActive(true);
+      setStep(5);
+      setMessage(describeActivationSuccess(environment));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudo activar la facturación electrónica.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deactivateElectronicBilling() {
+    if (!tenantId) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      const loaded = await refreshReadiness();
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "tenants",
+        rowId: tenantId,
+        op: "update",
+        payload: buildDeactivationPayload(loaded?.fiscalModeFallback),
+        deviceId: await getDeviceId(),
+      });
+      setFiscalActive(false);
+      setMessage("Facturación electrónica desactivada. El POS vuelve al modo fiscal de respaldo configurado en Ajustes.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudo desactivar la facturación electrónica.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleCompanyLookup() {
@@ -258,11 +347,12 @@ export function ActivationPanel() {
     }
   }
 
-  function verifyConfiguration() {
-    const ready = Boolean(company.name && company.rnc && company.address && company.phone && company.email && certificateReady && enabledTypes.length > 0);
-    setMessage(ready
+  async function verifyConfiguration() {
+    const loaded = await refreshReadiness();
+    if (!loaded) return;
+    setMessage(loaded.result.ready
       ? "La configuración está completa y lista para activar la facturación electrónica."
-      : "Falta completar los datos fiscales del emisor, certificado digital o secuencias e-CF.");
+      : formatReadinessIssues(loaded.result));
   }
 
   function openCertificationPortal(event?: MouseEvent<HTMLElement>) {
@@ -344,6 +434,17 @@ export function ActivationPanel() {
                   <CompanyField label="DIRECCIÓN" value={company.address} onChange={(address) => setCompany((current) => ({ ...current, address }))} />
                 </div>
               </div>
+              <div className="mt-6 border-t border-border pt-5">
+                <h3 className="font-['Space_Grotesk',sans-serif] text-base font-bold text-foreground">Datos técnicos del emisor</h3>
+                <p className="mt-1 text-xs text-muted-foreground">La DGII los requiere para construir cada comprobante electrónico. Sin ellos el POS no puede emitir e-CF.</p>
+                <div className="mt-4 grid gap-x-5 gap-y-4 sm:grid-cols-2">
+                  <CompanyField label="SUCURSAL EMISORA" value={company.sucursal} onChange={(sucursal) => setCompany((current) => ({ ...current, sucursal }))} />
+                  <CompanyField label="MUNICIPIO" value={company.municipio} onChange={(municipio) => setCompany((current) => ({ ...current, municipio }))} />
+                  <CompanyField label="PROVINCIA" value={company.provincia} onChange={(provincia) => setCompany((current) => ({ ...current, provincia }))} />
+                  <CompanyField label="ACTIVIDAD ECONÓMICA" value={company.actividad} onChange={(actividad) => setCompany((current) => ({ ...current, actividad }))} />
+                  <CompanyField label="CORREO DEL EMISOR E-CF" value={company.issuerEmail} type="email" onChange={(issuerEmail) => setCompany((current) => ({ ...current, issuerEmail }))} />
+                </div>
+              </div>
             </div>
           )}
 
@@ -410,6 +511,7 @@ export function ActivationPanel() {
                   const remaining = Math.max(0, seq.end - next + 1);
                   const total = Math.max(1, seq.end - seq.start + 1);
                   const progress = Math.min(100, Math.max(0, (seq.used / total) * 100));
+                  const rangeCheck = validateEcfRange(type.codigo, seq);
 
                   return (
                     <div key={type.codigo} className="relative rounded-2xl border border-border bg-background px-5 py-4 shadow-sm transition-all hover:border-primary/30">
@@ -432,6 +534,8 @@ export function ActivationPanel() {
                           <div className="h-full rounded-full bg-green-500" style={{ width: `${progress}%` }} />
                         </div>
                         <div className="mt-2 flex items-center justify-end gap-3 text-[11px]">
+                          {rangeCheck.errors.map((text) => <span key={text} className="font-bold text-destructive">{text}</span>)}
+                          {rangeCheck.warnings.map((text) => <span key={text} className="font-bold text-yellow-700 dark:text-yellow-300">{text}</span>)}
                           <span className="font-bold text-green-600 dark:text-green-400">{remaining} restantes</span>
                           <span className="text-muted-foreground">próximo: <strong className="font-mono text-foreground">{type.codigo}{String(next).padStart(10, "0")}</strong></span>
                         </div>
@@ -451,13 +555,13 @@ export function ActivationPanel() {
                   <h2 className="font-['Space_Grotesk',sans-serif] text-2xl font-bold text-foreground">Activación</h2>
                   <p className="mt-2 text-sm text-muted-foreground">Revisá el estado de tu configuración antes de habilitar la emisión electrónica.</p>
                 </div>
-                <button type="button" onClick={verifyConfiguration} className="rounded-xl border border-border px-4 py-2.5 text-xs font-bold text-foreground transition-colors hover:bg-muted">
+                <button type="button" onClick={() => void verifyConfiguration()} className="rounded-xl border border-border px-4 py-2.5 text-xs font-bold text-foreground transition-colors hover:bg-muted">
                   Verificar configuración
                 </button>
               </div>
 
               <div className="mt-6 grid gap-3 md:grid-cols-3">
-                <ActivationStatus label="Empresa" detail={company.name && company.rnc && company.address && company.phone && company.email ? `${company.name} · ${company.rnc}` : "Completá los datos fiscales del emisor"} ready={Boolean(company.name && company.rnc && company.address && company.phone && company.email)} />
+                <ActivationStatus label="Empresa" detail={companyReady ? `${company.name} · ${company.rnc}` : (issuerValidation.message || "Completá los datos fiscales del emisor")} ready={companyReady} />
                 <ActivationStatus label="Certificado digital" detail={certificateReady ? "Validado y listo para firmar" : "Pendiente de cargar"} ready={certificateReady} />
                 <ActivationStatus label="Secuencias e-CF" detail={enabledTypes.length > 0 ? `${enabledTypes.length} tipo(s) configurado(s)` : "Pendiente de configurar"} ready={enabledTypes.length > 0} />
               </div>
@@ -486,14 +590,31 @@ export function ActivationPanel() {
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={activateElectronicBilling}
-                disabled={saving || fiscalActive}
-                className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-4 font-['Space_Grotesk',sans-serif] text-sm font-bold text-primary-foreground shadow-lg shadow-primary/20 transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                  <Rocket className="size-4" /> {fiscalActive ? "Facturación electrónica activa" : "Validar configuración"}
-              </button>
+              {!fiscalActive && readiness && !readiness.ready && (
+                <ul className="mt-5 space-y-1.5 rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-4 text-xs leading-relaxed text-yellow-700 dark:text-yellow-300">
+                  {readiness.missing.map((issue) => <li key={issue.code} className="flex items-start gap-2"><AlertTriangle className="mt-0.5 size-3.5 shrink-0" /> <span>{issue.message}</span></li>)}
+                </ul>
+              )}
+
+              {fiscalActive ? (
+                <button
+                  type="button"
+                  onClick={() => void deactivateElectronicBilling()}
+                  disabled={saving}
+                  className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl border border-destructive/40 px-5 py-4 font-['Space_Grotesk',sans-serif] text-sm font-bold text-destructive transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {saving ? "Guardando..." : "Desactivar facturación electrónica"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void activateElectronicBilling()}
+                  disabled={saving || readinessLoading || !readiness?.ready}
+                  className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-4 font-['Space_Grotesk',sans-serif] text-sm font-bold text-primary-foreground shadow-lg shadow-primary/20 transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Rocket className="size-4" /> {saving ? "Activando..." : readinessLoading ? "Verificando..." : "Activar facturación electrónica"}
+                </button>
+              )}
             </div>
           )}
           {step === 5 && (

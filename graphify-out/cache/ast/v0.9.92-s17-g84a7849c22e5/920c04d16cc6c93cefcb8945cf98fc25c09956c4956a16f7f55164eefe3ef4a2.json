@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_supabase_migrations_20260919211000_allow_compras_and_details_tenant_update_sql", "label": "20260919211000_allow_compras_and_details_tenant_update.sql", "file_type": "code", "source_file": "supabase/migrations/20260919211000_allow_compras_and_details_tenant_update.sql", "source_location": null}], "edges": []}
