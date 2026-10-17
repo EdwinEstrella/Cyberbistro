@@ -6,11 +6,24 @@ import {
   ECF_CERTIFICATE_FUNCTION,
   buildCertificateStoragePath,
   buildValidateRequest,
-  extractInvokeErrorMessage,
+  extractInvokeError,
   interpretValidateResponse,
   isCertificateReadyInCloud,
   validateCertificateFile,
 } from "../lib/ecfCertificateUpload";
+import {
+  describeCertificateErrorCode,
+  evaluateCertificateHealth,
+  formatCertificateDate,
+  formatCertificateHealth,
+  type CertificateHealth,
+} from "../lib/ecfCertificateHealth";
+
+class CertificateUploadError extends Error {
+  constructor(message: string, readonly code?: string) {
+    super(message);
+  }
+}
 
 export function CertificateUploader({ environment, onValidated }: { environment: string; onValidated?: () => void }) {
   const { tenantId } = useAuth();
@@ -19,19 +32,22 @@ export function CertificateUploader({ environment, onValidated }: { environment:
   const [passphrase, setPassphrase] = useState("");
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [uploadIssue, setUploadIssue] = useState<CertificateHealth | null>(null);
   const [metadata, setMetadata] = useState<any>(null);
+  const [tenantRnc, setTenantRnc] = useState<string | null>(null);
 
-  const isExpired = metadata ? new Date() > new Date(metadata.valid_until) : false;
-  const isExpiringSoon = metadata && !isExpired ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) > new Date(metadata.valid_until) : false;
+  const health = evaluateCertificateHealth({ metadata, tenantRnc, selectedEnvironment: environment });
 
   useEffect(() => {
     if (tenantId) loadMetadata();
   }, [tenantId, environment]);
 
   async function loadMetadata() {
+    const { data: tenant } = await supabase.from("tenants").select("rnc").eq("id", tenantId).maybeSingle();
+    setTenantRnc(tenant?.rnc ?? null);
     const { data } = await supabase
       .from("ecf_certificate_metadata")
-      .select("id, subject, issuer, valid_from, valid_until, is_ready, last_validation_error, created_at")
+      .select("id, environment, subject, issuer, valid_from, valid_until, is_ready, last_validation_error, created_at")
       .eq("tenant_id", tenantId)
       .eq("environment", environment)
       .order("created_at", { ascending: false })
@@ -44,6 +60,7 @@ export function CertificateUploader({ environment, onValidated }: { environment:
     if (!file || !passphrase || !tenantId) return;
     setUploading(true);
     setMessage(null);
+    setUploadIssue(null);
 
     try {
       const fileError = validateCertificateFile(file);
@@ -60,9 +77,12 @@ export function CertificateUploader({ environment, onValidated }: { environment:
       const { data, error: invokeError } = await supabase.functions.invoke(ECF_CERTIFICATE_FUNCTION, {
         body: buildValidateRequest({ environment, storagePath, passphrase }),
       });
-      if (invokeError) throw new Error(await extractInvokeErrorMessage(invokeError));
+      if (invokeError) {
+        const failure = await extractInvokeError(invokeError);
+        throw new CertificateUploadError(failure.message, failure.code);
+      }
       const outcome = interpretValidateResponse(data);
-      if (!outcome.ok) throw new Error(outcome.message);
+      if (!outcome.ok) throw new CertificateUploadError(outcome.message, outcome.code);
 
       setMessage({ type: "success", text: outcome.message });
       setFile(null);
@@ -70,7 +90,12 @@ export function CertificateUploader({ environment, onValidated }: { environment:
       await loadMetadata();
       onValidated?.();
     } catch (err: any) {
-      setMessage({ type: "error", text: err.message || "Ocurrió un error inesperado." });
+      if (err instanceof CertificateUploadError) {
+        const issue = describeCertificateErrorCode(err.code, { fallbackMessage: err.message });
+        setUploadIssue(issue);
+      } else {
+        setMessage({ type: "error", text: err.message || "Ocurrió un error inesperado." });
+      }
     } finally {
       setUploading(false);
     }
@@ -80,22 +105,26 @@ export function CertificateUploader({ environment, onValidated }: { environment:
     <div className="bg-background rounded-[16px] border border-black/5 dark:border-white/5 p-5 mt-4">
       <h4 className="text-sm font-bold text-foreground mb-4">Certificado Digital (.p12)</h4>
       
-      {isCertificateReadyInCloud(metadata) ? (
-        <div className={`border rounded-xl p-4 mb-4 ${isExpired ? "bg-red-500/10 border-red-500/20" : isExpiringSoon ? "bg-yellow-500/10 border-yellow-500/20" : "bg-green-500/10 border-green-500/20"}`}>
-          <p className={`text-sm font-bold mb-1 ${isExpired ? "text-red-600 dark:text-red-400" : isExpiringSoon ? "text-yellow-600 dark:text-yellow-400" : "text-green-600 dark:text-green-400"}`}>
-            {isExpired ? "❌ Certificado Vencido" : isExpiringSoon ? "⚠️ Certificado por Vencer" : "✅ Certificado Configurado y Listo"}
-          </p>
-          <ul className="text-xs text-muted-foreground space-y-1">
-            <li><strong>Titular:</strong> {metadata.subject}</li>
-            <li><strong>Emisor:</strong> {metadata.issuer}</li>
-            <li><strong>Válido hasta:</strong> {new Date(metadata.valid_until).toLocaleDateString()}</li>
-          </ul>
-        </div>
-      ) : (
-        <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 mb-4">
-          <p className="text-sm text-yellow-600 dark:text-yellow-400 font-bold">⚠️ No hay certificado configurado para este entorno.</p>
-        </div>
-      )}
+      {(() => {
+        const shown = uploadIssue ?? health;
+        const tone = shown.status === "error"
+          ? { box: "bg-red-500/10 border-red-500/20", text: "text-red-600 dark:text-red-400", icon: "❌" }
+          : shown.status === "warning"
+            ? { box: "bg-yellow-500/10 border-yellow-500/20", text: "text-yellow-600 dark:text-yellow-400", icon: "⚠️" }
+            : { box: "bg-green-500/10 border-green-500/20", text: "text-green-600 dark:text-green-400", icon: "✅" };
+        return (
+          <div role={shown.status === "error" ? "alert" : "status"} className={`border rounded-xl p-4 mb-4 ${tone.box}`}>
+            <p className={`text-sm font-bold mb-1 ${tone.text}`}>{tone.icon} {formatCertificateHealth(shown)}</p>
+            {!uploadIssue && metadata && isCertificateReadyInCloud(metadata) && (
+              <ul className="text-xs text-muted-foreground space-y-1">
+                <li><strong>Titular:</strong> {metadata.subject}</li>
+                <li><strong>Emisor:</strong> {metadata.issuer}</li>
+                <li><strong>Válido hasta:</strong> {formatCertificateDate(metadata.valid_until)}</li>
+              </ul>
+            )}
+          </div>
+        );
+      })()}
 
       <div className="flex flex-col gap-3">
         <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Archivo .p12</label>

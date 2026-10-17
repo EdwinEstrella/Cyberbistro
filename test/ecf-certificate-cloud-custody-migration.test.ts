@@ -33,4 +33,30 @@ describe("e-CF certificate cloud custody migration", () => {
   it("never grants the sensitive columns to client roles", () => {
     expect(migration).not.toMatch(/GRANT[^;]*password_encrypted/);
   });
+
+  it("deletes the previous certificate object only after the new one is saved", () => {
+    const readPrevious = edgeFunction.indexOf('.select("storage_ref")');
+    const upsert = edgeFunction.indexOf('.upsert({');
+    const remove = edgeFunction.indexOf('.remove([previousRef])');
+    expect(readPrevious).toBeGreaterThan(-1);
+    expect(readPrevious).toBeLessThan(upsert);
+    expect(upsert).toBeLessThan(remove);
+    expect(edgeFunction).toContain("previousRef !== storagePath");
+    expect(edgeFunction).toContain("previousRef.startsWith(`${tenantId}/`)");
+  });
+
+  it("keeps a failed deletion non-fatal and free of secrets", () => {
+    expect(edgeFunction).toMatch(/if \(removeError\) console\.warn\("[^"$]*"\);/);
+    const start = edgeFunction.indexOf(".remove([previousRef])");
+    const end = edgeFunction.indexOf("return Response.json({ success: true");
+    expect(end).toBeGreaterThan(start);
+    expect(edgeFunction.slice(start, end)).not.toContain("throw");
+  });
+
+  it("returns machine-readable error codes the UI maps to actions", () => {
+    for (const code of ["WRONG_PASSWORD", "INVALID_FILE", "CERTIFICATE_EXPIRED", "FORBIDDEN", "SAVE_FAILED"]) {
+      expect(edgeFunction).toContain(`"${code}"`);
+    }
+    expect(edgeFunction).toContain("{ error: message, code }");
+  });
 });
