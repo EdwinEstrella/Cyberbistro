@@ -73,9 +73,25 @@ RDD: off (default). Delivery strategy: ask-on-risk.
 - [x] T2 Issuer data: wizard step 1 persists all `ecf_issuer_*` fields required by
   fiscalEngine; validation mirrors fiscalEngine requirements (shared helper); tests.
 - [x] T3 e-NCF ranges: persist start and end per type; tests.
-- [ ] T4 Activation: `activateElectronicBilling()` writes `fiscal_mode='dgii_ecf'` (+ environment)
+- [x] T4 Activation: `activateElectronicBilling()` writes `fiscal_mode='dgii_ecf'` (+ environment)
   when readiness passes (cert ready in cloud, issuer complete, ranges set, plan allows);
   pure readiness function shared with Ajustes; tests.
+
+- [x] T5 Enforce authorized e-NCF range (user decision 2026-10-17: "hay que bloquear"):
+  migration replacing `cloudix_reserve_ecf(uuid,text)` (based on the LIVE prod definition) to read
+  `tenants.ecf_secuencias_rangos`; no range for the type → `ECF_RANGE_NOT_CONFIGURED`; next > end →
+  `ECF_RANGE_EXHAUSTED`; next < start → start from `start`. Client (`src/shared/lib/invoiceNcf.ts`
+  and any offline/local reservation path) enforces the same and maps both codes to clear Spanish
+  messages with the action (request new range at DGII, load it in Activación). Also gate Ajustes
+  `handleSave` with the shared readiness check when saving `dgii_ecf` (T4 follow-up).
+  No tenant uses dgii_ecf in prod today (3 ncf_legacy, 1 internal_receipt), so strict mode is safe.
+
+- [x] T6 Follow-ups (user-authorized 2026-10-17): (a) Ajustes `handleSave` runs the e-CF readiness
+  check only when switching INTO `dgii_ecf` (previous persisted mode != dgii_ecf), so unrelated
+  edits (logo, etc.) are never blocked; when already on dgii_ecf and readiness fails, show a
+  non-blocking warning with the reasons. (b) Range errors (`ECF_RANGE_NOT_CONFIGURED` /
+  `ECF_RANGE_EXHAUSTED`) in the local-first reservation retry path (localFirst.ts ~L1803) are
+  terminal, not retryable, and surface the clear message.
 
 ## Acceptance
 - After wizard completion, tenant row has fiscal_mode `dgii_ecf`, complete issuer fields, ranges.
@@ -100,7 +116,7 @@ RDD: off (default). Delivery strategy: ask-on-risk.
   Deploy: redeploy `validate-ecf-certificate` after applying the T1 migration (unchanged).
 
 ## Next step
-T4.
+T5 (RPC enforces range end; separate authorized SQL change).
 - 2026-10-17: migration 20261017120000_ecf_certificate_cloud_custody APPLIED to production (cloudix-db.azokia.com) with user approval; verified columns storage_ref/password_encrypted, unique index, storage INSERT policy, bucket private. Found client table grants too broad → T1d lockdown migration written, pending approval.
 - 2026-10-17: T1d lockdown migration APPLIED to production with user approval. Verified: no table grants for anon/authenticated; authenticated cannot SELECT password_encrypted/storage_ref nor INSERT/UPDATE/DELETE; can SELECT app columns; service_role keeps full access. Live test as role authenticated: app select ok, read password blocked, update is_ready blocked.
 - 2026-10-17: T1c done. Checks: `npm run typecheck`: pass; `npm test`: 150 files passed, 883 tests passed (2 skipped).
@@ -125,3 +141,16 @@ T4.
   Follow-up (not done): enforce `end` inside cloudix_reserve_ecf (RPC currently ignores the end) - needs a separate authorized SQL change.
 - Checks (T1c follow-ups + T2 + T3): `npm run typecheck`: pass; `npm test`: 153 files passed, 1 skipped, 913 tests passed (2 skipped).
 - 2026-10-17: migration 20261017140000_add_tenants_ecf_secuencias_rangos APPLIED to production with user approval. Verified: jsonb NOT NULL default '{}', 4/4 tenants have '{}', authenticated has SELECT/UPDATE on the column (wizard write path works).
+- 2026-10-17: T4 done. Checks: `npm run typecheck`: pass; `npm test`: 154 files passed, 1 skipped, 933 tests passed (2 skipped).
+  Pure `src/shared/lib/ecfActivationReadiness.ts` (plan via canUseFeature(plan,'dgii_ecf'), environment, issuer, certificate health for the selected env, >=1 valid persisted range) + `src/features/fiscal/lib/loadEcfReadiness.ts` (reads persisted state). Wizard and Ajustes selector both use it.
+  Activation payload: fiscal_mode='dgii_ecf', ecf_environment, ncf_fiscal_activo=true (cloudix_reserve_ecf raises unless true; Ajustes load already derives true for dgii_ecf), updated_at. Deactivation: fiscal_mode = tenant fiscal_mode_fallback (internal_receipt|ncf_legacy), ncf_fiscal_activo = (fallback==='ncf_legacy').
+  Fiscal modes in code: internal_receipt | ncf_legacy | dgii_ecf. Open: semantics of ncf_fiscal_activo when deactivating are derived from Ajustes' load rule, not confirmed by product.
+- 2026-10-17: T5 done (1d0a9f1, 8015fbd). Checks: `npm run typecheck`: pass; `npm test`: 156 files passed, 1 skipped, 948 tests passed (2 skipped).
+  MIGRATION FILE NOT APPLIED: supabase/migrations/20261017150000_enforce_ecf_sequence_range.sql (based on live prod definition; apply only after user approval, then verify with a live call).
+  Client: pure `src/shared/lib/ecfRangeErrors.ts` (typed `EcfRangeError`, RPC error mapping, `enforceEcfRangeLocally`); `invoiceNcf.ts` throws the typed error (checkout alerts err.message, no fiscal-mode fallback) and no longer uses the legacy
+  read+increment path for e-CF. Offline: IndexedDB mirror reservation (`buildLocalTenantNcfReservation`) enforces the same range from the mirrored `ecf_secuencias_rangos`; SQLite `FiscalSequenceRepository.allocate` has no callers (not enforced).
+  Ajustes `handleSave` runs the shared readiness loader when saving `dgii_ecf` and blocks with the same reasons (pure `ecfSaveBlockMessage`).
+- 2026-10-17: migration 20261017150000_enforce_ecf_sequence_range APPLIED to production with user approval. Verified: definition has both codes, SECURITY DEFINER kept, EXECUTE now only authenticated/service_role/project_admin/postgres (PUBLIC+anon removed — they previously had it; harmless since fn rejects no-auth). Live rolled-back test as authenticated member: no range -> ECF_RANGE_NOT_CONFIGURED; range 100-102 -> 100,101,102 then ECF_RANGE_EXHAUSTED, counter stays 103. Post-check: no residual test data.
+- 2026-10-17: T6 done (c6af071, ac66755). Checks: `npm run typecheck`: pass; `npm test`: 156 files passed, 1 skipped, 956 tests passed (2 skipped).
+  (a) pure `decideEcfSaveGate` (replaces `ecfSaveBlockMessage`) returns {decision: allow|allow_with_warning|block, message}; Ajustes tracks `persistedFiscalMode` (set on load and after a successful save); block only when switching into dgii_ecf (fail closed if unreadable), warning toast (amber) when already on dgii_ecf and not ready.
+  (b) `ecfRangeTerminalMessage` (instance, `code`, or code text in message/string) used in the `adjustFacturaPayloadForServer` reservation catch -> `retryStatus: 'not_retryable'` (existing outbox convention), message preserved.

@@ -2,7 +2,8 @@ import { supabase } from "./supabase";
 import { incrementTenantNcfSequence, resolveNcfForNewInvoice, type ResolvedNcfForInvoice } from "./invoiceNcf";
 import { getCloudAvailabilitySnapshot, isCloudAvailabilityFailure, isCloudAvailableForDesktop, isDesktopCloudUnavailable, isDesktopRuntime, recordCloudFailure, recordCloudSuccess } from "./cloudAvailability";
 import { commitLanEdgeCursor, getLanEdgeBaseUrl, publishLanOutboxEntry, publishLanSnapshotEntries, pullLanOutboxEntries } from "./lanEdgeClient";
-import { buildTenantNcfUpdatePayload, DEFAULT_NCF_B_CODE, getNcfSequenceColumnName, isNcfBCode, prepareNcfForFacturaInsert, normalizeNcfSequenceMap, type TenantNcfRow } from "./ncf";
+import { buildTenantNcfUpdatePayload, DEFAULT_NCF_B_CODE, getNcfSequenceColumnName, isNcfBCode, ncfPayloadFromReservedSequence, prepareNcfForFacturaInsert, normalizeNcfSequenceMap, type TenantNcfRow } from "./ncf";
+import { ecfRangeTerminalMessage, enforceEcfRangeLocally } from "./ecfRangeErrors";
 
 export const LOCAL_FIRST_MIRROR_TABLES = [
   "tenants",
@@ -418,7 +419,7 @@ export function buildLocalTenantNcfReservation(
     return { reason: "No hay datos locales de secuencia NCF para garantizar unicidad fiscal." };
   }
 
-  const payload = prepareNcfForFacturaInsert(row, preferredType);
+  let payload = prepareNcfForFacturaInsert(row, preferredType);
   if (!payload) {
     return { reason: "No hay una secuencia NCF local válida para garantizar unicidad fiscal." };
   }
@@ -437,6 +438,21 @@ export function buildLocalTenantNcfReservation(
     (row.ncf_tipo_default === tipoCodigo && typeof row.ncf_secuencia_siguiente === "number");
   if (!hasExplicitSequence) {
     return { reason: "No hay secuencia NCF local explícita para garantizar unicidad fiscal." };
+  }
+
+  // Same authorized-range rule as cloudix_reserve_ecf: never hand out an e-NCF outside the range.
+  // Typed range errors propagate (no silent fallback to another fiscal mode).
+  if (isE) {
+    const sequence = enforceEcfRangeLocally({
+      tipo: tipoCodigo,
+      currentSequence: payload.usedSequence,
+      boundsRaw: row.ecf_secuencias_rangos,
+    });
+    if (sequence !== payload.usedSequence) {
+      const adjusted = ncfPayloadFromReservedSequence(tipoCodigo, sequence);
+      if (!adjusted) return { reason: "No hay una secuencia NCF local válida para garantizar unicidad fiscal." };
+      payload = adjusted;
+    }
   }
 
   // Obtener mapa completo de secuencias e incrementarlo
@@ -791,7 +807,15 @@ async function reserveLocalNcfForNewInvoice(
       let reserved: ResolvedNcfForInvoice | null = null;
 
       getReq.onsuccess = () => {
-        const reservation = buildLocalTenantNcfReservation(getReq.result as TenantNcfRow | null, preferredType);
+        let reservation: ReturnType<typeof buildLocalTenantNcfReservation>;
+        try {
+          reservation = buildLocalTenantNcfReservation(getReq.result as TenantNcfRow | null, preferredType);
+        } catch (err) {
+          // Typed e-CF range errors: reject as-is so the checkout shows the exact action.
+          reject(err);
+          tx.abort();
+          return;
+        }
         if ("reason" in reservation) {
           reject(new Error(reservation.reason));
           tx.abort();
@@ -1804,6 +1828,9 @@ async function adjustFacturaPayloadForServer(
   try {
     resolved = await resolveNcfForNewInvoice(tenantId, preferredType);
   } catch (err) {
+    // Missing/exhausted e-NCF range cannot fix itself by retrying: terminal, keep the clear message.
+    const rangeMessage = ecfRangeTerminalMessage(err);
+    if (rangeMessage) return { reason: rangeMessage, retryStatus: "not_retryable" };
     return {
       reason: err instanceof Error ? err.message : "No se pudo reservar un NCF disponible para reintentar.",
       retryStatus: "retryable",

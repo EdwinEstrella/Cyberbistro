@@ -8,6 +8,14 @@ import { CertificateUploader } from "../../ajustes/components/CertificateUploade
 import { enqueueLocalWrite, getDeviceId } from "../../../shared/lib/localFirst";
 import { buildIssuerUpdatePayload, validateEcfIssuer, type EcfIssuerInput } from "../../../shared/lib/ecfIssuerRequirements";
 import { buildRangesSavePayload, restoreRanges, validateEcfRange } from "../../../shared/lib/ecfSequenceRanges";
+import {
+  buildActivationPayload,
+  buildDeactivationPayload,
+  describeActivationSuccess,
+  formatReadinessIssues,
+  type EcfReadinessResult,
+} from "../../../shared/lib/ecfActivationReadiness";
+import { loadEcfActivationReadiness } from "../lib/loadEcfReadiness";
 
 type EcfEnvironment = "test" | "certification" | "production";
 
@@ -46,7 +54,7 @@ const certificationSteps = [
 const certificationPortalUrl = "https://ecf.dgii.gov.do/certecf/portalcertificacion/Login?ReturnUrl=%2Fcertecf%2Fportalcertificacion";
 
 export function ActivationPanel() {
-  const { tenantId } = useAuth();
+  const { tenantId, plan } = useAuth();
   const [step, setStep] = useState(1);
   const [environment, setEnvironment] = useState<EcfEnvironment>("test");
   const [company, setCompany] = useState({
@@ -67,6 +75,8 @@ export function ActivationPanel() {
   const [companyLookupLoading, setCompanyLookupLoading] = useState(false);
   const [savedNextRaw, setSavedNextRaw] = useState<unknown>({});
   const [savedBoundsRaw, setSavedBoundsRaw] = useState<unknown>({});
+  const [readiness, setReadiness] = useState<EcfReadinessResult | null>(null);
+  const [readinessLoading, setReadinessLoading] = useState(false);
 
   const issuerInput: EcfIssuerInput = {
     rnc: company.rnc,
@@ -244,20 +254,75 @@ export function ActivationPanel() {
     setEcfSequences((current) => ({ ...current, [type]: current[type] || { start: 1, end: 1000, used: 0 } }));
   }
 
-  function activateElectronicBilling() {
-    const missing = [
-      !companyReady && (issuerValidation.message || `Falta completar: ${contactMissing.join(", ")}.`),
-      !certificateReady && "Falta el certificado digital.",
-      enabledTypes.length === 0 && "Faltan las secuencias e-CF.",
-    ].filter(Boolean);
-
-    if (missing.length > 0) {
-      setMessage(`${missing.join(" ")} Completalo antes de activar la facturación electrónica.`);
-      return;
+  async function refreshReadiness() {
+    if (!tenantId) return null;
+    setReadinessLoading(true);
+    try {
+      const loaded = await loadEcfActivationReadiness({ tenantId, plan, environment });
+      setReadiness(loaded.result);
+      return loaded;
+    } finally {
+      setReadinessLoading(false);
     }
+  }
 
-    setStep(5);
-    setMessage("Configuración persistida y validada. La emisión real permanece bloqueada hasta que el motor e-CF firme y entregue los documentos a la DGII.");
+  // Re-check the persisted state whenever the activation step is shown or the environment changes.
+  useEffect(() => {
+    if (step !== 4) return;
+    void refreshReadiness();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, environment, tenantId, plan, certificateReady]);
+
+  async function activateElectronicBilling() {
+    if (!tenantId) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      // Same shared check as Ajustes, re-read from persisted data right before writing.
+      const loaded = await refreshReadiness();
+      if (!loaded || !loaded.result.ready) {
+        setMessage(loaded ? formatReadinessIssues(loaded.result) : "No se pudo verificar la configuración.");
+        return;
+      }
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "tenants",
+        rowId: tenantId,
+        op: "update",
+        payload: buildActivationPayload(environment),
+        deviceId: await getDeviceId(),
+      });
+      setFiscalActive(true);
+      setStep(5);
+      setMessage(describeActivationSuccess(environment));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudo activar la facturación electrónica.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deactivateElectronicBilling() {
+    if (!tenantId) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      const loaded = await refreshReadiness();
+      await enqueueLocalWrite({
+        tenantId,
+        tableName: "tenants",
+        rowId: tenantId,
+        op: "update",
+        payload: buildDeactivationPayload(loaded?.fiscalModeFallback),
+        deviceId: await getDeviceId(),
+      });
+      setFiscalActive(false);
+      setMessage("Facturación electrónica desactivada. El POS vuelve al modo fiscal de respaldo configurado en Ajustes.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se pudo desactivar la facturación electrónica.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleCompanyLookup() {
@@ -282,11 +347,12 @@ export function ActivationPanel() {
     }
   }
 
-  function verifyConfiguration() {
-    const ready = companyReady && certificateReady && enabledTypes.length > 0;
-    setMessage(ready
+  async function verifyConfiguration() {
+    const loaded = await refreshReadiness();
+    if (!loaded) return;
+    setMessage(loaded.result.ready
       ? "La configuración está completa y lista para activar la facturación electrónica."
-      : [issuerValidation.message, "Revisá también el certificado digital y las secuencias e-CF."].filter(Boolean).join(" "));
+      : formatReadinessIssues(loaded.result));
   }
 
   function openCertificationPortal(event?: MouseEvent<HTMLElement>) {
@@ -489,7 +555,7 @@ export function ActivationPanel() {
                   <h2 className="font-['Space_Grotesk',sans-serif] text-2xl font-bold text-foreground">Activación</h2>
                   <p className="mt-2 text-sm text-muted-foreground">Revisá el estado de tu configuración antes de habilitar la emisión electrónica.</p>
                 </div>
-                <button type="button" onClick={verifyConfiguration} className="rounded-xl border border-border px-4 py-2.5 text-xs font-bold text-foreground transition-colors hover:bg-muted">
+                <button type="button" onClick={() => void verifyConfiguration()} className="rounded-xl border border-border px-4 py-2.5 text-xs font-bold text-foreground transition-colors hover:bg-muted">
                   Verificar configuración
                 </button>
               </div>
@@ -524,14 +590,31 @@ export function ActivationPanel() {
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={activateElectronicBilling}
-                disabled={saving || fiscalActive}
-                className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-4 font-['Space_Grotesk',sans-serif] text-sm font-bold text-primary-foreground shadow-lg shadow-primary/20 transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                  <Rocket className="size-4" /> {fiscalActive ? "Facturación electrónica activa" : "Validar configuración"}
-              </button>
+              {!fiscalActive && readiness && !readiness.ready && (
+                <ul className="mt-5 space-y-1.5 rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-4 text-xs leading-relaxed text-yellow-700 dark:text-yellow-300">
+                  {readiness.missing.map((issue) => <li key={issue.code} className="flex items-start gap-2"><AlertTriangle className="mt-0.5 size-3.5 shrink-0" /> <span>{issue.message}</span></li>)}
+                </ul>
+              )}
+
+              {fiscalActive ? (
+                <button
+                  type="button"
+                  onClick={() => void deactivateElectronicBilling()}
+                  disabled={saving}
+                  className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl border border-destructive/40 px-5 py-4 font-['Space_Grotesk',sans-serif] text-sm font-bold text-destructive transition-colors hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {saving ? "Guardando..." : "Desactivar facturación electrónica"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void activateElectronicBilling()}
+                  disabled={saving || readinessLoading || !readiness?.ready}
+                  className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-4 font-['Space_Grotesk',sans-serif] text-sm font-bold text-primary-foreground shadow-lg shadow-primary/20 transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Rocket className="size-4" /> {saving ? "Activando..." : readinessLoading ? "Verificando..." : "Activar facturación electrónica"}
+                </button>
+              )}
             </div>
           )}
           {step === 5 && (

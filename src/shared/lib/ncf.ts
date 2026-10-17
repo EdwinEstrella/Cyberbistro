@@ -48,6 +48,8 @@ export interface TenantNcfRow {
   ncf_tipo_default?: string | null;
   ncf_secuencia_siguiente?: number | null;
   ncf_secuencias_por_tipo?: NcfSequenceMap | null;
+  /** Authorized e-CF ranges `{ E31: { start, end } }` (raw jsonb); enforced for E types. */
+  ecf_secuencias_rangos?: unknown;
   ncf_b01_secuencia_siguiente?: number | null;
   ncf_b02_secuencia_siguiente?: number | null;
   ncf_b14_secuencia_siguiente?: number | null;
