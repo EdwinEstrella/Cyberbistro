@@ -15,7 +15,7 @@ describe("electron fiscal contract", () => {
     vi.unstubAllGlobals();
   });
 
-  it("validates printing and certificate IPC payloads in preload", async () => {
+  it("validates printing IPC payloads in preload and exposes no certificate IPC", async () => {
     let exposedApi: Record<string, unknown> | undefined;
     const invoke = vi.fn(async () => ({ ok: true }));
 
@@ -43,16 +43,14 @@ describe("electron fiscal contract", () => {
     expect(exposedApi).toHaveProperty("printThermal");
     expect(exposedApi).toHaveProperty("openCashDrawer");
     expect(exposedApi).toHaveProperty("ensureInputFocus");
-    expect(exposedApi).toHaveProperty("validateEcfCertificate");
+    expect(exposedApi).not.toHaveProperty("validateEcfCertificate");
     expect(exposedApi).not.toHaveProperty("uploadCertificate");
     expect(exposedApi).not.toHaveProperty("importCertificate");
 
     const printThermal = exposedApi?.printThermal as ((payload: unknown) => Promise<unknown>) | undefined;
     const openCashDrawer = exposedApi?.openCashDrawer as ((payload: unknown) => Promise<unknown>) | undefined;
-    const validateEcfCertificate = exposedApi?.validateEcfCertificate as ((payload: unknown) => Promise<unknown>) | undefined;
     expect(printThermal).toBeTypeOf("function");
     expect(openCashDrawer).toBeTypeOf("function");
-    expect(validateEcfCertificate).toBeTypeOf("function");
 
     await expect(printThermal?.({ html: "<html><body>ticket</body></html>", deviceName: "Printer", silent: true, paperWidthMm: 80 })).resolves.toEqual({ ok: true });
     expect(invoke).toHaveBeenCalledWith("print:thermal", {
@@ -64,7 +62,6 @@ describe("electron fiscal contract", () => {
 
     await expect(printThermal?.({ html: "" })).resolves.toMatchObject({ ok: false });
     await expect(openCashDrawer?.({ paperWidthMm: "wide" })).resolves.toMatchObject({ ok: false });
-    await expect(validateEcfCertificate?.({ tenantId: "invalid" })).resolves.toMatchObject({ error: expect.any(String) });
     expect(invoke).toHaveBeenCalledTimes(1);
   });
 
@@ -78,12 +75,14 @@ describe("electron fiscal contract", () => {
     expect(mainSource).toMatch(/ipcMain\.handle\(\s*['"]cash-drawer:open['"]/);
     expect(mainSource).toMatch(/nodeIntegration:\s*false/);
     expect(mainSource).toMatch(/contextIsolation:\s*true/);
-    expect(mainSource).toMatch(/ipcMain\.handle\(\s*['"]ecf:validate-certificate['"]/);
+    // Certificates now go through the cloud edge function; no local certificate IPC remains.
+    expect(mainSource).not.toMatch(/ecf:validate-certificate|safeStorage\.encryptString\(JSON/);
     expect(mainSource).not.toMatch(/ipcMain\.(?:handle|on)\(\s*['"][^'"]*(upload|import)[^'"]*(certificate|passphrase)/i);
 
     expect(preloadSource).toMatch(/printThermal:\s*\(opts: unknown\)/);
     expect(preloadSource).toMatch(/openCashDrawer:\s*\(opts\?: unknown\)/);
-    expect(preloadSource).toMatch(/validateEcfCertificate:\s*\(payload: unknown\)/);
+    expect(preloadSource).not.toMatch(/validateEcfCertificate/);
+    expect(packagedPreloadSource).not.toMatch(/validateEcfCertificate/);
     expect(preloadSource).not.toMatch(/uploadCertificate|importCertificate|getCertificate/i);
 
     expect(thermalPrintSource).toContain("api?.printThermal");
