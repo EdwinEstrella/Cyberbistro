@@ -54,6 +54,16 @@ RDD: off (default). Delivery strategy: ask-on-risk.
   `ecf_certificate_metadata` (if missing); CertificateUploader uploads via edge function
   `validate-ecf-certificate` (not direct metadata insert with is_ready=true); `is_ready` only
   set by the edge function after successful validation + storage; tests.
+- [x] T1b Certificate replacement + health (added 2026-10-17, user-authorized):
+  (a) after a new .p12 validates and its metadata row is saved, the edge function deletes the
+  previous object in `fiscal_certificates` (server-side, service role; failure to delete is logged,
+  never fails the upload); (b) certificate health status with reason + action, shown in the
+  uploader/activation UI: expired, expiring soon (<= 30 days), wrong password, RNC mismatch with
+  tenant, invalid/unsupported file, environment mismatch, worker signing failures
+  (CERTIFICATE_NOT_FOUND / decrypt errors) — each maps to a clear neutral-Spanish message telling
+  the user whether to request a new certificate, re-enter the password, or contact support;
+  pure function + tests; (c) remove dead Electron IPC `validateEcfCertificate` (main + preload)
+  and its local safeStorage copy.
 - [ ] T2 Issuer data: wizard step 1 persists all `ecf_issuer_*` fields required by
   fiscalEngine; validation mirrors fiscalEngine requirements (shared helper); tests.
 - [ ] T3 e-NCF ranges: persist start and end per type; tests.
@@ -76,6 +86,12 @@ RDD: off (default). Delivery strategy: ask-on-risk.
   Env required: edge function `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `ECF_ENCRYPTION_KEY`
   (same `ecf-v1:` key as the worker; AES-256-GCM scheme verified compatible with worker/fiscal/crypto.ts).
   Commit: see git log (feat(fiscal): upload e-CF certificate to cloud custody via edge function).
+- T1b done (3b9faec, 167477a). Checks: `npm run typecheck`: pass; `npm test`: 149 files passed, 866 tests passed (2 skipped).
+  Notes: edge function now returns `{error, code}` (WRONG_PASSWORD, INVALID_FILE, CERTIFICATE_EXPIRED, FORBIDDEN, SAVE_FAILED, ...),
+  clears `last_validation_error` on success, and deletes the previous tenant-scoped object after the upsert (non-fatal on failure).
+  Health logic: `src/features/ajustes/lib/ecfCertificateHealth.ts`, rendered as banner in CertificateUploader (also used by
+  ActivationPanel). No new columns; only existing `valid_until`, `last_validation_error`, `environment`. Electron IPC removed.
+  Deploy: redeploy `validate-ecf-certificate` after applying the T1 migration (unchanged).
 
 ## Next step
 T2.
