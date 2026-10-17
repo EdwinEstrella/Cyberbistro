@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "../../../shared/lib/supabase";
 import { canUseFeature } from "../../../shared/lib/planFeatures";
+import { formatReadinessIssues } from "../../../shared/lib/ecfActivationReadiness";
+import { loadEcfActivationReadiness } from "../../fiscal/lib/loadEcfReadiness";
 import {
   Select,
   SelectContent,
@@ -513,6 +515,19 @@ export function Ajustes() {
                     onValueChange={val => {
                       const mode = val as any;
                       if (mode === "dgii_ecf" && !canUseFeature(plan, "dgii_ecf")) {
+                        return;
+                      }
+                      if (mode === "dgii_ecf" && tenantId) {
+                        // Same readiness decision as the activation wizard.
+                        void loadEcfActivationReadiness({ tenantId, plan, environment: config.ecf_environment }).then(({ result }) => {
+                          if (result.ready) {
+                            setConfig(p => ({ ...p, fiscal_mode: mode }));
+                          } else {
+                            setSaveMessage({ type: "error", text: `No se puede activar la facturación electrónica. ${formatReadinessIssues(result)}` });
+                          }
+                        }).catch(() => {
+                          setSaveMessage({ type: "error", text: "No se pudo verificar la configuración e-CF. Intentá de nuevo." });
+                        });
                         return;
                       }
                       setConfig(p => ({ ...p, fiscal_mode: mode }));
