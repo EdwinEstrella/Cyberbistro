@@ -1,6 +1,16 @@
 import { useState, useRef, useEffect } from "react";
 import { supabase } from "../../../shared/lib/supabase";
 import { useAuth } from "../../../shared/hooks/useAuth";
+import {
+  ECF_CERTIFICATE_BUCKET,
+  ECF_CERTIFICATE_FUNCTION,
+  buildCertificateStoragePath,
+  buildValidateRequest,
+  extractInvokeErrorMessage,
+  interpretValidateResponse,
+  isCertificateReadyInCloud,
+  validateCertificateFile,
+} from "../lib/ecfCertificateUpload";
 
 export function CertificateUploader({ environment, onValidated }: { environment: string; onValidated?: () => void }) {
   const { tenantId } = useAuth();
@@ -21,7 +31,7 @@ export function CertificateUploader({ environment, onValidated }: { environment:
   async function loadMetadata() {
     const { data } = await supabase
       .from("ecf_certificate_metadata")
-      .select("*")
+      .select("id, subject, issuer, valid_from, valid_until, is_ready, last_validation_error, created_at")
       .eq("tenant_id", tenantId)
       .eq("environment", environment)
       .order("created_at", { ascending: false })
@@ -36,43 +46,25 @@ export function CertificateUploader({ environment, onValidated }: { environment:
     setMessage(null);
 
     try {
-      if (!window.electronAPI?.validateEcfCertificate) {
-        throw new Error("La validación de certificados e-CF requiere la aplicación de escritorio.");
-      }
-      const certificateBase64 = await readFileAsBase64(file);
-      const result = await window.electronAPI.validateEcfCertificate({
-        tenantId,
-        environment,
-        certificateBase64,
-        passphrase,
+      const fileError = validateCertificateFile(file);
+      if (fileError) throw new Error(fileError);
+
+      // 1. Upload the .p12 to the private tenant-scoped bucket (works on web and desktop).
+      const storagePath = buildCertificateStoragePath(tenantId, environment);
+      const { error: uploadError } = await supabase.storage
+        .from(ECF_CERTIFICATE_BUCKET)
+        .upload(storagePath, file, { contentType: "application/x-pkcs12", upsert: false });
+      if (uploadError) throw new Error("No se pudo subir el certificado: " + uploadError.message);
+
+      // 2. The edge function validates, encrypts the passphrase and marks the row ready.
+      const { data, error: invokeError } = await supabase.functions.invoke(ECF_CERTIFICATE_FUNCTION, {
+        body: buildValidateRequest({ environment, storagePath, passphrase }),
       });
-      if (result.error || !result.data) throw new Error(result.error || "No se pudo validar el certificado.");
+      if (invokeError) throw new Error(await extractInvokeErrorMessage(invokeError));
+      const outcome = interpretValidateResponse(data);
+      if (!outcome.ok) throw new Error(outcome.message);
 
-      const certificateMetadata = {
-        tenant_id: tenantId,
-        environment,
-        subject: result.data.subject,
-        issuer: result.data.issuer,
-        serial_number: result.data.serialNumber,
-        valid_from: result.data.validFrom,
-        valid_until: result.data.validUntil,
-        is_ready: true,
-        last_validation_error: null,
-      };
-      const { data: existing, error: findError } = await supabase
-        .from("ecf_certificate_metadata")
-        .select("id")
-        .eq("tenant_id", tenantId)
-        .eq("environment", environment)
-        .maybeSingle();
-      if (findError) throw new Error("No se pudo consultar el certificado existente: " + findError.message);
-
-      const { error: saveError } = existing
-        ? await supabase.from("ecf_certificate_metadata").update(certificateMetadata).eq("id", existing.id)
-        : await supabase.from("ecf_certificate_metadata").insert([certificateMetadata]);
-      if (saveError) throw new Error("No se pudo guardar los metadatos del certificado: " + saveError.message);
-
-      setMessage({ type: "success", text: "Certificado validado y protegido localmente." });
+      setMessage({ type: "success", text: outcome.message });
       setFile(null);
       setPassphrase("");
       await loadMetadata();
@@ -88,7 +80,7 @@ export function CertificateUploader({ environment, onValidated }: { environment:
     <div className="bg-background rounded-[16px] border border-black/5 dark:border-white/5 p-5 mt-4">
       <h4 className="text-sm font-bold text-foreground mb-4">Certificado Digital (.p12)</h4>
       
-      {metadata?.is_ready ? (
+      {isCertificateReadyInCloud(metadata) ? (
         <div className={`border rounded-xl p-4 mb-4 ${isExpired ? "bg-red-500/10 border-red-500/20" : isExpiringSoon ? "bg-yellow-500/10 border-yellow-500/20" : "bg-green-500/10 border-green-500/20"}`}>
           <p className={`text-sm font-bold mb-1 ${isExpired ? "text-red-600 dark:text-red-400" : isExpiringSoon ? "text-yellow-600 dark:text-yellow-400" : "text-green-600 dark:text-green-400"}`}>
             {isExpired ? "❌ Certificado Vencido" : isExpiringSoon ? "⚠️ Certificado por Vencer" : "✅ Certificado Configurado y Listo"}
@@ -148,20 +140,4 @@ export function CertificateUploader({ environment, onValidated }: { environment:
       </div>
     </div>
   );
-}
-
-function readFileAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("No se pudo leer el certificado."));
-    reader.onload = () => {
-      const result = reader.result;
-      if (typeof result !== "string") {
-        reject(new Error("No se pudo leer el certificado."));
-        return;
-      }
-      resolve(result.split(",", 2)[1] || "");
-    };
-    reader.readAsDataURL(file);
-  });
 }
