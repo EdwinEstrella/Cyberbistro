@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildCertificateStoragePath,
   buildValidateRequest,
+  extractInvokeError,
   extractInvokeErrorMessage,
   interpretValidateResponse,
   isCertificateReadyInCloud,
@@ -47,6 +48,13 @@ describe("ecfCertificateUpload", () => {
     expect(await extractInvokeErrorMessage(error)).toBe("Invalid certificate or passphrase.");
     expect(await extractInvokeErrorMessage(new Error("boom"))).toBe("No se pudo validar el certificado.");
     expect(await extractInvokeErrorMessage({ context: new Response("not json") })).toBe("No se pudo validar el certificado.");
+  });
+
+  it("keeps the error code from the edge function body", async () => {
+    expect(interpretValidateResponse({ error: "x", code: "WRONG_PASSWORD" })).toEqual({ ok: false, message: "x", code: "WRONG_PASSWORD" });
+    const error = { context: new Response(JSON.stringify({ error: "x", code: "INVALID_FILE" }), { status: 400 }) };
+    expect(await extractInvokeError(error)).toEqual({ message: "x", code: "INVALID_FILE" });
+    expect(await extractInvokeError(new Error("boom"))).toEqual({ message: "No se pudo validar el certificado." });
   });
 
   it("validates the selected file", () => {

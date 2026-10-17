@@ -20,6 +20,8 @@ export interface ValidateCertificateRequest {
 export interface CertificateUploadOutcome {
   ok: boolean;
   message: string;
+  /** Error code returned by the edge function (e.g. WRONG_PASSWORD), when any. */
+  code?: string;
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -56,12 +58,30 @@ export function buildValidateRequest(input: {
 
 /** Interprets the edge function JSON body. Success requires `success === true`. */
 export function interpretValidateResponse(data: unknown): CertificateUploadOutcome {
-  const body = (data ?? {}) as { success?: unknown; error?: unknown };
+  const body = (data ?? {}) as { success?: unknown; error?: unknown; code?: unknown };
   if (body.success === true) {
     return { ok: true, message: "Certificado validado y guardado de forma segura en la nube." };
   }
   const detail = typeof body.error === "string" && body.error ? body.error : "No se pudo validar el certificado.";
-  return { ok: false, message: detail };
+  return { ok: false, message: detail, ...(typeof body.code === "string" && body.code ? { code: body.code } : {}) };
+}
+
+/** Like extractInvokeErrorMessage but also returns the edge function error code. */
+export async function extractInvokeError(error: unknown): Promise<{ message: string; code?: string }> {
+  const fallback = "No se pudo validar el certificado.";
+  const context = (error as { context?: unknown } | null)?.context;
+  if (context && typeof (context as Response).json === "function") {
+    try {
+      const body = (await (context as Response).json()) as { error?: unknown; code?: unknown };
+      return {
+        message: typeof body?.error === "string" && body.error ? body.error : fallback,
+        ...(typeof body?.code === "string" && body.code ? { code: body.code } : {}),
+      };
+    } catch {
+      // fall through to the generic message
+    }
+  }
+  return { message: fallback };
 }
 
 /**

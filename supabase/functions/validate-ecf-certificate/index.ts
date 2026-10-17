@@ -14,7 +14,7 @@ const tenantPathPattern = new RegExp(
 const ecfKeyPattern = /^ecf-v1:([A-Za-z0-9_-]{43})$/;
 
 class HttpError extends Error {
-  constructor(readonly status: number, message: string) {
+  constructor(readonly status: number, message: string, readonly code: string = "INVALID_REQUEST") {
     super(message);
   }
 }
@@ -39,7 +39,7 @@ function decodeEcfEncryptionKey(value: string): Uint8Array {
 function getBearerToken(req: Request): string {
   const authorization = req.headers.get("authorization");
   const match = authorization?.match(/^Bearer\s+(.+)$/i);
-  if (!match) throw new HttpError(401, "Authentication is required.");
+  if (!match) throw new HttpError(401, "Authentication is required.", "UNAUTHENTICATED");
   return match[1];
 }
 
@@ -91,7 +91,7 @@ serve(async (req) => {
       global: { headers: { Authorization: `Bearer ${token}` } },
     });
     const { data: authData, error: authError } = await authClient.auth.getUser(token);
-    if (authError || !authData.user) throw new HttpError(401, "Invalid authentication token.");
+    if (authError || !authData.user) throw new HttpError(401, "Invalid authentication token.", "UNAUTHENTICATED");
 
     const { environment, storagePath, passphrase } = validateRequestPayload(await req.json());
     // The tenant is derived from the only storage namespace this function accepts.
@@ -108,20 +108,65 @@ serve(async (req) => {
 
     if (membershipError) throw new Error("Could not verify tenant authorization.");
     if (!membership || !["admin", "super_admin"].includes(membership.rol)) {
-      throw new HttpError(403, "You are not authorized to manage this tenant certificate.");
+      throw new HttpError(403, "You are not authorized to manage this tenant certificate.", "FORBIDDEN");
     }
 
     const { data: fileData, error: downloadError } = await admin.storage.from("fiscal_certificates").download(storagePath);
-    if (downloadError || !fileData) throw new Error("Could not download certificate.");
+    if (downloadError || !fileData) throw new HttpError(500, "Could not download certificate.", "DOWNLOAD_FAILED");
 
     const bytes = new Uint8Array(await fileData.arrayBuffer());
     let binary = "";
     for (const byte of bytes) binary += String.fromCharCode(byte);
-    const certInfo = new P12Reader(passphrase).getCertificateInfoFromBase64(btoa(binary));
-    if (!certInfo.subject || !certInfo.validTo) throw new HttpError(400, "Invalid certificate or passphrase.");
-    if (new Date() > new Date(certInfo.validTo)) throw new HttpError(400, "El certificado digital se encuentra vencido.");
+    // A rejected upload is removed so it does not linger in the bucket. Only objects in this
+    // tenant's folder are deleted, and never the object the metadata currently points to (the
+    // stored certificate). Failure to delete is non-fatal and the original error is still returned.
+    const rejectUpload = async (message: string, code: string): Promise<never> => {
+      try {
+        const { data: current } = await admin
+          .from("ecf_certificate_metadata")
+          .select("storage_ref")
+          .eq("tenant_id", tenantId)
+          .eq("environment", environment)
+          .maybeSingle();
+        const currentRef = typeof current?.storage_ref === "string" ? current.storage_ref : null;
+        if (storagePath.startsWith(`${tenantId}/`) && storagePath !== currentRef) {
+          const { error: cleanupError } = await admin.storage.from("fiscal_certificates").remove([storagePath]);
+          if (cleanupError) console.warn("validate-ecf-certificate: could not delete the rejected upload.");
+        }
+      } catch {
+        console.warn("validate-ecf-certificate: could not delete the rejected upload.");
+      }
+      throw new HttpError(400, message, code);
+    };
+
+    let certInfo: ReturnType<P12Reader["getCertificateInfoFromBase64"]>;
+    try {
+      certInfo = new P12Reader(passphrase).getCertificateInfoFromBase64(btoa(binary));
+    } catch (parseError) {
+      // Never echo parser details: they may include file internals. Classify only.
+      const text = parseError instanceof Error ? parseError.message : "";
+      if (/mac could not be verified|invalid password|passphrase|password/i.test(text)) {
+        return await rejectUpload("La contraseña del certificado es incorrecta.", "WRONG_PASSWORD");
+      }
+      return await rejectUpload("El archivo no es un certificado .p12 válido.", "INVALID_FILE");
+    }
+    if (!certInfo.subject || !certInfo.validTo) {
+      return await rejectUpload("El archivo no es un certificado .p12 válido.", "INVALID_FILE");
+    }
+    if (new Date() > new Date(certInfo.validTo)) {
+      return await rejectUpload("El certificado digital se encuentra vencido.", "CERTIFICATE_EXPIRED");
+    }
 
     const encryptedPassphrase = await encryptPassphrase(passphrase, requiredEnv("ECF_ENCRYPTION_KEY"));
+    // Read the previous object reference before the upsert replaces it.
+    const { data: previous } = await admin
+      .from("ecf_certificate_metadata")
+      .select("storage_ref")
+      .eq("tenant_id", tenantId)
+      .eq("environment", environment)
+      .maybeSingle();
+    const previousRef = typeof previous?.storage_ref === "string" ? previous.storage_ref : null;
+
     const { error: insertError } = await admin.from("ecf_certificate_metadata").upsert({
       tenant_id: tenantId,
       environment,
@@ -133,13 +178,34 @@ serve(async (req) => {
       storage_ref: storagePath,
       password_encrypted: encryptedPassphrase,
       is_ready: true,
+      last_validation_error: null,
     }, { onConflict: "tenant_id,environment" });
-    if (insertError) throw new Error("Could not save certificate metadata.");
+    if (insertError) {
+      // Validation passed but the metadata was not saved: the new object would be orphaned. Remove it
+      // (tenant folder only, never the stored certificate). Non-fatal; SAVE_FAILED is always returned.
+      try {
+        if (storagePath.startsWith(`${tenantId}/`) && storagePath !== previousRef) {
+          const { error: cleanupError } = await admin.storage.from("fiscal_certificates").remove([storagePath]);
+          if (cleanupError) console.warn("validate-ecf-certificate: could not delete the unsaved upload.");
+        }
+      } catch {
+        console.warn("validate-ecf-certificate: could not delete the unsaved upload.");
+      }
+      throw new HttpError(500, "Could not save certificate metadata.", "SAVE_FAILED");
+    }
+
+    // The new certificate is validated and saved: remove the replaced object. Only objects in
+    // this tenant's folder are ever deleted. Failure is non-fatal and logged without secrets.
+    if (previousRef && previousRef !== storagePath && previousRef.startsWith(`${tenantId}/`)) {
+      const { error: removeError } = await admin.storage.from("fiscal_certificates").remove([previousRef]);
+      if (removeError) console.warn("validate-ecf-certificate: could not delete the previous certificate object.");
+    }
 
     return Response.json({ success: true, subject: certInfo.subject }, { headers: corsHeaders });
   } catch (error) {
     const status = error instanceof HttpError ? error.status : 500;
     const message = error instanceof HttpError ? error.message : "Certificate validation failed.";
-    return Response.json({ error: message }, { status, headers: corsHeaders });
+    const code = error instanceof HttpError ? error.code : "INTERNAL";
+    return Response.json({ error: message, code }, { status, headers: corsHeaders });
   }
 });
