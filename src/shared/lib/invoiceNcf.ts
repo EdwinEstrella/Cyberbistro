@@ -9,6 +9,7 @@ import {
   prepareNcfForFacturaInsert,
   type TenantNcfRow,
 } from "./ncf";
+import { mapEcfRangeRpcError } from "./ecfRangeErrors";
 import { isCloudAvailabilityFailure, recordCloudFailure, recordCloudSuccess } from "./cloudAvailability";
 
 /** Resultado al emitir factura: si `sequenceReservedAtomically`, la BD ya incremento la secuencia (RPC). */
@@ -98,6 +99,13 @@ export async function resolveNcfForNewInvoice(
   const { data, error } = await supabase.rpc(rpcName, rpcArgs);
 
   if (error) {
+    // Authorized-range errors are business rules, not connectivity: surface them as typed
+    // errors and never fall back to another fiscal mode.
+    const rangeError = isEcf ? mapEcfRangeRpcError(error, String(rpcArgs.p_ncf_tipo ?? "E32")) : null;
+    if (rangeError) {
+      recordCloudSuccess();
+      throw rangeError;
+    }
     if (isCloudAvailabilityFailure(error)) recordCloudFailure();
     throw new Error(error.message || "No se pudo reservar NCF fiscal.");
   }
@@ -122,6 +130,9 @@ export async function resolveNcfForNewInvoice(
       }
     }
   }
+
+  // e-CF must come from the atomic RPC so the authorized range is always enforced.
+  if (isEcf) throw new Error("No se pudo reservar el e-NCF. Intentá de nuevo.");
 
   const legacyRow = await loadTenantNcfRow(tenantId);
   const payload = ncfPayloadForInsert(legacyRow, preferredType);

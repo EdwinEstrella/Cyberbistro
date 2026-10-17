@@ -590,6 +590,21 @@ describe("localFirst", () => {
     expect(resolveConflictForTable("tenants", entry, { id: "tenant-1" }).resolution).toBe("local_wins");
   });
 
+  it("lets the e-CF activation wizard sync issuer data, email and range bounds (not silently dropped)", () => {
+    const entry = createSyncOutboxEntry({
+      tenantId: "tenant-1", tableName: "tenants", rowId: "tenant-1", op: "update",
+      payload: {
+        email: "a@b.co",
+        ecf_issuer_sucursal: "Principal", ecf_issuer_municipio: "SD", ecf_issuer_provincia: "DN",
+        ecf_issuer_actividad_economica: "Restaurantes", ecf_issuer_correo_emisor: "fiscal@b.co",
+        ecf_secuencias_rangos: { E31: { start: 1, end: 100 } },
+        updated_at: "2026-10-17T00:00:00.000Z",
+      },
+      deviceId: "dev1",
+    });
+    expect(resolveConflictForTable("tenants", entry, { id: "tenant-1" }).resolution).toBe("local_wins");
+  });
+
   it("bloquea actualización fiscal si intentan retroceder una secuencia respecto al servidor", () => {
     const backwardPayload = {
       ncf_b01_secuencia_siguiente: 5,
