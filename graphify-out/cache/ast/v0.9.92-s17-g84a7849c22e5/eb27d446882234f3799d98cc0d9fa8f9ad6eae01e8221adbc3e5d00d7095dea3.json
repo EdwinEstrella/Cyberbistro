@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_fixtures_local_sync_postgres_init_02_synthetic_seed_sql", "label": "02-synthetic-seed.sql", "file_type": "code", "source_file": "fixtures/local-sync-postgres/init/02-synthetic-seed.sql", "source_location": null}], "edges": []}

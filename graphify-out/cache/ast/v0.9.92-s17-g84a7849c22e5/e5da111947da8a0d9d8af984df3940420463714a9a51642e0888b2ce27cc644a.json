@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_supabase_migrations_20260612161909_create_menu_items_bucket_sql", "label": "20260612161909_create-menu-items-bucket.sql", "file_type": "code", "source_file": "supabase/migrations/20260612161909_create-menu-items-bucket.sql", "source_location": null}], "edges": []}
