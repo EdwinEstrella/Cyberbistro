@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_supabase_migrations_20260523170133_allow_sales_delete_consumo_sql", "label": "20260523170133_allow-sales-delete-consumo.sql", "file_type": "code", "source_file": "supabase/migrations/20260523170133_allow-sales-delete-consumo.sql", "source_location": null}], "edges": []}
