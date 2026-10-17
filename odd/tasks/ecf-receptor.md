@@ -81,7 +81,7 @@ strategy before opening PRs.
   explain the `module is not defined` failure of `validate-ecf-certificate`.
 - [x] T2 Migration: seeds/tokens, received e-CF, received approvals tables (+ storage refs) with
   RLS and lockdown; migration test.
-- [ ] T3 `supabase/functions/ecf-receptor`: routing by `/{rnc}/fe/...`, tenant lookup by RNC,
+- [x] T3 `supabase/functions/ecf-receptor`: routing by `/{rnc}/fe/...`, tenant lookup by RNC,
   seed issue/validate, short-lived token, reception with signed ARECF, ACECF intake; pure logic
   extracted and unit-tested; `config.toml` `verify_jwt = false` for this function.
 - [ ] T4 ActivationPanel: real base `cloudix-ecf.azokia.com/{rnc}`; tests.
@@ -123,5 +123,27 @@ strategy before opening PRs.
   Pre-existing/unrelated failure: `test/local-sync-protocol.test.ts` (needs docker compose via
   `scripts/local-sync-postgres.ps1`; fails in this environment).
 
+- 2026-10-17 T3 DONE. `supabase/functions/ecf-receptor/`: `protocol.ts` (pure: routing, seed/token, ARECF/ACECF
+  rules), `custody.ts` (AES-GCM passphrase decrypt, fail-closed `NotConfiguredError`), `security.ts`
+  (npm:dgii-ecf@1.8.0 signing + npm:xml-crypto@6.1.2 verification, requires exactly one Signature whose
+  single Reference has empty URI, cert validity checked, NO CA chain check), `handler.ts` (DI flow),
+  `store.ts` (service-role Supabase), `index.ts`; `[functions.ecf-receptor] verify_jwt = false`;
+  `vitest.config.ts` maps `npm:pkg@ver` imports to node_modules so edge code is tested from Node.
+  Contract decisions: seed 5 min single-use (hash stored, atomic consume), token 1 h opaque random
+  (hash stored) returned as `{token, expira, expedido}`; reception/approval require the Bearer token of
+  the same tenant; ARECF codes 1 spec / 2 signature / 3 duplicate / 4 buyer RNC mismatch (order 1,2,4,3),
+  types 31/33/34/44 accepted; ARECF signed with the tenant certificate; missing cert or key -> 503 and
+  nothing stored; ACECF response body (`{message, encf}`) is NOT a DGII-specified shape (unverified).
+  Tests: `test/ecf-receptor-protocol.test.ts` (34), `test/ecf-receptor-handler.test.ts` (16, real signing
+  and verification with a generated .p12), migration test (7).
+  Docker (`supabase/edge-runtime:v1.74.0`, main service routing on first segment, workers cached): the
+  function files + an in-memory store ran end to end and the REAL `dgii-ecf` `RestApi` client (buyerHost mode)
+  completed: getSeedApi -> sign -> getAuthTokenApi (token/expira/expedido) -> sendElectronicDocumentApi
+  returned a signed ARECF Estado 0; resubmission -> Estado 1 code 3; tampered -> code 2; `/Semilla` mixed
+  case 200; unknown RNC 404; no token 401; signed ACECF 200. The real `index.ts` + `store.ts` graph also
+  loads in the image (esm.sh supabase-js resolved) and answers 404/500 with no leak against a dead
+  `SUPABASE_URL`. NOT exercised locally: real Supabase (RPC `ecf_receptor_resolve_tenant`, storage download
+  of the .p12, PostgREST insert/23505 mapping), Kong/Dokploy/Cloudflare path rewriting, DGII itself.
+
 ## Next step
-T3 edge function.
+T4 ActivationPanel URLs.
