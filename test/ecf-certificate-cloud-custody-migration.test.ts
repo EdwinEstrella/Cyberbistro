@@ -68,6 +68,17 @@ describe("e-CF certificate cloud custody migration", () => {
     expect(body).toMatch(/throw new HttpError\(400, message, code\);\s*\};/);
   });
 
+  it("removes the just-uploaded object when the metadata save fails, never the stored certificate", () => {
+    const start = edgeFunction.indexOf("if (insertError) {");
+    const end = edgeFunction.indexOf('"SAVE_FAILED");', start);
+    const body = edgeFunction.slice(start, end);
+    expect(start).toBeGreaterThan(-1);
+    expect(body).toContain(".remove([storagePath])");
+    expect(body).toContain("storagePath.startsWith(`${tenantId}/`)");
+    expect(body).toContain("storagePath !== previousRef");
+    expect(body).toContain("catch {");
+  });
+
   it("rejects wrong password, invalid file and expired certificates through the cleanup", () => {
     for (const code of ["WRONG_PASSWORD", "INVALID_FILE", "CERTIFICATE_EXPIRED"]) {
       expect(edgeFunction).toMatch(new RegExp(`return await rejectUpload\\([^)]*"${code}"\\)`));

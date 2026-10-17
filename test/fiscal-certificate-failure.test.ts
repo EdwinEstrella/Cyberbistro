@@ -162,8 +162,32 @@ describe("FiscalWorker certificate failure reason", () => {
     expect(repository.recordCertificateFailure).not.toHaveBeenCalled();
   });
 
+  it("does not record a retryable certificate error while retries remain", async () => {
+    const repository = repo();
+    const worker = new FiscalWorker({ repository, custody: failingCustody("STORAGE_DOWNLOAD_FAILED", "Not Found", true), signer, dgii: dgiiOk, workerId: "w", now: () => now });
+
+    const result = await worker.processJob("job-1");
+
+    expect(result).toMatchObject({ kind: "failed", retryable: true, code: "STORAGE_DOWNLOAD_FAILED" });
+    expect(repository.updateJob).toHaveBeenCalledWith("job-1", expect.objectContaining({ status: "retryable_error" }));
+    expect(repository.recordCertificateFailure).not.toHaveBeenCalled();
+  });
+
+  it("records a retryable certificate error once the attempt threshold is reached", async () => {
+    const snap = snapshot();
+    snap.job = { ...snap.job, attempts: 4 };
+    const repository = repo({ claimJob: vi.fn().mockResolvedValue({ kind: "claimed", snapshot: snap }) });
+    const worker = new FiscalWorker({ repository, custody: failingCustody("STORAGE_DOWNLOAD_FAILED", "Not Found", true), signer, dgii: dgiiOk, workerId: "w", now: () => now });
+
+    await worker.processJob("job-1");
+
+    expect(repository.recordCertificateFailure).toHaveBeenCalledWith({ tenantId: "tenant-1", certificateId: "cert-1" }, "STORAGE_DOWNLOAD_FAILED");
+  });
+
   it("never changes the job outcome when writing the reason fails", async () => {
-    const repository = repo({ recordCertificateFailure: vi.fn(async () => { throw new Error("db down"); }) });
+    const snap = snapshot();
+    snap.job = { ...snap.job, attempts: 4 };
+    const repository = repo({ claimJob: vi.fn().mockResolvedValue({ kind: "claimed", snapshot: snap }), recordCertificateFailure: vi.fn(async () => { throw new Error("db down"); }) });
     const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const worker = new FiscalWorker({ repository, custody: failingCustody("STORAGE_DOWNLOAD_FAILED", "Not Found", true), signer, dgii: dgiiOk, workerId: "w", now: () => now });
 

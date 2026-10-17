@@ -180,7 +180,19 @@ serve(async (req) => {
       is_ready: true,
       last_validation_error: null,
     }, { onConflict: "tenant_id,environment" });
-    if (insertError) throw new HttpError(500, "Could not save certificate metadata.", "SAVE_FAILED");
+    if (insertError) {
+      // Validation passed but the metadata was not saved: the new object would be orphaned. Remove it
+      // (tenant folder only, never the stored certificate). Non-fatal; SAVE_FAILED is always returned.
+      try {
+        if (storagePath.startsWith(`${tenantId}/`) && storagePath !== previousRef) {
+          const { error: cleanupError } = await admin.storage.from("fiscal_certificates").remove([storagePath]);
+          if (cleanupError) console.warn("validate-ecf-certificate: could not delete the unsaved upload.");
+        }
+      } catch {
+        console.warn("validate-ecf-certificate: could not delete the unsaved upload.");
+      }
+      throw new HttpError(500, "Could not save certificate metadata.", "SAVE_FAILED");
+    }
 
     // The new certificate is validated and saved: remove the replaced object. Only objects in
     // this tenant's folder are ever deleted. Failure is non-fatal and logged without secrets.

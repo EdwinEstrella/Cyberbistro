@@ -17,6 +17,9 @@ import type {
   XmlSignerAdapter,
 } from "./types";
 
+/** The worker has no hard retry cap; a retryable certificate error is recorded from this attempt on. */
+export const DEFAULT_CERTIFICATE_FAILURE_ATTEMPT_THRESHOLD = 5;
+
 export type ProcessJobResult =
   | { kind: "processed"; jobId: string; operation: FiscalOutboxOperation; status: EcfFiscalStatus }
   | { kind: "skipped"; reason: "already_done" | "locked"; jobId: string }
@@ -31,6 +34,8 @@ export class FiscalWorker {
       dgii: DgiiClientAdapter;
       workerId: string;
       now?: () => Date;
+      /** Retryable certificate errors are written to the certificate row only from this attempt on. */
+      certificateFailureAttemptThreshold?: number;
     }
   ) {}
 
@@ -214,6 +219,10 @@ export class FiscalWorker {
     const code = classifyCertificateFailure(error);
     const certificateId = snapshot.document.certificateMetadataId ?? snapshot.certificate?.id ?? null;
     if (!code || !certificateId || !this.deps.repository.recordCertificateFailure) return;
+    // A transient (retryable) failure such as a storage hiccup must not flag the certificate as broken
+    // while the job can still recover; only write it once the retries reach the threshold.
+    const threshold = this.deps.certificateFailureAttemptThreshold ?? DEFAULT_CERTIFICATE_FAILURE_ATTEMPT_THRESHOLD;
+    if (error.retryable && snapshot.job.attempts + 1 < threshold) return;
     try {
       await this.deps.repository.recordCertificateFailure({ tenantId: snapshot.job.tenantId, certificateId }, code);
     } catch (writeError) {
