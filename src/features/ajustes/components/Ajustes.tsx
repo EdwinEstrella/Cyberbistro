@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "../../../shared/lib/supabase";
 import { canUseFeature } from "../../../shared/lib/planFeatures";
-import { formatReadinessIssues } from "../../../shared/lib/ecfActivationReadiness";
+import { ecfSaveBlockMessage, formatReadinessIssues } from "../../../shared/lib/ecfActivationReadiness";
 import { loadEcfActivationReadiness } from "../../fiscal/lib/loadEcfReadiness";
 import {
   Select,
@@ -271,6 +271,21 @@ export function Ajustes() {
     if (!tenantId) return;
     setSaving(true);
     setSaveMessage(null);
+    if (config.fiscal_mode === "dgii_ecf") {
+      // Same shared readiness check as the mode selector; fail closed when it cannot be read.
+      let loaded: Awaited<ReturnType<typeof loadEcfActivationReadiness>> | null = null;
+      try {
+        loaded = await loadEcfActivationReadiness({ tenantId, plan, environment: config.ecf_environment });
+      } catch {
+        loaded = null;
+      }
+      const blocked = ecfSaveBlockMessage(config.fiscal_mode, loaded?.result ?? null);
+      if (blocked) {
+        setSaveMessage({ type: "error", text: blocked });
+        setSaving(false);
+        return;
+      }
+    }
     const ncfUpdate = buildTenantNcfUpdatePayload(config.ncf_fiscal_activo, config.ncf_tipo_default, config.ncf_secuencias_por_tipo, config.ncf_secuencias_por_tipo);
     const payload = {
       nombre_negocio: config.nombre_empresa?.trim() || "",

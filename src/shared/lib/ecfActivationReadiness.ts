@@ -129,3 +129,14 @@ export function buildDeactivationPayload(fallbackRaw: unknown, now: Date = new D
 export function describeActivationSuccess(environment: EcfEnvironmentId): string {
   return `Facturación electrónica activada en ${ECF_ENVIRONMENT_LABELS[environment]}. La emisión real a la DGII depende de que el servicio fiscal (worker) esté desplegado y en ejecución.`;
 }
+
+/**
+ * Message that blocks an Ajustes save which persists `dgii_ecf`, or null when the save may go on.
+ * Uses the same readiness result (and reasons) as the mode selector.
+ */
+export function ecfSaveBlockMessage(fiscalMode: unknown, result: EcfReadinessResult | null): string | null {
+  if (fiscalMode !== "dgii_ecf") return null;
+  if (!result) return "No se pudo verificar la configuración e-CF. Intentá de nuevo.";
+  if (result.ready) return null;
+  return `No se puede guardar con facturación electrónica activa. ${formatReadinessIssues(result)}`;
+}
