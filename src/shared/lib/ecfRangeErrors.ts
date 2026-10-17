@@ -64,3 +64,21 @@ export function enforceEcfRangeLocally(args: {
   if (current > bounds.end) throw new EcfRangeError("ECF_RANGE_EXHAUSTED", args.tipo, bounds.end);
   return current;
 }
+
+/**
+ * Detects a range error even when the typed instance was lost (re-thrown as a plain Error, stored
+ * as a string in the outbox, or a raw RPC error) by looking at `code` and the message text.
+ * Returns the user-facing message to keep, or null when the error is not a range error.
+ */
+export function ecfRangeTerminalMessage(err: unknown): string | null {
+  if (err instanceof EcfRangeError) return err.message;
+  if (err == null) return null;
+  const record = typeof err === "object" ? (err as { code?: unknown; message?: unknown; details?: unknown }) : null;
+  const message = typeof err === "string" ? err : typeof record?.message === "string" ? record.message : "";
+  const details = typeof record?.details === "string" ? record.details : null;
+  const hasCode = record?.code === "ECF_RANGE_NOT_CONFIGURED" || record?.code === "ECF_RANGE_EXHAUSTED";
+  const mapped = mapEcfRangeRpcError({ message: hasCode ? String(record?.code) : message, details }, "e-CF");
+  if (!mapped) return null;
+  // A plain Error already carrying the Spanish text keeps it; a raw code gets the friendly one.
+  return message && !message.includes(mapped.code) ? message : mapped.message;
+}
