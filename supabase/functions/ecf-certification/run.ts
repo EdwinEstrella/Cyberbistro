@@ -18,11 +18,13 @@ import {
   type BuiltDocument,
   type TestSet,
 } from "./builder.ts";
+import { buildCommercialApprovals, detectWorkbookType, type BuiltApproval } from "./commercialApproval.ts";
 import { DgiiError, type DgiiClient, type DgiiMessage, type DgiiSendResult } from "./dgiiClient.ts";
 import { HttpError, json, loadSigner, type ActionContext } from "./context.ts";
 import { readXlsx, XlsxError } from "./xlsx.ts";
 
-export type SubmissionKind = "ecf" | "rfce" | "portal_upload";
+export type SubmissionKind = "ecf" | "rfce" | "portal_upload" | "acecf";
+export type RunType = "test_set" | "commercial_approval";
 export type SubmissionStatus = "pending" | "sent" | "accepted" | "accepted_conditional" | "rejected" | "error" | "ready_for_portal";
 export type RunEnvironment = "test" | "certification";
 export type RunStatus = "pending" | "running" | "completed" | "failed";
@@ -61,6 +63,7 @@ export interface Run {
   id: string;
   tenantId: string;
   environment: RunEnvironment;
+  runType: RunType;
   status: RunStatus;
   createdAt: string;
 }
@@ -69,13 +72,14 @@ export interface RunStore {
   createRun(input: {
     tenantId: string;
     environment: RunEnvironment;
+    runType: RunType;
     sourceSha256: string;
     createdBy: string;
     submissions: PlannedSubmission[];
   }): Promise<Run>;
   /** The run when it belongs to the tenant, else null. */
   getRun(tenantId: string, runId: string): Promise<Run | null>;
-  latestRun(tenantId: string, environment: RunEnvironment): Promise<Run | null>;
+  latestRun(tenantId: string, environment: RunEnvironment, runType: RunType): Promise<Run | null>;
   /** Ordered by sequence_order. */
   listSubmissions(runId: string): Promise<Submission[]>;
   /**
@@ -93,6 +97,7 @@ export const MAX_STATUS_POLLS = 10;
 export const MAX_ATTEMPTS = 3;
 const DEFAULT_BUDGET_MS = 40_000;
 const RUN_ENVIRONMENTS: RunEnvironment[] = ["test", "certification"];
+const RUN_TYPES: RunType[] = ["test_set", "commercial_approval"];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ACCEPTED: SubmissionStatus[] = ["accepted", "accepted_conditional"];
 const TERMINAL: SubmissionStatus[] = ["accepted", "accepted_conditional", "rejected", "error", "ready_for_portal"];
@@ -136,6 +141,33 @@ export function planSubmissions(set: TestSet): PlannedSubmission[] {
   return out;
 }
 
+/** Commercial approvals are independent: sent in sheet order, no dependencies. */
+export function planApprovals(approvals: BuiltApproval[]): PlannedSubmission[] {
+  return approvals.map((doc, sequenceOrder) => ({
+    caseId: doc.caseId,
+    encf: doc.encf,
+    tipoEcf: doc.tipoEcf,
+    kind: "acecf" as const,
+    sequenceOrder,
+    dependsOnCaseId: null,
+    unsignedXml: doc.xml,
+  }));
+}
+
+/**
+ * Commercial approval answer -> status. The service answers synchronously: codigo 01 "Aprobacion
+ * Comercial Aprobada", 02 "Aprobacion Comercial Rechazada". Answering "rechazada" to an approval that
+ * itself declared Estado 2 is the expected outcome, so it counts as accepted.
+ */
+export function mapApprovalResult(result: DgiiSendResult, submittedEstado: string | null): SubmissionPatch {
+  const estado = (result.estado ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const approved = result.codigo === 1 || (result.codigo === null && estado.includes("aprobada"));
+  const rejected = result.codigo === 2 || (result.codigo === null && estado.includes("rechazada"));
+  if (result.httpStatus < 400 && approved) return { status: "accepted", messages: result.messages };
+  if (result.httpStatus < 400 && rejected && submittedEstado === "2") return { status: "accepted", messages: result.messages };
+  return { status: result.httpStatus >= 400 || rejected ? "rejected" : "error", messages: result.messages };
+}
+
 /** The submission whose outcome gates this one, if any. */
 function dependencyOf(sub: Submission, all: Submission[]): Submission | null {
   if (!sub.dependsOnCaseId) return null;
@@ -172,6 +204,7 @@ export interface SubmissionView {
 export interface RunSummary {
   runId: string;
   environment: RunEnvironment;
+  runType: RunType;
   status: RunStatus;
   createdAt: string;
   counts: Record<SubmissionStatus, number>;
@@ -196,6 +229,7 @@ export function summarize(run: Run, subs: Submission[]): RunSummary {
   return {
     runId: run.id,
     environment: run.environment,
+    runType: run.runType ?? "test_set",
     status: run.status,
     createdAt: run.createdAt,
     counts,
@@ -250,12 +284,36 @@ async function requireRun(ctx: ActionContext): Promise<Run> {
 
 const digits = (value: string | null | undefined) => (value ?? "").replace(/\D/g, "");
 
+/** Optional runType in a request (start: expected type; latest: wanted type, default test_set). */
+function runTypeOf(payload: Record<string, unknown>): RunType | undefined {
+  const { runType } = payload;
+  if (runType === undefined) return undefined;
+  if (typeof runType !== "string" || !RUN_TYPES.includes(runType as RunType)) {
+    throw new HttpError(400, "INVALID_REQUEST", "runType must be test_set or commercial_approval.");
+  }
+  return runType as RunType;
+}
+
+const WORKBOOK_LABEL: Record<RunType, string> = {
+  test_set: "a test set (ECF/RFCE)",
+  commercial_approval: "a commercial approval set (ACEECF_Generadas)",
+};
+
 export async function startRun(ctx: ActionContext): Promise<Response> {
   const environment = runEnvironmentOf(ctx.payload);
+  const expectedType = runTypeOf(ctx.payload);
   const bytes = decodeBase64(ctx.payload.xlsxBase64);
-  let set: TestSet;
+  let runType: RunType;
+  let set: TestSet | null = null;
+  let approvals: BuiltApproval[] = [];
   try {
-    set = buildTestSet(await readXlsx(bytes));
+    const sheets = await readXlsx(bytes);
+    runType = detectWorkbookType(sheets);
+    if (expectedType && expectedType !== runType) {
+      throw new TestSetError(`This workbook is ${WORKBOOK_LABEL[runType]}, but ${WORKBOOK_LABEL[expectedType]} was expected.`);
+    }
+    if (runType === "test_set") set = buildTestSet(sheets);
+    else approvals = buildCommercialApprovals(sheets, new Date((ctx.deps.now ?? Date.now)()));
   } catch (error) {
     if (error instanceof XlsxError || error instanceof TestSetError) {
       ctx.deps.log("test_set_invalid");
@@ -264,8 +322,13 @@ export async function startRun(ctx: ActionContext): Promise<Response> {
     throw error;
   }
   const tenantRnc = digits(await ctx.deps.store.tenantRnc(ctx.tenantId));
-  if (!tenantRnc || [...set.ecf, ...set.rfce].some((doc) => doc.rncEmisor !== tenantRnc)) {
-    throw new HttpError(422, "RNC_MISMATCH", "The test set RNCEmisor does not match the tenant.");
+  const rncs = set ? [...set.ecf, ...set.rfce].map((doc) => doc.rncEmisor) : approvals.map((doc) => doc.rncComprador);
+  if (!tenantRnc || rncs.some((rnc) => rnc !== tenantRnc)) {
+    throw new HttpError(
+      422,
+      "RNC_MISMATCH",
+      set ? "The test set RNCEmisor does not match the tenant." : "The commercial approval set RNCComprador does not match the tenant.",
+    );
   }
   if (!(await ctx.deps.store.loadCertificate(ctx.tenantId, environment))) {
     throw new HttpError(409, "CERTIFICATE_NOT_READY", "No ready certificate for this environment.");
@@ -273,11 +336,12 @@ export async function startRun(ctx: ActionContext): Promise<Response> {
   const run = await ctx.deps.store.createRun({
     tenantId: ctx.tenantId,
     environment,
+    runType,
     sourceSha256: await sha256Hex(bytes),
     createdBy: ctx.userId,
-    submissions: planSubmissions(set),
+    submissions: set ? planSubmissions(set) : planApprovals(approvals),
   });
-  ctx.deps.log("run_started", { ecf: set.ecf.length, rfce: set.rfce.length });
+  ctx.deps.log("run_started", set ? { ecf: set.ecf.length, rfce: set.rfce.length } : { acecf: approvals.length });
   return json(200, summarize(run, await ctx.deps.store.listSubmissions(run.id)));
 }
 
@@ -293,6 +357,7 @@ function failureMessage(error: DgiiError): DgiiMessage[] {
 }
 
 function mapSendResult(sub: Submission, result: DgiiSendResult): SubmissionPatch {
+  if (sub.kind === "acecf") return mapApprovalResult(result, /<Estado>([12])<\/Estado>/.exec(sub.unsignedXml)?.[1] ?? null);
   if (sub.kind === "ecf") {
     if (result.trackId) return { status: "sent", trackId: result.trackId, messages: result.messages };
     return { status: result.httpStatus >= 400 ? "rejected" : "error", messages: result.messages };
@@ -395,15 +460,22 @@ export async function sendNext(ctx: ActionContext): Promise<Response> {
     }
 
     const signedXml =
-      sub.kind === "ecf"
-        ? await signWith(stampSignatureTime(sub.unsignedXml, new Date(now())), "ECF")
-        : await signWith(applySecurityCode(sub.unsignedXml, dependency!.securityCode!), "RFCE");
+      sub.kind === "acecf"
+        ? await signWith(sub.unsignedXml, "ACECF")
+        : sub.kind === "ecf"
+          ? await signWith(stampSignatureTime(sub.unsignedXml, new Date(now())), "ECF")
+          : await signWith(applySecurityCode(sub.unsignedXml, dependency!.securityCode!), "RFCE");
     const signedSha256 = await sha256Hex(signedXml);
     const fileName = `${sub.caseId}.xml`;
     let patch: SubmissionPatch;
     try {
       const dgii = await tokenFor();
-      const result = sub.kind === "ecf" ? await dgii.client.sendEcf(dgii.token, fileName, signedXml) : await dgii.client.sendRfce(dgii.token, fileName, signedXml);
+      const result =
+        sub.kind === "acecf"
+          ? await dgii.client.sendCommercialApproval(dgii.token, fileName, signedXml)
+          : sub.kind === "ecf"
+            ? await dgii.client.sendEcf(dgii.token, fileName, signedXml)
+            : await dgii.client.sendRfce(dgii.token, fileName, signedXml);
       patch = { ...mapSendResult(sub, result), signedXml, signedSha256 };
     } catch (error) {
       if (!(error instanceof DgiiError)) throw error;
@@ -453,7 +525,7 @@ export async function pollStatus(ctx: ActionContext): Promise<Response> {
 
 export async function latestRun(ctx: ActionContext): Promise<Response> {
   const environment = runEnvironmentOf(ctx.payload);
-  const run = await ctx.deps.store.latestRun(ctx.tenantId, environment);
+  const run = await ctx.deps.store.latestRun(ctx.tenantId, environment, runTypeOf(ctx.payload) ?? "test_set");
   if (!run) return json(200, { run: null });
   return json(200, { run: summarize(run, await ctx.deps.store.listSubmissions(run.id)) });
 }

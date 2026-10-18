@@ -10,13 +10,13 @@ function fail(operation: string): never {
   throw new Error(`Store operation failed: ${operation}`);
 }
 
-const RUN_COLUMNS = "id, tenant_id, environment, status, created_at";
+const RUN_COLUMNS = "id, tenant_id, environment, run_type, status, created_at";
 const SUBMISSION_COLUMNS =
   "id, case_id, encf, tipo_ecf, kind, sequence_order, depends_on_case_id, status, track_id, dgii_messages, unsigned_xml, signed_xml, security_code, attempts";
 
 // deno-lint-ignore no-explicit-any
 function toRun(row: any): Run {
-  return { id: row.id, tenantId: row.tenant_id, environment: row.environment, status: row.status, createdAt: row.created_at };
+  return { id: row.id, tenantId: row.tenant_id, environment: row.environment, runType: row.run_type === "commercial_approval" ? "commercial_approval" : "test_set", status: row.status, createdAt: row.created_at };
 }
 
 // deno-lint-ignore no-explicit-any
@@ -107,6 +107,7 @@ export function createSupabaseStore(opts: { url: string; publishableKey: string;
         .insert({
           tenant_id: input.tenantId,
           environment: input.environment,
+          run_type: input.runType,
           source_sha256: input.sourceSha256,
           created_by: input.createdBy,
           status: "pending",
@@ -140,12 +141,13 @@ export function createSupabaseStore(opts: { url: string; publishableKey: string;
       return data ? toRun(data) : null;
     },
 
-    async latestRun(tenantId, environment) {
+    async latestRun(tenantId, environment, runType) {
       const { data, error } = await db
         .from("ecf_certification_runs")
         .select(RUN_COLUMNS)
         .eq("tenant_id", tenantId)
         .eq("environment", environment)
+        .eq("run_type", runType)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();

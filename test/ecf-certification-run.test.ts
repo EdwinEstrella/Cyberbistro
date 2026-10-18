@@ -5,6 +5,7 @@ import { DgiiError, type DgiiClient, type DgiiSendResult, type DgiiTrackResult }
 import { handleRequest, type CertificationDeps, type CertificationStore } from "../supabase/functions/ecf-certification/handler";
 import {
   MAX_ATTEMPTS,
+  mapApprovalResult,
   mapDgiiStatus,
   planSubmissions,
   type PlannedSubmission,
@@ -70,7 +71,7 @@ function memoryStore(memory: Memory, over: Partial<CertificationStore> = {}): Ce
     tenantRnc: async () => "133-488-485",
     loadCertificate: async () => ({ p12Bytes: cert.p12Bytes, passphraseEncrypted }),
     async createRun(input) {
-      const run = { id: randomUUID(), tenantId: input.tenantId, environment: input.environment, status: "pending" as const, createdAt: new Date().toISOString(), createdBy: input.createdBy, sourceSha256: input.sourceSha256 };
+      const run = { id: randomUUID(), tenantId: input.tenantId, environment: input.environment, runType: input.runType, status: "pending" as const, createdAt: new Date().toISOString(), createdBy: input.createdBy, sourceSha256: input.sourceSha256 };
       memory.runs.push(run);
       for (const sub of input.submissions) {
         memory.subs.push({ ...sub, id: randomUUID(), runId: run.id, status: "pending", trackId: null, messages: [], signedXml: null, signedSha256: null, securityCode: null, attempts: 0 });
@@ -80,8 +81,8 @@ function memoryStore(memory: Memory, over: Partial<CertificationStore> = {}): Ce
     async getRun(tenantId, runId) {
       return memory.runs.find((run) => run.id === runId && run.tenantId === tenantId) ?? null;
     },
-    async latestRun(tenantId, environment) {
-      return [...memory.runs].reverse().find((run) => run.tenantId === tenantId && run.environment === environment) ?? null;
+    async latestRun(tenantId, environment, runType) {
+      return [...memory.runs].reverse().find((run) => run.tenantId === tenantId && run.environment === environment && run.runType === runType) ?? null;
     },
     async listSubmissions(runId) {
       return memory.subs.filter((sub) => sub.runId === runId).sort((a, b) => a.sequenceOrder - b.sequenceOrder).map(copy);
@@ -103,10 +104,11 @@ function memoryStore(memory: Memory, over: Partial<CertificationStore> = {}): Ce
 // ---- fake DGII ---------------------------------------------------------------------------------------
 interface FakeDgii {
   client: DgiiClient;
-  sent: { kind: "ecf" | "rfce"; fileName: string; xml: string; token: string }[];
+  sent: { kind: "ecf" | "rfce" | "acecf"; fileName: string; xml: string; token: string }[];
   authentications: number;
   sendEcf: (fileName: string, xml: string) => Promise<DgiiSendResult>;
   sendRfce: (fileName: string, xml: string) => Promise<DgiiSendResult>;
+  sendApproval: (fileName: string, xml: string) => Promise<DgiiSendResult>;
   track: (trackId: string) => Promise<DgiiTrackResult>;
   authenticate: () => Promise<void>;
 }
@@ -117,6 +119,7 @@ function fakeDgii(): FakeDgii {
     authentications: 0,
     sendEcf: async (fileName) => ({ httpStatus: 200, trackId: `track-${fileName}`, estado: null, codigo: null, messages: [] }),
     sendRfce: async () => ({ httpStatus: 200, trackId: null, estado: "Aceptado", codigo: 1, messages: [] }),
+    sendApproval: async () => ({ httpStatus: 200, trackId: null, estado: "Aprobación Comercial Aprobada.", codigo: 1, messages: [] }),
     track: async (trackId) => ({ trackId, estado: "Aceptado", codigo: 1, encf: null, messages: [] }),
     authenticate: async () => {},
     client: null as unknown as DgiiClient,
@@ -136,6 +139,10 @@ function fakeDgii(): FakeDgii {
     async sendRfce(token, fileName, xml) {
       fake.sent.push({ kind: "rfce", fileName, xml, token });
       return fake.sendRfce(fileName, xml);
+    },
+    async sendCommercialApproval(token, fileName, xml) {
+      fake.sent.push({ kind: "acecf", fileName, xml, token });
+      return fake.sendApproval(fileName, xml);
     },
     trackStatus: async (_token, trackId) => fake.track(trackId),
   };
@@ -371,7 +378,7 @@ describe("send-next and status", () => {
       "ecf:E310000000001:sent",
     ]);
     // The portal E32 was signed once; its security code did not change.
-    const rfceXmls = h.dgii.sent.filter((s) => s.kind === "rfce").map((s) => s.xml.match(/<CodigoSeguridadeCF>(\w+)</)![1]);
+    const rfceXmls = h.dgii.sent.filter((s) => s.kind === "rfce").map((s) => s.xml.match(/<CodigoSeguridadeCF>([^<]+)</)![1]);
     expect(new Set(rfceXmls).size).toBe(1);
   });
 
@@ -486,5 +493,147 @@ describe("send-next and status", () => {
     for (const action of ["start", "send-next", "status", "download", "latest"]) {
       expect((await h.call({ action, environment: "certification", runId: randomUUID() })).status).toBe(403);
     }
+  });
+});
+
+// ---- commercial approval runs (step 3) ---------------------------------------------------------------
+const ACECF_HEADER = ["Version", "RNCEmisor", "eNCF", "FechaEmision", "MontoTotal", "RNCComprador", "Estado", "DetalleMotivoRechazo", "FechaHoraAprobacionComercial"];
+const approvalRow = (encf: string, estado = "1", motivo = "", stamp = "18-10-2026 17:26:04") => [
+  "1.0", "131880681", encf, "01-04-2020", "1180.00", RNC, estado, motivo, stamp,
+];
+
+function approvalWorkbook(rows: string[][] = [approvalRow("E310000000001"), approvalRow("E310000000002", "2", "Mercancia danada")]): string {
+  return Buffer.from(makeXlsx([{ name: "ACEECF_Generadas", rows: [ACECF_HEADER, ...rows] }])).toString("base64");
+}
+
+describe("commercial approval runs", () => {
+  const startApprovals = (h: ReturnType<typeof harness>, workbookBase64 = approvalWorkbook()) =>
+    h.call({ action: "start", environment: "certification", xlsxBase64: workbookBase64 });
+
+  it("detects the workbook type by sheet and plans independent acecf submissions in sheet order", async () => {
+    const h = harness();
+    const res = await startApprovals(h);
+    expect(res.status).toBe(200);
+    expect(res.body.runType).toBe("commercial_approval");
+    expect(statuses(res.body)).toEqual(["acecf:E310000000001:pending", "acecf:E310000000002:pending"]);
+    expect(h.memory.runs[0].runType).toBe("commercial_approval");
+    expect(h.memory.subs.map((s) => s.dependsOnCaseId)).toEqual([null, null]);
+    expect(h.dgii.authentications).toBe(0);
+    const test = await h.call({ action: "start", environment: "certification", xlsxBase64: workbook() });
+    expect(test.body.runType).toBe("test_set");
+  });
+
+  it("rejects the wrong buyer RNC, a mismatching expected type, mixed and unknown workbooks", async () => {
+    const h = harness();
+    const other = approvalRow("E310000000001");
+    other[5] = "101010101";
+    expect((await startApprovals(h, approvalWorkbook([other]))).body.code).toBe("RNC_MISMATCH");
+    const mismatch = await h.call({ action: "start", environment: "certification", runType: "test_set", xlsxBase64: approvalWorkbook() });
+    expect(mismatch.status).toBe(422);
+    expect(mismatch.body.code).toBe("INVALID_TEST_SET");
+    expect(mismatch.body.error).toMatch(/commercial approval set.*test set.*expected/);
+    expect((await h.call({ action: "start", environment: "certification", runType: "nope", xlsxBase64: approvalWorkbook() })).status).toBe(400);
+    const mixed = Buffer.from(makeXlsx([{ name: "ECF", rows: [HEADER] }, { name: "ACEECF_Generadas", rows: [ACECF_HEADER] }])).toString("base64");
+    expect((await startApprovals(h, mixed)).body.error).toMatch(/mixes/);
+    const unknown = Buffer.from(makeXlsx([{ name: "Hoja1", rows: [HEADER] }])).toString("base64");
+    const res = await startApprovals(h, unknown);
+    expect(res.status).toBe(422);
+    expect(res.body.error).toMatch(/ACEECF_Generadas/);
+    expect(h.memory.runs).toHaveLength(0);
+  });
+
+  it("signs each ACECF, sends it with the buyer-based file name and marks the answer directly", async () => {
+    const h = harness();
+    const runId = (await startApprovals(h)).body.runId as string;
+    h.dgii.sendApproval = async (fileName) =>
+      fileName.includes("E310000000002")
+        ? { httpStatus: 200, trackId: null, estado: "Aprobacion Comercial Rechazada.", codigo: 2, messages: [] }
+        : { httpStatus: 200, trackId: null, estado: "Aprobación Comercial Aprobada.", codigo: 1, messages: [] };
+    const res = await h.call({ action: "send-next", runId });
+    expect(res.status).toBe(200);
+    expect(res.body.processed).toBe(2);
+    expect(res.body.waitingFor).toBeNull();
+    // The second approval declared Estado 2, so DGII answering "rechazada" is the expected outcome.
+    expect(statuses(res.body)).toEqual(["acecf:E310000000001:accepted", "acecf:E310000000002:accepted"]);
+    expect(res.body.done).toBe(true);
+    expect(h.memory.runs[0].status).toBe("completed");
+    expect(h.dgii.sent.map((s) => `${s.kind}:${s.fileName}`)).toEqual([`acecf:${RNC}E310000000001.xml`, `acecf:${RNC}E310000000002.xml`]);
+    expect(h.dgii.authentications).toBe(1);
+    for (const sent of h.dgii.sent) {
+      expect(sent.xml.startsWith("<?xml")).toBe(true);
+      expect(sent.xml).toContain("<ACECF><DetalleAprobacionComercial>");
+      expect(verifyXmlSignature(sent.xml, cert.certPem)).toBe(true);
+    }
+    expect(h.dgii.sent[0].xml).not.toContain("DetalleMotivoRechazo");
+    expect(h.dgii.sent[1].xml).toContain("<DetalleMotivoRechazo>Mercancia danada</DetalleMotivoRechazo>");
+    expect(h.memory.subs.every((s) => s.trackId === null && s.signedSha256?.length === 64)).toBe(true);
+  });
+
+  it("marks an approval rejected by DGII and records its messages", async () => {
+    const h = harness();
+    const runId = (await startApprovals(h, approvalWorkbook([approvalRow("E310000000001")]))).body.runId as string;
+    h.dgii.sendApproval = async () => ({
+      httpStatus: 200,
+      trackId: null,
+      estado: "Aprobacion Comercial Rechazada.",
+      codigo: 2,
+      messages: [{ codigo: null, valor: "El e-NCF no existe" }],
+    });
+    const res = await h.call({ action: "send-next", runId });
+    expect(statuses(res.body)).toEqual(["acecf:E310000000001:rejected"]);
+    expect(res.body.items[0].messages).toEqual([{ codigo: null, valor: "El e-NCF no existe" }]);
+  });
+
+  it("keeps an approval pending after a DGII failure and stops the batch without retrying", async () => {
+    const h = harness();
+    const runId = (await startApprovals(h)).body.runId as string;
+    h.dgii.sendApproval = async () => {
+      throw new DgiiError("timeout", "DGII did not answer in time.");
+    };
+    const res = await h.call({ action: "send-next", runId });
+    expect(res.body.stoppedReason).toBe("DGII_UNAVAILABLE");
+    expect(h.dgii.sent).toHaveLength(1);
+    expect(statuses(res.body)).toEqual(["acecf:E310000000001:pending", "acecf:E310000000002:pending"]);
+    expect(h.memory.subs[0].attempts).toBe(1);
+    for (let i = 1; i < MAX_ATTEMPTS; i++) await h.call({ action: "send-next", runId });
+    expect(h.memory.subs[0].status).toBe("error");
+  });
+
+  it("status is a no-op re-read for approvals", async () => {
+    const h = harness();
+    const runId = (await startApprovals(h)).body.runId as string;
+    await h.call({ action: "send-next", runId });
+    const before = h.dgii.authentications;
+    const res = await h.call({ action: "status", runId });
+    expect(res.status).toBe(200);
+    expect(res.body.polled).toBe(0);
+    expect(h.dgii.authentications).toBe(before);
+    expect(res.body.runType).toBe("commercial_approval");
+  });
+
+  it("latest returns the newest run of the requested type and defaults to the test set", async () => {
+    const h = harness();
+    const testRun = (await h.call({ action: "start", environment: "certification", xlsxBase64: workbook() })).body.runId;
+    const approvalRun = (await startApprovals(h)).body.runId;
+    expect((await h.call({ action: "latest", environment: "certification" })).body.run.runId).toBe(testRun);
+    expect((await h.call({ action: "latest", environment: "certification", runType: "test_set" })).body.run.runId).toBe(testRun);
+    expect((await h.call({ action: "latest", environment: "certification", runType: "commercial_approval" })).body.run.runId).toBe(approvalRun);
+    expect((await h.call({ action: "latest", environment: "test", runType: "commercial_approval" })).body).toEqual({ run: null });
+    expect((await h.call({ action: "latest", environment: "certification", runType: "x" })).status).toBe(400);
+  });
+});
+
+describe("mapApprovalResult", () => {
+  const result = (over: Partial<DgiiSendResult>): DgiiSendResult => ({ httpStatus: 200, trackId: null, estado: null, codigo: null, messages: [], ...over });
+
+  it("maps codes and texts defensively", () => {
+    expect(mapApprovalResult(result({ codigo: 1 }), "1").status).toBe("accepted");
+    expect(mapApprovalResult(result({ estado: "Aprobación Comercial Aprobada." }), "1").status).toBe("accepted");
+    expect(mapApprovalResult(result({ codigo: 2 }), "1").status).toBe("rejected");
+    expect(mapApprovalResult(result({ estado: "Aprobacion Comercial Rechazada." }), "1").status).toBe("rejected");
+    expect(mapApprovalResult(result({ codigo: 2 }), "2").status).toBe("accepted");
+    expect(mapApprovalResult(result({ httpStatus: 400, codigo: 1 }), "1").status).toBe("rejected");
+    expect(mapApprovalResult(result({ httpStatus: 400 }), "1").status).toBe("rejected");
+    expect(mapApprovalResult(result({}), "1").status).toBe("error");
   });
 });

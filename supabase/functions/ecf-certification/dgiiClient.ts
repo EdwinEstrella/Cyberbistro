@@ -31,6 +31,8 @@ export function dgiiUrls(environment: DgiiEnvironment) {
     sendEcf: `${DGII_HOSTS.ecf}/${path}/recepcion/api/FacturasElectronicas`,
     sendRfce: `${DGII_HOSTS.fc}/${path}/recepcionfc/api/recepcion/ecf`,
     trackStatus: `${DGII_HOSTS.ecf}/${path}/consultaresultado/api/Consultas/Estado`,
+    /** Commercial approval (ACECF); answers synchronously (modulo-ecf ENDPOINTS.COMMERCIAL_APPROVAL). */
+    sendCommercialApproval: `${DGII_HOSTS.ecf}/${path}/aprobacionComercial/api/AprobacionComercial`,
   };
 }
 
@@ -82,6 +84,8 @@ export interface DgiiClient {
   authenticate(signSeed: (seedXml: string) => string | Promise<string>): Promise<DgiiToken>;
   sendEcf(token: string, fileName: string, signedXml: string): Promise<DgiiSendResult>;
   sendRfce(token: string, fileName: string, signedXml: string): Promise<DgiiSendResult>;
+  /** ACECF; the file name is RNCComprador + eNCF + ".xml". Synchronous answer (estado/codigo, no trackId). */
+  sendCommercialApproval(token: string, fileName: string, signedXml: string): Promise<DgiiSendResult>;
   trackStatus(token: string, trackId: string): Promise<DgiiTrackResult>;
 }
 
@@ -137,6 +141,13 @@ export function parseMessages(body: unknown): DgiiMessage[] {
       const codigo = typeof item.codigo === "number" || typeof item.codigo === "string" ? String(item.codigo) : null;
       if (valor.trim() || codigo) out.push({ codigo, valor: clip(valor.trim()) });
     }
+  }
+  // The commercial approval service answers `mensaje` (string[] or string).
+  const single = record.mensaje;
+  const approvalMessages = Array.isArray(single) ? single : typeof single === "string" ? [single] : [];
+  for (const entry of approvalMessages) {
+    if (out.length >= MAX_MESSAGES) break;
+    if (typeof entry === "string" && entry.trim()) out.push({ codigo: null, valor: clip(entry.trim()) });
   }
   for (const key of ["error", "message", "title"]) {
     const value = record[key];
@@ -278,6 +289,7 @@ export function createDgiiClient(options: DgiiClientOptions): DgiiClient {
 
     sendEcf: (token, fileName, signedXml) => submit(urls.sendEcf, token, fileName, signedXml),
     sendRfce: (token, fileName, signedXml) => submit(urls.sendRfce, token, fileName, signedXml),
+    sendCommercialApproval: (token, fileName, signedXml) => submit(urls.sendCommercialApproval, token, fileName, signedXml),
 
     async trackStatus(token, trackId) {
       const url = `${urls.trackStatus}?trackId=${encodeURIComponent(trackId)}`;
