@@ -35,8 +35,9 @@ export function CertificateUploader({ environment, onValidated }: { environment:
   const [uploadIssue, setUploadIssue] = useState<CertificateHealth | null>(null);
   const [metadata, setMetadata] = useState<any>(null);
   const [tenantRnc, setTenantRnc] = useState<string | null>(null);
+  const [representativeId, setRepresentativeId] = useState<string | null>(null);
 
-  const health = evaluateCertificateHealth({ metadata, tenantRnc, selectedEnvironment: environment });
+  const health = evaluateCertificateHealth({ metadata, tenantRnc, representativeId, selectedEnvironment: environment });
 
   useEffect(() => {
     if (tenantId) loadMetadata();
@@ -45,6 +46,13 @@ export function CertificateUploader({ environment, onValidated }: { environment:
   async function loadMetadata() {
     const { data: tenant } = await supabase.from("tenants").select("rnc").eq("id", tenantId).maybeSingle();
     setTenantRnc(tenant?.rnc ?? null);
+    // Separate, tolerant read: the column may not exist yet; "not set" is the safe default.
+    try {
+      const { data: rep, error: repError } = await supabase.from("tenants").select("ecf_representative_id").eq("id", tenantId).maybeSingle();
+      setRepresentativeId(repError ? null : (rep?.ecf_representative_id ?? null));
+    } catch {
+      setRepresentativeId(null);
+    }
     const { data } = await supabase
       .from("ecf_certificate_metadata")
       .select("id, environment, subject, issuer, valid_from, valid_until, is_ready, last_validation_error, created_at")

@@ -1343,6 +1343,7 @@ export async function enqueueLocalWritesAtomically(writes: readonly LocalFirstWr
           }
         }
         outboxStore.add(entries[index]);
+  "ecf_representative_id",
       });
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error ?? new Error("No se pudo confirmar el checkout local."));

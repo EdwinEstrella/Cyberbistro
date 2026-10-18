@@ -6,7 +6,7 @@ import { NCF_E_TIPO_OPCIONES } from "../../../shared/lib/ncf";
 import { lookupBusinessByRnc } from "../../../shared/lib/dgiiRncLookup";
 import { CertificateUploader } from "../../ajustes/components/CertificateUploader";
 import { enqueueLocalWrite, getDeviceId } from "../../../shared/lib/localFirst";
-import { buildIssuerUpdatePayload, validateEcfIssuer, type EcfIssuerInput } from "../../../shared/lib/ecfIssuerRequirements";
+import { buildIssuerUpdatePayload, buildRepresentativeIdPayload, validateEcfIssuer, validateRepresentativeId, type EcfIssuerInput } from "../../../shared/lib/ecfIssuerRequirements";
 import { buildRangesSavePayload, restoreRanges, validateEcfRange } from "../../../shared/lib/ecfSequenceRanges";
 import {
   buildActivationPayload,
@@ -59,7 +59,7 @@ export function ActivationPanel() {
   const [step, setStep] = useState(1);
   const [environment, setEnvironment] = useState<EcfEnvironment>("test");
   const [company, setCompany] = useState({
-    name: "", rnc: "", phone: "", email: "", address: "", sucursal: "", municipio: "", provincia: "", actividad: "", issuerEmail: "",
+    name: "", rnc: "", phone: "", email: "", address: "", sucursal: "", municipio: "", provincia: "", actividad: "", issuerEmail: "", representativeId: "",
   });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -103,6 +103,11 @@ export function ActivationPanel() {
       supabase.from("tenants").select("ecf_secuencias_rangos").eq("id", tenantId).maybeSingle()
     ).then(({ data, error }) => (error ? null : (data?.ecf_secuencias_rangos ?? null))).catch(() => null);
 
+    // Optional representative cedula, read apart so a not-yet-deployed column cannot block the form.
+    const representativePromise = Promise.resolve(
+      supabase.from("tenants").select("ecf_representative_id").eq("id", tenantId).maybeSingle()
+    ).then(({ data, error }) => (error ? "" : (data?.ecf_representative_id ?? ""))).catch(() => "");
+
     void supabase
       .from("tenants")
         .select("nombre_negocio, rnc, telefono, email, direccion, ecf_environment, ncf_secuencias_por_tipo, fiscal_mode, ecf_issuer_sucursal, ecf_issuer_municipio, ecf_issuer_provincia, ecf_issuer_actividad_economica, ecf_issuer_correo_emisor")
@@ -111,6 +116,7 @@ export function ActivationPanel() {
       .then(async ({ data, error }) => {
         if (error || !data) return;
         const bounds = await boundsPromise;
+        const representativeId = await representativePromise;
         setCompany({
           name: data.nombre_negocio ?? "",
           rnc: data.rnc ?? "",
@@ -122,6 +128,7 @@ export function ActivationPanel() {
           provincia: data.ecf_issuer_provincia ?? "",
           actividad: data.ecf_issuer_actividad_economica ?? "",
           issuerEmail: data.ecf_issuer_correo_emisor ?? data.email ?? "",
+          representativeId,
         });
         setFiscalActive(data.fiscal_mode === "dgii_ecf");
         setSavedNextRaw(data.ncf_secuencias_por_tipo ?? {});
@@ -153,7 +160,8 @@ export function ActivationPanel() {
 
   async function saveCompany() {
     if (!tenantId) return;
-    const problems = [issuerValidation.message, contactMissing.length > 0 ? `Falta completar: ${contactMissing.join(", ")}.` : ""].filter(Boolean);
+    const representativeValidation = validateRepresentativeId(company.representativeId);
+    const problems = [issuerValidation.message, representativeValidation.message, contactMissing.length > 0 ? `Falta completar: ${contactMissing.join(", ")}.` : ""].filter(Boolean);
     if (problems.length > 0) {
       setMessage(problems.join(" "));
       return;
@@ -169,6 +177,7 @@ export function ActivationPanel() {
         op: "update",
         payload: {
           ...buildIssuerUpdatePayload(issuerInput),
+          ...buildRepresentativeIdPayload(company.representativeId),
           telefono: company.phone.trim() || null,
           email: company.email.trim() || null,
           updated_at: new Date().toISOString(),
@@ -445,6 +454,10 @@ export function ActivationPanel() {
                   <CompanyField label="PROVINCIA" value={company.provincia} onChange={(provincia) => setCompany((current) => ({ ...current, provincia }))} />
                   <CompanyField label="ACTIVIDAD ECONÓMICA" value={company.actividad} onChange={(actividad) => setCompany((current) => ({ ...current, actividad }))} />
                   <CompanyField label="CORREO DEL EMISOR E-CF" value={company.issuerEmail} type="email" onChange={(issuerEmail) => setCompany((current) => ({ ...current, issuerEmail }))} />
+                  <div className="sm:col-span-2">
+                    <CompanyField label="CÉDULA DEL REPRESENTANTE (OPCIONAL)" value={company.representativeId} onChange={(representativeId) => setCompany((current) => ({ ...current, representativeId }))} />
+                    <p className="mt-1 text-xs text-muted-foreground">La persona a nombre de quien está el certificado digital; debe ser el representante registrado en la DGII.</p>
+                  </div>
                 </div>
               </div>
             </div>

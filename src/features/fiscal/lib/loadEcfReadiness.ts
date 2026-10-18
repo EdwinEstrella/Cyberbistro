@@ -20,7 +20,7 @@ export async function loadEcfActivationReadiness(args: {
   environment: string;
 }): Promise<LoadedEcfReadiness> {
   const { tenantId, plan, environment } = args;
-  const [tenantRes, boundsRes, certRes] = await Promise.all([
+  const [tenantRes, boundsRes, representativeRes, certRes] = await Promise.all([
     supabase
       .from("tenants")
       .select("rnc, nombre_negocio, direccion, ncf_secuencias_por_tipo, fiscal_mode_fallback, ecf_issuer_sucursal, ecf_issuer_municipio, ecf_issuer_provincia, ecf_issuer_actividad_economica, ecf_issuer_correo_emisor")
@@ -28,6 +28,8 @@ export async function loadEcfActivationReadiness(args: {
       .maybeSingle(),
     // Separate query: a missing column must not block the rest (legacy fallback applies).
     Promise.resolve(supabase.from("tenants").select("ecf_secuencias_rangos").eq("id", tenantId).maybeSingle()).catch(() => null),
+    // Optional representative cedula; a missing column (migration not applied yet) just means "not set".
+    Promise.resolve(supabase.from("tenants").select("ecf_representative_id").eq("id", tenantId).maybeSingle()).catch(() => null),
     supabase
       .from("ecf_certificate_metadata")
       .select("subject, valid_until, is_ready, environment, last_validation_error")
@@ -63,6 +65,7 @@ export async function loadEcfActivationReadiness(args: {
     environment,
     issuer: issuerInputFromTenantRow(tenantRes.data),
     certificate: certRes.data ?? null,
+    representativeId: representativeRes && !representativeRes.error ? representativeRes.data?.ecf_representative_id ?? null : null,
     sequencesNextRaw: tenantRes.data.ncf_secuencias_por_tipo,
     sequencesBoundsRaw: boundsRaw,
     ecfTypeCodes: NCF_E_TIPO_OPCIONES.map((type) => type.codigo),

@@ -118,3 +118,21 @@ export function buildIssuerUpdatePayload(input: EcfIssuerInput): Record<string, 
   }
   return payload;
 }
+
+/** Cedula of the DGII-registered representative, digits only (accepts dashes and spaces). */
+export function normalizeRepresentativeId(value: string | null | undefined): string {
+  return (value ?? "").replace(/\D/g, "");
+}
+
+/** Optional field: empty is valid; otherwise it must be an 11-digit cedula. */
+export function validateRepresentativeId(value: string | null | undefined): { valid: boolean; message: string } {
+  const digits = normalizeRepresentativeId(value);
+  if (digits.length === 0 || digits.length === 11) return { valid: true, message: "" };
+  return { valid: false, message: "La cédula del representante debe tener 11 dígitos." };
+}
+
+/** Value persisted in `tenants.ecf_representative_id` (null when empty). */
+export function buildRepresentativeIdPayload(value: string | null | undefined): { ecf_representative_id: string | null } {
+  const digits = normalizeRepresentativeId(value);
+  return { ecf_representative_id: digits.length > 0 ? digits : null };
+}
