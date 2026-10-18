@@ -1,0 +1,471 @@
+// Test-set runs: plan, resumable submission batches, status polling and portal downloads.
+//
+// Submission order (sequence_order):
+//  1. Every E32 listed in the RFCE sheet (consumo < RD$250k), in ECF-sheet order: first the full E32
+//     is signed and kept for the portal upload (kind portal_upload, never sent through the API),
+//     then its RFCE (kind rfce) is sent to the summaries service with the E32 security code.
+//  2. Every other e-CF goes to the reception service in sheet order, except that a document
+//     referenced by another one (InformacionReferencia/NCFModificado, e.g. the invoice an E33/E34
+//     note modifies) is moved right before its first referrer. A referrer is only sent once the
+//     referenced document is accepted by DGII, so send-next pauses (waitingFor) until status polling
+//     records that acceptance.
+import {
+  applySecurityCode,
+  buildTestSet,
+  securityCodeFromSignedXml,
+  stampSignatureTime,
+  TestSetError,
+  type BuiltDocument,
+  type TestSet,
+} from "./builder.ts";
+import { DgiiError, type DgiiClient, type DgiiMessage, type DgiiSendResult } from "./dgiiClient.ts";
+import { HttpError, json, loadSigner, type ActionContext } from "./context.ts";
+import { readXlsx, XlsxError } from "./xlsx.ts";
+
+export type SubmissionKind = "ecf" | "rfce" | "portal_upload";
+export type SubmissionStatus = "pending" | "sent" | "accepted" | "accepted_conditional" | "rejected" | "error" | "ready_for_portal";
+export type RunEnvironment = "test" | "certification";
+export type RunStatus = "pending" | "running" | "completed" | "failed";
+
+export interface PlannedSubmission {
+  caseId: string;
+  encf: string;
+  tipoEcf: string;
+  kind: SubmissionKind;
+  sequenceOrder: number;
+  dependsOnCaseId: string | null;
+  unsignedXml: string;
+}
+
+export interface Submission extends PlannedSubmission {
+  id: string;
+  status: SubmissionStatus;
+  trackId: string | null;
+  messages: DgiiMessage[];
+  signedXml: string | null;
+  securityCode: string | null;
+  attempts: number;
+}
+
+export interface SubmissionPatch {
+  status?: SubmissionStatus;
+  trackId?: string | null;
+  messages?: DgiiMessage[];
+  signedXml?: string | null;
+  signedSha256?: string | null;
+  securityCode?: string | null;
+  attempts?: number;
+}
+
+export interface Run {
+  id: string;
+  tenantId: string;
+  environment: RunEnvironment;
+  status: RunStatus;
+  createdAt: string;
+}
+
+export interface RunStore {
+  createRun(input: {
+    tenantId: string;
+    environment: RunEnvironment;
+    sourceSha256: string;
+    createdBy: string;
+    submissions: PlannedSubmission[];
+  }): Promise<Run>;
+  /** The run when it belongs to the tenant, else null. */
+  getRun(tenantId: string, runId: string): Promise<Run | null>;
+  latestRun(tenantId: string, environment: RunEnvironment): Promise<Run | null>;
+  /** Ordered by sequence_order. */
+  listSubmissions(runId: string): Promise<Submission[]>;
+  /**
+   * Applies the patch; with `expected`, only when the row still has that status and attempt count
+   * (optimistic claim so two concurrent batches never send the same document). Returns whether a
+   * row was updated.
+   */
+  updateSubmission(id: string, patch: SubmissionPatch, expected?: { status: SubmissionStatus; attempts: number }): Promise<boolean>;
+  setRunStatus(runId: string, status: RunStatus): Promise<void>;
+}
+
+export const MAX_XLSX_BYTES = 2 * 1024 * 1024;
+export const MAX_SEND_LIMIT = 5;
+export const MAX_STATUS_POLLS = 10;
+export const MAX_ATTEMPTS = 3;
+const DEFAULT_BUDGET_MS = 40_000;
+const RUN_ENVIRONMENTS: RunEnvironment[] = ["test", "certification"];
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const ACCEPTED: SubmissionStatus[] = ["accepted", "accepted_conditional"];
+const TERMINAL: SubmissionStatus[] = ["accepted", "accepted_conditional", "rejected", "error", "ready_for_portal"];
+
+/** Orders the documents of a test set (see the rule at the top of this file). */
+export function planSubmissions(set: TestSet): PlannedSubmission[] {
+  const out: PlannedSubmission[] = [];
+  const push = (doc: BuiltDocument, kind: SubmissionKind, dependsOnCaseId: string | null) =>
+    out.push({
+      caseId: doc.caseId,
+      encf: doc.encf,
+      tipoEcf: doc.tipoEcf,
+      kind,
+      sequenceOrder: out.length,
+      dependsOnCaseId,
+      unsignedXml: doc.xml,
+    });
+
+  const summaries = new Map(set.rfce.map((doc) => [doc.encf, doc]));
+  for (const doc of set.ecf) {
+    const summary = summaries.get(doc.encf);
+    if (!summary) continue;
+    push(doc, "portal_upload", null);
+    push(summary, "rfce", doc.caseId);
+  }
+
+  const byEncf = new Map(set.ecf.map((doc) => [doc.encf, doc]));
+  const remaining = set.ecf.filter((doc) => !summaries.has(doc.encf));
+  const placed = new Set<string>();
+  const visiting = new Set<string>();
+  const visit = (doc: BuiltDocument) => {
+    if (placed.has(doc.encf) || visiting.has(doc.encf)) return;
+    visiting.add(doc.encf);
+    const referenced = doc.references && doc.references !== doc.encf ? byEncf.get(doc.references) : undefined;
+    if (referenced && !summaries.has(referenced.encf)) visit(referenced);
+    visiting.delete(doc.encf);
+    placed.add(doc.encf);
+    push(doc, "ecf", referenced ? referenced.caseId : null);
+  };
+  remaining.forEach(visit);
+  return out;
+}
+
+/** The submission whose outcome gates this one, if any. */
+function dependencyOf(sub: Submission, all: Submission[]): Submission | null {
+  if (!sub.dependsOnCaseId) return null;
+  const candidates = all.filter((other) => other.caseId === sub.dependsOnCaseId && other !== sub);
+  if (sub.kind === "rfce") return candidates.find((other) => other.kind === "portal_upload") ?? null;
+  // A reference to a consumo E32 is satisfied by the acceptance of its summary.
+  return candidates.find((other) => other.kind === "ecf") ?? candidates.find((other) => other.kind === "rfce") ?? null;
+}
+
+/** DGII estado/codigo -> submission status (null when DGII is still processing). */
+export function mapDgiiStatus(estado: string | null, codigo: number | null): SubmissionStatus | null {
+  const normalized = (estado ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
+  if (normalized === "aceptado") return "accepted";
+  if (normalized === "aceptado condicional") return "accepted_conditional";
+  if (normalized === "rechazado") return "rejected";
+  if (normalized === "en proceso" || normalized === "no encontrado") return null;
+  if (codigo === 1) return "accepted";
+  if (codigo === 2) return "rejected";
+  if (codigo === 4) return "accepted_conditional";
+  return null;
+}
+
+export interface SubmissionView {
+  caseId: string;
+  encf: string;
+  tipoEcf: string;
+  kind: SubmissionKind;
+  sequenceOrder: number;
+  status: SubmissionStatus;
+  trackId: string | null;
+  messages: DgiiMessage[];
+}
+
+export interface RunSummary {
+  runId: string;
+  environment: RunEnvironment;
+  status: RunStatus;
+  createdAt: string;
+  counts: Record<SubmissionStatus, number>;
+  /** No pending documents left (sent documents may still await their DGII status). */
+  sendComplete: boolean;
+  /** Every document reached a final state. */
+  done: boolean;
+  items: SubmissionView[];
+}
+
+export function summarize(run: Run, subs: Submission[]): RunSummary {
+  const counts: Record<SubmissionStatus, number> = {
+    pending: 0,
+    sent: 0,
+    accepted: 0,
+    accepted_conditional: 0,
+    rejected: 0,
+    error: 0,
+    ready_for_portal: 0,
+  };
+  for (const sub of subs) counts[sub.status]++;
+  return {
+    runId: run.id,
+    environment: run.environment,
+    status: run.status,
+    createdAt: run.createdAt,
+    counts,
+    sendComplete: counts.pending === 0,
+    done: subs.every((sub) => TERMINAL.includes(sub.status)),
+    items: subs.map((sub) => ({
+      caseId: sub.caseId,
+      encf: sub.encf,
+      tipoEcf: sub.tipoEcf,
+      kind: sub.kind,
+      sequenceOrder: sub.sequenceOrder,
+      status: sub.status,
+      trackId: sub.trackId,
+      messages: sub.messages,
+    })),
+  };
+}
+
+async function sha256Hex(value: string | Uint8Array): Promise<string> {
+  const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function decodeBase64(value: unknown): Uint8Array {
+  if (typeof value !== "string" || !value) throw new HttpError(400, "INVALID_REQUEST", "xlsxBase64 is required.");
+  const clean = value.replace(/^data:[^,]*,/, "").replace(/\s+/g, "");
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(clean) || clean.length % 4 !== 0) throw new HttpError(400, "INVALID_REQUEST", "xlsxBase64 is not valid base64.");
+  if ((clean.length / 4) * 3 > MAX_XLSX_BYTES + 3) throw new HttpError(413, "PAYLOAD_TOO_LARGE", "The test set file is too large.");
+  const binary = atob(clean);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  if (bytes.length > MAX_XLSX_BYTES) throw new HttpError(413, "PAYLOAD_TOO_LARGE", "The test set file is too large.");
+  return bytes;
+}
+
+function runEnvironmentOf(payload: Record<string, unknown>): RunEnvironment {
+  const { environment } = payload;
+  if (typeof environment !== "string" || !RUN_ENVIRONMENTS.includes(environment as RunEnvironment)) {
+    throw new HttpError(400, "INVALID_REQUEST", "environment must be test or certification.");
+  }
+  return environment as RunEnvironment;
+}
+
+async function requireRun(ctx: ActionContext): Promise<Run> {
+  const { runId } = ctx.payload;
+  if (typeof runId !== "string" || !UUID.test(runId)) throw new HttpError(400, "INVALID_REQUEST", "runId is invalid.");
+  const run = await ctx.deps.store.getRun(ctx.tenantId, runId);
+  if (!run) throw new HttpError(404, "RUN_NOT_FOUND", "The certification run does not exist.");
+  return run;
+}
+
+const digits = (value: string | null | undefined) => (value ?? "").replace(/\D/g, "");
+
+export async function startRun(ctx: ActionContext): Promise<Response> {
+  const environment = runEnvironmentOf(ctx.payload);
+  const bytes = decodeBase64(ctx.payload.xlsxBase64);
+  let set: TestSet;
+  try {
+    set = buildTestSet(await readXlsx(bytes));
+  } catch (error) {
+    if (error instanceof XlsxError || error instanceof TestSetError) {
+      ctx.deps.log("test_set_invalid");
+      throw new HttpError(422, "INVALID_TEST_SET", error.message);
+    }
+    throw error;
+  }
+  const tenantRnc = digits(await ctx.deps.store.tenantRnc(ctx.tenantId));
+  if (!tenantRnc || [...set.ecf, ...set.rfce].some((doc) => doc.rncEmisor !== tenantRnc)) {
+    throw new HttpError(422, "RNC_MISMATCH", "The test set RNCEmisor does not match the tenant.");
+  }
+  if (!(await ctx.deps.store.loadCertificate(ctx.tenantId, environment))) {
+    throw new HttpError(409, "CERTIFICATE_NOT_READY", "No ready certificate for this environment.");
+  }
+  const run = await ctx.deps.store.createRun({
+    tenantId: ctx.tenantId,
+    environment,
+    sourceSha256: await sha256Hex(bytes),
+    createdBy: ctx.userId,
+    submissions: planSubmissions(set),
+  });
+  ctx.deps.log("run_started", { ecf: set.ecf.length, rfce: set.rfce.length });
+  return json(200, summarize(run, await ctx.deps.store.listSubmissions(run.id)));
+}
+
+async function refreshRunStatus(ctx: ActionContext, run: Run, subs: Submission[]): Promise<Run> {
+  const status: RunStatus = subs.every((sub) => TERMINAL.includes(sub.status)) ? "completed" : "running";
+  if (status !== run.status) await ctx.deps.store.setRunStatus(run.id, status);
+  return { ...run, status };
+}
+
+function failureMessage(error: DgiiError): DgiiMessage[] {
+  const base: DgiiMessage = { codigo: error.status === null ? null : String(error.status), valor: `DGII: ${error.kind}` };
+  return [base, ...error.messages].slice(0, 20);
+}
+
+function mapSendResult(sub: Submission, result: DgiiSendResult): SubmissionPatch {
+  if (sub.kind === "ecf") {
+    if (result.trackId) return { status: "sent", trackId: result.trackId, messages: result.messages };
+    return { status: result.httpStatus >= 400 ? "rejected" : "error", messages: result.messages };
+  }
+  const mapped = mapDgiiStatus(result.estado, result.codigo);
+  if (mapped) return { status: mapped, messages: result.messages };
+  return { status: result.httpStatus >= 400 ? "rejected" : "error", messages: result.messages };
+}
+
+export interface SendNextResult extends RunSummary {
+  processed: number;
+  /** caseId whose DGII acceptance is awaited before the next document can be sent. */
+  waitingFor: string | null;
+  /** Set when the batch stopped early because DGII failed; the documents stay pending. */
+  stoppedReason: string | null;
+}
+
+export async function sendNext(ctx: ActionContext): Promise<Response> {
+  const run = await requireRun(ctx);
+  const rawLimit = ctx.payload.limit ?? MAX_SEND_LIMIT;
+  if (typeof rawLimit !== "number" || !Number.isInteger(rawLimit) || rawLimit < 1 || rawLimit > MAX_SEND_LIMIT) {
+    throw new HttpError(400, "INVALID_REQUEST", `limit must be between 1 and ${MAX_SEND_LIMIT}.`);
+  }
+  const now = ctx.deps.now ?? Date.now;
+  const started = now();
+  const budget = ctx.deps.budgetMs ?? DEFAULT_BUDGET_MS;
+  const subs = await ctx.deps.store.listSubmissions(run.id);
+  let sign: ((xml: string, root: string) => string) | null = null;
+  let client: DgiiClient | null = null;
+  // One DGII token per call (and tenant); it never leaves this function.
+  let token: string | null = null;
+  const signWith = async (xml: string, root: string) => {
+    sign ??= await loadSigner(ctx, run.environment);
+    return sign(xml, root);
+  };
+  const tokenFor = async (): Promise<{ client: DgiiClient; token: string }> => {
+    client ??= ctx.deps.dgii(run.environment);
+    token ??= (await client.authenticate((seed) => signWith(seed, "SemillaModel"))).token;
+    return { client, token };
+  };
+
+  let processed = 0;
+  let waitingFor: string | null = null;
+  let stoppedReason: string | null = null;
+
+  for (const sub of subs) {
+    if (sub.status !== "pending") continue;
+    if (processed >= rawLimit || now() - started > budget) break;
+
+    const dependency = dependencyOf(sub, subs);
+    if (sub.kind === "rfce" && (!dependency || dependency.status !== "ready_for_portal" || !dependency.securityCode)) {
+      waitingFor = sub.dependsOnCaseId;
+      break;
+    }
+    if (sub.kind === "ecf" && dependency && !ACCEPTED.includes(dependency.status)) {
+      if (dependency.status === "rejected" || dependency.status === "error") {
+        const patch: SubmissionPatch = {
+          status: "error",
+          messages: [{ codigo: null, valor: `The referenced document ${dependency.encf} was not accepted by DGII.` }],
+        };
+        if (await ctx.deps.store.updateSubmission(sub.id, patch, { status: "pending", attempts: sub.attempts })) Object.assign(sub, patch);
+        continue;
+      }
+      waitingFor = dependency.caseId;
+      break;
+    }
+
+    if (sub.kind !== "portal_upload") {
+      // Authenticate before claiming, so a DGII outage does not consume attempts.
+      try {
+        await tokenFor();
+      } catch (error) {
+        if (!(error instanceof DgiiError)) throw error;
+        ctx.deps.log("dgii_auth_failed", { kind: error.kind, status: error.status });
+        stoppedReason = error.kind === "unauthorized" ? "DGII_AUTH_REJECTED" : "DGII_UNAVAILABLE";
+        break;
+      }
+    }
+
+    // Claim the row: a concurrent batch that already took it makes this update a no-op.
+    if (!(await ctx.deps.store.updateSubmission(sub.id, { attempts: sub.attempts + 1 }, { status: "pending", attempts: sub.attempts }))) {
+      stoppedReason = "CONCURRENT_BATCH";
+      break;
+    }
+    sub.attempts += 1;
+    processed++;
+
+    if (sub.kind === "portal_upload") {
+      const signedXml = await signWith(stampSignatureTime(sub.unsignedXml, new Date(now())), "ECF");
+      const patch: SubmissionPatch = {
+        status: "ready_for_portal",
+        signedXml,
+        signedSha256: await sha256Hex(signedXml),
+        securityCode: securityCodeFromSignedXml(signedXml),
+        messages: [],
+      };
+      await ctx.deps.store.updateSubmission(sub.id, patch);
+      Object.assign(sub, patch);
+      continue;
+    }
+
+    const signedXml =
+      sub.kind === "ecf"
+        ? await signWith(stampSignatureTime(sub.unsignedXml, new Date(now())), "ECF")
+        : await signWith(applySecurityCode(sub.unsignedXml, dependency!.securityCode!), "RFCE");
+    const signedSha256 = await sha256Hex(signedXml);
+    const fileName = `${sub.caseId}.xml`;
+    let patch: SubmissionPatch;
+    try {
+      const dgii = await tokenFor();
+      const result = sub.kind === "ecf" ? await dgii.client.sendEcf(dgii.token, fileName, signedXml) : await dgii.client.sendRfce(dgii.token, fileName, signedXml);
+      patch = { ...mapSendResult(sub, result), signedXml, signedSha256 };
+    } catch (error) {
+      if (!(error instanceof DgiiError)) throw error;
+      // Keep the document pending (up to MAX_ATTEMPTS) and stop the batch: no retry storms.
+      ctx.deps.log("dgii_send_failed", { kind: error.kind, status: error.status });
+      patch = { status: sub.attempts >= MAX_ATTEMPTS ? "error" : "pending", messages: failureMessage(error) };
+      stoppedReason = error.kind === "unauthorized" ? "DGII_AUTH_REJECTED" : "DGII_UNAVAILABLE";
+    }
+    await ctx.deps.store.updateSubmission(sub.id, patch);
+    Object.assign(sub, patch);
+    if (stoppedReason) break;
+  }
+
+  const updated = await refreshRunStatus(ctx, run, subs);
+  const result: SendNextResult = { ...summarize(updated, subs), processed, waitingFor, stoppedReason };
+  ctx.deps.log("send_next", { processed, waiting: waitingFor !== null, stopped: stoppedReason });
+  return json(200, result);
+}
+
+export async function pollStatus(ctx: ActionContext): Promise<Response> {
+  const run = await requireRun(ctx);
+  const subs = await ctx.deps.store.listSubmissions(run.id);
+  const toPoll = subs.filter((sub) => sub.status === "sent" && sub.trackId).slice(0, MAX_STATUS_POLLS);
+  let stoppedReason: string | null = null;
+  if (toPoll.length > 0) {
+    const sign = await loadSigner(ctx, run.environment);
+    const client = ctx.deps.dgii(run.environment);
+    try {
+      const { token } = await client.authenticate((seed) => sign(seed, "SemillaModel"));
+      for (const sub of toPoll) {
+        const result = await client.trackStatus(token, sub.trackId!);
+        const status = mapDgiiStatus(result.estado, result.codigo);
+        const patch: SubmissionPatch = { messages: result.messages };
+        if (status) patch.status = status;
+        await ctx.deps.store.updateSubmission(sub.id, patch);
+        Object.assign(sub, patch);
+      }
+    } catch (error) {
+      if (!(error instanceof DgiiError)) throw error;
+      ctx.deps.log("dgii_status_failed", { kind: error.kind, status: error.status });
+      stoppedReason = error.kind === "unauthorized" ? "DGII_AUTH_REJECTED" : "DGII_UNAVAILABLE";
+    }
+  }
+  const updated = await refreshRunStatus(ctx, run, subs);
+  return json(200, { ...summarize(updated, subs), polled: toPoll.length, stoppedReason });
+}
+
+export async function latestRun(ctx: ActionContext): Promise<Response> {
+  const environment = runEnvironmentOf(ctx.payload);
+  const run = await ctx.deps.store.latestRun(ctx.tenantId, environment);
+  if (!run) return json(200, { run: null });
+  return json(200, { run: summarize(run, await ctx.deps.store.listSubmissions(run.id)) });
+}
+
+export async function downloadSigned(ctx: ActionContext): Promise<Response> {
+  const run = await requireRun(ctx);
+  const { caseId } = ctx.payload;
+  if (typeof caseId !== "string" || !caseId) throw new HttpError(400, "INVALID_REQUEST", "caseId is required.");
+  const sub = (await ctx.deps.store.listSubmissions(run.id)).find((item) => item.caseId === caseId && item.kind === "portal_upload");
+  if (!sub || sub.status !== "ready_for_portal" || !sub.signedXml) {
+    throw new HttpError(404, "NOT_READY", "The signed document is not available for download.");
+  }
+  ctx.deps.log("download", { tipoEcf: sub.tipoEcf });
+  return json(200, { fileName: `${sub.caseId}.xml`, signedXml: sub.signedXml });
+}

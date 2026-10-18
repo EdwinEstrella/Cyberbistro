@@ -1,6 +1,7 @@
 // Shared types and helpers for the ecf-certification actions.
 import { NotConfiguredError, decryptPassphrase } from "./custody.ts";
 import { DgiiError, isDgiiEnvironment, type DgiiClient, type DgiiEnvironment } from "./dgiiClient.ts";
+import type { RunStore } from "./run.ts";
 
 export interface Membership {
   tenantId: string;
@@ -17,7 +18,7 @@ export interface SigningMaterial {
   cert: string;
 }
 
-export interface CertificationStore {
+export interface CertificationStore extends RunStore {
   /** Verified user id for a bearer token, or null. */
   authenticate(token: string): Promise<string | null>;
   /** Active memberships of the user. */
@@ -35,6 +36,10 @@ export interface CertificationDeps {
   /** A fresh client per call: tokens are never shared between calls or tenants. */
   dgii(environment: DgiiEnvironment): DgiiClient;
   log(event: string, detail?: Record<string, unknown>): void;
+  /** Clock (ms) for signature timestamps and the batch time budget; defaults to Date.now. */
+  now?(): number;
+  /** Wall-clock budget of one send-next call; defaults to 40s. */
+  budgetMs?: number;
 }
 
 export const CORS = {

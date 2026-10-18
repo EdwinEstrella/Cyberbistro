@@ -13,6 +13,7 @@ import {
   type CertificationDeps,
 } from "./context.ts";
 import { authCheck } from "./actions.ts";
+import { downloadSigned, latestRun, pollStatus, sendNext, startRun } from "./run.ts";
 
 export const MAX_BODY_BYTES = 4 * 1024 * 1024;
 const ADMIN_ROLES = ["admin", "super_admin"];
@@ -51,7 +52,14 @@ async function readBody(req: Request): Promise<string | null> {
   return new TextDecoder().decode(merged);
 }
 
-const ACTIONS: Record<string, ActionHandler> = { "auth-check": authCheck };
+const ACTIONS: Record<string, ActionHandler> = {
+  "auth-check": authCheck,
+  start: startRun,
+  "send-next": sendNext,
+  status: pollStatus,
+  latest: latestRun,
+  download: downloadSigned,
+};
 
 export async function handleRequest(req: Request, deps: CertificationDeps): Promise<Response> {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
