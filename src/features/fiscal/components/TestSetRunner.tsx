@@ -221,9 +221,6 @@ export function TestSetRunner({ tenantId, environment }: TestSetRunnerProps) {
       <p className="text-xs leading-relaxed text-muted-foreground">
         Descargá el Excel del Set de Pruebas desde el portal de la DGII y cargalo aquí. Cloudix arma cada e-CF y RFCE, los firma con tu certificado y los envía a la DGII en el orden correcto.
       </p>
-      <button type="button" disabled={busy !== null} onClick={() => void checkConnection()} className="inline-flex w-fit items-center gap-2 rounded-xl border border-primary/30 px-4 py-2.5 text-xs font-bold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50">
-        <RefreshCw className="size-4" /> {busy === "auth" ? "Probando..." : "Probar conexión con la DGII"}
-      </button>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-sm">
           <Upload className="size-4" /> Seleccionar archivo
@@ -300,6 +297,10 @@ export function TestSetRunner({ tenantId, environment }: TestSetRunnerProps) {
           )}
         </>
       )}
+
+      <button type="button" disabled={busy !== null} onClick={() => void checkConnection()} className="flex w-full items-center justify-center gap-2 rounded-xl border border-primary/40 px-5 py-3.5 text-sm font-bold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50">
+        <RefreshCw className="size-4" /> {busy === "auth" ? "Probando..." : "Probar conexión con la DGII"}
+      </button>
 
       {status && (
         <p role="status" className={`text-xs font-semibold ${status.kind === "success" ? "text-green-600" : status.kind === "error" ? "text-red-500" : "text-muted-foreground"}`}>{status.text}</p>
