@@ -43,5 +43,9 @@ Mode: off (no project TDD config). Runner: `npx vitest run`, `npm run typecheck`
 - 2026-10-18 T1-T3 done. Evidence: `npm run typecheck` clean; `npx vitest run` 171 files passed, 1 skipped (RLS, no DATABASE_URL), 1137 tests passed, 2 skipped.
 - Open: exact DGII root name of the declaracion jurada (assumed `DeclaracionJurada`, constant in document.ts); postulacion root `Postulacion` and RNC tag `RNCContribuyente` taken from the library sample.
 
+- 2026-10-18 PROD: migration ecf_certification_progress applied (user authorized). Verified: both tables RLS on, no anon
+  grants; progress = authenticated SELECT/INSERT/UPDATE gated by 3 policies; signed_documents = column SELECT only for
+  admins. Edge function NOT deployed yet (user asked to hold; files exported with hashes for later Dokploy mounts).
+
 ## Next step
 User-approved: apply migration 20261018130000, deploy ecf-sign-document as Dokploy file mounts (custody.ts, document.ts, handler.ts, signer.ts, store.ts, index.ts), then test with a real DGII postulacion XML.
