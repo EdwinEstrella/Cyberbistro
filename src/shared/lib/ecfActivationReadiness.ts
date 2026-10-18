@@ -39,6 +39,8 @@ export interface EcfReadinessInput {
   issuer: EcfIssuerInput;
   /** Certificate metadata row for the SELECTED environment (null when none). */
   certificate: CertificateHealthMetadata | null | undefined;
+  /** Optional cedula of the registered representative; only drives a non-blocking warning. */
+  representativeId?: string | null;
   /** Persisted `ncf_secuencias_por_tipo` and `ecf_secuencias_rangos` (raw jsonb). */
   sequencesNextRaw: unknown;
   sequencesBoundsRaw: unknown;
@@ -79,10 +81,13 @@ export function evaluateEcfActivationReadiness(input: EcfReadinessInput): EcfRea
   const health = evaluateCertificateHealth({
     metadata: input.certificate,
     tenantRnc: input.issuer.rnc,
+    representativeId: input.representativeId,
     selectedEnvironment: String(input.environment ?? ""),
     now: input.now,
   });
-  if (health.status !== "ok" && !(health.status === "warning" && health.reason === "EXPIRING_SOON")) {
+  const nonBlockingWarning =
+    health.status === "warning" && (health.reason === "EXPIRING_SOON" || health.reason === "SIGNER_NOT_REPRESENTATIVE");
+  if (health.status !== "ok" && !nonBlockingWarning) {
     missing.push({ code: "CERTIFICATE", message: formatCertificateHealth(health) });
   }
 

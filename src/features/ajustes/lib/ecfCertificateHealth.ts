@@ -23,6 +23,7 @@ export type CertificateHealthReason =
   | "EXPIRED"
   | "WRONG_PASSWORD"
   | "RNC_MISMATCH"
+  | "SIGNER_NOT_REPRESENTATIVE"
   | "INVALID_FILE"
   | "ENVIRONMENT_MISMATCH"
   | "CERTIFICATE_NOT_FOUND"
@@ -50,6 +51,8 @@ export interface CertificateHealthMetadata {
 export interface CertificateHealthInput {
   metadata: CertificateHealthMetadata | null | undefined;
   tenantRnc?: string | null;
+  /** Cedula of the representative registered with the DGII (optional). */
+  representativeId?: string | null;
   selectedEnvironment: string;
   now?: Date;
   /** Optional explicit error code (edge function or worker); overrides last_validation_error. */
@@ -92,16 +95,71 @@ export function extractSubjectRncCandidates(subject: string | null | undefined):
   return [...found];
 }
 
+export interface SubjectIdentifiers {
+  /** Company RNCs: `VATDO-` prefix, organizationIdentifier, or a bare 9-digit number. */
+  companyIds: string[];
+  /** Person documents: `IDCDO-`/`PASDO-`/`PNODO-` prefix, or a bare 11-digit cedula. */
+  personIds: string[];
+}
+
+const COMPANY_PREFIXES = new Set(["VATDO"]);
+const PERSON_PREFIXES = new Set(["IDCDO", "PASDO", "PNODO"]);
+
 /**
- * True only when the subject carries RNC-like numbers AND none match the tenant RNC.
- * Unknown (no tenant RNC or no number in the subject) is never a mismatch.
+ * Classifies the identifiers of a certificate SUBJECT (ETSI EN 319 412-1 semantics identifiers).
+ * Works with both `undefined=` labels and friendly labels. Never pass the issuer: only the subject
+ * identifies the signer.
+ */
+export function parseSubjectIdentifiers(subject: string | null | undefined): SubjectIdentifiers {
+  const companyIds = new Set<string>();
+  const personIds = new Set<string>();
+  if (!subject) return { companyIds: [], personIds: [] };
+
+  const prefixed = /([A-Z]{5})-([0-9][0-9-]*[0-9]|[0-9])/gi;
+  let rest = subject.replace(prefixed, (_match, prefix: string, value: string) => {
+    const key = prefix.toUpperCase();
+    const digits = value.replace(/\D/g, "");
+    if (COMPANY_PREFIXES.has(key)) companyIds.add(digits);
+    else if (PERSON_PREFIXES.has(key)) personIds.add(digits);
+    return " ";
+  });
+  rest = rest.replace(/\s+/g, " ");
+
+  for (const token of rest.match(/\d[\d-]*\d|\d/g) ?? []) {
+    const digits = token.replace(/\D/g, "");
+    if (digits.length === 9) companyIds.add(digits);
+    else if (digits.length === 11) personIds.add(digits);
+  }
+  return { companyIds: [...companyIds], personIds: [...personIds] };
+}
+
+/**
+ * True only when the subject carries company identifiers AND none match the tenant RNC.
+ * Person-only certificates and unknown values are never a mismatch.
  */
 export function isRncMismatch(subject: string | null | undefined, tenantRnc: string | null | undefined): boolean {
   const tenant = digitsOnly(tenantRnc);
   if (!tenant) return false;
-  const candidates = extractSubjectRncCandidates(subject);
-  if (candidates.length === 0) return false;
-  return !candidates.includes(tenant);
+  const { companyIds, personIds } = parseSubjectIdentifiers(subject);
+  if (companyIds.length === 0) return false;
+  // An 11-digit tenant RNC (natural person) may legitimately match a person id.
+  return !companyIds.includes(tenant) && !personIds.includes(tenant);
+}
+
+/** True when the subject identifies only persons and none matches the registered representative. */
+export function isSignerNotRepresentative(
+  subject: string | null | undefined,
+  tenantRnc: string | null | undefined,
+  representativeId: string | null | undefined,
+): boolean {
+  const representative = digitsOnly(representativeId);
+  if (!representative) return false;
+  const { companyIds, personIds } = parseSubjectIdentifiers(subject);
+  if (personIds.length === 0) return false;
+  if (personIds.includes(representative)) return false;
+  const tenant = digitsOnly(tenantRnc);
+  if (tenant && (companyIds.includes(tenant) || personIds.includes(tenant))) return false;
+  return true;
 }
 
 function build(
@@ -185,7 +243,7 @@ export function describeCertificateErrorCode(
 
 /** Overall health of the stored certificate for the selected environment. */
 export function evaluateCertificateHealth(input: CertificateHealthInput): CertificateHealth {
-  const { metadata, tenantRnc, selectedEnvironment } = input;
+  const { metadata, tenantRnc, selectedEnvironment, representativeId } = input;
   const now = input.now ?? new Date();
 
   if (!metadata) {
@@ -212,6 +270,15 @@ export function evaluateCertificateHealth(input: CertificateHealthInput): Certif
 
   if (isRncMismatch(metadata.subject, tenantRnc)) {
     return describeCertificateErrorCode("RNC_MISMATCH");
+  }
+
+  if (isSignerNotRepresentative(metadata.subject, tenantRnc, representativeId)) {
+    return build(
+      "warning",
+      "SIGNER_NOT_REPRESENTATIVE",
+      "El certificado es de otra persona distinta al representante registrado. Verificá que esté autorizada como firmante en la DGII.",
+      "none",
+    );
   }
 
   if (validUntil && !Number.isNaN(validUntil.getTime()) && validUntil.getTime() - now.getTime() <= EXPIRING_SOON_DAYS * DAY_MS) {

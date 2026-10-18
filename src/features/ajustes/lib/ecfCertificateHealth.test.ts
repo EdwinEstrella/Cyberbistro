@@ -6,7 +6,9 @@ import {
   formatCertificateDate,
   formatCertificateHealth,
   isRncMismatch,
+  isSignerNotRepresentative,
   normalizeCertificateErrorCode,
+  parseSubjectIdentifiers,
 } from "./ecfCertificateHealth";
 
 const now = new Date("2026-10-17T12:00:00Z");
@@ -141,5 +143,62 @@ describe("helpers", () => {
     expect(text).toContain("contraseña");
     expect(text).toContain("Volvé a escribir");
     expect(formatCertificateHealth({ status: "ok", reason: "OK", message: "Listo.", action: "none" })).toBe("Listo.");
+  });
+});
+
+describe("natural-person signer certificates", () => {
+  const salpimentaoRnc = "133488485";
+  const personSubject =
+    "C=DO, undefined=TORIBIO GUERRERO, undefined=JOSE ABRAHAN, undefined=IDCDO-12100129126, CN=JOSE ABRAHAN TORIBIO GUERRERO, undefined=QUALIFIED CERTIFICATE FOR NATURAL PERSON - TAX PROCEDURES";
+  const friendlySubject =
+    "C=DO, SN=TORIBIO GUERRERO, GN=JOSE ABRAHAN, serialNumber=IDCDO-12100129126, CN=JOSE ABRAHAN TORIBIO GUERRERO, description=QUALIFIED CERTIFICATE FOR NATURAL PERSON - TAX PROCEDURES";
+  const meta = (s: string) => ({ ...base, subject: s });
+  const health = (s: string, extra: any = {}) =>
+    evaluateCertificateHealth(input(meta(s), { tenantRnc: salpimentaoRnc, ...extra }));
+
+  it("classifies company and person identifiers", () => {
+    expect(parseSubjectIdentifiers(personSubject)).toEqual({ companyIds: [], personIds: ["12100129126"] });
+    expect(parseSubjectIdentifiers("organizationIdentifier=VATDO-133488485, serialNumber=IDCDO-00112345678")).toEqual({
+      companyIds: ["133488485"],
+      personIds: ["00112345678"],
+    });
+    expect(parseSubjectIdentifiers("serialNumber=131234567")).toEqual({ companyIds: ["131234567"], personIds: [] });
+    expect(parseSubjectIdentifiers(null)).toEqual({ companyIds: [], personIds: [] });
+  });
+
+  it("does not treat a person-only certificate as an RNC mismatch", () => {
+    expect(isRncMismatch(personSubject, salpimentaoRnc)).toBe(false);
+    expect(health(personSubject)).toMatchObject({ status: "ok", reason: "OK" });
+  });
+
+  it("is ok when the representative cedula matches the signer", () => {
+    expect(health(personSubject, { representativeId: "121-0012912-6" })).toMatchObject({ status: "ok", reason: "OK" });
+  });
+
+  it("warns (non blocking reason) when the signer differs from the representative", () => {
+    const h = health(personSubject, { representativeId: "00112345678" });
+    expect(h).toMatchObject({ status: "warning", reason: "SIGNER_NOT_REPRESENTATIVE" });
+    expect(h.message).toContain("otra persona");
+    expect(isSignerNotRepresentative(personSubject, salpimentaoRnc, "00112345678")).toBe(true);
+    expect(isSignerNotRepresentative(personSubject, salpimentaoRnc, "")).toBe(false);
+  });
+
+  it("accepts the friendly-label subject variant", () => {
+    expect(health(friendlySubject)).toMatchObject({ status: "ok", reason: "OK" });
+    expect(health(friendlySubject, { representativeId: "99999999999" })).toMatchObject({ reason: "SIGNER_NOT_REPRESENTATIVE" });
+  });
+
+  it("keeps company certificates strict", () => {
+    expect(health("CN=EMPRESA, organizationIdentifier=VATDO-133488485")).toMatchObject({ status: "ok", reason: "OK" });
+    expect(health("CN=EMPRESA, undefined=VATDO-999999999")).toMatchObject({ status: "error", reason: "RNC_MISMATCH" });
+    expect(health("CN=EMPRESA, serialNumber=IDCDO-12100129126, organizationIdentifier=VATDO-999999999")).toMatchObject({
+      reason: "RNC_MISMATCH",
+    });
+  });
+
+  it("never counts issuer identifiers (only the subject is evaluated)", () => {
+    const issuer = "C=DO, O=VIAFIRMA, undefined=VATDO-130222509, CN=VIAFIRMA QUALIFIED CERTIFICATES";
+    const h = evaluateCertificateHealth(input({ ...meta(personSubject), issuer }, { tenantRnc: salpimentaoRnc }));
+    expect(h.reason).toBe("OK");
   });
 });

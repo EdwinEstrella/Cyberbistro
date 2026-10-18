@@ -79,6 +79,14 @@ describe("evaluateEcfActivationReadiness", () => {
     expect(codes(readyInput({ certificate: { ...base.certificate, is_ready: false } }))).toEqual(["CERTIFICATE"]);
   });
 
+  it("accepts a natural-person signer certificate and never blocks on a representative warning", () => {
+    const base = readyInput();
+    const person = { ...base.certificate, subject: "undefined=IDCDO-12100129126, CN=JOSE ABRAHAN TORIBIO GUERRERO" };
+    expect(evaluateEcfActivationReadiness(readyInput({ certificate: person }))).toEqual({ ready: true, missing: [] });
+    expect(evaluateEcfActivationReadiness(readyInput({ certificate: person, representativeId: "12100129126" })).ready).toBe(true);
+    expect(evaluateEcfActivationReadiness(readyInput({ certificate: person, representativeId: "00112345678" })).ready).toBe(true);
+  });
+
   it("blocks an expired certificate and tells what to do", () => {
     const base = readyInput();
     const result = evaluateEcfActivationReadiness(readyInput({ certificate: { ...base.certificate, valid_until: "2026-10-01T00:00:00Z" } }));
