@@ -17,6 +17,7 @@ import {
 } from "../../../shared/lib/ecfActivationReadiness";
 import { loadEcfActivationReadiness } from "../lib/loadEcfReadiness";
 import { buildReceptorUrls } from "../lib/receptorUrls";
+import { DocumentSigner } from "./DocumentSigner";
 
 type EcfEnvironment = "test" | "certification" | "production";
 
@@ -736,6 +737,18 @@ export function ActivationPanel() {
                   )}
                 </div>
 
+                {certificationStep === 1 && (
+                  <div className="mt-4">
+                    <DocumentSigner
+                      tenantId={tenantId}
+                      environment={environment}
+                      documentType="postulacion"
+                      title="Firmar postulación XML"
+                      helperText="Descargá el XML de postulación desde el portal de la DGII, firmalo aquí con tu certificado y subí el archivo firmado al portal."
+                    />
+                  </div>
+                )}
+
                 {certificationStep === 2 && (
                   <div className="mt-4 rounded-xl border border-dashed border-primary/35 bg-muted/20 p-5">
                     <div className="flex items-center gap-2 text-sm font-bold text-foreground"><FileKey2 className="size-4 text-primary" /> Subir Set de Pruebas de la DGII (.xlsx)</div>
@@ -938,20 +951,13 @@ export function ActivationPanel() {
                       </p>
                     </div>
 
-                    <div className="rounded-xl border border-dashed border-primary/35 bg-muted/20 p-5">
-                      <div className="flex items-center gap-2 text-sm font-bold text-foreground"><Download className="size-4 text-primary" /> Firmar declaracion jurada XML</div>
-                      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-                        <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-sm">
-                          <Upload className="size-4" /> Seleccionar archivo
-                          <input type="file" accept=".xml,application/xml" className="sr-only" onChange={(event) => setMessage(`Archivo ${event.target.files?.[0]?.name ?? ""} seleccionado para simulación de firma.`)} />
-                        </label>
-                        <span className="text-xs text-muted-foreground">Ningún archivo seleccionado</span>
-                        <button type="button" disabled className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary/30 px-4 py-2.5 text-xs font-bold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50 sm:ml-auto">
-                          <CheckCircle className="size-4" /> Firmar XML
-                        </button>
-                      </div>
-                      <p className="mt-3 text-xs text-muted-foreground">Este paso no envia el archivo automaticamente: solo lo firma para que el usuario lo suba manualmente en el portal DGII.</p>
-                    </div>
+                    <DocumentSigner
+                      tenantId={tenantId}
+                      environment={environment}
+                      documentType="declaracion_jurada"
+                      title="Firmar declaración jurada XML"
+                      helperText="Descargá la declaración jurada desde el portal de la DGII, firmala aquí con tu certificado digital y subí el archivo firmado al portal. Este paso no envía nada automáticamente."
+                    />
 
                     <button type="button" onClick={openCertificationPortal} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-900 dark:bg-slate-800 dark:hover:bg-slate-700">
                       <ExternalLink className="size-4" /> Ir al Portal DGII
