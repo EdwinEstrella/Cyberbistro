@@ -44,5 +44,7 @@ Mode: off. Runner: `npx vitest run`, `npm run typecheck`.
 ## Redeploy (supabase/functions/ecf-certification)
 Changed: dgiiClient.ts, run.ts, store.ts. New: commercialApproval.ts. Apply migration 20261018150000_ecf_certification_run_types.sql BEFORE redeploying (store now selects/filters run_type).
 
+- 2026-10-18 PROD: migration ecf_certification_run_types applied + NOTIFY pgrst (existing run -> test_set; kind CHECK includes acecf). Dokploy mounts: created commercialApproval.ts, updated dgiiClient.ts, store.ts, run.ts (content verified, 12 files, no bad paths). Pending: functions container restart (user click), then step 3 run.
+
 ## Next step
 Apply the migration, redeploy the changed ecf-certification files, run step 3 against CerteCF with the real set; then steps 4+.
