@@ -79,6 +79,8 @@ Mode: off (no project TDD config). Runner: `npx vitest run`, `npm run typecheck`
   `MontoSubRecargo`; `NumeroLineaDoR` -> `NumeroLinea`; `SubtotalImpuestoAdicional` treated as a single element.
 - RFCE built without FechaHoraFirma (as dgii-ecf convertECF32ToRFCE).
 
+- 2026-10-18 PROD: migration ecf_certification_submissions applied + NOTIFY pgrst reload (RLS on, no client table grants, unsigned_xml hidden). ecf-certification deployed as 11 Dokploy file mounts (content verified, index.ts last); unauthenticated call -> 401. Added "Probar conexion con la DGII" (auth-check) button, commit 74dfe1c (inline, 1 mechanical change; typecheck + 12 tests pass). Real CerteCF auth pending the user click.
+
 ## Next step
 User confirmation to apply migration 20261018140000 in production and deploy `ecf-certification` on Dokploy
 (file mounts); then `auth-check` against CerteCF, then run the set from wizard step 2.
