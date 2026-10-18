@@ -1,0 +1,37 @@
+// ecf-sign-document: signs DGII documents (postulacion, declaracion jurada) with the tenant certificate.
+// VERIFY_JWT is off globally, so the handler authenticates the bearer token itself.
+import { handleRequest } from "./handler.ts";
+import { readSigningMaterial, sign } from "./signer.ts";
+import { createSupabaseStore } from "./store.ts";
+
+function env(name: string): string {
+  const value = Deno.env.get(name)?.trim();
+  if (!value) throw new Error(`${name} is required.`);
+  return value;
+}
+
+let store: ReturnType<typeof createSupabaseStore> | null = null;
+
+Deno.serve((req) => {
+  try {
+    store ??= createSupabaseStore({
+      url: env("SUPABASE_URL"),
+      publishableKey: env("SUPABASE_PUBLISHABLE_KEY"),
+      serviceRoleKey: env("SUPABASE_SERVICE_ROLE_KEY"),
+    });
+  } catch {
+    console.warn("ecf-sign-document: missing required environment");
+    return new Response(JSON.stringify({ error: "Signing failed.", code: "INTERNAL" }), {
+      status: 500,
+      headers: { "content-type": "application/json; charset=utf-8", "Access-Control-Allow-Origin": "*" },
+    });
+  }
+  return handleRequest(req, {
+    store,
+    readSigningMaterial,
+    sign,
+    encryptionKey: () => Deno.env.get("ECF_ENCRYPTION_KEY"),
+    // Event names and short codes only: never payloads, certificates or secrets.
+    log: (event, detail) => console.warn(`ecf-sign-document: ${event}`, detail ?? {}),
+  });
+});
