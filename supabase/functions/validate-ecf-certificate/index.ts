@@ -1,6 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { P12Reader } from "npm:dgii-ecf";
+import forge from "npm:node-forge@1.3.1";
+import { formatDistinguishedName } from "./distinguishedName.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -150,6 +152,20 @@ serve(async (req) => {
       }
       return await rejectUpload("El archivo no es un certificado .p12 válido.", "INVALID_FILE");
     }
+    // dgii-ecf prints `undefined=` for OIDs without a short name; re-read the names with readable
+    // labels. Any failure keeps the library strings, so validation behavior is unchanged.
+    let subjectText = certInfo.subject;
+    let issuerText = certInfo.issuer;
+    try {
+      const pem = new P12Reader(passphrase).getKeyFromStringBase64(btoa(binary)).cert;
+      if (pem) {
+        const parsed = forge.pki.certificateFromPem(pem);
+        subjectText = formatDistinguishedName(parsed.subject.attributes) || subjectText;
+        issuerText = formatDistinguishedName(parsed.issuer.attributes) || issuerText;
+      }
+    } catch {
+      // keep the library-provided strings
+    }
     if (!certInfo.subject || !certInfo.validTo) {
       return await rejectUpload("El archivo no es un certificado .p12 válido.", "INVALID_FILE");
     }
@@ -170,8 +186,8 @@ serve(async (req) => {
     const { error: insertError } = await admin.from("ecf_certificate_metadata").upsert({
       tenant_id: tenantId,
       environment,
-      subject: certInfo.subject,
-      issuer: certInfo.issuer,
+      subject: subjectText,
+      issuer: issuerText,
       serial_number: certInfo.serialNumber,
       valid_from: certInfo.validFrom,
       valid_until: certInfo.validTo,
@@ -201,7 +217,7 @@ serve(async (req) => {
       if (removeError) console.warn("validate-ecf-certificate: could not delete the previous certificate object.");
     }
 
-    return Response.json({ success: true, subject: certInfo.subject }, { headers: corsHeaders });
+    return Response.json({ success: true, subject: subjectText }, { headers: corsHeaders });
   } catch (error) {
     const status = error instanceof HttpError ? error.status : 500;
     const message = error instanceof HttpError ? error.message : "Certificate validation failed.";
