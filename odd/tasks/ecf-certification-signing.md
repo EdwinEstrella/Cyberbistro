@@ -47,5 +47,9 @@ Mode: off (no project TDD config). Runner: `npx vitest run`, `npm run typecheck`
   grants; progress = authenticated SELECT/INSERT/UPDATE gated by 3 policies; signed_documents = column SELECT only for
   admins. Edge function NOT deployed yet (user asked to hold; files exported with hashes for later Dokploy mounts).
 
+- 2026-10-18 PROD: ran `NOTIFY pgrst, 'reload schema'` (PostgREST cache hid the new column/table: 400/404 in the app).
+  Deployed ecf-sign-document as 6 Dokploy file mounts (content verified, index.ts last; no Deploy needed).
+  Smoke: no auth -> 401, bad token -> 401, OPTIONS -> 200. Real signing pending the user's retry from the wizard.
+
 ## Next step
 User-approved: apply migration 20261018130000, deploy ecf-sign-document as Dokploy file mounts (custody.ts, document.ts, handler.ts, signer.ts, store.ts, index.ts), then test with a real DGII postulacion XML.
