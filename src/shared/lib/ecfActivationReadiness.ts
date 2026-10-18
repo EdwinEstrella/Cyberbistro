@@ -135,6 +135,14 @@ export function describeActivationSuccess(environment: EcfEnvironmentId): string
   return `Facturación electrónica activada en ${ECF_ENVIRONMENT_LABELS[environment]}. La emisión real a la DGII depende de que el servicio fiscal (worker) esté desplegado y en ejecución.`;
 }
 
+/**
+ * The activation notice ("Facturación electrónica activada en ...") is only shown while the tenant
+ * is really issuing e-CF (tenants.fiscal_mode === "dgii_ecf"); on any other fiscal mode it is hidden.
+ */
+export function activationNotice(fiscalMode: unknown, environment: EcfEnvironmentId): string | null {
+  return fiscalMode === "dgii_ecf" ? describeActivationSuccess(environment) : null;
+}
+
 export type EcfSaveGateDecision = "allow" | "allow_with_warning" | "block";
 
 export interface EcfSaveGate {

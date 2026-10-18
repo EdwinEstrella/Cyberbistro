@@ -11,7 +11,7 @@ import { buildRangesSavePayload, restoreRanges, validateEcfRange } from "../../.
 import {
   buildActivationPayload,
   buildDeactivationPayload,
-  describeActivationSuccess,
+  activationNotice,
   formatReadinessIssues,
   type EcfReadinessResult,
 } from "../../../shared/lib/ecfActivationReadiness";
@@ -19,6 +19,7 @@ import { loadEcfActivationReadiness } from "../lib/loadEcfReadiness";
 import { buildReceptorUrls } from "../lib/receptorUrls";
 import { advanceProgress, buildProgressUpsert, restoreProgress, type CertificationProgress } from "../lib/ecfCertificationProgress";
 import { DocumentSigner } from "./DocumentSigner";
+import { TestSetRunner } from "./TestSetRunner";
 
 type EcfEnvironment = "test" | "certification" | "production";
 
@@ -71,9 +72,10 @@ export function ActivationPanel() {
   });
   const [enabledTypes, setEnabledTypes] = useState<string[]>(["E31", "E32"]);
   const [certificateReady, setCertificateReady] = useState(false);
-  const [testSetFileName, setTestSetFileName] = useState("");
   const [commercialApprovalFileName, setCommercialApprovalFileName] = useState("");
   const [fiscalActive, setFiscalActive] = useState(false);
+  const [fiscalMode, setFiscalMode] = useState<string | null>(null);
+  const [showActivationNotice, setShowActivationNotice] = useState(false);
   const [certificationStep, setCertificationStep] = useState(1);
   const [completedCertificationSteps, setCompletedCertificationSteps] = useState<number[]>([]);
   const [companyLookupLoading, setCompanyLookupLoading] = useState(false);
@@ -134,6 +136,7 @@ export function ActivationPanel() {
           representativeId,
         });
         setFiscalActive(data.fiscal_mode === "dgii_ecf");
+        setFiscalMode(typeof data.fiscal_mode === "string" ? data.fiscal_mode : null);
         setSavedNextRaw(data.ncf_secuencias_por_tipo ?? {});
         setSavedBoundsRaw(bounds ?? {});
         const fiscalSequences = restoreRanges(NCF_E_TIPO_OPCIONES.map((type) => type.codigo), data.ncf_secuencias_por_tipo, bounds);
@@ -342,8 +345,9 @@ export function ActivationPanel() {
         deviceId: await getDeviceId(),
       });
       setFiscalActive(true);
+      setFiscalMode("dgii_ecf");
       setStep(5);
-      setMessage(describeActivationSuccess(environment));
+      setShowActivationNotice(true);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "No se pudo activar la facturación electrónica.");
     } finally {
@@ -357,15 +361,18 @@ export function ActivationPanel() {
     setMessage("");
     try {
       const loaded = await refreshReadiness();
+      const deactivation = buildDeactivationPayload(loaded?.fiscalModeFallback);
       await enqueueLocalWrite({
         tenantId,
         tableName: "tenants",
         rowId: tenantId,
         op: "update",
-        payload: buildDeactivationPayload(loaded?.fiscalModeFallback),
+        payload: deactivation,
         deviceId: await getDeviceId(),
       });
       setFiscalActive(false);
+      setFiscalMode(deactivation.fiscal_mode);
+      setShowActivationNotice(false);
       setMessage("Facturación electrónica desactivada. El POS vuelve al modo fiscal de respaldo configurado en Ajustes.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "No se pudo desactivar la facturación electrónica.");
@@ -786,22 +793,7 @@ export function ActivationPanel() {
                   </div>
                 )}
 
-                {certificationStep === 2 && (
-                  <div className="mt-4 rounded-xl border border-dashed border-primary/35 bg-muted/20 p-5">
-                    <div className="flex items-center gap-2 text-sm font-bold text-foreground"><FileKey2 className="size-4 text-primary" /> Subir Set de Pruebas de la DGII (.xlsx)</div>
-                    <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-                      <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-sm">
-                        <Upload className="size-4" /> Seleccionar archivo
-                        <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="sr-only" onChange={(event) => setTestSetFileName(event.target.files?.[0]?.name ?? "")} />
-                      </label>
-                      <span className="text-xs text-muted-foreground">{testSetFileName || "Ningún archivo seleccionado"}</span>
-                      <button type="button" disabled={!testSetFileName} onClick={() => setMessage("Set de pruebas seleccionado para el diseño. La carga y procesamiento se habilitarán con el motor e-CF.")} className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary/30 px-4 py-2.5 text-xs font-bold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50 sm:ml-auto">
-                        <Upload className="size-4" /> Cargar Set
-                      </button>
-                    </div>
-                    <p className="mt-3 text-xs text-muted-foreground">Seleccioná el Excel descargado desde el portal DGII. El procesamiento todavía no está conectado.</p>
-                  </div>
-                )}
+                {certificationStep === 2 && <TestSetRunner tenantId={tenantId} environment={environment} />}
 
                 {certificationStep === 3 && (
                   <div className="mt-4 rounded-xl border border-dashed border-primary/35 bg-muted/20 p-5">
@@ -1019,6 +1011,9 @@ export function ActivationPanel() {
             </div>
           )}
 
+          {showActivationNotice && activationNotice(fiscalMode, environment) && (
+            <div className="mt-5 rounded-xl border border-primary/20 bg-primary/10 p-3 text-sm text-primary">{activationNotice(fiscalMode, environment)}</div>
+          )}
           {message && <div className="mt-5 rounded-xl border border-primary/20 bg-primary/10 p-3 text-sm text-primary">{message}</div>}
           <div className="mt-7 flex items-center justify-between border-t border-border pt-5">
             <button type="button" onClick={() => setStep((current) => Math.max(1, current - 1))} disabled={step === 1} className="inline-flex items-center gap-1 rounded-xl border border-border px-4 py-2.5 text-xs font-bold text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40">

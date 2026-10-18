@@ -1,0 +1,287 @@
+import { useEffect, useRef, useState } from "react";
+import { Download, FileKey2, RefreshCw, Send, Square, Upload } from "lucide-react";
+import { supabase } from "../../../shared/lib/supabase";
+import {
+  ECF_CERTIFICATION_FUNCTION,
+  KIND_LABELS,
+  STATUS_LABELS,
+  buildDownloadRequest,
+  buildLatestRequest,
+  buildSendNextRequest,
+  buildStartRequest,
+  buildStatusRequest,
+  bytesToBase64,
+  describeProgress,
+  describeRunError,
+  extractRunInvokeError,
+  interpretRunResponse,
+  isTestSetEnvironment,
+  nextLoopAction,
+  portalDownloads,
+  safeDownloadName,
+  statusTone,
+  summariesAccepted,
+  toRunView,
+  validateTestSetFile,
+  type RunOutcome,
+  type RunView,
+  type StatusTone,
+} from "../lib/ecfCertificationRun";
+
+const POLL_DELAY_MS = 5000;
+const MAX_POLL_ROUNDS = 60;
+
+const TONE_CLASSES: Record<StatusTone, string> = {
+  neutral: "bg-muted text-muted-foreground",
+  progress: "bg-sky-500/15 text-sky-700 dark:text-sky-300",
+  success: "bg-green-500/15 text-green-600 dark:text-green-400",
+  warning: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-300",
+  danger: "bg-red-500/15 text-red-600 dark:text-red-400",
+};
+
+function saveXml(fileName: string, text: string) {
+  const url = URL.createObjectURL(new Blob([text], { type: "application/xml;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function invoke(body: Record<string, unknown>): Promise<{ data: unknown; error: { ok: false; message: string; code?: string } | null }> {
+  const { data, error } = await supabase.functions.invoke(ECF_CERTIFICATION_FUNCTION, { body });
+  if (error) return { data: null, error: await extractRunInvokeError(error) };
+  return { data, error: null };
+}
+
+async function invokeRun(body: Record<string, unknown>): Promise<RunOutcome> {
+  const { data, error } = await invoke(body);
+  return error ?? interpretRunResponse(data);
+}
+
+interface TestSetRunnerProps {
+  tenantId: string | null | undefined;
+  environment: string;
+}
+
+/** Wizard step 2: run the DGII test set (upload, send in batches, poll status, portal downloads). */
+export function TestSetRunner({ tenantId, environment }: TestSetRunnerProps) {
+  const [file, setFile] = useState<File | null>(null);
+  const [run, setRun] = useState<RunView | null>(null);
+  const [busy, setBusy] = useState<"start" | "send" | "status" | null>(null);
+  const [status, setStatus] = useState<{ kind: "success" | "error" | "info"; text: string } | null>(null);
+  const stopRef = useRef(false);
+  const supported = isTestSetEnvironment(environment);
+
+  useEffect(() => {
+    if (!supported || !tenantId) return;
+    let cancelled = false;
+    void invoke(buildLatestRequest(environment, tenantId)).then(({ data }) => {
+      const latest = toRunView((data as { run?: unknown } | null)?.run);
+      if (!cancelled && latest) setRun(latest);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [environment, tenantId, supported]);
+
+  if (!supported) {
+    return (
+      <div className="mt-4 rounded-xl border border-dashed border-primary/35 bg-muted/20 p-5 text-xs text-muted-foreground">
+        El Set de Pruebas se ejecuta en los ambientes de Pruebas (TesteCF) o Certificación (CerteCF). Cambiá el ambiente en el paso Ambiente y certificado.
+      </div>
+    );
+  }
+
+  function selectFile(selected: File | null) {
+    setStatus(null);
+    if (!selected) return setFile(null);
+    const problem = validateTestSetFile(selected);
+    if (problem) {
+      setFile(null);
+      setStatus({ kind: "error", text: problem });
+      return;
+    }
+    setFile(selected);
+  }
+
+  async function start() {
+    if (!file || !isTestSetEnvironment(environment)) return;
+    setBusy("start");
+    setStatus(null);
+    try {
+      const xlsxBase64 = bytesToBase64(new Uint8Array(await file.arrayBuffer()));
+      const outcome = await invokeRun(buildStartRequest({ environment, xlsxBase64, tenantId }));
+      if (!outcome.ok) return setStatus({ kind: "error", text: outcome.message });
+      setRun(outcome.run);
+      setStatus({ kind: "success", text: `Set de Pruebas cargado: ${outcome.run.items.length} documentos listos para enviar.` });
+    } catch {
+      setStatus({ kind: "error", text: describeRunError(undefined) });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function poll(runId: string): Promise<RunView | null> {
+    const outcome = await invokeRun(buildStatusRequest(runId, tenantId));
+    if (!outcome.ok) {
+      setStatus({ kind: "error", text: outcome.message });
+      return null;
+    }
+    setRun(outcome.run);
+    return outcome.run;
+  }
+
+  async function sendAll() {
+    if (!run) return;
+    stopRef.current = false;
+    setBusy("send");
+    setStatus({ kind: "info", text: "Enviando documentos a la DGII..." });
+    try {
+      let pollRounds = 0;
+      while (!stopRef.current) {
+        const outcome = await invokeRun(buildSendNextRequest(run.runId, tenantId));
+        if (!outcome.ok) return setStatus({ kind: "error", text: outcome.message });
+        setRun(outcome.run);
+        const action = nextLoopAction(outcome.run);
+        if (action === "stop") return setStatus({ kind: "error", text: describeRunError(outcome.run.stoppedReason ?? undefined) });
+        if (action === "done") {
+          await poll(run.runId);
+          return setStatus({ kind: "success", text: "Todos los documentos fueron enviados. Consultá el estado hasta que la DGII termine de procesarlos." });
+        }
+        if (action === "poll") {
+          if (++pollRounds > MAX_POLL_ROUNDS) {
+            return setStatus({ kind: "info", text: "La DGII sigue procesando documentos. Consultá el estado más tarde y volvé a enviar." });
+          }
+          setStatus({ kind: "info", text: "Esperando que la DGII acepte el documento referenciado por una nota..." });
+          await wait(POLL_DELAY_MS);
+          if (stopRef.current) break;
+          if (!(await poll(run.runId))) return;
+        }
+      }
+      setStatus({ kind: "info", text: "Envío detenido. Podés continuar cuando quieras." });
+    } catch {
+      setStatus({ kind: "error", text: describeRunError(undefined) });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function refreshStatus() {
+    if (!run) return;
+    setBusy("status");
+    try {
+      const updated = await poll(run.runId);
+      if (updated) setStatus({ kind: "success", text: describeProgress(updated).label });
+    } catch {
+      setStatus({ kind: "error", text: describeRunError(undefined) });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function download(caseId: string) {
+    if (!run) return;
+    const { data, error } = await invoke(buildDownloadRequest(run.runId, caseId, tenantId));
+    const body = (data ?? {}) as { fileName?: unknown; signedXml?: unknown; code?: unknown };
+    if (error || typeof body.signedXml !== "string") {
+      setStatus({ kind: "error", text: error?.message ?? describeRunError(typeof body.code === "string" ? body.code : undefined) });
+      return;
+    }
+    saveXml(safeDownloadName(typeof body.fileName === "string" ? body.fileName : "", caseId), body.signedXml);
+  }
+
+  const progress = run ? describeProgress(run) : null;
+  const downloads = run ? portalDownloads(run) : [];
+
+  return (
+    <div className="mt-4 space-y-4 rounded-xl border border-dashed border-primary/35 bg-muted/20 p-5">
+      <div className="flex items-center gap-2 text-sm font-bold text-foreground"><FileKey2 className="size-4 text-primary" /> Set de Pruebas de la DGII (.xlsx)</div>
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        Descargá el Excel del Set de Pruebas desde el portal de la DGII y cargalo aquí. Cloudix arma cada e-CF y RFCE, los firma con tu certificado y los envía a la DGII en el orden correcto.
+      </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-sm">
+          <Upload className="size-4" /> Seleccionar archivo
+          <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="sr-only" onChange={(event) => { selectFile(event.target.files?.[0] ?? null); event.target.value = ""; }} />
+        </label>
+        <span className="text-xs text-muted-foreground">{file ? file.name : "Ningún archivo seleccionado"}</span>
+        <button type="button" disabled={!file || busy !== null} onClick={() => void start()} className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary/30 px-4 py-2.5 text-xs font-bold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50 sm:ml-auto">
+          <Upload className="size-4" /> {busy === "start" ? "Procesando..." : "Cargar Set"}
+        </button>
+      </div>
+
+      {run && progress && (
+        <>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <p className="text-xs font-semibold text-foreground">{progress.label}</p>
+            <div className="flex gap-2 sm:ml-auto">
+              {busy === "send" ? (
+                <button type="button" onClick={() => { stopRef.current = true; }} className="inline-flex items-center gap-2 rounded-xl border border-destructive/40 px-4 py-2.5 text-xs font-bold text-destructive hover:bg-destructive/10">
+                  <Square className="size-4" /> Detener
+                </button>
+              ) : (
+                <button type="button" disabled={busy !== null || run.sendComplete} onClick={() => void sendAll()} className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-sm disabled:cursor-not-allowed disabled:opacity-50">
+                  <Send className="size-4" /> Enviar a la DGII
+                </button>
+              )}
+              <button type="button" disabled={busy !== null} onClick={() => void refreshStatus()} className="inline-flex items-center gap-2 rounded-xl border border-primary/30 px-4 py-2.5 text-xs font-bold text-primary hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50">
+                <RefreshCw className="size-4" /> {busy === "status" ? "Consultando..." : "Consultar estado"}
+              </button>
+            </div>
+          </div>
+
+          <div className="max-h-96 overflow-auto rounded-xl border border-border bg-background">
+            <table className="w-full text-left text-xs">
+              <thead className="sticky top-0 bg-muted text-[10px] uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2">#</th>
+                  <th className="px-3 py-2">Caso</th>
+                  <th className="px-3 py-2">Tipo</th>
+                  <th className="px-3 py-2">Envío</th>
+                  <th className="px-3 py-2">Estado</th>
+                  <th className="px-3 py-2">Mensajes DGII</th>
+                </tr>
+              </thead>
+              <tbody>
+                {run.items.map((item) => (
+                  <tr key={`${item.caseId}-${item.kind}`} className="border-t border-border align-top">
+                    <td className="px-3 py-2 text-muted-foreground">{item.sequenceOrder + 1}</td>
+                    <td className="px-3 py-2 font-mono">{item.encf}</td>
+                    <td className="px-3 py-2">E{item.tipoEcf}</td>
+                    <td className="px-3 py-2">{KIND_LABELS[item.kind]}</td>
+                    <td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 font-bold ${TONE_CLASSES[statusTone(item.status)]}`}>{STATUS_LABELS[item.status]}</span></td>
+                    <td className="px-3 py-2 text-muted-foreground">{item.messages.map((message) => (message.codigo ? `${message.codigo}: ${message.valor}` : message.valor)).join(" · ") || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {downloads.length > 0 && (
+            <div className="rounded-xl border border-border bg-background p-4">
+              <div className="flex items-center gap-2 text-xs font-bold text-foreground"><Download className="size-4 text-primary" /> Facturas de consumo menores a 250 mil</div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Subí estas facturas en el portal (Facturas de consumo &lt; 250Mil) cuando los resúmenes estén aceptados.
+                {summariesAccepted(run) ? " Los resúmenes ya fueron aceptados." : " Todavía hay resúmenes sin aceptar."}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {downloads.map((item) => (
+                  <button key={item.caseId} type="button" onClick={() => void download(item.caseId)} className="inline-flex items-center gap-2 rounded-xl border border-primary/30 px-3 py-2 text-xs font-bold text-primary hover:bg-primary/10">
+                    <Download className="size-3.5" /> {item.encf}.xml
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {status && (
+        <p role="status" className={`text-xs font-semibold ${status.kind === "success" ? "text-green-600" : status.kind === "error" ? "text-red-500" : "text-muted-foreground"}`}>{status.text}</p>
+      )}
+    </div>
+  );
+}

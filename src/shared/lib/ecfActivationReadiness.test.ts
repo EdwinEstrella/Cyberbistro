@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  activationNotice,
   buildActivationPayload,
   buildDeactivationPayload,
   describeActivationSuccess,
@@ -173,6 +174,13 @@ describe("activation payloads", () => {
 
   it("normalizes unknown fallbacks", () => {
     expect(normalizeFiscalFallback("whatever")).toBe("internal_receipt");
+  });
+
+  it("shows the activation notice only while the tenant is on dgii_ecf", () => {
+    expect(activationNotice("dgii_ecf", "certification")).toMatch(/CerteCF/);
+    for (const mode of ["ncf_legacy", "internal_receipt", null, undefined, ""]) {
+      expect(activationNotice(mode, "certification")).toBeNull();
+    }
   });
 
   it("mentions environment and worker dependency in the success message", () => {
