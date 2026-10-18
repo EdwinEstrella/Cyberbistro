@@ -9,7 +9,9 @@ export const TEST_SET_MAX_BYTES = 2 * 1024 * 1024;
 export const SEND_BATCH_LIMIT = 5;
 
 export type TestSetEnvironment = "test" | "certification";
-export type SubmissionKind = "ecf" | "rfce" | "portal_upload";
+export type SubmissionKind = "ecf" | "rfce" | "portal_upload" | "acecf";
+/** Step 2 runs the test set; step 3 runs the commercial approval set (ACECF). */
+export type RunType = "test_set" | "commercial_approval";
 export type SubmissionStatus = "pending" | "sent" | "accepted" | "accepted_conditional" | "rejected" | "error" | "ready_for_portal";
 
 export interface DgiiMessageView {
@@ -31,6 +33,7 @@ export interface SubmissionItem {
 export interface RunView {
   runId: string;
   environment: TestSetEnvironment;
+  runType: RunType;
   status: string;
   createdAt: string;
   counts: Record<SubmissionStatus, number>;
@@ -47,9 +50,47 @@ export function isTestSetEnvironment(value: string): value is TestSetEnvironment
   return value === "test" || value === "certification";
 }
 
+/** User-facing wording (Spanish) of each run type. */
+export interface RunCopy {
+  title: string;
+  description: string;
+  /** Name used inside sentences, e.g. "Set de Pruebas". */
+  setName: string;
+  unsupportedEnvironment: string;
+  sentAll: string;
+  loaded: (count: number) => string;
+}
+
+export const RUN_COPY: Record<RunType, RunCopy> = {
+  test_set: {
+    title: "Set de Pruebas de la DGII (.xlsx)",
+    description:
+      "Descargá el Excel del Set de Pruebas desde el portal de la DGII y cargalo aquí. Cloudix arma cada e-CF y RFCE, los firma con tu certificado y los envía a la DGII en el orden correcto.",
+    setName: "Set de Pruebas",
+    unsupportedEnvironment:
+      "El Set de Pruebas se ejecuta en los ambientes de Pruebas (TesteCF) o Certificación (CerteCF). Cambiá el ambiente en el paso Ambiente y certificado.",
+    sentAll: "Todos los documentos fueron enviados. Consultá el estado hasta que la DGII termine de procesarlos.",
+    loaded: (count) => `Set de Pruebas cargado: ${count} documentos listos para enviar.`,
+  },
+  commercial_approval: {
+    title: "Set de Aprobaciones Comerciales de la DGII (.xlsx)",
+    description:
+      "Descargá el set de datos del Paso 3 en el portal de la DGII y cargalo aquí. Cloudix genera cada aprobación comercial (ACECF), la firma con tu certificado y la envía a la DGII.",
+    setName: "Set de Aprobaciones Comerciales",
+    unsupportedEnvironment:
+      "Las Aprobaciones Comerciales se envían en los ambientes de Pruebas (TesteCF) o Certificación (CerteCF). Cambiá el ambiente en el paso Ambiente y certificado.",
+    sentAll: "Todas las aprobaciones comerciales fueron enviadas. Revisá el estado de cada una en la tabla.",
+    loaded: (count) => `Set de Aprobaciones Comerciales cargado: ${count} aprobaciones listas para enviar.`,
+  },
+};
+
+export function isRunType(value: unknown): value is RunType {
+  return value === "test_set" || value === "commercial_approval";
+}
+
 /** Returns a user-facing error (Spanish) or null when the selected file looks acceptable. */
-export function validateTestSetFile(file: { name: string; size: number }): string | null {
-  if (!/\.xlsx$/i.test(file.name)) return "Seleccioná el archivo .xlsx del Set de Pruebas.";
+export function validateTestSetFile(file: { name: string; size: number }, runType: RunType = "test_set"): string | null {
+  if (!/\.xlsx$/i.test(file.name)) return `Seleccioná el archivo .xlsx del ${RUN_COPY[runType].setName}.`;
   if (file.size <= 0) return "El archivo está vacío.";
   if (file.size > TEST_SET_MAX_BYTES) return "El archivo es demasiado grande (máximo 2 MB).";
   return null;
@@ -64,12 +105,15 @@ export function bytesToBase64(bytes: Uint8Array): string {
 
 const withTenant = (tenantId: string | null | undefined) => (tenantId ? { tenantId } : {});
 
-export function buildStartRequest(input: { environment: TestSetEnvironment; xlsxBase64: string; tenantId?: string | null }) {
-  return { action: "start", environment: input.environment, xlsxBase64: input.xlsxBase64, ...withTenant(input.tenantId) };
+const withRunType = (runType: RunType | undefined) => (runType ? { runType } : {});
+
+/** `runType` is the type the screen expects: the function rejects a workbook of the other type. */
+export function buildStartRequest(input: { environment: TestSetEnvironment; xlsxBase64: string; tenantId?: string | null; runType?: RunType }) {
+  return { action: "start", environment: input.environment, xlsxBase64: input.xlsxBase64, ...withRunType(input.runType), ...withTenant(input.tenantId) };
 }
 
-export function buildLatestRequest(environment: TestSetEnvironment, tenantId?: string | null) {
-  return { action: "latest", environment, ...withTenant(tenantId) };
+export function buildLatestRequest(environment: TestSetEnvironment, tenantId?: string | null, runType?: RunType) {
+  return { action: "latest", environment, ...withRunType(runType), ...withTenant(tenantId) };
 }
 
 export function buildSendNextRequest(runId: string, tenantId?: string | null, limit = SEND_BATCH_LIMIT) {
@@ -110,15 +154,31 @@ const ERROR_MESSAGES: Record<string, string> = {
 
 const FALLBACK_MESSAGE = "No se pudo procesar el Set de Pruebas.";
 
+/** Messages that name the set differ for the commercial approval set. */
+const COMMERCIAL_MESSAGES: Record<string, string> = {
+  FORBIDDEN: "Solo un administrador del negocio puede ejecutar las Aprobaciones Comerciales.",
+  INVALID_TEST_SET: "El archivo no es un Set de Aprobaciones Comerciales válido de la DGII.",
+  RNC_MISMATCH: "El RNC comprador del set no coincide con el RNC de tu negocio. Descargá el archivo de la empresa correcta.",
+  RUN_NOT_FOUND: "No encontramos esa ejecución de Aprobaciones Comerciales. Cargá el archivo de nuevo.",
+  CONCURRENT_BATCH: "Otro envío de Aprobaciones Comerciales está en curso. Esperá a que termine.",
+  INTERNAL: "No se pudo procesar el Set de Aprobaciones Comerciales. Intentá de nuevo en unos minutos.",
+};
+const COMMERCIAL_FALLBACK = "No se pudo procesar el Set de Aprobaciones Comerciales.";
+
+function fallbackMessage(runType: RunType): string {
+  return runType === "commercial_approval" ? COMMERCIAL_FALLBACK : FALLBACK_MESSAGE;
+}
+
 /** Spanish message for an edge function code; INVALID_TEST_SET keeps the technical detail. */
-export function describeRunError(code: string | undefined, detail?: string): string {
-  if (code === "INVALID_TEST_SET" && detail) return `${ERROR_MESSAGES.INVALID_TEST_SET} Detalle: ${detail}`;
-  if (code && ERROR_MESSAGES[code]) return ERROR_MESSAGES[code];
-  return FALLBACK_MESSAGE;
+export function describeRunError(code: string | undefined, detail?: string, runType: RunType = "test_set"): string {
+  const messages = runType === "commercial_approval" ? { ...ERROR_MESSAGES, ...COMMERCIAL_MESSAGES } : ERROR_MESSAGES;
+  if (code === "INVALID_TEST_SET" && detail) return `${messages.INVALID_TEST_SET} Detalle: ${detail}`;
+  if (code && messages[code]) return messages[code];
+  return fallbackMessage(runType);
 }
 
 const STATUSES: SubmissionStatus[] = ["pending", "sent", "accepted", "accepted_conditional", "rejected", "error", "ready_for_portal"];
-const KINDS: SubmissionKind[] = ["ecf", "rfce", "portal_upload"];
+const KINDS: SubmissionKind[] = ["ecf", "rfce", "portal_upload", "acecf"];
 
 function toMessages(value: unknown): DgiiMessageView[] {
   if (!Array.isArray(value)) return [];
@@ -152,6 +212,7 @@ export function toRunView(data: unknown): RunView | null {
   return {
     runId: body.runId,
     environment: body.environment === "test" ? "test" : "certification",
+    runType: isRunType(body.runType) ? body.runType : "test_set",
     status: typeof body.status === "string" ? body.status : "pending",
     createdAt: typeof body.createdAt === "string" ? body.createdAt : "",
     counts: countByStatus(items),
@@ -163,29 +224,29 @@ export function toRunView(data: unknown): RunView | null {
   };
 }
 
-export function interpretRunResponse(data: unknown): RunOutcome {
+export function interpretRunResponse(data: unknown, runType: RunType = "test_set"): RunOutcome {
   const run = toRunView(data);
   if (run) return { ok: true, run };
   const body = (data ?? {}) as { code?: unknown; error?: unknown };
   const code = typeof body.code === "string" && body.code ? body.code : undefined;
   const detail = typeof body.error === "string" ? body.error : undefined;
-  return { ok: false, message: describeRunError(code, detail), ...(code ? { code } : {}) };
+  return { ok: false, message: describeRunError(code, detail, runType), ...(code ? { code } : {}) };
 }
 
 /** Maps a supabase-js `functions.invoke` error (FunctionsHttpError carries the raw Response). */
-export async function extractRunInvokeError(error: unknown): Promise<{ ok: false; message: string; code?: string }> {
+export async function extractRunInvokeError(error: unknown, runType: RunType = "test_set"): Promise<{ ok: false; message: string; code?: string }> {
   const context = (error as { context?: unknown } | null)?.context;
   if (context && typeof (context as Response).json === "function") {
     try {
       const body = (await (context as Response).json()) as { error?: unknown; code?: unknown };
       const code = typeof body?.code === "string" && body.code ? body.code : undefined;
       const detail = typeof body?.error === "string" ? body.error : undefined;
-      return { ok: false, message: describeRunError(code, detail), ...(code ? { code } : {}) };
+      return { ok: false, message: describeRunError(code, detail, runType), ...(code ? { code } : {}) };
     } catch {
       // fall through to the generic message
     }
   }
-  return { ok: false, message: FALLBACK_MESSAGE };
+  return { ok: false, message: fallbackMessage(runType) };
 }
 
 export function countByStatus(items: SubmissionItem[]): Record<SubmissionStatus, number> {
@@ -208,6 +269,7 @@ export const KIND_LABELS: Record<SubmissionKind, string> = {
   ecf: "e-CF (recepción)",
   rfce: "Resumen RFCE",
   portal_upload: "e-CF consumo < 250 mil (portal)",
+  acecf: "Aprobación comercial",
 };
 
 export type StatusTone = "neutral" | "progress" | "success" | "warning" | "danger";
@@ -246,7 +308,10 @@ export function describeProgress(run: RunView): RunProgress {
   const accepted = c.accepted + c.accepted_conditional + c.ready_for_portal;
   const failed = c.rejected + c.error;
   const finished = accepted + failed;
-  const label = `${finished} de ${total} terminados · ${accepted} aceptados o firmados · ${failed} con error · ${c.sent} en proceso · ${c.pending} pendientes`;
+  const label =
+    run.runType === "commercial_approval"
+      ? `${finished} de ${total} terminadas · ${accepted} aceptadas · ${failed} con error · ${c.pending} pendientes`
+      : `${finished} de ${total} terminados · ${accepted} aceptados o firmados · ${failed} con error · ${c.sent} en proceso · ${c.pending} pendientes`;
   return { total, finished, accepted, failed, inProcess: c.sent, pending: c.pending, label };
 }
 

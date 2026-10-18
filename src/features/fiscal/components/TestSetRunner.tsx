@@ -4,6 +4,7 @@ import { supabase } from "../../../shared/lib/supabase";
 import {
   ECF_CERTIFICATION_FUNCTION,
   KIND_LABELS,
+  RUN_COPY,
   STATUS_LABELS,
   buildAuthCheckRequest,
   buildDownloadRequest,
@@ -25,6 +26,7 @@ import {
   toRunView,
   validateTestSetFile,
   type RunOutcome,
+  type RunType,
   type RunView,
   type StatusTone,
 } from "../lib/ecfCertificationRun";
@@ -51,24 +53,36 @@ function saveXml(fileName: string, text: string) {
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function invoke(body: Record<string, unknown>): Promise<{ data: unknown; error: { ok: false; message: string; code?: string } | null }> {
+async function invoke(
+  body: Record<string, unknown>,
+  runType: RunType,
+): Promise<{ data: unknown; error: { ok: false; message: string; code?: string } | null }> {
   const { data, error } = await supabase.functions.invoke(ECF_CERTIFICATION_FUNCTION, { body });
-  if (error) return { data: null, error: await extractRunInvokeError(error) };
+  if (error) return { data: null, error: await extractRunInvokeError(error, runType) };
   return { data, error: null };
 }
 
-async function invokeRun(body: Record<string, unknown>): Promise<RunOutcome> {
-  const { data, error } = await invoke(body);
-  return error ?? interpretRunResponse(data);
+async function invokeRun(body: Record<string, unknown>, runType: RunType): Promise<RunOutcome> {
+  const { data, error } = await invoke(body, runType);
+  return error ?? interpretRunResponse(data, runType);
 }
 
 interface TestSetRunnerProps {
   tenantId: string | null | undefined;
   environment: string;
+  /** Wizard step 2 runs the test set (default); step 3 runs the commercial approval set. */
+  runType?: RunType;
+  title?: string;
+  description?: string;
 }
 
-/** Wizard step 2: run the DGII test set (upload, send in batches, poll status, portal downloads). */
-export function TestSetRunner({ tenantId, environment }: TestSetRunnerProps) {
+/**
+ * Wizard steps 2 and 3: run a DGII set (upload, send in batches, poll status). The test set also
+ * offers the consumo < 250k portal downloads; the commercial approval set does not.
+ */
+export function TestSetRunner({ tenantId, environment, runType = "test_set", title, description }: TestSetRunnerProps) {
+  const copy = RUN_COPY[runType];
+  const isTestSet = runType === "test_set";
   const [file, setFile] = useState<File | null>(null);
   const [run, setRun] = useState<RunView | null>(null);
   const [busy, setBusy] = useState<"auth" | "start" | "send" | "status" | null>(null);
@@ -79,19 +93,19 @@ export function TestSetRunner({ tenantId, environment }: TestSetRunnerProps) {
   useEffect(() => {
     if (!supported || !tenantId) return;
     let cancelled = false;
-    void invoke(buildLatestRequest(environment, tenantId)).then(({ data }) => {
+    void invoke(buildLatestRequest(environment, tenantId, runType), runType).then(({ data }) => {
       const latest = toRunView((data as { run?: unknown } | null)?.run);
       if (!cancelled && latest) setRun(latest);
     });
     return () => {
       cancelled = true;
     };
-  }, [environment, tenantId, supported]);
+  }, [environment, tenantId, supported, runType]);
 
   if (!supported) {
     return (
       <div className="mt-4 rounded-xl border border-dashed border-primary/35 bg-muted/20 p-5 text-xs text-muted-foreground">
-        El Set de Pruebas se ejecuta en los ambientes de Pruebas (TesteCF) o Certificación (CerteCF). Cambiá el ambiente en el paso Ambiente y certificado.
+        {copy.unsupportedEnvironment}
       </div>
     );
   }
@@ -99,7 +113,7 @@ export function TestSetRunner({ tenantId, environment }: TestSetRunnerProps) {
   function selectFile(selected: File | null) {
     setStatus(null);
     if (!selected) return setFile(null);
-    const problem = validateTestSetFile(selected);
+    const problem = validateTestSetFile(selected, runType);
     if (problem) {
       setFile(null);
       setStatus({ kind: "error", text: problem });
@@ -113,14 +127,14 @@ export function TestSetRunner({ tenantId, environment }: TestSetRunnerProps) {
     setBusy("auth");
     setStatus({ kind: "info", text: "Probando la conexión con la DGII..." });
     try {
-      const { data, error } = await invoke(buildAuthCheckRequest(environment, tenantId));
+      const { data, error } = await invoke(buildAuthCheckRequest(environment, tenantId), runType);
       if (error) return setStatus({ kind: "error", text: error.message });
       const ok = (data as { ok?: unknown } | null)?.ok === true;
       setStatus(ok
         ? { kind: "success", text: "Conexión con la DGII correcta: tu certificado fue aceptado. No se envió ningún documento." }
-        : { kind: "error", text: describeRunError(undefined) });
+        : { kind: "error", text: describeRunError(undefined, undefined, runType) });
     } catch {
-      setStatus({ kind: "error", text: describeRunError(undefined) });
+      setStatus({ kind: "error", text: describeRunError(undefined, undefined, runType) });
     } finally {
       setBusy(null);
     }
@@ -132,19 +146,19 @@ export function TestSetRunner({ tenantId, environment }: TestSetRunnerProps) {
     setStatus(null);
     try {
       const xlsxBase64 = bytesToBase64(new Uint8Array(await file.arrayBuffer()));
-      const outcome = await invokeRun(buildStartRequest({ environment, xlsxBase64, tenantId }));
+      const outcome = await invokeRun(buildStartRequest({ environment, xlsxBase64, tenantId, runType }), runType);
       if (!outcome.ok) return setStatus({ kind: "error", text: outcome.message });
       setRun(outcome.run);
-      setStatus({ kind: "success", text: `Set de Pruebas cargado: ${outcome.run.items.length} documentos listos para enviar.` });
+      setStatus({ kind: "success", text: copy.loaded(outcome.run.items.length) });
     } catch {
-      setStatus({ kind: "error", text: describeRunError(undefined) });
+      setStatus({ kind: "error", text: describeRunError(undefined, undefined, runType) });
     } finally {
       setBusy(null);
     }
   }
 
   async function poll(runId: string): Promise<RunView | null> {
-    const outcome = await invokeRun(buildStatusRequest(runId, tenantId));
+    const outcome = await invokeRun(buildStatusRequest(runId, tenantId), runType);
     if (!outcome.ok) {
       setStatus({ kind: "error", text: outcome.message });
       return null;
@@ -161,14 +175,14 @@ export function TestSetRunner({ tenantId, environment }: TestSetRunnerProps) {
     try {
       let pollRounds = 0;
       while (!stopRef.current) {
-        const outcome = await invokeRun(buildSendNextRequest(run.runId, tenantId));
+        const outcome = await invokeRun(buildSendNextRequest(run.runId, tenantId), runType);
         if (!outcome.ok) return setStatus({ kind: "error", text: outcome.message });
         setRun(outcome.run);
         const action = nextLoopAction(outcome.run);
-        if (action === "stop") return setStatus({ kind: "error", text: describeRunError(outcome.run.stoppedReason ?? undefined) });
+        if (action === "stop") return setStatus({ kind: "error", text: describeRunError(outcome.run.stoppedReason ?? undefined, undefined, runType) });
         if (action === "done") {
           await poll(run.runId);
-          return setStatus({ kind: "success", text: "Todos los documentos fueron enviados. Consultá el estado hasta que la DGII termine de procesarlos." });
+          return setStatus({ kind: "success", text: copy.sentAll });
         }
         if (action === "poll") {
           if (++pollRounds > MAX_POLL_ROUNDS) {
@@ -182,7 +196,7 @@ export function TestSetRunner({ tenantId, environment }: TestSetRunnerProps) {
       }
       setStatus({ kind: "info", text: "Envío detenido. Podés continuar cuando quieras." });
     } catch {
-      setStatus({ kind: "error", text: describeRunError(undefined) });
+      setStatus({ kind: "error", text: describeRunError(undefined, undefined, runType) });
     } finally {
       setBusy(null);
     }
@@ -195,7 +209,7 @@ export function TestSetRunner({ tenantId, environment }: TestSetRunnerProps) {
       const updated = await poll(run.runId);
       if (updated) setStatus({ kind: "success", text: describeProgress(updated).label });
     } catch {
-      setStatus({ kind: "error", text: describeRunError(undefined) });
+      setStatus({ kind: "error", text: describeRunError(undefined, undefined, runType) });
     } finally {
       setBusy(null);
     }
@@ -203,23 +217,23 @@ export function TestSetRunner({ tenantId, environment }: TestSetRunnerProps) {
 
   async function download(caseId: string) {
     if (!run) return;
-    const { data, error } = await invoke(buildDownloadRequest(run.runId, caseId, tenantId));
+    const { data, error } = await invoke(buildDownloadRequest(run.runId, caseId, tenantId), runType);
     const body = (data ?? {}) as { fileName?: unknown; signedXml?: unknown; code?: unknown };
     if (error || typeof body.signedXml !== "string") {
-      setStatus({ kind: "error", text: error?.message ?? describeRunError(typeof body.code === "string" ? body.code : undefined) });
+      setStatus({ kind: "error", text: error?.message ?? describeRunError(typeof body.code === "string" ? body.code : undefined, undefined, runType) });
       return;
     }
     saveXml(safeDownloadName(typeof body.fileName === "string" ? body.fileName : "", caseId), body.signedXml);
   }
 
   const progress = run ? describeProgress(run) : null;
-  const downloads = run ? portalDownloads(run) : [];
+  const downloads = run && isTestSet ? portalDownloads(run) : [];
 
   return (
     <div className="mt-4 space-y-4 rounded-xl border border-dashed border-primary/35 bg-muted/20 p-5">
-      <div className="flex items-center gap-2 text-sm font-bold text-foreground"><FileKey2 className="size-4 text-primary" /> Set de Pruebas de la DGII (.xlsx)</div>
+      <div className="flex items-center gap-2 text-sm font-bold text-foreground"><FileKey2 className="size-4 text-primary" /> {title ?? copy.title}</div>
       <p className="text-xs leading-relaxed text-muted-foreground">
-        Descargá el Excel del Set de Pruebas desde el portal de la DGII y cargalo aquí. Cloudix arma cada e-CF y RFCE, los firma con tu certificado y los envía a la DGII en el orden correcto.
+        {description ?? copy.description}
       </p>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-sm">

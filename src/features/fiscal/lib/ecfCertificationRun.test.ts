@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  KIND_LABELS,
+  RUN_COPY,
   SEND_BATCH_LIMIT,
   buildAuthCheckRequest,
   buildDownloadRequest,
@@ -13,6 +15,7 @@ import {
   describeRunError,
   extractRunInvokeError,
   interpretRunResponse,
+  isRunType,
   isTestSetEnvironment,
   nextLoopAction,
   portalDownloads,
@@ -164,5 +167,73 @@ describe("progress and loop", () => {
     expect(statusTone("pending")).toBe("neutral");
     expect(safeDownloadName("133488485E320000000012.xml", "c")).toBe("133488485E320000000012.xml");
     expect(safeDownloadName("../evil.sh", "133488485E320000000012")).toBe("133488485E320000000012.xml");
+  });
+});
+
+describe("commercial approval runs", () => {
+  const approvalBody = (over: Record<string, unknown> = {}) =>
+    body({
+      runType: "commercial_approval",
+      items: [item("E310000000001", "acecf", "accepted", 0), item("E310000000004", "acecf", "rejected", 1), item("E330000000001", "acecf", "pending", 2)],
+      ...over,
+    });
+
+  it("adds runType to start and latest only when given, so step 2 requests are unchanged", () => {
+    expect(buildStartRequest({ environment: "certification", xlsxBase64: "AAA=", tenantId: TENANT, runType: "commercial_approval" })).toEqual({
+      action: "start",
+      environment: "certification",
+      xlsxBase64: "AAA=",
+      runType: "commercial_approval",
+      tenantId: TENANT,
+    });
+    expect(buildLatestRequest("certification", TENANT, "commercial_approval")).toEqual({
+      action: "latest",
+      environment: "certification",
+      runType: "commercial_approval",
+      tenantId: TENANT,
+    });
+    expect(buildLatestRequest("certification", TENANT, "test_set")).toEqual({ action: "latest", environment: "certification", runType: "test_set", tenantId: TENANT });
+    expect(buildLatestRequest("certification", TENANT)).not.toHaveProperty("runType");
+  });
+
+  it("reads the run type (defaulting to test_set) and the acecf kind", () => {
+    expect(view().runType).toBe("test_set");
+    expect(toRunView(approvalBody())?.runType).toBe("commercial_approval");
+    expect(toRunView(body({ runType: "other" }))?.runType).toBe("test_set");
+    const run = toRunView(approvalBody())!;
+    expect(run.items.map((entry) => entry.kind)).toEqual(["acecf", "acecf", "acecf"]);
+    expect(KIND_LABELS.acecf).toBe("Aprobación comercial");
+  });
+
+  it("describes progress without test-set wording and never offers portal downloads", () => {
+    const run = toRunView(approvalBody())!;
+    expect(describeProgress(run).label).toBe("2 de 3 terminadas · 1 aceptadas · 1 con error · 1 pendientes");
+    expect(portalDownloads(run)).toEqual([]);
+  });
+
+  it("uses commercial approval wording for errors and file validation", () => {
+    expect(describeRunError("RNC_MISMATCH", undefined, "commercial_approval")).toMatch(/RNC comprador/);
+    expect(describeRunError("RNC_MISMATCH")).toMatch(/Set de Pruebas/);
+    expect(describeRunError("INVALID_TEST_SET", "x", "commercial_approval")).toBe("El archivo no es un Set de Aprobaciones Comerciales válido de la DGII. Detalle: x");
+    expect(describeRunError("UNKNOWN", undefined, "commercial_approval")).toBe("No se pudo procesar el Set de Aprobaciones Comerciales.");
+    expect(describeRunError("DGII_TIMEOUT", undefined, "commercial_approval")).toBe(describeRunError("DGII_TIMEOUT"));
+    expect(validateTestSetFile({ name: "set.xls", size: 10 }, "commercial_approval")).toBe("Seleccioná el archivo .xlsx del Set de Aprobaciones Comerciales.");
+    expect(validateTestSetFile({ name: "set.xls", size: 10 })).toBe("Seleccioná el archivo .xlsx del Set de Pruebas.");
+    expect(interpretRunResponse({ code: "UNKNOWN" }, "commercial_approval")).toMatchObject({ ok: false, message: "No se pudo procesar el Set de Aprobaciones Comerciales." });
+  });
+
+  it("maps invoke errors with the run type wording", async () => {
+    const error = { context: new Response(JSON.stringify({ code: "RUN_NOT_FOUND" }), { status: 404 }) };
+    expect(await extractRunInvokeError(error, "commercial_approval")).toMatchObject({ code: "RUN_NOT_FOUND", message: expect.stringContaining("Aprobaciones Comerciales") });
+    expect(await extractRunInvokeError({}, "commercial_approval")).toMatchObject({ message: "No se pudo procesar el Set de Aprobaciones Comerciales." });
+  });
+
+  it("keeps per-type copy for the runner", () => {
+    expect(RUN_COPY.commercial_approval.title).toBe("Set de Aprobaciones Comerciales de la DGII (.xlsx)");
+    expect(RUN_COPY.commercial_approval.description).toContain("ACECF");
+    expect(RUN_COPY.commercial_approval.loaded(11)).toContain("11 aprobaciones");
+    expect(RUN_COPY.test_set.loaded(4)).toBe("Set de Pruebas cargado: 4 documentos listos para enviar.");
+    expect(isRunType("commercial_approval")).toBe(true);
+    expect(isRunType("x")).toBe(false);
   });
 });

@@ -1,5 +1,5 @@
 import { type MouseEvent, useEffect, useState } from "react";
-import { AlertTriangle, Award, Building2, Check, CheckCircle, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Copy, Download, ExternalLink, FileKey2, FileText, Hash, ListOrdered, RefreshCw, Rocket, Search, ShieldAlert, ShieldCheck, Sparkles, Upload, Wifi, X } from "lucide-react";
+import { AlertTriangle, Award, Building2, Check, CheckCircle, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Copy, Download, ExternalLink, FileKey2, FileText, Hash, ListOrdered, RefreshCw, Rocket, Search, ShieldAlert, ShieldCheck, Sparkles, Wifi, X } from "lucide-react";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { supabase } from "../../../shared/lib/supabase";
 import { NCF_E_TIPO_OPCIONES } from "../../../shared/lib/ncf";
@@ -72,7 +72,6 @@ export function ActivationPanel() {
   });
   const [enabledTypes, setEnabledTypes] = useState<string[]>(["E31", "E32"]);
   const [certificateReady, setCertificateReady] = useState(false);
-  const [commercialApprovalFileName, setCommercialApprovalFileName] = useState("");
   const [fiscalActive, setFiscalActive] = useState(false);
   const [fiscalMode, setFiscalMode] = useState<string | null>(null);
   const [showActivationNotice, setShowActivationNotice] = useState(false);
@@ -773,7 +772,7 @@ export function ActivationPanel() {
                       ) : certificationStep === 2 ? (
                         <li>Descargá el Set de Pruebas ECF y RFCE desde el portal y preparalo para cargarlo.</li>
                       ) : certificationStep === 3 ? (
-                        <li>Descargá el archivo de Aprobación Comercial desde el portal de certificación y preparalo para cargarlo.</li>
+                        <li>Descargá el set de datos de Aprobación Comercial (Paso 3) desde el portal de certificación y cargalo para enviarlo.</li>
                       ) : (
                         <li>Completá y documentá el hito con la DGII antes de avanzar al siguiente paso.</li>
                       )}
@@ -795,23 +794,7 @@ export function ActivationPanel() {
 
                 {certificationStep === 2 && <TestSetRunner tenantId={tenantId} environment={environment} />}
 
-                {certificationStep === 3 && (
-                  <div className="mt-4 rounded-xl border border-dashed border-primary/35 bg-muted/20 p-5">
-                    <div className="flex items-center gap-2 text-sm font-bold text-foreground"><FileKey2 className="size-4 text-primary" /> Subir archivo ACEFC de la DGII (.xlsx)</div>
-                    <p className="mt-2 text-xs leading-relaxed text-muted-foreground">Incluye los e-CF que la empresa recibe y aprueba, con RNC emisor, RNC comprador y fecha/hora de aprobación comercial.</p>
-                    <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-                      <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-sm">
-                        <Upload className="size-4" /> Seleccionar archivo
-                        <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="sr-only" onChange={(event) => setCommercialApprovalFileName(event.target.files?.[0]?.name ?? "")} />
-                      </label>
-                      <span className="text-xs text-muted-foreground">{commercialApprovalFileName || "Ningún archivo seleccionado"}</span>
-                      <button type="button" disabled={!commercialApprovalFileName} onClick={() => setMessage("Archivo ACEFC seleccionado para el diseño. La validación y envío a DGII se habilitarán con el motor e-CF.")} className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary/30 px-4 py-2.5 text-xs font-bold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50 sm:ml-auto">
-                        <Upload className="size-4" /> Cargar ACEFC
-                      </button>
-                    </div>
-                    <p className="mt-3 text-xs text-muted-foreground">Descargá el archivo de Aprobación Comercial desde el portal de certificación de la DGII.</p>
-                  </div>
-                )}
+                {certificationStep === 3 && <TestSetRunner tenantId={tenantId} environment={environment} runType="commercial_approval" />}
 
                 {certificationStep === 4 && (
                   <>
