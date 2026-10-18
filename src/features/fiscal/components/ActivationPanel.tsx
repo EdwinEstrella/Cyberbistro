@@ -17,6 +17,7 @@ import {
 } from "../../../shared/lib/ecfActivationReadiness";
 import { loadEcfActivationReadiness } from "../lib/loadEcfReadiness";
 import { buildReceptorUrls } from "../lib/receptorUrls";
+import { advanceProgress, buildProgressUpsert, restoreProgress, type CertificationProgress } from "../lib/ecfCertificationProgress";
 import { DocumentSigner } from "./DocumentSigner";
 
 type EcfEnvironment = "test" | "certification" | "production";
@@ -56,7 +57,7 @@ const certificationSteps = [
 const certificationPortalUrl = "https://ecf.dgii.gov.do/certecf/portalcertificacion/Login?ReturnUrl=%2Fcertecf%2Fportalcertificacion";
 
 export function ActivationPanel() {
-  const { tenantId, plan } = useAuth();
+  const { tenantId, plan, user } = useAuth();
   const [step, setStep] = useState(1);
   const [environment, setEnvironment] = useState<EcfEnvironment>("test");
   const [company, setCompany] = useState({
@@ -74,6 +75,7 @@ export function ActivationPanel() {
   const [commercialApprovalFileName, setCommercialApprovalFileName] = useState("");
   const [fiscalActive, setFiscalActive] = useState(false);
   const [certificationStep, setCertificationStep] = useState(1);
+  const [completedCertificationSteps, setCompletedCertificationSteps] = useState<number[]>([]);
   const [companyLookupLoading, setCompanyLookupLoading] = useState(false);
   const [savedNextRaw, setSavedNextRaw] = useState<unknown>({});
   const [savedBoundsRaw, setSavedBoundsRaw] = useState<unknown>({});
@@ -158,6 +160,41 @@ export function ActivationPanel() {
       .maybeSingle()
       .then(({ data }) => setCertificateReady(Boolean(data?.is_ready)));
   }, [tenantId, environment]);
+
+  // Certification progress is cloud-only (not local-first). Any failure keeps the wizard on step 1.
+  useEffect(() => {
+    if (!tenantId) return;
+    void Promise.resolve(
+      supabase.from("ecf_certification_progress").select("current_step, completed_steps").eq("tenant_id", tenantId).maybeSingle()
+    ).then(({ data, error }) => {
+      if (error || !data) return;
+      const restored = restoreProgress(data);
+      setCertificationStep(restored.currentStep);
+      setCompletedCertificationSteps(restored.completedSteps);
+    }).catch(() => undefined);
+  }, [tenantId]);
+
+  function persistCertificationProgress(progress: CertificationProgress) {
+    if (!tenantId) return;
+    void Promise.resolve(
+      supabase.from("ecf_certification_progress").upsert(
+        buildProgressUpsert({ tenantId, environment, progress, userId: user?.id }),
+        { onConflict: "tenant_id" }
+      )
+    ).catch(() => undefined);
+  }
+
+  function goToCertificationStep(step: number) {
+    setCertificationStep(step);
+    persistCertificationProgress({ currentStep: step, completedSteps: completedCertificationSteps });
+  }
+
+  function advanceCertificationStep() {
+    const next = advanceProgress({ currentStep: certificationStep, completedSteps: completedCertificationSteps }, certificationStep);
+    setCertificationStep(next.currentStep);
+    setCompletedCertificationSteps(next.completedSteps);
+    persistCertificationProgress(next);
+  }
 
   async function saveCompany() {
     if (!tenantId) return;
@@ -652,7 +689,7 @@ export function ActivationPanel() {
                     const complete = number < certificationStep;
                     return (
                       <li key={item} className="relative z-10 flex justify-center">
-                        <button type="button" onClick={() => setCertificationStep(number)} title={item} aria-label={`Paso ${number}: ${item}`} className={`flex size-7 items-center justify-center rounded-full border text-[10px] font-bold transition-transform hover:scale-110 sm:size-8 ${complete ? "border-primary bg-primary text-primary-foreground" : current ? "border-primary bg-primary text-primary-foreground shadow-lg shadow-primary/25" : "border-border bg-muted text-muted-foreground"}`}>
+                        <button type="button" onClick={() => goToCertificationStep(number)} title={item} aria-label={`Paso ${number}: ${item}`} className={`flex size-7 items-center justify-center rounded-full border text-[10px] font-bold transition-transform hover:scale-110 sm:size-8 ${complete ? "border-primary bg-primary text-primary-foreground" : current ? "border-primary bg-primary text-primary-foreground shadow-lg shadow-primary/25" : "border-border bg-muted text-muted-foreground"}`}>
                           {complete ? <Check className="size-3" /> : number}
                         </button>
                       </li>
@@ -973,7 +1010,7 @@ export function ActivationPanel() {
                   </div>
                 )}
 
-                <button type="button" onClick={() => setCertificationStep((current) => Math.min(certificationSteps.length, current + 1))} disabled={certificationStep === certificationSteps.length || certificationStep === 8} className={`mt-4 flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-bold transition-colors ${certificationStep === 8 ? "cursor-not-allowed bg-sky-500/50 text-white shadow-none" : "bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90 disabled:opacity-50"}`}>
+                <button type="button" onClick={advanceCertificationStep} disabled={certificationStep === certificationSteps.length || certificationStep === 8} className={`mt-4 flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-bold transition-colors ${certificationStep === 8 ? "cursor-not-allowed bg-sky-500/50 text-white shadow-none" : "bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90 disabled:opacity-50"}`}>
                   {certificationStep === certificationSteps.length ? "Certificación lista para revisión" : certificationStep === 14 ? "> Marcar como aprobado manualmente" : certificationStep === 13 ? "> XML enviado a DGII — Avanzar" : certificationStep === 12 ? "> URLs registradas — Avanzar al Paso 13" : certificationStep === 11 ? "Completado — Avanzar al Paso 12" : certificationStep === 10 ? "Completado — Avanzar al Paso 11" : certificationStep === 9 ? "Completado — Avanzar al Paso 10" : certificationStep === 8 ? "> Esperando e-CFs de DGII..." : certificationStep === 7 ? "URLs registradas — Avanzar al Paso 8" : certificationStep === 6 ? "DGII aprobó — Avanzar al Paso 7" : certificationStep === 5 ? "Representaciones subidas — Avanzar" : `Ya completé este paso - Avanzar al paso ${certificationStep + 1}`} {certificationStep !== 8 && certificationStep !== 14 && certificationStep !== 13 && certificationStep !== 12 && certificationStep !== 15 && <ChevronRight className="size-4" />}
                 </button>
                   </>
