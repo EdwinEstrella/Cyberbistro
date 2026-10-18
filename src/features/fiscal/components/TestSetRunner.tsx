@@ -21,6 +21,8 @@ import {
   nextLoopAction,
   portalDownloads,
   safeDownloadName,
+  signedEcfDownloads,
+  simulationQuotaSummary,
   statusTone,
   summariesAccepted,
   toRunView,
@@ -70,22 +72,24 @@ async function invokeRun(body: Record<string, unknown>, runType: RunType): Promi
 interface TestSetRunnerProps {
   tenantId: string | null | undefined;
   environment: string;
-  /** Wizard step 2 runs the test set (default); step 3 runs the commercial approval set. */
+  /** Wizard step 2 runs the test set (default); step 3 the commercial approval set; step 4 the simulation. */
   runType?: RunType;
   title?: string;
   description?: string;
 }
 
 /**
- * Wizard steps 2 and 3: run a DGII set (upload, send in batches, poll status). The test set also
- * offers the consumo < 250k portal downloads; the commercial approval set does not.
+ * Wizard steps 2, 3 and 4: run a DGII set (upload, send in batches, poll status). The test set and
+ * the simulation also offer the consumo < 250k portal downloads; the simulation adds the quotas of
+ * the DGII portal list and the download of every signed e-CF (needed for step 5).
  */
 export function TestSetRunner({ tenantId, environment, runType = "test_set", title, description }: TestSetRunnerProps) {
   const copy = RUN_COPY[runType];
-  const isTestSet = runType === "test_set";
+  const hasPortalUploads = runType !== "commercial_approval";
+  const isSimulation = runType === "simulation";
   const [file, setFile] = useState<File | null>(null);
   const [run, setRun] = useState<RunView | null>(null);
-  const [busy, setBusy] = useState<"auth" | "start" | "send" | "status" | null>(null);
+  const [busy, setBusy] = useState<"auth" | "start" | "send" | "status" | "download" | null>(null);
   const [status, setStatus] = useState<{ kind: "success" | "error" | "info"; text: string } | null>(null);
   const stopRef = useRef(false);
   const supported = isTestSetEnvironment(environment);
@@ -215,19 +219,38 @@ export function TestSetRunner({ tenantId, environment, runType = "test_set", tit
     }
   }
 
-  async function download(caseId: string) {
-    if (!run) return;
+  async function download(caseId: string): Promise<boolean> {
+    if (!run) return false;
     const { data, error } = await invoke(buildDownloadRequest(run.runId, caseId, tenantId), runType);
     const body = (data ?? {}) as { fileName?: unknown; signedXml?: unknown; code?: unknown };
     if (error || typeof body.signedXml !== "string") {
       setStatus({ kind: "error", text: error?.message ?? describeRunError(typeof body.code === "string" ? body.code : undefined, undefined, runType) });
-      return;
+      return false;
     }
     saveXml(safeDownloadName(typeof body.fileName === "string" ? body.fileName : "", caseId), body.signedXml);
+    return true;
+  }
+
+  async function downloadAll(caseIds: string[]) {
+    setBusy("download");
+    try {
+      let saved = 0;
+      for (const caseId of caseIds) {
+        if (!(await download(caseId))) return;
+        saved++;
+      }
+      setStatus({ kind: "success", text: `Se descargaron ${saved} XML firmados.` });
+    } catch {
+      setStatus({ kind: "error", text: describeRunError(undefined, undefined, runType) });
+    } finally {
+      setBusy(null);
+    }
   }
 
   const progress = run ? describeProgress(run) : null;
-  const downloads = run && isTestSet ? portalDownloads(run) : [];
+  const downloads = run && hasPortalUploads ? portalDownloads(run) : [];
+  const quotas = run && isSimulation ? simulationQuotaSummary(run) : [];
+  const signedDocuments = run && isSimulation ? signedEcfDownloads(run) : [];
 
   return (
     <div className="mt-4 space-y-4 rounded-xl border border-dashed border-primary/35 bg-muted/20 p-5">
@@ -293,6 +316,22 @@ export function TestSetRunner({ tenantId, environment, runType = "test_set", tit
             </table>
           </div>
 
+          {quotas.length > 0 && (
+            <div className="rounded-xl border border-border bg-background p-4">
+              <div className="text-xs font-bold text-foreground">Cupos de la simulación (lista del portal de la DGII)</div>
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {quotas.map((quota) => (
+                  <div key={quota.label} className="rounded-lg border border-border/60 px-3 py-2 text-xs">
+                    <div className="text-muted-foreground">{quota.label}</div>
+                    <div className={`font-bold ${quota.accepted >= quota.expected ? "text-green-600 dark:text-green-400" : "text-foreground"}`}>
+                      {quota.accepted} de {quota.expected} aceptados
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {downloads.length > 0 && (
             <div className="rounded-xl border border-border bg-background p-4">
               <div className="flex items-center gap-2 text-xs font-bold text-foreground"><Download className="size-4 text-primary" /> Facturas de consumo menores a 250 mil</div>
@@ -303,6 +342,25 @@ export function TestSetRunner({ tenantId, environment, runType = "test_set", tit
               <div className="mt-3 flex flex-wrap gap-2">
                 {downloads.map((item) => (
                   <button key={item.caseId} type="button" onClick={() => void download(item.caseId)} className="inline-flex items-center gap-2 rounded-xl border border-primary/30 px-3 py-2 text-xs font-bold text-primary hover:bg-primary/10">
+                    <Download className="size-3.5" /> {item.encf}.xml
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {signedDocuments.length > 0 && (
+            <div className="rounded-xl border border-border bg-background p-4">
+              <div className="flex items-center gap-2 text-xs font-bold text-foreground"><Download className="size-4 text-primary" /> XML firmados de la simulación</div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Guardá todos los e-CF firmados: los vas a necesitar para la representación impresa (Paso 5).
+              </p>
+              <button type="button" disabled={busy !== null} onClick={() => void downloadAll(signedDocuments.map((item) => item.caseId))} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-sm disabled:cursor-not-allowed disabled:opacity-50">
+                <Download className="size-4" /> {busy === "download" ? "Descargando..." : `Descargar todos los XML firmados (${signedDocuments.length})`}
+              </button>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {signedDocuments.map((item) => (
+                  <button key={`${item.caseId}-${item.kind}`} type="button" disabled={busy !== null} onClick={() => void download(item.caseId)} className="inline-flex items-center gap-2 rounded-xl border border-primary/30 px-3 py-2 text-xs font-bold text-primary hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50">
                     <Download className="size-3.5" /> {item.encf}.xml
                   </button>
                 ))}

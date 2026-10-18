@@ -1,5 +1,5 @@
 import { type MouseEvent, useEffect, useState } from "react";
-import { AlertTriangle, Award, Building2, Check, CheckCircle, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Copy, Download, ExternalLink, FileKey2, FileText, Hash, ListOrdered, RefreshCw, Rocket, Search, ShieldAlert, ShieldCheck, Sparkles, Wifi, X } from "lucide-react";
+import { AlertTriangle, Award, Building2, Check, CheckCircle, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Copy, Download, ExternalLink, FileKey2, FileText, Hash, ListOrdered, RefreshCw, Rocket, Search, ShieldAlert, ShieldCheck, Wifi, X } from "lucide-react";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { supabase } from "../../../shared/lib/supabase";
 import { NCF_E_TIPO_OPCIONES } from "../../../shared/lib/ncf";
@@ -796,47 +796,7 @@ export function ActivationPanel() {
 
                 {certificationStep === 3 && <TestSetRunner tenantId={tenantId} environment={environment} runType="commercial_approval" />}
 
-                {certificationStep === 4 && (
-                  <>
-                    <div className="mt-4 rounded-xl border border-border bg-card p-5 shadow-sm">
-                      <div className="flex items-center justify-between">
-                        <h4 className="flex items-center gap-2 text-sm font-bold text-foreground"><Hash className="size-4 text-muted-foreground" /> Secuencias NCF autorizadas</h4>
-                        <button type="button" className="text-xs font-semibold text-primary hover:underline">Actualizar</button>
-                      </div>
-                      <div className="mt-4 flex flex-col gap-3">
-                        {NCF_E_TIPO_OPCIONES.filter((type) => enabledTypes.includes(type.codigo)).map((type) => {
-                          const seq = ecfSequences[type.codigo] || { start: 1, end: 1000, used: 0 };
-                          const nextSequenceNumber = seq.start + seq.used;
-                          const startSeq = String(nextSequenceNumber).padStart(10, "0");
-                          const endSeq = String(seq.end).padStart(10, "0");
-                          const remaining = Math.max(0, seq.end - nextSequenceNumber + 1);
-                          return (
-                            <div key={type.codigo} className="flex flex-col gap-2 border-b border-border/50 pb-3 last:border-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
-                              <div className="flex items-center gap-3">
-                                <span className="rounded bg-primary/10 px-1.5 py-0.5 font-mono text-xs font-bold text-primary">{type.codigo}</span>
-                                <span className="font-mono text-xs text-muted-foreground">{type.codigo}{String(seq.start).padStart(10, "0")} - {type.codigo}{endSeq}</span>
-                              </div>
-                              <div className="flex items-center gap-4 text-[11px]">
-                                <span className="text-muted-foreground">Usados: <strong className="text-foreground">{seq.used}</strong></span>
-                                <span className="font-semibold text-green-600 dark:text-green-400">Restantes: {remaining.toLocaleString()}</span>
-                                <span className="text-muted-foreground">Próximo: <strong className="font-mono text-foreground">{type.codigo}{startSeq}</strong></span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <p className="mt-3 text-[10px] text-muted-foreground">Las secuencias avanzan y no se reutilizan: si un comprobante es rechazado, el siguiente intento usa la próxima secuencia disponible.</p>
-                    </div>
-
-                    <div className="mt-4 rounded-xl border border-sky-500/20 bg-sky-500/5 p-5">
-                      <h4 className="flex items-center gap-2 text-sm font-bold text-sky-700 dark:text-sky-400"><Sparkles className="size-4" /> Generar comprobantes desde el sistema</h4>
-                      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">El sistema crea automáticamente los e-CF exigidos (E31, E32, E33, E41, E43-E47) con los datos de tu empresa, asignando eNCF de tus secuencias autorizadas (sin repetir) y firmados con tu certificado. Luego se envían a la DGII.</p>
-                      <button type="button" onClick={() => setMessage("Generación simulada iniciada en modo diseño. Requiere el motor e-CF para procesar y enviar a DGII.")} className="mt-4 inline-flex items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-sky-700">
-                        Iniciar generación de prueba
-                      </button>
-                    </div>
-                  </>
-                )}
+                {certificationStep === 4 && <TestSetRunner tenantId={tenantId} environment={environment} runType="simulation" />}
 
                 {certificationStep === 5 && (
                   <div className="mt-4 flex flex-col gap-4">

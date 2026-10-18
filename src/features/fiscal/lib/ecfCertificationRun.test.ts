@@ -19,7 +19,10 @@ import {
   isTestSetEnvironment,
   nextLoopAction,
   portalDownloads,
+  SIMULATION_QUOTAS,
   safeDownloadName,
+  signedEcfDownloads,
+  simulationQuotaSummary,
   statusTone,
   summariesAccepted,
   toRunView,
@@ -235,5 +238,61 @@ describe("commercial approval runs", () => {
     expect(RUN_COPY.test_set.loaded(4)).toBe("Set de Pruebas cargado: 4 documentos listos para enviar.");
     expect(isRunType("commercial_approval")).toBe(true);
     expect(isRunType("x")).toBe(false);
+  });
+});
+
+describe("simulation runs", () => {
+  const sim = (items: ReturnType<typeof item>[]) => toRunView({ ...body(), runType: "simulation", items }) as RunView;
+  const signedItem = (encf: string, kind: string, status: string, order: number, signed = true) => ({ ...item(encf, kind, status, order), signed, sourceCaseId: `133488485${encf.slice(0, 3)}0000000001` });
+
+  it("has its own copy, run type and messages", () => {
+    expect(isRunType("simulation")).toBe(true);
+    expect(RUN_COPY.simulation.title).toBe("Simulación e-CF (Paso 4 de la DGII)");
+    expect(RUN_COPY.simulation.description).toContain("Cargá el mismo Excel del Set de Pruebas (Paso 2)");
+    expect(RUN_COPY.simulation.description).toContain("menores a 250 mil se descargan");
+    expect(describeRunError("SEQUENCE_CONFLICT", undefined, "simulation")).toContain("secuencias");
+    expect(describeRunError("INVALID_TEST_SET", "bad", "simulation")).toBe("El archivo no es el Set de Pruebas (Paso 2) de la DGII. Detalle: bad");
+    expect(describeRunError(undefined, undefined, "simulation")).toBe("No se pudo procesar la Simulación e-CF.");
+    expect(buildStartRequest({ environment: "certification", xlsxBase64: "QQ==", runType: "simulation" })).toMatchObject({ runType: "simulation" });
+    expect(buildLatestRequest("certification", null, "simulation")).toEqual({ action: "latest", environment: "certification", runType: "simulation" });
+    expect(buildDownloadRequest(RUN, "c", TENANT, "rfce")).toEqual({ action: "download", runId: RUN, caseId: "c", kind: "rfce", tenantId: TENANT });
+  });
+
+  it("maps the source case and signed flags", () => {
+    const run = sim([signedItem("E310000000011", "ecf", "accepted", 0)]);
+    expect(run.runType).toBe("simulation");
+    expect(run.items[0]).toMatchObject({ sourceCaseId: "133488485E310000000001", signed: true });
+    expect(view().items[0]).toMatchObject({ sourceCaseId: null, signed: false });
+  });
+
+  it("matches the DGII portal quotas", () => {
+    expect(SIMULATION_QUOTAS.map((quota) => `${quota.label}:${quota.expected}`)).toEqual([
+      "E31:4", "E32 ≥ 250 mil:2", "E33:1", "E34:2", "E41:2", "E43:2", "E44:2", "E45:2", "E46:2", "E47:2", "RFCE (E32 < 250 mil):4",
+    ]);
+    expect(SIMULATION_QUOTAS.reduce((total, quota) => total + quota.expected, 0)).toBe(25);
+  });
+
+  it("counts accepted documents per quota line, consumo E32 through their RFCE", () => {
+    const run = sim([
+      signedItem("E320000000017", "portal_upload", "ready_for_portal", 0),
+      signedItem("E320000000017", "rfce", "accepted", 1),
+      signedItem("E320000000016", "ecf", "accepted_conditional", 2),
+      signedItem("E310000000011", "ecf", "accepted", 3),
+      signedItem("E310000000012", "ecf", "rejected", 4),
+      signedItem("E340000000017", "ecf", "pending", 5, false),
+    ]);
+    const byLabel = Object.fromEntries(simulationQuotaSummary(run).map((quota) => [quota.label, quota]));
+    expect(byLabel.E31).toEqual({ label: "E31", expected: 4, accepted: 1, inRun: 2 });
+    expect(byLabel["E32 ≥ 250 mil"]).toMatchObject({ accepted: 1, inRun: 1 });
+    expect(byLabel["RFCE (E32 < 250 mil)"]).toMatchObject({ accepted: 1, inRun: 1 });
+    expect(byLabel.E34).toMatchObject({ accepted: 0, inRun: 1 });
+    expect(byLabel.E47).toMatchObject({ accepted: 0, inRun: 0 });
+    // Every signed e-CF (not the RFCE, not unsigned ones) is offered for download.
+    expect(signedEcfDownloads(run).map((entry) => `${entry.kind}:${entry.encf}`)).toEqual([
+      "portal_upload:E320000000017",
+      "ecf:E320000000016",
+      "ecf:E310000000011",
+      "ecf:E310000000012",
+    ]);
   });
 });

@@ -10,8 +10,8 @@ export const SEND_BATCH_LIMIT = 5;
 
 export type TestSetEnvironment = "test" | "certification";
 export type SubmissionKind = "ecf" | "rfce" | "portal_upload" | "acecf";
-/** Step 2 runs the test set; step 3 runs the commercial approval set (ACECF). */
-export type RunType = "test_set" | "commercial_approval";
+/** Step 2 runs the test set; step 3 the commercial approval set (ACECF); step 4 the simulation. */
+export type RunType = "test_set" | "commercial_approval" | "simulation";
 export type SubmissionStatus = "pending" | "sent" | "accepted" | "accepted_conditional" | "rejected" | "error" | "ready_for_portal";
 
 export interface DgiiMessageView {
@@ -28,6 +28,10 @@ export interface SubmissionItem {
   status: SubmissionStatus;
   trackId: string | null;
   messages: DgiiMessageView[];
+  /** Simulation only: the step-2 test case this document re-issues. */
+  sourceCaseId: string | null;
+  /** A signed copy is stored on the server. */
+  signed: boolean;
 }
 
 export interface RunView {
@@ -82,10 +86,20 @@ export const RUN_COPY: Record<RunType, RunCopy> = {
     sentAll: "Todas las aprobaciones comerciales fueron enviadas. Revisá el estado de cada una en la tabla.",
     loaded: (count) => `Set de Aprobaciones Comerciales cargado: ${count} aprobaciones listas para enviar.`,
   },
+  simulation: {
+    title: "Simulación e-CF (Paso 4 de la DGII)",
+    description:
+      "Cargá el mismo Excel del Set de Pruebas (Paso 2). Cloudix genera la simulación con secuencias nuevas y la fecha de hoy, la firma con tu certificado y la envía a la DGII. Las facturas de consumo menores a 250 mil se descargan para subirlas al portal.",
+    setName: "Set de Pruebas",
+    unsupportedEnvironment:
+      "La Simulación e-CF se ejecuta en los ambientes de Pruebas (TesteCF) o Certificación (CerteCF). Cambiá el ambiente en el paso Ambiente y certificado.",
+    sentAll: "Todos los documentos de la simulación fueron enviados. Consultá el estado hasta que la DGII termine de procesarlos.",
+    loaded: (count) => `Simulación generada: ${count} documentos con secuencias nuevas listos para enviar.`,
+  },
 };
 
 export function isRunType(value: unknown): value is RunType {
-  return value === "test_set" || value === "commercial_approval";
+  return value === "test_set" || value === "commercial_approval" || value === "simulation";
 }
 
 /** Returns a user-facing error (Spanish) or null when the selected file looks acceptable. */
@@ -124,8 +138,9 @@ export function buildStatusRequest(runId: string, tenantId?: string | null) {
   return { action: "status", runId, ...withTenant(tenantId) };
 }
 
-export function buildDownloadRequest(runId: string, caseId: string, tenantId?: string | null) {
-  return { action: "download", runId, caseId, ...withTenant(tenantId) };
+/** `kind: "rfce"` downloads the summary of a consumo E32 (simulation runs only). */
+export function buildDownloadRequest(runId: string, caseId: string, tenantId?: string | null, kind?: "rfce") {
+  return { action: "download", runId, caseId, ...(kind ? { kind } : {}), ...withTenant(tenantId) };
 }
 
 /** Authenticates the tenant certificate against DGII only; sends no document. */
@@ -148,6 +163,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   DGII_UNAVAILABLE: "No se pudo conectar con la DGII. Intentá de nuevo en unos minutos.",
   DGII_ERROR: "La DGII respondió con un error. Intentá de nuevo en unos minutos.",
   CONCURRENT_BATCH: "Otro envío del Set de Pruebas está en curso. Esperá a que termine.",
+  SEQUENCE_CONFLICT: "Una de las secuencias e-NCF ya fue usada. Cargá el archivo de nuevo para asignar secuencias nuevas.",
   INVALID_REQUEST: "La solicitud no es válida. Intentá de nuevo.",
   INTERNAL: "No se pudo procesar el Set de Pruebas. Intentá de nuevo en unos minutos.",
 };
@@ -165,13 +181,29 @@ const COMMERCIAL_MESSAGES: Record<string, string> = {
 };
 const COMMERCIAL_FALLBACK = "No se pudo procesar el Set de Aprobaciones Comerciales.";
 
+/** The simulation takes the step-2 workbook; messages name the simulation instead. */
+const SIMULATION_MESSAGES: Record<string, string> = {
+  FORBIDDEN: "Solo un administrador del negocio puede ejecutar la Simulación e-CF.",
+  INVALID_TEST_SET: "El archivo no es el Set de Pruebas (Paso 2) de la DGII.",
+  RUN_NOT_FOUND: "No encontramos esa Simulación e-CF. Cargá el archivo de nuevo.",
+  CONCURRENT_BATCH: "Otro envío de la Simulación e-CF está en curso. Esperá a que termine.",
+  INTERNAL: "No se pudo procesar la Simulación e-CF. Intentá de nuevo en unos minutos.",
+};
+const SIMULATION_FALLBACK = "No se pudo procesar la Simulación e-CF.";
+
 function fallbackMessage(runType: RunType): string {
-  return runType === "commercial_approval" ? COMMERCIAL_FALLBACK : FALLBACK_MESSAGE;
+  if (runType === "commercial_approval") return COMMERCIAL_FALLBACK;
+  return runType === "simulation" ? SIMULATION_FALLBACK : FALLBACK_MESSAGE;
 }
 
 /** Spanish message for an edge function code; INVALID_TEST_SET keeps the technical detail. */
 export function describeRunError(code: string | undefined, detail?: string, runType: RunType = "test_set"): string {
-  const messages = runType === "commercial_approval" ? { ...ERROR_MESSAGES, ...COMMERCIAL_MESSAGES } : ERROR_MESSAGES;
+  const messages =
+    runType === "commercial_approval"
+      ? { ...ERROR_MESSAGES, ...COMMERCIAL_MESSAGES }
+      : runType === "simulation"
+        ? { ...ERROR_MESSAGES, ...SIMULATION_MESSAGES }
+        : ERROR_MESSAGES;
   if (code === "INVALID_TEST_SET" && detail) return `${messages.INVALID_TEST_SET} Detalle: ${detail}`;
   if (code && messages[code]) return messages[code];
   return fallbackMessage(runType);
@@ -201,6 +233,8 @@ function toItem(value: unknown): SubmissionItem | null {
     status: item.status as SubmissionStatus,
     trackId: typeof item.trackId === "string" ? item.trackId : null,
     messages: toMessages(item.messages),
+    sourceCaseId: typeof item.sourceCaseId === "string" ? item.sourceCaseId : null,
+    signed: item.signed === true,
   };
 }
 
@@ -338,4 +372,46 @@ export function nextLoopAction(run: RunView): LoopAction {
 
 export function safeDownloadName(fileName: string, caseId: string): string {
   return /^[\w.-]+\.xml$/i.test(fileName) ? fileName : `${caseId.replace(/[^\w.-]+/g, "_") || "documento"}.xml`;
+}
+
+/** One line of the DGII step-4 portal list: documents expected vs accepted by DGII. */
+export interface SimulationQuota {
+  label: string;
+  expected: number;
+  accepted: number;
+  /** Documents of the run in this line (any status). */
+  inRun: number;
+}
+
+/**
+ * Quotas of the DGII portal list for step 4. E32 >= 250k are e-CF sent to reception; consumo E32
+ * (< 250k) count through their RFCE summaries.
+ */
+export const SIMULATION_QUOTAS: { label: string; expected: number; matches: (item: SubmissionItem) => boolean }[] = [
+  ...["31"].map((tipo) => ({ label: `E${tipo}`, expected: 4, matches: (item: SubmissionItem) => item.kind === "ecf" && item.tipoEcf === tipo })),
+  { label: "E32 ≥ 250 mil", expected: 2, matches: (item) => item.kind === "ecf" && item.tipoEcf === "32" },
+  { label: "E33", expected: 1, matches: (item) => item.kind === "ecf" && item.tipoEcf === "33" },
+  ...["34", "41", "43", "44", "45", "46", "47"].map((tipo) => ({
+    label: `E${tipo}`,
+    expected: 2,
+    matches: (item: SubmissionItem) => item.kind === "ecf" && item.tipoEcf === tipo,
+  })),
+  { label: "RFCE (E32 < 250 mil)", expected: 4, matches: (item) => item.kind === "rfce" },
+];
+
+export function simulationQuotaSummary(run: RunView): SimulationQuota[] {
+  return SIMULATION_QUOTAS.map((quota) => {
+    const items = run.items.filter(quota.matches);
+    return {
+      label: quota.label,
+      expected: quota.expected,
+      accepted: items.filter((item) => item.status === "accepted" || item.status === "accepted_conditional").length,
+      inRun: items.length,
+    };
+  });
+}
+
+/** Every signed e-CF of the run (reception and consumo), needed for the printed representation. */
+export function signedEcfDownloads(run: RunView): SubmissionItem[] {
+  return run.items.filter((item) => item.signed && (item.kind === "ecf" || item.kind === "portal_upload"));
 }
