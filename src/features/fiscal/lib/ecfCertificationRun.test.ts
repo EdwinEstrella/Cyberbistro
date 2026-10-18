@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   SEND_BATCH_LIMIT,
+  buildAuthCheckRequest,
   buildDownloadRequest,
   buildLatestRequest,
   buildSendNextRequest,
@@ -85,6 +86,8 @@ describe("test set requests", () => {
     expect(buildSendNextRequest(RUN, null, 0).limit).toBe(1);
     expect(buildStatusRequest(RUN)).toEqual({ action: "status", runId: RUN });
     expect(buildDownloadRequest(RUN, "133488485E320000000012", TENANT)).toEqual({ action: "download", runId: RUN, caseId: "133488485E320000000012", tenantId: TENANT });
+    expect(buildAuthCheckRequest("certification", TENANT)).toEqual({ action: "auth-check", environment: "certification", tenantId: TENANT });
+    expect(buildAuthCheckRequest("test")).toEqual({ action: "auth-check", environment: "test" });
   });
 
   it("only runs in the test and certification environments", () => {

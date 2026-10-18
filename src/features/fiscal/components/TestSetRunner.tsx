@@ -5,6 +5,7 @@ import {
   ECF_CERTIFICATION_FUNCTION,
   KIND_LABELS,
   STATUS_LABELS,
+  buildAuthCheckRequest,
   buildDownloadRequest,
   buildLatestRequest,
   buildSendNextRequest,
@@ -70,7 +71,7 @@ interface TestSetRunnerProps {
 export function TestSetRunner({ tenantId, environment }: TestSetRunnerProps) {
   const [file, setFile] = useState<File | null>(null);
   const [run, setRun] = useState<RunView | null>(null);
-  const [busy, setBusy] = useState<"start" | "send" | "status" | null>(null);
+  const [busy, setBusy] = useState<"auth" | "start" | "send" | "status" | null>(null);
   const [status, setStatus] = useState<{ kind: "success" | "error" | "info"; text: string } | null>(null);
   const stopRef = useRef(false);
   const supported = isTestSetEnvironment(environment);
@@ -105,6 +106,24 @@ export function TestSetRunner({ tenantId, environment }: TestSetRunnerProps) {
       return;
     }
     setFile(selected);
+  }
+
+  async function checkConnection() {
+    if (!isTestSetEnvironment(environment)) return;
+    setBusy("auth");
+    setStatus({ kind: "info", text: "Probando la conexión con la DGII..." });
+    try {
+      const { data, error } = await invoke(buildAuthCheckRequest(environment, tenantId));
+      if (error) return setStatus({ kind: "error", text: error.message });
+      const ok = (data as { ok?: unknown } | null)?.ok === true;
+      setStatus(ok
+        ? { kind: "success", text: "Conexión con la DGII correcta: tu certificado fue aceptado. No se envió ningún documento." }
+        : { kind: "error", text: describeRunError(undefined) });
+    } catch {
+      setStatus({ kind: "error", text: describeRunError(undefined) });
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function start() {
@@ -202,6 +221,9 @@ export function TestSetRunner({ tenantId, environment }: TestSetRunnerProps) {
       <p className="text-xs leading-relaxed text-muted-foreground">
         Descargá el Excel del Set de Pruebas desde el portal de la DGII y cargalo aquí. Cloudix arma cada e-CF y RFCE, los firma con tu certificado y los envía a la DGII en el orden correcto.
       </p>
+      <button type="button" disabled={busy !== null} onClick={() => void checkConnection()} className="inline-flex w-fit items-center gap-2 rounded-xl border border-primary/30 px-4 py-2.5 text-xs font-bold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50">
+        <RefreshCw className="size-4" /> {busy === "auth" ? "Probando..." : "Probar conexión con la DGII"}
+      </button>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-sm">
           <Upload className="size-4" /> Seleccionar archivo

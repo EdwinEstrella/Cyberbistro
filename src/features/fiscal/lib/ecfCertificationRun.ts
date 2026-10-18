@@ -84,6 +84,11 @@ export function buildDownloadRequest(runId: string, caseId: string, tenantId?: s
   return { action: "download", runId, caseId, ...withTenant(tenantId) };
 }
 
+/** Authenticates the tenant certificate against DGII only; sends no document. */
+export function buildAuthCheckRequest(environment: TestSetEnvironment, tenantId?: string | null) {
+  return { action: "auth-check", environment, ...withTenant(tenantId) };
+}
+
 const ERROR_MESSAGES: Record<string, string> = {
   UNAUTHENTICATED: "Tu sesión venció. Iniciá sesión de nuevo e intentá otra vez.",
   FORBIDDEN: "Solo un administrador del negocio puede ejecutar el Set de Pruebas.",
