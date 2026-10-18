@@ -245,6 +245,25 @@ strategy before opening PRs.
     tested; behind the edge-runtime proxy an early reply to a client still uploading can stall instead of replying 413, so the
     runbook asks Cloudflare to block bodies over 5 MB).
 
+- 2026-10-18 DEPLOY D1 (user authorized): applied to PROD via Supabase MCP `ecf_receptor` + `ecf_receptor_hardening`
+  (were absent). Verified: 4 tables RLS on, no anon/authenticated table grants; authenticated column SELECT only on
+  non-secret columns (no xml/arecf_xml/signer_ids); both RPCs not executable by anon/authenticated;
+  `ecf_receptor_resolve_tenant('133488485')` -> 1 row. pg_cron NOT installed -> purge must be scheduled externally.
+- 2026-10-18 DEPLOY D2 blocked: `ssh root@75.119.129.150` -> Permission denied (publickey,password); no key in ~/.ssh/config.
+
+- 2026-10-18 DEPLOY D2 partial (user authorized, Dokploy UI): 8 file mounts created under /volumes/functions/
+  (ecf-receptor x7 + validate-ecf-certificate/index.ts), content verified identical to HEAD. Two mistaken mounts with
+  concatenated paths (CQMD5tD5wxfA-Voojh7zY, bMCr72S8ghAExltFEVAAT) must be deleted before Deploy. Secrets/env/compose edits
+  and mount deletion blocked by the agent permission classifier -> user performs them.
+
+- 2026-10-18 DEPLOY D2 DONE: user deleted the 2 mistaken mounts, added ECF_ENCRYPTION_KEY + ECF_RECEPTOR_SEED_SECRET to the
+  Dokploy Environment (verified names/format only, never values), added ECF_ENCRYPTION_KEY, ECF_RECEPTOR_SEED_SECRET and
+  SUPABASE_PUBLISHABLE_KEY to the `functions` service env (verified once each, 6-space indent), and redeployed.
+  Smoke (prod): seed 133488485 -> 200 SemillaModel (was 503 NOT_CONFIGURED before deploy); unknown RNC seed -> 200;
+  reception without token -> 401; unsigned seed -> 401; validate-ecf-certificate without JWT -> 401 UNAUTHENTICATED
+  (old Insforge stub `module is not defined` gone). Kong/auth/rest up, DB reachable.
+  Pending: daily purge scheduler (no pg_cron); fiscal worker must reuse the same ECF_ENCRYPTION_KEY; per-tenant onboarding.
+
 ## Open decisions for the user
 - RNC representation (T7): person-only signer certificates are accepted and flagged `signer_rnc_mismatch`; decide whether
   to add a per-issuer allow-list of signer cedulas (or require a company identifier once a CA issues one).
@@ -262,4 +281,4 @@ strategy before opening PRs.
   `feature-branch-chain`) before opening PRs.
 
 ## Next step
-User review; then authorized deployment following the runbook.
+Per-tenant onboarding (Salpimentao first): upload .p12 in Ajustes, issuer data + e-NCF ranges, register receptor URLs in the DGII portal, run DGII certification tests.
