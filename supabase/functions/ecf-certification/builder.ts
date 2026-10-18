@@ -26,6 +26,8 @@ export interface BuiltDocument {
   references: string | null;
   /** Unsigned XML: e-CF without FechaHoraFirma, RFCE without CodigoSeguridadeCF (both set at signing). */
   xml: string;
+  /** Simulation only: CasoPrueba of the step-2 test case this document re-issues. */
+  sourceCaseId?: string | null;
 }
 
 export interface TestSet {

@@ -9,6 +9,8 @@
 //     note modifies) is moved right before its first referrer. A referrer is only sent once the
 //     referenced document is accepted by DGII, so send-next pauses (waitingFor) until status polling
 //     records that acceptance.
+// A simulation run (DGII step 4) re-issues the test-set workbook with fresh e-NCF and today's dates
+// (see simulation.ts) and is sent exactly like a test set.
 import {
   applySecurityCode,
   buildTestSet,
@@ -21,10 +23,11 @@ import {
 import { buildCommercialApprovals, detectWorkbookType, type BuiltApproval } from "./commercialApproval.ts";
 import { DgiiError, type DgiiClient, type DgiiMessage, type DgiiSendResult } from "./dgiiClient.ts";
 import { HttpError, json, loadSigner, type ActionContext } from "./context.ts";
+import { buildSimulationSet } from "./simulation.ts";
 import { readXlsx, XlsxError } from "./xlsx.ts";
 
 export type SubmissionKind = "ecf" | "rfce" | "portal_upload" | "acecf";
-export type RunType = "test_set" | "commercial_approval";
+export type RunType = "test_set" | "commercial_approval" | "simulation";
 export type SubmissionStatus = "pending" | "sent" | "accepted" | "accepted_conditional" | "rejected" | "error" | "ready_for_portal";
 export type RunEnvironment = "test" | "certification";
 export type RunStatus = "pending" | "running" | "completed" | "failed";
@@ -37,6 +40,8 @@ export interface PlannedSubmission {
   sequenceOrder: number;
   dependsOnCaseId: string | null;
   unsignedXml: string;
+  /** Simulation only: the step-2 test case this document re-issues. */
+  sourceCaseId?: string | null;
 }
 
 export interface Submission extends PlannedSubmission {
@@ -80,6 +85,11 @@ export interface RunStore {
   /** The run when it belongs to the tenant, else null. */
   getRun(tenantId: string, runId: string): Promise<Run | null>;
   latestRun(tenantId: string, environment: RunEnvironment, runType: RunType): Promise<Run | null>;
+  /**
+   * Every e-NCF the tenant issued in the environment: kinds ecf, rfce and portal_upload of test-set
+   * and simulation runs (never commercial approvals, whose e-NCF belong to the DGII emitter).
+   */
+  issuedEncfs(tenantId: string, environment: RunEnvironment): Promise<string[]>;
   /** Ordered by sequence_order. */
   listSubmissions(runId: string): Promise<Submission[]>;
   /**
@@ -91,13 +101,21 @@ export interface RunStore {
   setRunStatus(runId: string, status: RunStatus): Promise<void>;
 }
 
+/** createRun refused a submission whose e-NCF the tenant already issued (database guard). */
+export class SequenceConflictError extends Error {
+  constructor() {
+    super("An e-NCF of the run was already issued by this tenant.");
+    this.name = "SequenceConflictError";
+  }
+}
+
 export const MAX_XLSX_BYTES = 2 * 1024 * 1024;
 export const MAX_SEND_LIMIT = 5;
 export const MAX_STATUS_POLLS = 10;
 export const MAX_ATTEMPTS = 3;
 const DEFAULT_BUDGET_MS = 40_000;
 const RUN_ENVIRONMENTS: RunEnvironment[] = ["test", "certification"];
-const RUN_TYPES: RunType[] = ["test_set", "commercial_approval"];
+const RUN_TYPES: RunType[] = ["test_set", "commercial_approval", "simulation"];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ACCEPTED: SubmissionStatus[] = ["accepted", "accepted_conditional"];
 const TERMINAL: SubmissionStatus[] = ["accepted", "accepted_conditional", "rejected", "error", "ready_for_portal"];
@@ -114,6 +132,7 @@ export function planSubmissions(set: TestSet): PlannedSubmission[] {
       sequenceOrder: out.length,
       dependsOnCaseId,
       unsignedXml: doc.xml,
+      ...(doc.sourceCaseId ? { sourceCaseId: doc.sourceCaseId } : {}),
     });
 
   const summaries = new Map(set.rfce.map((doc) => [doc.encf, doc]));
@@ -199,6 +218,10 @@ export interface SubmissionView {
   status: SubmissionStatus;
   trackId: string | null;
   messages: DgiiMessage[];
+  /** Simulation only: the step-2 test case this document re-issues. */
+  sourceCaseId: string | null;
+  /** A signed copy is stored (downloadable for simulation runs and portal uploads). */
+  signed: boolean;
 }
 
 export interface RunSummary {
@@ -244,6 +267,8 @@ export function summarize(run: Run, subs: Submission[]): RunSummary {
       status: sub.status,
       trackId: sub.trackId,
       messages: sub.messages,
+      sourceCaseId: sub.sourceCaseId ?? null,
+      signed: !!sub.signedXml,
     })),
   };
 }
@@ -289,7 +314,7 @@ function runTypeOf(payload: Record<string, unknown>): RunType | undefined {
   const { runType } = payload;
   if (runType === undefined) return undefined;
   if (typeof runType !== "string" || !RUN_TYPES.includes(runType as RunType)) {
-    throw new HttpError(400, "INVALID_REQUEST", "runType must be test_set or commercial_approval.");
+    throw new HttpError(400, "INVALID_REQUEST", "runType must be test_set, commercial_approval or simulation.");
   }
   return runType as RunType;
 }
@@ -297,6 +322,7 @@ function runTypeOf(payload: Record<string, unknown>): RunType | undefined {
 const WORKBOOK_LABEL: Record<RunType, string> = {
   test_set: "a test set (ECF/RFCE)",
   commercial_approval: "a commercial approval set (ACEECF_Generadas)",
+  simulation: "a test set (ECF/RFCE)",
 };
 
 export async function startRun(ctx: ActionContext): Promise<Response> {
@@ -306,14 +332,18 @@ export async function startRun(ctx: ActionContext): Promise<Response> {
   let runType: RunType;
   let set: TestSet | null = null;
   let approvals: BuiltApproval[] = [];
+  const now = new Date((ctx.deps.now ?? Date.now)());
   try {
     const sheets = await readXlsx(bytes);
-    runType = detectWorkbookType(sheets);
+    const workbookType = detectWorkbookType(sheets);
+    // The simulation (step 4) takes the step-2 test-set workbook.
+    runType = expectedType === "simulation" && workbookType === "test_set" ? "simulation" : workbookType;
     if (expectedType && expectedType !== runType) {
       throw new TestSetError(`This workbook is ${WORKBOOK_LABEL[runType]}, but ${WORKBOOK_LABEL[expectedType]} was expected.`);
     }
     if (runType === "test_set") set = buildTestSet(sheets);
-    else approvals = buildCommercialApprovals(sheets, new Date((ctx.deps.now ?? Date.now)()));
+    else if (runType === "simulation") set = buildSimulationSet(sheets, { issued: await ctx.deps.store.issuedEncfs(ctx.tenantId, environment), now });
+    else approvals = buildCommercialApprovals(sheets, now);
   } catch (error) {
     if (error instanceof XlsxError || error instanceof TestSetError) {
       ctx.deps.log("test_set_invalid");
@@ -333,15 +363,25 @@ export async function startRun(ctx: ActionContext): Promise<Response> {
   if (!(await ctx.deps.store.loadCertificate(ctx.tenantId, environment))) {
     throw new HttpError(409, "CERTIFICATE_NOT_READY", "No ready certificate for this environment.");
   }
-  const run = await ctx.deps.store.createRun({
-    tenantId: ctx.tenantId,
-    environment,
-    runType,
-    sourceSha256: await sha256Hex(bytes),
-    createdBy: ctx.userId,
-    submissions: set ? planSubmissions(set) : planApprovals(approvals),
-  });
-  ctx.deps.log("run_started", set ? { ecf: set.ecf.length, rfce: set.rfce.length } : { acecf: approvals.length });
+  let run: Run;
+  try {
+    run = await ctx.deps.store.createRun({
+      tenantId: ctx.tenantId,
+      environment,
+      runType,
+      sourceSha256: await sha256Hex(bytes),
+      createdBy: ctx.userId,
+      submissions: set ? planSubmissions(set) : planApprovals(approvals),
+    });
+  } catch (error) {
+    // Fail closed: never renumber silently; a new start allocates from the updated history.
+    if (error instanceof SequenceConflictError) {
+      ctx.deps.log("sequence_conflict", { runType });
+      throw new HttpError(409, "SEQUENCE_CONFLICT", "An e-NCF of this run was already issued. Start the run again to allocate new sequences.");
+    }
+    throw error;
+  }
+  ctx.deps.log("run_started", { runType, ...(set ? { ecf: set.ecf.length, rfce: set.rfce.length } : { acecf: approvals.length }) });
   return json(200, summarize(run, await ctx.deps.store.listSubmissions(run.id)));
 }
 
@@ -530,14 +570,30 @@ export async function latestRun(ctx: ActionContext): Promise<Response> {
   return json(200, { run: summarize(run, await ctx.deps.store.listSubmissions(run.id)) });
 }
 
+const DOWNLOAD_KINDS: SubmissionKind[] = ["ecf", "portal_upload", "rfce"];
+
+/**
+ * Signed document of a run. Test sets: only the consumo e-CF signed for the portal upload.
+ * Simulations: any signed document (step 5 needs every e-CF); `kind: "rfce"` picks the summary of a
+ * consumo E32, otherwise the e-CF of the case (portal_upload or ecf) is returned.
+ */
 export async function downloadSigned(ctx: ActionContext): Promise<Response> {
   const run = await requireRun(ctx);
-  const { caseId } = ctx.payload;
+  const { caseId, kind } = ctx.payload;
   if (typeof caseId !== "string" || !caseId) throw new HttpError(400, "INVALID_REQUEST", "caseId is required.");
-  const sub = (await ctx.deps.store.listSubmissions(run.id)).find((item) => item.caseId === caseId && item.kind === "portal_upload");
-  if (!sub || sub.status !== "ready_for_portal" || !sub.signedXml) {
+  if (kind !== undefined && !DOWNLOAD_KINDS.includes(kind as SubmissionKind)) throw new HttpError(400, "INVALID_REQUEST", "kind is invalid.");
+  const subs = (await ctx.deps.store.listSubmissions(run.id)).filter((item) => item.caseId === caseId);
+  let sub: Submission | undefined;
+  if (run.runType === "simulation") {
+    const wanted: SubmissionKind[] = kind === "rfce" ? ["rfce"] : ["portal_upload", "ecf"];
+    sub = wanted.map((k) => subs.find((item) => item.kind === k)).find((item) => !!item?.signedXml);
+  } else {
+    sub = subs.find((item) => item.kind === "portal_upload" && item.status === "ready_for_portal");
+  }
+  if (!sub || !sub.signedXml) {
     throw new HttpError(404, "NOT_READY", "The signed document is not available for download.");
   }
-  ctx.deps.log("download", { tipoEcf: sub.tipoEcf });
-  return json(200, { fileName: `${sub.caseId}.xml`, signedXml: sub.signedXml });
+  ctx.deps.log("download", { tipoEcf: sub.tipoEcf, kind: sub.kind });
+  const suffix = sub.kind === "rfce" ? "-RFCE" : "";
+  return json(200, { fileName: `${sub.caseId}${suffix}.xml`, signedXml: sub.signedXml, kind: sub.kind, securityCode: sub.securityCode });
 }

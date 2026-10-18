@@ -5,6 +5,7 @@ import { DgiiError, type DgiiClient, type DgiiSendResult, type DgiiTrackResult }
 import { handleRequest, type CertificationDeps, type CertificationStore } from "../supabase/functions/ecf-certification/handler";
 import {
   MAX_ATTEMPTS,
+  SequenceConflictError,
   mapApprovalResult,
   mapDgiiStatus,
   planSubmissions,
@@ -71,6 +72,27 @@ function memoryStore(memory: Memory, over: Partial<CertificationStore> = {}): Ce
     tenantRnc: async () => "133-488-485",
     loadCertificate: async () => ({ p12Bytes: cert.p12Bytes, passphraseEncrypted }),
     async createRun(input) {
+      // Mirrors the simulation migration guard: a signed tenant e-NCF is never stored twice across
+      // simulation runs, nor shared between a test-set and a simulation run.
+      const issuedKinds = ["ecf", "portal_upload"];
+      const runOf = (runId: string) => memory.runs.find((run) => run.id === runId)!;
+      if (input.runType === "simulation" || input.runType === "test_set") {
+        for (const sub of input.submissions.filter((planned) => issuedKinds.includes(planned.kind))) {
+          const clash = memory.subs.some((row) => {
+            const rowRun = runOf(row.runId);
+            const rowType = rowRun.runType;
+            return (
+              rowRun.tenantId === input.tenantId &&
+              rowRun.environment === input.environment &&
+              row.encf === sub.encf &&
+              issuedKinds.includes(row.kind) &&
+              (rowType === "simulation" || rowType === "test_set") &&
+              (rowType !== input.runType || input.runType === "simulation")
+            );
+          });
+          if (clash) throw new SequenceConflictError();
+        }
+      }
       const run = { id: randomUUID(), tenantId: input.tenantId, environment: input.environment, runType: input.runType, status: "pending" as const, createdAt: new Date().toISOString(), createdBy: input.createdBy, sourceSha256: input.sourceSha256 };
       memory.runs.push(run);
       for (const sub of input.submissions) {
@@ -83,6 +105,14 @@ function memoryStore(memory: Memory, over: Partial<CertificationStore> = {}): Ce
     },
     async latestRun(tenantId, environment, runType) {
       return [...memory.runs].reverse().find((run) => run.tenantId === tenantId && run.environment === environment && run.runType === runType) ?? null;
+    },
+    async issuedEncfs(tenantId, environment) {
+      return memory.subs
+        .filter((sub) => {
+          const run = memory.runs.find((r) => r.id === sub.runId)!;
+          return run.tenantId === tenantId && run.environment === environment && run.runType !== "commercial_approval" && sub.kind !== "acecf";
+        })
+        .map((sub) => sub.encf);
     },
     async listSubmissions(runId) {
       return memory.subs.filter((sub) => sub.runId === runId).sort((a, b) => a.sequenceOrder - b.sequenceOrder).map(copy);
@@ -635,5 +665,143 @@ describe("mapApprovalResult", () => {
     expect(mapApprovalResult(result({ httpStatus: 400, codigo: 1 }), "1").status).toBe("rejected");
     expect(mapApprovalResult(result({ httpStatus: 400 }), "1").status).toBe("rejected");
     expect(mapApprovalResult(result({}), "1").status).toBe("error");
+  });
+});
+
+describe("simulation runs", () => {
+  // Step-2 scenarios: an E31 and its credit note E34 (indicator 1, issued > 30 days later), a consumo
+  // E32 with its RFCE, and dated columns that must move with FechaEmision.
+  const SIM_HEADER = ["CasoPrueba", "Version", "TipoeCF", "ENCF", "IndicadorNotaCredito", "RNCEmisor", "FechaEmision", "FechaEntrega", "MontoTotal", "NumeroLinea[1]", "NombreItem[1]", "MontoItem[1]", "NCFModificado", "FechaNCFModificado", "CodigoModificacion"];
+  const simRow = (encf: string, emision: string, entrega = E, note: [string, string, string] | null = null) => [
+    `${RNC}${encf}`, "1.0", encf.slice(1, 3), encf, note ? note[0] : E, RNC, emision, entrega, "100.00", "1", "PAN", "100.00",
+    note ? note[1] : E, note ? note[2] : E, note ? "2" : E,
+  ];
+  const simWorkbook = () =>
+    Buffer.from(
+      makeXlsx([
+        {
+          name: "ECF",
+          rows: [
+            SIM_HEADER,
+            simRow("E340000000016", "01-12-2020", E, ["1", "E310000000010", "01-04-2020"]),
+            simRow("E310000000010", "01-04-2020", "10-10-2020"),
+            simRow("E320000000012", "01-04-2020"),
+          ],
+        },
+        { name: "RFCE", rows: [RFCE_HEADER, rfceRow("E320000000012")] },
+      ]),
+    ).toString("base64");
+
+  it("allocates new e-NCF above the test-set history, dates them today and remaps the references", async () => {
+    const h = harness();
+    // Step-2 history: the same workbook ran as a test set.
+    expect((await h.call({ action: "start", environment: "certification", xlsxBase64: simWorkbook(), runType: "test_set" })).status).toBe(200);
+    // ACECF rows carry the DGII emitter's e-NCF and never count.
+    h.memory.runs.push({ id: randomUUID(), tenantId: TENANT, environment: "certification", runType: "commercial_approval", status: "completed", createdAt: "", createdBy: USER, sourceSha256: "0".repeat(64) });
+    h.memory.subs.push({ id: randomUUID(), runId: h.memory.runs.at(-1)!.id, caseId: "x", encf: "E310000000900", tipoEcf: "31", kind: "acecf", sequenceOrder: 0, dependsOnCaseId: null, unsignedXml: "", status: "accepted", trackId: null, messages: [], signedXml: null, signedSha256: null, securityCode: null, attempts: 0 });
+
+    const res = await h.call({ action: "start", environment: "certification", xlsxBase64: simWorkbook(), runType: "simulation" });
+    expect(res.status).toBe(200);
+    expect(res.body.runType).toBe("simulation");
+    expect(statuses(res.body)).toEqual([
+      "portal_upload:E320000000013:pending",
+      "rfce:E320000000013:pending",
+      "ecf:E310000000011:pending",
+      "ecf:E340000000017:pending",
+    ]);
+    const items = res.body.items as { encf: string; kind: string; sourceCaseId: string | null }[];
+    expect(items.map((item) => item.sourceCaseId)).toEqual([`${RNC}E320000000012`, `${RNC}E320000000012`, `${RNC}E310000000010`, `${RNC}E340000000016`]);
+
+    const run = h.memory.runs.find((r) => r.id === res.body.runId)!;
+    const xmlOf = (encf: string, kind: string) => h.memory.subs.find((sub) => sub.runId === run.id && sub.encf === encf && sub.kind === kind)!.unsignedXml;
+    const note = xmlOf("E340000000017", "ecf");
+    expect(note).toContain("<eNCF>E340000000017</eNCF>");
+    expect(note).toContain("<IndicadorNotaCredito>0</IndicadorNotaCredito>");
+    expect(note).toContain("<FechaEmision>18-10-2026</FechaEmision>");
+    expect(note).toContain("<NCFModificado>E310000000011</NCFModificado>");
+    expect(note).toContain("<FechaNCFModificado>18-10-2026</FechaNCFModificado>");
+    const invoice = xmlOf("E310000000011", "ecf");
+    // FechaEntrega keeps its 192-day distance from FechaEmision.
+    expect(invoice).toContain("<FechaEntrega>28-04-2027</FechaEntrega>");
+    expect(xmlOf("E320000000013", "rfce")).toContain("<FechaEmision>18-10-2026</FechaEmision>");
+
+    // The note still waits for the acceptance of its new invoice; the RFCE uses the new E32 code.
+    const sent = await h.call({ action: "send-next", runId: run.id });
+    expect(sent.body.waitingFor).toBe(`${RNC}E310000000011`);
+    const portal = h.memory.subs.find((sub) => sub.runId === run.id && sub.kind === "portal_upload")!;
+    const rfce = h.dgii.sent.find((s) => s.kind === "rfce")!;
+    expect(rfce.fileName).toBe(`${RNC}E320000000013.xml`);
+    expect(rfce.xml).toContain(`<CodigoSeguridadeCF>${portal.securityCode}</CodigoSeguridadeCF>`);
+    expect(verifyXmlSignature(portal.signedXml!, cert.certPem)).toBe(true);
+    expect(verifyXmlSignature(h.dgii.sent.find((s) => s.kind === "ecf")!.xml, cert.certPem)).toBe(true);
+  });
+
+  it("never reuses sequences of an earlier simulation and keeps types independent", async () => {
+    const h = harness();
+    await h.call({ action: "start", environment: "certification", xlsxBase64: simWorkbook(), runType: "simulation" });
+    const second = await h.call({ action: "start", environment: "certification", xlsxBase64: simWorkbook(), runType: "simulation" });
+    expect(statuses(second.body).map((s) => s.split(":")[1])).toEqual(["E320000000002", "E320000000002", "E310000000002", "E340000000002"]);
+    // Another environment has its own history.
+    const test = await h.call({ action: "start", environment: "test", xlsxBase64: simWorkbook(), runType: "simulation" });
+    expect(statuses(test.body).map((s) => s.split(":")[1])).toEqual(["E320000000001", "E320000000001", "E310000000001", "E340000000001"]);
+  });
+
+  it("fails closed with SEQUENCE_CONFLICT when the guard refuses the run", async () => {
+    const h = harness({
+      createRun: async () => {
+        throw new SequenceConflictError();
+      },
+    });
+    const res = await h.call({ action: "start", environment: "certification", xlsxBase64: simWorkbook(), runType: "simulation" });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe("SEQUENCE_CONFLICT");
+  });
+
+  it("the store guard rejects a reused simulation e-NCF and a test set that reuses one", async () => {
+    const h = harness();
+    await h.call({ action: "start", environment: "certification", xlsxBase64: simWorkbook(), runType: "simulation" });
+    const store = h.deps.store;
+    const planned = (encf: string) => ({ caseId: `${RNC}${encf}`, encf, tipoEcf: encf.slice(1, 3), kind: "ecf" as const, sequenceOrder: 0, dependsOnCaseId: null, unsignedXml: "<ECF/>" });
+    const create = (runType: "simulation" | "test_set", encf: string) =>
+      store.createRun({ tenantId: TENANT, environment: "certification", runType, sourceSha256: "0".repeat(64), createdBy: USER, submissions: [planned(encf)] });
+    await expect(create("simulation", "E310000000001")).rejects.toBeInstanceOf(SequenceConflictError);
+    await expect(create("test_set", "E310000000001")).rejects.toBeInstanceOf(SequenceConflictError);
+    // Test sets may be re-run with the same DGII workbook numbers.
+    await expect(create("test_set", "E310000000777")).resolves.toBeTruthy();
+    await expect(create("test_set", "E310000000777")).resolves.toBeTruthy();
+  });
+
+  it("downloads every signed simulation document, including RFCE on request", async () => {
+    const h = harness();
+    const start = await h.call({ action: "start", environment: "certification", xlsxBase64: simWorkbook(), runType: "simulation" });
+    const runId = start.body.runId as string;
+    await h.call({ action: "send-next", runId });
+    const invoice = await h.call({ action: "download", runId, caseId: `${RNC}E310000000001` });
+    expect(invoice.status).toBe(200);
+    expect(invoice.body.kind).toBe("ecf");
+    expect(verifyXmlSignature(invoice.body.signedXml, cert.certPem)).toBe(true);
+    const consumo = await h.call({ action: "download", runId, caseId: `${RNC}E320000000001` });
+    expect(consumo.body.kind).toBe("portal_upload");
+    expect(consumo.body.securityCode).toMatch(/^.{6}$/);
+    const summary = await h.call({ action: "download", runId, caseId: `${RNC}E320000000001`, kind: "rfce" });
+    expect(summary.body.fileName).toBe(`${RNC}E320000000001-RFCE.xml`);
+    // The note was not signed yet; unknown kinds are rejected.
+    expect((await h.call({ action: "download", runId, caseId: `${RNC}E340000000001` })).status).toBe(404);
+    expect((await h.call({ action: "download", runId, caseId: `${RNC}E310000000001`, kind: "acecf" })).status).toBe(400);
+    const items = (await h.call({ action: "latest", environment: "certification", runType: "simulation" })).body.run.items as { kind: string; signed: boolean }[];
+    expect(items.map((item) => item.signed)).toEqual([true, true, true, false]);
+  });
+
+  it("rejects a commercial approval workbook and keeps latest defaults for steps 2 and 3", async () => {
+    const h = harness();
+    // A plain start without runType is still a test set.
+    expect((await h.call({ action: "start", environment: "certification", xlsxBase64: workbook() })).body.runType).toBe("test_set");
+    await h.call({ action: "start", environment: "certification", xlsxBase64: simWorkbook(), runType: "simulation" });
+    expect((await h.call({ action: "latest", environment: "certification" })).body.run.runType).toBe("test_set");
+    expect((await h.call({ action: "latest", environment: "certification", runType: "simulation" })).body.run.runType).toBe("simulation");
+    const approvals = Buffer.from(makeXlsx([{ name: "ACEECF_Generadas", rows: [["RNCEmisor"], ["1"]] }])).toString("base64");
+    const wrong = await h.call({ action: "start", environment: "certification", xlsxBase64: approvals, runType: "simulation" });
+    expect(wrong.status).toBe(422);
+    expect(wrong.body.code).toBe("INVALID_TEST_SET");
   });
 });

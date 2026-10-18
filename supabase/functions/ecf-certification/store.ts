@@ -1,7 +1,7 @@
 // Supabase-backed CertificationStore. Service role only; every query is scoped by tenant_id.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { CertificationStore } from "./context.ts";
-import type { Run, Submission, SubmissionPatch } from "./run.ts";
+import { SequenceConflictError, type Run, type RunType, type Submission, type SubmissionPatch } from "./run.ts";
 
 // deno-lint-ignore no-explicit-any
 type Db = any;
@@ -12,11 +12,15 @@ function fail(operation: string): never {
 
 const RUN_COLUMNS = "id, tenant_id, environment, run_type, status, created_at";
 const SUBMISSION_COLUMNS =
-  "id, case_id, encf, tipo_ecf, kind, sequence_order, depends_on_case_id, status, track_id, dgii_messages, unsigned_xml, signed_xml, security_code, attempts";
+  "id, case_id, encf, tipo_ecf, kind, sequence_order, depends_on_case_id, status, track_id, dgii_messages, unsigned_xml, signed_xml, security_code, attempts, source_case_id";
+const RUN_TYPES: RunType[] = ["test_set", "commercial_approval", "simulation"];
+/** Kinds that carry an e-NCF issued by the tenant (an ACECF carries the DGII emitter's). */
+const ISSUED_KINDS = ["ecf", "rfce", "portal_upload"];
+const MAX_ISSUED_ROWS = 10_000;
 
 // deno-lint-ignore no-explicit-any
 function toRun(row: any): Run {
-  return { id: row.id, tenantId: row.tenant_id, environment: row.environment, runType: row.run_type === "commercial_approval" ? "commercial_approval" : "test_set", status: row.status, createdAt: row.created_at };
+  return { id: row.id, tenantId: row.tenant_id, environment: row.environment, runType: RUN_TYPES.includes(row.run_type) ? row.run_type : "test_set", status: row.status, createdAt: row.created_at };
 }
 
 // deno-lint-ignore no-explicit-any
@@ -36,6 +40,7 @@ function toSubmission(row: any): Submission {
     signedXml: row.signed_xml,
     securityCode: row.security_code,
     attempts: row.attempts,
+    sourceCaseId: typeof row.source_case_id === "string" ? row.source_case_id : null,
   };
 }
 
@@ -126,10 +131,14 @@ export function createSupabaseStore(opts: { url: string; publishableKey: string;
         sequence_order: sub.sequenceOrder,
         depends_on_case_id: sub.dependsOnCaseId,
         unsigned_xml: sub.unsignedXml,
+        // run_type is set from the run by the insert trigger.
+        ...(sub.sourceCaseId ? { source_case_id: sub.sourceCaseId } : {}),
       }));
       const { error: insertError } = await db.from("ecf_certification_submissions").insert(rows);
       if (insertError) {
         await db.from("ecf_certification_runs").delete().eq("id", run.id).eq("tenant_id", input.tenantId);
+        // 23505: the unique / issued-e-NCF guard of the simulation migration.
+        if (insertError.code === "23505") throw new SequenceConflictError();
         fail("createSubmissions");
       }
       return toRun(run);
@@ -153,6 +162,23 @@ export function createSupabaseStore(opts: { url: string; publishableKey: string;
         .maybeSingle();
       if (error) fail("latestRun");
       return data ? toRun(data) : null;
+    },
+
+    async issuedEncfs(tenantId, environment) {
+      const { data, error } = await db
+        .from("ecf_certification_submissions")
+        .select("encf")
+        .eq("tenant_id", tenantId)
+        .eq("environment", environment)
+        .in("kind", ISSUED_KINDS)
+        .in("run_type", ["test_set", "simulation"])
+        .order("encf", { ascending: false })
+        .range(0, MAX_ISSUED_ROWS - 1);
+      if (error) fail("issuedEncfs");
+      const rows = Array.isArray(data) ? data : [];
+      // Fail closed rather than allocate from a truncated history.
+      if (rows.length >= MAX_ISSUED_ROWS) fail("issuedEncfs:truncated");
+      return rows.map((row: { encf: string }) => row.encf);
     },
 
     async listSubmissions(runId) {
