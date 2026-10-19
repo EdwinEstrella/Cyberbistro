@@ -1,21 +1,26 @@
 import { type MouseEvent, useEffect, useState } from "react";
-import { AlertTriangle, Award, Building2, Check, CheckCircle, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Copy, Download, ExternalLink, FileKey2, FileText, Hash, ListOrdered, RefreshCw, Rocket, Search, ShieldAlert, ShieldCheck, Sparkles, Upload, Wifi, X } from "lucide-react";
+import { AlertTriangle, Award, Building2, Check, CheckCircle, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Copy, Download, ExternalLink, FileKey2, FileText, Hash, ListOrdered, RefreshCw, Rocket, Search, ShieldAlert, ShieldCheck, Wifi, X } from "lucide-react";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { supabase } from "../../../shared/lib/supabase";
 import { NCF_E_TIPO_OPCIONES } from "../../../shared/lib/ncf";
 import { lookupBusinessByRnc } from "../../../shared/lib/dgiiRncLookup";
 import { CertificateUploader } from "../../ajustes/components/CertificateUploader";
 import { enqueueLocalWrite, getDeviceId } from "../../../shared/lib/localFirst";
-import { buildIssuerUpdatePayload, validateEcfIssuer, type EcfIssuerInput } from "../../../shared/lib/ecfIssuerRequirements";
+import { buildIssuerUpdatePayload, buildRepresentativeIdPayload, validateEcfIssuer, validateRepresentativeId, type EcfIssuerInput } from "../../../shared/lib/ecfIssuerRequirements";
 import { buildRangesSavePayload, restoreRanges, validateEcfRange } from "../../../shared/lib/ecfSequenceRanges";
 import {
   buildActivationPayload,
   buildDeactivationPayload,
-  describeActivationSuccess,
+  activationNotice,
   formatReadinessIssues,
   type EcfReadinessResult,
 } from "../../../shared/lib/ecfActivationReadiness";
 import { loadEcfActivationReadiness } from "../lib/loadEcfReadiness";
+import { buildReceptorUrls } from "../lib/receptorUrls";
+import { advanceProgress, buildProgressUpsert, restoreProgress, type CertificationProgress } from "../lib/ecfCertificationProgress";
+import { DocumentSigner } from "./DocumentSigner";
+import { PrintedRepresentationRunner } from "./PrintedRepresentationRunner";
+import { TestSetRunner } from "./TestSetRunner";
 
 type EcfEnvironment = "test" | "certification" | "production";
 
@@ -54,11 +59,11 @@ const certificationSteps = [
 const certificationPortalUrl = "https://ecf.dgii.gov.do/certecf/portalcertificacion/Login?ReturnUrl=%2Fcertecf%2Fportalcertificacion";
 
 export function ActivationPanel() {
-  const { tenantId, plan } = useAuth();
+  const { tenantId, plan, user } = useAuth();
   const [step, setStep] = useState(1);
   const [environment, setEnvironment] = useState<EcfEnvironment>("test");
   const [company, setCompany] = useState({
-    name: "", rnc: "", phone: "", email: "", address: "", sucursal: "", municipio: "", provincia: "", actividad: "", issuerEmail: "",
+    name: "", rnc: "", phone: "", email: "", address: "", sucursal: "", municipio: "", provincia: "", actividad: "", issuerEmail: "", representativeId: "",
   });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -68,10 +73,11 @@ export function ActivationPanel() {
   });
   const [enabledTypes, setEnabledTypes] = useState<string[]>(["E31", "E32"]);
   const [certificateReady, setCertificateReady] = useState(false);
-  const [testSetFileName, setTestSetFileName] = useState("");
-  const [commercialApprovalFileName, setCommercialApprovalFileName] = useState("");
   const [fiscalActive, setFiscalActive] = useState(false);
+  const [fiscalMode, setFiscalMode] = useState<string | null>(null);
+  const [showActivationNotice, setShowActivationNotice] = useState(false);
   const [certificationStep, setCertificationStep] = useState(1);
+  const [completedCertificationSteps, setCompletedCertificationSteps] = useState<number[]>([]);
   const [companyLookupLoading, setCompanyLookupLoading] = useState(false);
   const [savedNextRaw, setSavedNextRaw] = useState<unknown>({});
   const [savedBoundsRaw, setSavedBoundsRaw] = useState<unknown>({});
@@ -91,6 +97,7 @@ export function ActivationPanel() {
   const issuerValidation = validateEcfIssuer(issuerInput);
   const contactMissing = [!company.phone.trim() && "teléfono", !company.email.trim() && "correo electrónico"].filter(Boolean) as string[];
   const companyReady = issuerValidation.complete && contactMissing.length === 0;
+  const receptorUrls = buildReceptorUrls(company.rnc);
 
   useEffect(() => {
     if (!tenantId) return;
@@ -101,6 +108,11 @@ export function ActivationPanel() {
       supabase.from("tenants").select("ecf_secuencias_rangos").eq("id", tenantId).maybeSingle()
     ).then(({ data, error }) => (error ? null : (data?.ecf_secuencias_rangos ?? null))).catch(() => null);
 
+    // Optional representative cedula, read apart so a not-yet-deployed column cannot block the form.
+    const representativePromise = Promise.resolve(
+      supabase.from("tenants").select("ecf_representative_id").eq("id", tenantId).maybeSingle()
+    ).then(({ data, error }) => (error ? "" : (data?.ecf_representative_id ?? ""))).catch(() => "");
+
     void supabase
       .from("tenants")
         .select("nombre_negocio, rnc, telefono, email, direccion, ecf_environment, ncf_secuencias_por_tipo, fiscal_mode, ecf_issuer_sucursal, ecf_issuer_municipio, ecf_issuer_provincia, ecf_issuer_actividad_economica, ecf_issuer_correo_emisor")
@@ -109,6 +121,7 @@ export function ActivationPanel() {
       .then(async ({ data, error }) => {
         if (error || !data) return;
         const bounds = await boundsPromise;
+        const representativeId = await representativePromise;
         setCompany({
           name: data.nombre_negocio ?? "",
           rnc: data.rnc ?? "",
@@ -120,8 +133,10 @@ export function ActivationPanel() {
           provincia: data.ecf_issuer_provincia ?? "",
           actividad: data.ecf_issuer_actividad_economica ?? "",
           issuerEmail: data.ecf_issuer_correo_emisor ?? data.email ?? "",
+          representativeId,
         });
         setFiscalActive(data.fiscal_mode === "dgii_ecf");
+        setFiscalMode(typeof data.fiscal_mode === "string" ? data.fiscal_mode : null);
         setSavedNextRaw(data.ncf_secuencias_por_tipo ?? {});
         setSavedBoundsRaw(bounds ?? {});
         const fiscalSequences = restoreRanges(NCF_E_TIPO_OPCIONES.map((type) => type.codigo), data.ncf_secuencias_por_tipo, bounds);
@@ -149,9 +164,45 @@ export function ActivationPanel() {
       .then(({ data }) => setCertificateReady(Boolean(data?.is_ready)));
   }, [tenantId, environment]);
 
+  // Certification progress is cloud-only (not local-first). Any failure keeps the wizard on step 1.
+  useEffect(() => {
+    if (!tenantId) return;
+    void Promise.resolve(
+      supabase.from("ecf_certification_progress").select("current_step, completed_steps").eq("tenant_id", tenantId).maybeSingle()
+    ).then(({ data, error }) => {
+      if (error || !data) return;
+      const restored = restoreProgress(data);
+      setCertificationStep(restored.currentStep);
+      setCompletedCertificationSteps(restored.completedSteps);
+    }).catch(() => undefined);
+  }, [tenantId]);
+
+  function persistCertificationProgress(progress: CertificationProgress) {
+    if (!tenantId) return;
+    void Promise.resolve(
+      supabase.from("ecf_certification_progress").upsert(
+        buildProgressUpsert({ tenantId, environment, progress, userId: user?.id }),
+        { onConflict: "tenant_id" }
+      )
+    ).catch(() => undefined);
+  }
+
+  function goToCertificationStep(step: number) {
+    setCertificationStep(step);
+    persistCertificationProgress({ currentStep: step, completedSteps: completedCertificationSteps });
+  }
+
+  function advanceCertificationStep() {
+    const next = advanceProgress({ currentStep: certificationStep, completedSteps: completedCertificationSteps }, certificationStep);
+    setCertificationStep(next.currentStep);
+    setCompletedCertificationSteps(next.completedSteps);
+    persistCertificationProgress(next);
+  }
+
   async function saveCompany() {
     if (!tenantId) return;
-    const problems = [issuerValidation.message, contactMissing.length > 0 ? `Falta completar: ${contactMissing.join(", ")}.` : ""].filter(Boolean);
+    const representativeValidation = validateRepresentativeId(company.representativeId);
+    const problems = [issuerValidation.message, representativeValidation.message, contactMissing.length > 0 ? `Falta completar: ${contactMissing.join(", ")}.` : ""].filter(Boolean);
     if (problems.length > 0) {
       setMessage(problems.join(" "));
       return;
@@ -167,6 +218,7 @@ export function ActivationPanel() {
         op: "update",
         payload: {
           ...buildIssuerUpdatePayload(issuerInput),
+          ...buildRepresentativeIdPayload(company.representativeId),
           telefono: company.phone.trim() || null,
           email: company.email.trim() || null,
           updated_at: new Date().toISOString(),
@@ -293,8 +345,9 @@ export function ActivationPanel() {
         deviceId: await getDeviceId(),
       });
       setFiscalActive(true);
+      setFiscalMode("dgii_ecf");
       setStep(5);
-      setMessage(describeActivationSuccess(environment));
+      setShowActivationNotice(true);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "No se pudo activar la facturación electrónica.");
     } finally {
@@ -308,15 +361,18 @@ export function ActivationPanel() {
     setMessage("");
     try {
       const loaded = await refreshReadiness();
+      const deactivation = buildDeactivationPayload(loaded?.fiscalModeFallback);
       await enqueueLocalWrite({
         tenantId,
         tableName: "tenants",
         rowId: tenantId,
         op: "update",
-        payload: buildDeactivationPayload(loaded?.fiscalModeFallback),
+        payload: deactivation,
         deviceId: await getDeviceId(),
       });
       setFiscalActive(false);
+      setFiscalMode(deactivation.fiscal_mode);
+      setShowActivationNotice(false);
       setMessage("Facturación electrónica desactivada. El POS vuelve al modo fiscal de respaldo configurado en Ajustes.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "No se pudo desactivar la facturación electrónica.");
@@ -443,6 +499,10 @@ export function ActivationPanel() {
                   <CompanyField label="PROVINCIA" value={company.provincia} onChange={(provincia) => setCompany((current) => ({ ...current, provincia }))} />
                   <CompanyField label="ACTIVIDAD ECONÓMICA" value={company.actividad} onChange={(actividad) => setCompany((current) => ({ ...current, actividad }))} />
                   <CompanyField label="CORREO DEL EMISOR E-CF" value={company.issuerEmail} type="email" onChange={(issuerEmail) => setCompany((current) => ({ ...current, issuerEmail }))} />
+                  <div className="sm:col-span-2">
+                    <CompanyField label="CÉDULA DEL REPRESENTANTE (OPCIONAL)" value={company.representativeId} onChange={(representativeId) => setCompany((current) => ({ ...current, representativeId }))} />
+                    <p className="mt-1 text-xs text-muted-foreground">La persona a nombre de quien está el certificado digital; debe ser el representante registrado en la DGII.</p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -636,7 +696,7 @@ export function ActivationPanel() {
                     const complete = number < certificationStep;
                     return (
                       <li key={item} className="relative z-10 flex justify-center">
-                        <button type="button" onClick={() => setCertificationStep(number)} title={item} aria-label={`Paso ${number}: ${item}`} className={`flex size-7 items-center justify-center rounded-full border text-[10px] font-bold transition-transform hover:scale-110 sm:size-8 ${complete ? "border-primary bg-primary text-primary-foreground" : current ? "border-primary bg-primary text-primary-foreground shadow-lg shadow-primary/25" : "border-border bg-muted text-muted-foreground"}`}>
+                        <button type="button" onClick={() => goToCertificationStep(number)} title={item} aria-label={`Paso ${number}: ${item}`} className={`flex size-7 items-center justify-center rounded-full border text-[10px] font-bold transition-transform hover:scale-110 sm:size-8 ${complete ? "border-primary bg-primary text-primary-foreground" : current ? "border-primary bg-primary text-primary-foreground shadow-lg shadow-primary/25" : "border-border bg-muted text-muted-foreground"}`}>
                           {complete ? <Check className="size-3" /> : number}
                         </button>
                       </li>
@@ -713,7 +773,7 @@ export function ActivationPanel() {
                       ) : certificationStep === 2 ? (
                         <li>Descargá el Set de Pruebas ECF y RFCE desde el portal y preparalo para cargarlo.</li>
                       ) : certificationStep === 3 ? (
-                        <li>Descargá el archivo de Aprobación Comercial desde el portal de certificación y preparalo para cargarlo.</li>
+                        <li>Descargá el set de datos de Aprobación Comercial (Paso 3) desde el portal de certificación y cargalo para enviarlo.</li>
                       ) : (
                         <li>Completá y documentá el hito con la DGII antes de avanzar al siguiente paso.</li>
                       )}
@@ -721,95 +781,34 @@ export function ActivationPanel() {
                   )}
                 </div>
 
-                {certificationStep === 2 && (
-                  <div className="mt-4 rounded-xl border border-dashed border-primary/35 bg-muted/20 p-5">
-                    <div className="flex items-center gap-2 text-sm font-bold text-foreground"><FileKey2 className="size-4 text-primary" /> Subir Set de Pruebas de la DGII (.xlsx)</div>
-                    <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-                      <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-sm">
-                        <Upload className="size-4" /> Seleccionar archivo
-                        <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="sr-only" onChange={(event) => setTestSetFileName(event.target.files?.[0]?.name ?? "")} />
-                      </label>
-                      <span className="text-xs text-muted-foreground">{testSetFileName || "Ningún archivo seleccionado"}</span>
-                      <button type="button" disabled={!testSetFileName} onClick={() => setMessage("Set de pruebas seleccionado para el diseño. La carga y procesamiento se habilitarán con el motor e-CF.")} className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary/30 px-4 py-2.5 text-xs font-bold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50 sm:ml-auto">
-                        <Upload className="size-4" /> Cargar Set
-                      </button>
-                    </div>
-                    <p className="mt-3 text-xs text-muted-foreground">Seleccioná el Excel descargado desde el portal DGII. El procesamiento todavía no está conectado.</p>
+                {certificationStep === 1 && (
+                  <div className="mt-4">
+                    <DocumentSigner
+                      tenantId={tenantId}
+                      environment={environment}
+                      documentType="postulacion"
+                      title="Firmar postulación XML"
+                      helperText="Descargá el XML de postulación desde el portal de la DGII, firmalo aquí con tu certificado y subí el archivo firmado al portal."
+                    />
                   </div>
                 )}
 
-                {certificationStep === 3 && (
-                  <div className="mt-4 rounded-xl border border-dashed border-primary/35 bg-muted/20 p-5">
-                    <div className="flex items-center gap-2 text-sm font-bold text-foreground"><FileKey2 className="size-4 text-primary" /> Subir archivo ACEFC de la DGII (.xlsx)</div>
-                    <p className="mt-2 text-xs leading-relaxed text-muted-foreground">Incluye los e-CF que la empresa recibe y aprueba, con RNC emisor, RNC comprador y fecha/hora de aprobación comercial.</p>
-                    <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-                      <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-sm">
-                        <Upload className="size-4" /> Seleccionar archivo
-                        <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="sr-only" onChange={(event) => setCommercialApprovalFileName(event.target.files?.[0]?.name ?? "")} />
-                      </label>
-                      <span className="text-xs text-muted-foreground">{commercialApprovalFileName || "Ningún archivo seleccionado"}</span>
-                      <button type="button" disabled={!commercialApprovalFileName} onClick={() => setMessage("Archivo ACEFC seleccionado para el diseño. La validación y envío a DGII se habilitarán con el motor e-CF.")} className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary/30 px-4 py-2.5 text-xs font-bold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50 sm:ml-auto">
-                        <Upload className="size-4" /> Cargar ACEFC
-                      </button>
-                    </div>
-                    <p className="mt-3 text-xs text-muted-foreground">Descargá el archivo de Aprobación Comercial desde el portal de certificación de la DGII.</p>
-                  </div>
-                )}
+                {certificationStep === 2 && <TestSetRunner tenantId={tenantId} environment={environment} />}
 
-                {certificationStep === 4 && (
-                  <>
-                    <div className="mt-4 rounded-xl border border-border bg-card p-5 shadow-sm">
-                      <div className="flex items-center justify-between">
-                        <h4 className="flex items-center gap-2 text-sm font-bold text-foreground"><Hash className="size-4 text-muted-foreground" /> Secuencias NCF autorizadas</h4>
-                        <button type="button" className="text-xs font-semibold text-primary hover:underline">Actualizar</button>
-                      </div>
-                      <div className="mt-4 flex flex-col gap-3">
-                        {NCF_E_TIPO_OPCIONES.filter((type) => enabledTypes.includes(type.codigo)).map((type) => {
-                          const seq = ecfSequences[type.codigo] || { start: 1, end: 1000, used: 0 };
-                          const nextSequenceNumber = seq.start + seq.used;
-                          const startSeq = String(nextSequenceNumber).padStart(10, "0");
-                          const endSeq = String(seq.end).padStart(10, "0");
-                          const remaining = Math.max(0, seq.end - nextSequenceNumber + 1);
-                          return (
-                            <div key={type.codigo} className="flex flex-col gap-2 border-b border-border/50 pb-3 last:border-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
-                              <div className="flex items-center gap-3">
-                                <span className="rounded bg-primary/10 px-1.5 py-0.5 font-mono text-xs font-bold text-primary">{type.codigo}</span>
-                                <span className="font-mono text-xs text-muted-foreground">{type.codigo}{String(seq.start).padStart(10, "0")} - {type.codigo}{endSeq}</span>
-                              </div>
-                              <div className="flex items-center gap-4 text-[11px]">
-                                <span className="text-muted-foreground">Usados: <strong className="text-foreground">{seq.used}</strong></span>
-                                <span className="font-semibold text-green-600 dark:text-green-400">Restantes: {remaining.toLocaleString()}</span>
-                                <span className="text-muted-foreground">Próximo: <strong className="font-mono text-foreground">{type.codigo}{startSeq}</strong></span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <p className="mt-3 text-[10px] text-muted-foreground">Las secuencias avanzan y no se reutilizan: si un comprobante es rechazado, el siguiente intento usa la próxima secuencia disponible.</p>
-                    </div>
+                {certificationStep === 3 && <TestSetRunner tenantId={tenantId} environment={environment} runType="commercial_approval" />}
 
-                    <div className="mt-4 rounded-xl border border-sky-500/20 bg-sky-500/5 p-5">
-                      <h4 className="flex items-center gap-2 text-sm font-bold text-sky-700 dark:text-sky-400"><Sparkles className="size-4" /> Generar comprobantes desde el sistema</h4>
-                      <p className="mt-2 text-xs leading-relaxed text-muted-foreground">El sistema crea automáticamente los e-CF exigidos (E31, E32, E33, E41, E43-E47) con los datos de tu empresa, asignando eNCF de tus secuencias autorizadas (sin repetir) y firmados con tu certificado. Luego se envían a la DGII.</p>
-                      <button type="button" onClick={() => setMessage("Generación simulada iniciada en modo diseño. Requiere el motor e-CF para procesar y enviar a DGII.")} className="mt-4 inline-flex items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-sky-700">
-                        Iniciar generación de prueba
-                      </button>
-                    </div>
-                  </>
-                )}
+                {certificationStep === 4 && <TestSetRunner tenantId={tenantId} environment={environment} runType="simulation" />}
 
                 {certificationStep === 5 && (
                   <div className="mt-4 flex flex-col gap-4">
                     <div className="flex items-start gap-3 rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-4 text-xs leading-relaxed text-yellow-700 dark:text-yellow-400">
                       <AlertTriangle className="mt-0.5 size-4 shrink-0" />
                       <p>
-                        La suma de todos los archivos no puede superar <strong className="font-semibold">10MB</strong> (cada PDF pesa ~30KB, sin problema). Es responsabilidad del contribuyente que la representación cumpla la Ley 32-23 y el Formato e-CF.
+                        La suma de todos los archivos no puede superar <strong className="font-semibold">10MB</strong> (cada PDF pesa menos de 30KB, sin problema). Es responsabilidad del contribuyente que la representación cumpla la Ley 32-23 y el Formato e-CF.
                       </p>
                     </div>
 
-                    <div className="rounded-xl border border-border bg-muted/20 py-8 text-center">
-                      <p className="text-xs font-semibold text-muted-foreground">No hay comprobantes de simulación. Genera y envía los del Paso 4 primero.</p>
-                    </div>
+                    <PrintedRepresentationRunner tenantId={tenantId} environment={environment} />
                   </div>
                 )}
 
@@ -822,9 +821,9 @@ export function ActivationPanel() {
                 {certificationStep === 7 && (
                   <div className="mt-4 flex flex-col gap-4">
                     <div className="rounded-xl border border-border bg-muted/10 p-5">
-                      <UrlCopyField label="SERVICIO DE AUTENTICACIÓN" url={`https://api.cloudix.com/rnc_${company.rnc || "EMISOR"}/fe/autenticacion/api/[semilla|ValidacionCertificado]`} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Autenticación copiada al portapapeles."); }} />
-                      <UrlCopyField label="SERVICIO DE RECEPCIÓN *" url={`https://api.cloudix.com/rnc_${company.rnc || "EMISOR"}/fe/recepcion/api/ecf`} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Recepción copiada al portapapeles."); }} />
-                      <UrlCopyField label="SERVICIO DE APROBACIÓN COMERCIAL *" url={`https://api.cloudix.com/rnc_${company.rnc || "EMISOR"}/fe/aprobacioncomercial/api/ecf`} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Aprobación Comercial copiada al portapapeles."); }} />
+                      <UrlCopyField label="SERVICIO DE AUTENTICACIÓN" url={receptorUrls.authentication} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Autenticación copiada al portapapeles."); }} />
+                      <UrlCopyField label="SERVICIO DE RECEPCIÓN *" url={receptorUrls.reception} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Recepción copiada al portapapeles."); }} />
+                      <UrlCopyField label="SERVICIO DE APROBACIÓN COMERCIAL *" url={receptorUrls.approval} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Aprobación Comercial copiada al portapapeles."); }} />
                     </div>
 
                     <button type="button" onClick={() => setMessage("Configuración de URLs guardada para el diseño.")} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#1e293b] px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-900">
@@ -900,9 +899,9 @@ export function ActivationPanel() {
                 {certificationStep === 12 && (
                   <div className="mt-4 flex flex-col gap-4">
                     <div className="rounded-xl border border-border bg-muted/10 p-5">
-                      <UrlCopyField label="SERVICIO DE AUTENTICACIÓN" url={`https://api.cloudix.com/rnc_${company.rnc || "EMISOR"}/fe/autenticacion/api/[semilla|ValidacionCertificado]`} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Autenticación copiada al portapapeles."); }} />
-                      <UrlCopyField label="SERVICIO DE RECEPCIÓN *" url={`https://api.cloudix.com/rnc_${company.rnc || "EMISOR"}/fe/recepcion/api/ecf`} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Recepción copiada al portapapeles."); }} />
-                      <UrlCopyField label="SERVICIO DE APROBACIÓN COMERCIAL *" url={`https://api.cloudix.com/rnc_${company.rnc || "EMISOR"}/fe/aprobacioncomercial/api/ecf`} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Aprobación Comercial copiada al portapapeles."); }} />
+                      <UrlCopyField label="SERVICIO DE AUTENTICACIÓN" url={receptorUrls.authentication} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Autenticación copiada al portapapeles."); }} />
+                      <UrlCopyField label="SERVICIO DE RECEPCIÓN *" url={receptorUrls.reception} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Recepción copiada al portapapeles."); }} />
+                      <UrlCopyField label="SERVICIO DE APROBACIÓN COMERCIAL *" url={receptorUrls.approval} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Aprobación Comercial copiada al portapapeles."); }} />
                     </div>
 
                     <button type="button" onClick={() => setMessage("Configuración de URLs guardada para producción en el diseño.")} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#1e293b] px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-900">
@@ -923,20 +922,13 @@ export function ActivationPanel() {
                       </p>
                     </div>
 
-                    <div className="rounded-xl border border-dashed border-primary/35 bg-muted/20 p-5">
-                      <div className="flex items-center gap-2 text-sm font-bold text-foreground"><Download className="size-4 text-primary" /> Firmar declaracion jurada XML</div>
-                      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-                        <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-sm">
-                          <Upload className="size-4" /> Seleccionar archivo
-                          <input type="file" accept=".xml,application/xml" className="sr-only" onChange={(event) => setMessage(`Archivo ${event.target.files?.[0]?.name ?? ""} seleccionado para simulación de firma.`)} />
-                        </label>
-                        <span className="text-xs text-muted-foreground">Ningún archivo seleccionado</span>
-                        <button type="button" disabled className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary/30 px-4 py-2.5 text-xs font-bold text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50 sm:ml-auto">
-                          <CheckCircle className="size-4" /> Firmar XML
-                        </button>
-                      </div>
-                      <p className="mt-3 text-xs text-muted-foreground">Este paso no envia el archivo automaticamente: solo lo firma para que el usuario lo suba manualmente en el portal DGII.</p>
-                    </div>
+                    <DocumentSigner
+                      tenantId={tenantId}
+                      environment={environment}
+                      documentType="declaracion_jurada"
+                      title="Firmar declaración jurada XML"
+                      helperText="Descargá la declaración jurada desde el portal de la DGII, firmala aquí con tu certificado digital y subí el archivo firmado al portal. Este paso no envía nada automáticamente."
+                    />
 
                     <button type="button" onClick={openCertificationPortal} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-900 dark:bg-slate-800 dark:hover:bg-slate-700">
                       <ExternalLink className="size-4" /> Ir al Portal DGII
@@ -952,7 +944,7 @@ export function ActivationPanel() {
                   </div>
                 )}
 
-                <button type="button" onClick={() => setCertificationStep((current) => Math.min(certificationSteps.length, current + 1))} disabled={certificationStep === certificationSteps.length || certificationStep === 8} className={`mt-4 flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-bold transition-colors ${certificationStep === 8 ? "cursor-not-allowed bg-sky-500/50 text-white shadow-none" : "bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90 disabled:opacity-50"}`}>
+                <button type="button" onClick={advanceCertificationStep} disabled={certificationStep === certificationSteps.length || certificationStep === 8} className={`mt-4 flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-bold transition-colors ${certificationStep === 8 ? "cursor-not-allowed bg-sky-500/50 text-white shadow-none" : "bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90 disabled:opacity-50"}`}>
                   {certificationStep === certificationSteps.length ? "Certificación lista para revisión" : certificationStep === 14 ? "> Marcar como aprobado manualmente" : certificationStep === 13 ? "> XML enviado a DGII — Avanzar" : certificationStep === 12 ? "> URLs registradas — Avanzar al Paso 13" : certificationStep === 11 ? "Completado — Avanzar al Paso 12" : certificationStep === 10 ? "Completado — Avanzar al Paso 11" : certificationStep === 9 ? "Completado — Avanzar al Paso 10" : certificationStep === 8 ? "> Esperando e-CFs de DGII..." : certificationStep === 7 ? "URLs registradas — Avanzar al Paso 8" : certificationStep === 6 ? "DGII aprobó — Avanzar al Paso 7" : certificationStep === 5 ? "Representaciones subidas — Avanzar" : `Ya completé este paso - Avanzar al paso ${certificationStep + 1}`} {certificationStep !== 8 && certificationStep !== 14 && certificationStep !== 13 && certificationStep !== 12 && certificationStep !== 15 && <ChevronRight className="size-4" />}
                 </button>
                   </>
@@ -961,6 +953,9 @@ export function ActivationPanel() {
             </div>
           )}
 
+          {showActivationNotice && activationNotice(fiscalMode, environment) && (
+            <div className="mt-5 rounded-xl border border-primary/20 bg-primary/10 p-3 text-sm text-primary">{activationNotice(fiscalMode, environment)}</div>
+          )}
           {message && <div className="mt-5 rounded-xl border border-primary/20 bg-primary/10 p-3 text-sm text-primary">{message}</div>}
           <div className="mt-7 flex items-center justify-between border-t border-border pt-5">
             <button type="button" onClick={() => setStep((current) => Math.max(1, current - 1))} disabled={step === 1} className="inline-flex items-center gap-1 rounded-xl border border-border px-4 py-2.5 text-xs font-bold text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40">

@@ -5,3 +5,8 @@ enabled = true
 
 [functions.validate-ecf-certificate]
 verify_jwt = true
+
+# DGII calls the receptor without a Supabase JWT; callers authenticate with the bearer token issued
+# by the validacioncertificado service (see supabase/functions/ecf-receptor).
+[functions.ecf-receptor]
+verify_jwt = false

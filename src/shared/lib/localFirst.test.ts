@@ -605,6 +605,15 @@ describe("localFirst", () => {
     expect(resolveConflictForTable("tenants", entry, { id: "tenant-1" }).resolution).toBe("local_wins");
   });
 
+  it("syncs the e-CF representative cedula (not silently dropped)", () => {
+    const entry = createSyncOutboxEntry({
+      tenantId: "tenant-1", tableName: "tenants", rowId: "tenant-1", op: "update",
+      payload: { ecf_representative_id: "12100129126", updated_at: "2026-10-18T00:00:00.000Z" },
+      deviceId: "dev1",
+    });
+    expect(resolveConflictForTable("tenants", entry, { id: "tenant-1" }).resolution).toBe("local_wins");
+  });
+
   it("bloquea actualización fiscal si intentan retroceder una secuencia respecto al servidor", () => {
     const backwardPayload = {
       ncf_b01_secuencia_siguiente: 5,

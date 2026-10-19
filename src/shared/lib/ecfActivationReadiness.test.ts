@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  activationNotice,
   buildActivationPayload,
   buildDeactivationPayload,
   describeActivationSuccess,
@@ -77,6 +78,14 @@ describe("evaluateEcfActivationReadiness", () => {
   it("blocks when the certificate is not ready", () => {
     const base = readyInput();
     expect(codes(readyInput({ certificate: { ...base.certificate, is_ready: false } }))).toEqual(["CERTIFICATE"]);
+  });
+
+  it("accepts a natural-person signer certificate and never blocks on a representative warning", () => {
+    const base = readyInput();
+    const person = { ...base.certificate, subject: "undefined=IDCDO-12100129126, CN=JOSE ABRAHAN TORIBIO GUERRERO" };
+    expect(evaluateEcfActivationReadiness(readyInput({ certificate: person }))).toEqual({ ready: true, missing: [] });
+    expect(evaluateEcfActivationReadiness(readyInput({ certificate: person, representativeId: "12100129126" })).ready).toBe(true);
+    expect(evaluateEcfActivationReadiness(readyInput({ certificate: person, representativeId: "00112345678" })).ready).toBe(true);
   });
 
   it("blocks an expired certificate and tells what to do", () => {
@@ -165,6 +174,13 @@ describe("activation payloads", () => {
 
   it("normalizes unknown fallbacks", () => {
     expect(normalizeFiscalFallback("whatever")).toBe("internal_receipt");
+  });
+
+  it("shows the activation notice only while the tenant is on dgii_ecf", () => {
+    expect(activationNotice("dgii_ecf", "certification")).toMatch(/CerteCF/);
+    for (const mode of ["ncf_legacy", "internal_receipt", null, undefined, ""]) {
+      expect(activationNotice(mode, "certification")).toBeNull();
+    }
   });
 
   it("mentions environment and worker dependency in the success message", () => {

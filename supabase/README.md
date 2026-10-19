@@ -5,6 +5,7 @@ This is the native Supabase CLI root. It contains no project credentials and no 
 - `config.toml` defines local CLI configuration and requires JWT verification for `validate-ecf-certificate`.
 - `migrations/` contains forward-only Supabase CLI migrations. Apply files lexicographically and never edit a migration that has been applied.
 - `functions/validate-ecf-certificate/` contains the certificate validator. It validates the caller JWT, derives the tenant from a canonical `tenant UUID/filename.p12` object key, and verifies an active administrative membership before using server-only credentials.
+- `functions/ecf-receptor/` implements the DGII inbound e-CF services (seed, token, reception, commercial approval). Deployment runbook: [`../docs/ecf-receptor-deployment.md`](../docs/ecf-receptor-deployment.md).
 - `migrations/` is the complete, ordered Supabase CLI migration history, including the security-forward migration.
 - `../sql/` contains canonical SQL sources used by tests. `cyberbistro_register_tenant.sql` grants execution to `authenticated` only.
 

@@ -3,9 +3,11 @@ import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
   resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
-    },
+    alias: [
+      { find: "@", replacement: path.resolve(__dirname, "./src") },
+      // Edge functions import `npm:pkg@x.y.z`; resolve those to node_modules when testing from Node.
+      { find: /^npm:(@[^/@]+\/[^/@]+|[^/@]+)(?:@[^/]+)?$/, replacement: "$1" },
+    ],
   },
   test: {
     environment: "node",
