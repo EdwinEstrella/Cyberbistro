@@ -71,6 +71,8 @@ Mode: off. Runner: `npx vitest run`, `npm run typecheck`.
 ## Redeploy (supabase/functions/ecf-certification)
 - New: simulation.ts. Changed: builder.ts, run.ts, store.ts.
 
+- 2026-10-18 PROD: migration ecf_certification_simulation applied + NOTIFY pgrst (submissions backfilled: 29 test_set, 11 commercial_approval; trigger + unique index present). Dokploy: created simulation.ts, updated builder.ts, store.ts, run.ts (content verified; 13 files, no bad paths). Pending: functions-1 restart (user), then step 4 run.
+
 ## Next step
 Apply migration 20261018160000_ecf_certification_simulation.sql, then redeploy the four files above and restart
 functions; run step 4 from the wizard. Then step 5 (printed representation) as a new feature.
