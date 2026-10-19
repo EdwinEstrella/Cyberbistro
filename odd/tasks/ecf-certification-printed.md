@@ -65,6 +65,10 @@ Mode: off (project convention, see previous ecf features). Runner: `npx vitest r
   (MontoItem x rate, or extracted when IndicadorMontoGravado=1); exempt lines prefixed "E". Evidence: typecheck
   clean; `npx vitest run src/features/fiscal` 80 passed.
 
+- 2026-10-18 User uploaded the A4 PDFs in portal step 5; portal advanced to step 6 (manual DGII review). The 80 mm
+  roll layout was discussed and deferred: the spec allows both sheet and continuous paper and does not require the
+  certified format to match production; build it only if DGII asks or for the POS e-CF receipt.
+
 ## Next step
 Manual check in the app against the real Salpimentao simulation run (generate, inspect PDFs, scan a QR against
 certecf), then upload the 11 PDFs in the DGII portal step 5. Push/PR are the user's decision.
