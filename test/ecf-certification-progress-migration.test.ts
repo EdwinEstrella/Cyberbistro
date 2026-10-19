@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const sql = readFileSync("supabase/migrations/20261018130000_ecf_certification_progress.sql", "utf8");
+const sql = readFileSync("supabase/migrations/20261018130000_ecf_certification_progress.sql", "utf8").replace(/\r\n/g, "\n");
 const code = sql.replace(/^--.*$/gm, "");
 
 describe("ecf certification progress migration", () => {
