@@ -39,7 +39,7 @@ Mode: off (project convention, see previous ecf features). Runner: `npx vitest r
 
 ## Tasks
 - [x] T1 Lib: parse signed XML, QR URL builder, slot picker, PDF builder (jspdf); tests. Route: delegated (writer trigger). Commit: 894d408.
-- [ ] T2 Wizard step 5 UI in ActivationPanel (generate from latest simulation run, download per slot + all); tests. Route: delegated (writer trigger).
+- [x] T2 Wizard step 5 UI in ActivationPanel (generate from latest simulation run, download per slot + all); tests. Route: delegated (writer trigger). Commit: c85d5f8.
 
 ## Progress
 - 2026-10-18 created after user approved the wizard-button approach.
@@ -49,6 +49,16 @@ Mode: off (project convention, see previous ecf features). Runner: `npx vitest r
   portal_upload ready_for_portal whose RFCE (same caseId) is accepted. Evidence: `npm run typecheck` clean;
   `npx vitest run src/features/fiscal/lib/ecfPrintedRepresentation.test.ts` 21 passed; sample PDFs ~7 KB, accents
   render (checked visually).
+- 2026-10-18 T2 done (c85d5f8): `PrintedRepresentationRunner.tsx` replaces the step-5 placeholder in ActivationPanel:
+  loads the latest simulation run (`latest`), downloads each picked case (`download`), builds the PDFs
+  (`ecfPrintedDocuments.ts`: buildPrintedDocument, size helpers, Spanish errors), lists the 11 slots with e-NCF,
+  status, copyable QR URL, per-slot and sequential "Descargar todos" downloads, total size with > 10 MB warning.
+  Download helper extracted to `lib/saveFile.ts` and reused by TestSetRunner. Guards: same as step 4 (server-side
+  FORBIDDEN for non-admins). No component test: the repo has no DOM test environment (node env; FiscalPanel test
+  mocks React hooks); logic covered by pure tests. Evidence: `npm run typecheck` clean; `npx vitest run
+  src/features/fiscal` 8 files / 76 passed; full `npx vitest run` 184 files passed, 1 skipped (1325 passed,
+  2 skipped); `npx vite build` succeeded with jspdf.
 
 ## Next step
-T2.
+Manual check in the app against the real Salpimentao simulation run (generate, inspect PDFs, scan a QR against
+certecf), then upload the 11 PDFs in the DGII portal step 5. Push/PR are the user's decision.
