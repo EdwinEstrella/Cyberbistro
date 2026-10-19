@@ -32,6 +32,7 @@ import {
   type RunView,
   type StatusTone,
 } from "../lib/ecfCertificationRun";
+import { saveFile } from "../lib/saveFile";
 
 const POLL_DELAY_MS = 5000;
 const MAX_POLL_ROUNDS = 60;
@@ -44,14 +45,7 @@ const TONE_CLASSES: Record<StatusTone, string> = {
   danger: "bg-red-500/15 text-red-600 dark:text-red-400",
 };
 
-function saveXml(fileName: string, text: string) {
-  const url = URL.createObjectURL(new Blob([text], { type: "application/xml;charset=utf-8" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  link.click();
-  URL.revokeObjectURL(url);
-}
+const saveXml = (fileName: string, text: string) => saveFile(fileName, text, "application/xml;charset=utf-8");
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 

@@ -19,6 +19,7 @@ import { loadEcfActivationReadiness } from "../lib/loadEcfReadiness";
 import { buildReceptorUrls } from "../lib/receptorUrls";
 import { advanceProgress, buildProgressUpsert, restoreProgress, type CertificationProgress } from "../lib/ecfCertificationProgress";
 import { DocumentSigner } from "./DocumentSigner";
+import { PrintedRepresentationRunner } from "./PrintedRepresentationRunner";
 import { TestSetRunner } from "./TestSetRunner";
 
 type EcfEnvironment = "test" | "certification" | "production";
@@ -803,13 +804,11 @@ export function ActivationPanel() {
                     <div className="flex items-start gap-3 rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-4 text-xs leading-relaxed text-yellow-700 dark:text-yellow-400">
                       <AlertTriangle className="mt-0.5 size-4 shrink-0" />
                       <p>
-                        La suma de todos los archivos no puede superar <strong className="font-semibold">10MB</strong> (cada PDF pesa ~30KB, sin problema). Es responsabilidad del contribuyente que la representación cumpla la Ley 32-23 y el Formato e-CF.
+                        La suma de todos los archivos no puede superar <strong className="font-semibold">10MB</strong> (cada PDF pesa menos de 30KB, sin problema). Es responsabilidad del contribuyente que la representación cumpla la Ley 32-23 y el Formato e-CF.
                       </p>
                     </div>
 
-                    <div className="rounded-xl border border-border bg-muted/20 py-8 text-center">
-                      <p className="text-xs font-semibold text-muted-foreground">No hay comprobantes de simulación. Genera y envía los del Paso 4 primero.</p>
-                    </div>
+                    <PrintedRepresentationRunner tenantId={tenantId} environment={environment} />
                   </div>
                 )}
 
