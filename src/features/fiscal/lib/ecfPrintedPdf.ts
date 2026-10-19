@@ -6,13 +6,15 @@
  */
 import { jsPDF } from "jspdf";
 import QRCode from "qrcode";
-import { BILLING_INDICATORS, DOCUMENT_TITLES, formatAmount, type PrintedEcf, type TotalField } from "./ecfPrintedRepresentation";
+import { DOCUMENT_TITLES, formatAmount, isExemptItem, itemItbisAmount, type PrintedEcf, type TotalField } from "./ecfPrintedRepresentation";
 
 const PAGE_WIDTH = 210;
 const PAGE_HEIGHT = 297;
 const MARGIN = 15;
 const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
 const QR_SIZE = 30;
+/** DGII: QR starts at least 2 cm from the sheet edge, plus a 3 mm quiet margin around it. */
+const QR_EDGE_OFFSET = 20 + 3;
 /** QR plus the two lines under it. */
 const QR_BLOCK_HEIGHT = QR_SIZE + 12;
 const LINE = 4.5;
@@ -21,7 +23,7 @@ const COLUMNS = [
   { title: "Cant.", width: 18, align: "right" as const },
   { title: "Descripción", width: 72, align: "left" as const },
   { title: "Precio unitario", width: 30, align: "right" as const },
-  { title: "ITBIS", width: 25, align: "left" as const },
+  { title: "ITBIS", width: 25, align: "right" as const },
   { title: "Valor", width: 35, align: "right" as const },
 ];
 
@@ -170,7 +172,8 @@ export async function buildPrintedPdf({ model, qrUrl, securityCode }: PrintedPdf
   drawHeaderRow();
   for (const item of model.items) {
     doc.setFontSize(8);
-    const description = doc.splitTextToSize(item.nombreItem || "—", COLUMNS[1].width - 2) as string[];
+    const name = item.nombreItem || "—";
+    const description = doc.splitTextToSize(isExemptItem(item.indicadorFacturacion) ? `E  ${name}` : name, COLUMNS[1].width - 2) as string[];
     const retention = [
       item.montoItbisRetenido ? `ITBIS retenido: ${formatAmount(item.montoItbisRetenido)}` : undefined,
       item.montoIsrRetenido ? `ISR retenido: ${formatAmount(item.montoIsrRetenido)}` : undefined,
@@ -182,7 +185,7 @@ export async function buildPrintedPdf({ model, qrUrl, securityCode }: PrintedPdf
       item.cantidadItem ?? "",
       "",
       formatAmount(item.precioUnitarioItem),
-      BILLING_INDICATORS[item.indicadorFacturacion ?? ""] ?? item.indicadorFacturacion ?? "",
+      formatAmount(itemItbisAmount(item.montoItem, item.indicadorFacturacion, model.indicadorMontoGravado)),
       formatAmount(item.montoItem),
     ];
     let x = MARGIN;
@@ -230,13 +233,13 @@ export async function buildPrintedPdf({ model, qrUrl, securityCode }: PrintedPdf
   }
 
   // QR at the bottom left of the last page, with the security code and signature date under it.
-  if (y + 4 > PAGE_HEIGHT - MARGIN - QR_BLOCK_HEIGHT) doc.addPage();
-  const qrTop = PAGE_HEIGHT - MARGIN - QR_BLOCK_HEIGHT;
-  doc.addImage(qrDataUrl, "PNG", MARGIN, qrTop, QR_SIZE, QR_SIZE);
+  if (y + 4 > PAGE_HEIGHT - QR_EDGE_OFFSET - QR_BLOCK_HEIGHT) doc.addPage();
+  const qrTop = PAGE_HEIGHT - QR_EDGE_OFFSET - QR_BLOCK_HEIGHT;
+  doc.addImage(qrDataUrl, "PNG", QR_EDGE_OFFSET, qrTop, QR_SIZE, QR_SIZE);
   y = qrTop + QR_SIZE + 4.5;
-  write(`Código de Seguridad: ${securityCode}`, MARGIN, 9, "bold");
+  write(`Código de Seguridad: ${securityCode}`, QR_EDGE_OFFSET, 9, "bold");
   y += LINE;
-  write(`Fecha de Firma Digital: ${model.fechaHoraFirma ?? ""}`, MARGIN, 9);
+  write(`Fecha de Firma Digital: ${model.fechaHoraFirma ?? ""}`, QR_EDGE_OFFSET, 9);
 
   return new Uint8Array(doc.output("arraybuffer"));
 }

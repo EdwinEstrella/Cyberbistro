@@ -59,6 +59,12 @@ Mode: off (project convention, see previous ecf features). Runner: `npx vitest r
   src/features/fiscal` 8 files / 76 passed; full `npx vitest run` 184 files passed, 1 skipped (1325 passed,
   2 skipped); `npx vite build` succeeded with jspdf.
 
+- 2026-10-18 Compliance fix vs Informe Técnico e-CF v1.0 §18 (read from the DGII PDF): paper size is free (sheet or
+  continuous roll; no 80 mm requirement); QR must start >= 2 cm from the sheet edge with a 3 mm margin, min 22x22 mm
+  -> QR moved from 15 mm to 23 mm offset; ITBIS column must show the per-line ITBIS amount -> itemItbisAmount
+  (MontoItem x rate, or extracted when IndicadorMontoGravado=1); exempt lines prefixed "E". Evidence: typecheck
+  clean; `npx vitest run src/features/fiscal` 80 passed.
+
 ## Next step
 Manual check in the app against the real Salpimentao simulation run (generate, inspect PDFs, scan a QR against
 certecf), then upload the 11 PDFs in the DGII portal step 5. Push/PR are the user's decision.

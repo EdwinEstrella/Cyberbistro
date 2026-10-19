@@ -377,10 +377,22 @@ export const DOCUMENT_TITLES: Record<string, string> = {
 };
 
 /** IndicadorFacturacion of an item line. */
-export const BILLING_INDICATORS: Record<string, string> = {
-  "0": "No facturable",
-  "1": "ITBIS 18%",
-  "2": "ITBIS 16%",
-  "3": "ITBIS 0%",
-  "4": "Exento",
-};
+const ITBIS_RATES: Record<string, number> = { "1": 0.18, "2": 0.16, "3": 0 };
+
+/**
+ * Per-line ITBIS amount for the RI "ITBIS" column (the XML carries no per-line ITBIS). MontoItem
+ * excludes ITBIS unless IndicadorMontoGravado is "1" (prices include ITBIS). Exempt or non-billable
+ * lines return undefined.
+ */
+export function itemItbisAmount(montoItem: string | undefined, indicadorFacturacion: string | undefined, indicadorMontoGravado: string | undefined): string | undefined {
+  const rate = ITBIS_RATES[indicadorFacturacion ?? ""];
+  const amount = Number(montoItem);
+  if (rate === undefined || montoItem === undefined || !Number.isFinite(amount)) return undefined;
+  const itbis = indicadorMontoGravado === "1" ? amount - amount / (1 + rate) : amount * rate;
+  return (Math.round(itbis * 100) / 100).toFixed(2);
+}
+
+/** Exempt lines carry an "E" to the left of the description. */
+export function isExemptItem(indicadorFacturacion: string | undefined): boolean {
+  return indicadorFacturacion === "4";
+}

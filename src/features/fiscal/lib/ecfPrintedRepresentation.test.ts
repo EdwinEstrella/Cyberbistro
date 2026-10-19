@@ -8,6 +8,8 @@ import {
   dgiiEnvironmentSegment,
   formatAmount,
   isConsumoUnder250k,
+  isExemptItem,
+  itemItbisAmount,
   parseSignedEcf,
   pickPrintedSlots,
   printedFileName,
@@ -248,5 +250,28 @@ describe("buildPrintedPdf", () => {
     const bytes = await buildPrintedPdf({ model, securityCode: "a+b/C9", qrUrl: "https://ecf.dgii.gov.do/certecf/consultatimbre" });
     const pages = new TextDecoder("latin1").decode(bytes).match(/\/Type \/Page\b/g) ?? [];
     expect(pages.length).toBeGreaterThan(1);
+  });
+});
+
+describe("itemItbisAmount", () => {
+  it("applies the rate to MontoItem when prices exclude ITBIS", () => {
+    expect(itemItbisAmount("1000.00", "1", undefined)).toBe("180.00");
+    expect(itemItbisAmount("1000.00", "2", "0")).toBe("160.00");
+    expect(itemItbisAmount("1000.00", "3", undefined)).toBe("0.00");
+  });
+
+  it("extracts the ITBIS already included when IndicadorMontoGravado is 1", () => {
+    expect(itemItbisAmount("1180.00", "1", "1")).toBe("180.00");
+  });
+
+  it("returns undefined for exempt, non-billable or missing amounts", () => {
+    expect(itemItbisAmount("1000.00", "4", undefined)).toBeUndefined();
+    expect(itemItbisAmount("1000.00", "0", undefined)).toBeUndefined();
+    expect(itemItbisAmount(undefined, "1", undefined)).toBeUndefined();
+  });
+
+  it("flags only exempt lines for the E marker", () => {
+    expect(isExemptItem("4")).toBe(true);
+    expect(isExemptItem("1")).toBe(false);
   });
 });
