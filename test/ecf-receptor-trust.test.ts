@@ -101,6 +101,18 @@ describe("chain validation", () => {
     expect(security.verify(withExtras(5), now)).toMatchObject({ valid: false, reason: "too many embedded certificates" });
   });
 
+  it("reports the embedded chain's subject and issuer names when the issuer is not trusted", () => {
+    const other = createTestCa("Unknown CA");
+    const leaf = createTestCertificate({ ca: other, rnc: "131880738" });
+    const security = createXmlSecurity({ trustedCaPems: [root.certPem] });
+    const signed = new Signature(leaf.keyPem, leaf.certPem).signXml("<ECF><a>1</a></ECF>", "ECF");
+    const result = security.verify(signed, now);
+    expect(result).toMatchObject({ valid: false, reason: "issuer is not trusted", companyIds: [], personIds: [] });
+    expect(result.untrustedChain).toHaveLength(1);
+    expect(result.untrustedChain![0].issuer).toBe(parse(other.certPem).subject.attributes.map((a) => `${a.shortName ?? a.type}=${a.value}`).join(", "));
+    expect(security.verify("<!-- c -->" + signed, now).untrustedChain).toBeUndefined();
+  }, 60_000);
+
   it("rejects signed documents containing DTDs or comments", () => {
     const leaf = createTestCertificate({ ca: root, rnc: "131880738" });
     const security = createXmlSecurity({ trustedCaPems: [root.certPem] });

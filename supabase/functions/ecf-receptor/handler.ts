@@ -201,8 +201,8 @@ async function handleSeed(rnc: string, deps: ReceptorDeps): Promise<Response> {
 async function handleValidateSeed(req: Request, rnc: string, deps: ReceptorDeps): Promise<Response> {
   const signedSeed = await readXmlPayload(req, MAX_SEED_BYTES);
   const now = deps.now();
-  const reject = (reason: string): never => {
-    deps.log("seed_rejected", { reason });
+  const reject = (reason: string, detail: Record<string, unknown> = {}): never => {
+    deps.log("seed_rejected", { reason, ...detail });
     throw AUTH_FAILED();
   };
   const valor = extractSeedValue(signedSeed);
@@ -210,7 +210,9 @@ async function handleValidateSeed(req: Request, rnc: string, deps: ReceptorDeps)
   const seed = await checkSeedValue(valor, rnc, requireSeedSecret(deps), now);
   if (!seed.ok) return reject("seed");
   const verification = deps.security.verify(signedSeed, now);
-  if (!verification.valid) return reject(verification.reason ?? "signature");
+  if (!verification.valid) {
+    return reject(verification.reason ?? "signature", verification.untrustedChain ? { untrustedChain: verification.untrustedChain } : {});
+  }
   const tenantId = await deps.store.resolveTenant(rnc);
   if (!tenantId) return reject("tenant");
   if (!(await deps.store.consumeSeed(tenantId, seed.id, seed.expiresAt, now))) return reject("replay");

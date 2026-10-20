@@ -17,6 +17,11 @@ export interface VerifyResult {
   valid: boolean;
   /** Short, non-sensitive reason when invalid (for logs only). */
   reason?: string;
+  /**
+   * Public certificate metadata of the embedded chain, only when it does not reach a trusted anchor, so the
+   * missing CA can be identified (e.g. a DGII certification-environment CA) and added to the trust store.
+   */
+  untrustedChain?: { subject: string; issuer: string }[];
   /** Identities asserted by the (trusted) signer certificate. Empty unless valid. */
   companyIds: string[];
   personIds: string[];
@@ -118,6 +123,10 @@ export function chainsToAnchors(leaf: Certificate, extras: Certificate[], anchor
   return "chain too long";
 }
 
+function distinguishedName(name: Certificate["subject"]): string {
+  return name.attributes.map((attribute) => `${attribute.shortName ?? attribute.type}=${String(attribute.value)}`).join(", ");
+}
+
 function attributesOf(cert: Certificate) {
   return cert.subject.attributes.map((attribute) => ({
     type: attribute.type as string | undefined,
@@ -147,6 +156,10 @@ export function createXmlSecurity(options: { trustedCaPems: readonly string[] })
       const extras = certs.slice(1).map((base64) => forge.pki.certificateFromPem(pemFromBase64Der(base64)));
 
       const chainError = chainsToAnchors(leaf, extras, anchors, now);
+      if (chainError === "issuer is not trusted") {
+        const untrustedChain = [leaf, ...extras].map((cert) => ({ subject: distinguishedName(cert.subject), issuer: distinguishedName(cert.issuer) }));
+        return { ...fail(chainError), untrustedChain };
+      }
       if (chainError) return fail(chainError);
 
       const verifier = new SignedXml({ publicCert: leafPem });
