@@ -57,6 +57,7 @@ function harness(over: Partial<CertificationStore> = {}, dgii = fakeDgii()) {
     authenticate: async (token) => (token === "good" ? USER : null),
     memberships: async () => [{ tenantId: TENANT, rol: "admin" }],
     tenantRnc: async () => "133488485",
+    tenantLegalName: async () => "SALPIMENTAO RESTAURANT CAFE & GRILL SRL",
     loadCertificate: async () => ({ p12Bytes: cert.p12Bytes, passphraseEncrypted }),
     ...over,
   } as CertificationStore;
