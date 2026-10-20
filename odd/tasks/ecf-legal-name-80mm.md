@@ -44,8 +44,12 @@ Strategy ask-on-risk; forecast ~250 authored lines (under budget, single PR).
   (delegated writer). 422 LEGAL_NAME_MISSING when nombre_negocio empty.
 - [x] T2 80 mm roll RI PDF (dynamic height, wrapped text, QR rules) + overlap test. Commit c6aadc6 (delegated
   writer); pure layoutReceipt in ecfReceiptLayout.ts, QR 25 mm at x=23, >=23 mm below.
-- [ ] T3 Deploy edge (user, Dokploy), re-run step 4 simulation, verify consulta timbre shows legal name.
-- [ ] T4 Generate 11 RI, overlap check, user uploads to portal step 5.
+- [x] T3 Deploy edge (user, Dokploy), re-run step 4 simulation, verify consulta timbre shows legal name.
+  First re-run (portal at step 5) rejected by DGII: "No se encuentra en una fase válida dentro del proceso de
+  certificación." User returned portal to step 4, re-ran: run 01ff29cd-6d0f-474a-b046-26d2b5ef419e, 29/29 accepted,
+  RazonSocialEmisor = legal name. Consulta timbre E310000000023 and FC E320000000035 show the legal name.
+- [x] T4 Generate 11 RI, overlap check, user uploads to portal step 5. Uploaded 2026-10-19 ~21:16 local, 80 mm,
+  1 page each, legal name present, all 11 QR decode. Span check only flags font-bbox touches (~1.5 pt, not visible).
 
 ## Acceptance
 - New simulation signed XMLs carry RazonSocialEmisor = tenant legal name; consulta timbre shows it.
@@ -58,4 +62,6 @@ Strategy ask-on-risk; forecast ~250 authored lines (under budget, single PR).
   XML escaping checked: single `&amp;`. RDD off (not run).
 - 2026-10-19 Dokploy mounts updated (agent pasted via UI, user approved saves); deployed SHA-256 prefixes match branch:
   simulation 14e57a9f, run 70ce90f0, context dcc074f8, store 899d13de. User restarted functions-1.
-- Next: user re-runs step 4 simulation; agent verifies consulta timbre, then generates 80 mm RIs.
+- 2026-10-19 Step 4 re-passed, step 5 RIs uploaded; waiting for DGII step 6 review.
+- Follow-ups: TestSetRunner does not show edge 422 errors in UI; step-5 picker uses the latest simulation run even
+  if it was rejected; ecf_issuer_sucursal still holds the legal name (misfiled); branch not pushed/merged.
