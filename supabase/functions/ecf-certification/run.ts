@@ -342,7 +342,14 @@ export async function startRun(ctx: ActionContext): Promise<Response> {
       throw new TestSetError(`This workbook is ${WORKBOOK_LABEL[runType]}, but ${WORKBOOK_LABEL[expectedType]} was expected.`);
     }
     if (runType === "test_set") set = buildTestSet(sheets);
-    else if (runType === "simulation") set = buildSimulationSet(sheets, { issued: await ctx.deps.store.issuedEncfs(ctx.tenantId, environment), now });
+    else if (runType === "simulation") {
+      // DGII shows the XML razón social in the consulta timbre: never send the workbook placeholder.
+      const razonSocial = ((await ctx.deps.store.tenantLegalName(ctx.tenantId)) ?? "").trim();
+      if (!razonSocial) {
+        throw new HttpError(422, "LEGAL_NAME_MISSING", "The tenant has no razón social (nombre del negocio); set it before starting the simulation.");
+      }
+      set = buildSimulationSet(sheets, { issued: await ctx.deps.store.issuedEncfs(ctx.tenantId, environment), now, emisor: { razonSocial } });
+    }
     else approvals = buildCommercialApprovals(sheets, now);
   } catch (error) {
     if (error instanceof XlsxError || error instanceof TestSetError) {

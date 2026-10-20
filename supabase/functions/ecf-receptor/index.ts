@@ -6,7 +6,7 @@
 import { handleRequest } from "./handler.ts";
 import { createXmlSecurity } from "./security.ts";
 import { createSupabaseStore } from "./store.ts";
-import { BUILT_IN_TRUSTED_CAS } from "./trustedCas.ts";
+import { BUILT_IN_TRUSTED_CAS, DGII_CERTIFICATION_SIGNERS } from "./trustedCas.ts";
 
 function requiredEnv(name: string): string {
   const value = Deno.env.get(name)?.trim();
@@ -20,7 +20,13 @@ function trustedCaPems(): string[] {
   return [...BUILT_IN_TRUSTED_CAS.map((ca) => ca.pem), ...(extra ? [extra] : [])];
 }
 
-const security = createXmlSecurity({ trustedCaPems: trustedCaPems() });
+/** Pinned DGII certification-environment signers plus an optional PEM bundle, so ops can rotate the pin without a deploy. */
+function pinnedSignerPems(): string[] {
+  const extra = Deno.env.get("ECF_RECEPTOR_PINNED_SIGNER_PEMS")?.trim();
+  return [...DGII_CERTIFICATION_SIGNERS.map((signer) => signer.pem), ...(extra ? [extra] : [])];
+}
+
+const security = createXmlSecurity({ trustedCaPems: trustedCaPems(), pinnedSignerPems: pinnedSignerPems() });
 let store: ReturnType<typeof createSupabaseStore> | null = null;
 
 function internalError(): Response {

@@ -70,6 +70,7 @@ function memoryStore(memory: Memory, over: Partial<CertificationStore> = {}): Ce
     authenticate: async (token) => (token === "good" ? USER : null),
     memberships: async () => [{ tenantId: TENANT, rol: "admin" }],
     tenantRnc: async () => "133-488-485",
+    tenantLegalName: async () => "SALPIMENTAO RESTAURANT CAFE & GRILL SRL",
     loadCertificate: async () => ({ p12Bytes: cert.p12Bytes, passphraseEncrypted }),
     async createRun(input) {
       // Mirrors the simulation migration guard: a signed tenant e-NCF is never stored twice across
@@ -671,10 +672,10 @@ describe("mapApprovalResult", () => {
 describe("simulation runs", () => {
   // Step-2 scenarios: an E31 and its credit note E34 (indicator 1, issued > 30 days later), a consumo
   // E32 with its RFCE, and dated columns that must move with FechaEmision.
-  const SIM_HEADER = ["CasoPrueba", "Version", "TipoeCF", "ENCF", "IndicadorNotaCredito", "RNCEmisor", "FechaEmision", "FechaEntrega", "MontoTotal", "NumeroLinea[1]", "NombreItem[1]", "MontoItem[1]", "NCFModificado", "FechaNCFModificado", "CodigoModificacion"];
+  const SIM_HEADER = ["CasoPrueba", "Version", "TipoeCF", "ENCF", "IndicadorNotaCredito", "RNCEmisor", "FechaEmision", "FechaEntrega", "MontoTotal", "NumeroLinea[1]", "NombreItem[1]", "MontoItem[1]", "NCFModificado", "FechaNCFModificado", "CodigoModificacion", "RazonSocialEmisor", "NombreComercial"];
   const simRow = (encf: string, emision: string, entrega = E, note: [string, string, string] | null = null) => [
     `${RNC}${encf}`, "1.0", encf.slice(1, 3), encf, note ? note[0] : E, RNC, emision, entrega, "100.00", "1", "PAN", "100.00",
-    note ? note[1] : E, note ? note[2] : E, note ? "2" : E,
+    note ? note[1] : E, note ? note[2] : E, note ? "2" : E, "DOCUMENTOS ELECTRONICOS DE 02", "DOCUMENTOS ELECTRONICOS DE 02",
   ];
   const simWorkbook = () =>
     Buffer.from(
@@ -724,6 +725,12 @@ describe("simulation runs", () => {
     // FechaEntrega keeps its 192-day distance from FechaEmision.
     expect(invoice).toContain("<FechaEntrega>28-04-2027</FechaEntrega>");
     expect(xmlOf("E320000000013", "rfce")).toContain("<FechaEmision>18-10-2026</FechaEmision>");
+    // The tenant legal name replaces the workbook placeholder in every e-CF, portal upload included.
+    for (const xml of [note, invoice, xmlOf("E320000000013", "portal_upload")]) {
+      expect(xml).toContain("<RazonSocialEmisor>SALPIMENTAO RESTAURANT CAFE &amp; GRILL SRL</RazonSocialEmisor>");
+      expect(xml).toContain("<NombreComercial>SALPIMENTAO RESTAURANT CAFE &amp; GRILL SRL</NombreComercial>");
+      expect(xml).not.toContain("DOCUMENTOS ELECTRONICOS");
+    }
 
     // The note still waits for the acceptance of its new invoice; the RFCE uses the new E32 code.
     const sent = await h.call({ action: "send-next", runId: run.id });
@@ -734,6 +741,14 @@ describe("simulation runs", () => {
     expect(rfce.xml).toContain(`<CodigoSeguridadeCF>${portal.securityCode}</CodigoSeguridadeCF>`);
     expect(verifyXmlSignature(portal.signedXml!, cert.certPem)).toBe(true);
     expect(verifyXmlSignature(h.dgii.sent.find((s) => s.kind === "ecf")!.xml, cert.certPem)).toBe(true);
+  });
+
+  it("refuses to start a simulation when the tenant has no legal name", async () => {
+    const h = harness({ tenantLegalName: async () => "  " });
+    const res = await h.call({ action: "start", environment: "certification", xlsxBase64: simWorkbook(), runType: "simulation" });
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe("LEGAL_NAME_MISSING");
+    expect(h.memory.runs).toHaveLength(0);
   });
 
   it("never reuses sequences of an earlier simulation and keeps types independent", async () => {

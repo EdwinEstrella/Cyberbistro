@@ -1,7 +1,8 @@
 import { DOMParser } from "@xmldom/xmldom";
 import { describe, expect, it } from "vitest";
 import type { SubmissionItem } from "./ecfCertificationRun";
-import { buildPrintedPdf } from "./ecfPrintedPdf";
+import { buildPrintedPdf, jsPdfMeasure } from "./ecfPrintedPdf";
+import { QR_BOTTOM_CLEARANCE, QR_LEFT, QR_SIZE, ROLL_WIDTH, SIDE_MARGIN, layoutReceipt, wrapText, type LayoutBox } from "./ecfReceiptLayout";
 import {
   PRINTED_SLOTS,
   buildPrintedQrUrl,
@@ -243,13 +244,83 @@ describe("buildPrintedPdf", () => {
     expect(bytes.length).toBeLessThan(200_000);
   });
 
-  it("paginates a long item list", async () => {
-    const many = Array.from({ length: 120 }, (_, i) => ITEM.replace("<NumeroLinea>1</NumeroLinea>", `<NumeroLinea>${i + 1}</NumeroLinea>`)).join("");
-    const model = parse(E31.replace(ITEM, many));
-    expect(model.items).toHaveLength(120);
-    const bytes = await buildPrintedPdf({ model, securityCode: "a+b/C9", qrUrl: "https://ecf.dgii.gov.do/certecf/consultatimbre" });
-    const pages = new TextDecoder("latin1").decode(bytes).match(/\/Type \/Page\b/g) ?? [];
-    expect(pages.length).toBeGreaterThan(1);
+  const mediaBox = (bytes: Uint8Array) => {
+    const match = /\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]/.exec(new TextDecoder("latin1").decode(bytes));
+    const toMm = (pt: string) => (Number(pt) * 25.4) / 72;
+    return { width: toMm(match![1]), height: toMm(match![2]) };
+  };
+  const build = (model: ReturnType<typeof parse>) =>
+    buildPrintedPdf({ model, securityCode: "a+b/C9", qrUrl: "https://ecf.dgii.gov.do/certecf/consultatimbre" });
+  const manyItems = (count: number) =>
+    parse(E31.replace(ITEM, Array.from({ length: count }, (_, i) => ITEM.replace("<NumeroLinea>1</NumeroLinea>", `<NumeroLinea>${i + 1}</NumeroLinea>`)).join("")));
+
+  it("renders one 80 mm page whose height grows with the item count", async () => {
+    const few = mediaBox(await build(manyItems(2)));
+    const many = mediaBox(await build(manyItems(40)));
+    expect(few.width).toBeCloseTo(80, 1);
+    expect(many.width).toBeCloseTo(80, 1);
+    expect(many.height).toBeGreaterThan(few.height + 100);
+    const pages = new TextDecoder("latin1").decode(await build(manyItems(40))).match(/\/Type \/Page\b/g) ?? [];
+    expect(pages).toHaveLength(1);
+  });
+});
+
+describe("layoutReceipt", () => {
+  const measure = jsPdfMeasure();
+  const LONG_NAME = "DOCUMENTOS ELECTRONICOS PRUEBA FACTURA DE CONSUMO MENOR 250MIL";
+  const LONG_EMAIL = "facturacion.electronica.salpimentao@restaurante-ejemplo.com.do";
+  const longModel = () => {
+    const model = parse(E31);
+    model.emisor.razonSocial = LONG_NAME;
+    model.emisor.nombreComercial = "SALPIMENTAO RESTAURANT CAFE & GRILL SRL";
+    model.emisor.correo = LONG_EMAIL;
+    model.items[0].indicadorFacturacion = "4";
+    model.items[0].nombreItem = "Pechuga a la plancha con guarnición de vegetales salteados y puré";
+    return model;
+  };
+  const intersects = (a: LayoutBox, b: LayoutBox) => a.x < b.x + b.w - 1e-6 && b.x < a.x + a.w - 1e-6 && a.y < b.y + b.h - 1e-6 && b.y < a.y + a.h - 1e-6;
+
+  it("keeps every box inside the side margins and never overlaps two boxes", () => {
+    for (const model of [longModel(), parse(E31), parse(E32_CONSUMO), parse(E43), parse(E34)]) {
+      const { boxes, height } = layoutReceipt(model, "a+b/C9", measure);
+      for (const box of boxes) {
+        expect(box.x).toBeGreaterThanOrEqual(SIDE_MARGIN - 1e-6);
+        expect(box.x + box.w).toBeLessThanOrEqual(ROLL_WIDTH - SIDE_MARGIN + 1e-6);
+        expect(box.y + box.h).toBeLessThanOrEqual(height);
+      }
+      boxes.forEach((a, i) => boxes.slice(i + 1).forEach((b) => expect(intersects(a, b), `${JSON.stringify(a)} vs ${JSON.stringify(b)}`).toBe(false)));
+    }
+  });
+
+  it("wraps the long razón social and breaks an e-mail that has no spaces", () => {
+    const { boxes } = layoutReceipt(longModel(), "a+b/C9", measure);
+    const text = boxes.filter((box): box is Extract<LayoutBox, { kind: "text" }> => box.kind === "text").map((box) => box.text);
+    expect(text.filter((line) => LONG_NAME.includes(line) && line.length > 3).length).toBeGreaterThan(1);
+    expect(text.join("")).toContain(LONG_EMAIL);
+    expect(text.filter((line) => LONG_EMAIL.includes(line) && line !== LONG_EMAIL).length).toBeGreaterThan(1);
+    expect(wrapText("a".repeat(80), 30, 8, "normal", measure).length).toBeGreaterThan(1);
+  });
+
+  it("puts the exempt marker left of the description, on its own column", () => {
+    const { boxes } = layoutReceipt(longModel(), "a+b/C9", measure);
+    const marker = boxes.find((box) => box.kind === "text" && box.text === "E")!;
+    const description = boxes.find((box) => box.kind === "text" && box.text.startsWith("Pechuga"))!;
+    expect(marker.y).toBe(description.y);
+    expect(marker.x + marker.w).toBeLessThan(description.x);
+  });
+
+  it("places the QR per DGII: >= 22 mm, >= 20 mm from the left and bottom edges, texts directly below", () => {
+    const { boxes, height } = layoutReceipt(parse(E31), "a+b/C9", measure);
+    const qr = boxes.find((box) => box.kind === "qr")!;
+    expect(qr.w).toBeGreaterThanOrEqual(22);
+    expect(qr.w).toBe(QR_SIZE);
+    expect(qr.x).toBeGreaterThanOrEqual(20);
+    expect(qr.x).toBe(QR_LEFT);
+    expect(height - (qr.y + qr.h)).toBeGreaterThanOrEqual(QR_BOTTOM_CLEARANCE);
+    const under = boxes.filter((box) => box.kind === "text" && box.y >= qr.y + qr.h);
+    expect(under.map((box) => box.kind === "text" && box.text).join(" ")).toContain("Código de Seguridad: a+b/C9");
+    expect(under.map((box) => box.kind === "text" && box.text).join(" ")).toContain("Fecha de Firma Digital:");
+    expect(under.every((box) => box.x >= 20)).toBe(true);
   });
 });
 

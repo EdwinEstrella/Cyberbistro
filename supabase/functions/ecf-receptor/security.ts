@@ -17,6 +17,11 @@ export interface VerifyResult {
   valid: boolean;
   /** Short, non-sensitive reason when invalid (for logs only). */
   reason?: string;
+  /**
+   * How the signer was trusted, set only when valid: "anchor" chains to a trusted CA; "pinned" is an exact
+   * match of a pinned certification-environment signer, which the caller must restrict to non-production tenants.
+   */
+  trust?: "anchor" | "pinned";
   /** Identities asserted by the (trusted) signer certificate. Empty unless valid. */
   companyIds: string[];
   personIds: string[];
@@ -127,8 +132,9 @@ function attributesOf(cert: Certificate) {
   }));
 }
 
-export function createXmlSecurity(options: { trustedCaPems: readonly string[] }): XmlSecurity {
+export function createXmlSecurity(options: { trustedCaPems: readonly string[]; pinnedSignerPems?: readonly string[] }): XmlSecurity {
   const anchors = parseCertificates(options.trustedCaPems);
+  const pinnedSigners = parseCertificates(options.pinnedSignerPems ?? []);
 
   function verify(xml: string, now: Date): VerifyResult {
     const fail = (reason: string): VerifyResult => ({ valid: false, reason, ...NO_IDENTITY });
@@ -146,15 +152,21 @@ export function createXmlSecurity(options: { trustedCaPems: readonly string[] })
       const leaf = forge.pki.certificateFromPem(leafPem);
       const extras = certs.slice(1).map((base64) => forge.pki.certificateFromPem(pemFromBase64Der(base64)));
 
+      let trust: "anchor" | "pinned" = "anchor";
       const chainError = chainsToAnchors(leaf, extras, anchors, now);
-      if (chainError) return fail(chainError);
+      if (chainError) {
+        // A pin only ever replaces trust in the LEAF itself; any other failure (CA as signer, expiry) stays fatal.
+        const pinned = chainError === "issuer is not trusted" && !isCa(leaf) && validAt(leaf, now) && pinnedSigners.some((pin) => sameCertificate(pin, leaf));
+        if (!pinned) return fail(chainError);
+        trust = "pinned";
+      }
 
       const verifier = new SignedXml({ publicCert: leafPem });
       verifier.loadSignature(signatureNode);
       const references = verifier.getReferences();
       if (references.length !== 1 || (references[0].uri ?? "") !== "") return fail("reference must cover the whole document");
       if (!verifier.checkSignature(xml)) return fail("signature mismatch");
-      return { valid: true, ...extractSubjectIdentities(attributesOf(leaf)) };
+      return { valid: true, trust, ...extractSubjectIdentities(attributesOf(leaf)) };
     } catch {
       return fail("verification error");
     }

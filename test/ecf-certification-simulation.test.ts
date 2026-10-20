@@ -171,3 +171,41 @@ describe("buildSimulationSet", () => {
     expect(() => buildSimulationSet(badDate, { issued: [], now: NOW })).toThrow(/FechaEntrega/);
   });
 });
+
+describe("buildSimulationSet emisor override", () => {
+  const PLACEHOLDER = "DOCUMENTOS ELECTRONICOS DE 02";
+  const LEGAL = "SALPIMENTAO RESTAURANT CAFE & GRILL SRL";
+  const withEmisor = (): Sheet[] => {
+    const [ecf, rfceSheet] = workbook();
+    const ecfHeader = [...HEADER, "RazonSocialEmisor", "NombreComercial"];
+    const rfceHeader = [...RFCE_HEADER, "RazonSocialEmisor"];
+    return [
+      { name: "ECF", rows: [ecfHeader, ...ecf.rows.slice(1).map((r) => (r.every((c) => c === E) ? [...r, E, E] : [...r, PLACEHOLDER, PLACEHOLDER]))] },
+      { name: "RFCE", rows: [rfceHeader, ...rfceSheet.rows.slice(1).map((r) => [...r, PLACEHOLDER])] },
+    ];
+  };
+
+  it("writes the escaped legal name into every ECF and RFCE document", () => {
+    const set = buildSimulationSet(withEmisor(), { issued: ISSUED, now: NOW, emisor: { razonSocial: `  ${LEGAL} ` } });
+    expect(set.ecf.length).toBeGreaterThan(0);
+    for (const d of set.ecf) {
+      expect(tag(d.xml, "RazonSocialEmisor")).toEqual(["SALPIMENTAO RESTAURANT CAFE &amp; GRILL SRL"]);
+      expect(tag(d.xml, "NombreComercial")).toEqual(["SALPIMENTAO RESTAURANT CAFE &amp; GRILL SRL"]);
+    }
+    expect(tag(set.rfce[0].xml, "RazonSocialEmisor")).toEqual(["SALPIMENTAO RESTAURANT CAFE &amp; GRILL SRL"]);
+    expect(set.rfce[0].xml).not.toContain("NombreComercial");
+  });
+
+  it("leaves the workbook values untouched without an override or with a blank one", () => {
+    for (const emisor of [undefined, { razonSocial: "   " }]) {
+      const set = buildSimulationSet(withEmisor(), { issued: ISSUED, now: NOW, emisor });
+      for (const d of set.ecf) expect(tag(d.xml, "RazonSocialEmisor")).toEqual([PLACEHOLDER]);
+      expect(tag(set.rfce[0].xml, "RazonSocialEmisor")).toEqual([PLACEHOLDER]);
+    }
+  });
+
+  it("tolerates workbooks without the emisor columns", () => {
+    const set = buildSimulationSet(workbook(), { issued: ISSUED, now: NOW, emisor: { razonSocial: LEGAL } });
+    expect(set.ecf).toHaveLength(7);
+  });
+});

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import forge from "node-forge";
 import { Signature } from "dgii-ecf";
 import { beforeAll, describe, expect, it } from "vitest";
-import { BUILT_IN_TRUSTED_CAS } from "../supabase/functions/ecf-receptor/trustedCas";
+import { BUILT_IN_TRUSTED_CAS, DGII_CERTIFICATION_SIGNERS } from "../supabase/functions/ecf-receptor/trustedCas";
 import { chainsToAnchors, createXmlSecurity } from "../supabase/functions/ecf-receptor/security";
 import { createTestCa, createTestCertificate, type TestCa } from "./helpers/ecfTestCertificate";
 
@@ -50,6 +50,19 @@ describe("built-in Dominican trust store", () => {
     const digiRoot = [...byCn.keys()].find((cn) => cn.startsWith("digifirma CA Ra"))!;
     pair(digiRoot, "digifirma CA Subordinada 1");
     expect(byCn.get("Digito Root CA")!.verify(byCn.get("Digito Root CA")!)).toBe(true);
+  });
+});
+
+describe("DGII certification-environment signers", () => {
+  it("pins the observed leaf certificate (PEDRO PEREZ MARTINEZ), which is not a CA", () => {
+    expect(DGII_CERTIFICATION_SIGNERS.length).toBeGreaterThan(0);
+    for (const signer of DGII_CERTIFICATION_SIGNERS) {
+      const cert = parse(signer.pem);
+      const der = Buffer.from(forge.asn1.toDer(forge.pki.certificateToAsn1(cert)).getBytes(), "binary");
+      expect(createHash("sha256").update(der).digest("hex"), signer.name).toBe(signer.sha256);
+      expect((cert.getExtension("basicConstraints") as { cA?: boolean } | null)?.cA).toBeFalsy();
+      expect(cert.subject.getField("CN").value).toBe("PEDRO PEREZ MARTINEZ");
+    }
   });
 });
 
@@ -107,6 +120,52 @@ describe("chain validation", () => {
     const signed = new Signature(leaf.keyPem, leaf.certPem).signXml("<ECF><a>1</a></ECF>", "ECF");
     expect(security.verify("<!-- c -->" + signed, now).valid).toBe(false);
     expect(security.verify('<!DOCTYPE ECF [<!ENTITY e "x">]>' + signed, now).valid).toBe(false);
+  });
+
+  describe("pinned signers", () => {
+    const xmlOf = (leaf: { keyPem: string; certPem: string }) => new Signature(leaf.keyPem, leaf.certPem).signXml("<ECF><a>1</a></ECF>", "ECF");
+    let unknownCa: TestCa;
+    beforeAll(() => {
+      unknownCa = createTestCa("Unpublished CA");
+    }, 60_000);
+
+    it("accepts a pinned leaf from an unknown CA as trust 'pinned', and an anchored leaf as 'anchor'", () => {
+      const leaf = createTestCertificate({ ca: unknownCa, rnc: "131880738" });
+      const security = createXmlSecurity({ trustedCaPems: [root.certPem], pinnedSignerPems: [leaf.certPem] });
+      expect(security.verify(xmlOf(leaf), now)).toMatchObject({ valid: true, trust: "pinned", companyIds: ["131880738"] });
+      const anchored = createTestCertificate({ ca: root, rnc: "131880738" });
+      expect(security.verify(xmlOf(anchored), now)).toMatchObject({ valid: true, trust: "anchor" });
+    });
+
+    it("rejects the same leaf when it is not pinned, and a different leaf of the same CA", () => {
+      const leaf = createTestCertificate({ ca: unknownCa, rnc: "131880738" });
+      const sibling = createTestCertificate({ ca: unknownCa, rnc: "131880738" });
+      const plain = createXmlSecurity({ trustedCaPems: [root.certPem] });
+      expect(plain.verify(xmlOf(leaf), now)).toMatchObject({ valid: false, reason: "issuer is not trusted" });
+      const pinned = createXmlSecurity({ trustedCaPems: [root.certPem], pinnedSignerPems: [leaf.certPem] });
+      expect(pinned.verify(xmlOf(sibling), now)).toMatchObject({ valid: false, reason: "issuer is not trusted" });
+    });
+
+    it("still checks the XML signature of a pinned signer", () => {
+      const leaf = createTestCertificate({ ca: unknownCa, rnc: "131880738" });
+      const security = createXmlSecurity({ trustedCaPems: [root.certPem], pinnedSignerPems: [leaf.certPem] });
+      const tampered = xmlOf(leaf).replace("<a>1</a>", "<a>2</a>");
+      expect(security.verify(tampered, now)).toMatchObject({ valid: false, reason: "signature mismatch" });
+    });
+
+    it("does not let a pin outlive the certificate validity or turn a CA into a signer", () => {
+      const expired = createTestCertificate({ ca: unknownCa, rnc: "131880738", notBefore: new Date("2020-01-01"), notAfter: new Date("2021-01-01") });
+      const security = createXmlSecurity({ trustedCaPems: [root.certPem], pinnedSignerPems: [expired.certPem] });
+      expect(security.verify(xmlOf(expired), now)).toMatchObject({ valid: false, reason: "certificate outside validity period" });
+      const asCa = createTestCertificate({ ca: unknownCa, rnc: "131880738", isCa: true });
+      const caPinned = createXmlSecurity({ trustedCaPems: [root.certPem], pinnedSignerPems: [asCa.certPem] });
+      expect(caPinned.verify(xmlOf(asCa), now)).toMatchObject({ valid: false, reason: "signer certificate is a CA" });
+    });
+
+    it("ignores garbage pinned PEMs", () => {
+      const security = createXmlSecurity({ trustedCaPems: [root.certPem], pinnedSignerPems: ["junk", "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----"] });
+      expect(security.verify(xmlOf(createTestCertificate({ ca: unknownCa })), now).valid).toBe(false);
+    });
   });
 
   it("ignores garbage in the configured PEM list instead of widening trust", () => {

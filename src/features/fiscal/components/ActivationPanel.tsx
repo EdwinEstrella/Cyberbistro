@@ -1,5 +1,5 @@
 import { type MouseEvent, useEffect, useState } from "react";
-import { AlertTriangle, Award, Building2, Check, CheckCircle, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Copy, Download, ExternalLink, FileKey2, FileText, Hash, ListOrdered, RefreshCw, Rocket, Search, ShieldAlert, ShieldCheck, Wifi, X } from "lucide-react";
+import { AlertTriangle, Award, Building2, Check, CheckCircle, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Copy, ExternalLink, FileKey2, FileText, Hash, ListOrdered, Rocket, Search, ShieldCheck, Wifi, X } from "lucide-react";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { supabase } from "../../../shared/lib/supabase";
 import { NCF_E_TIPO_OPCIONES } from "../../../shared/lib/ncf";
@@ -18,6 +18,8 @@ import {
 import { loadEcfActivationReadiness } from "../lib/loadEcfReadiness";
 import { buildReceptorUrls } from "../lib/receptorUrls";
 import { advanceProgress, buildProgressUpsert, restoreProgress, type CertificationProgress } from "../lib/ecfCertificationProgress";
+import { certificationStepEvidence, loadReceivedEvidence, summarizeReceivedEvidence, type ReceivedEvidenceClient, type ReceivedEvidenceResult } from "../lib/ecfReceivedEvidence";
+import { ReceivedEvidencePanel, approvalRows, documentRows } from "./ReceivedEvidencePanel";
 import { DocumentSigner } from "./DocumentSigner";
 import { PrintedRepresentationRunner } from "./PrintedRepresentationRunner";
 import { TestSetRunner } from "./TestSetRunner";
@@ -83,6 +85,8 @@ export function ActivationPanel() {
   const [savedBoundsRaw, setSavedBoundsRaw] = useState<unknown>({});
   const [readiness, setReadiness] = useState<EcfReadinessResult | null>(null);
   const [readinessLoading, setReadinessLoading] = useState(false);
+  const [receivedEvidence, setReceivedEvidence] = useState<ReceivedEvidenceResult>({ docs: [], approvals: [], error: null });
+  const [receivedLoading, setReceivedLoading] = useState(false);
 
   const issuerInput: EcfIssuerInput = {
     rnc: company.rnc,
@@ -186,6 +190,33 @@ export function ActivationPanel() {
       )
     ).catch(() => undefined);
   }
+
+  async function refreshReceivedEvidence() {
+    if (!tenantId) return;
+    setReceivedLoading(true);
+    const result = await loadReceivedEvidence(supabase as unknown as ReceivedEvidenceClient, tenantId);
+    setReceivedEvidence(result);
+    setReceivedLoading(false);
+  }
+
+  useEffect(() => {
+    if (!tenantId || certificationStep < 8 || certificationStep > 11) return;
+    let cancelled = false;
+    const load = async () => {
+      const result = await loadReceivedEvidence(supabase as unknown as ReceivedEvidenceClient, tenantId);
+      if (!cancelled) setReceivedEvidence(result);
+    };
+    void load();
+    const timer = setInterval(() => void load(), 10_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [tenantId, certificationStep]);
+
+  const stepEvidence = certificationStepEvidence(certificationStep, summarizeReceivedEvidence(receivedEvidence.docs, receivedEvidence.approvals));
+  const stepEvidenceCount = certificationStep <= 9 ? summarizeReceivedEvidence(receivedEvidence.docs, []).acceptedDocuments : receivedEvidence.approvals.length;
+  const advanceBlocked = stepEvidence.applies && !stepEvidence.satisfied;
 
   function goToCertificationStep(step: number) {
     setCertificationStep(step);
@@ -821,9 +852,9 @@ export function ActivationPanel() {
                 {certificationStep === 7 && (
                   <div className="mt-4 flex flex-col gap-4">
                     <div className="rounded-xl border border-border bg-muted/10 p-5">
-                      <UrlCopyField label="SERVICIO DE AUTENTICACIÓN" url={receptorUrls.authentication} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Autenticación copiada al portapapeles."); }} />
-                      <UrlCopyField label="SERVICIO DE RECEPCIÓN *" url={receptorUrls.reception} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Recepción copiada al portapapeles."); }} />
-                      <UrlCopyField label="SERVICIO DE APROBACIÓN COMERCIAL *" url={receptorUrls.approval} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Aprobación Comercial copiada al portapapeles."); }} />
+                      <UrlCopyField label="SERVICIO DE AUTENTICACIÓN" field={receptorUrls.portalField} suffix={receptorUrls.paths.authentication} onCopy={(value) => { void navigator.clipboard.writeText(value); setMessage("Copiado: pegalo en el campo de Autenticación del portal DGII (sin https:// ni /fe/...)."); }} />
+                      <UrlCopyField label="SERVICIO DE RECEPCIÓN *" field={receptorUrls.portalField} suffix={receptorUrls.paths.reception} onCopy={(value) => { void navigator.clipboard.writeText(value); setMessage("Copiado: pegalo en el campo de Recepción del portal DGII (sin https:// ni /fe/...)."); }} />
+                      <UrlCopyField label="SERVICIO DE APROBACIÓN COMERCIAL *" field={receptorUrls.portalField} suffix={receptorUrls.paths.approval} onCopy={(value) => { void navigator.clipboard.writeText(value); setMessage("Copiado: pegalo en el campo de Aprobación Comercial del portal DGII (sin https:// ni /fe/...)."); }} />
                     </div>
 
                     <button type="button" onClick={() => setMessage("Configuración de URLs guardada para el diseño.")} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#1e293b] px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-900">
@@ -835,63 +866,19 @@ export function ActivationPanel() {
                   </div>
                 )}
 
-                {certificationStep === 8 && (
+                {certificationStep >= 8 && certificationStep <= 11 && (
                   <div className="mt-4 flex flex-col gap-4">
-                    <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-5 text-yellow-700 dark:text-yellow-400">
-                      <div className="flex items-center gap-2 font-bold">
-                        <ShieldAlert className="size-4" /> Certificado Raíz CA — No encontrado
-                      </div>
-                      <p className="mt-2 text-xs leading-relaxed">
-                        El sistema necesita el certificado CA de digifirma para validar las firmas de DGII. Descárgalo desde el portal DGII e instálalo contactando al administrador.
-                      </p>
-                    </div>
-
-                    <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-                      <div className="flex items-center justify-between border-b border-border/50 pb-3">
-                        <h4 className="flex items-center gap-2 text-sm font-bold text-foreground">
-                          <Download className="size-4 text-muted-foreground" /> e-CF Recibidos de DGII
-                        </h4>
-                        <button type="button" onClick={() => setMessage("Simulación de actualización. Aún no hay eventos de recepción del motor e-CF.")} className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-[10px] font-bold text-muted-foreground transition-colors hover:bg-muted">
-                          <RefreshCw className="size-3" /> Actualizar
-                        </button>
-                      </div>
-                      <div className="py-6 text-center">
-                        <p className="text-xs font-semibold text-muted-foreground">Ninguno aún. Presiona "Inicio envío de pruebas" en el portal DGII para que envíen los comprobantes.</p>
-                      </div>
-                    </div>
+                    <ReceivedEvidencePanel
+                      title={certificationStep === 8 ? "e-CF recibidos de DGII (Paso 8 – Inicio Prueba Recepción e-CF)" : certificationStep === 9 ? "e-CF recibidos (Paso 9 – Recepción e-CF)" : certificationStep === 10 ? "Aprobaciones comerciales recibidas (Paso 10 – Inicio Prueba Aprobación Comercial)" : "Aprobaciones comerciales recibidas (Paso 11 – Recepción Aprobación Comercial)"}
+                      rows={certificationStep <= 9 ? documentRows(receivedEvidence.docs) : approvalRows(receivedEvidence.approvals)}
+                      loading={receivedLoading}
+                      error={receivedEvidence.error}
+                      emptyText={certificationStep <= 9 ? "Aún no llegó ningún e-CF. Presioná \"Inicio envío de pruebas\" en el portal DGII para que envíen los comprobantes." : "Aún no llegó ninguna aprobación comercial. Presioná el inicio de la prueba de aprobación comercial en el portal DGII."}
+                      onRefresh={() => void refreshReceivedEvidence()}
+                    />
 
                     <button type="button" onClick={openCertificationPortal} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-900 dark:bg-slate-800 dark:hover:bg-slate-700">
-                      <ExternalLink className="size-4" /> Ir al Portal DGII — Iniciar envío de pruebas
-                    </button>
-                  </div>
-                )}
-
-                {certificationStep === 9 && (
-                  <div className="mt-4 flex flex-col gap-4">
-                    <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-                      <div className="flex items-center justify-between border-b border-border/50 pb-3">
-                        <h4 className="flex items-center gap-2 text-sm font-bold text-foreground">
-                          <Download className="size-4 text-muted-foreground" /> RFCE (E32) Recibidas
-                        </h4>
-                        <button type="button" onClick={() => setMessage("Simulación de actualización. Aún no hay eventos de recepción del motor e-CF.")} className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-[10px] font-bold text-muted-foreground transition-colors hover:bg-muted">
-                          <RefreshCw className="size-3" /> Actualizar
-                        </button>
-                      </div>
-                      <div className="py-6 text-center">
-                        <p className="text-xs font-semibold text-muted-foreground">Ninguna aún. Regresa al portal DGII y presiona "Inicio envío de pruebas" para RFCE.</p>
-                      </div>
-                    </div>
-
-                    <button type="button" onClick={openCertificationPortal} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-900 dark:bg-slate-800 dark:hover:bg-slate-700">
-                      <ExternalLink className="size-4" /> Ir al Portal DGII — Iniciar envío RFCE
-                    </button>
-                  </div>
-                )}
-
-                {(certificationStep === 10 || certificationStep === 11) && (
-                  <div className="mt-4 flex flex-col gap-4">
-                    <button type="button" onClick={openCertificationPortal} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-900 dark:bg-slate-800 dark:hover:bg-slate-700">
-                      <ExternalLink className="size-4" /> Ir al Portal DGII
+                      <ExternalLink className="size-4" /> {certificationStep === 8 ? "Ir al Portal DGII — Iniciar envío de pruebas" : "Ir al Portal DGII"}
                     </button>
                   </div>
                 )}
@@ -899,9 +886,9 @@ export function ActivationPanel() {
                 {certificationStep === 12 && (
                   <div className="mt-4 flex flex-col gap-4">
                     <div className="rounded-xl border border-border bg-muted/10 p-5">
-                      <UrlCopyField label="SERVICIO DE AUTENTICACIÓN" url={receptorUrls.authentication} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Autenticación copiada al portapapeles."); }} />
-                      <UrlCopyField label="SERVICIO DE RECEPCIÓN *" url={receptorUrls.reception} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Recepción copiada al portapapeles."); }} />
-                      <UrlCopyField label="SERVICIO DE APROBACIÓN COMERCIAL *" url={receptorUrls.approval} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Aprobación Comercial copiada al portapapeles."); }} />
+                      <UrlCopyField label="SERVICIO DE AUTENTICACIÓN" field={receptorUrls.portalField} suffix={receptorUrls.paths.authentication} onCopy={(value) => { void navigator.clipboard.writeText(value); setMessage("Copiado: pegalo en el campo de Autenticación del portal DGII (sin https:// ni /fe/...)."); }} />
+                      <UrlCopyField label="SERVICIO DE RECEPCIÓN *" field={receptorUrls.portalField} suffix={receptorUrls.paths.reception} onCopy={(value) => { void navigator.clipboard.writeText(value); setMessage("Copiado: pegalo en el campo de Recepción del portal DGII (sin https:// ni /fe/...)."); }} />
+                      <UrlCopyField label="SERVICIO DE APROBACIÓN COMERCIAL *" field={receptorUrls.portalField} suffix={receptorUrls.paths.approval} onCopy={(value) => { void navigator.clipboard.writeText(value); setMessage("Copiado: pegalo en el campo de Aprobación Comercial del portal DGII (sin https:// ni /fe/...)."); }} />
                     </div>
 
                     <button type="button" onClick={() => setMessage("Configuración de URLs guardada para producción en el diseño.")} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#1e293b] px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-900">
@@ -944,8 +931,8 @@ export function ActivationPanel() {
                   </div>
                 )}
 
-                <button type="button" onClick={advanceCertificationStep} disabled={certificationStep === certificationSteps.length || certificationStep === 8} className={`mt-4 flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-bold transition-colors ${certificationStep === 8 ? "cursor-not-allowed bg-sky-500/50 text-white shadow-none" : "bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90 disabled:opacity-50"}`}>
-                  {certificationStep === certificationSteps.length ? "Certificación lista para revisión" : certificationStep === 14 ? "> Marcar como aprobado manualmente" : certificationStep === 13 ? "> XML enviado a DGII — Avanzar" : certificationStep === 12 ? "> URLs registradas — Avanzar al Paso 13" : certificationStep === 11 ? "Completado — Avanzar al Paso 12" : certificationStep === 10 ? "Completado — Avanzar al Paso 11" : certificationStep === 9 ? "Completado — Avanzar al Paso 10" : certificationStep === 8 ? "> Esperando e-CFs de DGII..." : certificationStep === 7 ? "URLs registradas — Avanzar al Paso 8" : certificationStep === 6 ? "DGII aprobó — Avanzar al Paso 7" : certificationStep === 5 ? "Representaciones subidas — Avanzar" : `Ya completé este paso - Avanzar al paso ${certificationStep + 1}`} {certificationStep !== 8 && certificationStep !== 14 && certificationStep !== 13 && certificationStep !== 12 && certificationStep !== 15 && <ChevronRight className="size-4" />}
+                <button type="button" onClick={advanceCertificationStep} disabled={certificationStep === certificationSteps.length || advanceBlocked} className={`mt-4 flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-bold transition-colors ${advanceBlocked ? "cursor-not-allowed bg-sky-500/50 text-white shadow-none" : "bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90 disabled:opacity-50"}`}>
+                  {certificationStep === certificationSteps.length ? "Certificación lista para revisión" : certificationStep === 14 ? "> Marcar como aprobado manualmente" : certificationStep === 13 ? "> XML enviado a DGII — Avanzar" : certificationStep === 12 ? "> URLs registradas — Avanzar al Paso 13" : certificationStep >= 8 && certificationStep <= 11 ? (advanceBlocked ? (certificationStep <= 9 ? "> Esperando e-CF de DGII..." : "> Esperando aprobaciones comerciales...") : `Recibidos ${stepEvidenceCount} — Avanzar al Paso ${certificationStep + 1}`) : certificationStep === 7 ? "URLs registradas — Avanzar al Paso 8" : certificationStep === 6 ? "DGII aprobó — Avanzar al Paso 7" : certificationStep === 5 ? "Representaciones subidas — Avanzar" : `Ya completé este paso - Avanzar al paso ${certificationStep + 1}`} {!advanceBlocked && certificationStep !== 14 && certificationStep !== 13 && certificationStep !== 12 && certificationStep !== 15 && <ChevronRight className="size-4" />}
                 </button>
                   </>
                 )}
@@ -1010,13 +997,18 @@ function CertificationComplete() {
   );
 }
 
-function UrlCopyField({ label, url, onCopy }: { label: string; url: string; onCopy: (url: string) => void }) {
+function UrlCopyField({ label, field, suffix, onCopy }: { label: string; field: string; suffix: string; onCopy: (value: string) => void }) {
+  // Mirrors the DGII portal field: fixed "https://" and service path around the only part the tenant types.
   return (
     <div className="mb-4 last:mb-0">
       <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{label}</label>
       <div className="mt-1.5 flex gap-2">
-        <input type="text" readOnly value={url} className="flex-1 rounded-xl border border-green-500/30 bg-green-500/5 px-3 py-2.5 font-mono text-[11px] text-green-700 outline-none dark:text-green-400" />
-        <button type="button" onClick={() => onCopy(url)} title="Copiar URL" className="flex shrink-0 items-center justify-center rounded-xl border border-border bg-background px-3 transition-colors hover:bg-muted">
+        <div className="flex min-w-0 flex-1 items-stretch overflow-hidden rounded-xl border border-green-500/30 font-mono text-[11px]">
+          <span className="flex items-center bg-muted/40 px-2 text-muted-foreground">https://</span>
+          <input type="text" readOnly value={field} className="min-w-0 flex-1 bg-green-500/5 px-3 py-2.5 font-bold text-green-700 outline-none dark:text-green-400" />
+          <span className="flex items-center truncate bg-muted/40 px-2 text-muted-foreground" title={suffix}>{suffix}</span>
+        </div>
+        <button type="button" onClick={() => onCopy(field)} title="Copiar lo que va en el campo del portal" className="flex shrink-0 items-center justify-center rounded-xl border border-border bg-background px-3 transition-colors hover:bg-muted">
           <Copy className="size-4 text-muted-foreground" />
         </button>
       </div>

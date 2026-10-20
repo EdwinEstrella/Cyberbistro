@@ -24,6 +24,8 @@ export interface CertificationStore extends RunStore {
   /** Active memberships of the user. */
   memberships(userId: string): Promise<Membership[]>;
   tenantRnc(tenantId: string): Promise<string | null>;
+  /** Legal name (tenants.nombre_negocio, "Razón social"), or null. */
+  tenantLegalName(tenantId: string): Promise<string | null>;
   /** Ready certificate for (tenant, environment), or null. */
   loadCertificate(tenantId: string, environment: string): Promise<StoredCertificate | null>;
 }

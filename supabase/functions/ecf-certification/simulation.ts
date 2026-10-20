@@ -118,9 +118,21 @@ function requireDate(value: string | undefined, sheet: string, line: number, col
   return day;
 }
 
-function rewriteEcfSheet(sheet: Sheet, mapping: Map<string, string>, today: number): Sheet {
+/** Issuer data the simulation XMLs carry instead of the DGII workbook placeholders. */
+export interface SimulationEmisor {
+  razonSocial: string;
+}
+
+/** Column indexes holding the issuer legal name (RazonSocialEmisor) and trade name (NombreComercial), when present. */
+function emisorColumns(header: string[], emisor: SimulationEmisor | undefined): number[] {
+  if (!emisor?.razonSocial.trim()) return [];
+  return ["RazonSocialEmisor", "NombreComercial"].map((name) => columnIndex(header, name)).filter((index) => index >= 0);
+}
+
+function rewriteEcfSheet(sheet: Sheet, mapping: Map<string, string>, today: number, emisor?: SimulationEmisor): Sheet {
   const header = sheet.rows[0] ?? [];
   const col = (name: string) => columnIndex(header, name);
+  const emisorCols = emisorColumns(header, emisor);
   const [caso, encfCol, rnc, emision, ncfMod, fechaMod, indicador] = [
     col("CasoPrueba"),
     col("ENCF"),
@@ -141,6 +153,7 @@ function rewriteEcfSheet(sheet: Sheet, mapping: Map<string, string>, today: numb
     row[encfCol] = newEncf;
     row[caso] = `${(row[rnc] ?? "").trim()}${newEncf}`;
     row[emision] = formatDgiiDay(today);
+    for (const index of emisorCols) row[index] = emisor!.razonSocial.trim();
     for (const index of shifted) {
       if (isEmptyCell(row[index])) continue;
       row[index] = formatDgiiDay(requireDate(row[index], sheet.name, line, header[index].trim()) + delta);
@@ -165,8 +178,9 @@ function rewriteEcfSheet(sheet: Sheet, mapping: Map<string, string>, today: numb
   return { ...sheet, rows: [header, ...rows] };
 }
 
-function rewriteRfceSheet(sheet: Sheet, mapping: Map<string, string>, today: number): Sheet {
+function rewriteRfceSheet(sheet: Sheet, mapping: Map<string, string>, today: number, emisor?: SimulationEmisor): Sheet {
   const header = sheet.rows[0] ?? [];
+  const emisorCols = emisorColumns(header, emisor);
   const [caso, encfCol, rnc, emision] = ["CasoPrueba", "ENCF", "RNCEmisor", "FechaEmision"].map((name) => columnIndex(header, name));
   const rows = sheet.rows.slice(1).map((source) => {
     if (source.every((value) => isEmptyCell(value))) return source;
@@ -175,6 +189,7 @@ function rewriteRfceSheet(sheet: Sheet, mapping: Map<string, string>, today: num
     row[encfCol] = newEncf;
     row[caso] = `${(row[rnc] ?? "").trim()}${newEncf}`;
     if (emision >= 0) row[emision] = formatDgiiDay(today);
+    for (const index of emisorCols) row[index] = emisor!.razonSocial.trim();
     return row;
   });
   return { ...sheet, rows: [header, ...rows] };
@@ -183,17 +198,18 @@ function rewriteRfceSheet(sheet: Sheet, mapping: Map<string, string>, today: num
 /**
  * Builds the simulation batch from the step-2 workbook. `issued` lists the e-NCF the tenant already
  * issued (test-set and simulation runs); `now` fixes FechaEmision. Every document keeps a pointer to
- * its source case (sourceCaseId).
+ * its source case (sourceCaseId). With `emisor`, every document carries the tenant legal name instead of
+ * the workbook placeholder.
  */
-export function buildSimulationSet(sheets: Sheet[], options: { issued: string[]; now: Date }): SimulationSet {
+export function buildSimulationSet(sheets: Sheet[], options: { issued: string[]; now: Date; emisor?: SimulationEmisor }): SimulationSet {
   // Validates the workbook exactly like step 2 before rewriting it.
   const source = buildTestSet(sheets);
   const mapping = allocateSequences(source.ecf, options.issued);
   const today = dgiiToday(options.now);
   const rewritten = sheets.map((sheet) => {
     const name = sheet.name.trim().toUpperCase();
-    if (name === "ECF") return rewriteEcfSheet(sheet, mapping, today);
-    if (name === "RFCE") return rewriteRfceSheet(sheet, mapping, today);
+    if (name === "ECF") return rewriteEcfSheet(sheet, mapping, today, options.emisor);
+    if (name === "RFCE") return rewriteRfceSheet(sheet, mapping, today, options.emisor);
     return sheet;
   });
   const built = buildTestSet(rewritten);

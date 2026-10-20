@@ -69,6 +69,21 @@ function collect(node: XmlNode, rncs: string[], state: { signed: boolean }): voi
   }
 }
 
+/** `<DeclaracionJurada>` as downloaded from the DGII portal: a single `<DetalleGeneral>` holding only non-empty text. */
+function isDgiiDeclarationShape(root: XmlNode): boolean {
+  const elements: XmlNode[] = [];
+  for (let child = root.firstChild; child; child = child.nextSibling) {
+    if (child.nodeType === 1) elements.push(child);
+    else if (child.nodeType !== 3 || (child.nodeValue ?? "").trim() !== "") return false;
+  }
+  if (elements.length !== 1 || (elements[0].localName || elements[0].nodeName) !== "DetalleGeneral") return false;
+  const detail = elements[0];
+  for (let child = detail.firstChild; child; child = child.nextSibling) {
+    if (child.nodeType !== 3) return false;
+  }
+  return (detail.textContent ?? "").trim() !== "";
+}
+
 export function analyzeDocument(xml: string, documentType: DocumentType, tenantRnc: string): DocumentAnalysis {
   if (hasForbiddenXml(xml)) return { ok: false, failure: "FORBIDDEN_XML" };
   if (!isBalanced(xml)) return { ok: false, failure: "INVALID_XML" };
@@ -103,6 +118,10 @@ export function analyzeDocument(xml: string, documentType: DocumentType, tenantR
 
   const expected = digitsOnly(tenantRnc);
   const found = rncs.filter((rnc) => rnc !== "");
+  // The DGII declaracion jurada carries no RNC: only its exact shape (legal text, nothing else) may skip the check.
+  if (documentType === "declaracion_jurada" && found.length === 0 && isDgiiDeclarationShape(root)) {
+    return { ok: true, rootElement: rootName };
+  }
   if (!expected || found.length === 0 || found.some((rnc) => rnc !== expected)) {
     return { ok: false, failure: "RNC_MISMATCH" };
   }

@@ -8,7 +8,21 @@ describe("buildReceptorUrls", () => {
       authentication: "https://cloudix-ecf.azokia.com/133488485/fe/autenticacion/api/[semilla|ValidacionCertificado]",
       reception: "https://cloudix-ecf.azokia.com/133488485/fe/recepcion/api/ecf",
       approval: "https://cloudix-ecf.azokia.com/133488485/fe/aprobacioncomercial/api/ecf",
+      portalField: "cloudix-ecf.azokia.com/133488485",
+      paths: {
+        authentication: "/fe/autenticacion/api/[semilla|ValidacionCertificado]",
+        reception: "/fe/recepcion/api/ecf",
+        approval: "/fe/aprobacioncomercial/api/ecf",
+      },
     });
+  });
+
+  it("splits each URL into the DGII portal pieces: https:// + portalField + fixed path", () => {
+    const urls = buildReceptorUrls("133488485");
+    for (const key of ["authentication", "reception", "approval"] as const) {
+      expect(`https://${urls.portalField}${urls.paths[key]}`).toBe(urls[key]);
+    }
+    expect(urls.portalField).not.toMatch(/^https?:|\/fe\//);
   });
 
   it("strips dashes and spaces from the stored RNC", () => {

@@ -84,6 +84,12 @@ export function createSupabaseStore(opts: { url: string; publishableKey: string;
       return typeof data?.rnc === "string" ? data.rnc : null;
     },
 
+    async tenantLegalName(tenantId) {
+      const { data, error } = await db.from("tenants").select("nombre_negocio").eq("id", tenantId).maybeSingle();
+      if (error) fail("tenantLegalName");
+      return typeof data?.nombre_negocio === "string" ? data.nombre_negocio : null;
+    },
+
     async loadCertificate(tenantId, environment) {
       const { data, error } = await db
         .from("ecf_certificate_metadata")
