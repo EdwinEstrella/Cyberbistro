@@ -21,6 +21,7 @@ import { advanceProgress, buildProgressUpsert, restoreProgress, type Certificati
 import { certificationStepEvidence, loadReceivedEvidence, summarizeReceivedEvidence, type ReceivedEvidenceClient, type ReceivedEvidenceResult } from "../lib/ecfReceivedEvidence";
 import { ReceivedEvidencePanel, approvalRows, documentRows } from "./ReceivedEvidencePanel";
 import { DocumentSigner } from "./DocumentSigner";
+import { EcfTestSendCard } from "./EcfTestSendCard";
 import { PrintedRepresentationRunner } from "./PrintedRepresentationRunner";
 import { TestSetRunner } from "./TestSetRunner";
 
@@ -565,6 +566,7 @@ export function ActivationPanel() {
               </div>
 
               <CertificateUploader environment={environment} onValidated={() => setCertificateReady(true)} />
+              {environment === "test" && <EcfTestSendCard tenantId={tenantId} certificateReady={certificateReady} />}
             </div>
           )}
 
