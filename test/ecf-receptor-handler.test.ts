@@ -45,6 +45,8 @@ class MemoryStore implements ReceptorStore {
   approvals = new Map<string, ReceivedApprovalRow>();
   certificate: { p12Bytes: Uint8Array; passphraseEncrypted: string } | null = null;
   forceDuplicateOnce = false;
+  /** Whether the tenant is in the DGII test/certification environment (pinned signers allowed). */
+  certificationEnvironment = false;
   async resolveTenant(rnc: string) {
     this.calls.push("resolveTenant");
     return rnc === TENANT_RNC ? TENANT_ID : null;
@@ -83,6 +85,9 @@ class MemoryStore implements ReceptorStore {
   }
   async loadCertificate() {
     return this.certificate;
+  }
+  async allowsCertificationSigners() {
+    return this.certificationEnvironment;
   }
 }
 
@@ -594,5 +599,61 @@ describe("commercial approval", () => {
     const res = await handleRequest(approve(token, sign(acecf(TENANT_RNC, "1", "202020202"), "ACECF")), makeDeps(store));
     expect(res.status).toBe(403);
     expect(store.approvals.size).toBe(0);
+  });
+});
+
+describe("pinned DGII certification signer", () => {
+  let pinned: TestCertificate; // issued by a CA nobody trusts, like DGII's unpublished test CA
+  let pinnedSecurity: ReturnType<typeof createXmlSecurity>;
+  beforeAll(() => {
+    pinned = createTestCertificate({ ca: otherCa, rnc: EMITTER_RNC });
+    pinnedSecurity = createXmlSecurity({ trustedCaPems: [ca.certPem], pinnedSignerPems: [pinned.certPem] });
+  });
+
+  const exchangeAs = async (store: MemoryStore, from: TestCertificate) =>
+    handleRequest(
+      new Request(validateUrl(), { method: "POST", ...multipart(sign(await fetchSeed(store), "SemillaModel", from)) }),
+      makeDeps(store, { security: pinnedSecurity }),
+    );
+
+  it("issues a token to the pinned signer when the tenant is in the certification environment", async () => {
+    const store = await freshStore();
+    store.certificationEnvironment = true;
+    expect((await exchangeAs(store, pinned)).status).toBe(200);
+    expect(store.tokens.size).toBe(1);
+  });
+
+  it("answers the pinned signer with the same 401 as any other failure for a production tenant", async () => {
+    const store = await freshStore();
+    const res = await exchangeAs(store, pinned);
+    const bad = await exchange(store, sign(await fetchSeed(store), "SemillaModel", createTestCertificate()));
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual(await bad.json());
+    expect(store.tokens.size).toBe(0);
+  });
+
+  it("does not extend the pin to another certificate of the same untrusted CA", async () => {
+    const store = await freshStore();
+    store.certificationEnvironment = true;
+    expect((await exchangeAs(store, createTestCertificate({ ca: otherCa, rnc: EMITTER_RNC }))).status).toBe(401);
+  });
+
+  it("still rejects a self-signed forged certificate in the certification environment", async () => {
+    const store = await freshStore();
+    store.certificationEnvironment = true;
+    expect((await exchangeAs(store, createTestCertificate({ rnc: EMITTER_RNC }))).status).toBe(401);
+  });
+
+  it("accepts a pinned-signed e-CF in certification and rejects it (code 2) once the tenant is production", async () => {
+    const store = await freshStore();
+    store.certificationEnvironment = true;
+    const token = (await (await exchangeAs(store, pinned)).json()).token;
+    const signed = sign(sampleEcf, "ECF", pinned);
+    const accepted = await handleRequest(receive(token, signed), makeDeps(store, { security: pinnedSecurity }));
+    expect(await accepted.text()).toContain("<Estado>0</Estado>");
+
+    store.certificationEnvironment = false;
+    const rejected = await handleRequest(receive(token, signed), makeDeps(store, { security: pinnedSecurity }));
+    expect(await rejected.text()).toContain("<CodigoMotivoNoRecibido>2</CodigoMotivoNoRecibido>");
   });
 });

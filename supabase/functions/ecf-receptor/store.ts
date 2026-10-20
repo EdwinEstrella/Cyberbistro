@@ -115,6 +115,13 @@ export function createSupabaseStore(supabaseUrl: string, serviceRoleKey: string)
       if (error) fail("upsertApproval");
     },
 
+    async allowsCertificationSigners(tenantId) {
+      // Fail closed: a lookup error or unknown environment never enables the pinned test signers.
+      const { data, error } = await db.from("tenants").select("ecf_environment").eq("id", tenantId).maybeSingle();
+      if (error) return false;
+      return data?.ecf_environment === "test" || data?.ecf_environment === "certification";
+    },
+
     async loadCertificate(tenantId): Promise<StoredCertificate | null> {
       const { data: tenant } = await db.from("tenants").select("ecf_environment").eq("id", tenantId).maybeSingle();
       const { data, error } = await db

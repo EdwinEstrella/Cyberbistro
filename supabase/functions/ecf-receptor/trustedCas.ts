@@ -358,3 +358,53 @@ export const BUILT_IN_TRUSTED_CAS: readonly TrustedCa[] = [
     ].join("\n") + "\n",
   },
 ];
+
+/**
+ * Signer certificates pinned by exact DER match, trusted ONLY for tenants in the DGII test/certification
+ * environment (the handler downgrades them for production tenants). Unlike an anchor, a pin never vouches
+ * for anything else the same issuer signed.
+ */
+export const DGII_CERTIFICATION_SIGNERS: readonly TrustedCa[] = [
+  {
+    name: "DGII certification-environment signer (PEDRO PEREZ MARTINEZ, Viafirma TEST CA; valid 2026-02-17..2027-02-17)",
+    source: "Observed in the DGII CerteCF validacioncertificado request on 2026-10-20; the issuing test CA is not published",
+    operator: "DGII certification environment (CerteCF)",
+    sha256: "3d0be20c8bd2917f0e2d5a8d4dac056b50993fa8ef5c9884798c58f940c59cbb",
+    pem: [
+      "-----BEGIN CERTIFICATE-----",
+      "MIIF+jCCBOKgAwIBAgIIEcUTgcBORCgwDQYJKoZIhvcNAQELBQAwgYcxCzAJBgNV",
+      "BAYTAkRPMRMwEQYDVQQKDApBVkFOU0kgU1JMMRwwGgYDVQQLDBNWSUFGSVJNQSBE",
+      "T01JTklDQU5BMRYwFAYDVQQFEw1STkMgMTMwMjIyNTA5MS0wKwYDVQQDDCRWSUFG",
+      "SVJNQSBRVUFMSUZJRUQgQ0VSVElGSUNBVEVTIFRFU1QwHhcNMjYwMjE3MjIxNTA4",
+      "WhcNMjcwMjE3MjIxNTA4WjCBtTELMAkGA1UEBhMCRE8xFzAVBgNVBAQMDlBFUkVa",
+      "IE1BUlRJTkVaMQ4wDAYDVQQqDAVQRURSTzEaMBgGA1UEBRMRSURDRE8tMDAxOTk5",
+      "OTk5OTYxHTAbBgNVBAMMFFBFRFJPIFBFUkVaIE1BUlRJTkVaMUIwQAYDVQQuEzlR",
+      "VUFMSUZJRUQgQ0VSVElGSUNBVEUgRk9SIE5BVFVSQUwgUEVSU09OIC0gVEFYIFBS",
+      "T0NFRFVSRVMwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCfAazB2RAk",
+      "CwUTzEQKjZKNW0GCygTmjBhAweevpiFqiNhvhGUrGtdtACSTkWGEBOMgigbeIvxh",
+      "aYOeIIoXO3/IFspXdz684PHXkGtV5S+2O7KajipxoKiRBoPizUiE7Ov8U+OmejH9",
+      "7wwdraki+vOkNzT9hySp4YnBUdCsq2KleVFzk/NHNMb0UWPYkc8MzeOkXH8GwZr9",
+      "3mlje0U9cgSrLidA/SaFam3oeG7WJ+IQEEjK2hfLDiXCM4FDaMAHcaRdyDozDTsK",
+      "jFpjLH614Xx+KM954JHD8zFxSSgMIhi1s6KoHPTrPFkxRyEpixc8KYZtngp4QjeM",
+      "V9Y0LOB+W4oPAgMBAAGjggI4MIICNDBuBggrBgEFBQcBAQRiMGAwMAYIKwYBBQUH",
+      "MAKGJGh0dHA6Ly9jcHMudmlhZmlybWEuZG8vc3ViY2F0ZXN0LmNydDAsBggrBgEF",
+      "BQcwAYYgaHR0cDovL29jc3B0ZXN0LnZpYWZpcm1hLmRvL29jc3AwHQYDVR0OBBYE",
+      "FC1d03yfRs+O+Y6yGlCA7BPNmlYwMAwGA1UdEwEB/wQCMAAwHwYDVR0jBBgwFoAU",
+      "M80rwfPD2nAcajolYjPkrggKsogwGAYIKwYBBQUHAQMEDDAKMAgGBgQAjkYBATCB",
+      "lQYDVR0gBIGNMIGKMH0GDCsGAQQBgdYDBgIVADBtMCIGCCsGAQUFBwIBFhZodHRw",
+      "Oi8vY3BzLnZpYWZpcm1hLmRvMEcGCCsGAQUFBwICMDsMOVFVQUxJRklFRCBDRVJU",
+      "SUZJQ0FURSBGT1IgTkFUVVJBTCBQRVJTT04gLSBUQVggUFJPQ0VEVVJFUzAJBgcE",
+      "AIvsQAEAMHIGA1UdHwRrMGkwMqAwoC6GLGh0dHA6Ly9jcmwudmlhZmlybWEuZG8v",
+      "dmlhZmlybWFzdWJjYXRlc3QuY3JsMDOgMaAvhi1odHRwOi8vY3JsMi52aWFmaXJt",
+      "YS5kby92aWFmaXJtYXN1YmNhdGVzdC5jcmwwDgYDVR0PAQH/BAQDAgXgMB0GA1Ud",
+      "JQQWMBQGCCsGAQUFBwMCBggrBgEFBQcDBDAfBgNVHREEGDAWgRRPTkFDT1NUQUBE",
+      "R0lJLkdPVi5ETzANBgkqhkiG9w0BAQsFAAOCAQEAbZwh0Qwp+tu4k9lFlYAggzE8",
+      "ni7dEzqUv7YhYZplYg8nQ92j+tLsKDIvRXOON1MtXIIxSSVdN6p29jvQ7NGUo1RX",
+      "I5qTYNGTGN45gWTgPmWgcXLsM7kU0PSqhhm4w2XPCTlIDovA9nKxSWkGlHHzr/en",
+      "1bspcdRxCxSavYJn3yUsEjmx3jlNjR+qC3RqRqGFyZ71yKCtk1LZCaur7Siun+F2",
+      "thPdSSj4F/15o5OpxjOzeYyjmlpS9NiMaNRSkmUBtsJb2b4LYDKdqdFNkcekJN7m",
+      "rFEDzK8nhWpFb2KUxdXgX7GuX+5LQOKaiuImMW8HevmsJBN1LKeOnvVGKfTuGw==",
+      "-----END CERTIFICATE-----",
+    ].join("\n") + "\n",
+  },
+];

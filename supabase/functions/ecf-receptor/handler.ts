@@ -81,6 +81,8 @@ export interface ReceptorStore {
   /** Latest approval wins per (tenant, emisor, eNCF). */
   upsertApproval(row: ReceivedApprovalRow): Promise<void>;
   loadCertificate(tenantId: string): Promise<StoredCertificate | null>;
+  /** True only when the tenant is in the DGII test/certification environment (never throws; false when unknown). */
+  allowsCertificationSigners(tenantId: string): Promise<boolean>;
 }
 
 export interface ReceptorSecurity {
@@ -97,6 +99,14 @@ export interface ReceptorDeps {
   /** Keying material for stateless seeds (never logged or returned). */
   seedSecret(): string | undefined;
   log(event: string, detail?: Record<string, string | number>): void;
+}
+
+/** Verifies a signature, downgrading a pinned certification-environment signer unless the tenant is in that environment. */
+async function verifyForTenant(deps: ReceptorDeps, tenantId: string, xmlText: string, now: Date): Promise<VerifyResult> {
+  const verification = deps.security.verify(xmlText, now);
+  if (!verification.valid || verification.trust !== "pinned") return verification;
+  if (await deps.store.allowsCertificationSigners(tenantId).catch(() => false)) return verification;
+  return { valid: false, reason: "pinned signer outside certification", companyIds: [], personIds: [], serial: null };
 }
 
 class HttpError extends Error {
@@ -201,19 +211,17 @@ async function handleSeed(rnc: string, deps: ReceptorDeps): Promise<Response> {
 async function handleValidateSeed(req: Request, rnc: string, deps: ReceptorDeps): Promise<Response> {
   const signedSeed = await readXmlPayload(req, MAX_SEED_BYTES);
   const now = deps.now();
-  const reject = (reason: string, detail: Record<string, unknown> = {}): never => {
-    deps.log("seed_rejected", { reason, ...detail });
+  const reject = (reason: string): never => {
+    deps.log("seed_rejected", { reason });
     throw AUTH_FAILED();
   };
   const valor = extractSeedValue(signedSeed);
   if (!valor) return reject("shape");
   const seed = await checkSeedValue(valor, rnc, requireSeedSecret(deps), now);
   if (!seed.ok) return reject("seed");
-  const verification = deps.security.verify(signedSeed, now);
-  if (!verification.valid) {
-    return reject(verification.reason ?? "signature", verification.untrustedChain ? { untrustedChain: verification.untrustedChain } : {});
-  }
   const tenantId = await deps.store.resolveTenant(rnc);
+  const verification = tenantId ? await verifyForTenant(deps, tenantId, signedSeed, now) : deps.security.verify(signedSeed, now);
+  if (!verification.valid) return reject(verification.reason ?? "signature");
   if (!tenantId) return reject("tenant");
   if (!(await deps.store.consumeSeed(tenantId, seed.id, seed.expiresAt, now))) return reject("replay");
   const issued = await issueToken(now);
@@ -231,7 +239,7 @@ async function handleReception(req: Request, rnc: string, deps: ReceptorDeps): P
   if (tokenBinding === "violation") {
     throw new HttpError(403, "The token holder is not the issuer of this document.", "FORBIDDEN");
   }
-  const verification = fields ? deps.security.verify(document, now) : null;
+  const verification = fields ? await verifyForTenant(deps, tenantId, document, now) : null;
   // Same rule for the document signature. A person-only certificate (the usual DGII profile) names no company:
   // the document is accepted on chain trust + signature validity and flagged `signerRncMismatch` for the tenant.
   const docBinding = fields && verification?.valid ? bindSigner(verification, fields.rncEmisor) : null;
@@ -287,7 +295,7 @@ async function handleApproval(req: Request, rnc: string, deps: ReceptorDeps): Pr
   if (tokenBinding === "violation") {
     throw new HttpError(403, "The token holder is not the signer of this approval.", "FORBIDDEN");
   }
-  const verification = fields ? deps.security.verify(document, deps.now()) : null;
+  const verification = fields ? await verifyForTenant(deps, tenantId, document, deps.now()) : null;
   const docBinding = fields && verification?.valid ? bindSigner(verification, fields.rncComprador) : null;
   const signatureValid = !!fields && !!verification?.valid && docBinding !== "violation";
   const validation = validateApproval(fields, signatureValid, rnc);
