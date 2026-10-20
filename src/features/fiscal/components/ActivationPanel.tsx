@@ -852,9 +852,9 @@ export function ActivationPanel() {
                 {certificationStep === 7 && (
                   <div className="mt-4 flex flex-col gap-4">
                     <div className="rounded-xl border border-border bg-muted/10 p-5">
-                      <UrlCopyField label="SERVICIO DE AUTENTICACIÓN" url={receptorUrls.authentication} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Autenticación copiada al portapapeles."); }} />
-                      <UrlCopyField label="SERVICIO DE RECEPCIÓN *" url={receptorUrls.reception} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Recepción copiada al portapapeles."); }} />
-                      <UrlCopyField label="SERVICIO DE APROBACIÓN COMERCIAL *" url={receptorUrls.approval} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Aprobación Comercial copiada al portapapeles."); }} />
+                      <UrlCopyField label="SERVICIO DE AUTENTICACIÓN" field={receptorUrls.portalField} suffix={receptorUrls.paths.authentication} onCopy={(value) => { void navigator.clipboard.writeText(value); setMessage("Copiado: pegalo en el campo de Autenticación del portal DGII (sin https:// ni /fe/...)."); }} />
+                      <UrlCopyField label="SERVICIO DE RECEPCIÓN *" field={receptorUrls.portalField} suffix={receptorUrls.paths.reception} onCopy={(value) => { void navigator.clipboard.writeText(value); setMessage("Copiado: pegalo en el campo de Recepción del portal DGII (sin https:// ni /fe/...)."); }} />
+                      <UrlCopyField label="SERVICIO DE APROBACIÓN COMERCIAL *" field={receptorUrls.portalField} suffix={receptorUrls.paths.approval} onCopy={(value) => { void navigator.clipboard.writeText(value); setMessage("Copiado: pegalo en el campo de Aprobación Comercial del portal DGII (sin https:// ni /fe/...)."); }} />
                     </div>
 
                     <button type="button" onClick={() => setMessage("Configuración de URLs guardada para el diseño.")} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#1e293b] px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-900">
@@ -886,9 +886,9 @@ export function ActivationPanel() {
                 {certificationStep === 12 && (
                   <div className="mt-4 flex flex-col gap-4">
                     <div className="rounded-xl border border-border bg-muted/10 p-5">
-                      <UrlCopyField label="SERVICIO DE AUTENTICACIÓN" url={receptorUrls.authentication} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Autenticación copiada al portapapeles."); }} />
-                      <UrlCopyField label="SERVICIO DE RECEPCIÓN *" url={receptorUrls.reception} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Recepción copiada al portapapeles."); }} />
-                      <UrlCopyField label="SERVICIO DE APROBACIÓN COMERCIAL *" url={receptorUrls.approval} onCopy={(url) => { void navigator.clipboard.writeText(url); setMessage("URL de Aprobación Comercial copiada al portapapeles."); }} />
+                      <UrlCopyField label="SERVICIO DE AUTENTICACIÓN" field={receptorUrls.portalField} suffix={receptorUrls.paths.authentication} onCopy={(value) => { void navigator.clipboard.writeText(value); setMessage("Copiado: pegalo en el campo de Autenticación del portal DGII (sin https:// ni /fe/...)."); }} />
+                      <UrlCopyField label="SERVICIO DE RECEPCIÓN *" field={receptorUrls.portalField} suffix={receptorUrls.paths.reception} onCopy={(value) => { void navigator.clipboard.writeText(value); setMessage("Copiado: pegalo en el campo de Recepción del portal DGII (sin https:// ni /fe/...)."); }} />
+                      <UrlCopyField label="SERVICIO DE APROBACIÓN COMERCIAL *" field={receptorUrls.portalField} suffix={receptorUrls.paths.approval} onCopy={(value) => { void navigator.clipboard.writeText(value); setMessage("Copiado: pegalo en el campo de Aprobación Comercial del portal DGII (sin https:// ni /fe/...)."); }} />
                     </div>
 
                     <button type="button" onClick={() => setMessage("Configuración de URLs guardada para producción en el diseño.")} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#1e293b] px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-900">
@@ -997,13 +997,18 @@ function CertificationComplete() {
   );
 }
 
-function UrlCopyField({ label, url, onCopy }: { label: string; url: string; onCopy: (url: string) => void }) {
+function UrlCopyField({ label, field, suffix, onCopy }: { label: string; field: string; suffix: string; onCopy: (value: string) => void }) {
+  // Mirrors the DGII portal field: fixed "https://" and service path around the only part the tenant types.
   return (
     <div className="mb-4 last:mb-0">
       <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{label}</label>
       <div className="mt-1.5 flex gap-2">
-        <input type="text" readOnly value={url} className="flex-1 rounded-xl border border-green-500/30 bg-green-500/5 px-3 py-2.5 font-mono text-[11px] text-green-700 outline-none dark:text-green-400" />
-        <button type="button" onClick={() => onCopy(url)} title="Copiar URL" className="flex shrink-0 items-center justify-center rounded-xl border border-border bg-background px-3 transition-colors hover:bg-muted">
+        <div className="flex min-w-0 flex-1 items-stretch overflow-hidden rounded-xl border border-green-500/30 font-mono text-[11px]">
+          <span className="flex items-center bg-muted/40 px-2 text-muted-foreground">https://</span>
+          <input type="text" readOnly value={field} className="min-w-0 flex-1 bg-green-500/5 px-3 py-2.5 font-bold text-green-700 outline-none dark:text-green-400" />
+          <span className="flex items-center truncate bg-muted/40 px-2 text-muted-foreground" title={suffix}>{suffix}</span>
+        </div>
+        <button type="button" onClick={() => onCopy(field)} title="Copiar lo que va en el campo del portal" className="flex shrink-0 items-center justify-center rounded-xl border border-border bg-background px-3 transition-colors hover:bg-muted">
           <Copy className="size-4 text-muted-foreground" />
         </button>
       </div>
