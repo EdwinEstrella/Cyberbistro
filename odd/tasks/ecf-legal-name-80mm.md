@@ -56,4 +56,6 @@ Strategy ask-on-risk; forecast ~250 authored lines (under budget, single PR).
 - 2026-10-19 T1+T2 done. Verified by parent: `npx vitest run test/ecf-certification-simulation.test.ts
   test/ecf-certification-run.test.ts src/features/fiscal` -> 142 passed; writer: `npm run typecheck` -> pass.
   XML escaping checked: single `&amp;`. RDD off (not run).
-- Next: user redeploys simulation.ts, run.ts, context.ts, store.ts to Dokploy + restart functions-1; re-run step 4.
+- 2026-10-19 Dokploy mounts updated (agent pasted via UI, user approved saves); deployed SHA-256 prefixes match branch:
+  simulation 14e57a9f, run 70ce90f0, context dcc074f8, store 899d13de. User restarted functions-1.
+- Next: user re-runs step 4 simulation; agent verifies consulta timbre, then generates 80 mm RIs.
