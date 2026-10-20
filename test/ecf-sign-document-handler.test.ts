@@ -174,6 +174,27 @@ describe("ecf-sign-document input safety", () => {
     const unknownTenantRnc = harness({ tenantRnc: async () => null });
     expect(await codeOf(await handleRequest(request(valid()), unknownTenantRnc.deps))).toBe("RNC_MISMATCH");
   });
+
+  it("signs the DGII declaracion jurada (no RNC inside) only in its exact portal shape", async () => {
+    const h = harness();
+    const declaration = (body: string) =>
+      `<?xml version="1.0" encoding="utf-8"?>\n<DeclaracionJurada xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">\n  ${body}\n</DeclaracionJurada>`;
+    const asDeclaration = (xml: string) => ({ environment: "certification", documentType: "declaracion_jurada", xml });
+    const ok = await handleRequest(request(asDeclaration(declaration("<DetalleGeneral>Los CONTRIBUYENTES aceptan...</DetalleGeneral>"))), h.deps);
+    expect(ok.status).toBe(200);
+    for (const body of [
+      "<DetalleGeneral>texto</DetalleGeneral><Extra>x</Extra>",
+      "<DetalleGeneral><Sub>x</Sub></DetalleGeneral>",
+      "<DetalleGeneral>   </DetalleGeneral>",
+      "texto suelto<DetalleGeneral>texto</DetalleGeneral>",
+      "<Otro>texto</Otro>",
+    ]) {
+      expect(await codeOf(await handleRequest(request(asDeclaration(declaration(body))), h.deps)), body).toBe("RNC_MISMATCH");
+    }
+    // An RNC inside a declaracion still has to be the tenant's.
+    const foreign = declaration("<DetalleGeneral>texto</DetalleGeneral><RNC>101000001</RNC>");
+    expect(await codeOf(await handleRequest(request(asDeclaration(foreign)), h.deps))).toBe("RNC_MISMATCH");
+  });
 });
 
 describe("ecf-sign-document signing", () => {
