@@ -6,6 +6,8 @@ import { TenantStore } from "../electron/persistence/tenantStore";
 import { mainWindow } from "./support/electronMainWindow";
 
 test("keeps synthetic fiscal modes pending after graceful SQLite close/reopen", async () => {
+  // Launch + first window alone can take most of the default 30 s on CI runners, and the login wait below is 30 s.
+  test.setTimeout(90_000);
   const userDataDirectory = await mkdtemp(join(tmpdir(), "cloudix-sales-fiscal-e2e-"));
   const seed = TenantStore.open({ dataRoot: userDataDirectory, tenantId: "tenant-e2e" });
   seed.executeCatalogCommand({ command: { type: "catalog.branch.upsert", id: "branch-e2e", name: "Synthetic Branch" }, commitId: "seed-branch", branchId: "branch-e2e" });

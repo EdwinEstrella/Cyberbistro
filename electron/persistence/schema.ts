@@ -1,5 +1,57 @@
 import type { DatabaseSync } from "node:sqlite";
 
+/**
+ * Local e-CF status vocabularies. They are the union of what checkout writes today
+ * (fiscalEngine), the legacy local values, the cloud vocabulary
+ * (supabase/migrations/20260611220000_create-ecf-batches.sql) and the states local
+ * signing will add. Shared by the schema CHECKs and the tests.
+ */
+// Client-side states only: what checkout writes today plus local signing. DGII outcomes (submitted, accepted,
+// rejected, ...) are server-owned (docs/fiscal-status-truths.md) and must never be representable locally.
+export const ECF_DOCUMENT_STATUSES = [
+  "pending_offline", "pending_configuration", "pending_sync", "pending_processing", "signed",
+] as const;
+export const FISCAL_OUTBOX_STATUSES = [
+  "pending", "syncing", "pending_sync", "blocked_configuration",
+] as const;
+
+const sqlList = (values: readonly string[]): string => values.map((value) => `'${value}'`).join(", ");
+const ECF_DOCUMENT_STATUS_CHECK = `CHECK (status IN (${sqlList(ECF_DOCUMENT_STATUSES)}))`;
+const FISCAL_OUTBOX_STATUS_CHECK = `CHECK (status IN (${sqlList(FISCAL_OUTBOX_STATUSES)}))`;
+
+const ECF_DOCUMENTS_CREATE_BODY = (tableName: string): string => `
+    CREATE TABLE ${tableName} (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL REFERENCES tenants(id),
+      sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
+      factura_id TEXT NOT NULL UNIQUE REFERENCES facturas(id),
+      document_type TEXT NOT NULL,
+      status TEXT NOT NULL ${ECF_DOCUMENT_STATUS_CHECK},
+      certificate_metadata_id TEXT,
+      created_at TEXT,
+      updated_at TEXT,
+      signed_xml TEXT,
+      xml_hash TEXT,
+      dgii_security_code TEXT,
+      signed_at TEXT,
+      signed_by_device TEXT
+    ) STRICT;`;
+const FISCAL_OUTBOX_CREATE_BODY = (tableName: string): string => `
+    CREATE TABLE ${tableName} (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL REFERENCES tenants(id),
+      sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
+      factura_id TEXT NOT NULL REFERENCES facturas(id),
+      ecf_document_id TEXT,
+      operation TEXT,
+      status TEXT NOT NULL ${FISCAL_OUTBOX_STATUS_CHECK},
+      attempts INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at TEXT,
+      idempotency_key TEXT,
+      created_at TEXT,
+      updated_at TEXT
+    ) STRICT;`;
+
 export function initializeTenantSchema(database: DatabaseSync, tenantId: string): void {
   database.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
   database.exec(`
@@ -165,31 +217,8 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
       tenant_id TEXT PRIMARY KEY REFERENCES tenants(id),
       next_number INTEGER NOT NULL CHECK (next_number > 0)
     ) STRICT;
-    CREATE TABLE IF NOT EXISTS ecf_documents (
-      id TEXT PRIMARY KEY,
-      tenant_id TEXT NOT NULL REFERENCES tenants(id),
-      sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
-      factura_id TEXT NOT NULL UNIQUE REFERENCES facturas(id),
-      document_type TEXT NOT NULL,
-      status TEXT NOT NULL CHECK (status IN ('pending_sync', 'pending_processing')),
-      certificate_metadata_id TEXT,
-      created_at TEXT,
-      updated_at TEXT
-    ) STRICT;
-    CREATE TABLE IF NOT EXISTS fiscal_outbox (
-      id TEXT PRIMARY KEY,
-      tenant_id TEXT NOT NULL REFERENCES tenants(id),
-      sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
-      factura_id TEXT NOT NULL REFERENCES facturas(id),
-      ecf_document_id TEXT,
-      operation TEXT,
-      status TEXT NOT NULL CHECK (status IN ('pending', 'syncing')),
-      attempts INTEGER NOT NULL DEFAULT 0,
-      next_attempt_at TEXT,
-      idempotency_key TEXT,
-      created_at TEXT,
-      updated_at TEXT
-    ) STRICT;
+    ${ECF_DOCUMENTS_CREATE_BODY("IF NOT EXISTS ecf_documents")}
+    ${FISCAL_OUTBOX_CREATE_BODY("IF NOT EXISTS fiscal_outbox")}
     CREATE TABLE IF NOT EXISTS ecf_sequence_allocations (
       id TEXT PRIMARY KEY,
       tenant_id TEXT NOT NULL REFERENCES tenants(id),
@@ -502,49 +531,40 @@ function ensureInventorySchemaEvolution(database: DatabaseSync): void {
   }
 }
 
+/**
+ * Rebuilds ecf_documents / fiscal_outbox when an existing desktop DB still has the
+ * old narrow status CHECK or lacks the signed columns. Every column present in both
+ * the old and new table is copied, so rows survive intact. Idempotent: a table whose
+ * stored DDL already carries the current CHECK and columns is left untouched.
+ */
 function ensureFiscalCheckoutSchemaEvolution(database: DatabaseSync): void {
-  const ecfColumns = getTableColumns(database, "ecf_documents");
-  if (!ecfColumns.includes("certificate_metadata_id")) {
-    recreateTable(database, "ecf_documents", `
-      CREATE TABLE ecf_documents (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL REFERENCES tenants(id),
-        sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
-        factura_id TEXT NOT NULL UNIQUE REFERENCES facturas(id),
-        document_type TEXT NOT NULL,
-        status TEXT NOT NULL CHECK (status IN ('pending_sync', 'pending_processing')),
-        certificate_metadata_id TEXT,
-        created_at TEXT,
-        updated_at TEXT
-      ) STRICT;
-    `, `
-      INSERT INTO ecf_documents (id, tenant_id, sucursal_id, factura_id, document_type, status)
-      SELECT id, tenant_id, sucursal_id, factura_id, document_type, status FROM __old_table__;
-    `);
-  }
+  rebuildFiscalTableIfStale(database, "ecf_documents", ECF_DOCUMENT_STATUS_CHECK, ["signed_xml", "xml_hash", "dgii_security_code", "signed_at", "signed_by_device", "certificate_metadata_id"], ECF_DOCUMENTS_CREATE_BODY);
+  rebuildFiscalTableIfStale(database, "fiscal_outbox", FISCAL_OUTBOX_STATUS_CHECK, ["ecf_document_id", "operation"], FISCAL_OUTBOX_CREATE_BODY);
+  database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_ecf_documents_pending ON ecf_documents (tenant_id, sucursal_id, status);
+    CREATE INDEX IF NOT EXISTS idx_fiscal_outbox_pending ON fiscal_outbox (tenant_id, sucursal_id, status);
+  `);
+}
 
-  const outboxColumns = getTableColumns(database, "fiscal_outbox");
-  if (!outboxColumns.includes("ecf_document_id")) {
-    recreateTable(database, "fiscal_outbox", `
-      CREATE TABLE fiscal_outbox (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL REFERENCES tenants(id),
-        sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
-        factura_id TEXT NOT NULL REFERENCES facturas(id),
-        ecf_document_id TEXT,
-        operation TEXT,
-        status TEXT NOT NULL CHECK (status IN ('pending', 'syncing')),
-        attempts INTEGER NOT NULL DEFAULT 0,
-        next_attempt_at TEXT,
-        idempotency_key TEXT,
-        created_at TEXT,
-        updated_at TEXT
-      ) STRICT;
-    `, `
-      INSERT INTO fiscal_outbox (id, tenant_id, sucursal_id, factura_id, status)
-      SELECT id, tenant_id, sucursal_id, factura_id, status FROM __old_table__;
-    `);
-  }
+function rebuildFiscalTableIfStale(
+  database: DatabaseSync,
+  tableName: string,
+  statusCheck: string,
+  requiredColumns: readonly string[],
+  createBody: (tableName: string) => string,
+): void {
+  const row = database.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(tableName) as { sql: string } | undefined;
+  if (!row) return;
+  const oldColumns = getTableColumns(database, tableName);
+  const stale = !row.sql.includes(statusCheck) || requiredColumns.some((column) => !oldColumns.includes(column));
+  if (!stale) return;
+  const newColumns = columnsOfCreateBody(createBody(tableName));
+  const shared = newColumns.filter((column) => oldColumns.includes(column)).join(", ");
+  recreateTable(database, tableName, createBody(tableName), `INSERT INTO ${tableName} (${shared}) SELECT ${shared} FROM __old_table__;`);
+}
+
+function columnsOfCreateBody(sql: string): string[] {
+  return sql.split("\n").map((line) => /^\s{6}(\w+)\s/.exec(line)?.[1]).filter((name): name is string => Boolean(name));
 }
 
 function ensureSyncOutboxSchemaEvolution(database: DatabaseSync): void {
