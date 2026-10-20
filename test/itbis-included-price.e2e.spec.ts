@@ -112,7 +112,7 @@ async function openAjustes(page: Page): Promise<void> {
   } else {
     await page.evaluate(() => { window.location.hash = "/ajustes"; });
   }
-  await expect(page.getByRole("heading", { name: /Configuración del Negocio/i })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("heading", { name: /Configuración Fiscal/i })).toBeVisible({ timeout: 20_000 });
 }
 
 /** Sets the Ajustes checkbox, saves, and returns the value it had before. */

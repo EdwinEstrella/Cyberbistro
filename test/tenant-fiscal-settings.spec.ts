@@ -128,7 +128,7 @@ async function openAjustesModule(page: Page): Promise<void> {
     await page.evaluate(() => { window.location.hash = '/ajustes'; });
   }
 
-  await expect(page.getByRole('heading', { name: /Configuración del Negocio/i })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('heading', { name: /Configuración Fiscal/i })).toBeVisible({ timeout: 20_000 });
 }
 
 test('tenant fiscal settings can be saved and persisted after navigation', async () => {
