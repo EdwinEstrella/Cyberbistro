@@ -203,7 +203,14 @@ async function saveMesasCount(page: Page, count: number): Promise<void> {
     await alertResult.dialog.accept();
   } else if (alertResult.type === 'custom') {
     await alertModal.getByRole('button', { name: /Aceptar/i }).click();
+  } else {
+    // Soporte shows the inline status AND the custom alert; when the status wins the race the modal is still open
+    // and would swallow every later click, so dismiss it if it shows up.
+    await alertModal.waitFor({ state: 'visible', timeout: 3_000 })
+      .then(() => alertModal.getByRole('button', { name: /Aceptar/i }).click())
+      .catch(() => undefined);
   }
+  await expect(alertModal).toBeHidden({ timeout: 5_000 });
 
   await expect(page.getByRole('button', { name: /Guardar Distribución/i })).toBeEnabled({ timeout: 15_000 });
 }
