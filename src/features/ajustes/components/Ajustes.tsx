@@ -11,12 +11,9 @@ import {
   SelectValue,
 } from "../../../shared/ui/select";
 import { useAuth, ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
-import type { ThermalPrinterInfo } from "../../../shared/types/electron";
-import type { PaperWidthMm } from "../../../shared/lib/thermalStorage";
 
 import {
   getThermalPrintSettings,
-  saveThermalPrintSettings,
 } from "../../../shared/lib/thermalStorage";
 import {
   shouldReadLocalFirst,
@@ -41,7 +38,6 @@ import {
   uploadTenantLogoFile,
 } from "../../../shared/lib/tenantLogoStorage";
 import { cacheLogoFromUrl, refreshLogoCache } from "../../../shared/lib/logoCache";
-import { useAppUpdate } from "../../updates/AppUpdateContext";
 import { CertificateUploader } from "./CertificateUploader";
 import {
   buildBSequenceMapFromRow,
@@ -192,7 +188,6 @@ export function Ajustes() {
     ncf_secuencias_por_tipo: buildBSequenceMapFromRow(null),
     ncf_tipos_activos: {},
   });
-  const [thermalPreviewNonce, setThermalPreviewNonce] = useState(0);
   const [thermalPreviewKind, setThermalPreviewKind] = useState<ThermalPreviewKind>("factura");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -413,19 +408,14 @@ export function Ajustes() {
     };
     generatePreview();
     return () => { active = false; };
-  }, [tenantPreview, thermalPreviewNonce, thermalPreviewKind, config]);
+  }, [tenantPreview, thermalPreviewKind, config]);
 
   if (authLoading || loading) return <div className="flex-1 flex items-center justify-center font-['Space_Grotesk'] text-muted-foreground">Cargando...</div>;
 
   return (
     <div className="flex-1 min-h-0 p-4 sm:p-8 bg-background transition-colors duration-300 overflow-y-auto">
-      <div className="max-w-[1400px] mx-auto grid grid-cols-1 xl:grid-cols-[1fr_380px] gap-8">
+      <div className="max-w-[1400px] mx-auto grid grid-cols-1 gap-8">
         <div className="flex flex-col gap-6">
-          <div className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 sm:p-10 shadow-sm">
-            <span className="text-primary text-[11px] font-bold uppercase tracking-[0.2em] mb-2 block">Ajustes</span>
-            <h1 className="font-['Space_Grotesk'] text-3xl sm:text-4xl font-bold text-foreground mb-4">Configuración del Negocio</h1>
-            <p className="text-muted-foreground text-sm max-w-2xl leading-relaxed">Administra la información pública de tu negocio, los comprobantes fiscales y la configuración de impresión térmica.</p>
-          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <section className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 flex flex-col gap-6">
@@ -652,10 +642,6 @@ export function Ajustes() {
           </button>
         </div>
 
-        <aside className="flex flex-col gap-6 lg:sticky lg:top-8">
-           <ThermalPrintSettingsCard onThermalSaved={() => setThermalPreviewNonce(n => n + 1)} />
-           <AppDesktopUpdateCard />
-        </aside>
       </div>
       <style>{`
         .input-field {
@@ -681,59 +667,4 @@ export function Ajustes() {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <div className="flex flex-col gap-1.5"><label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">{label}</label>{children}</div>;
-}
-
-function AppDesktopUpdateCard() {
-  const { phase, checkForUpdates } = useAppUpdate();
-  const isElectron = Boolean(window.electronAPI?.checkForUpdates);
-  return (
-    <div className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 flex flex-col gap-4">
-      <h3 className="font-['Space_Grotesk'] text-lg font-bold text-foreground">Actualización</h3>
-      <p className="text-xs text-muted-foreground leading-relaxed">Versión actual: <span className="text-foreground font-bold">{__APP_VERSION__}</span>. Las actualizaciones automáticas están optimizadas para la versión nativa.</p>
-      {isElectron && (
-        <button onClick={checkForUpdates} disabled={phase === "checking"} className="bg-muted text-foreground border border-border rounded-lg py-2.5 text-[11px] font-bold uppercase tracking-widest hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-50 transition-all cursor-pointer">
-          {phase === "checking" ? "Buscando..." : "Buscar Actualización"}
-        </button>
-      )}
-    </div>
-  );
-}
-
-function ThermalPrintSettingsCard({ onThermalSaved }: { onThermalSaved?: () => void }) {
-  const initialThermalSettings = useMemo(() => getThermalPrintSettings(), []);
-  const [paperWidthMm, setPaperWidthMm] = useState<PaperWidthMm>(initialThermalSettings.paperWidthMm);
-  const [printerName, setPrinterName] = useState(initialThermalSettings.printerName);
-  const [printers, setPrinters] = useState<ThermalPrinterInfo[]>([]);
-  useEffect(() => {
-    if (window.electronAPI?.listPrinters) {
-      window.electronAPI.listPrinters().then(setPrinters).catch(() => {});
-    }
-  }, []);
-  function handleSave() {
-    saveThermalPrintSettings({ ...getThermalPrintSettings(), paperWidthMm, printerName });
-    onThermalSaved?.();
-    alert("Configuración de impresión guardada.");
-  }
-  return (
-    <div className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 flex flex-col gap-6 shadow-sm">
-      <h3 className="font-['Space_Grotesk'] text-lg font-bold text-foreground">Impresora Térmica</h3>
-      <div className="flex gap-2">
-        {([80, 58] as const).map(w => (
-          <button key={w} onClick={() => setPaperWidthMm(w)} className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all cursor-pointer ${paperWidthMm === w ? "bg-primary/10 border-primary text-primary" : "bg-muted border-border text-muted-foreground"}`}>{w}mm</button>
-        ))}
-      </div>
-      <Field label="Seleccionar Impresora">
-        <Select value={printerName || "default_printer"} onValueChange={val => setPrinterName(val === "default_printer" ? "" : val)}>
-          <SelectTrigger className="w-full rounded-xl">
-            <SelectValue placeholder="Seleccionar impresora" />
-          </SelectTrigger>
-          <SelectContent className="rounded-xl">
-            <SelectItem value="default_printer">Predeterminada</SelectItem>
-            {printers.map(p => <SelectItem key={p.name} value={p.name}>{p.displayName || p.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </Field>
-      <button onClick={handleSave} className="bg-muted text-foreground border border-border rounded-lg py-3 text-[11px] font-bold uppercase tracking-widest hover:bg-black/5 dark:hover:bg-white/10 transition-all cursor-pointer">Guardar Local</button>
-    </div>
-  );
 }

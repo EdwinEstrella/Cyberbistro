@@ -104,7 +104,8 @@ test.describe("invoice header edit (IPC + SQLite)", () => {
   });
 
   test.afterEach(async () => {
-    await rm(dataRoot, { recursive: true, force: true });
+    // Windows may still hold the Electron profile files for a moment after the app exits.
+    await rm(dataRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
   });
 
   test("edits the header, keeps items and total, and enqueues a partial outbox update", async () => {
