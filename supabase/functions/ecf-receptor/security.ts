@@ -21,7 +21,7 @@ export interface VerifyResult {
    * Public certificate metadata of the embedded chain, only when it does not reach a trusted anchor, so the
    * missing CA can be identified (e.g. a DGII certification-environment CA) and added to the trust store.
    */
-  untrustedChain?: { subject: string; issuer: string }[];
+  untrustedChain?: { subject: string; issuer: string; certificate: string }[];
   /** Identities asserted by the (trusted) signer certificate. Empty unless valid. */
   companyIds: string[];
   personIds: string[];
@@ -157,7 +157,12 @@ export function createXmlSecurity(options: { trustedCaPems: readonly string[] })
 
       const chainError = chainsToAnchors(leaf, extras, anchors, now);
       if (chainError === "issuer is not trusted") {
-        const untrustedChain = [leaf, ...extras].map((cert) => ({ subject: distinguishedName(cert.subject), issuer: distinguishedName(cert.issuer) }));
+        const untrustedChain = [leaf, ...extras].map((cert, index) => ({
+          subject: distinguishedName(cert.subject),
+          issuer: distinguishedName(cert.issuer),
+          // The public certificate itself, so its AIA "CA Issuers" URL can be read to fetch the missing CA.
+          certificate: certs[index].replace(/\s+/g, ""),
+        }));
         return { ...fail(chainError), untrustedChain };
       }
       if (chainError) return fail(chainError);

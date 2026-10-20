@@ -110,6 +110,7 @@ describe("chain validation", () => {
     expect(result).toMatchObject({ valid: false, reason: "issuer is not trusted", companyIds: [], personIds: [] });
     expect(result.untrustedChain).toHaveLength(1);
     expect(result.untrustedChain![0].issuer).toBe(parse(other.certPem).subject.attributes.map((a) => `${a.shortName ?? a.type}=${a.value}`).join(", "));
+    expect(result.untrustedChain![0].certificate).toBe(leaf.certPem.replace(/-----[A-Z ]+-----|\s/g, ""));
     expect(security.verify("<!-- c -->" + signed, now).untrustedChain).toBeUndefined();
   }, 60_000);
 
