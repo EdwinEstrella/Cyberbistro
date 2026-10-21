@@ -90,6 +90,27 @@ export function createSupabaseStore(opts: { url: string; publishableKey: string;
       return typeof data?.nombre_negocio === "string" ? data.nombre_negocio : null;
     },
 
+    async tenantIssuerProfile(tenantId) {
+      const { data, error } = await db
+        .from("tenants")
+        .select("rnc, nombre_negocio, direccion, ecf_issuer_sucursal, ecf_issuer_municipio, ecf_issuer_provincia, ecf_issuer_correo_emisor, ecf_issuer_actividad_economica")
+        .eq("id", tenantId)
+        .maybeSingle();
+      if (error) fail("tenantIssuerProfile");
+      if (!data) return null;
+      const text = (value: unknown) => (typeof value === "string" ? value : null);
+      return {
+        rnc: text(data.rnc),
+        razonSocial: text(data.nombre_negocio),
+        direccion: text(data.direccion),
+        sucursal: text(data.ecf_issuer_sucursal),
+        municipio: text(data.ecf_issuer_municipio),
+        provincia: text(data.ecf_issuer_provincia),
+        correoEmisor: text(data.ecf_issuer_correo_emisor),
+        actividadEconomica: text(data.ecf_issuer_actividad_economica),
+      };
+    },
+
     async loadCertificate(tenantId, environment) {
       const { data, error } = await db
         .from("ecf_certificate_metadata")

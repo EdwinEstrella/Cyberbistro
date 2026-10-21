@@ -14,6 +14,7 @@ import {
 } from "./context.ts";
 import { authCheck } from "./actions.ts";
 import { downloadSigned, latestRun, pollStatus, sendNext, startRun } from "./run.ts";
+import { sendTest, testStatus } from "./testSend.ts";
 
 export const MAX_BODY_BYTES = 4 * 1024 * 1024;
 const ADMIN_ROLES = ["admin", "super_admin"];
@@ -59,6 +60,8 @@ const ACTIONS: Record<string, ActionHandler> = {
   status: pollStatus,
   latest: latestRun,
   download: downloadSigned,
+  "send-test": sendTest,
+  "test-status": testStatus,
 };
 
 export async function handleRequest(req: Request, deps: CertificationDeps): Promise<Response> {

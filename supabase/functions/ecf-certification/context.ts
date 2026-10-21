@@ -2,6 +2,7 @@
 import { NotConfiguredError, decryptPassphrase } from "./custody.ts";
 import { DgiiError, isDgiiEnvironment, type DgiiClient, type DgiiEnvironment } from "./dgiiClient.ts";
 import type { RunStore } from "./run.ts";
+import type { IssuerProfile } from "./testSend.ts";
 
 export interface Membership {
   tenantId: string;
@@ -26,6 +27,8 @@ export interface CertificationStore extends RunStore {
   tenantRnc(tenantId: string): Promise<string | null>;
   /** Legal name (tenants.nombre_negocio, "Razón social"), or null. */
   tenantLegalName(tenantId: string): Promise<string | null>;
+  /** Issuer data for the TesteCF test invoice (tenants.rnc, nombre_negocio, direccion, ecf_issuer_*), or null. */
+  tenantIssuerProfile(tenantId: string): Promise<IssuerProfile | null>;
   /** Ready certificate for (tenant, environment), or null. */
   loadCertificate(tenantId: string, environment: string): Promise<StoredCertificate | null>;
 }
