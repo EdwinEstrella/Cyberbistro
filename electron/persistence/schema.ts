@@ -495,6 +495,7 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
   ensureCierresSchemaEvolution(database);
   ensureComprasSchemaEvolution(database);
   ensureCompraFiscalTable(database);
+  ensureSucursalesSchemaEvolution(database);
   ensureReceivablesSchemaEvolution(database);
   ensurePayablesSchemaEvolution(database);
   ensureSalonCocinaSchemaEvolution(database);
@@ -636,6 +637,25 @@ function ensureCierresSchemaEvolution(database: DatabaseSync): void {
  * column keeps its 'cash' CHECK; pulled rows set it to 'cash' and carry the real
  * method in the new `metodo_pago` column, so no data-carrying rebuild is needed.
  */
+/**
+ * The original `sucursales` table only held id/name (seeded as 'Principal').
+ * Cloud branches now download into it, so the renderer can resolve its branch
+ * with the cloud down. Added additively (valid under STRICT); `cloud_synced`
+ * marks rows that came from the cloud so seeded placeholders stay hidden.
+ */
+function ensureSucursalesSchemaEvolution(database: DatabaseSync): void {
+  const columns = getTableColumns(database, "sucursales");
+  if (columns.length === 0) return;
+  for (const [name, definition] of [
+    ["direccion", "TEXT"],
+    ["telefono", "TEXT"],
+    ["activa", "INTEGER NOT NULL DEFAULT 1"],
+    ["cloud_synced", "INTEGER NOT NULL DEFAULT 0"],
+  ] as const) {
+    if (!columns.includes(name)) database.exec(`ALTER TABLE sucursales ADD COLUMN ${name} ${definition};`);
+  }
+}
+
 /**
  * The original SQLite receivables tables were skeletons sized only for the
  * command path. Full local-first parity with the cloud/IndexedDB shape (and the

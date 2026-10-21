@@ -207,6 +207,50 @@ function toIntFlag(value: unknown): number {
 }
 
 /**
+ * Applies cloud branches (sucursales) into the local mirror. Branch rows are
+ * also seeded locally as 'Principal' placeholders (INSERT OR IGNORE) by every
+ * write path, so a real cloud row overwrites the name/metadata of the SAME id
+ * and is flagged `cloud_synced = 1`. Only flagged rows are exposed to the
+ * renderer, so a placeholder (or the 'main-process-default' sentinel) can never
+ * masquerade as a real branch. Each pull is a full snapshot, so tenant rows
+ * missing from it are un-flagged (not deleted: many tables reference them).
+ */
+export function applyCloudSucursalRows(
+  db: DatabaseSync,
+  tenantId: string,
+  sucursales: Array<Record<string, unknown>>,
+): void {
+  const stmt = db.prepare(`
+    INSERT INTO sucursales (id, tenant_id, name, direccion, telefono, activa, cloud_synced)
+    VALUES (?, ?, ?, ?, ?, ?, 1)
+    ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name,
+      direccion = excluded.direccion,
+      telefono = excluded.telefono,
+      activa = excluded.activa,
+      cloud_synced = 1
+  `);
+  const seen = new Set<string>();
+  for (const s of sucursales) {
+    if (!s || typeof s !== "object" || !s.id) continue;
+    const id = String(s.id);
+    seen.add(id);
+    stmt.run(
+      id,
+      tenantId,
+      s.nombre ? String(s.nombre) : "Sucursal",
+      s.direccion ? String(s.direccion) : null,
+      s.telefono ? String(s.telefono) : null,
+      s.activa === false || s.activa === 0 ? 0 : 1,
+    );
+  }
+  if (seen.size === 0) return;
+  const known = db.prepare("SELECT id FROM sucursales WHERE tenant_id = ? AND cloud_synced = 1").all(tenantId) as Array<{ id: string }>;
+  const unflag = db.prepare("UPDATE sucursales SET cloud_synced = 0 WHERE id = ? AND tenant_id = ?");
+  for (const row of known) if (!seen.has(row.id)) unflag.run(row.id, tenantId);
+}
+
+/**
  * Applies cloud dishes (platos) into the local mirror. Cloud ids are integers
  * (including negative temp ids assigned client-side before a real insert), so
  * they are coerced to their string form for the TEXT primary key. `categoria`

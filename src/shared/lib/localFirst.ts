@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { readLocalSucursales } from "./localSucursales";
 import { incrementTenantNcfSequence, resolveNcfForNewInvoice, type ResolvedNcfForInvoice } from "./invoiceNcf";
 import { getCloudAvailabilitySnapshot, isCloudAvailabilityFailure, isCloudAvailableForDesktop, isDesktopCloudUnavailable, isDesktopRuntime, recordCloudFailure, recordCloudSuccess } from "./cloudAvailability";
 import { commitLanEdgeCursor, getLanEdgeBaseUrl, publishLanOutboxEntry, publishLanSnapshotEntries, pullLanOutboxEntries } from "./lanEdgeClient";
@@ -2505,6 +2506,12 @@ export async function readLocalMirror<T = Record<string, unknown>>(
     } catch (err) {
       console.warn(`[localFirst] readLocalMirror failed for ${tableName}, falling back to cloud:`, err);
     }
+  }
+  // Desktop: SQLite is the local truth for branches (pulled from the cloud into
+  // the main process). Prefer it over any cloud round-trip.
+  if (tableName === "sucursales" && !shouldUseIndexedDb()) {
+    const local = await readLocalSucursales(tenantId);
+    if (local.length > 0) return local as unknown as T[];
   }
   // On desktop the cloud is a sync/administration service, not an operational
   // dependency: never block a mirror read on a cloud round-trip when the cloud

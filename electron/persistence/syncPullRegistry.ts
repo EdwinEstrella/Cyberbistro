@@ -24,6 +24,9 @@ export interface SyncPullTable {
 }
 
 export const SYNC_PULL_TABLES: readonly SyncPullTable[] = [
+  // Branches first: other tables reference sucursales. Never hard-deleted via
+  // pull (FK parent of nearly everything); absent rows are un-flagged instead.
+  { remoteTable: "sucursales", localTable: "sucursales", child: false, deletable: false },
   { remoteTable: "nomina_empleados", localTable: "payroll_employees", child: false, deletable: true },
   { remoteTable: "nomina_pagos", localTable: "payroll_payments", child: true, deletable: true },
   { remoteTable: "nomina_ajustes", localTable: "payroll_cloud_adjustments", child: true, deletable: true },

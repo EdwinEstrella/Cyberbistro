@@ -2071,14 +2071,28 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     ).all(this.tenantId) as Array<Record<string, unknown>>;
   }
 
-  listCatalog(): { platos: Array<Record<string, unknown>>; menuCategories: Array<Record<string, unknown>> } {
+  /** Cloud-synced branches only (never seeded placeholders), shaped like the cloud `sucursales` row. */
+  listSucursales(): Array<Record<string, unknown>> {
+    return (this.database.prepare(
+      "SELECT id, tenant_id, name, direccion, telefono, activa FROM sucursales WHERE tenant_id = ? AND cloud_synced = 1 ORDER BY name ASC, id ASC"
+    ).all(this.tenantId) as Array<Record<string, unknown>>).map((row) => ({
+      id: row.id,
+      tenant_id: row.tenant_id,
+      nombre: row.name,
+      direccion: row.direccion ?? null,
+      telefono: row.telefono ?? null,
+      activa: row.activa !== 0,
+    }));
+  }
+
+  listCatalog(): { platos: Array<Record<string, unknown>>; menuCategories: Array<Record<string, unknown>>; sucursales: Array<Record<string, unknown>> } {
     const platos = this.database.prepare(
       "SELECT id, tenant_id, sucursal_id, nombre, precio, categoria, disponible, va_a_cocina, created_at, updated_at, deleted_at FROM platos WHERE tenant_id = ? AND deleted_at IS NULL ORDER BY nombre ASC"
     ).all(this.tenantId) as Array<Record<string, unknown>>;
     const menuCategories = this.database.prepare(
       "SELECT id, tenant_id, nombre, color, sort_order, sucursal_id FROM menu_categories WHERE tenant_id = ? ORDER BY sort_order ASC, nombre ASC"
     ).all(this.tenantId) as Array<Record<string, unknown>>;
-    return { platos, menuCategories };
+    return { platos, menuCategories, sucursales: this.listSucursales() };
   }
 
   syncCloudCustomers(customers: Array<Record<string, unknown>>): void {
