@@ -49,5 +49,7 @@ With the cloud unreachable, a logged-in desktop caja that synced at least once c
 | T3 | delegated (writer trigger) | 97d60a0 | Billing settings fall back to local tenant row on any cloud failure; still fail-closed with no local row. vitest pass. |
 | T4 | delegated (writer trigger) | 45adb9a | Camarera kitchen ticket via resolveKitchenPrintTenant (cloud → local → minimal header). typecheck clean; vitest 1455 pass. App not run manually. |
 
+| T4b | delegated (writer trigger) | 631393a | User reported slow menu load offline. Cause: supabase.from() awaits auth-js startup refresh retrying ~25s (backoff 200ms..12.8s, 30s window) when token expired; SucursalContext cloud fallback + loadCantidadMesas were gated only by navigator.onLine. Added canAttemptCloudRead(). typecheck clean; vitest 1464 pass. First probe can still take 2.5s. |
+
 ## Next step
 T5: user decides delivery (merge to master + release). Pending user decision: apply migration 20261021120000 to prod when DB is back.
