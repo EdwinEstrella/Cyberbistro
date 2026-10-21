@@ -8,6 +8,7 @@ import {
   buildTestInvoiceXml,
   missingIssuerFields,
   testEncf,
+  TEST_SEQUENCE_MAX,
   type IssuerProfile,
 } from "../supabase/functions/ecf-certification/testSend";
 import { createTestCertificate, type TestCertificate } from "./helpers/ecfTestCertificate";
@@ -151,7 +152,14 @@ describe("test invoice XML", () => {
 
   it("derives the eNCF from secuencia or the clock and validates it", () => {
     expect(testEncf(7, NOW)).toBe("E310000000007");
-    expect(testEncf(undefined, NOW)).toBe(`E31${String(NOW / 1000).padStart(10, "0")}`);
+    expect(testEncf(undefined, NOW)).toBe(`E31${String(((NOW / 1000) % TEST_SEQUENCE_MAX) + 1).padStart(10, "0")}`);
+    // Always inside the range DGII pre-enables in TesteCF (E31 1..10,000,000); 1792543587 was rejected with 135.
+    for (const ms of [0, 1_792_543_587_000, 9_999_999_000, Date.UTC(2030, 0, 1)]) {
+      const seq = Number(testEncf(undefined, ms).slice(3));
+      expect(seq).toBeGreaterThanOrEqual(1);
+      expect(seq).toBeLessThanOrEqual(TEST_SEQUENCE_MAX);
+    }
+    expect(() => testEncf(TEST_SEQUENCE_MAX + 1, NOW)).toThrow();
     expect(() => testEncf(0, NOW)).toThrow();
     expect(() => testEncf("5", NOW)).toThrow();
   });

@@ -15,8 +15,12 @@ const TEST_ENVIRONMENT: DgiiEnvironment = "test";
  * The request may override it with `compradorRnc` / `compradorRazonSocial`.
  */
 export const DEFAULT_BUYER = { rnc: "131880681", razonSocial: "CLIENTE DE PRUEBA" } as const;
-/** Far-future expiry: TesteCF does not tie the sequence to an authorized range. */
+/**
+ * DGII pre-enables every approved emisor in TesteCF with E31 1..10,000,000 valid until 31-12-2028
+ * (Descripción Técnica Servicios DGII); numbers outside it are rejected with "135: Número de secuencia no autorizada".
+ */
 export const TEST_SEQUENCE_EXPIRY = "31-12-2028";
+export const TEST_SEQUENCE_MAX = 10_000_000;
 const ITEM = { name: "Servicio de prueba e-CF", quantity: "1", unitPrice: 100, itbisRate: 18 } as const;
 const TRACK_ID = /^[A-Za-z0-9-]{1,100}$/;
 
@@ -60,15 +64,16 @@ export function missingIssuerFields(issuer: IssuerProfile): string[] {
   return missing;
 }
 
-/** E31 + 10 digits: an explicit `secuencia`, or the current Unix second (unique per second). */
+/** E31 + 10 digits inside the TesteCF range: an explicit `secuencia`, or one derived from the current second. */
 export function testEncf(secuencia: unknown, nowMs: number): string {
   if (secuencia !== undefined) {
-    if (typeof secuencia !== "number" || !Number.isInteger(secuencia) || secuencia < 1 || secuencia > 9_999_999_999) {
-      throw new HttpError(400, "INVALID_REQUEST", "secuencia must be an integer between 1 and 9999999999.");
+    if (typeof secuencia !== "number" || !Number.isInteger(secuencia) || secuencia < 1 || secuencia > TEST_SEQUENCE_MAX) {
+      throw new HttpError(400, "INVALID_REQUEST", `secuencia must be an integer between 1 and ${TEST_SEQUENCE_MAX}.`);
     }
     return `E31${String(secuencia).padStart(10, "0")}`;
   }
-  return `E31${String(Math.floor(nowMs / 1000) % 10_000_000_000).padStart(10, "0")}`;
+  // Unique per second for ~115 days, always within 1..TEST_SEQUENCE_MAX.
+  return `E31${String((Math.floor(nowMs / 1000) % TEST_SEQUENCE_MAX) + 1).padStart(10, "0")}`;
 }
 
 function buyerOf(payload: Record<string, unknown>): { rnc: string; razonSocial: string } {
