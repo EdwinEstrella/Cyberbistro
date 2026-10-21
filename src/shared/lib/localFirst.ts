@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { readLocalSucursales } from "./localSucursales";
+import { readLocalTenant } from "./localTenant";
 import { incrementTenantNcfSequence, resolveNcfForNewInvoice, type ResolvedNcfForInvoice } from "./invoiceNcf";
 import { getCloudAvailabilitySnapshot, isCloudAvailabilityFailure, isCloudAvailableForDesktop, isDesktopCloudUnavailable, isDesktopRuntime, recordCloudFailure, recordCloudSuccess } from "./cloudAvailability";
 import { commitLanEdgeCursor, getLanEdgeBaseUrl, publishLanOutboxEntry, publishLanSnapshotEntries, pullLanOutboxEntries } from "./lanEdgeClient";
@@ -2512,6 +2513,11 @@ export async function readLocalMirror<T = Record<string, unknown>>(
   if (tableName === "sucursales" && !shouldUseIndexedDb()) {
     const local = await readLocalSucursales(tenantId);
     if (local.length > 0) return local as unknown as T[];
+  }
+  // Desktop: the current tenant's settings row is pulled into SQLite as well.
+  if (tableName === "tenants" && !shouldUseIndexedDb()) {
+    const local = await readLocalTenant(tenantId);
+    if (local) return [local] as unknown as T[];
   }
   // On desktop the cloud is a sync/administration service, not an operational
   // dependency: never block a mirror read on a cloud round-trip when the cloud

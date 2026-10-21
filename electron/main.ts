@@ -652,7 +652,7 @@ if (gotTheLock) {
           }
         }
       },
-      listCatalog: () => getStore()?.listCatalog() ?? { platos: [], menuCategories: [], sucursales: [] },
+      listCatalog: () => getStore()?.listCatalog() ?? { platos: [], menuCategories: [], sucursales: [], tenant: null },
     })
     registerOrdersRepositoryIpc({
       ipcMain,

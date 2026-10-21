@@ -588,7 +588,7 @@ export function registerCatalogRepositoryIpc(input: {
   ipcMain: CatalogRepositoryIpcMain;
   isTrustedSender: (event: { senderId: number }) => boolean;
   getRepository: () => { execute(command: CatalogCommand): CatalogRepositoryResult };
-  listCatalog?: () => { platos: Array<Record<string, unknown>>; menuCategories: Array<Record<string, unknown>>; sucursales?: Array<Record<string, unknown>> };
+  listCatalog?: () => { platos: Array<Record<string, unknown>>; menuCategories: Array<Record<string, unknown>>; sucursales?: Array<Record<string, unknown>>; tenant?: Record<string, unknown> | null };
 }): void {
   input.ipcMain.removeHandler(CATALOG_REPOSITORY_EXECUTE_CHANNEL);
   input.ipcMain.handle(CATALOG_REPOSITORY_EXECUTE_CHANNEL, async (event, payload) => {
@@ -601,7 +601,7 @@ export function registerCatalogRepositoryIpc(input: {
   input.ipcMain.removeHandler(CATALOG_LIST_CHANNEL);
   input.ipcMain.handle(CATALOG_LIST_CHANNEL, async (event) => {
     if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
-    return { ok: true, data: input.listCatalog?.() ?? { platos: [], menuCategories: [], sucursales: [] } };
+    return { ok: true, data: input.listCatalog?.() ?? { platos: [], menuCategories: [], sucursales: [], tenant: null } };
   });
 }
 

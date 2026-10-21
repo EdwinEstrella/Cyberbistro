@@ -75,7 +75,7 @@ export interface ElectronAPI {
   saveDeviceSessionPreference?: (preference: { tenantId: string; userId: string; allowedBranchIds: string[]; defaultBranchId: string | null }) => Promise<{ ok: true; data: { defaultBranchId: string | null } }>;
   getDeviceSessionPreference?: (identity: { tenantId: string; userId: string }) => Promise<{ ok: true; data: { allowedBranchIds: string[]; defaultBranchId: string | null } | null }>;
   executeCatalogCommand?: (command: import("../lib/catalogContracts").CatalogCommand) => Promise<{ ok: true; data: import("../lib/catalogContracts").CatalogRepositoryResult }>;
-  listCatalog?: () => Promise<{ ok: true; data: { platos: Array<Record<string, unknown>>; menuCategories: Array<Record<string, unknown>>; sucursales?: Array<Record<string, unknown>> } }>;
+  listCatalog?: () => Promise<{ ok: true; data: { platos: Array<Record<string, unknown>>; menuCategories: Array<Record<string, unknown>>; sucursales?: Array<Record<string, unknown>>; tenant?: Record<string, unknown> | null } }>;
   executeOrdersCommand?: (command: import("../lib/ordersContracts").OrdersCommand) => Promise<{ ok: true; data: import("../lib/ordersContracts").OrdersRepositoryResult }>;
   executeSalesFiscalCommand?: (command: import("../../../electron/persistence/salesFiscalRepository").SalesFiscalCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/salesFiscalRepository").SalesFiscalRepositoryResult }>;
   executeCashPurchaseCommand?: (command: import("../../../electron/persistence/cashPurchaseRepository").PurchaseCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/cashPurchaseRepository").PurchaseRepositoryResult }>;

@@ -9,6 +9,7 @@ const PULL_TABLES = SYNC_PULL_TABLES.map((entry) => ({
   table: entry.remoteTable,
   localTable: entry.localTable,
   child: entry.child,
+  scopeColumn: entry.scopeColumn ?? "tenant_id",
 }));
 const PULL_PAGE_SIZE = 500;
 
@@ -260,14 +261,14 @@ export class PayrollSyncClient implements ServerSyncClient {
     // Each table is buffered and only committed when its full pagination
     // succeeds, so a failing table applies nothing (no partial snapshot, no false
     // deletes) while every healthy table still downloads and retries next pull.
-    for (const { table, localTable, child } of PULL_TABLES) {
+    for (const { table, localTable, child, scopeColumn } of PULL_TABLES) {
       const tableChanges: ServerChange[] = [];
       try {
         let afterId: string | number | null = null;
         while (true) {
           let query = client.from(table)
             .select(child ? "*, nomina_empleados!inner(tenant_id,sucursal_id)" : "*")
-            .eq(child ? "nomina_empleados.tenant_id" : "tenant_id", input.tenantId)
+            .eq(child ? "nomina_empleados.tenant_id" : scopeColumn, input.tenantId)
             .order("id", { ascending: true })
             .limit(PULL_PAGE_SIZE);
           if (table === "comandas" && typeof (query as any).gte === "function") {
@@ -293,7 +294,7 @@ export class PayrollSyncClient implements ServerSyncClient {
               throw new Error(`Invalid pull page for ${table}`);
             }
             const parent = Array.isArray(row.nomina_empleados) ? row.nomina_empleados[0] : row.nomina_empleados;
-            if ((child ? parent?.tenant_id : row.tenant_id) !== input.tenantId) {
+            if ((child ? parent?.tenant_id : row[scopeColumn]) !== input.tenantId) {
               throw new Error(`Tenant mismatch in pull for ${table}`);
             }
             tableChanges.push({ tableName: localTable, rowId: String(rawId), payload: row, deleted: false });

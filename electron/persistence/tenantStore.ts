@@ -2085,14 +2085,29 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     }));
   }
 
-  listCatalog(): { platos: Array<Record<string, unknown>>; menuCategories: Array<Record<string, unknown>>; sucursales: Array<Record<string, unknown>> } {
+  /** The current tenant's cloud-synced settings row (shaped like the cloud `tenants` row), or null before the first pull. */
+  getLocalTenant(): Record<string, unknown> | null {
+    const row = this.database.prepare(
+      "SELECT settings_json FROM tenants WHERE id = ? AND cloud_synced = 1"
+    ).get(this.tenantId) as { settings_json: string | null } | undefined;
+    if (!row?.settings_json) return null;
+    try {
+      const settings = JSON.parse(row.settings_json) as unknown;
+      if (!settings || typeof settings !== "object" || Array.isArray(settings)) return null;
+      return { ...(settings as Record<string, unknown>), id: this.tenantId };
+    } catch {
+      return null;
+    }
+  }
+
+  listCatalog(): { platos: Array<Record<string, unknown>>; menuCategories: Array<Record<string, unknown>>; sucursales: Array<Record<string, unknown>>; tenant: Record<string, unknown> | null } {
     const platos = this.database.prepare(
       "SELECT id, tenant_id, sucursal_id, nombre, precio, categoria, disponible, va_a_cocina, created_at, updated_at, deleted_at FROM platos WHERE tenant_id = ? AND deleted_at IS NULL ORDER BY nombre ASC"
     ).all(this.tenantId) as Array<Record<string, unknown>>;
     const menuCategories = this.database.prepare(
       "SELECT id, tenant_id, nombre, color, sort_order, sucursal_id FROM menu_categories WHERE tenant_id = ? ORDER BY sort_order ASC, nombre ASC"
     ).all(this.tenantId) as Array<Record<string, unknown>>;
-    return { platos, menuCategories, sucursales: this.listSucursales() };
+    return { platos, menuCategories, sucursales: this.listSucursales(), tenant: this.getLocalTenant() };
   }
 
   syncCloudCustomers(customers: Array<Record<string, unknown>>): void {

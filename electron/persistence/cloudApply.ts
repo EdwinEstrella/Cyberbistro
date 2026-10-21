@@ -207,6 +207,55 @@ function toIntFlag(value: unknown): number {
 }
 
 /**
+ * Tenant columns mirrored locally for offline billing, NCF sequencing, receipt
+ * and kitchen printing, and plan limits. Whitelisted on purpose: the cloud row
+ * also carries fiscal custody metadata, and secrets (certificates, tokens) must
+ * never land in the local database.
+ */
+export const LOCAL_TENANT_SETTINGS_COLUMNS = [
+  "nombre_negocio", "rnc", "direccion", "telefono", "moneda", "menu_url",
+  "logo_url", "logo_size_px", "logo_offset_x", "logo_offset_y",
+  "plan", "sucursal_limit_enabled", "sucursal_limit", "payment_day_of_month",
+  "fiscal_mode", "fiscal_mode_fallback", "ecf_environment",
+  "itbis_cobro_por_defecto", "propina_cobro_por_defecto", "itbis_incluido_en_precio",
+  "ncf_fiscal_activo", "ncf_tipo_default", "ncf_tipos_activos",
+  "ncf_secuencia_siguiente", "ncf_secuencias_por_tipo",
+  "ncf_b01_secuencia_siguiente", "ncf_b02_secuencia_siguiente", "ncf_b14_secuencia_siguiente",
+  "ncf_b15_secuencia_siguiente", "ncf_b16_secuencia_siguiente", "ncf_b17_secuencia_siguiente",
+  "ecf_secuencias_rangos",
+  "ecf_issuer_sucursal", "ecf_issuer_municipio", "ecf_issuer_provincia",
+  "ecf_issuer_actividad_economica", "ecf_issuer_correo_emisor",
+  "updated_at",
+] as const;
+
+/** Picks only the whitelisted, non-secret tenant settings from a cloud row. */
+export function pickLocalTenantSettings(row: Record<string, unknown>): Record<string, unknown> {
+  const settings: Record<string, unknown> = {};
+  for (const column of LOCAL_TENANT_SETTINGS_COLUMNS) {
+    if (row[column] !== undefined) settings[column] = row[column];
+  }
+  return settings;
+}
+
+/**
+ * Applies the current tenant's cloud row into the local `tenants` row (seeded
+ * as the FK root at schema init). Rows of any other tenant are ignored. The
+ * settings are a full snapshot of the whitelisted columns.
+ */
+export function applyCloudTenantRows(
+  db: DatabaseSync,
+  tenantId: string,
+  tenants: Array<Record<string, unknown>>,
+): void {
+  const row = tenants.find((t) => t && typeof t === "object" && String(t.id ?? "") === tenantId);
+  if (!row) return;
+  const settings = pickLocalTenantSettings(row);
+  db.prepare("INSERT OR IGNORE INTO tenants (id) VALUES (?)").run(tenantId);
+  db.prepare("UPDATE tenants SET settings_json = ?, cloud_synced = 1, cloud_updated_at = ? WHERE id = ?")
+    .run(JSON.stringify(settings), typeof row.updated_at === "string" ? row.updated_at : null, tenantId);
+}
+
+/**
  * Applies cloud branches (sucursales) into the local mirror. Branch rows are
  * also seeded locally as 'Principal' placeholders (INSERT OR IGNORE) by every
  * write path, so a real cloud row overwrites the name/metadata of the SAME id
