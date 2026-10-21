@@ -12,7 +12,7 @@ import { supabase } from "../../shared/lib/supabase";
 import { resolveWithLastKnownList } from "../../shared/lib/lastKnownCache";
 import { canCommitTenantAsyncState } from "../../shared/lib/tenantAccessGuard";
 import { buildOfflineSucursales } from "../../shared/lib/offlineSucursales";
-import { isDesktopCloudUnavailable } from "../../shared/lib/cloudAvailability";
+import { canAttemptCloudRead, isDesktopCloudUnavailable } from "../../shared/lib/cloudAvailability";
 
 export interface Sucursal {
   id: string;
@@ -132,7 +132,9 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
       if (useLocal) {
         data = await readLocalMirror<any>(expectedTenantId, "sucursales").catch(() => []);
         if (!isCurrentAccess(generation, expectedTenantId)) return;
-        if (data.length === 0 && navigator.onLine) {
+        // Gate on the cloud circuit, not only navigator.onLine: with the backend down a
+        // supabase call waits for auth-js token-refresh retries (~25s) and delays the POS.
+        if (data.length === 0 && (await canAttemptCloudRead())) {
           try {
             const res = await supabase
               .from("sucursales")
