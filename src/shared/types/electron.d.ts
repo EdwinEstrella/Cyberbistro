@@ -90,6 +90,7 @@ export interface ElectronAPI {
   listInvoices?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number; dateFrom?: string; dateTo?: string }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
   reserveInvoiceNumbers?: (request: { tenantId: string; count: number }) => Promise<{ ok: true; data: number[] }>;
   getInvoiceNumberFloor?: (request: { tenantId: string }) => Promise<{ ok: true; data: number }>;
+  ncfLocalSequence?: (request: import("../../../electron/persistence/ncfLocalSequence").NcfLocalSequenceRequest) => Promise<import("../../../electron/persistence/ncfLocalSequence").NcfLocalSequenceResponse>;
   deleteInvoiceLocal?: (request: { tenantId: string; invoiceId: string }) => Promise<{ ok: true }>;
   saveInvoiceLocal?: (invoice: Record<string, unknown>) => Promise<{ ok: true }>;
   updateInvoiceHeaderLocal?: (request: { tenantId: string; invoiceId: string; changes: Record<string, unknown> }) => Promise<

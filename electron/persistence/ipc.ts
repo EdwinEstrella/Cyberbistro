@@ -8,6 +8,7 @@ import {
   type PayrollCommand,
 } from "../../src/shared/lib/payrollContracts";
 import type { SalesFiscalCommand, SalesFiscalRepositoryResult } from "./salesFiscalRepository";
+import { parseNcfLocalSequenceRequest, type NcfLocalSequenceRequest, type NcfLocalSequenceResponse } from "./ncfLocalSequence";
 import type { PurchaseCommand, CashPurchaseCommand, CashPurchaseRepositoryResult, PurchaseRepositoryResult } from "./cashPurchaseRepository";
 import type { ReceivablesCommand, ReceivablesRepositoryResult } from "./receivablesRepository";
 import type { PayablesCommand, PayablesRepositoryResult } from "./payablesRepository";
@@ -41,6 +42,7 @@ export const CHECKOUT_COMMIT_CHANNEL = "checkout:commit";
 export const FISCAL_SALES_REPOSITORY_EXECUTE_CHANNEL = "sales-fiscal-repository:execute";
 export const FACTURAS_LIST_CHANNEL = "facturas:list";
 export const FACTURAS_RESERVE_NUMBERS_CHANNEL = "facturas:reserve-numbers";
+export const NCF_LOCAL_SEQUENCE_CHANNEL = "ncf:local-sequence";
 export const FACTURAS_NUMBER_FLOOR_CHANNEL = "facturas:number-floor";
 export const FACTURAS_DELETE_LOCAL_CHANNEL = "facturas:delete-local";
 export const FACTURAS_SAVE_LOCAL_CHANNEL = "facturas:save-local";
@@ -383,6 +385,7 @@ export function registerSalesFiscalRepositoryIpc(input: {
   listInvoices?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number; dateFrom?: string; dateTo?: string }) => Array<Record<string, unknown>>;
   reserveInvoiceNumbers?: (input: { tenantId?: string; count: number }) => number[];
   getInvoiceNumberFloor?: (input: { tenantId?: string }) => number;
+  ncfLocalSequence?: (request: NcfLocalSequenceRequest) => NcfLocalSequenceResponse;
   deleteInvoiceLocal?: (input: { tenantId?: string; invoiceId: string }) => void;
   saveInvoiceLocal?: (invoice: Record<string, unknown>) => void;
   updateInvoiceHeaderLocal?: (input: { tenantId?: string; invoiceId: string; changes: Record<string, unknown> }) => InvoiceHeaderUpdateResult;
@@ -410,6 +413,15 @@ export function registerSalesFiscalRepositoryIpc(input: {
     }
     if (!input.reserveInvoiceNumbers) throw new Error("Invoice number reservation is unavailable");
     return { ok: true, data: input.reserveInvoiceNumbers({ tenantId: request.tenantId as string | undefined, count: Number(request.count) }) };
+  });
+
+  input.ipcMain.removeHandler(NCF_LOCAL_SEQUENCE_CHANNEL);
+  input.ipcMain.handle(NCF_LOCAL_SEQUENCE_CHANNEL, async (event, payload) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    const request = parseNcfLocalSequenceRequest(payload);
+    if (!request) throw new Error("Invalid NCF sequence request");
+    if (!input.ncfLocalSequence) throw new Error("Local NCF sequencing is unavailable");
+    return input.ncfLocalSequence(request);
   });
 
   input.ipcMain.removeHandler(FACTURAS_DELETE_LOCAL_CHANNEL);

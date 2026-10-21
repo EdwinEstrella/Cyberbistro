@@ -5,6 +5,7 @@ import { initializeTenantSchema } from "./schema";
 import { applyCloudExpenseCategoryRows, applyCloudExpenseRows, applyCloudCustomerRows } from "./cloudApply";
 import { TenantSQLiteImporter, type LegacyImportChunk, type LegacyImportManifest } from "./importer";
 import { PayrollSyncOrchestrator } from "./payrollSyncOrchestrator";
+import { executeNcfLocalSequenceRequest, type NcfLocalSequenceRequest, type NcfLocalSequenceResponse } from "./ncfLocalSequence";
 import type { DesktopCommand, DesktopRepositoryStore } from "../../src/shared/lib/desktopRepository";
 import type { CatalogCommand } from "../../src/shared/lib/catalogContracts";
 import type { OrdersCommand } from "../../src/shared/lib/ordersContracts";
@@ -1276,6 +1277,12 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
       this.rollbackTransaction();
       throw error;
     }
+  }
+
+  /** Local NCF B sequencing (reserve / peek / record) for offline fiscal sales. */
+  executeNcfLocalSequence(request: NcfLocalSequenceRequest): NcfLocalSequenceResponse {
+    if (this.transactionDepth > 0) throw new Error("NCF sequence requests cannot run inside another transaction");
+    return executeNcfLocalSequenceRequest(this.database, this.tenantId, request);
   }
 
   getInvoiceNumberFloor(): number {

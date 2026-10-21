@@ -1,6 +1,7 @@
 import { supabase } from "./supabase";
 import { readLocalSucursales } from "./localSucursales";
 import { readLocalTenant } from "./localTenant";
+import { resolveNcfForNewInvoiceDesktop } from "./localNcfReservation";
 import { incrementTenantNcfSequence, resolveNcfForNewInvoice, type ResolvedNcfForInvoice } from "./invoiceNcf";
 import { getCloudAvailabilitySnapshot, isCloudAvailabilityFailure, isCloudAvailableForDesktop, isDesktopCloudUnavailable, isDesktopRuntime, recordCloudFailure, recordCloudSuccess } from "./cloudAvailability";
 import { commitLanEdgeCursor, getLanEdgeBaseUrl, publishLanOutboxEntry, publishLanSnapshotEntries, pullLanOutboxEntries } from "./lanEdgeClient";
@@ -849,6 +850,10 @@ export async function resolveNcfForNewInvoiceLocalFirst(
 ): Promise<ResolvedNcfForInvoice | null> {
   if (isLocalFirstEnabled() && shouldUseIndexedDb()) {
     return reserveLocalNcfForNewInvoice(tenantId, preferredType);
+  }
+  // Desktop: SQLite local NCF sequence when the cloud is unavailable (cloud RPC stays authoritative otherwise).
+  if (isDesktopRuntime()) {
+    return resolveNcfForNewInvoiceDesktop(tenantId, preferredType);
   }
 
   return resolveNcfForNewInvoice(tenantId, preferredType);

@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import { NCF_LOCAL_SEQUENCES_CREATE_SQL } from "./ncfLocalSequence";
 
 /**
  * Local e-CF status vocabularies. They are the union of what checkout writes today
@@ -497,6 +498,7 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
   ensureCompraFiscalTable(database);
   ensureSucursalesSchemaEvolution(database);
   ensureTenantsSchemaEvolution(database);
+  database.exec(NCF_LOCAL_SEQUENCES_CREATE_SQL);
   ensureReceivablesSchemaEvolution(database);
   ensurePayablesSchemaEvolution(database);
   ensureSalonCocinaSchemaEvolution(database);
