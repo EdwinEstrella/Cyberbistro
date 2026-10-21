@@ -21,8 +21,8 @@ The desktop POS must keep selling (including fiscal NCF sales) while the cloud b
 - [x] T1b Sucursales pulled into SQLite and read locally on desktop (real names/ids, not placeholders).
 - [x] T1c Tenants (billing/NCF/print columns) pulled into SQLite and read locally on desktop — prerequisite for T2–T4.
 - [x] T2 NCF/e-CF reservation from local SQLite on desktop (IPC), cloud sequence reconciled on sync without regressions or duplicates.
-- [ ] T3 Fiscal billing settings fall back to last-known local values instead of blocking.
-- [ ] T4 Camarera kitchen ticket prints offline using the local tenant mirror.
+- [x] T3 Fiscal billing settings fall back to last-known local values instead of blocking.
+- [x] T4 Camarera kitchen ticket prints offline using the local tenant mirror.
 - [ ] T5 Release + verify offline journey.
 
 ## Acceptance criteria
@@ -46,5 +46,8 @@ With the cloud unreachable, a logged-in desktop caja that synced at least once c
 
 | T2 fix | delegated (one bounded correction) | e204440 | Verifier (opus, independent) FIX REQUIRED: catch-up UPDATE blocked by admin-only RLS for cajera → web duplicate risk. Fixed: SECURITY DEFINER RPC cloudix_advance_ncf_sequence (member check, forward-only GREATEST, all 3 counters), fallback to direct UPDATE when RPC missing, local-only reservation while cloud lags; fresh peek per returned type. typecheck clean; vitest 1450 pass. Migration `supabase/migrations/20261021120000_cloudix_advance_ncf_sequence.sql` NOT APPLIED — needs user OK once DB is back. |
 
+| T3 | delegated (writer trigger) | 97d60a0 | Billing settings fall back to local tenant row on any cloud failure; still fail-closed with no local row. vitest pass. |
+| T4 | delegated (writer trigger) | 45adb9a | Camarera kitchen ticket via resolveKitchenPrintTenant (cloud → local → minimal header). typecheck clean; vitest 1455 pass. App not run manually. |
+
 ## Next step
-T3 + T4. Pending user decision: apply migration 20261021120000 to prod when DB is back.
+T5: user decides delivery (merge to master + release). Pending user decision: apply migration 20261021120000 to prod when DB is back.
