@@ -81,40 +81,69 @@ export async function resolveNcfForNewInvoiceDesktop(
 
   // Before asking the cloud, make sure its counter is not behind numbers this
   // device issued while offline.
-  const peek = await callBridge<NcfLocalPeek>(bridge, { action: "peek", tenantId, preferredType: preferredType ?? null }).catch(() => null);
+  const peek = await peekLocal(bridge, tenantId, preferredType);
   if (peek && peek.localNextSequence > peek.cloudNextSequence) {
     const caughtUp = await deps.catchUpCloud(tenantId, peek.tipoCodigo, peek.localNextSequence).catch(() => false);
-    if (caughtUp) await recordQuietly(bridge, tenantId, peek.tipoCodigo, peek.localNextSequence - 1, "cloud");
+    if (!caughtUp) {
+      // The cloud would hand out a number this device already used: do not burn
+      // a cloud number, stay on the local sequence until the catch-up succeeds.
+      console.warn(`[localNcfReservation] cloud ${peek.tipoCodigo} counter lags local issuance; using local sequence.`);
+      return reserveLocal(bridge, tenantId, preferredType);
+    }
+    await recordQuietly(bridge, tenantId, peek.tipoCodigo, peek.localNextSequence - 1, "cloud");
   }
 
   let cloud: ResolvedNcfForInvoice | null;
   try {
     cloud = await deps.cloudReserve(tenantId, preferredType);
   } catch (error) {
+    // A timed-out RPC may still have committed: that cloud number is simply
+    // left unused (a gap), never issued twice.
     if (isCloudOutage(error)) return reserveLocal(bridge, tenantId, preferredType);
     throw error;
   }
   if (!cloud || !isNcfBCode(cloud.tipoCodigo)) return cloud;
 
+  // Fresh peek for the type the cloud actually used (the tenant default may
+  // differ from the local copy), taken before recording the cloud number.
+  const after = await peekLocal(bridge, tenantId, cloud.tipoCodigo);
   const fromAtomicRpc = cloud.reservationSource === "remote_rpc";
   await recordQuietly(bridge, tenantId, cloud.tipoCodigo, cloud.usedSequence, fromAtomicRpc ? "cloud" : "local");
 
-  // The cloud counter still lags (catch-up denied or failed): its number may
-  // already be on an invoice issued offline. Never reuse it; the local counter
-  // is past both.
-  if (peek && peek.tipoCodigo === cloud.tipoCodigo && cloud.usedSequence < peek.localNextSequence) {
+  // The cloud counter still lags: its number may already be on an invoice
+  // issued offline. Never reuse it; the local counter is past both.
+  if (after && cloud.usedSequence < after.localNextSequence) {
     console.warn(`[localNcfReservation] cloud ${cloud.tipoCodigo} counter lags local issuance; using local sequence.`);
     return reserveLocal(bridge, tenantId, cloud.tipoCodigo);
   }
   return cloud;
 }
 
+async function peekLocal(bridge: NcfLocalSequenceBridge, tenantId: string, preferredType?: string | null): Promise<NcfLocalPeek | null> {
+  return callBridge<NcfLocalPeek>(bridge, { action: "peek", tenantId, preferredType: preferredType ?? null }).catch(() => null);
+}
+
+function isMissingRpc(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  return error.code === "PGRST202" || error.code === "42883" || /could not find the function/i.test(error.message ?? "");
+}
+
 /**
- * Monotonic catch-up: `UPDATE tenants SET col = n WHERE id = ? AND (col IS NULL OR col < n)`.
- * Atomic per row in Postgres, so it can only move the counter forward.
+ * Advances the cloud counter to at least `nextSequence`, never backwards, via
+ * the SECURITY DEFINER RPC `cloudix_advance_ncf_sequence` (any active member).
+ * Until that migration is deployed, falls back to a conditional UPDATE
+ * (`... WHERE col IS NULL OR col < n`), which RLS only allows for admins.
  */
 export async function catchUpCloudNcfSequence(tenantId: string, tipoCodigo: string, nextSequence: number): Promise<boolean> {
   if (!isNcfBCode(tipoCodigo) || !Number.isSafeInteger(nextSequence) || nextSequence < 1) return false;
+  const rpc = await supabase.rpc("cloudix_advance_ncf_sequence", {
+    p_tenant_id: tenantId,
+    p_ncf_tipo: tipoCodigo,
+    p_next: nextSequence,
+  });
+  if (!rpc.error) return typeof rpc.data === "number" && rpc.data >= nextSequence;
+  if (!isMissingRpc(rpc.error)) return false;
+
   const column = getNcfSequenceColumnName(tipoCodigo);
   const updated = await supabase
     .from("tenants")
