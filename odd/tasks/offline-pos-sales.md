@@ -19,8 +19,8 @@ The desktop POS must keep selling (including fiscal NCF sales) while the cloud b
 ## Tasks
 - [x] T1 Sucursal resolves offline (desktop): diagnose why activeSucursalId is null with cloud down and fix so the POS always has a branch from local data.
 - [x] T1b Sucursales pulled into SQLite and read locally on desktop (real names/ids, not placeholders).
-- [ ] T1c Tenants (billing/NCF/print columns) pulled into SQLite and read locally on desktop — prerequisite for T2–T4.
-- [ ] T2 NCF/e-CF reservation from local SQLite on desktop (IPC), cloud sequence reconciled on sync without regressions or duplicates.
+- [x] T1c Tenants (billing/NCF/print columns) pulled into SQLite and read locally on desktop — prerequisite for T2–T4.
+- [x] T2 NCF/e-CF reservation from local SQLite on desktop (IPC), cloud sequence reconciled on sync without regressions or duplicates.
 - [ ] T3 Fiscal billing settings fall back to last-known local values instead of blocking.
 - [ ] T4 Camarera kitchen ticket prints offline using the local tenant mirror.
 - [ ] T5 Release + verify offline journey.
@@ -41,5 +41,10 @@ With the cloud unreachable, a logged-in desktop caja that synced at least once c
 | T1 | delegated (writer trigger: 2+ files) | a912cc1 | typecheck clean; vitest 1399 pass. Root cause: desktop readLocalMirror("sucursales") never read SQLite → [] offline; auth was fine (validated). Placeholder from defaultBranchId/allowedBranchIds. |
 | T1b | delegated (writer trigger) | c6ba798 | typecheck clean; vitest 1408 pass (2 skipped). Pull applier + idempotent migration (direccion, telefono, activa, cloud_synced); only cloud_synced rows exposed; via existing catalog:list IPC. Unverified: prod RLS lets authenticated read sucursales. |
 
+| T1c | delegated (writer trigger) | 5c2da26 | typecheck clean. Tenant row pulled as JSON with whitelisted columns (no certs/tokens); desktop readLocalMirror("tenants") reads SQLite first. |
+| T2 | delegated (writer trigger) | a65a2ef | typecheck clean; vitest 1439 pass (2 skipped). Offline B-NCF via IPC ncf:local-sequence, start = max(local, known cloud, max local invoice+1); online RPC authoritative + recorded locally; connectivity-fail fallback; forward-only cloud catch-up on next online sale. e-CF stays cloud-only. No cloud migration. RDD off; risk high → independent verifier running. Unverified: RLS allows authenticated UPDATE on tenants. |
+
+| T2 fix | delegated (one bounded correction) | e204440 | Verifier (opus, independent) FIX REQUIRED: catch-up UPDATE blocked by admin-only RLS for cajera → web duplicate risk. Fixed: SECURITY DEFINER RPC cloudix_advance_ncf_sequence (member check, forward-only GREATEST, all 3 counters), fallback to direct UPDATE when RPC missing, local-only reservation while cloud lags; fresh peek per returned type. typecheck clean; vitest 1450 pass. Migration `supabase/migrations/20261021120000_cloudix_advance_ncf_sequence.sql` NOT APPLIED — needs user OK once DB is back. |
+
 ## Next step
-T1c tenants into SQLite, then T2.
+T3 + T4. Pending user decision: apply migration 20261021120000 to prod when DB is back.
