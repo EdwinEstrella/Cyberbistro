@@ -86,3 +86,18 @@ describe("operational cycle SQLite write engine (single-engine cierres)", () => 
     });
   });
 });
+
+describe("cycle close purges the queued comandas", () => {
+  it("deletes every comanda of the cycle's branch locally on close, without one outbox row per comanda", () => {
+    withStore(({ tenant, orders }) => {
+      orders.execute({ type: "orders.cycle.open", id: "cycle-1", businessDay: "2026-09-16", openingCash: 0, cycleNumber: 1, openedAt: "2026-09-16T10:00:00.000Z" });
+      const db = (tenant as unknown as { database: import("node:sqlite").DatabaseSync }).database;
+      db.prepare("INSERT INTO comandas (id, tenant_id, sucursal_id, state) VALUES ('co-1', 'tenant-a', 'branch-a', 'pending')").run();
+      db.prepare("INSERT INTO comandas (id, tenant_id, sucursal_id, state) VALUES ('co-2', 'tenant-a', 'branch-a', 'ready')").run();
+      orders.execute({ type: "orders.cycle.close", id: "cycle-1", closedAt: "2026-09-16T18:30:00.000Z" });
+
+      expect(db.prepare("SELECT COUNT(*) AS n FROM comandas").get()).toEqual({ n: 0 });
+      expect(tenant.readLocalOutbox().filter((e) => e.tableName === "comandas")).toEqual([]);
+    });
+  });
+});

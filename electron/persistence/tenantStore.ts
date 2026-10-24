@@ -2,6 +2,7 @@ import { chmodSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { initializeTenantSchema } from "./schema";
+import { purgeExpiredComandasOlderThan, purgeComandasForCierre } from "./comandasCleanup";
 import { applyCloudExpenseCategoryRows, applyCloudExpenseRows, applyCloudCustomerRows, mergeLocalTenantSettings } from "./cloudApply";
 import { TenantSQLiteImporter, type LegacyImportChunk, type LegacyImportManifest } from "./importer";
 import { PayrollSyncOrchestrator } from "./payrollSyncOrchestrator";
@@ -439,7 +440,13 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
           {
             const result = this.database.prepare("UPDATE cierres_operativos SET state = 'closed', closed_at = ? WHERE id = ? AND tenant_id = ? AND state = 'open'").run(command.closedAt, command.id, this.tenantId);
             // Never create a close event without one local state transition.
-            if (Number(result.changes) === 1) outbox("cierres_operativos", command.id, command, "cycle-close");
+            if (Number(result.changes) === 1) {
+              outbox("cierres_operativos", command.id, command, "cycle-close");
+              // Closing the register clears the queued comandas locally. The cloud copy is
+              // purged in bulk by cloudix_purge_comandas (no per-comanda outbox rows).
+              const cycle = this.database.prepare("SELECT sucursal_id FROM cierres_operativos WHERE id = ? AND tenant_id = ?").get(command.id, this.tenantId) as { sucursal_id: string | null } | undefined;
+              purgeComandasForCierre(this.database, this.tenantId, cycle?.sucursal_id ?? null);
+            }
           }
           break;
         case "orders.cycle.mark-printed":
@@ -1571,31 +1578,25 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
   }
 
   purgeExpiredComandas(days = 3): number {
-    const minCreatedAt = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-    const res = this.database.prepare(
-      "DELETE FROM comandas WHERE tenant_id = ? AND created_at < ?"
-    ).run(this.tenantId, minCreatedAt);
-    return res.changes;
+    return purgeExpiredComandasOlderThan(this.database, this.tenantId, days);
   }
 
   listComandas(filter?: { sucursalId?: string; activeOnly?: boolean; maxAgeDays?: number }): Array<Record<string, unknown>> {
     const days = filter?.maxAgeDays ?? 3;
     const minCreatedAt = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
     try {
-      this.database.prepare(
-        "DELETE FROM comandas WHERE tenant_id = ? AND created_at < ?"
-      ).run(this.tenantId, minCreatedAt);
+      purgeExpiredComandasOlderThan(this.database, this.tenantId, days);
     } catch {
       // non-blocking
     }
     const activeFilter = filter?.activeOnly ? " AND estado IN ('pendiente', 'en_preparacion', 'listo')" : "";
     if (filter?.sucursalId) {
       return this.database.prepare(
-        `SELECT * FROM comandas WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id = 'main-process-default' OR sucursal_id IS NULL) AND created_at >= ?${activeFilter} ORDER BY created_at ASC`
+        `SELECT * FROM comandas WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id = 'main-process-default' OR sucursal_id IS NULL) AND datetime(created_at) >= datetime(?)${activeFilter} ORDER BY created_at ASC`
       ).all(this.tenantId, filter.sucursalId, minCreatedAt) as Array<Record<string, unknown>>;
     }
     return this.database.prepare(
-      `SELECT * FROM comandas WHERE tenant_id = ? AND created_at >= ?${activeFilter} ORDER BY created_at ASC`
+      `SELECT * FROM comandas WHERE tenant_id = ? AND datetime(created_at) >= datetime(?)${activeFilter} ORDER BY created_at ASC`
     ).all(this.tenantId, minCreatedAt) as Array<Record<string, unknown>>;
   }
   saveComanda(comanda: Record<string, unknown>): void {

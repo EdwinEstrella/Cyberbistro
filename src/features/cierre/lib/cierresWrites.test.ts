@@ -11,6 +11,9 @@ vi.mock("../../../shared/lib/localFirst", () => ({
   getDeviceId: vi.fn(async () => "device-1"),
 }));
 
+const rpc = vi.fn(async (..._args: unknown[]) => ({ data: 3, error: null }) as { data: unknown; error: unknown });
+vi.mock("../../../shared/lib/supabase", () => ({ supabase: { rpc: (...args: unknown[]) => rpc(...args) } }));
+
 import * as adapter from "../../../shared/lib/ordersUiAdapter";
 import { enqueueLocalWrite } from "../../../shared/lib/localFirst";
 import { writeCycleOpen, writeCycleClose, writeCycleDiscard, writeCyclePrinted } from "./cierresWrites";
@@ -74,5 +77,35 @@ describe("cierresWrites — single engine per runtime", () => {
         payload: expect.objectContaining({ cycle_number: 5, opened_at: "2026-09-16T10:00:00.000Z", efectivo_inicial: 500 }),
       }));
     });
+  });
+});
+
+describe("cierresWrites - comandas purge on close", () => {
+  const closeInput = { tenantId: "tenant-1", cycleId: "cycle-1", closedAtIso: "2026-09-16T18:00:00.000Z" };
+  const BRANCH = "11111111-1111-4111-8111-111111111111";
+
+  for (const [label, win] of [["desktop", { electronAPI: { executeOrdersCommand: vi.fn() } }], ["web", {}]] as const) {
+    it(`${label}: calls cloudix_purge_comandas with the cycle branch after closing`, async () => {
+      vi.stubGlobal("window", win);
+      await writeCycleClose({ ...closeInput, sucursalId: BRANCH });
+      expect(rpc).toHaveBeenCalledWith("cloudix_purge_comandas", { p_tenant_id: "tenant-1", p_sucursal_id: BRANCH });
+    });
+  }
+
+  it("passes a null branch (tenant-wide) for a non-uuid or missing branch", async () => {
+    vi.stubGlobal("window", {});
+    await writeCycleClose({ ...closeInput, sucursalId: "main-process-default" });
+    await writeCycleClose(closeInput);
+    expect(rpc).toHaveBeenNthCalledWith(1, "cloudix_purge_comandas", { p_tenant_id: "tenant-1", p_sucursal_id: null });
+    expect(rpc).toHaveBeenNthCalledWith(2, "cloudix_purge_comandas", { p_tenant_id: "tenant-1", p_sucursal_id: null });
+  });
+
+  it("never fails the close when the cloud purge errors or throws", async () => {
+    vi.stubGlobal("window", { electronAPI: { executeOrdersCommand: vi.fn() } });
+    rpc.mockResolvedValueOnce({ data: null, error: { message: "offline" } });
+    await expect(writeCycleClose(closeInput)).resolves.toBeUndefined();
+    rpc.mockRejectedValueOnce(new Error("network"));
+    await expect(writeCycleClose(closeInput)).resolves.toBeUndefined();
+    expect(adapter.closeOperatingCycle).toHaveBeenCalledTimes(2);
   });
 });

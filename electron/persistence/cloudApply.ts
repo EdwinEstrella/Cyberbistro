@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import { deleteComandaWithReferences } from "./comandasCleanup";
 
 /**
  * Transaction-free cloud→SQLite appliers shared by the pull path
@@ -1241,6 +1242,10 @@ export function applyCloudDeletes(
     if (tableName === "customers" && db.prepare("SELECT 1 FROM cuentas_cobrar WHERE customer_id=?").get(id)) { complete = false; continue; }
     if (tableName === "payroll_cloud_adjustments") {
       if (tenantId) db.prepare("DELETE FROM payroll_payment_adjustments WHERE id=? AND tenant_id=?").run(id, tenantId);
+    }
+    if (tableName === "comandas") {
+      deleteComandaWithReferences(db, id, tenantId);
+      continue;
     }
     if (tenantId) stmt.run(id, tenantId); else stmt.run(id);
   }
