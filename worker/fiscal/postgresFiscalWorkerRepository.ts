@@ -251,6 +251,7 @@ export const CLAIM_JOB_SQL = `
       FROM public.ecf_certificate_metadata cm
       WHERE cm.tenant_id = ed.tenant_id
         AND cm.is_ready IS TRUE
+        AND cm.environment = t.ecf_environment
         AND (ed.certificate_metadata_id IS NULL OR cm.id = ed.certificate_metadata_id)
       ORDER BY cm.valid_until DESC NULLS LAST, cm.created_at DESC
       LIMIT 1
