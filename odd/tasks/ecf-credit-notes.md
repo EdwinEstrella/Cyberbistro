@@ -57,12 +57,23 @@ Branch to be created after comandas-cierre-cleanup. ask-on-risk; likely > 400 li
       supabase.rpc("cloudix_issue_credit_note"), then triggerSync + reload. Reader is SELECT * so credit_note_of/ref_*
       reach the renderer. Evidence: 6 new test files (45 tests); typecheck clean; vitest 218 files / 1601 passed / 2 skipped.
       React Doctor (CI) is fail-on none and not runnable locally. Commits: see git log (fix(billing), feat(fiscal)).
-- [ ] T5 Print E34 (cash-out gasto already created by the T2 RPC).
+- [x] T5 Print E34 at 80 mm. Branch feat/ecf-credit-notes-04-print. Route: delegated writer (writer trigger).
+      Correction to Facts: ecfPrintedRepresentation/ecfReceiptLayout are the certification PDF path, NOT the
+      thermal path. Real thermal path = receiptTemplates.buildFacturaReceiptHtml (checkout, Billing and
+      FiscalPanel reprint, printLocalInvoiceReceipt). buildFacturaReceiptHtml now routes any credit-note row
+      (isCreditNoteInvoice) to buildCreditNoteReceiptHtml: title NOTA DE CRÉDITO ELECTRÓNICA, e-NCF, reference
+      block (NCF modificado, fecha dd-MM-yyyy, Anulación total, razón), items, positive totals; QR + código de
+      seguridad + fecha de firma only when ecf_status accepted, else existing policy ("Pendiente de aceptación
+      DGII" line, no QR). Page: "Imprimir" per issued note + auto-print after issuing (mirrors checkout) via
+      lib/creditNotePrint.ts (cloud fallback for note row / ecf doc). Billing reprint passes ref_* fields.
+      Evidence: creditNoteReceipt.test.ts (6) + creditNotePrint.test.ts (4); typecheck clean; vitest 220 files /
+      1611 passed / 2 skipped. RED observed for the receipt builder; creditNotePrint tests written with impl.
 - [ ] T6 CI green, release, production test with a real invoice.
 
 ## Progress
 - 2026-10-24: mapping done; decisions recorded.
 - 2026-10-24: T4 UI done on feat/ecf-credit-notes-03-ui.
+- 2026-10-24: T5 print done on feat/ecf-credit-notes-04-print.
 
 ## Next step
-T5 print E34 (cash-out gasto already created by the T2 RPC).
+T6 release + production test with a real invoice (verify E34 print with QR after DGII acceptance).

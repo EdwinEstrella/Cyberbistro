@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw, Search } from "lucide-react";
+import { Printer, RefreshCw, Search } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { useSucursal } from "../../../app/context/SucursalContext";
@@ -16,6 +16,7 @@ import {
 import { getCreditNoteStatusDisplay, type CreditNoteStatusTone } from "../lib/creditNoteStatus";
 import { loadCreditNoteData, issueCreditNote, type CreditNoteData } from "../lib/creditNotesService";
 import { formatDateTimeDo, formatRd } from "../lib/formatRd";
+import { printCreditNote } from "../lib/creditNotePrint";
 import { IssueCreditNoteDialog } from "./IssueCreditNoteDialog";
 
 const TONE_CLASS: Record<CreditNoteStatusTone, string> = {
@@ -113,6 +114,10 @@ export function NotasCredito() {
       const result = await issueCreditNote({ tenantId, facturaId: target.invoice.id, reason, sucursalId: activeSucursalId });
       toast.success(`Nota de crédito ${result.encf} emitida`);
       setTarget(null);
+      // Same as checkout: print right after issuing (the note shows as pending until DGII accepts it).
+      void printCreditNote({ tenantId, noteId: result.credit_note_factura_id }).then((printed) => {
+        if (!printed.ok) toast.error(printed.error ?? "No se pudo imprimir la nota de crédito.");
+      });
       void window.electronAPI?.triggerSync?.().catch(() => undefined);
       await reload();
     } catch (error) {
@@ -120,6 +125,12 @@ export function NotasCredito() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handlePrint = async (note: CreditNoteInvoice) => {
+    if (!tenantId) return;
+    const printed = await printCreditNote({ tenantId, note: note as unknown as Record<string, unknown> });
+    if (!printed.ok) toast.error(printed.error ?? "No se pudo imprimir la nota de crédito.");
   };
 
   if (authLoading) return null;
@@ -219,11 +230,12 @@ export function NotasCredito() {
                   <th className="px-4 py-3 text-right">Total</th>
                   <th className="px-4 py-3">Motivo</th>
                   <th className="px-4 py-3">Estado DGII</th>
+                  <th className="px-4 py-3 text-right">Acción</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-black/5 dark:divide-white/5">
                 {issuedNotes.length === 0 && (
-                  <tr><td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">Todavía no hay notas de crédito.</td></tr>
+                  <tr><td colSpan={7} className="px-4 py-10 text-center text-muted-foreground">Todavía no hay notas de crédito.</td></tr>
                 )}
                 {issuedNotes.map((note: CreditNoteInvoice) => {
                   const status = getCreditNoteStatusDisplay(data.ecfByInvoiceId.get(note.id)?.status ?? note.fiscal_status);
@@ -236,6 +248,15 @@ export function NotasCredito() {
                       <td className="px-4 py-3">{note.ref_razon_modificacion || "-"}</td>
                       <td className="px-4 py-3">
                         <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold uppercase ${TONE_CLASS[status.tone]}`}>{status.label}</span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => void handlePrint(note)}
+                          className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-muted px-3 text-xs font-semibold"
+                        >
+                          <Printer size={14} /> Imprimir
+                        </button>
                       </td>
                     </tr>
                   );
