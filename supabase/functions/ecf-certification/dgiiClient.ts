@@ -139,7 +139,8 @@ export function parseMessages(body: unknown): DgiiMessage[] {
       const item = entry as Record<string, unknown>;
       const valor = typeof item.valor === "string" ? item.valor : typeof item.mensaje === "string" ? item.mensaje : "";
       const codigo = typeof item.codigo === "number" || typeof item.codigo === "string" ? String(item.codigo) : null;
-      if (valor.trim() || codigo) out.push({ codigo, valor: clip(valor.trim()) });
+      // DGII answers {codigo: 0, valor: ""} for "En proceso"; a message without text carries no information.
+      if (valor.trim()) out.push({ codigo, valor: clip(valor.trim()) });
     }
   }
   // The commercial approval service answers `mensaje` (string[] or string).

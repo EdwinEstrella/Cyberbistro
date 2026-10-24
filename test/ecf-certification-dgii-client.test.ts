@@ -211,4 +211,9 @@ describe("parseMessages", () => {
     expect(many).toHaveLength(20);
     expect(many[0].valor.length).toBeLessThanOrEqual(503);
   });
+
+  it("drops DGII placeholder messages with an empty valor", () => {
+    expect(parseMessages({ mensajes: [{ codigo: 0, valor: "" }] })).toEqual([]);
+    expect(parseMessages({ mensajes: [{ codigo: 0, valor: "  " }, { codigo: 7, valor: "Falta RNC" }] })).toEqual([{ codigo: "7", valor: "Falta RNC" }]);
+  });
 });

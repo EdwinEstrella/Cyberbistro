@@ -70,4 +70,25 @@ describe("EcfTestSendView", () => {
     expect(html).toContain("La DGII rechazó la factura de prueba. (e-NCF E310000000042)");
     expect(html).toContain("Mensajes DGII: RNC inválido");
   });
+
+  it("shows a visible progress state and blocks every button while polling", () => {
+    const { text, buttons } = render({
+      busy: "poll",
+      result: { encf: "E310000000042", trackId: "tr", estado: "En proceso", mensajes: [], codigoSeguridad: null, fechaFirma: null },
+    });
+    expect(text).toContain("Consultando a la DGII…");
+    expect(buttons.every((button) => button.disabled)).toBe(true);
+  });
+
+  it("shows the non-final notice after the polling cap", () => {
+    const { text } = render({ notice: "La DGII aún no responde. Tocá «Consultar estado» para volver a consultar." });
+    expect(text).toContain("La DGII aún no responde.");
+  });
+
+  it("never prints an empty DGII message as a bare code", () => {
+    const { text } = render({
+      result: { encf: null, trackId: "tr", estado: "En proceso", mensajes: [{ codigo: "0", valor: "" }], codigoSeguridad: null, fechaFirma: null },
+    });
+    expect(text).not.toContain("0:");
+  });
 });
