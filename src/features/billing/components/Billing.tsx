@@ -29,7 +29,8 @@ import { canUseFeature } from "../../../shared/lib/planFeatures";
 import { calculateExpectedCashDrawer, isCashPaymentMethod, sumCashExpenses } from "../../../shared/lib/cycleCash";
 import { getFiscalPendingPresentation } from "../../../shared/lib/salesFiscalUiAdapter";
 import { writeCyclePrinted } from "../../cierre/lib/cierresWrites";
-import { isSaleInvoice } from "../../../shared/lib/invoiceKind";
+import { isCreditNoteInvoice, isSaleInvoice } from "../../../shared/lib/invoiceKind";
+import { ECF_DELETE_BLOCKED_MESSAGE, isEcfInvoice } from "../lib/invoiceDeletion";
 import { canDeleteInvoices as canDeleteInvoicesForRol, canEditInvoiceHeader, canViewBillingSummaries } from "../../../shared/lib/roleNav";
 // useTheme removed
 import {
@@ -1215,6 +1216,10 @@ export function Billing() {
       if (!tenantId) return;
       if (!canDeleteInvoices) return;
       if (inv.tenant_id != null && inv.tenant_id !== tenantId) return;
+      if (isEcfInvoice(inv, ecfDocuments.has(inv.id))) {
+        alert(ECF_DELETE_BLOCKED_MESSAGE);
+        return;
+      }
 
       try {
         // 1. Fetch consumos to delete
@@ -1232,7 +1237,7 @@ export function Billing() {
         alert(`No se pudo eliminar la factura offline: ${err.message}`);
       }
     },
-    [tenantId, canDeleteInvoices, loadBillingData]
+    [tenantId, canDeleteInvoices, ecfDocuments, loadBillingData]
   );
 
   if (authLoading) {
@@ -1489,6 +1494,7 @@ export function Billing() {
                             <div className="text-xs text-muted-foreground font-medium">
                               {date.toLocaleDateString()} · {date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}
                             </div>
+                            {isCreditNoteInvoice(inv) && <span className="mt-1 inline-block rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-500">Nota de crédito</span>}
                           </div>
                           <div className="text-right font-['Space_Grotesk',sans-serif] text-lg font-bold text-primary tabular-nums">
                             {RD(inv.total)}
@@ -1553,6 +1559,7 @@ export function Billing() {
                           <div key={inv.id} className={`${gridColsClass} px-6 py-5 items-center hover:bg-muted/30 transition-colors group`}>
                             <div className="flex flex-col">
                               <span className="font-['Space_Grotesk',sans-serif] font-bold text-foreground">#{String(inv.numero_factura).padStart(4, "0")}</span>
+                              {isCreditNoteInvoice(inv) && <span className="text-[10px] font-bold uppercase text-amber-500">Nota de crédito</span>}
                               {(() => {
                                 const ecfDoc = ecfDocuments.get(inv.id);
                                 if (!ecfDoc) return null;
