@@ -64,6 +64,14 @@ describe("ncf", () => {
     expect(construirCadenaNcf("B01", 0)).toBeNull();
   });
 
+  it("construirCadenaNcf arma e-NCF de 13 caracteres (E + tipo + 10 digitos)", () => {
+    expect(construirCadenaNcf("E31", 1)).toBe("E310000000001");
+    expect(construirCadenaNcf("E32", 300000)).toBe("E320000300000");
+    expect(construirCadenaNcf("E34", 9999999999)).toBe("E349999999999");
+    expect(construirCadenaNcf("E34", 10000000000)).toBeNull();
+    expect(construirCadenaNcf("B01", 100000000)).toBeNull();
+  });
+
   it("buildBSequenceMap migra la secuencia legacy al tipo B activo", () => {
     expect(buildBSequenceMap(null, "B02", 141)).toEqual({
       B01: 1,

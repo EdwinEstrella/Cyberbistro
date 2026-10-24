@@ -55,8 +55,9 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
   }
 
   const ncf = String(factura.ncf || "").trim();
-  if (!/^E(31|32|33|34|41|43|44|45|46|47)/.test(ncf)) {
-    throw fiscalWorkerError("FISCAL_XML_INVALID", "Factura e-CF requires a valid eNCF starting with an allowed E-series type.", false);
+  // DGII e-NCF: E + 2-digit type + 10-digit sequence (13 characters).
+  if (!/^E(31|32|33|34|41|43|44|45|46|47)\d{10}$/.test(ncf)) {
+    throw fiscalWorkerError("FISCAL_XML_INVALID", "Factura e-CF requires a 13-character eNCF of an allowed E-series type.", false);
   }
 
   // Determine dynamic e-CF type (31 = Factura de Credito Fiscal, 32 = Factura de Consumo, etc.)

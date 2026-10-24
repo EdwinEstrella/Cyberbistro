@@ -167,9 +167,9 @@ describe("Facturas cloud→SQLite pull", () => {
         id: "nc-1",
         estado: "nota_credito",
         fiscal_mode: "dgii_ecf",
-        ncf: "E3400000001",
+        ncf: "E340000000001",
         credit_note_of: "fac-1",
-        ref_ncf: "E3200000009",
+        ref_ncf: "E320000000009",
         ref_fecha_emision: "2026-09-14",
         ref_codigo_modificacion: 1,
         ref_razon_modificacion: "Devolucion total",
@@ -177,7 +177,7 @@ describe("Facturas cloud→SQLite pull", () => {
     ]);
     const row = s.listInvoices().find((r) => r.id === "nc-1") as Record<string, unknown>;
     expect(row.credit_note_of).toBe("fac-1");
-    expect(row.ref_ncf).toBe("E3200000009");
+    expect(row.ref_ncf).toBe("E320000000009");
     expect(row.ref_fecha_emision).toBe("2026-09-14");
     expect(row.ref_codigo_modificacion).toBe(1);
     expect(row.ref_razon_modificacion).toBe("Devolucion total");
@@ -190,7 +190,7 @@ describe("Facturas cloud→SQLite pull", () => {
     const row = s.listInvoices()[0] as Record<string, unknown>;
     expect(row.credit_note_of).toBeNull();
     expect(row.ref_ncf).toBeNull();
-    applyCloudFacturaRows(db, tenantId, [cloudInvoice({ credit_note_of: "x", ref_ncf: "E3200000009" })]);
+    applyCloudFacturaRows(db, tenantId, [cloudInvoice({ credit_note_of: "x", ref_ncf: "E320000000009" })]);
     const again = s.listInvoices()[0] as Record<string, unknown>;
     expect(again.credit_note_of).toBe("x");
   });

@@ -394,15 +394,18 @@ export function buildCierrePayloadWithCycleNumber(
 }
 
 function extractNcfSequence(ncf: string): number | null {
-  const match = ncf.match(/(\d{8})$/);
+  const match = ncf.match(/^E\d{12}$/i) ? ncf.match(/(\d{10})$/) : ncf.match(/(\d{8})$/);
   if (!match) return null;
   const sequence = Number.parseInt(match[1], 10);
   return Number.isNaN(sequence) ? null : sequence;
 }
 
 export function buildNcfWithSequence(ncf: string, sequence: number): string | null {
-  if (!/(\d{8})$/.test(ncf)) return null;
-  return ncf.replace(/\d{8}$/, String(sequence).padStart(8, "0"));
+  // DGII e-NCF carries 10 sequence digits (13 chars); B-series NCF carries 8 (11 chars).
+  const digits = /^E\d{12}$/i.test(ncf) ? 10 : 8;
+  const tail = new RegExp(`\\d{${digits}}$`);
+  if (!tail.test(ncf)) return null;
+  return ncf.replace(tail, String(sequence).padStart(digits, "0"));
 }
 
 export function buildFacturaPayloadWithNcfSequence(
