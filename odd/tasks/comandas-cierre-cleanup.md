@@ -33,7 +33,9 @@ Branch `fix/comandas-cierre-cleanup` from master e650a11. ask-on-risk.
 - [x] T1 Pull delete FK fix for comandas (+ test). Route: delegated writer. Evidence: 86c8ed6, test/local-sqlite-comandas-delete.test.ts (RED: FOREIGN KEY constraint failed, then GREEN).
 - [x] T2 Cierre close purges comandas locally + cloud (bulk RPC migration, desktop + web). Route: delegated writer. Evidence: local purge in orders.cycle.close, cloudix_purge_comandas migration 20261024120000 (NOT applied), cierresWrites calls the RPC; tests comandas-cleanup, local-sqlite-cierres-write, purge-comandas-migration, cierresWrites.test.
 - [x] T3 3-day purge: datetime-normalized comparison (+ test). Route: same writer. Evidence: b27c0aa, test/comandas-cleanup.test.ts.
-- [ ] T4 Apply cloud migration (user OK), CI green, merge.
+- [x] T4 Apply cloud migration (user OK), CI green, merge. Evidence 2026-10-24: user "Si"; applied
+      20261024120000 to prod, pg_proc shows prosecdef=true, EXECUTE authenticated/service_role only (no
+      anon/PUBLIC); PR #81 CI E2E/Verify/React all pass.
 
 ## Progress
 - 2026-10-24: diagnosis done (mapper + local/cloud data).
