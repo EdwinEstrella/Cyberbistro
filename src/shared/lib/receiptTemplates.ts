@@ -1,6 +1,7 @@
 import { type PaperWidthMm } from "./thermalStorage";
 import { getLogoUrlForPrint } from "./logoCache";
 import QRCode from "qrcode";
+import { isCreditNoteInvoice } from "./invoiceKind";
 
 export interface TenantReceiptInfo {
   nombre_negocio: string | null;
@@ -216,10 +217,17 @@ export async function buildFacturaReceiptHtml(
     ecf_track_id?: string | null;
     ecf_security_code?: string | null;
     ecf_submitted_at?: string | null;
+    /** E34 credit note fields (facturas row with estado nota_credito). */
+    credit_note_of?: string | null;
+    ref_ncf?: string | null;
+    ref_fecha_emision?: string | null;
+    ref_codigo_modificacion?: number | string | null;
+    ref_razon_modificacion?: string | null;
   },
   numeroFactura: number,
   paperWidthMm: PaperWidthMm
 ): Promise<string> {
+  if (isCreditNoteInvoice(factura)) return buildCreditNoteReceiptHtml(tenant, factura, paperWidthMm);
   const when = factura.pagada_at || factura.created_at || new Date().toISOString();
   const { date: fechaStr, time: horaStr } = formatFacturaDateParts(when);
   const mesaLabel =
@@ -417,6 +425,133 @@ export async function buildFacturaReceiptHtml(
   `;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${numeroFactura === 0 ? "Pre-cuenta" : "Factura"}</title><style>${thermalStyles(paperWidthMm)}</style></head><body>${body}</body></html>`;
+}
+
+type FacturaReceiptInput = Parameters<typeof buildFacturaReceiptHtml>[1];
+
+const MODIFICATION_CODE_LABELS: Record<string, string> = {
+  "1": "Anulación total",
+  "2": "Corrección de texto",
+  "3": "Corrección de montos",
+  "4": "Reemplazo NCF de contingencia",
+  "5": "Referencia FC",
+};
+
+/** "2026-10-10" (date column) or a full ISO timestamp -> "10-10-2026"; unparseable values are echoed. */
+function formatReferenceDate(value: string | null | undefined): string | null {
+  const raw = (value ?? "").trim();
+  if (!raw) return null;
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  if (dateOnly) return `${dateOnly[3]}-${dateOnly[2]}-${dateOnly[1]}`;
+  return formatDgiiDate(raw) ?? raw;
+}
+
+/**
+ * DGII printed representation of an E34 credit note for the thermal printer. Same policy as the sale
+ * e-CF receipt: QR + security code + signature date only once DGII accepted it; otherwise a pending line.
+ */
+async function buildCreditNoteReceiptHtml(
+  tenant: TenantReceiptInfo,
+  factura: FacturaReceiptInput,
+  paperWidthMm: PaperWidthMm
+): Promise<string> {
+  const when = factura.created_at || new Date().toISOString();
+  const { date: fechaStr, time: horaStr } = formatFacturaDateParts(when);
+  const ncf = (factura.ncf || "").trim();
+  const securityCode = (factura.ecf_security_code || "").trim();
+  const clienteNombre = (factura.cliente_nombre || "").trim();
+  const clienteRnc = (factura.cliente_rnc || "").trim();
+  const issuerRnc = (tenant.rnc || "").trim();
+  const accepted = factura.ecf_status === "accepted";
+  const issuedAt = formatDgiiDate(when);
+  const signedAt = formatDgiiDateTime(factura.ecf_submitted_at ?? null);
+
+  const itemsRows = (factura.items ?? [])
+    .map((item) => {
+      const pu = Number(item.precio_unitario ?? 0);
+      const line = Number(item.subtotal ?? item.cantidad * pu);
+      return `
+    <tr><td colspan="3" class="fdo-item-name">${escapeHtml(item.nombre)}</td></tr>
+    <tr class="fdo-item-sub"><td colspan="2">${rdFixed(pu, tenant)} × ${item.cantidad}</td><td style="text-align:right;font-weight:bold">${rdFixed(line, tenant)}</td></tr>`;
+    })
+    .join("");
+
+  const codeKey = String(factura.ref_codigo_modificacion ?? "").trim();
+  const codeLabel = codeKey ? MODIFICATION_CODE_LABELS[codeKey] ?? `Código ${codeKey}` : null;
+  const refDate = formatReferenceDate(factura.ref_fecha_emision);
+  const razon = (factura.ref_razon_modificacion || "").trim();
+  const refRows = [
+    `<tr class="header-row"><td>NCF modificado</td><td style="text-align:right;font-weight:bold;font-size:14px">${escapeHtml((factura.ref_ncf || "").trim() || "-")}</td></tr>`,
+    refDate ? `<tr class="header-row"><td>Fecha NCF modificado</td><td style="text-align:right">${escapeHtml(refDate)}</td></tr>` : "",
+    codeLabel ? `<tr class="header-row"><td>Modificación</td><td style="text-align:right">${escapeHtml(codeLabel)}</td></tr>` : "",
+    razon ? `<tr class="header-row"><td>Razón</td><td style="text-align:right">${escapeHtml(razon)}</td></tr>` : "",
+  ].join("");
+
+  let qrBlock = "";
+  if (accepted && securityCode !== "" && issuerRnc !== "" && ncf !== "" && issuedAt && signedAt) {
+    const verificationUrl = buildDgiiEcfQrUrl({
+      issuerRnc,
+      buyerRnc: clienteRnc,
+      encf: ncf,
+      total: Number(factura.total),
+      issuedAt,
+      signedAt,
+      securityCode,
+      environment: tenant.ecf_environment,
+    });
+    try {
+      const qrDataUrl = await QRCode.toDataURL(verificationUrl, { margin: 1, width: 150 });
+      qrBlock = `
+        <div class="divider"></div>
+        <div class="center" style="margin: 12px 0 8px">
+          <img src="${qrDataUrl}" style="width: 120px; height: 120px;" />
+          <div style="font-size:10px;margin-top:4px;word-wrap:break-word;padding:0 10px;">
+            <a href="${verificationUrl}" style="color:inherit;text-decoration:none">Verificar comprobante</a>
+          </div>
+          <div style="font-size:10px;margin-top:2px;">Codigo de seguridad: ${escapeHtml(securityCode)}</div>
+          <div style="font-size:10px;margin-top:2px;">Fecha de firma: ${escapeHtml(signedAt)}</div>
+        </div>`;
+    } catch (err) {
+      console.error("Failed to generate DGII QR code", err);
+    }
+  }
+
+  const fiscalRow = accepted
+    ? `<tr class="header-row"><td>Estado e-CF</td><td style="text-align:right;font-weight:bold;font-size:13px">ACEPTADO POR DGII</td></tr>`
+    : factura.ecf_status === "rejected"
+    ? `<tr class="header-row"><td>Estado e-CF</td><td style="text-align:right;font-weight:bold;font-size:13px">RECHAZADO POR DGII</td></tr>`
+    : `<tr class="header-row"><td colspan="2" style="text-align:center;font-weight:bold;font-size:12px;padding:6px 0;border:1px dashed #000">Pendiente de aceptación DGII. La validez fiscal se confirmará al sincronizar.</td></tr>`;
+
+  const body = `
+    ${headerBlock(tenant)}
+    <h2>NOTA DE CRÉDITO ELECTRÓNICA</h2>
+    <div class="divider"></div>
+    <table>
+      <tr class="header-row"><td>e-NCF</td><td style="text-align:right;font-weight:bold;font-size:14px">${escapeHtml(ncf)}</td></tr>
+      <tr class="header-row"><td>Fecha</td><td style="text-align:right">${escapeHtml(fechaStr)}</td></tr>
+      <tr class="header-row"><td>Hora</td><td style="text-align:right">${escapeHtml(horaStr)}</td></tr>
+      ${clienteNombre ? `<tr class="header-row"><td>Cliente</td><td style="text-align:right">${escapeHtml(clienteNombre)}</td></tr>` : ""}
+      ${clienteRnc ? `<tr class="header-row"><td>RNC/Céd.</td><td style="text-align:right">${escapeHtml(clienteRnc)}</td></tr>` : ""}
+    </table>
+    <div class="divider"></div>
+    <table>${refRows}</table>
+    <div class="divider"></div>
+    <table>
+      <thead class="fdo-items-head"><tr><th>Desc</th><th class="r">Cant</th><th class="r">Total</th></tr></thead>
+      <tbody>${itemsRows}</tbody>
+    </table>
+    <div class="divider"></div>
+    <table>
+      <tr><td>Subtotal</td><td style="text-align:right">${rdFixed(factura.subtotal, tenant)}</td></tr>
+      <tr><td>ITBIS</td><td style="text-align:right">${rdFixed(factura.itbis, tenant)}</td></tr>
+      <tr class="total-xl"><td>TOTAL</td><td style="text-align:right">${rdFixed(factura.total, tenant)}</td></tr>
+    </table>
+    <div class="divider"></div>
+    <table>${fiscalRow}</table>
+    ${qrBlock}
+    <div class="double-divider"></div>
+  `;
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Nota de crédito</title><style>${thermalStyles(paperWidthMm)}</style></head><body>${body}</body></html>`;
 }
 
 export function buildComandaReceiptHtml(

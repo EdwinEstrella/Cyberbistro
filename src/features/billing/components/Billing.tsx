@@ -81,6 +81,10 @@ interface Invoice {
   ncf?: string | null;
   ncf_tipo?: string | null;
   credit_note_of?: string | null;
+  ref_ncf?: string | null;
+  ref_fecha_emision?: string | null;
+  ref_codigo_modificacion?: number | null;
+  ref_razon_modificacion?: string | null;
   cliente_nombre?: string | null;
   cliente_rnc?: string | null;
   fiscal_mode?: string | null;
@@ -1115,6 +1119,11 @@ export function Billing() {
           ncf_tipo: inv.ncf_tipo ?? null,
           cliente_nombre: inv.cliente_nombre ?? null,
           cliente_rnc: inv.cliente_rnc ?? null,
+          credit_note_of: inv.credit_note_of ?? null,
+          ref_ncf: inv.ref_ncf ?? null,
+          ref_fecha_emision: inv.ref_fecha_emision ?? null,
+          ref_codigo_modificacion: inv.ref_codigo_modificacion ?? null,
+          ref_razon_modificacion: inv.ref_razon_modificacion ?? null,
           ecf_status: ecfDocuments.get(inv.id)?.status ?? null,
           ecf_track_id: ecfDocuments.get(inv.id)?.dgii_track_id ?? null,
           ecf_security_code: ecfDocuments.get(inv.id)?.dgii_security_code ?? null,

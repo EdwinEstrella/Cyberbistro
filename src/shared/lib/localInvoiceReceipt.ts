@@ -66,12 +66,15 @@ export async function printLocalInvoiceReceipt(args: {
   tenantId: string;
   factura: Record<string, unknown>;
   numeroFactura: number;
+  /** Fallback fiscal state when the local mirror has no ecf_documents row (e.g. web, or just issued). */
+  ecfDocument?: Record<string, unknown> | null;
 }): Promise<PrintThermalResult> {
   try {
-    const [tenant, ecfDocument] = await Promise.all([
+    const [tenant, localEcfDocument] = await Promise.all([
       loadReceiptTenantForPrint(args.tenantId),
       loadLocalEcfDocument(args.tenantId, String(args.factura.id ?? "")),
     ]);
+    const ecfDocument = localEcfDocument ?? args.ecfDocument ?? null;
     if (!tenant) {
       return { ok: false, error: "No se encontró información del tenant para imprimir." };
     }
