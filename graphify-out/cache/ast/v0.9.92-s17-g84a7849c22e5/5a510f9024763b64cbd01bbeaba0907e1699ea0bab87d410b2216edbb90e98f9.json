@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_supabase_migrations_20261018130000_ecf_certification_progress_sql", "label": "20261018130000_ecf_certification_progress.sql", "file_type": "code", "source_file": "supabase/migrations/20261018130000_ecf_certification_progress.sql", "source_location": null}], "edges": []}
