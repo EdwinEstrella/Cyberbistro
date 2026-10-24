@@ -643,6 +643,7 @@ if (gotTheLock) {
         }
       },
       listCatalog: () => getStore()?.listCatalog() ?? { platos: [], menuCategories: [], sucursales: [], tenant: null },
+      mergeTenantSettings: (tenantId, patch) => getStore()?.mergeLocalTenantSettings(tenantId, patch) ?? false,
     })
     registerOrdersRepositoryIpc({
       ipcMain,

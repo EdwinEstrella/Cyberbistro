@@ -238,6 +238,33 @@ export function pickLocalTenantSettings(row: Record<string, unknown>): Record<st
 }
 
 /**
+ * Write-through for a just-saved cloud `tenants` update: overlays the written
+ * whitelisted keys onto the pulled local snapshot (same shape a pull writes),
+ * leaving every other key untouched. No pulled row (cloud_synced = 1) means
+ * nothing to patch: the next pull creates it. Returns whether a row was patched.
+ */
+export function mergeLocalTenantSettings(
+  db: DatabaseSync,
+  tenantId: string,
+  patch: Record<string, unknown>,
+): boolean {
+  const row = db.prepare("SELECT settings_json FROM tenants WHERE id = ? AND cloud_synced = 1")
+    .get(tenantId) as { settings_json: string | null } | undefined;
+  if (!row) return false;
+  let current: Record<string, unknown> = {};
+  try {
+    const parsed = row.settings_json ? JSON.parse(row.settings_json) as unknown : null;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) current = parsed as Record<string, unknown>;
+  } catch {
+    current = {};
+  }
+  const next = { ...current, ...pickLocalTenantSettings(patch) };
+  db.prepare("UPDATE tenants SET settings_json = ? WHERE id = ? AND cloud_synced = 1")
+    .run(JSON.stringify(next), tenantId);
+  return true;
+}
+
+/**
  * Applies the current tenant's cloud row into the local `tenants` row (seeded
  * as the FK root at schema init). Rows of any other tenant are ignored. The
  * settings are a full snapshot of the whitelisted columns.

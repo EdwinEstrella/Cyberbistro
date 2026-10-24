@@ -1025,6 +1025,23 @@ async function writeDirectlyToServer(args: {
   if (acknowledgementFailure) throw new Error(acknowledgementFailure);
 }
 
+/**
+ * Desktop reads `tenants` settings from the SQLite snapshot, which only the
+ * periodic pull refreshes. After a confirmed cloud write, overlay the saved
+ * fields locally so the next read does not show stale settings. Best effort:
+ * the cloud save already succeeded, so a failure here is only logged.
+ */
+async function writeThroughLocalTenantSettings(tenantId: string, payload: Record<string, unknown> | null | undefined): Promise<void> {
+  if (!payload) return;
+  const merge = typeof window !== "undefined" ? window.electronAPI?.mergeTenantSettings : undefined;
+  if (!merge) return;
+  try {
+    await merge(tenantId, payload);
+  } catch (error) {
+    console.warn("[localFirst] tenants write-through to SQLite failed:", error);
+  }
+}
+
 export async function enqueueLocalWrite(args: {
   tenantId: string;
   tableName: LocalFirstMirrorTable | "facturas" | "comandas" | "mesas_estado" | "consumos";
@@ -1050,6 +1067,9 @@ export async function enqueueLocalWrite(args: {
       throw new Error(`${args.tableName} has no SQLite command route and the cloud is unavailable.`);
     }
     await writeDirectlyToServer(mirrorArgs);
+    if (args.tableName === "tenants" && args.op !== "delete") {
+      await writeThroughLocalTenantSettings(args.tenantId, args.payload);
+    }
     return;
   }
   const mode = resolveLocalWriteMode({
