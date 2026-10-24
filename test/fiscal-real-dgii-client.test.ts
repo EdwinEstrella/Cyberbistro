@@ -151,6 +151,23 @@ describe("RealDgiiClient", () => {
     expect(result.rfceThresholdUsed).toBeNull();
   });
 
+  it("sends an E34 credit note as a full e-CF even when it is under the RFCE threshold", async () => {
+    mockAuthenticate.mockResolvedValue({ token: "token" });
+    mockSendElectronicDocument.mockResolvedValue({ trackId: "track-e34" });
+
+    const client = new RealDgiiClient();
+    const result = await client.submitSignedXml({
+      signedXml: "<ECF><RNCEmisor>131880738</RNCEmisor><eNCF>E340000000001</eNCF><TipoeCF>34</TipoeCF><MontoTotal>100</MontoTotal></ECF>",
+      environment: "certification",
+      idempotencyKey: "test-key-e34",
+      certificate: mockCertificate,
+    });
+
+    expect(mockSendElectronicDocument).toHaveBeenCalledWith(expect.any(String), "131880738E340000000001.xml");
+    expect(mockSendSummary).not.toHaveBeenCalled();
+    expect(result.rfceThresholdUsed).toBeNull();
+  });
+
   it("fails closed when signed XML cannot provide the DGII file name data", async () => {
     mockAuthenticate.mockResolvedValue({ token: "token" });
 

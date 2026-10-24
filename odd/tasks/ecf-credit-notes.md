@@ -37,13 +37,19 @@ Branch to be created after comandas-cierre-cleanup. ask-on-risk; likely > 400 li
       Preferred: E34 lives in ecf_documents (document_type E34, new nullable related_factura_id; relax
       factura_id UNIQUE/NOT NULL) — to validate against worker claim SQL (joins facturas f ON fo.factura_id).
 - [x] T2 Data model + issue RPC (cloud migration, local schema). Route: delegated writer (mapping trigger).
-      Branch feat/ecf-credit-notes-01-data. Migration 20261024130000_ecf_credit_notes.sql (NOT applied).
+      Branch feat/ecf-credit-notes-01-data. Migration 20261024130000_ecf_credit_notes.sql APPLIED to prod 2026-10-24 (verified); PR #82 merged (8603e0d); Dokploy worker mapper.ts redeployed + restarted.
       E34 = own facturas row (estado 'nota_credito'); RPC cloudix_issue_credit_note also books the refund
       gasto + category in the open cycle (moved here from T5); fiado originals rejected (v1).
       Sales exclusion via isSaleInvoice (invoiceKind.ts): Cierre summarizeCycleSales, readAnalyticsSummary,
       Billing KPIs. Evidence: new tests green; typecheck clean; vitest 211 files / 1535 passed / 2 skipped.
-- [ ] T3 Worker mapper E34 (InformacionReferencia, IndicadorNotaCredito) + claim payload reference.
-- [ ] T4 Billing UI: issue button + reason dialog + badges; block hard delete for e-CF invoices.
+- [x] T3 Worker mapper E34 (InformacionReferencia, IndicadorNotaCredito) + claim payload reference.
+      Branch feat/ecf-credit-notes-02-worker. Claim SQL already uses to_jsonb(f.*), so ref_* columns arrive
+      unchanged. Mapper fails closed on bad ref; reason capped at 90 chars; E34 never RFCE (only TipoeCF 32
+      converts; guard test added). Order follows dgii-ecf reference ecf.ts (no XSD in repo): IndicadorNotaCredito
+      after eNCF, InformacionReferencia after DetallesItems. FechaVencimientoSecuencia still not emitted (mapper-wide
+      gap, see ecf-pos-local-signing). Evidence: vitest 213 files / 1553 passed / 2 skipped; typecheck clean.
+- [ ] T4 UI: new sidebar entry "Notas de crédito" (user 2026-10-24) listing accepted E31/E32 invoices
+      with issue button + reason dialog + issued-notes list/badges; block hard delete for e-CF invoices in Billing.
 - [ ] T5 Print E34 (cash-out gasto already created by the T2 RPC).
 - [ ] T6 CI green, release, production test with a real invoice.
 
@@ -51,4 +57,4 @@ Branch to be created after comandas-cierre-cleanup. ask-on-risk; likely > 400 li
 - 2026-10-24: mapping done; decisions recorded.
 
 ## Next step
-T1 exploration (read-only) while comandas-cierre-cleanup is implemented.
+T4 sidebar UI "Notas de crédito" (list accepted E31/E32, issue button + reason dialog, block hard delete for e-CF invoices).
