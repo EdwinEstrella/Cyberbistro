@@ -259,8 +259,12 @@ export function mergeLocalTenantSettings(
     current = {};
   }
   const next = { ...current, ...pickLocalTenantSettings(patch) };
-  db.prepare("UPDATE tenants SET settings_json = ? WHERE id = ? AND cloud_synced = 1")
-    .run(JSON.stringify(next), tenantId);
+  // Stamp the snapshot with the written row's updated_at so a pull that fetched
+  // the cloud row BEFORE this save (pulls buffer every table and apply at the
+  // end) cannot overwrite the fresh value with its older snapshot.
+  const stamp = typeof patch.updated_at === "string" ? patch.updated_at : null;
+  db.prepare("UPDATE tenants SET settings_json = ?, cloud_updated_at = COALESCE(?, cloud_updated_at) WHERE id = ? AND cloud_synced = 1")
+    .run(JSON.stringify(next), stamp, tenantId);
   return true;
 }
 
@@ -278,6 +282,12 @@ export function applyCloudTenantRows(
   if (!row) return;
   const settings = pickLocalTenantSettings(row);
   db.prepare("INSERT OR IGNORE INTO tenants (id) VALUES (?)").run(tenantId);
+  const local = db.prepare("SELECT cloud_updated_at FROM tenants WHERE id = ? AND cloud_synced = 1")
+    .get(tenantId) as { cloud_updated_at: string | null } | undefined;
+  const localStamp = local?.cloud_updated_at ? Date.parse(local.cloud_updated_at) : NaN;
+  const incomingStamp = typeof row.updated_at === "string" ? Date.parse(row.updated_at) : NaN;
+  // A snapshot older than what a write-through already stored is stale: keep local.
+  if (Number.isFinite(localStamp) && Number.isFinite(incomingStamp) && incomingStamp < localStamp) return;
   db.prepare("UPDATE tenants SET settings_json = ?, cloud_synced = 1, cloud_updated_at = ? WHERE id = ?")
     .run(JSON.stringify(settings), typeof row.updated_at === "string" ? row.updated_at : null, tenantId);
 }

@@ -75,6 +75,28 @@ describe("Tenant settings write-through merge (SQLite)", () => {
     expect(s.getLocalTenant()).toMatchObject({ nombre_negocio: "Salpimentao" });
   });
 
+  it("keeps the saved value when a stale in-flight pull is applied afterwards", () => {
+    const s = setup();
+    const db = s.getDatabase();
+    applyCloudTenantRows(db, tenantId, [pulled]);
+    // The pull fetched the cloud row (B01 = 10) before the save, then applies it after the write-through.
+    const staleSnapshot = { ...pulled };
+    s.mergeLocalTenantSettings(tenantId, { ncf_b01_secuencia_siguiente: 25, updated_at: "2026-10-21T10:00:05.000Z" });
+    applyCloudTenantRows(db, tenantId, [staleSnapshot]);
+    expect(s.getLocalTenant()).toMatchObject({ ncf_b01_secuencia_siguiente: 25 });
+  });
+
+  it("still applies a pull that is as new or newer than the local snapshot", () => {
+    const s = setup();
+    const db = s.getDatabase();
+    applyCloudTenantRows(db, tenantId, [pulled]);
+    s.mergeLocalTenantSettings(tenantId, { ncf_b01_secuencia_siguiente: 25, updated_at: "2026-10-21T10:00:05.000Z" });
+    applyCloudTenantRows(db, tenantId, [{ ...pulled, ncf_b01_secuencia_siguiente: 25, updated_at: "2026-10-21 10:00:05+00" }]);
+    expect(s.getLocalTenant()).toMatchObject({ ncf_b01_secuencia_siguiente: 25 });
+    applyCloudTenantRows(db, tenantId, [{ ...pulled, ncf_b01_secuencia_siguiente: 40, updated_at: "2026-10-21T10:01:00.000Z" }]);
+    expect(s.getLocalTenant()).toMatchObject({ ncf_b01_secuencia_siguiente: 40 });
+  });
+
   it("exposes the merge through a trusted-sender IPC channel", async () => {
     const handlers = new Map<string, (event: { senderId: number }, payload?: unknown) => unknown>();
     const ipcMain: CatalogRepositoryIpcMain = {
