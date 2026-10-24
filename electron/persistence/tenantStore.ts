@@ -2,6 +2,7 @@ import { chmodSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { initializeTenantSchema } from "./schema";
+import { purgeExpiredComandasOlderThan } from "./comandasCleanup";
 import { applyCloudExpenseCategoryRows, applyCloudExpenseRows, applyCloudCustomerRows, mergeLocalTenantSettings } from "./cloudApply";
 import { TenantSQLiteImporter, type LegacyImportChunk, type LegacyImportManifest } from "./importer";
 import { PayrollSyncOrchestrator } from "./payrollSyncOrchestrator";
@@ -1571,31 +1572,25 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
   }
 
   purgeExpiredComandas(days = 3): number {
-    const minCreatedAt = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-    const res = this.database.prepare(
-      "DELETE FROM comandas WHERE tenant_id = ? AND created_at < ?"
-    ).run(this.tenantId, minCreatedAt);
-    return res.changes;
+    return purgeExpiredComandasOlderThan(this.database, this.tenantId, days);
   }
 
   listComandas(filter?: { sucursalId?: string; activeOnly?: boolean; maxAgeDays?: number }): Array<Record<string, unknown>> {
     const days = filter?.maxAgeDays ?? 3;
     const minCreatedAt = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
     try {
-      this.database.prepare(
-        "DELETE FROM comandas WHERE tenant_id = ? AND created_at < ?"
-      ).run(this.tenantId, minCreatedAt);
+      purgeExpiredComandasOlderThan(this.database, this.tenantId, days);
     } catch {
       // non-blocking
     }
     const activeFilter = filter?.activeOnly ? " AND estado IN ('pendiente', 'en_preparacion', 'listo')" : "";
     if (filter?.sucursalId) {
       return this.database.prepare(
-        `SELECT * FROM comandas WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id = 'main-process-default' OR sucursal_id IS NULL) AND created_at >= ?${activeFilter} ORDER BY created_at ASC`
+        `SELECT * FROM comandas WHERE tenant_id = ? AND (sucursal_id = ? OR sucursal_id = 'main-process-default' OR sucursal_id IS NULL) AND datetime(created_at) >= datetime(?)${activeFilter} ORDER BY created_at ASC`
       ).all(this.tenantId, filter.sucursalId, minCreatedAt) as Array<Record<string, unknown>>;
     }
     return this.database.prepare(
-      `SELECT * FROM comandas WHERE tenant_id = ? AND created_at >= ?${activeFilter} ORDER BY created_at ASC`
+      `SELECT * FROM comandas WHERE tenant_id = ? AND datetime(created_at) >= datetime(?)${activeFilter} ORDER BY created_at ASC`
     ).all(this.tenantId, minCreatedAt) as Array<Record<string, unknown>>;
   }
   saveComanda(comanda: Record<string, unknown>): void {
