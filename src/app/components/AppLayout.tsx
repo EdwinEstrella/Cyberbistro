@@ -37,7 +37,7 @@ import { canUseFeature, type Feature } from "../../shared/lib/planFeatures";
 type SidebarItem = {
   readonly label: string;
   readonly path?: string;
-  readonly customIcon?: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras" | "cxp" | "cxc" | "pedidos" | "fiscal" | "nomina";
+  readonly customIcon?: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras" | "cxp" | "cxc" | "pedidos" | "fiscal" | "nomina" | "notacredito";
   readonly icon?: string;
   readonly viewBox?: string;
   readonly feature?: Feature;
@@ -88,6 +88,7 @@ const sidebarSections: readonly SidebarSection[] = [
       { label: "Cierre", customIcon: "cierre", path: "/cierre" },
       { label: "Cuentas por Pagar", customIcon: "cxp", path: "/cuentas-pagar", feature: "accounts_payable" },
       { label: "Cuentas por Cobrar", customIcon: "cxc", path: "/cuentas-cobrar", feature: "accounts_receivable" },
+      { label: "Notas de crédito", customIcon: "notacredito", path: "/notas-credito", feature: "dgii_ecf" },
       {
         label: "DGII e-CF",
         customIcon: "fiscal",
@@ -120,6 +121,7 @@ const routePrefetchers: Record<string, () => Promise<unknown>> = {
   "/fiscal/activacion": () => import("../../features/fiscal"),
   "/cuentas-cobrar": () => import("../../features/cuentas-cobrar"),
   "/historial": () => import("../../features/historial"),
+  "/notas-credito": () => import("../../features/notas-credito"),
 };
 
 function prefetchRoute(path: string) {
@@ -188,7 +190,15 @@ function filterMainNavForRol(rol: string | null): readonly SidebarSection[] {
   return filtered.filter((section) => section.items.length > 0);
 }
 
-function SidebarCustomIcon({ name }: { name: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras" | "cxp" | "cxc" | "pedidos" | "fiscal" | "nomina" | "historial" }) {
+function SidebarCustomIcon({ name }: { name: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras" | "cxp" | "cxc" | "pedidos" | "fiscal" | "nomina" | "historial" | "notacredito" }) {
+  if (name === "notacredito") {
+    return (
+      <svg className="shrink-0 size-[20px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 14l-4-4 4-4M5 10h9a5 5 0 010 10h-3" />
+      </svg>
+    );
+  }
+
   if (name === "historial") {
     return (
       <svg className="shrink-0 size-[20px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden>

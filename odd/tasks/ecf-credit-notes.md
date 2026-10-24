@@ -48,13 +48,21 @@ Branch to be created after comandas-cierre-cleanup. ask-on-risk; likely > 400 li
       converts; guard test added). Order follows dgii-ecf reference ecf.ts (no XSD in repo): IndicadorNotaCredito
       after eNCF, InformacionReferencia after DetallesItems. FechaVencimientoSecuencia still not emitted (mapper-wide
       gap, see ecf-pos-local-signing). Evidence: vitest 213 files / 1553 passed / 2 skipped; typecheck clean.
-- [ ] T4 UI: new sidebar entry "Notas de crédito" (user 2026-10-24) listing accepted E31/E32 invoices
-      with issue button + reason dialog + issued-notes list/badges; block hard delete for e-CF invoices in Billing.
+- [x] T4 UI: new sidebar entry "Notas de crédito" (admin-only, feature dgii_ecf, route /notas-credito) in
+      src/features/notas-credito (eligible invoices + search, reason dialog, issued-notes list with fiscal badge);
+      Billing blocks hard delete for e-CF invoices and badges nota_credito rows.
+      Route: delegated writer (writer trigger: 2+ non-trivial files). TDD on: RED observed (modules missing), then GREEN.
+      Data: facturas via readLocalInvoices (SQLite) / fetchCloudInvoicesInRange (web); ecf status via
+      readLocalMirror("ecf_documents") (SQLite mirror) / ecf_documents .in(factura_id) on web; issue via
+      supabase.rpc("cloudix_issue_credit_note"), then triggerSync + reload. Reader is SELECT * so credit_note_of/ref_*
+      reach the renderer. Evidence: 6 new test files (45 tests); typecheck clean; vitest 218 files / 1601 passed / 2 skipped.
+      React Doctor (CI) is fail-on none and not runnable locally. Commits: see git log (fix(billing), feat(fiscal)).
 - [ ] T5 Print E34 (cash-out gasto already created by the T2 RPC).
 - [ ] T6 CI green, release, production test with a real invoice.
 
 ## Progress
 - 2026-10-24: mapping done; decisions recorded.
+- 2026-10-24: T4 UI done on feat/ecf-credit-notes-03-ui.
 
 ## Next step
-T4 sidebar UI "Notas de crédito" (list accepted E31/E32, issue button + reason dialog, block hard delete for e-CF invoices).
+T5 print E34 (cash-out gasto already created by the T2 RPC).
