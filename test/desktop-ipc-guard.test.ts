@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   TENANT_STORE_ACTIVATE_CHANNEL,
-  TENANT_STORE_IMPORT_CHANNEL,
   TENANT_STORE_STATUS_CHANNEL,
   PAYROLL_SYNC_ACCESS_TOKEN_CHANNEL,
   registerPayrollSyncAccessTokenIpc,
@@ -52,25 +51,6 @@ describe("tenant store IPC boundary", () => {
       sql: "SELECT * FROM tenant_b",
       table: "tenant_b",
     })).resolves.toEqual({ ok: true, data: { isOpen: true } });
-  });
-
-  it("permits bounded legacy import data only for the main-process active tenant", async () => {
-    const { handlers, ipcMain } = createIpcHarness();
-    const importLegacySnapshot = async (payload: unknown) => ({ received: payload });
-    registerTenantStoreIpc({
-      ipcMain,
-      isTrustedSender: (event) => event.senderId === 7,
-      getStatus: () => ({ tenantId: "tenant-a", isOpen: true }),
-      getActiveTenantId: () => "tenant-a",
-      importLegacySnapshot,
-    });
-
-    await expect(handlers.get(TENANT_STORE_IMPORT_CHANNEL)?.({ senderId: 7 }, {
-      manifest: { tenantId: "tenant-b" }, chunks: [],
-    })).rejects.toThrow("tenant mismatch");
-    await expect(handlers.get(TENANT_STORE_IMPORT_CHANNEL)?.({ senderId: 7 }, {
-      manifest: { tenantId: "tenant-a" }, chunks: [],
-    })).resolves.toEqual({ ok: true, data: { received: { manifest: { tenantId: "tenant-a" }, chunks: [] } } });
   });
 
   it("validates and activates valid tenant identity while rejecting untrusted sender and malformed tenantId", async () => {

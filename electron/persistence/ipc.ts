@@ -23,7 +23,6 @@ export type InvoiceHeaderUpdateResult =
 
 export const TENANT_STORE_STATUS_CHANNEL = "tenant-store:status";
 export const TENANT_STORE_ACTIVATE_CHANNEL = "tenant-store:activate";
-export const TENANT_STORE_IMPORT_CHANNEL = "tenant-store:import-indexeddb";
 export const DESKTOP_REPOSITORY_EXECUTE_CHANNEL = "desktop-repository:execute";
 export const CATALOG_REPOSITORY_EXECUTE_CHANNEL = "catalog-repository:execute";
 export const CATALOG_LIST_CHANNEL = "catalog:list";
@@ -635,9 +634,7 @@ export function registerTenantStoreIpc(input: {
   ipcMain: TenantStoreIpcMain;
   isTrustedSender: (event: { senderId: number }) => boolean;
   getStatus: () => { tenantId: string | null; isOpen: boolean };
-  getActiveTenantId?: () => string | null;
   activateTenant?: (tenantId: string) => void;
-  importLegacySnapshot?: (payload: unknown) => Promise<unknown> | unknown;
 }): void {
   input.ipcMain.removeHandler(TENANT_STORE_STATUS_CHANNEL);
   input.ipcMain.handle(TENANT_STORE_STATUS_CHANNEL, async (event) => {
@@ -656,26 +653,6 @@ export function registerTenantStoreIpc(input: {
       return { ok: true, data: { tenantId } };
     });
   }
-
-  if (input.getActiveTenantId && input.importLegacySnapshot) {
-    input.ipcMain.removeHandler(TENANT_STORE_IMPORT_CHANNEL);
-    input.ipcMain.handle(TENANT_STORE_IMPORT_CHANNEL, async (event, payload) => {
-      if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
-      const manifestTenantId = getManifestTenantId(payload);
-      if (!manifestTenantId) throw new Error("Legacy import manifest is invalid");
-      const activeTenantId = input.getActiveTenantId();
-      if (activeTenantId && manifestTenantId !== activeTenantId) throw new Error("Legacy import tenant mismatch");
-      return { ok: true, data: await input.importLegacySnapshot(payload) };
-    });
-  }
-}
-
-function getManifestTenantId(payload: unknown): string | null {
-  if (!payload || typeof payload !== "object") return null;
-  const manifest = (payload as { manifest?: unknown }).manifest;
-  if (!manifest || typeof manifest !== "object") return null;
-  const tenantId = (manifest as { tenantId?: unknown }).tenantId;
-  return typeof tenantId === "string" ? tenantId : null;
 }
 
 function parseTenantIdentity(payload: unknown): string | null {

@@ -12,8 +12,6 @@ import {
   ensureDefaultSucursal,
   assertCanWriteOffline,
   syncLanEdge,
-  exportLegacyIndexedDbImportPayload,
-  importLegacyIndexedDbThroughDesktop,
 } from "../lib/localFirst";
 import { syncIndexedDbComprasToSqlite } from "../../features/compras/lib/purchaseService";
 import {
@@ -236,22 +234,6 @@ export function useLocalFirstBootstrap(tenantId: string | null, accessValidated 
         if (!canContinue()) return;
         await ensureDefaultSucursal(validatedTenantId);
         if (!canContinue()) return;
-
-        if (window.electronAPI?.importLegacyIndexedDb) {
-          const migrationKey = `cloudix_sqlite_imported_v1_${validatedTenantId}`;
-          if (!localStorage.getItem(migrationKey)) {
-            try {
-              const payload = await exportLegacyIndexedDbImportPayload(validatedTenantId);
-              if (payload.chunks.some((c) => c.rows.length > 0)) {
-                await importLegacyIndexedDbThroughDesktop(payload);
-                console.info("[Migration] Legacy IndexedDB safely imported into SQLite for tenant:", validatedTenantId);
-              }
-              localStorage.setItem(migrationKey, "true");
-            } catch (importErr) {
-              console.warn("[Migration] Could not auto-import legacy IndexedDB:", importErr);
-            }
-          }
-        }
 
         if (window.electronAPI?.executePurchaseCommand) {
           void syncIndexedDbComprasToSqlite(validatedTenantId).catch(() => 0);

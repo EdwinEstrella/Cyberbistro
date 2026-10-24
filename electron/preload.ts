@@ -107,7 +107,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('local-data-updated', listener);
   },
   retryFailedSyncErrors: (tenantId?: string) => ipcRenderer.invoke('sync:retry-errors', tenantId),
-  importLegacyIndexedDb: (payload: unknown) => ipcRenderer.invoke('tenant-store:import-indexeddb', payload),
   close: () => {
     console.log('preload: close called')
     ipcRenderer.send('window-close')

@@ -125,7 +125,6 @@ export interface ElectronAPI {
   openLogsFolder?: () => Promise<{ ok: boolean; path?: string }>;
   onLocalDataUpdated?: (callback: (tenantId: string) => void) => () => void;
   retryFailedSyncErrors?: (tenantId?: string) => Promise<{ ok: true; data: { count: number } }>;
-  importLegacyIndexedDb?: (payload: unknown) => Promise<{ ok: true; data: { tenantId: string; importedRows: number; recoveredOutbox: number } }>;
   close: () => void;
   getVersions: () => NodeJS.ProcessVersions;
   onWindowMaximized?: (callback: (isMaximized: boolean) => void) => void;
