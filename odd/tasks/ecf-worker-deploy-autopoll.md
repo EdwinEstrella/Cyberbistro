@@ -41,8 +41,13 @@ Branch `fix/ecf-certificate-env-flash` (already holds 066ff96, 921bd6a). Strateg
       Evidence: 11 RED→GREEN tests; full suite 202 files / 1487 passed; typecheck ok. Edge file changed:
       supabase/functions/ecf-certification/dgiiClient.ts (needs Dokploy mount update + functions restart).
       Gap: no persisted last trackId → no re-poll on reopen (timeout notice tells user to press Consultar).
-- [ ] T3 Deploy `fiscal-worker` service on Dokploy (file mounts + compose service + env), redeploy,
-      verify logs. Route: inline browser (user clicks Save/Deploy when the classifier blocks).
+- [x] T3 Deploy `fiscal-worker` service on Dokploy (file mounts + compose service + env), redeploy,
+      verify. Route: inline via Dokploy API (token in ~/.dokploy-token, never printed).
+      Evidence 2026-10-24 15:16 UTC: 15 mounts created/updated; compose saved with fiscal-worker +
+      fiscal-worker-node-modules volume; deployment "done"; container fiscal-worker-1 running; Postgres
+      session from the worker polling fiscal_outbox since 15:16:27; other services untouched (Up 2 days);
+      functions-1 restarted; ecf-certification answers 401 unauthenticated (boots fine).
+      Rollback: compose.backup.yml + dgiiClient.backup.ts kept in the session scratchpad.
 - [ ] T4 Release + verify end-to-end (TesteCF send resolves to Aceptado/Rechazado without clicks).
 
 ## Progress
@@ -56,5 +61,8 @@ Branch `fix/ecf-certificate-env-flash` (already holds 066ff96, 921bd6a). Strateg
   Blocked: injecting the bundle into the panel page from a localhost server was denied by the
   permission classifier.
 
+- 2026-10-24: PR #79 opened (5 commits, ~430 lines), waiting for CI before merge to master.
+
 ## Next step
-T3: transfer files via Dokploy API token from the shell (user to provide) or paste per file in panel.
+Merge PR #79 after CI, pull master; user retests TesteCF send (should end in Aceptado/Rechazado
+without clicks); then release (user decision) and activation step 15 as activator.
