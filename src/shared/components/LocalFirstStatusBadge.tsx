@@ -35,7 +35,7 @@ function statusTheme(status: LocalFirstStatus) {
         dot: "bg-emerald-500",
         pulse: "bg-emerald-500/40",
         bar: "bg-emerald-500",
-        animate: true,
+        animate: false,
       };
     case "offline":
     case "error":
@@ -71,11 +71,14 @@ export function LocalFirstStatusBadge({
 
   const theme = statusTheme(status);
   const percentage = totalHistoryTables > 0 ? (completedHistoryTables / totalHistoryTables) * 100 : 0;
+  // Once history is complete the badge collapses to one line; progress only matters while it runs.
+  const isComplete = status === "history_complete";
+  const showProgress = !isComplete && totalHistoryTables > 0;
 
   return (
     <div
       onClick={onClick}
-      className={`rounded-xl border p-3 font-['Inter',sans-serif] text-[11px] leading-tight transition-all duration-300 flex flex-col gap-2.5 ${theme.bg} ${
+      className={`rounded-xl border px-3 py-2.5 font-['Inter',sans-serif] text-[11px] leading-tight transition-all duration-300 flex flex-col gap-2 ${theme.bg} ${
         onClick
           ? "cursor-pointer hover:opacity-90 hover:scale-[1.01] active:scale-[0.99] transition-transform select-none"
           : ""
@@ -99,29 +102,32 @@ export function LocalFirstStatusBadge({
             )}
             <span className={`relative inline-flex rounded-full size-2 ${theme.dot}`} />
           </div>
-          <span className="font-bold uppercase tracking-wider text-[10px] truncate">
-            {labelForStatus(status)}
-          </span>
+          <span className="font-semibold text-[11px] truncate">{labelForStatus(status)}</span>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
-          <span className="text-[9.5px] font-bold opacity-80 tabular-nums">
-            {completedHistoryTables}/{totalHistoryTables}
-          </span>
-          {onClick && <span className="text-[10px] opacity-60">↗</span>}
+        <div className="flex items-center gap-1.5 shrink-0 opacity-70">
+          {showProgress && (
+            <span className="text-[10px] font-medium tabular-nums">
+              {completedHistoryTables}/{totalHistoryTables}
+            </span>
+          )}
+          {onClick && <span className="text-[10px]">↗</span>}
         </div>
       </div>
 
-      {/* Progress Bar */}
-      <div className="w-full bg-black/5 dark:bg-white/10 h-1 rounded-full overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all duration-500 ${theme.bar}`}
-          style={{ width: `${percentage}%` }}
-        />
-      </div>
+      {showProgress && (
+        <div className="w-full bg-black/5 dark:bg-white/10 h-1 rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-500 ${theme.bar}`}
+            style={{ width: `${percentage}%` }}
+          />
+        </div>
+      )}
 
-      <div className="text-[9.5px] opacity-75 font-medium truncate" title={message}>
-        {message}
-      </div>
+      {!isComplete && (
+        <div className="text-[10px] opacity-70 truncate" title={message}>
+          {message}
+        </div>
+      )}
     </div>
   );
 }

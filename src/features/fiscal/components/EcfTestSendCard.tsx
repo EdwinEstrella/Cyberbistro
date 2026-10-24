@@ -1,13 +1,16 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { RefreshCw, Send } from "lucide-react";
 import { supabase } from "../../../shared/lib/supabase";
-import { ECF_CERTIFICATION_FUNCTION, type DgiiMessageView, type StatusTone } from "../lib/ecfCertificationRun";
+import { ECF_CERTIFICATION_FUNCTION, type StatusTone } from "../lib/ecfCertificationRun";
 import {
   NO_TEST_CERTIFICATE_MESSAGE,
+  TEST_POLL_TIMEOUT_MESSAGE,
   TEST_SEND_FALLBACK,
   buildSendTestRequest,
   buildTestStatusRequest,
   extractTestSendInvokeError,
+  formatDgiiMessages,
+  nextTestPollStep,
   testEstadoView,
   toTestSendFailure,
   toTestSendResult,
@@ -23,21 +26,23 @@ const TONE_CLASSES: Record<StatusTone, string> = {
   danger: "bg-red-500/15 text-red-600 dark:text-red-400",
 };
 
-type Busy = "send" | "status" | null;
+type Busy = "send" | "status" | "poll" | null;
 
-const formatMessages = (messages: DgiiMessageView[]) =>
-  messages.map((message) => (message.codigo ? `${message.codigo}: ${message.valor}` : message.valor)).join(" · ");
+const formatMessages = formatDgiiMessages;
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 export interface EcfTestSendViewProps {
   certificateReady: boolean;
   busy: Busy;
   result: TestSendResult | null;
   failure: TestSendFailure | null;
+  /** Non-final outcome shown when automatic polling stopped without a final DGII estado. */
+  notice?: string | null;
   onSend(): void;
   onCheckStatus(): void;
 }
 
-export function EcfTestSendView({ certificateReady, busy, result, failure, onSend, onCheckStatus }: EcfTestSendViewProps) {
+export function EcfTestSendView({ certificateReady, busy, result, failure, notice, onSend, onCheckStatus }: EcfTestSendViewProps) {
   const estado = result ? testEstadoView(result.estado) : null;
   return (
     <div className="mt-6 rounded-2xl border border-primary/25 bg-primary/5 p-5">
@@ -59,6 +64,10 @@ export function EcfTestSendView({ certificateReady, busy, result, failure, onSen
         )}
       </div>
 
+      {busy === "poll" && (
+        <p role="status" className="mt-3 flex items-center gap-2 text-xs font-semibold text-sky-700 dark:text-sky-300"><RefreshCw className="size-4 animate-spin" /> Consultando a la DGII…</p>
+      )}
+
       {result && estado && (
         <dl className="mt-4 grid gap-2 rounded-xl border border-border bg-background p-4 text-xs sm:grid-cols-2">
           <div><dt className="text-muted-foreground">e-NCF</dt><dd className="font-mono font-bold text-foreground">{result.encf ?? "—"}</dd></div>
@@ -68,6 +77,8 @@ export function EcfTestSendView({ certificateReady, busy, result, failure, onSen
           <div className="sm:col-span-2"><dt className="text-muted-foreground">Mensajes DGII</dt><dd className="text-foreground">{formatMessages(result.mensajes) || "—"}</dd></div>
         </dl>
       )}
+
+      {notice && <p role="status" className="mt-3 text-xs font-semibold text-yellow-700 dark:text-yellow-300">{notice}</p>}
 
       {failure && (
         <div role="status" className="mt-3 text-xs font-semibold text-red-500">
@@ -99,18 +110,59 @@ export function EcfTestSendCard({ tenantId, certificateReady }: EcfTestSendCardP
   const [busy, setBusy] = useState<Busy>(null);
   const [result, setResult] = useState<TestSendResult | null>(null);
   const [failure, setFailure] = useState<TestSendFailure | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const mounted = useRef(true);
 
-  async function run(kind: Exclude<Busy, null>, body: Record<string, unknown>) {
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  /** Runs one request; returns the mapped result (null on failure). No state is touched after unmount. */
+  async function request(body: Record<string, unknown>, previous: TestSendResult | null): Promise<TestSendResult | null> {
+    const { data, failure: invokeFailure } = await invoke(body);
+    if (!mounted.current) return null;
+    if (invokeFailure) {
+      setFailure(invokeFailure);
+      return null;
+    }
+    const next = toTestSendResult(data, previous);
+    if (next) setResult(next);
+    else setFailure(toTestSendFailure(data));
+    return next;
+  }
+
+  /** Re-checks the TrackId with bounded backoff until DGII gives a final estado or the cap is reached. */
+  async function poll(first: TestSendResult) {
+    setBusy("poll");
+    let current = first;
+    let attempt = 0;
+    let elapsedMs = 0;
+    while (mounted.current) {
+      const step = nextTestPollStep({ estado: current.estado, attempt, elapsedMs });
+      if (step.action === "done") return;
+      if (step.action === "give-up") return setNotice(TEST_POLL_TIMEOUT_MESSAGE);
+      await wait(step.delayMs);
+      elapsedMs += step.delayMs;
+      attempt += 1;
+      if (!mounted.current) return;
+      const next = await request(buildTestStatusRequest(current.trackId, tenantId), current);
+      if (!next) return;
+      current = next;
+    }
+  }
+
+  async function run(kind: "send" | "status", body: Record<string, unknown>) {
     setBusy(kind);
     setFailure(null);
+    setNotice(null);
     try {
-      const { data, failure: invokeFailure } = await invoke(body);
-      if (invokeFailure) return setFailure(invokeFailure);
-      const next = toTestSendResult(data, kind === "status" ? result : null);
-      if (next) setResult(next);
-      else setFailure(toTestSendFailure(data));
+      const next = await request(body, kind === "status" ? result : null);
+      if (next && kind === "send") await poll(next);
     } finally {
-      setBusy(null);
+      if (mounted.current) setBusy(null);
     }
   }
 
@@ -120,6 +172,7 @@ export function EcfTestSendCard({ tenantId, certificateReady }: EcfTestSendCardP
       busy={busy}
       result={result}
       failure={failure}
+      notice={notice}
       onSend={() => void run("send", buildSendTestRequest(tenantId))}
       onCheckStatus={() => result && void run("status", buildTestStatusRequest(result.trackId, tenantId))}
     />

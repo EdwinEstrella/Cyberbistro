@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { normalizeTenantBillingSettings } from "./tenantBillingSettings";
 
 describe("normalizeTenantBillingSettings", () => {
@@ -39,5 +39,32 @@ describe("normalizeTenantBillingSettings", () => {
     expect(normalizeTenantBillingSettings(null).itbisIncluded).toBe(false);
     expect(normalizeTenantBillingSettings({}).itbisIncluded).toBe(false);
     expect(normalizeTenantBillingSettings({ itbis_incluido_en_precio: true }).itbisIncluded).toBe(true);
+  });
+});
+
+describe("loadTenantBillingSettings offline", () => {
+  it("resolves from the local tenant row when the cloud read throws", async () => {
+    vi.resetModules();
+    vi.doMock("./supabase", () => ({
+      supabase: { from: () => { throw new Error("fetch failed"); } },
+    }));
+    vi.doMock("./cloudAvailability", () => ({
+      isCloudAvailabilityFailure: () => true,
+      isDesktopCloudUnavailable: async () => false,
+      recordCloudFailure: () => undefined,
+      recordCloudSuccess: () => undefined,
+    }));
+    const rows: Array<Record<string, unknown>> = [{ id: "t1", ncf_fiscal_activo: true, ncf_tipo_default: "B01" }];
+    vi.doMock("./localFirst", () => ({ readLocalMirror: async () => rows }));
+    const mod = await import("./tenantBillingSettings");
+    await expect(mod.loadTenantBillingSettings("t1")).resolves.toMatchObject({
+      fiscalMode: "ncf_legacy",
+      defaultNcfType: "B01",
+    });
+    rows.length = 0;
+    await expect(mod.loadTenantBillingSettings("t1")).resolves.toBeNull();
+    vi.doUnmock("./supabase");
+    vi.doUnmock("./cloudAvailability");
+    vi.doUnmock("./localFirst");
   });
 });

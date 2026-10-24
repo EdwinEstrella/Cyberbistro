@@ -3,6 +3,17 @@ import { RealDgiiClient, RealXmlSigner } from "./dgiiAdapters";
 import { fiscalWorkerError } from "./errors";
 // import { convertECF32ToRFCE } from "dgii-ecf";
 
+/** Only documents whose certificate belongs to the tenant's configured e-CF environment are batched. */
+export const RFCE_PENDING_DOCUMENTS_SQL = `
+  SELECT ed.id, ed.factura_id, ed.certificate_metadata_id, cm.environment, f.created_at as fiscal_date
+  FROM public.ecf_documents ed
+  JOIN public.tenants t ON t.id = ed.tenant_id
+  JOIN public.ecf_certificate_metadata cm ON ed.certificate_metadata_id = cm.id
+    AND cm.environment = t.ecf_environment
+  JOIN public.facturas f ON ed.factura_id = f.id
+  WHERE ed.tenant_id = $1 AND ed.status = 'pending_rfce_batch'
+`;
+
 export class RfceBatchWorker {
   private db: any;
 
@@ -30,13 +41,7 @@ export class RfceBatchWorker {
 
   private async processTenant(tenantId: string) {
     // 2. Fetch pending documents for this tenant
-    const docsResult = await this.db.query(`
-      SELECT ed.id, ed.factura_id, ed.certificate_metadata_id, cm.environment, f.created_at as fiscal_date
-      FROM public.ecf_documents ed
-      JOIN public.ecf_certificate_metadata cm ON ed.certificate_metadata_id = cm.id
-      JOIN public.facturas f ON ed.factura_id = f.id
-      WHERE ed.tenant_id = $1 AND ed.status = 'pending_rfce_batch'
-    `, [tenantId]);
+    const docsResult = await this.db.query(RFCE_PENDING_DOCUMENTS_SQL, [tenantId]);
 
     if (docsResult.rows.length === 0) return;
 
@@ -103,6 +108,6 @@ export class RfceBatchWorker {
 }
 
 // Optional execution wrapper
-if (require.main === module) {
+if (typeof require !== "undefined" && require.main === module) {
   new RfceBatchWorker().runBatchProcess().catch(console.error);
 }

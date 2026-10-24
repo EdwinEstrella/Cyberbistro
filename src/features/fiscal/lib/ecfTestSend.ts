@@ -56,7 +56,7 @@ function toMessages(value: unknown): DgiiMessageView[] {
   return value
     .filter((entry): entry is { codigo?: unknown; valor?: unknown } => !!entry && typeof entry === "object")
     .map((entry) => ({ codigo: typeof entry.codigo === "string" ? entry.codigo : null, valor: typeof entry.valor === "string" ? entry.valor : "" }))
-    .filter((entry) => entry.valor || entry.codigo);
+    .filter((entry) => entry.valor.trim() !== "");
 }
 
 const text = (value: unknown) => (typeof value === "string" && value ? value : null);
@@ -110,4 +110,30 @@ export function testEstadoView(estado: string | null): { label: string; tone: St
   if (normalized === "rechazado") return { label: "Rechazado", tone: "danger", final: true };
   if (normalized === "no encontrado") return { label: "No encontrado", tone: "neutral", final: false };
   return { label: "En proceso", tone: "progress", final: false };
+}
+
+/** Joins DGII messages for display; a message without text is never printed (no bare "0:"). */
+export function formatDgiiMessages(messages: DgiiMessageView[]): string {
+  return messages
+    .filter((message) => message.valor.trim() !== "")
+    .map((message) => (message.codigo ? `${message.codigo}: ${message.valor}` : message.valor))
+    .join(" · ");
+}
+
+/** Backoff between automatic status checks of a TesteCF submission; the last delay repeats. */
+export const TEST_POLL_DELAYS_MS = [2000, 3000, 5000] as const;
+export const TEST_POLL_MAX_TOTAL_MS = 180_000;
+export const TEST_POLL_TIMEOUT_MESSAGE = "La DGII aún no responde. Tocá «Consultar estado» para volver a consultar.";
+
+export type TestPollStep = { action: "done" } | { action: "wait"; delayMs: number } | { action: "give-up" };
+
+/**
+ * Decides what to do after a send/status answer: stop on a final estado, wait the next backoff delay,
+ * or give up when waiting again would exceed the total cap. `attempt` is the number of status checks done.
+ */
+export function nextTestPollStep(input: { estado: string | null; attempt: number; elapsedMs: number }): TestPollStep {
+  if (testEstadoView(input.estado).final) return { action: "done" };
+  const delayMs = TEST_POLL_DELAYS_MS[Math.min(input.attempt, TEST_POLL_DELAYS_MS.length - 1)];
+  if (input.elapsedMs + delayMs > TEST_POLL_MAX_TOTAL_MS) return { action: "give-up" };
+  return { action: "wait", delayMs };
 }

@@ -72,6 +72,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   listInvoices: (filter?: unknown) => ipcRenderer.invoke('facturas:list', filter),
   reserveInvoiceNumbers: (request: unknown) => ipcRenderer.invoke('facturas:reserve-numbers', request),
   getInvoiceNumberFloor: (request: unknown) => ipcRenderer.invoke('facturas:number-floor', request),
+  ncfLocalSequence: (request: unknown) => ipcRenderer.invoke('ncf:local-sequence', request),
   deleteInvoiceLocal: (request: unknown) => ipcRenderer.invoke('facturas:delete-local', request),
   saveInvoiceLocal: (invoice: unknown) => ipcRenderer.invoke('facturas:save-local', invoice),
   updateInvoiceHeaderLocal: (request: unknown) => ipcRenderer.invoke('facturas:update-header', request),
@@ -106,7 +107,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('local-data-updated', listener);
   },
   retryFailedSyncErrors: (tenantId?: string) => ipcRenderer.invoke('sync:retry-errors', tenantId),
-  importLegacyIndexedDb: (payload: unknown) => ipcRenderer.invoke('tenant-store:import-indexeddb', payload),
   close: () => {
     console.log('preload: close called')
     ipcRenderer.send('window-close')

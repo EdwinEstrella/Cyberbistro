@@ -19,7 +19,7 @@ export type ResolvedNcfForInvoice = {
   tipoCodigo: string;
   usedSequence: number;
   sequenceReservedAtomically: boolean;
-  reservationSource?: "remote_rpc" | "remote_legacy" | "local_mirror";
+  reservationSource?: "remote_rpc" | "remote_legacy" | "local_mirror" | "local_sqlite";
 };
 
 /** Solo la fila del tenant de la sesion (`tenants.id` = tenant del usuario). */
@@ -106,8 +106,10 @@ export async function resolveNcfForNewInvoice(
       recordCloudSuccess();
       throw rangeError;
     }
-    if (isCloudAvailabilityFailure(error)) recordCloudFailure();
-    throw new Error(error.message || "No se pudo reservar NCF fiscal.");
+    const cloudUnavailable = isCloudAvailabilityFailure(error);
+    if (cloudUnavailable) recordCloudFailure();
+    // Flag connectivity failures so the desktop can fall back to its local sequence.
+    throw Object.assign(new Error(error.message || "No se pudo reservar NCF fiscal."), { cloudUnavailable });
   }
 
   recordCloudSuccess();

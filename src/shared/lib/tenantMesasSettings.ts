@@ -1,5 +1,8 @@
 import { supabase } from "./supabase";
 import { enqueueLocalWrite, getDeviceId, readLocalMirror, shouldReadLocalFirst } from "./localFirst";
+import { canAttemptCloudRead } from "./cloudAvailability";
+
+const DEFAULT_CANTIDAD_MESAS = 20;
 
 export async function loadCantidadMesas(tenantId: string): Promise<number> {
   const readLocalCantidad = async () => {
@@ -14,6 +17,12 @@ export async function loadCantidadMesas(tenantId: string): Promise<number> {
     if (localCantidad) return localCantidad;
   }
 
+  // Desktop with the cloud down: never block the dashboard on a cloud read
+  // (supabase calls wait on auth-js token-refresh retries).
+  if (!(await canAttemptCloudRead())) {
+    return (await readLocalCantidad()) || DEFAULT_CANTIDAD_MESAS;
+  }
+
   const { data, error } = await supabase
     .from("tenants")
     .select("cantidad_mesas")
@@ -22,7 +31,7 @@ export async function loadCantidadMesas(tenantId: string): Promise<number> {
     
   if (error || !data || !data.cantidad_mesas) {
     const localCantidad = await readLocalCantidad();
-    return localCantidad || 20;
+    return localCantidad || DEFAULT_CANTIDAD_MESAS;
   }
   return data.cantidad_mesas as number;
 }

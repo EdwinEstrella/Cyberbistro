@@ -1,4 +1,7 @@
 import { supabase } from "./supabase";
+import { readLocalSucursales } from "./localSucursales";
+import { readLocalTenant } from "./localTenant";
+import { resolveNcfForNewInvoiceDesktop } from "./localNcfReservation";
 import { incrementTenantNcfSequence, resolveNcfForNewInvoice, type ResolvedNcfForInvoice } from "./invoiceNcf";
 import { getCloudAvailabilitySnapshot, isCloudAvailabilityFailure, isCloudAvailableForDesktop, isDesktopCloudUnavailable, isDesktopRuntime, recordCloudFailure, recordCloudSuccess } from "./cloudAvailability";
 import { commitLanEdgeCursor, getLanEdgeBaseUrl, publishLanOutboxEntry, publishLanSnapshotEntries, pullLanOutboxEntries } from "./lanEdgeClient";
@@ -119,104 +122,6 @@ export type LocalFirstStatus =
   | "offline"
   | "syncing"
   | "error";
-
-export interface LegacyIndexedDbImportPayload {
-  manifest: { tenantId: string; tables: Array<{ name: string; count: number; hash: string }>; outboxIdsHash: string; hash: string };
-  chunks: Array<{ table: string; rows: Record<string, unknown>[] }>;
-}
-
-/** The renderer may export its legacy IndexedDB snapshot, but activation and validation remain main-process authority. */
-export async function importLegacyIndexedDbThroughDesktop(payload: LegacyIndexedDbImportPayload): Promise<{ tenantId: string; importedRows: number; recoveredOutbox: number }> {
-  const importer = window.electronAPI?.importLegacyIndexedDb;
-  if (!importer) throw new Error("Desktop IndexedDB import is unavailable outside Electron.");
-  const response = await importer(payload);
-  return response.data;
-}
-
-/** Reads only this tenant's legacy IndexedDB rows in fixed-size batches for main-process validation and activation. */
-export async function exportLegacyIndexedDbImportPayload(tenantId: string, chunkSize = 250): Promise<LegacyIndexedDbImportPayload> {
-  if (!Number.isInteger(chunkSize) || chunkSize < 1 || chunkSize > 250) throw new Error("Invalid legacy export chunk size.");
-  if (isDesktopRuntime()) {
-    const chunks: LegacyIndexedDbImportPayload["chunks"] = [];
-    return { manifest: await buildLegacyIndexedDbManifest(tenantId, chunks), chunks };
-  }
-  const db = await openLocalFirstDbForSync(tenantId);
-  try {
-    const chunks: LegacyIndexedDbImportPayload["chunks"] = [];
-    const tables = [...LOCAL_FIRST_MIRROR_TABLES, "sync_outbox", "local_fiscal_outbox"];
-    for (const table of tables) {
-      if (!db.objectStoreNames.contains(table)) continue;
-      chunks.push(...await readLegacyStoreInChunks(db, table, tenantId, chunkSize));
-    }
-    const manifest = await buildLegacyIndexedDbManifest(tenantId, chunks);
-    return { manifest, chunks };
-  } finally {
-    db.close();
-  }
-}
-
-async function readLegacyStoreInChunks(db: IDBDatabase, table: string, tenantId: string, chunkSize: number): Promise<Array<{ table: string; rows: Record<string, unknown>[] }>> {
-  return new Promise((resolve, reject) => {
-    const chunks: Array<{ table: string; rows: Record<string, unknown>[] }> = [];
-    const tx = db.transaction(table, "readonly");
-    const request = tx.objectStore(table).openCursor();
-    let rows: Record<string, unknown>[] = [];
-    request.onsuccess = () => {
-      const cursor = request.result;
-      if (!cursor) {
-        if (rows.length > 0) chunks.push({ table, rows });
-        resolve(chunks);
-        return;
-      }
-      const row = cursor.value as Record<string, unknown>;
-      if (!row || row.id == null || String(row.id).trim() === "") {
-        cursor.continue();
-        return;
-      }
-      const belongsToTenant =
-        table === "tenants"
-          ? String(row.id) === tenantId
-          : (table === "nomina_pagos" || table === "nomina_ajustes")
-          ? true
-          : String(row.tenant_id ?? "") === tenantId;
-      if (belongsToTenant) {
-        rows.push({ ...row, id: String(row.id).trim() });
-        if (rows.length === chunkSize) {
-          chunks.push({ table, rows });
-          rows = [];
-        }
-      }
-      cursor.continue();
-    };
-    request.onerror = () => reject(request.error ?? new Error(`No se pudo leer ${table} desde IndexedDB.`));
-  });
-}
-
-async function buildLegacyIndexedDbManifest(tenantId: string, chunks: LegacyIndexedDbImportPayload["chunks"]): Promise<LegacyIndexedDbImportPayload["manifest"]> {
-  const rowsByTable = new Map<string, Record<string, unknown>[]>();
-  const outboxIds: string[] = [];
-  for (const chunk of chunks) {
-    const rows = rowsByTable.get(chunk.table) ?? [];
-    rows.push(...chunk.rows);
-    rowsByTable.set(chunk.table, rows);
-    if (chunk.table === "sync_outbox") outboxIds.push(...chunk.rows.map((row) => String(row.id ?? "")));
-  }
-  const tables = await Promise.all([...rowsByTable.entries()].map(async ([name, rows]) => ({ name, count: rows.length, hash: await sha256(legacyCanonical(rows)) })));
-  tables.sort((a, b) => a.name.localeCompare(b.name));
-  const outboxIdsHash = await sha256(legacyCanonical(outboxIds.sort()));
-  return { tenantId, tables, outboxIdsHash, hash: await sha256(legacyCanonical({ tenantId, tables, outboxIdsHash })) };
-}
-
-function legacyCanonical(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(legacyCanonical).join(",")}]`;
-  if (value && typeof value === "object") return `{${Object.keys(value as Record<string, unknown>).sort().map((key) => `${JSON.stringify(key)}:${legacyCanonical((value as Record<string, unknown>)[key])}`).join(",")}}`;
-  return JSON.stringify(value) ?? "null";
-}
-
-async function sha256(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
 
 export interface SyncStateRow {
   key: string;
@@ -847,6 +752,10 @@ export async function resolveNcfForNewInvoiceLocalFirst(
 ): Promise<ResolvedNcfForInvoice | null> {
   if (isLocalFirstEnabled() && shouldUseIndexedDb()) {
     return reserveLocalNcfForNewInvoice(tenantId, preferredType);
+  }
+  // Desktop: SQLite local NCF sequence when the cloud is unavailable (cloud RPC stays authoritative otherwise).
+  if (isDesktopRuntime()) {
+    return resolveNcfForNewInvoiceDesktop(tenantId, preferredType);
   }
 
   return resolveNcfForNewInvoice(tenantId, preferredType);
@@ -2505,6 +2414,17 @@ export async function readLocalMirror<T = Record<string, unknown>>(
     } catch (err) {
       console.warn(`[localFirst] readLocalMirror failed for ${tableName}, falling back to cloud:`, err);
     }
+  }
+  // Desktop: SQLite is the local truth for branches (pulled from the cloud into
+  // the main process). Prefer it over any cloud round-trip.
+  if (tableName === "sucursales" && !shouldUseIndexedDb()) {
+    const local = await readLocalSucursales(tenantId);
+    if (local.length > 0) return local as unknown as T[];
+  }
+  // Desktop: the current tenant's settings row is pulled into SQLite as well.
+  if (tableName === "tenants" && !shouldUseIndexedDb()) {
+    const local = await readLocalTenant(tenantId);
+    if (local) return [local] as unknown as T[];
   }
   // On desktop the cloud is a sync/administration service, not an operational
   // dependency: never block a mirror read on a cloud round-trip when the cloud

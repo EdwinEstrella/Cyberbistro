@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_supabase_migrations_20261014120000_allow_void_account_payments_sql", "label": "20261014120000_allow_void_account_payments.sql", "file_type": "code", "source_file": "supabase/migrations/20261014120000_allow_void_account_payments.sql", "source_location": null}], "edges": []}

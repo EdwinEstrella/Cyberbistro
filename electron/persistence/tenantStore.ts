@@ -5,6 +5,7 @@ import { initializeTenantSchema } from "./schema";
 import { applyCloudExpenseCategoryRows, applyCloudExpenseRows, applyCloudCustomerRows } from "./cloudApply";
 import { TenantSQLiteImporter, type LegacyImportChunk, type LegacyImportManifest } from "./importer";
 import { PayrollSyncOrchestrator } from "./payrollSyncOrchestrator";
+import { executeNcfLocalSequenceRequest, type NcfLocalSequenceRequest, type NcfLocalSequenceResponse } from "./ncfLocalSequence";
 import type { DesktopCommand, DesktopRepositoryStore } from "../../src/shared/lib/desktopRepository";
 import type { CatalogCommand } from "../../src/shared/lib/catalogContracts";
 import type { OrdersCommand } from "../../src/shared/lib/ordersContracts";
@@ -1278,6 +1279,12 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     }
   }
 
+  /** Local NCF B sequencing (reserve / peek / record) for offline fiscal sales. */
+  executeNcfLocalSequence(request: NcfLocalSequenceRequest): NcfLocalSequenceResponse {
+    if (this.transactionDepth > 0) throw new Error("NCF sequence requests cannot run inside another transaction");
+    return executeNcfLocalSequenceRequest(this.database, this.tenantId, request);
+  }
+
   getInvoiceNumberFloor(): number {
     const invoiceMax = this.database.prepare(
       "SELECT COALESCE(MAX(numero_factura), 0) AS max_number FROM facturas WHERE tenant_id = ?"
@@ -1597,13 +1604,31 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     const itemsStr = comanda.items == null ? null : (typeof comanda.items === "string" ? comanda.items : JSON.stringify(comanda.items));
     const estado = comanda.estado ? String(comanda.estado) : "pendiente";
     const state = estado === "entregado" ? "delivered" : estado === "listo" ? "ready" : estado === "en_preparacion" ? "preparing" : "pending";
-    const mesaNum = comanda.mesa_numero != null && Number(comanda.mesa_numero) > 0 ? Number(comanda.mesa_numero) : 1;
-    const mesaId = comanda.mesa_id ? String(comanda.mesa_id) : String(mesaNum);
+    const mesaNum = comanda.mesa_numero != null && Number(comanda.mesa_numero) > 0 ? Number(comanda.mesa_numero) : null;
 
     this.beginImmediateTransaction();
     try {
       this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(branchId, this.tenantId, "Principal");
-      this.database.prepare("INSERT OR IGNORE INTO mesas_estado (id, tenant_id, sucursal_id, table_number, state) VALUES (?, ?, ?, ?, 'free')").run(mesaId, this.tenantId, branchId, mesaNum);
+
+      let resolvedMesaId: string | null = null;
+      if (comanda.mesa_id) {
+        const byId = this.database.prepare("SELECT id FROM mesas_estado WHERE id = ?").get(String(comanda.mesa_id)) as { id: string } | undefined;
+        if (byId) resolvedMesaId = byId.id;
+      }
+      if (!resolvedMesaId && mesaNum != null) {
+        const byNum = this.database.prepare("SELECT id FROM mesas_estado WHERE tenant_id = ? AND sucursal_id = ? AND table_number = ?")
+          .get(this.tenantId, branchId, mesaNum) as { id: string } | undefined;
+        if (byNum) {
+          resolvedMesaId = byNum.id;
+        } else {
+          const candidateId = comanda.mesa_id ? String(comanda.mesa_id) : `mesa_${branchId}_${mesaNum}`;
+          this.database.prepare("INSERT OR IGNORE INTO mesas_estado (id, tenant_id, sucursal_id, table_number, state) VALUES (?, ?, ?, ?, 'free')")
+            .run(candidateId, this.tenantId, branchId, mesaNum);
+          const check = this.database.prepare("SELECT id FROM mesas_estado WHERE tenant_id = ? AND sucursal_id = ? AND table_number = ?")
+            .get(this.tenantId, branchId, mesaNum) as { id: string } | undefined;
+          resolvedMesaId = check?.id ?? null;
+        }
+      }
       this.database.prepare(`
         INSERT INTO comandas (id, tenant_id, sucursal_id, numero_comanda, mesa_id, mesa_numero, state, estado, items, notas, creado_por, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1623,7 +1648,7 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
         this.tenantId,
         branchId,
         comanda.numero_comanda != null ? Number(comanda.numero_comanda) : null,
-        mesaId,
+        resolvedMesaId,
         mesaNum,
         state,
         estado,
@@ -1736,7 +1761,7 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     try {
       this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(branchId, this.tenantId, "Principal");
       if (comandaId) {
-        this.database.prepare("INSERT OR IGNORE INTO comandas (id, tenant_id, sucursal_id, mesa_id, mesa_numero, state) VALUES (?, ?, ?, '1', 1, 'pending')").run(comandaId, this.tenantId, branchId);
+        this.database.prepare("INSERT OR IGNORE INTO comandas (id, tenant_id, sucursal_id, mesa_id, mesa_numero, state) VALUES (?, ?, ?, NULL, NULL, 'pending')").run(comandaId, this.tenantId, branchId);
       }
       this.database.prepare(`
         INSERT INTO consumos (id, tenant_id, sucursal_id, comanda_id, plato_id, name, nombre, quantity, cantidad, unit_price, precio_unitario, subtotal, tipo, state, estado, factura_id, mesa_numero, created_by_auth_user_id, created_at, updated_at)
@@ -2071,14 +2096,43 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     ).all(this.tenantId) as Array<Record<string, unknown>>;
   }
 
-  listCatalog(): { platos: Array<Record<string, unknown>>; menuCategories: Array<Record<string, unknown>> } {
+  /** Cloud-synced branches only (never seeded placeholders), shaped like the cloud `sucursales` row. */
+  listSucursales(): Array<Record<string, unknown>> {
+    return (this.database.prepare(
+      "SELECT id, tenant_id, name, direccion, telefono, activa FROM sucursales WHERE tenant_id = ? AND cloud_synced = 1 ORDER BY name ASC, id ASC"
+    ).all(this.tenantId) as Array<Record<string, unknown>>).map((row) => ({
+      id: row.id,
+      tenant_id: row.tenant_id,
+      nombre: row.name,
+      direccion: row.direccion ?? null,
+      telefono: row.telefono ?? null,
+      activa: row.activa !== 0,
+    }));
+  }
+
+  /** The current tenant's cloud-synced settings row (shaped like the cloud `tenants` row), or null before the first pull. */
+  getLocalTenant(): Record<string, unknown> | null {
+    const row = this.database.prepare(
+      "SELECT settings_json FROM tenants WHERE id = ? AND cloud_synced = 1"
+    ).get(this.tenantId) as { settings_json: string | null } | undefined;
+    if (!row?.settings_json) return null;
+    try {
+      const settings = JSON.parse(row.settings_json) as unknown;
+      if (!settings || typeof settings !== "object" || Array.isArray(settings)) return null;
+      return { ...(settings as Record<string, unknown>), id: this.tenantId };
+    } catch {
+      return null;
+    }
+  }
+
+  listCatalog(): { platos: Array<Record<string, unknown>>; menuCategories: Array<Record<string, unknown>>; sucursales: Array<Record<string, unknown>>; tenant: Record<string, unknown> | null } {
     const platos = this.database.prepare(
       "SELECT id, tenant_id, sucursal_id, nombre, precio, categoria, disponible, va_a_cocina, created_at, updated_at, deleted_at FROM platos WHERE tenant_id = ? AND deleted_at IS NULL ORDER BY nombre ASC"
     ).all(this.tenantId) as Array<Record<string, unknown>>;
     const menuCategories = this.database.prepare(
       "SELECT id, tenant_id, nombre, color, sort_order, sucursal_id FROM menu_categories WHERE tenant_id = ? ORDER BY sort_order ASC, nombre ASC"
     ).all(this.tenantId) as Array<Record<string, unknown>>;
-    return { platos, menuCategories };
+    return { platos, menuCategories, sucursales: this.listSucursales(), tenant: this.getLocalTenant() };
   }
 
   syncCloudCustomers(customers: Array<Record<string, unknown>>): void {

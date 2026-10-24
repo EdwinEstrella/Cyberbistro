@@ -7,6 +7,9 @@ import { loadCantidadMesas } from "../../../shared/lib/tenantMesasSettings";
 import { buildComandaReceiptHtml } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
+import { resolveKitchenPrintTenant } from "../../../shared/lib/kitchenPrintTenant";
+import { isDesktopCloudUnavailable } from "../../../shared/lib/cloudAvailability";
+import { readLocalMirror } from "../../../shared/lib/localFirst";
 import { normalizeTenantRol } from "../../../shared/lib/roleNav";
 import { readLocalConsumos, saveLocalConsumo, deleteLocalConsumo, readLocalComandas, saveLocalComanda, deleteLocalComanda } from "../../../shared/lib/ordersLocal";
 import { ConfirmModal } from "../../../shared/components/ConfirmModal";
@@ -403,18 +406,24 @@ export function Camarera() {
       const comanda = comandaPayload;
       comandaId = localComandaId;
 
-      const { data: tenantRow } = await supabase
-        .from("tenants")
-        .select("nombre_negocio, rnc, direccion, telefono, logo_url, moneda")
-        .eq("id", tenantId)
-        .single();
+      // Cloud when reachable, else the local tenant row, else a minimal header:
+      // the kitchen ticket must print even with the cloud down.
+      const tenantRow = await resolveKitchenPrintTenant({
+        cloudUnavailable: !navigator.onLine || (await isDesktopCloudUnavailable().catch(() => true)),
+        fetchCloud: async (columns) =>
+          await supabase.from("tenants").select(columns).eq("id", tenantId).single(),
+        readLocal: async () => {
+          const rows = await readLocalMirror<TenantPrintRow & { id?: string }>(tenantId, "tenants");
+          return rows.find((row) => row.id === tenantId) ?? null;
+        },
+      });
 
-      if (tenantRow) {
+      {
         const printSettings = getThermalPrintSettings();
         if (printSettings.printComandas !== false) {
           const paperWidthMm = printSettings.paperWidthMm;
           const html = buildComandaReceiptHtml(
-            tenantRow as TenantPrintRow,
+            tenantRow,
             {
               id: comanda.id,
               numero_comanda: (comanda as { numero_comanda?: number }).numero_comanda,

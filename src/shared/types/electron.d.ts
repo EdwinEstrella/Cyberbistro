@@ -75,7 +75,7 @@ export interface ElectronAPI {
   saveDeviceSessionPreference?: (preference: { tenantId: string; userId: string; allowedBranchIds: string[]; defaultBranchId: string | null }) => Promise<{ ok: true; data: { defaultBranchId: string | null } }>;
   getDeviceSessionPreference?: (identity: { tenantId: string; userId: string }) => Promise<{ ok: true; data: { allowedBranchIds: string[]; defaultBranchId: string | null } | null }>;
   executeCatalogCommand?: (command: import("../lib/catalogContracts").CatalogCommand) => Promise<{ ok: true; data: import("../lib/catalogContracts").CatalogRepositoryResult }>;
-  listCatalog?: () => Promise<{ ok: true; data: { platos: Array<Record<string, unknown>>; menuCategories: Array<Record<string, unknown>> } }>;
+  listCatalog?: () => Promise<{ ok: true; data: { platos: Array<Record<string, unknown>>; menuCategories: Array<Record<string, unknown>>; sucursales?: Array<Record<string, unknown>>; tenant?: Record<string, unknown> | null } }>;
   executeOrdersCommand?: (command: import("../lib/ordersContracts").OrdersCommand) => Promise<{ ok: true; data: import("../lib/ordersContracts").OrdersRepositoryResult }>;
   executeSalesFiscalCommand?: (command: import("../../../electron/persistence/salesFiscalRepository").SalesFiscalCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/salesFiscalRepository").SalesFiscalRepositoryResult }>;
   executeCashPurchaseCommand?: (command: import("../../../electron/persistence/cashPurchaseRepository").PurchaseCommand) => Promise<{ ok: true; data: import("../../../electron/persistence/cashPurchaseRepository").PurchaseRepositoryResult }>;
@@ -90,6 +90,7 @@ export interface ElectronAPI {
   listInvoices?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number; dateFrom?: string; dateTo?: string }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
   reserveInvoiceNumbers?: (request: { tenantId: string; count: number }) => Promise<{ ok: true; data: number[] }>;
   getInvoiceNumberFloor?: (request: { tenantId: string }) => Promise<{ ok: true; data: number }>;
+  ncfLocalSequence?: (request: import("../../../electron/persistence/ncfLocalSequence").NcfLocalSequenceRequest) => Promise<import("../../../electron/persistence/ncfLocalSequence").NcfLocalSequenceResponse>;
   deleteInvoiceLocal?: (request: { tenantId: string; invoiceId: string }) => Promise<{ ok: true }>;
   saveInvoiceLocal?: (invoice: Record<string, unknown>) => Promise<{ ok: true }>;
   updateInvoiceHeaderLocal?: (request: { tenantId: string; invoiceId: string; changes: Record<string, unknown> }) => Promise<
@@ -124,7 +125,6 @@ export interface ElectronAPI {
   openLogsFolder?: () => Promise<{ ok: boolean; path?: string }>;
   onLocalDataUpdated?: (callback: (tenantId: string) => void) => () => void;
   retryFailedSyncErrors?: (tenantId?: string) => Promise<{ ok: true; data: { count: number } }>;
-  importLegacyIndexedDb?: (payload: unknown) => Promise<{ ok: true; data: { tenantId: string; importedRows: number; recoveredOutbox: number } }>;
   close: () => void;
   getVersions: () => NodeJS.ProcessVersions;
   onWindowMaximized?: (callback: (isMaximized: boolean) => void) => void;

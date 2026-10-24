@@ -200,3 +200,18 @@ export async function isCloudAvailableForDesktop(): Promise<boolean> {
 export async function isDesktopCloudUnavailable(): Promise<boolean> {
   return isOfflineCapableRuntime() && !(await probeCloudAvailability(false));
 }
+
+/**
+ * Gate for optional cloud reads/fallbacks on UI critical paths.
+ *
+ * `navigator.onLine` alone is not enough on desktop: with the backend down
+ * (e.g. HTTP 530) Windows still reports connectivity, and any `supabase.from()`
+ * awaits `auth.getSession()`, which waits for auth-js to finish refreshing an
+ * expired token with exponential backoff (~25s of retries). Checking the cloud
+ * circuit first keeps local-first screens from waiting on that.
+ * On web (not offline-capable) this is equivalent to `navigator.onLine`.
+ */
+export async function canAttemptCloudRead(): Promise<boolean> {
+  if (typeof navigator !== "undefined" && !navigator.onLine) return false;
+  return !(await isDesktopCloudUnavailable().catch(() => true));
+}

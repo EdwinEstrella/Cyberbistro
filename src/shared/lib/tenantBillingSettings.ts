@@ -96,34 +96,42 @@ export async function loadTenantBillingSettings(
     return loadLocalTenantBillingSettings(tenantId);
   }
 
-  let res = await supabase
-    .from("tenants")
-    .select(TENANT_BILLING_SETTINGS_SELECT)
-    .eq("id", tenantId)
-    .maybeSingle();
-
-  if (res.error) {
-    // The cloud may not have the newest column yet: retry without it before degrading further.
-    res = await supabase
+  type CloudRes = { data: unknown; error: unknown };
+  let res: CloudRes;
+  try {
+    res = (await supabase
       .from("tenants")
-      .select(TENANT_BILLING_SETTINGS_SELECT_LEGACY)
+      .select(TENANT_BILLING_SETTINGS_SELECT)
       .eq("id", tenantId)
-      .maybeSingle();
-  }
+      .maybeSingle()) as CloudRes;
 
-  if (res.error) {
-    res = await supabase
-      .from("tenants")
-      .select("ncf_fiscal_activo, ncf_tipo_default")
-      .eq("id", tenantId)
-      .maybeSingle();
+    if (res.error) {
+      // The cloud may not have the newest column yet: retry without it before degrading further.
+      res = (await supabase
+        .from("tenants")
+        .select(TENANT_BILLING_SETTINGS_SELECT_LEGACY)
+        .eq("id", tenantId)
+        .maybeSingle()) as CloudRes;
+    }
+
+    if (res.error) {
+      res = (await supabase
+        .from("tenants")
+        .select("ncf_fiscal_activo, ncf_tipo_default")
+        .eq("id", tenantId)
+        .maybeSingle()) as CloudRes;
+    }
+  } catch (error) {
+    // Network-level throw (cloud down): degrade to the last-known local tenant row.
+    if (isCloudAvailabilityFailure(error)) recordCloudFailure();
+    res = { data: null, error };
   }
 
   if (res.error || !res.data) {
     if (res.error && isCloudAvailabilityFailure(res.error)) recordCloudFailure();
-    return await isDesktopCloudUnavailable()
-      ? loadLocalTenantBillingSettings(tenantId)
-      : null;
+    // Any cloud failure (not only a recognised outage) falls back to the local
+    // tenant row. Returns null only when no local tenant data exists (fail closed).
+    return loadLocalTenantBillingSettings(tenantId);
   }
   recordCloudSuccess();
   return normalizeTenantBillingSettings(res.data as TenantBillingSettingsRow);

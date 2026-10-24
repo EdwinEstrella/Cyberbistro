@@ -567,19 +567,9 @@ if (gotTheLock) {
       ipcMain,
       isTrustedSender,
       getStatus: () => tenantStoreController?.getStatus() ?? ({ tenantId: null, isOpen: false }),
-      getActiveTenantId: () => tenantStoreController?.getActiveStore()?.getTenantId() ?? null,
       activateTenant: (tenantId: string) => {
         if (!tenantStoreController) throw new Error('Tenant store is unavailable');
         tenantStoreController.activate(tenantId);
-      },
-      importLegacySnapshot: (payload) => {
-        const request = payload as Parameters<TenantSQLiteImporter["import"]>[0];
-        if (!tenantStoreController) throw new Error('Tenant store is unavailable');
-        const manifestTenantId = (request as any)?.manifest?.tenantId;
-        if (manifestTenantId && tenantStoreController.getActiveStore()?.getTenantId() !== manifestTenantId) {
-          tenantStoreController.activate(manifestTenantId);
-        }
-        return tenantStoreController.importLegacySnapshot(request);
       },
     });
 
@@ -652,7 +642,7 @@ if (gotTheLock) {
           }
         }
       },
-      listCatalog: () => getStore()?.listCatalog() ?? { platos: [], menuCategories: [] },
+      listCatalog: () => getStore()?.listCatalog() ?? { platos: [], menuCategories: [], sucursales: [], tenant: null },
     })
     registerOrdersRepositoryIpc({
       ipcMain,
@@ -756,6 +746,11 @@ if (gotTheLock) {
         const store = getStore(request.tenantId)
         if (!store) throw new Error('Tenant store is unavailable')
         return store.reserveInvoiceNumbers(request.count)
+      },
+      ncfLocalSequence: (request) => {
+        const store = getStore(request.tenantId)
+        if (!store) throw new Error('Tenant store is unavailable')
+        return store.executeNcfLocalSequence(request)
       },
       getInvoiceNumberFloor: (request) => {
         const store = getStore(request.tenantId)

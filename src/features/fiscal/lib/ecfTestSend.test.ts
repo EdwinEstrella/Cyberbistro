@@ -4,7 +4,11 @@ import {
   TEST_SEND_FALLBACK,
   buildSendTestRequest,
   buildTestStatusRequest,
+  TEST_POLL_MAX_TOTAL_MS,
+  TEST_POLL_TIMEOUT_MESSAGE,
   describeTestSendError,
+  formatDgiiMessages,
+  nextTestPollStep,
   extractTestSendInvokeError,
   testEstadoView,
   toTestSendFailure,
@@ -74,5 +78,45 @@ describe("testEstadoView", () => {
     expect(testEstadoView("En Proceso")).toEqual({ label: "En proceso", tone: "progress", final: false });
     expect(testEstadoView(null)).toEqual({ label: "En proceso", tone: "progress", final: false });
     expect(testEstadoView("No Encontrado").label).toBe("No encontrado");
+  });
+});
+
+describe("empty DGII messages", () => {
+  it("toTestSendResult drops the DGII placeholder with an empty or blank valor", () => {
+    const result = toTestSendResult({ trackId: "tr", estado: "En proceso", mensajes: [{ codigo: "0", valor: "" }, { codigo: "1", valor: "   " }, { codigo: "2", valor: "Algo" }] });
+    expect(result?.mensajes).toEqual([{ codigo: "2", valor: "Algo" }]);
+  });
+
+  it("toTestSendFailure drops empty messages too", () => {
+    expect(toTestSendFailure({ code: "DGII_ERROR", mensajes: [{ codigo: "0", valor: "" }] }).mensajes).toEqual([]);
+  });
+
+  it("formatDgiiMessages never prints a code without text", () => {
+    expect(formatDgiiMessages([{ codigo: "0", valor: "" }])).toBe("");
+    expect(formatDgiiMessages([{ codigo: "10", valor: "RNC inválido" }, { codigo: null, valor: "otro" }])).toBe("10: RNC inválido · otro");
+  });
+});
+
+describe("nextTestPollStep", () => {
+  it("is done as soon as the estado is final", () => {
+    expect(nextTestPollStep({ estado: "Aceptado", attempt: 0, elapsedMs: 0 })).toEqual({ action: "done" });
+    expect(nextTestPollStep({ estado: "Rechazado", attempt: 4, elapsedMs: 20000 })).toEqual({ action: "done" });
+    expect(nextTestPollStep({ estado: "Aceptado condicional", attempt: 1, elapsedMs: 2000 })).toEqual({ action: "done" });
+  });
+
+  it("backs off 2s, 3s, 5s and then stays at 5s while the estado is not final", () => {
+    const delays = [0, 1, 2, 3, 10].map((attempt) => nextTestPollStep({ estado: "En proceso", attempt, elapsedMs: 0 }));
+    expect(delays).toEqual([2000, 3000, 5000, 5000, 5000].map((delayMs) => ({ action: "wait", delayMs })));
+  });
+
+  it("keeps waiting on 'No encontrado' (not final)", () => {
+    expect(nextTestPollStep({ estado: "No encontrado", attempt: 0, elapsedMs: 0 })).toEqual({ action: "wait", delayMs: 2000 });
+  });
+
+  it("gives up when the next wait would pass the total cap", () => {
+    expect(TEST_POLL_MAX_TOTAL_MS).toBe(180000);
+    expect(nextTestPollStep({ estado: "En proceso", attempt: 30, elapsedMs: 175000 })).toEqual({ action: "wait", delayMs: 5000 });
+    expect(nextTestPollStep({ estado: "En proceso", attempt: 31, elapsedMs: 175001 })).toEqual({ action: "give-up" });
+    expect(TEST_POLL_TIMEOUT_MESSAGE).toMatch(/DGII/);
   });
 });

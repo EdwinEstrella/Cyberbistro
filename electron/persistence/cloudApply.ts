@@ -207,6 +207,99 @@ function toIntFlag(value: unknown): number {
 }
 
 /**
+ * Tenant columns mirrored locally for offline billing, NCF sequencing, receipt
+ * and kitchen printing, and plan limits. Whitelisted on purpose: the cloud row
+ * also carries fiscal custody metadata, and secrets (certificates, tokens) must
+ * never land in the local database.
+ */
+export const LOCAL_TENANT_SETTINGS_COLUMNS = [
+  "nombre_negocio", "rnc", "direccion", "telefono", "moneda", "menu_url",
+  "logo_url", "logo_size_px", "logo_offset_x", "logo_offset_y",
+  "plan", "sucursal_limit_enabled", "sucursal_limit", "payment_day_of_month",
+  "fiscal_mode", "fiscal_mode_fallback", "ecf_environment",
+  "itbis_cobro_por_defecto", "propina_cobro_por_defecto", "itbis_incluido_en_precio",
+  "ncf_fiscal_activo", "ncf_tipo_default", "ncf_tipos_activos",
+  "ncf_secuencia_siguiente", "ncf_secuencias_por_tipo",
+  "ncf_b01_secuencia_siguiente", "ncf_b02_secuencia_siguiente", "ncf_b14_secuencia_siguiente",
+  "ncf_b15_secuencia_siguiente", "ncf_b16_secuencia_siguiente", "ncf_b17_secuencia_siguiente",
+  "ecf_secuencias_rangos",
+  "ecf_issuer_sucursal", "ecf_issuer_municipio", "ecf_issuer_provincia",
+  "ecf_issuer_actividad_economica", "ecf_issuer_correo_emisor",
+  "updated_at",
+] as const;
+
+/** Picks only the whitelisted, non-secret tenant settings from a cloud row. */
+export function pickLocalTenantSettings(row: Record<string, unknown>): Record<string, unknown> {
+  const settings: Record<string, unknown> = {};
+  for (const column of LOCAL_TENANT_SETTINGS_COLUMNS) {
+    if (row[column] !== undefined) settings[column] = row[column];
+  }
+  return settings;
+}
+
+/**
+ * Applies the current tenant's cloud row into the local `tenants` row (seeded
+ * as the FK root at schema init). Rows of any other tenant are ignored. The
+ * settings are a full snapshot of the whitelisted columns.
+ */
+export function applyCloudTenantRows(
+  db: DatabaseSync,
+  tenantId: string,
+  tenants: Array<Record<string, unknown>>,
+): void {
+  const row = tenants.find((t) => t && typeof t === "object" && String(t.id ?? "") === tenantId);
+  if (!row) return;
+  const settings = pickLocalTenantSettings(row);
+  db.prepare("INSERT OR IGNORE INTO tenants (id) VALUES (?)").run(tenantId);
+  db.prepare("UPDATE tenants SET settings_json = ?, cloud_synced = 1, cloud_updated_at = ? WHERE id = ?")
+    .run(JSON.stringify(settings), typeof row.updated_at === "string" ? row.updated_at : null, tenantId);
+}
+
+/**
+ * Applies cloud branches (sucursales) into the local mirror. Branch rows are
+ * also seeded locally as 'Principal' placeholders (INSERT OR IGNORE) by every
+ * write path, so a real cloud row overwrites the name/metadata of the SAME id
+ * and is flagged `cloud_synced = 1`. Only flagged rows are exposed to the
+ * renderer, so a placeholder (or the 'main-process-default' sentinel) can never
+ * masquerade as a real branch. Each pull is a full snapshot, so tenant rows
+ * missing from it are un-flagged (not deleted: many tables reference them).
+ */
+export function applyCloudSucursalRows(
+  db: DatabaseSync,
+  tenantId: string,
+  sucursales: Array<Record<string, unknown>>,
+): void {
+  const stmt = db.prepare(`
+    INSERT INTO sucursales (id, tenant_id, name, direccion, telefono, activa, cloud_synced)
+    VALUES (?, ?, ?, ?, ?, ?, 1)
+    ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name,
+      direccion = excluded.direccion,
+      telefono = excluded.telefono,
+      activa = excluded.activa,
+      cloud_synced = 1
+  `);
+  const seen = new Set<string>();
+  for (const s of sucursales) {
+    if (!s || typeof s !== "object" || !s.id) continue;
+    const id = String(s.id);
+    seen.add(id);
+    stmt.run(
+      id,
+      tenantId,
+      s.nombre ? String(s.nombre) : "Sucursal",
+      s.direccion ? String(s.direccion) : null,
+      s.telefono ? String(s.telefono) : null,
+      s.activa === false || s.activa === 0 ? 0 : 1,
+    );
+  }
+  if (seen.size === 0) return;
+  const known = db.prepare("SELECT id FROM sucursales WHERE tenant_id = ? AND cloud_synced = 1").all(tenantId) as Array<{ id: string }>;
+  const unflag = db.prepare("UPDATE sucursales SET cloud_synced = 0 WHERE id = ? AND tenant_id = ?");
+  for (const row of known) if (!seen.has(row.id)) unflag.run(row.id, tenantId);
+}
+
+/**
  * Applies cloud dishes (platos) into the local mirror. Cloud ids are integers
  * (including negative temp ids assigned client-side before a real insert), so
  * they are coerced to their string form for the TEXT primary key. `categoria`
@@ -864,15 +957,32 @@ export function applyCloudComandaRows(
     const itemsStr = c.items == null ? null : (typeof c.items === "string" ? c.items : JSON.stringify(c.items));
     const estado = c.estado ? String(c.estado) : "pendiente";
     const state = stateMap[estado] || "pending";
-    const mesaNum = c.mesa_numero != null && Number(c.mesa_numero) > 0 ? Number(c.mesa_numero) : 1;
-    const mesaId = c.mesa_id ? String(c.mesa_id) : String(mesaNum);
-    db.prepare("INSERT OR IGNORE INTO mesas_estado (id, tenant_id, sucursal_id, table_number, state) VALUES (?, ?, ?, ?, 'free')").run(mesaId, tenantId, branchId, mesaNum);
+    const mesaNum = c.mesa_numero != null && Number(c.mesa_numero) > 0 ? Number(c.mesa_numero) : null;
+    let resolvedMesaId: string | null = null;
+    if (c.mesa_id) {
+      const byId = db.prepare("SELECT id FROM mesas_estado WHERE id = ?").get(String(c.mesa_id)) as { id: string } | undefined;
+      if (byId) resolvedMesaId = byId.id;
+    }
+    if (!resolvedMesaId && mesaNum != null) {
+      const byNum = db.prepare("SELECT id FROM mesas_estado WHERE tenant_id = ? AND sucursal_id = ? AND table_number = ?")
+        .get(tenantId, branchId, mesaNum) as { id: string } | undefined;
+      if (byNum) {
+        resolvedMesaId = byNum.id;
+      } else {
+        const candidateId = c.mesa_id ? String(c.mesa_id) : `mesa_${branchId}_${mesaNum}`;
+        db.prepare("INSERT OR IGNORE INTO mesas_estado (id, tenant_id, sucursal_id, table_number, state) VALUES (?, ?, ?, ?, 'free')")
+          .run(candidateId, tenantId, branchId, mesaNum);
+        const check = db.prepare("SELECT id FROM mesas_estado WHERE tenant_id = ? AND sucursal_id = ? AND table_number = ?")
+          .get(tenantId, branchId, mesaNum) as { id: string } | undefined;
+        resolvedMesaId = check?.id ?? null;
+      }
+    }
     stmt.run(
       String(c.id),
       tenantId,
       branchId,
       c.numero_comanda != null ? Number(c.numero_comanda) : null,
-      mesaId,
+      resolvedMesaId,
       mesaNum,
       state,
       estado,
@@ -928,7 +1038,7 @@ export function applyCloudConsumoRows(
     const branchId = typeof c.sucursal_id === "string" && c.sucursal_id.trim() ? c.sucursal_id.trim() : defaultBranchId;
     ensureBranch.run(branchId, tenantId, "Principal");
     if (c.comanda_id) {
-      db.prepare("INSERT OR IGNORE INTO comandas (id, tenant_id, sucursal_id, mesa_id, mesa_numero, state) VALUES (?, ?, ?, '1', 1, 'pending')").run(String(c.comanda_id), tenantId, branchId);
+      db.prepare("INSERT OR IGNORE INTO comandas (id, tenant_id, sucursal_id, mesa_id, mesa_numero, state) VALUES (?, ?, ?, NULL, NULL, 'pending')").run(String(c.comanda_id), tenantId, branchId);
     }
     const cant = Number(c.cantidad ?? c.quantity);
     const cantidad = Number.isFinite(cant) && cant > 0 ? Math.round(cant) : 1;

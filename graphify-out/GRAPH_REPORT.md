@@ -1,17 +1,17 @@
-# Graph Report - cyberbistro  (2026-10-17)
+# Graph Report - cyberbistro  (2026-10-21)
 
 ## Corpus Check
-- 979 files · ~1,538,705 words
+- 1099 files · ~1,629,453 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 57 file(s) not represented in the graph (top: .xml 19, .gz 14, (none) 8)
 
 ## Summary
-- 7995 nodes · 14716 edges · 690 communities (417 shown, 273 thin omitted)
-- Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 316 edges (avg confidence: 0.91)
+- 9179 nodes · 17427 edges · 733 communities (451 shown, 282 thin omitted)
+- Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 384 edges (avg confidence: 0.91)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `ef8b1036`
+- Built from commit: `631393ab`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -22,29 +22,29 @@
 - cn
 - Dashboard.tsx
 - TenantStore
-- Camarera.tsx
+- ecfPrintedRepresentation.ts
+- SuperAdmin.tsx
+- shouldUseIndexedDb
 - localFirst.test.ts
-- localFirst.ts
-- ref_node_crypto
 - payrollSyncClient.ts
 - dependencies
 - schema.sql
-- ref_react
+- LoginForm.tsx
 - RestApi.ts
 - fiscalWorkerRuntime.ts
 - sidebar.tsx
 - package.json
 - Billing.tsx
-- shouldReadLocalFirst
-- AppUpdateContext.tsx
-- src/index.ts
-- importer.ts
-- customers.ts
+- run.ts
+- electron.d.ts
+- Tables.tsx
+- ecfPrintedRepresentation.test.ts
+- simulation.ts
 - useAuth.ts
 - devDependencies
 - modulo-ecf/package.json
-- Dashboard
-- openLocalFirstDbForSync
+- command.tsx
+- ref_node_crypto
 - date-picker.tsx
 - Apply Progress: migrate-desktop-local-sqlite
 - LoginRegistro.tsx
@@ -56,68 +56,68 @@
 - DashboardPos.tsx
 - ecfCertificateHealth.ts
 - IACECF.ts
-- Cierre.tsx
+- Nomina.tsx
 - Node.js Best Practices
 - HistorialSync.tsx
 - dgiiAdapters.ts
 - utils.ts
-- carousel.tsx
+- fiscal/types.ts
 - IARECF.ts
 - nsis
-- AppLayout
-- electron
-- Ajustes.tsx
-- Nomina
-- invoicesLocal.ts
-- ref_lucide_react
+- handler.ts
+- lanEdgeServer.ts
+- ecf-certification-run.test.ts
+- localNcfReservation.ts
+- S3-Compatible Storage Gateway
+- protocol.ts
 - resolveTenantUserFromAuth.ts
-- utils.test.ts
+- ECF.test.ts
 - npx @insforge/cli compute deploy — deploy a backend container
 - postgresFiscalWorkerRepository.ts
-- Exploration: integrate-dgii-ecf
-- fiscal/types.ts
+- xlsx.ts
+- fiscalWorkerError
 - schema-upgrade-v12.1.29.test.ts
 - compilerOptions
-- SucursalContext.tsx
+- ecf-receptor/index.ts
 - mapper.ts
 - SenderReceiver.ts
 - devDependencies
-- Implementacion
-- cloudAvailability.ts
-- canUseFeature
-- fiscalWorker.ts
 - InsForge CLI
+- electron
+- invoiceSearch.ts
+- fiscal-offline-reconnect.test.ts
+- mainWindow
 - compilerOptions
-- payrollContracts.ts
-- form.tsx
-- lanEdgeClient.ts
-- Tables.tsx
-- local-sqlite-catalogs.test.ts
-- ActivationPanel.tsx
+- Tasks: Tenant Management and Payment Alerts
+- ecf-certification-test-send.test.ts
+- localFirst.ts
+- PrintedRepresentationRunner.tsx
+- EcfTestSendCard.tsx
+- ecfSequenceRanges.ts
 - initializeTenantSchema
-- useAuth
-- cashPurchaseRepository.ts
+- Cierre.tsx
+- AppUpdateContext.tsx
 - compilerOptions
 - schema-ci.sql
-- TenantStoreController
+- .open
 - claudix/package.json
 - Background2
 - npx @insforge/cli branch merge
-- invoicesLocal.ts
+- ecf-certification/handler.ts
 - Node.js Backend Patterns
 - Signature
-- autoUpdater.ts
-- roleNav.ts
+- security.ts
+- SucursalContext.tsx
 - AsideRightSideFloatingCartPanel
 - Nav
 - SEO optimization
 - InsumoRow
 - FiscalWorker
-- DeviceAccountDirectory
+- lanEdgeClient.ts
 - 20260608191001_add-updated-at-to-new-tables.sql
 - scripts
-- ecfIssuerRequirements.ts
-- ecfSequenceRanges.ts
+- ncfLocalSequence.ts
+- Dashboard.tsx
 - systemt.md
 - ProductGridBentoStyle
 - Container17
@@ -133,11 +133,11 @@
 - AsideSideNavBarShell
 - MainCanvas
 - Container53
-- AppLayoutContent
+- Usage/Examples
 - validate-ecf-certificate/index.ts
 - chart.tsx
-- drawer.tsx
-- P12Reader
+- dropdown-menu.tsx
+- ncf.ts
 - Database Access Control for InsForge
 - InsForge + Better Auth Integration Guide
 - BackgroundBorder
@@ -147,20 +147,20 @@
 - supabase
 - TypeScript Advanced Types
 - Container52
-- tenant-fiscal-settings.spec.ts
+- vite.config.mts
 - tenant-management-migration.test.ts
 - layout.tsx
-- build-icon.mjs
+- dgiiClient.ts
 - Item
-- shouldReadLocalFirst
+- payrollCloudSync.ts
 - compilerOptions
 - devDependencies
-- rfceBatchWorker.ts
-- invoicesCloud.ts
+- ecf-signer-identity
+- context-menu.tsx
 - DashboardPos
 - Container1
 - Container24
-- navigation-menu.tsx
+- ecfActivationReadiness.ts
 - schema-upgrade-v12.1.29.test.ts
 - verify-electron-main-externalization.cjs
 - CartItem
@@ -176,15 +176,15 @@
 - BackgroundBorderShadow3
 - Background
 - Background1
-- fiscal-offline-reconnect.test.ts
-- Tasks
+- Proposal: Tenant Management and Payment Alerts
+- Feature: e-CF receptor (DGII inbound services)
 - dependencies
-- local-sqlite-orders.test.ts
-- customTransformers.ts
+- 20261017160000_ecf_receptor.sql
+- builder.ts
 - Body
-- scripts
+- ecf-receptor-handler.test.ts
 - npx @insforge/cli db export
-- eslint.config.mjs
+- toggle-group.tsx
 - Opción B: Control por producción o jornada
 - realtimeLifecycle.ts
 - Storage Row Level Security (RLS) for InsForge
@@ -195,15 +195,15 @@
 - types/global.d.ts
 - validate-ecf-certificate/index.js
 - .mcp.json
-- Razorpay Payments SDK Integration
+- planFeatures.ts
 - qrcode.d.ts
 - claudix/postcss.config.mjs
 - 01-sync-schema.sql
-- S3-Compatible Storage Gateway
+- ecfCertificationRun.ts
 - Tailwind CSS Development Patterns
 - 5. Re-render Optimization
 - Inventario y Gestión de Stock
-- lanEdgeServer.ts
+- carousel.tsx
 - npx @insforge/cli db migrations
 - npx @insforge/cli payments
 - Database SDK Integration
@@ -215,8 +215,8 @@
 - Tailwind CSS Documentation
 - React Composition Patterns
 - Design: Tenant Management and Payment Alerts
-- getThermalPrintSettings
-- Diseño de Base de Datos y RLS
+- Ajustes.tsx
+- mesas-count.spec.ts
 - RESPUESTAS EJEMPLO
 - InsForge SDK Documentation - Overview
 - Proposal: Migrate Desktop Runtime to Local SQLite
@@ -232,7 +232,7 @@
 - Tailwind CSS Accessibility Guidelines
 - Tailwind CSS Configuration
 - JavaScript API
-- menubar.tsx
+- ecf-sign-document-handler.test.ts
 - Vite Configuration
 - vite/SKILL.md
 - Vite Plugin API
@@ -248,7 +248,7 @@
 - Requirements
 - Requirements
 - Plan de implementacion
-- localInvoiceReceipt.ts
+- ecf-legal-name-80mm
 - InsForge + Stytch Integration Guide
 - InsForge + WorkOS Integration Guide
 - Stripe Payments SDK Integration
@@ -257,12 +257,12 @@
 - Design: Migrate Full Desktop Operations to Local SQLite
 - 3. Brechas e Implementación Restante
 - 3. Módulo de Pedidos en la App de Escritorio (Electron/React)
-- ENDPOINTS
+- DocumentSigner.tsx
 - Tasks
 - Tasks
 - WCAG 2.2 Quick Reference
 - npx @insforge/cli db query
-- Email SDK Integration
+- ActivationPanel.tsx
 - InsForge + Kinde Integration Guide
 - InsForge Integrations
 - Dark Mode
@@ -272,15 +272,15 @@
 - [1.8.0] - 2026-04-17
 - Feature: ITBIS included in price
 - 1. Diseño de Base de Datos (InsForge / PostgreSQL)
-- date-picker.tsx
+- salesFiscalRepository.ts
 - Tasks
-- Tasks
+- Diseño del Sistema
 - Publicar Cloudix (NSIS + auto-actualización)
-- cierresWrites.ts
+- build-icon.mjs
 - Accessibility (a11y)
 - npx @insforge/cli create
 - Database Integrity
-- okx-x402.md
+- ecf-certification-simulation
 - Storage SDK Integration
 - Tailwind CSS Animations & Transitions
 - tailwind-css-patterns/SKILL.md
@@ -291,9 +291,9 @@
 - Fiscal Status Truths and Lifecycle
 - Design: Integrate DGII e-CF
 - Exploration: Tenant Management and Payment Alerts
-- Tasks
+- drawer.tsx
 - Spec + Tasks — PR 2: Helpers de Inventario por Presentación
-- SidebarCustomIcon
+- okx-x402.md
 - Accessibility Code Patterns
 - Operable
 - npx @insforge/cli login
@@ -302,18 +302,18 @@
 - Advisor
 - Environment API (Vite 6+)
 - Feature: compras-delete-payments
-- Feature: e-CF activation (DGII electronic invoicing)
-- Exploration: migrate-desktop-local-sqlite
+- form.tsx
+- enqueueLocalWrite
 - 20260905120000_saved-accounts-and-branch-grants.sql
 - SDD Tasks: Epic e-CF (Issue #39)
-- SucursalContext.tsx
+- Lógica del Servicio de Compras (`purchaseService.ts`)
 - Tasks
 - 20260707100000_digital-orders-table-codes-order-number.sql
-- harden-registration-fiscal-rpcs.test.ts
+- ecf-certification-printed
 - MANEJO DE OBJECIONES
 - Common ARIA patterns
 - Understandable
-- invoicesLocal.ts
+- npx @insforge/cli payments stripe
 - Database Vector Search
 - npx @insforge/cli posthog setup
 - AI assist
@@ -322,19 +322,19 @@
 - Logs
 - Metrics
 - Policies
-- Functions SDK Integration
+- invoiceHeaderEdit.ts
 - Tasks: Integrate DGII e-CF
 - clients-digital-menu/tasks.md
 - Requirement: SQLite-First Idempotent Replication
 - Requirement: Explicit Tenant Access and Safe Switching
 - Tareas
 - Decisiones de Diseño
-- Spec + Tasks — PR 6: Servicio Compras → Inventario → Movimiento
-- Propuesta — PR 7: Compras → Gastos + Cierre/Analíticas
-- Diseño del Sistema
+- ecf-wizard-live-receipts
+- useLocalFirstBootstrap.ts
+- tenantRealtimeSubscriptionManager.ts
 - README.md
 - Audio
-- enqueueLocalWrite
+- CategoriasPanel
 - npx @insforge/cli config
 - npx @insforge/cli db import
 - DB health
@@ -342,21 +342,21 @@
 - 1. Eliminating Waterfalls
 - Validación manual local SQLite — C3d fiscal
 - Local Sync PostgreSQL Fixture
-- PayrollSyncClient
+- date-picker.tsx
 - Requirement: Offline Pending Fiscal Sync
 - Requirement: Legacy Non-Regression
-- Camarera.tsx
-- ecfActivationReadiness.ts
+- .createClient
+- ENDPOINTS
 - Diseño del Módulo `presentationUnits.ts`
 - Resultados de Verificación
 - Resultados de Verificación
-- payrollCloudSync.ts
+- ActivationPanel.tsx
 - Exploración — PR 8: Cuentas por Pagar
 - Exploración — PR 9: Cuentas por Cobrar + Fiado en POS
 - SDD Proposal: Motor Fiscal e-CF (Epic #39)
 - 1. Experiencia de Usuario (UX)
-- itbis-included-price.e2e.spec.ts
-- Models List
+- importer.ts
+- ecfRangeErrors.ts
 - Sections
 - 2. Bundle Size Optimization
 - React Best Practices
@@ -366,16 +366,16 @@
 - Validación manual segura del modo local
 - Arquitectura de Módulos — Plan Profesional (Issue #36)
 - Tareas de Implementación: Menú Digital Administrable (PR 11)
-- SDD Design: Epic e-CF (Issue #39)
+- Propuesta — PR 5: Modelo Compras + Proveedores (Tablas + CRUD)
 - scripts
-- Seguridad y multitenant (Cloudix)
+- 20261018160000_ecf_certification_simulation.sql
 - Propuesta — PR 3: Migración Inventario Avanzado (Campos SQL)
-- mesas-count.spec.ts
-- Spec
 - Tasks
-- Apply Progress — PR 1: Feature Gates + Sidebar Agrupado
+- Functions SDK Integration
+- lookup-business-rnc/index.js
+- CertificationStore
 - Diagnostics and Logs
-- Propuesta: PR 1 — Feature Gates + Sidebar Agrupado
+- AppLayout
 - 4. Client-Side Data Fetching
 - Verification Report
 - Archive Report — PR 1: Feature Gates + Sidebar Agrupado
@@ -384,10 +384,10 @@
 - Verify Report — PR 2: Helpers de Inventario por Presentación
 - Archive Report — PR 4: UI Inventario por Presentación
 - Archive Report — PR 5: Modelo Compras + Proveedores (Tablas + CRUD)
-- accordion.tsx
+- InsForge + OKX x402 Payments Integration Guide
 - Archive Report — PR 6: Servicio Compras → Inventario → Movimiento
 - Verify Report — PR 6: Servicio Compras → Inventario → Movimiento
-- Proposal: Tenant Management and Payment Alerts
+- ecf-certification-testset
 - Archive Report — PR 7: Compras → Gastos + Cierre/Analíticas
 - Verify Report — PR 7: Compras → Gastos + Cierre/Analíticas
 - 20260715000000_add-foreign-key-and-rls-indexes.sql
@@ -395,15 +395,15 @@
 - Verify Report — PR 8: Cuentas por Pagar
 - Archive Report — PR 9: Cuentas por Cobrar + Fiado en POS
 - tenants
-- Lógica del Servicio de Compras (`purchaseService.ts`)
-- paymentDate.ts
+- customers.ts
+- ecf-pos-local-signing
 - HERRAMIENTAS
 - Perceivable
 - Common issues by impact
 - Auth Backend Configuration
 - 20260612100001_harden-digital-menu-public-rpcs.sql
 - async-cheap-condition-before-await.md
-- PayrollRepository
+- navigation-menu.tsx
 - Apply Progress — PR 4: UI Inventario por Presentación
 - Apply Progress — PR 5: Modelo Compras + Proveedores (Tablas + CRUD)
 - 20260809180000_local-sync-foundation.sql
@@ -488,45 +488,49 @@
 - server-serialization.md
 - vercel-react-best-practices/rules/_template.md
 - GENERATION.md
-- toggle-group.tsx
+- server-hoist-static-io.md
 - pr9-apply-progress.md
-- supabase/README.md
+- e-CF receptor: deployment runbook
 - claudix/AGENTS.md
-- Chat Completions
+- Propuesta — PR 7: Compras → Gastos + Cierre/Analíticas
 - cloudix_gastos.sql
 - cloudix_super_admin_limits.sql
-- Video Generation
-- Entregas.tsx
-- ENDPOINTS_SENDER_RECEIVER
-- Compras.tsx
-- Apply Progress — PR 2: Helpers de Inventario por Presentación
-- ecfRangeErrors.ts
+- Architecture Decisions
+- Seguridad y multitenant (Cloudix)
+- ecfIssuerRequirements.ts
+- Feature: offline-pos-sales
 - public.cuentas_cobrar
 - 20260510121152_super-admin-rpcs.sql
 - public.productos_inventario
 - 20260524200000_enforce-sucursal-plan-limits.sql
 - public.cuentas_pagar
 - 20260715130000_tenant-access-authoritative-rules.sql
-- DashboardTickerStrip.tsx
-- executePayrollCommandLocally
-- AI Overview
+- Implementacion
+- Image Generation
+- Razorpay Payments SDK Integration
 - 20260606195500_add-customers-and-invoice-link.sql
 - public.compras
 - 20260608190000_add-digital-menu-tables.sql
 - 20260612153202_realtime-menu-updates.sql
-- sendToKitchen
-- PayrollAdapter
+- Exploración — PR 7: Compras → Gastos + Cierre/Analíticas
+- fiscal-real-dgii-client.test.ts
 - public.cierres_operativos
 - cyberbistro_menu_categories.sql
-- Realtime Backend Configuration
 - public.get_table_security_codes
 - 20260919213000_resolve_usuario_id_triggers.sql
 - 20261002150000_add_tenant_id_id_indexes_for_pull.sql
-- Análisis de Integración en el Flujo de Datos (`Billing.tsx`)
+- fiscal-certificate-failure.test.ts
+- Tasks
 - public.cloudix_reserve_ecf
+- CustomAuthentication
 - public.create_public_digital_order
 - 20260926150000_resolve_pagos_created_by_tenant_user.sql
+- Propuesta — PR 6: Servicio Compras → Inventario → Movimiento
 - public.tenant_users
+- receptorUrls.ts
+- ecf-certification-acecf
+- document.ts
+- paymentDate.ts
 - rememberLoginStorage.ts
 - 20260611210000_finish-dgii-ecf-readiness.sql
 - public.cxp_pagos
@@ -536,7 +540,8 @@
 - public.compra_fiscal
 - public.cloudix_reserve_invoice_numbers
 - public.cierres_operativos
-- Apply Progress — PR 7: Compras → Gastos + Cierre/Analíticas
+- ecf-certification-signing
+- 20261017170000_ecf_receptor_hardening.sql
 - idx_digital_orders_sucursal_id
 - public.cloudix_resolve_tenant_user
 - trg_guard_productos_inventario_update
@@ -555,7 +560,7 @@
 - public.register_nomina_pago
 - public.register_nomina_pago
 - public.cloudix_reserve_invoice_numbers_v2
-- server-hoist-static-io.md
+- registrarPagoCxC
 - public.gastos
 - public.facturas
 - ecf_certificate_metadata_tenant_environment_uidx
@@ -593,95 +598,127 @@
 - idx_comandas_tenant
 - idx_mesas_estado_tenant
 - idx_platos_tenant
+- Verify Report — PR 1: Feature Gates + Sidebar Agrupado
+- ecf-sign-document/handler.ts
+- Exploration: integrate-dgii-ecf
+- Exploración — PR 4: UI Inventario por Presentación
+- Diseño de Base de Datos y RLS
+- 20261018140000_ecf_certification_submissions.sql
+- ecf-receptor-protocol.test.ts
+- scripts
+- Feature: e-CF activation (DGII electronic invoicing)
+- handleRequest
+- printKitchenComanda.test.ts
+- eslint.config.mjs
+- Apply Progress — PR 6: Servicio Compras → Inventario → Movimiento
+- RfceBatchWorker
+- Vite / React-only setups
+- Apply Progress — PR 7: Compras → Gastos + Cierre/Analíticas
+- Apply Progress — PR 8: Cuentas por Pagar
+- app/page.tsx
+- Diseño del Sistema
+- Reporte de Verificación — PR 9: Cuentas por Cobrar + Fiado en POS
+- customTransformers.ts
+- SidebarCustomIcon
+- readLocalTenant
+- DashboardTickerStrip.tsx
+- localSucursales.ts
+- ecf_certification_runs_tenant_type_created_idx
+- Tasks
+- Tasks: Full Desktop Operations to Local SQLite
+- Apply Progress — PR 2: Helpers de Inventario por Presentación
+- ecf-sign-document/index.ts
+- harden-registration-fiscal-rpcs.test.ts
+- public.cloudix_advance_ncf_sequence
 
 ## God Nodes (most connected - your core abstractions)
 1. `cn()` - 226 edges
-2. `vitest` - 159 edges
-3. `TenantStore` - 113 edges
+2. `vitest` - 204 edges
+3. `TenantStore` - 125 edges
 4. `enqueueLocalWrite()` - 95 edges
 5. `useAuth()` - 76 edges
 6. `Dashboard()` - 71 edges
 7. `getDeviceId()` - 69 edges
 8. `shouldReadLocalFirst()` - 67 edges
 9. `Billing()` - 61 edges
-10. `readLocalMirror()` - 55 edges
+10. `readLocalMirror()` - 58 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `Real validation checklist` --references--> `P12Reader`  [INFERRED]
   docs/dgii-ecf-real-test-handoff.md → modulo-ecf/src/P12Reader.ts
-- `Modificaciones de Rutas y Navegación` --references--> `SidebarCustomIcon()`  [INFERRED]
-  openspec/pr5-explore.md → src/app/components/AppLayout.tsx
-- `In Scope` --references--> `AppLayout()`  [INFERRED]
-  openspec/changes/tenant-management/proposal.md → src/app/components/AppLayout.tsx
-- `Rollback Plan` --references--> `AppLayout()`  [INFERRED]
-  openspec/changes/tenant-management/proposal.md → src/app/components/AppLayout.tsx
-- `Task 6: Registrar la ruta en la aplicación` --references--> `AppLayout()`  [INFERRED]
-  openspec/pr5-spec-tasks.md → src/app/components/AppLayout.tsx
+- `Facts (verified 2026-10-18 from the real set 133488485-18102026163551.xlsx)` --references--> `ECF`  [INFERRED]
+  odd/tasks/ecf-certification-testset.md → modulo-ecf/src/ecf/ECF.ts
+- `8. Smoke tests` --references--> `RestApi`  [INFERRED]
+  docs/ecf-receptor-deployment.md → modulo-ecf/src/networking/RestApi.ts
+- `Common Concepts` --references--> `test()`  [INFERRED]
+  .agents/skills/insforge-cli/references/payments/overview.md → scripts/test-postgrest.js
+- `Task 5: Actualizar `filterMainNavForRol`` --references--> `filterMainNavForRol()`  [INFERRED]
+  openspec/pr1-spec-tasks.md → src/app/components/AppLayout.tsx
 
 ## Import Cycles
 - 3-file cycle: `modulo-ecf/src/customAuthentication/CustomAuthentication.ts -> modulo-ecf/src/index.ts -> modulo-ecf/src/customAuthentication/index.ts -> modulo-ecf/src/customAuthentication/CustomAuthentication.ts`
 
-## Communities (690 total, 273 thin omitted)
+## Communities (733 total, 282 thin omitted)
 
 ### Community 0 - "ipc.ts"
 Cohesion: 0.02
-Nodes (135): applyWindowsTaskbarIdentity(), createWindow(), __dirname, discardThermalPrintWindow(), focusMainWindowForTextInput(), getThermalPrintWindow(), gotTheLock, loadWindowIconImage() (+127 more)
+Nodes (141): applyWindowsTaskbarIdentity(), createWindow(), __dirname, discardThermalPrintWindow(), focusMainWindowForTextInput(), getThermalPrintWindow(), gotTheLock, loadWindowIconImage() (+133 more)
 
 ### Community 1 - "payrollSyncStore.ts"
-Cohesion: 0.08
-Nodes (46): applyCloudCocinaEstadoRows(), applyCloudComandaRows(), applyCloudCompraFiscalRows(), applyCloudCompraRows(), applyCloudConsumoRows(), applyCloudCustomerRows(), applyCloudCxcPagoRows(), applyCloudCxpPagoRows() (+38 more)
+Cohesion: 0.07
+Nodes (51): applyCloudCocinaEstadoRows(), applyCloudComandaRows(), applyCloudCompraFiscalRows(), applyCloudCompraRows(), applyCloudConsumoRows(), applyCloudCustomerRows(), applyCloudCxcPagoRows(), applyCloudCxpPagoRows() (+43 more)
 
 ### Community 2 - "vitest"
 Cohesion: 0.04
-Nodes (51): @playwright/test, rcedit, vitest, default(), electronExe, fs, iconPath, path (+43 more)
+Nodes (50): LegacyImportChunk, DESKTOP_REPOSITORY_EXECUTE_CHANNEL, ReceivablesCommand, ReceivablesRepositoryStore, ROW_VERSION_TABLES, SyncPullTableError, rcedit, vitest (+42 more)
 
 ### Community 3 - "cn"
-Cohesion: 0.04
-Nodes (62): cmdk, input-otp, @radix-ui/react-context-menu, @radix-ui/react-dropdown-menu, @radix-ui/react-tabs, BreadcrumbEllipsis(), BreadcrumbItem(), BreadcrumbLink() (+54 more)
+Cohesion: 0.05
+Nodes (54): input-otp, @radix-ui/react-accordion, @radix-ui/react-avatar, @radix-ui/react-menubar, @radix-ui/react-tabs, AccordionContent(), AccordionItem(), AccordionTrigger() (+46 more)
 
 ### Community 4 - "Dashboard.tsx"
-Cohesion: 0.08
-Nodes (48): groupConsumosForFactura(), loadTableConsumption(), imprimirPrecuenta(), MesaCloseAccountModalProps, RD(), CartItem, Consumo, CONSUMO_DELETE_STAFF_ROLES (+40 more)
+Cohesion: 0.05
+Nodes (78): groupConsumosForFactura(), hasOpenCycle(), loadTableConsumption(), MesaCloseAccountModal(), calculateTotals(), collectPersonGroups(), createInvoice(), createSplitInvoices() (+70 more)
 
 ### Community 5 - "TenantStore"
-Cohesion: 0.06
-Nodes (3): TenantStore, DesktopCheckoutWrite, seedPaidConsumos()
+Cohesion: 0.05
+Nodes (8): InvoiceHeaderUpdateResult, PayablesCommandOutcome, catalogDefinition(), TenantStore, DesktopCheckoutCommand, DesktopCheckoutResult, DesktopCheckoutWrite, seedPaidConsumos()
 
-### Community 6 - "Camarera.tsx"
+### Community 6 - "ecfPrintedRepresentation.ts"
 Cohesion: 0.09
-Nodes (39): deleteMesaConsumoGroup(), Cocina(), advanceComanda(), load(), toggleCocina(), Comanda, ACTIVE_ESTADOS, AdvanceOptions (+31 more)
+Nodes (36): SubmissionItem, TestSetEnvironment, buildPrintedDocument(), formatBytes(), PORTAL_MAX_BYTES, PrintedDocument, PrintedDocumentOutcome, parser (+28 more)
 
-### Community 7 - "localFirst.test.ts"
-Cohesion: 0.08
-Nodes (41): Fase 6: Reglas de conflicto para sincronizacion, adjustCierrePayloadForServer(), adjustFacturaPayloadForServer(), buildCierrePayloadWithCycleNumber(), buildEcfDocumentPayloadForServer(), buildFacturaPayloadWithNcfSequence(), buildFiscalOutboxPayloadForServer(), buildNcfWithSequence() (+33 more)
+### Community 7 - "SuperAdmin.tsx"
+Cohesion: 0.11
+Nodes (35): getDraftField(), getDraftLimit(), LimitDraft, LimitDraftNumberField, MANAGED_ROLES, parseNullableLimit(), parseNullablePositiveLimit(), parsePaymentDay() (+27 more)
 
-### Community 8 - "localFirst.ts"
-Cohesion: 0.05
-Nodes (56): applyLocalFirstDbSchema(), bootstrapLocalFirstPhase(), buildMirrorStoreResetSyncStateKeys(), buildSyncStateKey(), compareOutboxEntriesByCreatedAtThenId(), COMPOSITE_UPSERT_CONFLICT_TABLES, ConflictResolution, ConflictResult (+48 more)
+### Community 8 - "shouldUseIndexedDb"
+Cohesion: 0.14
+Nodes (25): applyLocalFirstDbSchema(), applyMirrorPull(), clearLocalDeviceSession(), createSyncStateRow(), deleteLocalTenantDatabase(), encodeIncrementalCursor(), getLastTenantId(), getLocalDeviceSession() (+17 more)
 
-### Community 9 - "ref_node_crypto"
-Cohesion: 0.05
-Nodes (37): ExpenseCommand, ExpenseRepositoryResult, ExpenseRepositoryStore, InvoiceHeaderUpdateResult, PayablesCommand, PayablesRepository, PayablesRepositoryResult, PayablesRepositoryStore (+29 more)
+### Community 9 - "localFirst.test.ts"
+Cohesion: 0.11
+Nodes (24): Fase 5: Validacion de licencia y bloqueo, assertCanWriteOffline(), buildFacturaPayloadWithNcfSequence(), buildMirrorStoreResetSyncStateKeys(), buildNcfWithSequence(), buildSyncStateKey(), compareRowsByUpdatedAtThenId(), decodeIncrementalCursor() (+16 more)
 
 ### Community 10 - "payrollSyncClient.ts"
-Cohesion: 0.10
-Nodes (50): buildAdjustmentReason(), centsToAmount(), ClientOverride, coerceBoolean(), defaultDueDate(), FACTURA_HEADER_UPDATE_FIELDS, mapAdjustmentPayload(), mapCategoryPayload() (+42 more)
+Cohesion: 0.08
+Nodes (56): buildAdjustmentReason(), capitalize(), centsToAmount(), classifyRemoteError(), ClientOverride, coerceBoolean(), defaultDueDate(), FACTURA_HEADER_UPDATE_FIELDS (+48 more)
 
 ### Community 11 - "dependencies"
 Cohesion: 0.03
-Nodes (63): dependencies, canvas-confetti, class-variance-authority, clsx, cmdk, date-fns, dgii-ecf, electron-log (+55 more)
+Nodes (64): dependencies, canvas-confetti, class-variance-authority, clsx, cmdk, date-fns, dgii-ecf, electron-log (+56 more)
 
 ### Community 12 - "schema.sql"
 Cohesion: 0.05
 Nodes (48): cierres_operativos, cierres_operativos_open_idx, cierres_operativos_tenant_cycle_idx, cierres_operativos_tenant_day_idx, cierres_operativos_unique_cycle, cloudix_super_admins, cloudix_super_admins_email_key, cocina_estado (+40 more)
 
-### Community 13 - "ref_react"
-Cohesion: 0.08
-Nodes (47): Sucursal, ThermalPrintSettingsCard(), handleSave(), extractRefreshTokenFromSignInPayload(), ICONS, Login(), EditarCompraFiscalModal(), ProductoRow (+39 more)
+### Community 13 - "LoginForm.tsx"
+Cohesion: 0.04
+Nodes (88): Sucursal, extractRefreshTokenFromSignInPayload(), ICONS, Login(), Register(), CompraRow, Compras(), exportFormato606() (+80 more)
 
 ### Community 14 - "RestApi.ts"
-Cohesion: 0.06
-Nodes (41): BaseUrl, CF, ECF, STATUS, restClient, AuthToken, CommercialApprovalResponse, CustomTrackStatusEnum (+33 more)
+Cohesion: 0.05
+Nodes (52): ENDPOINTS_SENDER_RECEIVER, SEED, SEND_COMMERCIAL_APPROVAL, SEND_INVOICE, VALIDATE_SEED, BaseUrl, CF, ECF (+44 more)
 
 ### Community 15 - "fiscalWorkerRuntime.ts"
 Cohesion: 0.18
@@ -689,39 +726,39 @@ Nodes (10): SupabaseStorageCertificateCustody, classifySupabaseWorkerCredential(
 
 ### Community 16 - "sidebar.tsx"
 Cohesion: 0.06
-Nodes (46): @radix-ui/react-dialog, @radix-ui/react-separator, @radix-ui/react-tooltip, Input(), Separator(), Sheet(), SheetContent(), SheetDescription() (+38 more)
+Nodes (45): @radix-ui/react-separator, @radix-ui/react-tooltip, Input(), Separator(), Sheet(), SheetContent(), SheetDescription(), SheetFooter() (+37 more)
 
 ### Community 17 - "package.json"
-Cohesion: 0.03
-Nodes (55): { FusesPlugin }, { FuseV1Options, FuseVersion }, author, description, engines, node, lucide-react, react (+47 more)
+Cohesion: 0.04
+Nodes (47): { FusesPlugin }, { FuseV1Options, FuseVersion }, author, description, engines, node, lucide-react, react (+39 more)
 
 ### Community 18 - "Billing.tsx"
+Cohesion: 0.03
+Nodes (109): Análisis de Integración en el Flujo de Datos (`Billing.tsx`), Exploración — PR 10: Analíticas Financieras Ampliadas, Objetivos del Cambio, Billing(), businessDayInFilter(), CierreOperativoRow, CycleMethodSummary, CycleSummary (+101 more)
+
+### Community 19 - "run.ts"
 Cohesion: 0.08
-Nodes (41): Billing(), businessDayInFilter(), CierreOperativoRow, CycleMethodSummary, CycleSummary, Expense, ExpenseCategory, formatDateTime() (+33 more)
+Nodes (36): ACCEPTED, decodeBase64(), dependencyOf(), digits(), DOWNLOAD_KINDS, downloadSigned(), failureMessage(), latestRun() (+28 more)
 
-### Community 19 - "shouldReadLocalFirst"
-Cohesion: 0.07
-Nodes (42): getElectronAPI(), normalizeAccount(), normalizePago(), ReadAccountsOptions, readLocalCuentasCobrar(), readLocalCuentasPagar(), readLocalCxcPagos(), readLocalCxpPagos() (+34 more)
-
-### Community 20 - "AppUpdateContext.tsx"
-Cohesion: 0.07
-Nodes (26): next-themes, sonner, App(), router, AppDesktopUpdateCard(), AppUpdateContext, AppUpdateContextValue, AppUpdatePhase (+18 more)
-
-### Community 21 - "src/index.ts"
+### Community 20 - "electron.d.ts"
 Cohesion: 0.08
-Nodes (18): CustomAuthentication, DecodedToken, P12ReaderData, Digest, Signature, validateXMLCertificate(), ValidateXMLOptions, ValidationResponse (+10 more)
+Nodes (23): OrdersRepository, OrdersRepositoryStore, PayablesCommand, PayablesRepositoryResult, PayablesRepositoryStore, OrderItem, OrdersCommand, OrdersRepositoryResult (+15 more)
 
-### Community 22 - "importer.ts"
-Cohesion: 0.19
-Nodes (10): buildLegacyImportManifest(), hashValue(), initializeImportedDataSchema(), LegacyImportChunk, LegacyImportManifest, recoverOutboxStatus(), stringify(), TenantSQLiteImporter (+2 more)
+### Community 21 - "Tables.tsx"
+Cohesion: 0.13
+Nodes (22): TableMesaCard, ConsumoPanelRow, Estado, etiquetaEstadoConsumo(), getAdjacentMesas(), Mesa, RD(), StatusBadge() (+14 more)
 
-### Community 23 - "customers.ts"
-Cohesion: 0.08
-Nodes (41): Register(), Clientes(), deleteCustomer(), handleViewCustomer(), lookupCustomerBusiness(), refreshCustomers(), saveCustomer(), startCreate() (+33 more)
+### Community 22 - "ecfPrintedRepresentation.test.ts"
+Cohesion: 0.09
+Nodes (32): buildPrintedPdf(), jsPdfMeasure(), PrintedPdfInput, DOCUMENT_TITLES, formatAmount(), isExemptItem(), itemItbisAmount(), PrintedEcf (+24 more)
+
+### Community 23 - "simulation.ts"
+Cohesion: 0.14
+Nodes (26): TestSet, allocateSequences(), baseName(), buildSimulationSet(), columnIndex(), creditNoteIndicator(), dgiiToday(), emisorColumns() (+18 more)
 
 ### Community 24 - "useAuth.ts"
-Cohesion: 0.09
-Nodes (48): clearSessionShared(), doRefreshShared(), ensureGlobalListeners(), ensureTenantAccessRealtime(), extractAccessTokenFromPayload(), extractRefreshTokenFromPayload(), extractUserFromAuthPayload(), handleRealtimeTenantBlocked() (+40 more)
+Cohesion: 0.11
+Nodes (35): clearSessionShared(), doRefreshShared(), ensureGlobalListeners(), ensureTenantAccessRealtime(), extractAccessTokenFromPayload(), extractRefreshTokenFromPayload(), extractUserFromAuthPayload(), handleRealtimeTenantBlocked() (+27 more)
 
 ### Community 25 - "devDependencies"
 Cohesion: 0.07
@@ -729,23 +766,23 @@ Nodes (28): devDependencies, axios-mock-adapter, @babel/cli, @babel/core, babel-
 
 ### Community 26 - "modulo-ecf/package.json"
 Cohesion: 0.05
-Nodes (41): author, description, engines, node, homepage, eslint, @types/node, typescript (+33 more)
+Nodes (40): author, description, engines, node, homepage, eslint, @types/node, typescript (+32 more)
 
-### Community 27 - "Dashboard"
-Cohesion: 0.09
-Nodes (51): useVentaCartSearch(), hasOpenCycle(), MesaCloseAccountModal(), collectPersonGroups(), createInvoice(), createSplitInvoices(), parseOptionalCashReceived(), Dashboard() (+43 more)
+### Community 27 - "command.tsx"
+Cohesion: 0.13
+Nodes (13): cmdk, @radix-ui/react-dialog, Command(), CommandGroup(), CommandInput(), CommandItem(), CommandList(), CommandSeparator() (+5 more)
 
-### Community 28 - "openLocalFirstDbForSync"
-Cohesion: 0.14
-Nodes (26): Fase 4: Sync incremental, Fase 5: Validacion de licencia y bloqueo, applyMirrorPull(), clearLocalDeviceSession(), createSyncStateRow(), deleteLocalTenantDatabase(), encodeIncrementalCursor(), getLastTenantId() (+18 more)
+### Community 28 - "ref_node_crypto"
+Cohesion: 0.06
+Nodes (21): CashPurchaseCommand, CashPurchaseRepository, CashPurchaseRepositoryResult, CashPurchaseRepositoryStore, FullPurchaseCreateCommand, PurchaseCommand, PurchaseDeleteCommand, PurchaseExpenseInput (+13 more)
 
 ### Community 29 - "date-picker.tsx"
 Cohesion: 0.11
 Nodes (20): @radix-ui/react-alert-dialog, react-day-picker, AlertDialogAction(), AlertDialogCancel(), AlertDialogContent(), AlertDialogDescription(), AlertDialogFooter(), AlertDialogHeader() (+12 more)
 
 ### Community 30 - "Apply Progress: migrate-desktop-local-sqlite"
-Cohesion: 0.05
-Nodes (38): Apply Progress: migrate-desktop-local-sqlite, C3d Correction Attempt: Graceful SQLite Close/Reopen Claim (Generation 21), C3d Reconciliation Inventory, C4a Correction: Same-Branch Purchase Graph Integrity (Generation 23), C4b Typed Cash-Purchase Repository, IPC, and Runtime Evidence, Completed Tasks, Corrective Claim/Progress Paths (four), Delivery (+30 more)
+Cohesion: 0.06
+Nodes (31): Apply Progress: migrate-desktop-local-sqlite, C3d Correction Attempt: Graceful SQLite Close/Reopen Claim (Generation 21), C3d Reconciliation Inventory, C4a Correction: Same-Branch Purchase Graph Integrity (Generation 23), C4b Typed Cash-Purchase Repository, IPC, and Runtime Evidence, Corrective Claim/Progress Paths (four), Delivery, Issues (+23 more)
 
 ### Community 31 - "LoginRegistro.tsx"
 Cohesion: 0.09
@@ -753,15 +790,19 @@ Nodes (41): BackgroundBorder(), BackgroundDecoration(), BiometricActionButton(),
 
 ### Community 32 - "IECF.ts"
 Cohesion: 0.05
-Nodes (38): CodigosItem, Comprador, DescuentoOrecargo, DescuentosOrecargos, DetallesItems, Ecf, Emisor, Encabezado (+30 more)
+Nodes (39): CodigosItem, Comprador, DescuentoOrecargo, DescuentosOrecargos, DetallesItems, Ecf, Emisor, Encabezado (+31 more)
 
 ### Community 33 - "MainContentArea.tsx"
 Cohesion: 0.09
 Nodes (37): BackgroundBorder(), BackgroundBorder1(), BackgroundBorder2(), Button13(), Button14(), Button15(), Button16(), Button17() (+29 more)
 
+### Community 34 - "ECF"
+Cohesion: 0.13
+Nodes (3): ECF, RestApi, P12ReaderData
+
 ### Community 35 - "AppLayout.tsx"
-Cohesion: 0.09
-Nodes (16): react-router, routePrefetchers, SidebarItem, SidebarSection, sidebarSections, FeatureGuard(), RoleGuard(), TenantAccessDenied() (+8 more)
+Cohesion: 0.05
+Nodes (51): Progreso de Aplicación — PR 10: Analíticas Financieras Ampliadas, react-router, AppLayoutContent(), loadPendingCount(), filterMainNavForRol(), prefetchRoute(), routePrefetchers, SidebarItem (+43 more)
 
 ### Community 36 - "GestionDeMesas.tsx"
 Cohesion: 0.10
@@ -772,16 +813,16 @@ Cohesion: 0.11
 Nodes (35): AsideSideNavBarShell(), Button(), Button1(), Button2(), Button3(), Button4(), Button5(), CategoryBar() (+27 more)
 
 ### Community 38 - "ecfCertificateHealth.ts"
-Cohesion: 0.20
-Nodes (17): ACTION_HINTS, build(), CertificateHealth, CertificateHealthAction, CertificateHealthInput, CertificateHealthReason, CertificateHealthStatus, describeCertificateErrorCode() (+9 more)
+Cohesion: 0.16
+Nodes (22): ACTION_HINTS, build(), CertificateHealth, CertificateHealthAction, CertificateHealthInput, CertificateHealthReason, CertificateHealthStatus, COMPANY_PREFIXES (+14 more)
 
 ### Community 39 - "IACECF.ts"
 Cohesion: 0.05
 Nodes (39): Blocked item, Certificate placement, Current status, Files touched in the local hardening pass, Next step, Real validation checklist, Suggested local `.env` entries, Acecf (+31 more)
 
-### Community 40 - "Cierre.tsx"
-Cohesion: 0.09
-Nodes (34): calculateTotals(), Cierre(), confirmStartCycle(), handleCerrarCiclo(), handleStartCycle(), CierreOperativoRow, ConsumoAbiertoRow, etiquetaMetodo() (+26 more)
+### Community 40 - "Nomina.tsx"
+Cohesion: 0.11
+Nodes (18): AdjustmentDraft, buildPeriodValue(), currencyInputToCents(), emptyAdjustmentDraft, emptyEmployeeDraft, formatCentsToCurrencyDisplay(), formatCurrencyInput(), formatMoney() (+10 more)
 
 ### Community 41 - "Node.js Best Practices"
 Cohesion: 0.05
@@ -789,75 +830,75 @@ Nodes (38): 10. Anti-Patterns to Avoid, 11. Decision Checklist, 1. Framework Sel
 
 ### Community 42 - "HistorialSync.tsx"
 Cohesion: 0.09
-Nodes (28): CLOUD_COMPARABLE_TABLES, DiagnosticReport, fetchCloudCounts(), fetchCloudCountsPerTable(), fetchCloudCountsViaRpc(), fetchCloudRowVersions(), fetchMirrorCounts(), fetchPendingContent() (+20 more)
+Nodes (27): CLOUD_COMPARABLE_TABLES, DiagnosticReport, fetchCloudCounts(), fetchCloudCountsPerTable(), fetchCloudCountsViaRpc(), fetchCloudRowVersions(), fetchMirrorCounts(), fetchPendingContent() (+19 more)
 
 ### Community 43 - "dgiiAdapters.ts"
-Cohesion: 0.09
-Nodes (22): dgii-ecf, mockAuthenticate, mockGetKeyFromStringBase64, mockSendElectronicDocument, mockSendSummary, mockSignXml, mockStatusTrackId, validateCertificateForCustody() (+14 more)
+Cohesion: 0.12
+Nodes (12): Facts (sources), convertECF32ToRFCE(), createDgiiFileName(), FailClosedDgiiClient, FailClosedXmlSigner, getDgiiEnvironment(), getXmlTagValue(), RealDgiiClient (+4 more)
 
 ### Community 44 - "utils.ts"
-Cohesion: 0.06
-Nodes (22): clsx, @radix-ui/react-avatar, @radix-ui/react-checkbox, @radix-ui/react-hover-card, @radix-ui/react-progress, @radix-ui/react-radio-group, @radix-ui/react-scroll-area, @radix-ui/react-slider (+14 more)
+Cohesion: 0.07
+Nodes (19): clsx, @radix-ui/react-checkbox, @radix-ui/react-hover-card, @radix-ui/react-progress, @radix-ui/react-radio-group, @radix-ui/react-scroll-area, @radix-ui/react-slider, react-resizable-panels (+11 more)
 
-### Community 45 - "carousel.tsx"
-Cohesion: 0.17
-Nodes (15): embla-carousel-react, Button(), Carousel(), CarouselApi, CarouselContent(), CarouselContext, CarouselContextProps, CarouselItem() (+7 more)
+### Community 45 - "fiscal/types.ts"
+Cohesion: 0.12
+Nodes (21): claimRow, CLAIM_JOB_SQL, ClaimRow, isAlreadySubmitted(), PostgresFiscalWorkerRepositoryOptions, Queryable, rowToSnapshot(), toIsoOrNull() (+13 more)
 
 ### Community 46 - "IARECF.ts"
 Cohesion: 0.06
-Nodes (33): IACECF, Arecf, Attributes, Attributes2, Attributes3, Attributes4, Attributes5, Attributes6 (+25 more)
+Nodes (30): Arecf, Attributes, Attributes2, Attributes3, Attributes4, Attributes5, Attributes6, Attributes7 (+22 more)
 
 ### Community 47 - "nsis"
 Cohesion: 0.06
 Nodes (31): build, afterPack, appId, asar, asarUnpack, directories, extraResources, files (+23 more)
 
-### Community 48 - "AppLayout"
-Cohesion: 0.19
-Nodes (14): Requirement: Payment Alert Modal, Scenario: No payment day configured, Scenario: On payment day, Scenario: Reminder one day before, Corrective Risk-Review Remediation, Phase 1: Database and RPC Foundation, Phase 2: Core Logic and Utilities, Phase 3: Frontend Implementation (+6 more)
+### Community 48 - "handler.ts"
+Cohesion: 0.12
+Nodes (22): AUTH_FAILED(), handleApproval(), handleRequest(), handleSeed(), handleValidateSeed(), HttpError, json(), readLimited() (+14 more)
 
-### Community 49 - "electron"
-Cohesion: 0.13
-Nodes (3): { contextBridge, ipcRenderer }, { contextBridge, ipcRenderer }, electron
+### Community 49 - "lanEdgeServer.ts"
+Cohesion: 0.21
+Nodes (13): collectLanUrls(), contentType(), DEFAULT_LAN_EDGE_PORT, isEnvelope(), isPrivateOrLoopbackAddress(), LanEdgeEventEnvelope, LanEdgeServerHandle, readJsonBody() (+5 more)
 
-### Community 50 - "Ajustes.tsx"
-Cohesion: 0.07
-Nodes (59): qrcode, Ajustes(), handleLogoUpload(), handlePrintTest(), Config, CURRENCY_OPTIONS, Field(), SAMPLE_CIERRE_THERMAL_BASE (+51 more)
+### Community 50 - "ecf-certification-run.test.ts"
+Cohesion: 0.08
+Nodes (27): BuiltDocument, DgiiMessage, DgiiSendResult, DgiiTrackResult, MAX_ATTEMPTS, PlannedSubmission, Run, RunType (+19 more)
 
-### Community 51 - "Nomina"
+### Community 51 - "localNcfReservation.ts"
+Cohesion: 0.14
+Nodes (19): NcfLocalSequenceRequest, NcfLocalSequenceResponse, ResolvedNcfForInvoice, callBridge(), catchUpCloudNcfSequence(), defaultDesktopNcfDeps(), DesktopNcfDeps, isCloudOutage() (+11 more)
+
+### Community 52 - "S3-Compatible Storage Gateway"
 Cohesion: 0.11
-Nodes (20): AdjustmentDraft, buildPeriodValue(), createPaymentInCloud(), createPaymentLocally(), currencyInputToCents(), emptyAdjustmentDraft, emptyEmployeeDraft, formatCentsToCurrencyDisplay() (+12 more)
+Nodes (19): Access keys, AWS CLI (shared credentials file), AWS SDK for JavaScript v3, Best Practices, boto3 (Python), Common Mistakes, Configuration pitfalls, Create a key (+11 more)
 
-### Community 52 - "invoicesLocal.ts"
-Cohesion: 0.26
-Nodes (11): mocks, deleteLocalInvoice(), findCloudNcfClash(), getElectronAPI(), InvoiceNcfDuplicateError, normalizeInvoice(), ReadInvoicesOptions, readLocalInvoices() (+3 more)
-
-### Community 53 - "ref_lucide_react"
-Cohesion: 0.27
-Nodes (8): AnimatedSection(), AnimatedSectionProps, FeatureCard(), HeroSection(), PricingCard(), HardwareItem(), LandingPage(), MiniFeature()
+### Community 53 - "protocol.ts"
+Cohesion: 0.09
+Nodes (49): handleReception(), ACCEPTED_ECF_TYPES, AcecfFields, ApprovalValidation, ArecfInput, bindSigner(), buildArecfXml(), buildSeedXml() (+41 more)
 
 ### Community 54 - "resolveTenantUserFromAuth.ts"
-Cohesion: 0.05
-Nodes (61): getDraftField(), getDraftLimit(), LimitDraft, LimitDraftNumberField, MANAGED_ROLES, parseNullableLimit(), parseNullablePositiveLimit(), parsePaymentDay() (+53 more)
-
-### Community 55 - "utils.test.ts"
 Cohesion: 0.07
-Nodes (26): CommercialApprovalData, GenerateACECFXmlResult, genrateACECFXml(), getCommercialApprovalData(), ENVIRONMENT, CERT, DEV, PROD (+18 more)
+Nodes (40): Approaches, Current State, Exploration: migrate-desktop-local-sqlite, Ready for Proposal, Risks, getErrorText(), getNumericStatus(), isCloudAvailabilityFailure() (+32 more)
+
+### Community 55 - "ECF.test.ts"
+Cohesion: 0.11
+Nodes (19): CommercialApprovalData, GenerateACECFXmlResult, genrateACECFXml(), getCommercialApprovalData(), ENVIRONMENT, CERT, DEV, PROD (+11 more)
 
 ### Community 56 - "npx @insforge/cli compute deploy — deploy a backend container"
 Cohesion: 0.05
 Nodes (36): Common errors, Common picks, CPU Tier (Fly.io standard format), FAQ, If you don't have a Dockerfile yet, Notes, npx @insforge/cli compute deploy — deploy a backend container, Options (+28 more)
 
 ### Community 57 - "postgresFiscalWorkerRepository.ts"
-Cohesion: 0.08
-Nodes (25): Guidelines, How to Fetch Documentation, Step 1: Resolve the Library ID, Step 2: Select the Best Match, Step 3: Fetch the Documentation, Step 4: Use the Documentation, When to Use This Skill, claimRow (+17 more)
+Cohesion: 0.09
+Nodes (12): Guidelines, How to Fetch Documentation, Step 1: Resolve the Library ID, Step 2: Select the Best Match, Step 3: Fetch the Documentation, Step 4: Use the Documentation, When to Use This Skill, FiscalWorkerRuntimeOptions (+4 more)
 
-### Community 58 - "Exploration: integrate-dgii-ecf"
-Cohesion: 0.25
-Nodes (8): Affected Areas, Approaches, Current State, Exploration: integrate-dgii-ecf, Ready for Proposal, Recommendation, Risks, NcfBCode
-
-### Community 59 - "fiscal/types.ts"
+### Community 58 - "xlsx.ts"
 Cohesion: 0.12
-Nodes (20): validParsedCertificate, custody, now, CertificateParser, createWorkerMemoryCertificateCustody(), FailClosedCertificateCustody, ValidateCertificateForCustodyInput, decodeEcfEncryptionKey() (+12 more)
+Nodes (26): attributes(), columnIndex(), decodeXmlText(), DEFAULT_XLSX_LIMITS, inflateRaw(), NAMED_ENTITIES, parseSharedStrings(), parseSheet() (+18 more)
+
+### Community 59 - "fiscalWorkerError"
+Cohesion: 0.18
+Nodes (17): validParsedCertificate, CertificateParser, createWorkerMemoryCertificateCustody(), FailClosedCertificateCustody, validateCertificateForCustody(), ValidateCertificateForCustodyInput, validateSecretInput(), decodeEcfEncryptionKey() (+9 more)
 
 ### Community 60 - "schema-upgrade-v12.1.29.test.ts"
 Cohesion: 0.33
@@ -867,81 +908,77 @@ Nodes (14): ensureCierresSchemaEvolution(), ensureCompraFiscalTable(), ensureCom
 Cohesion: 0.08
 Nodes (23): compilerOptions, allowJs, allowSyntheticDefaultImports, baseUrl, declaration, emitDeclarationOnly, esModuleInterop, forceConsistentCasingInFileNames (+15 more)
 
-### Community 62 - "SucursalContext.tsx"
-Cohesion: 0.09
-Nodes (20): Action Plan, Issues / Findings, Verification Summary, Verify Report — PR 1: Feature Gates + Sidebar Agrupado, useSucursal(), isPayloadForTenant(), payloadTenantId(), useCocinaRealtimeSync() (+12 more)
+### Community 62 - "ecf-receptor/index.ts"
+Cohesion: 0.17
+Nodes (5): ReceivedApprovalRow, StoredCertificate, security, createSupabaseStore(), Db
 
 ### Community 63 - "mapper.ts"
-Cohesion: 0.21
-Nodes (14): assertMinimumEcfXml(), assertTotalsBalance(), assertValidMoney(), createUnsignedEcfXml(), formatDgiiDate(), formatDgiiDateTime(), getSantoDomingoDateParts(), hasXmlTagWithValue() (+6 more)
+Cohesion: 0.15
+Nodes (16): custody, now, assertMinimumEcfXml(), assertTotalsBalance(), assertValidMoney(), createUnsignedEcfXml(), formatDgiiDate(), formatDgiiDateTime() (+8 more)
 
 ### Community 64 - "SenderReceiver.ts"
 Cohesion: 0.10
-Nodes (14): excludedEncfType, NoReceivedCode, Envío duplicado, Error de especificación, Error de Firma Digital, RNC Comprador no corresponde, ReceivedStatus, e-CF No Recibido (+6 more)
+Nodes (15): excludedEncfType, NoReceivedCode, Envío duplicado, Error de especificación, Error de Firma Digital, RNC Comprador no corresponde, ReceivedStatus, e-CF No Recibido (+7 more)
 
 ### Community 65 - "devDependencies"
 Cohesion: 0.09
 Nodes (22): devDependencies, electron, electron-builder, @electron-forge/cli, @electron-forge/maker-deb, @electron-forge/maker-rpm, @electron-forge/maker-wix, @electron-forge/maker-zip (+14 more)
 
-### Community 66 - "Implementacion"
-Cohesion: 0.23
-Nodes (11): Fase 2: Sesion local y PIN offline, Fase 3: Bootstrap progresivo, Fase 7: Pantalla de estado de sincronizacion, Implementacion, labelForStatus(), LocalFirstStatusBadge(), LocalFirstStatusBadgeProps, statusTheme() (+3 more)
-
-### Community 67 - "cloudAvailability.ts"
-Cohesion: 0.11
-Nodes (35): canStartProtectedTenantWork(), EMPTY_STATE, resolveLicenseGateForOnlineSync(), useLocalFirstBootstrap(), CloudAvailabilitySnapshot, CloudCircuitState, getCloudAvailabilitySnapshot(), getErrorText() (+27 more)
-
-### Community 68 - "canUseFeature"
-Cohesion: 0.26
-Nodes (11): Progreso de Aplicación — PR 10: Analíticas Financieras Ampliadas, Executive Summary, Solución, Task 1: Crear `planFeatures.ts`, FeatureGuardProps, canUseFeature(), Feature, getRequiredPlan() (+3 more)
-
-### Community 69 - "fiscalWorker.ts"
-Cohesion: 0.15
-Nodes (13): dgiiOk, now, okCustody, repo(), signer, snapshot(), CertificateFailureCode, classifyCertificateFailure() (+5 more)
-
-### Community 70 - "InsForge CLI"
+### Community 66 - "InsForge CLI"
 Cohesion: 0.08
 Nodes (23): AI Gateway, Branching, Command Routing, Connection Setup, Core Rules, Database Workflow, Deployments, Diagnostics and Logs (+15 more)
+
+### Community 67 - "electron"
+Cohesion: 0.09
+Nodes (14): buildPrivateReleasesFeed(), checkForUpdatesWithRetry(), getTargetWindow(), installDownloadedUpdate(), isTransientUpdateError(), setupAutoUpdater(), updateErrorMessage(), UpdatePhase (+6 more)
+
+### Community 68 - "invoiceSearch.ts"
+Cohesion: 0.22
+Nodes (17): buildInvoiceSearchOrFilter(), createdAtMs(), digitsOnly(), filterOnlyWithNcf(), hasNcf(), INVOICE_SEARCH_LIMIT, invoiceMatchesQuery(), InvoiceSearchResult (+9 more)
+
+### Community 70 - "mainWindow"
+Cohesion: 0.06
+Nodes (33): @playwright/test, attachDiagnostics(), BrowserDiagnostics, launchApp(), loginIfNeeded(), revealSidebar(), waitForAppShell(), waitForLoginOrShell() (+25 more)
 
 ### Community 71 - "compilerOptions"
 Cohesion: 0.10
 Nodes (20): compilerOptions, allowImportingTsExtensions, isolatedModules, jsx, lib, module, moduleResolution, noEmit (+12 more)
 
-### Community 72 - "payrollContracts.ts"
-Cohesion: 0.19
-Nodes (16): PayrollEmployeeRow, calculatePayrollPaymentContext(), FREQUENCY_DIVISOR, getCurrentPaymentAdjustmentTotals(), PayrollPaymentHistory, employee, PayrollAdjustmentKind, PayrollAdjustmentScope (+8 more)
+### Community 72 - "Tasks: Tenant Management and Payment Alerts"
+Cohesion: 0.25
+Nodes (7): Corrective Risk-Review Remediation, Phase 1: Database and RPC Foundation, Phase 2: Core Logic and Utilities, Phase 4: Verification, Review Workload Forecast, Suggested Work Units (For Single-PR review tracking), Tasks: Tenant Management and Payment Alerts
 
-### Community 73 - "form.tsx"
+### Community 73 - "ecf-certification-test-send.test.ts"
+Cohesion: 0.06
+Nodes (35): node-forge, SigningMaterial, bytesToBase64(), readSigningMaterial(), sign(), createSupabaseStore(), DEFAULT_BUYER, TEST_SEQUENCE_MAX (+27 more)
+
+### Community 74 - "localFirst.ts"
+Cohesion: 0.05
+Nodes (69): Fase 6: Reglas de conflicto para sincronizacion, adjustCierrePayloadForServer(), adjustFacturaPayloadForServer(), buildCierrePayloadWithCycleNumber(), buildEcfDocumentPayloadForServer(), buildFiscalOutboxPayloadForServer(), buildServerWritePayload(), buildSyncErrorRow() (+61 more)
+
+### Community 75 - "PrintedRepresentationRunner.tsx"
 Cohesion: 0.14
-Nodes (16): @radix-ui/react-label, @radix-ui/react-slot, react-hook-form, Badge(), badgeVariants, FormControl(), FormDescription(), FormFieldContext (+8 more)
+Nodes (22): Design notes, invoke(), PrintedRepresentationRunner(), downloadAll(), generate(), PrintedRepresentationRunnerProps, RUN_TYPE, savePdf() (+14 more)
 
-### Community 74 - "lanEdgeClient.ts"
+### Community 76 - "EcfTestSendCard.tsx"
 Cohesion: 0.14
-Nodes (22): Fase 1: Schema local y estructura base, commitLanEdgeCursor(), edgeFetch(), getLanEdgeBaseUrl(), isLanEdgeAvailable(), LanEdgeEventEnvelope, LanEdgePullResult, normalizedBaseUrl() (+14 more)
+Nodes (28): Busy, EcfTestSendCard(), run(), EcfTestSendCardProps, EcfTestSendView(), EcfTestSendViewProps, formatMessages(), invoke() (+20 more)
 
-### Community 75 - "Tables.tsx"
-Cohesion: 0.11
-Nodes (30): MesaCardData, Props, TableMesaCard, TableMesaCardBase(), ConsumoPanelRow, Estado, etiquetaEstadoConsumo(), getAdjacentMesas() (+22 more)
-
-### Community 76 - "local-sqlite-catalogs.test.ts"
-Cohesion: 0.18
-Nodes (7): CatalogRepository, CatalogRepositoryStore, CATALOG_REPOSITORY_EXECUTE_CHANNEL, CatalogRepositoryIpcMain, CatalogCommand, CatalogRepositoryResult, withStores()
-
-### Community 77 - "ActivationPanel.tsx"
-Cohesion: 0.16
-Nodes (20): ActivationPanel(), activateElectronicBilling(), deactivateElectronicBilling(), handleCompanyLookup(), openCertificationPortal(), refreshReadiness(), verifyConfiguration(), ActivationStatus() (+12 more)
+### Community 77 - "ecfSequenceRanges.ts"
+Cohesion: 0.24
+Nodes (14): saveSequences(), buildRangesSavePayload(), DEFAULT_ECF_RANGE_SIZE, ECF_LOW_REMAINING_RATIO, EcfRange, EcfRangeValidation, EcfStoredBounds, isRecord() (+6 more)
 
 ### Community 78 - "initializeTenantSchema"
 Cohesion: 0.04
-Nodes (45): FiscalSequenceAllocation, FiscalSequenceRepository, SQLitePayrollSyncStore, ensureCierresSchemaEvolution(), ensureCompraFiscalTable(), ensureComprasSchemaEvolution(), ensureFacturasSchemaEvolution(), ensureFiscalCheckoutSchemaEvolution() (+37 more)
+Nodes (52): PAYROLL_REPOSITORY_EXECUTE_CHANNEL, PayrollRepositoryIpcMain, PayrollSyncOrchestrator, SQLitePayrollSyncStore, columnsOfCreateBody(), ECF_DOCUMENT_STATUSES, ECF_DOCUMENTS_CREATE_BODY(), ensureCierresSchemaEvolution() (+44 more)
 
-### Community 79 - "useAuth"
+### Community 79 - "Cierre.tsx"
+Cohesion: 0.10
+Nodes (43): Cierre(), confirmStartCycle(), handleCerrarCiclo(), handleStartCycle(), CierreOperativoRow, ConsumoAbiertoRow, etiquetaMetodo(), FacturaEstado (+35 more)
+
+### Community 80 - "AppUpdateContext.tsx"
 Cohesion: 0.07
-Nodes (55): CartaPanel(), ensureCategoryExists(), handleDelete(), handleSave(), CategoriasPanel(), assignedCountFor(), ensureCategoryExists(), handleDeleteCategory() (+47 more)
-
-### Community 80 - "cashPurchaseRepository.ts"
-Cohesion: 0.09
-Nodes (17): CashPurchaseCommand, CashPurchaseRepository, CashPurchaseRepositoryResult, CashPurchaseRepositoryStore, FullPurchaseCreateCommand, PurchaseCommand, PurchaseDeleteCommand, PurchaseExpenseInput (+9 more)
+Nodes (30): App(), router, MesaCardData, Props, TableMesaCardBase(), estadoColors, estadoLabels, MesaEstadoVisual (+22 more)
 
 ### Community 81 - "compilerOptions"
 Cohesion: 0.11
@@ -951,9 +988,9 @@ Nodes (18): compilerOptions, allowJs, esModuleInterop, incremental, isolatedModu
 Cohesion: 0.12
 Nodes (10): cloudix_super_admins, cocina_estado, cocina_estado_realtime, consumos_tenant_created_by_auth_user_idx, cyberbistro_super_admins, idx_consumos_comanda_id, idx_consumos_estado, idx_consumos_factura_id (+2 more)
 
-### Community 83 - "TenantStoreController"
-Cohesion: 0.09
-Nodes (11): ExpenseRepository, PayrollSyncOrchestrator, TenantStoreController, setup(), setupStore(), setup(), withStore(), setup() (+3 more)
+### Community 83 - ".open"
+Cohesion: 0.05
+Nodes (24): CatalogRepository, CatalogRepositoryStore, CATALOG_REPOSITORY_EXECUTE_CHANNEL, CatalogRepositoryIpcMain, PayablesRepository, ReceivablesRepository, TenantStoreController, CatalogCommand (+16 more)
 
 ### Community 84 - "claudix/package.json"
 Cohesion: 0.12
@@ -967,25 +1004,25 @@ Nodes (17): Background2(), Button(), Container10(), Container11(), Container12()
 Cohesion: 0.06
 Nodes (34): After the merge, Always run `--dry-run` first, Conflicts, Example, Merge order (matters), npx @insforge/cli branch merge, Options, Resolution steps (+26 more)
 
-### Community 87 - "invoicesLocal.ts"
-Cohesion: 0.22
-Nodes (17): buildInvoiceSearchOrFilter(), createdAtMs(), digitsOnly(), filterOnlyWithNcf(), hasNcf(), INVOICE_SEARCH_LIMIT, invoiceMatchesQuery(), InvoiceSearchResult (+9 more)
+### Community 87 - "ecf-certification/handler.ts"
+Cohesion: 0.10
+Nodes (40): authCheck(), formatDgiiDateTime(), stampSignatureTime(), ActionContext, ActionHandler, CertificationDeps, CORS, dgiiHttpError() (+32 more)
 
 ### Community 88 - "Node.js Backend Patterns"
 Cohesion: 0.06
 Nodes (33): API Response Format, Authentication & Authorization, Caching Strategies, Database Patterns, Dependency Injection, DI Container, JWT Authentication, MongoDB with Mongoose (+25 more)
 
 ### Community 89 - "Signature"
+Cohesion: 0.07
+Nodes (19): DecodedToken, P12Reader, Digest, Signature, generateRandomAlphaNumeric(), validateXMLCertificate(), ValidateXMLOptions, ValidationResponse (+11 more)
+
+### Community 90 - "security.ts"
 Cohesion: 0.14
-Nodes (13): Authors, Custom Authentication, DGII-eCF, Installation, 🔗 Links, Read Certificate Information from Base64, Related, Run Integration Test local environment (+5 more)
+Nodes (19): extractSubjectIdentifiers(), extractSubjectIdentities(), SubjectIdentities, attributesOf(), bytesToBase64(), Certificate, chainsToAnchors(), createXmlSecurity() (+11 more)
 
-### Community 90 - "autoUpdater.ts"
-Cohesion: 0.29
-Nodes (10): buildPrivateReleasesFeed(), checkForUpdatesWithRetry(), getTargetWindow(), installDownloadedUpdate(), isTransientUpdateError(), setupAutoUpdater(), updateErrorMessage(), UpdatePhase (+2 more)
-
-### Community 91 - "roleNav.ts"
-Cohesion: 0.17
-Nodes (13): DecisionInput, getRoleGuardDecision(), RoleGuardDecision, BILLING_PATH, CIERRE_PATH, defaultRouteForRol(), GASTOS_PATH, isAppRouteAllowed() (+5 more)
+### Community 91 - "SucursalContext.tsx"
+Cohesion: 0.10
+Nodes (27): handleCreateBranch(), defaultSucursalLimitForPlan(), resolveEffectiveSucursalLimit(), scopedStorageKey(), SucursalContext, SucursalContextValue, SucursalProvider(), addSucursal() (+19 more)
 
 ### Community 92 - "AsideRightSideFloatingCartPanel"
 Cohesion: 0.12
@@ -1007,9 +1044,9 @@ Nodes (29): Apply Progress — PR 3: Migración Inventario Avanzado (Campos SQL)
 Cohesion: 0.31
 Nodes (4): FiscalWorker, EcfFiscalStatus, FiscalWorkerError, FiscalWorkerSnapshot
 
-### Community 97 - "DeviceAccountDirectory"
+### Community 97 - "lanEdgeClient.ts"
 Cohesion: 0.16
-Nodes (5): DeviceAccountDirectory, DeviceSessionPreference, normalizeBranchIds(), normalizeEmail(), SavedAccountMetadata
+Nodes (20): commitLanEdgeCursor(), edgeFetch(), getLanEdgeBaseUrl(), isLanEdgeAvailable(), LanEdgeEventEnvelope, LanEdgePullResult, normalizedBaseUrl(), publishLanOutboxEntry() (+12 more)
 
 ### Community 98 - "20260608191001_add-updated-at-to-new-tables.sql"
 Cohesion: 0.15
@@ -1019,13 +1056,13 @@ Nodes (10): public.handle_updated_at(), set_public_compra_detalles_updated_at, s
 Cohesion: 0.13
 Nodes (15): scripts, build, dev, dist:win, fiscal-worker, icon:build, make, package (+7 more)
 
-### Community 100 - "ecfIssuerRequirements.ts"
-Cohesion: 0.21
-Nodes (14): LoadedEcfReadiness, EcfReadinessResult, buildIssuerUpdatePayload(), ECF_ISSUER_FIELDS, EcfIssuerFieldDef, EcfIssuerFieldKey, EcfIssuerValidation, issuerInputFromTenantRow() (+6 more)
+### Community 100 - "ncfLocalSequence.ts"
+Cohesion: 0.18
+Nodes (20): cloudNextSequenceFromSettings(), computeNcfReservationStart(), executeNcfLocalSequenceRequest(), isNcfBCode(), NCF_B_CODES, NCF_LOCAL_SEQUENCES_CREATE_SQL, NCF_MAX_SEQUENCE, NcfBCode (+12 more)
 
-### Community 101 - "ecfSequenceRanges.ts"
-Cohesion: 0.24
-Nodes (14): saveSequences(), buildRangesSavePayload(), DEFAULT_ECF_RANGE_SIZE, ECF_LOW_REMAINING_RATIO, EcfRange, EcfRangeValidation, EcfStoredBounds, isRecord() (+6 more)
+### Community 101 - "Dashboard.tsx"
+Cohesion: 0.03
+Nodes (109): buildOwnerNameMap(), Camarera(), deleteMesaConsumoGroup(), submitOrder(), CartItem, getMesaConsumoGroupKey(), getTenantUserName(), groupMesaConsumos() (+101 more)
 
 ### Community 102 - "systemt.md"
 Cohesion: 0.06
@@ -1052,8 +1089,8 @@ Cohesion: 0.13
 Nodes (15): Container46(), Container47(), Container48(), Container49(), Container50(), Container51(), Data21(), Data22() (+7 more)
 
 ### Community 108 - "insforge/SKILL.md"
-Cohesion: 0.12
-Nodes (6): Best Practices, Common Mistakes, Generate an Image, Image Generation, Setup, Store the Output
+Cohesion: 0.09
+Nodes (14): Best Practices, Chat Completions, Common Mistakes, Setup, Store a Response, Best Practices, Common Mistakes, Deno Memory (+6 more)
 
 ### Community 109 - "dependencies"
 Cohesion: 0.14
@@ -1087,33 +1124,33 @@ Nodes (13): BackgroundBorder1(), BackgroundBorder2(), BackgroundBorder3(), Butto
 Cohesion: 0.15
 Nodes (13): Container50(), Container51(), Container52(), Container53(), Container54(), Container55(), Container56(), Container57() (+5 more)
 
-### Community 117 - "AppLayoutContent"
-Cohesion: 0.23
-Nodes (10): AppLayoutContent(), loadPendingCount(), prefetchRoute(), isMissingPaymentDayColumnError(), isPaymentDayUnavailable(), markPaymentDayUnavailable(), resetPaymentDayAvailabilityForTests(), unavailableTenants (+2 more)
+### Community 117 - "Usage/Examples"
+Cohesion: 0.10
+Nodes (20): API Methods, Commercial approval, Customer Directory, Get all the tracks IDs, Inquiry Status, Options, Requirements, Send Electronic Document eFC (+12 more)
 
 ### Community 118 - "validate-ecf-certificate/index.ts"
-Cohesion: 0.23
-Nodes (8): corsHeaders, decodeEcfEncryptionKey(), encryptPassphrase(), getBearerToken(), HttpError, tenantIdFromStoragePath(), tenantPathPattern, validateRequestPayload()
+Cohesion: 0.15
+Nodes (11): DistinguishedNameAttribute, formatDistinguishedName(), OID_LABELS, corsHeaders, decodeEcfEncryptionKey(), encryptPassphrase(), getBearerToken(), HttpError (+3 more)
 
 ### Community 119 - "chart.tsx"
 Cohesion: 0.24
 Nodes (11): recharts, ChartConfig, ChartContainer(), ChartContext, ChartContextProps, ChartLegendContent(), ChartStyle(), ChartTooltipContent() (+3 more)
 
-### Community 120 - "drawer.tsx"
-Cohesion: 0.20
-Nodes (8): vaul, DrawerContent(), DrawerDescription(), DrawerFooter(), DrawerHeader(), DrawerOverlay(), DrawerPortal(), DrawerTitle()
+### Community 120 - "dropdown-menu.tsx"
+Cohesion: 0.12
+Nodes (10): @radix-ui/react-dropdown-menu, DropdownMenuCheckboxItem(), DropdownMenuContent(), DropdownMenuItem(), DropdownMenuLabel(), DropdownMenuRadioItem(), DropdownMenuSeparator(), DropdownMenuShortcut() (+2 more)
 
-### Community 121 - "P12Reader"
-Cohesion: 0.09
-Nodes (21): API Methods, Commercial approval, Customer Directory, Get all the tracks IDs, Inquiry Status, Options, Requirements, Send Electronic Document eFC (+13 more)
+### Community 121 - "ncf.ts"
+Cohesion: 0.16
+Nodes (29): ncfPayloadForInsert(), resolveNcfForNewInvoice(), buildLocalTenantNcfReservation(), buildBSequenceMap(), buildDefaultBSequenceMap(), buildNcfSequenceColumnsForSave(), buildNcfSequenceMapForSave(), buildTenantNcfUpdatePayload() (+21 more)
 
 ### Community 122 - "Database Access Control for InsForge"
 Cohesion: 0.08
 Nodes (25): 1. Infinite Recursive RLS (CRITICAL — Causes OOM Crash), 2. Missing USING or WITH CHECK (HIGH), 3. Overly Permissive Policies (HIGH), 4. View Bypass (MEDIUM), Authenticated-Only Access, Checklist, Common InsForge RLS Patterns, Critical Vulnerabilities (+17 more)
 
 ### Community 123 - "InsForge + Better Auth Integration Guide"
-Cohesion: 0.07
-Nodes (29): Better Auth, Better Auth configuration, Better Auth plugins (optional), Better Auth route handlers (Next.js), Common Mistakes, Dashboard setup (manual, cannot be automated), Database setup, Email transport (verification + password reset) (+21 more)
+Cohesion: 0.08
+Nodes (24): Better Auth, Better Auth configuration, Better Auth plugins (optional), Better Auth route handlers (Next.js), Common Mistakes, Dashboard setup (manual, cannot be automated), Database setup, Email transport (verification + password reset) (+16 more)
 
 ### Community 124 - "BackgroundBorder"
 Cohesion: 0.18
@@ -1143,9 +1180,9 @@ Nodes (23): 1. Generics, 1. Infer Keyword, 2. Conditional Types, 2. Type Guards,
 Cohesion: 0.20
 Nodes (10): Container52(), Container53(), Container54(), Container55(), Container56(), Container57(), Container58(), Container59() (+2 more)
 
-### Community 131 - "tenant-fiscal-settings.spec.ts"
-Cohesion: 0.36
-Nodes (7): attachDiagnostics(), BrowserDiagnostics, launchApp(), loginIfNeeded(), revealSidebar(), waitForAppShell(), waitForLoginOrShell()
+### Community 131 - "vite.config.mts"
+Cohesion: 0.14
+Nodes (11): @tailwindcss/vite, vite, vite-plugin-electron, @vitejs/plugin-react, __dirname, ELECTRON_MAIN_EXTERNALS, external(), filter() (+3 more)
 
 ### Community 132 - "tenant-management-migration.test.ts"
 Cohesion: 0.20
@@ -1155,17 +1192,17 @@ Nodes (9): accessRealtimeMigration, adminSql, authoritativeMigration, migration,
 Cohesion: 0.22
 Nodes (5): next, dmSans, metadata, outfit, nextConfig
 
-### Community 134 - "build-icon.mjs"
-Cohesion: 0.17
-Nodes (9): sharp, __dirname, icoFromPngEntries(), main(), outPath, root, sizes, svgPath (+1 more)
+### Community 134 - "dgiiClient.ts"
+Cohesion: 0.10
+Nodes (22): buildMultipart(), clip(), createDgiiClient(), failOnStatus(), once(), request(), submit(), DGII_HOSTS (+14 more)
 
 ### Community 135 - "Item"
 Cohesion: 0.22
 Nodes (9): Container28(), Container29(), Container30(), Container31(), Container32(), Container33(), Heading6(), Item() (+1 more)
 
-### Community 136 - "shouldReadLocalFirst"
-Cohesion: 0.12
-Nodes (30): CategoriaGasto, CicloAbierto, dateTimeFormatter, formatDateTime(), GastoRow, Gastos(), eliminarCategoria(), eliminarGasto() (+22 more)
+### Community 136 - "payrollCloudSync.ts"
+Cohesion: 0.05
+Nodes (51): mapEmployeeRow(), PayrollEmployeeRow, PayrollRepository, createPaymentInCloud(), createPaymentLocally(), getLocalPaymentContext(), handleConfirmAnnullPayment(), handleConfirmDisable() (+43 more)
 
 ### Community 137 - "compilerOptions"
 Cohesion: 0.22
@@ -1175,9 +1212,13 @@ Nodes (8): compilerOptions, allowSyntheticDefaultImports, composite, module, mod
 Cohesion: 0.22
 Nodes (9): devDependencies, eslint, eslint-config-next, tailwindcss, @tailwindcss/postcss, @types/node, @types/react, @types/react-dom (+1 more)
 
-### Community 140 - "invoicesCloud.ts"
-Cohesion: 0.25
-Nodes (7): cycleStartMs(), CycleTimes, fetchCloudInvoicesInRange(), INVOICE_LIST_WINDOW_MS, invoiceLoadStartIso(), RECENT_CYCLES_LIMIT, Call
+### Community 139 - "ecf-signer-identity"
+Cohesion: 0.17
+Nodes (11): Constraints, ecf-signer-identity, Next step, Objective, Problem, Progress, Route, Scope (+3 more)
+
+### Community 140 - "context-menu.tsx"
+Cohesion: 0.12
+Nodes (10): @radix-ui/react-context-menu, ContextMenuCheckboxItem(), ContextMenuContent(), ContextMenuItem(), ContextMenuLabel(), ContextMenuRadioItem(), ContextMenuSeparator(), ContextMenuShortcut() (+2 more)
 
 ### Community 141 - "DashboardPos"
 Cohesion: 0.25
@@ -1191,9 +1232,9 @@ Nodes (8): Container1(), Container2(), Container3(), Container4(), Container5(),
 Cohesion: 0.25
 Nodes (8): Container22(), Container23(), Container24(), Container25(), Container26(), Container27(), Heading2(), OverlayBorder()
 
-### Community 144 - "navigation-menu.tsx"
-Cohesion: 0.22
-Nodes (10): @radix-ui/react-navigation-menu, NavigationMenu(), NavigationMenuContent(), NavigationMenuIndicator(), NavigationMenuItem(), NavigationMenuLink(), NavigationMenuList(), NavigationMenuTrigger() (+2 more)
+### Community 144 - "ecfActivationReadiness.ts"
+Cohesion: 0.11
+Nodes (24): Design notes, CertificateHealthMetadata, deactivateElectronicBilling(), LoadedEcfReadiness, activationNotice(), buildDeactivationPayload(), describeActivationSuccess(), ECF_ENVIRONMENT_LABELS (+16 more)
 
 ### Community 145 - "schema-upgrade-v12.1.29.test.ts"
 Cohesion: 0.27
@@ -1255,33 +1296,41 @@ Nodes (6): Background(), Container(), Container1(), Container2(), Container3(), 
 Cohesion: 0.33
 Nodes (6): Background1(), Container4(), Container5(), Container6(), Container7(), Heading1()
 
-### Community 160 - "fiscal-offline-reconnect.test.ts"
+### Community 160 - "Proposal: Tenant Management and Payment Alerts"
 Cohesion: 0.14
-Nodes (3): LocalStorageMock, FiscalWorkerRuntimeOptions, FiscalWorkerRepository
+Nodes (13): Affected Areas, Capabilities, Dependencies, In Scope, Intent, Modified Capabilities, New Capabilities, Out of Scope (+5 more)
 
-### Community 161 - "Tasks"
-Cohesion: 0.20
-Nodes (9): Invariantes, Review Workload Forecast, Spec, Spec + Tasks — PR 10: Analíticas Financieras Ampliadas, Task 1: Importar canUseFeature, Task 3: Actualizar loadBillingData, Task 4: Implementar Renderizado de KPIs y Selector de Vista, Task 5: Implementar Dashboard Finanzas Pro (+1 more)
+### Community 161 - "Feature: e-CF receptor (DGII inbound services)"
+Cohesion: 0.14
+Nodes (13): Constraints, Feature: e-CF receptor (DGII inbound services), Infrastructure (verified 2026-10-17), Next step, Objective, Open decisions for the user, Problem, Review / delivery (+5 more)
 
 ### Community 162 - "dependencies"
 Cohesion: 0.33
 Nodes (6): dependencies, lucide-react, next, react, react-dom, @supabase/supabase-js
 
-### Community 163 - "local-sqlite-orders.test.ts"
-Cohesion: 0.18
-Nodes (9): ORDERS_REPOSITORY_EXECUTE_CHANNEL, OrdersRepositoryIpcMain, OrdersRepository, OrdersRepositoryStore, OrderItem, OrdersCommand, OrdersRepositoryResult, withStore() (+1 more)
+### Community 163 - "20261017160000_ecf_receptor.sql"
+Cohesion: 0.27
+Nodes (10): ecf_received_approvals_tenant_received_idx, ecf_received_documents_accepted_uidx, ecf_received_documents_tenant_received_idx, ecf_receptor_seeds_expires_idx, ecf_receptor_tokens_expires_idx, public.ecf_received_approvals, public.ecf_received_documents, public.ecf_receptor_resolve_tenant() (+2 more)
+
+### Community 164 - "builder.ts"
+Cohesion: 0.09
+Nodes (35): applySecurityCode(), buildSheet(), buildTemplate(), buildTestSet(), cell(), DocumentKind, ECF_MARKERS, ECF_METADATA (+27 more)
 
 ### Community 165 - "Body"
 Cohesion: 0.40
 Nodes (5): Body(), Container55(), Pagination(), SectionTransactionsTable(), Table()
 
-### Community 166 - "scripts"
-Cohesion: 0.40
-Nodes (5): scripts, build, dev, lint, start
+### Community 166 - "ecf-receptor-handler.test.ts"
+Cohesion: 0.11
+Nodes (16): dgii-ecf, ReceivedDocumentRow, TokenInfo, encryptPassphrase(), exchange(), fetchSeed(), freshStore(), login() (+8 more)
 
 ### Community 167 - "npx @insforge/cli db export"
-Cohesion: 0.22
-Nodes (6): Examples, npx @insforge/cli db export, Options, Syntax, corsHeaders, json()
+Cohesion: 0.40
+Nodes (4): Examples, npx @insforge/cli db export, Options, Syntax
+
+### Community 168 - "toggle-group.tsx"
+Cohesion: 0.18
+Nodes (12): class-variance-authority, @radix-ui/react-toggle, @radix-ui/react-toggle-group, Alert(), AlertDescription(), AlertTitle(), alertVariants, ToggleGroup() (+4 more)
 
 ### Community 169 - "Opción B: Control por producción o jornada"
 Cohesion: 0.10
@@ -1291,17 +1340,17 @@ Nodes (20): 1. Crea el producto en inventario, 2. Registra entradas de inventari
 Cohesion: 0.10
 Nodes (20): Caveats, Checklist, Don't write app-side filters on top of RLS, Hoist `auth.jwt()` into a subquery, Index the columns RLS reads, InsForge Storage RLS Basics, Inspecting current policies, Managed Storage RLS (+12 more)
 
-### Community 180 - "Razorpay Payments SDK Integration"
-Cohesion: 0.08
-Nodes (22): Common Concepts, Environment variables, Common Mistakes, Mental Model, One-Time Order Flow, Razorpay Payments SDK Integration, RLS Before Orders And Subscriptions, Runtime State (+14 more)
+### Community 180 - "planFeatures.ts"
+Cohesion: 0.07
+Nodes (30): Apply Progress — PR 1: Feature Gates + Sidebar Agrupado, Artifacts, Executive Summary, Next Recommended, Risks, Skill Resolution, Archivos, Criterios de aceptación (+22 more)
 
 ### Community 189 - "01-sync-schema.sql"
 Cohesion: 0.12
 Nodes (7): public.fixture_sync_applies, public.sync_devices, public.sync_events, public.sync_operations, public.sync_stream_heads, public.sync_tenants, sync_events_tenant_cursor_idx
 
-### Community 190 - "S3-Compatible Storage Gateway"
-Cohesion: 0.11
-Nodes (19): Access keys, AWS CLI (shared credentials file), AWS SDK for JavaScript v3, Best Practices, boto3 (Python), Common Mistakes, Configuration pitfalls, Create a key (+11 more)
+### Community 190 - "ecfCertificationRun.ts"
+Cohesion: 0.09
+Nodes (56): invoke(), invokeRun(), TestSetRunner(), checkConnection(), poll(), refreshStatus(), selectFile(), sendAll() (+48 more)
 
 ### Community 191 - "Tailwind CSS Development Patterns"
 Cohesion: 0.11
@@ -1315,17 +1364,17 @@ Nodes (18): 5.10 Subscribe to Derived State, 5.11 Use Functional setState Update
 Cohesion: 0.11
 Nodes (18): 1️⃣ Registro de Producto, 2️⃣ Entrada de Stock (Compra de Botellas / Ingredientes), 3.1 Venta de Bebida (por vaso), 3.2 Preparación de Plato (por receta), 3️⃣ Salida de Stock (Venta de Bebidas / Preparación de Platos), 4️⃣ Ajustes de Inventario (Inventario Físico), 5️⃣ Reportes y Métricas, 6️⃣ Integración con Pedidos y Producción (+10 more)
 
-### Community 194 - "lanEdgeServer.ts"
-Cohesion: 0.21
-Nodes (13): collectLanUrls(), contentType(), DEFAULT_LAN_EDGE_PORT, isEnvelope(), isPrivateOrLoopbackAddress(), LanEdgeEventEnvelope, LanEdgeServerHandle, readJsonBody() (+5 more)
+### Community 194 - "carousel.tsx"
+Cohesion: 0.17
+Nodes (15): embla-carousel-react, Button(), Carousel(), CarouselApi, CarouselContent(), CarouselContext, CarouselContextProps, CarouselItem() (+7 more)
 
 ### Community 195 - "npx @insforge/cli db migrations"
 Cohesion: 0.11
 Nodes (18): Best Practices, Command Behavior, Commands, Common Mistakes, Examples, `fetch`, Filename Format, `list` (+10 more)
 
 ### Community 196 - "npx @insforge/cli payments"
-Cohesion: 0.07
-Nodes (24): Availability, Common Mistakes, Fulfillment Model, Managed Tables, npx @insforge/cli payments, Provider Command Map, Provider References, Admin Reads (+16 more)
+Cohesion: 0.11
+Nodes (16): Availability, Common Concepts, Common Mistakes, Fulfillment Model, Managed Tables, npx @insforge/cli payments, Provider Command Map, Provider References (+8 more)
 
 ### Community 197 - "Database SDK Integration"
 Cohesion: 0.11
@@ -1336,7 +1385,7 @@ Cohesion: 0.11
 Nodes (18): Debug Primitives, Fastest Path: AI-Assisted Triage, InsForge Debug, Recipe: 429 rate limit, Recipe: All responses slow / high CPU/memory (active incident), Recipe: `deployments deploy` failed (Vercel), Recipe: Don't know where to start, Recipe: Edge function runtime error / timeout (+10 more)
 
 ### Community 199 - "InsForge + Clerk Integration Guide (Next.js)"
-Cohesion: 0.13
+Cohesion: 0.12
 Nodes (16): `app/layout.tsx`, Clerk Application, Clerk JWT Template, Common Mistakes, Dashboard setup (manual, cannot be automated), Database setup, Environment variables, InsForge + Clerk Integration Guide (Next.js) (+8 more)
 
 ### Community 200 - "Usage Examples"
@@ -1360,16 +1409,16 @@ Cohesion: 0.12
 Nodes (16): 1.1 Avoid Boolean Prop Proliferation, 1.2 Use Compound Components, 1. Component Architecture, 2.1 Decouple State Management from UI, 2.2 Define Generic Context Interfaces for Dependency Injection, 2.3 Lift State into Provider Components, 2. State Management, 3.1 Create Explicit Component Variants (+8 more)
 
 ### Community 205 - "Design: Tenant Management and Payment Alerts"
-Cohesion: 0.12
-Nodes (16): Architecture Decisions, Data Flow, Decision: Auth User Deletion Ordering, Decision: Explicit Tenant Access Validation Gate, Decision: Payment Alert State Persistence, Decision: Reconnect and Fallback Reconciliation, Decision: Temporary Blocking and Tenant Access Realtime, Decision: Tenant Deletion Mechanism (+8 more)
+Cohesion: 0.25
+Nodes (7): Data Flow, Design: Tenant Management and Payment Alerts, Interfaces / Contracts, Migration / Rollout, Open Questions, Technical Approach, Testing Strategy
 
-### Community 206 - "getThermalPrintSettings"
-Cohesion: 0.07
-Nodes (33): Camarera(), submitOrder(), imprimirPrecuentaTakeout(), printKitchenComanda(), alertMock, buildComandaReceiptHtml, COMANDA, getThermalPrintSettings (+25 more)
+### Community 206 - "Ajustes.tsx"
+Cohesion: 0.06
+Nodes (62): qrcode, Ajustes(), handleLogoUpload(), handlePrintTest(), Config, CURRENCY_OPTIONS, Field(), SAMPLE_CIERRE_THERMAL_BASE (+54 more)
 
-### Community 207 - "Diseño de Base de Datos y RLS"
-Cohesion: 0.20
-Nodes (9): 1. Tabla `proveedores`, 2. Tabla `compras`, 3. Tabla `compra_detalles`, Diseño de Base de Datos y RLS, Estrategia de Pruebas, Exploración — PR 5: Modelo Compras + Proveedores (Tablas + CRUD), Modificaciones de Rutas y Navegación, Objetivos del Cambio (+1 more)
+### Community 207 - "mesas-count.spec.ts"
+Cohesion: 0.11
+Nodes (25): hasConfig, login(), mesaSelector(), openAjustes(), parseMoney(), readSummary(), reloadToPos(), selectMesa() (+17 more)
 
 ### Community 208 - "RESPUESTAS EJEMPLO"
 Cohesion: 0.12
@@ -1404,8 +1453,8 @@ Cohesion: 0.13
 Nodes (14): Payment Alerts Specification, Purpose, Requirement: Alert Dismiss Persistence, Requirement: Clamp-to-Month-End Logic, Requirement: LocalFirst Sync of Payment Day, Requirement: Payment Day Column, Requirements, Scenario: Day 29+ in February non-leap year (+6 more)
 
 ### Community 216 - "CertificateUploader.tsx"
-Cohesion: 0.23
-Nodes (17): CertificateUploader(), handleUpload(), loadMetadata(), CertificateUploadError, formatCertificateHealth(), buildCertificateStoragePath(), buildValidateRequest(), CertificateUploadOutcome (+9 more)
+Cohesion: 0.17
+Nodes (21): 1. Arquitectura de Componentes Frontend, 2. API / Backend (Insforge), 3. Motor de Sincronización POS, SDD Design: Epic e-CF (Issue #39), CertificateUploader(), handleUpload(), loadMetadata(), CertificateUploadError (+13 more)
 
 ### Community 217 - "SSR Authentication Integration"
 Cohesion: 0.14
@@ -1431,9 +1480,9 @@ Nodes (13): Advanced v4.1 Features, Creating a Reusable Preset, CSS-First Config
 Cohesion: 0.14
 Nodes (13): build, Build and SSR, createServer, JavaScript API, Library Mode, loadEnv, Multi-Page App, Multiple Entries (+5 more)
 
-### Community 223 - "menubar.tsx"
-Cohesion: 0.12
-Nodes (13): @radix-ui/react-menubar, Menubar(), MenubarCheckboxItem(), MenubarContent(), MenubarItem(), MenubarLabel(), MenubarPortal(), MenubarRadioItem() (+5 more)
+### Community 223 - "ecf-sign-document-handler.test.ts"
+Cohesion: 0.19
+Nodes (8): AuditRow, MAX_BODY_BYTES, SigningMaterial, bytesToBase64(), readSigningMaterial(), sign(), encrypt(), Harness
 
 ### Community 224 - "Vite Configuration"
 Cohesion: 0.15
@@ -1495,9 +1544,9 @@ Nodes (12): Purpose, Requirement: Fiscal Operations Panel, Requirement: Fiscal O
 Cohesion: 0.06
 Nodes (30): 1. Modulo de clientes, 2. Cobro con cliente opcional, 3. Menu digital profesional, 4. Pedido desde menu digital, Administracion desde soporte, Alcance funcional, Campos sugeridos de cliente, Criterios de aceptacion (+22 more)
 
-### Community 239 - "localInvoiceReceipt.ts"
-Cohesion: 0.18
-Nodes (12): describeError(), lastKnownKey(), loadLastKnown(), resolveWithLastKnownList(), saveLastKnown(), StorageLike, throwing, loadLocalEcfDocument() (+4 more)
+### Community 239 - "ecf-legal-name-80mm"
+Cohesion: 0.15
+Nodes (12): Acceptance, Constraints, Delivery, ecf-legal-name-80mm, Facts, Objective, Problem / why, Progress (+4 more)
 
 ### Community 240 - "InsForge + Stytch Integration Guide"
 Cohesion: 0.17
@@ -1531,9 +1580,9 @@ Nodes (11): 1. Objetivo del Cambio, 2. Estado Actual (Descubrimientos), 3. Brech
 Cohesion: 0.17
 Nodes (11): 1. Migraciones de Base de Datos (InsForge), 2. Aplicación Next.js (website/claudix), 3. Módulo de Pedidos en la App de Escritorio (Electron/React), A. Estructura de Rutas, A. Registro de Rutas, B. Configuración de InsForge Client en Next.js, B. Integración en el Sidebar, C. Flujo de Pedidos (+3 more)
 
-### Community 248 - "ENDPOINTS"
-Cohesion: 0.12
-Nodes (16): ENDPOINTS, ALL_TACKING_ECF, COMMERCIAL_APPROVAL, DIRECTORY_PROD, DIRECTORY_TEST_CERT, INQUIRY_INVOICE_SUMMARY, INQUIRY_STATUS, SEED (+8 more)
+### Community 248 - "DocumentSigner.tsx"
+Cohesion: 0.24
+Nodes (18): DocumentSigner(), selectFile(), signAndDownload(), DocumentSignerProps, saveXml(), buildSignRequest(), describeSigningError(), ECF_SIGN_FUNCTION (+10 more)
 
 ### Community 249 - "Tasks"
 Cohesion: 0.17
@@ -1548,12 +1597,12 @@ Cohesion: 0.18
 Nodes (8): Level A (minimum), Level AA (standard), Level AAA (enhanced), Sources, Success criteria by level, Testing tools, WCAG 2.2 Quick Reference, What changed from 2.1 to 2.2
 
 ### Community 252 - "npx @insforge/cli db query"
-Cohesion: 0.22
+Cohesion: 0.18
 Nodes (9): Complete Example: Row-Level Data Fix, Examples, InsForge SQL References, Notes, npx @insforge/cli db query, Options, Output, Permission Model and Schema Changes (+1 more)
 
-### Community 253 - "Email SDK Integration"
-Cohesion: 0.18
-Nodes (11): API Reference, Common Errors, Common Mistakes, Email SDK Integration, Limits, Quick Reference, REST Fallback, Send an Email (+3 more)
+### Community 253 - "ActivationPanel.tsx"
+Cohesion: 0.12
+Nodes (29): Problem, Tasks, ActivationPanel(), activateElectronicBilling(), advanceCertificationStep(), goToCertificationStep(), handleCompanyLookup(), openCertificationPortal() (+21 more)
 
 ### Community 254 - "InsForge + Kinde Integration Guide"
 Cohesion: 0.18
@@ -1591,25 +1640,25 @@ Nodes (10): Acceptance, Constraints, Feature: ITBIS included in price, Next step
 Cohesion: 0.18
 Nodes (10): 1. Diseño de Base de Datos (InsForge / PostgreSQL), 2. Ruteo Dinámico en Next.js (website/claudix), 3. Recepción en Tiempo Real en la App de Escritorio (Electron/React), 4. UI y Módulos del Desktop POS, A. Tabla `digital_menu_settings`, B. Tabla `digital_menu_items`, C. Tabla `digital_orders`, D. Tabla `digital_order_items` (+2 more)
 
-### Community 263 - "date-picker.tsx"
-Cohesion: 0.29
-Nodes (11): date-fns, @radix-ui/react-popover, DatePicker(), DatePickerProps, DateTimePicker(), DateTimePickerProps, formatYMD(), parseYMD() (+3 more)
+### Community 263 - "salesFiscalRepository.ts"
+Cohesion: 0.21
+Nodes (8): SalesFiscalCommand, SalesFiscalRepository, SalesFiscalRepositoryResult, SalesFiscalRepositoryStore, createLocalFiscalSale(), FiscalPendingPresentation, getFiscalPendingPresentation(), withStore()
 
 ### Community 264 - "Tasks"
 Cohesion: 0.18
 Nodes (10): Commits, Invariantes, Spec, Spec + Tasks — PR 4: UI Inventario por Presentación, Task 1: Modificar el estado y lógica del Formulario de Insumo, Task 2: Añadir campos de entrada condicionales en el Modal, Task 3: Formatear Stock y Costos en el Listado de Insumos, Task 4: Implementar costeo de recetas (+2 more)
 
-### Community 265 - "Tasks"
-Cohesion: 0.18
-Nodes (10): Invariantes, Review Workload Forecast, Spec, Spec + Tasks — PR 8: Cuentas por Pagar, Task 1: Crear la migración SQL de la Base de Datos, Task 2: Configurar Sincronización Local-First, Task 4: Integración en Compras a Crédito, Task 5: Desarrollar el Servicio de Cuentas por Pagar (+2 more)
+### Community 265 - "Diseño del Sistema"
+Cohesion: 0.25
+Nodes (7): 1. Actualizaciones de Navegación y Rutas, 2. Automatización compras a crédito (`purchaseService.ts`), 3. Servicio de Pagos (`accountsPayableService.ts`), Análisis de Riesgos, Diseño del Sistema, Objetivos del Cambio, Propuesta — PR 8: Cuentas por Pagar
 
 ### Community 266 - "Publicar Cloudix (NSIS + auto-actualización)"
 Cohesion: 0.18
 Nodes (10): Checklist rápido, Comportamiento en la app empaquetada, Electron main (CJS) y Vite, Generar el instalador .exe localmente (sin subir), Instalador NSIS: “Siguiente” cierra la ventana, MSI con Electron Forge, Publicar Cloudix (NSIS + auto-actualización), Publicar una nueva versión en GitHub (release **Latest**) (+2 more)
 
-### Community 267 - "cierresWrites.ts"
-Cohesion: 0.26
-Nodes (15): hasSqliteCycles(), OpenCycleInput, openInput, writeCycleClose(), writeCycleDiscard(), writeCycleOpen(), writeCyclePrinted(), advanceKitchenOrder (+7 more)
+### Community 267 - "build-icon.mjs"
+Cohesion: 0.17
+Nodes (9): sharp, __dirname, icoFromPngEntries(), main(), outPath, root, sizes, svgPath (+1 more)
 
 ### Community 268 - "Accessibility (a11y)"
 Cohesion: 0.20
@@ -1623,9 +1672,9 @@ Nodes (9): Examples, Interactive Mode, Non-Interactive Mode, Notes, npx @insforg
 Cohesion: 0.20
 Nodes (9): Bad: Guard Blocks Its Own Maintenance Trigger, Choose the Smallest Database Primitive, Database Integrity, Good: Restrict Client Update Surface, Let Trigger Maintain, Immutable Fields and Append-Only Tables, Latest Pointer and History Pattern, Legal Insert Payloads, Self-Check Before Finishing (+1 more)
 
-### Community 272 - "okx-x402.md"
-Cohesion: 0.09
-Nodes (15): Chain + Asset constants (X Layer), Environment variables, Explorer URLs by chain, InsForge + OKX x402 Payments Integration Guide, InsForge project, Key packages, OKX Web3 API credentials, Payment recipient wallet (+7 more)
+### Community 272 - "ecf-certification-simulation"
+Cohesion: 0.15
+Nodes (12): Constraints, ecf-certification-simulation, Facts (verified 2026-10-18), Next step, Objective, Progress, Redeploy (supabase/functions/ecf-certification), Route (+4 more)
 
 ### Community 273 - "Storage SDK Integration"
 Cohesion: 0.20
@@ -1667,17 +1716,17 @@ Nodes (9): Architecture Decisions, Data Flow, Design: Integrate DGII e-CF, File 
 Cohesion: 0.20
 Nodes (9): 1. **Tenant Deletion: RPC Manual Deletion vs Cascade**, 2. **Payment Alert Modal Implementation**, Affected Areas, Approaches, Current State, Exploration: Tenant Management and Payment Alerts, Ready for Proposal, Recommendation (+1 more)
 
-### Community 283 - "Tasks"
-Cohesion: 0.14
-Nodes (12): Cambios Realizados, Reporte de Archivamiento: PR 10 (Analíticas Financieras Ampliadas), Verificación, 1. Extensión del Tipo de Vista, 2. Extensión de la Carga de Datos (`loadBillingData`), 3. Computación de Métricas del Período, Análisis de Riesgos, Diseño del Sistema (+4 more)
+### Community 283 - "drawer.tsx"
+Cohesion: 0.20
+Nodes (8): vaul, DrawerContent(), DrawerDescription(), DrawerFooter(), DrawerHeader(), DrawerOverlay(), DrawerPortal(), DrawerTitle()
 
 ### Community 284 - "Spec + Tasks — PR 2: Helpers de Inventario por Presentación"
 Cohesion: 0.20
 Nodes (9): Commits, Contratos, Invariantes, Spec, Spec + Tasks — PR 2: Helpers de Inventario por Presentación, Task 1: Crear `presentationUnits.ts`, Task 2: Crear `presentationUnits.test.ts`, Task 3: Ejecutar pruebas unitarias (+1 more)
 
-### Community 285 - "SidebarCustomIcon"
-Cohesion: 0.15
-Nodes (12): 1. `localFirst.ts`, 2. `routes.tsx`, 3. `AppLayout.tsx`, Análisis de Riesgos, Modificaciones de Base de Datos (SQL), Modificaciones de Código (TS), Objetivos del Cambio, Propuesta — PR 5: Modelo Compras + Proveedores (Tablas + CRUD) (+4 more)
+### Community 285 - "okx-x402.md"
+Cohesion: 0.17
+Nodes (5): Step 1 — Schema & Realtime, Step 2 — Server Primitives & Env, Step 3 — Paid Endpoint & Aggregate API, Step 4 — Client Libs & Consumer Flow, Step 5 — Realtime Dashboard
 
 ### Community 286 - "Accessibility Code Patterns"
 Cohesion: 0.22
@@ -1711,13 +1760,13 @@ Nodes (9): Backward Compatibility, Basic Configuration, Concept, Custom Environm
 Cohesion: 0.22
 Nodes (8): Acceptance criteria, Checklist, Constraints, Feature: compras-delete-payments, Objective, Problem / Why, Progress / Next step, Scope
 
-### Community 294 - "Feature: e-CF activation (DGII electronic invoicing)"
+### Community 294 - "form.tsx"
 Cohesion: 0.14
-Nodes (13): Acceptance, Constraints, Decisions, Feature: e-CF activation (DGII electronic invoicing), Objective, Problem, Progress / evidence, Review / delivery (+5 more)
+Nodes (16): @radix-ui/react-label, @radix-ui/react-slot, react-hook-form, Badge(), badgeVariants, FormControl(), FormDescription(), FormFieldContext (+8 more)
 
-### Community 295 - "Exploration: migrate-desktop-local-sqlite"
-Cohesion: 0.25
-Nodes (7): Affected Areas, Approaches, Current State, Exploration: migrate-desktop-local-sqlite, Ready for Proposal, Recommendation, Risks
+### Community 295 - "enqueueLocalWrite"
+Cohesion: 0.06
+Nodes (66): Affected Areas, Recommendation, Estrategia de Pruebas, Task 1: Crear el servicio de compras, Task 3: Desarrollar la Interfaz de Compras y Proveedores, Task 1: Actualizar el Servicio de Compras, handleSave(), actualizarDatosFiscalesCompra() (+58 more)
 
 ### Community 296 - "20260905120000_saved-accounts-and-branch-grants.sql"
 Cohesion: 0.15
@@ -1727,21 +1776,21 @@ Nodes (5): public.cyberbistro_can_access_branch(), public.tenant_user_sucursales
 Cohesion: 0.33
 Nodes (5): PR 1: Configuración Fiscal y Certificados (#39, #42), PR 2: Panel de Auditoría Fiscal (#47), PR 3: Motor Fiscal Unificado POS (#43, #45), PR 4: Recibo Térmico y QR (#46), SDD Tasks: Epic e-CF (Issue #39)
 
-### Community 298 - "SucursalContext.tsx"
-Cohesion: 0.18
-Nodes (16): handleCreateBranch(), defaultSucursalLimitForPlan(), resolveEffectiveSucursalLimit(), scopedStorageKey(), SucursalContext, SucursalContextValue, SucursalProvider(), addSucursal() (+8 more)
+### Community 298 - "Lógica del Servicio de Compras (`purchaseService.ts`)"
+Cohesion: 0.25
+Nodes (7): 1. Flujo de Datos al Registrar Compra, 2. Conversión a Unidad Base (Líquidos), 3. Fórmula del Costo Promedio Ponderado, 4. Registro de Movimientos de Inventario, Exploración — PR 6: Servicio Compras → Inventario → Movimiento, Interfaz de Usuario y CRUD Proveedores, Lógica del Servicio de Compras (`purchaseService.ts`)
 
 ### Community 299 - "Tasks"
-Cohesion: 0.20
-Nodes (9): Commits, Invariantes, Spec, Spec + Tasks — PR 7: Compras → Gastos + Cierre/Analíticas, Task 1: Actualizar el Servicio de Compras, Task 2: Modificar y Ampliar las Pruebas Unitarias del Servicio, Task 3: Integrar Validación en la Interfaz de Compras, Task 4: Validaciones Locales (+1 more)
+Cohesion: 0.22
+Nodes (8): Commits, Invariantes, Spec, Spec + Tasks — PR 7: Compras → Gastos + Cierre/Analíticas, Task 2: Modificar y Ampliar las Pruebas Unitarias del Servicio, Task 3: Integrar Validación en la Interfaz de Compras, Task 4: Validaciones Locales, Tasks
 
 ### Community 300 - "20260707100000_digital-orders-table-codes-order-number.sql"
 Cohesion: 0.19
 Nodes (7): digital_orders_mesa_status_idx, digital_orders_session_status_idx, mesas_estado_tenant_sucursal_id_idx, public.create_public_digital_order(), public.get_public_digital_menu(), public.get_table_security_codes(), public.tenant_order_counters
 
-### Community 301 - "harden-registration-fiscal-rpcs.test.ts"
-Cohesion: 0.53
-Nodes (4): splitStatements(), validateGuard(), validateMigration(), validateObsoleteDoBlock()
+### Community 301 - "ecf-certification-printed"
+Cohesion: 0.18
+Nodes (10): Constraints, ecf-certification-printed, Facts (verified 2026-10-18), Next step, Objective, Progress, Route, Scope (+2 more)
 
 ### Community 302 - "MANEJO DE OBJECIONES"
 Cohesion: 0.22
@@ -1755,9 +1804,9 @@ Nodes (8): Buttons, Common ARIA patterns, Error states, Form fields, Links, Live
 Cohesion: 0.25
 Nodes (8): Accessible authentication (3.3.8) — new in 2.2, Consistent help (3.2.6) — new in 2.2, Consistent navigation (3.2.3), Error handling (3.3.1, 3.3.3), Form labels (3.3.2), Page language (3.1.1), Redundant entry (3.3.7) — new in 2.2, Understandable
 
-### Community 305 - "invoicesLocal.ts"
-Cohesion: 0.21
-Nodes (14): EditableInvoice, EditInvoiceHeaderModal(), handleSubmit(), EditInvoiceHeaderModalProps, clean(), InvoiceHeaderEditResult, InvoiceHeaderField, InvoiceHeaderFields (+6 more)
+### Community 305 - "npx @insforge/cli payments stripe"
+Cohesion: 0.22
+Nodes (9): Admin Reads, Catalog, Common Mistakes, Fulfillment Trigger, npx @insforge/cli payments stripe, RLS For Runtime App Code, Setup Flow, Subscription Cancellation Fields (+1 more)
 
 ### Community 306 - "Database Vector Search"
 Cohesion: 0.25
@@ -1791,9 +1840,9 @@ Nodes (8): Boundaries, Command, Example, Frequently paired with, How to read, Me
 Cohesion: 0.25
 Nodes (8): Boundaries, Command, Common RLS bug shapes, Example, Frequently paired with, How to read, Policies, Policy anatomy
 
-### Community 314 - "Functions SDK Integration"
-Cohesion: 0.25
-Nodes (7): Best Practices, Common Mistakes, Functions SDK Integration, Important Notes, Invoke Function, Recommended Workflow, Setup
+### Community 314 - "invoiceHeaderEdit.ts"
+Cohesion: 0.15
+Nodes (18): EditableInvoice, EditInvoiceHeaderModal(), handleSubmit(), EditInvoiceHeaderModalProps, clean(), InvoiceHeaderEditResult, InvoiceHeaderField, InvoiceHeaderFields (+10 more)
 
 ### Community 315 - "Tasks: Integrate DGII e-CF"
 Cohesion: 0.25
@@ -1819,17 +1868,17 @@ Nodes (7): Estado General, Progreso de Implementación: Menú Digital Administra
 Cohesion: 0.25
 Nodes (7): 1. Entradas Condicionales en Formulario, 2. Formateo de Stock Bidireccional, 3. Costeo Financiero en Fórmulas, Análisis de Riesgos, Decisiones de Diseño, Objetivos del Cambio, Propuesta — PR 4: UI Inventario por Presentación
 
-### Community 321 - "Spec + Tasks — PR 6: Servicio Compras → Inventario → Movimiento"
-Cohesion: 0.40
-Nodes (4): Commits, Invariantes, Spec, Spec + Tasks — PR 6: Servicio Compras → Inventario → Movimiento
+### Community 321 - "ecf-wizard-live-receipts"
+Cohesion: 0.14
+Nodes (13): Acceptance, Constraints, Delivery, ecf-wizard-live-receipts, Facts, Next step, Objective, Problem / why (+5 more)
 
-### Community 322 - "Propuesta — PR 7: Compras → Gastos + Cierre/Analíticas"
-Cohesion: 0.25
-Nodes (7): 1. Núcleo del Servicio (`purchaseService.ts`), 2. Cambios en la Vista del Frontend (`Compras.tsx`), Archivos que serán Modificados, Estimación de Líneas, Modificaciones Planificadas, Objetivos del Cambio, Propuesta — PR 7: Compras → Gastos + Cierre/Analíticas
+### Community 322 - "useLocalFirstBootstrap.ts"
+Cohesion: 0.11
+Nodes (32): canStartProtectedTenantWork(), EMPTY_STATE, resolveLicenseGateForOnlineSync(), useLocalFirstBootstrap(), isCloudAvailableForDesktop(), isDesktopRuntime(), bootstrapLocalFirstPhase(), checkSucursalHasData() (+24 more)
 
-### Community 323 - "Diseño del Sistema"
-Cohesion: 0.25
-Nodes (7): 1. Actualizaciones de Navegación y Rutas, 2. Automatización compras a crédito (`purchaseService.ts`), 3. Servicio de Pagos (`accountsPayableService.ts`), Análisis de Riesgos, Diseño del Sistema, Objetivos del Cambio, Propuesta — PR 8: Cuentas por Pagar
+### Community 323 - "tenantRealtimeSubscriptionManager.ts"
+Cohesion: 0.11
+Nodes (16): useSucursal(), isPayloadForTenant(), payloadTenantId(), useCocinaRealtimeSync(), buildMenuUrl(), currency(), DigitalOrder, DigitalOrderItem (+8 more)
 
 ### Community 324 - "README.md"
 Cohesion: 0.25
@@ -1839,9 +1888,9 @@ Nodes (7): cloudix, Description, Example, Install:, Name, Synopsis, Test:
 Cohesion: 0.29
 Nodes (7): Audio, Audio Input via Chat, Best Practices, Common Mistakes, Naming, Speech-to-Text, Text-to-Speech
 
-### Community 326 - "enqueueLocalWrite"
-Cohesion: 0.04
-Nodes (81): Apply Progress — PR 6: Servicio Compras → Inventario → Movimiento, Artifacts, Executive Summary, Next Recommended, Análisis de Riesgos, Contrato de Funciones (`purchaseService.ts`), Modificaciones de Interfaz de Usuario (`Compras.tsx`), Objetivos del Cambio (+73 more)
+### Community 326 - "CategoriasPanel"
+Cohesion: 0.07
+Nodes (53): CartaPanel(), ensureCategoryExists(), handleDelete(), handleSave(), CategoriasPanel(), assignedCountFor(), ensureCategoryExists(), handleDeleteCategory() (+45 more)
 
 ### Community 327 - "npx @insforge/cli config"
 Cohesion: 0.29
@@ -1871,9 +1920,9 @@ Nodes (6): Lista de comprobación de cierre y reapertura ordenados, Límite, Pre
 Cohesion: 0.29
 Nodes (6): Fixture contract, Local Sync PostgreSQL Fixture, Next validation, Quick path, Reset, Safety proof
 
-### Community 334 - "PayrollSyncClient"
-Cohesion: 0.16
-Nodes (11): Common Mistakes, InsForge client, Common Mistakes, Go-live checklist, Step 6 — Diagnostics & Go-Live, capitalize(), classifyRemoteError(), isPermanentRemoteError() (+3 more)
+### Community 334 - "date-picker.tsx"
+Cohesion: 0.29
+Nodes (11): date-fns, @radix-ui/react-popover, DatePicker(), DatePickerProps, DateTimePicker(), DateTimePickerProps, formatYMD(), parseYMD() (+3 more)
 
 ### Community 335 - "Requirement: Offline Pending Fiscal Sync"
 Cohesion: 0.29
@@ -1883,13 +1932,13 @@ Nodes (6): Delta for e-CF Document Lifecycle, MODIFIED Requirements, Requirement
 Cohesion: 0.29
 Nodes (6): Delta for Tenant Fiscal Modes, MODIFIED Requirements, Requirement: Legacy Non-Regression, Scenario: Internal receipt unchanged, Scenario: Legacy mode during cloud outage, Scenario: Legacy NCF survives recovery
 
-### Community 337 - "Camarera.tsx"
-Cohesion: 0.16
-Nodes (17): buildOwnerNameMap(), CartItem, getMesaConsumoGroupKey(), getTenantUserName(), groupMesaConsumos(), MesaConsumoGroup, MesaConsumoRow, MesaOption (+9 more)
+### Community 337 - ".createClient"
+Cohesion: 0.25
+Nodes (5): Common Mistakes, InsForge client, Common Mistakes, Go-live checklist, Step 6 — Diagnostics & Go-Live
 
-### Community 338 - "ecfActivationReadiness.ts"
-Cohesion: 0.14
-Nodes (17): CertificateHealthMetadata, decideEcfSaveGate(), ECF_ENVIRONMENT_LABELS, ECF_ENVIRONMENTS, EcfEnvironmentId, EcfReadinessCode, EcfReadinessInput, EcfReadinessIssue (+9 more)
+### Community 338 - "ENDPOINTS"
+Cohesion: 0.12
+Nodes (16): ENDPOINTS, ALL_TACKING_ECF, COMMERCIAL_APPROVAL, DIRECTORY_PROD, DIRECTORY_TEST_CERT, INQUIRY_INVOICE_SUMMARY, INQUIRY_STATUS, SEED (+8 more)
 
 ### Community 339 - "Diseño del Módulo `presentationUnits.ts`"
 Cohesion: 0.29
@@ -1903,9 +1952,9 @@ Nodes (6): 1. Formulario de Materia Prima, 2. Vista del Listado de Stock, 3. Cos
 Cohesion: 0.29
 Nodes (6): 1. Esquema de Base de Datos y RLS, 2. Soporte Local-First, 3. Enrutamiento y Navegación, 4. Pruebas y Compilación, Resultados de Verificación, Verify Report — PR 5: Modelo Compras + Proveedores (Tablas + CRUD)
 
-### Community 342 - "payrollCloudSync.ts"
-Cohesion: 0.17
-Nodes (18): createPayrollPaymentInCloud(), deactivatePayrollEmployeeInCloud(), deletePayrollPaymentInCloud(), getPayrollPaymentContextFromCloud(), mapPaymentHistory(), mapPayrollEmployeeForCloud(), mapPayrollFrequencyForCloud(), mapPayrollFrequencyFromCloud() (+10 more)
+### Community 342 - "ActivationPanel.tsx"
+Cohesion: 0.07
+Nodes (28): API Reference, Common Errors, Common Mistakes, Email SDK Integration, Limits, Quick Reference, REST Fallback, Send an Email (+20 more)
 
 ### Community 343 - "Exploración — PR 8: Cuentas por Pagar"
 Cohesion: 0.29
@@ -1923,13 +1972,13 @@ Nodes (6): 1. Gestión de Certificado .p12 (#42), 2. Motor Fiscal Unificado (#43
 Cohesion: 0.29
 Nodes (6): 1. Experiencia de Usuario (UX), Configuración Fiscal (Ajustes de Local), Impresión de Recibo, Panel de Auditoría Fiscal, Proceso de Venta (POS), SDD Spec: Epic e-CF (Issue #39)
 
-### Community 347 - "itbis-included-price.e2e.spec.ts"
-Cohesion: 0.19
-Nodes (11): hasConfig, login(), mesaSelector(), openAjustes(), parseMoney(), readSummary(), reloadToPos(), selectMesa() (+3 more)
+### Community 347 - "importer.ts"
+Cohesion: 0.24
+Nodes (9): buildLegacyImportManifest(), hashValue(), initializeImportedDataSchema(), LegacyImportManifest, recoverOutboxStatus(), stringify(), TenantSQLiteImporter, validateChunks() (+1 more)
 
-### Community 348 - "Models List"
-Cohesion: 0.33
-Nodes (6): Best Practices, Capability Filters, Common Mistakes, List Models, Models List, Setup
+### Community 348 - "ecfRangeErrors.ts"
+Cohesion: 0.38
+Nodes (8): Next step, decideEcfSaveGate(), EcfRangeError, EcfRangeErrorCode, ecfRangeErrorMessage(), ecfRangeTerminalMessage(), enforceEcfRangeLocally(), mapEcfRangeRpcError()
 
 ### Community 349 - "Sections"
 Cohesion: 0.33
@@ -1967,45 +2016,41 @@ Nodes (5): Arquitectura de Módulos — Plan Profesional (Issue #36), Decisiones
 Cohesion: 0.33
 Nodes (5): Tarea 1: Base de Datos y Local-First, Tarea 2: Web Pública de Menú (Next.js - website/claudix), Tarea 3: Panel de Administración (Escritorio - Soporte > Menú Digital), Tarea 4: Módulo de Pedidos y Realtime (Escritorio - POS), Tareas de Implementación: Menú Digital Administrable (PR 11)
 
-### Community 358 - "SDD Design: Epic e-CF (Issue #39)"
-Cohesion: 0.40
-Nodes (4): 1. Arquitectura de Componentes Frontend, 2. API / Backend (Insforge), 3. Motor de Sincronización POS, SDD Design: Epic e-CF (Issue #39)
+### Community 358 - "Propuesta — PR 5: Modelo Compras + Proveedores (Tablas + CRUD)"
+Cohesion: 0.22
+Nodes (8): 1. `localFirst.ts`, 2. `routes.tsx`, 3. `AppLayout.tsx`, Análisis de Riesgos, Modificaciones de Base de Datos (SQL), Modificaciones de Código (TS), Objetivos del Cambio, Propuesta — PR 5: Modelo Compras + Proveedores (Tablas + CRUD)
 
 ### Community 359 - "scripts"
 Cohesion: 0.11
 Nodes (19): scripts, build, build:lib, build:types, clean, compile, dev, lint (+11 more)
 
-### Community 360 - "Seguridad y multitenant (Cloudix)"
-Cohesion: 0.29
-Nodes (6): Auditoría de consultas (`limit(1)` y similares), Modelo de amenaza, NCF atómico, RLS en Postgres (plantilla), Secretos, Seguridad y multitenant (Cloudix)
+### Community 360 - "20261018160000_ecf_certification_simulation.sql"
+Cohesion: 0.47
+Nodes (3): ecf_certification_submissions_issued_guard, ecf_certification_submissions_simulation_encf_key, ecf_certification_submissions_tenant_encf_idx
 
 ### Community 361 - "Propuesta — PR 3: Migración Inventario Avanzado (Campos SQL)"
 Cohesion: 0.33
 Nodes (5): Análisis de Riesgos, Modificaciones de Base de Datos (SQL), Modificaciones de Frontend (TS), Objetivos del Cambio, Propuesta — PR 3: Migración Inventario Avanzado (Campos SQL)
 
-### Community 362 - "mesas-count.spec.ts"
-Cohesion: 0.24
-Nodes (14): attachDiagnostics(), BrowserDiagnostics, expectSupportPanelCountAfterReopen(), launchApp(), loginIfNeeded(), mesasCountInput(), openMesasModule(), openSupportMesasPanel() (+6 more)
+### Community 362 - "Tasks"
+Cohesion: 0.18
+Nodes (10): Invariantes, Review Workload Forecast, Spec, Spec + Tasks — PR 8: Cuentas por Pagar, Task 1: Crear la migración SQL de la Base de Datos, Task 2: Configurar Sincronización Local-First, Task 4: Integración en Compras a Crédito, Task 5: Desarrollar el Servicio de Cuentas por Pagar (+2 more)
 
-### Community 363 - "Spec"
-Cohesion: 0.29
-Nodes (6): Commits, Contratos, Invariantes, Sidebar sections data structure, Spec, Spec + Tasks — PR 1: Feature Gates + Sidebar Agrupado
+### Community 363 - "Functions SDK Integration"
+Cohesion: 0.25
+Nodes (7): Best Practices, Common Mistakes, Functions SDK Integration, Important Notes, Invoke Function, Recommended Workflow, Setup
 
-### Community 364 - "Tasks"
-Cohesion: 0.29
-Nodes (7): Task 2: Tests para `planFeatures`, Task 3: Refactorizar sidebar de array plano a secciones, Task 4: Integrar `canUseFeature` en el sidebar, Task 5: Actualizar `filterMainNavForRol`, Tasks, filterMainNavForRol(), showSoporteInSidebar()
-
-### Community 365 - "Apply Progress — PR 1: Feature Gates + Sidebar Agrupado"
-Cohesion: 0.33
-Nodes (5): Apply Progress — PR 1: Feature Gates + Sidebar Agrupado, Artifacts, Next Recommended, Risks, Skill Resolution
+### Community 365 - "CertificationStore"
+Cohesion: 0.22
+Nodes (3): Progress, CertificationStore, IssuerProfile
 
 ### Community 366 - "Diagnostics and Logs"
 Cohesion: 0.40
 Nodes (4): Common Debugging Scenarios, Diagnostics, Diagnostics and Logs, Logs
 
-### Community 367 - "Propuesta: PR 1 — Feature Gates + Sidebar Agrupado"
-Cohesion: 0.33
-Nodes (5): Archivos, Criterios de aceptación, Problema, Propuesta: PR 1 — Feature Gates + Sidebar Agrupado, Riesgos
+### Community 367 - "AppLayout"
+Cohesion: 0.36
+Nodes (9): File Changes, Approach, Requirement: Payment Alert Modal, Scenario: No payment day configured, Scenario: On payment day, Scenario: Reminder one day before, Phase 3: Frontend Implementation, AppLayout() (+1 more)
 
 ### Community 368 - "4. Client-Side Data Fetching"
 Cohesion: 0.40
@@ -2039,9 +2084,9 @@ Nodes (4): Archive Report — PR 4: UI Inventario por Presentación, Impacto en 
 Cohesion: 0.40
 Nodes (4): Archive Report — PR 5: Modelo Compras + Proveedores (Tablas + CRUD), Impacto en el Código, Próximas Unidades de Cambio, Resumen Ejecutivo
 
-### Community 376 - "accordion.tsx"
-Cohesion: 0.33
-Nodes (4): @radix-ui/react-accordion, AccordionContent(), AccordionItem(), AccordionTrigger()
+### Community 376 - "InsForge + OKX x402 Payments Integration Guide"
+Cohesion: 0.20
+Nodes (10): Chain + Asset constants (X Layer), Environment variables, Explorer URLs by chain, InsForge + OKX x402 Payments Integration Guide, InsForge project, Key packages, OKX Web3 API credentials, Payment recipient wallet (+2 more)
 
 ### Community 377 - "Archive Report — PR 6: Servicio Compras → Inventario → Movimiento"
 Cohesion: 0.40
@@ -2051,9 +2096,9 @@ Nodes (4): Archive Report — PR 6: Servicio Compras → Inventario → Movimien
 Cohesion: 0.40
 Nodes (4): Action Plan, Issues / Findings, Verification Summary, Verify Report — PR 6: Servicio Compras → Inventario → Movimiento
 
-### Community 379 - "Proposal: Tenant Management and Payment Alerts"
-Cohesion: 0.13
-Nodes (14): Affected Areas, Approach, Capabilities, Dependencies, In Scope, Intent, Modified Capabilities, New Capabilities (+6 more)
+### Community 379 - "ecf-certification-testset"
+Cohesion: 0.12
+Nodes (15): SubtotalImpuestoAdicional, Constraints, ecf-certification-testset, Facts (verified 2026-10-18 from the real set 133488485-18102026163551.xlsx), Next step, Objective, Problem, Progress (+7 more)
 
 ### Community 380 - "Archive Report — PR 7: Compras → Gastos + Cierre/Analíticas"
 Cohesion: 0.40
@@ -2083,13 +2128,13 @@ Nodes (4): Archive Report — PR 9: Cuentas por Cobrar + Fiado en POS, Code Base
 Cohesion: 0.24
 Nodes (12): cierres_operativos, comandas, comandas_realtime, consumos, facturas, gasto_categorias, gastos, menu_categories (+4 more)
 
-### Community 387 - "Lógica del Servicio de Compras (`purchaseService.ts`)"
-Cohesion: 0.22
-Nodes (8): 1. Flujo de Datos al Registrar Compra, 2. Conversión a Unidad Base (Líquidos), 3. Fórmula del Costo Promedio Ponderado, 4. Registro de Movimientos de Inventario, Estrategia de Pruebas, Exploración — PR 6: Servicio Compras → Inventario → Movimiento, Interfaz de Usuario y CRUD Proveedores, Lógica del Servicio de Compras (`purchaseService.ts`)
+### Community 387 - "customers.ts"
+Cohesion: 0.11
+Nodes (29): Clientes(), deleteCustomer(), handleViewCustomer(), lookupCustomerBusiness(), refreshCustomers(), saveCustomer(), startCreate(), emptyForm (+21 more)
 
-### Community 388 - "paymentDate.ts"
-Cohesion: 0.73
-Nodes (4): clampPaymentDate(), formatLocalDateKey(), getPaymentAlert(), getPaymentAlertStorageKey()
+### Community 388 - "ecf-pos-local-signing"
+Cohesion: 0.18
+Nodes (10): Constraints, Delivery, ecf-pos-local-signing, Next step, Objective, Problem / why, Progress, Scope (+2 more)
 
 ### Community 389 - "HERRAMIENTAS"
 Cohesion: 0.40
@@ -2110,6 +2155,10 @@ Nodes (3): Auth Backend Configuration, `auth.users` Fields Agents Commonly Need,
 ### Community 393 - "20260612100001_harden-digital-menu-public-rpcs.sql"
 Cohesion: 0.24
 Nodes (5): digital_menu_items_visible_idx, digital_orders_created_idx, digital_orders_sucursal_status_idx, public.create_public_digital_order(), public.get_public_digital_menu()
+
+### Community 395 - "navigation-menu.tsx"
+Cohesion: 0.22
+Nodes (10): @radix-ui/react-navigation-menu, NavigationMenu(), NavigationMenuContent(), NavigationMenuIndicator(), NavigationMenuItem(), NavigationMenuLink(), NavigationMenuList(), NavigationMenuTrigger() (+2 more)
 
 ### Community 396 - "Apply Progress — PR 4: UI Inventario por Presentación"
 Cohesion: 0.50
@@ -2139,41 +2188,33 @@ Nodes (3): Deploy on Vercel, Getting Started, Learn More
 Cohesion: 0.67
 Nodes (3): Herramienta: Humano, Herramienta: Notificar humano, USO OBLIGATORIO DE HERRAMIENTAS PARA HUMANO
 
-### Community 481 - "toggle-group.tsx"
-Cohesion: 0.18
-Nodes (12): class-variance-authority, @radix-ui/react-toggle, @radix-ui/react-toggle-group, Alert(), AlertDescription(), AlertTitle(), alertVariants, ToggleGroup() (+4 more)
+### Community 483 - "e-CF receptor: deployment runbook"
+Cohesion: 0.14
+Nodes (12): 1. Migrations (apply first), 2. Function files, 3. Environment on the `functions` service (names only), 4. JWT verification, 5. Certificate trust (who may authenticate and deliver), 6. Rate limits (Cloudflare, recommended), 7. Related, out of scope here, 8. Smoke tests (+4 more)
 
-### Community 489 - "Chat Completions"
-Cohesion: 0.40
-Nodes (5): Best Practices, Chat Completions, Common Mistakes, Setup, Store a Response
+### Community 489 - "Propuesta — PR 7: Compras → Gastos + Cierre/Analíticas"
+Cohesion: 0.25
+Nodes (7): 1. Núcleo del Servicio (`purchaseService.ts`), 2. Cambios en la Vista del Frontend (`Compras.tsx`), Archivos que serán Modificados, Estimación de Líneas, Modificaciones Planificadas, Objetivos del Cambio, Propuesta — PR 7: Compras → Gastos + Cierre/Analíticas
 
 ### Community 490 - "cloudix_gastos.sql"
 Cohesion: 0.36
 Nodes (7): gasto_categorias_tenant_idx, gasto_categorias_tenant_nombre_unique, gastos_tenant_category_idx, gastos_tenant_cycle_idx, gastos_tenant_fecha_idx, public.gasto_categorias, public.gastos
 
-### Community 493 - "Video Generation"
-Cohesion: 0.40
-Nodes (5): Best Practices, Common Mistakes, Deno Memory, Recommended InsForge Flow, Video Generation
+### Community 494 - "Architecture Decisions"
+Cohesion: 0.25
+Nodes (8): Architecture Decisions, Decision: Auth User Deletion Ordering, Decision: Explicit Tenant Access Validation Gate, Decision: Payment Alert State Persistence, Decision: Reconnect and Fallback Reconciliation, Decision: Temporary Blocking and Tenant Access Realtime, Decision: Tenant Deletion Mechanism, Decision: User Revocation Channel
 
-### Community 494 - "Entregas.tsx"
-Cohesion: 0.22
-Nodes (14): canDeleteOpenConsumo(), Entregas(), marcarEntregado(), ItemEntrega, MesaConPedido, RD(), getElectronAPI(), normalizeMenuCategory() (+6 more)
+### Community 495 - "Seguridad y multitenant (Cloudix)"
+Cohesion: 0.29
+Nodes (6): Auditoría de consultas (`limit(1)` y similares), Modelo de amenaza, NCF atómico, RLS en Postgres (plantilla), Secretos, Seguridad y multitenant (Cloudix)
 
-### Community 495 - "ENDPOINTS_SENDER_RECEIVER"
-Cohesion: 0.40
-Nodes (5): ENDPOINTS_SENDER_RECEIVER, SEED, SEND_COMMERCIAL_APPROVAL, SEND_INVOICE, VALIDATE_SEED
+### Community 496 - "ecfIssuerRequirements.ts"
+Cohesion: 0.24
+Nodes (15): saveCompany(), buildIssuerUpdatePayload(), buildRepresentativeIdPayload(), ECF_ISSUER_FIELDS, EcfIssuerFieldDef, EcfIssuerFieldKey, EcfIssuerValidation, issuerInputFromTenantRow() (+7 more)
 
-### Community 496 - "Compras.tsx"
-Cohesion: 0.11
-Nodes (29): CompraRow, Compras(), exportFormato606(), openDeleteConfirm(), dateFormatter, ProductoRow, ProveedorRow, RD() (+21 more)
-
-### Community 497 - "Apply Progress — PR 2: Helpers de Inventario por Presentación"
-Cohesion: 0.33
-Nodes (5): Apply Progress — PR 2: Helpers de Inventario por Presentación, Artifacts, Executive Summary, Next Recommended, Risks
-
-### Community 498 - "ecfRangeErrors.ts"
-Cohesion: 0.33
-Nodes (9): Next step, EcfRangeError, EcfRangeErrorCode, ecfRangeErrorMessage(), ecfRangeTerminalMessage(), enforceEcfRangeLocally(), mapEcfRangeRpcError(), buildLocalTenantNcfReservation() (+1 more)
+### Community 497 - "Feature: offline-pos-sales"
+Cohesion: 0.18
+Nodes (10): Acceptance criteria, Checks, Constraints, Delivery, Feature: offline-pos-sales, Next step, Objective, Problem (+2 more)
 
 ### Community 501 - "public.productos_inventario"
 Cohesion: 0.50
@@ -2187,13 +2228,17 @@ Nodes (3): enforce_sucursal_plan_limits_trg, normalize_tenant_plan_limits_trg, p
 Cohesion: 0.28
 Nodes (3): public.cloudix_super_admin_block_tenant(), tenant_user_access_realtime_delete, tenant_user_access_realtime_update
 
-### Community 506 - "executePayrollCommandLocally"
-Cohesion: 0.33
-Nodes (8): getLocalPaymentContext(), handleConfirmAnnullPayment(), handleConfirmDisable(), handleSaveEmployee(), PayrollCommand, PayrollRepositoryResult, executePayrollCommandLocally(), isPayrollLocalStorageAvailable()
+### Community 505 - "Implementacion"
+Cohesion: 0.17
+Nodes (14): Fase 1: Schema local y estructura base, Fase 2: Sesion local y PIN offline, Fase 3: Bootstrap progresivo, Fase 4: Sync incremental, Fase 7: Pantalla de estado de sincronizacion, Implementacion, labelForStatus(), LocalFirstStatusBadge() (+6 more)
 
-### Community 507 - "AI Overview"
-Cohesion: 0.40
-Nodes (5): AI Overview, Capability Guides, Common Mistakes, InsForge Patterns, Setup
+### Community 506 - "Image Generation"
+Cohesion: 0.10
+Nodes (17): Best Practices, Common Mistakes, Generate an Image, Image Generation, Setup, Store the Output, Best Practices, Capability Filters (+9 more)
+
+### Community 507 - "Razorpay Payments SDK Integration"
+Cohesion: 0.20
+Nodes (9): Common Mistakes, Mental Model, One-Time Order Flow, Razorpay Payments SDK Integration, RLS Before Orders And Subscriptions, Runtime State, Subscription Flow, Subscription Management (+1 more)
 
 ### Community 508 - "20260606195500_add-customers-and-invoice-link.sql"
 Cohesion: 0.36
@@ -2211,9 +2256,13 @@ Nodes (4): public.digital_menu_items, public.digital_menu_settings, public.digit
 Cohesion: 0.25
 Nodes (3): trg_notify_digital_menu_items, trg_notify_digital_menu_settings, trg_notify_platos_digital_menu
 
-### Community 512 - "sendToKitchen"
+### Community 512 - "Exploración — PR 7: Compras → Gastos + Cierre/Analíticas"
 Cohesion: 0.29
-Nodes (8): sendToKitchen(), buildOrderWrites(), OrderCartLine, OrderWriteContext, OrderWriteDeps, OrderWrites, persistOrderWrites(), splitCartByDestination()
+Nodes (6): Análisis de Modelos de Datos, Exploración — PR 7: Compras → Gastos + Cierre/Analíticas, Objetivos del Cambio, Pruebas de Integración, Relación de Gastos (`gastos`), Resolución de Categoría `"Compras"`
+
+### Community 513 - "fiscal-real-dgii-client.test.ts"
+Cohesion: 0.29
+Nodes (6): mockAuthenticate, mockGetKeyFromStringBase64, mockSendElectronicDocument, mockSendSummary, mockSignXml, mockStatusTrackId
 
 ### Community 514 - "public.cierres_operativos"
 Cohesion: 0.48
@@ -2223,10 +2272,6 @@ Nodes (5): cierres_operativos_open_idx, cierres_operativos_tenant_cycle_idx, cie
 Cohesion: 0.38
 Nodes (4): menu_categories_tenant_nombre_idx, menu_categories_tenant_sort_idx, public.cyberbistro_current_admin_tenant_ids(), public.menu_categories
 
-### Community 516 - "Realtime Backend Configuration"
-Cohesion: 0.50
-Nodes (4): Create Channel Patterns, Publish From App-Owned Tables, Realtime Backend Configuration, Restrict Channel Access
-
 ### Community 518 - "20260919213000_resolve_usuario_id_triggers.sql"
 Cohesion: 0.38
 Nodes (4): public.resolve_compras_tenant_user_id(), public.resolve_inventario_movimientos_tenant_user_id(), trg_resolve_compras_tenant_user_id, trg_resolve_inventario_movimientos_tenant_user_id
@@ -2235,15 +2280,43 @@ Nodes (4): public.resolve_compras_tenant_user_id(), public.resolve_inventario_mo
 Cohesion: 0.29
 Nodes (3): idx_comandas_tenant_id_id, idx_consumos_tenant_id_id, idx_facturas_tenant_id_id
 
-### Community 521 - "Análisis de Integración en el Flujo de Datos (`Billing.tsx`)"
-Cohesion: 0.50
-Nodes (3): Análisis de Integración en el Flujo de Datos (`Billing.tsx`), Exploración — PR 10: Analíticas Financieras Ampliadas, Objetivos del Cambio
+### Community 521 - "fiscal-certificate-failure.test.ts"
+Cohesion: 0.16
+Nodes (12): dgiiOk, now, okCustody, repo(), signer, snapshot(), CertificateFailureCode, classifyCertificateFailure() (+4 more)
+
+### Community 522 - "Tasks"
+Cohesion: 0.08
+Nodes (21): Cambios Realizados, Reporte de Archivamiento: PR 10 (Analíticas Financieras Ampliadas), Verificación, 1. Extensión del Tipo de Vista, 2. Extensión de la Carga de Datos (`loadBillingData`), 3. Computación de Métricas del Período, Análisis de Riesgos, Diseño del Sistema (+13 more)
+
+### Community 525 - "CustomAuthentication"
+Cohesion: 0.12
+Nodes (14): Authors, Custom Authentication, DGII-eCF, Installation, 🔗 Links, Read Certificate Information from Base64, Related, Run Integration Test local environment (+6 more)
+
+### Community 528 - "Propuesta — PR 6: Servicio Compras → Inventario → Movimiento"
+Cohesion: 0.33
+Nodes (5): Análisis de Riesgos, Contrato de Funciones (`purchaseService.ts`), Modificaciones de Interfaz de Usuario (`Compras.tsx`), Objetivos del Cambio, Propuesta — PR 6: Servicio Compras → Inventario → Movimiento
 
 ### Community 529 - "public.tenant_users"
 Cohesion: 0.33
 Nodes (5): idx_tenant_users_auth_user_id, idx_tenant_users_email, idx_tenant_users_rol, idx_tenant_users_tenant, tenant_users_tenant_id_email_key
 
-### Community 532 - "rememberLoginStorage.ts"
+### Community 530 - "receptorUrls.ts"
+Cohesion: 0.48
+Nodes (5): buildReceptorUrls(), ECF_RECEPTOR_BASE_URL, receptorRncSegment(), ReceptorUrls, SERVICE_PATHS
+
+### Community 531 - "ecf-certification-acecf"
+Cohesion: 0.15
+Nodes (12): Constraints, ecf-certification-acecf, Evidence, Facts (verified 2026-10-18 from the real set 133488485-18102026172843.xlsx), Next step, Objective, Progress, Redeploy (supabase/functions/ecf-certification) (+4 more)
+
+### Community 532 - "document.ts"
+Cohesion: 0.23
+Nodes (12): ALLOWED_ROOTS, analyzeDocument(), collect(), digitsOnly(), DocumentAnalysis, DocumentFailure, DocumentType, hasForbiddenXml() (+4 more)
+
+### Community 533 - "paymentDate.ts"
+Cohesion: 0.73
+Nodes (4): clampPaymentDate(), formatLocalDateKey(), getPaymentAlert(), getPaymentAlertStorageKey()
+
+### Community 534 - "rememberLoginStorage.ts"
 Cohesion: 0.53
 Nodes (4): consumeRememberedLogin(), parseRememberedLogin(), RememberedLoginState, StorageLike
 
@@ -2259,9 +2332,9 @@ Nodes (4): idx_inventario_movimientos_producto_id, idx_inventario_movimientos_su
 Cohesion: 0.40
 Nodes (4): cierres_operativos_open_idx, cierres_operativos_tenant_cycle_idx, cierres_operativos_tenant_day_idx, cierres_operativos_unique_cycle
 
-### Community 545 - "Apply Progress — PR 7: Compras → Gastos + Cierre/Analíticas"
-Cohesion: 0.40
-Nodes (4): Apply Progress — PR 7: Compras → Gastos + Cierre/Analíticas, Artifacts, Executive Summary, Next Recommended
+### Community 544 - "ecf-certification-signing"
+Cohesion: 0.17
+Nodes (11): Constraints, ecf-certification-signing, Next step, Objective, Problem, Progress, Route, Scope (+3 more)
 
 ### Community 554 - "public.compra_detalles"
 Cohesion: 0.50
@@ -2283,6 +2356,10 @@ Nodes (3): idx_gastos_category_id, idx_gastos_cycle_id, idx_gastos_sucursal_id
 Cohesion: 0.50
 Nodes (3): idx_produccion_cocina_producto_id, idx_produccion_cocina_sucursal_id, idx_produccion_cocina_tenant_id
 
+### Community 565 - "registrarPagoCxC"
+Cohesion: 0.22
+Nodes (9): ReceivablesRepositoryResult, Análisis de Riesgos, Objetivos del Cambio, Propuesta — PR 9: Cuentas por Cobrar + Fiado en POS, handleRegistrarAbono(), hasSqliteReceivables(), PaymentInput, registrarPagoCxC() (+1 more)
+
 ### Community 566 - "public.gastos"
 Cohesion: 0.50
 Nodes (3): gastos_tenant_category_idx, gastos_tenant_cycle_idx, gastos_tenant_fecha_idx
@@ -2291,25 +2368,121 @@ Nodes (3): gastos_tenant_category_idx, gastos_tenant_cycle_idx, gastos_tenant_fe
 Cohesion: 0.50
 Nodes (3): idx_facturas_estado, idx_facturas_fecha, idx_facturas_tenant
 
+### Community 615 - "Verify Report — PR 1: Feature Gates + Sidebar Agrupado"
+Cohesion: 0.40
+Nodes (4): Action Plan, Issues / Findings, Verification Summary, Verify Report — PR 1: Feature Gates + Sidebar Agrupado
+
+### Community 699 - "ecf-sign-document/handler.ts"
+Cohesion: 0.19
+Nodes (12): decodeEcfEncryptionKey(), decryptPassphrase(), fromHex(), NotConfiguredError, ADMIN_ROLES, CORS, ENVIRONMENTS, fail() (+4 more)
+
+### Community 700 - "Exploration: integrate-dgii-ecf"
+Cohesion: 0.25
+Nodes (7): Affected Areas, Approaches, Current State, Exploration: integrate-dgii-ecf, Ready for Proposal, Recommendation, Risks
+
+### Community 701 - "Exploración — PR 4: UI Inventario por Presentación"
+Cohesion: 0.07
+Nodes (24): Environment variables, Setup Check, Setup Check, Constraints, Delivery, ecf-test-send, Facts, Follow-ups (+16 more)
+
+### Community 704 - "Diseño de Base de Datos y RLS"
+Cohesion: 0.20
+Nodes (9): 1. Tabla `proveedores`, 2. Tabla `compras`, 3. Tabla `compra_detalles`, Diseño de Base de Datos y RLS, Estrategia de Pruebas, Exploración — PR 5: Modelo Compras + Proveedores (Tablas + CRUD), Modificaciones de Rutas y Navegación, Objetivos del Cambio (+1 more)
+
+### Community 705 - "20261018140000_ecf_certification_submissions.sql"
+Cohesion: 0.60
+Nodes (4): ecf_certification_runs_tenant_created_idx, ecf_certification_submissions_tenant_idx, public.ecf_certification_runs, public.ecf_certification_submissions
+
+### Community 706 - "ecf-receptor-protocol.test.ts"
+Cohesion: 0.22
+Nodes (8): decodeEcfEncryptionKey(), decryptPassphrase(), fromHex(), NotConfiguredError, ReceptorSecurity, signWithTenantCertificate(), SigningMaterial, encrypt()
+
+### Community 707 - "scripts"
+Cohesion: 0.40
+Nodes (5): scripts, build, dev, lint, start
+
+### Community 708 - "Feature: e-CF activation (DGII electronic invoicing)"
+Cohesion: 0.17
+Nodes (11): Acceptance, Constraints, Decisions, Feature: e-CF activation (DGII electronic invoicing), Objective, Progress / evidence, Review / delivery, Route (+3 more)
+
+### Community 709 - "handleRequest"
+Cohesion: 0.24
+Nodes (4): handleRequest(), sha256Hex(), SignDeps, SignStore
+
+### Community 710 - "printKitchenComanda.test.ts"
+Cohesion: 0.25
+Nodes (7): alertMock, buildComandaReceiptHtml, COMANDA, getThermalPrintSettings, maybeSingle, printThermalHtml, readLocalMirror
+
+### Community 712 - "Apply Progress — PR 6: Servicio Compras → Inventario → Movimiento"
+Cohesion: 0.40
+Nodes (4): Apply Progress — PR 6: Servicio Compras → Inventario → Movimiento, Artifacts, Executive Summary, Next Recommended
+
+### Community 714 - "Vite / React-only setups"
+Cohesion: 0.40
+Nodes (5): Env vars in Vite, Pattern A — Vite proxy, Pattern B — true cross-origin (no proxy), The bridge route in non-Next servers, Vite / React-only setups
+
+### Community 715 - "Apply Progress — PR 7: Compras → Gastos + Cierre/Analíticas"
+Cohesion: 0.40
+Nodes (4): Apply Progress — PR 7: Compras → Gastos + Cierre/Analíticas, Artifacts, Executive Summary, Next Recommended
+
+### Community 716 - "Apply Progress — PR 8: Cuentas por Pagar"
+Cohesion: 0.40
+Nodes (4): Apply Progress — PR 8: Cuentas por Pagar, Artifacts, Executive Summary, Next Recommended
+
+### Community 718 - "app/page.tsx"
+Cohesion: 0.28
+Nodes (8): AnimatedSection(), AnimatedSectionProps, FeatureCard(), HeroSection(), PricingCard(), HardwareItem(), LandingPage(), MiniFeature()
+
+### Community 719 - "Diseño del Sistema"
+Cohesion: 0.40
+Nodes (5): 1. Rutas y Navegación, 2. POS (`MesaCloseAccountModal.tsx`), 3. Servicio de Cobros (`accountsReceivableService.ts`), 4. Integración del Flujo de Caja (`Cierre.tsx`), Diseño del Sistema
+
+### Community 720 - "Reporte de Verificación — PR 9: Cuentas por Cobrar + Fiado en POS"
+Cohesion: 0.40
+Nodes (4): Pruebas de Calidad, Recomendaciones y Conclusiones, Reporte de Verificación — PR 9: Cuentas por Cobrar + Fiado en POS, Verificación de Invariantes
+
+### Community 722 - "SidebarCustomIcon"
+Cohesion: 0.50
+Nodes (4): Task 4: Agregar Compras al Sidebar y SidebarCustomIcon, Task 3: Integrar Rutas e Iconos en el Sidebar, Task 6: Integrar Rutas e Iconos en el Sidebar, SidebarCustomIcon()
+
+### Community 726 - "localSucursales.ts"
+Cohesion: 0.70
+Nodes (3): LocalSucursalRow, normalizeLocalSucursales(), readLocalSucursales()
+
+### Community 732 - "Tasks"
+Cohesion: 0.25
+Nodes (7): Commits, Invariantes, Spec, Spec + Tasks — PR 6: Servicio Compras → Inventario → Movimiento, Task 2: Crear pruebas unitarias del servicio, Task 4: Ejecutar verificaciones locales, Tasks
+
+### Community 737 - "Tasks: Full Desktop Operations to Local SQLite"
+Cohesion: 0.29
+Nodes (6): Phase 1: Retained Foundation and Safety RED, Phase 2: Dependency-Ordered Cohort RED/GREEN, Phase 3: Verification and Approval, Review Workload Forecast, Suggested Work Units, Tasks: Full Desktop Operations to Local SQLite
+
+### Community 738 - "Apply Progress — PR 2: Helpers de Inventario por Presentación"
+Cohesion: 0.33
+Nodes (5): Apply Progress — PR 2: Helpers de Inventario por Presentación, Artifacts, Executive Summary, Next Recommended, Risks
+
+### Community 741 - "harden-registration-fiscal-rpcs.test.ts"
+Cohesion: 0.53
+Nodes (4): splitStatements(), validateGuard(), validateMigration(), validateObsoleteDoBlock()
+
 ## Knowledge Gaps
 - **107 isolated node(s):** `@babel/cli`, `@babel/core`, `@babel/preset-env`, `@babel/preset-typescript`, `@types/busboy` (+102 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 3803 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **273 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 4241 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **282 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `vitest` connect `vitest` to `sendToKitchen`, `ipc.ts`, `payrollSyncStore.ts`, `Dashboard.tsx`, `paymentDate.ts`, `Camarera.tsx`, `localFirst.test.ts`, `shouldReadLocalFirst`, `ref_node_crypto`, `tenant-management-migration.test.ts`, `cierresWrites.ts`, `invoicesCloud.ts`, `fiscalWorkerRuntime.ts`, `package.json`, `Billing.tsx`, `schema-upgrade-v12.1.29.test.ts`, `AppUpdateContext.tsx`, `rememberLoginStorage.ts`, `src/index.ts`, `customers.ts`, `useAuth.ts`, `importer.ts`, `Dashboard`, `fiscal-offline-reconnect.test.ts`, `AppLayout.tsx`, `local-sqlite-orders.test.ts`, `ecfCertificateHealth.ts`, `Cierre.tsx`, `HistorialSync.tsx`, `realtimeLifecycle.ts`, `SucursalContext.tsx`, `dgiiAdapters.ts`, `harden-registration-fiscal-rpcs.test.ts`, `invoicesLocal.ts`, `Ajustes.tsx`, `Nomina`, `invoicesLocal.ts`, `resolveTenantUserFromAuth.ts`, `postgresFiscalWorkerRepository.ts`, `fiscal/types.ts`, `mapper.ts`, `cloudAvailability.ts`, `canUseFeature`, `fiscalWorker.ts`, `enqueueLocalWrite`, `payrollContracts.ts`, `Tables.tsx`, `local-sqlite-catalogs.test.ts`, `getThermalPrintSettings`, `useAuth`, `initializeTenantSchema`, `cashPurchaseRepository.ts`, `ecfActivationReadiness.ts`, `PayrollSyncClient`, `payrollCloudSync.ts`, `invoicesLocal.ts`, `CertificateUploader.tsx`, `autoUpdater.ts`, `roleNav.ts`, `ecfIssuerRequirements.ts`, `ecfSequenceRanges.ts`, `localInvoiceReceipt.ts`, `Compras.tsx`, `ecfRangeErrors.ts`, `AppLayoutContent`, `executePayrollCommandLocally`?**
-  _High betweenness centrality (0.218) - this node is a cross-community bridge._
+- **Why does `vitest` connect `vitest` to `ipc.ts`, `fiscal-real-dgii-client.test.ts`, `payrollSyncStore.ts`, `Dashboard.tsx`, `ecfPrintedRepresentation.ts`, `localFirst.test.ts`, `fiscal-certificate-failure.test.ts`, `payrollSyncClient.ts`, `LoginForm.tsx`, `fiscalWorkerRuntime.ts`, `package.json`, `Billing.tsx`, `receptorUrls.ts`, `electron.d.ts`, `Tables.tsx`, `ecfPrintedRepresentation.test.ts`, `paymentDate.ts`, `useAuth.ts`, `rememberLoginStorage.ts`, `simulation.ts`, `AppLayout.tsx`, `ecfCertificateHealth.ts`, `Nomina.tsx`, `HistorialSync.tsx`, `dgiiAdapters.ts`, `fiscal/types.ts`, `ecf-certification-run.test.ts`, `localNcfReservation.ts`, `registrarPagoCxC`, `resolveTenantUserFromAuth.ts`, `protocol.ts`, `xlsx.ts`, `fiscalWorkerError`, `mapper.ts`, `electron`, `invoiceSearch.ts`, `fiscal-offline-reconnect.test.ts`, `mainWindow`, `ecf-certification-test-send.test.ts`, `EcfTestSendCard.tsx`, `ecfSequenceRanges.ts`, `initializeTenantSchema`, `Cierre.tsx`, `AppUpdateContext.tsx`, `.open`, `Signature`, `SucursalContext.tsx`, `Dashboard.tsx`, `validate-ecf-certificate/index.ts`, `ncf.ts`, `tenant-management-migration.test.ts`, `dgiiClient.ts`, `payrollCloudSync.ts`, `ecfActivationReadiness.ts`, `schema-upgrade-v12.1.29.test.ts`, `builder.ts`, `ecf-receptor-handler.test.ts`, `realtimeLifecycle.ts`, `planFeatures.ts`, `ecfCertificationRun.ts`, `printKitchenComanda.test.ts`, `Ajustes.tsx`, `readLocalTenant`, `localSucursales.ts`, `CertificateUploader.tsx`, `ecf-sign-document-handler.test.ts`, `harden-registration-fiscal-rpcs.test.ts`, `DocumentSigner.tsx`, `ActivationPanel.tsx`, `salesFiscalRepository.ts`, `enqueueLocalWrite`, `invoiceHeaderEdit.ts`, `useLocalFirstBootstrap.ts`, `CategoriasPanel`, `ActivationPanel.tsx`, `ecfRangeErrors.ts`, `customers.ts`, `ecfIssuerRequirements.ts`?**
+  _High betweenness centrality (0.266) - this node is a cross-community bridge._
 - **Are the 16 inferred relationships involving `enqueueLocalWrite()` (e.g. with `Fase 4: Sync incremental` and `Affected Areas`) actually correct?**
   _`enqueueLocalWrite()` has 16 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `@babel/cli`, `@babel/core`, `@babel/preset-env` to the rest of the system?**
   _107 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `ipc.ts` be split into smaller, more focused modules?**
-  _Cohesion score 0.020389610389610388 - nodes in this community are weakly interconnected._
-- **Why does `useAuth()` connect `useAuth.ts` to `Dashboard.tsx`, `Camarera.tsx`, `shouldReadLocalFirst`, `localFirst.ts`, `ref_react`, `Billing.tsx`, `shouldReadLocalFirst`, `customers.ts`, `Dashboard`, `AppLayout.tsx`, `Cierre.tsx`, `SucursalContext.tsx`, `HistorialSync.tsx`, `Ajustes.tsx`, `Nomina`, `resolveTenantUserFromAuth.ts`, `SucursalContext.tsx`, `canUseFeature`, `enqueueLocalWrite`, `InsForge + Clerk Integration Guide (Next.js)`, `Tables.tsx`, `ActivationPanel.tsx`, `getThermalPrintSettings`, `useAuth`, `Camarera.tsx`, `CertificateUploader.tsx`, `Entregas.tsx`, `Compras.tsx`, `AppLayoutContent`?**
-  _High betweenness centrality (0.062) - this node is a cross-community bridge._
+  _Cohesion score 0.018912529550827423 - nodes in this community are weakly interconnected._
+- **Why does `PayrollSyncClient` connect `payrollSyncClient.ts` to `ipc.ts`, `payrollSyncStore.ts`, `vitest`, `initializeTenantSchema`, `.createClient`?**
+  _High betweenness centrality (0.032) - this node is a cross-community bridge._
 - **Should `payrollSyncStore.ts` be split into smaller, more focused modules?**
-  _Cohesion score 0.08350168350168351 - nodes in this community are weakly interconnected._
-- **Why does `fs` connect `src/index.ts` to `build-icon.mjs`, `harden-registration-fiscal-rpcs.test.ts`, `IARECF.ts`, `utils.test.ts`, `modulo-ecf/package.json`?**
-  _High betweenness centrality (0.057) - this node is a cross-community bridge._
+  _Cohesion score 0.07219662058371736 - nodes in this community are weakly interconnected._
+- **Why does `useAuth()` connect `AppLayout.tsx` to `customers.ts`, `Dashboard.tsx`, `SuperAdmin.tsx`, `LoginForm.tsx`, `Billing.tsx`, `Tables.tsx`, `useAuth.ts`, `enqueueLocalWrite`, `Nomina.tsx`, `HistorialSync.tsx`, `resolveTenantUserFromAuth.ts`, `useLocalFirstBootstrap.ts`, `tenantRealtimeSubscriptionManager.ts`, `CategoriasPanel`, `InsForge + Clerk Integration Guide (Next.js)`, `localFirst.ts`, `Ajustes.tsx`, `Cierre.tsx`, `CertificateUploader.tsx`, `SucursalContext.tsx`, `Dashboard.tsx`, `ActivationPanel.tsx`?**
+  _High betweenness centrality (0.024) - this node is a cross-community bridge._

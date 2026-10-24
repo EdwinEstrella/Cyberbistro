@@ -115,25 +115,46 @@ export function validateEcfRange(type: string, range: EcfRange): EcfRangeValidat
 export interface RangesSavePayload {
   ncf_secuencias_por_tipo: Record<string, number>;
   ecf_secuencias_rangos: Record<string, EcfStoredBounds>;
+  /** Turned-off e-CF types kept because numbers were already issued from them. */
+  keptTypes: string[];
+}
+
+/** True when the stored counter shows at least one number was issued for the type. */
+function hasIssued(next: number | undefined, bounds: EcfStoredBounds | undefined): boolean {
+  if (next == null) return false;
+  return next > (bounds?.start ?? 1);
 }
 
 /**
- * Builds the payload to persist. Entries for types not being edited are preserved so saving the
- * wizard never erases other types' ranges or counters.
+ * Builds the payload to persist. `managedTypes` are the e-CF codes the wizard shows: those the user
+ * turned off are removed, unless numbers were already issued from them (removing the counter would
+ * let a re-added type reuse e-NCF numbers), in which case they are kept and listed in `keptTypes`.
+ * Every other entry (legacy NCF counters such as B02) is preserved untouched.
  */
 export function buildRangesSavePayload(
   enabledTypes: readonly string[],
   ranges: Record<string, EcfRange>,
   existingNextRaw: unknown,
-  existingBoundsRaw: unknown
+  existingBoundsRaw: unknown,
+  managedTypes: readonly string[] = []
 ): RangesSavePayload {
   const next = { ...parseNextNumbers(existingNextRaw) };
   const bounds = { ...parseStoredBounds(existingBoundsRaw) };
+  const keptTypes: string[] = [];
+  for (const type of managedTypes) {
+    if (enabledTypes.includes(type) || (next[type] == null && !bounds[type])) continue;
+    if (hasIssued(next[type], bounds[type])) {
+      keptTypes.push(type);
+      continue;
+    }
+    delete next[type];
+    delete bounds[type];
+  }
   for (const type of enabledTypes) {
     const range = ranges[type];
     if (!range) continue;
     next[type] = range.start + range.used;
     bounds[type] = { start: range.start, end: range.end };
   }
-  return { ncf_secuencias_por_tipo: next, ecf_secuencias_rangos: bounds };
+  return { ncf_secuencias_por_tipo: next, ecf_secuencias_rangos: bounds, keptTypes };
 }

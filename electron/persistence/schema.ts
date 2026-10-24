@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import { NCF_LOCAL_SEQUENCES_CREATE_SQL } from "./ncfLocalSequence";
 
 /**
  * Local e-CF status vocabularies. They are the union of what checkout writes today
@@ -495,6 +496,9 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
   ensureCierresSchemaEvolution(database);
   ensureComprasSchemaEvolution(database);
   ensureCompraFiscalTable(database);
+  ensureSucursalesSchemaEvolution(database);
+  ensureTenantsSchemaEvolution(database);
+  database.exec(NCF_LOCAL_SEQUENCES_CREATE_SQL);
   ensureReceivablesSchemaEvolution(database);
   ensurePayablesSchemaEvolution(database);
   ensureSalonCocinaSchemaEvolution(database);
@@ -636,6 +640,44 @@ function ensureCierresSchemaEvolution(database: DatabaseSync): void {
  * column keeps its 'cash' CHECK; pulled rows set it to 'cash' and carry the real
  * method in the new `metodo_pago` column, so no data-carrying rebuild is needed.
  */
+/**
+ * The original `sucursales` table only held id/name (seeded as 'Principal').
+ * Cloud branches now download into it, so the renderer can resolve its branch
+ * with the cloud down. Added additively (valid under STRICT); `cloud_synced`
+ * marks rows that came from the cloud so seeded placeholders stay hidden.
+ */
+/**
+ * The original `tenants` table only held the id (FK root). The current tenant's
+ * cloud row (billing, NCF sequences, receipt headers) now downloads into it so
+ * the POS can bill and print with the cloud down. Settings live in a JSON
+ * payload of whitelisted, non-secret columns: the cloud row is wide and evolves
+ * often, and no SQL ever filters on those fields.
+ */
+function ensureTenantsSchemaEvolution(database: DatabaseSync): void {
+  const columns = getTableColumns(database, "tenants");
+  if (columns.length === 0) return;
+  for (const [name, definition] of [
+    ["settings_json", "TEXT"],
+    ["cloud_synced", "INTEGER NOT NULL DEFAULT 0"],
+    ["cloud_updated_at", "TEXT"],
+  ] as const) {
+    if (!columns.includes(name)) database.exec(`ALTER TABLE tenants ADD COLUMN ${name} ${definition};`);
+  }
+}
+
+function ensureSucursalesSchemaEvolution(database: DatabaseSync): void {
+  const columns = getTableColumns(database, "sucursales");
+  if (columns.length === 0) return;
+  for (const [name, definition] of [
+    ["direccion", "TEXT"],
+    ["telefono", "TEXT"],
+    ["activa", "INTEGER NOT NULL DEFAULT 1"],
+    ["cloud_synced", "INTEGER NOT NULL DEFAULT 0"],
+  ] as const) {
+    if (!columns.includes(name)) database.exec(`ALTER TABLE sucursales ADD COLUMN ${name} ${definition};`);
+  }
+}
+
 /**
  * The original SQLite receivables tables were skeletons sized only for the
  * command path. Full local-first parity with the cloud/IndexedDB shape (and the

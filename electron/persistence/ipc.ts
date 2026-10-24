@@ -8,6 +8,7 @@ import {
   type PayrollCommand,
 } from "../../src/shared/lib/payrollContracts";
 import type { SalesFiscalCommand, SalesFiscalRepositoryResult } from "./salesFiscalRepository";
+import { parseNcfLocalSequenceRequest, type NcfLocalSequenceRequest, type NcfLocalSequenceResponse } from "./ncfLocalSequence";
 import type { PurchaseCommand, CashPurchaseCommand, CashPurchaseRepositoryResult, PurchaseRepositoryResult } from "./cashPurchaseRepository";
 import type { ReceivablesCommand, ReceivablesRepositoryResult } from "./receivablesRepository";
 import type { PayablesCommand, PayablesRepositoryResult } from "./payablesRepository";
@@ -22,7 +23,6 @@ export type InvoiceHeaderUpdateResult =
 
 export const TENANT_STORE_STATUS_CHANNEL = "tenant-store:status";
 export const TENANT_STORE_ACTIVATE_CHANNEL = "tenant-store:activate";
-export const TENANT_STORE_IMPORT_CHANNEL = "tenant-store:import-indexeddb";
 export const DESKTOP_REPOSITORY_EXECUTE_CHANNEL = "desktop-repository:execute";
 export const CATALOG_REPOSITORY_EXECUTE_CHANNEL = "catalog-repository:execute";
 export const CATALOG_LIST_CHANNEL = "catalog:list";
@@ -41,6 +41,7 @@ export const CHECKOUT_COMMIT_CHANNEL = "checkout:commit";
 export const FISCAL_SALES_REPOSITORY_EXECUTE_CHANNEL = "sales-fiscal-repository:execute";
 export const FACTURAS_LIST_CHANNEL = "facturas:list";
 export const FACTURAS_RESERVE_NUMBERS_CHANNEL = "facturas:reserve-numbers";
+export const NCF_LOCAL_SEQUENCE_CHANNEL = "ncf:local-sequence";
 export const FACTURAS_NUMBER_FLOOR_CHANNEL = "facturas:number-floor";
 export const FACTURAS_DELETE_LOCAL_CHANNEL = "facturas:delete-local";
 export const FACTURAS_SAVE_LOCAL_CHANNEL = "facturas:save-local";
@@ -383,6 +384,7 @@ export function registerSalesFiscalRepositoryIpc(input: {
   listInvoices?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number; dateFrom?: string; dateTo?: string }) => Array<Record<string, unknown>>;
   reserveInvoiceNumbers?: (input: { tenantId?: string; count: number }) => number[];
   getInvoiceNumberFloor?: (input: { tenantId?: string }) => number;
+  ncfLocalSequence?: (request: NcfLocalSequenceRequest) => NcfLocalSequenceResponse;
   deleteInvoiceLocal?: (input: { tenantId?: string; invoiceId: string }) => void;
   saveInvoiceLocal?: (invoice: Record<string, unknown>) => void;
   updateInvoiceHeaderLocal?: (input: { tenantId?: string; invoiceId: string; changes: Record<string, unknown> }) => InvoiceHeaderUpdateResult;
@@ -410,6 +412,15 @@ export function registerSalesFiscalRepositoryIpc(input: {
     }
     if (!input.reserveInvoiceNumbers) throw new Error("Invoice number reservation is unavailable");
     return { ok: true, data: input.reserveInvoiceNumbers({ tenantId: request.tenantId as string | undefined, count: Number(request.count) }) };
+  });
+
+  input.ipcMain.removeHandler(NCF_LOCAL_SEQUENCE_CHANNEL);
+  input.ipcMain.handle(NCF_LOCAL_SEQUENCE_CHANNEL, async (event, payload) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    const request = parseNcfLocalSequenceRequest(payload);
+    if (!request) throw new Error("Invalid NCF sequence request");
+    if (!input.ncfLocalSequence) throw new Error("Local NCF sequencing is unavailable");
+    return input.ncfLocalSequence(request);
   });
 
   input.ipcMain.removeHandler(FACTURAS_DELETE_LOCAL_CHANNEL);
@@ -588,7 +599,7 @@ export function registerCatalogRepositoryIpc(input: {
   ipcMain: CatalogRepositoryIpcMain;
   isTrustedSender: (event: { senderId: number }) => boolean;
   getRepository: () => { execute(command: CatalogCommand): CatalogRepositoryResult };
-  listCatalog?: () => { platos: Array<Record<string, unknown>>; menuCategories: Array<Record<string, unknown>> };
+  listCatalog?: () => { platos: Array<Record<string, unknown>>; menuCategories: Array<Record<string, unknown>>; sucursales?: Array<Record<string, unknown>>; tenant?: Record<string, unknown> | null };
 }): void {
   input.ipcMain.removeHandler(CATALOG_REPOSITORY_EXECUTE_CHANNEL);
   input.ipcMain.handle(CATALOG_REPOSITORY_EXECUTE_CHANNEL, async (event, payload) => {
@@ -601,7 +612,7 @@ export function registerCatalogRepositoryIpc(input: {
   input.ipcMain.removeHandler(CATALOG_LIST_CHANNEL);
   input.ipcMain.handle(CATALOG_LIST_CHANNEL, async (event) => {
     if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
-    return { ok: true, data: input.listCatalog?.() ?? { platos: [], menuCategories: [] } };
+    return { ok: true, data: input.listCatalog?.() ?? { platos: [], menuCategories: [], sucursales: [], tenant: null } };
   });
 }
 
@@ -623,9 +634,7 @@ export function registerTenantStoreIpc(input: {
   ipcMain: TenantStoreIpcMain;
   isTrustedSender: (event: { senderId: number }) => boolean;
   getStatus: () => { tenantId: string | null; isOpen: boolean };
-  getActiveTenantId?: () => string | null;
   activateTenant?: (tenantId: string) => void;
-  importLegacySnapshot?: (payload: unknown) => Promise<unknown> | unknown;
 }): void {
   input.ipcMain.removeHandler(TENANT_STORE_STATUS_CHANNEL);
   input.ipcMain.handle(TENANT_STORE_STATUS_CHANNEL, async (event) => {
@@ -644,26 +653,6 @@ export function registerTenantStoreIpc(input: {
       return { ok: true, data: { tenantId } };
     });
   }
-
-  if (input.getActiveTenantId && input.importLegacySnapshot) {
-    input.ipcMain.removeHandler(TENANT_STORE_IMPORT_CHANNEL);
-    input.ipcMain.handle(TENANT_STORE_IMPORT_CHANNEL, async (event, payload) => {
-      if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
-      const manifestTenantId = getManifestTenantId(payload);
-      if (!manifestTenantId) throw new Error("Legacy import manifest is invalid");
-      const activeTenantId = input.getActiveTenantId();
-      if (activeTenantId && manifestTenantId !== activeTenantId) throw new Error("Legacy import tenant mismatch");
-      return { ok: true, data: await input.importLegacySnapshot(payload) };
-    });
-  }
-}
-
-function getManifestTenantId(payload: unknown): string | null {
-  if (!payload || typeof payload !== "object") return null;
-  const manifest = (payload as { manifest?: unknown }).manifest;
-  if (!manifest || typeof manifest !== "object") return null;
-  const tenantId = (manifest as { tenantId?: unknown }).tenantId;
-  return typeof tenantId === "string" ? tenantId : null;
 }
 
 function parseTenantIdentity(payload: unknown): string | null {

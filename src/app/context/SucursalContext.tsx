@@ -11,6 +11,8 @@ import { readLocalMirror, shouldReadLocalFirst, enqueueLocalWrite, getDeviceId }
 import { supabase } from "../../shared/lib/supabase";
 import { resolveWithLastKnownList } from "../../shared/lib/lastKnownCache";
 import { canCommitTenantAsyncState } from "../../shared/lib/tenantAccessGuard";
+import { buildOfflineSucursales } from "../../shared/lib/offlineSucursales";
+import { canAttemptCloudRead, isDesktopCloudUnavailable } from "../../shared/lib/cloudAvailability";
 
 export interface Sucursal {
   id: string;
@@ -130,7 +132,9 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
       if (useLocal) {
         data = await readLocalMirror<any>(expectedTenantId, "sucursales").catch(() => []);
         if (!isCurrentAccess(generation, expectedTenantId)) return;
-        if (data.length === 0 && navigator.onLine) {
+        // Gate on the cloud circuit, not only navigator.onLine: with the backend down a
+        // supabase call waits for auth-js token-refresh retries (~25s) and delays the POS.
+        if (data.length === 0 && (await canAttemptCloudRead())) {
           try {
             const res = await supabase
               .from("sucursales")
@@ -162,7 +166,23 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
       // Cloud blip: the desktop reads sucursales from the cloud and gets [] when offline.
       // Fall back to the last non-empty list so the POS keeps a branch to sell from.
       data = resolveWithLastKnownList(SUCURSALES_CACHE, expectedTenantId, data);
-      retryNeeded = data.length === 0;
+
+      // The device preference lives in the Electron main process, so it is readable
+      // with the cloud down even when the mirror and the last-known cache are empty.
+      const preference = user
+        ? await window.electronAPI?.getDeviceSessionPreference?.({ tenantId: expectedTenantId, userId: user.id }).catch(() => undefined)
+        : undefined;
+      if (!isCurrentAccess(generation, expectedTenantId)) return;
+
+      if (data.length === 0) {
+        data = buildOfflineSucursales({
+          tenantId: expectedTenantId,
+          allowedBranchIds: tenantUser?.allowedBranchIds,
+          defaultBranchId: preference?.data?.defaultBranchId,
+        });
+        // Placeholder names: keep retrying so the real list replaces them.
+        retryNeeded = true;
+      }
 
        const allowedBranchIds = tenantUser?.allowedBranchIds ?? [];
        const isAdmin = tenantUser?.rol === "admin";
@@ -171,9 +191,6 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
       if (!isCurrentAccess(generation, expectedTenantId)) return;
       setSucursales(activeList);
 
-       const preference = user
-         ? await window.electronAPI?.getDeviceSessionPreference?.({ tenantId: expectedTenantId, userId: user.id }).catch(() => undefined)
-         : undefined;
        const savedId = preference?.data?.defaultBranchId ?? localStorage.getItem(scopedStorageKey(expectedTenantId));
       const isSavedValid = savedId && activeList.some((s) => s.id === savedId);
       if (isSavedValid) {
@@ -227,7 +244,7 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
   async function loadTenantSucursalLimit(): Promise<TenantSucursalLimitRow | null> {
     if (!tenantId) return null;
 
-    if (navigator.onLine) {
+    if (navigator.onLine && !(await isDesktopCloudUnavailable().catch(() => true))) {
       try {
         const res = await supabase
           .from("tenants")
@@ -247,7 +264,7 @@ export function SucursalProvider({ children }: { children: ReactNode }) {
   async function loadActiveSucursalCount(): Promise<number> {
     if (!tenantId) return sucursales.filter((s) => s.activa !== false).length;
 
-    if (navigator.onLine) {
+    if (navigator.onLine && !(await isDesktopCloudUnavailable().catch(() => true))) {
       try {
         const res = await supabase
           .from("sucursales")

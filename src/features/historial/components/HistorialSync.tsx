@@ -17,8 +17,6 @@ import {
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { supabase } from "../../../shared/lib/supabase";
 import {
-  exportLegacyIndexedDbImportPayload,
-  importLegacyIndexedDbThroughDesktop,
   readLocalMirror,
 } from "../../../shared/lib/localFirst";
 import { resolveSyncHealth } from "../lib/syncHealth";
@@ -219,8 +217,7 @@ export function HistorialSync() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [retrying, setRetrying] = useState(false);
-  const [migrating, setMigrating] = useState(false);
-  const [activeTab, setActiveTab] = useState<"resumen" | "bajada" | "errores" | "tablas" | "cola" | "migracion">("resumen");
+  const [activeTab, setActiveTab] = useState<"resumen" | "bajada" | "errores" | "tablas" | "cola">("resumen");
   const [selectedError, setSelectedError] = useState<SyncErrorItem | null>(null);
   const [cloudCounts, setCloudCounts] = useState<Record<string, number> | null>(null);
   const [mirrorCounts, setMirrorCounts] = useState<Record<string, number>>({});
@@ -229,16 +226,8 @@ export function HistorialSync() {
   const [cloudStatus, setCloudStatus] = useState<"checking" | "online" | "offline">("checking");
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [message, setMessage] = useState<string>("");
-  const [migrationStatus, setMigrationStatus] = useState<{
-    completed: boolean;
-    importedRows?: number;
-    recoveredOutbox?: number;
-  }>({ completed: false });
-
   useEffect(() => {
     if (tenantId) {
-      const key = `cloudix_sqlite_imported_v1_${tenantId}`;
-      setMigrationStatus({ completed: localStorage.getItem(key) === "true" });
       void syncIndexedDbComprasToSqlite(tenantId).catch(() => 0);
     }
   }, [tenantId]);
@@ -326,38 +315,6 @@ export function HistorialSync() {
       setMessage(`Error al reintentar: ${e.message}`);
     } finally {
       setRetrying(false);
-    }
-  };
-
-  const handleRunMigration = async () => {
-    if (!tenantId) {
-      setMessage("Se requiere estar autenticado para migrar los datos del negocio.");
-      return;
-    }
-    setMigrating(true);
-    setMessage("");
-    try {
-      const payload = await exportLegacyIndexedDbImportPayload(tenantId);
-      const totalIndexedDbRows = payload.chunks.reduce((acc, c) => acc + c.rows.length, 0);
-      if (totalIndexedDbRows === 0) {
-        setMessage("IndexedDB no contiene registros pendientes de migrar para este negocio.");
-        setMigrationStatus({ completed: true });
-        localStorage.setItem(`cloudix_sqlite_imported_v1_${tenantId}`, "true");
-        return;
-      }
-      const res = await importLegacyIndexedDbThroughDesktop(payload);
-      localStorage.setItem(`cloudix_sqlite_imported_v1_${tenantId}`, "true");
-      setMigrationStatus({
-        completed: true,
-        importedRows: res.importedRows,
-        recoveredOutbox: res.recoveredOutbox,
-      });
-      setMessage(`✔ Migración exitosa: ${res.importedRows} filas y ${res.recoveredOutbox} outbox transferidos a SQLite.`);
-      await loadReport();
-    } catch (err: any) {
-      setMessage(`Error en la migración de IndexedDB a SQLite: ${err.message}`);
-    } finally {
-      setMigrating(false);
     }
   };
 
@@ -466,16 +423,6 @@ export function HistorialSync() {
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={handleRunMigration}
-                disabled={migrating || loading}
-                className="rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-4 py-2.5 text-xs font-bold text-cyan-400 hover:bg-cyan-500/20 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
-              >
-                <Database size={14} className={migrating ? "animate-spin" : ""} />
-                {migrating ? "Migrando datos..." : "Migrar IndexedDB → SQLite"}
-              </button>
-
               <button
                 type="button"
                 onClick={handleTriggerSync}
@@ -654,22 +601,6 @@ export function HistorialSync() {
             }`}
           >
             Cola Pendiente ({report?.pendingQueue.length ?? 0})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("migracion")}
-            className={`px-4 py-3 text-xs font-bold uppercase tracking-wider transition-colors border-b-2 cursor-pointer flex items-center gap-2 ${
-              activeTab === "migracion"
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            Migración IndexedDB
-            <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
-              migrationStatus.completed ? "bg-emerald-500/20 text-emerald-400" : "bg-cyan-500/20 text-cyan-400"
-            }`}>
-              {migrationStatus.completed ? "Al día" : "Disponible"}
-            </span>
           </button>
         </section>
 
@@ -1006,77 +937,6 @@ export function HistorialSync() {
                 <CheckCircle2 className="size-10 mx-auto text-emerald-500 mb-2 opacity-80" />
                 <p className="font-bold text-foreground text-sm">Cola Vacía</p>
                 <p className="mt-1">No hay transacciones pendientes por enviar a la nube.</p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === "migracion" && (
-          <div className="rounded-[20px] border border-black/10 dark:border-white/10 bg-card p-6 flex flex-col gap-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-black/10 dark:border-white/10 pb-4">
-              <div>
-                <h3 className="font-['Space_Grotesk'] text-lg font-bold flex items-center gap-2">
-                  <Database className="size-5 text-cyan-400" />
-                  Transición Segura: IndexedDB → SQLite
-                </h3>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Mapeo y consolidación de datos locales históricos hacia el motor transaccional SQLite de la aplicación de escritorio.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleRunMigration}
-                disabled={migrating}
-                className="rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 px-5 py-2.5 text-xs font-bold hover:bg-cyan-500/20 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 shrink-0"
-              >
-                <RefreshCw size={14} className={migrating ? "animate-spin" : ""} />
-                {migrating ? "Ejecutando migración..." : "Migrar IndexedDB a SQLite"}
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-              <div className="p-4 rounded-xl border border-black/5 dark:border-white/5 bg-muted/20">
-                <div className="text-muted-foreground font-bold uppercase text-[10px]">Estado de la Migración</div>
-                <div className="mt-2 flex items-center gap-2">
-                  <span className={`size-2.5 rounded-full ${migrationStatus.completed ? "bg-emerald-500" : "bg-amber-500"}`} />
-                  <span className="font-bold text-sm font-['Space_Grotesk'] text-foreground">
-                    {migrationStatus.completed ? "Consolidado en SQLite" : "Pendiente de Migrar"}
-                  </span>
-                </div>
-                <p className="mt-2 text-[11px] text-muted-foreground">
-                  {migrationStatus.completed
-                    ? "Los datos históricos de este negocio ya fueron transferidos de forma segura a SQLite."
-                    : "Hay datos en IndexedDB que aún no se han transferido a la base SQLite local."}
-                </p>
-              </div>
-
-              <div className="p-4 rounded-xl border border-black/5 dark:border-white/5 bg-muted/20">
-                <div className="text-muted-foreground font-bold uppercase text-[10px]">Arquitectura Objetivo</div>
-                <div className="mt-2 font-bold text-sm font-['Space_Grotesk'] text-cyan-400">
-                  SQLite Local-First + Outbox
-                </div>
-                <p className="mt-2 text-[11px] text-muted-foreground">
-                  Alimentación de un solo archivo local con soporte ACID, eliminando la volatilidad de la memoria web de IndexedDB.
-                </p>
-              </div>
-
-              <div className="p-4 rounded-xl border border-black/5 dark:border-white/5 bg-muted/20">
-                <div className="text-muted-foreground font-bold uppercase text-[10px]">Garantía Anti-Pérdida</div>
-                <div className="mt-2 font-bold text-sm font-['Space_Grotesk'] text-emerald-400">
-                  Zero Data Loss
-                </div>
-                <p className="mt-2 text-[11px] text-muted-foreground">
-                  IndexedDB se lee en lotes validados con hash y se escribe en SQLite en una sola transacción sin tocar la nube destructivamente.
-                </p>
-              </div>
-            </div>
-
-            {migrationStatus.importedRows !== undefined && (
-              <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400">
-                <div className="font-bold mb-1">Último reporte de importación:</div>
-                <div>Filas importadas a SQLite: <strong>{migrationStatus.importedRows}</strong></div>
-                <div>Operaciones de outbox recuperadas: <strong>{migrationStatus.recoveredOutbox}</strong></div>
               </div>
             )}
           </div>
