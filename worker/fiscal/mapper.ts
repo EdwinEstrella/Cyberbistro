@@ -80,6 +80,8 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
     ? splitInclusiveLines(items.map((item: any) => Number(item.subtotal || 0)), DEFAULT_ITBIS_RATE, subtotal, itbis)
     : null;
 
+  const creditNoteRef = ecfType === 34 ? buildCreditNoteReference(factura, now) : null;
+
   // Comprador Strict Validation for E31 (Crédito Fiscal)
   let compradorRnc = factura.cliente_rnc?.trim();
   let compradorNombre = factura.cliente_nombre?.trim();
@@ -99,6 +101,7 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
     IdDoc: {
       TipoeCF: ecfType,
       eNCF: ncf,
+      ...(creditNoteRef ? { IndicadorNotaCredito: creditNoteRef.indicadorNotaCredito } : {}),
       IndicadorMontoGravado: 0,
       TipoIngresos: "01",
       TipoPago: payments.length > 0 ? 1 : 2,
@@ -184,6 +187,7 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
       },
       Encabezado: encabezado,
       DetallesItems: detallesItems,
+      ...(creditNoteRef ? { InformacionReferencia: creditNoteRef.informacionReferencia } : {}),
       FechaHoraFirma: formatDgiiDateTime(now),
     },
   };
@@ -191,6 +195,64 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
   const xml = transformer.json2xml(ecfObject);
   assertMinimumEcfXml(xml);
   return xml;
+}
+
+const CREDIT_NOTE_REASON_MAX_LENGTH = 90;
+const CREDIT_NOTE_MAX_DAYS = 30;
+
+/**
+ * Builds the E34 reference block. Element order (NCFModificado, FechaNCFModificado,
+ * CodigoModificacion, RazonModificacion) follows the dgii-ecf reference document; the reason is
+ * capped at the DGII 90-character limit. Fails closed when the reference is incomplete.
+ */
+function buildCreditNoteReference(factura: any, now: Date): {
+  indicadorNotaCredito: number;
+  informacionReferencia: Record<string, string | number>;
+} {
+  const invalid = (detail: string) =>
+    fiscalWorkerError("FISCAL_XML_INVALID", `E34 credit note ${detail}.`, false);
+
+  const refNcf = String(factura.ref_ncf ?? "").trim();
+  if (!/^E3[12]\d{10}$/.test(refNcf)) {
+    throw invalid("requires ref_ncf to be a 13-character E31/E32 e-NCF");
+  }
+
+  const refDate = parseDateOnly(factura.ref_fecha_emision);
+  if (!refDate) throw invalid("requires a valid ref_fecha_emision");
+
+  const codigo = Number(factura.ref_codigo_modificacion);
+  if (factura.ref_codigo_modificacion == null || !Number.isInteger(codigo) || codigo < 1 || codigo > 5) {
+    throw invalid("requires ref_codigo_modificacion between 1 and 5");
+  }
+
+  const emission = getSantoDomingoDateParts(parseDateOrFallback(factura.created_at, now));
+  const emissionDay = Date.UTC(Number(emission.year), Number(emission.month) - 1, Number(emission.day));
+  const refDay = Date.UTC(refDate.year, refDate.month - 1, refDate.day);
+  const daysElapsed = Math.round((emissionDay - refDay) / 86_400_000);
+
+  const reason = String(factura.ref_razon_modificacion ?? "").trim().slice(0, CREDIT_NOTE_REASON_MAX_LENGTH).trim();
+  const pad = (n: number) => String(n).padStart(2, "0");
+
+  return {
+    indicadorNotaCredito: daysElapsed > CREDIT_NOTE_MAX_DAYS ? 1 : 0,
+    informacionReferencia: {
+      NCFModificado: refNcf,
+      FechaNCFModificado: `${pad(refDate.day)}-${pad(refDate.month)}-${refDate.year}`,
+      CodigoModificacion: codigo,
+      ...(reason ? { RazonModificacion: reason } : {}),
+    },
+  };
+}
+
+/** Parses a `yyyy-MM-dd` date (optionally followed by a time part) without timezone shifting. */
+function parseDateOnly(value: unknown): { year: number; month: number; day: number } | null {
+  if (typeof value !== "string") return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.trim());
+  if (!match) return null;
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const check = new Date(Date.UTC(year, month - 1, day));
+  if (check.getUTCFullYear() !== year || check.getUTCMonth() !== month - 1 || check.getUTCDate() !== day) return null;
+  return { year, month, day };
 }
 
 /**
