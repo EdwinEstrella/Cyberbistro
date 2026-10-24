@@ -14,6 +14,11 @@ ALTER TABLE public.facturas
   ADD COLUMN IF NOT EXISTS ref_codigo_modificacion smallint,
   ADD COLUMN IF NOT EXISTS ref_razon_modificacion text;
 
+-- Credit notes use their own estado; the existing CHECK only allowed pendiente/pagada/cancelada.
+ALTER TABLE public.facturas DROP CONSTRAINT IF EXISTS facturas_estado_check;
+ALTER TABLE public.facturas ADD CONSTRAINT facturas_estado_check
+  CHECK (estado::text = ANY (ARRAY['pendiente', 'pagada', 'cancelada', 'nota_credito']::text[]));
+
 -- One credit note per original invoice.
 CREATE UNIQUE INDEX IF NOT EXISTS facturas_credit_note_of_unique_idx
   ON public.facturas (credit_note_of)

@@ -12,6 +12,11 @@ describe("e-CF credit notes migration", () => {
     }
   });
 
+  it("extends the facturas estado CHECK with nota_credito, keeping the existing values", () => {
+    expect(sql).toContain("DROP CONSTRAINT IF EXISTS facturas_estado_check");
+    expect(sql).toContain("ARRAY['pendiente', 'pagada', 'cancelada', 'nota_credito']");
+  });
+
   it("builds a 13-character DGII e-NCF (E34 + 10-digit sequence)", () => {
     expect(sql).toContain("v_encf := 'E34' || lpad(v_seq::text, 10, '0');");
   });
