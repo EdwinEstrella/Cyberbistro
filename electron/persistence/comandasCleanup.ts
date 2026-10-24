@@ -29,3 +29,17 @@ export function purgeExpiredComandasOlderThan(db: DatabaseSync, tenantId: string
   for (const row of rows) deleteComandaWithReferences(db, row.id, tenantId);
   return rows.length;
 }
+
+/**
+ * Cash-register close: removes every queued comanda of the tenant and branch
+ * (FK stubs with NULL estado included). A null/sentinel branch means tenant-wide.
+ * Consumos are only unlinked, never deleted. Returns the deleted count.
+ */
+export function purgeComandasForCierre(db: DatabaseSync, tenantId: string, sucursalId: string | null): number {
+  const branchScoped = sucursalId != null && sucursalId !== "" && sucursalId !== "main-process-default";
+  const rows = (branchScoped
+    ? db.prepare("SELECT id FROM comandas WHERE tenant_id = ? AND sucursal_id = ?").all(tenantId, sucursalId)
+    : db.prepare("SELECT id FROM comandas WHERE tenant_id = ?").all(tenantId)) as Array<{ id: string }>;
+  for (const row of rows) deleteComandaWithReferences(db, row.id, tenantId);
+  return rows.length;
+}

@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { initializeTenantSchema } from "./schema";
-import { purgeExpiredComandasOlderThan } from "./comandasCleanup";
+import { purgeExpiredComandasOlderThan, purgeComandasForCierre } from "./comandasCleanup";
 import { applyCloudExpenseCategoryRows, applyCloudExpenseRows, applyCloudCustomerRows, mergeLocalTenantSettings } from "./cloudApply";
 import { TenantSQLiteImporter, type LegacyImportChunk, type LegacyImportManifest } from "./importer";
 import { PayrollSyncOrchestrator } from "./payrollSyncOrchestrator";
@@ -440,7 +440,13 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
           {
             const result = this.database.prepare("UPDATE cierres_operativos SET state = 'closed', closed_at = ? WHERE id = ? AND tenant_id = ? AND state = 'open'").run(command.closedAt, command.id, this.tenantId);
             // Never create a close event without one local state transition.
-            if (Number(result.changes) === 1) outbox("cierres_operativos", command.id, command, "cycle-close");
+            if (Number(result.changes) === 1) {
+              outbox("cierres_operativos", command.id, command, "cycle-close");
+              // Closing the register clears the queued comandas locally. The cloud copy is
+              // purged in bulk by cloudix_purge_comandas (no per-comanda outbox rows).
+              const cycle = this.database.prepare("SELECT sucursal_id FROM cierres_operativos WHERE id = ? AND tenant_id = ?").get(command.id, this.tenantId) as { sucursal_id: string | null } | undefined;
+              purgeComandasForCierre(this.database, this.tenantId, cycle?.sucursal_id ?? null);
+            }
           }
           break;
         case "orders.cycle.mark-printed":

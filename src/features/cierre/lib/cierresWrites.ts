@@ -5,6 +5,7 @@ import {
   discardOperatingCycle,
 } from "../../../shared/lib/ordersUiAdapter";
 import { enqueueLocalWrite, getDeviceId } from "../../../shared/lib/localFirst";
+import { supabase } from "../../../shared/lib/supabase";
 
 /**
  * Operational-cycle writes go through exactly one engine per runtime:
@@ -58,7 +59,31 @@ export async function writeCycleOpen(input: OpenCycleInput): Promise<void> {
   });
 }
 
-export async function writeCycleClose(input: { tenantId: string; cycleId: string; closedAtIso: string; closedByAuthUserId?: string | null }): Promise<void> {
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Bulk-deletes the tenant's queued comandas in the cloud after a successful
+ * close (one RPC, not one delete per comanda). Best effort: when the cloud is
+ * unreachable the next successful close purges them (the desktop already
+ * cleared its local copy). A non-uuid or missing branch means tenant-wide.
+ */
+async function purgeCloudComandas(tenantId: string, sucursalId: string | null | undefined): Promise<void> {
+  try {
+    await supabase.rpc("cloudix_purge_comandas", {
+      p_tenant_id: tenantId,
+      p_sucursal_id: sucursalId && UUID_RE.test(sucursalId) ? sucursalId : null,
+    });
+  } catch {
+    // non-blocking: closing the cycle must not depend on the cloud purge
+  }
+}
+
+export async function writeCycleClose(input: { tenantId: string; cycleId: string; closedAtIso: string; closedByAuthUserId?: string | null; sucursalId?: string | null }): Promise<void> {
+  await closeCycleRow(input);
+  await purgeCloudComandas(input.tenantId, input.sucursalId);
+}
+
+async function closeCycleRow(input: { tenantId: string; cycleId: string; closedAtIso: string; closedByAuthUserId?: string | null }): Promise<void> {
   if (hasSqliteCycles()) {
     await closeOperatingCycle(input.cycleId, input.closedAtIso);
     return;

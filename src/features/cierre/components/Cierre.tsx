@@ -620,7 +620,7 @@ export function Cierre() {
 
     // Single-engine write (see cycle open): the cycle's whole lifecycle stays on
     // one engine to avoid the double cloud push that caused ghost/duplicate cycles.
-    await writeCycleClose({ tenantId, cycleId: currentCycle.id, closedAtIso: now, closedByAuthUserId: user?.id ?? null });
+    await writeCycleClose({ tenantId, cycleId: currentCycle.id, closedAtIso: now, closedByAuthUserId: user?.id ?? null, sucursalId: activeSucursalId || null });
     triggerImmediateSync();
     setPrintMsg("Ciclo cerrado.");
 

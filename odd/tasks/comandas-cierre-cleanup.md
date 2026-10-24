@@ -30,13 +30,13 @@ On (session norm). Runner: `npx vitest run`, `npm run typecheck`.
 Branch `fix/comandas-cierre-cleanup` from master e650a11. ask-on-risk.
 
 ## Tasks
-- [ ] T1 Pull delete FK fix for comandas (+ test). Route: delegated writer.
-- [ ] T2 Cierre close purges comandas locally + cloud (bulk RPC migration, desktop + web). Route: delegated writer.
-- [ ] T3 3-day purge: datetime-normalized comparison (+ test). Route: same writer.
+- [x] T1 Pull delete FK fix for comandas (+ test). Route: delegated writer. Evidence: 86c8ed6, test/local-sqlite-comandas-delete.test.ts (RED: FOREIGN KEY constraint failed, then GREEN).
+- [x] T2 Cierre close purges comandas locally + cloud (bulk RPC migration, desktop + web). Route: delegated writer. Evidence: local purge in orders.cycle.close, cloudix_purge_comandas migration 20261024120000 (NOT applied), cierresWrites calls the RPC; tests comandas-cleanup, local-sqlite-cierres-write, purge-comandas-migration, cierresWrites.test.
+- [x] T3 3-day purge: datetime-normalized comparison (+ test). Route: same writer. Evidence: b27c0aa, test/comandas-cleanup.test.ts.
 - [ ] T4 Apply cloud migration (user OK), CI green, merge.
 
 ## Progress
 - 2026-10-24: diagnosis done (mapper + local/cloud data).
 
 ## Next step
-Writer for T1–T3.
+T4: user OK to apply migration 20261024120000_purge_comandas_on_cierre.sql, CI, merge.
