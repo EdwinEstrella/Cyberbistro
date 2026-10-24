@@ -238,6 +238,37 @@ export function pickLocalTenantSettings(row: Record<string, unknown>): Record<st
 }
 
 /**
+ * Write-through for a just-saved cloud `tenants` update: overlays the written
+ * whitelisted keys onto the pulled local snapshot (same shape a pull writes),
+ * leaving every other key untouched. No pulled row (cloud_synced = 1) means
+ * nothing to patch: the next pull creates it. Returns whether a row was patched.
+ */
+export function mergeLocalTenantSettings(
+  db: DatabaseSync,
+  tenantId: string,
+  patch: Record<string, unknown>,
+): boolean {
+  const row = db.prepare("SELECT settings_json FROM tenants WHERE id = ? AND cloud_synced = 1")
+    .get(tenantId) as { settings_json: string | null } | undefined;
+  if (!row) return false;
+  let current: Record<string, unknown> = {};
+  try {
+    const parsed = row.settings_json ? JSON.parse(row.settings_json) as unknown : null;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) current = parsed as Record<string, unknown>;
+  } catch {
+    current = {};
+  }
+  const next = { ...current, ...pickLocalTenantSettings(patch) };
+  // Stamp the snapshot with the written row's updated_at so a pull that fetched
+  // the cloud row BEFORE this save (pulls buffer every table and apply at the
+  // end) cannot overwrite the fresh value with its older snapshot.
+  const stamp = typeof patch.updated_at === "string" ? patch.updated_at : null;
+  db.prepare("UPDATE tenants SET settings_json = ?, cloud_updated_at = COALESCE(?, cloud_updated_at) WHERE id = ? AND cloud_synced = 1")
+    .run(JSON.stringify(next), stamp, tenantId);
+  return true;
+}
+
+/**
  * Applies the current tenant's cloud row into the local `tenants` row (seeded
  * as the FK root at schema init). Rows of any other tenant are ignored. The
  * settings are a full snapshot of the whitelisted columns.
@@ -251,6 +282,12 @@ export function applyCloudTenantRows(
   if (!row) return;
   const settings = pickLocalTenantSettings(row);
   db.prepare("INSERT OR IGNORE INTO tenants (id) VALUES (?)").run(tenantId);
+  const local = db.prepare("SELECT cloud_updated_at FROM tenants WHERE id = ? AND cloud_synced = 1")
+    .get(tenantId) as { cloud_updated_at: string | null } | undefined;
+  const localStamp = local?.cloud_updated_at ? Date.parse(local.cloud_updated_at) : NaN;
+  const incomingStamp = typeof row.updated_at === "string" ? Date.parse(row.updated_at) : NaN;
+  // A snapshot older than what a write-through already stored is stale: keep local.
+  if (Number.isFinite(localStamp) && Number.isFinite(incomingStamp) && incomingStamp < localStamp) return;
   db.prepare("UPDATE tenants SET settings_json = ?, cloud_synced = 1, cloud_updated_at = ? WHERE id = ?")
     .run(JSON.stringify(settings), typeof row.updated_at === "string" ? row.updated_at : null, tenantId);
 }

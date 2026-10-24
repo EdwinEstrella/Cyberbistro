@@ -26,6 +26,7 @@ export const TENANT_STORE_ACTIVATE_CHANNEL = "tenant-store:activate";
 export const DESKTOP_REPOSITORY_EXECUTE_CHANNEL = "desktop-repository:execute";
 export const CATALOG_REPOSITORY_EXECUTE_CHANNEL = "catalog-repository:execute";
 export const CATALOG_LIST_CHANNEL = "catalog:list";
+export const TENANT_SETTINGS_MERGE_CHANNEL = "tenant-settings:merge";
 export const ORDERS_REPOSITORY_EXECUTE_CHANNEL = "orders-repository:execute";
 export const CIERRES_LIST_CHANNEL = "cierres:list";
 export const MESAS_LIST_CHANNEL = "mesas:list";
@@ -600,6 +601,7 @@ export function registerCatalogRepositoryIpc(input: {
   isTrustedSender: (event: { senderId: number }) => boolean;
   getRepository: () => { execute(command: CatalogCommand): CatalogRepositoryResult };
   listCatalog?: () => { platos: Array<Record<string, unknown>>; menuCategories: Array<Record<string, unknown>>; sucursales?: Array<Record<string, unknown>>; tenant?: Record<string, unknown> | null };
+  mergeTenantSettings?: (tenantId: string, patch: Record<string, unknown>) => boolean;
 }): void {
   input.ipcMain.removeHandler(CATALOG_REPOSITORY_EXECUTE_CHANNEL);
   input.ipcMain.handle(CATALOG_REPOSITORY_EXECUTE_CHANNEL, async (event, payload) => {
@@ -613,6 +615,20 @@ export function registerCatalogRepositoryIpc(input: {
   input.ipcMain.handle(CATALOG_LIST_CHANNEL, async (event) => {
     if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
     return { ok: true, data: input.listCatalog?.() ?? { platos: [], menuCategories: [], sucursales: [], tenant: null } };
+  });
+
+  input.ipcMain.removeHandler(TENANT_SETTINGS_MERGE_CHANNEL);
+  input.ipcMain.handle(TENANT_SETTINGS_MERGE_CHANNEL, async (event, payload) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    const request = payload as { tenantId?: unknown; patch?: unknown } | null;
+    const patch = request?.patch;
+    if (
+      typeof request?.tenantId !== "string" || !request.tenantId
+      || !patch || typeof patch !== "object" || Array.isArray(patch)
+    ) {
+      throw new Error("Invalid tenant settings merge");
+    }
+    return { ok: true, data: { merged: input.mergeTenantSettings?.(request.tenantId, patch as Record<string, unknown>) ?? false } };
   });
 }
 

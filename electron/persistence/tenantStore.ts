@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { initializeTenantSchema } from "./schema";
-import { applyCloudExpenseCategoryRows, applyCloudExpenseRows, applyCloudCustomerRows } from "./cloudApply";
+import { applyCloudExpenseCategoryRows, applyCloudExpenseRows, applyCloudCustomerRows, mergeLocalTenantSettings } from "./cloudApply";
 import { TenantSQLiteImporter, type LegacyImportChunk, type LegacyImportManifest } from "./importer";
 import { PayrollSyncOrchestrator } from "./payrollSyncOrchestrator";
 import { executeNcfLocalSequenceRequest, type NcfLocalSequenceRequest, type NcfLocalSequenceResponse } from "./ncfLocalSequence";
@@ -2123,6 +2123,12 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     } catch {
       return null;
     }
+  }
+
+  /** Write-through of a saved cloud `tenants` update into the local settings snapshot; false when not applicable. */
+  mergeLocalTenantSettings(tenantId: string, patch: Record<string, unknown>): boolean {
+    if (tenantId !== this.tenantId) return false;
+    return mergeLocalTenantSettings(this.database, tenantId, patch);
   }
 
   listCatalog(): { platos: Array<Record<string, unknown>>; menuCategories: Array<Record<string, unknown>>; sucursales: Array<Record<string, unknown>>; tenant: Record<string, unknown> | null } {
