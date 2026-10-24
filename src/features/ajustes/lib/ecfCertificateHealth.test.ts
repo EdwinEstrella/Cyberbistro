@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  certificateMetadataFor,
   describeCertificateErrorCode,
   evaluateCertificateHealth,
   extractSubjectRncCandidates,
@@ -200,5 +201,28 @@ describe("natural-person signer certificates", () => {
     const issuer = "C=DO, O=VIAFIRMA, undefined=VATDO-130222509, CN=VIAFIRMA QUALIFIED CERTIFICATES";
     const h = evaluateCertificateHealth(input({ ...meta(personSubject), issuer }, { tenantRnc: salpimentaoRnc }));
     expect(h.reason).toBe("OK");
+  });
+});
+
+describe("certificateMetadataFor", () => {
+  it("is loading while nothing has been fetched yet", () => {
+    expect(certificateMetadataFor(null, "production")).toEqual({ loading: true, metadata: null });
+  });
+
+  it("is loading while the loaded row belongs to the previously selected environment", () => {
+    const loaded = { environment: "test", metadata: { ...base, environment: "test" } };
+    expect(certificateMetadataFor(loaded, "production")).toEqual({ loading: true, metadata: null });
+  });
+
+  it("returns the row once it was fetched for the selected environment", () => {
+    const loaded = { environment: "production", metadata: { ...base, environment: "production" } };
+    expect(certificateMetadataFor(loaded, "production")).toEqual({ loading: false, metadata: loaded.metadata });
+  });
+
+  it("returns no row (not loading) when the selected environment has no certificate", () => {
+    expect(certificateMetadataFor({ environment: "production", metadata: null }, "production")).toEqual({
+      loading: false,
+      metadata: null,
+    });
   });
 });

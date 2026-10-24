@@ -12,11 +12,13 @@ import {
   validateCertificateFile,
 } from "../lib/ecfCertificateUpload";
 import {
+  certificateMetadataFor,
   describeCertificateErrorCode,
   evaluateCertificateHealth,
   formatCertificateDate,
   formatCertificateHealth,
   type CertificateHealth,
+  type LoadedCertificateMetadata,
 } from "../lib/ecfCertificateHealth";
 
 class CertificateUploadError extends Error {
@@ -33,17 +35,24 @@ export function CertificateUploader({ environment, onValidated }: { environment:
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [uploadIssue, setUploadIssue] = useState<CertificateHealth | null>(null);
-  const [metadata, setMetadata] = useState<any>(null);
+  const [loaded, setLoaded] = useState<LoadedCertificateMetadata<any> | null>(null);
   const [tenantRnc, setTenantRnc] = useState<string | null>(null);
   const [representativeId, setRepresentativeId] = useState<string | null>(null);
+  const latestRequest = useRef(0);
 
+  const { loading, metadata } = certificateMetadataFor(loaded, environment);
   const health = evaluateCertificateHealth({ metadata, tenantRnc, representativeId, selectedEnvironment: environment });
 
   useEffect(() => {
+    // Messages from the previous environment do not apply to the new selection.
+    setMessage(null);
+    setUploadIssue(null);
     if (tenantId) loadMetadata();
   }, [tenantId, environment]);
 
   async function loadMetadata() {
+    const requestId = ++latestRequest.current;
+    const requestedEnvironment = environment;
     const { data: tenant } = await supabase.from("tenants").select("rnc").eq("id", tenantId).maybeSingle();
     setTenantRnc(tenant?.rnc ?? null);
     // Separate, tolerant read: the column may not exist yet; "not set" is the safe default.
@@ -57,11 +66,13 @@ export function CertificateUploader({ environment, onValidated }: { environment:
       .from("ecf_certificate_metadata")
       .select("id, environment, subject, issuer, valid_from, valid_until, is_ready, last_validation_error, created_at")
       .eq("tenant_id", tenantId)
-      .eq("environment", environment)
+      .eq("environment", requestedEnvironment)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    setMetadata(data);
+    // A slower response for an earlier selection must not overwrite the current one.
+    if (requestId !== latestRequest.current) return;
+    setLoaded({ environment: requestedEnvironment, metadata: data });
   }
 
   async function handleUpload() {
@@ -113,7 +124,11 @@ export function CertificateUploader({ environment, onValidated }: { environment:
     <div className="bg-background rounded-[16px] border border-black/5 dark:border-white/5 p-5 mt-4">
       <h4 className="text-sm font-bold text-foreground mb-4">Certificado Digital (.p12)</h4>
       
-      {(() => {
+      {!uploadIssue && loading ? (
+        <div role="status" className="border border-border rounded-xl p-4 mb-4 bg-muted/40">
+          <p className="text-sm text-muted-foreground">Verificando certificado…</p>
+        </div>
+      ) : (() => {
         const shown = uploadIssue ?? health;
         const tone = shown.status === "error"
           ? { box: "bg-red-500/10 border-red-500/20", text: "text-red-600 dark:text-red-400", icon: "❌" }

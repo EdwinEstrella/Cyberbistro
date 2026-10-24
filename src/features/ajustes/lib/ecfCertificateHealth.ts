@@ -241,6 +241,25 @@ export function describeCertificateErrorCode(
   }
 }
 
+/** Metadata row as fetched, tagged with the environment it was fetched for. */
+export interface LoadedCertificateMetadata<T = CertificateHealthMetadata> {
+  environment: string;
+  metadata: T | null;
+}
+
+/**
+ * Metadata to evaluate for the selected environment. A row fetched for another environment
+ * (the previous selection, still in state while the new fetch runs) means "loading", never a
+ * mismatch: otherwise switching environments flashes ENVIRONMENT_MISMATCH for a moment.
+ */
+export function certificateMetadataFor<T>(
+  loaded: LoadedCertificateMetadata<T> | null,
+  selectedEnvironment: string,
+): { loading: boolean; metadata: T | null } {
+  if (!loaded || loaded.environment !== selectedEnvironment) return { loading: true, metadata: null };
+  return { loading: false, metadata: loaded.metadata };
+}
+
 /** Overall health of the stored certificate for the selected environment. */
 export function evaluateCertificateHealth(input: CertificateHealthInput): CertificateHealth {
   const { metadata, tenantRnc, selectedEnvironment, representativeId } = input;
