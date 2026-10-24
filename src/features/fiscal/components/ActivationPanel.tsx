@@ -299,7 +299,13 @@ export function ActivationPanel() {
     setMessage("");
     try {
       const deviceId = await getDeviceId();
-      const payload = buildRangesSavePayload(enabledTypes, ecfSequences, savedNextRaw, savedBoundsRaw);
+      const payload = buildRangesSavePayload(
+        enabledTypes,
+        ecfSequences,
+        savedNextRaw,
+        savedBoundsRaw,
+        NCF_E_TIPO_OPCIONES.map((type) => type.codigo)
+      );
       // Two writes on purpose: the next-number map is what the POS and reserve RPC read; the range
       // bounds are separate so a deploy lag on that column can never block the counters.
       await enqueueLocalWrite({
@@ -320,8 +326,14 @@ export function ActivationPanel() {
       });
       setSavedNextRaw(payload.ncf_secuencias_por_tipo);
       setSavedBoundsRaw(payload.ecf_secuencias_rangos);
+      if (payload.keptTypes.length > 0) setEnabledTypes((current) => [...current, ...payload.keptTypes]);
       setStep(4);
       const warnings = enabledTypes.flatMap((type) => validateEcfRange(type, ecfSequences[type]).warnings);
+      if (payload.keptTypes.length > 0) {
+        warnings.push(
+          `No se quitaron ${payload.keptTypes.join(", ")}: ya se emitieron comprobantes de esos tipos y quitarlos permitiría repetir números.`
+        );
+      }
       setMessage(["Secuencias e-CF guardadas.", ...warnings].join(" "));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "No se pudieron guardar las secuencias e-CF.");

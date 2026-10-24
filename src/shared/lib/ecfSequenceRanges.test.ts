@@ -86,7 +86,41 @@ describe("buildRangesSavePayload", () => {
     expect(payload).toEqual({
       ncf_secuencias_por_tipo: { E32: 50, E31: 105 },
       ecf_secuencias_rangos: { E32: { start: 40, end: 90 }, E31: { start: 100, end: 200 } },
+      keptTypes: [],
     });
+  });
+
+  it("removes e-CF types the user turned off when nothing was issued from them", () => {
+    const payload = buildRangesSavePayload(
+      ["E31"],
+      { E31: { start: 1, end: 300, used: 0 } },
+      { E31: 1, E33: 1, B02: 77 },
+      { E31: { start: 1, end: 300 }, E33: { start: 1, end: 1000 } },
+      ["E31", "E33", "E34"]
+    );
+    expect(payload).toEqual({
+      ncf_secuencias_por_tipo: { E31: 1, B02: 77 },
+      ecf_secuencias_rangos: { E31: { start: 1, end: 300 } },
+      keptTypes: [],
+    });
+  });
+
+  it("keeps a turned-off e-CF type that already issued numbers so they are never reused", () => {
+    const payload = buildRangesSavePayload(
+      ["E31"],
+      { E31: { start: 1, end: 300, used: 0 } },
+      { E31: 1, E34: 4 },
+      { E31: { start: 1, end: 300 }, E34: { start: 1, end: 10 } },
+      ["E31", "E34"]
+    );
+    expect(payload.ecf_secuencias_rangos.E34).toEqual({ start: 1, end: 10 });
+    expect(payload.ncf_secuencias_por_tipo.E34).toBe(4);
+    expect(payload.keptTypes).toEqual(["E34"]);
+  });
+
+  it("removes a turned-off legacy counter-only e-CF type that never issued", () => {
+    const payload = buildRangesSavePayload(["E31"], { E31: { start: 1, end: 9, used: 0 } }, { E32: 1 }, {}, ["E31", "E32"]);
+    expect(payload.ncf_secuencias_por_tipo).toEqual({ E31: 1 });
   });
 
   it("keeps the next-number map numeric so the reserve RPC can cast it", () => {
