@@ -12,6 +12,10 @@ describe("e-CF credit notes migration", () => {
     }
   });
 
+  it("builds a 13-character DGII e-NCF (E34 + 10-digit sequence)", () => {
+    expect(sql).toContain("v_encf := 'E34' || lpad(v_seq::text, 10, '0');");
+  });
+
   it("allows only one credit note per original invoice", () => {
     expect(sql).toMatch(/CREATE UNIQUE INDEX IF NOT EXISTS \w+\s+ON public\.facturas \(credit_note_of\)\s+WHERE credit_note_of IS NOT NULL/);
   });

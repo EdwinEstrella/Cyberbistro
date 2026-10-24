@@ -108,7 +108,8 @@ BEGIN
 
   -- Reserve the E34 (membership, fiscal-active and authorized range are enforced there).
   SELECT r.seq_reserved INTO v_seq FROM public.cloudix_reserve_ecf(p_tenant_id, 'E34') r;
-  v_encf := 'E34' || lpad(v_seq::text, 8, '0');
+  -- DGII e-NCF: E + 2-digit type + 10-digit sequence (13 characters).
+  v_encf := 'E34' || lpad(v_seq::text, 10, '0');
 
   INSERT INTO public.facturas (
     id, tenant_id, sucursal_id, customer_id, mesa_numero, comanda_ids, cliente_nombre, cliente_rnc,
