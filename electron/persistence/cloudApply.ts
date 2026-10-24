@@ -957,15 +957,32 @@ export function applyCloudComandaRows(
     const itemsStr = c.items == null ? null : (typeof c.items === "string" ? c.items : JSON.stringify(c.items));
     const estado = c.estado ? String(c.estado) : "pendiente";
     const state = stateMap[estado] || "pending";
-    const mesaNum = c.mesa_numero != null && Number(c.mesa_numero) > 0 ? Number(c.mesa_numero) : 1;
-    const mesaId = c.mesa_id ? String(c.mesa_id) : String(mesaNum);
-    db.prepare("INSERT OR IGNORE INTO mesas_estado (id, tenant_id, sucursal_id, table_number, state) VALUES (?, ?, ?, ?, 'free')").run(mesaId, tenantId, branchId, mesaNum);
+    const mesaNum = c.mesa_numero != null && Number(c.mesa_numero) > 0 ? Number(c.mesa_numero) : null;
+    let resolvedMesaId: string | null = null;
+    if (c.mesa_id) {
+      const byId = db.prepare("SELECT id FROM mesas_estado WHERE id = ?").get(String(c.mesa_id)) as { id: string } | undefined;
+      if (byId) resolvedMesaId = byId.id;
+    }
+    if (!resolvedMesaId && mesaNum != null) {
+      const byNum = db.prepare("SELECT id FROM mesas_estado WHERE tenant_id = ? AND sucursal_id = ? AND table_number = ?")
+        .get(tenantId, branchId, mesaNum) as { id: string } | undefined;
+      if (byNum) {
+        resolvedMesaId = byNum.id;
+      } else {
+        const candidateId = c.mesa_id ? String(c.mesa_id) : `mesa_${branchId}_${mesaNum}`;
+        db.prepare("INSERT OR IGNORE INTO mesas_estado (id, tenant_id, sucursal_id, table_number, state) VALUES (?, ?, ?, ?, 'free')")
+          .run(candidateId, tenantId, branchId, mesaNum);
+        const check = db.prepare("SELECT id FROM mesas_estado WHERE tenant_id = ? AND sucursal_id = ? AND table_number = ?")
+          .get(tenantId, branchId, mesaNum) as { id: string } | undefined;
+        resolvedMesaId = check?.id ?? null;
+      }
+    }
     stmt.run(
       String(c.id),
       tenantId,
       branchId,
       c.numero_comanda != null ? Number(c.numero_comanda) : null,
-      mesaId,
+      resolvedMesaId,
       mesaNum,
       state,
       estado,
@@ -1021,7 +1038,7 @@ export function applyCloudConsumoRows(
     const branchId = typeof c.sucursal_id === "string" && c.sucursal_id.trim() ? c.sucursal_id.trim() : defaultBranchId;
     ensureBranch.run(branchId, tenantId, "Principal");
     if (c.comanda_id) {
-      db.prepare("INSERT OR IGNORE INTO comandas (id, tenant_id, sucursal_id, mesa_id, mesa_numero, state) VALUES (?, ?, ?, '1', 1, 'pending')").run(String(c.comanda_id), tenantId, branchId);
+      db.prepare("INSERT OR IGNORE INTO comandas (id, tenant_id, sucursal_id, mesa_id, mesa_numero, state) VALUES (?, ?, ?, NULL, NULL, 'pending')").run(String(c.comanda_id), tenantId, branchId);
     }
     const cant = Number(c.cantidad ?? c.quantity);
     const cantidad = Number.isFinite(cant) && cant > 0 ? Math.round(cant) : 1;

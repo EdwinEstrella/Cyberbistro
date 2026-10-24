@@ -1604,13 +1604,31 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     const itemsStr = comanda.items == null ? null : (typeof comanda.items === "string" ? comanda.items : JSON.stringify(comanda.items));
     const estado = comanda.estado ? String(comanda.estado) : "pendiente";
     const state = estado === "entregado" ? "delivered" : estado === "listo" ? "ready" : estado === "en_preparacion" ? "preparing" : "pending";
-    const mesaNum = comanda.mesa_numero != null && Number(comanda.mesa_numero) > 0 ? Number(comanda.mesa_numero) : 1;
-    const mesaId = comanda.mesa_id ? String(comanda.mesa_id) : String(mesaNum);
+    const mesaNum = comanda.mesa_numero != null && Number(comanda.mesa_numero) > 0 ? Number(comanda.mesa_numero) : null;
 
     this.beginImmediateTransaction();
     try {
       this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(branchId, this.tenantId, "Principal");
-      this.database.prepare("INSERT OR IGNORE INTO mesas_estado (id, tenant_id, sucursal_id, table_number, state) VALUES (?, ?, ?, ?, 'free')").run(mesaId, this.tenantId, branchId, mesaNum);
+
+      let resolvedMesaId: string | null = null;
+      if (comanda.mesa_id) {
+        const byId = this.database.prepare("SELECT id FROM mesas_estado WHERE id = ?").get(String(comanda.mesa_id)) as { id: string } | undefined;
+        if (byId) resolvedMesaId = byId.id;
+      }
+      if (!resolvedMesaId && mesaNum != null) {
+        const byNum = this.database.prepare("SELECT id FROM mesas_estado WHERE tenant_id = ? AND sucursal_id = ? AND table_number = ?")
+          .get(this.tenantId, branchId, mesaNum) as { id: string } | undefined;
+        if (byNum) {
+          resolvedMesaId = byNum.id;
+        } else {
+          const candidateId = comanda.mesa_id ? String(comanda.mesa_id) : `mesa_${branchId}_${mesaNum}`;
+          this.database.prepare("INSERT OR IGNORE INTO mesas_estado (id, tenant_id, sucursal_id, table_number, state) VALUES (?, ?, ?, ?, 'free')")
+            .run(candidateId, this.tenantId, branchId, mesaNum);
+          const check = this.database.prepare("SELECT id FROM mesas_estado WHERE tenant_id = ? AND sucursal_id = ? AND table_number = ?")
+            .get(this.tenantId, branchId, mesaNum) as { id: string } | undefined;
+          resolvedMesaId = check?.id ?? null;
+        }
+      }
       this.database.prepare(`
         INSERT INTO comandas (id, tenant_id, sucursal_id, numero_comanda, mesa_id, mesa_numero, state, estado, items, notas, creado_por, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1630,7 +1648,7 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
         this.tenantId,
         branchId,
         comanda.numero_comanda != null ? Number(comanda.numero_comanda) : null,
-        mesaId,
+        resolvedMesaId,
         mesaNum,
         state,
         estado,
@@ -1743,7 +1761,7 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     try {
       this.database.prepare("INSERT OR IGNORE INTO sucursales (id, tenant_id, name) VALUES (?, ?, ?)").run(branchId, this.tenantId, "Principal");
       if (comandaId) {
-        this.database.prepare("INSERT OR IGNORE INTO comandas (id, tenant_id, sucursal_id, mesa_id, mesa_numero, state) VALUES (?, ?, ?, '1', 1, 'pending')").run(comandaId, this.tenantId, branchId);
+        this.database.prepare("INSERT OR IGNORE INTO comandas (id, tenant_id, sucursal_id, mesa_id, mesa_numero, state) VALUES (?, ?, ?, NULL, NULL, 'pending')").run(comandaId, this.tenantId, branchId);
       }
       this.database.prepare(`
         INSERT INTO consumos (id, tenant_id, sucursal_id, comanda_id, plato_id, name, nombre, quantity, cantidad, unit_price, precio_unitario, subtotal, tipo, state, estado, factura_id, mesa_numero, created_by_auth_user_id, created_at, updated_at)

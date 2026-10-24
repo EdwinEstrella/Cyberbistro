@@ -54,6 +54,66 @@ describe("mesas_estado and comandas cloud→local pull", () => {
     });
   });
 
+  it("applies cloud comandas when mesas_estado already has the table under a cloud UUID and comanda has null mesa_id", () => {
+    applyCloudMesasEstadoRows(db, TENANT, [
+      { id: "uuid-mesa-1", table_number: 1, estado: "libre", tenant_id: TENANT, sucursal_id: "branch-1" },
+    ]);
+
+    applyCloudComandaRows(db, TENANT, [
+      {
+        id: "comanda-null-mesa-id",
+        tenant_id: TENANT,
+        sucursal_id: "branch-1",
+        numero_comanda: 102,
+        mesa_id: null,
+        mesa_numero: 1,
+        estado: "en_preparacion",
+      },
+    ]);
+
+    const comandas = db.prepare("SELECT * FROM comandas WHERE id = 'comanda-null-mesa-id'").all() as Array<Record<string, unknown>>;
+    expect(comandas).toHaveLength(1);
+    expect(comandas[0].mesa_id).toBe("uuid-mesa-1");
+  });
+
+  it("applies takeaway cloud comandas without mesa (null mesa_id and null mesa_numero)", () => {
+    applyCloudComandaRows(db, TENANT, [
+      {
+        id: "comanda-takeaway-1",
+        tenant_id: TENANT,
+        sucursal_id: "branch-1",
+        numero_comanda: 103,
+        mesa_id: null,
+        mesa_numero: null,
+        estado: "pendiente",
+      },
+    ]);
+
+    const comandas = db.prepare("SELECT * FROM comandas WHERE id = 'comanda-takeaway-1'").all() as Array<Record<string, unknown>>;
+    expect(comandas).toHaveLength(1);
+    expect(comandas[0].mesa_id).toBeNull();
+    expect(comandas[0].mesa_numero).toBeNull();
+  });
+
+  it("applies cloud consumos referencing new comanda without violating mesas_estado FK", () => {
+    applyCloudConsumoRows(db, TENANT, [
+      {
+        id: "consumo-with-comanda",
+        tenant_id: TENANT,
+        sucursal_id: "branch-1",
+        comanda_id: "comanda-unseen",
+        nombre: "Jugo de Naranja",
+        cantidad: 1,
+        precio_unitario: 120,
+        subtotal: 120,
+      },
+    ]);
+
+    const comanda = db.prepare("SELECT * FROM comandas WHERE id = 'comanda-unseen'").get() as Record<string, unknown>;
+    expect(comanda).toBeDefined();
+    expect(comanda.mesa_id).toBeNull();
+  });
+
   it("applies cloud consumos with null comanda_id and null plato_id without constraint errors", () => {
     applyCloudConsumoRows(db, TENANT, [
       {
