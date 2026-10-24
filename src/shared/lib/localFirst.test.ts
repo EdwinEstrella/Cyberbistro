@@ -292,6 +292,7 @@ describe("localFirst", () => {
     };
 
     expect(buildNcfWithSequence("B0100000007", 8)).toBe("B0100000008");
+    expect(buildNcfWithSequence("E310000000007", 123456789)).toBe("E310123456789");
     expect(buildFacturaPayloadWithNcfSequence(payload, 8)).toEqual({
       ...payload,
       ncf: "B0100000008",

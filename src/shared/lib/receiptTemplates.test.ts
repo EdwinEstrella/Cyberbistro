@@ -87,7 +87,7 @@ describe("receiptTemplates fiscal regression", () => {
     const html = await buildFacturaReceiptHtml(
       tenant,
       baseFactura({
-        ncf: "E3100000045",
+        ncf: "E310000000045",
         ncf_tipo: "E31 - Factura de credito fiscal electronica",
         ecf_status: "accepted",
         ecf_track_id: "TRK-12345",
@@ -108,7 +108,7 @@ describe("receiptTemplates fiscal regression", () => {
     expect(qrCall?.[0]).toContain("https://ecf.dgii.gov.do/certecf/consultatimbre");
     expect(qrCall?.[0]).toContain("rncemisor=130862346");
     expect(qrCall?.[0]).toContain("RncComprador=130862346");
-    expect(qrCall?.[0]).toContain("encf=E3100000045");
+    expect(qrCall?.[0]).toContain("encf=E310000000045");
     expect(qrCall?.[0]).toContain("codigoseguridad=ABC123");
   });
 
@@ -116,7 +116,7 @@ describe("receiptTemplates fiscal regression", () => {
     const html = await buildFacturaReceiptHtml(
       { ...tenant, menu_url: null },
       baseFactura({
-        ncf: "E3200000046",
+        ncf: "E320000000046",
         ncf_tipo: "E32 - Factura de consumo electronica",
         ecf_status: "pending_offline",
         cliente_rnc: "",
@@ -135,7 +135,7 @@ describe("receiptTemplates fiscal regression", () => {
     const html = await buildFacturaReceiptHtml(
       { ...tenant, menu_url: null },
       baseFactura({
-        ncf: "E3100000047",
+        ncf: "E310000000047",
         ncf_tipo: "E31 - Factura de credito fiscal electronica",
         ecf_status: "rejected",
         ecf_track_id: "TRK-REJECTED",

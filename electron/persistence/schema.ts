@@ -608,6 +608,12 @@ function ensureFacturasSchemaEvolution(database: DatabaseSync): void {
     ["created_at", "TEXT"],
     ["updated_at", "TEXT"],
     ["pagada_at", "TEXT"],
+    // e-CF credit note (E34) reference, filled by the cloud issue RPC and pulled down.
+    ["credit_note_of", "TEXT"],
+    ["ref_ncf", "TEXT"],
+    ["ref_fecha_emision", "TEXT"],
+    ["ref_codigo_modificacion", "INTEGER"],
+    ["ref_razon_modificacion", "TEXT"],
   ];
   for (const [name, type] of additions) {
     if (!columns.includes(name)) {

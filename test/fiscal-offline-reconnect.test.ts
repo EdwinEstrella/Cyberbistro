@@ -88,7 +88,7 @@ describe("Offline e-CF Sales and Reconnect Sync Integration", () => {
     // Mock sequence resolution for the test
     const { resolveNcfForNewInvoiceLocalFirst } = await import("../src/shared/lib/localFirst");
     vi.mocked(resolveNcfForNewInvoiceLocalFirst).mockResolvedValueOnce({
-      ncf: "E3100000101",
+      ncf: "E310000000101",
       ncf_tipo: "E31 - Factura de credito fiscal electronica",
       tipoCodigo: "E31",
       usedSequence: 101,
@@ -108,7 +108,7 @@ describe("Offline e-CF Sales and Reconnect Sync Integration", () => {
     });
 
     expect(engineResult).toEqual({
-      ncf: "E3100000101",
+      ncf: "E310000000101",
       ncf_tipo: "E31 - Factura de credito fiscal electronica",
       tipoCodigo: "E31",
       usedSequence: 101,
@@ -195,7 +195,7 @@ describe("Offline e-CF Sales and Reconnect Sync Integration", () => {
           created_at: "2026-06-10T12:00:00.000Z",
           cliente_rnc: "123456789",
           cliente_nombre: "Cliente de Prueba",
-          ncf: "E3100000001",
+          ncf: "E310000000001",
         },
         tenant: {
           rnc: "130862346",

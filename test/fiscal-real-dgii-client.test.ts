@@ -62,7 +62,7 @@ describe("RealDgiiClient", () => {
     mockSendSummary.mockResolvedValue({
       codigo: 1,
       estado: "Aceptado",
-      encf: "E3200000001",
+      encf: "E320000000001",
       secuenciaUtilizada: true,
     });
 
@@ -79,7 +79,7 @@ describe("RealDgiiClient", () => {
     expect(mockSendElectronicDocument).not.toHaveBeenCalled();
     expect(result).toEqual({
       kind: "submitted",
-      trackId: "E3200000001",
+      trackId: "E320000000001",
       statusCode: "1",
       message: "Aceptado",
       rfceThresholdUsed: 250000,

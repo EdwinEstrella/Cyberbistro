@@ -150,11 +150,17 @@ export function esCodigoNcfValido(tipoCodigo: string): boolean {
   return /^[BE][0-9]{2}$/i.test(tipoCodigo.trim());
 }
 
+/** Digits after the type code: B-series NCF uses 8 (11 chars), DGII e-NCF uses 10 (13 chars). */
+export function ncfSequenceDigits(tipoCodigo: string): number {
+  return normalizeCode(tipoCodigo).startsWith("E") ? 10 : 8;
+}
+
 export function construirCadenaNcf(tipoCodigo: string, secuencia: number): string | null {
   const code = normalizeCode(tipoCodigo);
   if (!esCodigoNcfValido(code)) return null;
-  if (!Number.isInteger(secuencia) || secuencia < 1 || secuencia > 99999999) return null;
-  return `${code}${String(secuencia).padStart(8, "0")}`;
+  const digits = ncfSequenceDigits(code);
+  if (!Number.isInteger(secuencia) || secuencia < 1 || secuencia >= 10 ** digits) return null;
+  return `${code}${String(secuencia).padStart(digits, "0")}`;
 }
 
 export function normalizeNcfSequenceMap(rawMap: unknown): NcfSequenceMap {

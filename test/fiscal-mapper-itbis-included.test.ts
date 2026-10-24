@@ -7,7 +7,7 @@ const cents = (value: number) => Math.round(value * 100);
 function snapshotWith(factura: Record<string, unknown>, items: unknown[]): FiscalWorkerSnapshot {
   return {
     invoicePayload: {
-      factura: { created_at: "2026-06-10T12:00:00.000Z", cliente_rnc: "123456789", cliente_nombre: "Test", ncf: "E3100000001", ...factura },
+      factura: { created_at: "2026-06-10T12:00:00.000Z", cliente_rnc: "123456789", cliente_nombre: "Test", ncf: "E310000000001", ...factura },
       tenant: {
         rnc: "130862346",
         nombre_negocio: "CYBERBISTRO SRL",

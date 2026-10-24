@@ -523,8 +523,9 @@ export function applyCloudFacturaRows(
       id, tenant_id, sucursal_id, fiscal_mode, total, local_status,
       numero_factura, mesa_numero, cliente_nombre, metodo_pago, estado,
       subtotal, itbis, propina, moneda, items, notas, ncf, ncf_tipo,
-      cliente_rnc, customer_id, created_at, updated_at, pagada_at
-    ) VALUES (?, ?, ?, ?, ?, 'committed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      cliente_rnc, customer_id, created_at, updated_at, pagada_at,
+      credit_note_of, ref_ncf, ref_fecha_emision, ref_codigo_modificacion, ref_razon_modificacion
+    ) VALUES (?, ?, ?, ?, ?, 'committed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       sucursal_id = excluded.sucursal_id,
       fiscal_mode = excluded.fiscal_mode,
@@ -546,7 +547,12 @@ export function applyCloudFacturaRows(
       customer_id = excluded.customer_id,
       created_at = excluded.created_at,
       updated_at = excluded.updated_at,
-      pagada_at = excluded.pagada_at
+      pagada_at = excluded.pagada_at,
+      credit_note_of = excluded.credit_note_of,
+      ref_ncf = excluded.ref_ncf,
+      ref_fecha_emision = excluded.ref_fecha_emision,
+      ref_codigo_modificacion = excluded.ref_codigo_modificacion,
+      ref_razon_modificacion = excluded.ref_razon_modificacion
   `);
   const allowedFiscalModes = new Set(["internal_receipt", "ncf_legacy", "dgii_ecf"]);
   const str = (value: unknown): string | null => {
@@ -597,6 +603,11 @@ export function applyCloudFacturaRows(
       str(f.created_at),
       str(f.updated_at),
       str(f.pagada_at),
+      str(f.credit_note_of),
+      str(f.ref_ncf),
+      str(f.ref_fecha_emision),
+      int(f.ref_codigo_modificacion),
+      str(f.ref_razon_modificacion),
     );
   }
 }

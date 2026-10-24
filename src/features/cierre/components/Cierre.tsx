@@ -12,6 +12,7 @@ import { readLocalInvoices } from "../../billing/lib/invoicesLocal";
 import { readLocalCierres } from "../lib/cierresLocal";
 import { readLocalConsumos } from "../../../shared/lib/ordersLocal";
 import { writeCycleOpen, writeCycleClose, writeCycleDiscard, writeCyclePrinted } from "../lib/cierresWrites";
+import { summarizeCycleSales } from "../lib/cycleSales";
 import { isDesktopRuntime, isCloudAvailableForDesktop } from "../../../shared/lib/cloudAvailability";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { calculateExpectedCashDrawer, sumCashExpenses } from "../../../shared/lib/cycleCash";
@@ -19,7 +20,7 @@ import { calculateInvoiceTotals } from "../../../shared/lib/billingTotals";
 import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
 import { DatePicker } from "../../../shared/ui/date-picker";
 
-type FacturaEstado = "pagada" | "pendiente" | "cancelada";
+type FacturaEstado = "pagada" | "pendiente" | "cancelada" | "nota_credito";
 
 interface FacturaRow {
   id: string;
@@ -158,31 +159,10 @@ export function Cierre() {
   const hasOpenCycle = currentCycle != null && currentCycle.closed_at == null;
 
   const resumen = useMemo(() => {
-    const totalFacturas = facturas.reduce((s, f) => s + Number(f.total), 0);
-    const subtotal = facturas.reduce((s, f) => s + Number(f.subtotal), 0);
-    const itbis = facturas.reduce((s, f) => s + Number(f.itbis), 0);
-    const propina = facturas.reduce((s, f) => s + Number(f.propina ?? 0), 0);
-    const totalCxc = cxcPagos.reduce((s, p) => s + Number(p.monto), 0);
-    const totalPagado = totalFacturas + totalCxc;
-
-    const porMetodoMap = new Map<string, { cantidad: number; total: number }>();
-    for (const f of facturas) {
-      const k = f.metodo_pago || "otro";
-      const cur = porMetodoMap.get(k) ?? { cantidad: 0, total: 0 };
-      cur.cantidad += 1; cur.total += Number(f.total); porMetodoMap.set(k, cur);
-    }
-    for (const p of cxcPagos) {
-      const k = p.metodo_pago || "otro";
-      const cur = porMetodoMap.get(k) ?? { cantidad: 0, total: 0 };
-      cur.cantidad += 1; cur.total += Number(p.monto); porMetodoMap.set(k, cur);
-    }
+    const summary = summarizeCycleSales(facturas, cxcPagos);
     return {
-      facturas,
-      totalPagado,
-      subtotalPagado: subtotal,
-      itbisPagado: itbis,
-      propinaPagado: propina,
-      porMetodo: [...porMetodoMap.entries()].map(([etiqueta, v]) => ({ etiqueta: etiquetaMetodo(etiqueta), ...v })).sort((a, b) => b.total - a.total),
+      ...summary,
+      porMetodo: summary.porMetodo.map(({ metodo, ...v }) => ({ etiqueta: etiquetaMetodo(metodo), ...v })),
     };
   }, [facturas, cxcPagos]);
 

@@ -53,7 +53,7 @@ describe("validateInvoiceHeaderEdit", () => {
   });
 
   it("requires the RNC for E31 and when clearing the RNC of a B01 invoice", () => {
-    const e31 = validateInvoiceHeaderEdit({ ...original, fiscal_mode: "ncf_legacy" }, { ...same, ncf: "E3100000001" });
+    const e31 = validateInvoiceHeaderEdit({ ...original, fiscal_mode: "ncf_legacy" }, { ...same, ncf: "E310000000001" });
     expect(e31.ok).toBe(false);
 
     const b01 = { ...original, ncf: "B0100000005", ncf_tipo: "B01", cliente_rnc: "131234567" };
@@ -72,13 +72,13 @@ describe("validateInvoiceHeaderEdit", () => {
   });
 
   it("locks the NCF on e-CF invoices but keeps other fields editable", () => {
-    const ecf = { ...original, fiscal_mode: "dgii_ecf", ncf: "E3200000001", ncf_tipo: "E32" };
+    const ecf = { ...original, fiscal_mode: "dgii_ecf", ncf: "E320000000001", ncf_tipo: "E32" };
     expect(isNcfLocked(ecf)).toBe(true);
-    const blocked = validateInvoiceHeaderEdit(ecf, { ...same, ncf: "E3200000002" });
+    const blocked = validateInvoiceHeaderEdit(ecf, { ...same, ncf: "E320000000002" });
     expect(blocked.ok).toBe(false);
     if (!blocked.ok) expect(blocked.errors.ncf).toMatch(/e-CF/);
 
-    const ok = validateInvoiceHeaderEdit(ecf, { ncf: "E3200000001", cliente_nombre: "Ana", cliente_rnc: "", notas: "" });
+    const ok = validateInvoiceHeaderEdit(ecf, { ncf: "E320000000001", cliente_nombre: "Ana", cliente_rnc: "", notas: "" });
     expect(ok).toEqual({ ok: true, changed: true, changes: { cliente_nombre: "Ana" } });
   });
 

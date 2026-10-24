@@ -315,7 +315,7 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     activePayrollEmployees: number;
   } {
     const salesRow = this.database.prepare(
-      "SELECT COALESCE(SUM(total), 0) AS total FROM facturas WHERE tenant_id = ?" + (sucursalId ? " AND sucursal_id = ?" : "")
+      "SELECT COALESCE(SUM(total), 0) AS total FROM facturas WHERE tenant_id = ? AND COALESCE(estado, '') <> 'nota_credito' AND credit_note_of IS NULL" + (sucursalId ? " AND sucursal_id = ?" : "")
     ).get(...(sucursalId ? [this.tenantId, sucursalId] : [this.tenantId])) as { total: number };
 
     const expensesRow = this.database.prepare(

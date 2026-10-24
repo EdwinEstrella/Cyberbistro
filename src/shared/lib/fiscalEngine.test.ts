@@ -197,7 +197,7 @@ describe("fiscalEngine", () => {
 
     it("resolves sequence for dgii_ecf mode with E31 (RNC present)", async () => {
       vi.mocked(resolveNcfForNewInvoiceLocalFirst).mockResolvedValueOnce({
-        ncf: "E3100000045",
+        ncf: "E310000000045",
         ncf_tipo: "E31 - Factura de credito fiscal electronica",
         tipoCodigo: "E31",
         usedSequence: 45,
@@ -216,7 +216,7 @@ describe("fiscalEngine", () => {
       });
 
       expect(result).toEqual({
-        ncf: "E3100000045",
+        ncf: "E310000000045",
         ncf_tipo: "E31 - Factura de credito fiscal electronica",
         tipoCodigo: "E31",
         usedSequence: 45,
@@ -230,7 +230,7 @@ describe("fiscalEngine", () => {
 
     it("resolves sequence for dgii_ecf mode with E32 (RNC empty)", async () => {
       vi.mocked(resolveNcfForNewInvoiceLocalFirst).mockResolvedValueOnce({
-        ncf: "E3200000046",
+        ncf: "E320000000046",
         ncf_tipo: "E32 - Factura de consumo electronica",
         tipoCodigo: "E32",
         usedSequence: 46,
@@ -249,7 +249,7 @@ describe("fiscalEngine", () => {
       });
 
       expect(result).toEqual({
-        ncf: "E3200000046",
+        ncf: "E320000000046",
         ncf_tipo: "E32 - Factura de consumo electronica",
         tipoCodigo: "E32",
         usedSequence: 46,
@@ -520,7 +520,7 @@ describe("fiscalEngine", () => {
 
     it("trims whitespace from RNC when determining dgii_ecf type E31 or E32", async () => {
       vi.mocked(resolveNcfForNewInvoiceLocalFirst).mockResolvedValueOnce({
-        ncf: "E3100000047",
+        ncf: "E310000000047",
         ncf_tipo: "E31 - Factura de credito fiscal electronica",
         tipoCodigo: "E31",
         usedSequence: 47,
@@ -544,7 +544,7 @@ describe("fiscalEngine", () => {
 
     it("treats null or undefined RNC as empty and uses E32 in runFiscalEngine", async () => {
       vi.mocked(resolveNcfForNewInvoiceLocalFirst).mockResolvedValueOnce({
-        ncf: "E3200000048",
+        ncf: "E320000000048",
         ncf_tipo: "E32 - Factura de consumo electronica",
         tipoCodigo: "E32",
         usedSequence: 48,
@@ -562,7 +562,7 @@ describe("fiscalEngine", () => {
         deviceId: "device-1",
       });
 
-      expect(result?.ncf).toBe("E3200000048");
+      expect(result?.ncf).toBe("E320000000048");
       expect(result?.tipoCodigo).toBe("E32");
     });
   });

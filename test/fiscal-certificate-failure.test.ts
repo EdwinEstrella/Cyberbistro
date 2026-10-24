@@ -84,7 +84,7 @@ function snapshot(): FiscalWorkerSnapshot {
     document: { id: "doc-1", tenantId: "tenant-1", facturaId: "inv-1", status: "queued", certificateMetadataId: "cert-1", dgiiTrackId: null, rfce_threshold_used: null, rejection_scope: null },
     certificate: { id: "cert-1", tenantId: "tenant-1", environment: "certification", isReady: true, validUntil: "2027-01-01T00:00:00.000Z" },
     invoicePayload: {
-      factura: { total: 118, itbis: 18, subtotal: 100, created_at: "2026-06-10T12:00:00.000Z", cliente_rnc: "123456789", cliente_nombre: "C", ncf: "E3100000001" },
+      factura: { total: 118, itbis: 18, subtotal: 100, created_at: "2026-06-10T12:00:00.000Z", cliente_rnc: "123456789", cliente_nombre: "C", ncf: "E310000000001" },
       tenant: {
         rnc: "130862346", nombre_negocio: "X SRL", direccion: "A", telefono: "8095555555", email: "i@x.app",
         ecf_issuer_sucursal: "P", ecf_issuer_municipio: "SD", ecf_issuer_provincia: "DN", ecf_issuer_actividad_economica: "6201", ecf_issuer_correo_emisor: "f@x.app",

@@ -29,6 +29,7 @@ import { canUseFeature } from "../../../shared/lib/planFeatures";
 import { calculateExpectedCashDrawer, isCashPaymentMethod, sumCashExpenses } from "../../../shared/lib/cycleCash";
 import { getFiscalPendingPresentation } from "../../../shared/lib/salesFiscalUiAdapter";
 import { writeCyclePrinted } from "../../cierre/lib/cierresWrites";
+import { isSaleInvoice } from "../../../shared/lib/invoiceKind";
 import { canDeleteInvoices as canDeleteInvoicesForRol, canEditInvoiceHeader, canViewBillingSummaries } from "../../../shared/lib/roleNav";
 // useTheme removed
 import {
@@ -47,7 +48,7 @@ import {
 } from "../../../shared/ui/select";
 import { DatePicker } from "../../../shared/ui/date-picker";
 
-type InvoiceStatus = "pagada" | "pendiente" | "cancelada";
+type InvoiceStatus = "pagada" | "pendiente" | "cancelada" | "nota_credito";
 type BillingView = "facturas" | "ciclos" | "finanzas";
 
 interface InvoiceItem {
@@ -78,6 +79,7 @@ interface Invoice {
   notas?: string | null;
   ncf?: string | null;
   ncf_tipo?: string | null;
+  credit_note_of?: string | null;
   cliente_nombre?: string | null;
   cliente_rnc?: string | null;
   fiscal_mode?: string | null;
@@ -836,7 +838,7 @@ export function Billing() {
   const { totalRevenue, recentCount } = useMemo(() => {
     const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const recentInvoices = invoices.filter(
-      (inv) => new Date(inv.created_at) > last24h
+      (inv) => isSaleInvoice(inv) && new Date(inv.created_at) > last24h
     );
     return {
       totalRevenue: recentInvoices.reduce((sum, inv) => sum + Number(inv.total || 0), 0),
@@ -1020,11 +1022,12 @@ export function Billing() {
   }, [view, finanzasData, totalRevenue, recentCount, cycleKpis, invoices]);
 
   const filteredStats = useMemo(() => {
-    const total = filteredInvoices.reduce((sum, inv) => sum + Number(inv.total || 0), 0);
-    const count = filteredInvoices.length;
+    const salesInvoices = filteredInvoices.filter(isSaleInvoice);
+    const total = salesInvoices.reduce((sum, inv) => sum + Number(inv.total || 0), 0);
+    const count = salesInvoices.length;
     
     const methodCounts: Record<string, number> = {};
-    for (const inv of filteredInvoices) {
+    for (const inv of salesInvoices) {
       methodCounts[inv.metodo_pago] = (methodCounts[inv.metodo_pago] || 0) + Number(inv.total || 0);
     }
     
