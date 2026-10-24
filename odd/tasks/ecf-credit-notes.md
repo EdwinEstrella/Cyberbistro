@@ -36,10 +36,15 @@ Branch to be created after comandas-cierre-cleanup. ask-on-risk; likely > 400 li
       unfiltered sums in Cierre.tsx:160-187, tenantStore.ts:317, reserveInvoiceNumbers L1260/L1290).
       Preferred: E34 lives in ecf_documents (document_type E34, new nullable related_factura_id; relax
       factura_id UNIQUE/NOT NULL) — to validate against worker claim SQL (joins facturas f ON fo.factura_id).
-- [ ] T2 Data model + issue RPC (cloud migration, local schema).
+- [x] T2 Data model + issue RPC (cloud migration, local schema). Route: delegated writer (mapping trigger).
+      Branch feat/ecf-credit-notes-01-data. Migration 20261024130000_ecf_credit_notes.sql (NOT applied).
+      E34 = own facturas row (estado 'nota_credito'); RPC cloudix_issue_credit_note also books the refund
+      gasto + category in the open cycle (moved here from T5); fiado originals rejected (v1).
+      Sales exclusion via isSaleInvoice (invoiceKind.ts): Cierre summarizeCycleSales, readAnalyticsSummary,
+      Billing KPIs. Evidence: new tests green; typecheck clean; vitest 211 files / 1535 passed / 2 skipped.
 - [ ] T3 Worker mapper E34 (InformacionReferencia, IndicadorNotaCredito) + claim payload reference.
 - [ ] T4 Billing UI: issue button + reason dialog + badges; block hard delete for e-CF invoices.
-- [ ] T5 Print E34; cash-out record in the current shift.
+- [ ] T5 Print E34 (cash-out gasto already created by the T2 RPC).
 - [ ] T6 CI green, release, production test with a real invoice.
 
 ## Progress
