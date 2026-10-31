@@ -29,9 +29,9 @@ export function PricingCard({ name, price, features, color, highlighted = false,
   return (
     <div 
       ref={ref}
-      className={`p-8 flex flex-col rounded-2xl border transition-all relative overflow-hidden ${
+      className={`p-6 xl:p-8 flex flex-col rounded-2xl border transition-all relative overflow-hidden ${
         highlighted 
-          ? 'bg-card/80 border-primary/40 scale-[1.02] lg:scale-105' 
+          ? 'bg-card/80 border-primary/40 scale-[1.02]' 
           : 'bg-card/30 border-border/50 hover:border-border'
       }`}
       style={{

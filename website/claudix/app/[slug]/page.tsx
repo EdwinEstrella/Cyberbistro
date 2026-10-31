@@ -28,7 +28,7 @@ interface DigitalMenuSettings {
   description: string | null;
   logo_url: string | null;
   banner_url: string | null;
-  theme: any;
+  theme: Record<string, unknown> | null;
 }
 
 interface Plato {
@@ -200,7 +200,7 @@ export default function DigitalMenuPage() {
   }, [enrichedPlatos, selectedCategory]);
 
   // Cart Handlers
-  const addToCart = (plato: any) => {
+  const addToCart = (plato: Plato & { displayName: string; description: string; image_url: string | null }) => {
     setCart((prev) => {
       const existing = prev.find((item) => item.plato.id === plato.id);
       if (existing) {

@@ -2,12 +2,12 @@ import {
   Receipt, 
   Utensils, 
   ChefHat, 
-  BarChart3, 
+ 
   WalletCards, 
   ArrowRight,
   Monitor,
-  Zap,
-  Split,
+
+
   Settings2,
   LayoutGrid,
   MapPin,
@@ -15,7 +15,7 @@ import {
   Printer,
   MousePointer2,
   Keyboard,
-  Clock,
+
   Phone,
   Globe,
   PackageSearch,
@@ -24,7 +24,8 @@ import {
   QrCode,
   TrendingUp,
   ShieldCheck,
-  Users2
+  Users2,
+  Building2
 } from "lucide-react";
 import { HeroSection } from "./components/HeroSection";
 import { FeatureCard } from "./components/FeatureCard";
@@ -137,7 +138,7 @@ export default function LandingPage() {
               <p className="text-muted-foreground mt-4 text-lg max-w-xl mx-auto">Soluciones escalables que crecen al ritmo de tu negocio.</p>
             </AnimatedSection>
             
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-7xl mx-auto items-stretch">
               <PricingCard 
                 name="Básico"
                 price="50"
@@ -158,7 +159,7 @@ export default function LandingPage() {
                 price="90"
                 color="var(--primary)"
                 highlighted
-                badge="Más Recomendado"
+                badge="Recomendado"
                 features={[
                   "Hasta 2 Sucursales",
                   "Hasta 5 Usuarios (+ Admin)",
@@ -176,18 +177,32 @@ export default function LandingPage() {
                 price="175"
                 color="oklch(0.7 0.15 290)"
                 features={[
-                  "Sucursales Ilimitadas",
-                  "Usuarios Ilimitados",
-                  "Todo Ilimitado",
-                  "Facturación Electrónica e-CF (DGII)",
-                  "Todo lo del Plan Profesional",
+                  "Sucursales y Usuarios Ilimitados",
+                  "Todo lo del Plan Profesional (e-CF)",
+                  "Links de Menú por Empresa (pedidos a crédito CxC)",
+                  "Menús Personalizados por Día (recurrente o semanal)",
+                  "Extras Configurables por Link",
+                  "Estado de Cuenta en PDF por Rango de Fechas",
                   "Control Multi-Sede Centralizado",
                   "Integraciones vía API",
-                  "Configuraciones Especiales",
-                  "Seguridad Avanzada",
                   "Soporte 24/7 Dedicado"
                 ]}
                 delay={0.2}
+              />
+              <PricingCard 
+                name="Corporativo"
+                price="299"
+                color="oklch(0.68 0.16 240)"
+                badge="Para Empresas"
+                features={[
+                  "Todo lo del Plan Empresarial",
+                  "Factura Consolidada e-CF Mensual por Empresa",
+                  "Lista de Empleados Autorizados (nombre o cédula)",
+                  "Límite de Crédito por Empresa con Bloqueo Automático",
+                  "Reportes Detallados por Empresa",
+                  "Soporte Prioritario y Configuración Asistida"
+                ]}
+                delay={0.3}
               />
             </div>
           </div>
@@ -201,7 +216,7 @@ export default function LandingPage() {
               <p className="text-muted-foreground">Analiza cómo Cloudix optimiza cada tipo de operación.</p>
             </AnimatedSection>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
               <AnimatedSection delay={0.1}>
                 <div className="flex flex-col gap-6">
                   <div className="w-12 h-12 rounded-2xl bg-green-500/10 flex items-center justify-center text-green-500">
@@ -240,9 +255,23 @@ export default function LandingPage() {
                     <Globe size={24} />
                   </div>
                   <div>
-                    <h4 className="text-xl font-bold mb-3 font-display">Plan Empresarial: Todo Ilimitado</h4>
+                    <h4 className="text-xl font-bold mb-3 font-display">Plan Empresarial: Multi-Sede y Pedidos B2B</h4>
                     <p className="text-sm text-muted-foreground leading-relaxed">
-                      Diseñado para cadenas grandes, franquicias y grupos que exigen **todo ilimitado** (sucursales y usuarios sin restricción), integraciones vía API y soporte prioritario 24/7.
+                      Para cadenas y restaurantes que venden a empresas: sucursales y usuarios ilimitados, links de menú dedicados por empresa con pedidos a cuenta por cobrar, menús personalizados por día, extras por link y estados de cuenta en PDF.
+                    </p>
+                  </div>
+                </div>
+              </AnimatedSection>
+
+              <AnimatedSection delay={0.4}>
+                <div className="flex flex-col gap-6">
+                  <div className="w-12 h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center text-blue-500">
+                    <Building2 size={24} />
+                  </div>
+                  <div>
+                    <h4 className="text-xl font-bold mb-3 font-display">Plan Corporativo: Control y Factura e-CF</h4>
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      Para restaurantes con servicios corporativos y catering empresarial a escala. Suma factura consolidada mensual e-CF por empresa, lista de empleados autorizados por cédula, límite de crédito con bloqueo automático y soporte asistido.
                     </p>
                   </div>
                 </div>
