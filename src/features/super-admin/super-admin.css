@@ -1,0 +1,14 @@
+/* Super Admin font scoping: enforce clean sans-serif across super-admin and all portals */
+.super-admin-scope,
+body.super-admin-active {
+  --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-sans);
+}
+
+body.super-admin-active [data-radix-portal],
+body.super-admin-active [data-slot="sheet-content"],
+body.super-admin-active [data-slot="dialog-content"],
+body.super-admin-active [data-slot="dropdown-menu-content"] {
+  --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-sans);
+}

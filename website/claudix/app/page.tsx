@@ -161,7 +161,7 @@ export default function LandingPage() {
                 highlighted
                 badge="Recomendado"
                 features={[
-                  "Hasta 2 Sucursales",
+                  "Hasta 3 Sucursales",
                   "Hasta 5 Usuarios (+ Admin)",
                   "Facturación Electrónica e-CF (DGII)",
                   "Inventario Avanzado (Recetas)",
@@ -244,7 +244,7 @@ export default function LandingPage() {
                   <div>
                     <h4 className="text-xl font-bold mb-3 font-display text-primary">Plan Profesional: El más Completo</h4>
                     <p className="text-sm text-muted-foreground leading-relaxed">
-                      <strong className="text-foreground">El plan recomendado para el 90% de los negocios gastronómicos.</strong> Incluye hasta 2 sucursales, 5 usuarios (+ admin) y <strong className="text-primary">Facturación Electrónica e-CF (DGII)</strong>. Con el sistema de recetas y costos sabrás exactamente tu ganancia por plato, además de menú digital QR, compras y control de CXC/CXP.
+                      <strong className="text-foreground">El plan recomendado para el 90% de los negocios gastronómicos.</strong> Incluye hasta 3 sucursales, 5 usuarios (+ admin) y <strong className="text-primary">Facturación Electrónica e-CF (DGII)</strong>. Con el sistema de recetas y costos sabrás exactamente tu ganancia por plato, además de menú digital QR, compras y control de CXC/CXP.
                     </p>
                   </div>
                 </div>

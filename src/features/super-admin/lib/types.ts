@@ -1,3 +1,79 @@
+import type { ManagedUserRole } from "../../../shared/lib/tenantUserLimits";
+import type { Plan } from "../../../shared/lib/planFeatures";
+
+export interface SuperAdminAuditLogRow {
+  id: string;
+  actor_auth_user_id: string | null;
+  action: string;
+  tenant_id: string | null;
+  target_id: string | null;
+  details: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface TenantUserRow {
+  id: string;
+  tenant_id: string;
+  email: string;
+  rol: string;
+  nombre: string | null;
+  activo: boolean | null;
+  auth_user_id: string | null;
+}
+
+export interface TenantRow {
+  id: string;
+  nombre_negocio?: string | null;
+  rnc?: string | null;
+  telefono?: string | null;
+  direccion?: string | null;
+  activa?: boolean | null;
+  plan?: string | null;
+  created_at?: string | null;
+  user_limit_enabled?: boolean | null;
+  admin_user_limit?: number | null;
+  cajera_user_limit?: number | null;
+  cocina_user_limit?: number | null;
+  mesero_user_limit?: number | null;
+  sucursal_limit_enabled?: boolean | null;
+  sucursal_limit?: number | null;
+  payment_day_of_month?: number | null;
+  [key: string]: unknown;
+}
+
+export interface LimitDraft {
+  userLimitEnabled: boolean;
+  adminUserLimit: string;
+  cajeraUserLimit: string;
+  cocinaUserLimit: string;
+  meseroUserLimit: string;
+  sucursalLimitEnabled: boolean;
+  sucursalLimit: string;
+  paymentDayOfMonth: string;
+}
+
+export type LimitDraftNumberField = Exclude<keyof LimitDraft, "userLimitEnabled" | "sucursalLimitEnabled">;
+
+export interface TenantCard {
+  tenant: TenantRow;
+  users: TenantUserRow[];
+  admins: TenantUserRow[];
+  counts: Record<ManagedUserRole, number>;
+}
+
+export interface SuperAdminKpis {
+  total: number;
+  active: number;
+  blocked: number;
+  byPlan: Record<Plan, number>;
+}
+
+export interface TenantFilterState {
+  search: string;
+  status: "all" | "active" | "blocked";
+  plan: "all" | Plan;
+}
+
 export interface TenantOverviewLimits {
   user_limit_enabled: boolean | null;
   admin_user_limit: number | null;
