@@ -166,6 +166,8 @@ $$;
 
 -- 3. Include migration file
 \i supabase/migrations/20261031120000_corporate_menu_links.sql
+\i supabase/migrations/20261031130000_corporate_menu_links_revoke_anon.sql
+\i supabase/migrations/20261101090000_add_corporativo_plan.sql
 
 -- 4. Test Assertion Helper
 CREATE OR REPLACE FUNCTION test_assert(p_cond boolean, p_msg text)
@@ -934,4 +936,88 @@ BEGIN
   PERFORM pg_sleep(0.01);
   UPDATE public.menu_items SET sort_order = sort_order + 1 WHERE id = v_item_id RETURNING updated_at INTO v_new_updated;
   PERFORM test_assert(v_new_updated > v_old_updated, 'menu_items updated_at trigger must update updated_at');
+END $$;
+
+
+-- Test 18: Plan check constraint rejects invalid plans like 'foo' and accepts 'corporativo'
+DO $$
+DECLARE
+  v_caught boolean := false;
+  v_tenant_id uuid := gen_random_uuid();
+BEGIN
+  -- Rejects invalid plan 'foo'
+  BEGIN
+    INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
+    VALUES (v_tenant_id, 'Restaurante Invalido', 'foo', true);
+  EXCEPTION WHEN check_violation OR OTHERS THEN
+    v_caught := true;
+  END;
+  PERFORM test_assert(v_caught, 'CHECK tenants_plan_allowed must reject plan foo');
+
+  -- Accepts 'corporativo'
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
+  VALUES (v_tenant_id, 'Restaurante Corporativo Valido', 'corporativo', true);
+  PERFORM test_assert(EXISTS(SELECT 1 FROM public.tenants WHERE id = v_tenant_id AND plan = 'corporativo'), 'Plan corporativo must be accepted by CHECK constraint');
+END $$;
+
+-- Test 19: Corporativo tenant can read a link menu and create an order via RPCs
+DO $$
+DECLARE
+  v_tenant_id uuid := gen_random_uuid();
+  v_sucursal_id uuid;
+  v_menu_id uuid;
+  v_plato_id int;
+  v_link_id uuid;
+  v_token text;
+  v_today date;
+  v_dow smallint;
+  v_res jsonb;
+  v_order_res jsonb;
+  v_order_count int;
+BEGIN
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
+  VALUES (v_tenant_id, 'Corporativo Gourmet', 'corporativo', true);
+
+  v_today := public.menu_business_today(v_tenant_id);
+  v_dow := public.menu_business_isodow(v_tenant_id, v_today);
+
+  INSERT INTO public.sucursales (tenant_id)
+  VALUES (v_tenant_id)
+  RETURNING id INTO v_sucursal_id;
+
+  INSERT INTO public.platos (nombre, precio, disponible, tenant_id, sucursal_id, is_extra)
+  VALUES ('Plato Ejecutivo Corp', 350.00, true, v_tenant_id, v_sucursal_id, false)
+  RETURNING id INTO v_plato_id;
+
+  INSERT INTO public.menus (tenant_id, sucursal_id, name, schedule_mode)
+  VALUES (v_tenant_id, v_sucursal_id, 'Menu Ejecutivo Corp', 'recurring')
+  RETURNING id INTO v_menu_id;
+
+  INSERT INTO public.menu_items (tenant_id, menu_id, plato_id, weekdays, sort_order)
+  VALUES (v_tenant_id, v_menu_id, v_plato_id, ARRAY[v_dow]::smallint[], 1);
+
+  INSERT INTO public.menu_links (tenant_id, sucursal_id, menu_id, label, link_type, allow_extras, enabled)
+  VALUES (v_tenant_id, v_sucursal_id, v_menu_id, 'Link Corp', 'public', false, true)
+  RETURNING id, token INTO v_link_id, v_token;
+
+  -- 1. Read link menu as anon
+  v_res := public.get_menu_by_link(v_token);
+  PERFORM test_assert((v_res->>'available')::boolean = true, 'get_menu_by_link must be available for corporativo plan');
+  PERFORM test_assert(jsonb_array_length(v_res->'items') = 1, 'get_menu_by_link should return 1 item for corporativo plan');
+
+  -- 2. Create order by link
+  v_order_res := public.create_order_by_link(
+    v_token,
+    'Ejecutivo Corporativo',
+    'Sin cebolla',
+    jsonb_build_array(jsonb_build_object('plato_id', v_plato_id, 'quantity', 1))
+  );
+
+  PERFORM test_assert(v_order_res->>'order_id' IS NOT NULL, 'create_order_by_link must create order for corporativo plan');
+  PERFORM test_assert((v_order_res->>'total')::numeric = 350.00, 'Order total must match 350.00');
+
+  SELECT count(*) INTO v_order_count
+  FROM public.digital_orders
+  WHERE tenant_id = v_tenant_id;
+  PERFORM test_assert(v_order_count = 1, 'Exactly 1 digital order should exist for corporativo tenant');
 END $$;

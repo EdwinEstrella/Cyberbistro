@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { ElectronAPI, ThermalPrinterInfo } from "../../../shared/types/electron";
 import svgPaths from "../../../imports/svg-h2gjocs89h";
 import { useAuth } from "../../../shared/hooks/useAuth";
+import { isPlanAtLeast, normalizePlan, PLAN_LABELS } from "../../../shared/lib/planFeatures";
 import type { Sucursal } from "../../../app/context/SucursalContext";
 import { SUPER_ADMIN_ROLE } from "../../../shared/lib/superAdmin";
 import { Printer, RefreshCw } from "lucide-react";
@@ -224,7 +225,7 @@ export function TitleBar({
         ) : null}
 
         {/* Basic plan branch display with add button */}
-        {shouldShowBranchControls && (!plan || (plan !== "profesional" && plan !== "empresarial")) && (
+        {shouldShowBranchControls && !isPlanAtLeast(plan, "profesional") && (
           <div className="flex items-center gap-1 ml-2" style={{ WebkitAppRegion: "no-drag" as any }}>
             <button
               type="button"
@@ -251,7 +252,7 @@ export function TitleBar({
         )}
 
         {/* Professional/Empresarial plan branch dropdown + plus button */}
-        {shouldShowBranchControls && (plan === "profesional" || plan === "empresarial") && !sucursalesLoading && sucursales.length === 0 && (
+        {shouldShowBranchControls && isPlanAtLeast(plan, "profesional") && !sucursalesLoading && sucursales.length === 0 && (
           <div className="flex items-center gap-1 ml-2" style={{ WebkitAppRegion: "no-drag" as any }}>
             <button
               type="button"
@@ -267,7 +268,7 @@ export function TitleBar({
           </div>
         )}
 
-        {shouldShowBranchControls && (plan === "profesional" || plan === "empresarial") && sucursales.length > 0 && (
+        {shouldShowBranchControls && isPlanAtLeast(plan, "profesional") && sucursales.length > 0 && (
           <div className="flex items-center gap-1 ml-2" style={{ WebkitAppRegion: "no-drag" as any }}>
             <div className="relative">
               <button
@@ -356,7 +357,7 @@ export function TitleBar({
             <button
               type="button"
               onClick={
-                plan === "profesional" && sucursales.length >= 3
+                !isPlanAtLeast(plan, "empresarial") && sucursales.length >= 3
                   ? onShowBranchUpsell
                   : onAddBranch
               }
@@ -382,7 +383,7 @@ export function TitleBar({
                 border: '1px solid rgba(89, 238, 80, 0.25)'
               }}
             >
-              Plan {plan}
+              Plan {PLAN_LABELS[normalizePlan(plan)]}
             </span>
           </div>
         )}

@@ -5,6 +5,7 @@ import { NewInsumoModal } from "./NewInsumoModal";
 import { supabase } from "../../../shared/lib/supabase";
 import { formatFractionalStock } from "../../../shared/lib/presentationUnits";
 import { useAuth } from "../../../shared/hooks/useAuth";
+import { isPlanAtLeast } from "../../../shared/lib/planFeatures";
 import { readLocalMirror, enqueueLocalWrite, getDeviceId, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { ConfirmModal } from "../../../shared/components/ConfirmModal";
@@ -102,7 +103,7 @@ export function Inventario() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!authLoading && (!plan || (plan !== "profesional" && plan !== "empresarial"))) {
+    if (!authLoading && !isPlanAtLeast(plan, "profesional")) {
       navigate("/dashboard", { replace: true });
     }
   }, [plan, authLoading, navigate]);

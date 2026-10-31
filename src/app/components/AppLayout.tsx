@@ -7,6 +7,7 @@ import svgPaths from "../../imports/svg-qgatbhef3k";
 import { TitleBar } from "../../features/window";
 import { supabase } from "../../shared/lib/supabase";
 import { useAuth } from "../../shared/hooks/useAuth";
+import { isPlanAtLeast } from "../../shared/lib/planFeatures";
 import {
   canAccessCocinaRoute,
   normalizeTenantRol,
@@ -1176,7 +1177,7 @@ function AppLayoutContent() {
                   Agregar Sucursal
                 </h3>
                 <span className="font-['Space_Grotesk',sans-serif] font-bold text-[#ff906d] text-[11px] uppercase tracking-[1px]">
-                  {plan === "profesional" ? `Plan Profesional (${sucursales.length}/2)` : "Plan Empresarial (Ilimitadas)"}
+                  {plan === "profesional" ? `Plan Profesional (${sucursales.length}/2)` : isPlanAtLeast(plan, "corporativo") ? "Plan Corporativo (Ilimitadas)" : "Plan Empresarial (Ilimitadas)"}
                 </span>
               </div>
 

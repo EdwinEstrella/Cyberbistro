@@ -13,6 +13,7 @@ import { resolveWithLastKnownList } from "../../shared/lib/lastKnownCache";
 import { canCommitTenantAsyncState } from "../../shared/lib/tenantAccessGuard";
 import { buildOfflineSucursales } from "../../shared/lib/offlineSucursales";
 import { canAttemptCloudRead, isDesktopCloudUnavailable } from "../../shared/lib/cloudAvailability";
+import { isPlanAtLeast } from "../../shared/lib/planFeatures";
 
 export interface Sucursal {
   id: string;
@@ -48,17 +49,10 @@ const RETRY_DELAY_MS = 5000;
 const STORAGE_KEY = "cloudix_active_sucursal_id";
 const scopedStorageKey = (tenantId: string) => `${STORAGE_KEY}:${tenantId}`;
 
-function defaultSucursalLimitForPlan(plan?: string | null): number | null {
-  switch ((plan || "basico").trim().toLowerCase()) {
-    case "basico":
-      return 1;
-    case "profesional":
-      return 2;
-    case "empresarial":
-      return null;
-    default:
-      return 1;
-  }
+export function defaultSucursalLimitForPlan(plan?: string | null): number | null {
+  if (isPlanAtLeast(plan, "empresarial")) return null;
+  if (isPlanAtLeast(plan, "profesional")) return 2;
+  return 1;
 }
 
 function resolveEffectiveSucursalLimit(

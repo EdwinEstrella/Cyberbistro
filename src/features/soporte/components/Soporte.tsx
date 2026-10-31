@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Navigate, useNavigate } from "react-router";
 import QRCode from "qrcode";
 import { ExternalLink } from "lucide-react";
-import { canUseFeature } from "../../../shared/lib/planFeatures";
+import { canUseFeature, isPlanAtLeast } from "../../../shared/lib/planFeatures";
 import { MenuLinksList } from "../../menu-links";
 import { supabase, createIsolatedAuthClient } from "../../../shared/lib/supabase";
 import { useAuth } from "../../../shared/hooks/useAuth";
@@ -1421,7 +1421,7 @@ function LegacyDigitalMenuPanel() {
 
   const resolvedSlug = slug.trim().toLowerCase().replace(/[^a-z0-9-_]/g, "");
   
-  const qrUrl = plan === "profesional" || plan === "empresarial"
+  const qrUrl = isPlanAtLeast(plan, "profesional")
     ? `https://cloudix-app.azokia.com/#/menu/${resolvedSlug}`
     : `https://cloudix-app.azokia.com`;
 
@@ -1435,7 +1435,7 @@ function LegacyDigitalMenuPanel() {
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!tenantId) return;
-    if (plan === "basico") return;
+    if (!isPlanAtLeast(plan, "profesional")) return;
 
     if (!resolvedSlug) {
       setError("El slug público es obligatorio.");
@@ -1494,7 +1494,7 @@ function LegacyDigitalMenuPanel() {
   };
 
   const handleToggleDishVisibility = async (platoId: number, visible: boolean) => {
-    if (!tenantId || plan === "basico") return;
+    if (!tenantId || !isPlanAtLeast(plan, "profesional")) return;
 
     try {
       setError("");
@@ -1533,7 +1533,7 @@ function LegacyDigitalMenuPanel() {
   };
 
   const handleUpdateDishCustomFields = async () => {
-    if (!tenantId || !editingPlato || plan === "basico") return;
+    if (!tenantId || !editingPlato || !isPlanAtLeast(plan, "profesional")) return;
 
     try {
       setError("");
@@ -1640,7 +1640,7 @@ function LegacyDigitalMenuPanel() {
 
   if (loading) return <div className="p-10 text-muted-foreground font-['Space_Grotesk'] text-center">Cargando configuración...</div>;
 
-  const isBasic = plan === "basico";
+  const isBasic = !isPlanAtLeast(plan, "profesional");
 
   return (
     <div className="flex-1 p-4 sm:p-8 bg-background overflow-y-auto relative">

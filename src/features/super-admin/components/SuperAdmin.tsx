@@ -3,6 +3,7 @@ import { Navigate, useNavigate } from "react-router";
 import { TitleBar } from "../../window";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { supabase } from "../../../shared/lib/supabase";
+import { type Plan } from "../../../shared/lib/planFeatures";
 import { isSuperAdminUser, SUPER_ADMIN_EMAIL } from "../../../shared/lib/superAdmin";
 import {
   countActiveUsersByRole,
@@ -286,7 +287,7 @@ export function SuperAdmin() {
     }
   }
 
-  function updateTenantPlan(tenantId: string, plan: 'basico' | 'profesional' | 'empresarial') {
+  function updateTenantPlan(tenantId: string, plan: Plan) {
     let confirmMsg = `¿Cambiar el plan del restaurante a ${plan.toUpperCase()}?\n\n`;
     if (plan === 'basico') {
       confirmMsg += 'Si se degrada a Básico, se ocultarán los módulos de inventario y sucursales (límite de 1 sucursal y 3 usuarios + admin).';
