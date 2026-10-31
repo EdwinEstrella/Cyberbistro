@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw, DollarSign, FileText, CheckCircle, Clock, Eye } from "lucide-react";
+import { RefreshCw, DollarSign, FileText, CheckCircle, Clock, Eye, Receipt, Lock } from "lucide-react";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { canUseFeature } from "../../../shared/lib/planFeatures";
 import { StatementDialog, type StatementCustomerTarget } from "../statement";
@@ -71,7 +71,11 @@ const dateTimeFormatter = new Intl.DateTimeFormat("es-DO", {
 export function CuentasCobrar() {
   const { tenantId, user, plan } = useAuth();
   const canUseMenuLinks = canUseFeature(plan, "menu_links");
-  const [statementCustomer, setStatementCustomer] = useState<StatementCustomerTarget | null>(null);
+  const canConsolidate = canUseFeature(plan, "consolidated_invoice");
+  const [statementCustomer, setStatementCustomer] = useState<{
+    target: StatementCustomerTarget;
+    initialMode?: "statement" | "invoice";
+  } | null>(null);
   const { activeSucursalId } = useSucursal();
 
   const [activeTab, setActiveTab] = useState<'pendientes' | 'pagadas' | 'pagos'>('pendientes');
@@ -410,19 +414,44 @@ export function CuentasCobrar() {
                                   <Eye className="size-[14px]" />
                                 </button>
                                 {canUseMenuLinks && (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setStatementCustomer({
-                                        id: row.customer_id,
-                                        name: custName,
-                                      })
-                                    }
-                                    className="bg-[#222] border border-[rgba(72,72,71,0.4)] hover:border-[#ff906d] text-[#adaaaa] hover:text-[#ff906d] rounded-[8px] p-1.5 transition-all cursor-pointer"
-                                    title="Estado de cuenta (PDF)"
-                                  >
-                                    <FileText className="size-[14px]" />
-                                  </button>
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setStatementCustomer({
+                                          target: {
+                                            id: row.customer_id,
+                                            name: custName,
+                                          },
+                                          initialMode: "statement",
+                                        })
+                                      }
+                                      className="bg-[#222] border border-[rgba(72,72,71,0.4)] hover:border-[#ff906d] text-[#adaaaa] hover:text-[#ff906d] rounded-[8px] p-1.5 transition-all cursor-pointer"
+                                      title="Estado de cuenta (PDF)"
+                                    >
+                                      <FileText className="size-[14px]" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setStatementCustomer({
+                                          target: {
+                                            id: row.customer_id,
+                                            name: custName,
+                                          },
+                                          initialMode: "invoice",
+                                        })
+                                      }
+                                      className={`border rounded-[8px] p-1.5 transition-all cursor-pointer ${
+                                        canConsolidate
+                                          ? "bg-[#222] border-[rgba(72,72,71,0.4)] hover:border-emerald-500 text-[#adaaaa] hover:text-emerald-400"
+                                          : "bg-[#181818] border-zinc-800/50 text-zinc-600 cursor-not-allowed"
+                                      }`}
+                                      title={canConsolidate ? "Emitir factura consolidada (e-CF)" : "Disponible en el plan Corporativo"}
+                                    >
+                                      {canConsolidate ? <Receipt className="size-[14px]" /> : <Lock className="size-[12px]" />}
+                                    </button>
+                                  </>
                                 )}
                                 {activeTab === 'pendientes' && (
                                   <button
@@ -541,7 +570,8 @@ export function CuentasCobrar() {
         onOpenChange={(isOpen) => {
           if (!isOpen) setStatementCustomer(null);
         }}
-        customer={statementCustomer}
+        customer={statementCustomer?.target ?? null}
+        initialMode={statementCustomer?.initialMode ?? "statement"}
       />
     </div>
   );

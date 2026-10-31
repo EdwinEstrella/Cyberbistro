@@ -1520,3 +1520,498 @@ BEGIN
   PERFORM test_assert(v_priv_anon IS FALSE, 'company_credit_used wrapper must NOT be executable by anon');
 END $$;
 
+-- ============================================================
+-- C-T6: Consolidated e-CF (E31) Invoices Tests
+-- ============================================================
+
+-- Stubs for fiscal pipeline
+CREATE TABLE IF NOT EXISTS public.facturas (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  sucursal_id uuid,
+  customer_id uuid,
+  mesa_numero integer,
+  comanda_ids jsonb,
+  cliente_nombre text,
+  cliente_rnc text,
+  metodo_pago text,
+  estado text,
+  subtotal numeric,
+  itbis numeric,
+  propina numeric,
+  total numeric,
+  moneda text,
+  items jsonb,
+  notas text,
+  creado_por text,
+  fiscal_mode text,
+  ncf text,
+  ncf_tipo text,
+  pagada_at timestamptz,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.ecf_documents (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  factura_id uuid NOT NULL,
+  certificate_metadata_id uuid,
+  ecf_type text NOT NULL,
+  status text NOT NULL DEFAULT 'queued',
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.fiscal_outbox (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  ecf_document_id uuid,
+  factura_id uuid,
+  operation text NOT NULL,
+  status text NOT NULL DEFAULT 'queued',
+  idempotency_key text UNIQUE,
+  attempts integer DEFAULT 0,
+  next_attempt_at timestamptz DEFAULT now(),
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.ecf_certificate_metadata (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  environment text NOT NULL DEFAULT 'test',
+  is_ready boolean NOT NULL DEFAULT true,
+  valid_until timestamptz DEFAULT now() + interval '1 year',
+  created_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE public.tenants ADD COLUMN IF NOT EXISTS itbis_incluido_en_precio boolean DEFAULT false;
+ALTER TABLE public.tenants ADD COLUMN IF NOT EXISTS ecf_environment text DEFAULT 'test';
+
+CREATE OR REPLACE FUNCTION public.cloudix_auth_user_id()
+RETURNS uuid
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT COALESCE(
+    NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid,
+    NULLIF(current_setting('test.user_id', true), '')::uuid,
+    '00000000-0000-0000-0000-000000000001'::uuid
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.cloudix_reserve_ecf(p_tenant_id uuid, p_ncf_tipo text)
+RETURNS TABLE(ncf_fiscal_activo boolean, ncf_tipo_codigo text, seq_reserved integer)
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_seq integer;
+BEGIN
+  SELECT COALESCE(MAX(substring(ncf from 4)::integer), 0) + 1
+  INTO v_seq
+  FROM public.facturas
+  WHERE tenant_id = p_tenant_id AND ncf LIKE (p_ncf_tipo || '%');
+
+  RETURN QUERY SELECT true, p_ncf_tipo, v_seq;
+END;
+$$;
+
+-- Include consolidated invoice migration
+\i supabase/migrations/20261101120000_consolidated_invoice.sql
+
+-- Test 23: Issue links all eligible CxC rows, sets factura_id, creates facturas, ecf_documents and fiscal_outbox
+DO $$
+DECLARE
+  v_tenant uuid := gen_random_uuid();
+  v_sucursal uuid := gen_random_uuid();
+  v_cust uuid := gen_random_uuid();
+  v_ord1 uuid := gen_random_uuid();
+  v_ord2 uuid := gen_random_uuid();
+  v_cxc1 uuid := gen_random_uuid();
+  v_cxc2 uuid := gen_random_uuid();
+  v_res jsonb;
+  v_factura_id uuid;
+  v_factura public.facturas%ROWTYPE;
+  v_ecf public.ecf_documents%ROWTYPE;
+  v_outbox public.fiscal_outbox%ROWTYPE;
+  v_cxc_check1 public.cuentas_cobrar%ROWTYPE;
+  v_cxc_check2 public.cuentas_cobrar%ROWTYPE;
+  v_today date := (now() AT TIME ZONE 'America/Santo_Domingo')::date;
+BEGIN
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa, itbis_incluido_en_precio)
+  VALUES (v_tenant, 'Corp Restaurant 1', 'corporativo', true, true);
+  INSERT INTO public.sucursales (id, tenant_id) VALUES (v_sucursal, v_tenant);
+  INSERT INTO public.customers (id, tenant_id, name, document_id)
+  VALUES (v_cust, v_tenant, 'Acme Dominicana SRL', '131-12345-1'); -- 9 digits
+
+  -- Create two digital orders & CxC rows
+  INSERT INTO public.digital_orders (id, tenant_id, sucursal_id, customer_name, status, total, numero_pedido, employee_name, created_at)
+  VALUES (v_ord1, v_tenant, v_sucursal, 'Acme Emp 1', 'accepted', 500.00, 101, 'Pedro Perez', now()),
+         (v_ord2, v_tenant, v_sucursal, 'Acme Emp 2', 'accepted', 300.00, 102, 'Maria Gomez', now());
+
+  INSERT INTO public.cuentas_cobrar (id, tenant_id, sucursal_id, customer_id, digital_order_id, monto_total, monto_pagado, fecha_vencimiento, estado)
+  VALUES (v_cxc1, v_tenant, v_sucursal, v_cust, v_ord1, 500.00, 0.00, now() + interval '30 days', 'pendiente'),
+         (v_cxc2, v_tenant, v_sucursal, v_cust, v_ord2, 300.00, 0.00, now() + interval '30 days', 'pendiente');
+
+  PERFORM set_config('test.tenant', v_tenant::text, true);
+
+  -- Preview test
+  v_res := public.cloudix_preview_consolidated_invoice(v_cust, v_today - 5, v_today + 5, v_sucursal);
+  PERFORM test_assert((v_res->>'count')::int = 2, 'Preview count must be 2');
+  PERFORM test_assert((v_res->'customer'->>'rnc_valid')::boolean IS TRUE, 'Preview customer RNC must be valid');
+  PERFORM test_assert(v_res->>'blocked_reason' IS NULL, 'Preview blocked_reason must be NULL when eligible');
+
+  -- Issue test
+  v_res := public.cloudix_issue_consolidated_invoice(v_cust, v_today - 5, v_today + 5, v_sucursal);
+  v_factura_id := (v_res->>'factura_id')::uuid;
+  PERFORM test_assert(v_factura_id IS NOT NULL, 'Issued factura_id must not be null');
+  PERFORM test_assert(v_res->>'ncf' LIKE 'E31%', 'NCF must start with E31');
+  PERFORM test_assert((v_res->>'count')::int = 2, 'Issued count must be 2');
+
+  -- Verify CxC rows have factura_id linked
+  SELECT * INTO v_cxc_check1 FROM public.cuentas_cobrar WHERE id = v_cxc1;
+  SELECT * INTO v_cxc_check2 FROM public.cuentas_cobrar WHERE id = v_cxc2;
+  PERFORM test_assert(v_cxc_check1.factura_id = v_factura_id, 'cxc1 factura_id must be set');
+  PERFORM test_assert(v_cxc_check2.factura_id = v_factura_id, 'cxc2 factura_id must be set');
+  PERFORM test_assert(v_cxc_check1.monto_total = 500.00, 'cxc1 amount must not change');
+  PERFORM test_assert(v_cxc_check2.monto_total = 300.00, 'cxc2 amount must not change');
+
+  -- Verify factura row
+  SELECT * INTO v_factura FROM public.facturas WHERE id = v_factura_id;
+  PERFORM test_assert(v_factura.fiscal_mode = 'dgii_ecf', 'factura fiscal_mode must be dgii_ecf');
+  PERFORM test_assert(v_factura.ncf_tipo = 'E31', 'factura ncf_tipo must be E31');
+  PERFORM test_assert(v_factura.metodo_pago = 'fiado', 'factura metodo_pago must be fiado');
+  PERFORM test_assert(v_factura.estado = 'pendiente', 'factura estado must be pendiente');
+  PERFORM test_assert(v_factura.cliente_rnc = '131123451', 'factura cliente_rnc must be digits-only');
+  PERFORM test_assert(v_factura.cliente_nombre = 'Acme Dominicana SRL', 'factura cliente_nombre must match');
+  PERFORM test_assert(cardinality(v_factura.consolidated_cxc_ids) = 2, 'factura consolidated_cxc_ids must have 2 ids');
+
+  -- Verify ecf_documents and fiscal_outbox rows
+  SELECT * INTO v_ecf FROM public.ecf_documents WHERE factura_id = v_factura_id;
+  PERFORM test_assert(v_ecf.ecf_type = '31', 'ecf_documents ecf_type must be 31');
+  PERFORM test_assert(v_ecf.status = 'queued', 'ecf_documents status must be queued');
+
+  SELECT * INTO v_outbox FROM public.fiscal_outbox WHERE factura_id = v_factura_id;
+  PERFORM test_assert(v_outbox.operation = 'submit', 'fiscal_outbox operation must be submit');
+  PERFORM test_assert(v_outbox.status = 'queued', 'fiscal_outbox status must be queued');
+  PERFORM test_assert(v_outbox.idempotency_key = v_tenant::text || ':' || v_factura_id::text || ':submit', 'fiscal_outbox idempotency key must match');
+END $$;
+
+-- Test 24: Second issue for the same range -> NOTHING_TO_INVOICE (no double invoicing)
+DO $$
+DECLARE
+  v_tenant uuid := gen_random_uuid();
+  v_sucursal uuid := gen_random_uuid();
+  v_cust uuid := gen_random_uuid();
+  v_ord uuid := gen_random_uuid();
+  v_cxc uuid := gen_random_uuid();
+  v_today date := (now() AT TIME ZONE 'America/Santo_Domingo')::date;
+  v_caught_nothing boolean := false;
+BEGIN
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa, itbis_incluido_en_precio)
+  VALUES (v_tenant, 'Corp Restaurant 2', 'corporativo', true, true);
+  INSERT INTO public.sucursales (id, tenant_id) VALUES (v_sucursal, v_tenant);
+  INSERT INTO public.customers (id, tenant_id, name, document_id)
+  VALUES (v_cust, v_tenant, 'Beta Corp', '101-00000-1');
+
+  INSERT INTO public.digital_orders (id, tenant_id, sucursal_id, customer_name, status, total, numero_pedido, employee_name, created_at)
+  VALUES (v_ord, v_tenant, v_sucursal, 'Emp', 'accepted', 200.00, 201, 'Ana', now());
+
+  INSERT INTO public.cuentas_cobrar (id, tenant_id, sucursal_id, customer_id, digital_order_id, monto_total, monto_pagado, fecha_vencimiento, estado)
+  VALUES (v_cxc, v_tenant, v_sucursal, v_cust, v_ord, 200.00, 0.00, now() + interval '30 days', 'pendiente');
+
+  PERFORM set_config('test.tenant', v_tenant::text, true);
+
+  -- First issue succeeds
+  PERFORM public.cloudix_issue_consolidated_invoice(v_cust, v_today - 1, v_today + 1, v_sucursal);
+
+  -- Second issue must raise NOTHING_TO_INVOICE
+  BEGIN
+    PERFORM public.cloudix_issue_consolidated_invoice(v_cust, v_today - 1, v_today + 1, v_sucursal);
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'NOTHING_TO_INVOICE' THEN
+      v_caught_nothing := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_nothing, 'Second issue on already-invoiced range must raise NOTHING_TO_INVOICE');
+END $$;
+
+-- Test 25: Rows with payments or anulada are excluded
+DO $$
+DECLARE
+  v_tenant uuid := gen_random_uuid();
+  v_sucursal uuid := gen_random_uuid();
+  v_cust uuid := gen_random_uuid();
+  v_ord1 uuid := gen_random_uuid();
+  v_ord2 uuid := gen_random_uuid();
+  v_ord3 uuid := gen_random_uuid();
+  v_cxc1 uuid := gen_random_uuid();
+  v_cxc2 uuid := gen_random_uuid();
+  v_cxc3 uuid := gen_random_uuid();
+  v_today date := (now() AT TIME ZONE 'America/Santo_Domingo')::date;
+  v_res jsonb;
+BEGIN
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa, itbis_incluido_en_precio)
+  VALUES (v_tenant, 'Corp Restaurant 3', 'corporativo', true, true);
+  INSERT INTO public.sucursales (id, tenant_id) VALUES (v_sucursal, v_tenant);
+  INSERT INTO public.customers (id, tenant_id, name, document_id)
+  VALUES (v_cust, v_tenant, 'Gamma Corp', '101-00000-2');
+
+  INSERT INTO public.digital_orders (id, tenant_id, sucursal_id, customer_name, status, total, numero_pedido, employee_name, created_at)
+  VALUES (v_ord1, v_tenant, v_sucursal, 'Emp 1', 'accepted', 100.00, 301, 'Carlos', now()),
+         (v_ord2, v_tenant, v_sucursal, 'Emp 2', 'accepted', 200.00, 302, 'David', now()),
+         (v_ord3, v_tenant, v_sucursal, 'Emp 3', 'accepted', 300.00, 303, 'Elena', now());
+
+  -- cxc1: eligible
+  INSERT INTO public.cuentas_cobrar (id, tenant_id, sucursal_id, customer_id, digital_order_id, monto_total, monto_pagado, fecha_vencimiento, estado)
+  VALUES (v_cxc1, v_tenant, v_sucursal, v_cust, v_ord1, 100.00, 0.00, now() + interval '30 days', 'pendiente');
+
+  -- cxc2: has payment -> excluded
+  INSERT INTO public.cuentas_cobrar (id, tenant_id, sucursal_id, customer_id, digital_order_id, monto_total, monto_pagado, fecha_vencimiento, estado)
+  VALUES (v_cxc2, v_tenant, v_sucursal, v_cust, v_ord2, 200.00, 50.00, now() + interval '30 days', 'parcial');
+
+  -- cxc3: anulada -> excluded
+  INSERT INTO public.cuentas_cobrar (id, tenant_id, sucursal_id, customer_id, digital_order_id, monto_total, monto_pagado, fecha_vencimiento, estado)
+  VALUES (v_cxc3, v_tenant, v_sucursal, v_cust, v_ord3, 300.00, 0.00, now() + interval '30 days', 'anulada');
+
+  PERFORM set_config('test.tenant', v_tenant::text, true);
+
+  v_res := public.cloudix_issue_consolidated_invoice(v_cust, v_today - 1, v_today + 1, v_sucursal);
+  PERFORM test_assert((v_res->>'count')::int = 1, 'Only cxc1 must be invoiced (count=1)');
+
+  -- Verify cxc2 and cxc3 still have factura_id null
+  PERFORM test_assert((SELECT factura_id FROM public.cuentas_cobrar WHERE id = v_cxc2) IS NULL, 'cxc with payments must remain uninvoiced');
+  PERFORM test_assert((SELECT factura_id FROM public.cuentas_cobrar WHERE id = v_cxc3) IS NULL, 'cxc anulada must remain uninvoiced');
+END $$;
+
+-- Test 26: Invalid RNC -> BUYER_RNC_INVALID
+DO $$
+DECLARE
+  v_tenant uuid := gen_random_uuid();
+  v_sucursal uuid := gen_random_uuid();
+  v_cust uuid := gen_random_uuid();
+  v_ord uuid := gen_random_uuid();
+  v_cxc uuid := gen_random_uuid();
+  v_today date := (now() AT TIME ZONE 'America/Santo_Domingo')::date;
+  v_caught_rnc boolean := false;
+  v_preview jsonb;
+BEGIN
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa, itbis_incluido_en_precio)
+  VALUES (v_tenant, 'Corp Restaurant 4', 'corporativo', true, true);
+  INSERT INTO public.sucursales (id, tenant_id) VALUES (v_sucursal, v_tenant);
+  INSERT INTO public.customers (id, tenant_id, name, document_id)
+  VALUES (v_cust, v_tenant, 'Delta Corp', '12345'); -- Invalid: only 5 digits
+
+  INSERT INTO public.digital_orders (id, tenant_id, sucursal_id, customer_name, status, total, numero_pedido, employee_name, created_at)
+  VALUES (v_ord, v_tenant, v_sucursal, 'Emp', 'accepted', 100.00, 401, 'Fran', now());
+
+  INSERT INTO public.cuentas_cobrar (id, tenant_id, sucursal_id, customer_id, digital_order_id, monto_total, monto_pagado, fecha_vencimiento, estado)
+  VALUES (v_cxc, v_tenant, v_sucursal, v_cust, v_ord, 100.00, 0.00, now() + interval '30 days', 'pendiente');
+
+  PERFORM set_config('test.tenant', v_tenant::text, true);
+
+  -- Preview reports rnc_valid = false and blocked_reason = BUYER_RNC_INVALID
+  v_preview := public.cloudix_preview_consolidated_invoice(v_cust, v_today - 1, v_today + 1, v_sucursal);
+  PERFORM test_assert((v_preview->'customer'->>'rnc_valid')::boolean IS FALSE, 'Preview must flag invalid RNC');
+  PERFORM test_assert(v_preview->>'blocked_reason' = 'BUYER_RNC_INVALID', 'Preview blocked_reason must be BUYER_RNC_INVALID');
+
+  -- Issue raises BUYER_RNC_INVALID
+  BEGIN
+    PERFORM public.cloudix_issue_consolidated_invoice(v_cust, v_today - 1, v_today + 1, v_sucursal);
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'BUYER_RNC_INVALID' THEN
+      v_caught_rnc := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_rnc, 'Invalid RNC must raise BUYER_RNC_INVALID');
+END $$;
+
+-- Test 27: Empresarial tenant -> PLAN_REQUIRED
+DO $$
+DECLARE
+  v_tenant uuid := gen_random_uuid();
+  v_sucursal uuid := gen_random_uuid();
+  v_cust uuid := gen_random_uuid();
+  v_ord uuid := gen_random_uuid();
+  v_cxc uuid := gen_random_uuid();
+  v_today date := (now() AT TIME ZONE 'America/Santo_Domingo')::date;
+  v_caught_plan boolean := false;
+  v_preview jsonb;
+BEGIN
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
+  VALUES (v_tenant, 'Empresarial Restaurant', 'empresarial', true);
+  INSERT INTO public.sucursales (id, tenant_id) VALUES (v_sucursal, v_tenant);
+  INSERT INTO public.customers (id, tenant_id, name, document_id)
+  VALUES (v_cust, v_tenant, 'Epsilon Corp', '131-12345-1');
+
+  INSERT INTO public.digital_orders (id, tenant_id, sucursal_id, customer_name, status, total, numero_pedido, employee_name, created_at)
+  VALUES (v_ord, v_tenant, v_sucursal, 'Emp', 'accepted', 150.00, 501, 'Gaby', now());
+
+  INSERT INTO public.cuentas_cobrar (id, tenant_id, sucursal_id, customer_id, digital_order_id, monto_total, monto_pagado, fecha_vencimiento, estado)
+  VALUES (v_cxc, v_tenant, v_sucursal, v_cust, v_ord, 150.00, 0.00, now() + interval '30 days', 'pendiente');
+
+  PERFORM set_config('test.tenant', v_tenant::text, true);
+
+  -- Preview reports blocked_reason = PLAN_REQUIRED
+  v_preview := public.cloudix_preview_consolidated_invoice(v_cust, v_today - 1, v_today + 1, v_sucursal);
+  PERFORM test_assert(v_preview->>'blocked_reason' = 'PLAN_REQUIRED', 'Preview blocked_reason must be PLAN_REQUIRED for non-corporativo');
+
+  -- Issue raises PLAN_REQUIRED
+  BEGIN
+    PERFORM public.cloudix_issue_consolidated_invoice(v_cust, v_today - 1, v_today + 1, v_sucursal);
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'PLAN_REQUIRED' THEN
+      v_caught_plan := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_plan, 'Empresarial tenant must raise PLAN_REQUIRED');
+END $$;
+
+-- Test 28: Cancel item or revert accept on invoiced order -> ORDER_ALREADY_INVOICED
+DO $$
+DECLARE
+  v_tenant uuid := gen_random_uuid();
+  v_sucursal uuid := gen_random_uuid();
+  v_cust uuid := gen_random_uuid();
+  v_ord uuid := gen_random_uuid();
+  v_item uuid := gen_random_uuid();
+  v_cxc uuid := gen_random_uuid();
+  v_today date := (now() AT TIME ZONE 'America/Santo_Domingo')::date;
+  v_caught_cancel boolean := false;
+  v_caught_revert boolean := false;
+BEGIN
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa, itbis_incluido_en_precio)
+  VALUES (v_tenant, 'Corp Restaurant 5', 'corporativo', true, true);
+  INSERT INTO public.sucursales (id, tenant_id) VALUES (v_sucursal, v_tenant);
+  INSERT INTO public.customers (id, tenant_id, name, document_id)
+  VALUES (v_cust, v_tenant, 'Zeta Corp', '131-98765-4');
+
+  INSERT INTO public.digital_orders (id, tenant_id, sucursal_id, customer_name, status, total, numero_pedido, employee_name, created_at)
+  VALUES (v_ord, v_tenant, v_sucursal, 'Emp', 'accepted', 120.00, 601, 'Hector', now());
+
+  INSERT INTO public.digital_order_items (id, tenant_id, order_id, plato_id, name_snapshot, price_snapshot, quantity, subtotal, status)
+  VALUES (v_item, v_tenant, v_ord, 1, 'Plato Test', 120.00, 1, 120.00, 'active');
+
+  INSERT INTO public.cuentas_cobrar (id, tenant_id, sucursal_id, customer_id, digital_order_id, monto_total, monto_pagado, fecha_vencimiento, estado)
+  VALUES (v_cxc, v_tenant, v_sucursal, v_cust, v_ord, 120.00, 0.00, now() + interval '30 days', 'pendiente');
+
+  PERFORM set_config('test.tenant', v_tenant::text, true);
+
+  -- Issue the invoice
+  PERFORM public.cloudix_issue_consolidated_invoice(v_cust, v_today - 1, v_today + 1, v_sucursal);
+
+  -- Canceling item must raise ORDER_ALREADY_INVOICED
+  BEGIN
+    PERFORM public.cancel_digital_order_item(v_item);
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'ORDER_ALREADY_INVOICED' THEN
+      v_caught_cancel := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_cancel, 'cancel_digital_order_item on invoiced order must raise ORDER_ALREADY_INVOICED');
+
+  -- Reverting accept must raise ORDER_ALREADY_INVOICED
+  BEGIN
+    PERFORM public.revert_company_digital_order_accept(v_ord);
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'ORDER_ALREADY_INVOICED' THEN
+      v_caught_revert := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_revert, 'revert_company_digital_order_accept on invoiced order must raise ORDER_ALREADY_INVOICED');
+END $$;
+
+-- Test 29: Non-included blocked from consolidated invoice; included tenant totals balance
+DO $$
+DECLARE
+  v_tenant_excl uuid := gen_random_uuid();
+  v_tenant_incl uuid := gen_random_uuid();
+  v_sucursal_excl uuid := gen_random_uuid();
+  v_sucursal_incl uuid := gen_random_uuid();
+  v_cust_excl uuid := gen_random_uuid();
+  v_cust_incl uuid := gen_random_uuid();
+  v_ord_excl uuid := gen_random_uuid();
+  v_ord_incl uuid := gen_random_uuid();
+  v_cxc_excl uuid := gen_random_uuid();
+  v_cxc_incl uuid := gen_random_uuid();
+  v_today date := (now() AT TIME ZONE 'America/Santo_Domingo')::date;
+  v_res_excl jsonb;
+  v_res_incl jsonb;
+  v_fact_incl public.facturas%ROWTYPE;
+  v_caught_excl boolean := false;
+  v_fact_count_excl integer;
+  v_outbox_count_excl integer;
+  v_ecf_count_excl integer;
+  v_sum_cxc_incl numeric;
+BEGIN
+  -- 1. Non-included tenant: preview blocked_reason ITBIS_NOT_INCLUDED_UNSUPPORTED,
+  -- issue raises it with NO ncf reserved and NO factura inserted
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa, itbis_incluido_en_precio)
+  VALUES (v_tenant_excl, 'Exclusive ITBIS Restaurant', 'corporativo', true, false);
+  INSERT INTO public.sucursales (id, tenant_id) VALUES (v_sucursal_excl, v_tenant_excl);
+  INSERT INTO public.customers (id, tenant_id, name, document_id)
+  VALUES (v_cust_excl, v_tenant_excl, 'Client Excl', '131-00001-1');
+
+  INSERT INTO public.digital_orders (id, tenant_id, sucursal_id, customer_name, status, total, numero_pedido, employee_name, created_at)
+  VALUES (v_ord_excl, v_tenant_excl, v_sucursal_excl, 'Emp Excl', 'accepted', 1000.00, 701, 'Ivan', now());
+  INSERT INTO public.cuentas_cobrar (id, tenant_id, sucursal_id, customer_id, digital_order_id, monto_total, monto_pagado, fecha_vencimiento, estado)
+  VALUES (v_cxc_excl, v_tenant_excl, v_sucursal_excl, v_cust_excl, v_ord_excl, 1000.00, 0.00, now() + interval '30 days', 'pendiente');
+
+  PERFORM set_config('test.tenant', v_tenant_excl::text, true);
+
+  -- Preview verification
+  v_res_excl := public.cloudix_preview_consolidated_invoice(v_cust_excl, v_today - 1, v_today + 1, v_sucursal_excl);
+  PERFORM test_assert(v_res_excl->>'blocked_reason' = 'ITBIS_NOT_INCLUDED_UNSUPPORTED', 'Excl preview blocked_reason must be ITBIS_NOT_INCLUDED_UNSUPPORTED');
+  PERFORM test_assert((v_res_excl->>'total')::numeric = 1000.00, 'Excl preview total must equal orders total');
+  PERFORM test_assert(v_res_excl->>'itbis' IS NULL, 'Excl preview itbis must be null');
+  PERFORM test_assert((v_res_excl->>'count')::int = 1, 'Excl preview count must be 1');
+
+  -- Issue raises ITBIS_NOT_INCLUDED_UNSUPPORTED
+  BEGIN
+    PERFORM public.cloudix_issue_consolidated_invoice(v_cust_excl, v_today - 1, v_today + 1, v_sucursal_excl);
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'ITBIS_NOT_INCLUDED_UNSUPPORTED' THEN
+      v_caught_excl := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_excl, 'Excl issue must raise ITBIS_NOT_INCLUDED_UNSUPPORTED');
+
+  -- Verify NO factura inserted, NO ecf documents, NO outbox (no NCF reserved)
+  SELECT count(*) INTO v_fact_count_excl FROM public.facturas WHERE tenant_id = v_tenant_excl;
+  SELECT count(*) INTO v_ecf_count_excl FROM public.ecf_documents WHERE tenant_id = v_tenant_excl;
+  SELECT count(*) INTO v_outbox_count_excl FROM public.fiscal_outbox WHERE tenant_id = v_tenant_excl;
+  PERFORM test_assert(v_fact_count_excl = 0, 'No factura must be inserted for non-included tenant');
+  PERFORM test_assert(v_ecf_count_excl = 0, 'No ecf_document must be created for non-included tenant');
+  PERFORM test_assert(v_outbox_count_excl = 0, 'No fiscal_outbox row must be created for non-included tenant');
+
+  -- CxC row must remain uninvoiced
+  PERFORM test_assert((SELECT factura_id FROM public.cuentas_cobrar WHERE id = v_cxc_excl) IS NULL, 'cxc_excl factura_id must remain null');
+
+  -- 2. ITBIS included tenant: prices are gross, base is split from total
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa, itbis_incluido_en_precio)
+  VALUES (v_tenant_incl, 'Inclusive ITBIS Restaurant', 'corporativo', true, true);
+  INSERT INTO public.sucursales (id, tenant_id) VALUES (v_sucursal_incl, v_tenant_incl);
+  INSERT INTO public.customers (id, tenant_id, name, document_id)
+  VALUES (v_cust_incl, v_tenant_incl, 'Client Incl', '131-00002-2');
+
+  INSERT INTO public.digital_orders (id, tenant_id, sucursal_id, customer_name, status, total, numero_pedido, employee_name, created_at)
+  VALUES (v_ord_incl, v_tenant_incl, v_sucursal_incl, 'Emp Incl', 'accepted', 1180.00, 702, 'Julia', now());
+  INSERT INTO public.cuentas_cobrar (id, tenant_id, sucursal_id, customer_id, digital_order_id, monto_total, monto_pagado, fecha_vencimiento, estado)
+  VALUES (v_cxc_incl, v_tenant_incl, v_sucursal_incl, v_cust_incl, v_ord_incl, 1180.00, 0.00, now() + interval '30 days', 'pendiente');
+
+  SELECT COALESCE(SUM(monto_total), 0) INTO v_sum_cxc_incl
+  FROM public.cuentas_cobrar
+  WHERE id = v_cxc_incl;
+
+  PERFORM set_config('test.tenant', v_tenant_incl::text, true);
+  v_res_incl := public.cloudix_issue_consolidated_invoice(v_cust_incl, v_today - 1, v_today + 1, v_sucursal_incl);
+  SELECT * INTO v_fact_incl FROM public.facturas WHERE id = (v_res_incl->>'factura_id')::uuid;
+
+  PERFORM test_assert(v_fact_incl.total = v_sum_cxc_incl, 'Incl factura total must equal sum of linked CxC monto_total');
+  PERFORM test_assert(v_fact_incl.total = 1180.00, 'Incl total must be 1180.00');
+  PERFORM test_assert(v_fact_incl.subtotal = 1000.00, 'Incl subtotal must be 1000.00');
+  PERFORM test_assert(v_fact_incl.itbis = 180.00, 'Incl itbis must be 180.00');
+  PERFORM test_assert(round(v_fact_incl.subtotal + v_fact_incl.itbis, 2) = v_fact_incl.total, 'Incl subtotal + itbis must equal total');
+END $$;
+
+

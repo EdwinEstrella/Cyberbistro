@@ -13,7 +13,9 @@ import {
   MapPin, 
   Trash2, 
   Edit,
-  CreditCard
+  CreditCard,
+  Receipt,
+  Lock
 } from "lucide-react";
 import {
   createCustomer,
@@ -49,7 +51,11 @@ export function Clientes() {
   const { tenantId, plan } = useAuth();
   const canUseMenuLinks = canUseFeature(plan, "menu_links");
   const canUseCreditLimit = canUseFeature(plan, "credit_limit");
-  const [statementCustomer, setStatementCustomer] = useState<StatementCustomerTarget | null>(null);
+  const canConsolidate = canUseFeature(plan, "consolidated_invoice");
+  const [statementCustomer, setStatementCustomer] = useState<{
+    target: StatementCustomerTarget;
+    initialMode?: "statement" | "invoice";
+  } | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -399,19 +405,48 @@ export function Clientes() {
                               <Eye className="w-[18px] h-[18px]" />
                             </button>
                             {canUseMenuLinks && (
-                              <button
-                                title="Estado de cuenta (PDF)"
-                                onClick={() =>
-                                  setStatementCustomer({
-                                    id: customer.id,
-                                    name: customer.name,
-                                    document_id: customer.document_id,
-                                  })
-                                }
-                                className="w-10 h-10 rounded-xl bg-zinc-850 hover:bg-orange-500/10 hover:text-orange-400 text-zinc-400 flex items-center justify-center border border-zinc-800 transition-all cursor-pointer active:scale-90"
-                              >
-                                <FileText className="w-[16px] h-[16px]" />
-                              </button>
+                              <>
+                                <button
+                                  title="Estado de cuenta (PDF)"
+                                  onClick={() =>
+                                    setStatementCustomer({
+                                      target: {
+                                        id: customer.id,
+                                        name: customer.name,
+                                        document_id: customer.document_id,
+                                      },
+                                      initialMode: "statement",
+                                    })
+                                  }
+                                  className="w-10 h-10 rounded-xl bg-zinc-850 hover:bg-orange-500/10 hover:text-orange-400 text-zinc-400 flex items-center justify-center border border-zinc-800 transition-all cursor-pointer active:scale-90"
+                                >
+                                  <FileText className="w-[16px] h-[16px]" />
+                                </button>
+                                <button
+                                  title={canConsolidate ? "Emitir factura consolidada (e-CF)" : "Disponible en el plan Corporativo"}
+                                  onClick={() =>
+                                    setStatementCustomer({
+                                      target: {
+                                        id: customer.id,
+                                        name: customer.name,
+                                        document_id: customer.document_id,
+                                      },
+                                      initialMode: "invoice",
+                                    })
+                                  }
+                                  className={`w-10 h-10 rounded-xl flex items-center justify-center border transition-all cursor-pointer active:scale-90 ${
+                                    canConsolidate
+                                      ? "bg-zinc-850 hover:bg-emerald-500/10 hover:text-emerald-400 text-zinc-400 border-zinc-800"
+                                      : "bg-zinc-900/40 text-zinc-600 border-zinc-800/50"
+                                  }`}
+                                >
+                                  {canConsolidate ? (
+                                    <Receipt className="w-[16px] h-[16px]" />
+                                  ) : (
+                                    <Lock className="w-[14px] h-[14px]" />
+                                  )}
+                                </button>
+                              </>
                             )}
                             <button
                               title="Editar Perfil"
@@ -696,21 +731,48 @@ export function Clientes() {
               </div>
               <div className="flex items-center gap-2">
                 {canUseMenuLinks && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setStatementCustomer({
-                        id: viewingCustomer.id,
-                        name: viewingCustomer.name,
-                        document_id: viewingCustomer.document_id,
-                      })
-                    }
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-orange-500/30 text-orange-400 hover:bg-orange-500/10 text-xs font-bold font-['Space_Grotesk'] transition-colors cursor-pointer"
-                    title="Estado de cuenta (PDF)"
-                  >
-                    <FileText className="w-3.5 h-3.5" />
-                    <span>Estado de cuenta (PDF)</span>
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setStatementCustomer({
+                          target: {
+                            id: viewingCustomer.id,
+                            name: viewingCustomer.name,
+                            document_id: viewingCustomer.document_id,
+                          },
+                          initialMode: "statement",
+                        })
+                      }
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-orange-500/30 text-orange-400 hover:bg-orange-500/10 text-xs font-bold font-['Space_Grotesk'] transition-colors cursor-pointer"
+                      title="Estado de cuenta (PDF)"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>Estado de cuenta (PDF)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setStatementCustomer({
+                          target: {
+                            id: viewingCustomer.id,
+                            name: viewingCustomer.name,
+                            document_id: viewingCustomer.document_id,
+                          },
+                          initialMode: "invoice",
+                        })
+                      }
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold font-['Space_Grotesk'] transition-colors cursor-pointer ${
+                        canConsolidate
+                          ? "border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
+                          : "border-zinc-800 text-zinc-500 hover:bg-zinc-900"
+                      }`}
+                      title={canConsolidate ? "Emitir factura consolidada (e-CF)" : "Disponible en el plan Corporativo"}
+                    >
+                      {canConsolidate ? <Receipt className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                      <span>Factura e-CF</span>
+                    </button>
+                  </>
                 )}
                 <button
                   type="button"
@@ -905,7 +967,8 @@ export function Clientes() {
         onOpenChange={(isOpen) => {
           if (!isOpen) setStatementCustomer(null);
         }}
-        customer={statementCustomer}
+        customer={statementCustomer?.target ?? null}
+        initialMode={statementCustomer?.initialMode ?? "statement"}
       />
     </div>
   );

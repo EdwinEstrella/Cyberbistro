@@ -15,6 +15,12 @@ describe('cancelItemErrors', () => {
   });
 
   describe('mapCancelItemError', () => {
+    it('maps ORDER_ALREADY_INVOICED correctly', () => {
+      expect(mapCancelItemError(new Error('ORDER_ALREADY_INVOICED'))).toBe(
+        'Este pedido ya fue facturado; para corregirlo emití una nota de crédito.'
+      );
+    });
+
     it('maps PAYMENT_EXCEEDS_TOTAL correctly', () => {
       expect(mapCancelItemError(new Error('PAYMENT_EXCEEDS_TOTAL'))).toBe(
         'La cuenta ya tiene pagos mayores al nuevo total'
