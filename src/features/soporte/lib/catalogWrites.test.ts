@@ -46,10 +46,40 @@ describe("catalogWrites — desktop SQLite vs web IndexedDB", () => {
         categoria: "Pizzas",
         disponible: true,
         va_a_cocina: true,
+        is_extra: false,
       });
       expect(localFirst.enqueueLocalWrite).not.toHaveBeenCalled();
       // Desktop is SQLite-only: the legacy IndexedDB mirror is not written.
       expect(localFirst.writeLocalMirrorRow).not.toHaveBeenCalled();
+    });
+
+    it("routes plato upsert with is_extra=true through saveCatalogCommandLocally", async () => {
+      await writePlatoUpsert(
+        {
+          tenantId: "tenant-1",
+          sucursalId: "branch-1",
+          id: 11,
+          nombre: "Queso Extra",
+          precio: 50,
+          categoria: "Extras",
+          disponible: true,
+          va_a_cocina: false,
+          is_extra: true,
+        },
+        true
+      );
+
+      expect(adapter.saveCatalogCommandLocally).toHaveBeenCalledWith({
+        type: "catalog.product.upsert",
+        id: "11",
+        sucursalId: "branch-1",
+        nombre: "Queso Extra",
+        precio: 50,
+        categoria: "Extras",
+        disponible: true,
+        va_a_cocina: false,
+        is_extra: true,
+      });
     });
 
     it("routes plato delete through saveCatalogCommandLocally", async () => {

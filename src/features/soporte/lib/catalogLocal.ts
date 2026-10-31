@@ -30,6 +30,7 @@ export function normalizePlato(raw: Record<string, unknown>): Record<string, unk
     categoria: raw.categoria != null ? String(raw.categoria) : "",
     disponible: toBool(raw.disponible),
     va_a_cocina: toBool(raw.va_a_cocina),
+    is_extra: toBool(raw.is_extra ?? raw.isExtra),
     sucursal_id: raw.sucursal_id != null ? String(raw.sucursal_id) : null,
   };
 }

@@ -79,6 +79,20 @@ describe("Catálogo (platos/menu_categories) cloud→SQLite pull", () => {
     expect(row.categoria).toBe("Bebidas");
     expect(row.disponible).toBe(1);
     expect(row.va_a_cocina).toBe(0);
+    expect(row.is_extra).toBe(0);
+  });
+
+
+  it("lands a cloud plato with is_extra=true in SQLite as 1", () => {
+    const s = setup();
+    const db = s.getDatabase();
+
+    applyCloudPlatoRows(db, tenantId, [cloudPlato({ id: 99, is_extra: true, categoria: "Extras" })]);
+
+    const row = db.prepare("SELECT id, categoria, is_extra FROM platos WHERE id = '99'").get() as Record<string, unknown>;
+    expect(row).toBeTruthy();
+    expect(row.is_extra).toBe(1);
+    expect(row.categoria).toBe("Extras");
   });
 
   it("accepts a negative client-assigned temp id for a plato", () => {

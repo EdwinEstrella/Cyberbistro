@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo } from "react";
 import { Navigate, useNavigate } from "react-router";
 import QRCode from "qrcode";
 import { ExternalLink } from "lucide-react";
+import { canUseFeature } from "../../../shared/lib/planFeatures";
+import { MenuLinksList } from "../../menu-links";
 import { supabase, createIsolatedAuthClient } from "../../../shared/lib/supabase";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { useSucursal } from "../../../app/context/SucursalContext";
@@ -73,6 +75,7 @@ interface Plato {
   categoria: string;
   disponible: boolean;
   va_a_cocina: boolean;
+  is_extra?: boolean;
   sucursal_id?: string | null;
 }
 
@@ -166,7 +169,7 @@ function CartaPanel() {
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [mode, setMode] = useState<FormMode>(null);
-  const [form, setForm] = useState({ nombre: "", precio: "", categoria: "General", disponible: true, va_a_cocina: true });
+  const [form, setForm] = useState({ nombre: "", precio: "", categoria: "General", disponible: true, va_a_cocina: true, is_extra: false });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [activeFilter, setActiveFilter] = useState("Todos");
@@ -211,7 +214,7 @@ function CartaPanel() {
   const filtered = activeFilter === "Todos" ? platos : platos.filter((p) => p.categoria === activeFilter);
 
   function openAdd() {
-    setForm({ nombre: "", precio: "", categoria: categoryOptions[0] ?? "General", disponible: true, va_a_cocina: true });
+    setForm({ nombre: "", precio: "", categoria: categoryOptions[0] ?? "General", disponible: true, va_a_cocina: true, is_extra: false });
     setSelectedId(null);
     setMode("add");
     setError("");
@@ -219,7 +222,7 @@ function CartaPanel() {
 
   function openEdit(p: Plato) {
     setSelectedId(p.id);
-    setForm({ nombre: p.nombre, precio: String(p.precio), categoria: p.categoria, disponible: p.disponible, va_a_cocina: p.va_a_cocina !== false });
+    setForm({ nombre: p.nombre, precio: String(p.precio), categoria: p.categoria, disponible: p.disponible, va_a_cocina: p.va_a_cocina !== false, is_extra: Boolean(p.is_extra) });
     setMode("edit");
     setError("");
   }
@@ -331,7 +334,7 @@ function CartaPanel() {
         setSaving(false);
         return;
       }
-      setPlatos((prev) => prev.map((p) => p.id === selectedId ? { ...p, nombre: form.nombre.trim(), precio, categoria: form.categoria, disponible: form.disponible, va_a_cocina: form.va_a_cocina } : p));
+      setPlatos((prev) => prev.map((p) => p.id === selectedId ? { ...p, nombre: form.nombre.trim(), precio, categoria: form.categoria, disponible: form.disponible, va_a_cocina: form.va_a_cocina, is_extra: form.is_extra } : p));
       setMode(null);
       setSelectedId(null);
     }
@@ -453,7 +456,7 @@ function CartaPanel() {
                   <SelectValue placeholder="Seleccionar categoría" />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl">
-                  {categoryOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  {Array.from(new Set([...categoryOptions, form.categoria, form.is_extra ? "Extras" : ""])).filter(Boolean).map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -466,6 +469,25 @@ function CartaPanel() {
               <div className="flex flex-col"><span className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">Cocina</span><span className="text-[9px] text-muted-foreground/60">¿Pasa por pedido de cocina?</span></div>
               <button onClick={() => setForm(f => ({ ...f, va_a_cocina: !f.va_a_cocina }))} className={`rounded-full px-[12px] py-[5px] text-[10px] font-bold uppercase transition-all cursor-pointer border ${form.va_a_cocina ? "bg-primary/10 border-primary/30 text-primary" : "bg-muted border-border text-muted-foreground"}`}>{form.va_a_cocina ? "Sí" : "No"}</button>
             </div>
+            <label className="flex items-center gap-3 pt-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={form.is_extra}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setForm((f) => ({
+                    ...f,
+                    is_extra: checked,
+                    categoria: checked && (!f.categoria || f.categoria.trim() === "") ? "Extras" : f.categoria,
+                  }));
+                }}
+                className="size-4 rounded border-border text-primary focus:ring-primary"
+              />
+              <div className="flex flex-col">
+                <span className="text-[12px] font-semibold text-foreground">Es un extra (se agrega a otros platos)</span>
+                <span className="text-[10px] text-muted-foreground">Disponible como adición en links con extras</span>
+              </div>
+            </label>
           </div>
 
           <div className="flex flex-col gap-3 mt-4 pt-4 border-t border-black/5 dark:border-white/5">
@@ -1328,9 +1350,10 @@ function MesasPanel() {
 // ─────────────────────────────────────────────
 // DIGITAL MENU PANEL
 // ─────────────────────────────────────────────
-function DigitalMenuPanel() {
+function LegacyDigitalMenuPanel() {
   const { tenantId, plan } = useAuth();
   const { activeSucursalId } = useSucursal();
+
   const [settings, setSettings] = useState<any>(null);
   const [platos, setPlatos] = useState<Plato[]>([]);
   const [menuItems, setMenuItems] = useState<any[]>([]);
@@ -1894,6 +1917,27 @@ function DigitalMenuPanel() {
       />
     </div>
   );
+}
+
+function DigitalMenuPanel() {
+  const { tenantId, plan } = useAuth();
+  const { activeSucursalId } = useSucursal();
+
+  if (canUseFeature(plan, "menu_links") && tenantId) {
+    return (
+      <div className="flex-1 overflow-y-auto flex flex-col">
+        <MenuLinksList tenantId={tenantId} sucursalId={activeSucursalId} />
+        <section className="border-t border-black/10 dark:border-white/10 pt-6">
+          <h2 className="text-xl font-bold font-['Space_Grotesk'] text-foreground px-4 sm:px-8 mb-2">
+            Apariencia del menú (logo, título, tema)
+          </h2>
+          <LegacyDigitalMenuPanel />
+        </section>
+      </div>
+    );
+  }
+
+  return <LegacyDigitalMenuPanel />;
 }
 
 // ─────────────────────────────────────────────

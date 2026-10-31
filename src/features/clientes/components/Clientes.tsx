@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useAuth } from "../../../shared/hooks/useAuth";
+import { canUseFeature } from "../../../shared/lib/planFeatures";
+import { StatementDialog, type StatementCustomerTarget } from "../../cuentas-cobrar/statement";
 import { 
   Eye, 
   Plus, 
@@ -37,7 +39,9 @@ const emptyForm: CustomerFormInput = {
 };
 
 export function Clientes() {
-  const { tenantId } = useAuth();
+  const { tenantId, plan } = useAuth();
+  const canUseMenuLinks = canUseFeature(plan, "menu_links");
+  const [statementCustomer, setStatementCustomer] = useState<StatementCustomerTarget | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
@@ -298,6 +302,21 @@ export function Clientes() {
                             >
                               <Eye className="w-[18px] h-[18px]" />
                             </button>
+                            {canUseMenuLinks && (
+                              <button
+                                title="Estado de cuenta (PDF)"
+                                onClick={() =>
+                                  setStatementCustomer({
+                                    id: customer.id,
+                                    name: customer.name,
+                                    document_id: customer.document_id,
+                                  })
+                                }
+                                className="w-10 h-10 rounded-xl bg-zinc-850 hover:bg-orange-500/10 hover:text-orange-400 text-zinc-400 flex items-center justify-center border border-zinc-800 transition-all cursor-pointer active:scale-90"
+                              >
+                                <FileText className="w-[16px] h-[16px]" />
+                              </button>
+                            )}
                             <button
                               title="Editar Perfil"
                               onClick={() => startEdit(customer)}
@@ -520,14 +539,33 @@ export function Clientes() {
                   ID único: <span className="font-mono text-[10px] bg-zinc-900 px-1.5 py-0.5 rounded text-zinc-400">{viewingCustomer.id}</span>
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setViewingCustomer(null)}
-                aria-label="Cerrar modal"
-                className="text-zinc-400 bg-transparent border-none cursor-pointer text-[26px] hover:text-white transition-colors leading-none w-10 h-10 flex items-center justify-center rounded-full hover:bg-zinc-900"
-              >
-                ×
-              </button>
+              <div className="flex items-center gap-2">
+                {canUseMenuLinks && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setStatementCustomer({
+                        id: viewingCustomer.id,
+                        name: viewingCustomer.name,
+                        document_id: viewingCustomer.document_id,
+                      })
+                    }
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-orange-500/30 text-orange-400 hover:bg-orange-500/10 text-xs font-bold font-['Space_Grotesk'] transition-colors cursor-pointer"
+                    title="Estado de cuenta (PDF)"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>Estado de cuenta (PDF)</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setViewingCustomer(null)}
+                  aria-label="Cerrar modal"
+                  className="text-zinc-400 bg-transparent border-none cursor-pointer text-[26px] hover:text-white transition-colors leading-none w-10 h-10 flex items-center justify-center rounded-full hover:bg-zinc-900"
+                >
+                  ×
+                </button>
+              </div>
             </div>
 
             {/* Modal Body (Scrollable) */}
@@ -692,6 +730,14 @@ export function Clientes() {
           setConfirmInfo(s => ({ ...s, open: false }));
         }}
         onCancel={() => setConfirmInfo(s => ({ ...s, open: false }))}
+      />
+
+      <StatementDialog
+        open={Boolean(statementCustomer)}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) setStatementCustomer(null);
+        }}
+        customer={statementCustomer}
       />
     </div>
   );

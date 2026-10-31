@@ -104,6 +104,7 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
       categoria TEXT,
       disponible INTEGER,
       va_a_cocina INTEGER,
+      is_extra INTEGER NOT NULL DEFAULT 0,
       created_at TEXT,
       updated_at TEXT,
       deleted_at TEXT
@@ -418,23 +419,6 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
       is_available INTEGER NOT NULL DEFAULT 1 CHECK (is_available IN (0, 1)),
       price_override REAL
     ) STRICT;
-    CREATE TABLE IF NOT EXISTS digital_orders (
-      id TEXT PRIMARY KEY,
-      tenant_id TEXT NOT NULL REFERENCES tenants(id),
-      sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
-      customer_name TEXT,
-      total REAL NOT NULL CHECK (total >= 0),
-      status TEXT NOT NULL
-    ) STRICT;
-    CREATE TABLE IF NOT EXISTS digital_order_items (
-      id TEXT PRIMARY KEY,
-      tenant_id TEXT NOT NULL REFERENCES tenants(id),
-      order_id TEXT NOT NULL REFERENCES digital_orders(id),
-      plato_id TEXT NOT NULL REFERENCES platos(id),
-      quantity INTEGER NOT NULL CHECK (quantity > 0),
-      unit_price REAL NOT NULL CHECK (unit_price >= 0),
-      subtotal REAL NOT NULL CHECK (subtotal >= 0)
-    ) STRICT;
     CREATE TABLE IF NOT EXISTS sync_state (
       key TEXT PRIMARY KEY,
       tenant_id TEXT NOT NULL REFERENCES tenants(id),
@@ -503,6 +487,7 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
   ensurePayablesSchemaEvolution(database);
   ensureSalonCocinaSchemaEvolution(database);
   ensureInventorySchemaEvolution(database);
+  ensurePlatosSchemaEvolution(database);
   ensureFiscalCheckoutSchemaEvolution(database);
   database.exec(`
     CREATE INDEX IF NOT EXISTS idx_payroll_payments_employee_period ON payroll_payments (tenant_id, sucursal_id, employee_id, period);
@@ -510,6 +495,13 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
     CREATE INDEX IF NOT EXISTS idx_gastos_payroll_payment ON gastos (payroll_payment_id);
   `);
   database.exec("UPDATE sync_outbox SET status = 'pending' WHERE status = 'syncing';");
+}
+
+function ensurePlatosSchemaEvolution(database: DatabaseSync): void {
+  const columns = getTableColumns(database, "platos");
+  if (columns.length > 0 && !columns.includes("is_extra")) {
+    database.exec("ALTER TABLE platos ADD COLUMN is_extra INTEGER NOT NULL DEFAULT 0;");
+  }
 }
 
 function ensureInventorySchemaEvolution(database: DatabaseSync): void {

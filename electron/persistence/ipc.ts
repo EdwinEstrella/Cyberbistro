@@ -704,11 +704,13 @@ function parseCatalogCommand(payload: unknown): CatalogCommand | null {
   if (command.type === "catalog.category.delete" && hasOnly("type", "id") && isString("id")) return command as CatalogCommand;
   if (
     command.type === "catalog.product.upsert" &&
-    Object.keys(command).every((key) => ["type", "id", "tenantId", "sucursalId", "nombre", "precio", "categoria", "disponible", "va_a_cocina"].includes(key)) &&
+    Object.keys(command).every((key) => ["type", "id", "tenantId", "sucursalId", "nombre", "precio", "categoria", "disponible", "va_a_cocina", "is_extra", "isExtra"].includes(key)) &&
     isString("id") && isString("sucursalId") && isString("nombre") && isString("categoria") &&
     (command.tenantId === undefined || isString("tenantId")) &&
     typeof command.precio === "number" && Number.isFinite(command.precio) && command.precio >= 0 &&
-    typeof command.disponible === "boolean" && typeof command.va_a_cocina === "boolean"
+    typeof command.disponible === "boolean" && typeof command.va_a_cocina === "boolean" &&
+    (command.is_extra === undefined || typeof command.is_extra === "boolean") &&
+    (command.isExtra === undefined || typeof command.isExtra === "boolean")
   ) return command as CatalogCommand;
   if (command.type === "catalog.product.delete" && hasOnly("type", "id") && isString("id")) return command as CatalogCommand;
   if (command.type === "catalog.inventory-product.upsert" && hasOnly("type", "id", "name", "unit") && isString("id") && isString("name") && isString("unit")) return command as CatalogCommand;

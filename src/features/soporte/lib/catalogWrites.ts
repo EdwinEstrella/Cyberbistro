@@ -19,9 +19,11 @@ export interface WritePlatoUpsertInput {
   categoria: string;
   disponible: boolean;
   va_a_cocina: boolean;
+  is_extra?: boolean;
 }
 
 export async function writePlatoUpsert(input: WritePlatoUpsertInput, isNew: boolean): Promise<void> {
+  const isExtra = Boolean(input.is_extra);
   const payload = {
     id: input.id,
     nombre: input.nombre,
@@ -29,6 +31,7 @@ export async function writePlatoUpsert(input: WritePlatoUpsertInput, isNew: bool
     categoria: input.categoria,
     disponible: input.disponible,
     va_a_cocina: input.va_a_cocina,
+    is_extra: isExtra,
     tenant_id: input.tenantId,
     sucursal_id: input.sucursalId,
   };
@@ -45,6 +48,7 @@ export async function writePlatoUpsert(input: WritePlatoUpsertInput, isNew: bool
       categoria: input.categoria,
       disponible: input.disponible,
       va_a_cocina: input.va_a_cocina,
+      is_extra: isExtra,
     });
   } else {
     // Web: no SQLite engine, so the IndexedDB mirror stays the local store.

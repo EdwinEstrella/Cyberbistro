@@ -22,6 +22,7 @@ describe("planFeatures", () => {
     allFeatures.forEach((feature) => {
       expect(canUseFeature("basico", feature)).toBe(false);
     });
+    expect(canUseFeature("basico", "menu_links")).toBe(false);
   });
 
   it("profesional tiene todas las features", () => {
@@ -34,6 +35,7 @@ describe("planFeatures", () => {
     allFeatures.forEach((feature) => {
       expect(canUseFeature("empresarial", feature)).toBe(true);
     });
+    expect(canUseFeature("empresarial", "menu_links")).toBe(true);
   });
 
   it("null, undefined o planes desconocidos se normalizan a basico (sin acceso)", () => {
@@ -51,6 +53,19 @@ describe("planFeatures", () => {
   });
 
   it("getRequiredPlan retorna el plan minimo requerido (profesional)", () => {
+    allFeatures.forEach((feature) => {
+      expect(getRequiredPlan(feature)).toBe("profesional");
+    });
+  });
+
+  it("menu_links esta habilitado UNICAMENTE en el plan empresarial", () => {
+    expect(canUseFeature("basico", "menu_links")).toBe(false);
+    expect(canUseFeature("profesional", "menu_links")).toBe(false);
+    expect(canUseFeature("empresarial", "menu_links")).toBe(true);
+  });
+
+  it("getRequiredPlan('menu_links') retorna 'empresarial' y los demas retornan 'profesional'", () => {
+    expect(getRequiredPlan("menu_links")).toBe("empresarial");
     allFeatures.forEach((feature) => {
       expect(getRequiredPlan(feature)).toBe("profesional");
     });

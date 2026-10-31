@@ -37,7 +37,7 @@ import { canUseFeature, type Feature } from "../../shared/lib/planFeatures";
 type SidebarItem = {
   readonly label: string;
   readonly path?: string;
-  readonly customIcon?: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras" | "cxp" | "cxc" | "pedidos" | "fiscal" | "nomina" | "notacredito";
+  readonly customIcon?: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras" | "cxp" | "cxc" | "pedidos" | "fiscal" | "nomina" | "notacredito" | "menulinks";
   readonly icon?: string;
   readonly viewBox?: string;
   readonly feature?: Feature;
@@ -57,6 +57,7 @@ const sidebarSections: readonly SidebarSection[] = [
     items: [
       { label: "Venta", customIcon: "venta", path: "/dashboard" },
       { label: "Pedidos", customIcon: "pedidos", path: "/pedidos", feature: "digital_menu" },
+      { label: "Links de menú", customIcon: "menulinks", path: "/menu-links", feature: "menu_links" },
       { label: "Camarera", customIcon: "camarera", path: "/camarera" },
       { label: "Mesas", customIcon: "mesas", path: "/tables" },
       { label: "Cocina", customIcon: "cocina", path: "/cocina" },
@@ -190,7 +191,7 @@ function filterMainNavForRol(rol: string | null): readonly SidebarSection[] {
   return filtered.filter((section) => section.items.length > 0);
 }
 
-function SidebarCustomIcon({ name }: { name: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras" | "cxp" | "cxc" | "pedidos" | "fiscal" | "nomina" | "historial" | "notacredito" }) {
+function SidebarCustomIcon({ name }: { name: "gastos" | "cocina" | "entregas" | "mesas" | "cierre" | "venta" | "clientes" | "camarera" | "inventario" | "compras" | "cxp" | "cxc" | "pedidos" | "fiscal" | "nomina" | "historial" | "notacredito" | "menulinks" }) {
   if (name === "notacredito") {
     return (
       <svg className="shrink-0 size-[20px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden>
@@ -211,6 +212,14 @@ function SidebarCustomIcon({ name }: { name: "gastos" | "cocina" | "entregas" | 
     return (
       <svg className="shrink-0 size-[20px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden>
         <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+      </svg>
+    );
+  }
+
+  if (name === "menulinks") {
+    return (
+      <svg className="shrink-0 size-[20px]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
       </svg>
     );
   }

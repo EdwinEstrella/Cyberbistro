@@ -350,8 +350,8 @@ export function applyCloudPlatoRows(
   platos: Array<Record<string, unknown>>,
 ): void {
   const stmt = db.prepare(`
-    INSERT INTO platos (id, tenant_id, sucursal_id, nombre, precio, categoria, disponible, va_a_cocina, created_at, updated_at, deleted_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO platos (id, tenant_id, sucursal_id, nombre, precio, categoria, disponible, va_a_cocina, is_extra, created_at, updated_at, deleted_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       sucursal_id = excluded.sucursal_id,
       nombre = excluded.nombre,
@@ -361,6 +361,7 @@ export function applyCloudPlatoRows(
       va_a_cocina = excluded.va_a_cocina,
       created_at = excluded.created_at,
       updated_at = excluded.updated_at,
+      is_extra = excluded.is_extra,
       deleted_at = excluded.deleted_at
   `);
   for (const p of platos) {
@@ -377,6 +378,7 @@ export function applyCloudPlatoRows(
       p.categoria ? String(p.categoria) : null,
       toIntFlag(p.disponible),
       toIntFlag(p.va_a_cocina),
+      toIntFlag(p.is_extra ?? p.isExtra),
       p.created_at ? String(p.created_at) : null,
       p.updated_at ? String(p.updated_at) : null,
       p.deleted_at ? String(p.deleted_at) : null,
