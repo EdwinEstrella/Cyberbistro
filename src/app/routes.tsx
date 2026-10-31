@@ -21,6 +21,7 @@ export const appRoutes = [
   { path: "/register", Component: Register },
   { path: "/super-admin", lazy: () => import("../features/super-admin").then(({ SuperAdmin }) => ({ Component: SuperAdmin })) },
   { path: "/menu/:slug", lazy: () => import("../features/digital-menu").then(({ PublicDigitalMenu }) => ({ Component: PublicDigitalMenu })) },
+  { path: "/menu/c/:token", lazy: () => import("../features/digital-menu").then(({ LinkDigitalMenu }) => ({ Component: LinkDigitalMenu })) },
   {
     Component: AppLayout,
     HydrateFallback: () => null,

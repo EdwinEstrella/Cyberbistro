@@ -1,1 +1,3 @@
-﻿export { PublicDigitalMenu } from "./PublicDigitalMenu";
+export { PublicDigitalMenu } from "./PublicDigitalMenu";
+export { LinkDigitalMenu } from "./link";
+
