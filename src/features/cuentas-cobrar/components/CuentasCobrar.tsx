@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshCw, DollarSign, FileText, CheckCircle, Clock, Eye } from "lucide-react";
 import { useAuth } from "../../../shared/hooks/useAuth";
+import { canUseFeature } from "../../../shared/lib/planFeatures";
+import { StatementDialog, type StatementCustomerTarget } from "../statement";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { readLocalCuentasCobrar, readLocalCxcPagos } from "../../billing/lib/accountsLocal";
@@ -64,7 +66,9 @@ const dateTimeFormatter = new Intl.DateTimeFormat("es-DO", {
 });
 
 export function CuentasCobrar() {
-  const { tenantId, user } = useAuth();
+  const { tenantId, user, plan } = useAuth();
+  const canUseMenuLinks = canUseFeature(plan, "menu_links");
+  const [statementCustomer, setStatementCustomer] = useState<StatementCustomerTarget | null>(null);
   const { activeSucursalId } = useSucursal();
 
   const [activeTab, setActiveTab] = useState<'pendientes' | 'pagadas' | 'pagos'>('pendientes');
@@ -368,6 +372,21 @@ export function CuentasCobrar() {
                                 >
                                   <Eye className="size-[14px]" />
                                 </button>
+                                {canUseMenuLinks && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setStatementCustomer({
+                                        id: row.customer_id,
+                                        name: custName,
+                                      })
+                                    }
+                                    className="bg-[#222] border border-[rgba(72,72,71,0.4)] hover:border-[#ff906d] text-[#adaaaa] hover:text-[#ff906d] rounded-[8px] p-1.5 transition-all cursor-pointer"
+                                    title="Estado de cuenta (PDF)"
+                                  >
+                                    <FileText className="size-[14px]" />
+                                  </button>
+                                )}
                                 {activeTab === 'pendientes' && (
                                   <button
                                     type="button"
@@ -479,6 +498,14 @@ export function CuentasCobrar() {
           facturaNumero={detailCuenta.factura_id ? facturasMap.get(detailCuenta.factura_id) ? `#${facturasMap.get(detailCuenta.factura_id)}` : "Factura" : "Manual"}
         />
       )}
+
+      <StatementDialog
+        open={Boolean(statementCustomer)}
+        onOpenChange={(isOpen) => {
+          if (!isOpen) setStatementCustomer(null);
+        }}
+        customer={statementCustomer}
+      />
     </div>
   );
 }
