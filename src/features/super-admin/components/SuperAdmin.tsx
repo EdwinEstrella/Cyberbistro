@@ -4,7 +4,7 @@ import { TitleBar } from "../../window";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { supabase } from "../../../shared/lib/supabase";
 import { type Plan } from "../../../shared/lib/planFeatures";
-import { isSuperAdminUser, SUPER_ADMIN_EMAIL } from "../../../shared/lib/superAdmin";
+import { fetchIsSuperAdmin } from "../../../shared/lib/superAdmin";
 import {
   countActiveUsersByRole,
   extractTenantUserLimitConfig,
@@ -13,6 +13,17 @@ import {
   type ManagedUserRole,
 } from "../../../shared/lib/tenantUserLimits";
 import { ConfirmModal } from "../../../shared/components/ConfirmModal";
+import { TenantOverviewPanel } from "./TenantOverviewPanel";
+
+interface SuperAdminAuditLogRow {
+  id: string;
+  actor_auth_user_id: string | null;
+  action: string;
+  tenant_id: string | null;
+  target_id: string | null;
+  details: Record<string, unknown>;
+  created_at: string;
+}
 
 interface TenantUserRow {
   id: string;
@@ -145,6 +156,7 @@ export function SuperAdmin() {
   const [info, setInfo] = useState("");
   const [drafts, setDrafts] = useState<Record<string, LimitDraft>>({});
   const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
+  const [overviewTenantId, setOverviewTenantId] = useState<string | null>(null);
   const [savingTenantId, setSavingTenantId] = useState<string | null>(null);
   const [savingPlanId, setSavingPlanId] = useState<string | null>(null);
   const [rowActionId, setRowActionId] = useState<string | null>(null);
@@ -155,9 +167,53 @@ export function SuperAdmin() {
     setConfirmState({ open: true, message, onConfirm, title, variant });
   };
 
-  const isAllowed = isSuperAdminUser(user);
+  const [checkingAccess, setCheckingAccess] = useState(true);
+  const [isAllowed, setIsAllowed] = useState(false);
+  const [auditLogs, setAuditLogs] = useState<SuperAdminAuditLogRow[]>([]);
+  const [loadingAudit, setLoadingAudit] = useState(false);
+
+  async function loadAuditLogs() {
+    setLoadingAudit(true);
+    try {
+      const { data, error: auditError } = await supabase
+        .from("superadmin_audit_log")
+        .select("id, actor_auth_user_id, action, tenant_id, target_id, details, created_at")
+        .order("created_at", { ascending: false })
+        .limit(50);
+      if (!auditError && data) {
+        setAuditLogs(data as SuperAdminAuditLogRow[]);
+      }
+    } catch (err) {
+      console.warn("loadAuditLogs failed", err);
+    } finally {
+      setLoadingAudit(false);
+    }
+  }
+
+  useEffect(() => {
+    let mounted = true;
+    async function checkSuperAdmin() {
+      if (loading) return;
+      if (!isAuthenticated) {
+        setCheckingAccess(false);
+        setIsAllowed(false);
+        return;
+      }
+      setCheckingAccess(true);
+      const allowed = await fetchIsSuperAdmin();
+      if (mounted) {
+        setIsAllowed(allowed);
+        setCheckingAccess(false);
+      }
+    }
+    void checkSuperAdmin();
+    return () => {
+      mounted = false;
+    };
+  }, [loading, isAuthenticated]);
 
   async function loadData() {
+    void loadAuditLogs();
     setLoadingData(true);
     setError("");
     setInfo("");
@@ -213,10 +269,10 @@ export function SuperAdmin() {
   }
 
   useEffect(() => {
-    if (!loading && isAuthenticated && isAllowed) {
+    if (!loading && isAuthenticated && !checkingAccess && isAllowed) {
       void loadData();
     }
-  }, [loading, isAuthenticated, isAllowed]);
+  }, [loading, isAuthenticated, checkingAccess, isAllowed]);
 
   const tenantCards = useMemo<TenantCard[]>(() => {
     const usersByTenant = new Map<string, TenantUserRow[]>();
@@ -293,8 +349,10 @@ export function SuperAdmin() {
       confirmMsg += 'Si se degrada a Básico, se ocultarán los módulos de inventario y sucursales (límite de 1 sucursal y 3 usuarios + admin).';
     } else if (plan === 'profesional') {
       confirmMsg += 'Se habilitará el inventario avanzado, facturación electrónica (e-CF) y el soporte de hasta 2 sucursales con 5 usuarios (+ admin).';
+    } else if (plan === 'empresarial') {
+      confirmMsg += 'Se habilitará el soporte para sucursales ilimitadas, usuarios ilimitados y enlaces de menú público.';
     } else {
-      confirmMsg += 'Se habilitará el soporte para sucursales ilimitadas, usuarios ilimitados, integraciones avanzadas y soporte corporativo 24/7.';
+      confirmMsg += 'Se habilitará el plan Corporativo con factura consolidada quincenal/mensual, nómina de empleados, límite de crédito corporativo y hasta 6 enlaces de menú.';
     }
     
     showConfirm(confirmMsg, async () => {
@@ -475,6 +533,18 @@ export function SuperAdmin() {
             >
               Empresarial
             </button>
+            <button
+              type="button"
+              onClick={() => updateTenantPlan(tenant.id, 'corporativo')}
+              disabled={tenant.plan === 'corporativo' || savingPlanId === tenant.id}
+              className={`flex-1 py-2 px-3 rounded-[10px] font-['Space_Grotesk',sans-serif] font-bold text-[11px] uppercase tracking-[0.5px] border cursor-pointer transition-all duration-200 ${
+                tenant.plan === 'corporativo'
+                  ? 'bg-[rgba(59,130,246,0.12)] border-[#3b82f6] text-[#60a5fa]'
+                  : 'bg-[#1a1a1a] border-[rgba(72,72,71,0.22)] text-[#adaaaa] hover:border-[rgba(59,130,246,0.2)] hover:text-white'
+              }`}
+            >
+              Corporativo
+            </button>
           </div>
           {savingPlanId === tenant.id && (
             <span className="font-['Inter',sans-serif] text-[10px] text-[#ff906d]">Actualizando plan...</span>
@@ -633,7 +703,9 @@ export function SuperAdmin() {
               </span>
               <StatusPill active={!isBlocked} />
               <span className={`inline-flex rounded-full px-2.5 py-1 font-['Space_Grotesk',sans-serif] text-[10px] font-bold uppercase tracking-[0.8px] ${
-                tenant.plan === 'empresarial'
+                tenant.plan === 'corporativo'
+                  ? 'bg-[rgba(59,130,246,0.15)] text-[#60a5fa] border border-[rgba(59,130,246,0.3)]'
+                  : tenant.plan === 'empresarial'
                   ? 'bg-[rgba(139,92,246,0.15)] text-[#a78bfa] border border-[rgba(139,92,246,0.3)]'
                   : tenant.plan === 'profesional' 
                     ? 'bg-[rgba(255,144,109,0.15)] text-[#ff906d] border border-[rgba(255,144,109,0.3)]' 
@@ -655,6 +727,13 @@ export function SuperAdmin() {
           </div>
 
           <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setOverviewTenantId(tenant.id)}
+              className="bg-[rgba(59,130,246,0.12)] border border-[rgba(59,130,246,0.3)] rounded-[10px] px-3 py-2 font-['Space_Grotesk',sans-serif] font-bold text-[#60a5fa] text-[10px] uppercase cursor-pointer hover:bg-[rgba(59,130,246,0.2)]"
+            >
+              Ficha 360
+            </button>
             <button
               type="button"
               disabled={rowActionId === `tenant:${tenant.id}`}
@@ -785,7 +864,7 @@ export function SuperAdmin() {
                   Super Admin
                 </span>
                 <span className="font-['Inter',sans-serif] text-[#6b7280] text-[13px] max-w-[760px] leading-relaxed">
-                  Vista global de restaurantes y usuarios creados en cloudix. Este acceso queda reservado al correo {SUPER_ADMIN_EMAIL}.
+                  Vista global de restaurantes y usuarios. Acceso restringido a superadministradores.
                 </span>
                 <span className="font-['Inter',sans-serif] text-[#adaaaa] text-[11px] break-all">
                   Auth user ID: {user?.id ?? "sin sesion"}
@@ -874,7 +953,9 @@ export function SuperAdmin() {
                             <div className="mt-1 truncate font-['Inter',sans-serif] text-[11px] text-[#6b7280] flex items-center gap-1.5">
                               <span>{tenant.rnc || tenant.telefono || tenant.id}</span>
                               <span className={`px-1 py-0.2 text-[8px] rounded uppercase font-bold tracking-[0.4px] ${
-                                tenant.plan === 'empresarial'
+                                tenant.plan === 'corporativo'
+                                  ? 'bg-[rgba(59,130,246,0.15)] text-[#60a5fa]'
+                                  : tenant.plan === 'empresarial'
                                   ? 'bg-[rgba(139,92,246,0.15)] text-[#a78bfa]'
                                   : tenant.plan === 'profesional' 
                                     ? 'bg-[rgba(255,144,109,0.15)] text-[#ff906d]' 
@@ -886,12 +967,22 @@ export function SuperAdmin() {
                           </div>
                           <StatusPill active={tenant.activa !== false} />
                         </div>
-                        <div className="mt-3 flex flex-wrap gap-2 font-['Inter',sans-serif] text-[11px] text-[#adaaaa]">
-                          <span>{users.length} usuarios</span>
-                          <span>{counts.admin} admin</span>
-                          <span>{counts.cajera} cajera</span>
-                          <span>{counts.cocina} cocina</span>
-                          <span>{counts.mesero} camarera</span>
+                        <div className="mt-3 flex items-center justify-between">
+                          <div className="flex flex-wrap gap-2 font-['Inter',sans-serif] text-[11px] text-[#adaaaa]">
+                            <span>{users.length} usuarios</span>
+                            <span>{counts.admin} admin</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedTenantId(tenant.id);
+                              setOverviewTenantId(tenant.id);
+                            }}
+                            className="text-[10px] uppercase font-bold text-[#60a5fa] hover:underline cursor-pointer border-none bg-transparent"
+                          >
+                            Ficha 360 →
+                          </button>
                         </div>
                       </button>
                     );
@@ -902,8 +993,105 @@ export function SuperAdmin() {
               {selectedTenantCard ? renderTenantDetail(selectedTenantCard) : null}
             </div>
           )}
+
+          {/* Auditoría Section */}
+          <div className="bg-[#131313] rounded-[20px] border border-[rgba(72,72,71,0.18)] p-6 flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-1">
+                <span className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[18px] uppercase">
+                  Auditoría
+                </span>
+                <span className="font-['Inter',sans-serif] text-[#6b7280] text-[12px]">
+                  Últimos 50 registros de auditoría del sistema.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => void loadAuditLogs()}
+                className="bg-[#262626] border border-[rgba(72,72,71,0.35)] rounded-[10px] px-3 py-1.5 font-['Space_Grotesk',sans-serif] font-bold text-[#adaaaa] text-[11px] uppercase cursor-pointer hover:bg-[#303030]"
+              >
+                {loadingAudit ? "Cargando..." : "Actualizar"}
+              </button>
+            </div>
+
+            {loadingAudit && auditLogs.length === 0 ? (
+              <span className="font-['Inter',sans-serif] text-[#6b7280] text-[13px]">
+                Cargando registros de auditoría...
+              </span>
+            ) : auditLogs.length === 0 ? (
+              <span className="font-['Inter',sans-serif] text-[#6b7280] text-[13px]">
+                No hay registros de auditoría aún.
+              </span>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left font-['Inter',sans-serif] text-[12px] border-collapse">
+                  <thead>
+                    <tr className="border-b border-[rgba(72,72,71,0.25)] text-[#adaaaa]">
+                      <th className="py-2 px-3 font-semibold">Fecha</th>
+                      <th className="py-2 px-3 font-semibold">Acción</th>
+                      <th className="py-2 px-3 font-semibold">Restaurante</th>
+                      <th className="py-2 px-3 font-semibold">Detalle</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {auditLogs.map((log) => {
+                      const restaurantName =
+                        tenants.find((t) => t.id === log.tenant_id)?.nombre_negocio ??
+                        log.tenant_id ??
+                        "-";
+                      return (
+                        <tr
+                          key={log.id}
+                          className="border-b border-[rgba(72,72,71,0.12)] hover:bg-[#1a1a1a]"
+                        >
+                          <td className="py-2 px-3 text-[#adaaaa] whitespace-nowrap">
+                            {new Date(log.created_at).toLocaleString()}
+                          </td>
+                          <td className="py-2 px-3 text-white font-mono text-[11px]">
+                            {log.action}
+                          </td>
+                          <td className="py-2 px-3 text-[#e5e7eb]">
+                            {restaurantName}
+                          </td>
+                          <td
+                            className="py-2 px-3 text-[#9ca3af] font-mono text-[11px] max-w-[400px] truncate"
+                            title={JSON.stringify(log.details)}
+                          >
+                            {JSON.stringify(log.details)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       </div>
+      
+      {overviewTenantId && (
+        <TenantOverviewPanel
+          tenantId={overviewTenantId}
+          onClose={() => setOverviewTenantId(null)}
+          onUpdatePlan={async (tId, newPlan) => {
+            updateTenantPlan(tId, newPlan);
+          }}
+          onToggleBlock={async (tId, currentActiva) => {
+            const t = tenants.find((item) => item.id === tId);
+            if (t) {
+              if (currentActiva) blockTenant(t);
+              else unblockTenant(t);
+            }
+          }}
+          onDeleteUser={async (userId) => {
+            const u = tenantUsers.find((item) => item.id === userId);
+            if (u) deleteTenantUser(u);
+          }}
+          savingPlanId={savingPlanId}
+          rowActionId={rowActionId}
+        />
+      )}
       
       <ConfirmModal
         open={confirmState.open}

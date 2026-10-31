@@ -20,7 +20,7 @@ export const BLOCKED_ACCOUNT_MESSAGE =
 export const UNLINKED_ACCOUNT_MESSAGE =
   'Esta cuenta no está vinculada a ningún negocio. El administrador debe darte acceso desde Soporte.';
 import {
-  isSuperAdminEmail,
+  fetchIsSuperAdmin,
   SUPER_ADMIN_ROLE,
   SUPER_ADMIN_TENANT_ID,
 } from './superAdmin';
@@ -215,7 +215,8 @@ async function withRetry<T>(
  * Primero por `auth_user_id`, luego por email de la sesión.
  */
 export async function resolveTenantAccessForSession(user: User): Promise<TenantAccessResolution> {
-  if (isSuperAdminEmail(user.email)) {
+  const isSuperAdmin = await fetchIsSuperAdmin();
+  if (isSuperAdmin) {
     return {
       status: 'active',
       row: {
