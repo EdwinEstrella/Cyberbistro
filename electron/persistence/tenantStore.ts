@@ -2134,7 +2134,7 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
 
   listCatalog(): { platos: Array<Record<string, unknown>>; menuCategories: Array<Record<string, unknown>>; sucursales: Array<Record<string, unknown>>; tenant: Record<string, unknown> | null } {
     const platos = this.database.prepare(
-      "SELECT id, tenant_id, sucursal_id, nombre, precio, categoria, disponible, va_a_cocina, created_at, updated_at, deleted_at FROM platos WHERE tenant_id = ? AND deleted_at IS NULL ORDER BY nombre ASC"
+      "SELECT id, tenant_id, sucursal_id, nombre, precio, categoria, disponible, va_a_cocina, is_extra, created_at, updated_at, deleted_at FROM platos WHERE tenant_id = ? AND deleted_at IS NULL ORDER BY nombre ASC"
     ).all(this.tenantId) as Array<Record<string, unknown>>;
     const menuCategories = this.database.prepare(
       "SELECT id, tenant_id, nombre, color, sort_order, sucursal_id FROM menu_categories WHERE tenant_id = ? ORDER BY sort_order ASC, nombre ASC"
@@ -2393,8 +2393,8 @@ function catalogDefinition(command: CatalogCommand, tenantId: string): { tableNa
         tableName: "platos",
         operation: "upsert",
         sql: `
-          INSERT INTO platos (id, tenant_id, sucursal_id, nombre, precio, categoria, disponible, va_a_cocina, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+          INSERT INTO platos (id, tenant_id, sucursal_id, nombre, precio, categoria, disponible, va_a_cocina, is_extra, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
           ON CONFLICT(id) DO UPDATE SET
             sucursal_id = excluded.sucursal_id,
             nombre = excluded.nombre,
@@ -2402,9 +2402,10 @@ function catalogDefinition(command: CatalogCommand, tenantId: string): { tableNa
             categoria = excluded.categoria,
             disponible = excluded.disponible,
             va_a_cocina = excluded.va_a_cocina,
+            is_extra = excluded.is_extra,
             updated_at = datetime('now')
         `,
-        values: [command.id, tenantId, command.sucursalId, command.nombre, command.precio, command.categoria, Number(command.disponible), Number(command.va_a_cocina)],
+        values: [command.id, tenantId, command.sucursalId, command.nombre, command.precio, command.categoria, Number(command.disponible), Number(command.va_a_cocina), Number(Boolean(command.is_extra ?? command.isExtra))],
       };
     case "catalog.product.delete":
       return { tableName: "platos", operation: "delete", sql: "DELETE FROM platos WHERE id = ? AND tenant_id = ?", values: [command.id, tenantId] };

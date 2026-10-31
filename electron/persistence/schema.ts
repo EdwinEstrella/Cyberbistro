@@ -104,6 +104,7 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
       categoria TEXT,
       disponible INTEGER,
       va_a_cocina INTEGER,
+      is_extra INTEGER NOT NULL DEFAULT 0,
       created_at TEXT,
       updated_at TEXT,
       deleted_at TEXT
@@ -503,6 +504,7 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
   ensurePayablesSchemaEvolution(database);
   ensureSalonCocinaSchemaEvolution(database);
   ensureInventorySchemaEvolution(database);
+  ensurePlatosSchemaEvolution(database);
   ensureFiscalCheckoutSchemaEvolution(database);
   database.exec(`
     CREATE INDEX IF NOT EXISTS idx_payroll_payments_employee_period ON payroll_payments (tenant_id, sucursal_id, employee_id, period);
@@ -510,6 +512,13 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
     CREATE INDEX IF NOT EXISTS idx_gastos_payroll_payment ON gastos (payroll_payment_id);
   `);
   database.exec("UPDATE sync_outbox SET status = 'pending' WHERE status = 'syncing';");
+}
+
+function ensurePlatosSchemaEvolution(database: DatabaseSync): void {
+  const columns = getTableColumns(database, "platos");
+  if (columns.length > 0 && !columns.includes("is_extra")) {
+    database.exec("ALTER TABLE platos ADD COLUMN is_extra INTEGER NOT NULL DEFAULT 0;");
+  }
 }
 
 function ensureInventorySchemaEvolution(database: DatabaseSync): void {

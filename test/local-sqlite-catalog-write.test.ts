@@ -62,7 +62,7 @@ describe("catalog write path (platos / menu_categories) — SQLite is the single
       });
 
       const row = store.getDatabase().prepare(
-        "SELECT id, tenant_id, sucursal_id, nombre, precio, categoria, disponible, va_a_cocina FROM platos WHERE id = ?"
+        "SELECT id, tenant_id, sucursal_id, nombre, precio, categoria, disponible, va_a_cocina, is_extra FROM platos WHERE id = ?"
       ).get("-1758100000123");
       expect(row).toEqual({
         id: "-1758100000123",
@@ -73,6 +73,7 @@ describe("catalog write path (platos / menu_categories) — SQLite is the single
         categoria: "Comidas",
         disponible: 1,
         va_a_cocina: 1,
+        is_extra: 0,
       });
 
       const outbox = store.readLocalOutbox().find((o) => o.tableName === "platos" && o.rowId === "-1758100000123");
@@ -95,6 +96,53 @@ describe("catalog write path (platos / menu_categories) — SQLite is the single
       const updated = store.getDatabase().prepare("SELECT nombre, precio, disponible, created_at FROM platos WHERE id = 'p-1'").get() as { nombre: string; precio: number; disponible: number; created_at: string };
 
       expect(updated).toEqual({ nombre: "Pizza Grande", precio: 600, disponible: 0, created_at: created.created_at });
+    });
+  });
+
+  it("preserves is_extra across listCatalog read and subsequent re-upsert (editing on desktop)", () => {
+    withStore((store, catalog) => {
+      catalog.execute({
+        type: "catalog.product.upsert",
+        id: "extra-100",
+        sucursalId: "branch-test",
+        nombre: "Queso Extra",
+        precio: 50,
+        categoria: "Extras",
+        disponible: true,
+        va_a_cocina: false,
+        is_extra: true,
+      });
+
+      const catalogData = store.listCatalog();
+      const loadedPlato = catalogData.platos.find((p) => p.id === "extra-100");
+      expect(loadedPlato).toBeDefined();
+      expect(loadedPlato?.is_extra).toBeTruthy();
+
+      catalog.execute({
+        type: "catalog.product.upsert",
+        id: String(loadedPlato!.id),
+        sucursalId: "branch-test",
+        nombre: "Queso Cheddar Extra",
+        precio: 60,
+        categoria: String(loadedPlato!.categoria),
+        disponible: Boolean(loadedPlato!.disponible),
+        va_a_cocina: Boolean(loadedPlato!.va_a_cocina),
+        is_extra: Boolean(loadedPlato!.is_extra),
+      });
+
+      const dbRow = store.getDatabase().prepare(
+        "SELECT id, nombre, precio, is_extra FROM platos WHERE id = ?"
+      ).get("extra-100") as { id: string; nombre: string; precio: number; is_extra: number };
+      expect(dbRow).toEqual({
+        id: "extra-100",
+        nombre: "Queso Cheddar Extra",
+        precio: 60,
+        is_extra: 1,
+      });
+
+      const updatedCatalog = store.listCatalog();
+      const reloadedPlato = updatedCatalog.platos.find((p) => p.id === "extra-100");
+      expect(reloadedPlato?.is_extra).toBeTruthy();
     });
   });
 
@@ -162,6 +210,7 @@ describe("catalog write path (platos / menu_categories) — SQLite is the single
           categoria: "Saludable",
           disponible: true,
           va_a_cocina: false,
+          is_extra: false,
         },
         { onConflict: "id" }
       );

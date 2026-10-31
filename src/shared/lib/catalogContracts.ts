@@ -21,6 +21,8 @@ export type CatalogCommand =
       categoria: string;
       disponible: boolean;
       va_a_cocina: boolean;
+      is_extra?: boolean;
+      isExtra?: boolean;
     }
   | { type: "catalog.product.delete"; id: string }
   | { type: "catalog.inventory-product.upsert"; id: string; name: string; unit: string }

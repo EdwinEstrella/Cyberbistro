@@ -45,7 +45,7 @@ A new client wants one link per company. Some companies allow extras, others don
 ## Tasks
 Route per task recorded as (route / trigger evidence). All code written by agy CLI; Claude reviews diffs and runs checks (user rule).
 - [x] T1 Plan gate `menu_links` (empresarial only) + DB migration (menus, menu_items, menu_links, plato_sold_out, platos.is_extra, order/item/CxC columns) + server RPCs (read/create by token with schedule + extras + re-pricing; accept company order → CxC; cancel item → recompute + CxC; statement data). (delegated agy / 2+ non-trivial files)
-- [ ] T2 Admin UI: list of links/menus + dedicated editor screen (dishes, weekdays, mode recurring/weekly, extras, duplicate menu, sold-out today). (delegated agy)
+- [x] T2 Admin UI: list of links/menus + dedicated editor screen (dishes, weekdays, mode recurring/weekly, extras, duplicate menu, sold-out today). (delegated agy)
 - [ ] T3 Public menu by token `/menu/c/:token`: schedule-aware, extras picker when allowed, employee name, "menu not available". (delegated agy)
 - [ ] T4 Pedidos: company + employee badge, accept via RPC (CxC), per-item cancel with extras, totals recompute. (delegated agy)
 - [ ] T5 Online-only: drop digital orders from local-first mirrors, connection banner, realtime reconnect + backfill (desktop + web). (delegated agy)
@@ -63,4 +63,6 @@ Strategy: ask-on-risk. Forecast > 400 lines → chained PRs.
 ## Progress
 - 2026-10-31: exploration done, document created. D1–D4 resolved.
 - 2026-10-31 T1 done (agy wrote, Claude reviewed vs PROD schema read-only; 7 review fixes re-prompted: tenant-mismatch triggers, LATERAL dmi dedupe, cancel guards, pending-order cap, fixed tz, anon grants, redundant index). Evidence: `npm run test:sql` 17 scenarios PASS (run by Claude), planFeatures 7/7, typecheck OK, vitest 1613 pass / 1 pre-existing fail. Migration NOT applied to PROD (T8). Commit: see git log `feat(menu-links): ...`.
-- Next: T2 admin list + editor. Note for T2: desktop SQLite `platos` mirror needs `is_extra`.
+- 2026-10-31 T2 done (agy; Claude review found Rules-of-Hooks violation in DigitalMenuPanel and desktop listCatalog dropping is_extra → re-prompted, fixed + test). Evidence: typecheck OK, vitest 1643 pass / 1 pre-existing fail.
+- RELEASE GATE: desktop/web now send `platos.is_extra` to the cloud → migration (T8) MUST be applied to PROD before any release containing T2, or plato sync/web saves fail.
+- Next: T3 public menu by token.

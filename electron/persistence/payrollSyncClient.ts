@@ -667,7 +667,8 @@ function mapPlatoPayload(operation: DurableOperation, payload: Record<string, un
     categoria: requireString(payload.categoria, "platos.categoria"),
     disponible: coerceBoolean(payload.disponible, "platos.disponible"),
     va_a_cocina: coerceBoolean(payload.va_a_cocina, "platos.va_a_cocina"),
-  };
+  is_extra: coerceBoolean(payload.is_extra ?? payload.isExtra ?? false, "platos.is_extra"),
+};
 }
 
 function mapMenuCategoryPayload(operation: DurableOperation, payload: Record<string, unknown>): Record<string, unknown> {
