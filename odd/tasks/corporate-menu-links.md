@@ -51,7 +51,7 @@ Route per task recorded as (route / trigger evidence). All code written by agy C
 - [x] T5 Online-only: drop digital orders from local-first mirrors, connection banner, realtime reconnect + backfill (desktop + web). (delegated agy)
 - [x] T6 Statement PDF A4 (jsPDF): company, date range, rows (date, order #, employee, amount), totals. (delegated agy)
 - [x] T7 E2E coverage of the flow + typecheck/vitest green.
-- [ ] T8 Apply migration to Supabase PROD (needs explicit user OK).
+- [x] T8 Apply migration to Supabase PROD (needs explicit user OK).
 
 ## TDD / checks
 Mode: off (no project TDD config); runner vitest + `npm run test:sql` (Docker Postgres 16) for SQL. Checks per task: typecheck + vitest (user norm), e2e where flows change.
@@ -69,3 +69,4 @@ User rule (2026-10-31): everything must pass CI (`.github/workflows/ci.yml`: typ
 - 2026-10-31 T3 done (b49c624) and T6 done (e391bcc), parallel agy agents with disjoint files; reviewed payload (no prices sent) and A4 test (210×297, no item names). Evidence: typecheck OK, vitest 1677 pass / 1 pre-existing local fail.
 - 2026-10-31 T4+T5 done: Pedidos company/employee badges, accept via RPC (CxC) + comanda with extras, per-item cancel, digital_orders.comanda_id, mandatory link sucursal, online-only (removed from local-first + SQLite schema), connection bar, reconnect/focus/30s refetch, CI sql-tests job. Review fixes: mandatory sucursal, accept error mapper, comanda_id link. Evidence: typecheck OK, test:sql PASS, vitest 1714 pass / 1 pre-existing local fail, build OK.
 - 2026-10-31 T7 done: test/menu-links-public.e2e.spec.ts (4 network-mocked scenarios, 4/4 pass run by Claude). Next: T8 PROD migration awaiting user OK, then PR + CI + merge to master + pull.
+- 2026-10-31 T8 done with user OK: applied corporate_menu_links + corporate_menu_links_revoke_anon to PROD via Supabase MCP. Verified: 3 tables, 7 new columns, 6 RPCs, probe get_menu_by_link returns MENU_NOT_AVAILABLE, anon can only call get_menu_by_link/create_order_by_link (default privileges had granted anon EXECUTE; fixed by follow-up revoke migration).
