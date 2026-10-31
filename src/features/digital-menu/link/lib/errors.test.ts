@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapLinkOrderError } from "./errors";
+import { mapLinkOrderError, mapMenuUnavailableReason } from "./errors";
 
 describe("mapLinkOrderError", () => {
   it("maps ITEM_SOLD_OUT to expected message", () => {
@@ -44,6 +44,24 @@ describe("mapLinkOrderError", () => {
     );
   });
 
+  it("maps EMPLOYEE_NOT_AUTHORIZED to expected message", () => {
+    expect(mapLinkOrderError("EMPLOYEE_NOT_AUTHORIZED")).toBe(
+      "No encontramos ese nombre o cédula en la lista de la empresa. Verificá o consultá con tu empresa."
+    );
+  });
+
+  it("maps CREDIT_LIMIT_EXCEEDED to expected message", () => {
+    expect(mapLinkOrderError("CREDIT_LIMIT_EXCEEDED")).toBe(
+      "Este pedido supera el crédito disponible de la empresa. Consultá con tu empresa."
+    );
+  });
+
+  it("maps CREDIT_LIMIT_REACHED to expected message", () => {
+    expect(mapLinkOrderError("CREDIT_LIMIT_REACHED")).toBe(
+      "El menú de tu empresa está pausado temporalmente. Consultá con tu empresa."
+    );
+  });
+
   it("maps TOO_MANY_PENDING_ORDERS to expected message", () => {
     expect(mapLinkOrderError("TOO_MANY_PENDING_ORDERS")).toBe(
       "Tienes demasiados pedidos pendientes en este momento. Por favor espera a que se procesen."
@@ -82,5 +100,31 @@ describe("mapLinkOrderError", () => {
       "Ocurrió un error inesperado. Por favor intenta nuevamente."
     );
     expect(mapLinkOrderError("CUSTOM_SERVER_ERROR")).toBe("CUSTOM_SERVER_ERROR");
+  });
+});
+
+describe("mapMenuUnavailableReason", () => {
+  it("maps CREDIT_LIMIT_REACHED to friendly notice", () => {
+    expect(mapMenuUnavailableReason("CREDIT_LIMIT_REACHED")).toBe(
+      "El menú de tu empresa está pausado temporalmente. Consultá con tu empresa."
+    );
+  });
+
+  it("maps LINK_DISABLED and PLAN_REQUIRED", () => {
+    expect(mapMenuUnavailableReason("LINK_DISABLED")).toBe(
+      "Este enlace de menú ha sido desactivado."
+    );
+    expect(mapMenuUnavailableReason("PLAN_REQUIRED")).toBe(
+      "Este enlace requiere una suscripción empresarial activa."
+    );
+  });
+
+  it("falls back to generic unavailable message", () => {
+    expect(mapMenuUnavailableReason(null)).toBe(
+      "Este menú no está disponible en este momento."
+    );
+    expect(mapMenuUnavailableReason("UNKNOWN")).toBe(
+      "Este menú no está disponible en este momento."
+    );
   });
 });

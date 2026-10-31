@@ -15,7 +15,12 @@ import {
   RefreshCw,
   Search,
   Sparkles,
+  Users,
 } from "lucide-react";
+import { fetchLinkEmployeeCounts } from "../lib/rosterRepo";
+import { fetchBatchCompanyCreditUsed } from "../lib/creditRepo";
+import { formatCreditUsage, isCreditLimitReached, getCreditProgressPercentage } from "../lib/creditLimit";
+import { AuthorizedEmployeesDialog } from "./AuthorizedEmployeesDialog";
 import { toast } from "sonner";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { normalizePlan } from "../../../shared/lib/planFeatures";
@@ -49,6 +54,9 @@ export function MenuLinksList({ tenantId, sucursalId }: MenuLinksListProps) {
 
   const [newLinkOpen, setNewLinkOpen] = useState(false);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
+  const [rosterCounts, setRosterCounts] = useState<Record<string, number>>({});
+  const [creditUsedMap, setCreditUsedMap] = useState<Record<string, number>>({});
+  const [rosterModalLink, setRosterModalLink] = useState<MenuLink | null>(null);
 
   const limit = getMenuLinkLimit(plan);
   const activeCount = links.filter((l) => l.enabled && l.link_type === "company").length;
@@ -70,6 +78,18 @@ export function MenuLinksList({ tenantId, sucursalId }: MenuLinksListProps) {
       ]);
       setLinks(linksData);
       setMenus(menusData);
+
+      // Load roster counts & credit used for company links
+      const companyLinks = linksData.filter((l) => l.link_type === "company");
+      const linkIds = companyLinks.map((l) => l.id);
+      const customerIds = companyLinks.map((l) => l.customer_id).filter(Boolean) as string[];
+
+      const [counts, creditMap] = await Promise.all([
+        fetchLinkEmployeeCounts(linkIds),
+        fetchBatchCompanyCreditUsed(tenantId, customerIds),
+      ]);
+      setRosterCounts(counts);
+      setCreditUsedMap(creditMap);
     } catch (err: unknown) {
       const normalized = normalizeRepoError(err, "No se pudieron cargar los links de menú.");
       setError(normalized.message);
@@ -281,14 +301,62 @@ export function MenuLinksList({ tenantId, sucursalId }: MenuLinksListProps) {
                         {/* Type */}
                         <td className="py-3.5 px-4">
                           {link.link_type === "company" ? (
-                            <div className="flex items-center gap-1.5">
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
-                                <Building2 className="size-3" />
-                                Empresa
-                              </span>
-                              <span className="font-semibold text-foreground/90 truncate max-w-[160px]" title={link.customer?.name}>
-                                {link.customer?.name ?? "Sin asignar"}
-                              </span>
+                            <div className="flex flex-col gap-1.5">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                                  <Building2 className="size-3" />
+                                  Empresa
+                                </span>
+                                <span className="font-semibold text-foreground/90 truncate max-w-[140px]" title={link.customer?.name}>
+                                  {link.customer?.name ?? "Sin asignar"}
+                                </span>
+
+                                <button
+                                  type="button"
+                                  onClick={() => setRosterModalLink(link)}
+                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold transition-colors cursor-pointer border ${
+                                    link.require_roster
+                                      ? "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/30 hover:bg-purple-500/25"
+                                      : "bg-muted text-muted-foreground border-border hover:bg-muted/80"
+                                  }`}
+                                  title={link.require_roster ? "Roster activo: solo empleados autorizados" : "Configurar empleados autorizados"}
+                                >
+                                  <Users className="size-3" />
+                                  {rosterCounts[link.id] !== undefined ? `${rosterCounts[link.id]} empleados` : "Roster"}
+                                  {link.require_roster && <span className="size-1.5 rounded-full bg-purple-500" />}
+                                </button>
+                              </div>
+
+                              {link.customer_id && link.customer?.credit_limit != null && (
+                                <div className="flex flex-col gap-1 mt-0.5">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="text-[11px] text-muted-foreground font-medium">
+                                      {formatCreditUsage(creditUsedMap[link.customer_id] || 0, link.customer.credit_limit)}
+                                    </span>
+                                    {isCreditLimitReached(creditUsedMap[link.customer_id] || 0, link.customer.credit_limit) && (
+                                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold uppercase bg-destructive/15 text-destructive border border-destructive/30">
+                                        <AlertCircle className="size-2.5" />
+                                        Bloqueado por límite
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="w-48 h-1.5 rounded-full bg-muted overflow-hidden">
+                                    <div
+                                      className={`h-full rounded-full transition-all ${
+                                        isCreditLimitReached(creditUsedMap[link.customer_id] || 0, link.customer.credit_limit)
+                                          ? "bg-destructive"
+                                          : "bg-primary"
+                                      }`}
+                                      style={{
+                                        width: `${getCreditProgressPercentage(
+                                          creditUsedMap[link.customer_id] || 0,
+                                          link.customer.credit_limit
+                                        )}%`,
+                                      }}
+                                    />
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground border border-border">
@@ -505,6 +573,40 @@ export function MenuLinksList({ tenantId, sucursalId }: MenuLinksListProps) {
         url={qrModalState.url}
         title={qrModalState.title}
       />
+
+      {/* Authorized Employees Dialog */}
+      {rosterModalLink && (
+        <AuthorizedEmployeesDialog
+          open={Boolean(rosterModalLink)}
+          onClose={() => setRosterModalLink(null)}
+          link={rosterModalLink}
+          tenantId={tenantId}
+          plan={plan}
+          onRequireRosterChange={(linkId, req) => {
+            setLinks((prev) => prev.map((l) => (l.id === linkId ? { ...l, require_roster: req } : l)));
+          }}
+          onRosterCountChange={(linkId, count) => {
+            setRosterCounts((prev) => ({ ...prev, [linkId]: count }));
+          }}
+        />
+      )}
+
+      {/* Authorized Employees Dialog */}
+      {rosterModalLink && (
+        <AuthorizedEmployeesDialog
+          open={Boolean(rosterModalLink)}
+          onClose={() => setRosterModalLink(null)}
+          link={rosterModalLink}
+          tenantId={tenantId}
+          plan={plan}
+          onRequireRosterChange={(linkId, req) => {
+            setLinks((prev) => prev.map((l) => (l.id === linkId ? { ...l, require_roster: req } : l)));
+          }}
+          onRosterCountChange={(linkId, count) => {
+            setRosterCounts((prev) => ({ ...prev, [linkId]: count }));
+          }}
+        />
+      )}
 
       {/* New Link Dialog */}
       <NewLinkDialog

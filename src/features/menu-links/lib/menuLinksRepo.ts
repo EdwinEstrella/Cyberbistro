@@ -69,7 +69,7 @@ export async function fetchMenuLinks(tenantId: string, sucursalId?: string | nul
 
     let query = supabase
       .from("menu_links")
-      .select("*, menu:menus(id, name, schedule_mode, week_start), customer:customers(id, name)")
+      .select("*, menu:menus(id, name, schedule_mode, week_start), customer:customers(id, name, credit_limit)")
       .eq("tenant_id", tenantId)
       .order("created_at", { ascending: false });
 
@@ -119,7 +119,7 @@ export async function createMenuLink(input: CreateMenuLinkInput): Promise<MenuLi
           enabled: true,
         },
       ])
-      .select("*, menu:menus(id, name, schedule_mode, week_start), customer:customers(id, name)")
+      .select("*, menu:menus(id, name, schedule_mode, week_start), customer:customers(id, name, credit_limit)")
       .single();
 
     if (error) throw error;

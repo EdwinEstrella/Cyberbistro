@@ -42,6 +42,7 @@ docker cp supabase/migrations/20261031120000_corporate_menu_links.sql "$CONTAINE
 docker cp supabase/migrations/20261031130000_corporate_menu_links_revoke_anon.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
 docker cp supabase/migrations/20261101090000_add_corporativo_plan.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
 docker cp supabase/migrations/20261101100000_menu_link_limits.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
+docker cp supabase/migrations/20261101110000_roster_and_credit_limit.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
 docker cp test/sql/corporate_menu_links.test.sql "$CONTAINER_NAME":/workspace/test/sql/
 
 echo "Executing test suite..."

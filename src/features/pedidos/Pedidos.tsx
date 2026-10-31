@@ -21,6 +21,9 @@ import {
   mapCancelItemError,
 } from "./lib/cancelItemErrors";
 import { mapAcceptOrderError } from "./lib/acceptOrderErrors";
+import { fetchBatchCompanyCreditUsed } from "../menu-links/lib/creditRepo";
+import { wouldExceedCreditLimit } from "../menu-links/lib/creditLimit";
+import { AlertTriangle } from "lucide-react";
 import {
   appendCancelNoteToComanda,
   buildComandaItemsFromOrderItems,
@@ -57,6 +60,7 @@ export function Pedidos() {
   const [message, setMessage] = useState<string | null>(null);
   const [acceptingIds, setAcceptingIds] = useState<Set<string>>(new Set());
   const [cancellingItemIds, setCancellingItemIds] = useState<Set<string>>(new Set());
+  const [creditUsedMap, setCreditUsedMap] = useState<Record<string, number>>({});
 
   // Online / Realtime state
   const [isNavigatorOnline, setIsNavigatorOnline] = useState<boolean>(() =>
@@ -93,7 +97,7 @@ export function Pedidos() {
           .select(
             `id, tenant_id, customer_name, customer_phone, notes, status, total, created_at,
              order_type, mesa_numero, numero_pedido, sucursal_id, menu_link_id, employee_name, comanda_id,
-             menu_links(label, link_type, customer:customers(name))`
+             menu_links(label, link_type, customer_id, customer:customers(id, name, credit_limit))`
           )
           .eq("tenant_id", tenantId)
           .eq("sucursal_id", activeSucursalId)
@@ -106,6 +110,17 @@ export function Pedidos() {
 
       const loadedOrders = (ordersRes.data ?? []) as unknown as DigitalOrder[];
       const orderIds = loadedOrders.map((order) => order.id);
+
+      // Load credit usage for company orders
+      const custIds = loadedOrders
+        .filter((o) => o.order_type === "company")
+        .map((o) => extractOrderLinkInfo(o).customerId)
+        .filter(Boolean) as string[];
+      if (custIds.length > 0) {
+        void fetchBatchCompanyCreditUsed(tenantId, custIds)
+          .then((map) => setCreditUsedMap(map))
+          .catch(() => {});
+      }
       let loadedOrderItems: DigitalOrderItem[] = [];
 
       if (orderIds.length > 0) {
@@ -728,6 +743,21 @@ export function Pedidos() {
                                   Empleado: {linkInfo.employeeName}
                                 </span>
                               )}
+                              {order.status === "pending" &&
+                                linkInfo.creditLimit != null &&
+                                wouldExceedCreditLimit(
+                                  creditUsedMap[linkInfo.customerId || ""] || 0,
+                                  activeTotal,
+                                  linkInfo.creditLimit
+                                ) && (
+                                  <span
+                                    className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 px-2 py-0.5 text-[10px] font-bold"
+                                    title="Aceptar este pedido superará el límite de crédito configurado para la empresa"
+                                  >
+                                    <AlertTriangle className="size-3" />
+                                    Supera límite de crédito
+                                  </span>
+                                )}
                             </>
                           )}
 

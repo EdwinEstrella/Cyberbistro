@@ -12,7 +12,8 @@ import {
   FileText, 
   MapPin, 
   Trash2, 
-  Edit
+  Edit,
+  CreditCard
 } from "lucide-react";
 import {
   createCustomer,
@@ -28,6 +29,12 @@ import {
 import { AlertModal } from "../../../shared/components/AlertModal";
 import { ConfirmModal } from "../../../shared/components/ConfirmModal";
 import { lookupBusinessByRnc } from "../../../shared/lib/dgiiRncLookup";
+import {
+  fetchCreditLimit,
+  saveCreditLimit,
+  parseCreditLimit,
+  hasCreditLimitChanged,
+} from "../lib/creditLimitRepo";
 
 const emptyForm: CustomerFormInput = {
   name: "",
@@ -41,6 +48,7 @@ const emptyForm: CustomerFormInput = {
 export function Clientes() {
   const { tenantId, plan } = useAuth();
   const canUseMenuLinks = canUseFeature(plan, "menu_links");
+  const canUseCreditLimit = canUseFeature(plan, "credit_limit");
   const [statementCustomer, setStatementCustomer] = useState<StatementCustomerTarget | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [query, setQuery] = useState("");
@@ -48,6 +56,10 @@ export function Clientes() {
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
   const [form, setForm] = useState<CustomerFormInput>(emptyForm);
+  const [creditLimitInput, setCreditLimitInput] = useState("");
+  const [initialCreditLimit, setInitialCreditLimit] = useState<number | null | undefined>(null);
+  const [creditLimitLoading, setCreditLimitLoading] = useState(false);
+  const [creditLimitFetchFailed, setCreditLimitFetchFailed] = useState(false);
   const [rncLookupMessage, setRncLookupMessage] = useState("");
   const [rncLookupLoading, setRncLookupLoading] = useState(false);
   
@@ -56,6 +68,7 @@ export function Clientes() {
 
   // Modal details control
   const [viewingCustomer, setViewingCustomer] = useState<Customer | null>(null);
+  const [viewingCreditLimit, setViewingCreditLimit] = useState<number | null | undefined>(undefined);
   const [viewingInvoices, setViewingInvoices] = useState<any[]>([]);
   const [viewingLoading, setViewingLoading] = useState(false);
 
@@ -95,6 +108,10 @@ export function Clientes() {
   function startCreate() {
     setEditing(null);
     setForm(emptyForm);
+    setCreditLimitInput("");
+    setInitialCreditLimit(null);
+    setCreditLimitLoading(false);
+    setCreditLimitFetchFailed(false);
     setRncLookupMessage("");
     setActiveSubTab("form");
   }
@@ -110,7 +127,28 @@ export function Clientes() {
       notes: customer.notes ?? "",
     });
     setRncLookupMessage("");
+    setCreditLimitInput("");
+    setInitialCreditLimit(undefined);
+    setCreditLimitFetchFailed(false);
     setActiveSubTab("form");
+
+    if (canUseCreditLimit && tenantId) {
+      setCreditLimitLoading(true);
+      void fetchCreditLimit(tenantId, customer.id)
+        .then((limit) => {
+          setInitialCreditLimit(limit);
+          setCreditLimitInput(limit !== null && limit !== undefined ? String(limit) : "");
+          setCreditLimitFetchFailed(false);
+        })
+        .catch((err) => {
+          console.warn("[Clientes] Error fetching credit limit:", err);
+          setInitialCreditLimit(undefined);
+          setCreditLimitFetchFailed(true);
+        })
+        .finally(() => {
+          setCreditLimitLoading(false);
+        });
+    }
   }
 
   async function lookupCustomerBusiness() {
@@ -140,12 +178,63 @@ export function Clientes() {
 
   async function saveCustomer() {
     if (!tenantId || savingRef.current) return;
+
+    let parsedLimit: number | null = null;
+    if (canUseCreditLimit && creditLimitInput.trim() !== "") {
+      try {
+        parsedLimit = parseCreditLimit(creditLimitInput);
+      } catch (err) {
+        showAlert(
+          err instanceof Error ? err.message : "El límite de crédito es inválido.",
+          "Error de Validación"
+        );
+        return;
+      }
+    }
+
     savingRef.current = true;
     setSaving(true);
     try {
       const saved = editing 
         ? await updateCustomer(tenantId, editing.id, form) 
         : await createCustomer(tenantId, form);
+
+      if (canUseCreditLimit) {
+        if (editing) {
+          if (
+            !creditLimitFetchFailed &&
+            initialCreditLimit !== undefined &&
+            hasCreditLimitChanged(initialCreditLimit, parsedLimit)
+          ) {
+            try {
+              await saveCreditLimit(tenantId, editing.id, parsedLimit);
+            } catch (err) {
+              showAlert(
+                err instanceof Error ? err.message : "No se pudo actualizar el límite de crédito.",
+                "Límite de Crédito"
+              );
+            }
+          }
+        } else {
+          const isOnline = typeof navigator === "undefined" || navigator.onLine !== false;
+          if (isOnline && parsedLimit !== null) {
+            try {
+              await saveCreditLimit(tenantId, saved.id, parsedLimit);
+            } catch (err) {
+              showAlert(
+                err instanceof Error ? err.message : "No se pudo registrar el límite de crédito.",
+                "Límite de Crédito"
+              );
+            }
+          } else if (!isOnline && parsedLimit !== null) {
+            showAlert(
+              "El cliente fue creado localmente, pero el límite de crédito requiere conexión a internet y no se guardó.",
+              "Sin Conexión"
+            );
+          }
+        }
+      }
+
       await refreshCustomers();
       setActiveSubTab("list");
       startCreate();
@@ -176,6 +265,7 @@ export function Clientes() {
     setViewingCustomer(customer);
     setViewingLoading(true);
     setViewingInvoices([]);
+    setViewingCreditLimit(undefined);
     try {
       const invs = await listCustomerInvoices(tenantId!, customer.id);
       setViewingInvoices(invs);
@@ -183,6 +273,12 @@ export function Clientes() {
       console.error("Error al cargar historial de facturas:", err);
     } finally {
       setViewingLoading(false);
+    }
+
+    if (canUseCreditLimit && tenantId) {
+      void fetchCreditLimit(tenantId, customer.id)
+        .then((limit) => setViewingCreditLimit(limit))
+        .catch(() => setViewingCreditLimit(null));
     }
   }
 
@@ -474,6 +570,65 @@ export function Clientes() {
                 />
               </div>
 
+              {canUseCreditLimit ? (
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between px-1">
+                    <label className="text-zinc-500 font-['Space_Grotesk'] font-bold text-[11px] uppercase tracking-[1px]">
+                      Límite de crédito (RD$)
+                    </label>
+                    {creditLimitLoading && (
+                      <span className="text-[11px] text-[#ff906d] animate-pulse">
+                        Consultando en la nube...
+                      </span>
+                    )}
+                    {creditLimitFetchFailed && (
+                      <span className="text-[11px] text-amber-500">
+                        Error al consultar (deshabilitado)
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    disabled={creditLimitLoading || creditLimitFetchFailed}
+                    value={creditLimitInput}
+                    onChange={(e) => setCreditLimitInput(e.target.value)}
+                    placeholder={
+                      creditLimitLoading
+                        ? "Cargando límite de la nube..."
+                        : creditLimitFetchFailed
+                        ? "No se pudo cargar de la nube (deshabilitado)"
+                        : "Vacío = sin límite"
+                    }
+                    className="rounded-xl border border-zinc-800 bg-zinc-900/30 px-4 py-3.5 text-sm text-white font-mono outline-none focus:border-[#ff906d]/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  />
+                  <span className="text-[11px] text-zinc-500 px-1">
+                    {creditLimitFetchFailed
+                      ? "Se requiere conexión a internet para ver o modificar el límite de crédito en la nube."
+                      : "Dejar vacío para crédito sin límite. En plan Corporativo, los links de empresa se bloquean automáticamente al alcanzar el límite."}
+                  </span>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1.5 opacity-60">
+                  <div className="flex items-center justify-between px-1">
+                    <label className="text-zinc-500 font-['Space_Grotesk'] font-bold text-[11px] uppercase tracking-[1px]">
+                      Límite de crédito (RD$)
+                    </label>
+                    <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                      Disponible en el plan Corporativo
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    disabled
+                    value=""
+                    placeholder="Disponible en el plan Corporativo"
+                    className="rounded-xl border border-zinc-800 bg-zinc-900/20 px-4 py-3.5 text-sm text-zinc-500 cursor-not-allowed"
+                  />
+                </div>
+              )}
+
               <div className="flex flex-col gap-1.5">
                 <label className="text-zinc-500 font-['Space_Grotesk'] font-bold text-[11px] uppercase tracking-[1px] px-1">
                   Notas / Observaciones
@@ -598,6 +753,19 @@ export function Clientes() {
                     <MapPin className="w-4 h-4 text-zinc-500 shrink-0 mt-0.5" />
                     <span>{viewingCustomer.address || "—"}</span>
                   </div>
+                  {canUseCreditLimit && (
+                    <div className="flex items-center gap-2.5 text-zinc-300 md:col-span-2">
+                      <CreditCard className="w-4 h-4 text-zinc-500 shrink-0" />
+                      <span>
+                        Límite de crédito:{" "}
+                        {viewingCreditLimit === undefined
+                          ? "Consultando en la nube..."
+                          : viewingCreditLimit != null
+                          ? "RD$" + Number(viewingCreditLimit).toLocaleString("es-DO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                          : "Sin límite"}
+                      </span>
+                    </div>
+                  )}
                   {viewingCustomer.notes && (
                     <div className="flex items-start gap-2.5 text-zinc-300 md:col-span-2 bg-zinc-900/30 p-3.5 rounded-xl border border-zinc-800/60 mt-1">
                       <FileText className="w-4 h-4 text-[#ff906d] shrink-0 mt-0.5" />

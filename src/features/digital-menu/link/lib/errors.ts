@@ -47,6 +47,18 @@ export function mapLinkOrderError(codeOrMessage?: string | null): string {
     return "Por favor ingresa tu nombre (debe tener entre 2 y 80 caracteres).";
   }
 
+  if (upper.includes("EMPLOYEE_NOT_AUTHORIZED")) {
+    return "No encontramos ese nombre o cédula en la lista de la empresa. Verificá o consultá con tu empresa.";
+  }
+
+  if (upper.includes("CREDIT_LIMIT_EXCEEDED")) {
+    return "Este pedido supera el crédito disponible de la empresa. Consultá con tu empresa.";
+  }
+
+  if (upper.includes("CREDIT_LIMIT_REACHED")) {
+    return "El menú de tu empresa está pausado temporalmente. Consultá con tu empresa.";
+  }
+
   if (upper.includes("TOO_MANY_PENDING_ORDERS")) {
     return "Tienes demasiados pedidos pendientes en este momento. Por favor espera a que se procesen.";
   }
@@ -64,4 +76,24 @@ export function mapLinkOrderError(codeOrMessage?: string | null): string {
   }
 
   return raw;
+}
+
+/**
+ * Maps menu unavailable reason to a friendly user explanation.
+ */
+export function mapMenuUnavailableReason(reason?: string | null): string {
+  if (!reason) {
+    return "Este menú no está disponible en este momento.";
+  }
+  const upper = String(reason).trim().toUpperCase();
+  if (upper.includes("CREDIT_LIMIT_REACHED")) {
+    return "El menú de tu empresa está pausado temporalmente. Consultá con tu empresa.";
+  }
+  if (upper.includes("LINK_DISABLED")) {
+    return "Este enlace de menú ha sido desactivado.";
+  }
+  if (upper.includes("PLAN_REQUIRED")) {
+    return "Este enlace requiere una suscripción empresarial activa.";
+  }
+  return "Este menú no está disponible en este momento.";
 }

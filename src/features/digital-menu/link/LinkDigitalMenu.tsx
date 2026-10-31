@@ -14,7 +14,7 @@ import {
   updateLineExtras,
   updateLineQuantity,
 } from "./lib/cart";
-import { mapLinkOrderError } from "./lib/errors";
+import { mapLinkOrderError, mapMenuUnavailableReason } from "./lib/errors";
 import { getLinkSessionId } from "./lib/session";
 import type {
   CartExtra,
@@ -393,7 +393,7 @@ export function LinkDigitalMenu() {
             Menú no disponible
           </p>
           <p className="text-sm text-orange-100/80 leading-relaxed">
-            Este menú no está disponible en este momento.
+            {mapMenuUnavailableReason(menu?.reason)}
           </p>
         </div>
       </div>
@@ -740,6 +740,8 @@ function CartPanel({
   onSubmit,
 }: CartPanelProps) {
   const isCompany = menu.link_type === "company";
+  const requireRoster = Boolean(menu.require_roster);
+  const companyName = menu.company_name || menu.label || "tu empresa";
 
   return (
     <div className="rounded-[32px] border border-white/10 bg-[#21150f] p-5 shadow-2xl text-[#fff7ed]">
@@ -867,14 +869,25 @@ function CartPanel({
       <div className="mt-4 space-y-3">
         <div>
           <label htmlFor="customer-name-input" className="block text-xs font-bold text-orange-100/80 mb-1">
-            Tu nombre {isCompany && <span className="text-orange-400">*</span>}
+            {requireRoster ? "Tu cédula o nombre registrado" : <>Tu nombre {isCompany && <span className="text-orange-400">*</span>}</>}
           </label>
+          {requireRoster && (
+            <p className="text-[11px] text-orange-200/70 mb-1.5 leading-snug">
+              Solo empleados autorizados por {companyName} pueden pedir.
+            </p>
+          )}
           <input
             id="customer-name-input"
             type="text"
-            required={isCompany}
-            aria-label="Tu nombre"
-            placeholder={isCompany ? "Ej. María Rodríguez (requerido)" : "Ej. María Rodríguez (opcional)"}
+            required={isCompany || requireRoster}
+            aria-label={requireRoster ? "Tu cédula o nombre registrado" : "Tu nombre"}
+            placeholder={
+              requireRoster
+                ? "Ej. 402-1234567-8 o María Rodríguez"
+                : isCompany
+                ? "Ej. María Rodríguez (requerido)"
+                : "Ej. María Rodríguez (opcional)"
+            }
             value={employeeName}
             onChange={(e) => onEmployeeNameChange(e.target.value.slice(0, 80))}
             maxLength={80}

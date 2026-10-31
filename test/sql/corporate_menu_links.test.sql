@@ -1168,3 +1168,355 @@ BEGIN
   END;
   PERFORM test_assert(v_caught_limit_corp, '7th company link on corporativo must raise LINK_LIMIT_REACHED');
 END $$;
+
+-- ============================================================
+-- C-T4 & C-T5: Employee Roster and Credit Limit Tests
+-- ============================================================
+\i supabase/migrations/20261101110000_roster_and_credit_limit.sql
+
+-- Test C-T4.1: Roster matching, canonical name, inactive rejection, and plan check
+DO $$
+DECLARE
+  v_tenant_corp uuid := gen_random_uuid();
+  v_sucursal_corp uuid := gen_random_uuid();
+  v_menu_corp uuid := gen_random_uuid();
+  v_plato_id int;
+  v_cust_corp uuid := gen_random_uuid();
+  v_link_roster uuid := gen_random_uuid();
+  v_token_roster text;
+  v_res jsonb;
+  v_order_id uuid;
+  v_emp_name text;
+  v_caught_inactive boolean := false;
+  v_caught_unauth boolean := false;
+  v_caught_anon boolean := false;
+
+  v_tenant_emp uuid := gen_random_uuid();
+  v_sucursal_emp uuid := gen_random_uuid();
+  v_menu_emp uuid := gen_random_uuid();
+  v_cust_emp uuid := gen_random_uuid();
+  v_link_emp uuid := gen_random_uuid();
+  v_token_emp text;
+  v_plato_emp_id int;
+BEGIN
+  -- Setup Corporativo Tenant
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
+  VALUES (v_tenant_corp, 'Tenant Corp Roster', 'corporativo', true);
+
+  INSERT INTO public.sucursales (id, tenant_id)
+  VALUES (v_sucursal_corp, v_tenant_corp);
+
+  INSERT INTO public.menus (id, tenant_id, sucursal_id, name)
+  VALUES (v_menu_corp, v_tenant_corp, v_sucursal_corp, 'Menu Corp Roster');
+
+  INSERT INTO public.platos (nombre, precio, categoria, disponible, tenant_id, sucursal_id)
+  VALUES ('Mofongo Corp', 350.00, 'Platos', true, v_tenant_corp, v_sucursal_corp)
+  RETURNING id INTO v_plato_id;
+
+  INSERT INTO public.menu_items (tenant_id, menu_id, plato_id, weekdays)
+  VALUES (v_tenant_corp, v_menu_corp, v_plato_id, ARRAY[1,2,3,4,5,6,7]);
+
+  INSERT INTO public.customers (id, tenant_id, name)
+  VALUES (v_cust_corp, v_tenant_corp, 'Empresa Roster SRL');
+
+  -- Create company link with require_roster = true
+  INSERT INTO public.menu_links (id, tenant_id, sucursal_id, menu_id, label, link_type, customer_id, enabled, require_roster)
+  VALUES (v_link_roster, v_tenant_corp, v_sucursal_corp, v_menu_corp, 'Link Roster Corp', 'company', v_cust_corp, true, true)
+  RETURNING token INTO v_token_roster;
+
+  -- Verify get_menu_by_link returns require_roster = true and does NOT return roster contents
+  v_res := public.get_menu_by_link(v_token_roster);
+  PERFORM test_assert((v_res->>'require_roster')::boolean IS TRUE, 'get_menu_by_link must return require_roster = true');
+  PERFORM test_assert(NOT (v_res ? 'employees'), 'get_menu_by_link must NEVER expose roster contents');
+
+  -- Insert employees in roster
+  INSERT INTO public.menu_link_employees (tenant_id, menu_link_id, full_name, document_id, active)
+  VALUES (v_tenant_corp, v_link_roster, 'Juan Pérez Rodríguez', '40212345678', true);
+
+  INSERT INTO public.menu_link_employees (tenant_id, menu_link_id, full_name, document_id, active)
+  VALUES (v_tenant_corp, v_link_roster, 'José Ángel Peña', NULL, true);
+
+  INSERT INTO public.menu_link_employees (tenant_id, menu_link_id, full_name, document_id, active)
+  VALUES (v_tenant_corp, v_link_roster, 'María de los Ángeles', '00198765432', true);
+
+  INSERT INTO public.menu_link_employees (tenant_id, menu_link_id, full_name, document_id, active)
+  VALUES (v_tenant_corp, v_link_roster, 'Roberto Inactivo', '40200000000', false);
+
+  -- 1. Match by cédula with dashes typed ('402-1234567-8') -> matches Juan Pérez Rodríguez and stores canonical name
+  v_res := public.create_order_by_link(
+    v_token_roster,
+    '402-1234567-8',
+    'Nota 1',
+    jsonb_build_array(jsonb_build_object('plato_id', v_plato_id, 'quantity', 1))
+  );
+  v_order_id := (v_res->>'order_id')::uuid;
+  SELECT employee_name INTO v_emp_name FROM public.digital_orders WHERE id = v_order_id;
+  PERFORM test_assert(v_emp_name = 'Juan Pérez Rodríguez', 'Order matched by cedula must store canonical full_name');
+
+  -- 2. Match by name with accents, lowercase, extra spaces ('  jose   angel   pena  ') -> matches José Ángel Peña
+  v_res := public.create_order_by_link(
+    v_token_roster,
+    '  jose   angel   pena  ',
+    'Nota 2',
+    jsonb_build_array(jsonb_build_object('plato_id', v_plato_id, 'quantity', 1))
+  );
+  v_order_id := (v_res->>'order_id')::uuid;
+  SELECT employee_name INTO v_emp_name FROM public.digital_orders WHERE id = v_order_id;
+  PERFORM test_assert(v_emp_name = 'José Ángel Peña', 'Order matched by normalized name must store canonical full_name');
+
+  -- 3. Match by name canonical check: typed 'maria de los angeles' -> stored 'María de los Ángeles'
+  v_res := public.create_order_by_link(
+    v_token_roster,
+    'maria de los angeles',
+    'Nota 3',
+    jsonb_build_array(jsonb_build_object('plato_id', v_plato_id, 'quantity', 1))
+  );
+  v_order_id := (v_res->>'order_id')::uuid;
+  SELECT employee_name INTO v_emp_name FROM public.digital_orders WHERE id = v_order_id;
+  PERFORM test_assert(v_emp_name = 'María de los Ángeles', 'Order must store canonical full_name, not typed variation');
+
+  -- 4. Inactive employee rejected -> raises EMPLOYEE_NOT_AUTHORIZED
+  BEGIN
+    PERFORM public.create_order_by_link(
+      v_token_roster,
+      '402-0000000-0',
+      'Nota Inactivo',
+      jsonb_build_array(jsonb_build_object('plato_id', v_plato_id, 'quantity', 1))
+    );
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'EMPLOYEE_NOT_AUTHORIZED' THEN
+      v_caught_inactive := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_inactive, 'Inactive employee must raise EMPLOYEE_NOT_AUTHORIZED');
+
+  -- 5. Non-existent employee rejected -> raises EMPLOYEE_NOT_AUTHORIZED
+  BEGIN
+    PERFORM public.create_order_by_link(
+      v_token_roster,
+      'Desconocido No Roster',
+      'Nota Desconocido',
+      jsonb_build_array(jsonb_build_object('plato_id', v_plato_id, 'quantity', 1))
+    );
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'EMPLOYEE_NOT_AUTHORIZED' THEN
+      v_caught_unauth := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_unauth, 'Unlisted employee must raise EMPLOYEE_NOT_AUTHORIZED');
+
+  -- 6. require_roster ignored on plan 'empresarial' (treated as false)
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
+  VALUES (v_tenant_emp, 'Tenant Emp Roster', 'empresarial', true);
+
+  INSERT INTO public.sucursales (id, tenant_id)
+  VALUES (v_sucursal_emp, v_tenant_emp);
+
+  INSERT INTO public.menus (id, tenant_id, sucursal_id, name)
+  VALUES (v_menu_emp, v_tenant_emp, v_sucursal_emp, 'Menu Emp Roster');
+
+  INSERT INTO public.platos (nombre, precio, categoria, disponible, tenant_id, sucursal_id)
+  VALUES ('Chivo Emp', 300.00, 'Platos', true, v_tenant_emp, v_sucursal_emp)
+  RETURNING id INTO v_plato_emp_id;
+
+  INSERT INTO public.menu_items (tenant_id, menu_id, plato_id, weekdays)
+  VALUES (v_tenant_emp, v_menu_emp, v_plato_emp_id, ARRAY[1,2,3,4,5,6,7]);
+
+  INSERT INTO public.customers (id, tenant_id, name)
+  VALUES (v_cust_emp, v_tenant_emp, 'Empresa Emp Roster');
+
+  INSERT INTO public.menu_links (id, tenant_id, sucursal_id, menu_id, label, link_type, customer_id, enabled, require_roster)
+  VALUES (v_link_emp, v_tenant_emp, v_sucursal_emp, v_menu_emp, 'Link Emp Roster', 'company', v_cust_emp, true, true)
+  RETURNING token INTO v_token_emp;
+
+  -- On empresarial, any valid employee name passes even though not in roster
+  v_res := public.create_order_by_link(
+    v_token_emp,
+    'Cualquier Empleado',
+    'Nota Emp',
+    jsonb_build_array(jsonb_build_object('plato_id', v_plato_emp_id, 'quantity', 1))
+  );
+  PERFORM test_assert(v_res ? 'order_id', 'On empresarial plan, require_roster must be ignored');
+END $$;
+
+-- Test C-T4.2: anon cannot select menu_link_employees
+DO $$
+DECLARE
+  v_caught_anon boolean := false;
+BEGIN
+  BEGIN
+    SET LOCAL ROLE anon;
+    PERFORM count(*) FROM public.menu_link_employees;
+    RESET ROLE;
+  EXCEPTION WHEN OTHERS THEN
+    RESET ROLE;
+    IF SQLSTATE = '42501' THEN
+      v_caught_anon := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_anon, 'anon cannot select menu_link_employees (must raise 42501 permission denied)');
+END $$;
+
+-- Test C-T5: Credit Limit Enforcement
+DO $$
+DECLARE
+  v_tenant uuid := gen_random_uuid();
+  v_sucursal uuid := gen_random_uuid();
+  v_menu uuid := gen_random_uuid();
+  v_plato_id int;
+  v_cust uuid := gen_random_uuid();
+  v_link uuid := gen_random_uuid();
+  v_token text;
+  v_used numeric;
+  v_res jsonb;
+  v_caught_exceed boolean := false;
+  v_caught_second_exceed boolean := false;
+BEGIN
+  -- Setup Corporativo Tenant & Customer with credit_limit = 500.00
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
+  VALUES (v_tenant, 'Tenant Corp Credit', 'corporativo', true);
+
+  PERFORM set_config('test.tenant', v_tenant::text, true);
+
+  INSERT INTO public.sucursales (id, tenant_id)
+  VALUES (v_sucursal, v_tenant);
+
+  INSERT INTO public.menus (id, tenant_id, sucursal_id, name)
+  VALUES (v_menu, v_tenant, v_sucursal, 'Menu Corp Credit');
+
+  INSERT INTO public.platos (nombre, precio, categoria, disponible, tenant_id, sucursal_id)
+  VALUES ('Plato Especial', 250.00, 'Platos', true, v_tenant, v_sucursal)
+  RETURNING id INTO v_plato_id;
+
+  INSERT INTO public.menu_items (tenant_id, menu_id, plato_id, weekdays)
+  VALUES (v_tenant, v_menu, v_plato_id, ARRAY[1,2,3,4,5,6,7]);
+
+  INSERT INTO public.customers (id, tenant_id, name, credit_limit)
+  VALUES (v_cust, v_tenant, 'Empresa Credito Limitada', 500.00);
+
+  INSERT INTO public.menu_links (id, tenant_id, sucursal_id, menu_id, label, link_type, customer_id, enabled)
+  VALUES (v_link, v_tenant, v_sucursal, v_menu, 'Link Credito', 'company', v_cust, true)
+  RETURNING token INTO v_token;
+
+  -- 1. Insert accounts receivable (cuentas_cobrar):
+  -- Active pendiente debt: 200 total, 50 paid -> balance 150
+  INSERT INTO public.cuentas_cobrar (tenant_id, sucursal_id, customer_id, monto_total, monto_pagado, fecha_vencimiento, estado)
+  VALUES (v_tenant, v_sucursal, v_cust, 200.00, 50.00, now() + interval '30 days', 'pendiente');
+
+  -- Pagada: 1000 total, 1000 paid -> must be EXCLUDED from used credit
+  INSERT INTO public.cuentas_cobrar (tenant_id, sucursal_id, customer_id, monto_total, monto_pagado, fecha_vencimiento, estado)
+  VALUES (v_tenant, v_sucursal, v_cust, 1000.00, 1000.00, now() + interval '30 days', 'pagada');
+
+  -- Anulada: 800 total, 0 paid -> must be EXCLUDED from used credit
+  INSERT INTO public.cuentas_cobrar (tenant_id, sucursal_id, customer_id, monto_total, monto_pagado, fecha_vencimiento, estado)
+  VALUES (v_tenant, v_sucursal, v_cust, 800.00, 0.00, now() + interval '30 days', 'anulada');
+
+  -- Check company_credit_used = 150.00
+  v_used := public.company_credit_used(v_tenant, v_cust);
+  PERFORM test_assert(v_used = 150.00, 'company_credit_used must equal 150.00 (excluding pagada and anulada)');
+
+  -- 2. Order that exceeds limit raises CREDIT_LIMIT_EXCEEDED
+  -- Used = 150. Limit = 500. Order of 2 items = 500 -> 150 + 500 = 650 > 500 -> raises!
+  BEGIN
+    PERFORM public.create_order_by_link(
+      v_token,
+      'Empleado Prueba',
+      '',
+      jsonb_build_array(jsonb_build_object('plato_id', v_plato_id, 'quantity', 2))
+    );
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'CREDIT_LIMIT_EXCEEDED' THEN
+      v_caught_exceed := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_exceed, 'Order exceeding credit limit must raise CREDIT_LIMIT_EXCEEDED');
+
+  -- 3. Order within limit passes:
+  -- Used = 150. Order of 1 item = 250 -> 150 + 250 = 400 <= 500 -> succeeds!
+  v_res := public.create_order_by_link(
+    v_token,
+    'Empleado Valido',
+    '',
+    jsonb_build_array(jsonb_build_object('plato_id', v_plato_id, 'quantity', 1))
+  );
+  PERFORM test_assert(v_res ? 'order_id', 'Order within credit limit must pass');
+
+  -- 4. Used credit now includes the pending digital order (150 + 250 = 400.00)
+  v_used := public.company_credit_used(v_tenant, v_cust);
+  PERFORM test_assert(v_used = 400.00, 'company_credit_used must include pending digital orders (400.00)');
+
+  -- Second order of 1 item (250) -> 400 + 250 = 650 > 500 -> raises CREDIT_LIMIT_EXCEEDED
+  BEGIN
+    PERFORM public.create_order_by_link(
+      v_token,
+      'Empleado Valido 2',
+      '',
+      jsonb_build_array(jsonb_build_object('plato_id', v_plato_id, 'quantity', 1))
+    );
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'CREDIT_LIMIT_EXCEEDED' THEN
+      v_caught_second_exceed := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_second_exceed, 'Second order that pushes total over limit must raise CREDIT_LIMIT_EXCEEDED');
+
+  -- 5. get_menu_by_link auto-blocks when used >= credit_limit
+  -- Currently used is 400 < 500, menu should still be available
+  v_res := public.get_menu_by_link(v_token);
+  PERFORM test_assert((v_res->>'available')::boolean IS TRUE, 'Menu must be available when used < credit_limit');
+
+  -- Add another 100 debt -> used becomes 400 + 100 = 500.00 >= 500.00
+  INSERT INTO public.cuentas_cobrar (tenant_id, sucursal_id, customer_id, monto_total, monto_pagado, fecha_vencimiento, estado)
+  VALUES (v_tenant, v_sucursal, v_cust, 100.00, 0.00, now() + interval '30 days', 'pendiente');
+
+  v_res := public.get_menu_by_link(v_token);
+  PERFORM test_assert((v_res->>'available')::boolean IS FALSE, 'Menu must be unavailable when used >= credit_limit');
+  PERFORM test_assert(v_res->>'reason' = 'CREDIT_LIMIT_REACHED', 'Reason must be CREDIT_LIMIT_REACHED');
+  PERFORM test_assert(NOT (v_res ? 'credit_limit'), 'get_menu_by_link must not expose credit limit');
+  PERFORM test_assert(NOT (v_res ? 'credit_used'), 'get_menu_by_link must not expose credit used');
+END $$;
+
+-- Test 22: company_credit_used tenant authorization and internal function privilege check
+DO $$
+DECLARE
+  v_tenant_a uuid := gen_random_uuid();
+  v_tenant_b uuid := gen_random_uuid();
+  v_cust_a uuid := gen_random_uuid();
+  v_caught_unauth boolean := false;
+  v_priv_anon boolean;
+  v_priv_auth boolean;
+BEGIN
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
+  VALUES (v_tenant_a, 'Tenant Corp A', 'corporativo', true),
+         (v_tenant_b, 'Tenant Corp B', 'corporativo', true);
+
+  INSERT INTO public.customers (id, tenant_id, name, credit_limit)
+  VALUES (v_cust_a, v_tenant_a, 'Cliente A', 1000.00);
+
+  -- 1. Calling company_credit_used with another tenant's session raises UNAUTHORIZED
+  PERFORM set_config('test.tenant', v_tenant_b::text, true);
+
+  BEGIN
+    PERFORM public.company_credit_used(v_tenant_a, v_cust_a);
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'UNAUTHORIZED' THEN
+      v_caught_unauth := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_unauth, 'Calling company_credit_used with another tenant session must raise UNAUTHORIZED');
+
+  -- 2. Internal function is not executable by authenticated or anon
+  SELECT has_function_privilege('anon', 'public.company_credit_used_internal(uuid, uuid)', 'execute') INTO v_priv_anon;
+  PERFORM test_assert(v_priv_anon IS FALSE, 'company_credit_used_internal must NOT be executable by anon');
+
+  SELECT has_function_privilege('authenticated', 'public.company_credit_used_internal(uuid, uuid)', 'execute') INTO v_priv_auth;
+  PERFORM test_assert(v_priv_auth IS FALSE, 'company_credit_used_internal must NOT be executable by authenticated');
+
+  -- 3. Client wrapper is executable by authenticated, but NOT anon
+  SELECT has_function_privilege('authenticated', 'public.company_credit_used(uuid, uuid)', 'execute') INTO v_priv_auth;
+  PERFORM test_assert(v_priv_auth IS TRUE, 'company_credit_used wrapper must be executable by authenticated');
+
+  SELECT has_function_privilege('anon', 'public.company_credit_used(uuid, uuid)', 'execute') INTO v_priv_anon;
+  PERFORM test_assert(v_priv_anon IS FALSE, 'company_credit_used wrapper must NOT be executable by anon');
+END $$;
+

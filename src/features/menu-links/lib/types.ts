@@ -36,10 +36,22 @@ export interface MenuLink {
   customer_id?: string | null;
   allow_extras: boolean;
   enabled: boolean;
+  require_roster?: boolean;
   created_at?: string;
   updated_at?: string;
   menu?: Pick<Menu, "id" | "name" | "schedule_mode" | "week_start"> | null;
-  customer?: { id: string; name: string } | null;
+  customer?: { id: string; name: string; credit_limit?: number | null } | null;
+}
+
+export interface MenuLinkEmployee {
+  id: string;
+  tenant_id: string;
+  menu_link_id: string;
+  full_name: string;
+  document_id: string | null;
+  active: boolean;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface PlatoSoldOut {
