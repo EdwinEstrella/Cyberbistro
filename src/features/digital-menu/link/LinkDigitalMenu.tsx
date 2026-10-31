@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router";
 import { supabase } from "../../../shared/lib/supabase";
+import { ClosedRestaurantState } from "../components/ClosedRestaurantState";
+import { isRestaurantClosedError, RESTAURANT_CLOSED_MESSAGE } from "../lib/onlineStatus";
+import { useOnlineMenuStatus } from "../lib/useOnlineMenuStatus";
 import { DishExtrasModal } from "./DishExtrasModal";
 import {
   addToCart,
@@ -88,6 +91,9 @@ export function LinkDigitalMenu() {
   // Session ID
   const sessionId = useMemo(() => (token ? getLinkSessionId(token) : ""), [token]);
 
+  // Online cycle status
+  const { isOpen, setIsOpen, checking: isCheckingStatus, checkStatus } = useOnlineMenuStatus({ token });
+
   // Load menu from RPC
   const loadMenu = useCallback(async () => {
     if (!token) return null;
@@ -95,9 +101,12 @@ export function LinkDigitalMenu() {
     setNetworkError(false);
 
     try {
-      const { data, error } = await supabase.rpc("get_menu_by_link", {
-        p_token: token.trim(),
-      });
+      const [{ data, error }] = await Promise.all([
+        supabase.rpc("get_menu_by_link", {
+          p_token: token.trim(),
+        }),
+        checkStatus(),
+      ]);
 
       if (error) {
         const errorMsg = error.message || "";
@@ -287,6 +296,13 @@ export function LinkDigitalMenu() {
         const errorText = error.message || "";
         const upper = errorText.toUpperCase();
 
+        if (isRestaurantClosedError(errorText)) {
+          setIsOpen(false);
+          setSubmitError(RESTAURANT_CLOSED_MESSAGE);
+          setSubmitting(false);
+          return;
+        }
+
         if (
           upper.includes("ITEM_SOLD_OUT") ||
           upper.includes("ITEM_NOT_AVAILABLE") ||
@@ -327,7 +343,12 @@ export function LinkDigitalMenu() {
       setShowMobileCart(false);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      setSubmitError(mapLinkOrderError(msg));
+      if (isRestaurantClosedError(msg)) {
+        setIsOpen(false);
+        setSubmitError(RESTAURANT_CLOSED_MESSAGE);
+      } else {
+        setSubmitError(mapLinkOrderError(msg));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -342,7 +363,7 @@ export function LinkDigitalMenu() {
   }
 
   // 1. Loading state
-  if (loading && !menu && !networkError) {
+  if ((loading && isOpen === null) && !menu && !networkError) {
     return (
       <div className="min-h-screen bg-[#15100c] text-[#fff7ed] grid place-items-center p-6 text-center">
         <div className="space-y-4">
@@ -350,6 +371,18 @@ export function LinkDigitalMenu() {
           <p className="text-sm font-semibold text-orange-100/70">Cargando menú...</p>
         </div>
       </div>
+    );
+  }
+
+  // 1b. Closed restaurant state (no open operational cycle)
+  if (isOpen === false) {
+    return (
+      <ClosedRestaurantState
+        title={menu?.restaurant?.title}
+        logoUrl={menu?.restaurant?.logo_url}
+        onRetry={() => void loadMenu()}
+        isRetrying={loading || isCheckingStatus}
+      />
     );
   }
 

@@ -33,6 +33,18 @@ CREATE TABLE IF NOT EXISTS public.sucursales (
   tenant_id uuid REFERENCES public.tenants(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS public.cierres_operativos (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+  sucursal_id uuid REFERENCES public.sucursales(id) ON DELETE SET NULL,
+  business_day date DEFAULT CURRENT_DATE,
+  cycle_number int DEFAULT 1,
+  opened_at timestamptz NOT NULL DEFAULT now(),
+  closed_at timestamptz,
+  efectivo_inicial numeric(12,2) DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS public.comandas (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid REFERENCES public.tenants(id) ON DELETE CASCADE,
@@ -168,6 +180,7 @@ $$;
 \i supabase/migrations/20261031120000_corporate_menu_links.sql
 \i supabase/migrations/20261031130000_corporate_menu_links_revoke_anon.sql
 \i supabase/migrations/20261101090000_add_corporativo_plan.sql
+\i supabase/migrations/20261101150000_menus_closed_without_cycle.sql
 
 -- 4. Test Assertion Helper
 CREATE OR REPLACE FUNCTION test_assert(p_cond boolean, p_msg text)
@@ -203,6 +216,9 @@ BEGIN
   INSERT INTO public.sucursales (id, tenant_id)
   VALUES (gen_random_uuid(), v_tenant_id)
   RETURNING id INTO v_sucursal_id;
+
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at)
+  VALUES (v_tenant_id, v_sucursal_id, now(), NULL);
 
   v_today := public.menu_business_today(v_tenant_id);
   v_dow := public.menu_business_isodow(v_tenant_id, v_today);
@@ -498,6 +514,9 @@ BEGIN
   INSERT INTO public.sucursales (id, tenant_id)
   VALUES (gen_random_uuid(), v_tenant_b)
   RETURNING id INTO v_sucursal_b;
+
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at)
+  VALUES (v_tenant_b, v_sucursal_b, now(), NULL);
 
   INSERT INTO public.customers (tenant_id, name)
   VALUES (v_tenant_b, 'Customer Tenant B')
@@ -985,6 +1004,9 @@ BEGIN
   VALUES (v_tenant_id)
   RETURNING id INTO v_sucursal_id;
 
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at)
+  VALUES (v_tenant_id, v_sucursal_id, now(), NULL);
+
   INSERT INTO public.platos (nombre, precio, disponible, tenant_id, sucursal_id, is_extra)
   VALUES ('Plato Ejecutivo Corp', 350.00, true, v_tenant_id, v_sucursal_id, false)
   RETURNING id INTO v_plato_id;
@@ -1206,6 +1228,9 @@ BEGIN
   INSERT INTO public.sucursales (id, tenant_id)
   VALUES (v_sucursal_corp, v_tenant_corp);
 
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at)
+  VALUES (v_tenant_corp, v_sucursal_corp, now(), NULL);
+
   INSERT INTO public.menus (id, tenant_id, sucursal_id, name)
   VALUES (v_menu_corp, v_tenant_corp, v_sucursal_corp, 'Menu Corp Roster');
 
@@ -1312,6 +1337,9 @@ BEGIN
   INSERT INTO public.sucursales (id, tenant_id)
   VALUES (v_sucursal_emp, v_tenant_emp);
 
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at)
+  VALUES (v_tenant_emp, v_sucursal_emp, now(), NULL);
+
   INSERT INTO public.menus (id, tenant_id, sucursal_id, name)
   VALUES (v_menu_emp, v_tenant_emp, v_sucursal_emp, 'Menu Emp Roster');
 
@@ -1380,6 +1408,9 @@ BEGIN
 
   INSERT INTO public.sucursales (id, tenant_id)
   VALUES (v_sucursal, v_tenant);
+
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at)
+  VALUES (v_tenant, v_sucursal, now(), NULL);
 
   INSERT INTO public.menus (id, tenant_id, sucursal_id, name)
   VALUES (v_menu, v_tenant, v_sucursal, 'Menu Corp Credit');
@@ -1641,6 +1672,7 @@ BEGIN
   INSERT INTO public.tenants (id, nombre_negocio, plan, activa, itbis_incluido_en_precio)
   VALUES (v_tenant, 'Corp Restaurant 1', 'corporativo', true, true);
   INSERT INTO public.sucursales (id, tenant_id) VALUES (v_sucursal, v_tenant);
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at) VALUES (v_tenant, v_sucursal, now(), NULL);
   INSERT INTO public.customers (id, tenant_id, name, document_id)
   VALUES (v_cust, v_tenant, 'Acme Dominicana SRL', '131-12345-1'); -- 9 digits
 
@@ -1711,6 +1743,7 @@ BEGIN
   INSERT INTO public.tenants (id, nombre_negocio, plan, activa, itbis_incluido_en_precio)
   VALUES (v_tenant, 'Corp Restaurant 2', 'corporativo', true, true);
   INSERT INTO public.sucursales (id, tenant_id) VALUES (v_sucursal, v_tenant);
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at) VALUES (v_tenant, v_sucursal, now(), NULL);
   INSERT INTO public.customers (id, tenant_id, name, document_id)
   VALUES (v_cust, v_tenant, 'Beta Corp', '101-00000-1');
 
@@ -1754,6 +1787,7 @@ BEGIN
   INSERT INTO public.tenants (id, nombre_negocio, plan, activa, itbis_incluido_en_precio)
   VALUES (v_tenant, 'Corp Restaurant 3', 'corporativo', true, true);
   INSERT INTO public.sucursales (id, tenant_id) VALUES (v_sucursal, v_tenant);
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at) VALUES (v_tenant, v_sucursal, now(), NULL);
   INSERT INTO public.customers (id, tenant_id, name, document_id)
   VALUES (v_cust, v_tenant, 'Gamma Corp', '101-00000-2');
 
@@ -1799,6 +1833,7 @@ BEGIN
   INSERT INTO public.tenants (id, nombre_negocio, plan, activa, itbis_incluido_en_precio)
   VALUES (v_tenant, 'Corp Restaurant 4', 'corporativo', true, true);
   INSERT INTO public.sucursales (id, tenant_id) VALUES (v_sucursal, v_tenant);
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at) VALUES (v_tenant, v_sucursal, now(), NULL);
   INSERT INTO public.customers (id, tenant_id, name, document_id)
   VALUES (v_cust, v_tenant, 'Delta Corp', '12345'); -- Invalid: only 5 digits
 
@@ -1841,6 +1876,7 @@ BEGIN
   INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
   VALUES (v_tenant, 'Empresarial Restaurant', 'empresarial', true);
   INSERT INTO public.sucursales (id, tenant_id) VALUES (v_sucursal, v_tenant);
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at) VALUES (v_tenant, v_sucursal, now(), NULL);
   INSERT INTO public.customers (id, tenant_id, name, document_id)
   VALUES (v_cust, v_tenant, 'Epsilon Corp', '131-12345-1');
 
@@ -1883,6 +1919,7 @@ BEGIN
   INSERT INTO public.tenants (id, nombre_negocio, plan, activa, itbis_incluido_en_precio)
   VALUES (v_tenant, 'Corp Restaurant 5', 'corporativo', true, true);
   INSERT INTO public.sucursales (id, tenant_id) VALUES (v_sucursal, v_tenant);
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at) VALUES (v_tenant, v_sucursal, now(), NULL);
   INSERT INTO public.customers (id, tenant_id, name, document_id)
   VALUES (v_cust, v_tenant, 'Zeta Corp', '131-98765-4');
 
@@ -1949,6 +1986,7 @@ BEGIN
   INSERT INTO public.tenants (id, nombre_negocio, plan, activa, itbis_incluido_en_precio)
   VALUES (v_tenant_excl, 'Exclusive ITBIS Restaurant', 'corporativo', true, false);
   INSERT INTO public.sucursales (id, tenant_id) VALUES (v_sucursal_excl, v_tenant_excl);
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at) VALUES (v_tenant_excl, v_sucursal_excl, now(), NULL);
   INSERT INTO public.customers (id, tenant_id, name, document_id)
   VALUES (v_cust_excl, v_tenant_excl, 'Client Excl', '131-00001-1');
 
@@ -1991,6 +2029,7 @@ BEGIN
   INSERT INTO public.tenants (id, nombre_negocio, plan, activa, itbis_incluido_en_precio)
   VALUES (v_tenant_incl, 'Inclusive ITBIS Restaurant', 'corporativo', true, true);
   INSERT INTO public.sucursales (id, tenant_id) VALUES (v_sucursal_incl, v_tenant_incl);
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at) VALUES (v_tenant_incl, v_sucursal_incl, now(), NULL);
   INSERT INTO public.customers (id, tenant_id, name, document_id)
   VALUES (v_cust_incl, v_tenant_incl, 'Client Incl', '131-00002-2');
 
@@ -2012,6 +2051,222 @@ BEGIN
   PERFORM test_assert(v_fact_incl.subtotal = 1000.00, 'Incl subtotal must be 1000.00');
   PERFORM test_assert(v_fact_incl.itbis = 180.00, 'Incl itbis must be 180.00');
   PERFORM test_assert(round(v_fact_incl.subtotal + v_fact_incl.itbis, 2) = v_fact_incl.total, 'Incl subtotal + itbis must equal total');
+END $$;
+
+-- ============================================================
+-- Tests: Menus Closed Without Open Operational Cycle
+-- ============================================================
+
+-- Test 30: When all cycles are closed (or none exist), create_order_by_link raises RESTAURANT_CLOSED
+DO $$
+DECLARE
+  v_tenant_id   uuid := gen_random_uuid();
+  v_sucursal_id uuid := gen_random_uuid();
+  v_menu_id     uuid := gen_random_uuid();
+  v_cust_id     uuid := gen_random_uuid();
+  v_plato_id    int;
+  v_token       text;
+  v_status      jsonb;
+  v_caught_closed boolean := false;
+BEGIN
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
+  VALUES (v_tenant_id, 'Restaurante Cerrado', 'corporativo', true);
+
+  INSERT INTO public.sucursales (id, tenant_id)
+  VALUES (v_sucursal_id, v_tenant_id);
+
+  INSERT INTO public.menus (id, tenant_id, sucursal_id, name)
+  VALUES (v_menu_id, v_tenant_id, v_sucursal_id, 'Menu Cerrado');
+
+  INSERT INTO public.platos (nombre, precio, disponible, tenant_id, sucursal_id)
+  VALUES ('Plato Cerrado', 200, true, v_tenant_id, v_sucursal_id)
+  RETURNING id INTO v_plato_id;
+
+  INSERT INTO public.menu_items (tenant_id, menu_id, plato_id, weekdays)
+  VALUES (v_tenant_id, v_menu_id, v_plato_id, ARRAY[1,2,3,4,5,6,7]);
+
+  INSERT INTO public.customers (id, tenant_id, name)
+  VALUES (v_cust_id, v_tenant_id, 'Cliente Cerrado');
+
+  INSERT INTO public.menu_links (tenant_id, sucursal_id, menu_id, label, link_type, customer_id, enabled)
+  VALUES (v_tenant_id, v_sucursal_id, v_menu_id, 'Link Cerrado', 'company', v_cust_id, true)
+  RETURNING token INTO v_token;
+
+  -- 1. No cycles exist at all -> status is open: false
+  v_status := public.get_online_menu_status(p_token => v_token);
+  PERFORM test_assert((v_status->>'open')::boolean IS FALSE, 'Status must be open: false when no cycles exist');
+
+  -- Attempting order must raise RESTAURANT_CLOSED
+  BEGIN
+    PERFORM public.create_order_by_link(
+      v_token,
+      'Empleado Prueba',
+      '',
+      jsonb_build_array(jsonb_build_object('plato_id', v_plato_id, 'quantity', 1))
+    );
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'RESTAURANT_CLOSED' THEN
+      v_caught_closed := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_closed, 'create_order_by_link must raise RESTAURANT_CLOSED when no cycle exists');
+
+  -- 2. Only closed cycles exist (closed_at IS NOT NULL) -> status is open: false
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at)
+  VALUES (v_tenant_id, v_sucursal_id, now() - interval '2 hours', now() - interval '1 hour');
+
+  v_status := public.get_online_menu_status(p_token => v_token);
+  PERFORM test_assert((v_status->>'open')::boolean IS FALSE, 'Status must be open: false when all cycles closed');
+
+  v_caught_closed := false;
+  BEGIN
+    PERFORM public.create_order_by_link(
+      v_token,
+      'Empleado Prueba',
+      '',
+      jsonb_build_array(jsonb_build_object('plato_id', v_plato_id, 'quantity', 1))
+    );
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'RESTAURANT_CLOSED' THEN
+      v_caught_closed := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_closed, 'create_order_by_link must raise RESTAURANT_CLOSED when all cycles closed');
+END $$;
+
+-- Test 31: Legacy cycle with NULL sucursal counts as open for the branch
+DO $$
+DECLARE
+  v_tenant_id   uuid := gen_random_uuid();
+  v_sucursal_id uuid := gen_random_uuid();
+  v_menu_id     uuid := gen_random_uuid();
+  v_cust_id     uuid := gen_random_uuid();
+  v_plato_id    int;
+  v_token       text;
+  v_status      jsonb;
+  v_order_res   jsonb;
+BEGIN
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
+  VALUES (v_tenant_id, 'Restaurante Legacy Cycle', 'corporativo', true);
+
+  INSERT INTO public.sucursales (id, tenant_id)
+  VALUES (v_sucursal_id, v_tenant_id);
+
+  INSERT INTO public.menus (id, tenant_id, sucursal_id, name)
+  VALUES (v_menu_id, v_tenant_id, v_sucursal_id, 'Menu Legacy');
+
+  INSERT INTO public.platos (nombre, precio, disponible, tenant_id, sucursal_id)
+  VALUES ('Plato Legacy', 200, true, v_tenant_id, v_sucursal_id)
+  RETURNING id INTO v_plato_id;
+
+  INSERT INTO public.menu_items (tenant_id, menu_id, plato_id, weekdays)
+  VALUES (v_tenant_id, v_menu_id, v_plato_id, ARRAY[1,2,3,4,5,6,7]);
+
+  INSERT INTO public.customers (id, tenant_id, name)
+  VALUES (v_cust_id, v_tenant_id, 'Cliente Legacy');
+
+  INSERT INTO public.menu_links (tenant_id, sucursal_id, menu_id, label, link_type, customer_id, enabled)
+  VALUES (v_tenant_id, v_sucursal_id, v_menu_id, 'Link Legacy', 'company', v_cust_id, true)
+  RETURNING token INTO v_token;
+
+  -- Insert legacy cycle with sucursal_id NULL and closed_at NULL
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at)
+  VALUES (v_tenant_id, NULL, now(), NULL);
+
+  -- Status must be open: true
+  v_status := public.get_online_menu_status(p_token => v_token);
+  PERFORM test_assert((v_status->>'open')::boolean IS TRUE, 'Status must be open: true for legacy cycle with NULL sucursal');
+
+  -- create_order_by_link must succeed
+  v_order_res := public.create_order_by_link(
+    v_token,
+    'Empleado Legacy',
+    '',
+    jsonb_build_array(jsonb_build_object('plato_id', v_plato_id, 'quantity', 1))
+  );
+  PERFORM test_assert(v_order_res ? 'order_id', 'Order must succeed with open legacy cycle');
+END $$;
+
+-- Test 32: Status RPC returns open true/false and nothing else
+DO $$
+DECLARE
+  v_tenant_id   uuid := gen_random_uuid();
+  v_sucursal_id uuid := gen_random_uuid();
+  v_slug        text := 'test-slug-status-' || substr(gen_random_uuid()::text, 1, 8);
+  v_status_open jsonb;
+  v_status_closed jsonb;
+  v_status_unknown jsonb;
+  v_keys_count  int;
+  v_caught_args boolean := false;
+BEGIN
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
+  VALUES (v_tenant_id, 'Restaurante Slug Status', 'empresarial', true);
+
+  INSERT INTO public.sucursales (id, tenant_id)
+  VALUES (v_sucursal_id, v_tenant_id);
+
+  INSERT INTO public.digital_menu_settings (tenant_id, sucursal_id, title, public_slug, enabled)
+  VALUES (v_tenant_id, v_sucursal_id, 'Menu Slug Status', v_slug, true);
+
+  -- 1. Slug with no open cycle -> open: false
+  v_status_closed := public.get_online_menu_status(p_public_slug => v_slug);
+  SELECT count(*) INTO v_keys_count FROM jsonb_object_keys(v_status_closed);
+  PERFORM test_assert(v_keys_count = 1, 'Status JSONB must contain exactly 1 key');
+  PERFORM test_assert(v_status_closed ? 'open', 'Status JSONB key must be open');
+  PERFORM test_assert((v_status_closed->>'open')::boolean IS FALSE, 'Status must be open: false');
+
+  -- 2. Open cycle for sucursal -> open: true
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at)
+  VALUES (v_tenant_id, v_sucursal_id, now(), NULL);
+
+  v_status_open := public.get_online_menu_status(p_public_slug => v_slug);
+  SELECT count(*) INTO v_keys_count FROM jsonb_object_keys(v_status_open);
+  PERFORM test_assert(v_keys_count = 1, 'Status JSONB must contain exactly 1 key');
+  PERFORM test_assert((v_status_open->>'open')::boolean IS TRUE, 'Status must be open: true');
+
+  -- 3. Unknown slug returns { "open": false }
+  v_status_unknown := public.get_online_menu_status(p_public_slug => 'nonexistent-slug-xyz');
+  PERFORM test_assert((v_status_unknown->>'open')::boolean IS FALSE, 'Unknown slug must return open: false');
+  SELECT count(*) INTO v_keys_count FROM jsonb_object_keys(v_status_unknown);
+  PERFORM test_assert(v_keys_count = 1, 'Unknown slug return must contain only open key');
+
+  -- 4. Unknown token returns { "open": false }
+  v_status_unknown := public.get_online_menu_status(p_token => 'nonexistent-token-xyz');
+  PERFORM test_assert((v_status_unknown->>'open')::boolean IS FALSE, 'Unknown token must return open: false');
+
+  -- 5. Providing both or neither raises exception
+  BEGIN
+    PERFORM public.get_online_menu_status(p_public_slug => v_slug, p_token => 'token123');
+  EXCEPTION WHEN OTHERS THEN
+    v_caught_args := true;
+  END;
+  PERFORM test_assert(v_caught_args, 'get_online_menu_status with both args must raise exception');
+
+  v_caught_args := false;
+  BEGIN
+    PERFORM public.get_online_menu_status();
+  EXCEPTION WHEN OTHERS THEN
+    v_caught_args := true;
+  END;
+  PERFORM test_assert(v_caught_args, 'get_online_menu_status with neither arg must raise exception');
+END $$;
+
+-- Test 33: anon cannot call restaurant_cycle_open
+DO $$
+DECLARE
+  v_caught_anon boolean := false;
+BEGIN
+  BEGIN
+    SET LOCAL ROLE anon;
+    PERFORM public.restaurant_cycle_open(gen_random_uuid(), gen_random_uuid());
+    RESET ROLE;
+  EXCEPTION WHEN OTHERS THEN
+    RESET ROLE;
+    IF SQLSTATE = '42501' THEN
+      v_caught_anon := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_anon, 'anon cannot call restaurant_cycle_open (must raise 42501 permission denied)');
 END $$;
 
 

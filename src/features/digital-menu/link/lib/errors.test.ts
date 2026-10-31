@@ -95,6 +95,12 @@ describe("mapLinkOrderError", () => {
     );
   });
 
+  it("maps RESTAURANT_CLOSED to expected closed restaurant message", () => {
+    expect(mapLinkOrderError("RESTAURANT_CLOSED")).toBe(
+      "Este restaurante no está trabajando en este momento. Por favor, vuelva en horario laboral."
+    );
+  });
+
   it("returns fallback for unknown or empty errors", () => {
     expect(mapLinkOrderError(null)).toBe(
       "Ocurrió un error inesperado. Por favor intenta nuevamente."
@@ -107,6 +113,12 @@ describe("mapMenuUnavailableReason", () => {
   it("maps CREDIT_LIMIT_REACHED to friendly notice", () => {
     expect(mapMenuUnavailableReason("CREDIT_LIMIT_REACHED")).toBe(
       "El menú de tu empresa está pausado temporalmente. Consultá con tu empresa."
+    );
+  });
+
+  it("maps RESTAURANT_CLOSED to friendly notice", () => {
+    expect(mapMenuUnavailableReason("RESTAURANT_CLOSED")).toBe(
+      "Este restaurante no está trabajando en este momento. Por favor, vuelva en horario laboral."
     );
   });
 

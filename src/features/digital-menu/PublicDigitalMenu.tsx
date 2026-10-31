@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router";
 import { supabase } from "../../shared/lib/supabase";
+import { ClosedRestaurantState } from "./components/ClosedRestaurantState";
+import { isRestaurantClosedError, RESTAURANT_CLOSED_MESSAGE } from "./lib/onlineStatus";
+import { useOnlineMenuStatus } from "./lib/useOnlineMenuStatus";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -101,16 +104,19 @@ export function PublicDigitalMenu() {
   // ── Stable session ID ────────────────────────────────────────────────────
   const clientSessionId = useMemo(() => (slug ? getClientSessionId(slug) : ""), [slug]);
 
+  // ── Online cycle status ──────────────────────────────────────────────────
+  const { isOpen, setIsOpen, checking: isCheckingStatus, checkStatus } = useOnlineMenuStatus({ slug });
+
   // ── Load menu from RPC ───────────────────────────────────────────────────
   useEffect(() => {
     let active = true;
     setLoading(true);
     setError(null);
     void (async () => {
-      const { data, error: rpcError } = await supabase.rpc(
-        "get_public_digital_menu",
-        { p_public_slug: slug }
-      );
+      const [{ data, error: rpcError }] = await Promise.all([
+        supabase.rpc("get_public_digital_menu", { p_public_slug: slug }),
+        checkStatus(),
+      ]);
       if (!active) return;
       if (rpcError) {
         setError(rpcError.message || "No se pudo cargar el menú.");
@@ -121,7 +127,7 @@ export function PublicDigitalMenu() {
       setLoading(false);
     })();
     return () => { active = false; };
-  }, [slug]);
+  }, [slug, checkStatus]);
 
   // ── Realtime: refresh menu on changes ───────────────────────────────────
   useEffect(() => {
@@ -278,6 +284,11 @@ export function PublicDigitalMenu() {
 
     if (rpcError) {
       const msg = rpcError.message || "No se pudo enviar el pedido.";
+      if (isRestaurantClosedError(msg)) {
+        setIsOpen(false);
+        setError(RESTAURANT_CLOSED_MESSAGE);
+        return;
+      }
       if (msg.toLowerCase().includes("código de mesa incorrecto")) {
         setMesaCodeError("Código incorrecto. Verificá el código en la mesa.");
       } else {
@@ -303,11 +314,32 @@ export function PublicDigitalMenu() {
 
   // ── Render helpers ───────────────────────────────────────────────────────
 
-  if (loading) {
+  if (loading && isOpen === null) {
     return (
       <div className="min-h-screen bg-[#15100c] text-[#fff7ed] grid place-items-center">
         Cargando menú...
       </div>
+    );
+  }
+
+  if (isOpen === false) {
+    return (
+      <ClosedRestaurantState
+        title={menu.settings?.title}
+        logoUrl={menu.settings?.logo_url}
+        onRetry={() => {
+          void checkStatus().then((open) => {
+            if (open) {
+              void supabase
+                .rpc("get_public_digital_menu", { p_public_slug: slug })
+                .then(({ data, error: rpcErr }) => {
+                  if (!rpcErr) setMenu(asMenuPayload(data));
+                });
+            }
+          });
+        }}
+        isRetrying={isCheckingStatus}
+      />
     );
   }
 

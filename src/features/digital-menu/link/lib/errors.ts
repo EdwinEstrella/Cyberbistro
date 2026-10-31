@@ -19,6 +19,10 @@ export function mapLinkOrderError(codeOrMessage?: string | null): string {
     return "Sin conexión. Este menú necesita internet.";
   }
 
+  if (upper.includes("RESTAURANT_CLOSED")) {
+    return "Este restaurante no está trabajando en este momento. Por favor, vuelva en horario laboral.";
+  }
+
   if (upper.includes("ITEM_SOLD_OUT")) {
     return "Uno de los platos se agotó; recargamos el menú";
   }
@@ -86,6 +90,9 @@ export function mapMenuUnavailableReason(reason?: string | null): string {
     return "Este menú no está disponible en este momento.";
   }
   const upper = String(reason).trim().toUpperCase();
+  if (upper.includes("RESTAURANT_CLOSED")) {
+    return "Este restaurante no está trabajando en este momento. Por favor, vuelva en horario laboral.";
+  }
   if (upper.includes("CREDIT_LIMIT_REACHED")) {
     return "El menú de tu empresa está pausado temporalmente. Consultá con tu empresa.";
   }

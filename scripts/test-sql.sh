@@ -46,6 +46,7 @@ docker cp supabase/migrations/20261101110000_roster_and_credit_limit.sql "$CONTA
 docker cp supabase/migrations/20261101120000_consolidated_invoice.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
 docker cp supabase/migrations/20261101130000_superadmin_tenant_overview.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
 docker cp supabase/migrations/20261101140000_superadmin_hardening.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
+docker cp supabase/migrations/20261101150000_menus_closed_without_cycle.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
 docker cp test/sql/corporate_menu_links.test.sql "$CONTAINER_NAME":/workspace/test/sql/
 docker cp test/sql/superadmin_overview.test.sql "$CONTAINER_NAME":/workspace/test/sql/
 docker cp test/sql/superadmin_hardening.test.sql "$CONTAINER_NAME":/workspace/test/sql/
