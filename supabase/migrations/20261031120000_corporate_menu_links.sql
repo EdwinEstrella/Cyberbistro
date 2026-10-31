@@ -58,7 +58,7 @@ CREATE INDEX IF NOT EXISTS menu_items_plato_idx
 CREATE TABLE IF NOT EXISTS public.menu_links (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
-  sucursal_id uuid REFERENCES public.sucursales(id) ON DELETE SET NULL,
+  sucursal_id uuid NOT NULL REFERENCES public.sucursales(id) ON DELETE RESTRICT,
   menu_id uuid NOT NULL REFERENCES public.menus(id) ON DELETE RESTRICT,
   label text NOT NULL,
   link_type text NOT NULL CHECK (link_type IN ('public', 'company')),
@@ -161,6 +161,7 @@ SET search_path = public
 AS $$
 DECLARE
   v_menu_tenant_id uuid;
+  v_sucursal_tenant_id uuid;
   v_customer_tenant_id uuid;
   v_customer_deleted_at timestamptz;
 BEGIN
@@ -170,6 +171,16 @@ BEGIN
 
   IF v_menu_tenant_id IS DISTINCT FROM NEW.tenant_id THEN
     RAISE EXCEPTION 'TENANT_MISMATCH';
+  END IF;
+
+  IF NEW.sucursal_id IS NOT NULL THEN
+    SELECT tenant_id INTO v_sucursal_tenant_id
+    FROM public.sucursales
+    WHERE id = NEW.sucursal_id;
+
+    IF v_sucursal_tenant_id IS DISTINCT FROM NEW.tenant_id THEN
+      RAISE EXCEPTION 'TENANT_MISMATCH';
+    END IF;
   END IF;
 
   IF NEW.customer_id IS NOT NULL THEN
@@ -223,11 +234,16 @@ CREATE TRIGGER trg_plato_sold_out_tenant_integrity
 -- 6. Alter digital_orders: link to menu_link, employee name, and extend order_type check
 ALTER TABLE public.digital_orders
   ADD COLUMN IF NOT EXISTS menu_link_id uuid REFERENCES public.menu_links(id) ON DELETE SET NULL,
-  ADD COLUMN IF NOT EXISTS employee_name text;
+  ADD COLUMN IF NOT EXISTS employee_name text,
+  ADD COLUMN IF NOT EXISTS comanda_id uuid REFERENCES public.comandas(id) ON DELETE SET NULL;
 
 CREATE INDEX IF NOT EXISTS digital_orders_menu_link_created_idx
   ON public.digital_orders (menu_link_id, created_at DESC)
   WHERE menu_link_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS digital_orders_comanda_id_idx
+  ON public.digital_orders (comanda_id)
+  WHERE comanda_id IS NOT NULL;
 
 ALTER TABLE public.digital_orders DROP CONSTRAINT IF EXISTS digital_orders_order_type_check;
 ALTER TABLE public.digital_orders ADD CONSTRAINT digital_orders_order_type_check
@@ -498,7 +514,7 @@ BEGIN
   SELECT * INTO v_settings
   FROM public.digital_menu_settings
   WHERE tenant_id = v_link.tenant_id
-    AND (v_link.sucursal_id IS NULL OR sucursal_id IS NULL OR sucursal_id = v_link.sucursal_id)
+    AND (sucursal_id IS NULL OR sucursal_id = v_link.sucursal_id)
   ORDER BY (sucursal_id = v_link.sucursal_id) DESC NULLS LAST
   LIMIT 1;
 
@@ -558,7 +574,7 @@ BEGIN
           AND so.plato_id = p.id
           AND so.sold_out_date = v_today
       )
-      AND (v_link.sucursal_id IS NULL OR p.sucursal_id IS NULL OR p.sucursal_id = v_link.sucursal_id);
+      AND (p.sucursal_id IS NULL OR p.sucursal_id = v_link.sucursal_id);
 
     -- Extras if allowed
     IF v_link.allow_extras IS TRUE THEN
@@ -597,7 +613,7 @@ BEGIN
             AND so.plato_id = p.id
             AND so.sold_out_date = v_today
         )
-        AND (v_link.sucursal_id IS NULL OR p.sucursal_id IS NULL OR p.sucursal_id = v_link.sucursal_id);
+        AND (p.sucursal_id IS NULL OR p.sucursal_id = v_link.sucursal_id);
     END IF;
   END IF;
 
@@ -803,7 +819,7 @@ BEGIN
       AND p.disponible IS TRUE
       AND p.is_extra IS FALSE
       AND v_isodow = ANY(mi.weekdays)
-      AND (v_link.sucursal_id IS NULL OR p.sucursal_id IS NULL OR p.sucursal_id = v_link.sucursal_id);
+      AND (p.sucursal_id IS NULL OR p.sucursal_id = v_link.sucursal_id);
 
     IF NOT FOUND THEN
       RAISE EXCEPTION 'ITEM_NOT_AVAILABLE';
@@ -881,7 +897,7 @@ BEGIN
           AND p.disponible IS TRUE
           AND p.is_extra IS TRUE
           AND v_isodow = ANY(mi.weekdays)
-          AND (v_link.sucursal_id IS NULL OR p.sucursal_id IS NULL OR p.sucursal_id = v_link.sucursal_id);
+          AND (p.sucursal_id IS NULL OR p.sucursal_id = v_link.sucursal_id);
 
         IF NOT FOUND THEN
           RAISE EXCEPTION 'ITEM_NOT_AVAILABLE';

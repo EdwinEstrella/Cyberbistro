@@ -46,10 +46,10 @@ A new client wants one link per company. Some companies allow extras, others don
 Route per task recorded as (route / trigger evidence). All code written by agy CLI; Claude reviews diffs and runs checks (user rule).
 - [x] T1 Plan gate `menu_links` (empresarial only) + DB migration (menus, menu_items, menu_links, plato_sold_out, platos.is_extra, order/item/CxC columns) + server RPCs (read/create by token with schedule + extras + re-pricing; accept company order → CxC; cancel item → recompute + CxC; statement data). (delegated agy / 2+ non-trivial files)
 - [x] T2 Admin UI: list of links/menus + dedicated editor screen (dishes, weekdays, mode recurring/weekly, extras, duplicate menu, sold-out today). (delegated agy)
-- [ ] T3 Public menu by token `/menu/c/:token`: schedule-aware, extras picker when allowed, employee name, "menu not available". (delegated agy)
-- [ ] T4 Pedidos: company + employee badge, accept via RPC (CxC), per-item cancel with extras, totals recompute. (delegated agy)
-- [ ] T5 Online-only: drop digital orders from local-first mirrors, connection banner, realtime reconnect + backfill (desktop + web). (delegated agy)
-- [ ] T6 Statement PDF A4 (jsPDF): company, date range, rows (date, order #, employee, amount), totals. (delegated agy)
+- [x] T3 Public menu by token `/menu/c/:token`: schedule-aware, extras picker when allowed, employee name, "menu not available". (delegated agy)
+- [x] T4 Pedidos: company + employee badge, accept via RPC (CxC), per-item cancel with extras, totals recompute. (delegated agy)
+- [x] T5 Online-only: drop digital orders from local-first mirrors, connection banner, realtime reconnect + backfill (desktop + web). (delegated agy)
+- [x] T6 Statement PDF A4 (jsPDF): company, date range, rows (date, order #, employee, amount), totals. (delegated agy)
 - [ ] T7 E2E coverage of the flow + typecheck/vitest green.
 - [ ] T8 Apply migration to Supabase PROD (needs explicit user OK).
 
@@ -59,10 +59,13 @@ Known pre-existing failure: `test/local-sync-protocol.test.ts` fails on master t
 
 ## Delivery
 Strategy: ask-on-risk. Forecast > 400 lines → chained PRs.
+User rule (2026-10-31): everything must pass CI (`.github/workflows/ci.yml`: typecheck, unit, build, Windows e2e) before merge; then master on remote + local pulled. Add a CI job for `npm run test:sql` (ubuntu has Docker). Master CI was green on 2026-10-24, so `test/local-sync-protocol.test.ts` failing locally is environment-specific (Windows), not a CI blocker — confirm on the PR run.
 
 ## Progress
 - 2026-10-31: exploration done, document created. D1–D4 resolved.
 - 2026-10-31 T1 done (agy wrote, Claude reviewed vs PROD schema read-only; 7 review fixes re-prompted: tenant-mismatch triggers, LATERAL dmi dedupe, cancel guards, pending-order cap, fixed tz, anon grants, redundant index). Evidence: `npm run test:sql` 17 scenarios PASS (run by Claude), planFeatures 7/7, typecheck OK, vitest 1613 pass / 1 pre-existing fail. Migration NOT applied to PROD (T8). Commit: see git log `feat(menu-links): ...`.
 - 2026-10-31 T2 done (agy; Claude review found Rules-of-Hooks violation in DigitalMenuPanel and desktop listCatalog dropping is_extra → re-prompted, fixed + test). Evidence: typecheck OK, vitest 1643 pass / 1 pre-existing fail.
 - RELEASE GATE: desktop/web now send `platos.is_extra` to the cloud → migration (T8) MUST be applied to PROD before any release containing T2, or plato sync/web saves fail.
-- Next: T3 public menu by token.
+- 2026-10-31 T3 done (b49c624) and T6 done (e391bcc), parallel agy agents with disjoint files; reviewed payload (no prices sent) and A4 test (210×297, no item names). Evidence: typecheck OK, vitest 1677 pass / 1 pre-existing local fail.
+- 2026-10-31 T4+T5 done: Pedidos company/employee badges, accept via RPC (CxC) + comanda with extras, per-item cancel, digital_orders.comanda_id, mandatory link sucursal, online-only (removed from local-first + SQLite schema), connection bar, reconnect/focus/30s refetch, CI sql-tests job. Review fixes: mandatory sucursal, accept error mapper, comanda_id link. Evidence: typecheck OK, test:sql PASS, vitest 1714 pass / 1 pre-existing local fail, build OK.
+- Next: T7 e2e (mock RPCs via Playwright routing so CI does not depend on PROD migration), then PR + CI, T8 needs user OK.

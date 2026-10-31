@@ -1,7 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { isNetworkError, normalizeRepoError } from "./menuLinksRepo";
+import { createMenuLink, isNetworkError, normalizeRepoError } from "./menuLinksRepo";
 
-describe("menuLinksRepo error handling", () => {
+describe("menuLinksRepo", () => {
+  describe("createMenuLink validation", () => {
+    it("requires sucursalId when calling createMenuLink", async () => {
+      await expect(
+        createMenuLink({
+          tenantId: "t-1",
+          sucursalId: "" as unknown as string,
+          menuId: "m-1",
+          label: "Test",
+          linkType: "public",
+          allowExtras: false,
+        })
+      ).rejects.toThrow("Se requiere una sucursal para crear el link.");
+    });
+  });
+
+  describe("error handling", () => {
   it("detects network errors from messages and types", () => {
     expect(isNetworkError(new TypeError("Failed to fetch"))).toBe(true);
     expect(isNetworkError(new Error("NetworkError when attempting to fetch resource"))).toBe(true);
@@ -28,5 +44,6 @@ describe("menuLinksRepo error handling", () => {
   it("propagates other error messages", () => {
     const err = normalizeRepoError(new Error("El nombre es requerido"));
     expect(err.message).toBe("El nombre es requerido");
+  });
   });
 });

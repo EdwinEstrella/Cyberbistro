@@ -37,6 +37,17 @@ jobs:
       - name: Build renderer and main process
         run: npm run build
 
+  sql-tests:
+    name: SQL Migration Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run SQL test suite
+        run: bash scripts/test-sql.sh
+
   e2e:
     name: E2E (Windows)
     runs-on: windows-latest

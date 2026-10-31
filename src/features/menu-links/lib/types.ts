@@ -28,7 +28,7 @@ export interface MenuItem {
 export interface MenuLink {
   id: string;
   tenant_id: string;
-  sucursal_id?: string | null;
+  sucursal_id: string;
   menu_id: string;
   label: string;
   link_type: LinkType;

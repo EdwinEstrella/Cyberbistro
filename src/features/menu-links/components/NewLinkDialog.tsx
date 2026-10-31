@@ -72,6 +72,11 @@ export function NewLinkDialog({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!sucursalId) {
+      setError("Seleccioná una sucursal antes de crear un link.");
+      return;
+    }
+
     if (!label.trim()) {
       setError("La etiqueta del link es obligatoria.");
       return;
@@ -151,6 +156,13 @@ export function NewLinkDialog({
             Genera un enlace público o corporativo con un menú y reglas específicas.
           </p>
         </div>
+
+        {!sucursalId && (
+          <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-xs font-medium">
+            <AlertCircle className="size-4 shrink-0" />
+            <span>Seleccioná una sucursal antes de crear un link.</span>
+          </div>
+        )}
 
         {error && (
           <div className="flex items-center gap-2 p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs font-medium">
@@ -343,22 +355,30 @@ export function NewLinkDialog({
           </div>
 
           {/* Action buttons */}
-          <div className="flex gap-3 mt-3 pt-2">
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex-1 py-3 px-4 rounded-xl bg-primary text-primary-foreground font-bold text-xs uppercase tracking-wider hover:opacity-95 disabled:opacity-50 transition-all cursor-pointer shadow-lg"
-            >
-              {saving ? "Guardando..." : "Crear Link"}
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={saving}
-              className="py-3 px-5 rounded-xl bg-muted text-muted-foreground font-bold text-xs uppercase tracking-wider hover:text-foreground transition-colors cursor-pointer border border-border"
-            >
-              Cancelar
-            </button>
+          <div className="flex flex-col gap-2 mt-3 pt-2">
+            {!sucursalId && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 font-medium text-center">
+                Seleccioná una sucursal antes de crear un link.
+              </p>
+            )}
+            <div className="flex gap-3">
+              <button
+                type="submit"
+                disabled={saving || !sucursalId}
+                title={!sucursalId ? "Seleccioná una sucursal antes de crear un link." : undefined}
+                className="flex-1 py-3 px-4 rounded-xl bg-primary text-primary-foreground font-bold text-xs uppercase tracking-wider hover:opacity-95 disabled:opacity-50 transition-all cursor-pointer shadow-lg disabled:cursor-not-allowed"
+              >
+                {saving ? "Guardando..." : "Crear"}
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={saving}
+                className="py-3 px-5 rounded-xl bg-muted text-muted-foreground font-bold text-xs uppercase tracking-wider hover:text-foreground transition-colors cursor-pointer border border-border"
+              >
+                Cancelar
+              </button>
+            </div>
           </div>
         </form>
       </div>

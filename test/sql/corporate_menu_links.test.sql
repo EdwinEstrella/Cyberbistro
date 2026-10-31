@@ -33,6 +33,17 @@ CREATE TABLE IF NOT EXISTS public.sucursales (
   tenant_id uuid REFERENCES public.tenants(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS public.comandas (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid REFERENCES public.tenants(id) ON DELETE CASCADE,
+  sucursal_id uuid REFERENCES public.sucursales(id) ON DELETE SET NULL,
+  estado varchar(20) DEFAULT 'pendiente',
+  items jsonb NOT NULL DEFAULT '[]'::jsonb,
+  notas text,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS public.platos (
   id serial PRIMARY KEY,
   nombre text NOT NULL,
@@ -174,6 +185,7 @@ $$;
 DO $$
 DECLARE
   v_tenant_id uuid := gen_random_uuid();
+  v_sucursal_id uuid;
   v_menu_id uuid;
   v_plato_main int;
   v_plato_extra int;
@@ -185,6 +197,10 @@ DECLARE
 BEGIN
   INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
   VALUES (v_tenant_id, 'Restaurante Test', 'empresarial', true);
+
+  INSERT INTO public.sucursales (id, tenant_id)
+  VALUES (gen_random_uuid(), v_tenant_id)
+  RETURNING id INTO v_sucursal_id;
 
   v_today := public.menu_business_today(v_tenant_id);
   v_dow := public.menu_business_isodow(v_tenant_id, v_today);
@@ -206,8 +222,8 @@ BEGIN
     (v_tenant_id, v_menu_id, v_plato_main, ARRAY[v_dow]::smallint[]),
     (v_tenant_id, v_menu_id, v_plato_extra, ARRAY[v_dow]::smallint[]);
 
-  INSERT INTO public.menu_links (tenant_id, menu_id, label, link_type, allow_extras, enabled)
-  VALUES (v_tenant_id, v_menu_id, 'Public Link No Extras', 'public', false, true)
+  INSERT INTO public.menu_links (tenant_id, sucursal_id, menu_id, label, link_type, allow_extras, enabled)
+  VALUES (v_tenant_id, v_sucursal_id, v_menu_id, 'Public Link No Extras', 'public', false, true)
   RETURNING id, token INTO v_link_id, v_token;
 
   v_res := public.get_menu_by_link(v_token);
@@ -252,6 +268,7 @@ END $$;
 DO $$
 DECLARE
   v_tenant_id uuid;
+  v_sucursal_id uuid;
   v_menu_weekly_id uuid;
   v_token text;
   v_today date;
@@ -260,6 +277,7 @@ DECLARE
   v_res jsonb;
 BEGIN
   SELECT id INTO v_tenant_id FROM public.tenants WHERE nombre_negocio = 'Restaurante Test' LIMIT 1;
+  SELECT id INTO v_sucursal_id FROM public.sucursales WHERE tenant_id = v_tenant_id LIMIT 1;
   v_today := public.menu_business_today(v_tenant_id);
   v_last_monday := (v_today - ((EXTRACT(isodow FROM v_today)::int - 1) || ' days')::interval)::date;
   v_past_monday := (v_last_monday - interval '14 days')::date;
@@ -268,8 +286,8 @@ BEGIN
   VALUES (v_tenant_id, 'Menu Pasado', 'weekly', v_past_monday)
   RETURNING id INTO v_menu_weekly_id;
 
-  INSERT INTO public.menu_links (tenant_id, menu_id, label, link_type, allow_extras, enabled)
-  VALUES (v_tenant_id, v_menu_weekly_id, 'Weekly Link Past', 'public', true, true)
+  INSERT INTO public.menu_links (tenant_id, sucursal_id, menu_id, label, link_type, allow_extras, enabled)
+  VALUES (v_tenant_id, v_sucursal_id, v_menu_weekly_id, 'Weekly Link Past', 'public', true, true)
   RETURNING token INTO v_token;
 
   v_res := public.get_menu_by_link(v_token);
@@ -408,6 +426,7 @@ END $$;
 DO $$
 DECLARE
   v_tenant_id uuid;
+  v_sucursal_id uuid;
   v_menu_id uuid;
   v_cust_id uuid;
   v_token text;
@@ -417,6 +436,7 @@ DECLARE
   v_res jsonb;
 BEGIN
   SELECT id INTO v_tenant_id FROM public.tenants WHERE nombre_negocio = 'Restaurante Test' LIMIT 1;
+  SELECT id INTO v_sucursal_id FROM public.sucursales WHERE tenant_id = v_tenant_id LIMIT 1;
   SELECT id INTO v_menu_id FROM public.menus WHERE tenant_id = v_tenant_id AND schedule_mode = 'recurring' LIMIT 1;
   SELECT id INTO v_plato_main FROM public.platos WHERE tenant_id = v_tenant_id AND nombre = 'Chivo Liniero' LIMIT 1;
 
@@ -424,8 +444,8 @@ BEGIN
   VALUES (v_tenant_id, 'Empresa Acero SA', '130000000')
   RETURNING id INTO v_cust_id;
 
-  INSERT INTO public.menu_links (tenant_id, menu_id, label, link_type, customer_id, allow_extras, enabled)
-  VALUES (v_tenant_id, v_menu_id, 'Company Link', 'company', v_cust_id, true, true)
+  INSERT INTO public.menu_links (tenant_id, sucursal_id, menu_id, label, link_type, customer_id, allow_extras, enabled)
+  VALUES (v_tenant_id, v_sucursal_id, v_menu_id, 'Company Link', 'company', v_cust_id, true, true)
   RETURNING token INTO v_token;
 
   BEGIN
@@ -455,18 +475,27 @@ DO $$
 DECLARE
   v_tenant_a uuid;
   v_tenant_b uuid := gen_random_uuid();
+  v_sucursal_a uuid;
+  v_sucursal_b uuid;
   v_menu_a uuid;
   v_cust_b uuid;
   v_plato_b int;
   v_caught_link boolean := false;
+  v_caught_sucursal boolean := false;
+  v_caught_null_sucursal boolean := false;
   v_caught_item boolean := false;
   v_caught_sold boolean := false;
 BEGIN
   SELECT id INTO v_tenant_a FROM public.tenants WHERE nombre_negocio = 'Restaurante Test' LIMIT 1;
+  SELECT id INTO v_sucursal_a FROM public.sucursales WHERE tenant_id = v_tenant_a LIMIT 1;
   SELECT id INTO v_menu_a FROM public.menus WHERE tenant_id = v_tenant_a LIMIT 1;
 
   INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
   VALUES (v_tenant_b, 'Tenant B', 'empresarial', true);
+
+  INSERT INTO public.sucursales (id, tenant_id)
+  VALUES (gen_random_uuid(), v_tenant_b)
+  RETURNING id INTO v_sucursal_b;
 
   INSERT INTO public.customers (tenant_id, name)
   VALUES (v_tenant_b, 'Customer Tenant B')
@@ -478,14 +507,38 @@ BEGIN
 
   -- 1. Cross-tenant customer on menu_links
   BEGIN
-    INSERT INTO public.menu_links (tenant_id, menu_id, label, link_type, customer_id)
-    VALUES (v_tenant_a, v_menu_a, 'Cross Link', 'company', v_cust_b);
+    INSERT INTO public.menu_links (tenant_id, sucursal_id, menu_id, label, link_type, customer_id)
+    VALUES (v_tenant_a, v_sucursal_a, v_menu_a, 'Cross Link', 'company', v_cust_b);
   EXCEPTION WHEN OTHERS THEN
     IF SQLERRM = 'TENANT_MISMATCH' THEN
       v_caught_link := true;
     END IF;
   END;
   PERFORM test_assert(v_caught_link, 'Cross-tenant customer in menu_links must raise TENANT_MISMATCH');
+
+  -- 1b. Cross-tenant sucursal on menu_links
+  BEGIN
+    INSERT INTO public.menu_links (tenant_id, sucursal_id, menu_id, label, link_type)
+    VALUES (v_tenant_a, v_sucursal_b, v_menu_a, 'Cross Sucursal Link', 'public');
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'TENANT_MISMATCH' THEN
+      v_caught_sucursal := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_sucursal, 'Cross-tenant sucursal in menu_links must raise TENANT_MISMATCH');
+
+  -- 1c. Assertion that inserting a link with NULL sucursal fails (NOT NULL constraint)
+  BEGIN
+    INSERT INTO public.menu_links (tenant_id, sucursal_id, menu_id, label, link_type)
+    VALUES (v_tenant_a, NULL, v_menu_a, 'Null Sucursal Link', 'public');
+  EXCEPTION WHEN not_null_violation THEN
+    v_caught_null_sucursal := true;
+  WHEN OTHERS THEN
+    IF SQLERRM LIKE '%null value in column "sucursal_id"%' OR SQLSTATE = '23502' THEN
+      v_caught_null_sucursal := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_null_sucursal, 'Inserting menu_link with NULL sucursal_id must fail not-null constraint');
 
   -- 2. Cross-tenant plato in menu_items
   BEGIN

@@ -70,7 +70,7 @@ export async function fetchMenuLinks(tenantId: string, sucursalId?: string | nul
 
 export interface CreateMenuLinkInput {
   tenantId: string;
-  sucursalId?: string | null;
+  sucursalId: string;
   menuId: string;
   label: string;
   linkType: LinkType;
@@ -80,6 +80,10 @@ export interface CreateMenuLinkInput {
 
 export async function createMenuLink(input: CreateMenuLinkInput): Promise<MenuLink> {
   try {
+    if (!input.sucursalId) {
+      throw new Error("Se requiere una sucursal para crear el link.");
+    }
+
     if (typeof navigator !== "undefined" && !navigator.onLine) {
       throw new Error("Se requiere conexión a internet");
     }
@@ -89,7 +93,7 @@ export async function createMenuLink(input: CreateMenuLinkInput): Promise<MenuLi
       .insert([
         {
           tenant_id: input.tenantId,
-          sucursal_id: input.sucursalId || null,
+          sucursal_id: input.sucursalId,
           menu_id: input.menuId,
           label: input.label.trim(),
           link_type: input.linkType,

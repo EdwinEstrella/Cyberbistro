@@ -84,6 +84,10 @@ describe("localFirst", () => {
     expect(LOCAL_FIRST_HISTORY_TABLES).not.toContain("ecf_certificate_metadata");
     expect(LOCAL_FIRST_MIRROR_TABLES).not.toContain("orders");
     expect(LOCAL_FIRST_MIRROR_TABLES).not.toContain("invoices");
+    expect(LOCAL_FIRST_MIRROR_TABLES).not.toContain("digital_orders");
+    expect(LOCAL_FIRST_MIRROR_TABLES).not.toContain("digital_order_items");
+    expect(LOCAL_FIRST_HISTORY_TABLES).not.toContain("digital_orders");
+    expect(LOCAL_FIRST_HISTORY_TABLES).not.toContain("digital_order_items");
     expect(LOCAL_FIRST_METADATA_TABLES).toContain("sync_outbox");
     expect(LOCAL_FIRST_METADATA_TABLES).toContain("local_fiscal_outbox");
   });

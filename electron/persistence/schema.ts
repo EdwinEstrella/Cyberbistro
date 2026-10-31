@@ -419,23 +419,6 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
       is_available INTEGER NOT NULL DEFAULT 1 CHECK (is_available IN (0, 1)),
       price_override REAL
     ) STRICT;
-    CREATE TABLE IF NOT EXISTS digital_orders (
-      id TEXT PRIMARY KEY,
-      tenant_id TEXT NOT NULL REFERENCES tenants(id),
-      sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
-      customer_name TEXT,
-      total REAL NOT NULL CHECK (total >= 0),
-      status TEXT NOT NULL
-    ) STRICT;
-    CREATE TABLE IF NOT EXISTS digital_order_items (
-      id TEXT PRIMARY KEY,
-      tenant_id TEXT NOT NULL REFERENCES tenants(id),
-      order_id TEXT NOT NULL REFERENCES digital_orders(id),
-      plato_id TEXT NOT NULL REFERENCES platos(id),
-      quantity INTEGER NOT NULL CHECK (quantity > 0),
-      unit_price REAL NOT NULL CHECK (unit_price >= 0),
-      subtotal REAL NOT NULL CHECK (subtotal >= 0)
-    ) STRICT;
     CREATE TABLE IF NOT EXISTS sync_state (
       key TEXT PRIMARY KEY,
       tenant_id TEXT NOT NULL REFERENCES tenants(id),
