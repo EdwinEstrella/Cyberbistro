@@ -10,16 +10,20 @@ import {
   Building2,
   Calendar,
   AlertTriangle,
+  AlertCircle,
   WifiOff,
   RefreshCw,
   Search,
   Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "../../../shared/hooks/useAuth";
+import { normalizePlan } from "../../../shared/lib/planFeatures";
 import type { Menu, MenuLink } from "../lib/types";
 import { fetchMenuLinks, fetchMenus, toggleMenuLinkEnabled, normalizeRepoError } from "../lib/menuLinksRepo";
 import { buildMenuLinkUrl } from "../lib/menuLinkUrl";
 import { formatWeekRange, isWeekPast } from "../lib/menuSchedule";
+import { getMenuLinkLimit } from "../lib/menuLinkLimits";
 import { MenuQrModal } from "./MenuQrModal";
 import { NewLinkDialog } from "./NewLinkDialog";
 
@@ -30,6 +34,7 @@ interface MenuLinksListProps {
 
 export function MenuLinksList({ tenantId, sucursalId }: MenuLinksListProps) {
   const navigate = useNavigate();
+  const { plan } = useAuth();
   const [links, setLinks] = useState<MenuLink[]>([]);
   const [menus, setMenus] = useState<Menu[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,6 +49,15 @@ export function MenuLinksList({ tenantId, sucursalId }: MenuLinksListProps) {
 
   const [newLinkOpen, setNewLinkOpen] = useState(false);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
+
+  const limit = getMenuLinkLimit(plan);
+  const activeCount = links.filter((l) => l.enabled && l.link_type === "company").length;
+  const isAtLimit = limit > 0 && activeCount >= limit;
+
+  const limitMessage =
+    normalizePlan(plan) === "corporativo"
+      ? "Llegaste al máximo de 6 links del plan Corporativo."
+      : "Llegaste al máximo de 2 links del plan Empresarial. El plan Corporativo permite hasta 6.";
 
   const loadData = useCallback(async () => {
     if (!tenantId) return;
@@ -70,6 +84,12 @@ export function MenuLinksList({ tenantId, sucursalId }: MenuLinksListProps) {
 
   const handleToggleEnabled = async (link: MenuLink) => {
     const nextState = !link.enabled;
+
+    if (nextState && isAtLimit) {
+      toast.error(limitMessage);
+      return;
+    }
+
     // Optimistic update
     setLinks((prev) => prev.map((l) => (l.id === link.id ? { ...l, enabled: nextState } : l)));
     try {
@@ -131,7 +151,12 @@ export function MenuLinksList({ tenantId, sucursalId }: MenuLinksListProps) {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
+          {limit > 0 && (
+            <span className="inline-flex items-center px-3 py-1.5 rounded-xl text-xs font-bold font-['Space_Grotesk'] bg-muted/80 border border-border text-foreground">
+              {activeCount} de {limit} links activos
+            </span>
+          )}
           <button
             onClick={() => void loadData()}
             className="p-2 rounded-xl border border-border bg-card hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
@@ -141,13 +166,27 @@ export function MenuLinksList({ tenantId, sucursalId }: MenuLinksListProps) {
           </button>
           <button
             onClick={() => setNewLinkOpen(true)}
-            className="flex items-center gap-2 py-2 px-4 rounded-xl bg-primary text-primary-foreground font-bold text-xs uppercase tracking-wider hover:opacity-95 transition-all cursor-pointer shadow-md"
+            disabled={isAtLimit}
+            title={isAtLimit ? limitMessage : "Nuevo link"}
+            className={`flex items-center gap-2 py-2 px-4 rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-md ${
+              isAtLimit
+                ? "bg-muted text-muted-foreground border border-border cursor-not-allowed opacity-60"
+                : "bg-primary text-primary-foreground hover:opacity-95 cursor-pointer"
+            }`}
           >
             <Plus className="size-4" />
             Nuevo link
           </button>
         </div>
       </div>
+
+      {/* Plan limit warning message banner */}
+      {isAtLimit && (
+        <div className="mx-4 sm:mx-6 mt-4 p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center gap-3 text-amber-700 dark:text-amber-300 text-xs font-medium animate-in fade-in">
+          <AlertCircle className="size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <span>{limitMessage}</span>
+        </div>
+      )}
 
       {/* Network Error Banner */}
       {error && (
@@ -180,20 +219,25 @@ export function MenuLinksList({ tenantId, sucursalId }: MenuLinksListProps) {
         ) : filteredLinks.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center gap-3 bg-card/40 rounded-2xl border border-dashed border-border p-8">
             <div className="p-3.5 rounded-full bg-primary/10 text-primary">
-              <Globe className="size-6" />
+              <Building2 className="size-6" />
             </div>
             <h3 className="text-base font-bold text-foreground">
-              {search ? "No se encontraron links con esa búsqueda" : "No tienes links de menú creados"}
+              {search ? "No se encontraron links con esa búsqueda" : "No tienes links de menú corporativos creados"}
             </h3>
             <p className="text-xs text-muted-foreground max-w-sm">
               {search
                 ? "Prueba con otro término o limpia el filtro de búsqueda."
-                : "Crea tu primer enlace para compartir un menú digital con clientes individuales o corporativos."}
+                : "Crea tu primer enlace para compartir un menú digital con una empresa asignada."}
             </p>
             {!search && (
               <button
                 onClick={() => setNewLinkOpen(true)}
-                className="mt-2 flex items-center gap-2 py-2 px-4 rounded-xl bg-primary text-primary-foreground font-bold text-xs uppercase tracking-wider hover:opacity-95 transition-all cursor-pointer shadow-md"
+                disabled={isAtLimit}
+                className={`mt-2 flex items-center gap-2 py-2 px-4 rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-md ${
+                  isAtLimit
+                    ? "bg-muted text-muted-foreground border border-border cursor-not-allowed opacity-60"
+                    : "bg-primary text-primary-foreground hover:opacity-95 cursor-pointer"
+                }`}
               >
                 <Plus className="size-4" />
                 Crear primer link
@@ -225,6 +269,8 @@ export function MenuLinksList({ tenantId, sucursalId }: MenuLinksListProps) {
                         : "Semanal"
                       : "Recurrente";
 
+                    const disableToggle = !link.enabled && isAtLimit;
+
                     return (
                       <tr key={link.id} className="hover:bg-muted/20 transition-colors">
                         {/* Label */}
@@ -245,9 +291,9 @@ export function MenuLinksList({ tenantId, sucursalId }: MenuLinksListProps) {
                               </span>
                             </div>
                           ) : (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground border border-border">
                               <Globe className="size-3" />
-                              Público
+                              Público (heredado)
                             </span>
                           )}
                         </td>
@@ -289,10 +335,14 @@ export function MenuLinksList({ tenantId, sucursalId }: MenuLinksListProps) {
                         <td className="py-3.5 px-4 text-center">
                           <button
                             onClick={() => handleToggleEnabled(link)}
-                            className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase transition-all cursor-pointer border ${
+                            disabled={disableToggle}
+                            title={disableToggle ? limitMessage : undefined}
+                            className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase transition-all border ${
                               link.enabled
-                                ? "bg-green-500/15 border-green-500/40 text-green-600 dark:text-green-400"
-                                : "bg-muted border-border text-muted-foreground"
+                                ? "bg-green-500/15 border-green-500/40 text-green-600 dark:text-green-400 cursor-pointer"
+                                : disableToggle
+                                ? "bg-muted/40 border-border text-muted-foreground/60 cursor-not-allowed opacity-50"
+                                : "bg-muted border-border text-muted-foreground cursor-pointer"
                             }`}
                           >
                             {link.enabled ? "Activo" : "Inactivo"}
@@ -348,6 +398,8 @@ export function MenuLinksList({ tenantId, sucursalId }: MenuLinksListProps) {
                     : "Semanal"
                   : "Recurrente";
 
+                const disableToggle = !link.enabled && isAtLimit;
+
                 return (
                   <div
                     key={link.id}
@@ -365,9 +417,9 @@ export function MenuLinksList({ tenantId, sucursalId }: MenuLinksListProps) {
                               {link.customer?.name ?? "Empresa"}
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground border border-border">
                               <Globe className="size-3" />
-                              Público
+                              Público (heredado)
                             </span>
                           )}
 
@@ -381,10 +433,14 @@ export function MenuLinksList({ tenantId, sucursalId }: MenuLinksListProps) {
 
                       <button
                         onClick={() => handleToggleEnabled(link)}
-                        className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase transition-all cursor-pointer border ${
+                        disabled={disableToggle}
+                        title={disableToggle ? limitMessage : undefined}
+                        className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase transition-all border ${
                           link.enabled
-                            ? "bg-green-500/15 border-green-500/40 text-green-600 dark:text-green-400"
-                            : "bg-muted border-border text-muted-foreground"
+                            ? "bg-green-500/15 border-green-500/40 text-green-600 dark:text-green-400 cursor-pointer"
+                            : disableToggle
+                            ? "bg-muted/40 border-border text-muted-foreground/60 cursor-not-allowed opacity-50"
+                            : "bg-muted border-border text-muted-foreground cursor-pointer"
                         }`}
                       >
                         {link.enabled ? "Activo" : "Inactivo"}

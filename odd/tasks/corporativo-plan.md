@@ -25,7 +25,7 @@ Add a 4th plan "Corporativo" (US$299/mo) above Empresarial (US$175), with exclus
 
 ## Tasks
 - [x] T1 Plan foundation: `corporativo` in DB (constraint, sucursal-limit triggers = unlimited, menu-link RPC plan checks accept empresarial|corporativo), planFeatures (new plan + exclusive features `consolidated_invoice`, `employee_roster`, `credit_limit`), central plan-rank helper replacing hardcoded plan comparisons, SuperAdmin can assign it. (delegated agy)
-- [ ] T2 Links de menú = company links only + plan link limits (Empresarial 2, Corporativo 6) in DB trigger + UI counter/upsell; Soporte → Menú Digital back to the single public menu panel (remove the embedded links list added in corporate-menu-links T2). (delegated agy)
+- [x] T2 Links de menú = company links only + plan link limits (Empresarial 2, Corporativo 6) in DB trigger + UI counter/upsell; Soporte → Menú Digital back to the single public menu panel (remove the embedded links list added in corporate-menu-links T2). (delegated agy)
 - [ ] T3 Website pricing tables + systemt.md with 4 plans. (delegated agy)
 - [ ] T4 Employee roster per company link (name/cédula), enforced server-side in create_order_by_link. (delegated agy)
 - [ ] T5 Credit limit per company customer with auto-block of company links. (delegated agy)
@@ -39,3 +39,4 @@ typecheck + vitest + `npm run test:sql` + build; CI must pass before merge (user
 - 2026-10-31: decisions recorded, document created.
 - 2026-10-31 C-T1 done (agy): corporativo plan in planFeatures (PLAN_ORDER, planRank, isPlanAtLeast, PLAN_LABELS), hardcoded plan checks replaced (SucursalContext, TitleBar, Inventario, Soporte, SuperAdmin, AppLayout), migration 20261101090000 (plan CHECK, plan-limit fns, register_tenant, menu-link RPCs accept empresarial|corporativo). Claude review vs PROD defs: register_tenant search_path regressed to 'public' → fixed to pg_catalog, public, pg_temp. Evidence: typecheck OK, vitest 1721 pass, test:sql PASS, build OK.
 - 2026-10-31 C-T3 done (de4ce12): website 4 pricing cards + plan details + systemt.md. Pending: link-limit copy (2/6) + 'Menú digital' naming → C-T2.
+- 2026-10-31 C-T2 done (agy): migration 20261101100000_menu_link_limits (trigger LINK_LIMIT_REACHED / PUBLIC_LINK_NOT_ALLOWED, tenant row lock), company-only NewLinkDialog, counter + upsell, 'Menú digital' sidebar, Soporte tab 'Menú público' single panel, website/systemt limits 2/6. Evidence: typecheck OK, test:sql PASS, vitest 1726 pass / 1 known local-only fail, build OK.

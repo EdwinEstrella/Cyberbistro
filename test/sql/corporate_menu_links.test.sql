@@ -1021,3 +1021,150 @@ BEGIN
   WHERE tenant_id = v_tenant_id;
   PERFORM test_assert(v_order_count = 1, 'Exactly 1 digital order should exist for corporativo tenant');
 END $$;
+
+-- ============================================================
+-- 6. Include menu link limits migration
+-- ============================================================
+\i supabase/migrations/20261101100000_menu_link_limits.sql
+
+-- Test 9: Menu Link Limits and Prohibit New Public Links
+DO $$
+DECLARE
+  v_tenant_emp uuid := gen_random_uuid();
+  v_tenant_corp uuid := gen_random_uuid();
+  v_sucursal_emp uuid := gen_random_uuid();
+  v_sucursal_corp uuid := gen_random_uuid();
+  v_menu_emp uuid := gen_random_uuid();
+  v_menu_corp uuid := gen_random_uuid();
+  v_cust_1 uuid := gen_random_uuid();
+  v_cust_2 uuid := gen_random_uuid();
+  v_cust_3 uuid := gen_random_uuid();
+  v_link_1 uuid;
+  v_link_2 uuid;
+  v_link_3 uuid;
+  v_caught_public boolean := false;
+  v_caught_limit_emp boolean := false;
+  v_caught_reenable_emp boolean := false;
+  v_caught_limit_corp boolean := false;
+  v_existing_public_count int;
+  i int;
+  v_cust_corp uuid;
+  v_link_corp uuid;
+BEGIN
+  -- Unit assertions for menu_links_plan_limit
+  PERFORM test_assert(public.menu_links_plan_limit('empresarial') = 2, 'menu_links_plan_limit empresarial = 2');
+  PERFORM test_assert(public.menu_links_plan_limit('corporativo') = 6, 'menu_links_plan_limit corporativo = 6');
+  PERFORM test_assert(public.menu_links_plan_limit('profesional') = 0, 'menu_links_plan_limit profesional = 0');
+  PERFORM test_assert(public.menu_links_plan_limit('basico') = 0, 'menu_links_plan_limit basico = 0');
+  PERFORM test_assert(public.menu_links_plan_limit(NULL) = 0, 'menu_links_plan_limit NULL = 0');
+
+  -- Verify existing public links created BEFORE migration are untouched
+  SELECT count(*) INTO v_existing_public_count FROM public.menu_links WHERE link_type = 'public';
+  PERFORM test_assert(v_existing_public_count > 0, 'Existing public links created before migration must remain in table');
+
+  -- 1. Inserting new public link raises PUBLIC_LINK_NOT_ALLOWED
+  BEGIN
+    INSERT INTO public.menu_links (tenant_id, sucursal_id, menu_id, label, link_type)
+    VALUES (v_tenant_emp, v_sucursal_emp, v_menu_emp, 'Attempted Public Link', 'public');
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'PUBLIC_LINK_NOT_ALLOWED' THEN
+      v_caught_public := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_public, 'New public link insert must raise PUBLIC_LINK_NOT_ALLOWED');
+
+  -- Setup Empresarial Tenant
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
+  VALUES (v_tenant_emp, 'Tenant Empresarial Limits', 'empresarial', true);
+
+  INSERT INTO public.sucursales (id, tenant_id)
+  VALUES (v_sucursal_emp, v_tenant_emp);
+
+  INSERT INTO public.menus (id, tenant_id, sucursal_id, name)
+  VALUES (v_menu_emp, v_tenant_emp, v_sucursal_emp, 'Menu Emp');
+
+  INSERT INTO public.customers (id, tenant_id, name) VALUES (v_cust_1, v_tenant_emp, 'Empresa 1');
+  INSERT INTO public.customers (id, tenant_id, name) VALUES (v_cust_2, v_tenant_emp, 'Empresa 2');
+  INSERT INTO public.customers (id, tenant_id, name) VALUES (v_cust_3, v_tenant_emp, 'Empresa 3');
+
+  -- Empresarial: 1st enabled company link -> OK
+  INSERT INTO public.menu_links (tenant_id, sucursal_id, menu_id, label, link_type, customer_id, enabled)
+  VALUES (v_tenant_emp, v_sucursal_emp, v_menu_emp, 'Link Emp 1', 'company', v_cust_1, true)
+  RETURNING id INTO v_link_1;
+
+  -- Empresarial: 2nd enabled company link -> OK
+  INSERT INTO public.menu_links (tenant_id, sucursal_id, menu_id, label, link_type, customer_id, enabled)
+  VALUES (v_tenant_emp, v_sucursal_emp, v_menu_emp, 'Link Emp 2', 'company', v_cust_2, true)
+  RETURNING id INTO v_link_2;
+
+  -- Empresarial: 3rd enabled company link -> raises LINK_LIMIT_REACHED
+  BEGIN
+    INSERT INTO public.menu_links (tenant_id, sucursal_id, menu_id, label, link_type, customer_id, enabled)
+    VALUES (v_tenant_emp, v_sucursal_emp, v_menu_emp, 'Link Emp 3', 'company', v_cust_3, true)
+    RETURNING id INTO v_link_3;
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'LINK_LIMIT_REACHED' THEN
+      v_caught_limit_emp := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_limit_emp, '3rd company link on empresarial must raise LINK_LIMIT_REACHED');
+
+  -- Disabling one link frees a slot
+  UPDATE public.menu_links
+  SET enabled = false
+  WHERE id = v_link_2;
+
+  -- Now inserting 3rd enabled company link succeeds
+  INSERT INTO public.menu_links (tenant_id, sucursal_id, menu_id, label, link_type, customer_id, enabled)
+  VALUES (v_tenant_emp, v_sucursal_emp, v_menu_emp, 'Link Emp 3', 'company', v_cust_3, true)
+  RETURNING id INTO v_link_3;
+
+  PERFORM test_assert(v_link_3 IS NOT NULL, 'Inserting company link after freeing slot must succeed');
+
+  -- Re-enabling link 2 over the limit raises LINK_LIMIT_REACHED
+  BEGIN
+    UPDATE public.menu_links
+    SET enabled = true
+    WHERE id = v_link_2;
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'LINK_LIMIT_REACHED' THEN
+      v_caught_reenable_emp := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_reenable_emp, 'Re-enabling company link over limit must raise LINK_LIMIT_REACHED');
+
+  -- Setup Corporativo Tenant: allows 6, 7th raises
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
+  VALUES (v_tenant_corp, 'Tenant Corporativo Limits', 'corporativo', true);
+
+  INSERT INTO public.sucursales (id, tenant_id)
+  VALUES (v_sucursal_corp, v_tenant_corp);
+
+  INSERT INTO public.menus (id, tenant_id, sucursal_id, name)
+  VALUES (v_menu_corp, v_tenant_corp, v_sucursal_corp, 'Menu Corp');
+
+  FOR i IN 1..6 LOOP
+    v_cust_corp := gen_random_uuid();
+    INSERT INTO public.customers (id, tenant_id, name)
+    VALUES (v_cust_corp, v_tenant_corp, 'Corp Cust ' || i);
+
+    INSERT INTO public.menu_links (tenant_id, sucursal_id, menu_id, label, link_type, customer_id, enabled)
+    VALUES (v_tenant_corp, v_sucursal_corp, v_menu_corp, 'Corp Link ' || i, 'company', v_cust_corp, true)
+    RETURNING id INTO v_link_corp;
+  END LOOP;
+
+  -- 7th company link insert raises LINK_LIMIT_REACHED
+  v_cust_corp := gen_random_uuid();
+  INSERT INTO public.customers (id, tenant_id, name)
+  VALUES (v_cust_corp, v_tenant_corp, 'Corp Cust 7');
+
+  BEGIN
+    INSERT INTO public.menu_links (tenant_id, sucursal_id, menu_id, label, link_type, customer_id, enabled)
+    VALUES (v_tenant_corp, v_sucursal_corp, v_menu_corp, 'Corp Link 7', 'company', v_cust_corp, true);
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'LINK_LIMIT_REACHED' THEN
+      v_caught_limit_corp := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_limit_corp, '7th company link on corporativo must raise LINK_LIMIT_REACHED');
+END $$;

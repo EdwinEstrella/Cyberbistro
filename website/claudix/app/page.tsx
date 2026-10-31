@@ -179,7 +179,7 @@ export default function LandingPage() {
                 features={[
                   "Sucursales y Usuarios Ilimitados",
                   "Todo lo del Plan Profesional (e-CF)",
-                  "Links de Menú por Empresa (pedidos a crédito CxC)",
+                  "Menú digital para empresas: hasta 2 links",
                   "Menús Personalizados por Día (recurrente o semanal)",
                   "Extras Configurables por Link",
                   "Estado de Cuenta en PDF por Rango de Fechas",
@@ -196,6 +196,7 @@ export default function LandingPage() {
                 badge="Para Empresas"
                 features={[
                   "Todo lo del Plan Empresarial",
+                  "Menú digital para empresas: hasta 6 links",
                   "Factura Consolidada e-CF Mensual por Empresa",
                   "Lista de Empleados Autorizados (nombre o cédula)",
                   "Límite de Crédito por Empresa con Bloqueo Automático",
@@ -257,7 +258,7 @@ export default function LandingPage() {
                   <div>
                     <h4 className="text-xl font-bold mb-3 font-display">Plan Empresarial: Multi-Sede y Pedidos B2B</h4>
                     <p className="text-sm text-muted-foreground leading-relaxed">
-                      Para cadenas y restaurantes que venden a empresas: sucursales y usuarios ilimitados, links de menú dedicados por empresa con pedidos a cuenta por cobrar, menús personalizados por día, extras por link y estados de cuenta en PDF.
+                      Para cadenas y restaurantes que venden a empresas: sucursales y usuarios ilimitados, menú digital para empresas: hasta 2 links con pedidos a cuenta por cobrar, menús personalizados por día, extras por link y estados de cuenta en PDF.
                     </p>
                   </div>
                 </div>
@@ -271,7 +272,7 @@ export default function LandingPage() {
                   <div>
                     <h4 className="text-xl font-bold mb-3 font-display">Plan Corporativo: Control y Factura e-CF</h4>
                     <p className="text-sm text-muted-foreground leading-relaxed">
-                      Para restaurantes con servicios corporativos y catering empresarial a escala. Suma factura consolidada mensual e-CF por empresa, lista de empleados autorizados por cédula, límite de crédito con bloqueo automático y soporte asistido.
+                      Para restaurantes con servicios corporativos y catering empresarial a escala. Suma menú digital para empresas: hasta 6 links, factura consolidada mensual e-CF por empresa, lista de empleados autorizados por cédula, límite de crédito con bloqueo automático y soporte asistido.
                     </p>
                   </div>
                 </div>

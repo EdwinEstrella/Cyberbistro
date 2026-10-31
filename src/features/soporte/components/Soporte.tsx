@@ -2,8 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Navigate, useNavigate } from "react-router";
 import QRCode from "qrcode";
 import { ExternalLink } from "lucide-react";
-import { canUseFeature, isPlanAtLeast } from "../../../shared/lib/planFeatures";
-import { MenuLinksList } from "../../menu-links";
+import { isPlanAtLeast } from "../../../shared/lib/planFeatures";
 import { supabase, createIsolatedAuthClient } from "../../../shared/lib/supabase";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { useSucursal } from "../../../app/context/SucursalContext";
@@ -1920,23 +1919,6 @@ function LegacyDigitalMenuPanel() {
 }
 
 function DigitalMenuPanel() {
-  const { tenantId, plan } = useAuth();
-  const { activeSucursalId } = useSucursal();
-
-  if (canUseFeature(plan, "menu_links") && tenantId) {
-    return (
-      <div className="flex-1 overflow-y-auto flex flex-col">
-        <MenuLinksList tenantId={tenantId} sucursalId={activeSucursalId} />
-        <section className="border-t border-black/10 dark:border-white/10 pt-6">
-          <h2 className="text-xl font-bold font-['Space_Grotesk'] text-foreground px-4 sm:px-8 mb-2">
-            Apariencia del menú (logo, título, tema)
-          </h2>
-          <LegacyDigitalMenuPanel />
-        </section>
-      </div>
-    );
-  }
-
   return <LegacyDigitalMenuPanel />;
 }
 
@@ -1960,7 +1942,7 @@ function SoportePanel() {
                 onClick={() => setActiveTab(tab)}
                 className={`px-5 py-4 font-['Space_Grotesk'] font-bold text-[13px] tracking-widest uppercase border-b-2 transition-all bg-transparent cursor-pointer ${activeTab === tab ? "text-primary border-primary" : "text-muted-foreground border-transparent hover:text-foreground"}`}
               >
-                {tab === "carta" ? "Carta" : tab === "usuarios" ? "Usuarios" : tab === "mesas" ? "Mesas" : tab === "categorias" ? "Categorías" : "Menú Digital"}
+                {tab === "carta" ? "Carta" : tab === "usuarios" ? "Usuarios" : tab === "mesas" ? "Mesas" : tab === "categorias" ? "Categorías" : "Menú público"}
               </button>
             ))}
           </div>

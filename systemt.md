@@ -237,7 +237,7 @@ Incluye:
 
 * Todo ilimitado: sucursales y usuarios ilimitados
 * Todo lo del plan Profesional (incluye e-CF)
-* Links de menú por empresa (cada empresa cliente con su propio link, sus empleados piden y se carga a su cuenta por cobrar)
+* Menú digital para empresas: hasta 2 links (cada empresa cliente con su propio link, sus empleados piden y se carga a su cuenta por cobrar)
 * Menús personalizados por día (recurrente o semanal, opción de agotado hoy)
 * Extras configurables por link
 * Estado de cuenta en PDF por rango de fechas
@@ -258,6 +258,7 @@ Restaurantes y negocios gastronomicos que venden almuerzos o comida a empresas c
 Incluye:
 
 * Todo lo del plan Empresarial
+* Menú digital para empresas: hasta 6 links
 * Factura consolidada e-CF mensual por empresa (una sola factura de credito fiscal con todos los pedidos del periodo)
 * Lista de empleados autorizados por empresa (control por nombre o cedula para validar pedidos)
 * Limite de credito por empresa con bloqueo automatico al superarlo

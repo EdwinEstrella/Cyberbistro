@@ -28,6 +28,14 @@ export function isNetworkError(error: unknown): boolean {
 export function normalizeRepoError(error: unknown, fallbackMessage = "Error al procesar la solicitud."): Error {
   if (typeof error === "object" && error !== null) {
     const err = error as any;
+    const msg = String(err.message || "");
+    const details = String(err.details || "");
+    if (msg.includes("LINK_LIMIT_REACHED") || details.includes("LINK_LIMIT_REACHED")) {
+      return new Error("Se alcanzó el límite de links activos permitido para tu plan.");
+    }
+    if (msg.includes("PUBLIC_LINK_NOT_ALLOWED") || details.includes("PUBLIC_LINK_NOT_ALLOWED")) {
+      return new Error("Ya no se permite crear links de menú públicos. El menú público se gestiona desde Soporte.");
+    }
     if (err.code === "23503" || err.message?.includes("violates foreign key constraint")) {
       return new Error("No se puede eliminar este menú porque está asignado a uno o más links.");
     }
@@ -37,7 +45,16 @@ export function normalizeRepoError(error: unknown, fallbackMessage = "Error al p
     return new Error("Se requiere conexión a internet");
   }
 
-  if (error instanceof Error) return error;
+  if (error instanceof Error) {
+    const msg = error.message;
+    if (msg.includes("LINK_LIMIT_REACHED")) {
+      return new Error("Se alcanzó el límite de links activos permitido para tu plan.");
+    }
+    if (msg.includes("PUBLIC_LINK_NOT_ALLOWED")) {
+      return new Error("Ya no se permite crear links de menú públicos. El menú público se gestiona desde Soporte.");
+    }
+    return error;
+  }
   if (typeof error === "object" && error !== null && (error as any).message) {
     return new Error(String((error as any).message));
   }

@@ -58,7 +58,7 @@ const sidebarSections: readonly SidebarSection[] = [
     items: [
       { label: "Venta", customIcon: "venta", path: "/dashboard" },
       { label: "Pedidos", customIcon: "pedidos", path: "/pedidos", feature: "digital_menu" },
-      { label: "Links de menú", customIcon: "menulinks", path: "/menu-links", feature: "menu_links" },
+      { label: "Menú digital", customIcon: "menulinks", path: "/menu-links", feature: "menu_links" },
       { label: "Camarera", customIcon: "camarera", path: "/camarera" },
       { label: "Mesas", customIcon: "mesas", path: "/tables" },
       { label: "Cocina", customIcon: "cocina", path: "/cocina" },
