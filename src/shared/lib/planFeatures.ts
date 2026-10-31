@@ -8,7 +8,8 @@ export type Feature =
   | "suppliers"
   | "finance_reports"
   | "digital_menu"
-  | "dgii_ecf";
+  | "dgii_ecf"
+  | "menu_links";
 
 export const PLAN_FEATURES: Record<Plan, ReadonlySet<Feature>> = {
   basico: new Set<Feature>(),
@@ -31,6 +32,7 @@ export const PLAN_FEATURES: Record<Plan, ReadonlySet<Feature>> = {
     "finance_reports",
     "digital_menu",
     "dgii_ecf",
+    "menu_links",
   ]),
 };
 
@@ -48,8 +50,9 @@ export function canUseFeature(plan: string | null | undefined, feature: Feature)
   return PLAN_FEATURES[normalized].has(feature);
 }
 
-export function getRequiredPlan(_feature: Feature): Plan {
-  // Currently, all features are enabled on 'profesional' and 'empresarial'.
-  // Thus, the minimum plan required is 'profesional'.
+export function getRequiredPlan(feature: Feature): Plan {
+  if (feature === "menu_links") {
+    return "empresarial";
+  }
   return "profesional";
 }
