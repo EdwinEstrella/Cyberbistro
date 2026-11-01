@@ -22,6 +22,7 @@ import { PayablesRepository } from './persistence/payablesRepository'
 import { ExpenseRepository } from './persistence/expenseRepository'
 import { CustomerRepository } from './persistence/customerRepository'
 import { DeviceAccountDirectory } from './persistence/deviceAccountDirectory'
+import { AutoLaunchManager, registerAutoLaunchIpc } from './autoLaunch'
 
 // Rotating log file for production diagnostics. The global console is NOT
 // replaced (that hung the main process on CI runners); sync errors are written
@@ -35,6 +36,7 @@ let mainWindow: BrowserWindow | null = null
 let lanEdgeServer: LanEdgeServerHandle | null = null
 let tenantStoreController: TenantStoreController | null = null
 let deviceAccountDirectory: DeviceAccountDirectory | null = null
+let autoLaunchManager: AutoLaunchManager | null = null
 let payrollAuthorizationContext: PayrollAuthorizationContext | null = null
 let thermalPrintWindow: BrowserWindow | null = null
 let thermalPrintWindowReady: Promise<BrowserWindow> | null = null
@@ -513,6 +515,16 @@ if (gotTheLock) {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('local-data-updated', tenantId);
     };
     deviceAccountDirectory = DeviceAccountDirectory.open(app.getPath('userData'))
+    autoLaunchManager = new AutoLaunchManager({
+      userDataDir: app.getPath('userData'),
+    })
+    registerAutoLaunchIpc(ipcMain, autoLaunchManager)
+    try {
+      // Never let a registry/preferences failure block app startup.
+      autoLaunchManager.init()
+    } catch (error) {
+      console.error('[autoLaunch] init failed', error)
+    }
     try {
       lanEdgeServer = await startLanEdgeServer({
         dataDir: app.getPath('userData'),

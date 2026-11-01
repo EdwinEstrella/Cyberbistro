@@ -279,9 +279,13 @@ export function NewLinkDialog({
                       Fecha del lunes de inicio
                     </label>
                     <DatePicker
-                      value={newMenuWeekStart}
-                      onChange={(date) => setNewMenuWeekStart(date ? getMondayOfWeek(date) : "")}
+                      aria-label="Fecha del lunes de inicio"
                       placeholder="Seleccionar lunes"
+                      value={newMenuWeekStart}
+                      onChange={(selected) => {
+                        if (!selected) return;
+                        setNewMenuWeekStart(getMondayOfWeek(selected));
+                      }}
                     />
                   </div>
                 )}

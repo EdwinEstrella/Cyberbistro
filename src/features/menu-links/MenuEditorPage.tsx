@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { useAuth } from "../../shared/hooks/useAuth";
 import { supabase } from "../../shared/lib/supabase";
 import { ConfirmModal } from "../../shared/components/ConfirmModal";
+import { DatePicker } from "../../shared/ui/date-picker";
 import type { Menu, MenuItem, CatalogDish, ScheduleMode } from "./lib/types";
 import {
   fetchMenuById,
@@ -443,17 +444,15 @@ export function MenuEditorPage() {
                   Semana del menú (inicia en lunes)
                 </label>
                 <div className="flex items-center gap-2">
-                  <input
-                    type="date"
+                  <DatePicker
+                    aria-label="Semana del menú"
+                    className="flex-1"
                     value={weekStart}
-                    onChange={(e) => {
-                      const selected = e.target.value;
+                    onChange={(selected) => {
                       if (!selected) return;
                       // Enforce Monday storage
-                      const monday = getMondayOfWeek(selected);
-                      setWeekStart(monday);
+                      setWeekStart(getMondayOfWeek(selected));
                     }}
-                    className="flex-1 px-3 py-2 rounded-xl bg-muted/60 border border-border text-foreground text-xs focus:outline-none focus:border-primary"
                   />
                   <div className="px-3 py-2 rounded-xl bg-muted/40 border border-border text-xs font-semibold text-foreground shrink-0">
                     {formatWeekRange(weekStart)}
