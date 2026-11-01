@@ -47,9 +47,11 @@ docker cp supabase/migrations/20261101120000_consolidated_invoice.sql "$CONTAINE
 docker cp supabase/migrations/20261101130000_superadmin_tenant_overview.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
 docker cp supabase/migrations/20261101140000_superadmin_hardening.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
 docker cp supabase/migrations/20261101150000_menus_closed_without_cycle.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
+docker cp supabase/migrations/20261101160000_public_menu_calendar.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
 docker cp test/sql/corporate_menu_links.test.sql "$CONTAINER_NAME":/workspace/test/sql/
 docker cp test/sql/superadmin_overview.test.sql "$CONTAINER_NAME":/workspace/test/sql/
 docker cp test/sql/superadmin_hardening.test.sql "$CONTAINER_NAME":/workspace/test/sql/
+docker cp test/sql/public_menu_calendar.test.sql "$CONTAINER_NAME":/workspace/test/sql/
 
 echo "Executing corporate menu links test suite..."
 docker exec -w /workspace -i "$CONTAINER_NAME" psql -U postgres -v ON_ERROR_STOP=1 -f test/sql/corporate_menu_links.test.sql
@@ -61,5 +63,9 @@ docker exec -w /workspace -i "$CONTAINER_NAME" psql -U postgres -d test_superadm
 echo "Executing superadmin hardening test suite..."
 docker exec "$CONTAINER_NAME" createdb -U postgres test_superadmin_hardening
 docker exec -w /workspace -i "$CONTAINER_NAME" psql -U postgres -d test_superadmin_hardening -v ON_ERROR_STOP=1 -f test/sql/superadmin_hardening.test.sql
+
+echo "Executing public menu calendar test suite..."
+docker exec "$CONTAINER_NAME" createdb -U postgres test_public_menu_calendar
+docker exec -w /workspace -i "$CONTAINER_NAME" psql -U postgres -d test_public_menu_calendar -v ON_ERROR_STOP=1 -f test/sql/public_menu_calendar.test.sql
 
 echo "SQL test suite completed successfully."
