@@ -14,7 +14,7 @@ The user asked to manage the public menu together with the company links from on
 
 ## Tasks
 - [x] U1 DB: `digital_menu_settings.menu_id` (nullable, same tenant), public menu RPCs serve today's calendar items when set (same rules as links, weekly menu past its week → empty), order creation validates against the same set; SQL tests. (delegated agy)
-- [ ] U2 UI: unified "Menú digital" screen (public card: slug/QR/enable/assign or create calendar menu → MenuEditorPage; links list with plan gating/upsell), sidebar entry visible from Profesional, Soporte tab removed; vitest + e2e. (delegated agy)
+- [x] U2 UI: unified "Menú digital" screen (public card: slug/QR/enable/assign or create calendar menu → MenuEditorPage; links list with plan gating/upsell), sidebar entry visible from Profesional, Soporte tab removed; vitest + e2e. (delegated agy)
 - [ ] U3 CI green, PROD migration (user OK), merge + release.
 
 ## Checks
@@ -25,3 +25,5 @@ Delegated direct (agy) in worktree `../cyberbistro-menu` (another agy runs auto-
 
 ## Progress
 - 2026-11-01: document created.
+- 2026-11-01 U1 (92a60a9): migration 20261101160000_public_menu_calendar (menu_id + tenant trigger, internal get_menu_today_plato_ids, public RPCs rebuilt from PROD defs; in-store table count now uses the sucursal count like the menu does). Review fix: no EXECUTE to PUBLIC. test:sql 4 suites PASS.
+- 2026-11-01 U2: unified screen (PublicMenuAdminCard + links section, Soporte tab removed). Review fix: calendar assign/remove online-only (direct update, TENANT_MISMATCH surfaced), settings save never sends menu_id; removed ad-hoc screenshot spec. Merged master (NewLinkDialog DatePicker conflict resolved). Evidence: typecheck OK, vitest 1857 pass / 1 known local fail, build OK, e2e menu 6/6. PR #92.
