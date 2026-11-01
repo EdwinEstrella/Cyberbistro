@@ -28,6 +28,7 @@ interface TitleBarProps {
 
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "../../../shared/ui/select";
 import { Switch } from "../../../shared/ui/switch";
+import { toast } from "sonner";
 
 export function TitleBar({
   showSidebarToggle = false,
@@ -60,6 +61,9 @@ export function TitleBar({
   const [kitchenPrinterName, setKitchenPrinterName] = useState("");
   const [salesPrinterName, setSalesPrinterName] = useState("");
   const [printComandas, setPrintComandas] = useState(false);
+  const [autoLaunchSupported, setAutoLaunchSupported] = useState(false);
+  const [autoLaunchEnabled, setAutoLaunchEnabled] = useState(false);
+  const [autoLaunchLoading, setAutoLaunchLoading] = useState(false);
 
   const [confirmState, setConfirmState] = useState<{ open: boolean; message: string; onConfirm: () => void, title?: string, variant?: "danger" | "primary" }>({ open: false, message: "", onConfirm: () => {} });
   const showConfirm = (message: string, onConfirm: () => void, title = "Confirmar", variant: "danger" | "primary" = "danger") => setConfirmState({ open: true, message, onConfirm, title, variant });
@@ -102,6 +106,40 @@ export function TitleBar({
     settings.printComandas = checked;
     setPrintComandas(checked);
     saveThermalPrintSettings(settings);
+  };
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.electronAPI?.getOpenAtLogin) {
+      window.electronAPI.getOpenAtLogin()
+        .then((res) => {
+          setAutoLaunchSupported(Boolean(res?.supported));
+          setAutoLaunchEnabled(Boolean(res?.enabled));
+        })
+        .catch((err) => {
+          console.error("Error reading openAtLogin setting:", err);
+        });
+    }
+  }, []);
+
+  const handleToggleAutoLaunch = async (checked: boolean) => {
+    if (!window.electronAPI?.setOpenAtLogin || autoLaunchLoading) return;
+    const previous = autoLaunchEnabled;
+    setAutoLaunchEnabled(checked);
+    setAutoLaunchLoading(true);
+    try {
+      const res = await window.electronAPI.setOpenAtLogin(checked);
+      if (!res?.supported) {
+        setAutoLaunchEnabled(previous);
+        toast.error("No se pudo configurar el inicio automático con Windows.");
+      } else {
+        setAutoLaunchEnabled(res.enabled);
+      }
+    } catch {
+      setAutoLaunchEnabled(previous);
+      toast.error("No se pudo configurar el inicio automático con Windows.");
+    } finally {
+      setAutoLaunchLoading(false);
+    }
   };
 
   const activeSucursal = sucursales.find(s => s.id === activeSucursalId);
@@ -508,6 +546,24 @@ export function TitleBar({
                       className="scale-75 origin-right"
                     />
                   </div>
+
+                  {autoLaunchSupported && (
+                    <>
+                      <div className="h-[1px] bg-white/10 my-1 w-full" />
+                      
+                      <div className="flex items-center justify-between px-1">
+                        <label className="text-[10px] text-white/70 font-['Space_Grotesk',sans-serif]">
+                          Abrir Cloudix al iniciar Windows
+                        </label>
+                        <Switch
+                          checked={autoLaunchEnabled}
+                          disabled={autoLaunchLoading}
+                          onCheckedChange={handleToggleAutoLaunch}
+                          className="scale-75 origin-right"
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
               </>
             )}

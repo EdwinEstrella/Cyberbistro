@@ -62,7 +62,14 @@ export interface UpdateStatePayload {
   error: string;
 }
 
+export interface OpenAtLoginStatus {
+  supported: boolean;
+  enabled: boolean;
+}
+
 export interface ElectronAPI {
+  getOpenAtLogin?: () => Promise<OpenAtLoginStatus>;
+  setOpenAtLogin?: (enabled: boolean) => Promise<OpenAtLoginStatus>;
   minimize: () => void;
   maximize: () => void;
   ensureInputFocus?: () => Promise<boolean>;
