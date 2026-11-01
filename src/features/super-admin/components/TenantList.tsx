@@ -48,9 +48,9 @@ export function TenantList({
   return (
     <div className="flex h-full flex-col gap-3">
       {/* Filters strip */}
-      <div className="flex flex-col gap-2 rounded-xl border border-border/50 bg-card/60 p-3">
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span className="flex items-center gap-1.5 font-medium">
+      <div className="flex flex-col gap-2.5 rounded-[12px] border border-[rgba(72,72,71,0.18)] bg-[#1a1a1a] p-3">
+        <div className="flex items-center justify-between text-xs text-[#adaaaa]">
+          <span className="flex items-center gap-1.5 font-['Inter',sans-serif] text-[10px] uppercase tracking-[0.5px]">
             <Filter className="h-3.5 w-3.5" />
             Filtros
           </span>
@@ -58,7 +58,7 @@ export function TenantList({
             <button
               type="button"
               onClick={() => onFilterChange({ status: "all", plan: "all", search: "" })}
-              className="text-[11px] text-primary hover:underline"
+              className="text-[10px] uppercase tracking-[0.5px] font-['Inter',sans-serif] text-[#ff906d] hover:underline cursor-pointer"
             >
               Restablecer
             </button>
@@ -66,7 +66,7 @@ export function TenantList({
         </div>
 
         {/* Status chips */}
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap gap-1.5">
           {statusOptions.map((opt) => {
             const isSelected = filterState.status === opt.id;
             return (
@@ -74,10 +74,10 @@ export function TenantList({
                 key={opt.id}
                 type="button"
                 onClick={() => onFilterChange({ status: opt.id })}
-                className={`rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+                className={`rounded-[10px] px-2.5 py-1 text-xs font-medium transition-all cursor-pointer ${
                   isSelected
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    ? "bg-[#ff906d] text-black font-bold shadow-sm"
+                    : "bg-[#131313] border border-[rgba(72,72,71,0.3)] text-[#adaaaa] hover:text-white hover:border-white"
                 }`}
               >
                 {opt.label}
@@ -87,7 +87,7 @@ export function TenantList({
         </div>
 
         {/* Plan chips */}
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap gap-1.5">
           {planOptions.map((opt) => {
             const isSelected = filterState.plan === opt.id;
             return (
@@ -95,10 +95,10 @@ export function TenantList({
                 key={opt.id}
                 type="button"
                 onClick={() => onFilterChange({ plan: opt.id })}
-                className={`rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
+                className={`rounded-[10px] px-2.5 py-1 text-xs font-medium transition-all cursor-pointer ${
                   isSelected
-                    ? "bg-secondary text-secondary-foreground shadow-sm font-semibold"
-                    : "bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    ? "bg-[rgba(255,144,109,0.15)] border border-[#ff906d] text-[#ff906d] font-bold shadow-sm"
+                    : "bg-[#131313] border border-[rgba(72,72,71,0.3)] text-[#adaaaa] hover:text-white hover:border-white"
                 }`}
               >
                 {opt.label}
@@ -109,7 +109,7 @@ export function TenantList({
       </div>
 
       {/* Header with count */}
-      <div className="flex items-center justify-between px-1 text-xs text-muted-foreground">
+      <div className="flex items-center justify-between px-1 text-[10px] uppercase tracking-[0.5px] font-['Inter',sans-serif] text-[#adaaaa]">
         <span>
           Mostrando {filteredCards.length} de {cards.length} restaurantes
         </span>
@@ -121,30 +121,30 @@ export function TenantList({
           Array.from({ length: 5 }).map((_, i) => (
             <div
               key={i}
-              className="flex items-start gap-3 rounded-xl border border-border/40 bg-card/30 p-3.5"
+              className="flex items-start gap-3 rounded-[12px] border border-[rgba(72,72,71,0.18)] bg-[#131313] p-3.5"
             >
-              <Skeleton className="h-10 w-10 shrink-0 rounded-lg" />
+              <Skeleton className="h-10 w-10 shrink-0 rounded-[10px] bg-[#1a1a1a]" />
               <div className="flex-1 space-y-2">
-                <Skeleton className="h-4 w-3/4" />
-                <Skeleton className="h-3 w-1/2" />
-                <Skeleton className="h-3 w-1/3" />
+                <Skeleton className="h-4 w-3/4 rounded-[4px] bg-[#1a1a1a]" />
+                <Skeleton className="h-3 w-1/2 rounded-[4px] bg-[#1a1a1a]" />
+                <Skeleton className="h-3 w-1/3 rounded-[4px] bg-[#1a1a1a]" />
               </div>
             </div>
           ))
         ) : filteredCards.length === 0 ? (
-          <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/60 p-8 text-center">
-            <Store className="h-8 w-8 text-muted-foreground/60" />
-            <h5 className="text-sm font-semibold text-foreground">
+          <div className="flex flex-col items-center justify-center gap-2 rounded-[12px] border border-dashed border-[rgba(72,72,71,0.3)] p-8 text-center bg-[#131313]">
+            <Store className="h-8 w-8 text-[#adaaaa]" />
+            <h5 className="font-['Space_Grotesk',sans-serif] font-bold text-sm text-white">
               No se encontraron restaurantes
             </h5>
-            <p className="max-w-[240px] text-xs text-muted-foreground">
+            <p className="max-w-[240px] text-xs text-[#adaaaa]">
               Intenta cambiar los términos de búsqueda o los filtros activos.
             </p>
             {hasActiveFilters && (
               <Button
                 variant="outline"
                 size="sm"
-                className="mt-2 text-xs"
+                className="mt-2 text-xs rounded-[10px] border border-[rgba(72,72,71,0.3)] text-[#adaaaa] hover:border-white hover:text-white bg-transparent cursor-pointer"
                 onClick={() => onFilterChange({ status: "all", plan: "all", search: "" })}
               >
                 Limpiar filtros

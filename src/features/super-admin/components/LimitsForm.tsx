@@ -44,17 +44,17 @@ export function LimitsForm({
     <div className="flex flex-col gap-6">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Card 1: Sucursales */}
-        <Card className="border-border/60 bg-card/60">
+        <Card className="border border-[rgba(72,72,71,0.18)] bg-[#131313] rounded-[16px]">
           <CardHeader>
             <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-muted/40 text-foreground">
+              <div className="flex h-9 w-9 items-center justify-center rounded-[10px] p-2.5 bg-[rgba(255,144,109,0.1)] text-[#ff906d]">
                 <GitBranch className="h-4 w-4" />
               </div>
               <div>
-                <CardTitle className="text-base font-semibold text-foreground">
+                <CardTitle className="font-['Space_Grotesk',sans-serif] font-bold text-base text-white">
                   Límite de sucursales
                 </CardTitle>
-                <CardDescription className="text-xs">
+                <CardDescription className="text-xs text-[#adaaaa]">
                   Configura la cantidad máxima de sedes autorizadas para operar.
                 </CardDescription>
               </div>
@@ -62,12 +62,12 @@ export function LimitsForm({
           </CardHeader>
 
           <CardContent className="space-y-4">
-            <div className="flex items-center justify-between rounded-lg border border-border/50 bg-background/50 p-3">
+            <div className="flex items-center justify-between rounded-[12px] border border-[rgba(72,72,71,0.18)] bg-[#1a1a1a] p-3">
               <div className="space-y-0.5">
-                <Label htmlFor="sucursal-toggle" className="text-sm font-medium text-foreground cursor-pointer">
+                <Label htmlFor="sucursal-toggle" className="text-sm font-medium text-white cursor-pointer">
                   Activar control de sucursales
                 </Label>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-[#adaaaa]">
                   Restringe la creación de nuevas sedes al valor configurado.
                 </p>
               </div>
@@ -81,7 +81,7 @@ export function LimitsForm({
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="sucursal-limit-input" className="text-xs font-medium text-muted-foreground">
+              <Label htmlFor="sucursal-limit-input" className="text-[10px] uppercase tracking-[0.5px] font-['Inter',sans-serif] text-[#adaaaa]">
                 Cantidad máxima de sucursales
               </Label>
               <Input
@@ -94,14 +94,14 @@ export function LimitsForm({
                 onChange={(e) =>
                   onChange({ ...draft, sucursalLimit: e.target.value })
                 }
-                className={`text-sm ${
-                  validation.errors.sucursalLimit ? "border-destructive focus-visible:ring-destructive/30" : ""
+                className={`rounded-[10px] bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] text-sm text-white focus:border-[#ff906d]/50 ${
+                  validation.errors.sucursalLimit ? "border-[#ff716c] focus-visible:ring-[#ff716c]/30" : ""
                 }`}
               />
               {validation.errors.sucursalLimit ? (
-                <p className="text-xs text-destructive">{validation.errors.sucursalLimit}</p>
+                <p className="text-xs text-[#ff716c]">{validation.errors.sucursalLimit}</p>
               ) : (
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-[#adaaaa]">
                   Deja el campo vacío si el restaurante cuenta con sucursales ilimitadas.
                 </p>
               )}
@@ -110,17 +110,17 @@ export function LimitsForm({
         </Card>
 
         {/* Card 2: Usuarios por rol */}
-        <Card className="border-border/60 bg-card/60">
+        <Card className="border border-[rgba(72,72,71,0.18)] bg-[#131313] rounded-[16px]">
           <CardHeader>
             <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-muted/40 text-foreground">
+              <div className="flex h-9 w-9 items-center justify-center rounded-[10px] p-2.5 bg-[rgba(255,144,109,0.1)] text-[#ff906d]">
                 <Users className="h-4 w-4" />
               </div>
               <div>
-                <CardTitle className="text-base font-semibold text-foreground">
+                <CardTitle className="font-['Space_Grotesk',sans-serif] font-bold text-base text-white">
                   Usuarios por rol
                 </CardTitle>
-                <CardDescription className="text-xs">
+                <CardDescription className="text-xs text-[#adaaaa]">
                   Establece topes máximos de usuarios activos por cada función operativa.
                 </CardDescription>
               </div>
@@ -128,12 +128,12 @@ export function LimitsForm({
           </CardHeader>
 
           <CardContent className="space-y-4">
-            <div className="flex items-center justify-between rounded-lg border border-border/50 bg-background/50 p-3">
+            <div className="flex items-center justify-between rounded-[12px] border border-[rgba(72,72,71,0.18)] bg-[#1a1a1a] p-3">
               <div className="space-y-0.5">
-                <Label htmlFor="user-limit-toggle" className="text-sm font-medium text-foreground cursor-pointer">
+                <Label htmlFor="user-limit-toggle" className="text-sm font-medium text-white cursor-pointer">
                   Activar control de cuotas
                 </Label>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-[#adaaaa]">
                   Bloquea la invitación de usuarios cuando se alcance el tope asignado.
                 </p>
               </div>
@@ -168,11 +168,11 @@ export function LimitsForm({
                 return (
                   <div key={role} className="space-y-1.5">
                     <div className="flex items-center justify-between">
-                      <Label htmlFor={`role-limit-${role}`} className="text-xs font-medium text-muted-foreground">
+                      <Label htmlFor={`role-limit-${role}`} className="text-[10px] uppercase tracking-[0.5px] font-['Inter',sans-serif] text-[#adaaaa]">
                         {formatRoleLabel(role)}
                       </Label>
                       {isAdmin && (
-                        <span className="text-[10px] text-muted-foreground font-mono">
+                        <span className="text-[10px] text-[#adaaaa] font-mono">
                           Fijo (dueño)
                         </span>
                       )}
@@ -189,9 +189,11 @@ export function LimitsForm({
                           onChange({ ...draft, [fieldKey]: e.target.value });
                         }
                       }}
-                      className={`text-sm ${error ? "border-destructive focus-visible:ring-destructive/30" : ""}`}
+                      className={`rounded-[10px] bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] text-sm text-white focus:border-[#ff906d]/50 ${
+                        error ? "border-[#ff716c] focus-visible:ring-[#ff716c]/30" : ""
+                      }`}
                     />
-                    {error && <p className="text-[11px] text-destructive">{error}</p>}
+                    {error && <p className="text-[11px] text-[#ff716c]">{error}</p>}
                   </div>
                 );
               })}
@@ -201,8 +203,8 @@ export function LimitsForm({
       </div>
 
       {/* Sticky save bar */}
-      <div className="sticky bottom-0 z-10 flex items-center justify-between gap-4 rounded-xl border border-border/80 bg-background/95 p-4 shadow-lg backdrop-blur-md">
-        <div className="text-xs text-muted-foreground">
+      <div className="sticky bottom-0 z-10 flex items-center justify-between gap-4 rounded-[16px] border border-[rgba(72,72,71,0.25)] bg-[#131313]/95 p-4 shadow-lg backdrop-blur-md">
+        <div className="text-xs text-[#adaaaa]">
           {isDirty ? (
             <span className="text-amber-400 font-medium">Hay cambios pendientes sin guardar</span>
           ) : (
@@ -218,7 +220,7 @@ export function LimitsForm({
               size="sm"
               disabled={saving}
               onClick={onReset}
-              className="gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+              className="gap-1.5 text-xs rounded-[10px] border border-[rgba(72,72,71,0.3)] text-[#adaaaa] hover:border-white hover:text-white bg-transparent cursor-pointer"
             >
               <RotateCcw className="h-3.5 w-3.5" />
               Descartar
@@ -231,7 +233,7 @@ export function LimitsForm({
             size="sm"
             disabled={!isDirty || !isValid || saving}
             onClick={onSave}
-            className="gap-1.5 text-xs font-semibold"
+            className="gap-1.5 text-xs font-bold rounded-[10px] bg-[#ff906d] text-black hover:bg-[#ff8059] disabled:opacity-50 cursor-pointer transition-colors"
           >
             <Save className="h-4 w-4" />
             {saving ? "Guardando..." : "Guardar cambios"}
