@@ -40,6 +40,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.send('window-maximize')
   },
   ensureInputFocus: () => ipcRenderer.invoke('window:ensure-input-focus'),
+  getOpenAtLogin: () => ipcRenderer.invoke('app:get-open-at-login'),
+  setOpenAtLogin: (enabled) => ipcRenderer.invoke('app:set-open-at-login', enabled),
   getTenantStoreStatus: () => ipcRenderer.invoke('tenant-store:status'),
   activateTenant: (tenantId) => ipcRenderer.invoke('tenant-store:activate', tenantId),
   listSavedAccounts: () => ipcRenderer.invoke('saved-accounts:list'),
