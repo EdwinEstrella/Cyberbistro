@@ -6,6 +6,7 @@ import { listCustomers, type Customer } from "../../clientes/lib/customers";
 import { createMenuLink, createMenu, normalizeRepoError } from "../lib/menuLinksRepo";
 import { getBusinessToday } from "../lib/menuBusinessDate";
 import { getMondayOfWeek } from "../lib/menuSchedule";
+import { DatePicker } from "../../../shared/ui/date-picker";
 
 interface NewLinkDialogProps {
   open: boolean;
@@ -277,11 +278,13 @@ export function NewLinkDialog({
                     <label className="text-[11px] font-bold text-muted-foreground">
                       Fecha del lunes de inicio
                     </label>
-                    <input
-                      type="date"
+                    <DatePicker
+                      aria-label="Fecha del lunes de inicio"
                       value={newMenuWeekStart}
-                      onChange={(e) => setNewMenuWeekStart(e.target.value)}
-                      className="w-full px-3 py-1.5 rounded-lg bg-background border border-border text-foreground text-xs focus:outline-none focus:border-primary"
+                      onChange={(selected) => {
+                        if (!selected) return;
+                        setNewMenuWeekStart(getMondayOfWeek(selected));
+                      }}
                     />
                   </div>
                 )}
