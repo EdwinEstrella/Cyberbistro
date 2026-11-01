@@ -1,5 +1,6 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
 import { mainWindow } from "./support/electronMainWindow";
+import { dismissPaymentAlertIfPresent } from "./helpers/appAlerts";
 
 const TEST_EMAIL_ENV = 'CYBERBISTRO_TEST_EMAIL';
 const TEST_PASSWORD_ENV = 'CYBERBISTRO_TEST_PASSWORD';
@@ -71,6 +72,7 @@ async function waitForAppShell(page: Page): Promise<void> {
   const showSidebar = page.getByRole('button', { name: 'Mostrar barra lateral' });
   const mesas = page.locator('aside').getByRole('button', { name: /^Mesas$/ });
   await expect(showSidebar.or(mesas).first()).toBeVisible({ timeout: 20_000 });
+  await dismissPaymentAlertIfPresent(page);
   await revealSidebar(page);
   await expect(mesas).toBeVisible({ timeout: 20_000 });
 }

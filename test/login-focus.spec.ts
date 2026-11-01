@@ -1,5 +1,6 @@
 import { test, expect, _electron as electron } from '@playwright/test';
 import { mainWindow } from "./support/electronMainWindow";
+import { dismissPaymentAlertIfPresent } from "./helpers/appAlerts";
 
 test('login and logout focus stability test', async () => {
   test.setTimeout(60_000);
@@ -49,6 +50,7 @@ test('login and logout focus stability test', async () => {
   const isLoggedIn = await logoutButton.isVisible();
 
   if (isLoggedIn) {
+    await dismissPaymentAlertIfPresent(window);
     console.log('[E2E Test] Already logged in. Proceeding to logout...');
     await window.waitForTimeout(1500); // Pause before logging out
     
@@ -74,6 +76,7 @@ test('login and logout focus stability test', async () => {
     // Wait for the dashboard shell to mount, then reveal the sidebar so the logout control shows.
     const sidebarToggle = window.getByRole('button', { name: 'Mostrar barra lateral' });
     await expect(logoutButton.or(sidebarToggle).first()).toBeVisible({ timeout: 15000 });
+    await dismissPaymentAlertIfPresent(window);
     await revealSidebar();
     await expect(logoutButton).toBeVisible({ timeout: 15000 });
     console.log('[E2E Test] Logged in successfully. Waiting 2 seconds...');
