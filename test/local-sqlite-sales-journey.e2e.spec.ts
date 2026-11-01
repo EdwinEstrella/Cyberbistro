@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mainWindow } from "./support/electronMainWindow";
+import { dismissPaymentAlertIfPresent } from "./helpers/appAlerts";
 
 /**
  * Real end-to-end sales journey: login → send to kitchen → assert the consumo
@@ -110,6 +111,7 @@ test("POS sales journey persists the order and the invoice to SQLite", async () 
     const mesaSelector = page.getByRole("button", { name: /Seleccionar mesa|Mesa \d+/ });
     await expect(mesaSelector).toBeVisible({ timeout: 30_000 });
     console.log("[JOURNEY] Step 2: Mesa selector visible ✓");
+    await dismissPaymentAlertIfPresent(page);
 
     const invoicesBefore = await countInvoices();
     const consumosBefore = await countConsumosForMesa();

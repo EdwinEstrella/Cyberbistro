@@ -38,8 +38,10 @@ export function PlanSelector({
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h3 className="text-base font-semibold text-foreground">Planes de suscripción</h3>
-        <p className="text-xs text-muted-foreground">
+        <h3 className="font-['Space_Grotesk',sans-serif] font-bold text-base uppercase tracking-[0.5px] text-white">
+          Planes de suscripción
+        </h3>
+        <p className="text-xs text-[#adaaaa]">
           Selecciona un plan para ajustar las capacidades operativas del restaurante.
         </p>
       </div>
@@ -53,60 +55,60 @@ export function PlanSelector({
           return (
             <Card
               key={planKey}
-              className={`relative flex flex-col justify-between transition-all duration-200 ${
+              className={`relative flex flex-col justify-between transition-all duration-200 rounded-[16px] border ${
                 isCurrent
-                  ? "border-primary/60 bg-primary/5 ring-1 ring-primary/40 shadow-sm"
-                  : "border-border/60 bg-card/50 hover:border-border hover:bg-card/80"
+                  ? "border-[#ff906d]/70 bg-[rgba(255,144,109,0.06)] shadow-[0_0_16px_rgba(255,144,109,0.08)]"
+                  : "border-[rgba(72,72,71,0.18)] bg-[#131313] hover:border-[rgba(72,72,71,0.35)] hover:bg-[#1a1a1a]"
               }`}
             >
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <div
-                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] p-2.5 ${
                       isCurrent
-                        ? "border-primary/40 bg-primary/20 text-primary"
-                        : "border-border bg-muted/40 text-muted-foreground"
+                        ? "bg-[rgba(255,144,109,0.15)] text-[#ff906d]"
+                        : "bg-[rgba(255,255,255,0.05)] text-[#adaaaa]"
                     }`}
                   >
                     <Icon className="h-4 w-4" />
                   </div>
-                  <CardTitle className="text-base font-bold text-foreground truncate">
+                  <CardTitle className="font-['Space_Grotesk',sans-serif] font-bold text-base text-white truncate">
                     {tier.name}
                   </CardTitle>
                 </div>
 
-                {/* Badge ribbon row under the title: guarantees badge stays inside card and equal card heights */}
+                {/* Badge ribbon row under the title */}
                 <div className="h-6 flex items-center mt-2">
                   {isCurrent ? (
-                    <Badge variant="default" className="text-[11px] gap-1 font-medium">
-                      <Check className="h-3 w-3" />
+                    <Badge className="text-[11px] gap-1 font-bold rounded-full bg-[#ff906d] text-black">
+                      <Check className="h-3 w-3 stroke-[3]" />
                       Plan actual
                     </Badge>
                   ) : tier.recommended ? (
-                    <Badge variant="outline" className="border-primary/40 text-primary text-[11px] font-medium">
+                    <Badge variant="outline" className="border border-[#ff906d]/40 bg-[rgba(255,144,109,0.1)] text-[#ff906d] text-[11px] font-medium rounded-full">
                       Recomendado
                     </Badge>
                   ) : null}
                 </div>
 
                 <div className="mt-2 flex items-baseline gap-1">
-                  <span className="text-2xl font-bold tracking-tight text-foreground font-mono tabular-nums">
+                  <span className="font-['Space_Grotesk',sans-serif] font-bold text-2xl tracking-tight text-white tabular-nums">
                     US$ {tier.priceMonthlyUsd}
                   </span>
-                  <span className="text-xs text-muted-foreground">/ mes</span>
+                  <span className="text-xs text-[#adaaaa]">/ mes</span>
                 </div>
 
-                <CardDescription className="text-xs line-clamp-2 mt-1 min-h-[32px]">
+                <CardDescription className="text-xs text-[#adaaaa] line-clamp-2 mt-1 min-h-[32px]">
                   {tier.tagline}
                 </CardDescription>
               </CardHeader>
 
               <CardContent className="flex-1 pb-4">
-                <ul className="space-y-2 text-xs text-muted-foreground">
+                <ul className="space-y-2 text-xs text-[#adaaaa]">
                   {tier.bullets.map((bullet, idx) => (
                     <li key={idx} className="flex items-start gap-2">
-                      <Check className="h-3.5 w-3.5 shrink-0 text-emerald-400 mt-0.5" />
-                      <span className="text-foreground/90">{bullet}</span>
+                      <Check className="h-3.5 w-3.5 shrink-0 text-[#59ee50] mt-0.5" />
+                      <span className="text-white/90">{bullet}</span>
                     </li>
                   ))}
                 </ul>
@@ -118,7 +120,11 @@ export function PlanSelector({
                   size="sm"
                   disabled={isCurrent || isSaving}
                   onClick={() => onSelectPlan(planKey)}
-                  className="w-full text-xs font-semibold cursor-pointer"
+                  className={`w-full text-xs font-bold rounded-[10px] cursor-pointer transition-colors ${
+                    isCurrent
+                      ? "border border-[rgba(72,72,71,0.3)] text-[#adaaaa] bg-transparent"
+                      : "bg-[#ff906d] text-black hover:bg-[#ff8059]"
+                  }`}
                 >
                   {isSaving
                     ? "Actualizando..."

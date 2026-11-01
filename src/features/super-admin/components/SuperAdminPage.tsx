@@ -38,6 +38,14 @@ import { AuditTab } from "./AuditTab";
 import { TenantOverviewPanel } from "./TenantOverviewPanel";
 import "../super-admin.css";
 
+const MOBILE_QUERY = "(max-width: 767px)";
+
+function isMobileViewport(): boolean {
+  return typeof window !== "undefined" && typeof window.matchMedia === "function"
+    ? window.matchMedia(MOBILE_QUERY).matches
+    : false;
+}
+
 export function SuperAdminPage() {
   const navigate = useNavigate();
   const { loading: authLoading, isAuthenticated, signOut } = useAuth();
@@ -66,6 +74,17 @@ export function SuperAdminPage() {
 
   // Mobile detail drawer state (< 768px)
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
+
+  // Close the phone drawer when the window grows to the master-detail layout.
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const media = window.matchMedia(MOBILE_QUERY);
+    const onChange = (event: MediaQueryListEvent) => {
+      if (!event.matches) setMobileDetailOpen(false);
+    };
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
 
   // Active detail tab
   const [activeTab, setActiveTab] = useState<"resumen" | "usuarios" | "plan-limites" | "pagos" | "auditoria">("resumen");
@@ -483,7 +502,8 @@ export function SuperAdminPage() {
 
   const handleSelectTenant = (tenantId: string) => {
     setSelectedTenantId(tenantId);
-    setMobileDetailOpen(true);
+    // The bottom drawer is only for phones; on md+ the detail pane is already visible.
+    setMobileDetailOpen(isMobileViewport());
   };
 
   if (authLoading || checkingAccess) {
@@ -517,27 +537,27 @@ export function SuperAdminPage() {
       <Tabs value={activeTab} onValueChange={(val) => setActiveTab(val as typeof activeTab)}>
         <div className="relative w-full">
           <div className="overflow-x-auto scrollbar-none [scrollbar-width:none] [-ms-overflow-style:none] pb-1 snap-x">
-            <TabsList className="inline-flex w-auto min-w-full justify-start gap-1.5 h-10 p-1 bg-muted/60 rounded-xl">
-              <TabsTrigger value="resumen" className="text-xs shrink-0 snap-start px-3.5 whitespace-nowrap cursor-pointer">
+            <TabsList className="inline-flex w-auto min-w-full justify-start gap-1.5 h-10 p-1 bg-[#1a1a1a] border border-[rgba(72,72,71,0.18)] rounded-[10px]">
+              <TabsTrigger value="resumen" className="text-xs shrink-0 snap-start px-3.5 whitespace-nowrap cursor-pointer rounded-[8px] font-['Space_Grotesk',sans-serif] font-bold uppercase tracking-[0.5px] text-[#adaaaa] data-[state=active]:bg-[rgba(255,144,109,0.12)] data-[state=active]:border-[#ff906d] data-[state=active]:text-[#ff906d] data-[state=active]:shadow-[0_0_12px_rgba(255,144,109,0.1)]">
                 Resumen
               </TabsTrigger>
-              <TabsTrigger value="usuarios" className="text-xs shrink-0 snap-start px-3.5 whitespace-nowrap cursor-pointer">
+              <TabsTrigger value="usuarios" className="text-xs shrink-0 snap-start px-3.5 whitespace-nowrap cursor-pointer rounded-[8px] font-['Space_Grotesk',sans-serif] font-bold uppercase tracking-[0.5px] text-[#adaaaa] data-[state=active]:bg-[rgba(255,144,109,0.12)] data-[state=active]:border-[#ff906d] data-[state=active]:text-[#ff906d] data-[state=active]:shadow-[0_0_12px_rgba(255,144,109,0.1)]">
                 Usuarios ({selectedTenantCard.users.length})
               </TabsTrigger>
-              <TabsTrigger value="plan-limites" className="text-xs shrink-0 snap-start px-3.5 whitespace-nowrap cursor-pointer">
+              <TabsTrigger value="plan-limites" className="text-xs shrink-0 snap-start px-3.5 whitespace-nowrap cursor-pointer rounded-[8px] font-['Space_Grotesk',sans-serif] font-bold uppercase tracking-[0.5px] text-[#adaaaa] data-[state=active]:bg-[rgba(255,144,109,0.12)] data-[state=active]:border-[#ff906d] data-[state=active]:text-[#ff906d] data-[state=active]:shadow-[0_0_12px_rgba(255,144,109,0.1)]">
                 Plan y límites
               </TabsTrigger>
-              <TabsTrigger value="pagos" className="text-xs shrink-0 snap-start px-3.5 whitespace-nowrap cursor-pointer">
+              <TabsTrigger value="pagos" className="text-xs shrink-0 snap-start px-3.5 whitespace-nowrap cursor-pointer rounded-[8px] font-['Space_Grotesk',sans-serif] font-bold uppercase tracking-[0.5px] text-[#adaaaa] data-[state=active]:bg-[rgba(255,144,109,0.12)] data-[state=active]:border-[#ff906d] data-[state=active]:text-[#ff906d] data-[state=active]:shadow-[0_0_12px_rgba(255,144,109,0.1)]">
                 Pagos
               </TabsTrigger>
-              <TabsTrigger value="auditoria" className="text-xs shrink-0 snap-start px-3.5 whitespace-nowrap cursor-pointer">
+              <TabsTrigger value="auditoria" className="text-xs shrink-0 snap-start px-3.5 whitespace-nowrap cursor-pointer rounded-[8px] font-['Space_Grotesk',sans-serif] font-bold uppercase tracking-[0.5px] text-[#adaaaa] data-[state=active]:bg-[rgba(255,144,109,0.12)] data-[state=active]:border-[#ff906d] data-[state=active]:text-[#ff906d] data-[state=active]:shadow-[0_0_12px_rgba(255,144,109,0.1)]">
                 Auditoría
               </TabsTrigger>
             </TabsList>
           </div>
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute right-0 top-0 bottom-1 w-8 bg-gradient-to-l from-background via-background/60 to-transparent xl:hidden"
+            className="pointer-events-none absolute right-0 top-0 bottom-1 w-8 bg-gradient-to-l from-[#0c0c0c] via-[#0c0c0c]/60 to-transparent xl:hidden"
           />
         </div>
 
@@ -613,28 +633,28 @@ export function SuperAdminPage() {
       </Tabs>
     </div>
   ) : (
-    <div className="flex h-64 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border/70 p-12 text-center bg-card/20">
-      <Store className="h-8 w-8 text-muted-foreground/60" />
-      <h4 className="text-sm font-semibold text-foreground">Ningún restaurante seleccionado</h4>
-      <p className="max-w-sm text-xs text-muted-foreground">
+    <div className="flex h-64 flex-col items-center justify-center gap-3 rounded-[16px] border border-dashed border-[rgba(72,72,71,0.3)] p-12 text-center bg-[#131313]">
+      <Store className="h-8 w-8 text-[#adaaaa]" />
+      <h4 className="font-['Space_Grotesk',sans-serif] font-bold text-sm text-white">Ningún restaurante seleccionado</h4>
+      <p className="max-w-sm text-xs text-[#adaaaa]">
         Selecciona un restaurante de la lista lateral para visualizar sus métricas, usuarios y configuración.
       </p>
     </div>
   );
 
   return (
-    <div className="super-admin-scope flex h-screen min-h-0 w-full flex-col overflow-hidden bg-background text-foreground antialiased">
+    <div className="super-admin-scope flex h-screen min-h-0 w-full flex-col overflow-hidden bg-[#0c0c0c] text-white antialiased">
       <TitleBar />
 
       <main className="flex-1 min-h-0 overflow-y-auto px-4 py-6 sm:px-8">
         <div className="mx-auto flex max-w-[1520px] flex-col gap-6">
           {/* Header Strip */}
-          <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-border/50 bg-card/60 p-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-[16px] border border-[rgba(72,72,71,0.18)] bg-[#131313] p-5 shadow-sm">
             <div className="space-y-1">
-              <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+              <h1 className="font-['Space_Grotesk',sans-serif] font-bold text-2xl uppercase tracking-[0.5px] text-white">
                 Administración
               </h1>
-              <p className="text-xs text-muted-foreground">
+              <p className="font-['Inter',sans-serif] text-[10px] uppercase tracking-[0.5px] text-[#adaaaa]">
                 Restaurantes, planes y soporte
               </p>
             </div>
@@ -646,9 +666,9 @@ export function SuperAdminPage() {
                   placeholder="Buscar restaurante, RNC o email..."
                   value={filterState.search}
                   onChange={(e) => setFilterState((p) => ({ ...p, search: e.target.value }))}
-                  className="h-9 pl-9 text-xs"
+                  className="h-9 pl-9 text-xs rounded-[10px] bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] text-white placeholder:text-[#adaaaa] focus:border-[#ff906d]/50"
                 />
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-[#adaaaa] pointer-events-none" />
               </div>
 
               <Button
@@ -656,7 +676,7 @@ export function SuperAdminPage() {
                 size="sm"
                 onClick={() => void loadData()}
                 disabled={loadingData}
-                className="h-9 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                className="h-9 gap-1.5 text-xs rounded-[10px] border border-[rgba(72,72,71,0.3)] text-[#adaaaa] hover:border-white hover:text-white bg-transparent cursor-pointer"
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${loadingData ? "animate-spin" : ""}`} />
                 <span>Recargar</span>
@@ -669,7 +689,7 @@ export function SuperAdminPage() {
                   await signOut();
                   navigate("/", { replace: true });
                 }}
-                className="h-9 gap-1.5 text-xs font-medium"
+                className="h-9 gap-1.5 text-xs font-medium rounded-[10px] border border-[rgba(72,72,71,0.3)] text-[#adaaaa] hover:border-white hover:text-white bg-transparent cursor-pointer"
               >
                 <LogOut className="h-3.5 w-3.5" />
                 <span>Cerrar sesión</span>
@@ -679,17 +699,17 @@ export function SuperAdminPage() {
 
           {/* Feedback banners if any */}
           {error && (
-            <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-xs text-destructive">
+            <div className="rounded-[12px] border border-[rgba(255,113,108,0.3)] bg-[rgba(255,113,108,0.1)] px-4 py-3 text-xs text-[#ff716c]">
               {error}
             </div>
           )}
           {info && (
-            <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-xs text-blue-400">
+            <div className="rounded-[12px] border border-[rgba(96,165,250,0.3)] bg-[rgba(96,165,250,0.1)] px-4 py-3 text-xs text-blue-400">
               {info}
             </div>
           )}
           {!columnsReady && (
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-400">
+            <div className="rounded-[12px] border border-[rgba(245,158,11,0.3)] bg-[rgba(245,158,11,0.1)] px-4 py-3 text-xs text-amber-400">
               La UI de límites está lista, pero este backend todavía no expone las columnas de cuotas en tenants.
             </div>
           )}
@@ -699,13 +719,13 @@ export function SuperAdminPage() {
 
           {/* Master-Detail Layout */}
           {loadingData ? (
-            <div className="flex h-64 items-center justify-center rounded-xl border border-border/50 bg-card/30">
-              <RefreshCw className="h-6 w-6 animate-spin text-primary" />
+            <div className="flex h-64 items-center justify-center rounded-[16px] border border-[rgba(72,72,71,0.18)] bg-[#131313]">
+              <RefreshCw className="h-6 w-6 animate-spin text-[#ff906d]" />
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[360px_minmax(0,1fr)] gap-6 items-start">
               {/* Left Pane: Restaurant List */}
-              <aside className="rounded-xl border border-border/50 bg-card/40 p-4 md:sticky md:top-0 h-auto md:max-h-[calc(100vh-220px)] flex flex-col">
+              <aside className="rounded-[16px] border border-[rgba(72,72,71,0.18)] bg-[#131313] p-4 md:sticky md:top-0 h-auto md:max-h-[calc(100vh-220px)] flex flex-col">
                 <TenantList
                   cards={tenantCards}
                   selectedTenantId={selectedTenantId}
@@ -725,10 +745,10 @@ export function SuperAdminPage() {
               <Sheet open={mobileDetailOpen} onOpenChange={setMobileDetailOpen}>
                 <SheetContent
                   side="bottom"
-                  className="super-admin-scope h-[92vh] overflow-y-auto p-4 sm:p-6"
+                  className="super-admin-scope h-[92vh] overflow-y-auto p-4 sm:p-6 rounded-t-[16px] bg-[#131313] border-t border-[rgba(72,72,71,0.18)] text-white"
                 >
                   <SheetHeader className="pb-2">
-                    <SheetTitle className="text-base font-semibold text-foreground">
+                    <SheetTitle className="font-['Space_Grotesk',sans-serif] font-bold text-base text-white uppercase tracking-[0.5px]">
                       Detalle del restaurante
                     </SheetTitle>
                   </SheetHeader>

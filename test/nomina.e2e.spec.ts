@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { TenantStore } from "../electron/persistence/tenantStore";
 import { mainWindow } from "./support/electronMainWindow";
+import { dismissPaymentAlertIfPresent } from "./helpers/appAlerts";
 
 test.describe("Nomina (Payroll) Full CRUD & Local-First SQLite E2E", () => {
   let userDataDirectory: string;
@@ -26,6 +27,7 @@ test.describe("Nomina (Payroll) Full CRUD & Local-First SQLite E2E", () => {
     page = await mainWindow(app);
     await page.bringToFront();
     await expect(page.getByLabel("Correo")).toBeVisible({ timeout: 30_000 });
+    await dismissPaymentAlertIfPresent(page);
   });
 
   test.afterEach(async () => {

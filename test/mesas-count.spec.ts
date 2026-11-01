@@ -1,5 +1,6 @@
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
 import { mainWindow } from "./support/electronMainWindow";
+import { dismissPaymentAlertIfPresent } from "./helpers/appAlerts";
 import { settleLoginOrShell } from "./support/authSettle";
 
 const TEST_EMAIL_ENV = 'CYBERBISTRO_TEST_EMAIL';
@@ -74,6 +75,7 @@ async function waitForAppShell(page: Page): Promise<void> {
   const showSidebar = page.getByRole('button', { name: 'Mostrar barra lateral' });
   const mesas = page.locator('aside').getByRole('button', { name: /^Mesas$/ });
   await expect(showSidebar.or(mesas).first()).toBeVisible({ timeout: 20_000 });
+  await dismissPaymentAlertIfPresent(page);
   await revealSidebar(page);
   await expect(mesas).toBeVisible({ timeout: 20_000 });
   await expect(page.locator('aside').getByRole('button', { name: /^Soporte$/ })).toBeVisible({ timeout: 20_000 });
@@ -84,6 +86,7 @@ async function loginIfNeeded(page: Page): Promise<void> {
     .or(page.getByRole('button', { name: 'Mostrar barra lateral' }))
     .or(page.locator('button:has-text("Cerrar Sesión")'));
   if ((await settleLoginOrShell(page, shell)) === 'shell') {
+    await dismissPaymentAlertIfPresent(page);
     return;
   }
 

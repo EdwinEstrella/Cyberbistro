@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mainWindow } from "./support/electronMainWindow";
+import { dismissPaymentAlertIfPresent } from "./helpers/appAlerts";
 import { settleLoginOrShell } from "./support/authSettle";
 
 /**
@@ -103,6 +104,7 @@ async function reloadToPos(page: Page): Promise<void> {
   await page.reload();
   if ((await settleLoginOrShell(page, mesaSelector(page))) === "login") await login(page);
   await expect(mesaSelector(page)).toBeVisible({ timeout: 30_000 });
+  await dismissPaymentAlertIfPresent(page);
 }
 
 async function openAjustes(page: Page): Promise<void> {
@@ -178,6 +180,7 @@ test("ITBIS included in price: checkout split matches the setting and the persis
   try {
     await login(page);
     await expect(mesaSelector(page)).toBeVisible({ timeout: 30_000 });
+    await dismissPaymentAlertIfPresent(page);
     await waitForInitialPull(page);
     const invoicesBefore = await page.evaluate(() => window.electronAPI!.listInvoices!({}).then((r) => r.data.length));
 
