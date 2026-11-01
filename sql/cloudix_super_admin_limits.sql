@@ -33,21 +33,21 @@ CREATE TABLE IF NOT EXISTS public.cloudix_super_admins (
 -- Reemplaza el UUID por el auth_user_id que muestra la pantalla Super Admin.
 -- El correo solo no siempre llega en los claims RLS; el sub/auth_user_id es el dato estable.
 -- INSERT INTO public.cloudix_super_admins (auth_user_id, email)
--- VALUES ('00000000-0000-0000-0000-000000000000', 'admin@gmail.com')
+-- VALUES ('00000000-0000-0000-0000-000000000000', 'superadmin@example.com')
 -- ON CONFLICT (auth_user_id) DO UPDATE SET email = EXCLUDED.email;
 
 CREATE OR REPLACE FUNCTION public.cloudix_is_super_admin()
 RETURNS boolean
 LANGUAGE sql
 STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp
 AS $$
   SELECT EXISTS (
     SELECT 1
     FROM public.cloudix_super_admins sa
     WHERE sa.auth_user_id = public.cloudix_auth_user_id()
-      AND lower(sa.email) = 'admin@gmail.com'
-  )
-  OR lower(COALESCE(public.cloudix_auth_email(), '')) = 'admin@gmail.com';
+  );
 $$;
 
 ALTER TABLE public.tenants

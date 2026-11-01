@@ -9,7 +9,7 @@ export function MenuLinksPage() {
   if (!tenantId) {
     return (
       <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm font-['Space_Grotesk']">
-        Inicia sesión para administrar los enlaces de menú.
+        Inicia sesión para administrar los enlaces de menú digital.
       </div>
     );
   }
@@ -19,10 +19,10 @@ export function MenuLinksPage() {
       {/* Page Header */}
       <div className="px-6 py-5 border-b border-border bg-card/60 backdrop-blur-sm shrink-0">
         <h1 className="text-xl sm:text-2xl font-bold font-['Space_Grotesk'] tracking-tight text-foreground">
-          Links de menú
+          Menú digital
         </h1>
         <p className="text-xs text-muted-foreground mt-1">
-          Administra los enlaces de menú digital públicos y corporativos, horarios semanales y extras.
+          Administra los enlaces de menú digital corporativos para empresas, horarios semanales y extras.
         </p>
       </div>
 

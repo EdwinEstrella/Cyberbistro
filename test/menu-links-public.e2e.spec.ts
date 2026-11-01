@@ -125,6 +125,14 @@ test.describe("Public digital menu by link (E2E network-mocked)", () => {
         });
       });
 
+      await page.route("**/rest/v1/rpc/get_online_menu_status*", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ open: true }),
+        });
+      });
+
       await page.route("**/rest/v1/rpc/get_menu_by_link*", async (route) => {
         await route.fulfill({
           status: 200,
@@ -244,6 +252,14 @@ test.describe("Public digital menu by link (E2E network-mocked)", () => {
         extras: [],
       };
 
+      await page.route("**/rest/v1/rpc/get_online_menu_status*", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ open: true }),
+        });
+      });
+
       await page.route("**/rest/v1/rpc/get_menu_by_link*", async (route) => {
         await route.fulfill({
           status: 200,
@@ -295,6 +311,14 @@ test.describe("Public digital menu by link (E2E network-mocked)", () => {
         extras: [],
       };
 
+      await page.route("**/rest/v1/rpc/get_online_menu_status*", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ open: true }),
+        });
+      });
+
       await page.route("**/rest/v1/rpc/get_menu_by_link*", async (route) => {
         await route.fulfill({
           status: 200,
@@ -331,6 +355,14 @@ test.describe("Public digital menu by link (E2E network-mocked)", () => {
       });
 
       let getMenuCallCount = 0;
+      await page.route("**/rest/v1/rpc/get_online_menu_status*", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ open: true }),
+        });
+      });
+
       await page.route("**/rest/v1/rpc/get_menu_by_link*", async (route) => {
         getMenuCallCount++;
         await route.fulfill({
@@ -374,6 +406,58 @@ test.describe("Public digital menu by link (E2E network-mocked)", () => {
 
       // Verify the menu reloads (second get_menu_by_link call happens)
       await expect.poll(() => getMenuCallCount).toBeGreaterThanOrEqual(2);
+    } finally {
+      await closeApp(app, userDataDirectory);
+    }
+  });
+
+  test("5. Closed restaurant: mocked closed status renders full-page notice with Reintentar button and no menu/cart", async () => {
+    const { app, page, userDataDirectory } = await launchLoggedOutApp();
+    try {
+      await page.route("**/rest/v1/tenants*", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: "[]",
+        });
+      });
+
+      let isOpen = false;
+      await page.route("**/rest/v1/rpc/get_online_menu_status*", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ open: isOpen }),
+        });
+      });
+
+      await page.route("**/rest/v1/rpc/get_menu_by_link*", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(companyMenuFixture),
+        });
+      });
+
+      await navigateToMenuLink(page, "closed-cycle-token");
+
+      // Verify closed message and Reintentar button are visible
+      await expect(
+        page.getByText("Este restaurante no está trabajando en este momento. Por favor, vuelva en horario laboral.")
+      ).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole("button", { name: "Reintentar" })).toBeVisible();
+
+      // Verify menu / dishes / cart are NOT rendered
+      await expect(page.getByText("Pollo al Horno")).not.toBeVisible();
+      await expect(page.getByRole("button", { name: "Enviar pedido" })).not.toBeVisible();
+
+      // Now simulate opening the restaurant and clicking Reintentar
+      isOpen = true;
+      await page.getByRole("button", { name: "Reintentar" }).click();
+
+      // Menu should flip and become visible
+      await expect(page.getByText(/Menú para Acme Corp/i)).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByText("Pollo al Horno")).toBeVisible();
     } finally {
       await closeApp(app, userDataDirectory);
     }

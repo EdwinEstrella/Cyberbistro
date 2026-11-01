@@ -21,6 +21,9 @@ export function mapAcceptOrderError(error: unknown): string {
     return 'Se requiere conexión a internet';
   }
 
+  if (message.includes('ORDER_ALREADY_INVOICED')) {
+    return 'Este pedido ya fue facturado; para corregirlo emití una nota de crédito.';
+  }
   if (message.includes('ORDER_NOT_PENDING')) {
     return 'Este pedido ya fue procesado por otra persona.';
   }

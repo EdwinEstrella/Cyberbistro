@@ -39,9 +39,27 @@ fi
 echo "Copying test and migration files..."
 docker exec "$CONTAINER_NAME" mkdir -p /workspace/supabase/migrations /workspace/test/sql
 docker cp supabase/migrations/20261031120000_corporate_menu_links.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
+docker cp supabase/migrations/20261031130000_corporate_menu_links_revoke_anon.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
+docker cp supabase/migrations/20261101090000_add_corporativo_plan.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
+docker cp supabase/migrations/20261101100000_menu_link_limits.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
+docker cp supabase/migrations/20261101110000_roster_and_credit_limit.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
+docker cp supabase/migrations/20261101120000_consolidated_invoice.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
+docker cp supabase/migrations/20261101130000_superadmin_tenant_overview.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
+docker cp supabase/migrations/20261101140000_superadmin_hardening.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
+docker cp supabase/migrations/20261101150000_menus_closed_without_cycle.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
 docker cp test/sql/corporate_menu_links.test.sql "$CONTAINER_NAME":/workspace/test/sql/
+docker cp test/sql/superadmin_overview.test.sql "$CONTAINER_NAME":/workspace/test/sql/
+docker cp test/sql/superadmin_hardening.test.sql "$CONTAINER_NAME":/workspace/test/sql/
 
-echo "Executing test suite..."
+echo "Executing corporate menu links test suite..."
 docker exec -w /workspace -i "$CONTAINER_NAME" psql -U postgres -v ON_ERROR_STOP=1 -f test/sql/corporate_menu_links.test.sql
+
+echo "Executing superadmin overview test suite..."
+docker exec "$CONTAINER_NAME" createdb -U postgres test_superadmin_overview
+docker exec -w /workspace -i "$CONTAINER_NAME" psql -U postgres -d test_superadmin_overview -v ON_ERROR_STOP=1 -f test/sql/superadmin_overview.test.sql
+
+echo "Executing superadmin hardening test suite..."
+docker exec "$CONTAINER_NAME" createdb -U postgres test_superadmin_hardening
+docker exec -w /workspace -i "$CONTAINER_NAME" psql -U postgres -d test_superadmin_hardening -v ON_ERROR_STOP=1 -f test/sql/superadmin_hardening.test.sql
 
 echo "SQL test suite completed successfully."

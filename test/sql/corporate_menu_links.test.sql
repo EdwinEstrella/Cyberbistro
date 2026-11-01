@@ -33,6 +33,18 @@ CREATE TABLE IF NOT EXISTS public.sucursales (
   tenant_id uuid REFERENCES public.tenants(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS public.cierres_operativos (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL REFERENCES public.tenants(id) ON DELETE CASCADE,
+  sucursal_id uuid REFERENCES public.sucursales(id) ON DELETE SET NULL,
+  business_day date DEFAULT CURRENT_DATE,
+  cycle_number int DEFAULT 1,
+  opened_at timestamptz NOT NULL DEFAULT now(),
+  closed_at timestamptz,
+  efectivo_inicial numeric(12,2) DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS public.comandas (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid REFERENCES public.tenants(id) ON DELETE CASCADE,
@@ -166,6 +178,9 @@ $$;
 
 -- 3. Include migration file
 \i supabase/migrations/20261031120000_corporate_menu_links.sql
+\i supabase/migrations/20261031130000_corporate_menu_links_revoke_anon.sql
+\i supabase/migrations/20261101090000_add_corporativo_plan.sql
+\i supabase/migrations/20261101150000_menus_closed_without_cycle.sql
 
 -- 4. Test Assertion Helper
 CREATE OR REPLACE FUNCTION test_assert(p_cond boolean, p_msg text)
@@ -201,6 +216,9 @@ BEGIN
   INSERT INTO public.sucursales (id, tenant_id)
   VALUES (gen_random_uuid(), v_tenant_id)
   RETURNING id INTO v_sucursal_id;
+
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at)
+  VALUES (v_tenant_id, v_sucursal_id, now(), NULL);
 
   v_today := public.menu_business_today(v_tenant_id);
   v_dow := public.menu_business_isodow(v_tenant_id, v_today);
@@ -496,6 +514,9 @@ BEGIN
   INSERT INTO public.sucursales (id, tenant_id)
   VALUES (gen_random_uuid(), v_tenant_b)
   RETURNING id INTO v_sucursal_b;
+
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at)
+  VALUES (v_tenant_b, v_sucursal_b, now(), NULL);
 
   INSERT INTO public.customers (tenant_id, name)
   VALUES (v_tenant_b, 'Customer Tenant B')
@@ -935,3 +956,1317 @@ BEGIN
   UPDATE public.menu_items SET sort_order = sort_order + 1 WHERE id = v_item_id RETURNING updated_at INTO v_new_updated;
   PERFORM test_assert(v_new_updated > v_old_updated, 'menu_items updated_at trigger must update updated_at');
 END $$;
+
+
+-- Test 18: Plan check constraint rejects invalid plans like 'foo' and accepts 'corporativo'
+DO $$
+DECLARE
+  v_caught boolean := false;
+  v_tenant_id uuid := gen_random_uuid();
+BEGIN
+  -- Rejects invalid plan 'foo'
+  BEGIN
+    INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
+    VALUES (v_tenant_id, 'Restaurante Invalido', 'foo', true);
+  EXCEPTION WHEN check_violation OR OTHERS THEN
+    v_caught := true;
+  END;
+  PERFORM test_assert(v_caught, 'CHECK tenants_plan_allowed must reject plan foo');
+
+  -- Accepts 'corporativo'
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
+  VALUES (v_tenant_id, 'Restaurante Corporativo Valido', 'corporativo', true);
+  PERFORM test_assert(EXISTS(SELECT 1 FROM public.tenants WHERE id = v_tenant_id AND plan = 'corporativo'), 'Plan corporativo must be accepted by CHECK constraint');
+END $$;
+
+-- Test 19: Corporativo tenant can read a link menu and create an order via RPCs
+DO $$
+DECLARE
+  v_tenant_id uuid := gen_random_uuid();
+  v_sucursal_id uuid;
+  v_menu_id uuid;
+  v_plato_id int;
+  v_link_id uuid;
+  v_token text;
+  v_today date;
+  v_dow smallint;
+  v_res jsonb;
+  v_order_res jsonb;
+  v_order_count int;
+BEGIN
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
+  VALUES (v_tenant_id, 'Corporativo Gourmet', 'corporativo', true);
+
+  v_today := public.menu_business_today(v_tenant_id);
+  v_dow := public.menu_business_isodow(v_tenant_id, v_today);
+
+  INSERT INTO public.sucursales (tenant_id)
+  VALUES (v_tenant_id)
+  RETURNING id INTO v_sucursal_id;
+
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at)
+  VALUES (v_tenant_id, v_sucursal_id, now(), NULL);
+
+  INSERT INTO public.platos (nombre, precio, disponible, tenant_id, sucursal_id, is_extra)
+  VALUES ('Plato Ejecutivo Corp', 350.00, true, v_tenant_id, v_sucursal_id, false)
+  RETURNING id INTO v_plato_id;
+
+  INSERT INTO public.menus (tenant_id, sucursal_id, name, schedule_mode)
+  VALUES (v_tenant_id, v_sucursal_id, 'Menu Ejecutivo Corp', 'recurring')
+  RETURNING id INTO v_menu_id;
+
+  INSERT INTO public.menu_items (tenant_id, menu_id, plato_id, weekdays, sort_order)
+  VALUES (v_tenant_id, v_menu_id, v_plato_id, ARRAY[v_dow]::smallint[], 1);
+
+  INSERT INTO public.menu_links (tenant_id, sucursal_id, menu_id, label, link_type, allow_extras, enabled)
+  VALUES (v_tenant_id, v_sucursal_id, v_menu_id, 'Link Corp', 'public', false, true)
+  RETURNING id, token INTO v_link_id, v_token;
+
+  -- 1. Read link menu as anon
+  v_res := public.get_menu_by_link(v_token);
+  PERFORM test_assert((v_res->>'available')::boolean = true, 'get_menu_by_link must be available for corporativo plan');
+  PERFORM test_assert(jsonb_array_length(v_res->'items') = 1, 'get_menu_by_link should return 1 item for corporativo plan');
+
+  -- 2. Create order by link
+  v_order_res := public.create_order_by_link(
+    v_token,
+    'Ejecutivo Corporativo',
+    'Sin cebolla',
+    jsonb_build_array(jsonb_build_object('plato_id', v_plato_id, 'quantity', 1))
+  );
+
+  PERFORM test_assert(v_order_res->>'order_id' IS NOT NULL, 'create_order_by_link must create order for corporativo plan');
+  PERFORM test_assert((v_order_res->>'total')::numeric = 350.00, 'Order total must match 350.00');
+
+  SELECT count(*) INTO v_order_count
+  FROM public.digital_orders
+  WHERE tenant_id = v_tenant_id;
+  PERFORM test_assert(v_order_count = 1, 'Exactly 1 digital order should exist for corporativo tenant');
+END $$;
+
+-- ============================================================
+-- 6. Include menu link limits migration
+-- ============================================================
+\i supabase/migrations/20261101100000_menu_link_limits.sql
+
+-- Test 9: Menu Link Limits and Prohibit New Public Links
+DO $$
+DECLARE
+  v_tenant_emp uuid := gen_random_uuid();
+  v_tenant_corp uuid := gen_random_uuid();
+  v_sucursal_emp uuid := gen_random_uuid();
+  v_sucursal_corp uuid := gen_random_uuid();
+  v_menu_emp uuid := gen_random_uuid();
+  v_menu_corp uuid := gen_random_uuid();
+  v_cust_1 uuid := gen_random_uuid();
+  v_cust_2 uuid := gen_random_uuid();
+  v_cust_3 uuid := gen_random_uuid();
+  v_link_1 uuid;
+  v_link_2 uuid;
+  v_link_3 uuid;
+  v_caught_public boolean := false;
+  v_caught_limit_emp boolean := false;
+  v_caught_reenable_emp boolean := false;
+  v_caught_limit_corp boolean := false;
+  v_existing_public_count int;
+  i int;
+  v_cust_corp uuid;
+  v_link_corp uuid;
+BEGIN
+  -- Unit assertions for menu_links_plan_limit
+  PERFORM test_assert(public.menu_links_plan_limit('empresarial') = 2, 'menu_links_plan_limit empresarial = 2');
+  PERFORM test_assert(public.menu_links_plan_limit('corporativo') = 6, 'menu_links_plan_limit corporativo = 6');
+  PERFORM test_assert(public.menu_links_plan_limit('profesional') = 0, 'menu_links_plan_limit profesional = 0');
+  PERFORM test_assert(public.menu_links_plan_limit('basico') = 0, 'menu_links_plan_limit basico = 0');
+  PERFORM test_assert(public.menu_links_plan_limit(NULL) = 0, 'menu_links_plan_limit NULL = 0');
+
+  -- Verify existing public links created BEFORE migration are untouched
+  SELECT count(*) INTO v_existing_public_count FROM public.menu_links WHERE link_type = 'public';
+  PERFORM test_assert(v_existing_public_count > 0, 'Existing public links created before migration must remain in table');
+
+  -- 1. Inserting new public link raises PUBLIC_LINK_NOT_ALLOWED
+  BEGIN
+    INSERT INTO public.menu_links (tenant_id, sucursal_id, menu_id, label, link_type)
+    VALUES (v_tenant_emp, v_sucursal_emp, v_menu_emp, 'Attempted Public Link', 'public');
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'PUBLIC_LINK_NOT_ALLOWED' THEN
+      v_caught_public := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_public, 'New public link insert must raise PUBLIC_LINK_NOT_ALLOWED');
+
+  -- Setup Empresarial Tenant
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
+  VALUES (v_tenant_emp, 'Tenant Empresarial Limits', 'empresarial', true);
+
+  INSERT INTO public.sucursales (id, tenant_id)
+  VALUES (v_sucursal_emp, v_tenant_emp);
+
+  INSERT INTO public.menus (id, tenant_id, sucursal_id, name)
+  VALUES (v_menu_emp, v_tenant_emp, v_sucursal_emp, 'Menu Emp');
+
+  INSERT INTO public.customers (id, tenant_id, name) VALUES (v_cust_1, v_tenant_emp, 'Empresa 1');
+  INSERT INTO public.customers (id, tenant_id, name) VALUES (v_cust_2, v_tenant_emp, 'Empresa 2');
+  INSERT INTO public.customers (id, tenant_id, name) VALUES (v_cust_3, v_tenant_emp, 'Empresa 3');
+
+  -- Empresarial: 1st enabled company link -> OK
+  INSERT INTO public.menu_links (tenant_id, sucursal_id, menu_id, label, link_type, customer_id, enabled)
+  VALUES (v_tenant_emp, v_sucursal_emp, v_menu_emp, 'Link Emp 1', 'company', v_cust_1, true)
+  RETURNING id INTO v_link_1;
+
+  -- Empresarial: 2nd enabled company link -> OK
+  INSERT INTO public.menu_links (tenant_id, sucursal_id, menu_id, label, link_type, customer_id, enabled)
+  VALUES (v_tenant_emp, v_sucursal_emp, v_menu_emp, 'Link Emp 2', 'company', v_cust_2, true)
+  RETURNING id INTO v_link_2;
+
+  -- Empresarial: 3rd enabled company link -> raises LINK_LIMIT_REACHED
+  BEGIN
+    INSERT INTO public.menu_links (tenant_id, sucursal_id, menu_id, label, link_type, customer_id, enabled)
+    VALUES (v_tenant_emp, v_sucursal_emp, v_menu_emp, 'Link Emp 3', 'company', v_cust_3, true)
+    RETURNING id INTO v_link_3;
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'LINK_LIMIT_REACHED' THEN
+      v_caught_limit_emp := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_limit_emp, '3rd company link on empresarial must raise LINK_LIMIT_REACHED');
+
+  -- Disabling one link frees a slot
+  UPDATE public.menu_links
+  SET enabled = false
+  WHERE id = v_link_2;
+
+  -- Now inserting 3rd enabled company link succeeds
+  INSERT INTO public.menu_links (tenant_id, sucursal_id, menu_id, label, link_type, customer_id, enabled)
+  VALUES (v_tenant_emp, v_sucursal_emp, v_menu_emp, 'Link Emp 3', 'company', v_cust_3, true)
+  RETURNING id INTO v_link_3;
+
+  PERFORM test_assert(v_link_3 IS NOT NULL, 'Inserting company link after freeing slot must succeed');
+
+  -- Re-enabling link 2 over the limit raises LINK_LIMIT_REACHED
+  BEGIN
+    UPDATE public.menu_links
+    SET enabled = true
+    WHERE id = v_link_2;
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'LINK_LIMIT_REACHED' THEN
+      v_caught_reenable_emp := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_reenable_emp, 'Re-enabling company link over limit must raise LINK_LIMIT_REACHED');
+
+  -- Setup Corporativo Tenant: allows 6, 7th raises
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
+  VALUES (v_tenant_corp, 'Tenant Corporativo Limits', 'corporativo', true);
+
+  INSERT INTO public.sucursales (id, tenant_id)
+  VALUES (v_sucursal_corp, v_tenant_corp);
+
+  INSERT INTO public.menus (id, tenant_id, sucursal_id, name)
+  VALUES (v_menu_corp, v_tenant_corp, v_sucursal_corp, 'Menu Corp');
+
+  FOR i IN 1..6 LOOP
+    v_cust_corp := gen_random_uuid();
+    INSERT INTO public.customers (id, tenant_id, name)
+    VALUES (v_cust_corp, v_tenant_corp, 'Corp Cust ' || i);
+
+    INSERT INTO public.menu_links (tenant_id, sucursal_id, menu_id, label, link_type, customer_id, enabled)
+    VALUES (v_tenant_corp, v_sucursal_corp, v_menu_corp, 'Corp Link ' || i, 'company', v_cust_corp, true)
+    RETURNING id INTO v_link_corp;
+  END LOOP;
+
+  -- 7th company link insert raises LINK_LIMIT_REACHED
+  v_cust_corp := gen_random_uuid();
+  INSERT INTO public.customers (id, tenant_id, name)
+  VALUES (v_cust_corp, v_tenant_corp, 'Corp Cust 7');
+
+  BEGIN
+    INSERT INTO public.menu_links (tenant_id, sucursal_id, menu_id, label, link_type, customer_id, enabled)
+    VALUES (v_tenant_corp, v_sucursal_corp, v_menu_corp, 'Corp Link 7', 'company', v_cust_corp, true);
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'LINK_LIMIT_REACHED' THEN
+      v_caught_limit_corp := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_limit_corp, '7th company link on corporativo must raise LINK_LIMIT_REACHED');
+END $$;
+
+-- ============================================================
+-- C-T4 & C-T5: Employee Roster and Credit Limit Tests
+-- ============================================================
+\i supabase/migrations/20261101110000_roster_and_credit_limit.sql
+
+-- Test C-T4.1: Roster matching, canonical name, inactive rejection, and plan check
+DO $$
+DECLARE
+  v_tenant_corp uuid := gen_random_uuid();
+  v_sucursal_corp uuid := gen_random_uuid();
+  v_menu_corp uuid := gen_random_uuid();
+  v_plato_id int;
+  v_cust_corp uuid := gen_random_uuid();
+  v_link_roster uuid := gen_random_uuid();
+  v_token_roster text;
+  v_res jsonb;
+  v_order_id uuid;
+  v_emp_name text;
+  v_caught_inactive boolean := false;
+  v_caught_unauth boolean := false;
+  v_caught_anon boolean := false;
+
+  v_tenant_emp uuid := gen_random_uuid();
+  v_sucursal_emp uuid := gen_random_uuid();
+  v_menu_emp uuid := gen_random_uuid();
+  v_cust_emp uuid := gen_random_uuid();
+  v_link_emp uuid := gen_random_uuid();
+  v_token_emp text;
+  v_plato_emp_id int;
+BEGIN
+  -- Setup Corporativo Tenant
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
+  VALUES (v_tenant_corp, 'Tenant Corp Roster', 'corporativo', true);
+
+  INSERT INTO public.sucursales (id, tenant_id)
+  VALUES (v_sucursal_corp, v_tenant_corp);
+
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at)
+  VALUES (v_tenant_corp, v_sucursal_corp, now(), NULL);
+
+  INSERT INTO public.menus (id, tenant_id, sucursal_id, name)
+  VALUES (v_menu_corp, v_tenant_corp, v_sucursal_corp, 'Menu Corp Roster');
+
+  INSERT INTO public.platos (nombre, precio, categoria, disponible, tenant_id, sucursal_id)
+  VALUES ('Mofongo Corp', 350.00, 'Platos', true, v_tenant_corp, v_sucursal_corp)
+  RETURNING id INTO v_plato_id;
+
+  INSERT INTO public.menu_items (tenant_id, menu_id, plato_id, weekdays)
+  VALUES (v_tenant_corp, v_menu_corp, v_plato_id, ARRAY[1,2,3,4,5,6,7]);
+
+  INSERT INTO public.customers (id, tenant_id, name)
+  VALUES (v_cust_corp, v_tenant_corp, 'Empresa Roster SRL');
+
+  -- Create company link with require_roster = true
+  INSERT INTO public.menu_links (id, tenant_id, sucursal_id, menu_id, label, link_type, customer_id, enabled, require_roster)
+  VALUES (v_link_roster, v_tenant_corp, v_sucursal_corp, v_menu_corp, 'Link Roster Corp', 'company', v_cust_corp, true, true)
+  RETURNING token INTO v_token_roster;
+
+  -- Verify get_menu_by_link returns require_roster = true and does NOT return roster contents
+  v_res := public.get_menu_by_link(v_token_roster);
+  PERFORM test_assert((v_res->>'require_roster')::boolean IS TRUE, 'get_menu_by_link must return require_roster = true');
+  PERFORM test_assert(NOT (v_res ? 'employees'), 'get_menu_by_link must NEVER expose roster contents');
+
+  -- Insert employees in roster
+  INSERT INTO public.menu_link_employees (tenant_id, menu_link_id, full_name, document_id, active)
+  VALUES (v_tenant_corp, v_link_roster, 'Juan Pérez Rodríguez', '40212345678', true);
+
+  INSERT INTO public.menu_link_employees (tenant_id, menu_link_id, full_name, document_id, active)
+  VALUES (v_tenant_corp, v_link_roster, 'José Ángel Peña', NULL, true);
+
+  INSERT INTO public.menu_link_employees (tenant_id, menu_link_id, full_name, document_id, active)
+  VALUES (v_tenant_corp, v_link_roster, 'María de los Ángeles', '00198765432', true);
+
+  INSERT INTO public.menu_link_employees (tenant_id, menu_link_id, full_name, document_id, active)
+  VALUES (v_tenant_corp, v_link_roster, 'Roberto Inactivo', '40200000000', false);
+
+  -- 1. Match by cédula with dashes typed ('402-1234567-8') -> matches Juan Pérez Rodríguez and stores canonical name
+  v_res := public.create_order_by_link(
+    v_token_roster,
+    '402-1234567-8',
+    'Nota 1',
+    jsonb_build_array(jsonb_build_object('plato_id', v_plato_id, 'quantity', 1))
+  );
+  v_order_id := (v_res->>'order_id')::uuid;
+  SELECT employee_name INTO v_emp_name FROM public.digital_orders WHERE id = v_order_id;
+  PERFORM test_assert(v_emp_name = 'Juan Pérez Rodríguez', 'Order matched by cedula must store canonical full_name');
+
+  -- 2. Match by name with accents, lowercase, extra spaces ('  jose   angel   pena  ') -> matches José Ángel Peña
+  v_res := public.create_order_by_link(
+    v_token_roster,
+    '  jose   angel   pena  ',
+    'Nota 2',
+    jsonb_build_array(jsonb_build_object('plato_id', v_plato_id, 'quantity', 1))
+  );
+  v_order_id := (v_res->>'order_id')::uuid;
+  SELECT employee_name INTO v_emp_name FROM public.digital_orders WHERE id = v_order_id;
+  PERFORM test_assert(v_emp_name = 'José Ángel Peña', 'Order matched by normalized name must store canonical full_name');
+
+  -- 3. Match by name canonical check: typed 'maria de los angeles' -> stored 'María de los Ángeles'
+  v_res := public.create_order_by_link(
+    v_token_roster,
+    'maria de los angeles',
+    'Nota 3',
+    jsonb_build_array(jsonb_build_object('plato_id', v_plato_id, 'quantity', 1))
+  );
+  v_order_id := (v_res->>'order_id')::uuid;
+  SELECT employee_name INTO v_emp_name FROM public.digital_orders WHERE id = v_order_id;
+  PERFORM test_assert(v_emp_name = 'María de los Ángeles', 'Order must store canonical full_name, not typed variation');
+
+  -- 4. Inactive employee rejected -> raises EMPLOYEE_NOT_AUTHORIZED
+  BEGIN
+    PERFORM public.create_order_by_link(
+      v_token_roster,
+      '402-0000000-0',
+      'Nota Inactivo',
+      jsonb_build_array(jsonb_build_object('plato_id', v_plato_id, 'quantity', 1))
+    );
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'EMPLOYEE_NOT_AUTHORIZED' THEN
+      v_caught_inactive := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_inactive, 'Inactive employee must raise EMPLOYEE_NOT_AUTHORIZED');
+
+  -- 5. Non-existent employee rejected -> raises EMPLOYEE_NOT_AUTHORIZED
+  BEGIN
+    PERFORM public.create_order_by_link(
+      v_token_roster,
+      'Desconocido No Roster',
+      'Nota Desconocido',
+      jsonb_build_array(jsonb_build_object('plato_id', v_plato_id, 'quantity', 1))
+    );
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'EMPLOYEE_NOT_AUTHORIZED' THEN
+      v_caught_unauth := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_unauth, 'Unlisted employee must raise EMPLOYEE_NOT_AUTHORIZED');
+
+  -- 6. require_roster ignored on plan 'empresarial' (treated as false)
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
+  VALUES (v_tenant_emp, 'Tenant Emp Roster', 'empresarial', true);
+
+  INSERT INTO public.sucursales (id, tenant_id)
+  VALUES (v_sucursal_emp, v_tenant_emp);
+
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at)
+  VALUES (v_tenant_emp, v_sucursal_emp, now(), NULL);
+
+  INSERT INTO public.menus (id, tenant_id, sucursal_id, name)
+  VALUES (v_menu_emp, v_tenant_emp, v_sucursal_emp, 'Menu Emp Roster');
+
+  INSERT INTO public.platos (nombre, precio, categoria, disponible, tenant_id, sucursal_id)
+  VALUES ('Chivo Emp', 300.00, 'Platos', true, v_tenant_emp, v_sucursal_emp)
+  RETURNING id INTO v_plato_emp_id;
+
+  INSERT INTO public.menu_items (tenant_id, menu_id, plato_id, weekdays)
+  VALUES (v_tenant_emp, v_menu_emp, v_plato_emp_id, ARRAY[1,2,3,4,5,6,7]);
+
+  INSERT INTO public.customers (id, tenant_id, name)
+  VALUES (v_cust_emp, v_tenant_emp, 'Empresa Emp Roster');
+
+  INSERT INTO public.menu_links (id, tenant_id, sucursal_id, menu_id, label, link_type, customer_id, enabled, require_roster)
+  VALUES (v_link_emp, v_tenant_emp, v_sucursal_emp, v_menu_emp, 'Link Emp Roster', 'company', v_cust_emp, true, true)
+  RETURNING token INTO v_token_emp;
+
+  -- On empresarial, any valid employee name passes even though not in roster
+  v_res := public.create_order_by_link(
+    v_token_emp,
+    'Cualquier Empleado',
+    'Nota Emp',
+    jsonb_build_array(jsonb_build_object('plato_id', v_plato_emp_id, 'quantity', 1))
+  );
+  PERFORM test_assert(v_res ? 'order_id', 'On empresarial plan, require_roster must be ignored');
+END $$;
+
+-- Test C-T4.2: anon cannot select menu_link_employees
+DO $$
+DECLARE
+  v_caught_anon boolean := false;
+BEGIN
+  BEGIN
+    SET LOCAL ROLE anon;
+    PERFORM count(*) FROM public.menu_link_employees;
+    RESET ROLE;
+  EXCEPTION WHEN OTHERS THEN
+    RESET ROLE;
+    IF SQLSTATE = '42501' THEN
+      v_caught_anon := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_anon, 'anon cannot select menu_link_employees (must raise 42501 permission denied)');
+END $$;
+
+-- Test C-T5: Credit Limit Enforcement
+DO $$
+DECLARE
+  v_tenant uuid := gen_random_uuid();
+  v_sucursal uuid := gen_random_uuid();
+  v_menu uuid := gen_random_uuid();
+  v_plato_id int;
+  v_cust uuid := gen_random_uuid();
+  v_link uuid := gen_random_uuid();
+  v_token text;
+  v_used numeric;
+  v_res jsonb;
+  v_caught_exceed boolean := false;
+  v_caught_second_exceed boolean := false;
+BEGIN
+  -- Setup Corporativo Tenant & Customer with credit_limit = 500.00
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
+  VALUES (v_tenant, 'Tenant Corp Credit', 'corporativo', true);
+
+  PERFORM set_config('test.tenant', v_tenant::text, true);
+
+  INSERT INTO public.sucursales (id, tenant_id)
+  VALUES (v_sucursal, v_tenant);
+
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at)
+  VALUES (v_tenant, v_sucursal, now(), NULL);
+
+  INSERT INTO public.menus (id, tenant_id, sucursal_id, name)
+  VALUES (v_menu, v_tenant, v_sucursal, 'Menu Corp Credit');
+
+  INSERT INTO public.platos (nombre, precio, categoria, disponible, tenant_id, sucursal_id)
+  VALUES ('Plato Especial', 250.00, 'Platos', true, v_tenant, v_sucursal)
+  RETURNING id INTO v_plato_id;
+
+  INSERT INTO public.menu_items (tenant_id, menu_id, plato_id, weekdays)
+  VALUES (v_tenant, v_menu, v_plato_id, ARRAY[1,2,3,4,5,6,7]);
+
+  INSERT INTO public.customers (id, tenant_id, name, credit_limit)
+  VALUES (v_cust, v_tenant, 'Empresa Credito Limitada', 500.00);
+
+  INSERT INTO public.menu_links (id, tenant_id, sucursal_id, menu_id, label, link_type, customer_id, enabled)
+  VALUES (v_link, v_tenant, v_sucursal, v_menu, 'Link Credito', 'company', v_cust, true)
+  RETURNING token INTO v_token;
+
+  -- 1. Insert accounts receivable (cuentas_cobrar):
+  -- Active pendiente debt: 200 total, 50 paid -> balance 150
+  INSERT INTO public.cuentas_cobrar (tenant_id, sucursal_id, customer_id, monto_total, monto_pagado, fecha_vencimiento, estado)
+  VALUES (v_tenant, v_sucursal, v_cust, 200.00, 50.00, now() + interval '30 days', 'pendiente');
+
+  -- Pagada: 1000 total, 1000 paid -> must be EXCLUDED from used credit
+  INSERT INTO public.cuentas_cobrar (tenant_id, sucursal_id, customer_id, monto_total, monto_pagado, fecha_vencimiento, estado)
+  VALUES (v_tenant, v_sucursal, v_cust, 1000.00, 1000.00, now() + interval '30 days', 'pagada');
+
+  -- Anulada: 800 total, 0 paid -> must be EXCLUDED from used credit
+  INSERT INTO public.cuentas_cobrar (tenant_id, sucursal_id, customer_id, monto_total, monto_pagado, fecha_vencimiento, estado)
+  VALUES (v_tenant, v_sucursal, v_cust, 800.00, 0.00, now() + interval '30 days', 'anulada');
+
+  -- Check company_credit_used = 150.00
+  v_used := public.company_credit_used(v_tenant, v_cust);
+  PERFORM test_assert(v_used = 150.00, 'company_credit_used must equal 150.00 (excluding pagada and anulada)');
+
+  -- 2. Order that exceeds limit raises CREDIT_LIMIT_EXCEEDED
+  -- Used = 150. Limit = 500. Order of 2 items = 500 -> 150 + 500 = 650 > 500 -> raises!
+  BEGIN
+    PERFORM public.create_order_by_link(
+      v_token,
+      'Empleado Prueba',
+      '',
+      jsonb_build_array(jsonb_build_object('plato_id', v_plato_id, 'quantity', 2))
+    );
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'CREDIT_LIMIT_EXCEEDED' THEN
+      v_caught_exceed := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_exceed, 'Order exceeding credit limit must raise CREDIT_LIMIT_EXCEEDED');
+
+  -- 3. Order within limit passes:
+  -- Used = 150. Order of 1 item = 250 -> 150 + 250 = 400 <= 500 -> succeeds!
+  v_res := public.create_order_by_link(
+    v_token,
+    'Empleado Valido',
+    '',
+    jsonb_build_array(jsonb_build_object('plato_id', v_plato_id, 'quantity', 1))
+  );
+  PERFORM test_assert(v_res ? 'order_id', 'Order within credit limit must pass');
+
+  -- 4. Used credit now includes the pending digital order (150 + 250 = 400.00)
+  v_used := public.company_credit_used(v_tenant, v_cust);
+  PERFORM test_assert(v_used = 400.00, 'company_credit_used must include pending digital orders (400.00)');
+
+  -- Second order of 1 item (250) -> 400 + 250 = 650 > 500 -> raises CREDIT_LIMIT_EXCEEDED
+  BEGIN
+    PERFORM public.create_order_by_link(
+      v_token,
+      'Empleado Valido 2',
+      '',
+      jsonb_build_array(jsonb_build_object('plato_id', v_plato_id, 'quantity', 1))
+    );
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'CREDIT_LIMIT_EXCEEDED' THEN
+      v_caught_second_exceed := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_second_exceed, 'Second order that pushes total over limit must raise CREDIT_LIMIT_EXCEEDED');
+
+  -- 5. get_menu_by_link auto-blocks when used >= credit_limit
+  -- Currently used is 400 < 500, menu should still be available
+  v_res := public.get_menu_by_link(v_token);
+  PERFORM test_assert((v_res->>'available')::boolean IS TRUE, 'Menu must be available when used < credit_limit');
+
+  -- Add another 100 debt -> used becomes 400 + 100 = 500.00 >= 500.00
+  INSERT INTO public.cuentas_cobrar (tenant_id, sucursal_id, customer_id, monto_total, monto_pagado, fecha_vencimiento, estado)
+  VALUES (v_tenant, v_sucursal, v_cust, 100.00, 0.00, now() + interval '30 days', 'pendiente');
+
+  v_res := public.get_menu_by_link(v_token);
+  PERFORM test_assert((v_res->>'available')::boolean IS FALSE, 'Menu must be unavailable when used >= credit_limit');
+  PERFORM test_assert(v_res->>'reason' = 'CREDIT_LIMIT_REACHED', 'Reason must be CREDIT_LIMIT_REACHED');
+  PERFORM test_assert(NOT (v_res ? 'credit_limit'), 'get_menu_by_link must not expose credit limit');
+  PERFORM test_assert(NOT (v_res ? 'credit_used'), 'get_menu_by_link must not expose credit used');
+END $$;
+
+-- Test 22: company_credit_used tenant authorization and internal function privilege check
+DO $$
+DECLARE
+  v_tenant_a uuid := gen_random_uuid();
+  v_tenant_b uuid := gen_random_uuid();
+  v_cust_a uuid := gen_random_uuid();
+  v_caught_unauth boolean := false;
+  v_priv_anon boolean;
+  v_priv_auth boolean;
+BEGIN
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
+  VALUES (v_tenant_a, 'Tenant Corp A', 'corporativo', true),
+         (v_tenant_b, 'Tenant Corp B', 'corporativo', true);
+
+  INSERT INTO public.customers (id, tenant_id, name, credit_limit)
+  VALUES (v_cust_a, v_tenant_a, 'Cliente A', 1000.00);
+
+  -- 1. Calling company_credit_used with another tenant's session raises UNAUTHORIZED
+  PERFORM set_config('test.tenant', v_tenant_b::text, true);
+
+  BEGIN
+    PERFORM public.company_credit_used(v_tenant_a, v_cust_a);
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'UNAUTHORIZED' THEN
+      v_caught_unauth := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_unauth, 'Calling company_credit_used with another tenant session must raise UNAUTHORIZED');
+
+  -- 2. Internal function is not executable by authenticated or anon
+  SELECT has_function_privilege('anon', 'public.company_credit_used_internal(uuid, uuid)', 'execute') INTO v_priv_anon;
+  PERFORM test_assert(v_priv_anon IS FALSE, 'company_credit_used_internal must NOT be executable by anon');
+
+  SELECT has_function_privilege('authenticated', 'public.company_credit_used_internal(uuid, uuid)', 'execute') INTO v_priv_auth;
+  PERFORM test_assert(v_priv_auth IS FALSE, 'company_credit_used_internal must NOT be executable by authenticated');
+
+  -- 3. Client wrapper is executable by authenticated, but NOT anon
+  SELECT has_function_privilege('authenticated', 'public.company_credit_used(uuid, uuid)', 'execute') INTO v_priv_auth;
+  PERFORM test_assert(v_priv_auth IS TRUE, 'company_credit_used wrapper must be executable by authenticated');
+
+  SELECT has_function_privilege('anon', 'public.company_credit_used(uuid, uuid)', 'execute') INTO v_priv_anon;
+  PERFORM test_assert(v_priv_anon IS FALSE, 'company_credit_used wrapper must NOT be executable by anon');
+END $$;
+
+-- ============================================================
+-- C-T6: Consolidated e-CF (E31) Invoices Tests
+-- ============================================================
+
+-- Stubs for fiscal pipeline
+CREATE TABLE IF NOT EXISTS public.facturas (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  sucursal_id uuid,
+  customer_id uuid,
+  mesa_numero integer,
+  comanda_ids jsonb,
+  cliente_nombre text,
+  cliente_rnc text,
+  metodo_pago text,
+  estado text,
+  subtotal numeric,
+  itbis numeric,
+  propina numeric,
+  total numeric,
+  moneda text,
+  items jsonb,
+  notas text,
+  creado_por text,
+  fiscal_mode text,
+  ncf text,
+  ncf_tipo text,
+  pagada_at timestamptz,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.ecf_documents (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  factura_id uuid NOT NULL,
+  certificate_metadata_id uuid,
+  ecf_type text NOT NULL,
+  status text NOT NULL DEFAULT 'queued',
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.fiscal_outbox (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  ecf_document_id uuid,
+  factura_id uuid,
+  operation text NOT NULL,
+  status text NOT NULL DEFAULT 'queued',
+  idempotency_key text UNIQUE,
+  attempts integer DEFAULT 0,
+  next_attempt_at timestamptz DEFAULT now(),
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.ecf_certificate_metadata (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id uuid NOT NULL,
+  environment text NOT NULL DEFAULT 'test',
+  is_ready boolean NOT NULL DEFAULT true,
+  valid_until timestamptz DEFAULT now() + interval '1 year',
+  created_at timestamptz DEFAULT now()
+);
+
+ALTER TABLE public.tenants ADD COLUMN IF NOT EXISTS itbis_incluido_en_precio boolean DEFAULT false;
+ALTER TABLE public.tenants ADD COLUMN IF NOT EXISTS ecf_environment text DEFAULT 'test';
+
+CREATE OR REPLACE FUNCTION public.cloudix_auth_user_id()
+RETURNS uuid
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT COALESCE(
+    NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid,
+    NULLIF(current_setting('test.user_id', true), '')::uuid,
+    '00000000-0000-0000-0000-000000000001'::uuid
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.cloudix_reserve_ecf(p_tenant_id uuid, p_ncf_tipo text)
+RETURNS TABLE(ncf_fiscal_activo boolean, ncf_tipo_codigo text, seq_reserved integer)
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_seq integer;
+BEGIN
+  SELECT COALESCE(MAX(substring(ncf from 4)::integer), 0) + 1
+  INTO v_seq
+  FROM public.facturas
+  WHERE tenant_id = p_tenant_id AND ncf LIKE (p_ncf_tipo || '%');
+
+  RETURN QUERY SELECT true, p_ncf_tipo, v_seq;
+END;
+$$;
+
+-- Include consolidated invoice migration
+\i supabase/migrations/20261101120000_consolidated_invoice.sql
+
+-- Test 23: Issue links all eligible CxC rows, sets factura_id, creates facturas, ecf_documents and fiscal_outbox
+DO $$
+DECLARE
+  v_tenant uuid := gen_random_uuid();
+  v_sucursal uuid := gen_random_uuid();
+  v_cust uuid := gen_random_uuid();
+  v_ord1 uuid := gen_random_uuid();
+  v_ord2 uuid := gen_random_uuid();
+  v_cxc1 uuid := gen_random_uuid();
+  v_cxc2 uuid := gen_random_uuid();
+  v_res jsonb;
+  v_factura_id uuid;
+  v_factura public.facturas%ROWTYPE;
+  v_ecf public.ecf_documents%ROWTYPE;
+  v_outbox public.fiscal_outbox%ROWTYPE;
+  v_cxc_check1 public.cuentas_cobrar%ROWTYPE;
+  v_cxc_check2 public.cuentas_cobrar%ROWTYPE;
+  v_today date := (now() AT TIME ZONE 'America/Santo_Domingo')::date;
+BEGIN
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa, itbis_incluido_en_precio)
+  VALUES (v_tenant, 'Corp Restaurant 1', 'corporativo', true, true);
+  INSERT INTO public.sucursales (id, tenant_id) VALUES (v_sucursal, v_tenant);
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at) VALUES (v_tenant, v_sucursal, now(), NULL);
+  INSERT INTO public.customers (id, tenant_id, name, document_id)
+  VALUES (v_cust, v_tenant, 'Acme Dominicana SRL', '131-12345-1'); -- 9 digits
+
+  -- Create two digital orders & CxC rows
+  INSERT INTO public.digital_orders (id, tenant_id, sucursal_id, customer_name, status, total, numero_pedido, employee_name, created_at)
+  VALUES (v_ord1, v_tenant, v_sucursal, 'Acme Emp 1', 'accepted', 500.00, 101, 'Pedro Perez', now()),
+         (v_ord2, v_tenant, v_sucursal, 'Acme Emp 2', 'accepted', 300.00, 102, 'Maria Gomez', now());
+
+  INSERT INTO public.cuentas_cobrar (id, tenant_id, sucursal_id, customer_id, digital_order_id, monto_total, monto_pagado, fecha_vencimiento, estado)
+  VALUES (v_cxc1, v_tenant, v_sucursal, v_cust, v_ord1, 500.00, 0.00, now() + interval '30 days', 'pendiente'),
+         (v_cxc2, v_tenant, v_sucursal, v_cust, v_ord2, 300.00, 0.00, now() + interval '30 days', 'pendiente');
+
+  PERFORM set_config('test.tenant', v_tenant::text, true);
+
+  -- Preview test
+  v_res := public.cloudix_preview_consolidated_invoice(v_cust, v_today - 5, v_today + 5, v_sucursal);
+  PERFORM test_assert((v_res->>'count')::int = 2, 'Preview count must be 2');
+  PERFORM test_assert((v_res->'customer'->>'rnc_valid')::boolean IS TRUE, 'Preview customer RNC must be valid');
+  PERFORM test_assert(v_res->>'blocked_reason' IS NULL, 'Preview blocked_reason must be NULL when eligible');
+
+  -- Issue test
+  v_res := public.cloudix_issue_consolidated_invoice(v_cust, v_today - 5, v_today + 5, v_sucursal);
+  v_factura_id := (v_res->>'factura_id')::uuid;
+  PERFORM test_assert(v_factura_id IS NOT NULL, 'Issued factura_id must not be null');
+  PERFORM test_assert(v_res->>'ncf' LIKE 'E31%', 'NCF must start with E31');
+  PERFORM test_assert((v_res->>'count')::int = 2, 'Issued count must be 2');
+
+  -- Verify CxC rows have factura_id linked
+  SELECT * INTO v_cxc_check1 FROM public.cuentas_cobrar WHERE id = v_cxc1;
+  SELECT * INTO v_cxc_check2 FROM public.cuentas_cobrar WHERE id = v_cxc2;
+  PERFORM test_assert(v_cxc_check1.factura_id = v_factura_id, 'cxc1 factura_id must be set');
+  PERFORM test_assert(v_cxc_check2.factura_id = v_factura_id, 'cxc2 factura_id must be set');
+  PERFORM test_assert(v_cxc_check1.monto_total = 500.00, 'cxc1 amount must not change');
+  PERFORM test_assert(v_cxc_check2.monto_total = 300.00, 'cxc2 amount must not change');
+
+  -- Verify factura row
+  SELECT * INTO v_factura FROM public.facturas WHERE id = v_factura_id;
+  PERFORM test_assert(v_factura.fiscal_mode = 'dgii_ecf', 'factura fiscal_mode must be dgii_ecf');
+  PERFORM test_assert(v_factura.ncf_tipo = 'E31', 'factura ncf_tipo must be E31');
+  PERFORM test_assert(v_factura.metodo_pago = 'fiado', 'factura metodo_pago must be fiado');
+  PERFORM test_assert(v_factura.estado = 'pendiente', 'factura estado must be pendiente');
+  PERFORM test_assert(v_factura.cliente_rnc = '131123451', 'factura cliente_rnc must be digits-only');
+  PERFORM test_assert(v_factura.cliente_nombre = 'Acme Dominicana SRL', 'factura cliente_nombre must match');
+  PERFORM test_assert(cardinality(v_factura.consolidated_cxc_ids) = 2, 'factura consolidated_cxc_ids must have 2 ids');
+
+  -- Verify ecf_documents and fiscal_outbox rows
+  SELECT * INTO v_ecf FROM public.ecf_documents WHERE factura_id = v_factura_id;
+  PERFORM test_assert(v_ecf.ecf_type = '31', 'ecf_documents ecf_type must be 31');
+  PERFORM test_assert(v_ecf.status = 'queued', 'ecf_documents status must be queued');
+
+  SELECT * INTO v_outbox FROM public.fiscal_outbox WHERE factura_id = v_factura_id;
+  PERFORM test_assert(v_outbox.operation = 'submit', 'fiscal_outbox operation must be submit');
+  PERFORM test_assert(v_outbox.status = 'queued', 'fiscal_outbox status must be queued');
+  PERFORM test_assert(v_outbox.idempotency_key = v_tenant::text || ':' || v_factura_id::text || ':submit', 'fiscal_outbox idempotency key must match');
+END $$;
+
+-- Test 24: Second issue for the same range -> NOTHING_TO_INVOICE (no double invoicing)
+DO $$
+DECLARE
+  v_tenant uuid := gen_random_uuid();
+  v_sucursal uuid := gen_random_uuid();
+  v_cust uuid := gen_random_uuid();
+  v_ord uuid := gen_random_uuid();
+  v_cxc uuid := gen_random_uuid();
+  v_today date := (now() AT TIME ZONE 'America/Santo_Domingo')::date;
+  v_caught_nothing boolean := false;
+BEGIN
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa, itbis_incluido_en_precio)
+  VALUES (v_tenant, 'Corp Restaurant 2', 'corporativo', true, true);
+  INSERT INTO public.sucursales (id, tenant_id) VALUES (v_sucursal, v_tenant);
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at) VALUES (v_tenant, v_sucursal, now(), NULL);
+  INSERT INTO public.customers (id, tenant_id, name, document_id)
+  VALUES (v_cust, v_tenant, 'Beta Corp', '101-00000-1');
+
+  INSERT INTO public.digital_orders (id, tenant_id, sucursal_id, customer_name, status, total, numero_pedido, employee_name, created_at)
+  VALUES (v_ord, v_tenant, v_sucursal, 'Emp', 'accepted', 200.00, 201, 'Ana', now());
+
+  INSERT INTO public.cuentas_cobrar (id, tenant_id, sucursal_id, customer_id, digital_order_id, monto_total, monto_pagado, fecha_vencimiento, estado)
+  VALUES (v_cxc, v_tenant, v_sucursal, v_cust, v_ord, 200.00, 0.00, now() + interval '30 days', 'pendiente');
+
+  PERFORM set_config('test.tenant', v_tenant::text, true);
+
+  -- First issue succeeds
+  PERFORM public.cloudix_issue_consolidated_invoice(v_cust, v_today - 1, v_today + 1, v_sucursal);
+
+  -- Second issue must raise NOTHING_TO_INVOICE
+  BEGIN
+    PERFORM public.cloudix_issue_consolidated_invoice(v_cust, v_today - 1, v_today + 1, v_sucursal);
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'NOTHING_TO_INVOICE' THEN
+      v_caught_nothing := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_nothing, 'Second issue on already-invoiced range must raise NOTHING_TO_INVOICE');
+END $$;
+
+-- Test 25: Rows with payments or anulada are excluded
+DO $$
+DECLARE
+  v_tenant uuid := gen_random_uuid();
+  v_sucursal uuid := gen_random_uuid();
+  v_cust uuid := gen_random_uuid();
+  v_ord1 uuid := gen_random_uuid();
+  v_ord2 uuid := gen_random_uuid();
+  v_ord3 uuid := gen_random_uuid();
+  v_cxc1 uuid := gen_random_uuid();
+  v_cxc2 uuid := gen_random_uuid();
+  v_cxc3 uuid := gen_random_uuid();
+  v_today date := (now() AT TIME ZONE 'America/Santo_Domingo')::date;
+  v_res jsonb;
+BEGIN
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa, itbis_incluido_en_precio)
+  VALUES (v_tenant, 'Corp Restaurant 3', 'corporativo', true, true);
+  INSERT INTO public.sucursales (id, tenant_id) VALUES (v_sucursal, v_tenant);
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at) VALUES (v_tenant, v_sucursal, now(), NULL);
+  INSERT INTO public.customers (id, tenant_id, name, document_id)
+  VALUES (v_cust, v_tenant, 'Gamma Corp', '101-00000-2');
+
+  INSERT INTO public.digital_orders (id, tenant_id, sucursal_id, customer_name, status, total, numero_pedido, employee_name, created_at)
+  VALUES (v_ord1, v_tenant, v_sucursal, 'Emp 1', 'accepted', 100.00, 301, 'Carlos', now()),
+         (v_ord2, v_tenant, v_sucursal, 'Emp 2', 'accepted', 200.00, 302, 'David', now()),
+         (v_ord3, v_tenant, v_sucursal, 'Emp 3', 'accepted', 300.00, 303, 'Elena', now());
+
+  -- cxc1: eligible
+  INSERT INTO public.cuentas_cobrar (id, tenant_id, sucursal_id, customer_id, digital_order_id, monto_total, monto_pagado, fecha_vencimiento, estado)
+  VALUES (v_cxc1, v_tenant, v_sucursal, v_cust, v_ord1, 100.00, 0.00, now() + interval '30 days', 'pendiente');
+
+  -- cxc2: has payment -> excluded
+  INSERT INTO public.cuentas_cobrar (id, tenant_id, sucursal_id, customer_id, digital_order_id, monto_total, monto_pagado, fecha_vencimiento, estado)
+  VALUES (v_cxc2, v_tenant, v_sucursal, v_cust, v_ord2, 200.00, 50.00, now() + interval '30 days', 'parcial');
+
+  -- cxc3: anulada -> excluded
+  INSERT INTO public.cuentas_cobrar (id, tenant_id, sucursal_id, customer_id, digital_order_id, monto_total, monto_pagado, fecha_vencimiento, estado)
+  VALUES (v_cxc3, v_tenant, v_sucursal, v_cust, v_ord3, 300.00, 0.00, now() + interval '30 days', 'anulada');
+
+  PERFORM set_config('test.tenant', v_tenant::text, true);
+
+  v_res := public.cloudix_issue_consolidated_invoice(v_cust, v_today - 1, v_today + 1, v_sucursal);
+  PERFORM test_assert((v_res->>'count')::int = 1, 'Only cxc1 must be invoiced (count=1)');
+
+  -- Verify cxc2 and cxc3 still have factura_id null
+  PERFORM test_assert((SELECT factura_id FROM public.cuentas_cobrar WHERE id = v_cxc2) IS NULL, 'cxc with payments must remain uninvoiced');
+  PERFORM test_assert((SELECT factura_id FROM public.cuentas_cobrar WHERE id = v_cxc3) IS NULL, 'cxc anulada must remain uninvoiced');
+END $$;
+
+-- Test 26: Invalid RNC -> BUYER_RNC_INVALID
+DO $$
+DECLARE
+  v_tenant uuid := gen_random_uuid();
+  v_sucursal uuid := gen_random_uuid();
+  v_cust uuid := gen_random_uuid();
+  v_ord uuid := gen_random_uuid();
+  v_cxc uuid := gen_random_uuid();
+  v_today date := (now() AT TIME ZONE 'America/Santo_Domingo')::date;
+  v_caught_rnc boolean := false;
+  v_preview jsonb;
+BEGIN
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa, itbis_incluido_en_precio)
+  VALUES (v_tenant, 'Corp Restaurant 4', 'corporativo', true, true);
+  INSERT INTO public.sucursales (id, tenant_id) VALUES (v_sucursal, v_tenant);
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at) VALUES (v_tenant, v_sucursal, now(), NULL);
+  INSERT INTO public.customers (id, tenant_id, name, document_id)
+  VALUES (v_cust, v_tenant, 'Delta Corp', '12345'); -- Invalid: only 5 digits
+
+  INSERT INTO public.digital_orders (id, tenant_id, sucursal_id, customer_name, status, total, numero_pedido, employee_name, created_at)
+  VALUES (v_ord, v_tenant, v_sucursal, 'Emp', 'accepted', 100.00, 401, 'Fran', now());
+
+  INSERT INTO public.cuentas_cobrar (id, tenant_id, sucursal_id, customer_id, digital_order_id, monto_total, monto_pagado, fecha_vencimiento, estado)
+  VALUES (v_cxc, v_tenant, v_sucursal, v_cust, v_ord, 100.00, 0.00, now() + interval '30 days', 'pendiente');
+
+  PERFORM set_config('test.tenant', v_tenant::text, true);
+
+  -- Preview reports rnc_valid = false and blocked_reason = BUYER_RNC_INVALID
+  v_preview := public.cloudix_preview_consolidated_invoice(v_cust, v_today - 1, v_today + 1, v_sucursal);
+  PERFORM test_assert((v_preview->'customer'->>'rnc_valid')::boolean IS FALSE, 'Preview must flag invalid RNC');
+  PERFORM test_assert(v_preview->>'blocked_reason' = 'BUYER_RNC_INVALID', 'Preview blocked_reason must be BUYER_RNC_INVALID');
+
+  -- Issue raises BUYER_RNC_INVALID
+  BEGIN
+    PERFORM public.cloudix_issue_consolidated_invoice(v_cust, v_today - 1, v_today + 1, v_sucursal);
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'BUYER_RNC_INVALID' THEN
+      v_caught_rnc := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_rnc, 'Invalid RNC must raise BUYER_RNC_INVALID');
+END $$;
+
+-- Test 27: Empresarial tenant -> PLAN_REQUIRED
+DO $$
+DECLARE
+  v_tenant uuid := gen_random_uuid();
+  v_sucursal uuid := gen_random_uuid();
+  v_cust uuid := gen_random_uuid();
+  v_ord uuid := gen_random_uuid();
+  v_cxc uuid := gen_random_uuid();
+  v_today date := (now() AT TIME ZONE 'America/Santo_Domingo')::date;
+  v_caught_plan boolean := false;
+  v_preview jsonb;
+BEGIN
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
+  VALUES (v_tenant, 'Empresarial Restaurant', 'empresarial', true);
+  INSERT INTO public.sucursales (id, tenant_id) VALUES (v_sucursal, v_tenant);
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at) VALUES (v_tenant, v_sucursal, now(), NULL);
+  INSERT INTO public.customers (id, tenant_id, name, document_id)
+  VALUES (v_cust, v_tenant, 'Epsilon Corp', '131-12345-1');
+
+  INSERT INTO public.digital_orders (id, tenant_id, sucursal_id, customer_name, status, total, numero_pedido, employee_name, created_at)
+  VALUES (v_ord, v_tenant, v_sucursal, 'Emp', 'accepted', 150.00, 501, 'Gaby', now());
+
+  INSERT INTO public.cuentas_cobrar (id, tenant_id, sucursal_id, customer_id, digital_order_id, monto_total, monto_pagado, fecha_vencimiento, estado)
+  VALUES (v_cxc, v_tenant, v_sucursal, v_cust, v_ord, 150.00, 0.00, now() + interval '30 days', 'pendiente');
+
+  PERFORM set_config('test.tenant', v_tenant::text, true);
+
+  -- Preview reports blocked_reason = PLAN_REQUIRED
+  v_preview := public.cloudix_preview_consolidated_invoice(v_cust, v_today - 1, v_today + 1, v_sucursal);
+  PERFORM test_assert(v_preview->>'blocked_reason' = 'PLAN_REQUIRED', 'Preview blocked_reason must be PLAN_REQUIRED for non-corporativo');
+
+  -- Issue raises PLAN_REQUIRED
+  BEGIN
+    PERFORM public.cloudix_issue_consolidated_invoice(v_cust, v_today - 1, v_today + 1, v_sucursal);
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'PLAN_REQUIRED' THEN
+      v_caught_plan := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_plan, 'Empresarial tenant must raise PLAN_REQUIRED');
+END $$;
+
+-- Test 28: Cancel item or revert accept on invoiced order -> ORDER_ALREADY_INVOICED
+DO $$
+DECLARE
+  v_tenant uuid := gen_random_uuid();
+  v_sucursal uuid := gen_random_uuid();
+  v_cust uuid := gen_random_uuid();
+  v_ord uuid := gen_random_uuid();
+  v_item uuid := gen_random_uuid();
+  v_cxc uuid := gen_random_uuid();
+  v_today date := (now() AT TIME ZONE 'America/Santo_Domingo')::date;
+  v_caught_cancel boolean := false;
+  v_caught_revert boolean := false;
+BEGIN
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa, itbis_incluido_en_precio)
+  VALUES (v_tenant, 'Corp Restaurant 5', 'corporativo', true, true);
+  INSERT INTO public.sucursales (id, tenant_id) VALUES (v_sucursal, v_tenant);
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at) VALUES (v_tenant, v_sucursal, now(), NULL);
+  INSERT INTO public.customers (id, tenant_id, name, document_id)
+  VALUES (v_cust, v_tenant, 'Zeta Corp', '131-98765-4');
+
+  INSERT INTO public.digital_orders (id, tenant_id, sucursal_id, customer_name, status, total, numero_pedido, employee_name, created_at)
+  VALUES (v_ord, v_tenant, v_sucursal, 'Emp', 'accepted', 120.00, 601, 'Hector', now());
+
+  INSERT INTO public.digital_order_items (id, tenant_id, order_id, plato_id, name_snapshot, price_snapshot, quantity, subtotal, status)
+  VALUES (v_item, v_tenant, v_ord, 1, 'Plato Test', 120.00, 1, 120.00, 'active');
+
+  INSERT INTO public.cuentas_cobrar (id, tenant_id, sucursal_id, customer_id, digital_order_id, monto_total, monto_pagado, fecha_vencimiento, estado)
+  VALUES (v_cxc, v_tenant, v_sucursal, v_cust, v_ord, 120.00, 0.00, now() + interval '30 days', 'pendiente');
+
+  PERFORM set_config('test.tenant', v_tenant::text, true);
+
+  -- Issue the invoice
+  PERFORM public.cloudix_issue_consolidated_invoice(v_cust, v_today - 1, v_today + 1, v_sucursal);
+
+  -- Canceling item must raise ORDER_ALREADY_INVOICED
+  BEGIN
+    PERFORM public.cancel_digital_order_item(v_item);
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'ORDER_ALREADY_INVOICED' THEN
+      v_caught_cancel := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_cancel, 'cancel_digital_order_item on invoiced order must raise ORDER_ALREADY_INVOICED');
+
+  -- Reverting accept must raise ORDER_ALREADY_INVOICED
+  BEGIN
+    PERFORM public.revert_company_digital_order_accept(v_ord);
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'ORDER_ALREADY_INVOICED' THEN
+      v_caught_revert := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_revert, 'revert_company_digital_order_accept on invoiced order must raise ORDER_ALREADY_INVOICED');
+END $$;
+
+-- Test 29: Non-included blocked from consolidated invoice; included tenant totals balance
+DO $$
+DECLARE
+  v_tenant_excl uuid := gen_random_uuid();
+  v_tenant_incl uuid := gen_random_uuid();
+  v_sucursal_excl uuid := gen_random_uuid();
+  v_sucursal_incl uuid := gen_random_uuid();
+  v_cust_excl uuid := gen_random_uuid();
+  v_cust_incl uuid := gen_random_uuid();
+  v_ord_excl uuid := gen_random_uuid();
+  v_ord_incl uuid := gen_random_uuid();
+  v_cxc_excl uuid := gen_random_uuid();
+  v_cxc_incl uuid := gen_random_uuid();
+  v_today date := (now() AT TIME ZONE 'America/Santo_Domingo')::date;
+  v_res_excl jsonb;
+  v_res_incl jsonb;
+  v_fact_incl public.facturas%ROWTYPE;
+  v_caught_excl boolean := false;
+  v_fact_count_excl integer;
+  v_outbox_count_excl integer;
+  v_ecf_count_excl integer;
+  v_sum_cxc_incl numeric;
+BEGIN
+  -- 1. Non-included tenant: preview blocked_reason ITBIS_NOT_INCLUDED_UNSUPPORTED,
+  -- issue raises it with NO ncf reserved and NO factura inserted
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa, itbis_incluido_en_precio)
+  VALUES (v_tenant_excl, 'Exclusive ITBIS Restaurant', 'corporativo', true, false);
+  INSERT INTO public.sucursales (id, tenant_id) VALUES (v_sucursal_excl, v_tenant_excl);
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at) VALUES (v_tenant_excl, v_sucursal_excl, now(), NULL);
+  INSERT INTO public.customers (id, tenant_id, name, document_id)
+  VALUES (v_cust_excl, v_tenant_excl, 'Client Excl', '131-00001-1');
+
+  INSERT INTO public.digital_orders (id, tenant_id, sucursal_id, customer_name, status, total, numero_pedido, employee_name, created_at)
+  VALUES (v_ord_excl, v_tenant_excl, v_sucursal_excl, 'Emp Excl', 'accepted', 1000.00, 701, 'Ivan', now());
+  INSERT INTO public.cuentas_cobrar (id, tenant_id, sucursal_id, customer_id, digital_order_id, monto_total, monto_pagado, fecha_vencimiento, estado)
+  VALUES (v_cxc_excl, v_tenant_excl, v_sucursal_excl, v_cust_excl, v_ord_excl, 1000.00, 0.00, now() + interval '30 days', 'pendiente');
+
+  PERFORM set_config('test.tenant', v_tenant_excl::text, true);
+
+  -- Preview verification
+  v_res_excl := public.cloudix_preview_consolidated_invoice(v_cust_excl, v_today - 1, v_today + 1, v_sucursal_excl);
+  PERFORM test_assert(v_res_excl->>'blocked_reason' = 'ITBIS_NOT_INCLUDED_UNSUPPORTED', 'Excl preview blocked_reason must be ITBIS_NOT_INCLUDED_UNSUPPORTED');
+  PERFORM test_assert((v_res_excl->>'total')::numeric = 1000.00, 'Excl preview total must equal orders total');
+  PERFORM test_assert(v_res_excl->>'itbis' IS NULL, 'Excl preview itbis must be null');
+  PERFORM test_assert((v_res_excl->>'count')::int = 1, 'Excl preview count must be 1');
+
+  -- Issue raises ITBIS_NOT_INCLUDED_UNSUPPORTED
+  BEGIN
+    PERFORM public.cloudix_issue_consolidated_invoice(v_cust_excl, v_today - 1, v_today + 1, v_sucursal_excl);
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'ITBIS_NOT_INCLUDED_UNSUPPORTED' THEN
+      v_caught_excl := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_excl, 'Excl issue must raise ITBIS_NOT_INCLUDED_UNSUPPORTED');
+
+  -- Verify NO factura inserted, NO ecf documents, NO outbox (no NCF reserved)
+  SELECT count(*) INTO v_fact_count_excl FROM public.facturas WHERE tenant_id = v_tenant_excl;
+  SELECT count(*) INTO v_ecf_count_excl FROM public.ecf_documents WHERE tenant_id = v_tenant_excl;
+  SELECT count(*) INTO v_outbox_count_excl FROM public.fiscal_outbox WHERE tenant_id = v_tenant_excl;
+  PERFORM test_assert(v_fact_count_excl = 0, 'No factura must be inserted for non-included tenant');
+  PERFORM test_assert(v_ecf_count_excl = 0, 'No ecf_document must be created for non-included tenant');
+  PERFORM test_assert(v_outbox_count_excl = 0, 'No fiscal_outbox row must be created for non-included tenant');
+
+  -- CxC row must remain uninvoiced
+  PERFORM test_assert((SELECT factura_id FROM public.cuentas_cobrar WHERE id = v_cxc_excl) IS NULL, 'cxc_excl factura_id must remain null');
+
+  -- 2. ITBIS included tenant: prices are gross, base is split from total
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa, itbis_incluido_en_precio)
+  VALUES (v_tenant_incl, 'Inclusive ITBIS Restaurant', 'corporativo', true, true);
+  INSERT INTO public.sucursales (id, tenant_id) VALUES (v_sucursal_incl, v_tenant_incl);
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at) VALUES (v_tenant_incl, v_sucursal_incl, now(), NULL);
+  INSERT INTO public.customers (id, tenant_id, name, document_id)
+  VALUES (v_cust_incl, v_tenant_incl, 'Client Incl', '131-00002-2');
+
+  INSERT INTO public.digital_orders (id, tenant_id, sucursal_id, customer_name, status, total, numero_pedido, employee_name, created_at)
+  VALUES (v_ord_incl, v_tenant_incl, v_sucursal_incl, 'Emp Incl', 'accepted', 1180.00, 702, 'Julia', now());
+  INSERT INTO public.cuentas_cobrar (id, tenant_id, sucursal_id, customer_id, digital_order_id, monto_total, monto_pagado, fecha_vencimiento, estado)
+  VALUES (v_cxc_incl, v_tenant_incl, v_sucursal_incl, v_cust_incl, v_ord_incl, 1180.00, 0.00, now() + interval '30 days', 'pendiente');
+
+  SELECT COALESCE(SUM(monto_total), 0) INTO v_sum_cxc_incl
+  FROM public.cuentas_cobrar
+  WHERE id = v_cxc_incl;
+
+  PERFORM set_config('test.tenant', v_tenant_incl::text, true);
+  v_res_incl := public.cloudix_issue_consolidated_invoice(v_cust_incl, v_today - 1, v_today + 1, v_sucursal_incl);
+  SELECT * INTO v_fact_incl FROM public.facturas WHERE id = (v_res_incl->>'factura_id')::uuid;
+
+  PERFORM test_assert(v_fact_incl.total = v_sum_cxc_incl, 'Incl factura total must equal sum of linked CxC monto_total');
+  PERFORM test_assert(v_fact_incl.total = 1180.00, 'Incl total must be 1180.00');
+  PERFORM test_assert(v_fact_incl.subtotal = 1000.00, 'Incl subtotal must be 1000.00');
+  PERFORM test_assert(v_fact_incl.itbis = 180.00, 'Incl itbis must be 180.00');
+  PERFORM test_assert(round(v_fact_incl.subtotal + v_fact_incl.itbis, 2) = v_fact_incl.total, 'Incl subtotal + itbis must equal total');
+END $$;
+
+-- ============================================================
+-- Tests: Menus Closed Without Open Operational Cycle
+-- ============================================================
+
+-- Test 30: When all cycles are closed (or none exist), create_order_by_link raises RESTAURANT_CLOSED
+DO $$
+DECLARE
+  v_tenant_id   uuid := gen_random_uuid();
+  v_sucursal_id uuid := gen_random_uuid();
+  v_menu_id     uuid := gen_random_uuid();
+  v_cust_id     uuid := gen_random_uuid();
+  v_plato_id    int;
+  v_token       text;
+  v_status      jsonb;
+  v_caught_closed boolean := false;
+BEGIN
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
+  VALUES (v_tenant_id, 'Restaurante Cerrado', 'corporativo', true);
+
+  INSERT INTO public.sucursales (id, tenant_id)
+  VALUES (v_sucursal_id, v_tenant_id);
+
+  INSERT INTO public.menus (id, tenant_id, sucursal_id, name)
+  VALUES (v_menu_id, v_tenant_id, v_sucursal_id, 'Menu Cerrado');
+
+  INSERT INTO public.platos (nombre, precio, disponible, tenant_id, sucursal_id)
+  VALUES ('Plato Cerrado', 200, true, v_tenant_id, v_sucursal_id)
+  RETURNING id INTO v_plato_id;
+
+  INSERT INTO public.menu_items (tenant_id, menu_id, plato_id, weekdays)
+  VALUES (v_tenant_id, v_menu_id, v_plato_id, ARRAY[1,2,3,4,5,6,7]);
+
+  INSERT INTO public.customers (id, tenant_id, name)
+  VALUES (v_cust_id, v_tenant_id, 'Cliente Cerrado');
+
+  INSERT INTO public.menu_links (tenant_id, sucursal_id, menu_id, label, link_type, customer_id, enabled)
+  VALUES (v_tenant_id, v_sucursal_id, v_menu_id, 'Link Cerrado', 'company', v_cust_id, true)
+  RETURNING token INTO v_token;
+
+  -- 1. No cycles exist at all -> status is open: false
+  v_status := public.get_online_menu_status(p_token => v_token);
+  PERFORM test_assert((v_status->>'open')::boolean IS FALSE, 'Status must be open: false when no cycles exist');
+
+  -- Attempting order must raise RESTAURANT_CLOSED
+  BEGIN
+    PERFORM public.create_order_by_link(
+      v_token,
+      'Empleado Prueba',
+      '',
+      jsonb_build_array(jsonb_build_object('plato_id', v_plato_id, 'quantity', 1))
+    );
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'RESTAURANT_CLOSED' THEN
+      v_caught_closed := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_closed, 'create_order_by_link must raise RESTAURANT_CLOSED when no cycle exists');
+
+  -- 2. Only closed cycles exist (closed_at IS NOT NULL) -> status is open: false
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at)
+  VALUES (v_tenant_id, v_sucursal_id, now() - interval '2 hours', now() - interval '1 hour');
+
+  v_status := public.get_online_menu_status(p_token => v_token);
+  PERFORM test_assert((v_status->>'open')::boolean IS FALSE, 'Status must be open: false when all cycles closed');
+
+  v_caught_closed := false;
+  BEGIN
+    PERFORM public.create_order_by_link(
+      v_token,
+      'Empleado Prueba',
+      '',
+      jsonb_build_array(jsonb_build_object('plato_id', v_plato_id, 'quantity', 1))
+    );
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM = 'RESTAURANT_CLOSED' THEN
+      v_caught_closed := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_closed, 'create_order_by_link must raise RESTAURANT_CLOSED when all cycles closed');
+END $$;
+
+-- Test 31: Legacy cycle with NULL sucursal counts as open for the branch
+DO $$
+DECLARE
+  v_tenant_id   uuid := gen_random_uuid();
+  v_sucursal_id uuid := gen_random_uuid();
+  v_menu_id     uuid := gen_random_uuid();
+  v_cust_id     uuid := gen_random_uuid();
+  v_plato_id    int;
+  v_token       text;
+  v_status      jsonb;
+  v_order_res   jsonb;
+BEGIN
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
+  VALUES (v_tenant_id, 'Restaurante Legacy Cycle', 'corporativo', true);
+
+  INSERT INTO public.sucursales (id, tenant_id)
+  VALUES (v_sucursal_id, v_tenant_id);
+
+  INSERT INTO public.menus (id, tenant_id, sucursal_id, name)
+  VALUES (v_menu_id, v_tenant_id, v_sucursal_id, 'Menu Legacy');
+
+  INSERT INTO public.platos (nombre, precio, disponible, tenant_id, sucursal_id)
+  VALUES ('Plato Legacy', 200, true, v_tenant_id, v_sucursal_id)
+  RETURNING id INTO v_plato_id;
+
+  INSERT INTO public.menu_items (tenant_id, menu_id, plato_id, weekdays)
+  VALUES (v_tenant_id, v_menu_id, v_plato_id, ARRAY[1,2,3,4,5,6,7]);
+
+  INSERT INTO public.customers (id, tenant_id, name)
+  VALUES (v_cust_id, v_tenant_id, 'Cliente Legacy');
+
+  INSERT INTO public.menu_links (tenant_id, sucursal_id, menu_id, label, link_type, customer_id, enabled)
+  VALUES (v_tenant_id, v_sucursal_id, v_menu_id, 'Link Legacy', 'company', v_cust_id, true)
+  RETURNING token INTO v_token;
+
+  -- Insert legacy cycle with sucursal_id NULL and closed_at NULL
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at)
+  VALUES (v_tenant_id, NULL, now(), NULL);
+
+  -- Status must be open: true
+  v_status := public.get_online_menu_status(p_token => v_token);
+  PERFORM test_assert((v_status->>'open')::boolean IS TRUE, 'Status must be open: true for legacy cycle with NULL sucursal');
+
+  -- create_order_by_link must succeed
+  v_order_res := public.create_order_by_link(
+    v_token,
+    'Empleado Legacy',
+    '',
+    jsonb_build_array(jsonb_build_object('plato_id', v_plato_id, 'quantity', 1))
+  );
+  PERFORM test_assert(v_order_res ? 'order_id', 'Order must succeed with open legacy cycle');
+END $$;
+
+-- Test 32: Status RPC returns open true/false and nothing else
+DO $$
+DECLARE
+  v_tenant_id   uuid := gen_random_uuid();
+  v_sucursal_id uuid := gen_random_uuid();
+  v_slug        text := 'test-slug-status-' || substr(gen_random_uuid()::text, 1, 8);
+  v_status_open jsonb;
+  v_status_closed jsonb;
+  v_status_unknown jsonb;
+  v_keys_count  int;
+  v_caught_args boolean := false;
+BEGIN
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa)
+  VALUES (v_tenant_id, 'Restaurante Slug Status', 'empresarial', true);
+
+  INSERT INTO public.sucursales (id, tenant_id)
+  VALUES (v_sucursal_id, v_tenant_id);
+
+  INSERT INTO public.digital_menu_settings (tenant_id, sucursal_id, title, public_slug, enabled)
+  VALUES (v_tenant_id, v_sucursal_id, 'Menu Slug Status', v_slug, true);
+
+  -- 1. Slug with no open cycle -> open: false
+  v_status_closed := public.get_online_menu_status(p_public_slug => v_slug);
+  SELECT count(*) INTO v_keys_count FROM jsonb_object_keys(v_status_closed);
+  PERFORM test_assert(v_keys_count = 1, 'Status JSONB must contain exactly 1 key');
+  PERFORM test_assert(v_status_closed ? 'open', 'Status JSONB key must be open');
+  PERFORM test_assert((v_status_closed->>'open')::boolean IS FALSE, 'Status must be open: false');
+
+  -- 2. Open cycle for sucursal -> open: true
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at)
+  VALUES (v_tenant_id, v_sucursal_id, now(), NULL);
+
+  v_status_open := public.get_online_menu_status(p_public_slug => v_slug);
+  SELECT count(*) INTO v_keys_count FROM jsonb_object_keys(v_status_open);
+  PERFORM test_assert(v_keys_count = 1, 'Status JSONB must contain exactly 1 key');
+  PERFORM test_assert((v_status_open->>'open')::boolean IS TRUE, 'Status must be open: true');
+
+  -- 3. Unknown slug returns { "open": false }
+  v_status_unknown := public.get_online_menu_status(p_public_slug => 'nonexistent-slug-xyz');
+  PERFORM test_assert((v_status_unknown->>'open')::boolean IS FALSE, 'Unknown slug must return open: false');
+  SELECT count(*) INTO v_keys_count FROM jsonb_object_keys(v_status_unknown);
+  PERFORM test_assert(v_keys_count = 1, 'Unknown slug return must contain only open key');
+
+  -- 4. Unknown token returns { "open": false }
+  v_status_unknown := public.get_online_menu_status(p_token => 'nonexistent-token-xyz');
+  PERFORM test_assert((v_status_unknown->>'open')::boolean IS FALSE, 'Unknown token must return open: false');
+
+  -- 5. Providing both or neither raises exception
+  BEGIN
+    PERFORM public.get_online_menu_status(p_public_slug => v_slug, p_token => 'token123');
+  EXCEPTION WHEN OTHERS THEN
+    v_caught_args := true;
+  END;
+  PERFORM test_assert(v_caught_args, 'get_online_menu_status with both args must raise exception');
+
+  v_caught_args := false;
+  BEGIN
+    PERFORM public.get_online_menu_status();
+  EXCEPTION WHEN OTHERS THEN
+    v_caught_args := true;
+  END;
+  PERFORM test_assert(v_caught_args, 'get_online_menu_status with neither arg must raise exception');
+END $$;
+
+-- Test 33: anon cannot call restaurant_cycle_open
+DO $$
+DECLARE
+  v_caught_anon boolean := false;
+BEGIN
+  BEGIN
+    SET LOCAL ROLE anon;
+    PERFORM public.restaurant_cycle_open(gen_random_uuid(), gen_random_uuid());
+    RESET ROLE;
+  EXCEPTION WHEN OTHERS THEN
+    RESET ROLE;
+    IF SQLSTATE = '42501' THEN
+      v_caught_anon := true;
+    END IF;
+  END;
+  PERFORM test_assert(v_caught_anon, 'anon cannot call restaurant_cycle_open (must raise 42501 permission denied)');
+END $$;
+
+

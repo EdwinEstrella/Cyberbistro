@@ -7,8 +7,11 @@ export type MenuSettings = {
 export type MenuLinkJoined = {
   label: string;
   link_type: 'public' | 'company' | string;
+  customer_id?: string | null;
   customer: {
+    id?: string;
     name: string;
+    credit_limit?: number | null;
   } | null;
 };
 

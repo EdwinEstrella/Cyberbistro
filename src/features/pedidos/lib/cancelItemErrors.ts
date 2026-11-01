@@ -15,6 +15,9 @@ export function mapCancelItemError(error: unknown): string {
         (error as { details?: string })?.details ||
         String(error);
 
+  if (message.includes('ORDER_ALREADY_INVOICED')) {
+    return 'Este pedido ya fue facturado; para corregirlo emití una nota de crédito.';
+  }
   if (message.includes('PAYMENT_EXCEEDS_TOTAL')) {
     return 'La cuenta ya tiene pagos mayores al nuevo total';
   }

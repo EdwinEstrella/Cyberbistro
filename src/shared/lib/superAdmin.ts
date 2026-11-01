@@ -1,14 +1,24 @@
-import type { User } from "@supabase/supabase-js";
+import { supabase } from "./supabase";
 
-export const SUPER_ADMIN_EMAIL = "admin@gmail.com";
 export const SUPER_ADMIN_ROLE = "super_admin";
 export const SUPER_ADMIN_TENANT_ID = "__super_admin__";
 export const SUPER_ADMIN_ROUTE = "/super-admin";
 
-export function isSuperAdminEmail(email: string | null | undefined): boolean {
-  return (email ?? "").trim().toLowerCase() === SUPER_ADMIN_EMAIL;
-}
-
-export function isSuperAdminUser(user: User | null | undefined): boolean {
-  return isSuperAdminEmail(user?.email);
+/**
+ * Checks whether the current authenticated user is a super administrator
+ * via the secure authoritative RPC `cyberbistro_am_i_super_admin`.
+ * Fails closed (returns false) on error, non-true responses, or network failure.
+ */
+export async function fetchIsSuperAdmin(): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.rpc("cyberbistro_am_i_super_admin");
+    if (error) {
+      console.warn("fetchIsSuperAdmin: rpc error", error);
+      return false;
+    }
+    return data === true;
+  } catch (err) {
+    console.warn("fetchIsSuperAdmin: failed to verify super admin status", err);
+    return false;
+  }
 }

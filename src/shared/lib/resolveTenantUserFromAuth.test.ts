@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { resolveTenantAccessForSession, resolveTenantUserForSession } from "./resolveTenantUserFromAuth";
+import { SUPER_ADMIN_ROLE, SUPER_ADMIN_TENANT_ID } from "./superAdmin";
 
 const mocks = vi.hoisted(() => {
   const maybeSingle = vi.fn();
@@ -11,8 +12,16 @@ const mocks = vi.hoisted(() => {
   const select = vi.fn(() => chain);
   const from = vi.fn(() => ({ select }));
   const rpc = vi.fn();
-  const state = { tenantCache: null as any };
+  const state = { tenantCache: null as any, isSuperAdmin: false as boolean };
   return { maybeSingle, eq, ilike, is, from, rpc, state };
+});
+
+vi.mock("./superAdmin", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./superAdmin")>();
+  return {
+    ...actual,
+    fetchIsSuperAdmin: vi.fn(async () => mocks.state.isSuperAdmin ?? false),
+  };
 });
 
 vi.mock("./supabase", () => ({
@@ -35,6 +44,7 @@ describe("resolveTenantUserForSession", () => {
     mocks.from.mockClear();
     mocks.rpc.mockReset();
     mocks.state.tenantCache = null;
+    mocks.state.isSuperAdmin = false;
     mocks.maybeSingle.mockResolvedValue({ data: null, error: null });
     mocks.rpc.mockResolvedValue({ data: null, error: null });
   });
@@ -169,5 +179,39 @@ describe("resolveTenantUserForSession", () => {
         plan: "basico",
       },
     });
+  });
+
+  it("otorga acceso super admin si fetchIsSuperAdmin retorna true, sin importar el email", async () => {
+    mocks.state.isSuperAdmin = true;
+
+    const result = await resolveTenantAccessForSession({
+      id: "auth-sa-1",
+      email: "security-auditor@empresa.com",
+      user_metadata: { name: "Audit Lead" },
+    } as any);
+
+    expect(result).toEqual({
+      status: "active",
+      row: {
+        tenant_id: SUPER_ADMIN_TENANT_ID,
+        email: "security-auditor@empresa.com",
+        rol: SUPER_ADMIN_ROLE,
+        nombre: "Audit Lead",
+        plan: "profesional",
+      },
+    });
+  });
+
+  it("no otorga super admin por email si fetchIsSuperAdmin retorna false", async () => {
+    mocks.state.isSuperAdmin = false;
+    mocks.maybeSingle.mockResolvedValue({ data: null, error: null });
+
+    const result = await resolveTenantAccessForSession({
+      id: "auth-impostor",
+      email: "admin@gmail.com",
+    } as any);
+
+    expect(result.status).not.toBe("active");
+    expect((result as any).row?.tenant_id).not.toBe(SUPER_ADMIN_TENANT_ID);
   });
 });

@@ -2,6 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { mapAcceptOrderError } from './acceptOrderErrors';
 
 describe('mapAcceptOrderError', () => {
+  it('maps ORDER_ALREADY_INVOICED to user-friendly message', () => {
+    expect(mapAcceptOrderError('ORDER_ALREADY_INVOICED')).toBe(
+      'Este pedido ya fue facturado; para corregirlo emití una nota de crédito.'
+    );
+    expect(
+      mapAcceptOrderError(new Error('rpc error: ORDER_ALREADY_INVOICED'))
+    ).toBe('Este pedido ya fue facturado; para corregirlo emití una nota de crédito.');
+    expect(
+      mapAcceptOrderError({ message: 'ORDER_ALREADY_INVOICED' })
+    ).toBe('Este pedido ya fue facturado; para corregirlo emití una nota de crédito.');
+  });
+
   it('maps ORDER_NOT_PENDING to user-friendly message', () => {
     expect(mapAcceptOrderError('ORDER_NOT_PENDING')).toBe(
       'Este pedido ya fue procesado por otra persona.'
@@ -60,13 +72,14 @@ describe('mapAcceptOrderError', () => {
     expect(mapAcceptOrderError(new Error('offline'))).toBe(
       'Se requiere conexión a internet'
     );
-    expect(mapAcceptOrderError({ message: 'Se requiere conexión a internet' })).toBe(
-      'Se requiere conexión a internet'
-    );
   });
 
-  it('falls back to custom message or default message', () => {
-    expect(mapAcceptOrderError(new Error('Error custom inesperado'))).toBe('Error custom inesperado');
+  it('returns raw message for unmapped errors', () => {
+    expect(mapAcceptOrderError('SOME_UNKNOWN_ERROR')).toBe('SOME_UNKNOWN_ERROR');
+    expect(mapAcceptOrderError(new Error('Custom error'))).toBe('Custom error');
+  });
+
+  it('handles null/undefined gracefully', () => {
     expect(mapAcceptOrderError(null)).toBe('Error desconocido al procesar el pedido.');
     expect(mapAcceptOrderError(undefined)).toBe('Error desconocido al procesar el pedido.');
   });

@@ -38,6 +38,7 @@ export interface LinkMenuPayload {
   label?: string | null;
   link_type: "company" | "public";
   allow_extras: boolean;
+  require_roster?: boolean;
   company_name: string | null;
   restaurant: LinkMenuRestaurant | null;
   settings?: LinkMenuRestaurant | null;

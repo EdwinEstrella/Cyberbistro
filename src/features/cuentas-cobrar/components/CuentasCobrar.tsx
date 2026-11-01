@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw, DollarSign, FileText, CheckCircle, Clock, Eye } from "lucide-react";
+import { RefreshCw, DollarSign, FileText, CheckCircle, Clock, Eye, Receipt, Lock } from "lucide-react";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { canUseFeature } from "../../../shared/lib/planFeatures";
 import { StatementDialog, type StatementCustomerTarget } from "../statement";
@@ -12,10 +12,13 @@ import { listCustomers } from "../../clientes/lib/customers";
 import { supabase } from "../../../shared/lib/supabase";
 import { RegistrarPagoCxCModal } from "./RegistrarPagoCxCModal";
 import { DetalleCuentaCobrarModal } from "./DetalleCuentaCobrarModal";
+import { fetchBatchCompanyCreditUsed } from "../../menu-links/lib/creditRepo";
+import { formatCreditUsage, isCreditLimitReached, getCreditProgressPercentage } from "../../menu-links/lib/creditLimit";
 
 interface CustomerRow {
   id: string;
   name: string;
+  credit_limit?: number | null;
 }
 
 interface FacturaRow {
@@ -68,7 +71,11 @@ const dateTimeFormatter = new Intl.DateTimeFormat("es-DO", {
 export function CuentasCobrar() {
   const { tenantId, user, plan } = useAuth();
   const canUseMenuLinks = canUseFeature(plan, "menu_links");
-  const [statementCustomer, setStatementCustomer] = useState<StatementCustomerTarget | null>(null);
+  const canConsolidate = canUseFeature(plan, "consolidated_invoice");
+  const [statementCustomer, setStatementCustomer] = useState<{
+    target: StatementCustomerTarget;
+    initialMode?: "statement" | "invoice";
+  } | null>(null);
   const { activeSucursalId } = useSucursal();
 
   const [activeTab, setActiveTab] = useState<'pendientes' | 'pagadas' | 'pagos'>('pendientes');
@@ -78,6 +85,7 @@ export function CuentasCobrar() {
   const [pagos, setPagos] = useState<CxcPagoRow[]>([]);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [facturas, setFacturas] = useState<FacturaRow[]>([]);
+  const [creditUsedMap, setCreditUsedMap] = useState<Record<string, number>>({});
   const [cicloAbierto, setCicloAbierto] = useState<{ id: string; closed_at: string | null; opened_at: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
@@ -127,7 +135,7 @@ export function CuentasCobrar() {
         const [cRes, paRes, cuRes, fRes, cyRes] = await Promise.all([
           supabase.from("cuentas_cobrar").select("*").eq("tenant_id", tenantId),
           supabase.from("cxc_pagos").select("*").eq("tenant_id", tenantId),
-          supabase.from("customers").select("id, name").eq("tenant_id", tenantId),
+          supabase.from("customers").select("id, name, credit_limit").eq("tenant_id", tenantId),
           supabase.from("facturas").select("id, numero_factura").eq("tenant_id", tenantId),
           supabase.from("cierres_operativos").select("id, cycle_number, opened_at, closed_at, sucursal_id").eq("tenant_id", tenantId).is("closed_at", null).order("opened_at", { ascending: false }).limit(1),
         ]);
@@ -142,6 +150,9 @@ export function CuentasCobrar() {
       setPagos(pagosData.sort((a, b) => b.fecha_pago.localeCompare(a.fecha_pago)));
       setCustomers(customersData);
       setFacturas(facturasData);
+
+      const customerIds = customersData.map((c) => c.id).filter(Boolean);
+      void fetchBatchCompanyCreditUsed(tenantId, customerIds).then((res) => setCreditUsedMap(res)).catch(() => {});
 
       const activeCycle = useLocal
         ? ciclosData.filter(c => !c.closed_at && (c.sucursal_id === activeSucursalId || !c.sucursal_id)).sort((a, b) => b.opened_at.localeCompare(a.opened_at))[0] ?? null
@@ -160,6 +171,10 @@ export function CuentasCobrar() {
 
   const customersMap = useMemo(() => {
     return new Map(customers.map(c => [c.id, c.name]));
+  }, [customers]);
+
+  const customersLimitMap = useMemo(() => {
+    return new Map(customers.map(c => [c.id, c.credit_limit]));
   }, [customers]);
 
   const facturasMap = useMemo(() => {
@@ -339,12 +354,38 @@ export function CuentasCobrar() {
                     <tbody className="font-['Inter',sans-serif] text-[13px] text-white">
                       {filteredCuentas.map((row) => {
                         const custName = customersMap.get(row.customer_id) || "Desconocido";
+                        const creditLimit = customersLimitMap.get(row.customer_id);
+                        const usedCredit = creditUsedMap[row.customer_id] || 0;
                         const nFactura = row.factura_id ? facturasMap.get(row.factura_id) ? `#${facturasMap.get(row.factura_id)}` : "Factura" : "Manual";
                         const balance = row.monto_total - row.monto_pagado;
                         
                         return (
                           <tr key={row.id} className="border-t border-[rgba(72,72,71,0.12)] hover:bg-[#151515]">
-                            <td className="px-4 py-3 font-semibold text-white">{custName}</td>
+                            <td className="px-4 py-3 font-semibold text-white">
+                              <div>{custName}</div>
+                              {creditLimit != null && (
+                                <div className="flex flex-col gap-1 mt-1 font-normal">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="text-[10px] text-zinc-400">
+                                      {formatCreditUsage(usedCredit, creditLimit)}
+                                    </span>
+                                    {isCreditLimitReached(usedCredit, creditLimit) && (
+                                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold uppercase bg-red-500/15 text-red-400 border border-red-500/30">
+                                        Bloqueado por límite
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="w-36 h-1 rounded-full bg-zinc-800 overflow-hidden">
+                                    <div
+                                      className={`h-full rounded-full transition-all ${
+                                        isCreditLimitReached(usedCredit, creditLimit) ? "bg-red-500" : "bg-[#ff906d]"
+                                      }`}
+                                      style={{ width: `${getCreditProgressPercentage(usedCredit, creditLimit)}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                            </td>
                             <td className="px-4 py-3 font-mono text-white text-[12px]">{nFactura}</td>
                             <td className="px-4 py-3 text-[#adaaaa]">{dateFormatter.format(new Date(row.fecha_emision))}</td>
                             <td className="px-4 py-3 text-[#adaaaa]">{dateFormatter.format(new Date(row.fecha_vencimiento))}</td>
@@ -373,19 +414,44 @@ export function CuentasCobrar() {
                                   <Eye className="size-[14px]" />
                                 </button>
                                 {canUseMenuLinks && (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setStatementCustomer({
-                                        id: row.customer_id,
-                                        name: custName,
-                                      })
-                                    }
-                                    className="bg-[#222] border border-[rgba(72,72,71,0.4)] hover:border-[#ff906d] text-[#adaaaa] hover:text-[#ff906d] rounded-[8px] p-1.5 transition-all cursor-pointer"
-                                    title="Estado de cuenta (PDF)"
-                                  >
-                                    <FileText className="size-[14px]" />
-                                  </button>
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setStatementCustomer({
+                                          target: {
+                                            id: row.customer_id,
+                                            name: custName,
+                                          },
+                                          initialMode: "statement",
+                                        })
+                                      }
+                                      className="bg-[#222] border border-[rgba(72,72,71,0.4)] hover:border-[#ff906d] text-[#adaaaa] hover:text-[#ff906d] rounded-[8px] p-1.5 transition-all cursor-pointer"
+                                      title="Estado de cuenta (PDF)"
+                                    >
+                                      <FileText className="size-[14px]" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setStatementCustomer({
+                                          target: {
+                                            id: row.customer_id,
+                                            name: custName,
+                                          },
+                                          initialMode: "invoice",
+                                        })
+                                      }
+                                      className={`border rounded-[8px] p-1.5 transition-all cursor-pointer ${
+                                        canConsolidate
+                                          ? "bg-[#222] border-[rgba(72,72,71,0.4)] hover:border-emerald-500 text-[#adaaaa] hover:text-emerald-400"
+                                          : "bg-[#181818] border-zinc-800/50 text-zinc-600 cursor-not-allowed"
+                                      }`}
+                                      title={canConsolidate ? "Emitir factura consolidada (e-CF)" : "Disponible en el plan Corporativo"}
+                                    >
+                                      {canConsolidate ? <Receipt className="size-[14px]" /> : <Lock className="size-[12px]" />}
+                                    </button>
+                                  </>
                                 )}
                                 {activeTab === 'pendientes' && (
                                   <button
@@ -504,7 +570,8 @@ export function CuentasCobrar() {
         onOpenChange={(isOpen) => {
           if (!isOpen) setStatementCustomer(null);
         }}
-        customer={statementCustomer}
+        customer={statementCustomer?.target ?? null}
+        initialMode={statementCustomer?.initialMode ?? "statement"}
       />
     </div>
   );

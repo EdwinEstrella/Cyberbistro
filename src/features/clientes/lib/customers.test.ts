@@ -24,7 +24,7 @@ describe("customers domain helpers", () => {
       name: "Restaurante Demo",
       phone: "8095551111",
       email: "cliente@demo.com",
-    document_id: "101-00106-2",
+      document_id: "101-00106-2",
     } as Customer;
 
     expect(customerMatchesSearch(customer, "demo")).toBe(true);

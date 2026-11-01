@@ -10,6 +10,8 @@ export function extractOrderLinkInfo(order: DigitalOrder): {
   companyName: string | null;
   linkLabel: string | null;
   employeeName: string | null;
+  customerId: string | null;
+  creditLimit: number | null;
 } {
   const isCompanyOrder = order.order_type === 'company';
   const rawLink = order.menu_links;
@@ -25,12 +27,16 @@ export function extractOrderLinkInfo(order: DigitalOrder): {
   const companyName = customer?.name?.trim() || null;
   const linkLabel = link?.label?.trim() || null;
   const employeeName = order.employee_name?.trim() || null;
+  const customerId = customer?.id || link?.customer_id || null;
+  const creditLimit = customer?.credit_limit !== undefined && customer?.credit_limit !== null ? Number(customer.credit_limit) : null;
 
   return {
     isCompanyOrder,
     companyName,
     linkLabel,
     employeeName,
+    customerId,
+    creditLimit,
   };
 }
 
