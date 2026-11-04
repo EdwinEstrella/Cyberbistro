@@ -474,6 +474,7 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
     CREATE INDEX IF NOT EXISTS idx_ecf_documents_pending ON ecf_documents (tenant_id, sucursal_id, status);
     CREATE INDEX IF NOT EXISTS idx_fiscal_outbox_pending ON fiscal_outbox (tenant_id, sucursal_id, status);
   `);
+  repairDanglingLegacyMigrationReferences(database);
   migrateLegacyPayrollSchema(database);
   ensureSyncOutboxSchemaEvolution(database);
   ensureFacturasSchemaEvolution(database);
@@ -786,6 +787,49 @@ function ensureComprasSchemaEvolution(database: DatabaseSync): void {
     if (!columns.includes(name)) {
       database.exec(`ALTER TABLE compras ADD COLUMN ${name} ${type};`);
     }
+  }
+}
+
+export function repairDanglingLegacyMigrationReferences(database: DatabaseSync): void {
+  const tablesToRepair = (database
+    .prepare(
+      "SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '%\\_\\_legacy\\_migration' ESCAPE '\\' AND sql LIKE '%__legacy_migration%'",
+    )
+    .all() as Array<{ name: string; sql: string }>).filter((row) => row.sql && row.sql.includes("__legacy_migration"));
+
+  if (tablesToRepair.length === 0) return;
+
+  database.exec("PRAGMA foreign_keys = OFF;");
+  database.exec("PRAGMA legacy_alter_table = ON;");
+  try {
+    for (const { name: tableName, sql: originalSql } of tablesToRepair) {
+      const fixedSql = originalSql.replace(/"?(\w+?)__legacy_migration"?/g, "$1");
+      const capturedObjects = (database
+        .prepare("SELECT sql FROM sqlite_master WHERE tbl_name = ? AND type IN ('index', 'trigger') AND sql IS NOT NULL")
+        .all(tableName) as Array<{ sql: string }>).map((row) => row.sql);
+
+      const columns = getTableColumns(database, tableName);
+      const cols = columns.map((col) => `"${col}"`).join(", ");
+      const tempTableName = `${tableName}__fk_repair`;
+
+      database.exec("BEGIN IMMEDIATE;");
+      try {
+        database.exec(`ALTER TABLE "${tableName}" RENAME TO "${tempTableName}";`);
+        database.exec(fixedSql);
+        database.exec(`INSERT INTO "${tableName}" (${cols}) SELECT ${cols} FROM "${tempTableName}";`);
+        database.exec(`DROP TABLE "${tempTableName}";`);
+        for (const objectSql of capturedObjects) {
+          database.exec(objectSql);
+        }
+        database.exec("COMMIT;");
+      } catch (error) {
+        database.exec("ROLLBACK;");
+        throw error;
+      }
+    }
+  } finally {
+    database.exec("PRAGMA legacy_alter_table = OFF;");
+    database.exec("PRAGMA foreign_keys = ON;");
   }
 }
 
@@ -1137,6 +1181,7 @@ function getTableColumns(database: DatabaseSync, tableName: string): string[] {
 function recreateTable(database: DatabaseSync, tableName: string, createSql: string, copySql: string): void {
   const tempTableName = `${tableName}__legacy_migration`;
   database.exec("PRAGMA foreign_keys = OFF;");
+  database.exec("PRAGMA legacy_alter_table = ON;");
   database.exec("BEGIN IMMEDIATE;");
 
   try {
@@ -1149,6 +1194,7 @@ function recreateTable(database: DatabaseSync, tableName: string, createSql: str
     database.exec("ROLLBACK;");
     throw error;
   } finally {
+    database.exec("PRAGMA legacy_alter_table = OFF;");
     database.exec("PRAGMA foreign_keys = ON;");
   }
 }
