@@ -1,6 +1,6 @@
 import { fiscalWorkerError } from "./errors";
 import type { DgiiClientAdapter, XmlSignerAdapter, DgiiSubmitResult } from "./types";
-import ECF, { Signature, ENVIRONMENT, P12Reader, convertECF32ToRFCE as libConvertECF32ToRFCE } from "dgii-ecf";
+import { ECF, Signature, ENVIRONMENT, P12Reader, convertECF32ToRFCE as libConvertECF32ToRFCE } from "dgii-ecf";
 
 export function convertECF32ToRFCE(ecf32Xml: string): { xml: string; securityCode: string } {
   return libConvertECF32ToRFCE(ecf32Xml);
