@@ -226,15 +226,49 @@ export class RealDgiiClient implements DgiiClientAdapter {
           const { xml: rfceXml } = convertECF32ToRFCE(input.signedXml);
           const signature = new Signature(certs.key, certs.cert);
           const signedRFCEXml = signature.signXml(rfceXml, "RFCE");
-          
+
           response = await ecf.sendSummary(signedRFCEXml, fileName);
 
-          if (response && (response.codigo === 1 || response.estado?.toLowerCase().includes("aceptado") || response.estado?.toLowerCase().includes("aceptada"))) {
+          // RFCE sendSummary is a synchronous DGII response — it does NOT return a
+          // poll trackId. Map each codigo to the correct submit result:
+          //   1 → Aceptado       (accepted, no poll)
+          //   4 → Aceptado cond. (accepted with detail, no poll)
+          //   2 → Rechazado      (rejected terminal, no poll)
+          //   3 → En proceso     (submitted, keep polling via eNCF)
+          //   *  → terminal_error
+          const rfceCodigo = response?.codigo != null ? Number(response.codigo) : null;
+          const rfceEncf: string | undefined = response?.encf;
+
+          if (rfceCodigo === 1 || rfceCodigo === 4) {
+            // Build message: include estado and any mensajes detail
+            const message = describeDgiiError(response) || (response?.estado ?? "Aceptado");
+            return {
+              kind: "accepted",
+              dgiiTrackId: rfceEncf,
+              statusCode: String(rfceCodigo),
+              message,
+              rfceThresholdUsed,
+            };
+          }
+
+          if (rfceCodigo === 2) {
+            return {
+              kind: "rejected",
+              statusCode: "2",
+              message: describeDgiiError(response) || `DGII summary rejected: ${JSON.stringify(response)}`,
+              rfceThresholdUsed,
+            };
+          }
+
+          if (rfceCodigo === 3) {
+            // Keep polling; best-effort trackId is the eNCF (getSummaryInvoiceInquiry is
+            // production-only and not usable in all environments, so we fall back to the
+            // existing statusTrackId path using the eNCF as a handle).
             return {
               kind: "submitted",
-              trackId: response.encf || `summary-${input.idempotencyKey}`,
-              statusCode: String(response.codigo),
-              message: response.estado,
+              trackId: rfceEncf || `rfce-${input.idempotencyKey}`,
+              statusCode: "3",
+              message: response?.estado ?? "En proceso",
               rfceThresholdUsed,
             };
           }
