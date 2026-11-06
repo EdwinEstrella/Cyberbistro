@@ -38,7 +38,6 @@ import {
   uploadTenantLogoFile,
 } from "../../../shared/lib/tenantLogoStorage";
 import { cacheLogoFromUrl, refreshLogoCache } from "../../../shared/lib/logoCache";
-import { CertificateUploader } from "./CertificateUploader";
 import {
   buildBSequenceMapFromRow,
   buildTenantNcfUpdatePayload,
@@ -637,8 +636,6 @@ export function Ajustes() {
                       </SelectContent>
                     </Select>
                   </Field>
-                  
-                  <CertificateUploader environment={config.ecf_environment} />
                 </div>
               )}
 
