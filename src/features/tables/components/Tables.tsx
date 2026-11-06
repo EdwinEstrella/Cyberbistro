@@ -144,8 +144,8 @@ export function Tables() {
   }, [tenantId, refreshDeudaPorMesa]);
 
   useEffect(() => {
-    return window.electronAPI?.onLocalDataUpdated?.((updatedTenantId) => {
-      if (!updatedTenantId || updatedTenantId === tenantId) {
+    return window.electronAPI?.onLocalDataUpdated?.((payload) => {
+      if (!payload?.tenantId || payload.tenantId === tenantId) {
         void refreshDeudaPorMesa();
       }
     });

@@ -46,19 +46,8 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
   }
 
   const sucursal = tenant.ecf_issuer_sucursal?.trim();
-  if (!sucursal) {
-    throw fiscalWorkerError("FISCAL_CONFIGURATION_INCOMPLETE", "ecf_issuer_sucursal is missing or not configured.", false);
-  }
-
   const municipio = tenant.ecf_issuer_municipio?.trim();
-  if (!municipio) {
-    throw fiscalWorkerError("FISCAL_CONFIGURATION_INCOMPLETE", "ecf_issuer_municipio is missing or not configured.", false);
-  }
-
   const provincia = tenant.ecf_issuer_provincia?.trim();
-  if (!provincia) {
-    throw fiscalWorkerError("FISCAL_CONFIGURATION_INCOMPLETE", "ecf_issuer_provincia is missing or not configured.", false);
-  }
 
   const actividadEconomica = tenant.ecf_issuer_actividad_economica?.trim();
   if (!actividadEconomica) {
@@ -100,16 +89,38 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
 
   // Comprador Strict Validation for E31 (Crédito Fiscal)
   let compradorRnc = (factura.cliente_rnc?.trim() || "").replace(/\D/g, "");
+  if (compradorRnc === "000000000") {
+    compradorRnc = "";
+  }
   let compradorNombre = factura.cliente_nombre?.trim();
 
   if (ecfType === 31) {
     if (!compradorRnc || !compradorNombre) {
       throw fiscalWorkerError("FISCAL_CONFIGURATION_INCOMPLETE", "Factura de Crédito Fiscal (E31) requires both cliente_rnc and cliente_nombre.", false);
     }
-  } else {
-    compradorRnc = compradorRnc || "000000000";
-    compradorNombre = compradorNombre || "Consumidor Final";
   }
+
+  const comprador = compradorRnc
+    ? {
+        RNCComprador: compradorRnc,
+        ...(compradorNombre ? { RazonSocialComprador: compradorNombre } : {}),
+      }
+    : (ecfType === 32 || ecfType === 34)
+    ? null
+    : compradorNombre && compradorNombre !== "Consumidor Final"
+    ? {
+        RazonSocialComprador: compradorNombre,
+      }
+    : null;
+
+  const isDuplicateSucursal =
+    !sucursal ||
+    sucursal.toLowerCase() === tenantName.toLowerCase() ||
+    sucursal.toLowerCase() === (tenant.nombre_negocio || "").trim().toLowerCase() ||
+    sucursal.toLowerCase() === (tenant.nombre || "").trim().toLowerCase();
+
+  const validMunicipio = municipio && /^\d{6}$/.test(municipio) ? municipio : null;
+  const validProvincia = provincia && /^\d{6}$/.test(provincia) ? provincia : null;
 
   const typeKey = `E${ecfType}`;
   let fechaVencimientoSecuencia: string | null = null;
@@ -140,16 +151,20 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
       IndicadorMontoGravado: 0,
       TipoIngresos: "01",
       TipoPago: payments.length > 0 ? 1 : 2,
-      FechaLimitePago: formatDgiiDate(factura.created_at, now),
-      TerminoPago: payments.length > 0 ? "Al contado" : "A credito",
-      ...(payments.length > 0
+      ...(ecfType !== 34
         ? {
-            TablaFormasPago: {
-              FormaDePago: payments.map((p: any) => ({
-                FormaPago: mapPaymentMethod(p.payment_method),
-                MontoPago: Number(p.amount || 0).toFixed(2),
-              })),
-            },
+            FechaLimitePago: formatDgiiDate(factura.created_at, now),
+            TerminoPago: payments.length > 0 ? "Al contado" : "A credito",
+            ...(payments.length > 0
+              ? {
+                  TablaFormasPago: {
+                    FormaDePago: payments.map((p: any) => ({
+                      FormaPago: mapPaymentMethod(p.payment_method),
+                      MontoPago: Number(p.amount || 0).toFixed(2),
+                    })),
+                  },
+                }
+              : {}),
           }
         : {}),
     },
@@ -157,10 +172,10 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
       RNCEmisor: tenantRnc,
       RazonSocialEmisor: tenantName,
       NombreComercial: tenantName,
-      Sucursal: sucursal,
+      ...(!isDuplicateSucursal ? { Sucursal: sucursal } : {}),
       DireccionEmisor: tenantAddress,
-      Municipio: municipio,
-      Provincia: provincia,
+      ...(validMunicipio ? { Municipio: validMunicipio } : {}),
+      ...(validProvincia ? { Provincia: validProvincia } : {}),
       ...(tenant.telefono?.trim()
         ? {
             TablaTelefonoEmisor: {
@@ -172,10 +187,7 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
       ActividadEconomica: actividadEconomica,
       FechaEmision: formatDgiiDate(factura.created_at, now),
     },
-    Comprador: {
-      RNCComprador: compradorRnc,
-      RazonSocialComprador: compradorNombre,
-    },
+    ...(comprador ? { Comprador: comprador } : {}),
     Totales: {
       ...(itbis > 0
         ? {
@@ -219,17 +231,22 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
         ? item.indicadorFacturacion
         : (item.exento === true || itemItbis <= 0 ? 4 : 1);
 
+      const rawIndicadorBienoServicio = Number(
+        item.indicador_bien_o_servicio ?? item.indicadorBienoServicio ?? 1
+      );
+      const indicadorBienoServicio = rawIndicadorBienoServicio === 2 ? 2 : 1;
+
+      const rawUnidadMedida = item.unidad_medida ?? item.unidadMedida ?? item.unidad;
+      const trimmedUnidadMedida = rawUnidadMedida != null ? String(rawUnidadMedida).trim() : "";
+      const unidadMedida = /^\d{1,2}$/.test(trimmedUnidadMedida) ? trimmedUnidadMedida : null;
+
       return {
         NumeroLinea: index + 1,
-        TablaCodigosItem: {
-          CodigosItem: {
-            TipoCodigo: "INT",
-            CodigoItem: String(item.plato_id || "N/A"),
-          },
-        },
         IndicadorFacturacion: indicadorFacturacion,
         NombreItem: item.nombre,
+        IndicadorBienoServicio: indicadorBienoServicio,
         CantidadItem: item.cantidad,
+        ...(unidadMedida ? { UnidadMedida: unidadMedida } : {}),
         PrecioUnitarioItem: unitPrice.toFixed(2),
         ...(itemDiscount > 0 ? { DescuentoMonto: itemDiscount.toFixed(2) } : {}),
         MontoItem: itemTotal.toFixed(2),
@@ -240,9 +257,6 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
   // Construct standard JSON structure for dgii-ecf Transformer
   const ecfObject = {
     ECF: {
-      _attributes: {
-        xmlns: "http://dgii.gov.do/empresa/facturaElectronica",
-      },
       Encabezado: encabezado,
       DetallesItems: detallesItems,
       ...(creditNoteRef ? { InformacionReferencia: creditNoteRef.informacionReferencia } : {}),

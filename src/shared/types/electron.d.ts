@@ -67,6 +67,11 @@ export interface OpenAtLoginStatus {
   enabled: boolean;
 }
 
+export interface LocalDataUpdatedPayload {
+  tenantId: string;
+  tables: string[];
+}
+
 export interface ElectronAPI {
   getOpenAtLogin?: () => Promise<OpenAtLoginStatus>;
   setOpenAtLogin?: (enabled: boolean) => Promise<OpenAtLoginStatus>;
@@ -131,7 +136,7 @@ export interface ElectronAPI {
   triggerSync?: () => Promise<{ ok: true }>;
   getLocalRowVersions?: (tenantId: string | undefined, table: string) => Promise<{ ok: true; data: Array<{ id: string; updatedAt: string | null }> }>;
   openLogsFolder?: () => Promise<{ ok: boolean; path?: string }>;
-  onLocalDataUpdated?: (callback: (tenantId: string) => void) => () => void;
+  onLocalDataUpdated?: (callback: (payload: LocalDataUpdatedPayload) => void) => () => void;
   retryFailedSyncErrors?: (tenantId?: string) => Promise<{ ok: true; data: { count: number } }>;
   close: () => void;
   getVersions: () => NodeJS.ProcessVersions;

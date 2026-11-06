@@ -4,6 +4,11 @@ import { DurableSyncWorker, type ServerSyncClient } from "./syncWorker";
 import { SQLitePayrollSyncStore } from "./payrollSyncStore";
 import { PayrollSyncClient } from "./payrollSyncClient";
 
+export interface PullAppliedPayload {
+  tenantId: string;
+  tables: string[];
+}
+
 export class PayrollSyncOrchestrator {
   private worker: DurableSyncWorker | null = null;
   private store: SQLitePayrollSyncStore | null = null;
@@ -14,7 +19,7 @@ export class PayrollSyncOrchestrator {
   private accessToken: string | null = null;
   private client: ServerSyncClient | null = null;
   private tenantId = "";
-  public onPullApplied?: (tenantId: string) => void;
+  public onPullApplied?: (payload: PullAppliedPayload) => void;
 
   public start(db: DatabaseSync, tenantId: string, clientOverride?: any) {
     this.stop();
@@ -74,10 +79,15 @@ export class PayrollSyncOrchestrator {
       }
       try {
         if (!this.stopRequested && this.worker === worker) {
-          const applied = await worker.pull();
+          const pullResult = await worker.pull();
           // Only notify the renderer when the pull actually changed local data;
           // an empty pull every 30s would make every screen reload for nothing.
-          if (applied > 0 && !this.stopRequested && this.worker === worker) this.onPullApplied?.(tenantId);
+          if (pullResult.applied > 0 && !this.stopRequested && this.worker === worker) {
+            this.onPullApplied?.({
+              tenantId,
+              tables: pullResult.tables,
+            });
+          }
         }
       } catch (err) {
         console.error("[PayrollSyncOrchestrator] pull error:", err);

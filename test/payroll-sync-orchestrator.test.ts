@@ -138,14 +138,17 @@ describe('PayrollSyncOrchestrator Lifecycle', () => {
     orchestrator.onPullApplied = onPullApplied;
     const worker = (orchestrator as any).worker;
 
-    worker.pull = vi.fn().mockResolvedValue(0);
+    worker.pull = vi.fn().mockResolvedValue({ applied: 0, tables: [] });
     await orchestrator.triggerSync();
     expect(onPullApplied).not.toHaveBeenCalled();
 
-    worker.pull = vi.fn().mockResolvedValue(3);
+    worker.pull = vi.fn().mockResolvedValue({ applied: 3, tables: ['payroll_employees', 'gastos'] });
     await orchestrator.triggerSync();
     expect(onPullApplied).toHaveBeenCalledTimes(1);
-    expect(onPullApplied).toHaveBeenCalledWith('tenant-123');
+    expect(onPullApplied).toHaveBeenCalledWith({
+      tenantId: 'tenant-123',
+      tables: ['payroll_employees', 'gastos'],
+    });
   });
 
   it('requeues claimed rows, avoids late stale commits, and keeps timers bounded across tenant switch', async () => {

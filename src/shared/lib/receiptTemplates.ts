@@ -158,7 +158,7 @@ function resolveDgiiEnvironment(environment: TenantReceiptInfo["ecf_environment"
   return "testecf";
 }
 
-function buildDgiiEcfQrUrl(args: {
+export function buildDgiiEcfQrUrl(args: {
   issuerRnc: string;
   buyerRnc: string;
   encf: string;
@@ -169,6 +169,12 @@ function buildDgiiEcfQrUrl(args: {
   environment: TenantReceiptInfo["ecf_environment"];
 }): string {
   const envSegment = resolveDgiiEnvironment(args.environment);
+  const isE32Fc = /^E32/i.test(args.encf) && args.total < 250000;
+
+  if (isE32Fc) {
+    return `https://fc.dgii.gov.do/${envSegment}/consultatimbrefc?rncemisor=${encodeURIComponent(args.issuerRnc)}&encf=${encodeURIComponent(args.encf)}&montototal=${encodeURIComponent(args.total.toFixed(2))}&codigoseguridad=${encodeURIComponent(args.securityCode)}`;
+  }
+
   const buyerParam = args.buyerRnc && !/E43/i.test(args.encf) && !/E47/i.test(args.encf)
     ? `RncComprador=${encodeURIComponent(args.buyerRnc)}&`
     : "";
@@ -338,7 +344,8 @@ export async function buildFacturaReceiptHtml(
   const issuerRnc = (tenant.rnc || "").trim();
   const dgiiIssuedAt = formatDgiiDate(factura.created_at ?? when);
   const dgiiSignedAt = formatDgiiDateTime(factura.ecf_submitted_at ?? null);
-  const canRenderDgiiQr = ncf.toUpperCase().startsWith("E") && issuerRnc !== "" && ncf !== "" && ecfSecurityCode !== "" && !!dgiiIssuedAt && !!dgiiSignedAt;
+  const isE32Fc = /^E32/i.test(ncf) && Number(factura.total) < 250000;
+  const canRenderDgiiQr = ncf.toUpperCase().startsWith("E") && issuerRnc !== "" && ncf !== "" && ecfSecurityCode !== "" && !!dgiiIssuedAt && (isE32Fc || !!dgiiSignedAt);
   if (canRenderDgiiQr) {
     const trackId = factura.ecf_track_id || "";
     const verificationUrl = buildDgiiEcfQrUrl({
@@ -347,7 +354,7 @@ export async function buildFacturaReceiptHtml(
       encf: ncf,
       total: Number(factura.total),
       issuedAt: dgiiIssuedAt!,
-      signedAt: dgiiSignedAt!,
+      signedAt: dgiiSignedAt || "",
       securityCode: ecfSecurityCode,
       environment: tenant.ecf_environment,
     });

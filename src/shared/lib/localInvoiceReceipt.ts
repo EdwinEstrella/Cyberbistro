@@ -6,6 +6,7 @@ import { describeError } from "./errorMessage";
 import { loadLastKnown, saveLastKnown } from "./lastKnownCache";
 import { getThermalPrintSettings } from "./thermalStorage";
 import { printThermalHtml, type PrintThermalResult } from "./thermalPrint";
+import { isEcfInvoiceDocument, extractSecurityCode } from "./fiscalPrintGate";
 
 type ReceiptTenant = {
   nombre_negocio: string | null;
@@ -79,6 +80,18 @@ export async function printLocalInvoiceReceipt(args: {
       return { ok: false, error: "No se encontró información del tenant para imprimir." };
     }
 
+    const isEcf = isEcfInvoiceDocument(args.factura);
+    const securityCode =
+      extractSecurityCode(ecfDocument) ||
+      extractSecurityCode(args.factura);
+
+    if (isEcf && !securityCode) {
+      return {
+        ok: false,
+        error: "El comprobante e-CF no puede imprimirse sin código de seguridad de la DGII.",
+      };
+    }
+
     void cacheLogoFromUrl(tenant.logo_url);
     const paperWidthMm = getThermalPrintSettings().paperWidthMm;
     const html = await buildFacturaReceiptHtml(
@@ -97,10 +110,10 @@ export async function printLocalInvoiceReceipt(args: {
       },
       {
         ...args.factura,
-        ecf_status: ecfDocument?.status ?? args.factura.fiscal_status ?? null,
-        ecf_track_id: ecfDocument?.dgii_track_id ?? null,
-        ecf_security_code: ecfDocument?.dgii_security_code ?? null,
-        ecf_submitted_at: ecfDocument?.submitted_at ?? null,
+        ecf_status: (ecfDocument?.dgii_status as string) ?? ecfDocument?.status ?? args.factura.fiscal_status ?? null,
+        ecf_track_id: (ecfDocument?.dgii_track_id as string) ?? (args.factura.ecf_track_id as string) ?? null,
+        ecf_security_code: (ecfDocument?.dgii_security_code as string) ?? (args.factura.ecf_security_code as string) ?? null,
+        ecf_submitted_at: (ecfDocument?.submitted_at as string) ?? (ecfDocument?.accepted_at as string) ?? (args.factura.ecf_submitted_at as string) ?? null,
       } as Parameters<typeof buildFacturaReceiptHtml>[1],
       args.numeroFactura,
       paperWidthMm

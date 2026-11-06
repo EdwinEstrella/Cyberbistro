@@ -17,6 +17,7 @@ import { getCreditNoteStatusDisplay, type CreditNoteStatusTone } from "../lib/cr
 import { loadCreditNoteData, issueCreditNote, type CreditNoteData } from "../lib/creditNotesService";
 import { formatDateTimeDo, formatRd } from "../lib/formatRd";
 import { printCreditNote } from "../lib/creditNotePrint";
+import { gateFiscalPrint, FISCAL_GATE_PENDING_CONFIRMATION_MESSAGE } from "../../../shared/lib/fiscalPrintGate";
 import { IssueCreditNoteDialog } from "./IssueCreditNoteDialog";
 
 const TONE_CLASS: Record<CreditNoteStatusTone, string> = {
@@ -81,7 +82,12 @@ export function NotasCredito() {
     const refresh = () => void reload();
     window.addEventListener("local-mirror-updated", refresh);
     const unbind = window.electronAPI?.onLocalDataUpdated?.((updated) => {
-      if (!updated || updated === tenantId) refresh();
+      const payload: unknown = updated;
+      const updatedTenantId =
+        typeof payload === "string"
+          ? payload
+          : (payload as { tenantId?: string } | null | undefined)?.tenantId;
+      if (!updatedTenantId || updatedTenantId === tenantId) refresh();
     });
     return () => {
       window.removeEventListener("local-mirror-updated", refresh);
@@ -114,9 +120,16 @@ export function NotasCredito() {
       const result = await issueCreditNote({ tenantId, facturaId: target.invoice.id, reason, sucursalId: activeSucursalId });
       toast.success(`Nota de crédito ${result.encf} emitida`);
       setTarget(null);
-      // Same as checkout: print right after issuing (the note shows as pending until DGII accepts it).
-      void printCreditNote({ tenantId, noteId: result.credit_note_factura_id }).then((printed) => {
-        if (!printed.ok) toast.error(printed.error ?? "No se pudo imprimir la nota de crédito.");
+      // e-CF credit notes wait for DGII security code confirmation before printing
+      void gateFiscalPrint({
+        tenantId,
+        factura: {
+          id: result.credit_note_factura_id,
+          ncf: result.encf,
+          ncf_tipo: "E34",
+          estado: "nota_credito",
+        },
+        numeroFactura: 0,
       });
       void window.electronAPI?.triggerSync?.().catch(() => undefined);
       await reload();
@@ -129,8 +142,14 @@ export function NotasCredito() {
 
   const handlePrint = async (note: CreditNoteInvoice) => {
     if (!tenantId) return;
-    const printed = await printCreditNote({ tenantId, note: note as unknown as Record<string, unknown> });
-    if (!printed.ok) toast.error(printed.error ?? "No se pudo imprimir la nota de crédito.");
+    const printed = await printCreditNote({
+      tenantId,
+      note: note as unknown as Record<string, unknown>,
+      isReprint: true,
+    });
+    if (!printed.ok && printed.error !== FISCAL_GATE_PENDING_CONFIRMATION_MESSAGE) {
+      toast.error(printed.error ?? "No se pudo imprimir la nota de crédito.");
+    }
   };
 
   if (authLoading) return null;

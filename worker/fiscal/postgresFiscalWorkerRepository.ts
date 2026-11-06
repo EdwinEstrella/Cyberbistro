@@ -38,6 +38,7 @@ type ClaimRow = {
   document_status: EcfFiscalStatus;
   certificate_metadata_id: string | null;
   dgii_track_id: string | null;
+  dgii_security_code: string | null;
   rfce_threshold_used: number | string | null;
   rejection_scope: "individual" | "batch" | null;
   batch_id: string | null;
@@ -217,6 +218,7 @@ export const CLAIM_JOB_SQL = `
       ed.status AS document_status,
       ed.certificate_metadata_id,
       ed.dgii_track_id,
+      ed.dgii_security_code,
       ed.rfce_threshold_used,
       ed.rejection_scope,
       ed.batch_id,
@@ -287,6 +289,7 @@ export const CLAIM_JOB_SQL = `
     candidate.document_status,
     candidate.certificate_metadata_id,
     candidate.dgii_track_id,
+    candidate.dgii_security_code,
     candidate.rfce_threshold_used,
     candidate.rejection_scope,
     candidate.batch_id,
@@ -332,6 +335,7 @@ function rowToSnapshot(row: ClaimRow): FiscalWorkerSnapshot {
       status: row.document_status,
       certificateMetadataId: row.certificate_metadata_id,
       dgiiTrackId: row.dgii_track_id,
+      dgiiSecurityCode: row.dgii_security_code ?? null,
       rfce_threshold_used: row.rfce_threshold_used !== null && row.rfce_threshold_used !== undefined ? Number(row.rfce_threshold_used) : null,
       rejection_scope: row.rejection_scope,
       batchId: row.batch_id,

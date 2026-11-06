@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { getCodeSixDigitfromSignature } from "dgii-ecf";
 import { classifyCertificateFailure } from "./certificateFailure";
+import { isRfceDocument } from "./dgiiAdapters";
 import { fiscalWorkerError, unknownToWorkerError } from "./errors";
 import { createUnsignedEcfXml } from "./mapper";
 import type {
@@ -24,6 +25,40 @@ export type ProcessJobResult =
   | { kind: "processed"; jobId: string; operation: FiscalOutboxOperation; status: EcfFiscalStatus }
   | { kind: "skipped"; reason: "already_done" | "locked"; jobId: string }
   | { kind: "failed"; jobId: string; retryable: boolean; code: string };
+
+interface InvoiceFacturaView {
+  ncf?: string;
+  total?: number;
+  tipoeCf?: number | string;
+}
+
+function readInvoiceFactura(snapshot: FiscalWorkerSnapshot): InvoiceFacturaView {
+  const factura = snapshot.invoicePayload?.factura as
+    | {
+        ncf?: unknown;
+        total?: unknown;
+        tipoe_cf?: unknown;
+        TipoeCF?: unknown;
+      }
+    | undefined;
+
+  const ncf = typeof factura?.ncf === "string" ? factura.ncf.trim() : undefined;
+  const total =
+    typeof factura?.total === "number"
+      ? factura.total
+      : factura?.total != null && !Number.isNaN(Number(factura.total))
+      ? Number(factura.total)
+      : undefined;
+  const rawTipoe = factura?.tipoe_cf ?? factura?.TipoeCF;
+  const tipoeCf =
+    typeof rawTipoe === "number" || typeof rawTipoe === "string"
+      ? rawTipoe
+      : ncf && /^E\d{2}/i.test(ncf)
+      ? ncf.substring(1, 3)
+      : undefined;
+
+  return { ncf, total, tipoeCf };
+}
 
 export class FiscalWorker {
   constructor(
@@ -132,17 +167,65 @@ export class FiscalWorker {
     });
     if (!signingMaterial.ok) throw signingMaterial.error;
 
+    const factura = readInvoiceFactura(snapshot);
+
+    const isRfce = isRfceDocument({
+      rfceThresholdUsed: snapshot.document.rfce_threshold_used,
+      tipoeCF: factura.tipoeCf,
+      ncf: factura.ncf,
+      total: factura.total,
+    });
+
+    const rncEmisor = String((snapshot.invoicePayload?.tenant as any)?.rnc ?? (snapshot.invoicePayload as any)?.rncEmisor ?? "");
+    const encf = snapshot.document.dgiiTrackId ?? (factura.ncf ? String(factura.ncf) : "");
+    const securityCode = snapshot.document.dgiiSecurityCode ?? undefined;
+
     const result = await this.deps.dgii.pollStatus({
       trackId: snapshot.document.dgiiTrackId,
       environment: snapshot.certificate.environment,
       idempotencyKey: snapshot.job.idempotencyKey,
       certificate: signingMaterial.value,
+      isRfce,
+      rncEmisor,
+      encf,
+      securityCode,
     });
     await this.auditForSnapshot("dgii_polled", snapshot, { kind: result.kind, statusCode: result.statusCode });
     return this.persistPollResult(snapshot, result);
   }
 
   private async persistSubmissionResult(snapshot: FiscalWorkerSnapshot, result: DgiiSubmitResult): Promise<EcfFiscalStatus> {
+    if (result.kind === "accepted") {
+      const encf = result.trackId ?? (snapshot.invoicePayload?.factura as any)?.ncf ?? snapshot.document.dgiiTrackId;
+      const nowIso = this.nowIso();
+      await this.deps.repository.updateDocument(snapshot.document.id, {
+        status: "accepted",
+        dgiiTrackId: encf ?? undefined,
+        dgiiStatusCode: result.statusCode,
+        dgiiStatusMessage: result.message,
+        submittedAt: nowIso,
+        acceptedAt: nowIso,
+        lastError: null,
+        rfceThresholdUsed: result.rfceThresholdUsed ?? null,
+      });
+      await this.auditForSnapshot("dgii_submitted", snapshot, { trackId: encf, statusCode: result.statusCode });
+      return "accepted";
+    }
+
+    if (result.kind === "rejected") {
+      const nowIso = this.nowIso();
+      await this.deps.repository.updateDocument(snapshot.document.id, {
+        status: "rejected",
+        dgiiStatusCode: result.statusCode,
+        dgiiStatusMessage: result.message,
+        rejectedAt: nowIso,
+        lastError: result.message,
+        rfceThresholdUsed: result.rfceThresholdUsed ?? null,
+      });
+      await this.auditForSnapshot("dgii_submitted", snapshot, { statusCode: result.statusCode });
+      return "rejected";
+    }
+
     if (result.kind === "submitted") {
       await this.deps.repository.updateDocument(snapshot.document.id, {
         status: "submitted",
@@ -170,6 +253,15 @@ export class FiscalWorker {
   }
 
   private async persistPollResult(snapshot: FiscalWorkerSnapshot, result: DgiiPollResult): Promise<EcfFiscalStatus> {
+    if (snapshot.document.status === "accepted" || snapshot.document.status === "rejected") {
+      await this.auditForSnapshot("job_skipped", snapshot, {
+        reason: "terminal_status_preserved",
+        currentStatus: snapshot.document.status,
+        resultKind: result.kind,
+      });
+      return snapshot.document.status;
+    }
+
     if (result.kind === "accepted") {
       await this.deps.repository.updateDocument(snapshot.document.id, {
         status: "accepted",
@@ -251,11 +343,13 @@ export class FiscalWorker {
       nextAttemptAt: error.retryable && !isConfigError ? this.nextAttemptIso(snapshot.job.attempts + 1) : undefined,
       errorMessage: message,
     });
-    await this.deps.repository.updateDocument(snapshot.document.id, {
-      status: documentStatus,
-      lastError: message,
-      dgiiStatusMessage: message,
-    });
+    if (snapshot.document.status !== "accepted" && snapshot.document.status !== "rejected") {
+      await this.deps.repository.updateDocument(snapshot.document.id, {
+        status: documentStatus,
+        lastError: message,
+        dgiiStatusMessage: message,
+      });
+    }
     await this.auditForSnapshot("job_failed", snapshot, { code: error.code, retryable: error.retryable });
   }
 

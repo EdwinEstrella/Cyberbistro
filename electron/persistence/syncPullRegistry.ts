@@ -45,6 +45,10 @@ export const SYNC_PULL_TABLES: readonly SyncPullTable[] = [
   // Not hard-deleted via pull: invoice deletion is audited, never a silent
   // snapshot-absence removal.
   { remoteTable: "facturas", localTable: "facturas", child: false, deletable: false },
+  // e-CF mirror: DGII processing outcomes (status, track ID, security code)
+  // download into separate nullable columns on local ecf_documents rows.
+  // Never hard-deleted via pull. Follows facturas for FK resolution.
+  { remoteTable: "ecf_documents", localTable: "ecf_documents", child: false, deletable: false },
   // Purchases download for the compras module and finance analytics.
   // Reconciles remote deletions when a purchase is cancelled or deleted in web.
   { remoteTable: "compras", localTable: "compras", child: false, deletable: true },
