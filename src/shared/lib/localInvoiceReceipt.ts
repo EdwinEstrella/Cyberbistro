@@ -97,10 +97,10 @@ export async function printLocalInvoiceReceipt(args: {
       },
       {
         ...args.factura,
-        ecf_status: ecfDocument?.status ?? args.factura.fiscal_status ?? null,
-        ecf_track_id: ecfDocument?.dgii_track_id ?? null,
-        ecf_security_code: ecfDocument?.dgii_security_code ?? null,
-        ecf_submitted_at: ecfDocument?.submitted_at ?? null,
+        ecf_status: (ecfDocument?.dgii_status as string) ?? ecfDocument?.status ?? args.factura.fiscal_status ?? null,
+        ecf_track_id: (ecfDocument?.dgii_track_id as string) ?? (args.factura.ecf_track_id as string) ?? null,
+        ecf_security_code: (ecfDocument?.dgii_security_code as string) ?? (args.factura.ecf_security_code as string) ?? null,
+        ecf_submitted_at: (ecfDocument?.submitted_at as string) ?? (ecfDocument?.accepted_at as string) ?? (args.factura.ecf_submitted_at as string) ?? null,
       } as Parameters<typeof buildFacturaReceiptHtml>[1],
       args.numeroFactura,
       paperWidthMm

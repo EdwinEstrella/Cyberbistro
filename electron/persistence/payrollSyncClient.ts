@@ -292,6 +292,9 @@ export class PayrollSyncClient implements ServerSyncClient {
             const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
             query = (query as any).gte("created_at", threeDaysAgo);
           }
+          if (table === "ecf_documents" && input.cursor && typeof (query as any).gte === "function") {
+            query = (query as any).gte("updated_at", input.cursor);
+          }
           if (afterId != null) query = query.gt("id", afterId);
           const { data, error } = await query;
           if (error) throw new Error(`Pull failed for ${table}: ${error.message}`);
@@ -314,7 +317,8 @@ export class PayrollSyncClient implements ServerSyncClient {
             if ((child ? parent?.tenant_id : row[scopeColumn]) !== input.tenantId) {
               throw new Error(`Tenant mismatch in pull for ${table}`);
             }
-            tableChanges.push({ tableName: localTable, rowId: String(rawId), payload: row, deleted: false });
+            const payload = table === "ecf_documents" ? mapEcfDocumentPullPayload(row) : row;
+            tableChanges.push({ tableName: localTable, rowId: String(rawId), payload, deleted: false });
             afterId = rawId;
           }
         }
@@ -1169,6 +1173,27 @@ function mapEcfDocumentPayload(operation: DurableOperation, rawPayload: Record<s
     }
   }
   return row;
+}
+
+/**
+ * Maps incoming cloud ecf_documents rows to local pull changes.
+ * The server's `status` represents DGII processing outcomes and must be mirrored
+ * to `dgii_status` rather than local `status` (docs/fiscal-status-truths.md).
+ */
+function mapEcfDocumentPullPayload(row: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: String(row.id),
+    tenant_id: String(row.tenant_id),
+    factura_id: row.factura_id ? String(row.factura_id) : null,
+    ecf_type: row.ecf_type ?? row.document_type ?? null,
+    dgii_status: row.status ? String(row.status) : null,
+    dgii_track_id: row.dgii_track_id ? String(row.dgii_track_id) : null,
+    dgii_status_message: row.dgii_status_message ? String(row.dgii_status_message) : null,
+    dgii_security_code: row.dgii_security_code ? String(row.dgii_security_code) : null,
+    submitted_at: row.submitted_at ? String(row.submitted_at) : null,
+    accepted_at: row.accepted_at ? String(row.accepted_at) : null,
+    updated_at: row.updated_at ? String(row.updated_at) : null,
+  };
 }
 
 const FISCAL_OUTBOX_CLOUD_COLUMNS = [

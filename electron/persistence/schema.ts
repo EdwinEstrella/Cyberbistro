@@ -491,6 +491,7 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
   ensureInventorySchemaEvolution(database);
   ensurePlatosSchemaEvolution(database);
   ensureFiscalCheckoutSchemaEvolution(database);
+  ensureEcfDocumentsSchemaEvolution(database);
   database.exec(`
     CREATE INDEX IF NOT EXISTS idx_payroll_payments_employee_period ON payroll_payments (tenant_id, sucursal_id, employee_id, period);
     CREATE INDEX IF NOT EXISTS idx_payroll_adjustments_payment ON payroll_payment_adjustments (payment_id);
@@ -542,6 +543,27 @@ function ensureFiscalCheckoutSchemaEvolution(database: DatabaseSync): void {
     CREATE INDEX IF NOT EXISTS idx_ecf_documents_pending ON ecf_documents (tenant_id, sucursal_id, status);
     CREATE INDEX IF NOT EXISTS idx_fiscal_outbox_pending ON fiscal_outbox (tenant_id, sucursal_id, status);
   `);
+}
+
+/**
+ * DGII processing outcomes (submitted/accepted/rejected) belong to separate
+ * mirror columns rather than the local status CHECK (docs/fiscal-status-truths.md).
+ * Added additively without table rebuild, mirroring ensureFacturasSchemaEvolution.
+ */
+function ensureEcfDocumentsSchemaEvolution(database: DatabaseSync): void {
+  const columns = getTableColumns(database, "ecf_documents");
+  if (columns.length === 0) return;
+  const additions: ReadonlyArray<readonly [string, string]> = [
+    ["dgii_status", "TEXT"],
+    ["dgii_track_id", "TEXT"],
+    ["dgii_status_message", "TEXT"],
+    ["submitted_at", "TEXT"],
+    ["accepted_at", "TEXT"],
+    ["dgii_security_code", "TEXT"],
+  ] as const;
+  for (const [column, definition] of additions) {
+    if (!columns.includes(column)) database.exec(`ALTER TABLE ecf_documents ADD COLUMN ${column} ${definition};`);
+  }
 }
 
 function rebuildFiscalTableIfStale(
