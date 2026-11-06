@@ -166,40 +166,6 @@ export class FiscalWorker {
       return "submitted";
     }
 
-    if (result.kind === "accepted") {
-      // RFCE synchronous acceptance (codigo 1 or 4): no poll job needed.
-      // dgiiTrackId stores the eNCF for reference/audit; it is NOT a poll handle.
-      const nowIso = this.nowIso();
-      await this.deps.repository.updateDocument(snapshot.document.id, {
-        status: "accepted",
-        dgiiTrackId: result.dgiiTrackId,
-        dgiiStatusCode: result.statusCode,
-        dgiiStatusMessage: result.message,
-        submittedAt: nowIso,
-        acceptedAt: nowIso,
-        lastError: null,
-        rfceThresholdUsed: result.rfceThresholdUsed ?? null,
-      });
-      await this.auditForSnapshot("dgii_submitted", snapshot, { statusCode: result.statusCode, rfce: true, accepted: true });
-      return "accepted";
-    }
-
-    if (result.kind === "rejected") {
-      // RFCE synchronous rejection (codigo 2): terminal, no poll job.
-      const nowIso = this.nowIso();
-      await this.deps.repository.updateDocument(snapshot.document.id, {
-        status: "rejected",
-        dgiiStatusCode: result.statusCode,
-        dgiiStatusMessage: result.message,
-        submittedAt: nowIso,
-        rejectedAt: nowIso,
-        lastError: result.message,
-        rfceThresholdUsed: result.rfceThresholdUsed ?? null,
-      });
-      await this.auditForSnapshot("dgii_submitted", snapshot, { statusCode: result.statusCode, rfce: true, rejected: true });
-      return "rejected";
-    }
-
     throw fiscalWorkerError(result.kind.toUpperCase(), result.message, result.kind === "retryable_error");
   }
 

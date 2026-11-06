@@ -60,7 +60,7 @@ describe("RealDgiiClient", () => {
     passphrase: "password123",
   };
 
-  it("routes E32 below threshold to sendSummary and maps codigo 1 (Aceptado) to kind='accepted' with no trackId", async () => {
+  it("routes E32 below threshold to sendSummary and returns synchronized result", async () => {
     mockAuthenticate.mockResolvedValue({ token: "token" });
     mockSendSummary.mockResolvedValue({
       codigo: 1,
@@ -80,15 +80,13 @@ describe("RealDgiiClient", () => {
     expect(mockAuthenticate).toHaveBeenCalled();
     expect(mockSendSummary).toHaveBeenCalledWith(expect.any(String), "131880738E3200000001.xml");
     expect(mockSendElectronicDocument).not.toHaveBeenCalled();
-    expect(result).toMatchObject({
-      kind: "accepted",
-      dgiiTrackId: "E320000000001",
+    expect(result).toEqual({
+      kind: "submitted",
+      trackId: "E320000000001",
       statusCode: "1",
       message: "Aceptado",
       rfceThresholdUsed: 250000,
     });
-    // Accepted RFCE results must NOT carry a poll trackId
-    expect((result as any).trackId).toBeUndefined();
   });
 
   it("routes E32 equal to threshold to sendElectronicDocument", async () => {

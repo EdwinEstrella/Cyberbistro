@@ -190,20 +190,6 @@ export interface XmlSignerAdapter {
 
 export type DgiiSubmitResult =
   | { kind: "submitted"; trackId: string; statusCode?: string; message?: string; rfceThresholdUsed?: number | null }
-  | {
-      kind: "accepted";
-      /** eNCF from the RFCE summary response — stored as dgiiTrackId for reference, not used for polling. */
-      dgiiTrackId?: string;
-      statusCode?: string;
-      message?: string;
-      rfceThresholdUsed?: number | null;
-    }
-  | {
-      kind: "rejected";
-      statusCode?: string;
-      message: string;
-      rfceThresholdUsed?: number | null;
-    }
   | { kind: "retryable_error"; statusCode?: string; message: string }
   | { kind: "terminal_error"; statusCode?: string; message: string };
 
