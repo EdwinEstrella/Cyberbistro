@@ -47,6 +47,11 @@ describe("planPricing", () => {
     ).toBe(false);
   });
 
+  it("marks Empresarial as the only recommended plan", () => {
+    const recommended = ALL_PLAN_TIERS.filter((tier) => tier.recommended).map((tier) => tier.id);
+    expect(recommended).toEqual(["empresarial"]);
+  });
+
   it("handles getPlanPrice with fallbacks", () => {
     expect(getPlanPrice("corporativo")).toBe(299);
     expect(getPlanPrice("CORPORATIVO")).toBe(299);

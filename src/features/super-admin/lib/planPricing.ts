@@ -37,7 +37,6 @@ export const PLAN_TIERS: Record<Plan, PlanPricingTier> = {
     name: PLAN_LABELS.profesional,
     priceMonthlyUsd: PLAN_PRICES.profesional,
     tagline: "Para restaurantes en crecimiento y control de recetas",
-    recommended: true,
     bullets: [
       "Hasta 3 Sucursales",
       "Hasta 5 Usuarios (+ Admin)",
@@ -54,6 +53,7 @@ export const PLAN_TIERS: Record<Plan, PlanPricingTier> = {
     name: PLAN_LABELS.empresarial,
     priceMonthlyUsd: PLAN_PRICES.empresarial,
     tagline: "Para marcas multi-sede y pedidos B2B de empresas",
+    recommended: true,
     bullets: [
       "Sucursales y Usuarios Ilimitados",
       "Todo lo del Plan Profesional (e-CF)",
