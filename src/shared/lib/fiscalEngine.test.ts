@@ -132,6 +132,31 @@ describe("fiscalEngine", () => {
       expect(result).toEqual({ mode: "ncf_legacy", certificateId: null });
     });
 
+    it("keeps dgii_ecf for non-admin sales staff when online query returns null due to RLS", async () => {
+      const settings = {
+        ...validEcfSettings,
+        fiscalModeFallback: "internal_receipt" as const,
+      };
+
+      const mockMaybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
+      const queryBuilder: any = {
+        eq: vi.fn().mockReturnThis(),
+        order: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        maybeSingle: mockMaybeSingle,
+      };
+      queryBuilder.eq.mockReturnValue(queryBuilder);
+      vi.mocked(supabase.from).mockReturnValue({
+        select: () => queryBuilder,
+      } as any);
+
+      const resultVentas = await resolveActiveFiscalMode("tenant-1", settings, true, "ventas");
+      expect(resultVentas).toEqual({ mode: "dgii_ecf", certificateId: null });
+
+      const resultCajera = await resolveActiveFiscalMode("tenant-1", settings, true, "cajera");
+      expect(resultCajera).toEqual({ mode: "dgii_ecf", certificateId: null });
+    });
+
     it("keeps dgii_ecf active offline without reading certificate data from local storage", async () => {
       const settings = { ...validEcfSettings };
 

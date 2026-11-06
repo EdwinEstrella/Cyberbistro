@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../../../shared/lib/supabase";
-import { ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
+import { useAuth, ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
 import { buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml, type PrintThermalResult } from "../../../shared/lib/thermalPrint";
@@ -238,6 +238,7 @@ export function MesaCloseAccountModal({
   onPaidFull,
 }: MesaCloseAccountModalProps) {
   const { activeSucursalId } = useSucursal();
+  const { rol } = useAuth();
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
   const [mesaConsumos, setMesaConsumos] = useState<MesaConsumoRow[]>([]);
@@ -326,7 +327,7 @@ export function MesaCloseAccountModal({
 
 
       const isOnline = navigator.onLine;
-      const { mode, certificateId: certId } = await resolveActiveFiscalMode(tenantId, settings, isOnline);
+      const { mode, certificateId: certId } = await resolveActiveFiscalMode(tenantId, settings, isOnline, rol);
       setFiscalMode(mode);
       setCertificateId(certId);
       setNcfFiscalActive(mode !== "internal_receipt");

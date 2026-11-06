@@ -222,7 +222,7 @@ export function Dashboard() {
       setCartPropinaEnabled(settings?.defaultPropinaEnabled ?? false);
       setItbisIncluded(settings?.itbisIncluded ?? false);
       const isOnline = navigator.onLine;
-      const { mode, certificateId: certId } = await resolveActiveFiscalMode(tenantId, settings, isOnline);
+      const { mode, certificateId: certId } = await resolveActiveFiscalMode(tenantId, settings, isOnline, rol);
       setFiscalMode(mode);
       setCertificateId(certId);
       setTenantNcfFiscalActive(mode !== "internal_receipt");
