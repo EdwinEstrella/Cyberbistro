@@ -530,7 +530,10 @@ export function applyCloudFacturaRows(
     ) VALUES (?, ?, ?, ?, ?, 'committed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       sucursal_id = excluded.sucursal_id,
-      fiscal_mode = excluded.fiscal_mode,
+      fiscal_mode = CASE
+        WHEN facturas.fiscal_mode = 'dgii_ecf' AND excluded.fiscal_mode <> 'dgii_ecf' THEN facturas.fiscal_mode
+        ELSE excluded.fiscal_mode
+      END,
       total = excluded.total,
       numero_factura = excluded.numero_factura,
       mesa_numero = excluded.mesa_numero,
@@ -543,8 +546,8 @@ export function applyCloudFacturaRows(
       moneda = excluded.moneda,
       items = excluded.items,
       notas = excluded.notas,
-      ncf = excluded.ncf,
-      ncf_tipo = excluded.ncf_tipo,
+      ncf = COALESCE(excluded.ncf, facturas.ncf),
+      ncf_tipo = COALESCE(excluded.ncf_tipo, facturas.ncf_tipo),
       cliente_rnc = excluded.cliente_rnc,
       customer_id = excluded.customer_id,
       created_at = excluded.created_at,
