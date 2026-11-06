@@ -1,16 +1,10 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { useSearchParams } from "react-router";
 import { supabase } from "../../../shared/lib/supabase";
-import { canUseFeature } from "../../../shared/lib/planFeatures";
-import { decideEcfSaveGate, formatReadinessIssues } from "../../../shared/lib/ecfActivationReadiness";
+import { decideEcfSaveGate } from "../../../shared/lib/ecfActivationReadiness";
 import { loadEcfActivationReadiness } from "../../fiscal/lib/loadEcfReadiness";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../../../shared/ui/select";
 import { useAuth, ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../../shared/ui/tabs";
 
 import {
   getThermalPrintSettings,
@@ -38,7 +32,6 @@ import {
   uploadTenantLogoFile,
 } from "../../../shared/lib/tenantLogoStorage";
 import { cacheLogoFromUrl, refreshLogoCache } from "../../../shared/lib/logoCache";
-import { CertificateUploader } from "./CertificateUploader";
 import {
   buildBSequenceMapFromRow,
   buildTenantNcfUpdatePayload,
@@ -47,41 +40,12 @@ import {
   construirCadenaNcf,
   etiquetaTipoNcf,
   isNcfBCode,
-  isNcfTypeActive,
   normalizeNcfActiveMap,
-  NCF_B_TIPO_OPCIONES,
-  NCF_E_TIPO_OPCIONES,
   type NcfBCode,
 } from "../../../shared/lib/ncf";
-
-interface Config {
-  nombre_empresa: string;
-  rnc: string;
-  logo_url: string;
-  logo_size_px: number;
-  logo_offset_x: number;
-  logo_offset_y: number;
-  menu_url: string;
-  direccion: string;
-  telefono: string;
-  currency_code: "DOP" | "ARS";
-  itbis_cobro_por_defecto: boolean;
-  itbis_incluido_en_precio: boolean;
-  propina_cobro_por_defecto: boolean;
-  ncf_fiscal_activo: boolean;
-  fiscal_mode: "internal_receipt" | "ncf_legacy" | "dgii_ecf";
-  fiscal_mode_fallback: "internal_receipt" | "ncf_legacy";
-  ecf_environment: "test" | "certification" | "production";
-  ncf_tipo_default: string;
-  ncf_secuencia_siguiente: number;
-  ncf_secuencias_por_tipo: Record<string, number>;
-  ncf_tipos_activos: Record<string, boolean>;
-}
-
-const CURRENCY_OPTIONS: Array<{ code: Config["currency_code"]; label: string }> = [
-  { code: "DOP", label: "Peso dominicano (RD$)" },
-  { code: "ARS", label: "Peso argentino (AR$)" },
-];
+import { AjustesGeneralTab } from "./AjustesGeneralTab";
+import { AjustesFacturacionTab } from "./AjustesFacturacionTab";
+import type { AjustesConfig, ThermalPreviewKind } from "../types";
 
 const SAMPLE_FACTURA_THERMAL_PREVIEW: Parameters<typeof buildFacturaReceiptHtml>[1] = {
   items: [
@@ -153,19 +117,12 @@ const SAMPLE_NOMINA_THERMAL: NominaReceiptData = {
   ],
 };
 
-type ThermalPreviewKind = "factura" | "comanda" | "cierre" | "split" | "nomina";
-
-const THERMAL_PREVIEW_TABS: { id: ThermalPreviewKind; label: string }[] = [
-  { id: "factura", label: "Factura" },
-  { id: "comanda", label: "Comanda" },
-  { id: "cierre", label: "Cierre" },
-  { id: "split", label: "Separar cuenta" },
-  { id: "nomina", label: "Nómina" },
-];
-
 export function Ajustes() {
   const { tenantId, loading: authLoading, plan } = useAuth();
-  const [config, setConfig] = useState<Config>({
+  const [searchParams, setSearchParams] = useSearchParams();
+  const currentTab = searchParams.get("tab") || "general";
+
+  const [config, setConfig] = useState<AjustesConfig>({
     nombre_empresa: "",
     rnc: "",
     logo_url: "",
@@ -193,9 +150,7 @@ export function Ajustes() {
   const [saving, setSaving] = useState(false);
   const [printingTest, setPrintingTest] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ type: "success" | "error" | "warning"; text: string } | null>(null);
-  // Fiscal mode as last loaded/saved: the e-CF readiness gate only applies when switching into dgii_ecf.
   const [persistedFiscalMode, setPersistedFiscalMode] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const TENANT_FIELDS_BASE = "nombre_negocio, rnc, logo_url, logo_size_px, logo_offset_x, logo_offset_y, menu_url, direccion, telefono";
   const TENANT_FIELDS_CURRENCY = "moneda";
@@ -220,7 +175,6 @@ export function Ajustes() {
       } else {
         let res = await supabase.from("tenants").select(`${TENANT_FIELDS_BASE}, ${TENANT_FIELDS_CURRENCY}, ${TENANT_FIELDS_NCF}`).eq("id", tenantId).maybeSingle();
         if (res.error) {
-          // The cloud may not have itbis_incluido_en_precio yet: retry without it.
           res = await supabase.from("tenants").select(`${TENANT_FIELDS_BASE}, ${TENANT_FIELDS_CURRENCY}, ${TENANT_FIELDS_NCF.replace(" itbis_incluido_en_precio,", "")}`).eq("id", tenantId).maybeSingle();
         }
         if (res.error) console.error(res.error.message);
@@ -256,7 +210,6 @@ export function Ajustes() {
           ncf_tipos_activos: normalizeNcfActiveMap(data.ncf_tipos_activos),
         });
       }
-      // Proactively cache logo for offline printing
       if (data && data.logo_url) {
         void cacheLogoFromUrl(data.logo_url);
       }
@@ -271,7 +224,6 @@ export function Ajustes() {
     setSaveMessage(null);
     let warning: string | null = null;
     if (config.fiscal_mode === "dgii_ecf") {
-      // Same shared readiness check as the mode selector; blocks only when switching into dgii_ecf.
       let loaded: Awaited<ReturnType<typeof loadEcfActivationReadiness>> | null = null;
       try {
         loaded = await loadEcfActivationReadiness({ tenantId, plan, environment: config.ecf_environment });
@@ -334,7 +286,6 @@ export function Ajustes() {
     const saved = await saveTenantLogoUrl(tenantId, uploaded.publicUrl);
     if (!saved.ok) { return; }
     setConfig(p => ({ ...p, logo_url: uploaded.publicUrl }));
-    // Cache the new logo for offline printing
     void refreshLogoCache(uploaded.publicUrl);
   }
 
@@ -378,7 +329,6 @@ export function Ajustes() {
       switch (thermalPreviewKind) {
         case "factura":
           let sample = { ...SAMPLE_FACTURA_THERMAL_PREVIEW, pagada_at: nowIso };
-          
           sample.itbis = sample.subtotal * 0.18;
           sample.propina = sample.subtotal * 0.10;
           sample.total = sample.subtotal + sample.itbis + sample.propina;
@@ -410,239 +360,86 @@ export function Ajustes() {
     return () => { active = false; };
   }, [tenantPreview, thermalPreviewKind, config]);
 
+  function handleTabChange(tab: string) {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (tab === "general") {
+        next.delete("tab");
+      } else {
+        next.set("tab", tab);
+      }
+      return next;
+    }, { replace: true });
+  }
+
   if (authLoading || loading) return <div className="flex-1 flex items-center justify-center font-['Space_Grotesk'] text-muted-foreground">Cargando...</div>;
 
   return (
     <div className="flex-1 min-h-0 p-4 sm:p-8 bg-background transition-colors duration-300 overflow-y-auto">
       <div className="max-w-[1400px] mx-auto grid grid-cols-1 gap-8">
-        <div className="flex flex-col gap-6">
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <section className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 flex flex-col gap-6">
-              <h2 className="font-['Space_Grotesk'] text-xl font-bold text-foreground">Información Básica</h2>
-              <div className="space-y-4">
-                <Field label="Nombre Comercial"><input type="text" value={config.nombre_empresa} onChange={e => setConfig(p => ({ ...p, nombre_empresa: e.target.value }))} className="input-field" /></Field>
-                <Field label="RNC / Identificación"><input type="text" value={config.rnc} onChange={e => setConfig(p => ({ ...p, rnc: e.target.value }))} className="input-field" /></Field>
-                <Field label="Dirección"><input type="text" value={config.direccion} onChange={e => setConfig(p => ({ ...p, direccion: e.target.value }))} className="input-field" /></Field>
-                <div className="grid grid-cols-2 gap-4">
-                   <Field label="Teléfono"><input type="text" value={config.telefono} onChange={e => setConfig(p => ({ ...p, telefono: e.target.value }))} className="input-field" /></Field>
-                    <div className="col-span-2 rounded-2xl border border-border bg-muted/30 p-4">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="min-w-0">
-                          <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Link del menú digital</div>
-                          <p className="break-all text-xs text-muted-foreground">{config.menu_url.trim() || "Activá el menú desde Pedidos para generar el enlace público."}</p>
-                        </div>
-                        <button type="button" disabled={!config.menu_url.trim()} onClick={() => void navigator.clipboard?.writeText(config.menu_url.trim())} className="rounded-lg bg-muted px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-foreground border border-border disabled:opacity-40 cursor-pointer">Copiar</button>
-                      </div>
-                    </div>
-                    <Field label="Divisa">
-                      <Select value={config.currency_code} onValueChange={val => setConfig(p => ({ ...p, currency_code: val as any }))}>
-                        <SelectTrigger className="w-full rounded-xl">
-                          <SelectValue placeholder="Seleccionar divisa" />
-                        </SelectTrigger>
-                        <SelectContent className="rounded-xl">
-                          {CURRENCY_OPTIONS.map(o => <SelectItem key={o.code} value={o.code}>{o.label}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </Field>
-                </div>
-              </div>
-            </section>
-
-            <section className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 flex flex-col gap-6">
-              <h2 className="font-['Space_Grotesk'] text-xl font-bold text-foreground">Identidad Visual</h2>
-              <div className="aspect-video bg-muted/50 rounded-2xl border-2 border-dashed border-border flex items-center justify-center overflow-hidden relative group">
-                {config.logo_url ? <img src={config.logo_url} className="max-h-[80%] object-contain" /> : <span className="text-muted-foreground text-xs font-['Inter']">Sin Logo</span>}
-                <div className="absolute inset-0 bg-background/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                   <button onClick={() => fileInputRef.current?.click()} className="bg-primary text-primary-foreground rounded-lg px-4 py-2 text-xs font-bold uppercase border-none cursor-pointer">Cambiar</button>
-                </div>
-              </div>
-              <input ref={fileInputRef} type="file" className="hidden" onChange={handleLogoUpload} />
-              <Field label="URL Remota"><input type="text" value={config.logo_url} onChange={e => setConfig(p => ({ ...p, logo_url: e.target.value }))} className="input-field" /></Field>
-              <div className="border-t border-border pt-5 flex flex-col gap-4">
-                <div>
-                  <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Logo en recibos</div>
-                  <p className="text-xs text-muted-foreground leading-relaxed">Se guarda en Supabase al presionar Guardar Cambios.</p>
-                </div>
-                <Field label={`Tamaño (${config.logo_size_px}px)`}>
-                  <input type="range" min="32" max="90" value={config.logo_size_px} onChange={e => setConfig(p => ({ ...p, logo_size_px: Number(e.target.value) }))} className="w-full accent-primary" />
-                </Field>
-                <div className="grid grid-cols-2 gap-4">
-                  <Field label={`X (${config.logo_offset_x}px)`}>
-                    <input type="range" min="-28" max="28" value={config.logo_offset_x} onChange={e => setConfig(p => ({ ...p, logo_offset_x: Number(e.target.value) }))} className="w-full accent-primary" />
-                  </Field>
-                  <Field label={`Y (${config.logo_offset_y}px)`}>
-                    <input type="range" min="-12" max="18" value={config.logo_offset_y} onChange={e => setConfig(p => ({ ...p, logo_offset_y: Number(e.target.value) }))} className="w-full accent-primary" />
-                  </Field>
-                </div>
-              </div>
-            </section>
+        <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full flex flex-col gap-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-border shrink-0">
+            <div>
+              <span className="font-['Inter',sans-serif] text-muted-foreground text-[11px] uppercase tracking-[0.5px]">
+                Configuración del Sistema
+              </span>
+              <h1 className="font-['Space_Grotesk',sans-serif] font-bold text-foreground text-[24px] uppercase tracking-[0.5px] mt-0.5">
+                Ajustes
+              </h1>
+            </div>
+            <TabsList className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.18)] rounded-[10px] p-1 h-auto flex gap-1.5 shrink-0">
+              <TabsTrigger
+                value="general"
+                className="px-4 py-2 rounded-[8px] font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[0.5px] text-[#adaaaa] data-[state=active]:bg-[rgba(255,144,109,0.12)] data-[state=active]:border-[#ff906d] data-[state=active]:text-[#ff906d] data-[state=active]:shadow-[0_0_12px_rgba(255,144,109,0.1)] border border-transparent transition-all cursor-pointer"
+              >
+                General
+              </TabsTrigger>
+              <TabsTrigger
+                value="facturacion"
+                className="px-4 py-2 rounded-[8px] font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[0.5px] text-[#adaaaa] data-[state=active]:bg-[rgba(255,144,109,0.12)] data-[state=active]:border-[#ff906d] data-[state=active]:text-[#ff906d] data-[state=active]:shadow-[0_0_12px_rgba(255,144,109,0.1)] border border-transparent transition-all cursor-pointer"
+              >
+                Facturación
+              </TabsTrigger>
+            </TabsList>
           </div>
 
-          <section className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6">
-            <h2 className="font-['Space_Grotesk'] text-xl font-bold text-foreground mb-6">Vista Previa Impresión</h2>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-              <div className="flex gap-2 overflow-x-auto pb-2 sm:pb-0">
-                {THERMAL_PREVIEW_TABS.map(t => (
-                  <button key={t.id} onClick={() => setThermalPreviewKind(t.id)} className={`px-4 py-2 rounded-lg text-[12px] font-bold uppercase tracking-widest transition-all cursor-pointer border-none shrink-0 ${thermalPreviewKind === t.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5"}`}>{t.label}</button>
-                ))}
+          <TabsContent value="general" className="outline-none">
+            <AjustesGeneralTab
+              config={config}
+              setConfig={setConfig}
+              handleLogoUpload={handleLogoUpload}
+              thermalPreviewKind={thermalPreviewKind}
+              setThermalPreviewKind={setThermalPreviewKind}
+              thermalPreviewHtml={thermalPreviewHtml}
+              printingTest={printingTest}
+              handlePrintTest={handlePrintTest}
+            />
+          </TabsContent>
+
+          <TabsContent value="facturacion" className="outline-none">
+            <AjustesFacturacionTab
+              config={config}
+              setConfig={setConfig}
+              plan={plan}
+              tenantId={tenantId}
+              setSaveMessage={setSaveMessage}
+            />
+          </TabsContent>
+
+          <div className="flex flex-col gap-4 mt-2">
+            {saveMessage && (
+              <div className={`rounded-xl border p-4 text-sm font-medium ${saveMessage.type === "error" ? "border-destructive/20 bg-destructive/10 text-destructive" : saveMessage.type === "warning" ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400" : "border-green-500/20 bg-green-500/10 text-green-600 dark:text-green-400"}`}>
+                {saveMessage.text}
               </div>
-              <button 
-                onClick={handlePrintTest} 
-                disabled={printingTest || !thermalPreviewHtml}
-                className="shrink-0 px-4 py-2 bg-foreground text-background rounded-lg text-[12px] font-bold uppercase tracking-widest transition-all cursor-pointer disabled:opacity-50 border-none"
-              >
-                {printingTest ? "Imprimiendo..." : "Imprimir Prueba"}
-              </button>
-            </div>
-            <div className="bg-muted/30 rounded-2xl p-8 flex justify-center border border-dashed border-border min-h-[400px]">
-               <iframe srcDoc={thermalPreviewHtml} className="bg-white rounded shadow-2xl border-none w-[80mm] min-h-[500px] scale-95 origin-top" title="Thermal Preview" />
-            </div>
-          </section>
+            )}
 
-          <section className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 flex flex-col gap-6">
-            <h2 className="font-['Space_Grotesk'] text-xl font-bold text-foreground">Configuración Fiscal</h2>
-            <div className="flex flex-col gap-4">
-              <label className="flex items-center gap-3 cursor-pointer group">
-                <input type="checkbox" checked={config.itbis_cobro_por_defecto} onChange={e => setConfig(p => ({ ...p, itbis_cobro_por_defecto: e.target.checked }))} className="size-4 rounded accent-primary" />
-                <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">Cobrar ITBIS por defecto</span>
-              </label>
-              <label className="flex items-start gap-3 cursor-pointer group">
-                <input type="checkbox" checked={config.itbis_incluido_en_precio} onChange={e => setConfig(p => ({ ...p, itbis_incluido_en_precio: e.target.checked }))} className="mt-0.5 size-4 rounded accent-primary" />
-                <span className="flex flex-col">
-                  <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">ITBIS incluido en el precio</span>
-                  <span className="text-xs text-muted-foreground">El precio del producto ya incluye el ITBIS (ej. 100 = 84.75 + 15.25 ITBIS).</span>
-                </span>
-              </label>
-              <label className="flex items-center gap-3 cursor-pointer group">
-                <input type="checkbox" checked={config.propina_cobro_por_defecto} onChange={e => setConfig(p => ({ ...p, propina_cobro_por_defecto: e.target.checked }))} className="size-4 rounded accent-primary" />
-                <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">Cobrar propina legal 10% por defecto</span>
-              </label>
-              
-              <div className="border-t border-border pt-4">
-                <Field label="Modo Fiscal">
-                  <Select
-                    value={config.fiscal_mode}
-                    onValueChange={val => {
-                      const mode = val as any;
-                      if (mode === "dgii_ecf" && !canUseFeature(plan, "dgii_ecf")) {
-                        return;
-                      }
-                      if (mode === "dgii_ecf" && tenantId) {
-                        // Same readiness decision as the activation wizard.
-                        void loadEcfActivationReadiness({ tenantId, plan, environment: config.ecf_environment }).then(({ result }) => {
-                          if (result.ready) {
-                            setConfig(p => ({ ...p, fiscal_mode: mode }));
-                          } else {
-                            setSaveMessage({ type: "error", text: `No se puede activar la facturación electrónica. ${formatReadinessIssues(result)}` });
-                          }
-                        }).catch(() => {
-                          setSaveMessage({ type: "error", text: "No se pudo verificar la configuración e-CF. Intentá de nuevo." });
-                        });
-                        return;
-                      }
-                      setConfig(p => ({ ...p, fiscal_mode: mode }));
-                    }}
-                  >
-                    <SelectTrigger className="w-full rounded-xl">
-                      <SelectValue placeholder="Seleccionar modo fiscal" />
-                    </SelectTrigger>
-                    <SelectContent className="rounded-xl">
-                      <SelectItem value="internal_receipt">Recibo Interno (Sin NCF)</SelectItem>
-                      <SelectItem value="ncf_legacy">NCF Tradicional</SelectItem>
-                      <SelectItem value="dgii_ecf" disabled={!canUseFeature(plan, "dgii_ecf")}>
-                        Facturación Electrónica (e-CF) {!canUseFeature(plan, "dgii_ecf") ? "🔒 (Plan Profesional)" : ""}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
-              </div>
-
-              {config.fiscal_mode === "dgii_ecf" && (
-                <div className="animate-in fade-in flex flex-col gap-4 border-t border-border pt-4">
-                  <Field label="Entorno de Conexión DGII">
-                    <Select value={config.ecf_environment} onValueChange={val => setConfig(p => ({ ...p, ecf_environment: val as any }))}>
-                      <SelectTrigger className="w-full rounded-xl">
-                        <SelectValue placeholder="Seleccionar entorno" />
-                      </SelectTrigger>
-                      <SelectContent className="rounded-xl">
-                        <SelectItem value="test">Test</SelectItem>
-                        <SelectItem value="certification">Certificación</SelectItem>
-                        <SelectItem value="production">Producción</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label="Modo de Respaldo (Fallback offline prolongado)">
-                    <Select value={config.fiscal_mode_fallback} onValueChange={val => setConfig(p => ({ ...p, fiscal_mode_fallback: val as any }))}>
-                      <SelectTrigger className="w-full rounded-xl">
-                        <SelectValue placeholder="Seleccionar modo de respaldo" />
-                      </SelectTrigger>
-                      <SelectContent className="rounded-xl">
-                        <SelectItem value="internal_receipt">Recibo Interno</SelectItem>
-                        <SelectItem value="ncf_legacy">NCF Tradicional</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  
-                  <CertificateUploader environment={config.ecf_environment} />
-                </div>
-              )}
-
-              {(config.fiscal_mode === "ncf_legacy" || config.fiscal_mode === "dgii_ecf") && (
-                <div className="animate-in fade-in slide-in-from-top-2 duration-300 flex flex-col gap-4 border-t border-border pt-4">
-                  <Field label="Tipo Predeterminado">
-                    <Select value={config.ncf_tipo_default} onValueChange={val => setConfig(p => ({ ...p, ncf_tipo_default: val as any }))}>
-                      <SelectTrigger className="w-full rounded-xl">
-                        <SelectValue placeholder="Seleccionar tipo" />
-                      </SelectTrigger>
-                      <SelectContent className="rounded-xl">
-                        {(config.fiscal_mode === "dgii_ecf" ? NCF_E_TIPO_OPCIONES : NCF_B_TIPO_OPCIONES).map(o => (
-                          <SelectItem key={o.codigo} value={o.codigo}>{o.descripcion}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <div className="mt-4 pt-4 border-t border-border flex flex-col gap-4">
-                    <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">
-                      Secuencias Configuradas por Tipo {config.fiscal_mode === "dgii_ecf" ? "E" : "B"}
-                    </span>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {(config.fiscal_mode === "dgii_ecf" ? NCF_E_TIPO_OPCIONES : NCF_B_TIPO_OPCIONES).map(o => {
-                        const isDefault = o.codigo === config.ncf_tipo_default;
-                        const active = isDefault || isNcfTypeActive(config.ncf_tipos_activos, o.codigo);
-                        return (
-                        <div key={o.codigo} className={`bg-background rounded-[16px] border border-black/5 dark:border-white/5 p-4 flex flex-col gap-3 transition-colors ${active ? "hover:border-primary/20" : "opacity-60"}`}>
-                           <div className="flex justify-between items-center gap-2">
-                             <span className="font-bold font-['Space_Grotesk'] text-foreground text-lg">{o.codigo}</span>
-                             <label className="flex items-center gap-2 cursor-pointer" title={isDefault ? "El tipo predeterminado siempre está activo" : "Activar o desactivar la emisión de este comprobante"}>
-                               <span className={`text-[10px] uppercase font-bold tracking-widest ${isDefault ? "text-primary" : active ? "text-green-600 dark:text-green-400" : "text-muted-foreground"}`}>{isDefault ? "Predeterminado" : active ? "Activo" : "Apagado"}</span>
-                               <input type="checkbox" checked={active} disabled={isDefault} onChange={e => setConfig(p => ({ ...p, ncf_tipos_activos: { ...p.ncf_tipos_activos, [o.codigo]: e.target.checked } }))} className="size-4 rounded accent-primary disabled:opacity-60 cursor-pointer" />
-                             </label>
-                           </div>
-                           <input type="number" min="1" disabled={!active} value={config.ncf_secuencias_por_tipo[o.codigo] || 1} onChange={e => setConfig(p => ({ ...p, ncf_secuencias_por_tipo: { ...p.ncf_secuencias_por_tipo, [o.codigo]: Math.max(1, parseInt(e.target.value) || 1) } }))} className="bg-muted/30 border border-black/10 dark:border-white/10 rounded-xl px-4 py-3 font-mono text-foreground font-bold outline-none focus:border-primary/50 transition-all disabled:opacity-50" />
-                           <span className="text-[11px] text-muted-foreground/80 leading-relaxed">{o.codigo} - {o.descripcion}</span>
-                        </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </section>
-
-          {saveMessage && (
-            <div className={`rounded-xl border p-4 text-sm font-medium ${saveMessage.type === "error" ? "border-destructive/20 bg-destructive/10 text-destructive" : saveMessage.type === "warning" ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400" : "border-green-500/20 bg-green-500/10 text-green-600 dark:text-green-400"}`}>
-              {saveMessage.text}
-            </div>
-          )}
-
-          <button onClick={handleSave} disabled={saving} className="bg-primary text-primary-foreground rounded-xl py-4 font-bold uppercase text-sm tracking-[0.2em] shadow-lg hover:opacity-90 disabled:opacity-50 transition-all border-none cursor-pointer w-full md:w-fit md:px-12 self-end">
-            {saving ? "Guardando..." : "Guardar Cambios"}
-          </button>
-        </div>
-
+            <button onClick={handleSave} disabled={saving} className="bg-primary text-primary-foreground rounded-xl py-4 font-bold uppercase text-sm tracking-[0.2em] shadow-lg hover:opacity-90 disabled:opacity-50 transition-all border-none cursor-pointer w-full md:w-fit md:px-12 self-end">
+              {saving ? "Guardando..." : "Guardar Cambios"}
+            </button>
+          </div>
+        </Tabs>
       </div>
+
       <style>{`
         .input-field {
           width: 100%;
@@ -663,8 +460,4 @@ export function Ajustes() {
       `}</style>
     </div>
   );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div className="flex flex-col gap-1.5"><label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest ml-1">{label}</label>{children}</div>;
 }
