@@ -2,9 +2,10 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { ChevronDown, Eye, Pencil, Printer, Trash2, TrendingUp, DollarSign, RefreshCw, FileText, Activity, Calendar, Search, X } from "lucide-react";
 import { supabase } from "../../../shared/lib/supabase";
 import { useAuth, ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
-import { buildCierreDiaReceiptHtml, buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
+import { buildCierreDiaReceiptHtml } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
+import { gateFiscalPrint } from "../../../shared/lib/fiscalPrintGate";
 import { readLocalMirror, shouldReadLocalFirst } from "../../../shared/lib/localFirst";
 import { readLocalInvoices, deleteLocalInvoice } from "../lib/invoicesLocal";
 import { searchInvoicesGlobal } from "../lib/invoicesSearch";
@@ -23,7 +24,6 @@ import { readLocalCierres } from "../../cierre/lib/cierresLocal";
 import { readLocalCuentasCobrar, readLocalCuentasPagar, readLocalCxcPagos, readLocalCxpPagos } from "../lib/accountsLocal";
 import { readLocalExpenses, readLocalExpenseCategories } from "../../gastos/lib/expensesLocal";
 import { listCustomers } from "../../clientes/lib/customers";
-import { cacheLogoFromUrl } from "../../../shared/lib/logoCache";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { canUseFeature } from "../../../shared/lib/planFeatures";
 import { calculateExpectedCashDrawer, isCashPaymentMethod, sumCashExpenses } from "../../../shared/lib/cycleCash";
@@ -1056,89 +1056,15 @@ export function Billing() {
       if (inv.tenant_id != null && inv.tenant_id !== tenantId) return;
 
       const tid = inv.tenant_id ?? tenantId;
-
-      let tenant: any = null;
-      let tenantError: any = null;
-      try {
-        if (!navigator.onLine) {
-          const localTenants = await readLocalMirror<any>(tid, "tenants");
-          tenant = localTenants.find(t => t.id === tid) ?? null;
-        } else {
-          const { data, error } = await supabase
-            .from("tenants")
-            .select("nombre_negocio, rnc, direccion, telefono, logo_url, menu_url, ecf_environment, logo_size_px, logo_offset_x, logo_offset_y")
-            .eq("id", tid)
-            .single();
-          if (error) throw error;
-          tenant = data;
-          tenantError = error;
-        }
-      } catch (err) {
-        const localTenants = await readLocalMirror<any>(tid, "tenants").catch(() => []);
-        tenant = localTenants.find((t) => t.id === tid) ?? null;
-      }
-
-      if (!tenant) {
-        console.error("Error al cargar datos del negocio para imprimir:", tenantError);
-        return;
-      }
-
-      void cacheLogoFromUrl(tenant.logo_url);
-
-      const items = Array.isArray(inv.items) ? inv.items : [];
-      const paperWidthMm = getThermalPrintSettings().paperWidthMm;
-      const html = await buildFacturaReceiptHtml(
-        {
-          nombre_negocio: tenant.nombre_negocio,
-          rnc: tenant.rnc,
-          direccion: tenant.direccion,
-          telefono: tenant.telefono,
-          logo_url: tenant.logo_url,
-          ecf_environment: (tenant as any).ecf_environment ?? "certification",
-          logo_size_px: (tenant as any).logo_size_px,
-          logo_offset_x: (tenant as any).logo_offset_x,
-          logo_offset_y: (tenant as any).logo_offset_y,
-          menu_url: (tenant as any).menu_url,
-          moneda: (tenant as any).currency_code,
-        },
-        {
-          items,
-          subtotal: inv.subtotal,
-          itbis: inv.itbis,
-          total: inv.total,
-          metodo_pago: inv.metodo_pago,
-          mesa_numero: inv.mesa_numero,
-          notas: inv.notas ?? null,
-          pagada_at: inv.pagada_at,
-          created_at: inv.created_at,
-          estado: inv.estado,
-          propina: inv.propina,
-          monto_recibido: inv.monto_recibido ?? null,
-          cambio_devuelto: inv.cambio_devuelto ?? null,
-          ncf: inv.ncf ?? null,
-          ncf_tipo: inv.ncf_tipo ?? null,
-          cliente_nombre: inv.cliente_nombre ?? null,
-          cliente_rnc: inv.cliente_rnc ?? null,
-          credit_note_of: inv.credit_note_of ?? null,
-          ref_ncf: inv.ref_ncf ?? null,
-          ref_fecha_emision: inv.ref_fecha_emision ?? null,
-          ref_codigo_modificacion: inv.ref_codigo_modificacion ?? null,
-          ref_razon_modificacion: inv.ref_razon_modificacion ?? null,
-          ecf_status: ecfDocuments.get(inv.id)?.status ?? null,
-          ecf_track_id: ecfDocuments.get(inv.id)?.dgii_track_id ?? null,
-          ecf_security_code: ecfDocuments.get(inv.id)?.dgii_security_code ?? null,
-          ecf_submitted_at: ecfDocuments.get(inv.id)?.submitted_at ?? null,
-        },
-        inv.numero_factura,
-        paperWidthMm
-      );
-
-      const res = await printThermalHtml(html, { printType: "sales" });
-      if (!res.ok && res.error) {
-        console.warn("Impresion factura:", res.error);
-      }
+      await gateFiscalPrint({
+        tenantId: tid,
+        factura: inv as unknown as Record<string, unknown>,
+        numeroFactura: inv.numero_factura,
+        ecfDocument: (ecfDocuments.get(inv.id) as unknown as Record<string, unknown>) ?? null,
+        isReprint: true,
+      });
     },
-    [tenantId]
+    [tenantId, ecfDocuments]
   );
 
   const printCycleReport = useCallback(

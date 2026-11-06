@@ -99,6 +99,32 @@ describe("printLocalInvoiceReceipt", () => {
     );
   });
 
+  it("refuses to print an e-CF invoice without a DGII security code", async () => {
+    mocks.readLocalMirror.mockImplementation((_tenantId: string, table: string) => {
+      if (table === "tenants") {
+        return Promise.resolve([{
+          id: "tenant-1",
+          nombre_negocio: "Bistro Local",
+          rnc: "101010101",
+          direccion: "Calle 1",
+          telefono: "809-555-0101",
+          logo_url: null,
+        }]);
+      }
+      return Promise.resolve([{ factura_id: "inv-ecf-no-code", status: "queued", dgii_security_code: null }]);
+    });
+
+    const result = await printLocalInvoiceReceipt({
+      tenantId: "tenant-1",
+      factura: { id: "inv-ecf-no-code", numero_factura: 101, ncf: "E310000000001", total: 500 },
+      numeroFactura: 101,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("sin código de seguridad");
+    expect(mocks.printThermalHtml).not.toHaveBeenCalled();
+  });
+
   describe("cloud unavailable", () => {
     const factura = { id: "invoice-1", numero_factura: 7 };
     const tenantRow = {

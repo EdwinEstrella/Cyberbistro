@@ -6,6 +6,7 @@ import { describeError } from "./errorMessage";
 import { loadLastKnown, saveLastKnown } from "./lastKnownCache";
 import { getThermalPrintSettings } from "./thermalStorage";
 import { printThermalHtml, type PrintThermalResult } from "./thermalPrint";
+import { isEcfInvoiceDocument, extractSecurityCode } from "./fiscalPrintGate";
 
 type ReceiptTenant = {
   nombre_negocio: string | null;
@@ -77,6 +78,18 @@ export async function printLocalInvoiceReceipt(args: {
     const ecfDocument = localEcfDocument ?? args.ecfDocument ?? null;
     if (!tenant) {
       return { ok: false, error: "No se encontró información del tenant para imprimir." };
+    }
+
+    const isEcf = isEcfInvoiceDocument(args.factura);
+    const securityCode =
+      extractSecurityCode(ecfDocument) ||
+      extractSecurityCode(args.factura);
+
+    if (isEcf && !securityCode) {
+      return {
+        ok: false,
+        error: "El comprobante e-CF no puede imprimirse sin código de seguridad de la DGII.",
+      };
     }
 
     void cacheLogoFromUrl(tenant.logo_url);
