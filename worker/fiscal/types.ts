@@ -108,11 +108,21 @@ export interface CertificateMetadataSnapshot {
   validUntil: string | null;
 }
 
+export interface EcfSecuenciaRango {
+  start?: number;
+  end?: number;
+  vence?: string;
+  [key: string]: unknown;
+}
+
+export type EcfSecuenciasRangos = Record<string, EcfSecuenciaRango>;
+
 export interface FiscalWorkerSnapshot {
   job: FiscalOutboxJob;
   document: EcfDocumentSnapshot;
   certificate: CertificateMetadataSnapshot | null;
   invoicePayload: Record<string, unknown>;
+  ecf_secuencias_rangos?: EcfSecuenciasRangos | null;
 }
 
 export type ClaimJobResult =

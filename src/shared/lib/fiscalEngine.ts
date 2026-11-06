@@ -42,12 +42,21 @@ export async function resolveActiveFiscalMode(
     }
 
     try {
-      const { data: cert } = await supabase
+      const environment = settings.ecfEnvironment || "certification";
+      const { data: cert, error } = await supabase
         .from("ecf_certificate_metadata")
         .select("id")
         .eq("tenant_id", tenantId)
+        .eq("environment", environment)
         .eq("is_ready", true)
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
+
+      if (error) {
+        console.warn("Failed to check certificate readiness online, keeping e-CF pending for backend validation:", error);
+        return { mode: "dgii_ecf", certificateId: null };
+      }
 
       if (cert?.id) {
         return { mode: "dgii_ecf", certificateId: cert.id };

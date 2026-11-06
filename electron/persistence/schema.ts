@@ -9,11 +9,12 @@ import { NCF_LOCAL_SEQUENCES_CREATE_SQL } from "./ncfLocalSequence";
  */
 // Client-side states only: what checkout writes today plus local signing. DGII outcomes (submitted, accepted,
 // rejected, ...) are server-owned (docs/fiscal-status-truths.md) and must never be representable locally.
+// Note: 'queued' locally means "replicated to the server outbox" (see docs/fiscal-status-truths.md); it is not a DGII outcome.
 export const ECF_DOCUMENT_STATUSES = [
-  "pending_offline", "pending_configuration", "pending_sync", "pending_processing", "signed",
+  "pending_offline", "pending_configuration", "pending_sync", "pending_processing", "signed", "queued",
 ] as const;
 export const FISCAL_OUTBOX_STATUSES = [
-  "pending", "syncing", "pending_sync", "blocked_configuration",
+  "pending", "syncing", "pending_sync", "blocked_configuration", "queued",
 ] as const;
 
 const sqlList = (values: readonly string[]): string => values.map((value) => `'${value}'`).join(", ");

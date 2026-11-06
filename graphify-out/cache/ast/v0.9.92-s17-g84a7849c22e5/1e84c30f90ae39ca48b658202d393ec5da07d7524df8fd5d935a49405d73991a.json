@@ -1,1 +1,0 @@
-{"nodes": [{"id": "$graphify-root$_supabase_migrations_20260524172500_allow_mesero_delete_own_open_consumos_sql", "label": "20260524172500_allow-mesero-delete-own-open-consumos.sql", "file_type": "code", "source_file": "supabase/migrations/20260524172500_allow-mesero-delete-own-open-consumos.sql", "source_location": null}], "edges": []}

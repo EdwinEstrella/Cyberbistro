@@ -1,1 +1,0 @@
-{"nodes": [{"id": "$graphify-root$_supabase_migrations_20260612185500_drop_unused_legacy_tables_sql", "label": "20260612185500_drop-unused-legacy-tables.sql", "file_type": "code", "source_file": "supabase/migrations/20260612185500_drop-unused-legacy-tables.sql", "source_location": null}], "edges": []}

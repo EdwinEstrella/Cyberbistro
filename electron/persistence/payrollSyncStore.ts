@@ -47,7 +47,7 @@ const MAX_FAILING_ROW_PROBE = 5000;
 const PULLABLE_TABLES = SYNC_PULLABLE_LOCAL_TABLES;
 
 /** Tables supported for local→cloud durable outbox sync claims. */
-const SUPPORTED_OUTBOX_TABLES = [
+export const SUPPORTED_OUTBOX_TABLES = [
   "payroll_employees",
   "payroll_payments",
   "payroll_payment_adjustments",
@@ -73,6 +73,8 @@ const SUPPORTED_OUTBOX_TABLES = [
   "inventario_movimientos",
   "productos_inventario",
   "proveedores",
+  "ecf_documents",
+  "fiscal_outbox",
 ] as const;
 
 const SUPPORTED_TABLES_SQL = SUPPORTED_OUTBOX_TABLES.map((t) => `'${t}'`).join(", ");
@@ -273,7 +275,29 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
     }
 
     if (status === "synced") {
-      this.db.prepare("DELETE FROM sync_outbox WHERE id = ?").run(id);
+      this.db.exec("BEGIN IMMEDIATE;");
+      try {
+        const outboxRow = this.db.prepare(
+          "SELECT table_name, row_id FROM sync_outbox WHERE id = ?"
+        ).get(id) as { table_name: string; row_id: string } | undefined;
+
+        if (outboxRow) {
+          if (outboxRow.table_name === "ecf_documents") {
+            this.db.prepare(
+              "UPDATE ecf_documents SET status = 'queued', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND tenant_id = ? AND status = 'pending_offline'"
+            ).run(outboxRow.row_id, this.tenantId);
+          } else if (outboxRow.table_name === "fiscal_outbox") {
+            this.db.prepare(
+              "UPDATE fiscal_outbox SET status = 'queued', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND tenant_id = ? AND status = 'pending_sync'"
+            ).run(outboxRow.row_id, this.tenantId);
+          }
+        }
+        this.db.prepare("DELETE FROM sync_outbox WHERE id = ?").run(id);
+        this.db.exec("COMMIT;");
+      } catch (err) {
+        this.db.exec("ROLLBACK;");
+        throw err;
+      }
     } else {
       const storedResult = normalizeStoredResult(status, result);
       this.db.prepare(`

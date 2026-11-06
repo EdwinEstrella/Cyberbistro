@@ -187,6 +187,7 @@ describe("Offline e-CF Sales and Reconnect Sync Integration", () => {
         isReady: true,
         validUntil: "2028-01-01T00:00:00.000Z",
       },
+      ecf_secuencias_rangos: { E31: { start: 1, end: 300, vence: "31-12-2027" } },
       invoicePayload: {
         factura: {
           total: 118,
@@ -208,6 +209,7 @@ describe("Offline e-CF Sales and Reconnect Sync Integration", () => {
           ecf_issuer_provincia: "Distrito Nacional",
           ecf_issuer_actividad_economica: "6201",
           ecf_issuer_correo_emisor: "factura@cyberbistro.app",
+          ecf_secuencias_rangos: { E31: { start: 1, end: 300, vence: "31-12-2027" } },
         },
         items: [],
         payments: [],

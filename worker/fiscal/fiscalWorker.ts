@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { getCodeSixDigitfromSignature } from "dgii-ecf";
 import { classifyCertificateFailure } from "./certificateFailure";
-import { fiscalWorkerError,unknownToWorkerError } from "./errors";
+import { fiscalWorkerError, unknownToWorkerError } from "./errors";
 import { createUnsignedEcfXml } from "./mapper";
 import type {
   CertificateCustody,
@@ -243,16 +243,18 @@ export class FiscalWorker {
     const isConfigError = error.code === "FISCAL_CONFIGURATION_INCOMPLETE";
     const outboxStatus: FiscalOutboxStatus = isConfigError ? "blocked_configuration" : (error.retryable ? "retryable_error" : "terminal_error");
     const documentStatus: EcfFiscalStatus = isConfigError ? "pending_configuration" : (error.retryable ? "retryable_error" : "terminal_error");
+    const message = error.message?.trim() || "Unknown fiscal worker error";
 
     await this.deps.repository.updateJob(snapshot.job.id, {
       status: outboxStatus,
       attempts: snapshot.job.attempts + 1,
       nextAttemptAt: error.retryable && !isConfigError ? this.nextAttemptIso(snapshot.job.attempts + 1) : undefined,
-      errorMessage: error.message,
+      errorMessage: message,
     });
     await this.deps.repository.updateDocument(snapshot.document.id, {
       status: documentStatus,
-      lastError: error.message,
+      lastError: message,
+      dgiiStatusMessage: message,
     });
     await this.auditForSnapshot("job_failed", snapshot, { code: error.code, retryable: error.retryable });
   }

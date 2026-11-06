@@ -1,1 +1,0 @@
-{"nodes": [{"id": "$graphify-root$_supabase_migrations_20260808140000_add_accounting_role_sql", "label": "20260808140000_add-accounting-role.sql", "file_type": "code", "source_file": "supabase/migrations/20260808140000_add-accounting-role.sql", "source_location": null}], "edges": []}
