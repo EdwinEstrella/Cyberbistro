@@ -43,6 +43,8 @@ import {
 import { buildAjustesSavePayload } from "../lib/ajustesPayload";
 import { AjustesGeneralTab } from "./AjustesGeneralTab";
 import { AjustesFacturacionTab } from "./AjustesFacturacionTab";
+import { ActivationPanel } from "../../fiscal/components/ActivationPanel";
+import { FeatureGuard } from "../../../app/components/FeatureGuard";
 import type { AjustesConfig, ThermalPreviewKind } from "../types";
 
 const SAMPLE_FACTURA_THERMAL_PREVIEW: Parameters<typeof buildFacturaReceiptHtml>[1] = {
@@ -369,6 +371,12 @@ export function Ajustes() {
               >
                 Facturación
               </TabsTrigger>
+              <TabsTrigger
+                value="facturacion-electronica"
+                className="px-4 py-2 rounded-[8px] font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[0.5px] text-[#adaaaa] data-[state=active]:bg-[rgba(255,144,109,0.12)] data-[state=active]:border-[#ff906d] data-[state=active]:text-[#ff906d] data-[state=active]:shadow-[0_0_12px_rgba(255,144,109,0.1)] border border-transparent transition-all cursor-pointer"
+              >
+                Facturación electrónica
+              </TabsTrigger>
             </TabsList>
           </div>
 
@@ -396,17 +404,25 @@ export function Ajustes() {
             />
           </TabsContent>
 
-          <div className="flex flex-col gap-4 mt-2">
-            {saveMessage && (
-              <div className={`rounded-xl border p-4 text-sm font-medium ${saveMessage.type === "error" ? "border-destructive/20 bg-destructive/10 text-destructive" : saveMessage.type === "warning" ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400" : "border-green-500/20 bg-green-500/10 text-green-600 dark:text-green-400"}`}>
-                {saveMessage.text}
-              </div>
-            )}
+          <TabsContent value="facturacion-electronica" className="outline-none">
+            <FeatureGuard feature="dgii_ecf">
+              <ActivationPanel onNavigateToGeneral={() => handleTabChange("general")} />
+            </FeatureGuard>
+          </TabsContent>
 
-            <button onClick={handleSave} disabled={saving} className="bg-primary text-primary-foreground rounded-xl py-4 font-bold uppercase text-sm tracking-[0.2em] shadow-lg hover:opacity-90 disabled:opacity-50 transition-all border-none cursor-pointer w-full md:w-fit md:px-12 self-end">
-              {saving ? "Guardando..." : "Guardar Cambios"}
-            </button>
-          </div>
+          {currentTab !== "facturacion-electronica" && (
+            <div className="flex flex-col gap-4 mt-2">
+              {saveMessage && (
+                <div className={`rounded-xl border p-4 text-sm font-medium ${saveMessage.type === "error" ? "border-destructive/20 bg-destructive/10 text-destructive" : saveMessage.type === "warning" ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400" : "border-green-500/20 bg-green-500/10 text-green-600 dark:text-green-400"}`}>
+                  {saveMessage.text}
+                </div>
+              )}
+
+              <button onClick={handleSave} disabled={saving} className="bg-primary text-primary-foreground rounded-xl py-4 font-bold uppercase text-sm tracking-[0.2em] shadow-lg hover:opacity-90 disabled:opacity-50 transition-all border-none cursor-pointer w-full md:w-fit md:px-12 self-end">
+                {saving ? "Guardando..." : "Guardar Cambios"}
+              </button>
+            </div>
+          )}
         </Tabs>
       </div>
 
