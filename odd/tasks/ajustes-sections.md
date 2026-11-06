@@ -44,7 +44,7 @@ Refactor `Ajustes` into a modular, tabbed settings view with category buttons in
 ## Tasks
 - [x] **T1**: Ajustes tab shell + split into General/Facturación components (no behaviour change).
 - [x] **T2**: Remove duplicated e-CF settings from Facturación + pure payload builder tests.
-- [ ] **T3**: Activación wizard as "Facturación electrónica" tab (+ read-only company data link).
+- [x] **T3**: Activación wizard as "Facturación electrónica" tab (+ read-only company data link).
 - [ ] **T4**: Historial tabs + FiscalPanel tab + URL tab param.
 - [ ] **T5**: Routes / redirects / sidebar / roles + tests.
 - [ ] **T6**: Update e2e specs (`test/tenant-fiscal-settings.spec.ts`, `test/itbis-included-price.e2e.spec.ts`).
@@ -70,7 +70,8 @@ Refactor `Ajustes` into a modular, tabbed settings view with category buttons in
 | T0   | e211384 | docs: add task plan for ajustes sections refactor |
 | T1   | 177f260 | refactor(ajustes): split settings into tabs shell and general/facturacion components |
 | T2   | 1332d55 | feat(ajustes): remove duplicated e-cf settings and extract pure payload builder |
-| T3   |      |         |
+| T3   | c1e62bd | feat(ajustes): embed activation wizard as facturacion-electronica tab with read-only company links |
+| T4   |      |         |
 | T3   |      |         |
 | T4   |      |         |
 | T5   |      |         |
