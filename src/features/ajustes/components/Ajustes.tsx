@@ -1,8 +1,6 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useSearchParams } from "react-router";
 import { supabase } from "../../../shared/lib/supabase";
-import { decideEcfSaveGate } from "../../../shared/lib/ecfActivationReadiness";
-import { loadEcfActivationReadiness } from "../../fiscal/lib/loadEcfReadiness";
 import { useAuth, ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../../shared/ui/tabs";
 
@@ -34,7 +32,6 @@ import {
 import { cacheLogoFromUrl, refreshLogoCache } from "../../../shared/lib/logoCache";
 import {
   buildBSequenceMapFromRow,
-  buildTenantNcfUpdatePayload,
   DEFAULT_NCF_B_CODE,
   NCF_B_SEQUENCE_FIELDS_SELECT,
   construirCadenaNcf,
@@ -43,6 +40,7 @@ import {
   normalizeNcfActiveMap,
   type NcfBCode,
 } from "../../../shared/lib/ncf";
+import { buildAjustesSavePayload } from "../lib/ajustesPayload";
 import { AjustesGeneralTab } from "./AjustesGeneralTab";
 import { AjustesFacturacionTab } from "./AjustesFacturacionTab";
 import type { AjustesConfig, ThermalPreviewKind } from "../types";
@@ -150,7 +148,7 @@ export function Ajustes() {
   const [saving, setSaving] = useState(false);
   const [printingTest, setPrintingTest] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ type: "success" | "error" | "warning"; text: string } | null>(null);
-  const [persistedFiscalMode, setPersistedFiscalMode] = useState<string | null>(null);
+  const existingTenantRef = useRef<any>(null);
 
   const TENANT_FIELDS_BASE = "nombre_negocio, rnc, logo_url, logo_size_px, logo_offset_x, logo_offset_y, menu_url, direccion, telefono";
   const TENANT_FIELDS_CURRENCY = "moneda";
@@ -183,9 +181,9 @@ export function Ajustes() {
 
       if (cancelled) return;
       if (data) {
+        existingTenantRef.current = data;
         const defaultType: NcfBCode = isNcfBCode(data.ncf_tipo_default) ? data.ncf_tipo_default : DEFAULT_NCF_B_CODE;
         const ncfSequences = buildBSequenceMapFromRow(data);
-        setPersistedFiscalMode(data.fiscal_mode || "internal_receipt");
         setConfig({
           nombre_empresa: data.nombre_negocio ?? "",
           rnc: data.rnc ?? "",
@@ -222,44 +220,11 @@ export function Ajustes() {
     if (!tenantId) return;
     setSaving(true);
     setSaveMessage(null);
-    let warning: string | null = null;
-    if (config.fiscal_mode === "dgii_ecf") {
-      let loaded: Awaited<ReturnType<typeof loadEcfActivationReadiness>> | null = null;
-      try {
-        loaded = await loadEcfActivationReadiness({ tenantId, plan, environment: config.ecf_environment });
-      } catch {
-        loaded = null;
-      }
-      const gate = decideEcfSaveGate({ previousMode: persistedFiscalMode, nextMode: config.fiscal_mode, readiness: loaded?.result ?? null });
-      if (gate.decision === "block") {
-        setSaveMessage({ type: "error", text: gate.message ?? "No se puede guardar." });
-        setSaving(false);
-        return;
-      }
-      if (gate.decision === "allow_with_warning") warning = gate.message;
-    }
-    const ncfUpdate = buildTenantNcfUpdatePayload(config.ncf_fiscal_activo, config.ncf_tipo_default, config.ncf_secuencias_por_tipo, config.ncf_secuencias_por_tipo);
-    const payload = {
-      nombre_negocio: config.nombre_empresa?.trim() || "",
-      rnc: config.rnc?.trim() || null,
-      logo_url: config.logo_url?.trim() || null,
-      logo_size_px: Math.min(90, Math.max(32, Math.round(Number(config.logo_size_px) || 52))),
-      logo_offset_x: Math.min(28, Math.max(-28, Math.round(Number(config.logo_offset_x) || 0))),
-      logo_offset_y: Math.min(18, Math.max(-12, Math.round(Number(config.logo_offset_y) || 0))),
-      menu_url: config.menu_url?.trim() || null,
-      direccion: config.direccion?.trim() || null,
-      telefono: config.telefono?.trim() || null,
-      moneda: config.currency_code,
-      itbis_cobro_por_defecto: config.itbis_cobro_por_defecto,
-      itbis_incluido_en_precio: config.itbis_incluido_en_precio,
-      propina_cobro_por_defecto: config.propina_cobro_por_defecto,
-      fiscal_mode: config.fiscal_mode,
-      fiscal_mode_fallback: config.fiscal_mode_fallback,
-      ecf_environment: config.ecf_environment,
-      ...ncfUpdate,
-      ncf_tipos_activos: config.ncf_tipos_activos,
-      updated_at: new Date().toISOString()
-    };
+
+    const payload = buildAjustesSavePayload({
+      config,
+      existingTenant: existingTenantRef.current,
+    });
     
     try {
       await enqueueLocalWrite({
@@ -270,8 +235,12 @@ export function Ajustes() {
         payload,
         deviceId: await getDeviceId(),
       });
-      setPersistedFiscalMode(config.fiscal_mode);
-      setSaveMessage(warning ? { type: "warning", text: warning } : { type: "success", text: "Configuración guardada." });
+      // Update our cached reference so subsequent saves retain the updated values
+      existingTenantRef.current = {
+        ...existingTenantRef.current,
+        ...payload,
+      };
+      setSaveMessage({ type: "success", text: "Configuración guardada." });
     } catch (error) {
       console.error(error);
       setSaveMessage({ type: "error", text: error instanceof Error ? error.message : "No se pudo guardar la configuración." });
@@ -423,6 +392,7 @@ export function Ajustes() {
               plan={plan}
               tenantId={tenantId}
               setSaveMessage={setSaveMessage}
+              onNavigateToEcf={() => handleTabChange("facturacion-electronica")}
             />
           </TabsContent>
 

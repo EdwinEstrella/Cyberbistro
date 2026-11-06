@@ -1,7 +1,4 @@
 import React from "react";
-import { canUseFeature } from "../../../shared/lib/planFeatures";
-import { formatReadinessIssues } from "../../../shared/lib/ecfActivationReadiness";
-import { loadEcfActivationReadiness } from "../../fiscal/lib/loadEcfReadiness";
 import {
   Select,
   SelectContent,
@@ -9,11 +6,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../../shared/ui/select";
-import { CertificateUploader } from "./CertificateUploader";
 import {
   isNcfTypeActive,
   NCF_B_TIPO_OPCIONES,
-  NCF_E_TIPO_OPCIONES,
 } from "../../../shared/lib/ncf";
 import { Field } from "./Field";
 import type { AjustesConfig } from "../types";
@@ -24,19 +19,58 @@ interface AjustesFacturacionTabProps {
   plan: any;
   tenantId: string | null;
   setSaveMessage: (msg: { type: "success" | "error" | "warning"; text: string } | null) => void;
+  onNavigateToEcf?: () => void;
+}
+
+function formatEcfEnvironment(env: string): string {
+  if (env === "production") return "Producción";
+  if (env === "test") return "Test";
+  return "Certificación";
 }
 
 export function AjustesFacturacionTab({
   config,
   setConfig,
-  plan,
-  tenantId,
-  setSaveMessage,
+  onNavigateToEcf,
 }: AjustesFacturacionTabProps) {
+  const isEcfActive = config.fiscal_mode === "dgii_ecf";
+  const showBSequences =
+    config.fiscal_mode === "ncf_legacy" ||
+    (isEcfActive && config.fiscal_mode_fallback === "ncf_legacy");
+
   return (
     <div className="flex flex-col gap-6">
       <section className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 flex flex-col gap-6">
         <h2 className="font-['Space_Grotesk'] text-xl font-bold text-foreground">Configuración Fiscal</h2>
+
+        {isEcfActive && (
+          <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <span className="relative flex size-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full size-3 bg-emerald-500" />
+              </span>
+              <div>
+                <p className="font-['Space_Grotesk'] font-bold text-sm text-foreground">
+                  Facturación electrónica activa — ambiente {formatEcfEnvironment(config.ecf_environment)}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  El sistema emite comprobantes electrónicos fiscales (e-CF) validados con la DGII.
+                </p>
+              </div>
+            </div>
+            {onNavigateToEcf && (
+              <button
+                type="button"
+                onClick={onNavigateToEcf}
+                className="shrink-0 bg-emerald-600 hover:bg-emerald-500 text-white font-['Space_Grotesk'] font-bold text-xs uppercase px-4 py-2 rounded-xl transition-colors cursor-pointer border-none"
+              >
+                Configuración e-CF
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="flex flex-col gap-4">
           <label className="flex items-center gap-3 cursor-pointer group">
             <input
@@ -81,65 +115,34 @@ export function AjustesFacturacionTab({
             <Field label="Modo Fiscal">
               <Select
                 value={config.fiscal_mode}
+                disabled={isEcfActive}
                 onValueChange={val => {
-                  const mode = val as any;
-                  if (mode === "dgii_ecf" && !canUseFeature(plan, "dgii_ecf")) {
-                    return;
-                  }
-                  if (mode === "dgii_ecf" && tenantId) {
-                    void loadEcfActivationReadiness({ tenantId, plan, environment: config.ecf_environment })
-                      .then(({ result }) => {
-                        if (result.ready) {
-                          setConfig(p => ({ ...p, fiscal_mode: mode }));
-                        } else {
-                          setSaveMessage({
-                            type: "error",
-                            text: `No se puede activar la facturación electrónica. ${formatReadinessIssues(result)}`,
-                          });
-                        }
-                      })
-                      .catch(() => {
-                        setSaveMessage({
-                          type: "error",
-                          text: "No se pudo verificar la configuración e-CF. Intentá de nuevo.",
-                        });
-                      });
-                    return;
-                  }
-                  setConfig(p => ({ ...p, fiscal_mode: mode }));
+                  setConfig(p => ({ ...p, fiscal_mode: val as any }));
                 }}
               >
-                <SelectTrigger className="w-full rounded-xl">
+                <SelectTrigger className="w-full rounded-xl disabled:opacity-60 disabled:cursor-not-allowed">
                   <SelectValue placeholder="Seleccionar modo fiscal" />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl">
+                  {isEcfActive && (
+                    <SelectItem value="dgii_ecf" disabled>
+                      Facturación Electrónica (e-CF)
+                    </SelectItem>
+                  )}
                   <SelectItem value="internal_receipt">Recibo Interno (Sin NCF)</SelectItem>
                   <SelectItem value="ncf_legacy">NCF Tradicional</SelectItem>
-                  <SelectItem value="dgii_ecf" disabled={!canUseFeature(plan, "dgii_ecf")}>
-                    Facturación Electrónica (e-CF) {!canUseFeature(plan, "dgii_ecf") ? "🔒 (Plan Profesional)" : ""}
-                  </SelectItem>
                 </SelectContent>
               </Select>
             </Field>
+            {isEcfActive && (
+              <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+                El modo fiscal está gestionado por el asistente de facturación electrónica. Para cambiarlo o desactivarlo, usá el asistente en la pestaña Facturación electrónica.
+              </p>
+            )}
           </div>
 
-          {config.fiscal_mode === "dgii_ecf" && (
+          {isEcfActive && (
             <div className="animate-in fade-in flex flex-col gap-4 border-t border-border pt-4">
-              <Field label="Entorno de Conexión DGII">
-                <Select
-                  value={config.ecf_environment}
-                  onValueChange={val => setConfig(p => ({ ...p, ecf_environment: val as any }))}
-                >
-                  <SelectTrigger className="w-full rounded-xl">
-                    <SelectValue placeholder="Seleccionar entorno" />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-xl">
-                    <SelectItem value="test">Test</SelectItem>
-                    <SelectItem value="certification">Certificación</SelectItem>
-                    <SelectItem value="production">Producción</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
               <Field label="Modo de Respaldo (Fallback offline prolongado)">
                 <Select
                   value={config.fiscal_mode_fallback}
@@ -154,12 +157,10 @@ export function AjustesFacturacionTab({
                   </SelectContent>
                 </Select>
               </Field>
-
-              <CertificateUploader environment={config.ecf_environment} />
             </div>
           )}
 
-          {(config.fiscal_mode === "ncf_legacy" || config.fiscal_mode === "dgii_ecf") && (
+          {showBSequences && (
             <div className="animate-in fade-in slide-in-from-top-2 duration-300 flex flex-col gap-4 border-t border-border pt-4">
               <Field label="Tipo Predeterminado">
                 <Select
@@ -170,7 +171,7 @@ export function AjustesFacturacionTab({
                     <SelectValue placeholder="Seleccionar tipo" />
                   </SelectTrigger>
                   <SelectContent className="rounded-xl">
-                    {(config.fiscal_mode === "dgii_ecf" ? NCF_E_TIPO_OPCIONES : NCF_B_TIPO_OPCIONES).map(o => (
+                    {NCF_B_TIPO_OPCIONES.map(o => (
                       <SelectItem key={o.codigo} value={o.codigo}>
                         {o.descripcion}
                       </SelectItem>
@@ -180,10 +181,10 @@ export function AjustesFacturacionTab({
               </Field>
               <div className="mt-4 pt-4 border-t border-border flex flex-col gap-4">
                 <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">
-                  Secuencias Configuradas por Tipo {config.fiscal_mode === "dgii_ecf" ? "E" : "B"}
+                  Secuencias Configuradas por Tipo B
                 </span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {(config.fiscal_mode === "dgii_ecf" ? NCF_E_TIPO_OPCIONES : NCF_B_TIPO_OPCIONES).map(o => {
+                  {NCF_B_TIPO_OPCIONES.map(o => {
                     const isDefault = o.codigo === config.ncf_tipo_default;
                     const active = isDefault || isNcfTypeActive(config.ncf_tipos_activos, o.codigo);
                     return (
