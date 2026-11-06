@@ -1,4 +1,4 @@
-import { createHashRouter } from "react-router";
+import { createHashRouter, Navigate } from "react-router";
 import type React from "react";
 import { Login, Register } from "../features/auth";
 import { AppLayout } from "./components/AppLayout";
@@ -6,15 +6,17 @@ import { FeatureGuard } from "./components/FeatureGuard";
 
 type RouteComponent = () => React.ReactElement;
 
-export function createFiscalRouteComponent(FiscalPanel: RouteComponent): RouteComponent {
-  return function FiscalRoute() {
+export function createFiscalRedirectRoute(to: string): RouteComponent {
+  return function FiscalRedirectRoute() {
     return (
       <FeatureGuard feature="dgii_ecf">
-        <FiscalPanel />
+        <Navigate to={to} replace />
       </FeatureGuard>
     );
   };
 }
+
+export const createFiscalRouteComponent = createFiscalRedirectRoute;
 
 export const appRoutes = [
   { path: "/", Component: Login },
@@ -37,8 +39,8 @@ export const appRoutes = [
       { path: "/camarera", lazy: () => import("../features/camarera").then(({ Camarera }) => ({ Component: Camarera })) },
       { path: "/soporte", lazy: () => import("../features/soporte").then(({ Soporte }) => ({ Component: Soporte })) },
       { path: "/ajustes", lazy: () => import("../features/ajustes").then(({ Ajustes }) => ({ Component: Ajustes })) },
-      { path: "/fiscal", lazy: () => import("../features/fiscal").then(({ FiscalPanel }) => ({ Component: createFiscalRouteComponent(FiscalPanel) })) },
-      { path: "/fiscal/activacion", lazy: () => import("../features/fiscal").then(({ ActivationPanel }) => ({ Component: createFiscalRouteComponent(ActivationPanel) })) },
+      { path: "/fiscal", Component: createFiscalRedirectRoute("/historial?tab=fiscal") },
+      { path: "/fiscal/activacion", Component: createFiscalRedirectRoute("/ajustes?tab=facturacion-electronica") },
       { path: "/inventario", lazy: () => import("../features/inventario").then(({ Inventario }) => ({ Component: () => <FeatureGuard feature="advanced_inventory"><Inventario /></FeatureGuard> })) },
       { path: "/compras", lazy: () => import("../features/compras").then(({ Compras }) => ({ Component: () => <FeatureGuard feature="inventory_purchases"><Compras /></FeatureGuard> })) },
       { path: "/cuentas-pagar", lazy: () => import("../features/cuentas-pagar").then(({ CuentasPagar }) => ({ Component: () => <FeatureGuard feature="accounts_payable"><CuentasPagar /></FeatureGuard> })) },

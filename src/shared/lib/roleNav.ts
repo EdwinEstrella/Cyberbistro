@@ -71,13 +71,14 @@ export function isAppRouteAllowed(rol: string | null, pathname: string): boolean
     if (pathname === GASTOS_PATH) return true;
     if (pathname === NOMINA_PATH) return true;
     if (pathname === BILLING_PATH) return true;
+    if (pathname === "/historial" || pathname === "/fiscal") return true;
     return false;
   }
   if (normalized === "mesero") {
     return pathname === "/camarera" || pathname === "/entregas";
   }
   if (normalized === "contabilidad") {
-    return ["/billing", "/inventario", "/gastos", NOMINA_PATH, "/compras", "/cuentas-pagar", "/cuentas-cobrar", "/fiscal"].includes(pathname);
+    return ["/billing", "/inventario", "/gastos", NOMINA_PATH, "/compras", "/cuentas-pagar", "/cuentas-cobrar", "/fiscal", "/historial"].includes(pathname);
   }
   return pathname === "/dashboard";
 }

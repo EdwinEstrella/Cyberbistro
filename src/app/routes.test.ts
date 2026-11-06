@@ -1,45 +1,58 @@
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
+import { Navigate } from "react-router";
 import { FeatureGuard } from "./components/FeatureGuard";
-import { appRoutes, createFiscalRouteComponent } from "./routes";
+import { appRoutes, createFiscalRedirectRoute } from "./routes";
 
 vi.mock("react-router", () => ({
   createHashRouter: vi.fn((routes) => ({ routes })),
-}));
-
-function FiscalPanelStub() {
-  return React.createElement("section", null, "Fiscal panel");
-}
-
-vi.mock("../features/fiscal", () => ({
-  FiscalPanel: FiscalPanelStub,
+  Navigate: (props: { to: string; replace?: boolean }) =>
+    React.createElement("div", { "data-testid": "navigate", ...props }),
 }));
 
 describe("app routes", () => {
-  it("wraps the fiscal route component in the dgii_ecf feature guard", () => {
-    const FiscalRouteComponent = createFiscalRouteComponent(FiscalPanelStub);
+  it("wraps the fiscal redirect route in the dgii_ecf feature guard", () => {
+    const FiscalRedirectComponent = createFiscalRedirectRoute("/historial?tab=fiscal");
 
-    const element = FiscalRouteComponent();
-    const props = element.props as { feature: string; children: React.ReactElement };
+    const element = FiscalRedirectComponent();
+    const props = element.props as { feature: string; children: React.ReactElement<{ to?: string; replace?: boolean }> };
 
     expect(element.type).toBe(FeatureGuard);
     expect(props.feature).toBe("dgii_ecf");
-    expect(props.children.type).toBe(FiscalPanelStub);
+    expect(props.children.type).toBe(Navigate);
+    expect(props.children.props.to).toBe("/historial?tab=fiscal");
+    expect(props.children.props.replace).toBe(true);
   });
 
-  it("composes the actual /fiscal app route with the dgii_ecf feature guard", async () => {
+  it("redirects /fiscal to /historial?tab=fiscal guarded by dgii_ecf", () => {
     const layoutRoute = appRoutes.find((route) => "children" in route);
     const fiscalRoute = layoutRoute?.children?.find((route) => route.path === "/fiscal");
 
     expect(fiscalRoute).toBeDefined();
-    expect(fiscalRoute?.lazy).toBeTypeOf("function");
+    expect(fiscalRoute?.Component).toBeDefined();
 
-    const lazyResult = await fiscalRoute!.lazy!();
-    const element = lazyResult.Component();
-    const props = element.props as { feature: string; children: React.ReactElement };
+    const element = fiscalRoute!.Component!();
+    const props = element.props as { feature: string; children: React.ReactElement<{ to?: string; replace?: boolean }> };
 
     expect(element.type).toBe(FeatureGuard);
     expect(props.feature).toBe("dgii_ecf");
-    expect(props.children.type).toBe(FiscalPanelStub);
+    expect(props.children.type).toBe(Navigate);
+    expect(props.children.props.to).toBe("/historial?tab=fiscal");
+  });
+
+  it("redirects /fiscal/activacion to /ajustes?tab=facturacion-electronica guarded by dgii_ecf", () => {
+    const layoutRoute = appRoutes.find((route) => "children" in route);
+    const activacionRoute = layoutRoute?.children?.find((route) => route.path === "/fiscal/activacion");
+
+    expect(activacionRoute).toBeDefined();
+    expect(activacionRoute?.Component).toBeDefined();
+
+    const element = activacionRoute!.Component!();
+    const props = element.props as { feature: string; children: React.ReactElement<{ to?: string; replace?: boolean }> };
+
+    expect(element.type).toBe(FeatureGuard);
+    expect(props.feature).toBe("dgii_ecf");
+    expect(props.children.type).toBe(Navigate);
+    expect(props.children.props.to).toBe("/ajustes?tab=facturacion-electronica");
   });
 });

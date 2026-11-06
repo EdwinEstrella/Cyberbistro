@@ -91,14 +91,6 @@ const sidebarSections: readonly SidebarSection[] = [
       { label: "Cuentas por Pagar", customIcon: "cxp", path: "/cuentas-pagar", feature: "accounts_payable" },
       { label: "Cuentas por Cobrar", customIcon: "cxc", path: "/cuentas-cobrar", feature: "accounts_receivable" },
       { label: "Notas de crédito", customIcon: "notacredito", path: "/notas-credito", feature: "dgii_ecf" },
-      {
-        label: "DGII e-CF",
-        customIcon: "fiscal",
-        children: [
-          { label: "Documentos Fiscales", customIcon: "fiscal", path: "/fiscal", feature: "dgii_ecf" },
-          { label: "Activación", customIcon: "fiscal", path: "/fiscal/activacion", feature: "dgii_ecf" },
-        ],
-      },
     ],
   },
 ];
@@ -119,8 +111,6 @@ const routePrefetchers: Record<string, () => Promise<unknown>> = {
   "/camarera": () => import("../../features/camarera"),
   "/soporte": () => import("../../features/soporte"),
   "/ajustes": () => import("../../features/ajustes"),
-  "/fiscal": () => import("../../features/fiscal"),
-  "/fiscal/activacion": () => import("../../features/fiscal"),
   "/cuentas-cobrar": () => import("../../features/cuentas-cobrar"),
   "/historial": () => import("../../features/historial"),
   "/notas-credito": () => import("../../features/notas-credito"),
@@ -159,13 +149,13 @@ function filterMainNavForRol(rol: string | null): readonly SidebarSection[] {
   } else if (normalized === "cocina") {
     filtered = sidebarSections.map((s) => filterSectionItems(s, ["/cocina"]));
   } else if (normalized === "cajera") {
-    const allow = ["/dashboard", "/billing", "/clientes", "/tables", "/gastos", "/nomina", "/cierre", "/cuentas-pagar", "/cuentas-cobrar", "/pedidos", "/fiscal", "/fiscal/activacion", "/historial"];
+    const allow = ["/dashboard", "/billing", "/clientes", "/tables", "/gastos", "/nomina", "/cierre", "/cuentas-pagar", "/cuentas-cobrar", "/pedidos", "/historial"];
     filtered = sidebarSections.map((s) => filterSectionItems(s, allow));
   } else if (normalized === "mesero") {
     const allow = ["/camarera", "/entregas"];
     filtered = sidebarSections.map((s) => filterSectionItems(s, allow));
   } else if (normalized === "contabilidad") {
-    const allow = ["/billing", "/inventario", "/gastos", "/nomina", "/compras", "/cuentas-pagar", "/cuentas-cobrar", "/fiscal", "/historial"];
+    const allow = ["/billing", "/inventario", "/gastos", "/nomina", "/compras", "/cuentas-pagar", "/cuentas-cobrar", "/historial"];
     filtered = sidebarSections.map((s) => filterSectionItems(s, allow));
   } else {
     filtered = sidebarSections.map((s) => filterSectionItems(s, ["/dashboard"]));
@@ -629,7 +619,6 @@ function AppLayoutContent() {
     const allowedPaths = new Set<string>(sideNavItems.flatMap((item) => item.path ? [item.path] : []));
     if (showAjustesInSidebar(rol)) {
       allowedPaths.add("/ajustes");
-      allowedPaths.add("/fiscal");
     }
 
     let cancelled = false;
