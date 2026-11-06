@@ -45,9 +45,9 @@ Refactor `Ajustes` into a modular, tabbed settings view with category buttons in
 - [x] **T1**: Ajustes tab shell + split into General/Facturación components (no behaviour change).
 - [x] **T2**: Remove duplicated e-CF settings from Facturación + pure payload builder tests.
 - [x] **T3**: Activación wizard as "Facturación electrónica" tab (+ read-only company data link).
-- [ ] **T4**: Historial tabs + FiscalPanel tab + URL tab param.
-- [ ] **T5**: Routes / redirects / sidebar / roles + tests.
-- [ ] **T6**: Update e2e specs (`test/tenant-fiscal-settings.spec.ts`, `test/itbis-included-price.e2e.spec.ts`).
+- [x] **T4**: Historial tabs + FiscalPanel tab + URL tab param.
+- [x] **T5**: Routes / redirects / sidebar / roles + tests.
+- [x] **T6**: Update e2e specs (`test/tenant-fiscal-settings.spec.ts`, `test/itbis-included-price.e2e.spec.ts`).
 
 ## Acceptance Criteria
 - Ajustes displays Radix tabs: "General", "Facturación", and "Facturación electrónica".
@@ -71,8 +71,6 @@ Refactor `Ajustes` into a modular, tabbed settings view with category buttons in
 | T1   | 177f260 | refactor(ajustes): split settings into tabs shell and general/facturacion components |
 | T2   | 1332d55 | feat(ajustes): remove duplicated e-cf settings and extract pure payload builder |
 | T3   | c1e62bd | feat(ajustes): embed activation wizard as facturacion-electronica tab with read-only company links |
-| T4   |      |         |
-| T3   |      |         |
-| T4   |      |         |
-| T5   |      |         |
-| T6   |      |         |
+| T4   | efe6f4d | feat(historial): add tabs for sincronizacion and documentos fiscales |
+| T5   | c16081a | feat(routes): redirect legacy fiscal routes, clean up sidebar and update role navigation |
+| T6   | 6b9e664 | test(e2e): update fiscal and itbis tests for tabbed ajustes layout |
