@@ -27,6 +27,7 @@ const claimRow = {
   certificate_environment: "certification" as const,
   certificate_is_ready: true,
   certificate_valid_until: new Date("2027-01-01T00:00:00.000Z"),
+  ecf_secuencias_rangos: { E31: { start: 1, end: 300, vence: "31-12-2027" } },
   invoice_payload: { total: 118 },
 };
 
@@ -41,6 +42,13 @@ describe("PostgresFiscalWorkerRepository", () => {
     });
 
     expect(result.kind).toBe("claimed");
+    if (result.kind === "claimed") {
+      expect(result.snapshot.ecf_secuencias_rangos).toEqual({
+        E31: { start: 1, end: 300, vence: "31-12-2027" },
+      });
+    }
+    expect(CLAIM_JOB_SQL).toContain("t.ecf_secuencias_rangos");
+    expect(CLAIM_JOB_SQL).toContain("candidate.ecf_secuencias_rangos");
     expect(CLAIM_JOB_SQL).toContain("FOR UPDATE OF fo SKIP LOCKED");
     expect(CLAIM_JOB_SQL).toContain("LEFT JOIN LATERAL");
     expect(CLAIM_JOB_SQL).toContain("ed.certificate_metadata_id IS NULL OR cm.id = ed.certificate_metadata_id");

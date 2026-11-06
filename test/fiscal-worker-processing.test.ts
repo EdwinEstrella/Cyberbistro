@@ -16,6 +16,7 @@ const now = new Date("2026-06-10T12:00:00.000Z");
 
 function baseSnapshot(overrides: Partial<FiscalWorkerSnapshot> = {}): FiscalWorkerSnapshot {
   return {
+    ecf_secuencias_rangos: { E31: { start: 1, end: 300, vence: "31-12-2027" } },
     job: {
       id: "job-1",
       tenantId: "tenant-1",
@@ -62,6 +63,7 @@ function baseSnapshot(overrides: Partial<FiscalWorkerSnapshot> = {}): FiscalWork
         ecf_issuer_provincia: "Distrito Nacional",
         ecf_issuer_actividad_economica: "6201",
         ecf_issuer_correo_emisor: "factura@cyberbistro.app",
+        ecf_secuencias_rangos: { E31: { start: 1, end: 300, vence: "31-12-2027" } },
       },
       items: [],
       payments: [],

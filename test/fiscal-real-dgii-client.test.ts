@@ -10,15 +10,18 @@ const mockSignXml = vi.fn().mockImplementation((xml, type) => `<Signed_${type}>$
 const mockGetKeyFromStringBase64 = vi.fn().mockReturnValue({ key: "mock-key", cert: "mock-cert" });
 
 vi.mock("dgii-ecf", () => {
+  const ecfConstructor = vi.fn().mockImplementation(() => {
+    return {
+      authenticate: mockAuthenticate,
+      sendElectronicDocument: mockSendElectronicDocument,
+      sendSummary: mockSendSummary,
+      statusTrackId: mockStatusTrackId,
+    };
+  });
+
   return {
-    default: vi.fn().mockImplementation(() => {
-      return {
-        authenticate: mockAuthenticate,
-        sendElectronicDocument: mockSendElectronicDocument,
-        sendSummary: mockSendSummary,
-        statusTrackId: mockStatusTrackId,
-      };
-    }),
+    default: ecfConstructor,
+    ECF: ecfConstructor,
     P12Reader: vi.fn().mockImplementation(() => {
       return {
         getKeyFromStringBase64: mockGetKeyFromStringBase64,

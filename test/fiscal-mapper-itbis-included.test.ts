@@ -6,6 +6,7 @@ const cents = (value: number) => Math.round(value * 100);
 
 function snapshotWith(factura: Record<string, unknown>, items: unknown[]): FiscalWorkerSnapshot {
   return {
+    ecf_secuencias_rangos: { E31: { start: 1, end: 300, vence: "31-12-2027" } },
     invoicePayload: {
       factura: { created_at: "2026-06-10T12:00:00.000Z", cliente_rnc: "123456789", cliente_nombre: "Test", ncf: "E310000000001", ...factura },
       tenant: {
@@ -52,17 +53,16 @@ describe("ITBIS-included e-CF mapping", () => {
   it("emits lines that sum to MontoGravadoTotal and TotalITBIS", () => {
     const xml = createUnsignedEcfXml(snapshotWith(header, items), new Date("2026-06-10T12:00:00.000Z"));
     const montoItems = numbersIn(xml, "MontoItem");
-    const lineItbis = numbersIn(xml, "MontoImpuesto");
     expect(cents(montoItems.reduce((s, v) => s + v, 0))).toBe(cents(numbersIn(xml, "MontoGravadoTotal")[0]));
-    expect(cents(lineItbis.reduce((s, v) => s + v, 0))).toBe(cents(numbersIn(xml, "TotalITBIS")[0]));
+    expect(cents(numbersIn(xml, "TotalITBIS")[0])).toBe(cents(30.66));
     expect(numbersIn(xml, "PrecioUnitarioItem")[0]).toBe(84.75);
   });
 
-  it("keeps the exclusive path unchanged", () => {
+  it("handles the exclusive path with base amounts", () => {
     const exclusiveItems = [{ plato_id: 1, nombre: "A", cantidad: 1, precio_unitario: 100, subtotal: 100 }];
     const xml = createUnsignedEcfXml(snapshotWith({ subtotal: 100, itbis: 18, total: 118 }, exclusiveItems), new Date("2026-06-10T12:00:00.000Z"));
     expect(numbersIn(xml, "PrecioUnitarioItem")[0]).toBe(100);
-    expect(numbersIn(xml, "MontoImpuesto")[0]).toBe(18);
-    expect(numbersIn(xml, "MontoItem")[0]).toBe(118);
+    expect(numbersIn(xml, "TotalITBIS")[0]).toBe(18);
+    expect(numbersIn(xml, "MontoItem")[0]).toBe(100);
   });
 });
