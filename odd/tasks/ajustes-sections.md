@@ -42,8 +42,8 @@ Refactor `Ajustes` into a modular, tabbed settings view with category buttons in
   - Maintain single Guardar flow for General + Facturación.
 
 ## Tasks
-- [ ] **T1**: Ajustes tab shell + split into General/Facturación components (no behaviour change).
-- [ ] **T2**: Remove duplicated e-CF settings from Facturación + pure payload builder tests.
+- [x] **T1**: Ajustes tab shell + split into General/Facturación components (no behaviour change).
+- [x] **T2**: Remove duplicated e-CF settings from Facturación + pure payload builder tests.
 - [ ] **T3**: Activación wizard as "Facturación electrónica" tab (+ read-only company data link).
 - [ ] **T4**: Historial tabs + FiscalPanel tab + URL tab param.
 - [ ] **T5**: Routes / redirects / sidebar / roles + tests.
@@ -68,8 +68,9 @@ Refactor `Ajustes` into a modular, tabbed settings view with category buttons in
 | Task | Hash | Message |
 |------|------|---------|
 | T0   | e211384 | docs: add task plan for ajustes sections refactor |
-| T1   |      |         |
-| T2   |      |         |
+| T1   | 177f260 | refactor(ajustes): split settings into tabs shell and general/facturacion components |
+| T2   | 1332d55 | feat(ajustes): remove duplicated e-cf settings and extract pure payload builder |
+| T3   |      |         |
 | T3   |      |         |
 | T4   |      |         |
 | T5   |      |         |
