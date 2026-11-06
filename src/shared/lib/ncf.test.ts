@@ -7,6 +7,7 @@ import {
   isNcfTypeActive,
   ncfTypeRequiresClientRnc,
   normalizeNcfActiveMap,
+  normalizeNcfSequenceMap,
   normalizeNcfTypeForFiscalMode,
   prepareNcfForFacturaInsert,
 } from "./ncf";
@@ -23,6 +24,20 @@ describe("ncf tipos activos", () => {
   it("normalizeNcfActiveMap descarta códigos inválidos y normaliza a booleanos", () => {
     expect(normalizeNcfActiveMap({ b01: false, "E31": true, "xx": false })).toEqual({ B01: false, E31: true });
     expect(normalizeNcfActiveMap("no-objeto")).toEqual({});
+    expect(normalizeNcfActiveMap(JSON.stringify({ B01: false, E31: true }))).toEqual({ B01: false, E31: true });
+  });
+
+  it("normalizeNcfSequenceMap normaliza objetos y cadenas JSON con códigos B y E", () => {
+    expect(normalizeNcfSequenceMap({ B01: 5, E31: 12, E32: "4", invalid: 9 })).toEqual({
+      B01: 5,
+      E31: 12,
+      E32: 4,
+    });
+    expect(normalizeNcfSequenceMap(JSON.stringify({ E31: 15, E32: 8 }))).toEqual({
+      E31: 15,
+      E32: 8,
+    });
+    expect(normalizeNcfSequenceMap("invalid-json")).toEqual({});
   });
 });
 

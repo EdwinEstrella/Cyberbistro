@@ -46,12 +46,12 @@ import {
   NCF_B_SEQUENCE_FIELDS_SELECT,
   construirCadenaNcf,
   etiquetaTipoNcf,
-  isNcfBCode,
   isNcfTypeActive,
   normalizeNcfActiveMap,
+  normalizeNcfSequenceMap,
+  normalizeNcfTypeForFiscalMode,
   NCF_B_TIPO_OPCIONES,
   NCF_E_TIPO_OPCIONES,
-  type NcfBCode,
 } from "../../../shared/lib/ncf";
 
 interface Config {
@@ -229,9 +229,14 @@ export function Ajustes() {
 
       if (cancelled) return;
       if (data) {
-        const defaultType: NcfBCode = isNcfBCode(data.ncf_tipo_default) ? data.ncf_tipo_default : DEFAULT_NCF_B_CODE;
-        const ncfSequences = buildBSequenceMapFromRow(data);
-        setPersistedFiscalMode(data.fiscal_mode || "internal_receipt");
+        const fiscalMode = data.fiscal_mode || "internal_receipt";
+        const defaultType = normalizeNcfTypeForFiscalMode(data.ncf_tipo_default, fiscalMode);
+        const bSequences = buildBSequenceMapFromRow(data);
+        const ncfSequences: Record<string, number> = {
+          ...normalizeNcfSequenceMap(data.ncf_secuencias_por_tipo),
+          ...bSequences,
+        };
+        setPersistedFiscalMode(fiscalMode);
         setConfig({
           nombre_empresa: data.nombre_negocio ?? "",
           rnc: data.rnc ?? "",
@@ -246,8 +251,8 @@ export function Ajustes() {
           itbis_cobro_por_defecto: Boolean(data.itbis_cobro_por_defecto),
           itbis_incluido_en_precio: Boolean(data.itbis_incluido_en_precio),
           propina_cobro_por_defecto: Boolean(data.propina_cobro_por_defecto),
-          ncf_fiscal_activo: Boolean(data.ncf_fiscal_activo) || data.fiscal_mode === "ncf_legacy" || data.fiscal_mode === "dgii_ecf",
-          fiscal_mode: data.fiscal_mode || "internal_receipt",
+          ncf_fiscal_activo: Boolean(data.ncf_fiscal_activo) || fiscalMode === "ncf_legacy" || fiscalMode === "dgii_ecf",
+          fiscal_mode: fiscalMode,
           fiscal_mode_fallback: data.fiscal_mode_fallback || "internal_receipt",
           ecf_environment: data.ecf_environment || "certification",
           ncf_tipo_default: defaultType,
@@ -532,7 +537,11 @@ export function Ajustes() {
                         // Same readiness decision as the activation wizard.
                         void loadEcfActivationReadiness({ tenantId, plan, environment: config.ecf_environment }).then(({ result }) => {
                           if (result.ready) {
-                            setConfig(p => ({ ...p, fiscal_mode: mode }));
+                            setConfig(p => ({
+                              ...p,
+                              fiscal_mode: mode,
+                              ncf_tipo_default: normalizeNcfTypeForFiscalMode(p.ncf_tipo_default as any, mode),
+                            }));
                           } else {
                             setSaveMessage({ type: "error", text: `No se puede activar la facturación electrónica. ${formatReadinessIssues(result)}` });
                           }
@@ -541,7 +550,11 @@ export function Ajustes() {
                         });
                         return;
                       }
-                      setConfig(p => ({ ...p, fiscal_mode: mode }));
+                      setConfig(p => ({
+                        ...p,
+                        fiscal_mode: mode,
+                        ncf_tipo_default: normalizeNcfTypeForFiscalMode(p.ncf_tipo_default as any, mode),
+                      }));
                     }}
                   >
                     <SelectTrigger className="w-full rounded-xl">

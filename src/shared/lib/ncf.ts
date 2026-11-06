@@ -164,12 +164,20 @@ export function construirCadenaNcf(tipoCodigo: string, secuencia: number): strin
 }
 
 export function normalizeNcfSequenceMap(rawMap: unknown): NcfSequenceMap {
-  if (!rawMap || typeof rawMap !== "object" || Array.isArray(rawMap)) {
+  let map = rawMap;
+  if (typeof map === "string") {
+    try {
+      map = JSON.parse(map);
+    } catch {
+      return {};
+    }
+  }
+  if (!map || typeof map !== "object" || Array.isArray(map)) {
     return {};
   }
 
   const normalized: NcfSequenceMap = {};
-  for (const [rawCode, rawValue] of Object.entries(rawMap)) {
+  for (const [rawCode, rawValue] of Object.entries(map as Record<string, unknown>)) {
     const code = normalizeCode(rawCode);
     const seq = parseValidNcfSequence(rawValue);
     if (esCodigoNcfValido(code) && seq != null) {
@@ -183,9 +191,17 @@ export type NcfActiveMap = Record<string, boolean>;
 
 /** Normalizes a per-type active map. Only explicit `false` disables a type. */
 export function normalizeNcfActiveMap(raw: unknown): NcfActiveMap {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  let map = raw;
+  if (typeof map === "string") {
+    try {
+      map = JSON.parse(map);
+    } catch {
+      return {};
+    }
+  }
+  if (!map || typeof map !== "object" || Array.isArray(map)) return {};
   const out: NcfActiveMap = {};
-  for (const [rawCode, rawValue] of Object.entries(raw as Record<string, unknown>)) {
+  for (const [rawCode, rawValue] of Object.entries(map as Record<string, unknown>)) {
     const code = normalizeCode(rawCode);
     if (esCodigoNcfValido(code)) {
       out[code] = rawValue !== false;
