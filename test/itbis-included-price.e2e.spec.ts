@@ -114,6 +114,9 @@ async function openAjustes(page: Page): Promise<void> {
   } else {
     await page.evaluate(() => { window.location.hash = "/ajustes"; });
   }
+  const facturacionTab = page.getByRole("tab", { name: /Facturación/i });
+  await expect(facturacionTab).toBeVisible({ timeout: 20_000 });
+  await facturacionTab.click();
   await expect(page.getByRole("heading", { name: /Configuración Fiscal/i })).toBeVisible({ timeout: 20_000 });
 }
 
