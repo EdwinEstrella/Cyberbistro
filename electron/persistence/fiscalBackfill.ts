@@ -2,19 +2,25 @@ import type { DatabaseSync } from "node:sqlite";
 import crypto from "node:crypto";
 import { buildEcfDocumentPayloadForServer } from "../../src/shared/lib/fiscalSyncPayload";
 
-export interface UnpushedFiscalRows {
+interface UnpushedFiscalRows {
   unqueuedEcfDocs: Array<Record<string, unknown>>;
   unqueuedFiscalOutbox: Array<Record<string, unknown>>;
   facturasToPush: Array<Record<string, unknown>>;
 }
 
-export interface BackfillSummary {
+interface BackfillSummary {
   facturasEnqueued: number;
   ecfDocumentsEnqueued: number;
   fiscalOutboxEnqueued: number;
 }
 
-export function selectUnpushedRows(db: DatabaseSync, tenantId: string): UnpushedFiscalRows {
+function resolveBranchId(row: Record<string, unknown>): string {
+  return typeof row.sucursal_id === "string" && row.sucursal_id.trim()
+    ? row.sucursal_id
+    : "main-process-default";
+}
+
+function selectUnpushedRows(db: DatabaseSync, tenantId: string): UnpushedFiscalRows {
   const unqueuedEcfDocs = db.prepare(`
     SELECT * FROM ecf_documents
     WHERE tenant_id = ?
@@ -55,7 +61,7 @@ export function selectUnpushedRows(db: DatabaseSync, tenantId: string): Unpushed
   return { unqueuedEcfDocs, unqueuedFiscalOutbox, facturasToPush };
 }
 
-export function findEcfDocForFactura(
+function findEcfDocForFactura(
   db: DatabaseSync,
   tenantId: string,
   facturaId: string
@@ -67,21 +73,18 @@ export function findEcfDocForFactura(
   `).get(tenantId, facturaId) as { id: string; status: string } | undefined;
 }
 
-export function repairFacturaFiscalMode(
+function repairFacturaFiscalMode(
   db: DatabaseSync,
   tenantId: string,
-  facturaId: string,
-  currentFiscalMode: unknown
+  facturaId: string
 ): void {
-  if (currentFiscalMode !== "dgii_ecf") {
-    db.prepare(`
-      UPDATE facturas SET fiscal_mode = 'dgii_ecf'
-      WHERE tenant_id = ? AND id = ? AND fiscal_mode <> 'dgii_ecf'
-    `).run(tenantId, facturaId);
-  }
+  db.prepare(`
+    UPDATE facturas SET fiscal_mode = 'dgii_ecf'
+    WHERE tenant_id = ? AND id = ? AND fiscal_mode <> 'dgii_ecf'
+  `).run(tenantId, facturaId);
 }
 
-export function buildFacturaPayload(
+function buildFacturaPayload(
   factura: Record<string, unknown>,
   ecfDoc?: { id: string; status: string }
 ): Record<string, unknown> {
@@ -109,7 +112,7 @@ export function buildFacturaPayload(
   return payload;
 }
 
-export function buildEcfDocumentPayload(doc: Record<string, unknown>, tenantId: string): Record<string, unknown> {
+function buildEcfDocumentPayload(doc: Record<string, unknown>, tenantId: string): Record<string, unknown> {
   return {
     id: doc.id,
     tenant_id: tenantId,
@@ -123,7 +126,7 @@ export function buildEcfDocumentPayload(doc: Record<string, unknown>, tenantId: 
   };
 }
 
-export function buildFiscalOutboxPayload(outbox: Record<string, unknown>, tenantId: string): Record<string, unknown> {
+function buildFiscalOutboxPayload(outbox: Record<string, unknown>, tenantId: string): Record<string, unknown> {
   const op = outbox.operation ?? "submit";
   return {
     id: outbox.id,
@@ -140,7 +143,7 @@ export function buildFiscalOutboxPayload(outbox: Record<string, unknown>, tenant
   };
 }
 
-export function enqueueUnpushedFiscalRows(
+function enqueueUnpushedFiscalRows(
   db: DatabaseSync,
   tenantId: string,
   unpushed: UnpushedFiscalRows
@@ -154,14 +157,12 @@ export function enqueueUnpushedFiscalRows(
 
     // 1. Re-push facturas FIRST with repaired fiscal_mode and fiscal metadata
     for (const factura of unpushed.facturasToPush) {
-      const branchId = typeof factura.sucursal_id === "string" && factura.sucursal_id.trim()
-        ? factura.sucursal_id
-        : "main-process-default";
+      const branchId = resolveBranchId(factura);
       const facturaId = String(factura.id);
       const ecfDoc = findEcfDocForFactura(db, tenantId, facturaId);
 
       if (ecfDoc) {
-        repairFacturaFiscalMode(db, tenantId, facturaId, factura.fiscal_mode);
+        repairFacturaFiscalMode(db, tenantId, facturaId);
       }
 
       const payload = buildFacturaPayload(factura, ecfDoc);
@@ -177,9 +178,7 @@ export function enqueueUnpushedFiscalRows(
 
     // 2. Enqueue ecf_documents SECOND
     for (const doc of unpushed.unqueuedEcfDocs) {
-      const branchId = typeof doc.sucursal_id === "string" && doc.sucursal_id.trim()
-        ? doc.sucursal_id
-        : "main-process-default";
+      const branchId = resolveBranchId(doc);
       const payload = buildEcfDocumentPayload(doc, tenantId);
       insertStmt.run(
         crypto.randomUUID(),
@@ -193,9 +192,7 @@ export function enqueueUnpushedFiscalRows(
 
     // 3. Enqueue fiscal_outbox THIRD
     for (const outbox of unpushed.unqueuedFiscalOutbox) {
-      const branchId = typeof outbox.sucursal_id === "string" && outbox.sucursal_id.trim()
-        ? outbox.sucursal_id
-        : "main-process-default";
+      const branchId = resolveBranchId(outbox);
       const payload = buildFiscalOutboxPayload(outbox, tenantId);
       insertStmt.run(
         crypto.randomUUID(),
