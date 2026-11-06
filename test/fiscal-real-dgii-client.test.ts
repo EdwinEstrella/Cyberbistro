@@ -5,6 +5,7 @@ const mockAuthenticate = vi.fn();
 const mockSendElectronicDocument = vi.fn();
 const mockSendSummary = vi.fn();
 const mockStatusTrackId = vi.fn();
+const mockGetSummaryInvoiceInquiry = vi.fn();
 
 const mockSignXml = vi.fn().mockImplementation((xml, type) => `<Signed_${type}>${xml}</Signed_${type}>`);
 const mockGetKeyFromStringBase64 = vi.fn().mockReturnValue({ key: "mock-key", cert: "mock-cert" });
@@ -16,6 +17,7 @@ vi.mock("dgii-ecf", () => {
       sendElectronicDocument: mockSendElectronicDocument,
       sendSummary: mockSendSummary,
       statusTrackId: mockStatusTrackId,
+      getSummaryInvoiceInquiry: mockGetSummaryInvoiceInquiry,
     };
   });
 
@@ -60,7 +62,7 @@ describe("RealDgiiClient", () => {
     passphrase: "password123",
   };
 
-  it("routes E32 below threshold to sendSummary and returns synchronized result", async () => {
+  it("routes E32 below threshold to sendSummary and returns accepted result for codigo 1 without DGII prefix", async () => {
     mockAuthenticate.mockResolvedValue({ token: "token" });
     mockSendSummary.mockResolvedValue({
       codigo: 1,
@@ -81,12 +83,117 @@ describe("RealDgiiClient", () => {
     expect(mockSendSummary).toHaveBeenCalledWith(expect.any(String), "131880738E3200000001.xml");
     expect(mockSendElectronicDocument).not.toHaveBeenCalled();
     expect(result).toEqual({
-      kind: "submitted",
+      kind: "accepted",
       trackId: "E320000000001",
       statusCode: "1",
       message: "Aceptado",
       rfceThresholdUsed: 250000,
     });
+  });
+
+  it("returns accepted result for RFCE codigo 4 with mensajes detail without DGII prefix", async () => {
+    mockAuthenticate.mockResolvedValue({ token: "token" });
+    mockSendSummary.mockResolvedValue({
+      codigo: 4,
+      estado: "Aceptado Condicional",
+      encf: "E320000000001",
+      secuenciaUtilizada: true,
+      mensajes: [
+        { codigo: 101, mensaje: "Advertencia de validacion" },
+      ],
+    });
+
+    const client = new RealDgiiClient();
+    const result = await client.submitSignedXml({
+      signedXml: "<ECF><RNCEmisor>131880738</RNCEmisor><eNCF>E3200000001</eNCF><TipoeCF>32</TipoeCF><MontoTotal>150000</MontoTotal></ECF>",
+      environment: "certification",
+      idempotencyKey: "test-key-summary-4",
+      certificate: mockCertificate,
+    });
+
+    expect(result).toEqual({
+      kind: "accepted",
+      trackId: "E320000000001",
+      statusCode: "4",
+      message: "Aceptado Condicional: [101] Advertencia de validacion",
+      rfceThresholdUsed: 250000,
+    });
+  });
+
+  it("returns rejected terminal result for RFCE codigo 2 via describeDgiiError", async () => {
+    mockAuthenticate.mockResolvedValue({ token: "token" });
+    mockSendSummary.mockResolvedValue({
+      codigo: 2,
+      estado: "Rechazado",
+      encf: "E320000000001",
+      secuenciaUtilizada: false,
+      mensajes: [
+        { codigo: 31, valor: "RNC Comprador no existe" },
+      ],
+    });
+
+    const client = new RealDgiiClient();
+    const result = await client.submitSignedXml({
+      signedXml: "<ECF><RNCEmisor>131880738</RNCEmisor><eNCF>E3200000001</eNCF><TipoeCF>32</TipoeCF><MontoTotal>150000</MontoTotal></ECF>",
+      environment: "certification",
+      idempotencyKey: "test-key-summary-2",
+      certificate: mockCertificate,
+    });
+
+    expect(result).toEqual({
+      kind: "rejected",
+      trackId: "E320000000001",
+      statusCode: "2",
+      message: "DGII [2] Rechazado: [31] RNC Comprador no existe",
+      rfceThresholdUsed: 250000,
+    });
+  });
+
+  it("returns submitted result for RFCE codigo 3 to trigger poll", async () => {
+    mockAuthenticate.mockResolvedValue({ token: "token" });
+    mockSendSummary.mockResolvedValue({
+      codigo: 3,
+      estado: "En proceso",
+      encf: "E320000000001",
+      secuenciaUtilizada: false,
+    });
+
+    const client = new RealDgiiClient();
+    const result = await client.submitSignedXml({
+      signedXml: "<ECF><RNCEmisor>131880738</RNCEmisor><eNCF>E3200000001</eNCF><TipoeCF>32</TipoeCF><MontoTotal>150000</MontoTotal></ECF>",
+      environment: "certification",
+      idempotencyKey: "test-key-summary-3",
+      certificate: mockCertificate,
+    });
+
+    expect(result).toEqual({
+      kind: "submitted",
+      trackId: "E320000000001",
+      statusCode: "3",
+      message: "En proceso",
+      rfceThresholdUsed: 250000,
+    });
+  });
+
+  it("returns terminal_error for unexpected RFCE summary code", async () => {
+    mockAuthenticate.mockResolvedValue({ token: "token" });
+    mockSendSummary.mockResolvedValue({
+      codigo: 0,
+      estado: "No encontrado",
+      encf: "E320000000001",
+      secuenciaUtilizada: false,
+    });
+
+    const client = new RealDgiiClient();
+    const result = await client.submitSignedXml({
+      signedXml: "<ECF><RNCEmisor>131880738</RNCEmisor><eNCF>E3200000001</eNCF><TipoeCF>32</TipoeCF><MontoTotal>150000</MontoTotal></ECF>",
+      environment: "certification",
+      idempotencyKey: "test-key-summary-0",
+      certificate: mockCertificate,
+    });
+
+    expect(result.kind).toBe("terminal_error");
+    expect(result.statusCode).toBe("0");
   });
 
   it("routes E32 equal to threshold to sendElectronicDocument", async () => {
@@ -187,6 +294,176 @@ describe("RealDgiiClient", () => {
     expect(result).toMatchObject({
       kind: "terminal_error",
       message: expect.stringContaining("RNCEmisor and eNCF"),
+    });
+  });
+
+  describe("pollStatus", () => {
+    it("polls full e-CF via statusTrackId when isRfce is false or omitted", async () => {
+      mockAuthenticate.mockResolvedValue({ token: "token" });
+      mockStatusTrackId.mockResolvedValue({
+        trackId: "track-123",
+        codigo: 1,
+        estado: "Aceptado",
+      });
+
+      const client = new RealDgiiClient();
+      const result = await client.pollStatus({
+        trackId: "track-123",
+        environment: "certification",
+        idempotencyKey: "poll-key",
+        certificate: mockCertificate,
+      });
+
+      expect(mockAuthenticate).toHaveBeenCalled();
+      expect(mockStatusTrackId).toHaveBeenCalledWith("track-123");
+      expect(mockGetSummaryInvoiceInquiry).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        kind: "accepted",
+        statusCode: 1,
+        message: "Aceptado",
+      });
+    });
+
+    it("polls RFCE via getSummaryInvoiceInquiry with rnc, encf, and securityCode", async () => {
+      mockAuthenticate.mockResolvedValue({ token: "token" });
+      mockGetSummaryInvoiceInquiry.mockResolvedValue({
+        rnc: "131880738",
+        encf: "E320000000001",
+        codigo: 1,
+        estado: "Aceptado",
+        secuenciaUtilizada: true,
+      });
+
+      const client = new RealDgiiClient();
+      const result = await client.pollStatus({
+        trackId: "E320000000001",
+        environment: "certification",
+        idempotencyKey: "poll-rfce-key",
+        certificate: mockCertificate,
+        isRfce: true,
+        rncEmisor: "131880738",
+        encf: "E320000000001",
+        securityCode: "SEC123",
+      });
+
+      expect(mockAuthenticate).toHaveBeenCalled();
+      expect(mockGetSummaryInvoiceInquiry).toHaveBeenCalledWith("131880738", "E320000000001", "SEC123");
+      expect(mockStatusTrackId).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        kind: "accepted",
+        statusCode: "1",
+        message: "Aceptado",
+      });
+    });
+
+    it("maps RFCE inquiry codigo 4 to accepted with detail", async () => {
+      mockAuthenticate.mockResolvedValue({ token: "token" });
+      mockGetSummaryInvoiceInquiry.mockResolvedValue({
+        rnc: "131880738",
+        encf: "E320000000001",
+        codigo: 4,
+        estado: "Aceptado Condicional",
+        mensajes: [{ codigo: 200, mensaje: "Aviso de recepcion" }],
+      });
+
+      const client = new RealDgiiClient();
+      const result = await client.pollStatus({
+        trackId: "E320000000001",
+        environment: "certification",
+        idempotencyKey: "poll-rfce-4",
+        certificate: mockCertificate,
+        isRfce: true,
+        rncEmisor: "131880738",
+        encf: "E320000000001",
+        securityCode: "SEC123",
+      });
+
+      expect(result).toEqual({
+        kind: "accepted",
+        statusCode: "4",
+        message: "Aceptado Condicional: [200] Aviso de recepcion",
+      });
+    });
+
+    it("maps RFCE inquiry codigo 2 to rejected terminal", async () => {
+      mockAuthenticate.mockResolvedValue({ token: "token" });
+      mockGetSummaryInvoiceInquiry.mockResolvedValue({
+        rnc: "131880738",
+        encf: "E320000000001",
+        codigo: 2,
+        estado: "Rechazado",
+        mensajes: [{ codigo: 99, mensaje: "Comprobante rechazado" }],
+      });
+
+      const client = new RealDgiiClient();
+      const result = await client.pollStatus({
+        trackId: "E320000000001",
+        environment: "certification",
+        idempotencyKey: "poll-rfce-2",
+        certificate: mockCertificate,
+        isRfce: true,
+        rncEmisor: "131880738",
+        encf: "E320000000001",
+        securityCode: "SEC123",
+      });
+
+      expect(result).toEqual({
+        kind: "rejected",
+        statusCode: "2",
+        message: "DGII [2] Rechazado: [99] Comprobante rechazado",
+      });
+    });
+
+    it("maps RFCE inquiry codigo 3 to retryable_error with backoff", async () => {
+      mockAuthenticate.mockResolvedValue({ token: "token" });
+      mockGetSummaryInvoiceInquiry.mockResolvedValue({
+        rnc: "131880738",
+        encf: "E320000000001",
+        codigo: 3,
+        estado: "En proceso",
+      });
+
+      const client = new RealDgiiClient();
+      const result = await client.pollStatus({
+        trackId: "E320000000001",
+        environment: "certification",
+        idempotencyKey: "poll-rfce-3",
+        certificate: mockCertificate,
+        isRfce: true,
+        rncEmisor: "131880738",
+        encf: "E320000000001",
+        securityCode: "SEC123",
+      });
+
+      expect(result).toEqual({
+        kind: "retryable_error",
+        statusCode: "3",
+        message: "En proceso",
+      });
+    });
+
+    it("maps RFCE inquiry codigo 0 or unexpected to terminal_error", async () => {
+      mockAuthenticate.mockResolvedValue({ token: "token" });
+      mockGetSummaryInvoiceInquiry.mockResolvedValue({
+        rnc: "131880738",
+        encf: "E320000000001",
+        codigo: 0,
+        estado: "No encontrado",
+      });
+
+      const client = new RealDgiiClient();
+      const result = await client.pollStatus({
+        trackId: "E320000000001",
+        environment: "certification",
+        idempotencyKey: "poll-rfce-0",
+        certificate: mockCertificate,
+        isRfce: true,
+        rncEmisor: "131880738",
+        encf: "E320000000001",
+        securityCode: "SEC123",
+      });
+
+      expect(result.kind).toBe("terminal_error");
     });
   });
 });

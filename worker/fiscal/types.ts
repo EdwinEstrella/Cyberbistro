@@ -95,6 +95,7 @@ export interface EcfDocumentSnapshot {
   status: EcfFiscalStatus;
   certificateMetadataId: string | null;
   dgiiTrackId: string | null;
+  dgiiSecurityCode?: string | null;
   rfce_threshold_used: number | null;
   rejection_scope: "individual" | "batch" | null;
   batchId?: string | null;
@@ -190,6 +191,8 @@ export interface XmlSignerAdapter {
 
 export type DgiiSubmitResult =
   | { kind: "submitted"; trackId: string; statusCode?: string; message?: string; rfceThresholdUsed?: number | null }
+  | { kind: "accepted"; trackId?: string; statusCode?: string; message?: string; rfceThresholdUsed?: number | null }
+  | { kind: "rejected"; trackId?: string; statusCode?: string; message: string; rfceThresholdUsed?: number | null }
   | { kind: "retryable_error"; statusCode?: string; message: string }
   | { kind: "terminal_error"; statusCode?: string; message: string };
 
@@ -212,6 +215,10 @@ export interface DgiiClientAdapter {
     environment: EcfEnvironment;
     idempotencyKey: string;
     certificate: SigningMaterial;
+    rncEmisor?: string;
+    encf?: string;
+    securityCode?: string;
+    isRfce?: boolean;
   }): Promise<DgiiPollResult>;
   sendSummary(input: {
     signedXml: string;

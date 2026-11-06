@@ -22,6 +22,7 @@ const claimRow = {
   document_status: "queued" as const,
   certificate_metadata_id: "cert-1",
   dgii_track_id: null,
+  dgii_security_code: "123456",
   certificate_id: "cert-1",
   certificate_tenant_id: "tenant-1",
   certificate_environment: "certification" as const,
@@ -46,7 +47,10 @@ describe("PostgresFiscalWorkerRepository", () => {
       expect(result.snapshot.ecf_secuencias_rangos).toEqual({
         E31: { start: 1, end: 300, vence: "31-12-2027" },
       });
+      expect(result.snapshot.document.dgiiSecurityCode).toBe("123456");
     }
+    expect(CLAIM_JOB_SQL).toContain("ed.dgii_security_code");
+    expect(CLAIM_JOB_SQL).toContain("candidate.dgii_security_code");
     expect(CLAIM_JOB_SQL).toContain("t.ecf_secuencias_rangos");
     expect(CLAIM_JOB_SQL).toContain("candidate.ecf_secuencias_rangos");
     expect(CLAIM_JOB_SQL).toContain("FOR UPDATE OF fo SKIP LOCKED");
