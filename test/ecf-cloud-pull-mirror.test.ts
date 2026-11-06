@@ -341,8 +341,8 @@ describe("ecf_documents cloud->local pull mirror", () => {
     expect(acceptedHtml).not.toContain("Tipo e-CF");
     expect(acceptedHtml).not.toContain("PENDIENTE DE ENVIO DGII");
     expect(acceptedHtml).not.toContain("¡Escaneá para ver nuestro Menú!");
+    expect(acceptedHtml).not.toContain("Track ID");
     expect(acceptedHtml).toContain("Codigo de seguridad: XYZ999");
-    expect(acceptedHtml).toContain("Track ID: TRK-ACCEPTED-99");
     expect(acceptedHtml).toContain("Verificar comprobante");
     expect(acceptedHtml).toContain("https://fc.dgii.gov.do/certecf/consultatimbrefc?rncemisor=130862346&encf=E320000000099&montototal=1500.00&codigoseguridad=XYZ999");
   });

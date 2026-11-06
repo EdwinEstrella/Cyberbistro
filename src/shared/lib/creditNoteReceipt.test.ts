@@ -91,7 +91,9 @@ describe("E34 credit note thermal receipt", () => {
     expect(html).toContain("AbC123");
     expect(html).toContain("Fecha de firma");
     expect(html).toContain("24-10-2026 11:01:00");
-    expect(html).toContain("ACEPTADO POR DGII");
+    expect(html).not.toContain("Estado e-CF");
+    expect(html).not.toContain("ACEPTADO POR DGII");
+    expect(html).not.toContain("Track ID");
     expect(html).not.toContain("Pendiente de aceptación DGII");
   });
 

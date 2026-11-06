@@ -323,7 +323,6 @@ export async function buildFacturaReceiptHtml(
   const isE32Fc = /^E32/i.test(ncf) && Number(factura.total) < 250000;
   const canRenderDgiiQr = ncf.toUpperCase().startsWith("E") && issuerRnc !== "" && ncf !== "" && ecfSecurityCode !== "" && !!dgiiIssuedAt && (isE32Fc || !!dgiiSignedAt);
   if (canRenderDgiiQr) {
-    const trackId = factura.ecf_track_id || "";
     const verificationUrl = buildDgiiEcfQrUrl({
       issuerRnc,
       buyerRnc: clienteRnc,
@@ -344,7 +343,7 @@ export async function buildFacturaReceiptHtml(
             <a href="${verificationUrl}" style="color:inherit;text-decoration:none">Verificar comprobante</a>
           </div>
           <div style="font-size:10px;margin-top:2px;">Codigo de seguridad: ${escapeHtml(ecfSecurityCode)}</div>
-          <div style="font-size:10px;margin-top:2px;">Track ID: ${trackId}</div>
+          ${dgiiSignedAt ? `<div style="font-size:10px;margin-top:2px;">Fecha de firma: ${escapeHtml(dgiiSignedAt)}</div>` : ""}
         </div>
       `;
     } catch (err) {
@@ -500,7 +499,7 @@ async function buildCreditNoteReceiptHtml(
   }
 
   const fiscalRow = accepted
-    ? `<tr class="header-row"><td>Estado e-CF</td><td style="text-align:right;font-weight:bold;font-size:13px">ACEPTADO POR DGII</td></tr>`
+    ? ""
     : factura.ecf_status === "rejected"
     ? `<tr class="header-row"><td>Estado e-CF</td><td style="text-align:right;font-weight:bold;font-size:13px">RECHAZADO POR DGII</td></tr>`
     : `<tr class="header-row"><td colspan="2" style="text-align:center;font-weight:bold;font-size:12px;padding:6px 0;border:1px dashed #000">Pendiente de aceptación DGII. La validez fiscal se confirmará al sincronizar.</td></tr>`;
@@ -529,8 +528,7 @@ async function buildCreditNoteReceiptHtml(
       <tr><td>ITBIS</td><td style="text-align:right">${rdFixed(factura.itbis, tenant)}</td></tr>
       <tr class="total-xl"><td>TOTAL</td><td style="text-align:right">${rdFixed(factura.total, tenant)}</td></tr>
     </table>
-    <div class="divider"></div>
-    <table>${fiscalRow}</table>
+    ${fiscalRow ? `<div class="divider"></div><table>${fiscalRow}</table>` : ""}
     ${qrBlock}
     <div class="double-divider"></div>
   `;

@@ -101,9 +101,8 @@ describe("receiptTemplates fiscal regression", () => {
     expect(html).not.toContain("Estado e-CF");
     expect(html).not.toContain("Tipo e-CF");
     expect(html).not.toContain("<td>Codigo seg.</td>");
-    expect(html).not.toContain("<td>Track ID</td>");
+    expect(html).not.toContain("Track ID");
     expect(html).toContain("Codigo de seguridad: ABC123");
-    expect(html).toContain("Track ID: TRK-12345");
     expect(html).toContain("Verificar comprobante");
 
     const qrCall = vi.mocked(QRCode.toDataURL).mock.calls[0];
@@ -133,10 +132,9 @@ describe("receiptTemplates fiscal regression", () => {
     expect(html).not.toContain("Estado e-CF");
     expect(html).not.toContain("Tipo e-CF");
     expect(html).not.toContain("<td>Codigo seg.</td>");
-    expect(html).not.toContain("<td>Track ID</td>");
+    expect(html).not.toContain("Track ID");
     expect(html).not.toContain("¡Escaneá para ver nuestro Menú!");
     expect(html).toContain("Codigo de seguridad: FC1234");
-    expect(html).toContain("Track ID: TRK-98765");
     expect(html).toContain("Verificar comprobante");
 
     const qrCall = vi.mocked(QRCode.toDataURL).mock.calls[0];
