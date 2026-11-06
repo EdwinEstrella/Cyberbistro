@@ -291,7 +291,8 @@ describe("ecf_documents cloud->local pull mirror", () => {
       80
     );
 
-    expect(pendingHtml).toContain("PENDIENTE DE ENVIO DGII");
+    expect(pendingHtml).not.toContain("Estado e-CF");
+    expect(pendingHtml).toContain("Documento pendiente de envio a DGII");
     expect(pendingHtml).toContain("¡Escaneá para ver nuestro Menú!");
     expect(pendingHtml).not.toContain("Verificar comprobante");
     expect(pendingHtml).not.toContain("consultatimbrefc");
@@ -336,7 +337,8 @@ describe("ecf_documents cloud->local pull mirror", () => {
       80
     );
 
-    expect(acceptedHtml).toContain("ACEPTADO POR DGII");
+    expect(acceptedHtml).not.toContain("Estado e-CF");
+    expect(acceptedHtml).not.toContain("Tipo e-CF");
     expect(acceptedHtml).not.toContain("PENDIENTE DE ENVIO DGII");
     expect(acceptedHtml).not.toContain("¡Escaneá para ver nuestro Menú!");
     expect(acceptedHtml).toContain("Codigo de seguridad: XYZ999");

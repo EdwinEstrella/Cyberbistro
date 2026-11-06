@@ -248,7 +248,6 @@ export async function buildFacturaReceiptHtml(
   const clienteRnc = (factura.cliente_rnc || "").trim();
   const ncf = (factura.ncf || "").trim();
   const ecfSecurityCode = (factura.ecf_security_code || "").trim();
-  const ecfType = ncf.toUpperCase().startsWith("E") ? ncf.slice(0, 3).toUpperCase() : "";
   const propina = Number(factura.propina ?? 0);
   const montoRecibido = Number(factura.monto_recibido);
   const cambioDevuelto = Number(factura.cambio_devuelto);
@@ -295,18 +294,6 @@ export async function buildFacturaReceiptHtml(
 
   let metaEcf = "";
   if (ncf.toUpperCase().startsWith("E")) {
-    const statusLabel =
-      factura.ecf_status === "accepted"
-        ? "ACEPTADO POR DGII"
-        : factura.ecf_status === "rejected"
-        ? "RECHAZADO POR DGII"
-        : factura.ecf_status === "submitted"
-        ? "ENVIADO A DGII"
-        : factura.ecf_status === "queued" || factura.ecf_status === "signed"
-        ? "SINCRONIZADO, PENDIENTE DE FIRMA"
-        : factura.ecf_status === "retryable_error" || factura.ecf_status === "terminal_error"
-        ? "ERROR FISCAL"
-        : "PENDIENTE DE ENVIO DGII";
     const rejectionAction =
       factura.ecf_status === "rejected"
         ? `<tr class="header-row"><td colspan="2" style="text-align:center;font-weight:bold;font-size:12px;padding:6px 0;border:1px dashed #000">Accion recomendada: revisar datos fiscales y reenviar el comprobante.</td></tr>`
@@ -315,17 +302,6 @@ export async function buildFacturaReceiptHtml(
       factura.ecf_status !== "accepted" && factura.ecf_status !== "rejected"
         ? `<tr class="header-row"><td colspan="2" style="text-align:center;font-weight:bold;font-size:12px;padding:6px 0;border:1px dashed #000">Documento pendiente de envio a DGII. La validez fiscal se confirmara al sincronizar.</td></tr>`
         : "";
-    const typeLabel = factura.ncf_tipo?.trim() || ecfType;
-    if (typeLabel) {
-      metaEcf += `<tr class="header-row"><td>Tipo e-CF</td><td style="text-align:right;font-weight:bold;font-size:12px">${escapeHtml(typeLabel)}</td></tr>`;
-    }
-    metaEcf += `<tr class="header-row"><td>Estado e-CF</td><td style="text-align:right;font-weight:bold;font-size:13px">${statusLabel}</td></tr>`;
-    if (ecfSecurityCode) {
-      metaEcf += `<tr class="header-row"><td>Codigo seg.</td><td style="text-align:right;font-family:monospace;font-size:12px">${escapeHtml(ecfSecurityCode)}</td></tr>`;
-    }
-    if (factura.ecf_track_id) {
-      metaEcf += `<tr class="header-row"><td>Track ID</td><td style="text-align:right;font-family:monospace;font-size:12px">${escapeHtml(factura.ecf_track_id)}</td></tr>`;
-    }
     metaEcf += pendingWarning;
     metaEcf += rejectionAction;
   }

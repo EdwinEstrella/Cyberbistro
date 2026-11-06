@@ -98,10 +98,12 @@ describe("receiptTemplates fiscal regression", () => {
       80
     );
 
-    expect(html).toContain("ACEPTADO POR DGII");
-    expect(html).toContain("Codigo seg.");
-    expect(html).toContain("ABC123");
-    expect(html).toContain("Track ID");
+    expect(html).not.toContain("Estado e-CF");
+    expect(html).not.toContain("Tipo e-CF");
+    expect(html).not.toContain("<td>Codigo seg.</td>");
+    expect(html).not.toContain("<td>Track ID</td>");
+    expect(html).toContain("Codigo de seguridad: ABC123");
+    expect(html).toContain("Track ID: TRK-12345");
     expect(html).toContain("Verificar comprobante");
 
     const qrCall = vi.mocked(QRCode.toDataURL).mock.calls[0];
@@ -128,12 +130,13 @@ describe("receiptTemplates fiscal regression", () => {
       80
     );
 
-    expect(html).toContain("ACEPTADO POR DGII");
-    expect(html).not.toContain("PENDIENTE DE ENVIO DGII");
+    expect(html).not.toContain("Estado e-CF");
+    expect(html).not.toContain("Tipo e-CF");
+    expect(html).not.toContain("<td>Codigo seg.</td>");
+    expect(html).not.toContain("<td>Track ID</td>");
     expect(html).not.toContain("¡Escaneá para ver nuestro Menú!");
-    expect(html).toContain("Codigo seg.");
-    expect(html).toContain("FC1234");
-    expect(html).toContain("Track ID");
+    expect(html).toContain("Codigo de seguridad: FC1234");
+    expect(html).toContain("Track ID: TRK-98765");
     expect(html).toContain("Verificar comprobante");
 
     const qrCall = vi.mocked(QRCode.toDataURL).mock.calls[0];
@@ -155,7 +158,8 @@ describe("receiptTemplates fiscal regression", () => {
       80
     );
 
-    expect(html).toContain("PENDIENTE DE ENVIO DGII");
+    expect(html).not.toContain("Estado e-CF");
+    expect(html).not.toContain("Tipo e-CF");
     expect(html).toContain("Documento pendiente de envio a DGII. La validez fiscal se confirmara al sincronizar.");
     expect(html).not.toContain("Verificar comprobante");
     expect(vi.mocked(QRCode.toDataURL)).not.toHaveBeenCalled();
@@ -174,7 +178,8 @@ describe("receiptTemplates fiscal regression", () => {
       80
     );
 
-    expect(html).toContain("RECHAZADO POR DGII");
+    expect(html).not.toContain("Estado e-CF");
+    expect(html).not.toContain("Tipo e-CF");
     expect(html).toContain("Accion recomendada: revisar datos fiscales y reenviar el comprobante.");
     expect(html).not.toContain("Documento pendiente de envio a DGII");
   });
