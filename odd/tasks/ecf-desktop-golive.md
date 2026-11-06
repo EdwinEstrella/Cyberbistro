@@ -66,11 +66,19 @@ Addressed all code review findings:
 6. Reverted `vitest.config.ts` inclusion and relocated tests from `electron/persistence/__tests__/ecfDesktopGolive.test.ts` to `test/ecf-desktop-golive.test.ts`, deleting the empty directory.
 7. Cleaned up `mapEcfDocumentPayload` redundant `certificate_metadata_id` branch and added tenant ID logging on backfill failure.
 
+## Review round 2
+Addressed all second round code review findings:
+1. Reverted `.gitignore` change to ensure `graphify-out/` remains committed.
+2. Extracted pure `upsertOptionsForRemoteTable(remoteTable)` in `electron/persistence/payrollSyncClient.ts` to eliminate duplicated onConflict and ignoreDuplicates logic between single and batch push, covered with unit tests for `fiscal_outbox`, `ecf_documents`, `mesas_estado`, and `facturas`.
+3. Extracted backfill out of `TenantStore` into `electron/persistence/fiscalBackfill.ts` exporting `backfillUnpushedFiscalRows(db, tenantId)` decomposed into small helpers (`selectUnpushedRows`, `findEcfDocForFactura`, `repairFacturaFiscalMode`, `buildFacturaPayload`, `buildEcfDocumentPayload`, `buildFiscalOutboxPayload`, `enqueueUnpushedFiscalRows`), invoked once in `TenantStore.open` with try/catch and tenantId logging.
+4. Added data repair to backfill: for any factura owning an `ecf_documents` row whose local mode was overwritten to `'ncf_legacy'`, repaired local SQLite `facturas.fiscal_mode` to `'dgii_ecf'` inside the backfill transaction, and included `fiscal_mode = 'dgii_ecf'`, `fiscal_document_id`, and `fiscal_status = 'queued'` in the enqueued outbox payload to correct the cloud factura. Covered with unit test.
+5. Added schema migration safety test in `test/local-sqlite-schema-integrity.test.ts` verifying that existing databases with old status CHECKs (lacking `'queued'`) migrate cleanly when adding `'queued'`, preserve rows, accept `'queued'`, produce clean `PRAGMA foreign_key_check`, and leave no dangling foreign keys or migration artifacts. Updated doc comment in `schema.ts` explaining `'queued'` local semantics.
+
 ## Progress
 | Task | Description | Status | Verification |
 |------|-------------|--------|--------------|
 | T0 | Cert lookup by environment | DONE | Commit 41ee0e6 |
 | T1 | Desktop push of ecf_documents + fiscal_outbox | DONE | Outbox enqueue on checkout, SUPPORTED_OUTBOX_TABLES, payload mappers, onConflict id / idempotency_key with ignoreDuplicates: true |
 | T2 | Facturas fiscal fields & pull non-downgrade | DONE | Sent fiscal_mode/status/docId in mapFacturaPayload, guarded pull ON CONFLICT in cloudApply and tenantStore |
-| T3 | Backfill of already-stuck rows on open/sync | DONE | Private backfillUnpushedFiscalRows on TenantStore.open filtering pending_offline/pending_sync |
-| T4 | Comprehensive unit/integration tests | DONE | test/ecf-desktop-golive.test.ts (12 tests) & fiscalSyncPayload.test.ts (4 tests) passing |
+| T3 | Backfill of already-stuck rows on open/sync | DONE | `backfillUnpushedFiscalRows` in `fiscalBackfill.ts` called on TenantStore.open with data repair for facturas |
+| T4 | Comprehensive unit/integration tests | DONE | `test/ecf-desktop-golive.test.ts` (14 tests), `test/local-sqlite-schema-integrity.test.ts` (16 tests in suite), `fiscalSyncPayload.test.ts` (4 tests) passing |
