@@ -35,6 +35,11 @@ export interface PullBatch {
   failedTables?: Array<{ table: string; message: string }>;
 }
 
+export interface SyncPullResult {
+  applied: number;
+  tables: string[];
+}
+
 export interface DurableSyncStore {
   operations: DurableOperation[];
   commitMutation(operation: DurableOperation): void;
@@ -180,17 +185,31 @@ export class DurableSyncWorker {
     }
   }
 
-  async pull(): Promise<number> {
+  async pull(): Promise<SyncPullResult> {
     const batch = await this.server.pull({ tenantId: this.tenantId, cursor: this.store.getCursor() });
     // Store implementations MUST commit rows/tombstones and cursor in one transaction.
     this.store.applyPull(batch);
+    const tableSet = new Set<string>();
     if (batch.changes.length > 0) {
       const byTable = new Map<string, number>();
-      for (const change of batch.changes) byTable.set(change.tableName, (byTable.get(change.tableName) ?? 0) + 1);
+      for (const change of batch.changes) {
+        if (change?.tableName) {
+          tableSet.add(change.tableName);
+          byTable.set(change.tableName, (byTable.get(change.tableName) ?? 0) + 1);
+        }
+      }
       const detail = [...byTable.entries()].map(([table, count]) => `${table}:${count}`).join(", ");
       console.log(`[sync↓] bajaron ${batch.changes.length} cambio(s) de la nube (${detail})`);
     }
-    return batch.changes.length;
+    if (Array.isArray(batch.snapshotTables)) {
+      for (const table of batch.snapshotTables) {
+        if (table) tableSet.add(table);
+      }
+    }
+    return {
+      applied: batch.changes.length,
+      tables: Array.from(tableSet),
+    };
   }
 }
 

@@ -511,8 +511,10 @@ if (gotTheLock) {
 
   app.whenReady().then(async () => {
     tenantStoreController = new TenantStoreController(app.getPath('userData'))
-    tenantStoreController.payrollSync.onPullApplied = (tenantId) => {
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('local-data-updated', tenantId);
+    tenantStoreController.payrollSync.onPullApplied = (payload) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('local-data-updated', payload);
+      }
     };
     deviceAccountDirectory = DeviceAccountDirectory.open(app.getPath('userData'))
     autoLaunchManager = new AutoLaunchManager({

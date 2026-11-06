@@ -104,8 +104,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   triggerSync: () => ipcRenderer.invoke('sync:trigger'),
   getLocalRowVersions: (tenantId: string | undefined, table: string) => ipcRenderer.invoke('sync:get-local-row-versions', tenantId, table),
   openLogsFolder: () => ipcRenderer.invoke('sync:open-logs-folder'),
-  onLocalDataUpdated: (callback: (tenantId: string) => void) => {
-    const listener = (_event: unknown, tenantId: string) => callback(tenantId);
+  onLocalDataUpdated: (callback: (payload: { tenantId: string; tables: string[] }) => void) => {
+    const listener = (_event: unknown, payload: { tenantId: string; tables: string[] }) => callback(payload);
     ipcRenderer.on('local-data-updated', listener);
     return () => ipcRenderer.removeListener('local-data-updated', listener);
   },

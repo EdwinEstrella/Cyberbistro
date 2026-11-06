@@ -97,8 +97,8 @@ export function Cocina() {
   useEffect(() => {
     if (!tenantId) return;
     const tid = tenantId;
-    return window.electronAPI?.onLocalDataUpdated?.((updatedTenantId) => {
-      if (!updatedTenantId || updatedTenantId === tid) {
+    return window.electronAPI?.onLocalDataUpdated?.((payload) => {
+      if (!payload?.tenantId || payload.tenantId === tid) {
         void (async () => {
           const [estadoData, comandasData] = await Promise.all([
             readLocalCocinaEstado(tid, activeSucursalId),

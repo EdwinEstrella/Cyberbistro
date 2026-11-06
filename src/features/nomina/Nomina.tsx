@@ -485,8 +485,8 @@ export function Nomina() {
   useEffect(() => {
     if (!tenantId || !isPayrollLocalStorageAvailable()) return;
     void window.electronAPI?.triggerSync?.().catch(console.warn);
-    return window.electronAPI?.onLocalDataUpdated?.((updatedTenantId) => {
-      if (updatedTenantId !== tenantId) return;
+    return window.electronAPI?.onLocalDataUpdated?.((payload) => {
+      if (payload?.tenantId !== tenantId) return;
       void loadEmployees();
       void loadPayments();
     });
