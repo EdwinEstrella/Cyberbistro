@@ -27,7 +27,7 @@ export interface DigitalMenuSettings {
  * 4. Empty rows array or unresolvable targets return `null`.
  */
 export function pickPublicMenuSettings(
-  rows: readonly DigitalMenuSettings[] | DigitalMenuSettings[] | null | undefined,
+  rows: readonly DigitalMenuSettings[] | null | undefined,
   tenantId: string,
   sucursalId?: string | null
 ): DigitalMenuSettings | null {
@@ -97,18 +97,11 @@ export async function fetchPublicMenuSettings(
 
     // Fallback to cloud if available and online
     if (typeof navigator === "undefined" || navigator.onLine) {
-      let query = supabase
+      const { data, error } = await supabase
         .from("digital_menu_settings")
         .select("*")
         .eq("tenant_id", tenantId);
 
-      if (sucursalId) {
-        query = query.or(`sucursal_id.is.null,sucursal_id.eq.${sucursalId}`);
-      } else {
-        query = query.is("sucursal_id", null);
-      }
-
-      const { data, error } = await query;
       if (!error && data) {
         return pickPublicMenuSettings(data as DigitalMenuSettings[], tenantId, sucursalId);
       }
