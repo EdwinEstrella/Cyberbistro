@@ -158,7 +158,7 @@ function resolveDgiiEnvironment(environment: TenantReceiptInfo["ecf_environment"
   return "testecf";
 }
 
-function buildDgiiEcfQrUrl(args: {
+export function buildDgiiEcfQrUrl(args: {
   issuerRnc: string;
   buyerRnc: string;
   encf: string;
@@ -169,6 +169,12 @@ function buildDgiiEcfQrUrl(args: {
   environment: TenantReceiptInfo["ecf_environment"];
 }): string {
   const envSegment = resolveDgiiEnvironment(args.environment);
+  const isE32Fc = /^E32/i.test(args.encf) && args.total < 250000;
+
+  if (isE32Fc) {
+    return `https://fc.dgii.gov.do/${envSegment}/consultatimbrefc?rncemisor=${encodeURIComponent(args.issuerRnc)}&encf=${encodeURIComponent(args.encf)}&montototal=${encodeURIComponent(args.total.toFixed(2))}&codigoseguridad=${encodeURIComponent(args.securityCode)}`;
+  }
+
   const buyerParam = args.buyerRnc && !/E43/i.test(args.encf) && !/E47/i.test(args.encf)
     ? `RncComprador=${encodeURIComponent(args.buyerRnc)}&`
     : "";
@@ -242,7 +248,6 @@ export async function buildFacturaReceiptHtml(
   const clienteRnc = (factura.cliente_rnc || "").trim();
   const ncf = (factura.ncf || "").trim();
   const ecfSecurityCode = (factura.ecf_security_code || "").trim();
-  const ecfType = ncf.toUpperCase().startsWith("E") ? ncf.slice(0, 3).toUpperCase() : "";
   const propina = Number(factura.propina ?? 0);
   const montoRecibido = Number(factura.monto_recibido);
   const cambioDevuelto = Number(factura.cambio_devuelto);
@@ -289,18 +294,6 @@ export async function buildFacturaReceiptHtml(
 
   let metaEcf = "";
   if (ncf.toUpperCase().startsWith("E")) {
-    const statusLabel =
-      factura.ecf_status === "accepted"
-        ? "ACEPTADO POR DGII"
-        : factura.ecf_status === "rejected"
-        ? "RECHAZADO POR DGII"
-        : factura.ecf_status === "submitted"
-        ? "ENVIADO A DGII"
-        : factura.ecf_status === "queued" || factura.ecf_status === "signed"
-        ? "SINCRONIZADO, PENDIENTE DE FIRMA"
-        : factura.ecf_status === "retryable_error" || factura.ecf_status === "terminal_error"
-        ? "ERROR FISCAL"
-        : "PENDIENTE DE ENVIO DGII";
     const rejectionAction =
       factura.ecf_status === "rejected"
         ? `<tr class="header-row"><td colspan="2" style="text-align:center;font-weight:bold;font-size:12px;padding:6px 0;border:1px dashed #000">Accion recomendada: revisar datos fiscales y reenviar el comprobante.</td></tr>`
@@ -309,17 +302,6 @@ export async function buildFacturaReceiptHtml(
       factura.ecf_status !== "accepted" && factura.ecf_status !== "rejected"
         ? `<tr class="header-row"><td colspan="2" style="text-align:center;font-weight:bold;font-size:12px;padding:6px 0;border:1px dashed #000">Documento pendiente de envio a DGII. La validez fiscal se confirmara al sincronizar.</td></tr>`
         : "";
-    const typeLabel = factura.ncf_tipo?.trim() || ecfType;
-    if (typeLabel) {
-      metaEcf += `<tr class="header-row"><td>Tipo e-CF</td><td style="text-align:right;font-weight:bold;font-size:12px">${escapeHtml(typeLabel)}</td></tr>`;
-    }
-    metaEcf += `<tr class="header-row"><td>Estado e-CF</td><td style="text-align:right;font-weight:bold;font-size:13px">${statusLabel}</td></tr>`;
-    if (ecfSecurityCode) {
-      metaEcf += `<tr class="header-row"><td>Codigo seg.</td><td style="text-align:right;font-family:monospace;font-size:12px">${escapeHtml(ecfSecurityCode)}</td></tr>`;
-    }
-    if (factura.ecf_track_id) {
-      metaEcf += `<tr class="header-row"><td>Track ID</td><td style="text-align:right;font-family:monospace;font-size:12px">${escapeHtml(factura.ecf_track_id)}</td></tr>`;
-    }
     metaEcf += pendingWarning;
     metaEcf += rejectionAction;
   }
@@ -338,16 +320,16 @@ export async function buildFacturaReceiptHtml(
   const issuerRnc = (tenant.rnc || "").trim();
   const dgiiIssuedAt = formatDgiiDate(factura.created_at ?? when);
   const dgiiSignedAt = formatDgiiDateTime(factura.ecf_submitted_at ?? null);
-  const canRenderDgiiQr = ncf.toUpperCase().startsWith("E") && issuerRnc !== "" && ncf !== "" && ecfSecurityCode !== "" && !!dgiiIssuedAt && !!dgiiSignedAt;
+  const isE32Fc = /^E32/i.test(ncf) && Number(factura.total) < 250000;
+  const canRenderDgiiQr = ncf.toUpperCase().startsWith("E") && issuerRnc !== "" && ncf !== "" && ecfSecurityCode !== "" && !!dgiiIssuedAt && (isE32Fc || !!dgiiSignedAt);
   if (canRenderDgiiQr) {
-    const trackId = factura.ecf_track_id || "";
     const verificationUrl = buildDgiiEcfQrUrl({
       issuerRnc,
       buyerRnc: clienteRnc,
       encf: ncf,
       total: Number(factura.total),
       issuedAt: dgiiIssuedAt!,
-      signedAt: dgiiSignedAt!,
+      signedAt: dgiiSignedAt || "",
       securityCode: ecfSecurityCode,
       environment: tenant.ecf_environment,
     });
@@ -361,7 +343,7 @@ export async function buildFacturaReceiptHtml(
             <a href="${verificationUrl}" style="color:inherit;text-decoration:none">Verificar comprobante</a>
           </div>
           <div style="font-size:10px;margin-top:2px;">Codigo de seguridad: ${escapeHtml(ecfSecurityCode)}</div>
-          <div style="font-size:10px;margin-top:2px;">Track ID: ${trackId}</div>
+          ${dgiiSignedAt ? `<div style="font-size:10px;margin-top:2px;">Fecha de firma: ${escapeHtml(dgiiSignedAt)}</div>` : ""}
         </div>
       `;
     } catch (err) {
@@ -517,7 +499,7 @@ async function buildCreditNoteReceiptHtml(
   }
 
   const fiscalRow = accepted
-    ? `<tr class="header-row"><td>Estado e-CF</td><td style="text-align:right;font-weight:bold;font-size:13px">ACEPTADO POR DGII</td></tr>`
+    ? ""
     : factura.ecf_status === "rejected"
     ? `<tr class="header-row"><td>Estado e-CF</td><td style="text-align:right;font-weight:bold;font-size:13px">RECHAZADO POR DGII</td></tr>`
     : `<tr class="header-row"><td colspan="2" style="text-align:center;font-weight:bold;font-size:12px;padding:6px 0;border:1px dashed #000">Pendiente de aceptación DGII. La validez fiscal se confirmará al sincronizar.</td></tr>`;
@@ -546,8 +528,7 @@ async function buildCreditNoteReceiptHtml(
       <tr><td>ITBIS</td><td style="text-align:right">${rdFixed(factura.itbis, tenant)}</td></tr>
       <tr class="total-xl"><td>TOTAL</td><td style="text-align:right">${rdFixed(factura.total, tenant)}</td></tr>
     </table>
-    <div class="divider"></div>
-    <table>${fiscalRow}</table>
+    ${fiscalRow ? `<div class="divider"></div><table>${fiscalRow}</table>` : ""}
     ${qrBlock}
     <div class="double-divider"></div>
   `;

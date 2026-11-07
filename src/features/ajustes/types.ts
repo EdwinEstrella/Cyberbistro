@@ -22,10 +22,11 @@ export interface AjustesConfig {
   ncf_tipos_activos: Record<string, boolean>;
 }
 
-export type ThermalPreviewKind = "factura" | "comanda" | "cierre" | "split" | "nomina";
+export type ThermalPreviewKind = "factura" | "nota_credito" | "comanda" | "cierre" | "split" | "nomina";
 
 export const THERMAL_PREVIEW_TABS: { id: ThermalPreviewKind; label: string }[] = [
   { id: "factura", label: "Factura" },
+  { id: "nota_credito", label: "Nota de crédito" },
   { id: "comanda", label: "Comanda" },
   { id: "cierre", label: "Cierre" },
   { id: "split", label: "Separar cuenta" },

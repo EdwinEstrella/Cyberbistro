@@ -67,6 +67,27 @@ describe("durable cloud sync worker", () => {
     expect(store.rows.has("facturas:obsolete")).toBe(false);
   });
 
+  it("pull returns distinct table names from changes and snapshotTables", async () => {
+    const store = createStore();
+    const client: ServerSyncClient = {
+      push: async () => ({ result: {} }),
+      pull: async () => ({
+        cursor: "cursor-1",
+        changes: [
+          { tableName: "facturas", rowId: "sale-1", deleted: false, payload: { id: "sale-1" } },
+          { tableName: "facturas", rowId: "sale-2", deleted: false, payload: { id: "sale-2" } },
+          { tableName: "compras", rowId: "comp-1", deleted: false, payload: { id: "comp-1" } },
+        ],
+        snapshotTables: ["facturas", "cierres_operativos"],
+      }),
+    };
+    const worker = new DurableSyncWorker(store, client, tenantId);
+    const result = await worker.pull();
+
+    expect(result.applied).toBe(3);
+    expect(result.tables).toEqual(["facturas", "compras", "cierres_operativos"]);
+  });
+
   it.each(["facturas", "cierres_operativos", "inventario_movimientos"] as const)("never resolves %s conflicts with last-write-wins", async (tableName) => {
     const store = createStore();
     store.commitMutation(createDurableOperation({ tenantId, tableName, rowId: "row-1", op: "update", payload: { id: "row-1" }, deviceId: "device-1", sequence: 1, id: `operation-${tableName}` }));

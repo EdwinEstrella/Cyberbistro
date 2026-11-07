@@ -98,10 +98,11 @@ describe("receiptTemplates fiscal regression", () => {
       80
     );
 
-    expect(html).toContain("ACEPTADO POR DGII");
-    expect(html).toContain("Codigo seg.");
-    expect(html).toContain("ABC123");
-    expect(html).toContain("Track ID");
+    expect(html).not.toContain("Estado e-CF");
+    expect(html).not.toContain("Tipo e-CF");
+    expect(html).not.toContain("<td>Codigo seg.</td>");
+    expect(html).not.toContain("Track ID");
+    expect(html).toContain("Codigo de seguridad: ABC123");
     expect(html).toContain("Verificar comprobante");
 
     const qrCall = vi.mocked(QRCode.toDataURL).mock.calls[0];
@@ -110,6 +111,36 @@ describe("receiptTemplates fiscal regression", () => {
     expect(qrCall?.[0]).toContain("RncComprador=130862346");
     expect(qrCall?.[0]).toContain("encf=E310000000045");
     expect(qrCall?.[0]).toContain("codigoseguridad=ABC123");
+  });
+
+  it("renders accepted E32 consumo under 250k with DGII FC verification QR (ConsultaTimbreFC) and ACEPTADO state", async () => {
+    const html = await buildFacturaReceiptHtml(
+      tenant,
+      baseFactura({
+        ncf: "E320000000045",
+        ncf_tipo: "E32 - Factura de consumo electronica",
+        total: 1500,
+        ecf_status: "accepted",
+        ecf_track_id: "TRK-98765",
+        ecf_security_code: "FC1234",
+        ecf_submitted_at: "2026-06-10T12:06:00.000Z",
+      }),
+      45,
+      80
+    );
+
+    expect(html).not.toContain("Estado e-CF");
+    expect(html).not.toContain("Tipo e-CF");
+    expect(html).not.toContain("<td>Codigo seg.</td>");
+    expect(html).not.toContain("Track ID");
+    expect(html).not.toContain("¡Escaneá para ver nuestro Menú!");
+    expect(html).toContain("Codigo de seguridad: FC1234");
+    expect(html).toContain("Verificar comprobante");
+
+    const qrCall = vi.mocked(QRCode.toDataURL).mock.calls[0];
+    expect(qrCall?.[0]).toBe(
+      "https://fc.dgii.gov.do/certecf/consultatimbrefc?rncemisor=130862346&encf=E320000000045&montototal=1500.00&codigoseguridad=FC1234"
+    );
   });
 
   it("keeps offline e-CF receipts visibly pending without a DGII verification link", async () => {
@@ -125,7 +156,8 @@ describe("receiptTemplates fiscal regression", () => {
       80
     );
 
-    expect(html).toContain("PENDIENTE DE ENVIO DGII");
+    expect(html).not.toContain("Estado e-CF");
+    expect(html).not.toContain("Tipo e-CF");
     expect(html).toContain("Documento pendiente de envio a DGII. La validez fiscal se confirmara al sincronizar.");
     expect(html).not.toContain("Verificar comprobante");
     expect(vi.mocked(QRCode.toDataURL)).not.toHaveBeenCalled();
@@ -144,7 +176,8 @@ describe("receiptTemplates fiscal regression", () => {
       80
     );
 
-    expect(html).toContain("RECHAZADO POR DGII");
+    expect(html).not.toContain("Estado e-CF");
+    expect(html).not.toContain("Tipo e-CF");
     expect(html).toContain("Accion recomendada: revisar datos fiscales y reenviar el comprobante.");
     expect(html).not.toContain("Documento pendiente de envio a DGII");
   });

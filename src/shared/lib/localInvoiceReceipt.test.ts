@@ -55,6 +55,76 @@ describe("printLocalInvoiceReceipt", () => {
     expect(mocks.supabaseFrom).not.toHaveBeenCalled();
   });
 
+  it("feeds ecf_status from dgii_status, security code, submitted_at, and track_id when mirror row is accepted", async () => {
+    mocks.readLocalMirror.mockImplementation((_tenantId: string, table: string) => {
+      if (table === "tenants") {
+        return Promise.resolve([{
+          id: "tenant-1",
+          nombre_negocio: "Bistro Local",
+          rnc: "101010101",
+          direccion: "Calle 1",
+          telefono: "809-555-0101",
+          logo_url: null,
+        }]);
+      }
+      return Promise.resolve([{
+        factura_id: "invoice-accepted",
+        status: "queued",
+        dgii_status: "accepted",
+        dgii_security_code: "SEC123",
+        dgii_track_id: "TRK-999",
+        submitted_at: "2026-11-06T10:00:00Z",
+        accepted_at: "2026-11-06T10:05:00Z",
+      }]);
+    });
+
+    const result = await printLocalInvoiceReceipt({
+      tenantId: "tenant-1",
+      factura: { id: "invoice-accepted", numero_factura: 100, ncf: "E320000000001", total: 500 },
+      numeroFactura: 100,
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(mocks.buildFacturaReceiptHtml).toHaveBeenCalledWith(
+      expect.objectContaining({ nombre_negocio: "Bistro Local" }),
+      expect.objectContaining({
+        id: "invoice-accepted",
+        ecf_status: "accepted",
+        ecf_security_code: "SEC123",
+        ecf_track_id: "TRK-999",
+        ecf_submitted_at: "2026-11-06T10:00:00Z",
+      }),
+      100,
+      80
+    );
+  });
+
+  it("refuses to print an e-CF invoice without a DGII security code", async () => {
+    mocks.readLocalMirror.mockImplementation((_tenantId: string, table: string) => {
+      if (table === "tenants") {
+        return Promise.resolve([{
+          id: "tenant-1",
+          nombre_negocio: "Bistro Local",
+          rnc: "101010101",
+          direccion: "Calle 1",
+          telefono: "809-555-0101",
+          logo_url: null,
+        }]);
+      }
+      return Promise.resolve([{ factura_id: "inv-ecf-no-code", status: "queued", dgii_security_code: null }]);
+    });
+
+    const result = await printLocalInvoiceReceipt({
+      tenantId: "tenant-1",
+      factura: { id: "inv-ecf-no-code", numero_factura: 101, ncf: "E310000000001", total: 500 },
+      numeroFactura: 101,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("sin código de seguridad");
+    expect(mocks.printThermalHtml).not.toHaveBeenCalled();
+  });
+
   describe("cloud unavailable", () => {
     const factura = { id: "invoice-1", numero_factura: 7 };
     const tenantRow = {

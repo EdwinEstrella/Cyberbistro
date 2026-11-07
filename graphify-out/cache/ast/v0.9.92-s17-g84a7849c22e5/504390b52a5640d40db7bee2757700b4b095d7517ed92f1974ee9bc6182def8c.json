@@ -1,1 +1,0 @@
-{"nodes": [{"id": "$graphify-root$_supabase_migrations_20261017130000_ecf_certificate_metadata_lockdown_sql", "label": "20261017130000_ecf_certificate_metadata_lockdown.sql", "file_type": "code", "source_file": "supabase/migrations/20261017130000_ecf_certificate_metadata_lockdown.sql", "source_location": null}], "edges": []}

@@ -3,7 +3,11 @@ import { createUnsignedEcfXml } from "../worker/fiscal/mapper";
 import type { FiscalWorkerSnapshot } from "../worker/fiscal/types";
 
 function snapshotWithNcf(ncf: string): FiscalWorkerSnapshot {
+  const ecfType = /^E(\d{2})/.exec(ncf)?.[1];
+  const rangos: Record<string, unknown> = {};
+  if (ecfType === "31") rangos["E31"] = { start: 1, end: 300, vence: "31-12-2027" };
   return {
+    ecf_secuencias_rangos: rangos,
     invoicePayload: {
       factura: {
         created_at: "2026-10-24T12:00:00.000Z",

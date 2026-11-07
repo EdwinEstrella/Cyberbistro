@@ -530,7 +530,10 @@ export function applyCloudFacturaRows(
     ) VALUES (?, ?, ?, ?, ?, 'committed', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       sucursal_id = excluded.sucursal_id,
-      fiscal_mode = excluded.fiscal_mode,
+      fiscal_mode = CASE
+        WHEN facturas.fiscal_mode = 'dgii_ecf' AND excluded.fiscal_mode <> 'dgii_ecf' THEN facturas.fiscal_mode
+        ELSE excluded.fiscal_mode
+      END,
       total = excluded.total,
       numero_factura = excluded.numero_factura,
       mesa_numero = excluded.mesa_numero,
@@ -543,8 +546,8 @@ export function applyCloudFacturaRows(
       moneda = excluded.moneda,
       items = excluded.items,
       notas = excluded.notas,
-      ncf = excluded.ncf,
-      ncf_tipo = excluded.ncf_tipo,
+      ncf = COALESCE(excluded.ncf, facturas.ncf),
+      ncf_tipo = COALESCE(excluded.ncf_tipo, facturas.ncf_tipo),
       cliente_rnc = excluded.cliente_rnc,
       customer_id = excluded.customer_id,
       created_at = excluded.created_at,
@@ -611,6 +614,129 @@ export function applyCloudFacturaRows(
       int(f.ref_codigo_modificacion),
       str(f.ref_razon_modificacion),
     );
+  }
+}
+
+/**
+ * Applies cloud ecf_documents into the local SQLite mirror.
+ *
+ * Rules:
+ * 1. Only applies mirror columns (dgii_status, dgii_track_id, dgii_status_message,
+ *    dgii_security_code, submitted_at, accepted_at, updated_at).
+ * 2. Never alters the local checkout `status` column (docs/fiscal-status-truths.md).
+ * 3. Never downgrades once local `dgii_status` is 'accepted' or 'rejected'.
+ * 4. Matches local rows by `id` or `factura_id`.
+ * 5. Never inserts server-only rows for other devices unless the factura exists locally
+ *    (justification: ecf_documents has a strict FK to facturas; inserting an orphaned
+ *    document would violate foreign key constraints and be unrenderable locally).
+ */
+export function applyCloudEcfDocumentRows(
+  db: DatabaseSync,
+  tenantId: string,
+  rows: Array<Record<string, unknown>>,
+  defaultBranchId = "main-process-default",
+): void {
+  const findLocalStmt = db.prepare(`
+    SELECT id, factura_id, status, dgii_status, dgii_security_code, dgii_track_id, submitted_at, accepted_at
+    FROM ecf_documents
+    WHERE tenant_id = ? AND (id = ? OR factura_id = ?)
+    LIMIT 1
+  `);
+
+  const facturaExistsStmt = db.prepare(`
+    SELECT id, sucursal_id FROM facturas WHERE tenant_id = ? AND id = ? LIMIT 1
+  `);
+
+  const updateStmt = db.prepare(`
+    UPDATE ecf_documents
+    SET
+      dgii_status = ?,
+      dgii_track_id = COALESCE(?, dgii_track_id),
+      dgii_status_message = COALESCE(?, dgii_status_message),
+      dgii_security_code = COALESCE(?, dgii_security_code),
+      submitted_at = COALESCE(?, submitted_at),
+      accepted_at = COALESCE(?, accepted_at),
+      updated_at = COALESCE(?, updated_at)
+    WHERE id = ? AND tenant_id = ?
+  `);
+
+  const insertStmt = db.prepare(`
+    INSERT INTO ecf_documents (
+      id, tenant_id, sucursal_id, factura_id, document_type, status,
+      dgii_status, dgii_track_id, dgii_status_message, dgii_security_code,
+      submitted_at, accepted_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const TERMINAL_STATUSES = new Set(["accepted", "rejected"]);
+
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    const rowId = row.id ? String(row.id) : null;
+    const facturaId = row.factura_id ? String(row.factura_id) : null;
+    if (!rowId && !facturaId) continue;
+
+    if (rowId && hasPendingCloudWrite(db, tenantId, "ecf_documents", rowId)) continue;
+
+    const existing = findLocalStmt.get(tenantId, rowId ?? "", facturaId ?? "") as {
+      id: string;
+      factura_id: string;
+      status: string;
+      dgii_status: string | null;
+      dgii_security_code: string | null;
+      dgii_track_id: string | null;
+      submitted_at: string | null;
+      accepted_at: string | null;
+    } | undefined;
+
+    const incomingStatus = row.dgii_status ? String(row.dgii_status) : (row.status ? String(row.status) : null);
+    const incomingTrackId = row.dgii_track_id ? String(row.dgii_track_id) : null;
+    const incomingMessage = row.dgii_status_message ? String(row.dgii_status_message) : null;
+    const incomingSecurityCode = row.dgii_security_code ? String(row.dgii_security_code) : null;
+    const incomingSubmittedAt = row.submitted_at ? String(row.submitted_at) : null;
+    const incomingAcceptedAt = row.accepted_at ? String(row.accepted_at) : null;
+    const incomingUpdatedAt = row.updated_at ? String(row.updated_at) : null;
+
+    if (existing) {
+      let targetDgiiStatus = incomingStatus ?? existing.dgii_status;
+      if (existing.dgii_status && TERMINAL_STATUSES.has(existing.dgii_status)) {
+        targetDgiiStatus = existing.dgii_status;
+      }
+
+      updateStmt.run(
+        targetDgiiStatus,
+        incomingTrackId,
+        incomingMessage,
+        incomingSecurityCode,
+        incomingSubmittedAt,
+        incomingAcceptedAt,
+        incomingUpdatedAt,
+        existing.id,
+        tenantId,
+      );
+    } else {
+      if (!facturaId) continue;
+      const factura = facturaExistsStmt.get(tenantId, facturaId) as { id: string; sucursal_id: string } | undefined;
+      if (!factura) continue;
+
+      const branchId = factura.sucursal_id || (typeof row.sucursal_id === "string" && row.sucursal_id ? row.sucursal_id : defaultBranchId);
+      const docType = String(row.ecf_type ?? row.document_type ?? "E32");
+
+      insertStmt.run(
+        rowId ?? `ecf-${facturaId}`,
+        tenantId,
+        branchId,
+        facturaId,
+        docType,
+        incomingStatus,
+        incomingTrackId,
+        incomingMessage,
+        incomingSecurityCode,
+        incomingSubmittedAt,
+        incomingAcceptedAt,
+        incomingUpdatedAt,
+      );
+    }
   }
 }
 

@@ -22,20 +22,21 @@ vi.mock("./tenantBillingSettings", () => ({
   loadTenantBillingSettings: vi.fn(),
 }));
 
-vi.mock("./supabase", () => ({
-  supabase: {
-    from: vi.fn(() => ({
-      select: vi.fn(() => ({
-        eq: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            maybeSingle: vi.fn(),
-          })),
-          maybeSingle: vi.fn(),
-        })),
+vi.mock("./supabase", () => {
+  const queryBuilder: any = {
+    eq: vi.fn(() => queryBuilder),
+    order: vi.fn(() => queryBuilder),
+    limit: vi.fn(() => queryBuilder),
+    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+  };
+  return {
+    supabase: {
+      from: vi.fn(() => ({
+        select: vi.fn(() => queryBuilder),
       })),
-    })),
-  },
-}));
+    },
+  };
+});
 
 describe("fiscalEngine", () => {
   beforeEach(() => {
@@ -93,14 +94,15 @@ describe("fiscalEngine", () => {
       const settings = { ...validEcfSettings };
 
       const mockMaybeSingle = vi.fn().mockResolvedValue({ data: { id: "cert-uuid" }, error: null });
+      const queryBuilder: any = {
+        eq: vi.fn().mockReturnThis(),
+        order: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        maybeSingle: mockMaybeSingle,
+      };
+      queryBuilder.eq.mockReturnValue(queryBuilder);
       vi.mocked(supabase.from).mockReturnValue({
-        select: () => ({
-          eq: () => ({
-            eq: () => ({
-              maybeSingle: mockMaybeSingle,
-            }),
-          }),
-        }),
+        select: () => queryBuilder,
       } as any);
 
       const result = await resolveActiveFiscalMode("tenant-1", settings, true);
@@ -115,18 +117,44 @@ describe("fiscalEngine", () => {
       };
 
       const mockMaybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
+      const queryBuilder: any = {
+        eq: vi.fn().mockReturnThis(),
+        order: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        maybeSingle: mockMaybeSingle,
+      };
+      queryBuilder.eq.mockReturnValue(queryBuilder);
       vi.mocked(supabase.from).mockReturnValue({
-        select: () => ({
-          eq: () => ({
-            eq: () => ({
-              maybeSingle: mockMaybeSingle,
-            }),
-          }),
-        }),
+        select: () => queryBuilder,
       } as any);
 
       const result = await resolveActiveFiscalMode("tenant-1", settings, true);
       expect(result).toEqual({ mode: "ncf_legacy", certificateId: null });
+    });
+
+    it("keeps dgii_ecf for non-admin sales staff when online query returns null due to RLS", async () => {
+      const settings = {
+        ...validEcfSettings,
+        fiscalModeFallback: "internal_receipt" as const,
+      };
+
+      const mockMaybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
+      const queryBuilder: any = {
+        eq: vi.fn().mockReturnThis(),
+        order: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        maybeSingle: mockMaybeSingle,
+      };
+      queryBuilder.eq.mockReturnValue(queryBuilder);
+      vi.mocked(supabase.from).mockReturnValue({
+        select: () => queryBuilder,
+      } as any);
+
+      const resultVentas = await resolveActiveFiscalMode("tenant-1", settings, true, "ventas");
+      expect(resultVentas).toEqual({ mode: "dgii_ecf", certificateId: null });
+
+      const resultCajera = await resolveActiveFiscalMode("tenant-1", settings, true, "cajera");
+      expect(resultCajera).toEqual({ mode: "dgii_ecf", certificateId: null });
     });
 
     it("keeps dgii_ecf active offline without reading certificate data from local storage", async () => {
@@ -148,6 +176,108 @@ describe("fiscalEngine", () => {
 
       const result = await resolveActiveFiscalMode("tenant-1", settings, true);
       expect(result).toEqual({ mode: "ncf_legacy", certificateId: null });
+    });
+
+    it("resolves dgii_ecf and filters certificate by tenant environment when ready online", async () => {
+      const settings = {
+        ...validEcfSettings,
+        ecfEnvironment: "production",
+      };
+
+      const mockEq = vi.fn().mockReturnThis();
+      const mockOrder = vi.fn().mockReturnThis();
+      const mockLimit = vi.fn().mockReturnThis();
+      const mockMaybeSingle = vi.fn().mockResolvedValue({ data: { id: "cert-prod-1" }, error: null });
+
+      const queryBuilder: any = {
+        eq: mockEq,
+        order: mockOrder,
+        limit: mockLimit,
+        maybeSingle: mockMaybeSingle,
+      };
+      mockEq.mockReturnValue(queryBuilder);
+
+      vi.mocked(supabase.from).mockReturnValue({
+        select: vi.fn(() => queryBuilder),
+      } as any);
+
+      const result = await resolveActiveFiscalMode("tenant-1", settings, true);
+      expect(result).toEqual({ mode: "dgii_ecf", certificateId: "cert-prod-1" });
+      expect(mockEq).toHaveBeenCalledWith("environment", "production");
+      expect(mockOrder).toHaveBeenCalledWith("created_at", { ascending: false });
+      expect(mockLimit).toHaveBeenCalledWith(1);
+    });
+
+    it("keeps mode dgii_ecf pending backend validation when certificate query returns an error object", async () => {
+      const settings = {
+        ...validEcfSettings,
+        ecfEnvironment: "production",
+        fiscalModeFallback: "internal_receipt" as const,
+      };
+
+      const queryBuilder: any = {
+        eq: vi.fn().mockReturnThis(),
+        order: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        maybeSingle: vi.fn().mockResolvedValue({
+          data: null,
+          error: { code: "PGRST116", message: "JSON object requested, multiple (or no) rows returned" },
+        }),
+      };
+      queryBuilder.eq.mockReturnValue(queryBuilder);
+
+      vi.mocked(supabase.from).mockReturnValue({
+        select: vi.fn(() => queryBuilder),
+      } as any);
+
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const result = await resolveActiveFiscalMode("tenant-1", settings, true);
+      expect(result).toEqual({ mode: "dgii_ecf", certificateId: null });
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Failed to check certificate readiness online"),
+        expect.objectContaining({ code: "PGRST116" })
+      );
+      warnSpy.mockRestore();
+    });
+
+    it("falls back to fiscalModeFallback when certificate query succeeds but finds no cert", async () => {
+      const settings = {
+        ...validEcfSettings,
+        ecfEnvironment: "production",
+        fiscalModeFallback: "internal_receipt" as const,
+      };
+
+      const queryBuilder: any = {
+        eq: vi.fn().mockReturnThis(),
+        order: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+      };
+      queryBuilder.eq.mockReturnValue(queryBuilder);
+
+      vi.mocked(supabase.from).mockReturnValue({
+        select: vi.fn(() => queryBuilder),
+      } as any);
+
+      const result = await resolveActiveFiscalMode("tenant-1", settings, true);
+      expect(result).toEqual({ mode: "internal_receipt", certificateId: null });
+    });
+
+    it("preserves non dgii_ecf modes unchanged without querying certificates", async () => {
+      const settingsInternal = {
+        ...validEcfSettings,
+        fiscalMode: "internal_receipt" as const,
+      };
+      const resultInternal = await resolveActiveFiscalMode("tenant-1", settingsInternal, true);
+      expect(resultInternal).toEqual({ mode: "internal_receipt", certificateId: null });
+
+      const settingsLegacy = {
+        ...validEcfSettings,
+        fiscalMode: "ncf_legacy" as const,
+      };
+      const resultLegacy = await resolveActiveFiscalMode("tenant-1", settingsLegacy, true);
+      expect(resultLegacy).toEqual({ mode: "ncf_legacy", certificateId: null });
+      expect(supabase.from).not.toHaveBeenCalled();
     });
   });
 
@@ -349,14 +479,15 @@ describe("fiscalEngine", () => {
       };
 
       // Mock database call to throw an error
+      const queryBuilder: any = {
+        eq: vi.fn().mockReturnThis(),
+        order: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        maybeSingle: vi.fn().mockRejectedValue(new Error("Network Error")),
+      };
+      queryBuilder.eq.mockReturnValue(queryBuilder);
       vi.mocked(supabase.from).mockReturnValue({
-        select: () => ({
-          eq: () => ({
-            eq: () => ({
-              maybeSingle: vi.fn().mockRejectedValue(new Error("Network Error")),
-            }),
-          }),
-        }),
+        select: () => queryBuilder,
       } as any);
 
       const result = await resolveActiveFiscalMode("tenant-1", settings, true);
@@ -367,14 +498,15 @@ describe("fiscalEngine", () => {
       const settings = { ...validEcfSettings };
 
       const mockMaybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
+      const queryBuilder: any = {
+        eq: vi.fn().mockReturnThis(),
+        order: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        maybeSingle: mockMaybeSingle,
+      };
+      queryBuilder.eq.mockReturnValue(queryBuilder);
       vi.mocked(supabase.from).mockReturnValue({
-        select: () => ({
-          eq: () => ({
-            eq: () => ({
-              maybeSingle: mockMaybeSingle,
-            }),
-          }),
-        }),
+        select: () => queryBuilder,
       } as any);
 
       const result = await resolveActiveFiscalMode("tenant-1", settings, true);

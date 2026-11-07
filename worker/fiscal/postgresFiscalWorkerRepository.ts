@@ -4,6 +4,7 @@ import type {
   ClaimJobResult,
   EcfDocumentSnapshot,
   EcfFiscalStatus,
+  EcfSecuenciasRangos,
   FiscalAuditEvent,
   FiscalOutboxJob,
   FiscalOutboxOperation,
@@ -37,6 +38,7 @@ type ClaimRow = {
   document_status: EcfFiscalStatus;
   certificate_metadata_id: string | null;
   dgii_track_id: string | null;
+  dgii_security_code: string | null;
   rfce_threshold_used: number | string | null;
   rejection_scope: "individual" | "batch" | null;
   batch_id: string | null;
@@ -45,6 +47,7 @@ type ClaimRow = {
   certificate_environment: CertificateMetadataSnapshot["environment"] | null;
   certificate_is_ready: boolean | null;
   certificate_valid_until: Date | string | null;
+  ecf_secuencias_rangos?: EcfSecuenciasRangos | string | null;
   invoice_payload: Record<string, unknown> | null;
 };
 
@@ -215,6 +218,7 @@ export const CLAIM_JOB_SQL = `
       ed.status AS document_status,
       ed.certificate_metadata_id,
       ed.dgii_track_id,
+      ed.dgii_security_code,
       ed.rfce_threshold_used,
       ed.rejection_scope,
       ed.batch_id,
@@ -223,6 +227,7 @@ export const CLAIM_JOB_SQL = `
       cm.environment AS certificate_environment,
       cm.is_ready AS certificate_is_ready,
       cm.valid_until AS certificate_valid_until,
+      t.ecf_secuencias_rangos,
       (
         SELECT jsonb_build_object(
           'factura', to_jsonb(f.*),
@@ -284,6 +289,7 @@ export const CLAIM_JOB_SQL = `
     candidate.document_status,
     candidate.certificate_metadata_id,
     candidate.dgii_track_id,
+    candidate.dgii_security_code,
     candidate.rfce_threshold_used,
     candidate.rejection_scope,
     candidate.batch_id,
@@ -292,8 +298,22 @@ export const CLAIM_JOB_SQL = `
     candidate.certificate_environment,
     candidate.certificate_is_ready,
     candidate.certificate_valid_until,
+    candidate.ecf_secuencias_rangos,
     candidate.invoice_payload
 `;
+
+function parseRangos(val: unknown): EcfSecuenciasRangos | null {
+  if (!val) return null;
+  if (typeof val === "object") return val as EcfSecuenciasRangos;
+  if (typeof val === "string") {
+    try {
+      return JSON.parse(val) as EcfSecuenciasRangos;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
 
 function rowToSnapshot(row: ClaimRow): FiscalWorkerSnapshot {
   return {
@@ -315,6 +335,7 @@ function rowToSnapshot(row: ClaimRow): FiscalWorkerSnapshot {
       status: row.document_status,
       certificateMetadataId: row.certificate_metadata_id,
       dgiiTrackId: row.dgii_track_id,
+      dgiiSecurityCode: row.dgii_security_code ?? null,
       rfce_threshold_used: row.rfce_threshold_used !== null && row.rfce_threshold_used !== undefined ? Number(row.rfce_threshold_used) : null,
       rejection_scope: row.rejection_scope,
       batchId: row.batch_id,
@@ -328,6 +349,7 @@ function rowToSnapshot(row: ClaimRow): FiscalWorkerSnapshot {
           validUntil: toIsoOrNull(row.certificate_valid_until),
         }
       : null,
+    ecf_secuencias_rangos: parseRangos(row.ecf_secuencias_rangos),
     invoicePayload: row.invoice_payload ?? {},
   };
 }

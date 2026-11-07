@@ -362,6 +362,137 @@ describe("local SQLite schema integrity guard", () => {
     }
   });
 
+  it("safely migrates ecf_documents and fiscal_outbox from old status CHECKs to accept 'queued'", () => {
+    const db = new DatabaseSync(":memory:", { enableForeignKeyConstraints: true });
+    try {
+      const tenantId = "tenant-mig-queued";
+      const branchId = "branch-mig-queued";
+      const invId = "inv-mig-queued";
+      const docId = "doc-mig-queued";
+      const outboxId = "job-mig-queued";
+
+      // 1. Build database with OLD status CHECKs (without 'queued')
+      db.exec(`
+        CREATE TABLE tenant_identity (
+          id TEXT PRIMARY KEY CHECK (id = '${tenantId}')
+        ) STRICT;
+        INSERT INTO tenant_identity (id) VALUES ('${tenantId}');
+
+        CREATE TABLE tenants (
+          id TEXT PRIMARY KEY REFERENCES tenant_identity(id)
+        ) STRICT;
+        INSERT INTO tenants (id) VALUES ('${tenantId}');
+
+        CREATE TABLE sucursales (
+          id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL REFERENCES tenants(id),
+          name TEXT NOT NULL
+        ) STRICT;
+        INSERT INTO sucursales (id, tenant_id, name) VALUES ('${branchId}', '${tenantId}', 'Main');
+
+        CREATE TABLE facturas (
+          id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL REFERENCES tenants(id),
+          sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
+          fiscal_mode TEXT NOT NULL CHECK (fiscal_mode IN ('internal_receipt', 'ncf_legacy', 'dgii_ecf')),
+          total REAL NOT NULL CHECK (total >= 0),
+          local_status TEXT NOT NULL CHECK (local_status IN ('committed', 'annulled', 'draft'))
+        ) STRICT;
+        INSERT INTO facturas (id, tenant_id, sucursal_id, fiscal_mode, total, local_status)
+        VALUES ('${invId}', '${tenantId}', '${branchId}', 'dgii_ecf', 1500, 'committed');
+
+        CREATE TABLE ecf_documents (
+          id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL REFERENCES tenants(id),
+          sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
+          factura_id TEXT NOT NULL UNIQUE REFERENCES facturas(id),
+          document_type TEXT NOT NULL,
+          status TEXT NOT NULL CHECK (status IN ('pending_offline', 'pending_configuration', 'pending_sync', 'pending_processing', 'signed')),
+          certificate_metadata_id TEXT,
+          created_at TEXT,
+          updated_at TEXT,
+          signed_xml TEXT,
+          xml_hash TEXT,
+          dgii_security_code TEXT,
+          signed_at TEXT,
+          signed_by_device TEXT
+        ) STRICT;
+        INSERT INTO ecf_documents (id, tenant_id, sucursal_id, factura_id, document_type, status, created_at, updated_at)
+        VALUES ('${docId}', '${tenantId}', '${branchId}', '${invId}', 'E31', 'pending_offline', '2026-11-06T00:00:00Z', '2026-11-06T00:00:00Z');
+
+        CREATE TABLE fiscal_outbox (
+          id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL REFERENCES tenants(id),
+          sucursal_id TEXT NOT NULL REFERENCES sucursales(id),
+          factura_id TEXT NOT NULL REFERENCES facturas(id),
+          ecf_document_id TEXT,
+          operation TEXT,
+          status TEXT NOT NULL CHECK (status IN ('pending', 'syncing', 'pending_sync', 'blocked_configuration')),
+          attempts INTEGER NOT NULL DEFAULT 0,
+          next_attempt_at TEXT,
+          idempotency_key TEXT,
+          created_at TEXT,
+          updated_at TEXT
+        ) STRICT;
+        INSERT INTO fiscal_outbox (id, tenant_id, sucursal_id, factura_id, ecf_document_id, operation, status, attempts, idempotency_key, created_at, updated_at)
+        VALUES ('${outboxId}', '${tenantId}', '${branchId}', '${invId}', '${docId}', 'submit', 'pending_sync', 0, 'idem-key-1', '2026-11-06T00:00:00Z', '2026-11-06T00:00:00Z');
+      `);
+
+      // Verify old CHECK constraint rejects 'queued'
+      expect(() => {
+        db.prepare("UPDATE ecf_documents SET status = 'queued' WHERE id = ?").run(docId);
+      }).toThrow();
+      expect(() => {
+        db.prepare("UPDATE fiscal_outbox SET status = 'queued' WHERE id = ?").run(outboxId);
+      }).toThrow();
+
+      // 2. Run schema initialization and evolution
+      initializeTenantSchema(db, tenantId);
+
+      // 3. Assert rows are preserved
+      const factura = db.prepare("SELECT * FROM facturas WHERE id = ?").get(invId) as Record<string, unknown>;
+      expect(factura).toBeDefined();
+      expect(factura.fiscal_mode).toBe("dgii_ecf");
+      expect(factura.total).toBe(1500);
+
+      const ecfDoc = db.prepare("SELECT * FROM ecf_documents WHERE id = ?").get(docId) as Record<string, unknown>;
+      expect(ecfDoc).toBeDefined();
+      expect(ecfDoc.status).toBe("pending_offline");
+      expect(ecfDoc.document_type).toBe("E31");
+      expect(ecfDoc.factura_id).toBe(invId);
+
+      const outbox = db.prepare("SELECT * FROM fiscal_outbox WHERE id = ?").get(outboxId) as Record<string, unknown>;
+      expect(outbox).toBeDefined();
+      expect(outbox.status).toBe("pending_sync");
+      expect(outbox.ecf_document_id).toBe(docId);
+      expect(outbox.factura_id).toBe(invId);
+
+      // 4. Assert status 'queued' is now accepted
+      db.prepare("UPDATE ecf_documents SET status = 'queued' WHERE id = ?").run(docId);
+      expect((db.prepare("SELECT status FROM ecf_documents WHERE id = ?").get(docId) as { status: string }).status).toBe("queued");
+
+      db.prepare("UPDATE fiscal_outbox SET status = 'queued' WHERE id = ?").run(outboxId);
+      expect((db.prepare("SELECT status FROM fiscal_outbox WHERE id = ?").get(outboxId) as { status: string }).status).toBe("queued");
+
+      // 5. Assert foreign keys and schema integrity
+      expect(db.prepare("PRAGMA foreign_key_check;").all()).toEqual([]);
+      expect(findDanglingForeignKeys(db)).toEqual([]);
+      expect(findLeftoverMigrationArtifacts(db)).toEqual([]);
+      assertSchemaIntegrity(db);
+
+      // Verify no dangling references to __old_table__ or __legacy_migration
+      const schemaRows = db.prepare("SELECT name, sql FROM sqlite_master WHERE sql IS NOT NULL").all() as Array<{ name: string; sql: string }>;
+      for (const r of schemaRows) {
+        expect(r.name).not.toContain("__old_table__");
+        expect(r.name).not.toContain("__legacy_migration");
+        expect(r.sql).not.toContain("__old_table__");
+        expect(r.sql).not.toContain("__legacy_migration");
+      }
+    } finally {
+      db.close();
+    }
+  });
+
   it("verifies statically that any electron file using ALTER TABLE RENAME TO also sets legacy_alter_table = ON", () => {
     const electronDir = join(__dirname, "../electron");
     const violations: string[] = [];

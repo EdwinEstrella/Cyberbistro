@@ -36,9 +36,9 @@ import {
   NCF_B_SEQUENCE_FIELDS_SELECT,
   construirCadenaNcf,
   etiquetaTipoNcf,
-  isNcfBCode,
   normalizeNcfActiveMap,
-  type NcfBCode,
+  normalizeNcfSequenceMap,
+  normalizeNcfTypeForFiscalMode,
 } from "../../../shared/lib/ncf";
 import { buildAjustesSavePayload } from "../lib/ajustesPayload";
 import { AjustesGeneralTab } from "./AjustesGeneralTab";
@@ -63,6 +63,32 @@ const SAMPLE_FACTURA_THERMAL_PREVIEW: Parameters<typeof buildFacturaReceiptHtml>
   cliente_nombre: "Juan Pérez (Ejemplo)",
   cliente_rnc: "101-00123-4",
   ncf: "B0100000005"
+};
+
+const SAMPLE_NOTA_CREDITO_THERMAL_PREVIEW: Parameters<typeof buildFacturaReceiptHtml>[1] = {
+  items: [
+    { nombre: "Plato del menú (devolución)", categoria: "General", cantidad: 1, precio_unitario: 275.5, subtotal: 275.5 },
+  ],
+  subtotal: 275.5,
+  itbis: 49.59,
+  total: 325.09,
+  metodo_pago: "efectivo",
+  mesa_numero: 4,
+  notas: null,
+  estado: "nota_credito",
+  propina: 0,
+  cliente_nombre: "Juan Pérez (Ejemplo)",
+  cliente_rnc: "101-00123-4",
+  ncf: "E340000000001",
+  ncf_tipo: "E34",
+  credit_note_of: "00000000-0000-0000-0000-000000000001",
+  ref_ncf: "E310000000045",
+  ref_fecha_emision: "2026-11-06",
+  ref_codigo_modificacion: 1,
+  ref_razon_modificacion: "Devolución de producto",
+  ecf_status: "accepted",
+  ecf_security_code: "AbC123",
+  ecf_submitted_at: new Date().toISOString(),
 };
 
 const SAMPLE_COMANDA_THERMAL: Parameters<typeof buildComandaReceiptHtml>[1] = {
@@ -116,6 +142,7 @@ const SAMPLE_NOMINA_THERMAL: NominaReceiptData = {
     { descripcion: "Adelanto de quincena", monto: 1200, tipo: "deduccion" },
   ],
 };
+
 
 export function Ajustes() {
   const { tenantId, loading: authLoading, plan } = useAuth();
@@ -184,8 +211,13 @@ export function Ajustes() {
       if (cancelled) return;
       if (data) {
         existingTenantRef.current = data;
-        const defaultType: NcfBCode = isNcfBCode(data.ncf_tipo_default) ? data.ncf_tipo_default : DEFAULT_NCF_B_CODE;
-        const ncfSequences = buildBSequenceMapFromRow(data);
+        const fiscalMode = data.fiscal_mode || "internal_receipt";
+        const defaultType = normalizeNcfTypeForFiscalMode(data.ncf_tipo_default, fiscalMode);
+        const bSequences = buildBSequenceMapFromRow(data);
+        const ncfSequences: Record<string, number> = {
+          ...normalizeNcfSequenceMap(data.ncf_secuencias_por_tipo),
+          ...bSequences,
+        };
         setConfig({
           nombre_empresa: data.nombre_negocio ?? "",
           rnc: data.rnc ?? "",
@@ -200,8 +232,8 @@ export function Ajustes() {
           itbis_cobro_por_defecto: Boolean(data.itbis_cobro_por_defecto),
           itbis_incluido_en_precio: Boolean(data.itbis_incluido_en_precio),
           propina_cobro_por_defecto: Boolean(data.propina_cobro_por_defecto),
-          ncf_fiscal_activo: Boolean(data.ncf_fiscal_activo) || data.fiscal_mode === "ncf_legacy" || data.fiscal_mode === "dgii_ecf",
-          fiscal_mode: data.fiscal_mode || "internal_receipt",
+          ncf_fiscal_activo: Boolean(data.ncf_fiscal_activo) || fiscalMode === "ncf_legacy" || fiscalMode === "dgii_ecf",
+          fiscal_mode: fiscalMode,
           fiscal_mode_fallback: data.fiscal_mode_fallback || "internal_receipt",
           ecf_environment: data.ecf_environment || "certification",
           ncf_tipo_default: defaultType,
@@ -310,6 +342,20 @@ export function Ajustes() {
           }
           html = await buildFacturaReceiptHtml(tenantPreview, sample, 1, paperWidthMm);
           break;
+        case "nota_credito": {
+          let sample = {
+            ...SAMPLE_NOTA_CREDITO_THERMAL_PREVIEW,
+            created_at: nowIso,
+            ecf_submitted_at: nowIso,
+          };
+          if (config.ncf_fiscal_activo) {
+            const nextSeq = config.ncf_secuencias_por_tipo?.E34 ?? config.ncf_secuencia_siguiente;
+            const ncf = construirCadenaNcf("E34", nextSeq);
+            if (ncf) sample = { ...sample, ncf };
+          }
+          html = await buildFacturaReceiptHtml(tenantPreview, sample, 1, paperWidthMm);
+          break;
+        }
         case "comanda": 
           html = buildComandaReceiptHtml(tenantPreview, { ...SAMPLE_COMANDA_THERMAL, created_at: nowIso }, paperWidthMm);
           break;

@@ -8,7 +8,9 @@ import {
 } from "../../../shared/ui/select";
 import {
   isNcfTypeActive,
+  normalizeNcfTypeForFiscalMode,
   NCF_B_TIPO_OPCIONES,
+  NCF_E_TIPO_OPCIONES,
 } from "../../../shared/lib/ncf";
 import { Field } from "./Field";
 import type { AjustesConfig } from "../types";
@@ -117,7 +119,12 @@ export function AjustesFacturacionTab({
                 value={config.fiscal_mode}
                 disabled={isEcfActive}
                 onValueChange={val => {
-                  setConfig(p => ({ ...p, fiscal_mode: val as any }));
+                  const mode = val as any;
+                  setConfig(p => ({
+                    ...p,
+                    fiscal_mode: mode,
+                    ncf_tipo_default: normalizeNcfTypeForFiscalMode(p.ncf_tipo_default as any, mode),
+                  }));
                 }}
               >
                 <SelectTrigger className="w-full rounded-xl disabled:opacity-60 disabled:cursor-not-allowed">
@@ -157,6 +164,75 @@ export function AjustesFacturacionTab({
                   </SelectContent>
                 </Select>
               </Field>
+            </div>
+          )}
+
+          {isEcfActive && (
+            <div className="animate-in fade-in slide-in-from-top-2 duration-300 flex flex-col gap-4 border-t border-border pt-4">
+              <Field label="Tipo Predeterminado e-CF">
+                <Select value={config.ncf_tipo_default} disabled>
+                  <SelectTrigger className="w-full rounded-xl disabled:opacity-80 disabled:cursor-not-allowed">
+                    <SelectValue placeholder="Seleccionar tipo" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-xl">
+                    {NCF_E_TIPO_OPCIONES.map(o => (
+                      <SelectItem key={o.codigo} value={o.codigo}>
+                        {o.descripcion}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <div className="mt-4 pt-4 border-t border-border flex flex-col gap-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">
+                    Secuencias Configuradas por Tipo E
+                  </span>
+                  <span className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground">
+                    Solo lectura
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {NCF_E_TIPO_OPCIONES.map(o => {
+                    const isDefault = o.codigo === config.ncf_tipo_default;
+                    const active = isDefault || isNcfTypeActive(config.ncf_tipos_activos, o.codigo);
+                    return (
+                      <div
+                        key={o.codigo}
+                        className={`bg-background rounded-[16px] border border-black/5 dark:border-white/5 p-4 flex flex-col gap-3 transition-colors ${
+                          active ? "hover:border-primary/20" : "opacity-60"
+                        }`}
+                      >
+                        <div className="flex justify-between items-center gap-2">
+                          <span className="font-bold font-['Space_Grotesk'] text-foreground text-lg">
+                            {o.codigo}
+                          </span>
+                          <span
+                            className={`text-[10px] uppercase font-bold tracking-widest ${
+                              isDefault
+                                ? "text-primary"
+                                : active
+                                ? "text-green-600 dark:text-green-400"
+                                : "text-muted-foreground"
+                            }`}
+                          >
+                            {isDefault ? "Predeterminado" : active ? "Activo" : "Apagado"}
+                          </span>
+                        </div>
+                        <input
+                          type="number"
+                          disabled
+                          value={config.ncf_secuencias_por_tipo[o.codigo] || 1}
+                          className="bg-muted/30 border border-black/10 dark:border-white/10 rounded-xl px-4 py-3 font-mono text-foreground font-bold outline-none disabled:opacity-80 disabled:cursor-not-allowed"
+                        />
+                        <span className="text-[11px] text-muted-foreground/80 leading-relaxed">
+                          {o.codigo} - {o.descripcion}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           )}
 

@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../../../shared/lib/supabase";
-import { ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
+import { useAuth, ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
 import { buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
-import { printThermalHtml } from "../../../shared/lib/thermalPrint";
+import { printThermalHtml, type PrintThermalResult } from "../../../shared/lib/thermalPrint";
 import { printLocalInvoiceReceipt } from "../../../shared/lib/localInvoiceReceipt";
+import { gateFiscalPrint, isEcfInvoiceDocument } from "../../../shared/lib/fiscalPrintGate";
 import {
   incrementTenantNcfSequence,
 } from "../../../shared/lib/invoiceNcf";
@@ -237,6 +238,7 @@ export function MesaCloseAccountModal({
   onPaidFull,
 }: MesaCloseAccountModalProps) {
   const { activeSucursalId } = useSucursal();
+  const { rol } = useAuth();
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
   const [mesaConsumos, setMesaConsumos] = useState<MesaConsumoRow[]>([]);
@@ -325,7 +327,7 @@ export function MesaCloseAccountModal({
 
 
       const isOnline = navigator.onLine;
-      const { mode, certificateId: certId } = await resolveActiveFiscalMode(tenantId, settings, isOnline);
+      const { mode, certificateId: certId } = await resolveActiveFiscalMode(tenantId, settings, isOnline, rol);
       setFiscalMode(mode);
       setCertificateId(certId);
       setNcfFiscalActive(mode !== "internal_receipt");
@@ -642,10 +644,30 @@ export function MesaCloseAccountModal({
         checkoutWrites.push({ tenantId, tableName: "comandas", rowId: comandaId!, op: "delete", deviceId });
       }
     }
+    const ecfFacturas: Array<{ factura: Record<string, unknown>; numero: number }> = [];
+    const nonEcfPrints: Array<{ id: string; label: string; print: () => Promise<PrintThermalResult> }> = [];
+    for (const item of facturasToPrint) {
+      if (isEcfInvoiceDocument(item.factura)) {
+        ecfFacturas.push(item);
+      } else {
+        nonEcfPrints.push({
+          id: String(item.factura.id),
+          label: `Factura #${item.numero}`,
+          print: () => printLocalInvoiceReceipt({ tenantId, factura: item.factura, numeroFactura: item.numero }),
+        });
+      }
+    }
     await commitCheckout({
       writes: checkoutWrites,
-      prints: facturasToPrint.map(({ factura, numero }) => ({ id: String(factura.id), label: `Factura #${numero}`, print: () => printLocalInvoiceReceipt({ tenantId, factura, numeroFactura: numero }) })),
+      prints: nonEcfPrints,
     });
+    for (const item of ecfFacturas) {
+      void gateFiscalPrint({
+        tenantId,
+        factura: item.factura,
+        numeroFactura: item.numero,
+      });
+    }
     for (const increment of deferredNcfIncrements) void incrementTenantNcfSequence(tenantId, increment.tipoCodigo, increment.usedSequence).catch(console.error);
     setMesaConsumos(updatedConsumos);
     void onSettled?.(updatedConsumos);
@@ -965,10 +987,23 @@ export function MesaCloseAccountModal({
     for (const comandaId of new Set(consumosToBill.map((consumo) => consumo.comanda_id).filter(Boolean))) {
       checkoutWrites.push({ tenantId, tableName: "comandas", rowId: comandaId!, op: "delete", deviceId });
     }
-    await commitCheckout({
-      writes: checkoutWrites,
-      prints: [{ id: localFacturaId, label: `Factura #${nextFacturaNumber}`, print: () => printLocalInvoiceReceipt({ tenantId, factura: facturaData, numeroFactura: nextFacturaNumber }) }],
-    });
+    const isEcf = isEcfInvoiceDocument(facturaData);
+    if (isEcf) {
+      await commitCheckout({
+        writes: checkoutWrites,
+        prints: [],
+      });
+      void gateFiscalPrint({
+        tenantId,
+        factura: facturaData,
+        numeroFactura: nextFacturaNumber,
+      });
+    } else {
+      await commitCheckout({
+        writes: checkoutWrites,
+        prints: [{ id: localFacturaId, label: `Factura #${nextFacturaNumber}`, print: () => printLocalInvoiceReceipt({ tenantId, factura: facturaData, numeroFactura: nextFacturaNumber }) }],
+      });
+    }
 
     const paidConsumoIds = new Set(consumosToBill.map((consumo) => consumo.id));
     const restantes = mesaConsumos.filter((consumo) => !paidConsumoIds.has(consumo.id));

@@ -74,4 +74,21 @@ describe("printCreditNote", () => {
     expect(result).toEqual({ ok: false, error: "No se encontró la nota de crédito a imprimir." });
     expect(printLocalInvoiceReceipt).not.toHaveBeenCalled();
   });
+
+  it("blocks manual reprint if security code is not available yet", async () => {
+    ecfRow = { status: "queued", dgii_security_code: null };
+    const result = await printCreditNote({ tenantId: "t1", note, isReprint: true });
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("El comprobante se imprimirá cuando la DGII lo confirme");
+    expect(printLocalInvoiceReceipt).not.toHaveBeenCalled();
+  });
+
+  it("allows manual reprint when security code is available", async () => {
+    ecfRow = { status: "accepted", dgii_security_code: "AbC123" };
+    const result = await printCreditNote({ tenantId: "t1", note, isReprint: true });
+    expect(result.ok).toBe(true);
+    expect(printLocalInvoiceReceipt).toHaveBeenCalledWith(expect.objectContaining({
+      ecfDocument: expect.objectContaining({ dgii_security_code: "AbC123" }),
+    }));
+  });
 });

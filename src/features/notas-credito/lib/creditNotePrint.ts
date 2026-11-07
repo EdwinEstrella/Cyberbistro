@@ -1,6 +1,11 @@
 import { supabase } from "../../../shared/lib/supabase";
 import { printLocalInvoiceReceipt } from "../../../shared/lib/localInvoiceReceipt";
 import type { PrintThermalResult } from "../../../shared/lib/thermalPrint";
+import { toast } from "sonner";
+import {
+  FISCAL_GATE_PENDING_CONFIRMATION_MESSAGE,
+  extractSecurityCode,
+} from "../../../shared/lib/fiscalPrintGate";
 
 /** Cloud fallback for the fiscal state (security code, signature date); null when unavailable. */
 async function loadCloudEcfDocument(tenantId: string, facturaId: string): Promise<Record<string, unknown> | null> {
@@ -35,10 +40,20 @@ export async function printCreditNote(args: {
   tenantId: string;
   note?: Record<string, unknown>;
   noteId?: string;
+  isReprint?: boolean;
 }): Promise<PrintThermalResult> {
   const note = args.note ?? (args.noteId ? await loadCloudNote(args.tenantId, args.noteId) : null);
   if (!note) return { ok: false, error: "No se encontró la nota de crédito a imprimir." };
   const ecfDocument = await loadCloudEcfDocument(args.tenantId, String(note.id ?? ""));
+
+  if (args.isReprint) {
+    const code = extractSecurityCode(ecfDocument) || extractSecurityCode(note);
+    if (!code) {
+      toast.info(FISCAL_GATE_PENDING_CONFIRMATION_MESSAGE, { duration: 8000 });
+      return { ok: false, error: FISCAL_GATE_PENDING_CONFIRMATION_MESSAGE };
+    }
+  }
+
   return printLocalInvoiceReceipt({
     tenantId: args.tenantId,
     factura: note,

@@ -1,9 +1,223 @@
 import { fiscalWorkerError } from "./errors";
-import type { DgiiClientAdapter, XmlSignerAdapter, DgiiSubmitResult } from "./types";
-import ECF, { Signature, ENVIRONMENT, P12Reader, convertECF32ToRFCE as libConvertECF32ToRFCE } from "dgii-ecf";
+import type { DgiiClientAdapter, XmlSignerAdapter, DgiiSubmitResult, DgiiPollResult } from "./types";
+import { ECF, Signature, ENVIRONMENT, P12Reader, convertECF32ToRFCE as libConvertECF32ToRFCE } from "dgii-ecf";
+
+export function describeDgiiError(err: unknown): string {
+  if (err === null || err === undefined) {
+    return "Unknown DGII error";
+  }
+
+  if (typeof err === "string") {
+    return err.trim().slice(0, 1000) || "Unknown DGII error";
+  }
+
+  const rawData = (err as any)?.response?.data ?? err;
+
+  if (rawData && typeof rawData === "object") {
+    const data = rawData as Record<string, unknown>;
+    const codigo = data.codigo != null ? String(data.codigo) : null;
+    const estado = typeof data.estado === "string" ? data.estado.trim() : null;
+
+    let messageList: string[] = [];
+    if (Array.isArray(data.mensajes)) {
+      messageList = data.mensajes
+        .map((m: any) => {
+          if (!m) return "";
+          if (typeof m === "string") return m.trim();
+          const cod = m.codigo != null ? `[${m.codigo}] ` : "";
+          const val = m.valor != null ? String(m.valor).trim() : (m.mensaje != null ? String(m.mensaje).trim() : "");
+          return `${cod}${val}`.trim();
+        })
+        .filter(Boolean);
+    } else if (Array.isArray(data.messages)) {
+      messageList = data.messages
+        .map((m: any) => {
+          if (!m) return "";
+          if (typeof m === "string") return m.trim();
+          const cod = m.codigo != null ? `[${m.codigo}] ` : "";
+          const val = m.valor != null ? String(m.valor).trim() : (m.mensaje != null ? String(m.mensaje).trim() : "");
+          return `${cod}${val}`.trim();
+        })
+        .filter(Boolean);
+    }
+
+    if (messageList.length > 0) {
+      const joined = messageList.join("; ");
+      if (codigo && !joined.includes(`[${codigo}]`)) {
+        return `DGII [${codigo}]${estado ? ` ${estado}` : ""}: ${joined}`.slice(0, 1000);
+      }
+      return `${estado ? `${estado}: ` : ""}${joined}`.slice(0, 1000);
+    }
+
+    if (estado) {
+      return (codigo ? `DGII [${codigo}] ${estado}` : estado).slice(0, 1000);
+    }
+
+    if (typeof data.message === "string" && data.message.trim()) {
+      return (codigo ? `DGII [${codigo}] ${data.message.trim()}` : data.message.trim()).slice(0, 1000);
+    }
+    if (typeof data.error === "string" && data.error.trim()) {
+      return (codigo ? `DGII [${codigo}] ${data.error.trim()}` : data.error.trim()).slice(0, 1000);
+    }
+    if (typeof data.title === "string" && data.title.trim()) {
+      return (codigo ? `DGII [${codigo}] ${data.title.trim()}` : data.title.trim()).slice(0, 1000);
+    }
+  }
+
+  if (err instanceof Error && err.message?.trim()) {
+    return err.message.trim().slice(0, 1000);
+  }
+
+  try {
+    return JSON.stringify(err).slice(0, 1000);
+  } catch {
+    return String(err).slice(0, 1000);
+  }
+}
+
+export function isDgiiTerminalError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+
+  if ((err as any).retryable === false) return true;
+
+  // Network errors, timeouts, and 5xx are retryable
+  const status = (err as any).response?.status;
+  if (typeof status === "number" && status >= 500) return false;
+
+  const code = String((err as any).code || "");
+  if (/ECONNREFUSED|ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|ERR_NETWORK/i.test(code)) {
+    return false;
+  }
+
+  const message = String((err as any).message || "");
+  if (/timeout|network error|econnrefused/i.test(message)) {
+    return false;
+  }
+
+  const rawData = (err as any).response?.data ?? err;
+  if (rawData && typeof rawData === "object") {
+    const data = rawData as Record<string, unknown>;
+    const codigo = Number(data.codigo);
+    // DGII Codigo 2: Rechazado
+    if (codigo === 2) return true;
+
+    const estado = String(data.estado || "").toLowerCase();
+    if (estado.includes("rechazad")) return true;
+
+    const mensajes = Array.isArray(data.mensajes) ? data.mensajes : (Array.isArray(data.messages) ? data.messages : []);
+    for (const m of mensajes) {
+      const text = typeof m === "string" ? m : `${m?.codigo ?? ""} ${m?.valor ?? ""} ${m?.mensaje ?? ""}`;
+      if (/no es v[aá]lido|pattern constraint|schema|dtd|estructura|rechazad/i.test(text)) {
+        return true;
+      }
+    }
+  }
+
+  if (status === 400 || status === 422) return true;
+
+  return false;
+}
+
+export function getE32RfceThreshold(): number {
+  const thresholdEnv = process.env.ECF_E32_RFCE_THRESHOLD_DOP;
+  return thresholdEnv ? parseFloat(thresholdEnv) : 250000;
+}
 
 export function convertECF32ToRFCE(ecf32Xml: string): { xml: string; securityCode: string } {
   return libConvertECF32ToRFCE(ecf32Xml);
+}
+
+export function formatMensajesDetail(mensajes: unknown): string {
+  if (!Array.isArray(mensajes) || mensajes.length === 0) return "";
+  const list = mensajes
+    .map((m: any) => {
+      if (!m) return "";
+      if (typeof m === "string") return m.trim();
+      const cod = m.codigo != null ? `[${m.codigo}] ` : "";
+      const val = m.valor != null ? String(m.valor).trim() : (m.mensaje != null ? String(m.mensaje).trim() : "");
+      return `${cod}${val}`.trim();
+    })
+    .filter(Boolean);
+  return list.join("; ");
+}
+
+export function isRfceDocument(params: {
+  rfceThresholdUsed?: number | null;
+  tipoeCF?: number | string | null;
+  ncf?: string | null;
+  total?: number | null;
+  threshold?: number;
+}): boolean {
+  const isE32 =
+    (params.tipoeCF != null && String(params.tipoeCF) === "32") ||
+    (typeof params.ncf === "string" && params.ncf.trim().toUpperCase().startsWith("E32"));
+
+  if (!isE32) {
+    return false;
+  }
+
+  const threshold =
+    params.threshold ??
+    (params.rfceThresholdUsed != null ? Number(params.rfceThresholdUsed) : getE32RfceThreshold());
+  const total = params.total != null ? Number(params.total) : 0;
+  return total < threshold;
+}
+
+function mapRfceSummaryResponse(
+  response: any,
+  defaultTrackId: string | undefined,
+  rfceThresholdUsed: number | null
+): DgiiSubmitResult {
+  const codigo = response?.codigo != null ? Number(response.codigo) : null;
+  const trackId = response?.encf || defaultTrackId;
+
+  if (codigo === 1) {
+    return {
+      kind: "accepted",
+      trackId,
+      statusCode: String(response.codigo),
+      message: response.estado || "Aceptado",
+      rfceThresholdUsed,
+    };
+  }
+
+  if (codigo === 4) {
+    const detail = formatMensajesDetail(response.mensajes);
+    const estado = response.estado || "Aceptado Condicional";
+    return {
+      kind: "accepted",
+      trackId,
+      statusCode: String(response.codigo),
+      message: detail ? `${estado}: ${detail}` : estado,
+      rfceThresholdUsed,
+    };
+  }
+
+  if (codigo === 2) {
+    return {
+      kind: "rejected",
+      trackId,
+      statusCode: String(response.codigo),
+      message: describeDgiiError(response),
+      rfceThresholdUsed,
+    };
+  }
+
+  if (codigo === 3) {
+    return {
+      kind: "submitted",
+      trackId: trackId || "summary",
+      statusCode: String(response.codigo),
+      message: response.estado || "En proceso",
+      rfceThresholdUsed,
+    };
+  }
+
+  return {
+    kind: "terminal_error",
+    statusCode: codigo != null ? String(codigo) : undefined,
+    message: describeDgiiError(response) || `DGII summary submission failed: ${JSON.stringify(response)}`,
+  };
 }
 
 export class FailClosedXmlSigner implements XmlSignerAdapter {
@@ -37,7 +251,7 @@ export class RealXmlSigner implements XmlSignerAdapter {
 
       return { signedXml };
     } catch (err: any) {
-      throw fiscalWorkerError("SIGN_ERROR", `Failed to sign XML: ${err.message}`, false);
+      throw fiscalWorkerError("SIGN_ERROR", `Failed to sign XML: ${describeDgiiError(err)}`, false);
     }
   }
 }
@@ -94,8 +308,7 @@ export class RealDgiiClient implements DgiiClientAdapter {
       const totalMatch = /<MontoTotal>([^<]+)<\/MontoTotal>/.exec(input.signedXml);
       const total = totalMatch ? parseFloat(totalMatch[1]) : 0;
 
-      const thresholdEnv = process.env.ECF_E32_RFCE_THRESHOLD_DOP;
-      const threshold = thresholdEnv ? parseFloat(thresholdEnv) : 250000;
+      const threshold = getE32RfceThreshold();
 
       let rfceThresholdUsed: number | null = null;
       let response: any;
@@ -109,21 +322,8 @@ export class RealDgiiClient implements DgiiClientAdapter {
           
           response = await ecf.sendSummary(signedRFCEXml, fileName);
 
-          if (response && (response.codigo === 1 || response.estado?.toLowerCase().includes("aceptado") || response.estado?.toLowerCase().includes("aceptada"))) {
-            return {
-              kind: "submitted",
-              trackId: response.encf || `summary-${input.idempotencyKey}`,
-              statusCode: String(response.codigo),
-              message: response.estado,
-              rfceThresholdUsed,
-            };
-          }
-
-          return {
-            kind: "terminal_error",
-            statusCode: String(response?.codigo ?? ""),
-            message: response?.estado || `DGII summary submission failed: ${JSON.stringify(response)}`,
-          };
+          const encf = getXmlTagValue(input.signedXml, "eNCF") || undefined;
+          return mapRfceSummaryResponse(response, encf || `summary-${input.idempotencyKey}`, rfceThresholdUsed);
         } else {
           response = await ecf.sendElectronicDocument(input.signedXml, fileName);
         }
@@ -141,16 +341,17 @@ export class RealDgiiClient implements DgiiClientAdapter {
         };
       }
 
-      return { kind: "terminal_error", message: `No trackId returned: ${JSON.stringify(response)}` };
+      return { kind: "terminal_error", message: describeDgiiError(response) || `No trackId returned: ${JSON.stringify(response)}` };
     } catch (err: any) {
-      if (err?.retryable === false) {
-        return { kind: "terminal_error", message: err.message };
+      const message = describeDgiiError(err);
+      if (err?.retryable === false || isDgiiTerminalError(err)) {
+        return { kind: "terminal_error", message };
       }
-      return { kind: "retryable_error", message: err.message };
+      return { kind: "retryable_error", message };
     }
   }
 
-  async pollStatus(input: Parameters<DgiiClientAdapter["pollStatus"]>[0]): Promise<any> {
+  async pollStatus(input: Parameters<DgiiClientAdapter["pollStatus"]>[0]): Promise<DgiiPollResult> {
     try {
       const p12Base64 = Buffer.from(input.certificate.p12Bytes).toString("base64");
       const reader = new P12Reader(input.certificate.passphrase);
@@ -164,6 +365,63 @@ export class RealDgiiClient implements DgiiClientAdapter {
       const ecf = new ECF(certs, env);
       await ecf.authenticate();
 
+      if (input.isRfce) {
+        const rncEmisor = input.rncEmisor;
+        const encf = input.encf || input.trackId;
+        const securityCode = input.securityCode;
+
+        if (!rncEmisor || !encf || !securityCode) {
+          throw fiscalWorkerError(
+            "DGII_RFCE_POLL_DATA_MISSING",
+            "Polling an RFCE document requires rncEmisor, encf, and securityCode.",
+            false
+          );
+        }
+
+        const response = await ecf.getSummaryInvoiceInquiry(rncEmisor, encf, securityCode);
+
+        if (!response) {
+          return { kind: "retryable_error", message: "Empty response from DGII RFCE summary inquiry" };
+        }
+
+        const codigo = response.codigo != null ? Number(response.codigo) : null;
+        if (codigo === 1) {
+          return {
+            kind: "accepted",
+            statusCode: String(response.codigo),
+            message: response.estado || "Aceptado",
+          };
+        }
+        if (codigo === 4) {
+          const detail = formatMensajesDetail(response.mensajes);
+          const estado = response.estado || "Aceptado Condicional";
+          return {
+            kind: "accepted",
+            statusCode: String(response.codigo),
+            message: detail ? `${estado}: ${detail}` : estado,
+          };
+        }
+        if (codigo === 2) {
+          return {
+            kind: "rejected",
+            statusCode: String(response.codigo),
+            message: describeDgiiError(response),
+          };
+        }
+        if (codigo === 3) {
+          return {
+            kind: "retryable_error",
+            statusCode: String(response.codigo),
+            message: response.estado || "En proceso",
+          };
+        }
+        return {
+          kind: "terminal_error",
+          statusCode: codigo != null ? String(codigo) : undefined,
+          message: describeDgiiError(response) || `DGII RFCE inquiry failed: ${JSON.stringify(response)}`,
+        };
+      }
+
       const response = await ecf.statusTrackId(input.trackId);
 
       if (!response) {
@@ -174,12 +432,16 @@ export class RealDgiiClient implements DgiiClientAdapter {
       if (status.includes("aceptado")) {
         return { kind: "accepted", statusCode: response.codigo, message: response.estado };
       } else if (status.includes("rechazado")) {
-        return { kind: "rejected", statusCode: response.codigo, message: response.estado };
+        return { kind: "rejected", statusCode: response.codigo, message: describeDgiiError(response) || response.estado };
       } else {
         return { kind: "submitted", statusCode: response.codigo, message: response.estado };
       }
     } catch (err: any) {
-      return { kind: "retryable_error", message: err.message };
+      const message = describeDgiiError(err);
+      if (err?.retryable === false || isDgiiTerminalError(err)) {
+        return { kind: "terminal_error", message };
+      }
+      return { kind: "retryable_error", message };
     }
   }
 
@@ -199,13 +461,14 @@ export class RealDgiiClient implements DgiiClientAdapter {
 
       const response = await ecf.sendSummary(input.signedXml, input.fileName);
 
-      if (response && response.trackId) {
-        return { kind: "submitted", trackId: response.trackId, statusCode: "200", message: "Sent RFCE summary to DGII" };
-      }
-
-      return { kind: "terminal_error", message: `No trackId returned for summary: ${JSON.stringify(response)}` };
+      const encf = getXmlTagValue(input.signedXml, "eNCF") || undefined;
+      return mapRfceSummaryResponse(response, encf, null);
     } catch (err: any) {
-      return { kind: "retryable_error", message: err.message };
+      const message = describeDgiiError(err);
+      if (err?.retryable === false || isDgiiTerminalError(err)) {
+        return { kind: "terminal_error", message };
+      }
+      return { kind: "retryable_error", message };
     }
   }
 }
