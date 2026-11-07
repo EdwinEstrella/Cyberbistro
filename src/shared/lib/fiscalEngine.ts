@@ -196,18 +196,10 @@ export async function buildEcfDocumentWrites(args: {
   const now = new Date().toISOString();
 
   const settings = await loadTenantBillingSettings(args.tenantId);
-  const isConfigComplete = Boolean(
-    settings &&
-    settings.rnc?.trim() &&
-    settings.nombre?.trim() &&
-    settings.direccion?.trim() &&
-    settings.ecfIssuerSucursal?.trim() &&
-    settings.ecfIssuerMunicipio?.trim() &&
-    settings.ecfIssuerProvincia?.trim() &&
-    settings.ecfIssuerActividadEconomica?.trim() &&
-    settings.ecfIssuerCorreoEmisor?.trim() &&
-    args.certificateId
-  );
+  // Only the issuer configuration decides whether the e-CF can be queued. A null certificate
+  // is valid: non-admin staff and offline checkouts cannot read certificate metadata, and the
+  // fiscal worker resolves the tenant's ready certificate server-side.
+  const isConfigComplete = settings != null && isEcfIssuerConfigComplete(settings);
 
   const documentStatus = isConfigComplete ? "pending_offline" : "pending_configuration";
   const jobStatus = isConfigComplete ? "pending_sync" : "blocked_configuration";
