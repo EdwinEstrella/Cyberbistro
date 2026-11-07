@@ -32,3 +32,11 @@ export function buildMenuLinkUrl(token: string, explicitOrigin?: string): string
   const cleanOrigin = origin.replace(/\/+$/, "");
   return `${cleanOrigin}/#/menu/c/${encodeURIComponent(token)}`;
 }
+
+/**
+ * Builds the canonical public digital menu URL for a given slug.
+ * Format: `${DEFAULT_PRODUCTION_WEB_ORIGIN}/#/menu/${encodeURIComponent(slug)}`
+ */
+export function buildPublicMenuUrl(slug: string): string {
+  return `${DEFAULT_PRODUCTION_WEB_ORIGIN}/#/menu/${encodeURIComponent(slug)}`;
+}

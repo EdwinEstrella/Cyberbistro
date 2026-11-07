@@ -38,6 +38,9 @@ fi
 
 echo "Copying test and migration files..."
 docker exec "$CONTAINER_NAME" mkdir -p /workspace/supabase/migrations /workspace/test/sql
+docker cp supabase/migrations/20260917210000_add-atomic-invoice-number-reservation.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
+docker cp supabase/migrations/20260917213000_add-invoice-number-reservation-v2.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
+docker cp supabase/migrations/20261024130000_ecf_credit_notes.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
 docker cp supabase/migrations/20261031120000_corporate_menu_links.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
 docker cp supabase/migrations/20261031130000_corporate_menu_links_revoke_anon.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
 docker cp supabase/migrations/20261101090000_add_corporativo_plan.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
@@ -47,14 +50,13 @@ docker cp supabase/migrations/20261101120000_consolidated_invoice.sql "$CONTAINE
 docker cp supabase/migrations/20261101130000_superadmin_tenant_overview.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
 docker cp supabase/migrations/20261101140000_superadmin_hardening.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
 docker cp supabase/migrations/20261101150000_menus_closed_without_cycle.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
-docker cp supabase/migrations/20260917210000_add-atomic-invoice-number-reservation.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
-docker cp supabase/migrations/20260917213000_add-invoice-number-reservation-v2.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
-docker cp supabase/migrations/20261024130000_ecf_credit_notes.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
+docker cp supabase/migrations/20261106140000_public_menu_calendar.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
 docker cp supabase/migrations/20261106100000_credit_note_tenant_invoice_number.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
 docker cp test/sql/corporate_menu_links.test.sql "$CONTAINER_NAME":/workspace/test/sql/
 docker cp test/sql/superadmin_overview.test.sql "$CONTAINER_NAME":/workspace/test/sql/
 docker cp test/sql/superadmin_hardening.test.sql "$CONTAINER_NAME":/workspace/test/sql/
 docker cp test/sql/credit_notes.test.sql "$CONTAINER_NAME":/workspace/test/sql/
+docker cp test/sql/public_menu_calendar.test.sql "$CONTAINER_NAME":/workspace/test/sql/
 
 echo "Executing corporate menu links test suite..."
 docker exec -w /workspace -i "$CONTAINER_NAME" psql -U postgres -v ON_ERROR_STOP=1 -f test/sql/corporate_menu_links.test.sql
@@ -70,5 +72,9 @@ docker exec -w /workspace -i "$CONTAINER_NAME" psql -U postgres -d test_superadm
 echo "Executing credit notes test suite..."
 docker exec "$CONTAINER_NAME" createdb -U postgres test_credit_notes
 docker exec -w /workspace -i "$CONTAINER_NAME" psql -U postgres -d test_credit_notes -v ON_ERROR_STOP=1 -f test/sql/credit_notes.test.sql
+
+echo "Executing public menu calendar test suite..."
+docker exec "$CONTAINER_NAME" createdb -U postgres test_public_menu_calendar
+docker exec -w /workspace -i "$CONTAINER_NAME" psql -U postgres -d test_public_menu_calendar -v ON_ERROR_STOP=1 -f test/sql/public_menu_calendar.test.sql
 
 echo "SQL test suite completed successfully."

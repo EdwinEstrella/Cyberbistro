@@ -56,6 +56,12 @@ async function navigateToMenuLink(page: Page, token: string): Promise<void> {
   }, token);
 }
 
+async function navigateToPublicMenu(page: Page, slug: string): Promise<void> {
+  await page.evaluate((targetSlug) => {
+    window.location.hash = `#/menu/${targetSlug}`;
+  }, slug);
+}
+
 const companyMenuFixture = {
   available: true,
   reason: null,
@@ -458,6 +464,103 @@ test.describe("Public digital menu by link (E2E network-mocked)", () => {
       // Menu should flip and become visible
       await expect(page.getByText(/Menú para Acme Corp/i)).toBeVisible({ timeout: 15_000 });
       await expect(page.getByText("Pollo al Horno")).toBeVisible();
+    } finally {
+      await closeApp(app, userDataDirectory);
+    }
+  });
+
+  test("6. Public menu with assigned calendar menu (settings.menu_id set) renders calendar items", async () => {
+    const { app, page, userDataDirectory } = await launchLoggedOutApp();
+
+    try {
+      await page.route("**/rest/v1/tenants*", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: "[]",
+        });
+      });
+
+      await page.route("**/rest/v1/rpc/get_online_menu_status*", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ open: true }),
+        });
+      });
+
+      const calendarPublicMenuFixture = {
+        settings: {
+          tenant_id: "00000000-0000-0000-0000-000000000001",
+          public_slug: "bistro-publico-hoy",
+          title: "Bistro Público Central",
+          description: "Platos especiales según el calendario de hoy",
+          logo_url: null,
+          banner_url: null,
+          business_name: "Bistro Central SRL",
+          phone: "809-555-0199",
+          address: "Av. Winston Churchill",
+          currency: "DOP",
+          menu_id: "00000000-0000-0000-0000-000000000099",
+        },
+        items: [
+          {
+            id: "cal-item-1",
+            plato_id: 301,
+            name: "Sancocho Especial del Día",
+            description: "Tradicional sancocho de carnes selectas",
+            image_url: null,
+            price: 450,
+            category: "Platos Fuertes",
+            sort_order: 1,
+          },
+          {
+            id: "cal-item-2",
+            plato_id: 302,
+            name: "Jugo Natural de Chinola",
+            description: "Bebida natural recién preparada",
+            image_url: null,
+            price: 120,
+            category: "Bebidas",
+            sort_order: 2,
+          },
+        ],
+        cantidad_mesas: 8,
+      };
+
+      await page.route("**/rest/v1/rpc/get_public_digital_menu*", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(calendarPublicMenuFixture),
+        });
+      });
+
+      await navigateToPublicMenu(page, "bistro-publico-hoy");
+
+      // Verify the title appears on the order type screen
+      await expect(page.getByText("Bistro Público Central")).toBeVisible({ timeout: 15_000 });
+
+      // Select "Pido para llevar / afuera" to view the catalog directly
+      await page.getByRole("button", { name: /Pido para llevar/i }).click();
+
+      // Verify the calendar items returned by get_public_digital_menu are rendered
+      await expect(page.getByText("Sancocho Especial del Día")).toBeVisible();
+      await expect(page.getByText("Jugo Natural de Chinola")).toBeVisible();
+      await expect(page.getByText("Platos Fuertes")).toBeVisible();
+      await expect(page.getByText("Bebidas")).toBeVisible();
+
+      // Verify price formatting
+      await expect(page.getByText(/450/)).toBeVisible();
+      await expect(page.getByText(/120/)).toBeVisible();
+
+      // Add calendar item to cart
+      await page.locator("article").filter({ hasText: "Sancocho Especial del Día" }).getByRole("button", { name: "Agregar" }).click();
+
+      // Verify item and total in cart
+      await expect(page.locator("aside").getByText("Sancocho Especial del Día")).toBeVisible();
+      const totalContainer = page.locator("aside").getByText(/Total/i).locator("..");
+      await expect(totalContainer).toContainText("450");
     } finally {
       await closeApp(app, userDataDirectory);
     }

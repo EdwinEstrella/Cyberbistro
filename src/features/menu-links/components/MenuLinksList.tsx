@@ -155,9 +155,9 @@ export function MenuLinksList({ tenantId, sucursalId }: MenuLinksListProps) {
   });
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-background text-foreground overflow-hidden">
+    <div className="flex flex-col bg-card text-card-foreground">
       {/* Top action / search bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 p-4 sm:px-6 border-b border-border bg-card/40 shrink-0">
+      <div className="flex flex-wrap items-center justify-between gap-3 p-4 sm:px-6 border-b border-border bg-muted/20 shrink-0">
         <div className="flex items-center gap-3 flex-1 min-w-[240px] max-w-md">
           <div className="relative w-full">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
