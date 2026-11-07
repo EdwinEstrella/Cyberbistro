@@ -157,6 +157,28 @@ describe("fiscalEngine", () => {
       expect(resultCajera).toEqual({ mode: "dgii_ecf", certificateId: null });
     });
 
+    it("falls back to internal_receipt for role admin when online certificate query returns null", async () => {
+      const settings = {
+        ...validEcfSettings,
+        fiscalModeFallback: "internal_receipt" as const,
+      };
+
+      const mockMaybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
+      const queryBuilder: any = {
+        eq: vi.fn().mockReturnThis(),
+        order: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        maybeSingle: mockMaybeSingle,
+      };
+      queryBuilder.eq.mockReturnValue(queryBuilder);
+      vi.mocked(supabase.from).mockReturnValue({
+        select: () => queryBuilder,
+      } as any);
+
+      const resultAdmin = await resolveActiveFiscalMode("tenant-1", settings, true, "admin");
+      expect(resultAdmin).toEqual({ mode: "internal_receipt", certificateId: null });
+    });
+
     it("keeps dgii_ecf active offline without reading certificate data from local storage", async () => {
       const settings = { ...validEcfSettings };
 
@@ -594,7 +616,33 @@ describe("fiscalEngine", () => {
       }));
     });
 
-    it("enqueues as pending_configuration/blocked_configuration if certificateId is missing", async () => {
+    it("enqueues as pending_configuration/blocked_configuration if settings is null", async () => {
+      vi.mocked(loadTenantBillingSettings).mockResolvedValueOnce(null);
+
+      await enqueueEcfDocuments({
+        tenantId: "tenant-1",
+        facturaId: "invoice-1",
+        certificateId: "cert-uuid",
+        ecfType: "32",
+        deviceId: "device-1",
+      });
+
+      expect(enqueueLocalWrite).toHaveBeenCalledWith(expect.objectContaining({
+        tableName: "ecf_documents",
+        payload: expect.objectContaining({
+          status: "pending_configuration",
+        }),
+      }));
+
+      expect(enqueueLocalWrite).toHaveBeenCalledWith(expect.objectContaining({
+        tableName: "fiscal_outbox",
+        payload: expect.objectContaining({
+          status: "blocked_configuration",
+        }),
+      }));
+    });
+
+    it("enqueues as pending_offline/pending_sync with a null certificate when the issuer configuration is complete", async () => {
       vi.mocked(loadTenantBillingSettings).mockResolvedValueOnce({
         fiscalMode: "dgii_ecf" as const,
         ncfFiscalActive: false,
@@ -613,7 +661,7 @@ describe("fiscalEngine", () => {
       await enqueueEcfDocuments({
         tenantId: "tenant-1",
         facturaId: "invoice-1",
-        certificateId: null, // missing cert
+        certificateId: null,
         ecfType: "32",
         deviceId: "device-1",
       });
@@ -621,7 +669,7 @@ describe("fiscalEngine", () => {
       expect(enqueueLocalWrite).toHaveBeenCalledWith(expect.objectContaining({
         tableName: "ecf_documents",
         payload: expect.objectContaining({
-          status: "pending_configuration",
+          status: "pending_offline",
           certificate_metadata_id: null,
         }),
       }));
@@ -629,7 +677,7 @@ describe("fiscalEngine", () => {
       expect(enqueueLocalWrite).toHaveBeenCalledWith(expect.objectContaining({
         tableName: "fiscal_outbox",
         payload: expect.objectContaining({
-          status: "blocked_configuration",
+          status: "pending_sync",
         }),
       }));
     });
