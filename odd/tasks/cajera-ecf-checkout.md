@@ -31,7 +31,7 @@ In addition, the fiscal resolution `useEffect` hooks in `MesaCloseAccountModal.t
 - [x] T2 Role-aware effects: Add `rol` to dependency arrays of fiscal mode resolution `useEffect` hooks in `MesaCloseAccountModal.tsx` and `Dashboard.tsx`.
 - [x] T3 Tests in `src/shared/lib/fiscalEngine.test.ts`: Replace the bug-encoding test with null certificate handling, add null settings test, and verify role-based certificate resolution.
 - [x] T4 Least-privilege issuer SELECT policy on ecf_certificate_metadata (admin + cashier/sales roles via cyberbistro_has_tenant_role) with contract test; applied to production by the reviewer.
-- [ ] T5 Map POS payment methods to DGII FormaPago/TipoPago in worker/fiscal/mapper.ts (transferencia must be 2, fiado is a credit sale) — pending product decision for `digital`.
+- [x] T5 Map POS payment methods to DGII FormaPago/TipoPago in worker/fiscal/mapper.ts (efectivo 1, transferencia 2, tarjeta 3, fiado 4 + TipoPago credit, digital/delivery platforms 8, unknown 8).
 
 ## Acceptance Criteria
 1. `buildEcfDocumentWrites` relies strictly on `isEcfIssuerConfigComplete(settings)` (with null settings treated as incomplete); `certificateId: null` does not block outbox sync (`pending_offline` and `pending_sync` are written).
@@ -51,9 +51,11 @@ In addition, the fiscal resolution `useEffect` hooks in `MesaCloseAccountModal.t
 ## Progress
 - T1–T3 committed in 131eadb (fix(fiscal): queue cashier and offline e-CF checkouts without a client certificate). Route: delegated (agy writer, 4 files).
 - T4 committed in f3bddf0 (fix(rls): let invoice issuers read e-CF certificate readiness); applied to production on 2026-11-07 as migration `issuer_select_certificate_metadata` after a drift check (only `cb_ecf_certificate_metadata_admin_select` existed).
-- Next: T5 payment-method mapping, blocked on the product meaning of `digital`.
+- T5 committed in 5c1c6a2 (fix(fiscal-worker): map POS payment methods to DGII payment codes); deployed 2026-11-07 to the Dokploy fiscal-worker mount (mountId ISKYkuAOgibiI8QTYi1Kh) after a drift check against master; container restarted and Up.
+- Next: desktop release so offline/cashier checkouts get the client fix; real-world check that a cashier mesa checkout is accepted as E32.
 
 ## Verification evidence
 - `npm run typecheck`: passed (tsc --noEmit, no errors).
-- `npm test`: 270 files passed / 1 skipped; 1978 tests passed / 2 skipped.
+- `npm test`: 1987 tests passed / 2 skipped (271 files)
 - Production RLS check (simulated JWT, rolled back): cajera sees the ready production certificate; cajera SELECT on `password_encrypted` → permission denied; random non-member UUID → 0 rows.
+- Deployed mapper.ts sha256 (LF, trimmed) 485d28aa… equals the repo file; fiscal-worker container 0cab9db93007 Up after restart.
