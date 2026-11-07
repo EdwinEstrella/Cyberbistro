@@ -1,23 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { renderToStaticMarkup } from "react-dom/server";
 import { MenuLinksPage } from "./MenuLinksPage";
 import { canUseFeature, type Plan } from "../../shared/lib/planFeatures";
 import { getMenuLinkLimit } from "./lib/menuLinkLimits";
-
-function renderToStatic(node: any): string {
-  if (node == null || typeof node === "boolean") return "";
-  if (typeof node === "string" || typeof node === "number") return String(node);
-  if (Array.isArray(node)) return node.map(renderToStatic).join("");
-  if (typeof node.type === "function") {
-    return renderToStatic(node.type(node.props || {}));
-  }
-  const props = node.props || {};
-  const attrs = Object.entries(props)
-    .filter(([k]) => k.startsWith("data-") || k === "href" || k === "target")
-    .map(([k, v]) => ` ${k}="${v}"`)
-    .join("");
-  const children = props.children ? renderToStatic(props.children) : "";
-  return `<${node.type}${attrs}>${children}</${node.type}>`;
-}
 
 const mockAuth = vi.hoisted(() => ({
   tenantId: "test-tenant-id" as string | null,
@@ -90,13 +75,13 @@ describe("Unified Menú Digital Screen - Plan Gating & Section Visibility", () =
   describe("MenuLinksPage screen rendering and sections", () => {
     it("renders login prompt when tenantId is null", () => {
       mockAuth.tenantId = null;
-      const html = renderToStatic(<MenuLinksPage />);
+      const html = renderToStaticMarkup(<MenuLinksPage />);
       expect(html).toContain("Inicia sesión para administrar el menú digital");
     });
 
     it("on Profesional plan: renders Menú público card, and Links de empresa section is locked with upsell to Empresarial", () => {
       mockAuth.plan = "profesional";
-      const html = renderToStatic(<MenuLinksPage />);
+      const html = renderToStaticMarkup(<MenuLinksPage />);
 
       // Top section: Menú público is rendered
       expect(html).toContain("Menú público");
@@ -114,7 +99,7 @@ describe("Unified Menú Digital Screen - Plan Gating & Section Visibility", () =
 
     it("on Empresarial plan: renders Menú público card AND unlocked Links de empresa list", () => {
       mockAuth.plan = "empresarial";
-      const html = renderToStatic(<MenuLinksPage />);
+      const html = renderToStaticMarkup(<MenuLinksPage />);
 
       // Top section: Menú público is rendered
       expect(html).toContain("Menú público");
@@ -131,7 +116,7 @@ describe("Unified Menú Digital Screen - Plan Gating & Section Visibility", () =
 
     it("on Corporativo plan: renders Menú público card AND unlocked Links de empresa list", () => {
       mockAuth.plan = "corporativo";
-      const html = renderToStatic(<MenuLinksPage />);
+      const html = renderToStaticMarkup(<MenuLinksPage />);
 
       // Both sections unlocked
       expect(html).toContain("Menú público");

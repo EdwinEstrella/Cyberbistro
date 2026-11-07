@@ -26,3 +26,9 @@ declare module 'figma:asset/*' {
 declare module 'react-dom/client' {
   export { createRoot, hydrateRoot } from 'react-dom';
 }
+
+declare module 'react-dom/server' {
+  import type { ReactElement } from 'react';
+  export function renderToStaticMarkup(element: ReactElement): string;
+  export function renderToString(element: ReactElement): string;
+}

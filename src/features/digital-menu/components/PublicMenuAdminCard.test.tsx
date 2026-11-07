@@ -1,35 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { renderToStaticMarkup } from "react-dom/server";
 import { PublicMenuAdminCard } from "./PublicMenuAdminCard";
-
-function renderToStatic(node: any): string {
-  if (node == null || typeof node === "boolean") return "";
-  if (typeof node === "string" || typeof node === "number") return String(node);
-  if (Array.isArray(node)) return node.map(renderToStatic).join("");
-  if (typeof node.type === "function") {
-    return renderToStatic(node.type(node.props || {}));
-  }
-  const props = node.props || {};
-  const attrs = Object.entries(props)
-    .filter(([k]) => k.startsWith("data-") || k === "href" || k === "target")
-    .map(([k, v]) => ` ${k}="${v}"`)
-    .join("");
-  const children = props.children ? renderToStatic(props.children) : "";
-  return `<${node.type}${attrs}>${children}</${node.type}>`;
-}
-
-vi.mock("react", async () => {
-  const actual = await vi.importActual<typeof import("react")>("react");
-  return {
-    ...actual,
-    useState: (initial: any) => [
-      typeof initial === "function" ? initial() : initial,
-      vi.fn(),
-    ],
-    useEffect: vi.fn(),
-    useCallback: (fn: any) => fn,
-    useMemo: (fn: any) => (typeof fn === "function" ? fn() : fn),
-  };
-});
 
 const mockAdminData = vi.hoisted(() => ({
   loading: false,
@@ -150,12 +121,12 @@ describe("PublicMenuAdminCard container", () => {
 
   it("renders loading spinner while data is loading", () => {
     mockAdminData.loading = true;
-    const html = renderToStatic(<PublicMenuAdminCard tenantId="tenant-1" />);
+    const html = renderToStaticMarkup(<PublicMenuAdminCard tenantId="tenant-1" />);
     expect(html).toContain("Cargando configuración del menú público...");
   });
 
   it("renders composition with header, settings form, share section, calendar, and dishes", () => {
-    const html = renderToStatic(
+    const html = renderToStaticMarkup(
       <PublicMenuAdminCard tenantId="tenant-1" sucursalId="suc-1" />
     );
     expect(html).toContain("Menú público");
@@ -175,7 +146,7 @@ describe("PublicMenuAdminCard container", () => {
       disponible: true,
       va_a_cocina: true,
     };
-    const html = renderToStatic(
+    const html = renderToStaticMarkup(
       <PublicMenuAdminCard tenantId="tenant-1" initialEditingPlato={editingPlato} />
     );
     expect(html).toContain("Personalizar Plato en Web");
