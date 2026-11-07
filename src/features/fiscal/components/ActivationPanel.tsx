@@ -60,7 +60,7 @@ const certificationSteps = [
 
 const certificationPortalUrl = "https://ecf.dgii.gov.do/certecf/portalcertificacion/Login?ReturnUrl=%2Fcertecf%2Fportalcertificacion";
 
-export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral?: () => void } = {}) {
+export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral: () => void }) {
   const { tenantId, plan, user } = useAuth();
   const [step, setStep] = useState(1);
   const [environment, setEnvironment] = useState<EcfEnvironment>("test");
@@ -492,13 +492,7 @@ export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral?:
                 </div>
                 <button
                   type="button"
-                  onClick={() => {
-                    if (onNavigateToGeneral) {
-                      onNavigateToGeneral();
-                    } else {
-                      window.location.hash = "/ajustes?tab=general";
-                    }
-                  }}
+                  onClick={onNavigateToGeneral}
                   className="shrink-0 inline-flex items-center gap-1.5 text-xs font-bold text-primary hover:underline bg-primary/10 hover:bg-primary/20 px-3 py-1.5 rounded-lg border-none cursor-pointer transition-colors"
                 >
                   <ExternalLink className="size-3.5" /> Ir a General
