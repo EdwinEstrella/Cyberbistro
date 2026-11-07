@@ -66,6 +66,22 @@ describe("buildAjustesSavePayload", () => {
     expect(payload).not.toHaveProperty("ncf_secuencia_siguiente");
   });
 
+  it("omits fiscal_mode and legacy NCF fields when existing tenant is dgii_ecf even if config has ncf_legacy", () => {
+    const config = createMockConfig({
+      fiscal_mode: "ncf_legacy",
+      ncf_tipo_default: "B02",
+    });
+    const payload = buildAjustesSavePayload({
+      config,
+      existingTenant: { fiscal_mode: "dgii_ecf" },
+    });
+
+    expect(payload).not.toHaveProperty("fiscal_mode");
+    expect(payload).not.toHaveProperty("ncf_fiscal_activo");
+    expect(payload).not.toHaveProperty("ncf_tipo_default");
+    expect(payload).not.toHaveProperty("ncf_secuencia_siguiente");
+  });
+
   it("includes fiscal_mode when switching between internal_receipt and ncf_legacy", () => {
     const legacyConfig = createMockConfig({ fiscal_mode: "ncf_legacy" });
     const legacyPayload = buildAjustesSavePayload({ config: legacyConfig });

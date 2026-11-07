@@ -17,11 +17,9 @@ export interface BuildAjustesPayloadOptions {
   config: AjustesConfig;
   existingTenant?: {
     fiscal_mode?: string | null;
-    ecf_environment?: string | null;
     ncf_secuencias_por_tipo?: Record<string, number> | null;
     ncf_tipos_activos?: Record<string, boolean> | null;
-    ncf_tipo_default?: string | null;
-    ncf_secuencia_siguiente?: number | null;
+    [key: string]: unknown;
   } | null;
   now?: () => string;
 }
@@ -31,23 +29,8 @@ export function buildAjustesSavePayload({
   existingTenant,
   now = () => new Date().toISOString(),
 }: BuildAjustesPayloadOptions): Record<string, any> {
-  const isEcfMode = config.fiscal_mode === "dgii_ecf";
-
-  // Build B sequence columns
-  const bColumns: Record<NcfBSequenceColumn, number> = {
-    [NCF_B_SEQUENCE_COLUMN_BY_CODE.B01]:
-      parseValidNcfSequence(config.ncf_secuencias_por_tipo?.B01) ?? DEFAULT_NCF_SEQUENCE,
-    [NCF_B_SEQUENCE_COLUMN_BY_CODE.B02]:
-      parseValidNcfSequence(config.ncf_secuencias_por_tipo?.B02) ?? DEFAULT_NCF_SEQUENCE,
-    [NCF_B_SEQUENCE_COLUMN_BY_CODE.B14]:
-      parseValidNcfSequence(config.ncf_secuencias_por_tipo?.B14) ?? DEFAULT_NCF_SEQUENCE,
-    [NCF_B_SEQUENCE_COLUMN_BY_CODE.B15]:
-      parseValidNcfSequence(config.ncf_secuencias_por_tipo?.B15) ?? DEFAULT_NCF_SEQUENCE,
-    [NCF_B_SEQUENCE_COLUMN_BY_CODE.B16]:
-      parseValidNcfSequence(config.ncf_secuencias_por_tipo?.B16) ?? DEFAULT_NCF_SEQUENCE,
-    [NCF_B_SEQUENCE_COLUMN_BY_CODE.B17]:
-      parseValidNcfSequence(config.ncf_secuencias_por_tipo?.B17) ?? DEFAULT_NCF_SEQUENCE,
-  };
+  const isEcfMode =
+    config.fiscal_mode === "dgii_ecf" || existingTenant?.fiscal_mode === "dgii_ecf";
 
   // Build merged ncf_secuencias_por_tipo:
   // Preserve any existing non-B (e-CF) sequences from existing tenant,
@@ -61,11 +44,14 @@ export function buildAjustesSavePayload({
     }
   }
 
+  // Build B sequence columns and update B sequences in nextSequencesMap in a single pass
+  const bColumns = {} as Record<NcfBSequenceColumn, number>;
   for (const opcion of NCF_B_TIPO_OPCIONES) {
     const seq =
       parseValidNcfSequence(config.ncf_secuencias_por_tipo?.[opcion.codigo]) ??
       DEFAULT_NCF_SEQUENCE;
     nextSequencesMap[opcion.codigo] = seq;
+    bColumns[NCF_B_SEQUENCE_COLUMN_BY_CODE[opcion.codigo]] = seq;
   }
 
   // Preserve existing non-B active flags from existing tenant, apply B flags from config
