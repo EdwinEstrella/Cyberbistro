@@ -130,7 +130,7 @@ async function openAjustesModule(page: Page): Promise<void> {
     await page.evaluate(() => { window.location.hash = '/ajustes'; });
   }
 
-  const facturacionTab = page.getByRole('tab', { name: /Facturación/i });
+  const facturacionTab = page.getByRole('tab', { name: 'Facturación', exact: true });
   await expect(facturacionTab).toBeVisible({ timeout: 20_000 });
   await facturacionTab.click();
 
