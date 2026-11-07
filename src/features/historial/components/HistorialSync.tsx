@@ -2,7 +2,8 @@ import { useSearchParams } from "react-router";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { normalizeTenantRol } from "../../../shared/lib/roleNav";
 import { canUseFeature } from "../../../shared/lib/planFeatures";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../../shared/ui/tabs";
+import { Tabs, TabsContent } from "../../../shared/ui/tabs";
+import { SectionTabsList, SectionTabsTrigger } from "../../../shared/ui/SectionTabs";
 import { FeatureGuard } from "../../../app/components/FeatureGuard";
 import { HistorialSyncTab } from "./HistorialSyncTab";
 import { FiscalPanel } from "../../fiscal/components/FiscalPanel";
@@ -57,24 +58,18 @@ export function HistorialSync() {
               </h1>
             </div>
 
-            <TabsList className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.18)] rounded-[10px] p-1 h-auto flex gap-1.5 shrink-0">
+            <SectionTabsList>
               {isAdmin && (
-                <TabsTrigger
-                  value="sincronizacion"
-                  className="px-4 py-2 rounded-[8px] font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[0.5px] text-[#adaaaa] data-[state=active]:bg-[rgba(255,144,109,0.12)] data-[state=active]:border-[#ff906d] data-[state=active]:text-[#ff906d] data-[state=active]:shadow-[0_0_12px_rgba(255,144,109,0.1)] border border-transparent transition-all cursor-pointer"
-                >
+                <SectionTabsTrigger value="sincronizacion">
                   Sincronización
-                </TabsTrigger>
+                </SectionTabsTrigger>
               )}
               {canSeeFiscal && (
-                <TabsTrigger
-                  value="fiscal"
-                  className="px-4 py-2 rounded-[8px] font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[0.5px] text-[#adaaaa] data-[state=active]:bg-[rgba(255,144,109,0.12)] data-[state=active]:border-[#ff906d] data-[state=active]:text-[#ff906d] data-[state=active]:shadow-[0_0_12px_rgba(255,144,109,0.1)] border border-transparent transition-all cursor-pointer"
-                >
+                <SectionTabsTrigger value="fiscal">
                   Documentos fiscales
-                </TabsTrigger>
+                </SectionTabsTrigger>
               )}
-            </TabsList>
+            </SectionTabsList>
           </div>
 
           {isAdmin && (

@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useSearchParams } from "react-router";
 import { supabase } from "../../../shared/lib/supabase";
 import { useAuth, ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "../../../shared/ui/tabs";
+import { Tabs, TabsContent } from "../../../shared/ui/tabs";
+import { SectionTabsList, SectionTabsTrigger } from "../../../shared/ui/SectionTabs";
 
 import {
   getThermalPrintSettings,
@@ -404,26 +405,17 @@ export function Ajustes() {
                 Ajustes
               </h1>
             </div>
-            <TabsList className="bg-[#1a1a1a] border border-[rgba(72,72,71,0.18)] rounded-[10px] p-1 h-auto flex gap-1.5 shrink-0">
-              <TabsTrigger
-                value="general"
-                className="px-4 py-2 rounded-[8px] font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[0.5px] text-[#adaaaa] data-[state=active]:bg-[rgba(255,144,109,0.12)] data-[state=active]:border-[#ff906d] data-[state=active]:text-[#ff906d] data-[state=active]:shadow-[0_0_12px_rgba(255,144,109,0.1)] border border-transparent transition-all cursor-pointer"
-              >
+            <SectionTabsList>
+              <SectionTabsTrigger value="general">
                 General
-              </TabsTrigger>
-              <TabsTrigger
-                value="facturacion"
-                className="px-4 py-2 rounded-[8px] font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[0.5px] text-[#adaaaa] data-[state=active]:bg-[rgba(255,144,109,0.12)] data-[state=active]:border-[#ff906d] data-[state=active]:text-[#ff906d] data-[state=active]:shadow-[0_0_12px_rgba(255,144,109,0.1)] border border-transparent transition-all cursor-pointer"
-              >
+              </SectionTabsTrigger>
+              <SectionTabsTrigger value="facturacion">
                 Facturación
-              </TabsTrigger>
-              <TabsTrigger
-                value="facturacion-electronica"
-                className="px-4 py-2 rounded-[8px] font-['Space_Grotesk',sans-serif] font-bold text-[12px] uppercase tracking-[0.5px] text-[#adaaaa] data-[state=active]:bg-[rgba(255,144,109,0.12)] data-[state=active]:border-[#ff906d] data-[state=active]:text-[#ff906d] data-[state=active]:shadow-[0_0_12px_rgba(255,144,109,0.1)] border border-transparent transition-all cursor-pointer"
-              >
+              </SectionTabsTrigger>
+              <SectionTabsTrigger value="facturacion-electronica">
                 Facturación electrónica
-              </TabsTrigger>
-            </TabsList>
+              </SectionTabsTrigger>
+            </SectionTabsList>
           </div>
 
           <TabsContent value="general" className="outline-none">
