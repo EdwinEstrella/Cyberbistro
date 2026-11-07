@@ -346,7 +346,7 @@ export function MesaCloseAccountModal({
     return () => {
       cancelled = true;
     };
-  }, [open, tenantId, initialNcfType]);
+  }, [open, tenantId, initialNcfType, rol]);
 
   function collectPersonGroups(): Map<number, MesaConsumoRow[]> {
     const m = new Map<number, MesaConsumoRow[]>();

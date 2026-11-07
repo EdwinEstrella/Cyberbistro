@@ -250,7 +250,7 @@ export function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, tenantId]);
+  }, [authLoading, tenantId, rol]);
 
   useEffect(() => {
     // Set initial to empty since it depends on the database

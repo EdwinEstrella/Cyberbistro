@@ -137,6 +137,8 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
     fechaVencimientoSecuencia = vence;
   }
 
+  const creditSale = isCreditSale(payments);
+
   // 1. Encabezado
   // DGII schema order: Version -> IdDoc -> Emisor -> Comprador -> Totales
   // IdDoc order: TipoeCF -> eNCF -> FechaVencimientoSecuencia -> IndicadorNotaCredito ->
@@ -150,11 +152,11 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
       ...(creditNoteRef ? { IndicadorNotaCredito: creditNoteRef.indicadorNotaCredito } : {}),
       IndicadorMontoGravado: 0,
       TipoIngresos: "01",
-      TipoPago: payments.length > 0 ? 1 : 2,
+      TipoPago: creditSale ? 2 : 1,
       ...(ecfType !== 34
         ? {
             FechaLimitePago: formatDgiiDate(factura.created_at, now),
-            TerminoPago: payments.length > 0 ? "Al contado" : "A credito",
+            TerminoPago: creditSale ? "A credito" : "Al contado",
             ...(payments.length > 0
               ? {
                   TablaFormasPago: {
@@ -372,13 +374,30 @@ export function splitInclusiveLines(
   return lines;
 }
 
-function mapPaymentMethod(method: string): number {
-  switch (method) {
-    case "efectivo": return 1;
-    case "tarjeta": return 3;
-    case "transferencia": return 4;
-    default: return 1;
+function normalizePaymentMethod(method: unknown): string {
+  return typeof method === "string" ? method.trim().toLowerCase() : "";
+}
+
+/** DGII "Formas de pago" codes (Formato e-CF v1.0). */
+const DGII_FORMA_PAGO_BY_METHOD: ReadonlyMap<string, number> = new Map([
+  ["efectivo", 1],
+  ["transferencia", 2], // cheque / transfer / deposit
+  ["tarjeta", 3],
+  ["fiado", 4], // store credit = credit sale
+  ["digital", 8], // delivery platforms (Uber Eats, PedidosYa): other payment methods
+]);
+const DGII_FORMA_PAGO_OTHER = 8;
+
+function mapPaymentMethod(method: unknown): number {
+  const normalized = normalizePaymentMethod(method);
+  return DGII_FORMA_PAGO_BY_METHOD.get(normalized) ?? DGII_FORMA_PAGO_OTHER;
+}
+
+function isCreditSale(payments: unknown): boolean {
+  if (!Array.isArray(payments) || payments.length === 0) {
+    return true;
   }
+  return payments.some((p: any) => normalizePaymentMethod(p?.payment_method) === "fiado");
 }
 
 function assertValidMoney(fieldName: string, value: number): void {
