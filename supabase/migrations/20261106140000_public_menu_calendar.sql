@@ -339,6 +339,7 @@ BEGIN
 
   -- ── In-store: validate table number and code ─────────────────────────────
   IF p_order_type = 'in_store' THEN
+    -- Validate the table number against the branch table count (fallback: tenant count), consistent with get_public_digital_menu.
     IF v_settings.sucursal_id IS NOT NULL THEN
       SELECT COALESCE(
         NULLIF((SELECT cantidad_mesas FROM public.sucursales
@@ -359,6 +360,8 @@ BEGIN
       RAISE EXCEPTION 'El código de mesa es obligatorio';
     END IF;
 
+    -- Fetch the stored code for this table, scoped to the menu's sucursal.
+    -- Without sucursal_id isolation a customer at branch A could use branch B's code.
     SELECT me.codigo_seguridad INTO v_stored_code
     FROM public.mesas_estado me
     WHERE me.tenant_id   = v_settings.tenant_id
@@ -367,6 +370,7 @@ BEGIN
     LIMIT 1;
 
     IF v_stored_code IS NULL THEN
+      -- No code configured yet — reject; admin must generate codes first.
       RAISE EXCEPTION 'El código de mesa no ha sido configurado. Pide asistencia al personal.';
     END IF;
 
@@ -374,6 +378,9 @@ BEGIN
       RAISE EXCEPTION 'Código de mesa incorrecto';
     END IF;
 
+    -- Prevent double-ordering while a pending order exists for this session.
+    -- Only block on 'pending' — once staff accepts, the same browser is no longer
+    -- blocked (avoids permanent lock-out after payment/table release).
     IF p_client_session_id IS NOT NULL AND length(trim(p_client_session_id)) > 0 THEN
       SELECT COUNT(*) INTO v_active_orders
       FROM public.digital_orders
