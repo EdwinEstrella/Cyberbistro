@@ -400,27 +400,26 @@ export function HistorialSyncTab() {
   });
 
   return (
-    <div className="flex-1 bg-background p-4 sm:p-8 lg:p-10 overflow-y-auto min-h-0 text-foreground">
-      <div className="max-w-[1500px] mx-auto flex flex-col gap-6">
-        {/* Header */}
-        <section className="rounded-[24px] border border-black/10 dark:border-white/10 bg-card p-6 sm:p-8 shadow-sm">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="text-primary text-[11px] font-bold uppercase tracking-[0.25em]">
-                  Modo Desarrollador & Diagnóstico
-                </span>
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-                  <Database size={10} /> SQLite Local-First
-                </span>
-              </div>
-              <h1 className="font-['Space_Grotesk',sans-serif] text-3xl font-bold tracking-tight text-foreground flex items-center gap-3">
-                Historial & Monitor de Sincronización
-              </h1>
-              <p className="font-['Inter',sans-serif] text-sm text-muted-foreground max-w-3xl">
-                Supervisión del motor SQLite local, outbox durable, detección de anomalías y sincronización bidireccional con Supabase.
-              </p>
+    <div className="flex flex-col gap-6">
+      {/* Header */}
+      <section className="rounded-[24px] border border-black/10 dark:border-white/10 bg-card p-6 sm:p-8 shadow-sm">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-primary text-[11px] font-bold uppercase tracking-[0.25em]">
+                Modo Desarrollador & Diagnóstico
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                <Database size={10} /> SQLite Local-First
+              </span>
             </div>
+            <h2 className="font-['Space_Grotesk',sans-serif] text-xl font-bold tracking-tight text-foreground flex items-center gap-3">
+              Monitor de sincronización
+            </h2>
+            <p className="font-['Inter',sans-serif] text-sm text-muted-foreground max-w-3xl">
+              Supervisión del motor SQLite local, outbox durable, detección de anomalías y sincronización bidireccional con Supabase.
+            </p>
+          </div>
 
             <div className="flex flex-wrap items-center gap-3">
               <button
@@ -941,7 +940,6 @@ export function HistorialSyncTab() {
             )}
           </div>
         )}
-      </div>
 
       {/* Modal Error Detail */}
       {selectedError && (
