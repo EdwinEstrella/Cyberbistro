@@ -5,6 +5,7 @@ import { supabase } from "./supabase";
 import { type TenantBillingSettings, loadTenantBillingSettings } from "./tenantBillingSettings";
 import { isNcfTypeActive } from "./ncf";
 import { validateEcfIssuer } from "./ecfIssuerRequirements";
+import { normalizeTenantRol } from "./roleNav";
 
 /** True when every issuer field DGII requires is present and well formed (shared with the wizard). */
 export function isEcfIssuerConfigComplete(settings: TenantBillingSettings): boolean {
@@ -23,7 +24,8 @@ export function isEcfIssuerConfigComplete(settings: TenantBillingSettings): bool
 export async function resolveActiveFiscalMode(
   tenantId: string,
   settings: TenantBillingSettings | null,
-  isOnline: boolean
+  isOnline: boolean,
+  userRole?: string | null
 ): Promise<{ mode: FiscalMode; certificateId: string | null }> {
   if (!settings) {
     return { mode: "internal_receipt", certificateId: null };
@@ -42,18 +44,35 @@ export async function resolveActiveFiscalMode(
     }
 
     try {
-      const { data: cert } = await supabase
+      const environment = settings.ecfEnvironment || "certification";
+      const { data: cert, error } = await supabase
         .from("ecf_certificate_metadata")
         .select("id")
         .eq("tenant_id", tenantId)
+        .eq("environment", environment)
         .eq("is_ready", true)
+        .order("created_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
+
+      if (error) {
+        console.warn("Failed to check certificate readiness online, keeping e-CF pending for backend validation:", error);
+        return { mode: "dgii_ecf", certificateId: null };
+      }
 
       if (cert?.id) {
         return { mode: "dgii_ecf", certificateId: cert.id };
       }
     } catch (err) {
       console.warn("Failed to check certificate readiness online, keeping e-CF pending for backend validation:", err);
+      return { mode: "dgii_ecf", certificateId: null };
+    }
+
+    // Non-admin sales/cashier staff do not manage certificates. If the tenant is
+    // actively configured for dgii_ecf and configuration is complete, cashier checkout
+    // must not be downgraded to internal_receipt due to client-side certificate query restrictions.
+    const isNonAdminStaff = userRole && normalizeTenantRol(userRole) !== "admin";
+    if (isNonAdminStaff) {
       return { mode: "dgii_ecf", certificateId: null };
     }
 

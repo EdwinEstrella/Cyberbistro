@@ -1,4 +1,4 @@
-﻿import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DatabaseSync } from "node:sqlite";
 import { initializeTenantSchema } from "../electron/persistence/schema";
 import { PayrollSyncClient } from "../electron/persistence/payrollSyncClient";
@@ -51,7 +51,7 @@ describe("bidirectional SQLite cloud imports", () => {
   let db: DatabaseSync, store: SQLitePayrollSyncStore;
   beforeEach(() => { db = new DatabaseSync(":memory:"); initializeTenantSchema(db, TENANT); store = new SQLitePayrollSyncStore(db, TENANT); });
   afterEach(() => db.close());
-  const pull = async (cloud: ReturnType<typeof makeCloud>) => new DurableSyncWorker(store, new PayrollSyncClient(cloud.client), TENANT).pull();
+  const pull = async (cloud: ReturnType<typeof makeCloud>) => (await new DurableSyncWorker(store, new PayrollSyncClient(cloud.client), TENANT).pull()).applied;
   it("downloads all 1201 rows despite equal dates, an old cursor, and a server cap of 200", async () => {
     store.applyPull({ cursor: "2099-01-01", changes: [] });
     const cloud = makeCloud({ customers: Array.from({ length: 1201 }, (_, i) => ({ id: `cust-${String(i).padStart(5, "0")}`,

@@ -39,6 +39,7 @@ import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { printKitchenComanda } from "../lib/printKitchenComanda";
 import { printLocalInvoiceReceipt } from "../../../shared/lib/localInvoiceReceipt";
+import { gateFiscalPrint, isEcfInvoiceDocument } from "../../../shared/lib/fiscalPrintGate";
 import { useTenantCurrency } from "../../../shared/hooks/useTenantCurrency";
 import { useTheme } from "../../../shared/context/ThemeContext";
 import { buildPosCategoryTabs, suggestCategoryColor } from "../../../shared/lib/menuCategories";
@@ -221,7 +222,7 @@ export function Dashboard() {
       setCartPropinaEnabled(settings?.defaultPropinaEnabled ?? false);
       setItbisIncluded(settings?.itbisIncluded ?? false);
       const isOnline = navigator.onLine;
-      const { mode, certificateId: certId } = await resolveActiveFiscalMode(tenantId, settings, isOnline);
+      const { mode, certificateId: certId } = await resolveActiveFiscalMode(tenantId, settings, isOnline, rol);
       setFiscalMode(mode);
       setCertificateId(certId);
       setTenantNcfFiscalActive(mode !== "internal_receipt");
@@ -1238,13 +1239,26 @@ export function Dashboard() {
           }
         }
 
-    await commitCheckout({
-      writes: checkoutWrites,
-      prints: [
-        { id: localFacturaId, label: `Factura #${numeroFactura}`, print: () => printLocalInvoiceReceipt({ tenantId, factura: facturaData, numeroFactura }) },
-        ...kitchenPrints,
-      ],
-    });
+    const isEcf = isEcfInvoiceDocument(facturaData);
+    if (isEcf) {
+      await commitCheckout({
+        writes: checkoutWrites,
+        prints: kitchenPrints,
+      });
+      void gateFiscalPrint({
+        tenantId,
+        factura: facturaData,
+        numeroFactura,
+      });
+    } else {
+      await commitCheckout({
+        writes: checkoutWrites,
+        prints: [
+          { id: localFacturaId, label: `Factura #${numeroFactura}`, print: () => printLocalInvoiceReceipt({ tenantId, factura: facturaData, numeroFactura }) },
+          ...kitchenPrints,
+        ],
+      });
+    }
 
     setCart([]);
     setTakeoutClientRnc("");

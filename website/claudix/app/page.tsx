@@ -158,8 +158,6 @@ export default function LandingPage() {
                 name="Profesional"
                 price="90"
                 color="var(--primary)"
-                highlighted
-                badge="Recomendado"
                 features={[
                   "Hasta 3 Sucursales",
                   "Hasta 5 Usuarios (+ Admin)",
@@ -176,6 +174,8 @@ export default function LandingPage() {
                 name="Empresarial"
                 price="175"
                 color="oklch(0.7 0.15 290)"
+                highlighted
+                badge="Recomendado"
                 features={[
                   "Sucursales y Usuarios Ilimitados",
                   "Todo lo del Plan Profesional (e-CF)",
@@ -234,31 +234,31 @@ export default function LandingPage() {
               </AnimatedSection>
 
               <AnimatedSection delay={0.2}>
-                <div className="flex flex-col gap-6 p-6 rounded-2xl bg-primary/5 border border-primary/20 relative">
-                  <span className="absolute -top-3 right-6 bg-primary text-primary-foreground text-[10px] font-extrabold uppercase tracking-wider px-3 py-0.5 rounded-full shadow-sm">
-                    Recomendado
-                  </span>
+                <div className="flex flex-col gap-6">
                   <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary">
                     <ShieldCheck size={24} />
                   </div>
                   <div>
-                    <h4 className="text-xl font-bold mb-3 font-display text-primary">Plan Profesional: El más Completo</h4>
+                    <h4 className="text-xl font-bold mb-3 font-display">Plan Profesional: El más Completo</h4>
                     <p className="text-sm text-muted-foreground leading-relaxed">
-                      <strong className="text-foreground">El plan recomendado para el 90% de los negocios gastronómicos.</strong> Incluye hasta 3 sucursales, 5 usuarios (+ admin) y <strong className="text-primary">Facturación Electrónica e-CF (DGII)</strong>. Con el sistema de recetas y costos sabrás exactamente tu ganancia por plato, además de menú digital QR, compras y control de CXC/CXP.
+                      Incluye hasta 3 sucursales, 5 usuarios (+ admin) y <strong className="text-primary">Facturación Electrónica e-CF (DGII)</strong>. Con el sistema de recetas y costos sabrás exactamente tu ganancia por plato, además de menú digital QR, compras y control de CXC/CXP.
                     </p>
                   </div>
                 </div>
               </AnimatedSection>
 
               <AnimatedSection delay={0.3}>
-                <div className="flex flex-col gap-6">
+                <div className="flex flex-col gap-6 p-6 rounded-2xl bg-primary/5 border border-primary/20 relative">
+                  <span className="absolute -top-3 right-6 bg-primary text-primary-foreground text-[10px] font-extrabold uppercase tracking-wider px-3 py-0.5 rounded-full shadow-sm">
+                    Recomendado
+                  </span>
                   <div className="w-12 h-12 rounded-2xl bg-purple-500/10 flex items-center justify-center text-purple-500">
                     <Globe size={24} />
                   </div>
                   <div>
-                    <h4 className="text-xl font-bold mb-3 font-display">Plan Empresarial: Multi-Sede y Pedidos B2B</h4>
+                    <h4 className="text-xl font-bold mb-3 font-display text-primary">Plan Empresarial: Multi-Sede y Pedidos B2B</h4>
                     <p className="text-sm text-muted-foreground leading-relaxed">
-                      Para cadenas y restaurantes que venden a empresas: sucursales y usuarios ilimitados, menú digital para empresas: hasta 2 links con pedidos a cuenta por cobrar, menús personalizados por día, extras por link y estados de cuenta en PDF.
+                      <strong className="text-foreground">El plan recomendado para restaurantes que quieren crecer sin límites.</strong> Para cadenas y restaurantes que venden a empresas: sucursales y usuarios ilimitados, menú digital para empresas: hasta 2 links con pedidos a cuenta por cobrar, menús personalizados por día, extras por link y estados de cuenta en PDF.
                     </p>
                   </div>
                 </div>

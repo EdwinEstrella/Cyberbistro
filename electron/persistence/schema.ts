@@ -9,11 +9,12 @@ import { NCF_LOCAL_SEQUENCES_CREATE_SQL } from "./ncfLocalSequence";
  */
 // Client-side states only: what checkout writes today plus local signing. DGII outcomes (submitted, accepted,
 // rejected, ...) are server-owned (docs/fiscal-status-truths.md) and must never be representable locally.
+// Note: 'queued' locally means "replicated to the server outbox" (see docs/fiscal-status-truths.md); it is not a DGII outcome.
 export const ECF_DOCUMENT_STATUSES = [
-  "pending_offline", "pending_configuration", "pending_sync", "pending_processing", "signed",
+  "pending_offline", "pending_configuration", "pending_sync", "pending_processing", "signed", "queued",
 ] as const;
 export const FISCAL_OUTBOX_STATUSES = [
-  "pending", "syncing", "pending_sync", "blocked_configuration",
+  "pending", "syncing", "pending_sync", "blocked_configuration", "queued",
 ] as const;
 
 const sqlList = (values: readonly string[]): string => values.map((value) => `'${value}'`).join(", ");
@@ -474,6 +475,7 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
     CREATE INDEX IF NOT EXISTS idx_ecf_documents_pending ON ecf_documents (tenant_id, sucursal_id, status);
     CREATE INDEX IF NOT EXISTS idx_fiscal_outbox_pending ON fiscal_outbox (tenant_id, sucursal_id, status);
   `);
+  repairDanglingLegacyMigrationReferences(database);
   migrateLegacyPayrollSchema(database);
   ensureSyncOutboxSchemaEvolution(database);
   ensureFacturasSchemaEvolution(database);
@@ -489,6 +491,7 @@ export function initializeTenantSchema(database: DatabaseSync, tenantId: string)
   ensureInventorySchemaEvolution(database);
   ensurePlatosSchemaEvolution(database);
   ensureFiscalCheckoutSchemaEvolution(database);
+  ensureEcfDocumentsSchemaEvolution(database);
   database.exec(`
     CREATE INDEX IF NOT EXISTS idx_payroll_payments_employee_period ON payroll_payments (tenant_id, sucursal_id, employee_id, period);
     CREATE INDEX IF NOT EXISTS idx_payroll_adjustments_payment ON payroll_payment_adjustments (payment_id);
@@ -540,6 +543,27 @@ function ensureFiscalCheckoutSchemaEvolution(database: DatabaseSync): void {
     CREATE INDEX IF NOT EXISTS idx_ecf_documents_pending ON ecf_documents (tenant_id, sucursal_id, status);
     CREATE INDEX IF NOT EXISTS idx_fiscal_outbox_pending ON fiscal_outbox (tenant_id, sucursal_id, status);
   `);
+}
+
+/**
+ * DGII processing outcomes (submitted/accepted/rejected) belong to separate
+ * mirror columns rather than the local status CHECK (docs/fiscal-status-truths.md).
+ * Added additively without table rebuild, mirroring ensureFacturasSchemaEvolution.
+ */
+function ensureEcfDocumentsSchemaEvolution(database: DatabaseSync): void {
+  const columns = getTableColumns(database, "ecf_documents");
+  if (columns.length === 0) return;
+  const additions: ReadonlyArray<readonly [string, string]> = [
+    ["dgii_status", "TEXT"],
+    ["dgii_track_id", "TEXT"],
+    ["dgii_status_message", "TEXT"],
+    ["submitted_at", "TEXT"],
+    ["accepted_at", "TEXT"],
+    ["dgii_security_code", "TEXT"],
+  ] as const;
+  for (const [column, definition] of additions) {
+    if (!columns.includes(column)) database.exec(`ALTER TABLE ecf_documents ADD COLUMN ${column} ${definition};`);
+  }
 }
 
 function rebuildFiscalTableIfStale(
@@ -786,6 +810,49 @@ function ensureComprasSchemaEvolution(database: DatabaseSync): void {
     if (!columns.includes(name)) {
       database.exec(`ALTER TABLE compras ADD COLUMN ${name} ${type};`);
     }
+  }
+}
+
+export function repairDanglingLegacyMigrationReferences(database: DatabaseSync): void {
+  const tablesToRepair = (database
+    .prepare(
+      "SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '%\\_\\_legacy\\_migration' ESCAPE '\\' AND sql LIKE '%__legacy_migration%'",
+    )
+    .all() as Array<{ name: string; sql: string }>).filter((row) => row.sql && row.sql.includes("__legacy_migration"));
+
+  if (tablesToRepair.length === 0) return;
+
+  database.exec("PRAGMA foreign_keys = OFF;");
+  database.exec("PRAGMA legacy_alter_table = ON;");
+  try {
+    for (const { name: tableName, sql: originalSql } of tablesToRepair) {
+      const fixedSql = originalSql.replace(/"?(\w+?)__legacy_migration"?/g, "$1");
+      const capturedObjects = (database
+        .prepare("SELECT sql FROM sqlite_master WHERE tbl_name = ? AND type IN ('index', 'trigger') AND sql IS NOT NULL")
+        .all(tableName) as Array<{ sql: string }>).map((row) => row.sql);
+
+      const columns = getTableColumns(database, tableName);
+      const cols = columns.map((col) => `"${col}"`).join(", ");
+      const tempTableName = `${tableName}__fk_repair`;
+
+      database.exec("BEGIN IMMEDIATE;");
+      try {
+        database.exec(`ALTER TABLE "${tableName}" RENAME TO "${tempTableName}";`);
+        database.exec(fixedSql);
+        database.exec(`INSERT INTO "${tableName}" (${cols}) SELECT ${cols} FROM "${tempTableName}";`);
+        database.exec(`DROP TABLE "${tempTableName}";`);
+        for (const objectSql of capturedObjects) {
+          database.exec(objectSql);
+        }
+        database.exec("COMMIT;");
+      } catch (error) {
+        database.exec("ROLLBACK;");
+        throw error;
+      }
+    }
+  } finally {
+    database.exec("PRAGMA legacy_alter_table = OFF;");
+    database.exec("PRAGMA foreign_keys = ON;");
   }
 }
 
@@ -1137,6 +1204,7 @@ function getTableColumns(database: DatabaseSync, tableName: string): string[] {
 function recreateTable(database: DatabaseSync, tableName: string, createSql: string, copySql: string): void {
   const tempTableName = `${tableName}__legacy_migration`;
   database.exec("PRAGMA foreign_keys = OFF;");
+  database.exec("PRAGMA legacy_alter_table = ON;");
   database.exec("BEGIN IMMEDIATE;");
 
   try {
@@ -1149,6 +1217,7 @@ function recreateTable(database: DatabaseSync, tableName: string, createSql: str
     database.exec("ROLLBACK;");
     throw error;
   } finally {
+    database.exec("PRAGMA legacy_alter_table = OFF;");
     database.exec("PRAGMA foreign_keys = ON;");
   }
 }

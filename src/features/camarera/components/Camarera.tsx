@@ -286,8 +286,8 @@ export function Camarera() {
   }, [tenantId, activeSucursalId]);
 
   useEffect(() => {
-    return window.electronAPI?.onLocalDataUpdated?.((updatedTenantId) => {
-      if (!updatedTenantId || updatedTenantId === tenantId) {
+    return window.electronAPI?.onLocalDataUpdated?.((payload) => {
+      if (!payload?.tenantId || payload.tenantId === tenantId) {
         if (selectedMesaNumero) void loadSelectedMesaConsumos(selectedMesaNumero);
       }
     });

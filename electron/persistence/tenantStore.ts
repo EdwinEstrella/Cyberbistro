@@ -2,6 +2,7 @@ import { chmodSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { initializeTenantSchema } from "./schema";
+import { backfillUnpushedFiscalRows } from "./fiscalBackfill";
 import { purgeExpiredComandasOlderThan, purgeComandasForCierre } from "./comandasCleanup";
 import { applyCloudExpenseCategoryRows, applyCloudExpenseRows, applyCloudCustomerRows, mergeLocalTenantSettings } from "./cloudApply";
 import { TenantSQLiteImporter, type LegacyImportChunk, type LegacyImportManifest } from "./importer";
@@ -41,7 +42,13 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     const database = new DatabaseSync(databasePath, { enableForeignKeyConstraints: true, defensive: true });
     chmodSync(databasePath, 0o600);
     initializeTenantSchema(database, input.tenantId);
-    return new TenantStore(database, databasePath, input.tenantId);
+    const store = new TenantStore(database, databasePath, input.tenantId);
+    try {
+      backfillUnpushedFiscalRows(database, input.tenantId);
+    } catch (err) {
+      console.warn(`[fiscal-sync] backfillUnpushedFiscalRows failed for tenant ${input.tenantId}:`, err);
+    }
+    return store;
   }
 
   getTenantId(): string { return this.tenantId; }
@@ -91,7 +98,8 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
       movementIds.push(...this.applyCheckoutInventory(command.writes));
       for (const write of command.writes.filter((item) => item.tableName === "cuentas_cobrar")) this.applyCheckoutReceivable(write);
       for (const write of command.writes.filter((item) => item.tableName === "cxc_pagos")) this.applyCheckoutReceivablePayment(write);
-      for (const write of command.writes.filter((item) => item.tableName === "ecf_documents" || item.tableName === "fiscal_outbox")) this.applyCheckoutFiscalWrite(write);
+      for (const write of command.writes.filter((item) => item.tableName === "ecf_documents")) this.applyCheckoutFiscalWrite(write);
+      for (const write of command.writes.filter((item) => item.tableName === "fiscal_outbox")) this.applyCheckoutFiscalWrite(write);
       this.commitTransaction();
       return { localStatus: "committed", syncStatus: "pending", inventoryMovementIds: movementIds };
     } catch (error) {
@@ -245,6 +253,7 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
         ON CONFLICT(id) DO UPDATE SET status = excluded.status, attempts = excluded.attempts, updated_at = excluded.updated_at`)
         .run(write.rowId, this.tenantId, branchId, String(payload.factura_id), payload.ecf_document_id ?? null, payload.operation ?? "submit", payload.status ?? "pending_sync", Number(payload.attempts ?? 0), payload.next_attempt_at ?? null, payload.idempotency_key ?? null, payload.created_at ?? null, payload.updated_at ?? null);
     }
+    this.insertCheckoutOutbox(branchId, write.tableName, write.rowId, "upsert", payload);
   }
 
   writeFoundationRecord(id: string, value: string): void {
@@ -1324,7 +1333,10 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
         ) VALUES (?, ?, ?, ?, ?, 'pending_sync', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           sucursal_id = excluded.sucursal_id,
-          fiscal_mode = excluded.fiscal_mode,
+          fiscal_mode = CASE
+            WHEN facturas.fiscal_mode = 'dgii_ecf' AND excluded.fiscal_mode <> 'dgii_ecf' THEN facturas.fiscal_mode
+            ELSE excluded.fiscal_mode
+          END,
           total = excluded.total,
           numero_factura = excluded.numero_factura,
           mesa_numero = excluded.mesa_numero,
@@ -1337,8 +1349,8 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
           moneda = excluded.moneda,
           items = excluded.items,
           notas = excluded.notas,
-          ncf = excluded.ncf,
-          ncf_tipo = excluded.ncf_tipo,
+          ncf = COALESCE(excluded.ncf, facturas.ncf),
+          ncf_tipo = COALESCE(excluded.ncf_tipo, facturas.ncf_tipo),
           cliente_rnc = excluded.cliente_rnc,
           customer_id = excluded.customer_id,
           created_at = excluded.created_at,

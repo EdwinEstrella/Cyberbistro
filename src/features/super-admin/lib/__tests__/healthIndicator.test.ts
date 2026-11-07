@@ -201,7 +201,7 @@ describe("evaluateTenantHealth", () => {
 describe("formatSupportSummary", () => {
   it("formats comprehensive text summary suitable for support clipboard copy", () => {
     const data = createMockOverview();
-    const health = evaluateTenantHealth(data);
+    const health = evaluateTenantHealth(data, { now: new Date("2026-10-31T16:00:00.000Z").getTime() });
     const summary = formatSupportSummary(data, health);
 
     expect(summary).toContain("FICHA 360 - SOPORTE: Bistro Central");

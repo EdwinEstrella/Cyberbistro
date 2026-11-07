@@ -31,6 +31,9 @@ jobs:
       - name: Run TypeScript typecheck
         run: npm run typecheck
 
+      - name: Run SQLite schema integrity guard
+        run: npm run test:schema
+
       - name: Run unit tests
         run: npm run test
 

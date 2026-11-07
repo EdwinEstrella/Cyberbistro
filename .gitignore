@@ -56,3 +56,4 @@ fixtures/local-sync-postgres/.env
 
 # InsForge & AI agent skills
 .agents
+graphify-out/

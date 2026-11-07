@@ -7,6 +7,7 @@ import { getCloudAvailabilitySnapshot, isCloudAvailabilityFailure, isCloudAvaila
 import { commitLanEdgeCursor, getLanEdgeBaseUrl, publishLanOutboxEntry, publishLanSnapshotEntries, pullLanOutboxEntries } from "./lanEdgeClient";
 import { buildTenantNcfUpdatePayload, DEFAULT_NCF_B_CODE, getNcfSequenceColumnName, isNcfBCode, ncfPayloadFromReservedSequence, prepareNcfForFacturaInsert, normalizeNcfSequenceMap, type TenantNcfRow } from "./ncf";
 import { ecfRangeTerminalMessage, enforceEcfRangeLocally } from "./ecfRangeErrors";
+import { buildEcfDocumentPayloadForServer, buildFiscalOutboxPayloadForServer } from "./fiscalSyncPayload";
 
 export const LOCAL_FIRST_MIRROR_TABLES = [
   "tenants",
@@ -1700,15 +1701,7 @@ async function adjustCierrePayloadForServer(
   };
 }
 
-export function buildEcfDocumentPayloadForServer(payload: Record<string, unknown>): { payload: Record<string, unknown>; adjusted: boolean } {
-  if (payload["status"] !== "pending_offline") return { payload, adjusted: false };
-  return { payload: { ...payload, status: "queued" }, adjusted: true };
-}
-
-export function buildFiscalOutboxPayloadForServer(payload: Record<string, unknown>): { payload: Record<string, unknown>; adjusted: boolean } {
-  if (payload["status"] !== "pending_sync") return { payload, adjusted: false };
-  return { payload: { ...payload, status: "queued" }, adjusted: true };
-}
+export { buildEcfDocumentPayloadForServer, buildFiscalOutboxPayloadForServer };
 
 async function isNcfAvailableForFactura(tenantId: string, facturaId: string, ncf: string): Promise<{
   available?: boolean;

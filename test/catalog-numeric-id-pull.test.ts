@@ -48,7 +48,7 @@ describe("catalog cloud→SQLite pull with integer ids", () => {
   let db: DatabaseSync, store: SQLitePayrollSyncStore;
   beforeEach(() => { db = new DatabaseSync(":memory:"); initializeTenantSchema(db, TENANT); store = new SQLitePayrollSyncStore(db, TENANT); });
   afterEach(() => db.close());
-  const pull = (client: never) => new DurableSyncWorker(store, new PayrollSyncClient(client), TENANT).pull();
+  const pull = async (client: never) => (await new DurableSyncWorker(store, new PayrollSyncClient(client), TENANT).pull()).applied;
 
   it("downloads platos whose ids are negative integers (not string uuids)", async () => {
     const applied = await pull(makeNumericCloud({ platos: [plato()] }));

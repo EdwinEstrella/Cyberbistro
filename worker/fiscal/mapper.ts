@@ -2,6 +2,22 @@ import { Transformer } from "dgii-ecf";
 import { fiscalWorkerError } from "./errors";
 import type { FiscalWorkerSnapshot } from "./types";
 
+export const ECF_TYPES_WITH_SEQUENCE_EXPIRY = [31, 33, 41, 43, 44, 45, 46, 47] as const;
+
+export function isValidDgiiDateFormat(dateStr: string): boolean {
+  if (typeof dateStr !== "string") return false;
+  const match = /^(\d{2})-(\d{2})-(\d{4})$/.exec(dateStr.trim());
+  if (!match) return false;
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > 31) return false;
+  if (year < 2000 || year > 2100) return false;
+  const d = new Date(Date.UTC(year, month - 1, day));
+  return d.getUTCFullYear() === year && d.getUTCMonth() === month - 1 && d.getUTCDate() === day;
+}
+
 const transformer = new Transformer();
 
 const DEFAULT_ITBIS_RATE = 0.18;
@@ -14,7 +30,7 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
   const items = payload.items || [];
   const payments = payload.payments || [];
 
-  const tenantRnc = tenant.rnc?.trim();
+  const tenantRnc = tenant.rnc?.trim().replace(/\D/g, "");
   if (!tenantRnc) {
     throw fiscalWorkerError("FISCAL_CONFIGURATION_INCOMPLETE", "Tenant RNC is missing or not configured.", false);
   }
@@ -30,19 +46,8 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
   }
 
   const sucursal = tenant.ecf_issuer_sucursal?.trim();
-  if (!sucursal) {
-    throw fiscalWorkerError("FISCAL_CONFIGURATION_INCOMPLETE", "ecf_issuer_sucursal is missing or not configured.", false);
-  }
-
   const municipio = tenant.ecf_issuer_municipio?.trim();
-  if (!municipio) {
-    throw fiscalWorkerError("FISCAL_CONFIGURATION_INCOMPLETE", "ecf_issuer_municipio is missing or not configured.", false);
-  }
-
   const provincia = tenant.ecf_issuer_provincia?.trim();
-  if (!provincia) {
-    throw fiscalWorkerError("FISCAL_CONFIGURATION_INCOMPLETE", "ecf_issuer_provincia is missing or not configured.", false);
-  }
 
   const actividadEconomica = tenant.ecf_issuer_actividad_economica?.trim();
   if (!actividadEconomica) {
@@ -83,98 +88,168 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
   const creditNoteRef = ecfType === 34 ? buildCreditNoteReference(factura, now) : null;
 
   // Comprador Strict Validation for E31 (Crédito Fiscal)
-  let compradorRnc = factura.cliente_rnc?.trim();
+  let compradorRnc = (factura.cliente_rnc?.trim() || "").replace(/\D/g, "");
+  if (compradorRnc === "000000000") {
+    compradorRnc = "";
+  }
   let compradorNombre = factura.cliente_nombre?.trim();
 
   if (ecfType === 31) {
     if (!compradorRnc || !compradorNombre) {
       throw fiscalWorkerError("FISCAL_CONFIGURATION_INCOMPLETE", "Factura de Crédito Fiscal (E31) requires both cliente_rnc and cliente_nombre.", false);
     }
-  } else {
-    compradorRnc = compradorRnc || "000000000";
-    compradorNombre = compradorNombre || "Consumidor Final";
+  }
+
+  const comprador = compradorRnc
+    ? {
+        RNCComprador: compradorRnc,
+        ...(compradorNombre ? { RazonSocialComprador: compradorNombre } : {}),
+      }
+    : (ecfType === 32 || ecfType === 34)
+    ? null
+    : compradorNombre && compradorNombre !== "Consumidor Final"
+    ? {
+        RazonSocialComprador: compradorNombre,
+      }
+    : null;
+
+  const isDuplicateSucursal =
+    !sucursal ||
+    sucursal.toLowerCase() === tenantName.toLowerCase() ||
+    sucursal.toLowerCase() === (tenant.nombre_negocio || "").trim().toLowerCase() ||
+    sucursal.toLowerCase() === (tenant.nombre || "").trim().toLowerCase();
+
+  const validMunicipio = municipio && /^\d{6}$/.test(municipio) ? municipio : null;
+  const validProvincia = provincia && /^\d{6}$/.test(provincia) ? provincia : null;
+
+  const typeKey = `E${ecfType}`;
+  let fechaVencimientoSecuencia: string | null = null;
+  if ((ECF_TYPES_WITH_SEQUENCE_EXPIRY as readonly number[]).includes(ecfType)) {
+    const rawVence = snapshot.ecf_secuencias_rangos?.[typeKey]?.vence;
+    const vence = typeof rawVence === "string" ? rawVence.trim() : "";
+    if (!vence || !isValidDgiiDateFormat(vence)) {
+      throw fiscalWorkerError(
+        "FISCAL_CONFIGURATION_INCOMPLETE",
+        `Sequence expiry date (vence) is missing or invalid for ${typeKey} in tenants.ecf_secuencias_rangos. Expected format dd-MM-yyyy.`,
+        false
+      );
+    }
+    fechaVencimientoSecuencia = vence;
   }
 
   // 1. Encabezado
+  // DGII schema order: Version -> IdDoc -> Emisor -> Comprador -> Totales
+  // IdDoc order: TipoeCF -> eNCF -> FechaVencimientoSecuencia -> IndicadorNotaCredito ->
+  //              IndicadorMontoGravado -> TipoIngresos -> TipoPago -> FechaLimitePago -> TerminoPago -> TablaFormasPago
   const encabezado = {
-    Version: 1,
+    Version: "1.0",
     IdDoc: {
       TipoeCF: ecfType,
       eNCF: ncf,
+      ...(fechaVencimientoSecuencia ? { FechaVencimientoSecuencia: fechaVencimientoSecuencia } : {}),
       ...(creditNoteRef ? { IndicadorNotaCredito: creditNoteRef.indicadorNotaCredito } : {}),
       IndicadorMontoGravado: 0,
       TipoIngresos: "01",
       TipoPago: payments.length > 0 ? 1 : 2,
-      TablaFormasPago: {
-        FormaDePago: payments.map((p: any) => ({
-          FormaPago: mapPaymentMethod(p.payment_method),
-          MontoPago: p.amount,
-        })),
-      },
-      FechaLimitePago: formatDgiiDate(factura.created_at, now),
-      TerminoPago: "Al contado",
+      ...(ecfType !== 34
+        ? {
+            FechaLimitePago: formatDgiiDate(factura.created_at, now),
+            TerminoPago: payments.length > 0 ? "Al contado" : "A credito",
+            ...(payments.length > 0
+              ? {
+                  TablaFormasPago: {
+                    FormaDePago: payments.map((p: any) => ({
+                      FormaPago: mapPaymentMethod(p.payment_method),
+                      MontoPago: Number(p.amount || 0).toFixed(2),
+                    })),
+                  },
+                }
+              : {}),
+          }
+        : {}),
     },
     Emisor: {
       RNCEmisor: tenantRnc,
       RazonSocialEmisor: tenantName,
       NombreComercial: tenantName,
-      Sucursal: sucursal,
+      ...(!isDuplicateSucursal ? { Sucursal: sucursal } : {}),
       DireccionEmisor: tenantAddress,
-      Municipio: municipio,
-      Provincia: provincia,
-      TablaTelefonoEmisor: {
-        TelefonoEmisor: [tenant.telefono || ""],
-      },
+      ...(validMunicipio ? { Municipio: validMunicipio } : {}),
+      ...(validProvincia ? { Provincia: validProvincia } : {}),
+      ...(tenant.telefono?.trim()
+        ? {
+            TablaTelefonoEmisor: {
+              TelefonoEmisor: [tenant.telefono.trim()],
+            },
+          }
+        : {}),
       CorreoEmisor: correoEmisor,
       ActividadEconomica: actividadEconomica,
       FechaEmision: formatDgiiDate(factura.created_at, now),
     },
-    Comprador: {
-      RNCComprador: compradorRnc,
-      RazonSocialComprador: compradorNombre,
-    },
+    ...(comprador ? { Comprador: comprador } : {}),
     Totales: {
-      MontoTotal: total,
-      TotalITBIS: itbis,
-      TotalITBIS18: itbis,
-      MontoGravadoTotal: subtotal,
-      MontoGravadoI18: subtotal,
+      ...(itbis > 0
+        ? {
+            MontoGravadoTotal: subtotal.toFixed(2),
+            MontoGravadoI1: subtotal.toFixed(2),
+            ITBIS1: 18,
+            TotalITBIS: itbis.toFixed(2),
+            TotalITBIS1: itbis.toFixed(2),
+          }
+        : subtotal > 0
+        ? {
+            MontoExento: subtotal.toFixed(2),
+            TotalITBIS: "0.00",
+          }
+        : {}),
+      MontoTotal: total.toFixed(2),
     },
   };
 
   // 2. DetallesItems
+  // In DGII e-CF, item lines carry no per-line ITBIS subtable (TablaImpuestos does not exist in DGII XSD).
+  // Taxability is indicated by IndicadorFacturacion, and MontoItem equals base price * quantity (excluding ITBIS when IndicadorMontoGravado = 0).
   const detallesItems = {
     Item: items.map((item: any, index: number) => {
       const inclusiveLine = inclusiveLines?.[index];
       const itemSubtotal = Number(item.subtotal || 0);
-      const itemItbis = inclusiveLine ? inclusiveLine.itbis : itemSubtotal * itbisRate;
-      const itemTotal = inclusiveLine ? inclusiveLine.base : itemSubtotal + itemItbis;
+      const itemExplicitItbis = item.itbis !== undefined ? Number(item.itbis) : null;
+      const itemItbis = itemExplicitItbis !== null
+        ? itemExplicitItbis
+        : (inclusiveLine ? inclusiveLine.itbis : (item.exento ? 0 : itemSubtotal * itbisRate));
+      const itemTotal = inclusiveLine ? inclusiveLine.base : itemSubtotal;
       const quantity = Number(item.cantidad || 0);
       const unitPrice = inclusiveLine
         ? (quantity > 0 ? roundCurrency(inclusiveLine.base / quantity) : inclusiveLine.base)
-        : item.precio_unitario;
+        : Number(item.precio_unitario || 0);
+      const itemDiscount = Number(item.descuento_monto ?? item.descuento ?? item.descuentoMonto ?? item.discount ?? 0);
+
+      const indicadorFacturacion = typeof item.indicador_facturacion === "number"
+        ? item.indicador_facturacion
+        : typeof item.indicadorFacturacion === "number"
+        ? item.indicadorFacturacion
+        : (item.exento === true || itemItbis <= 0 ? 4 : 1);
+
+      const rawIndicadorBienoServicio = Number(
+        item.indicador_bien_o_servicio ?? item.indicadorBienoServicio ?? 1
+      );
+      const indicadorBienoServicio = rawIndicadorBienoServicio === 2 ? 2 : 1;
+
+      const rawUnidadMedida = item.unidad_medida ?? item.unidadMedida ?? item.unidad;
+      const trimmedUnidadMedida = rawUnidadMedida != null ? String(rawUnidadMedida).trim() : "";
+      const unidadMedida = /^\d{1,2}$/.test(trimmedUnidadMedida) ? trimmedUnidadMedida : null;
 
       return {
         NumeroLinea: index + 1,
-        TablaCodigosItem: {
-          CodigosItem: {
-            TipoCodigo: "INT",
-            CodigoItem: String(item.plato_id || "N/A"),
-          },
-        },
-        IndicadorFacturacion: itemItbis > 0 ? 1 : 0, // 1: Gravado
+        IndicadorFacturacion: indicadorFacturacion,
         NombreItem: item.nombre,
+        IndicadorBienoServicio: indicadorBienoServicio,
         CantidadItem: item.cantidad,
-        PrecioUnitarioItem: unitPrice,
-        DescuentoMonto: 0,
-        TablaImpuestos: {
-          Impuesto: {
-            TipoImpuesto: 1, // ITBIS
-            TasaImpuesto: Math.round((inclusiveLine ? DEFAULT_ITBIS_RATE : itbisRate) * 100),
-            MontoImpuesto: Number(itemItbis.toFixed(2)),
-          },
-        },
-        MontoItem: Number(itemTotal.toFixed(2)),
+        ...(unidadMedida ? { UnidadMedida: unidadMedida } : {}),
+        PrecioUnitarioItem: unitPrice.toFixed(2),
+        ...(itemDiscount > 0 ? { DescuentoMonto: itemDiscount.toFixed(2) } : {}),
+        MontoItem: itemTotal.toFixed(2),
       };
     }),
   };
@@ -182,9 +257,6 @@ export function createUnsignedEcfXml(snapshot: FiscalWorkerSnapshot, now: Date):
   // Construct standard JSON structure for dgii-ecf Transformer
   const ecfObject = {
     ECF: {
-      _attributes: {
-        xmlns: "http://dgii.gov.do/empresa/facturaElectronica",
-      },
       Encabezado: encabezado,
       DetallesItems: detallesItems,
       ...(creditNoteRef ? { InformacionReferencia: creditNoteRef.informacionReferencia } : {}),

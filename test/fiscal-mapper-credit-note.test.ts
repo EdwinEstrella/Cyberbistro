@@ -4,6 +4,7 @@ import type { FiscalWorkerSnapshot } from "../worker/fiscal/types";
 
 function snapshot(factura: Record<string, unknown>): FiscalWorkerSnapshot {
   return {
+    ecf_secuencias_rangos: { E31: { start: 1, end: 300, vence: "31-12-2027" } },
     invoicePayload: {
       factura: {
         created_at: "2026-10-24T12:00:00.000Z",

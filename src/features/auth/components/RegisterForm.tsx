@@ -479,12 +479,8 @@ export function Register() {
                           : 'bg-[rgba(20,20,20,0.4)] border-[rgba(72,72,71,0.22)] hover:border-[rgba(255,144,109,0.25)]'
                       }`}
                     >
-                      <div className="absolute top-0 right-0 bg-[#3b82f6] text-white font-['Space_Grotesk',sans-serif] font-bold text-[8px] uppercase tracking-[0.5px] px-1.5 py-0.5 rounded-bl-[6px]">
-                        Recomendado
-                      </div>
-
                       <div>
-                        <div className="flex justify-between items-start mb-1 gap-2 pt-2.5 sm:pt-0">
+                        <div className="flex justify-between items-start mb-1 gap-2">
                           <div>
                             <h4 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] uppercase tracking-[0.5px] flex items-center gap-1">
                               Plan Profesional
@@ -527,8 +523,12 @@ export function Register() {
                           : 'bg-[rgba(20,20,20,0.4)] border-[rgba(72,72,71,0.22)] hover:border-[rgba(255,144,109,0.25)]'
                       }`}
                     >
+                      <div className="absolute top-0 right-0 bg-[#8b5cf6] text-white font-['Space_Grotesk',sans-serif] font-bold text-[8px] uppercase tracking-[0.5px] px-1.5 py-0.5 rounded-bl-[6px]">
+                        Recomendado
+                      </div>
+
                       <div>
-                        <div className="flex justify-between items-start mb-1 gap-2">
+                        <div className="flex justify-between items-start mb-1 gap-2 pt-2.5 sm:pt-0">
                           <div>
                             <h4 className="font-['Space_Grotesk',sans-serif] font-bold text-white text-[13px] uppercase tracking-[0.5px] flex items-center gap-1">
                               Plan Empresarial

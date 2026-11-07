@@ -19,6 +19,8 @@ import { calculateExpectedCashDrawer, sumCashExpenses } from "../../../shared/li
 import { calculateInvoiceTotals } from "../../../shared/lib/billingTotals";
 import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
 import { DatePicker } from "../../../shared/ui/date-picker";
+import { areCierreRowsEqual } from "../lib/cierreStructuralEquality";
+import { isTableRelevantForCierre } from "../lib/cierreSyncFilter";
 
 type FacturaEstado = "pagada" | "pendiente" | "cancelada" | "nota_credito";
 
@@ -213,9 +215,21 @@ export function Cierre() {
     efectivoGastos: resumenGastos.efectivo,
   });
 
-  const cargar = useCallback(async () => {
-    if (!tenantId || !activeSucursalId) { setCycles([]); setFacturas([]); setGastos([]); setGastoCategorias([]); setConsumosAbiertos([]); setLoading(false); return; }
-    setLoading(true); setLoadError("");
+  const cargar = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
+    if (!tenantId || !activeSucursalId) {
+      setCycles((prev) => (prev.length === 0 ? prev : []));
+      setFacturas((prev) => (prev.length === 0 ? prev : []));
+      setGastos((prev) => (prev.length === 0 ? prev : []));
+      setGastoCategorias((prev) => (prev.length === 0 ? prev : []));
+      setConsumosAbiertos((prev) => (prev.length === 0 ? prev : []));
+      if (!silent) setLoading(false);
+      return;
+    }
+    if (!silent) {
+      setLoading(true);
+      setLoadError("");
+    }
     try {
       const [useLocalCiclos, useLocalConsumos, useLocalCategorias] = await Promise.all([
         shouldReadLocalFirst(tenantId, ["cierres_operativos"]),
@@ -238,22 +252,38 @@ export function Cierre() {
           : supabase.from("gasto_categorias").select("id, nombre").eq("tenant_id", tenantId).or(activeSucursalId ? `sucursal_id.eq.${activeSucursalId},sucursal_id.is.null` : `sucursal_id.is.null`).then(r => ({ data: r.data, error: r.error })),
       ]);
 
-      if (!useLocalCiclos && (cyclesAll as any).error) { setLoadError((cyclesAll as any).error.message); setLoading(false); return; }
-      if (!useLocalCategorias && (categoriasData as any).error) { setLoadError((categoriasData as any).error.message); setLoading(false); return; }
+      if (!useLocalCiclos && (cyclesAll as any).error) {
+        if (!silent) {
+          setLoadError((cyclesAll as any).error.message);
+          setLoading(false);
+        } else {
+          console.error("[Cierre] silent refresh cycles error:", (cyclesAll as any).error);
+        }
+        return;
+      }
+      if (!useLocalCategorias && (categoriasData as any).error) {
+        if (!silent) {
+          setLoadError((categoriasData as any).error.message);
+          setLoading(false);
+        } else {
+          console.error("[Cierre] silent refresh categories error:", (categoriasData as any).error);
+        }
+        return;
+      }
 
       const cycleRowsArray = (useLocalCiclos ? cyclesAll : (cyclesAll as any).data ?? []) as CierreOperativoRow[];
       const openGlobalArray = (useLocalCiclos ? openGlobal : (openGlobal as any).data ?? []) as CierreOperativoRow[];
       const consAllArray = (useLocalConsumos ? consAll : (consAll as any).data ?? []) as ConsumoAbiertoRow[];
       const categoriasArray = (useLocalCategorias ? categoriasData : (categoriasData as any).data ?? []) as GastoCategoriaRow[];
 
-      setGastoCategorias(categoriasArray);
+      setGastoCategorias((prev) => (areCierreRowsEqual(prev, categoriasArray) ? prev : categoriasArray));
 
       const openCycle = sortByOpenedAtDesc(openGlobalArray.filter(c => !c.closed_at))[0] ?? null;
       const cycleRows = cycleRowsArray.filter(c => toYmd(c.business_day) === toYmd(fecha)).sort((a, b) => b.cycle_number - a.cycle_number);
       const visibleCycleRows = openCycle && !cycleRows.some(c => c.id === openCycle.id)
         ? [openCycle, ...cycleRows]
         : cycleRows;
-      setCycles(visibleCycleRows);
+      setCycles((prev) => (areCierreRowsEqual(prev, visibleCycleRows) ? prev : visibleCycleRows));
       if (openCycle && toYmd(openCycle.business_day) !== toYmd(fecha)) {
         setFecha(toYmd(openCycle.business_day));
       }
@@ -302,40 +332,52 @@ export function Cierre() {
         ]);
 
         const allFacturas = (factData as FacturaRow[] | null) ?? [];
-        setFacturas(allFacturas.filter((invoice) => invoiceBelongsToCycle(invoice, sel)));
-        setGastos((gastosData as GastoRow[]) ?? []);
-        setCxcPagos((cxcData as any[]) ?? []);
+        const nextFacturas = allFacturas.filter((invoice) => invoiceBelongsToCycle(invoice, sel));
+        const nextGastos = (gastosData as GastoRow[]) ?? [];
+        const nextCxc = (cxcData as any[]) ?? [];
+
+        setFacturas((prev) => (areCierreRowsEqual(prev, nextFacturas) ? prev : nextFacturas));
+        setGastos((prev) => (areCierreRowsEqual(prev, nextGastos) ? prev : nextGastos));
+        setCxcPagos((prev) => (areCierreRowsEqual(prev, nextCxc) ? prev : nextCxc));
       } else {
-        setFacturas([]);
-        setGastos([]);
-        setCxcPagos([]);
+        setFacturas((prev) => (prev.length === 0 ? prev : []));
+        setGastos((prev) => (prev.length === 0 ? prev : []));
+        setCxcPagos((prev) => (prev.length === 0 ? prev : []));
       }
 
       const consumosAbiertosData = consAllArray.filter(c => c.estado !== "pagado");
+      let nextConsumos: ConsumoAbiertoRow[] = [];
       if (sel) {
         if (sel.closed_at == null) {
           // Ciclo abierto: mostramos todos los consumos pendientes activos de la sucursal
-          setConsumosAbiertos(consumosAbiertosData);
+          nextConsumos = consumosAbiertosData;
         } else {
           // Ciclo cerrado: filtramos retroactivamente los consumos pendientes cuya fecha de creación caiga dentro del rango del ciclo cerrado
           const startMs = new Date(getCycleStartIso(sel)).getTime();
           const endMs = new Date(sel.closed_at).getTime();
-          const consumosDelCiclo = consumosAbiertosData.filter(c => {
+          nextConsumos = consumosAbiertosData.filter(c => {
             const createdIso = (c as any).created_at;
             if (!createdIso) return false;
             const cAt = new Date(createdIso).getTime();
             return cAt >= startMs && cAt <= endMs;
           });
-          setConsumosAbiertos(consumosDelCiclo);
         }
-      } else {
-        setConsumosAbiertos([]);
       }
-      setGlobalHasOpenCycle(!!openCycle);
+      setConsumosAbiertos((prev) => (areCierreRowsEqual(prev, nextConsumos) ? prev : nextConsumos));
+
+      const hasOpen = !!openCycle;
+      setGlobalHasOpenCycle((prev) => (prev === hasOpen ? prev : hasOpen));
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : "Error cargando datos");
+      if (!silent) {
+        setLoadError(err instanceof Error ? err.message : "Error cargando datos");
+      } else {
+        console.error("[Cierre] silent refresh failed:", err);
+      }
+    } finally {
+      if (!silent) {
+        setLoading(false);
+      }
     }
-    setLoading(false);
   }, [tenantId, fecha, activeSucursalId]);
 
   useEffect(() => {
@@ -369,12 +411,17 @@ export function Cierre() {
 
   useEffect(() => {
     const onMirrorUpdated = () => {
-      void cargar();
+      void cargar({ silent: true });
     };
     window.addEventListener("local-mirror-updated", onMirrorUpdated);
-    const unbind = window.electronAPI?.onLocalDataUpdated?.((updatedTenantId) => {
+    const unbind = window.electronAPI?.onLocalDataUpdated?.((payload) => {
+      const updatedTenantId = typeof payload === "string" ? payload : payload?.tenantId;
+      const tables = typeof payload === "string" ? undefined : payload?.tables;
+
       if (!updatedTenantId || updatedTenantId === tenantId) {
-        void cargar();
+        if (isTableRelevantForCierre(tables)) {
+          void cargar({ silent: true });
+        }
       }
     });
     return () => {

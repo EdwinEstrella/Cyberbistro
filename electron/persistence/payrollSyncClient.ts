@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { DurableOperation, PullBatch, ServerChange, ServerSyncClient } from "./syncWorker";
 import { SYNC_PULL_TABLES } from "./syncPullRegistry";
+import { buildEcfDocumentPayloadForServer, buildFiscalOutboxPayloadForServer } from "../../src/shared/lib/fiscalSyncPayload";
 
 /** Cloud→local pull tables, from the shared registry (single source of truth).
  * Children have neither tenant_id nor updated_at: scope via the employee join.
@@ -43,6 +44,22 @@ type PushResponse = Awaited<ReturnType<ServerSyncClient["push"]>>;
 export interface PayrollAuthorizationContext {
   tenantId: string;
   allowedBranchIds: string[];
+}
+
+export interface RemoteUpsertOptions {
+  onConflict: string;
+  ignoreDuplicates?: boolean;
+}
+
+export function upsertOptionsForRemoteTable(remoteTable: string): RemoteUpsertOptions {
+  const onConflict = remoteTable === "fiscal_outbox"
+    ? "idempotency_key"
+    : (remoteTable === "mesas_estado" ? "tenant_id,id" : "id");
+  const isAppendOnlyTable = remoteTable === "ecf_documents" || remoteTable === "fiscal_outbox";
+  return {
+    onConflict,
+    ...(isAppendOnlyTable ? { ignoreDuplicates: true } : {}),
+  };
 }
 
 export class PayrollSyncClient implements ServerSyncClient {
@@ -115,8 +132,8 @@ export class PayrollSyncClient implements ServerSyncClient {
       const updateResult = await tableClient.update(mapped.payload).eq("id", operation.rowId).select();
       error = updateResult.error;
     } else {
-      const onConflict = mapped.remoteTable === "mesas_estado" ? "tenant_id,id" : "id";
-      const upsertResult = await tableClient.upsert(mapped.payload, { onConflict });
+      const upsertOptions = upsertOptionsForRemoteTable(mapped.remoteTable);
+      const upsertResult = await tableClient.upsert(mapped.payload, upsertOptions);
       error = upsertResult.error;
     }
 
@@ -186,9 +203,9 @@ export class PayrollSyncClient implements ServerSyncClient {
     const remoteTable = mapped[0].remoteTable;
     if (mapped.some((m) => m.remoteTable !== remoteTable)) return { ok: false };
 
-    const onConflict = remoteTable === "mesas_estado" ? "tenant_id,id" : "id";
+    const upsertOptions = upsertOptionsForRemoteTable(remoteTable);
     const tableClient = await this.getTableClient(remoteTable);
-    const { error } = await tableClient.upsert(mapped.map((m) => m.payload), { onConflict });
+    const { error } = await tableClient.upsert(mapped.map((m) => m.payload), upsertOptions);
     if (error) return { ok: false, error: { message: error.message } };
     return { ok: true };
   }
@@ -275,6 +292,9 @@ export class PayrollSyncClient implements ServerSyncClient {
             const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
             query = (query as any).gte("created_at", threeDaysAgo);
           }
+          if (table === "ecf_documents" && input.cursor && typeof (query as any).gte === "function") {
+            query = (query as any).gte("updated_at", input.cursor);
+          }
           if (afterId != null) query = query.gt("id", afterId);
           const { data, error } = await query;
           if (error) throw new Error(`Pull failed for ${table}: ${error.message}`);
@@ -297,7 +317,8 @@ export class PayrollSyncClient implements ServerSyncClient {
             if ((child ? parent?.tenant_id : row[scopeColumn]) !== input.tenantId) {
               throw new Error(`Tenant mismatch in pull for ${table}`);
             }
-            tableChanges.push({ tableName: localTable, rowId: String(rawId), payload: row, deleted: false });
+            const payload = table === "ecf_documents" ? mapEcfDocumentPullPayload(row) : row;
+            tableChanges.push({ tableName: localTable, rowId: String(rawId), payload, deleted: false });
             afterId = rawId;
           }
         }
@@ -420,6 +441,12 @@ function mapDeleteOperation(operation: DurableOperation):
   if (operation.tableName === "proveedores") {
     return { ok: true, remoteTable: "proveedores" };
   }
+  if (operation.tableName === "ecf_documents") {
+    return { ok: true, remoteTable: "ecf_documents" };
+  }
+  if (operation.tableName === "fiscal_outbox") {
+    return { ok: true, remoteTable: "fiscal_outbox" };
+  }
 
   const remoteTable = PAYROLL_TABLES[operation.tableName];
   if (!remoteTable) {
@@ -467,6 +494,10 @@ function mapOperation(operation: DurableOperation):
           return { ok: true, remoteTable: "facturas", payload: mapFacturaHeaderUpdatePayload(operation.payload), isPartial: true };
         }
         return { ok: true, remoteTable: "facturas", payload: mapFacturaPayload(operation, operation.payload) };
+      case "ecf_documents":
+        return { ok: true, remoteTable: "ecf_documents", payload: mapEcfDocumentPayload(operation, operation.payload) };
+      case "fiscal_outbox":
+        return { ok: true, remoteTable: "fiscal_outbox", payload: mapFiscalOutboxPayload(operation, operation.payload) };
       case "mesas_estado":
         return { ok: true, remoteTable: "mesas_estado", payload: mapMesasEstadoPayload(operation, operation.payload) };
       case "cocina_estado":
@@ -1094,6 +1125,113 @@ function mapFacturaPayload(operation: DurableOperation, payload: Record<string, 
   if (payload.ncf) row.ncf = str(payload.ncf);
   if (payload.ncf_tipo || payload.ncfTipo) row.ncf_tipo = str(payload.ncf_tipo ?? payload.ncfTipo);
   if (payload.cliente_rnc || payload.clienteRnc) row.cliente_rnc = str(payload.cliente_rnc ?? payload.clienteRnc);
+  if (payload.fiscal_mode || payload.fiscalMode) row.fiscal_mode = str(payload.fiscal_mode ?? payload.fiscalMode);
+  if (payload.fiscal_status || payload.fiscalStatus) row.fiscal_status = str(payload.fiscal_status ?? payload.fiscalStatus);
+  if (payload.fiscal_document_id || payload.fiscalDocumentId) row.fiscal_document_id = str(payload.fiscal_document_id ?? payload.fiscalDocumentId);
+  return row;
+}
+
+const ECF_DOCUMENTS_CLOUD_COLUMNS = [
+  "id",
+  "tenant_id",
+  "factura_id",
+  "certificate_metadata_id",
+  "ecf_type",
+  "status",
+  "dgii_track_id",
+  "dgii_status_code",
+  "dgii_status_message",
+  "xml_hash",
+  "signed_xml_storage_key",
+  "submitted_at",
+  "accepted_at",
+  "rejected_at",
+  "last_error",
+  "created_at",
+  "updated_at",
+  "batch_id",
+  "rejection_scope",
+  "rfce_threshold_used",
+] as const;
+
+function mapEcfDocumentPayload(operation: DurableOperation, rawPayload: Record<string, unknown>): Record<string, unknown> {
+  const { payload: translated } = buildEcfDocumentPayloadForServer(rawPayload);
+  const ecfType = translated.ecf_type ?? translated.document_type ?? null;
+  const row: Record<string, unknown> = {
+    id: operation.rowId,
+    tenant_id: operation.tenantId,
+    factura_id: String(translated.factura_id),
+    status: String(translated.status ?? "queued"),
+  };
+  if (ecfType != null) {
+    row.ecf_type = String(ecfType);
+  }
+  for (const col of ECF_DOCUMENTS_CLOUD_COLUMNS) {
+    if (col in row) continue;
+    if (col in translated && translated[col] !== undefined) {
+      row[col] = translated[col];
+    }
+  }
+  return row;
+}
+
+/**
+ * Maps incoming cloud ecf_documents rows to local pull changes.
+ * The server's `status` represents DGII processing outcomes and must be mirrored
+ * to `dgii_status` rather than local `status` (docs/fiscal-status-truths.md).
+ */
+function mapEcfDocumentPullPayload(row: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: String(row.id),
+    tenant_id: String(row.tenant_id),
+    factura_id: row.factura_id ? String(row.factura_id) : null,
+    ecf_type: row.ecf_type ?? row.document_type ?? null,
+    dgii_status: row.status ? String(row.status) : null,
+    dgii_track_id: row.dgii_track_id ? String(row.dgii_track_id) : null,
+    dgii_status_message: row.dgii_status_message ? String(row.dgii_status_message) : null,
+    dgii_security_code: row.dgii_security_code ? String(row.dgii_security_code) : null,
+    submitted_at: row.submitted_at ? String(row.submitted_at) : null,
+    accepted_at: row.accepted_at ? String(row.accepted_at) : null,
+    updated_at: row.updated_at ? String(row.updated_at) : null,
+  };
+}
+
+const FISCAL_OUTBOX_CLOUD_COLUMNS = [
+  "id",
+  "tenant_id",
+  "ecf_document_id",
+  "factura_id",
+  "operation",
+  "status",
+  "attempts",
+  "next_attempt_at",
+  "locked_at",
+  "locked_by",
+  "idempotency_key",
+  "error_message",
+  "created_at",
+  "updated_at",
+] as const;
+
+function mapFiscalOutboxPayload(operation: DurableOperation, rawPayload: Record<string, unknown>): Record<string, unknown> {
+  const { payload: translated } = buildFiscalOutboxPayloadForServer(rawPayload);
+  const operationKind = String(translated.operation ?? "submit");
+  const row: Record<string, unknown> = {
+    id: operation.rowId,
+    tenant_id: operation.tenantId,
+    ecf_document_id: String(translated.ecf_document_id),
+    factura_id: String(translated.factura_id),
+    operation: operationKind,
+    status: String(translated.status ?? "queued"),
+    attempts: Number(translated.attempts ?? 0),
+    idempotency_key: String(translated.idempotency_key ?? `${operation.tenantId}:${translated.factura_id}:${operationKind}`),
+  };
+  for (const col of FISCAL_OUTBOX_CLOUD_COLUMNS) {
+    if (col in row) continue;
+    if (col in translated && translated[col] !== undefined) {
+      row[col] = translated[col];
+    }
+  }
   return row;
 }
 
