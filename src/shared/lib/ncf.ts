@@ -58,7 +58,7 @@ export interface TenantNcfRow {
   ncf_b17_secuencia_siguiente?: number | null;
 }
 
-function parseValidNcfSequence(value: unknown): number | null {
+export function parseValidNcfSequence(value: unknown): number | null {
   const num = Number(value);
   if (!Number.isInteger(num) || num < 1 || num > 99999999) return null;
   return num;

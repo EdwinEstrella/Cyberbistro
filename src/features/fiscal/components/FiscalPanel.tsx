@@ -24,7 +24,7 @@ import {
   DollarSign 
 } from "lucide-react";
 
-export function FiscalPanel() {
+export function FiscalPanel({ embedded = false }: { embedded?: boolean } = {}) {
   const { tenantId } = useAuth();
   const [resubmitting, setResubmitting] = useState<string | null>(null);
   const [selectedQr, setSelectedQr] = useState<{ src: string, link: string, trackId: string } | null>(null);
@@ -201,8 +201,8 @@ export function FiscalPanel() {
   }
 
   return (
-    <div className="flex-1 p-4 sm:p-8 bg-background min-h-0 overflow-y-auto">
-      <div className="max-w-[1400px] mx-auto">
+    <div className={embedded ? "w-full" : "flex-1 p-4 sm:p-8 bg-background min-h-0 overflow-y-auto"}>
+      <div className={embedded ? "w-full" : "max-w-[1400px] mx-auto"}>
         
         {/* Cabecera Principal */}
         <div className="bg-card rounded-[24px] border border-black/10 dark:border-white/10 p-6 sm:p-8 mb-8 shadow-sm">
