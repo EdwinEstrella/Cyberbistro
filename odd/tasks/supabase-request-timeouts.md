@@ -53,7 +53,8 @@ Establish a granular, method- and path-aware request timeout policy for Supabase
 - T1: `fafab48 feat(supabase): implement method-aware request timeout policy and AbortError handling`
 - T2: `764fdd0 fix(auth): map supabase timeout and abort errors to user friendly message`
 - T3: `9474dbb test(e2e): configure extended timeout for nomina journey`
-- T4: `docs(odd): record supabase timeout policy progress`
+- T4: `0195b02 docs(odd): record supabase timeout policy progress`
+- Review round 2: `7608e55 refactor(supabase): simplify timeout fetch and lock no-retry behavior with a client test`
 
 ## Verification evidence
 - `npm run typecheck`: passed with exit code 0 (`tsc --noEmit`).
