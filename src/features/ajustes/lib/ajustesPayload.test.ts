@@ -44,7 +44,7 @@ describe("buildAjustesSavePayload", () => {
     const config = createMockConfig({ ecf_environment: "production" });
     const payload = buildAjustesSavePayload({
       config,
-      existingTenant: { ecf_environment: "production" },
+      existingTenant: { ecf_environment: "production" } as any,
     });
 
     expect(payload).not.toHaveProperty("ecf_environment");
@@ -57,7 +57,7 @@ describe("buildAjustesSavePayload", () => {
     });
     const payload = buildAjustesSavePayload({
       config,
-      existingTenant: { fiscal_mode: "dgii_ecf", ncf_tipo_default: "E31" },
+      existingTenant: { fiscal_mode: "dgii_ecf" },
     });
 
     expect(payload).not.toHaveProperty("fiscal_mode");

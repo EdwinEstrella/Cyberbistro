@@ -3,14 +3,13 @@ import { lookupBusinessByRnc, type BusinessRncLookup } from "../../../shared/lib
 export interface CompanyLookupResult {
   rnc: string;
   nombre_empresa: string;
-  legalName: string;
 }
 
 export type CompanyLookupResponse =
   | { success: true; data: CompanyLookupResult; message: string }
   | { success: false; error: string };
 
-export async function handleDgiiRncLookup(
+export async function lookupCompanyByRnc(
   rawRnc: string,
   lookupFn: (rnc: string) => Promise<{ data: BusinessRncLookup | null; error: string | null }> = lookupBusinessByRnc
 ): Promise<CompanyLookupResponse> {
@@ -34,7 +33,6 @@ export async function handleDgiiRncLookup(
       data: {
         rnc: result.data.rnc,
         nombre_empresa,
-        legalName: result.data.legalName,
       },
       message: `Empresa encontrada: ${result.data.legalName}.`,
     };

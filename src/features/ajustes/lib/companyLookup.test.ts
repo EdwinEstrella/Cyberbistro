@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { handleDgiiRncLookup } from "./companyLookup";
+import { lookupCompanyByRnc } from "./companyLookup";
 import type { BusinessRncLookup } from "../../../shared/lib/dgiiRncLookup";
 
-describe("handleDgiiRncLookup", () => {
+describe("lookupCompanyByRnc", () => {
   it("returns error early if RNC is empty or whitespace", async () => {
     const mockLookup = vi.fn();
-    const res = await handleDgiiRncLookup("   ", mockLookup);
+    const res = await lookupCompanyByRnc("   ", mockLookup);
 
     expect(res).toEqual({
       success: false,
@@ -23,13 +23,12 @@ describe("handleDgiiRncLookup", () => {
     };
     const mockLookup = vi.fn().mockResolvedValue({ data: mockDataWithTrade, error: null });
 
-    const res = await handleDgiiRncLookup("131-00000-1", mockLookup);
+    const res = await lookupCompanyByRnc("131-00000-1", mockLookup);
 
     expect(res.success).toBe(true);
     if (res.success) {
       expect(res.data.rnc).toBe("131000001");
       expect(res.data.nombre_empresa).toBe("RESTAURANTE EL CHEF");
-      expect(res.data.legalName).toBe("EMPRESA DOMINICANA SRL");
       expect(res.message).toBe("Empresa encontrada: EMPRESA DOMINICANA SRL.");
     }
   });
@@ -43,7 +42,7 @@ describe("handleDgiiRncLookup", () => {
     };
     const mockLookup = vi.fn().mockResolvedValue({ data: mockDataWithoutTrade, error: null });
 
-    const res = await handleDgiiRncLookup("131000002", mockLookup);
+    const res = await lookupCompanyByRnc("131000002", mockLookup);
 
     expect(res.success).toBe(true);
     if (res.success) {
@@ -57,7 +56,7 @@ describe("handleDgiiRncLookup", () => {
       error: "No encontramos un negocio con ese RNC.",
     });
 
-    const res = await handleDgiiRncLookup("000000000", mockLookup);
+    const res = await lookupCompanyByRnc("000000000", mockLookup);
 
     expect(res).toEqual({
       success: false,
@@ -68,7 +67,7 @@ describe("handleDgiiRncLookup", () => {
   it("handles thrown exceptions safely", async () => {
     const mockLookup = vi.fn().mockRejectedValue(new Error("Network connection lost"));
 
-    const res = await handleDgiiRncLookup("131000001", mockLookup);
+    const res = await lookupCompanyByRnc("131000001", mockLookup);
 
     expect(res).toEqual({
       success: false,

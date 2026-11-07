@@ -8,7 +8,7 @@ import {
   SelectValue,
 } from "../../../shared/ui/select";
 import { Field } from "./Field";
-import { handleDgiiRncLookup } from "../lib/companyLookup";
+import { lookupCompanyByRnc } from "../lib/companyLookup";
 import {
   CURRENCY_OPTIONS,
   THERMAL_PREVIEW_TABS,
@@ -25,7 +25,7 @@ interface AjustesGeneralTabProps {
   thermalPreviewHtml: string;
   printingTest: boolean;
   handlePrintTest: () => Promise<void>;
-  setSaveMessage?: (message: { type: "success" | "error" | "warning"; text: string } | null) => void;
+  setSaveMessage: (message: { type: "success" | "error" | "warning"; text: string } | null) => void;
 }
 
 export function AjustesGeneralTab({
@@ -45,8 +45,8 @@ export function AjustesGeneralTab({
   async function handleCompanyLookup() {
     if (!config.rnc?.trim()) return;
     setLookupLoading(true);
-    setSaveMessage?.(null);
-    const result = await handleDgiiRncLookup(config.rnc);
+    setSaveMessage(null);
+    const result = await lookupCompanyByRnc(config.rnc);
     setLookupLoading(false);
     if (result.success) {
       setConfig(prev => ({
@@ -54,9 +54,9 @@ export function AjustesGeneralTab({
         rnc: result.data.rnc,
         nombre_empresa: result.data.nombre_empresa,
       }));
-      setSaveMessage?.({ type: "success", text: result.message });
+      setSaveMessage({ type: "success", text: result.message });
     } else {
-      setSaveMessage?.({ type: "error", text: result.error });
+      setSaveMessage({ type: "error", text: result.error });
     }
   }
 

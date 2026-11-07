@@ -19,7 +19,6 @@ export interface BuildAjustesPayloadOptions {
     fiscal_mode?: string | null;
     ncf_secuencias_por_tipo?: Record<string, number> | null;
     ncf_tipos_activos?: Record<string, boolean> | null;
-    [key: string]: unknown;
   } | null;
   now?: () => string;
 }
