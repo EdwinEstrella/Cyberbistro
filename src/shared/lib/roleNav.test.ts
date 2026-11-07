@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { canDeleteInvoices, canEditInvoiceHeader, canViewBillingSummaries } from "./roleNav";
+import {
+  canDeleteInvoices,
+  canEditInvoiceHeader,
+  canViewBillingSummaries,
+  isAppRouteAllowed,
+} from "./roleNav";
 
 describe("invoice permissions by role", () => {
   it("only admin can delete invoices", () => {
@@ -28,5 +33,26 @@ describe("invoice permissions by role", () => {
     for (const rol of ["contabilidad", "mesero", "cocina", "unknown", null]) {
       expect(canEditInvoiceHeader(rol)).toBe(false);
     }
+  });
+});
+
+describe("app route permissions by role", () => {
+  it("allows contabilidad and cajera to access /historial and legacy /fiscal", () => {
+    expect(isAppRouteAllowed("cajera", "/historial")).toBe(true);
+    expect(isAppRouteAllowed("cajera", "/fiscal")).toBe(true);
+    expect(isAppRouteAllowed("contabilidad", "/historial")).toBe(true);
+    expect(isAppRouteAllowed("contabilidad", "/fiscal")).toBe(true);
+  });
+
+  it("strictly forbids non-admins from accessing /ajustes", () => {
+    for (const rol of ["cajera", "contabilidad", "mesero", "cocina", null]) {
+      expect(isAppRouteAllowed(rol, "/ajustes")).toBe(false);
+    }
+    expect(isAppRouteAllowed("admin", "/ajustes")).toBe(true);
+  });
+
+  it("restricts mesero and cocina from accessing /historial", () => {
+    expect(isAppRouteAllowed("mesero", "/historial")).toBe(false);
+    expect(isAppRouteAllowed("cocina", "/historial")).toBe(false);
   });
 });

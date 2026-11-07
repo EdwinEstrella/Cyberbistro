@@ -1,9 +1,8 @@
 import { type MouseEvent, useEffect, useState } from "react";
-import { AlertTriangle, Award, Building2, Check, CheckCircle, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Copy, ExternalLink, FileKey2, FileText, Hash, ListOrdered, Rocket, Search, ShieldCheck, Wifi, X } from "lucide-react";
+import { AlertTriangle, Award, Building2, Check, CheckCircle, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Copy, ExternalLink, FileKey2, FileText, Hash, ListOrdered, Rocket, ShieldCheck, Wifi, X } from "lucide-react";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { supabase } from "../../../shared/lib/supabase";
 import { NCF_E_TIPO_OPCIONES } from "../../../shared/lib/ncf";
-import { lookupBusinessByRnc } from "../../../shared/lib/dgiiRncLookup";
 import { CertificateUploader } from "../../ajustes/components/CertificateUploader";
 import { enqueueLocalWrite, getDeviceId } from "../../../shared/lib/localFirst";
 import { buildIssuerUpdatePayload, buildRepresentativeIdPayload, validateEcfIssuer, validateRepresentativeId, type EcfIssuerInput } from "../../../shared/lib/ecfIssuerRequirements";
@@ -61,7 +60,7 @@ const certificationSteps = [
 
 const certificationPortalUrl = "https://ecf.dgii.gov.do/certecf/portalcertificacion/Login?ReturnUrl=%2Fcertecf%2Fportalcertificacion";
 
-export function ActivationPanel() {
+export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral: () => void }) {
   const { tenantId, plan, user } = useAuth();
   const [step, setStep] = useState(1);
   const [environment, setEnvironment] = useState<EcfEnvironment>("test");
@@ -81,7 +80,6 @@ export function ActivationPanel() {
   const [showActivationNotice, setShowActivationNotice] = useState(false);
   const [certificationStep, setCertificationStep] = useState(1);
   const [completedCertificationSteps, setCompletedCertificationSteps] = useState<number[]>([]);
-  const [companyLookupLoading, setCompanyLookupLoading] = useState(false);
   const [savedNextRaw, setSavedNextRaw] = useState<unknown>({});
   const [savedBoundsRaw, setSavedBoundsRaw] = useState<unknown>({});
   const [readiness, setReadiness] = useState<EcfReadinessResult | null>(null);
@@ -251,7 +249,6 @@ export function ActivationPanel() {
         payload: {
           ...buildIssuerUpdatePayload(issuerInput),
           ...buildRepresentativeIdPayload(company.representativeId),
-          telefono: company.phone.trim() || null,
           email: company.email.trim() || null,
           updated_at: new Date().toISOString(),
         },
@@ -425,28 +422,6 @@ export function ActivationPanel() {
     }
   }
 
-  async function handleCompanyLookup() {
-    setCompanyLookupLoading(true);
-    setMessage("");
-    try {
-      const result = await lookupBusinessByRnc(company.rnc);
-      if (result.error || !result.data) {
-        setMessage(result.error || "No encontramos la empresa en la DGII.");
-        return;
-      }
-      setCompany((current) => ({
-        ...current,
-        rnc: result.data.rnc,
-        name: result.data.tradeName || result.data.legalName,
-      }));
-      setMessage(`Empresa encontrada: ${result.data.legalName}.`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "No se pudo consultar la empresa en la DGII.");
-    } finally {
-      setCompanyLookupLoading(false);
-    }
-  }
-
   async function verifyConfiguration() {
     const loaded = await refreshReadiness();
     if (!loaded) return;
@@ -508,30 +483,29 @@ export function ActivationPanel() {
               <span className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Paso 1</span>
               <h2 className="mt-2 font-['Space_Grotesk',sans-serif] text-2xl font-bold text-foreground">Datos de la empresa</h2>
               
-              <div className="mt-6 rounded-2xl border border-primary/20 bg-primary/5 p-4 sm:p-5">
-                <label className="text-[11px] font-bold text-primary flex items-center gap-2">
-                  <Search className="size-4" /> Consultar empresa en la DGII
-                </label>
-                <div className="mt-3 flex flex-col gap-3 sm:flex-row">
-                  <input
-                    value={company.rnc}
-                    onChange={(event) => setCompany((current) => ({ ...current, rnc: event.target.value }))}
-                    placeholder="22300691924"
-                    className="min-w-0 flex-1 rounded-xl border border-border bg-background px-4 py-3 font-mono text-sm text-foreground outline-none focus:border-primary shadow-sm"
-                  />
-                  <button type="button" onClick={() => void handleCompanyLookup()} disabled={companyLookupLoading || !company.rnc.trim()} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#0284c7] px-6 py-3 text-sm font-bold text-white shadow-sm hover:bg-[#0369a1] transition-colors disabled:opacity-50">
-                    <Search className="size-4" /> {companyLookupLoading ? "Consultando..." : "Consultar DGII"}
-                  </button>
+              <div className="mt-6 rounded-2xl border border-border bg-muted/20 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <span className="text-xs font-bold text-foreground">Datos generales de la empresa</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Nombre comercial, RNC, dirección y teléfono se configuran en la pestaña General.
+                  </p>
                 </div>
+                <button
+                  type="button"
+                  onClick={onNavigateToGeneral}
+                  className="shrink-0 inline-flex items-center gap-1.5 text-xs font-bold text-primary hover:underline bg-primary/10 hover:bg-primary/20 px-3 py-1.5 rounded-lg border-none cursor-pointer transition-colors"
+                >
+                  <ExternalLink className="size-3.5" /> Ir a General
+                </button>
               </div>
 
-              <div className="mt-6 grid gap-x-5 gap-y-4 sm:grid-cols-2">
-                <CompanyField label="RNC DEL EMISOR" value={company.rnc} onChange={(rnc) => setCompany((current) => ({ ...current, rnc }))} />
-                <CompanyField label="RAZÓN SOCIAL" value={company.name} onChange={(name) => setCompany((current) => ({ ...current, name }))} />
-                <CompanyField label="TELÉFONO" value={company.phone} onChange={(phone) => setCompany((current) => ({ ...current, phone }))} />
+              <div className="mt-4 grid gap-x-5 gap-y-4 sm:grid-cols-2">
+                <CompanyField label="RNC DEL EMISOR" value={company.rnc} readOnly />
+                <CompanyField label="RAZÓN SOCIAL" value={company.name} readOnly />
+                <CompanyField label="TELÉFONO" value={company.phone} readOnly />
                 <CompanyField label="EMAIL FISCAL" value={company.email} type="email" onChange={(email) => setCompany((current) => ({ ...current, email }))} />
                 <div className="sm:col-span-2">
-                  <CompanyField label="DIRECCIÓN" value={company.address} onChange={(address) => setCompany((current) => ({ ...current, address }))} />
+                  <CompanyField label="DIRECCIÓN" value={company.address} readOnly />
                 </div>
               </div>
               <div className="mt-6 border-t border-border pt-5">
@@ -986,11 +960,33 @@ export function ActivationPanel() {
   );
 }
 
-function CompanyField({ label, value, type = "text", onChange }: { label: string; value: string; type?: string; onChange: (value: string) => void }) {
+function CompanyField({
+  label,
+  value,
+  type = "text",
+  onChange,
+  readOnly = false,
+}: {
+  label: string;
+  value: string;
+  type?: string;
+  onChange?: (value: string) => void;
+  readOnly?: boolean;
+}) {
   return (
     <label className="block">
       <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{label}</span>
-      <input type={type} value={value} onChange={(event) => onChange(event.target.value)} className="mt-1.5 w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm text-foreground outline-none focus:border-primary" />
+      <input
+        type={type}
+        value={value}
+        readOnly={readOnly}
+        onChange={readOnly ? undefined : (event) => onChange?.(event.target.value)}
+        className={`mt-1.5 w-full rounded-xl border border-border px-3 py-2.5 text-sm outline-none transition-colors ${
+          readOnly
+            ? "bg-muted/40 text-muted-foreground cursor-not-allowed border-dashed"
+            : "bg-background text-foreground focus:border-primary"
+        }`}
+      />
     </label>
   );
 }
