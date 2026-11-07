@@ -16,6 +16,7 @@ export const GASTOS_PATH = "/gastos";
 export const NOMINA_PATH = "/nomina";
 /** Analíticas / facturas emitidas. */
 export const BILLING_PATH = "/billing";
+export const HISTORIAL_PATH = "/historial";
 
 /**
  * Canonicaliza roles legacy para evitar duplicados operativos:
@@ -71,14 +72,14 @@ export function isAppRouteAllowed(rol: string | null, pathname: string): boolean
     if (pathname === GASTOS_PATH) return true;
     if (pathname === NOMINA_PATH) return true;
     if (pathname === BILLING_PATH) return true;
-    if (pathname === "/historial" || pathname === "/fiscal") return true;
+    if (pathname === HISTORIAL_PATH || pathname === "/fiscal") return true;
     return false;
   }
   if (normalized === "mesero") {
     return pathname === "/camarera" || pathname === "/entregas";
   }
   if (normalized === "contabilidad") {
-    return ["/billing", "/inventario", "/gastos", NOMINA_PATH, "/compras", "/cuentas-pagar", "/cuentas-cobrar", "/fiscal", "/historial"].includes(pathname);
+    return ["/billing", "/inventario", "/gastos", NOMINA_PATH, "/compras", "/cuentas-pagar", "/cuentas-cobrar", "/fiscal", HISTORIAL_PATH].includes(pathname);
   }
   return pathname === "/dashboard";
 }

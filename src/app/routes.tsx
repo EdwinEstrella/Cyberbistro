@@ -16,7 +16,6 @@ export function createFiscalRedirectRoute(to: string): RouteComponent {
   };
 }
 
-export const createFiscalRouteComponent = createFiscalRedirectRoute;
 
 export const appRoutes = [
   { path: "/", Component: Login },
