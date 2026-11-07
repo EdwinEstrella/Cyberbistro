@@ -74,3 +74,14 @@ Refactor `Ajustes` into a modular, tabbed settings view with category buttons in
 | T4   | efe6f4d | feat(historial): add tabs for sincronizacion and documentos fiscales |
 | T5   | c16081a | feat(routes): redirect legacy fiscal routes, clean up sidebar and update role navigation |
 | T6   | 6b9e664 | test(e2e): update fiscal and itbis tests for tabbed ajustes layout |
+
+## Review round 1
+| Item | Hash | Description |
+|------|------|-------------|
+| 1 | 34e432e | fix(ajustes): guard e-cf mode against tenant overwrite and parse b sequences once |
+| 2 | 9deb4fe | feat(ajustes): add dgii rnc lookup button and handler in ajustes general tab |
+| 3 | 0055c2a | refactor(fiscal): require onNavigateToGeneral prop in activation panel |
+| 4 | fe4f249 | refactor(historial): remove nested page wrapper and update sync section heading |
+| 5 | e9f54ff | refactor(ui): extract shared SectionTabs component for ajustes and historial tabs |
+| 6 | 2ac86fd | refactor(routes): define HISTORIAL_PATH and remove dead createFiscalRouteComponent alias |
+
