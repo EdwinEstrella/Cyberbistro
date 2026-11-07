@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { isDesktopCloudUnavailable, registerCloudAnonKey, registerCloudBaseUrl } from './cloudAvailability';
 import {
+  isSupabaseRequestTimeoutError,
   resolveSupabaseRequestTimeoutMs,
   SupabaseRequestTimeoutError,
 } from './supabaseRequestTimeout';
@@ -109,8 +110,29 @@ export function getSupabaseResolvedBaseUrl(): string {
 }
 
 export function formatSupabaseConnectivityError(error: unknown): string | null {
-  const message = error instanceof Error ? error.message.toLowerCase() : '';
-  return /failed to fetch|network|timeout|dns|connection/.test(message)
+  if (isSupabaseRequestTimeoutError(error)) {
+    return 'No se pudo conectar con Supabase. Comprobá tu conexión a internet o el estado del backend.';
+  }
+
+  const errName =
+    typeof error === 'object' && error !== null && 'name' in error && typeof (error as { name: unknown }).name === 'string'
+      ? (error as { name: string }).name
+      : '';
+
+  if (errName === 'TimeoutError' || errName === 'AbortError') {
+    return 'No se pudo conectar con Supabase. Comprobá tu conexión a internet o el estado del backend.';
+  }
+
+  const message =
+    error instanceof Error
+      ? error.message.toLowerCase()
+      : typeof error === 'object' && error !== null && 'message' in error && typeof (error as { message: unknown }).message === 'string'
+        ? (error as { message: string }).message.toLowerCase()
+        : typeof error === 'string'
+          ? error.toLowerCase()
+          : '';
+
+  return /failed to fetch|network|timeout|dns|connection|abort|timed out/.test(message)
     ? 'No se pudo conectar con Supabase. Comprobá tu conexión a internet o el estado del backend.'
     : null;
 }

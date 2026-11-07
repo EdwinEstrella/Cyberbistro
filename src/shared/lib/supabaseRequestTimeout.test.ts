@@ -7,7 +7,7 @@ import {
   isSupabaseRequestTimeoutError,
   resolveSupabaseRequestTimeoutMs,
 } from "./supabaseRequestTimeout";
-import { supabaseFetchWithTimeout } from "./supabase";
+import { formatSupabaseConnectivityError, supabaseFetchWithTimeout } from "./supabase";
 
 function createPendingFetchStub() {
   return vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
@@ -261,5 +261,48 @@ describe("supabaseFetchWithTimeout behavior", () => {
 
     expect(res.status).toBe(200);
     expect(removeSpy).toHaveBeenCalledWith("abort", expect.any(Function));
+  });
+});
+
+describe("formatSupabaseConnectivityError", () => {
+  const EXPECTED_MSG =
+    "No se pudo conectar con Supabase. Comprobá tu conexión a internet o el estado del backend.";
+
+  it("formats SupabaseRequestTimeoutError", () => {
+    const error = new SupabaseRequestTimeoutError(6000);
+    expect(formatSupabaseConnectivityError(error)).toBe(EXPECTED_MSG);
+  });
+
+  it("formats AbortError and TimeoutError instances", () => {
+    const abortErr = new DOMException("Operation aborted", "AbortError");
+    expect(formatSupabaseConnectivityError(abortErr)).toBe(EXPECTED_MSG);
+
+    const timeoutErr = new DOMException("Operation timed out", "TimeoutError");
+    expect(formatSupabaseConnectivityError(timeoutErr)).toBe(EXPECTED_MSG);
+
+    const customAbort = { name: "AbortError", message: "aborted" };
+    expect(formatSupabaseConnectivityError(customAbort)).toBe(EXPECTED_MSG);
+  });
+
+  it("formats 'signal is aborted without reason' raw message", () => {
+    const error = new Error("signal is aborted without reason");
+    expect(formatSupabaseConnectivityError(error)).toBe(EXPECTED_MSG);
+
+    const objError = { message: "signal is aborted without reason" };
+    expect(formatSupabaseConnectivityError(objError)).toBe(EXPECTED_MSG);
+  });
+
+  it("formats existing 'Failed to fetch' error", () => {
+    const error = new TypeError("Failed to fetch");
+    expect(formatSupabaseConnectivityError(error)).toBe(EXPECTED_MSG);
+  });
+
+  it("returns null for non-connectivity errors", () => {
+    expect(formatSupabaseConnectivityError(new Error("Invalid login credentials"))).toBeNull();
+    expect(formatSupabaseConnectivityError(new Error("Email already registered"))).toBeNull();
+    expect(formatSupabaseConnectivityError({ message: "Invalid password" })).toBeNull();
+    expect(formatSupabaseConnectivityError(null)).toBeNull();
+    expect(formatSupabaseConnectivityError(undefined)).toBeNull();
+    expect(formatSupabaseConnectivityError("Random text")).toBeNull();
   });
 });
