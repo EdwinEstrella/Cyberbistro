@@ -17,9 +17,45 @@ function renderToStatic(node: any): string {
   return `<${node.type}${attrs}>${children}</${node.type}>`;
 }
 
-const mockHookState = vi.hoisted(() => ({
+vi.mock("react", async () => {
+  const actual = await vi.importActual<typeof import("react")>("react");
+  return {
+    ...actual,
+    useState: (initial: any) => [
+      typeof initial === "function" ? initial() : initial,
+      vi.fn(),
+    ],
+    useEffect: vi.fn(),
+    useCallback: (fn: any) => fn,
+    useMemo: (fn: any) => (typeof fn === "function" ? fn() : fn),
+  };
+});
+
+const mockAdminData = vi.hoisted(() => ({
   loading: false,
   loadData: vi.fn(),
+  data: {
+    settings: {
+      id: "settings-1",
+      tenant_id: "tenant-1",
+      sucursal_id: null,
+      enabled: true,
+      public_slug: "cyber-bistro",
+      title: "Cyber Bistro",
+      description: "Comida gourmet",
+      logo_url: null,
+      banner_url: null,
+      theme: { accentColor: "#f97316" },
+      menu_id: null,
+      updated_at: "2026-11-01T00:00:00Z",
+    },
+    menus: [],
+    platos: [],
+    menuItems: [],
+  },
+}));
+
+const mockSettings = vi.hoisted(() => ({
   settings: {
     id: "settings-1",
     tenant_id: "tenant-1",
@@ -34,59 +70,49 @@ const mockHookState = vi.hoisted(() => ({
     menu_id: null,
     updated_at: "2026-11-01T00:00:00Z",
   },
-  enabled: true,
-  setEnabled: vi.fn(),
-  slug: "cyber-bistro",
-  setSlug: vi.fn(),
-  title: "Cyber Bistro",
-  setTitle: vi.fn(),
-  description: "Comida gourmet",
-  setDescription: vi.fn(),
-  logoUrl: "",
-  setLogoUrl: vi.fn(),
-  bannerUrl: "",
-  setBannerUrl: vi.fn(),
-  accentColor: "#f97316",
-  setAccentColor: vi.fn(),
+  setSettings: vi.fn(),
+  form: {
+    enabled: true,
+    slug: "cyber-bistro",
+    title: "Cyber Bistro",
+    description: "Comida gourmet",
+    logoUrl: "",
+    bannerUrl: "",
+    accentColor: "#f97316",
+  },
+  updateField: vi.fn(),
   menuId: null,
   savingSettings: false,
   handleSaveSettings: vi.fn(),
+}));
+
+const mockCalendar = vi.hoisted(() => ({
   menus: [],
+  setMenus: vi.fn(),
   selectedCalendarMenuId: "",
   setSelectedCalendarMenuId: vi.fn(),
   assignedMenu: undefined,
   updatingCalendar: false,
+  creatingMenu: false,
   handleAssignCalendar: vi.fn(),
   handleRemoveCalendar: vi.fn(),
-  handleEditCalendar: vi.fn(),
-  showCreateMenu: false,
-  setShowCreateMenu: vi.fn(),
-  handleOpenCreateMenu: vi.fn(),
-  newMenuName: "",
-  setNewMenuName: vi.fn(),
-  newMenuMode: "recurring" as const,
-  setNewMenuMode: vi.fn(),
-  newMenuWeekStart: "2026-11-02",
-  setNewMenuWeekStart: vi.fn(),
-  creatingMenu: false,
   handleCreateAndAssignMenu: vi.fn(),
+  handleEditCalendar: vi.fn(),
+}));
+
+const mockDishes = vi.hoisted(() => ({
   platos: [],
   menuItems: [],
   dishSearch: "",
   setDishSearch: vi.fn(),
   filteredPlatosList: [],
   handleToggleDishVisibility: vi.fn(),
-  handleOpenEditPlato: vi.fn(),
-  editingPlato: null as any,
-  setEditingPlato: vi.fn(),
-  editDisplayName: "",
-  setEditDisplayName: vi.fn(),
-  editDescription: "",
-  setEditDescription: vi.fn(),
-  editImageUrl: "",
+  handleUpdateDishCustomFields: vi.fn(),
   uploadingImage: false,
   handleImageUpload: vi.fn(),
-  handleUpdateDishCustomFields: vi.fn(),
+}));
+
+const mockShare = vi.hoisted(() => ({
   resolvedSlug: "cyber-bistro",
   qrUrl: "https://cloudix-app.azokia.com/#/menu/cyber-bistro",
   qrCodeDataUrl: "data:image/png;base64,mockqr",
@@ -95,25 +121,43 @@ const mockHookState = vi.hoisted(() => ({
   handleDownloadQR: vi.fn(),
 }));
 
-vi.mock("../hooks/usePublicMenuAdmin", () => ({
-  usePublicMenuAdmin: () => mockHookState,
+vi.mock("../hooks/usePublicMenuAdminData", () => ({
+  usePublicMenuAdminData: () => mockAdminData,
+}));
+
+vi.mock("../hooks/usePublicMenuSettings", () => ({
+  usePublicMenuSettings: () => mockSettings,
+  createSettingsFormState: () => mockSettings.form,
+}));
+
+vi.mock("../hooks/usePublicMenuCalendar", () => ({
+  usePublicMenuCalendar: () => mockCalendar,
+}));
+
+vi.mock("../hooks/usePublicMenuDishes", () => ({
+  usePublicMenuDishes: () => mockDishes,
+}));
+
+vi.mock("../hooks/usePublicMenuShare", () => ({
+  usePublicMenuShare: () => mockShare,
 }));
 
 describe("PublicMenuAdminCard container", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockHookState.loading = false;
-    mockHookState.editingPlato = null;
+    mockAdminData.loading = false;
   });
 
   it("renders loading spinner while data is loading", () => {
-    mockHookState.loading = true;
+    mockAdminData.loading = true;
     const html = renderToStatic(<PublicMenuAdminCard tenantId="tenant-1" />);
     expect(html).toContain("Cargando configuración del menú público...");
   });
 
   it("renders composition with header, settings form, share section, calendar, and dishes", () => {
-    const html = renderToStatic(<PublicMenuAdminCard tenantId="tenant-1" sucursalId="suc-1" />);
+    const html = renderToStatic(
+      <PublicMenuAdminCard tenantId="tenant-1" sucursalId="suc-1" />
+    );
     expect(html).toContain("Menú público");
     expect(html).toContain("Profesional+");
     expect(html).toContain("Datos del Menú Público");
@@ -123,7 +167,7 @@ describe("PublicMenuAdminCard container", () => {
   });
 
   it("renders EditDishDialog when editingPlato is present", () => {
-    mockHookState.editingPlato = {
+    const editingPlato = {
       id: 42,
       nombre: "Mofongo Especial",
       precio: 350,
@@ -131,7 +175,9 @@ describe("PublicMenuAdminCard container", () => {
       disponible: true,
       va_a_cocina: true,
     };
-    const html = renderToStatic(<PublicMenuAdminCard tenantId="tenant-1" />);
+    const html = renderToStatic(
+      <PublicMenuAdminCard tenantId="tenant-1" initialEditingPlato={editingPlato} />
+    );
     expect(html).toContain("Personalizar Plato en Web");
     expect(html).toContain("Foto del Plato");
   });
