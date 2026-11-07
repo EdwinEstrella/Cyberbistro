@@ -1,4 +1,5 @@
-import React, { useRef } from "react";
+import React, { useRef, useState } from "react";
+import { Search } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -7,6 +8,7 @@ import {
   SelectValue,
 } from "../../../shared/ui/select";
 import { Field } from "./Field";
+import { handleDgiiRncLookup } from "../lib/companyLookup";
 import {
   CURRENCY_OPTIONS,
   THERMAL_PREVIEW_TABS,
@@ -23,6 +25,7 @@ interface AjustesGeneralTabProps {
   thermalPreviewHtml: string;
   printingTest: boolean;
   handlePrintTest: () => Promise<void>;
+  setSaveMessage?: (message: { type: "success" | "error" | "warning"; text: string } | null) => void;
 }
 
 export function AjustesGeneralTab({
@@ -34,8 +37,28 @@ export function AjustesGeneralTab({
   thermalPreviewHtml,
   printingTest,
   handlePrintTest,
+  setSaveMessage,
 }: AjustesGeneralTabProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [lookupLoading, setLookupLoading] = useState(false);
+
+  async function handleCompanyLookup() {
+    if (!config.rnc?.trim()) return;
+    setLookupLoading(true);
+    setSaveMessage?.(null);
+    const result = await handleDgiiRncLookup(config.rnc);
+    setLookupLoading(false);
+    if (result.success) {
+      setConfig(prev => ({
+        ...prev,
+        rnc: result.data.rnc,
+        nombre_empresa: result.data.nombre_empresa,
+      }));
+      setSaveMessage?.({ type: "success", text: result.message });
+    } else {
+      setSaveMessage?.({ type: "error", text: result.error });
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -52,12 +75,24 @@ export function AjustesGeneralTab({
               />
             </Field>
             <Field label="RNC / Identificación">
-              <input
-                type="text"
-                value={config.rnc}
-                onChange={e => setConfig(p => ({ ...p, rnc: e.target.value }))}
-                className="input-field"
-              />
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={config.rnc}
+                  onChange={e => setConfig(p => ({ ...p, rnc: e.target.value }))}
+                  className="input-field min-w-0 flex-1"
+                  placeholder="22300691924"
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleCompanyLookup()}
+                  disabled={lookupLoading || !config.rnc?.trim()}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50 cursor-pointer shrink-0"
+                >
+                  <Search className="size-3.5" />
+                  {lookupLoading ? "Consultando..." : "Consultar DGII"}
+                </button>
+              </div>
             </Field>
             <Field label="Dirección">
               <input

@@ -436,6 +436,7 @@ export function Ajustes() {
               thermalPreviewHtml={thermalPreviewHtml}
               printingTest={printingTest}
               handlePrintTest={handlePrintTest}
+              setSaveMessage={setSaveMessage}
             />
           </TabsContent>
 
