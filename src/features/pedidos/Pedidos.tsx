@@ -34,12 +34,9 @@ import {
   getConnectionBarConfig,
 } from "./lib/connectionStatus";
 import { createDedupedRefetch } from "./lib/dedupRefetch";
+import { buildPublicMenuUrl } from "../menu-links/lib/menuLinkUrl";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function buildMenuUrl(slug: string) {
-  return `https://cloudix-app.azokia.com/#/menu/${encodeURIComponent(slug)}`;
-}
 
 function orderTypeLabel(type: string | null | undefined): string {
   if (type === "in_store") return "Mesa";
@@ -75,7 +72,7 @@ export function Pedidos() {
   const isOffline = connectionState === "offline";
   const barConfig = useMemo(() => getConnectionBarConfig(connectionState), [connectionState]);
 
-  const menuUrl = settings ? buildMenuUrl(settings.public_slug) : "";
+  const menuUrl = settings ? buildPublicMenuUrl(settings.public_slug) : "";
 
   // ── Load data ───────────────────────────────────────────────────────────────
 

@@ -24,6 +24,7 @@ import type { Menu } from "../../menu-links/lib/types";
 import { fetchMenus, createMenu } from "../../menu-links/lib/menuLinksRepo";
 import { getMondayOfWeek, formatWeekRange, isWeekPast } from "../../menu-links/lib/menuSchedule";
 import { getBusinessToday } from "../../menu-links/lib/menuBusinessDate";
+import { buildPublicMenuUrl } from "../../menu-links/lib/menuLinkUrl";
 import {
   type DigitalMenuSettings,
   assignPublicMenuCalendar,
@@ -189,7 +190,7 @@ export function PublicMenuAdminCard({ tenantId, sucursalId }: PublicMenuAdminCar
     [slug]
   );
   const qrUrl = useMemo(
-    () => `https://cloudix-app.azokia.com/#/menu/${resolvedSlug}`,
+    () => buildPublicMenuUrl(resolvedSlug),
     [resolvedSlug]
   );
 

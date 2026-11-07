@@ -1,6 +1,7 @@
 import { enqueueLocalWrite, getDeviceId, readLocalMirror } from "../../../shared/lib/localFirst";
 import { supabase } from "../../../shared/lib/supabase";
 import { isNetworkError } from "./menuLinksRepo";
+import { buildPublicMenuUrl } from "./menuLinkUrl";
 
 export interface DigitalMenuSettings {
   id: string;
@@ -174,7 +175,7 @@ export async function savePublicMenuSettings(
       payload: {
         id: input.tenantId,
         menu_url: input.enabled
-          ? `https://cloudix-app.azokia.com/#/menu/${payload.public_slug}`
+          ? buildPublicMenuUrl(payload.public_slug)
           : null,
         updated_at: new Date().toISOString(),
       },
