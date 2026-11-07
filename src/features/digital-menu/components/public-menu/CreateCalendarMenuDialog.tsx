@@ -1,36 +1,46 @@
-import React from "react";
+import React, { useState } from "react";
 import { X } from "lucide-react";
+import { toast } from "sonner";
 import { DatePicker } from "../../../../shared/ui/date-picker";
 import { getMondayOfWeek } from "../../../menu-links/lib/menuSchedule";
+import { getBusinessToday } from "../../../menu-links/lib/menuBusinessDate";
+import type { CreateCalendarMenuValues } from "../../hooks/usePublicMenuCalendar";
 
 export interface CreateCalendarMenuDialogProps {
-  newMenuName: string;
-  onNewMenuNameChange: (val: string) => void;
-  newMenuMode: "recurring" | "weekly";
-  onNewMenuModeChange: (val: "recurring" | "weekly") => void;
-  newMenuWeekStart: string;
-  onNewMenuWeekStartChange: (val: string) => void;
   creatingMenu: boolean;
   hasSettingsId: boolean;
   onClose: () => void;
-  onSubmit: (e: React.FormEvent) => void;
+  onSubmit: (values: CreateCalendarMenuValues) => void | Promise<void>;
 }
 
 export function CreateCalendarMenuDialog({
-  newMenuName,
-  onNewMenuNameChange,
-  newMenuMode,
-  onNewMenuModeChange,
-  newMenuWeekStart,
-  onNewMenuWeekStartChange,
   creatingMenu,
   hasSettingsId,
   onClose,
   onSubmit,
 }: CreateCalendarMenuDialogProps) {
+  const [newMenuName, setNewMenuName] = useState("");
+  const [newMenuMode, setNewMenuMode] = useState<"recurring" | "weekly">("recurring");
+  const [newMenuWeekStart, setNewMenuWeekStart] = useState<string>(
+    getMondayOfWeek(getBusinessToday())
+  );
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMenuName.trim()) {
+      toast.error("El nombre del nuevo menú es obligatorio.");
+      return;
+    }
+    void onSubmit({
+      name: newMenuName.trim(),
+      mode: newMenuMode,
+      weekStart: newMenuMode === "weekly" ? newMenuWeekStart : "",
+    });
+  };
+
   return (
     <form
-      onSubmit={onSubmit}
+      onSubmit={handleSubmit}
       className="p-4 rounded-xl border border-border bg-muted/30 flex flex-col gap-3 animate-in fade-in duration-150"
     >
       <div className="flex items-center justify-between border-b border-border/50 pb-2">
@@ -54,7 +64,7 @@ export function CreateCalendarMenuDialog({
           type="text"
           required
           value={newMenuName}
-          onChange={(e) => onNewMenuNameChange(e.target.value)}
+          onChange={(e) => setNewMenuName(e.target.value)}
           placeholder="Ej. Menú Ejecutivo Semanal"
           className="w-full px-3 py-1.5 rounded-lg bg-background border border-border text-foreground text-xs focus:outline-none focus:border-primary"
         />
@@ -67,7 +77,7 @@ export function CreateCalendarMenuDialog({
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
-            onClick={() => onNewMenuModeChange("recurring")}
+            onClick={() => setNewMenuMode("recurring")}
             className={`py-1.5 px-3 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
               newMenuMode === "recurring"
                 ? "bg-primary text-primary-foreground border-primary"
@@ -78,7 +88,7 @@ export function CreateCalendarMenuDialog({
           </button>
           <button
             type="button"
-            onClick={() => onNewMenuModeChange("weekly")}
+            onClick={() => setNewMenuMode("weekly")}
             className={`py-1.5 px-3 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
               newMenuMode === "weekly"
                 ? "bg-primary text-primary-foreground border-primary"
@@ -98,7 +108,7 @@ export function CreateCalendarMenuDialog({
           <DatePicker
             value={newMenuWeekStart}
             onChange={(date) =>
-              onNewMenuWeekStartChange(date ? getMondayOfWeek(date) : "")
+              setNewMenuWeekStart(date ? getMondayOfWeek(date) : "")
             }
             placeholder="Seleccionar lunes"
           />
@@ -116,7 +126,11 @@ export function CreateCalendarMenuDialog({
         <button
           type="submit"
           disabled={creatingMenu || !hasSettingsId}
-          title={!hasSettingsId ? "Guarda primero la configuración del menú público antes de asignar un calendario." : undefined}
+          title={
+            !hasSettingsId
+              ? "Guarda primero la configuración del menú público antes de asignar un calendario."
+              : undefined
+          }
           className="py-1.5 px-4 rounded-lg bg-primary text-primary-foreground font-bold text-xs uppercase tracking-wider hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-sm"
         >
           {creatingMenu ? "Creando..." : "Crear y asignar"}

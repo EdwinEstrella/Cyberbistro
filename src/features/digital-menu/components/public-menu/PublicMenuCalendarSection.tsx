@@ -1,4 +1,3 @@
-import React from "react";
 import {
   Calendar as CalendarIcon,
   CheckCircle2,
@@ -8,6 +7,7 @@ import {
 } from "lucide-react";
 import type { Menu } from "../../../menu-links/lib/types";
 import { formatWeekRange, isWeekPast } from "../../../menu-links/lib/menuSchedule";
+import type { CreateCalendarMenuValues } from "../../hooks/usePublicMenuCalendar";
 import { CreateCalendarMenuDialog } from "./CreateCalendarMenuDialog";
 
 export interface PublicMenuCalendarSectionProps {
@@ -23,15 +23,8 @@ export interface PublicMenuCalendarSectionProps {
   showCreateMenu: boolean;
   onOpenCreateMenu: () => void;
   onCloseCreateMenu: () => void;
-  // Create menu dialog props
-  newMenuName: string;
-  onNewMenuNameChange: (val: string) => void;
-  newMenuMode: "recurring" | "weekly";
-  onNewMenuModeChange: (val: "recurring" | "weekly") => void;
-  newMenuWeekStart: string;
-  onNewMenuWeekStartChange: (val: string) => void;
   creatingMenu: boolean;
-  onCreateAndAssignMenu: (e: React.FormEvent) => void;
+  onCreateAndAssignMenu: (values: CreateCalendarMenuValues) => void | Promise<void>;
 }
 
 export function PublicMenuCalendarSection({
@@ -47,12 +40,6 @@ export function PublicMenuCalendarSection({
   showCreateMenu,
   onOpenCreateMenu,
   onCloseCreateMenu,
-  newMenuName,
-  onNewMenuNameChange,
-  newMenuMode,
-  onNewMenuModeChange,
-  newMenuWeekStart,
-  onNewMenuWeekStartChange,
   creatingMenu,
   onCreateAndAssignMenu,
 }: PublicMenuCalendarSectionProps) {
@@ -191,12 +178,6 @@ export function PublicMenuCalendarSection({
               </div>
             ) : (
               <CreateCalendarMenuDialog
-                newMenuName={newMenuName}
-                onNewMenuNameChange={onNewMenuNameChange}
-                newMenuMode={newMenuMode}
-                onNewMenuModeChange={onNewMenuModeChange}
-                newMenuWeekStart={newMenuWeekStart}
-                onNewMenuWeekStartChange={onNewMenuWeekStartChange}
                 creatingMenu={creatingMenu}
                 hasSettingsId={hasSettingsId}
                 onClose={onCloseCreateMenu}

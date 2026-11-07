@@ -1,5 +1,5 @@
 import { Search, Sparkles } from "lucide-react";
-import type { Plato, DigitalMenuItem } from "../../hooks/usePublicMenuAdmin";
+import type { Plato, DigitalMenuItem } from "../../hooks/usePublicMenuDishes";
 
 export interface PublicMenuDishesSectionProps {
   isCalendarAssigned: boolean;

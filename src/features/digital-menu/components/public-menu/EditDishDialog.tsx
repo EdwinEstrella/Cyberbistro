@@ -1,33 +1,60 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { X } from "lucide-react";
-import type { Plato } from "../../hooks/usePublicMenuAdmin";
+import type { Plato, DigitalMenuItem, DishCustomFieldsInput } from "../../hooks/usePublicMenuDishes";
 
 export interface EditDishDialogProps {
   editingPlato: Plato | null;
-  editDisplayName: string;
-  onEditDisplayNameChange: (val: string) => void;
-  editDescription: string;
-  onEditDescriptionChange: (val: string) => void;
-  editImageUrl: string;
-  uploadingImage: boolean;
-  onImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  customItem?: DigitalMenuItem | null;
+  uploadingImage?: boolean;
+  onImageUpload?: (file: File) => Promise<string | null>;
   onClose: () => void;
-  onSave: () => void;
+  onSubmit: (values: DishCustomFieldsInput) => void | Promise<void>;
 }
 
 export function EditDishDialog({
   editingPlato,
-  editDisplayName,
-  onEditDisplayNameChange,
-  editDescription,
-  onEditDescriptionChange,
-  editImageUrl,
-  uploadingImage,
+  customItem,
+  uploadingImage = false,
   onImageUpload,
   onClose,
-  onSave,
+  onSubmit,
 }: EditDishDialogProps) {
   if (!editingPlato) return null;
+
+  const [editDisplayName, setEditDisplayName] = useState(
+    customItem?.display_name || editingPlato.nombre
+  );
+  const [editDescription, setEditDescription] = useState(
+    customItem?.description || ""
+  );
+  const [editImageUrl, setEditImageUrl] = useState(
+    customItem?.image_url || ""
+  );
+
+  useEffect(() => {
+    if (editingPlato) {
+      setEditDisplayName(customItem?.display_name || editingPlato.nombre);
+      setEditDescription(customItem?.description || "");
+      setEditImageUrl(customItem?.image_url || "");
+    }
+  }, [editingPlato, customItem]);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0 || !onImageUpload) return;
+    const file = e.target.files[0];
+    const url = await onImageUpload(file);
+    if (url) {
+      setEditImageUrl(url);
+    }
+  };
+
+  const handleSave = () => {
+    void onSubmit({
+      displayName: editDisplayName,
+      description: editDescription,
+      imageUrl: editImageUrl,
+    });
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
@@ -58,7 +85,7 @@ export function EditDishDialog({
             <input
               type="text"
               value={editDisplayName}
-              onChange={(e) => onEditDisplayNameChange(e.target.value)}
+              onChange={(e) => setEditDisplayName(e.target.value)}
               placeholder={editingPlato.nombre}
               className="w-full px-3 py-2 rounded-xl bg-muted/60 border border-border text-foreground text-xs focus:outline-none focus:border-primary"
             />
@@ -71,7 +98,7 @@ export function EditDishDialog({
             <textarea
               rows={3}
               value={editDescription}
-              onChange={(e) => onEditDescriptionChange(e.target.value)}
+              onChange={(e) => setEditDescription(e.target.value)}
               placeholder="Detalla los ingredientes o modo de preparación..."
               className="w-full px-3 py-2 rounded-xl bg-muted/60 border border-border text-foreground text-xs focus:outline-none focus:border-primary resize-none"
             />
@@ -92,7 +119,7 @@ export function EditDishDialog({
               <input
                 type="file"
                 accept="image/*"
-                onChange={onImageUpload}
+                onChange={handleFileChange}
                 disabled={uploadingImage}
                 className="text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 cursor-pointer"
               />
@@ -113,7 +140,7 @@ export function EditDishDialog({
           </button>
           <button
             type="button"
-            onClick={onSave}
+            onClick={handleSave}
             className="py-2 px-4 rounded-xl bg-primary text-primary-foreground text-xs font-bold uppercase tracking-wider hover:opacity-90 transition-opacity cursor-pointer shadow-sm"
           >
             Guardar Personalización
