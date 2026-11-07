@@ -17,6 +17,41 @@ export interface DigitalMenuSettings {
   updated_at: string;
 }
 
+/**
+ * Resolves the active DigitalMenuSettings row for a given tenant and sucursal.
+ * Follows the precedence rule:
+ * 1. Branch-specific row (`sucursal_id === sucursalId`) wins over a tenant-wide (`sucursal_id IS NULL`) row.
+ * 2. When no branch-specific row is present, falls back to the tenant-wide row (`sucursal_id IS NULL`).
+ * 3. Rows belonging to other tenants are ignored.
+ * 4. Empty rows array or unresolvable targets return `null`.
+ */
+export function pickPublicMenuSettings(
+  rows: readonly DigitalMenuSettings[] | DigitalMenuSettings[] | null | undefined,
+  tenantId: string,
+  sucursalId?: string | null
+): DigitalMenuSettings | null {
+  if (!rows || rows.length === 0 || !tenantId) {
+    return null;
+  }
+
+  const tenantRows = rows.filter((r) => Boolean(r && r.tenant_id === tenantId));
+  if (tenantRows.length === 0) {
+    return null;
+  }
+
+  const targetSucursal = sucursalId?.trim() || null;
+
+  if (targetSucursal) {
+    const branchRow = tenantRows.find((r) => r.sucursal_id === targetSucursal);
+    if (branchRow) {
+      return branchRow;
+    }
+  }
+
+  const nullRow = tenantRows.find((r) => !r.sucursal_id);
+  return nullRow ?? null;
+}
+
 export function mapCalendarError(error: unknown): string {
   if (!error) return "Ocurrió un error inesperado al actualizar el calendario.";
 
@@ -56,9 +91,7 @@ export async function fetchPublicMenuSettings(
 ): Promise<DigitalMenuSettings | null> {
   try {
     const settingsLocal = await readLocalMirror<DigitalMenuSettings>(tenantId, "digital_menu_settings");
-    const found = settingsLocal.find(
-      (s) => s.tenant_id === tenantId && (!s.sucursal_id || s.sucursal_id === sucursalId)
-    );
+    const found = pickPublicMenuSettings(settingsLocal, tenantId, sucursalId);
     if (found) return found;
 
     // Fallback to cloud if available and online
@@ -70,11 +103,13 @@ export async function fetchPublicMenuSettings(
 
       if (sucursalId) {
         query = query.or(`sucursal_id.is.null,sucursal_id.eq.${sucursalId}`);
+      } else {
+        query = query.is("sucursal_id", null);
       }
 
-      const { data, error } = await query.limit(1).maybeSingle();
+      const { data, error } = await query;
       if (!error && data) {
-        return data as DigitalMenuSettings;
+        return pickPublicMenuSettings(data as DigitalMenuSettings[], tenantId, sucursalId);
       }
     }
 

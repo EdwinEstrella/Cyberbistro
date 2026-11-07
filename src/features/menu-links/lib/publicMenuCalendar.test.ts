@@ -4,6 +4,7 @@ import {
   assignPublicMenuCalendar,
   removePublicMenuCalendar,
   savePublicMenuSettings,
+  pickPublicMenuSettings,
   type DigitalMenuSettings,
 } from "./publicMenuCalendar";
 import * as localFirst from "../../../shared/lib/localFirst";
@@ -267,6 +268,117 @@ describe("publicMenuCalendar helpers", () => {
 
       const settingsCall = vi.mocked(localFirst.enqueueLocalWrite).mock.calls[0][0];
       expect("menu_id" in (settingsCall.payload as Record<string, unknown>)).toBe(false);
+    });
+  });
+
+  describe("pickPublicMenuSettings", () => {
+    const tenantNullRow: DigitalMenuSettings = {
+      ...sampleSettings,
+      id: "settings-null",
+      tenant_id: "tenant-1",
+      sucursal_id: null,
+      public_slug: "tenant-slug",
+    };
+
+    const branchRow1: DigitalMenuSettings = {
+      ...sampleSettings,
+      id: "settings-branch-1",
+      tenant_id: "tenant-1",
+      sucursal_id: "sucursal-1",
+      public_slug: "branch-1-slug",
+    };
+
+    const branchRow2: DigitalMenuSettings = {
+      ...sampleSettings,
+      id: "settings-branch-2",
+      tenant_id: "tenant-1",
+      sucursal_id: "sucursal-2",
+      public_slug: "branch-2-slug",
+    };
+
+    const otherTenantRow: DigitalMenuSettings = {
+      ...sampleSettings,
+      id: "settings-other-tenant",
+      tenant_id: "other-tenant",
+      sucursal_id: "sucursal-1",
+      public_slug: "other-slug",
+    };
+
+    it("branch row wins over NULL row regardless of array order", () => {
+      // Order 1: NULL row first, branch row second
+      const result1 = pickPublicMenuSettings(
+        [tenantNullRow, branchRow1],
+        "tenant-1",
+        "sucursal-1"
+      );
+      expect(result1).toBe(branchRow1);
+      expect(result1?.id).toBe("settings-branch-1");
+
+      // Order 2: branch row first, NULL row second
+      const result2 = pickPublicMenuSettings(
+        [branchRow1, tenantNullRow],
+        "tenant-1",
+        "sucursal-1"
+      );
+      expect(result2).toBe(branchRow1);
+      expect(result2?.id).toBe("settings-branch-1");
+    });
+
+    it("NULL row used when no branch row matches", () => {
+      // Asking for sucursal-1 when only branchRow2 (sucursal-2) and tenantNullRow exist
+      const result = pickPublicMenuSettings(
+        [branchRow2, tenantNullRow],
+        "tenant-1",
+        "sucursal-1"
+      );
+      expect(result).toBe(tenantNullRow);
+      expect(result?.id).toBe("settings-null");
+    });
+
+    it("other tenant's rows are ignored", () => {
+      const result = pickPublicMenuSettings(
+        [otherTenantRow],
+        "tenant-1",
+        "sucursal-1"
+      );
+      expect(result).toBeNull();
+
+      // Mixed with other tenant
+      const resultMixed = pickPublicMenuSettings(
+        [otherTenantRow, tenantNullRow],
+        "tenant-1",
+        "sucursal-1"
+      );
+      expect(resultMixed).toBe(tenantNullRow);
+    });
+
+    it("returns null on empty, null, or undefined rows", () => {
+      expect(pickPublicMenuSettings([], "tenant-1", "sucursal-1")).toBeNull();
+      expect(pickPublicMenuSettings(null, "tenant-1", "sucursal-1")).toBeNull();
+      expect(pickPublicMenuSettings(undefined, "tenant-1", "sucursal-1")).toBeNull();
+      expect(pickPublicMenuSettings([branchRow1], "", "sucursal-1")).toBeNull();
+    });
+
+    it("falls back to NULL row when sucursalId is null or omitted", () => {
+      const resultWithNull = pickPublicMenuSettings(
+        [branchRow1, tenantNullRow],
+        "tenant-1",
+        null
+      );
+      expect(resultWithNull).toBe(tenantNullRow);
+
+      const resultOmitted = pickPublicMenuSettings(
+        [branchRow1, tenantNullRow],
+        "tenant-1"
+      );
+      expect(resultOmitted).toBe(tenantNullRow);
+
+      const resultOnlyBranches = pickPublicMenuSettings(
+        [branchRow1, branchRow2],
+        "tenant-1",
+        null
+      );
+      expect(resultOnlyBranches).toBeNull();
     });
   });
 });

@@ -30,6 +30,7 @@ import {
   removePublicMenuCalendar,
   savePublicMenuSettings,
   mapCalendarError,
+  pickPublicMenuSettings,
 } from "../../menu-links/lib/publicMenuCalendar";
 
 interface Plato {
@@ -125,18 +126,25 @@ export function PublicMenuAdminCard({ tenantId, sucursalId }: PublicMenuAdminCar
       setPlatos(filteredPlatos);
       setMenus(tenantMenus);
 
-      let tenantSettings = settingsLocal.find(
-        (s) => s.tenant_id === tenantId && (!s.sucursal_id || s.sucursal_id === sucursalId)
-      );
+      let tenantSettings = pickPublicMenuSettings(settingsLocal, tenantId, sucursalId);
 
       // If not in local mirror, try direct fetch from cloud
       if (!tenantSettings && (typeof navigator === "undefined" || navigator.onLine)) {
-        const { data } = await supabase
+        let query = supabase
           .from("digital_menu_settings")
           .select("*")
-          .eq("tenant_id", tenantId)
-          .maybeSingle();
-        if (data) tenantSettings = data as DigitalMenuSettings;
+          .eq("tenant_id", tenantId);
+
+        if (sucursalId) {
+          query = query.or(`sucursal_id.is.null,sucursal_id.eq.${sucursalId}`);
+        } else {
+          query = query.is("sucursal_id", null);
+        }
+
+        const { data } = await query;
+        if (data && data.length > 0) {
+          tenantSettings = pickPublicMenuSettings(data as DigitalMenuSettings[], tenantId, sucursalId);
+        }
       }
 
       if (tenantSettings) {
