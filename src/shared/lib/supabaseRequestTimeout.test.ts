@@ -7,7 +7,11 @@ import {
   isSupabaseRequestTimeoutError,
   resolveSupabaseRequestTimeoutMs,
 } from "./supabaseRequestTimeout";
-import { formatSupabaseConnectivityError, supabaseFetchWithTimeout } from "./supabase";
+import {
+  formatSupabaseConnectivityError,
+  SUPABASE_CONNECTIVITY_MESSAGE,
+  supabaseFetchWithTimeout,
+} from "./supabase";
 
 function createPendingFetchStub() {
   return vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
@@ -265,8 +269,7 @@ describe("supabaseFetchWithTimeout behavior", () => {
 });
 
 describe("formatSupabaseConnectivityError", () => {
-  const EXPECTED_MSG =
-    "No se pudo conectar con Supabase. Comprobá tu conexión a internet o el estado del backend.";
+  const EXPECTED_MSG = SUPABASE_CONNECTIVITY_MESSAGE;
 
   it("formats SupabaseRequestTimeoutError", () => {
     const error = new SupabaseRequestTimeoutError(6000);

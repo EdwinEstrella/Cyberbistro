@@ -42,11 +42,9 @@ export const supabaseFetchWithTimeout: typeof fetch = async (input, init) => {
 
   const timeoutMs = resolveSupabaseRequestTimeoutMs(reqUrl, reqMethod);
   const controller = new AbortController();
-  let didTimeout = false;
   let timeoutError: SupabaseRequestTimeoutError | null = null;
 
   const timeoutId = setTimeout(() => {
-    didTimeout = true;
     timeoutError = new SupabaseRequestTimeoutError(timeoutMs);
     controller.abort(timeoutError);
   }, timeoutMs);
@@ -62,16 +60,8 @@ export const supabaseFetchWithTimeout: typeof fetch = async (input, init) => {
   try {
     return await fetch(input, { ...init, signal: controller.signal });
   } catch (fetchError: unknown) {
-    if (didTimeout && timeoutError) {
+    if (timeoutError) {
       throw timeoutError;
-    }
-    if (
-      init?.signal?.aborted &&
-      init.signal.reason !== undefined &&
-      (fetchError as any)?.name === 'AbortError' &&
-      fetchError !== init.signal.reason
-    ) {
-      throw init.signal.reason;
     }
     throw fetchError;
   } finally {
@@ -82,11 +72,9 @@ export const supabaseFetchWithTimeout: typeof fetch = async (input, init) => {
   }
 };
 
-const customFetch = supabaseFetchWithTimeout;
-
 export const supabase = createClient(url, publishableKey, {
   auth: { autoRefreshToken: true, persistSession: true, detectSessionInUrl: false },
-  global: { fetch: customFetch },
+  global: { fetch: supabaseFetchWithTimeout },
 });
 
 export function createIsolatedAuthClient() {
@@ -101,7 +89,7 @@ export function createIsolatedAuthClient() {
         removeItem: () => {},
       },
     },
-    global: { fetch: customFetch },
+    global: { fetch: supabaseFetchWithTimeout },
   });
 }
 
@@ -109,30 +97,53 @@ export function getSupabaseResolvedBaseUrl(): string {
   return url!;
 }
 
+export const SUPABASE_CONNECTIVITY_MESSAGE =
+  'No se pudo conectar con Supabase. Comprobá tu conexión a internet o el estado del backend.';
+
+function readErrorName(error: unknown): string {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'name' in error &&
+    typeof (error as { name: unknown }).name === 'string'
+  ) {
+    return (error as { name: string }).name;
+  }
+  return '';
+}
+
+function readErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    typeof (error as { message: unknown }).message === 'string'
+  ) {
+    return (error as { message: string }).message;
+  }
+  if (typeof error === 'string') {
+    return error;
+  }
+  return '';
+}
+
 export function formatSupabaseConnectivityError(error: unknown): string | null {
   if (isSupabaseRequestTimeoutError(error)) {
-    return 'No se pudo conectar con Supabase. Comprobá tu conexión a internet o el estado del backend.';
+    return SUPABASE_CONNECTIVITY_MESSAGE;
   }
 
-  const errName =
-    typeof error === 'object' && error !== null && 'name' in error && typeof (error as { name: unknown }).name === 'string'
-      ? (error as { name: string }).name
-      : '';
-
-  if (errName === 'TimeoutError' || errName === 'AbortError') {
-    return 'No se pudo conectar con Supabase. Comprobá tu conexión a internet o el estado del backend.';
+  const name = readErrorName(error);
+  if (name === 'TimeoutError' || name === 'AbortError') {
+    return SUPABASE_CONNECTIVITY_MESSAGE;
   }
 
-  const message =
-    error instanceof Error
-      ? error.message.toLowerCase()
-      : typeof error === 'object' && error !== null && 'message' in error && typeof (error as { message: unknown }).message === 'string'
-        ? (error as { message: string }).message.toLowerCase()
-        : typeof error === 'string'
-          ? error.toLowerCase()
-          : '';
+  const message = readErrorMessage(error).toLowerCase();
+  if (/failed to fetch|network|timeout|dns|connection|abort|timed out/.test(message)) {
+    return SUPABASE_CONNECTIVITY_MESSAGE;
+  }
 
-  return /failed to fetch|network|timeout|dns|connection|abort|timed out/.test(message)
-    ? 'No se pudo conectar con Supabase. Comprobá tu conexión a internet o el estado del backend.'
-    : null;
+  return null;
 }
