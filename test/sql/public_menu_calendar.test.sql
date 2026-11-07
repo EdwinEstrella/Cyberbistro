@@ -194,7 +194,7 @@ $$;
 \i supabase/migrations/20261031130000_corporate_menu_links_revoke_anon.sql
 \i supabase/migrations/20261101090000_add_corporativo_plan.sql
 \i supabase/migrations/20261101150000_menus_closed_without_cycle.sql
-\i supabase/migrations/20261101160000_public_menu_calendar.sql
+\i supabase/migrations/20261106140000_public_menu_calendar.sql
 
 -- 4. Test Assertion Helper
 CREATE OR REPLACE FUNCTION test_assert(p_cond boolean, p_msg text)

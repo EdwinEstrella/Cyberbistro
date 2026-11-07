@@ -50,7 +50,7 @@ docker cp supabase/migrations/20261101120000_consolidated_invoice.sql "$CONTAINE
 docker cp supabase/migrations/20261101130000_superadmin_tenant_overview.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
 docker cp supabase/migrations/20261101140000_superadmin_hardening.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
 docker cp supabase/migrations/20261101150000_menus_closed_without_cycle.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
-docker cp supabase/migrations/20261101160000_public_menu_calendar.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
+docker cp supabase/migrations/20261106140000_public_menu_calendar.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
 docker cp supabase/migrations/20261106100000_credit_note_tenant_invoice_number.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
 docker cp test/sql/corporate_menu_links.test.sql "$CONTAINER_NAME":/workspace/test/sql/
 docker cp test/sql/superadmin_overview.test.sql "$CONTAINER_NAME":/workspace/test/sql/
