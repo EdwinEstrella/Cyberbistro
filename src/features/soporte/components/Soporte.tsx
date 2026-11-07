@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router";
-import { supabase, createIsolatedAuthClient } from "../../../shared/lib/supabase";
+import { supabase, createIsolatedAuthClient, formatSupabaseConnectivityError } from "../../../shared/lib/supabase";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { useTenantCurrency } from "../../../shared/hooks/useTenantCurrency";
@@ -982,6 +982,13 @@ function UsuariosPanel() {
     const { data: signData, error: authError } = await tempClient.auth.signUp({ email: staffEmail, password });
     
     if (authError) {
+      const connectivity = formatSupabaseConnectivityError(authError);
+      if (connectivity) {
+        setError(connectivity);
+        setCreating(false);
+        return;
+      }
+
       const isAlreadyRegistered =
         /already registered|already exists|ya está registrado/i.test(authError.message) ||
         (authError as any).status === 422 ||
@@ -993,13 +1000,14 @@ function UsuariosPanel() {
           password,
         });
         if (signInError || !signInData.user?.id) {
-          setError(`El correo ${staffEmail} ya está registrado en el sistema. Verificá la contraseña ingresada.`);
+          const signInConn = signInError ? formatSupabaseConnectivityError(signInError) : null;
+          setError(signInConn ?? `El correo ${staffEmail} ya está registrado en el sistema. Verificá la contraseña ingresada.`);
           setCreating(false);
           return;
         }
         newUserId = signInData.user.id;
       } else {
-        setError((authError as any).message);
+        setError(formatSupabaseConnectivityError(authError) ?? (authError as any).message);
         setCreating(false);
         return;
       }
@@ -1011,7 +1019,8 @@ function UsuariosPanel() {
           password,
         });
         if (signInError || !signInData.user?.id) {
-          setError(`El correo ${staffEmail} ya está registrado en el sistema. Verificá la contraseña ingresada.`);
+          const signInConn = signInError ? formatSupabaseConnectivityError(signInError) : null;
+          setError(signInConn ?? `El correo ${staffEmail} ya está registrado en el sistema. Verificá la contraseña ingresada.`);
           setCreating(false);
           return;
         }
@@ -1175,7 +1184,8 @@ function ChangePasswordCard() {
       });
 
       if (signInError) {
-        setError("La contraseña actual es incorrecta");
+        const connectivity = formatSupabaseConnectivityError(signInError);
+        setError(connectivity ?? "La contraseña actual es incorrecta");
         setLoading(false);
         return;
       }
@@ -1192,7 +1202,7 @@ function ChangePasswordCard() {
         setNewPassword("");
       }
     } catch (err: any) {
-      setError("Error de conexión");
+      setError(formatSupabaseConnectivityError(err) ?? "Error de conexión");
     } finally {
       setLoading(false);
     }

@@ -4,7 +4,7 @@ import svgPaths from "../../../imports/svg-h2gjocs89h";
 import imgLoginRegistro from "figma:asset/47f7239cc7433af3270415eeec94f9bdbb11cd99.png";
 import imgDecorativeScanlineEffect from "figma:asset/70a05c412757c6d4e1cffbb0780858880dce7a5a.png";
 import { TitleBar } from "../../window";
-import { supabase } from "../../../shared/lib/supabase";
+import { supabase, formatSupabaseConnectivityError } from "../../../shared/lib/supabase";
 import { writeTenantSessionCache } from "../../../shared/lib/tenantSessionCache";
 import { lookupBusinessByRnc } from "../../../shared/lib/dgiiRncLookup";
 
@@ -57,7 +57,8 @@ export function Register() {
       });
 
       if (authError) {
-        throw new Error(authError.message || "Error al crear usuario");
+        const connectivity = formatSupabaseConnectivityError(authError);
+        throw new Error(connectivity ?? (authError.message || "Error al crear usuario"));
       }
 
       const newUserId = signData?.user?.id;
@@ -76,7 +77,8 @@ export function Register() {
       setLoading(false);
       setStep('plan');
     } catch (err: any) {
-      setError(err.message || "Error al crear cuenta");
+      const connectivity = formatSupabaseConnectivityError(err);
+      setError(connectivity ?? (err.message || "Error al crear cuenta"));
       setLoading(false);
     }
   };
@@ -161,6 +163,11 @@ export function Register() {
         if (!signInErr) {
           const { data: cur2 } = await supabase.auth.getUser();
           if (cur2?.user?.id) authUserId = cur2.user.id;
+        } else {
+          const connectivity = formatSupabaseConnectivityError(signInErr);
+          if (connectivity) {
+            throw new Error(connectivity);
+          }
         }
       }
 
@@ -209,7 +216,8 @@ export function Register() {
       }, 2000);
 
     } catch (err: any) {
-      setError(err.message || "Error al completar registro");
+      const connectivity = formatSupabaseConnectivityError(err);
+      setError(connectivity ?? (err.message || "Error al completar registro"));
       setLoading(false);
     }
   };

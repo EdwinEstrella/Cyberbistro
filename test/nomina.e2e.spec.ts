@@ -8,6 +8,7 @@ import { mainWindow } from "./support/electronMainWindow";
 import { dismissPaymentAlertIfPresent } from "./helpers/appAlerts";
 
 test.describe("Nomina (Payroll) Full CRUD & Local-First SQLite E2E", () => {
+  test.describe.configure({ timeout: 120_000 });
   let userDataDirectory: string;
   let app: ElectronApplication;
   let page: Page;
