@@ -55,9 +55,12 @@ import {
   isNcfTypeCode,
   normalizeNcfTypeForFiscalMode,
   NCF_TIPO_OPCIONES,
-  ncfTypeRequiresClientRnc,
   type NcfTypeCode,
 } from "../../../shared/lib/ncf";
+import {
+  getFiscalCustomerIssue,
+  resolveInvoiceCustomerName,
+} from "../../billing/lib/fiscalCustomerRequirement";
 import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
 import { calculateInvoiceTotals } from "../../../shared/lib/billingTotals";
 import { type FiscalMode } from "../../../shared/lib/fiscalTypes";
@@ -197,11 +200,17 @@ export function Dashboard() {
   const [fiscalMode, setFiscalMode] = useState<FiscalMode>("internal_receipt");
   const [certificateId, setCertificateId] = useState<string | null>(null);
 
-  const [takeoutClientRnc, setTakeoutClientRnc] = useState("");
   const [takeoutCustomer, setTakeoutCustomer] = useState<Customer | null>(null);
   const [takeoutCustomerName, setTakeoutCustomerName] = useState("");
   const [cashReceivedInput, setCashReceivedInput] = useState("");
   const [orderNotes, setOrderNotes] = useState("");
+
+  const fiscalCustomerIssue = getFiscalCustomerIssue({
+    fiscalActive: tenantNcfFiscalActive,
+    solicitaComprobante,
+    ncfType: selectedNcfType,
+    customer: takeoutCustomer,
+  });
   const [deleteConfirm, setDeleteConfirm] = useState<{
     open: boolean;
     title: string;
@@ -819,7 +828,6 @@ export function Dashboard() {
         alert("No hay items en el carrito para cobrar.");
         return;
       }
-      setTakeoutClientRnc("");
       setTakeoutCustomer(null);
       setTakeoutCustomerName("");
       setCashReceivedInput("");
@@ -947,14 +955,7 @@ export function Dashboard() {
       alert("No hay negocio activo.");
       return;
     }
-    const normalizedClientRnc = takeoutClientRnc.trim() || takeoutCustomer?.document_id?.trim() || "";
-    if (
-      tenantNcfFiscalActive &&
-      solicitaComprobante &&
-      ncfTypeRequiresClientRnc(selectedNcfType) &&
-      normalizedClientRnc === ""
-    ) {
-      alert("Debes indicar el RNC del cliente para emitir comprobante fiscal.");
+    if (fiscalCustomerIssue) {
       return;
     }
     if (paymentMethod === "fiado" && !takeoutCustomer) {
@@ -1059,7 +1060,7 @@ export function Dashboard() {
           certificateId,
           facturaId: localFacturaId,
           numeroFactura,
-          clientRnc: takeoutClientRnc || (takeoutCustomer?.document_id || ""),
+          clientRnc: takeoutCustomer?.document_id?.trim() || "",
           preferredNcfType: targetNcfType,
           deviceId: await getDeviceId(),
         });
@@ -1100,10 +1101,7 @@ export function Dashboard() {
         facturaData[LOCAL_NCF_RESERVED_PAYLOAD_FLAG] = true;
       }
     }
-    if (normalizedClientRnc !== "") {
-      facturaData.cliente_rnc = normalizedClientRnc;
-    }
-    const customerName = takeoutCustomerName.trim() || takeoutCustomer?.name || "";
+    const customerName = resolveInvoiceCustomerName(takeoutCustomer, takeoutCustomerName);
     if (customerName) {
       facturaData.cliente_nombre = customerName;
     }
@@ -1261,7 +1259,6 @@ export function Dashboard() {
     }
 
     setCart([]);
-    setTakeoutClientRnc("");
     setTakeoutCustomer(null);
     setTakeoutCustomerName("");
     setCashReceivedInput("");
@@ -1908,7 +1905,6 @@ export function Dashboard() {
             className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm transition-all duration-300"
             onClick={(e) => {
                 if (e.target === e.currentTarget) {
-                  setTakeoutClientRnc("");
                   setTakeoutCustomer(null);
                   setTakeoutCustomerName("");
                   setCashReceivedInput("");
@@ -1934,7 +1930,6 @@ export function Dashboard() {
                 <button
                   type="button"
                 onClick={() => {
-                  setTakeoutClientRnc("");
                   setTakeoutCustomer(null);
                   setTakeoutCustomerName("");
                   setCashReceivedInput("");
@@ -2078,12 +2073,16 @@ export function Dashboard() {
                         onChange={(customer) => {
                           setTakeoutCustomer(customer);
                           if (customer) setTakeoutCustomerName(customer.name);
-                          if (customer?.document_id) setTakeoutClientRnc(customer.document_id);
                         }}
                         onQueryChange={setTakeoutCustomerName}
                         compact
                       />
                     </div>
+                    {fiscalCustomerIssue && (
+                      <div className="rounded-[12px] border border-[#59ee50]/30 bg-[#59ee50]/10 px-[14px] py-[10px] text-[#d7ffd4] text-[12px] leading-relaxed">
+                        {fiscalCustomerIssue}
+                      </div>
+                    )}
                     <p className="px-1 text-[11px] font-['Inter',sans-serif] text-zinc-500">
                       Si no seleccionás un cliente, el nombre escrito se imprimirá sin crear un registro nuevo.
                     </p>
@@ -2151,21 +2150,6 @@ export function Dashboard() {
                         </div>
                       )}
 
-                      {solicitaComprobante && ncfTypeRequiresClientRnc(selectedNcfType) && (
-                        <div className="flex flex-col gap-2">
-                          <label htmlFor="client-rnc-input" className="text-zinc-400 font-['Space_Grotesk',sans-serif] font-bold text-[11px] uppercase tracking-[1px] px-1">
-                            RNC del cliente
-                          </label>
-                          <input
-                            id="client-rnc-input"
-                            type="text"
-                            value={takeoutClientRnc}
-                            onChange={(e) => setTakeoutClientRnc(e.target.value)}
-                            placeholder="RNC del cliente (obligatorio)"
-                            className="w-full rounded-[14px] border border-white/20 bg-[#0a0a0a] px-4 py-3.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors shadow-sm"
-                          />
-                        </div>
-                      )}
                     </div>
                   )}
 
@@ -2264,7 +2248,6 @@ export function Dashboard() {
                       <button
                         type="button"
                         onClick={() => {
-                          setTakeoutClientRnc("");
                           setTakeoutCustomer(null);
                           setTakeoutCustomerName("");
                           setCashReceivedInput("");
@@ -2286,7 +2269,7 @@ export function Dashboard() {
                     <button
                       type="button"
                       onClick={() => void createInvoice()}
-                      disabled={charging}
+                      disabled={charging || Boolean(fiscalCustomerIssue)}
                       className="flex-1 bg-[#59ee50] rounded-xl py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-[#0e0e0e] text-[12px] tracking-[0.5px] uppercase cursor-pointer border-none disabled:opacity-50 hover:bg-[#4cd444] transition-all shadow-[0_4px_12px_rgba(89,238,80,0.2)] active:scale-95"
                     >
                       {charging ? "Procesando..." : "Confirmar Pago"}
