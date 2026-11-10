@@ -28,7 +28,7 @@ import { listCustomers } from "../../clientes/lib/customers";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { canUseFeature } from "../../../shared/lib/planFeatures";
 import { calculateExpectedCashDrawer, isCashPaymentMethod, sumCashExpenses } from "../../../shared/lib/cycleCash";
-import { getFiscalPendingPresentation } from "../../../shared/lib/salesFiscalUiAdapter";
+import { ECF_DELAY_HINT_TEXT, getEcfStatusDisplay, isEcfDocumentDelayed } from "../lib/ecfStatusDisplay";
 import { writeCyclePrinted } from "../../cierre/lib/cierresWrites";
 import { isCreditNoteInvoice, isSaleInvoice } from "../../../shared/lib/invoiceKind";
 import { ECF_DELETE_BLOCKED_MESSAGE, isEcfInvoice } from "../lib/invoiceDeletion";
@@ -284,28 +284,6 @@ function ymdToLongLabel(ymd: string): string {
   if (!match) return ymd;
   const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
   return new Intl.DateTimeFormat("es-DO", { weekday: "long", year: "numeric", month: "long", day: "numeric" }).format(date);
-}
-
-function getEcfStatusDisplay(status: string) {
-  switch (status) {
-    case "pending_offline":
-    case "pending_sync":
-      return { label: getFiscalPendingPresentation("dgii_ecf").label, color: "#6b7280", bg: "rgba(107, 114, 128, 0.1)" };
-    case "queued":
-    case "signed":
-      return { label: "e-CF: Sincronizado, pendiente de firma", color: "#f59e0b", bg: "rgba(245, 158, 11, 0.1)" };
-    case "submitted":
-      return { label: "e-CF: Enviado a DGII", color: "#3b82f6", bg: "rgba(59, 130, 246, 0.1)" };
-    case "accepted":
-      return { label: "e-CF: Aceptado", color: "#10b981", bg: "rgba(16, 185, 129, 0.1)" };
-    case "rejected":
-      return { label: "e-CF: Rechazado", color: "#ef4444", bg: "rgba(239, 68, 68, 0.1)" };
-    case "retryable_error":
-    case "terminal_error":
-      return { label: "e-CF: Error fiscal", color: "#f97316", bg: "rgba(249, 115, 22, 0.1)" };
-    default:
-      return { label: `e-CF: ${status}`, color: "#6b7280", bg: "rgba(107, 114, 128, 0.1)" };
-  }
 }
 
 export function Billing() {
@@ -1455,10 +1433,18 @@ export function Billing() {
                               const ecfDoc = ecfDocuments.get(inv.id);
                               if (!ecfDoc) return null;
                               const ecfDisplay = getEcfStatusDisplay(ecfDoc.status);
+                              const isDelayed = isEcfDocumentDelayed(ecfDoc);
                               return (
-                                <div className="flex items-center gap-2 rounded-full border border-black/5 px-3 py-1 dark:border-white/5 w-fit" style={{ borderColor: ecfDisplay.color + "22", backgroundColor: ecfDisplay.bg }}>
-                                  <div className="size-1.5 rounded-full" style={{ backgroundColor: ecfDisplay.color }} />
-                                  <span className="text-[10px] font-bold uppercase" style={{ color: ecfDisplay.color }}>{ecfDisplay.label}</span>
+                                <div className="flex flex-col gap-1">
+                                  <div className="flex items-center gap-2 rounded-full border border-black/5 px-3 py-1 dark:border-white/5 w-fit" style={{ borderColor: ecfDisplay.color + "22", backgroundColor: ecfDisplay.bg }}>
+                                    <div className="size-1.5 rounded-full" style={{ backgroundColor: ecfDisplay.color }} />
+                                    <span className="text-[10px] font-bold uppercase" style={{ color: ecfDisplay.color }}>{ecfDisplay.label}</span>
+                                  </div>
+                                  {isDelayed && (
+                                    <span className="text-[10px] font-medium text-amber-500 px-1">
+                                      {ECF_DELAY_HINT_TEXT}
+                                    </span>
+                                  )}
                                 </div>
                               );
                             })()}
@@ -1503,8 +1489,16 @@ export function Billing() {
                                 const ecfDoc = ecfDocuments.get(inv.id);
                                 if (!ecfDoc) return null;
                                 const ecfDisplay = getEcfStatusDisplay(ecfDoc.status);
+                                const isDelayed = isEcfDocumentDelayed(ecfDoc);
                                 return (
-                                  <span className="text-[10px] font-bold uppercase" style={{ color: ecfDisplay.color }}>{ecfDisplay.label}</span>
+                                  <>
+                                    <span className="text-[10px] font-bold uppercase" style={{ color: ecfDisplay.color }}>{ecfDisplay.label}</span>
+                                    {isDelayed && (
+                                      <span className="text-[10px] font-medium text-amber-500">
+                                        {ECF_DELAY_HINT_TEXT}
+                                      </span>
+                                    )}
+                                  </>
                                 );
                               })()}
                             </div>
