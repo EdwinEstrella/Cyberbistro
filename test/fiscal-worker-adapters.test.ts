@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { FailClosedDgiiClient, FailClosedXmlSigner, RealDgiiClient } from "../worker/fiscal/dgiiAdapters";
+import {
+  FailClosedDgiiClient,
+  FailClosedXmlSigner,
+  RealDgiiClient,
+  normalizeDgiiMessages,
+} from "../worker/fiscal/dgiiAdapters";
 
 describe("fail-closed DGII adapters", () => {
   it("refuses XML signing when the real signer is not configured", async () => {
@@ -54,5 +59,55 @@ describe("RealDgiiClient DGII file naming", () => {
       kind: "terminal_error",
       message: expect.stringContaining("RNCEmisor and eNCF"),
     });
+  });
+});
+
+describe("normalizeDgiiMessages", () => {
+  it("normalizes string messages with trimmed text and null code", () => {
+    expect(normalizeDgiiMessages(["  Mensaje simple  ", "Otro mensaje"])).toEqual([
+      { code: null, text: "Mensaje simple" },
+      { code: null, text: "Otro mensaje" },
+    ]);
+  });
+
+  it("normalizes object messages with codigo and valor or mensaje", () => {
+    expect(
+      normalizeDgiiMessages([
+        { codigo: "101", valor: "RNC del comprador no registrado" },
+        { codigo: 202, mensaje: "Secuencia fuera de rango" },
+        { codigo: null, valor: "Observacion sin codigo" },
+      ])
+    ).toEqual([
+      { code: "101", text: "RNC del comprador no registrado" },
+      { code: "202", text: "Secuencia fuera de rango" },
+      { code: null, text: "Observacion sin codigo" },
+    ]);
+  });
+
+  it("drops empty, whitespace-only, and malformed entries", () => {
+    expect(
+      normalizeDgiiMessages([
+        "",
+        "   ",
+        null,
+        undefined,
+        {},
+        { codigo: "500" }, // no valor or mensaje
+        { other: "unknown" },
+        { codigo: "400", valor: "   " },
+      ])
+    ).toEqual([]);
+  });
+
+  it("handles non-array inputs gracefully", () => {
+    expect(normalizeDgiiMessages(null)).toEqual([]);
+    expect(normalizeDgiiMessages(undefined)).toEqual([]);
+    expect(normalizeDgiiMessages(12345)).toEqual([]);
+    expect(normalizeDgiiMessages("Unico mensaje directo")).toEqual([
+      { code: null, text: "Unico mensaje directo" },
+    ]);
+    expect(
+      normalizeDgiiMessages({ codigo: "777", valor: "Objeto individual directo" })
+    ).toEqual([{ code: "777", text: "Objeto individual directo" }]);
   });
 });

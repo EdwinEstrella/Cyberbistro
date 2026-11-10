@@ -142,6 +142,7 @@ export interface FiscalWorkerRepository {
     dgiiSecurityCode: string;
     dgiiStatusCode: string;
     dgiiStatusMessage: string;
+    dgiiMessages: Array<{ code: string | null; text: string }> | null;
     submittedAt: string;
     acceptedAt: string;
     rejectedAt: string;
@@ -190,18 +191,18 @@ export interface XmlSignerAdapter {
 }
 
 export type DgiiSubmitResult =
-  | { kind: "submitted"; trackId: string; statusCode?: string; message?: string; rfceThresholdUsed?: number | null }
-  | { kind: "accepted"; trackId?: string; statusCode?: string; message?: string; rfceThresholdUsed?: number | null }
-  | { kind: "rejected"; trackId?: string; statusCode?: string; message: string; rfceThresholdUsed?: number | null }
-  | { kind: "retryable_error"; statusCode?: string; message: string }
-  | { kind: "terminal_error"; statusCode?: string; message: string };
+  | { kind: "submitted"; trackId: string; statusCode?: string; message?: string; rfceThresholdUsed?: number | null; messages?: Array<{ code: string | null; text: string }> }
+  | { kind: "accepted"; trackId?: string; statusCode?: string; message?: string; rfceThresholdUsed?: number | null; messages?: Array<{ code: string | null; text: string }> }
+  | { kind: "rejected"; trackId?: string; statusCode?: string; message: string; rfceThresholdUsed?: number | null; messages?: Array<{ code: string | null; text: string }> }
+  | { kind: "retryable_error"; statusCode?: string; message: string; messages?: Array<{ code: string | null; text: string }> }
+  | { kind: "terminal_error"; statusCode?: string; message: string; messages?: Array<{ code: string | null; text: string }> };
 
 export type DgiiPollResult =
-  | { kind: "submitted"; statusCode?: string; message?: string }
-  | { kind: "accepted"; statusCode?: string; message?: string }
-  | { kind: "rejected"; statusCode?: string; message: string }
-  | { kind: "retryable_error"; statusCode?: string; message: string }
-  | { kind: "terminal_error"; statusCode?: string; message: string };
+  | { kind: "submitted"; statusCode?: string; message?: string; messages?: Array<{ code: string | null; text: string }> }
+  | { kind: "accepted"; statusCode?: string; message?: string; messages?: Array<{ code: string | null; text: string }> }
+  | { kind: "rejected"; statusCode?: string; message: string; messages?: Array<{ code: string | null; text: string }> }
+  | { kind: "retryable_error"; statusCode?: string; message: string; messages?: Array<{ code: string | null; text: string }> }
+  | { kind: "terminal_error"; statusCode?: string; message: string; messages?: Array<{ code: string | null; text: string }> };
 
 export interface DgiiClientAdapter {
   submitSignedXml(input: {

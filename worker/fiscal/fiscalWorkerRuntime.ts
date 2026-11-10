@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { setTimeout as delay } from "node:timers/promises";
 import { SupabaseStorageCertificateCustody } from "./certificateCustody";
 import { RealDgiiClient, RealXmlSigner } from "./dgiiAdapters";
-import { FiscalWorker } from "./fiscalWorker";
+import { DEFAULT_FISCAL_JOB_TIMEOUT_MS, FiscalWorker } from "./fiscalWorker";
+import { withTimeout } from "./withTimeout";
 import { PostgresFiscalWorkerRepository, createProjectAdminPgPoolFromEnv } from "./postgresFiscalWorkerRepository";
 import type { FiscalWorkerRepository } from "./types";
+
+// Uses global setTimeout instead of node:timers/promises so it honors vitest fake timers.
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export type SupabaseWorkerCredentialClass = "service_role" | "project_admin" | "anon" | "unknown";
 
@@ -60,6 +63,7 @@ export interface FiscalWorkerRuntimeOptions {
   pollIntervalMs?: number;
   now?: () => Date;
   onError?: (error: unknown) => void;
+  jobTimeoutMs?: number;
 }
 
 export class FiscalWorkerRuntime {
@@ -67,18 +71,30 @@ export class FiscalWorkerRuntime {
 
   constructor(private readonly options: FiscalWorkerRuntimeOptions) {}
 
+  get jobTimeoutMs(): number {
+    return this.options.jobTimeoutMs ?? this.options.worker.jobTimeoutMs ?? DEFAULT_FISCAL_JOB_TIMEOUT_MS;
+  }
+
   stop(): void {
     this.stopped = true;
   }
 
   async runForever(): Promise<void> {
     const pollIntervalMs = this.options.pollIntervalMs ?? 5_000;
+    const outerTimeoutMs = this.jobTimeoutMs + 30_000;
     while (!this.stopped) {
       try {
         const now = (this.options.now ?? (() => new Date()))().toISOString();
         const jobId = await this.options.repository.findNextRunnableJob?.(now);
         if (jobId) {
-          await this.options.worker.processJob(jobId);
+          await withTimeout(
+            this.options.worker.processJob(jobId),
+            outerTimeoutMs,
+            () =>
+              new Error(
+                `Fiscal job ${jobId} exceeded outer runtime timeout (${Math.round(outerTimeoutMs / 1000)}s); continuing loop.`
+              )
+          );
         } else {
           await delay(pollIntervalMs);
         }
@@ -90,7 +106,20 @@ export class FiscalWorkerRuntime {
   }
 }
 
-export function createFiscalWorkerRuntimeFromEnv(env: NodeJS.ProcessEnv = process.env): FiscalWorkerRuntime {
+export function resolveFiscalJobTimeoutMsFromEnv(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.FISCAL_JOB_TIMEOUT_MS?.trim();
+  if (!raw) return DEFAULT_FISCAL_JOB_TIMEOUT_MS;
+  const parsed = Number(raw);
+  if (Number.isInteger(parsed) && parsed > 0) {
+    return parsed;
+  }
+  return DEFAULT_FISCAL_JOB_TIMEOUT_MS;
+}
+
+export function createFiscalWorkerRuntimeFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+  overrides?: Partial<FiscalWorkerRuntimeOptions>
+): FiscalWorkerRuntime {
   const supabaseKey = resolveFiscalWorkerCredentialFromEnv(env);
 
   const encryptionKey = env.ECF_ENCRYPTION_KEY?.trim();
@@ -104,12 +133,14 @@ export function createFiscalWorkerRuntimeFromEnv(env: NodeJS.ProcessEnv = proces
   const repository = new PostgresFiscalWorkerRepository({ db: pool });
   const workerId = env.FISCAL_WORKER_ID?.trim() || `fiscal-worker-${randomUUID()}`;
   const supabaseUrl = resolveFiscalWorkerSupabaseUrlFromEnv(env);
+  const jobTimeoutMs = resolveFiscalJobTimeoutMsFromEnv(env);
   const worker = new FiscalWorker({
     repository,
     custody: new SupabaseStorageCertificateCustody(supabaseUrl, supabaseKey, pool),
     signer: new RealXmlSigner(),
     dgii: new RealDgiiClient(),
     workerId,
+    jobTimeoutMs,
   });
-  return new FiscalWorkerRuntime({ repository, worker });
+  return new FiscalWorkerRuntime({ repository, worker, jobTimeoutMs, ...overrides });
 }

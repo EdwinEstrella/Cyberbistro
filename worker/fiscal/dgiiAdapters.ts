@@ -127,18 +127,42 @@ export function convertECF32ToRFCE(ecf32Xml: string): { xml: string; securityCod
   return libConvertECF32ToRFCE(ecf32Xml);
 }
 
-export function formatMensajesDetail(mensajes: unknown): string {
-  if (!Array.isArray(mensajes) || mensajes.length === 0) return "";
-  const list = mensajes
+export function normalizeDgiiMessages(mensajes: unknown): Array<{ code: string | null; text: string }> {
+  if (!mensajes) return [];
+  const list = Array.isArray(mensajes)
+    ? mensajes
+    : typeof mensajes === "object" || typeof mensajes === "string"
+    ? [mensajes]
+    : [];
+
+  return list
     .map((m: any) => {
-      if (!m) return "";
-      if (typeof m === "string") return m.trim();
-      const cod = m.codigo != null ? `[${m.codigo}] ` : "";
-      const val = m.valor != null ? String(m.valor).trim() : (m.mensaje != null ? String(m.mensaje).trim() : "");
-      return `${cod}${val}`.trim();
+      if (!m) return null;
+      if (typeof m === "string") {
+        const text = m.trim();
+        return text ? { code: null, text } : null;
+      }
+      if (typeof m === "object") {
+        const code = m.codigo != null ? String(m.codigo).trim() || null : null;
+        const text =
+          m.valor != null
+            ? String(m.valor).trim()
+            : m.mensaje != null
+            ? String(m.mensaje).trim()
+            : "";
+        return text ? { code, text } : null;
+      }
+      return null;
     })
-    .filter(Boolean);
-  return list.join("; ");
+    .filter((entry): entry is { code: string | null; text: string } => entry !== null);
+}
+
+export function formatMensajesDetail(mensajes: unknown): string {
+  const normalized = normalizeDgiiMessages(mensajes);
+  if (normalized.length === 0) return "";
+  return normalized
+    .map((m) => (m.code ? `[${m.code}] ${m.text}` : m.text))
+    .join("; ");
 }
 
 export function isRfceDocument(params: {
@@ -170,6 +194,8 @@ function mapRfceSummaryResponse(
 ): DgiiSubmitResult {
   const codigo = response?.codigo != null ? Number(response.codigo) : null;
   const trackId = response?.encf || defaultTrackId;
+  const messages = normalizeDgiiMessages(response?.mensajes ?? response?.messages);
+  const messagesProp = messages.length > 0 ? { messages } : {};
 
   if (codigo === 1) {
     return {
@@ -178,11 +204,12 @@ function mapRfceSummaryResponse(
       statusCode: String(response.codigo),
       message: response.estado || "Aceptado",
       rfceThresholdUsed,
+      ...messagesProp,
     };
   }
 
   if (codigo === 4) {
-    const detail = formatMensajesDetail(response.mensajes);
+    const detail = formatMensajesDetail(response?.mensajes ?? response?.messages);
     const estado = response.estado || "Aceptado Condicional";
     return {
       kind: "accepted",
@@ -190,6 +217,7 @@ function mapRfceSummaryResponse(
       statusCode: String(response.codigo),
       message: detail ? `${estado}: ${detail}` : estado,
       rfceThresholdUsed,
+      ...messagesProp,
     };
   }
 
@@ -200,6 +228,7 @@ function mapRfceSummaryResponse(
       statusCode: String(response.codigo),
       message: describeDgiiError(response),
       rfceThresholdUsed,
+      ...messagesProp,
     };
   }
 
@@ -210,6 +239,7 @@ function mapRfceSummaryResponse(
       statusCode: String(response.codigo),
       message: response.estado || "En proceso",
       rfceThresholdUsed,
+      ...messagesProp,
     };
   }
 
@@ -217,6 +247,7 @@ function mapRfceSummaryResponse(
     kind: "terminal_error",
     statusCode: codigo != null ? String(codigo) : undefined,
     message: describeDgiiError(response) || `DGII summary submission failed: ${JSON.stringify(response)}`,
+    ...messagesProp,
   };
 }
 
@@ -332,12 +363,14 @@ export class RealDgiiClient implements DgiiClientAdapter {
       }
 
       if (response && response.trackId) {
+        const messages = normalizeDgiiMessages(response.mensajes ?? response.messages);
         return {
           kind: "submitted",
           trackId: response.trackId,
           statusCode: "200",
           message: "Sent to DGII",
           rfceThresholdUsed,
+          ...(messages.length > 0 ? { messages } : {}),
         };
       }
 
@@ -385,20 +418,24 @@ export class RealDgiiClient implements DgiiClientAdapter {
         }
 
         const codigo = response.codigo != null ? Number(response.codigo) : null;
+        const messages = normalizeDgiiMessages(response.mensajes ?? response.messages);
+        const messagesProp = messages.length > 0 ? { messages } : {};
         if (codigo === 1) {
           return {
             kind: "accepted",
             statusCode: String(response.codigo),
             message: response.estado || "Aceptado",
+            ...messagesProp,
           };
         }
         if (codigo === 4) {
-          const detail = formatMensajesDetail(response.mensajes);
+          const detail = formatMensajesDetail(response.mensajes ?? response.messages);
           const estado = response.estado || "Aceptado Condicional";
           return {
             kind: "accepted",
             statusCode: String(response.codigo),
             message: detail ? `${estado}: ${detail}` : estado,
+            ...messagesProp,
           };
         }
         if (codigo === 2) {
@@ -406,6 +443,7 @@ export class RealDgiiClient implements DgiiClientAdapter {
             kind: "rejected",
             statusCode: String(response.codigo),
             message: describeDgiiError(response),
+            ...messagesProp,
           };
         }
         if (codigo === 3) {
@@ -413,12 +451,14 @@ export class RealDgiiClient implements DgiiClientAdapter {
             kind: "retryable_error",
             statusCode: String(response.codigo),
             message: response.estado || "En proceso",
+            ...messagesProp,
           };
         }
         return {
           kind: "terminal_error",
           statusCode: codigo != null ? String(codigo) : undefined,
           message: describeDgiiError(response) || `DGII RFCE inquiry failed: ${JSON.stringify(response)}`,
+          ...messagesProp,
         };
       }
 
@@ -428,13 +468,15 @@ export class RealDgiiClient implements DgiiClientAdapter {
         return { kind: "retryable_error", message: "Empty response from DGII status polling" };
       }
 
+      const messages = normalizeDgiiMessages(response.mensajes ?? response.messages);
+      const messagesProp = messages.length > 0 ? { messages } : {};
       const status = response.estado?.toLowerCase() || "";
       if (status.includes("aceptado")) {
-        return { kind: "accepted", statusCode: response.codigo, message: response.estado };
+        return { kind: "accepted", statusCode: response.codigo, message: response.estado, ...messagesProp };
       } else if (status.includes("rechazado")) {
-        return { kind: "rejected", statusCode: response.codigo, message: describeDgiiError(response) || response.estado };
+        return { kind: "rejected", statusCode: response.codigo, message: describeDgiiError(response) || response.estado, ...messagesProp };
       } else {
-        return { kind: "submitted", statusCode: response.codigo, message: response.estado };
+        return { kind: "submitted", statusCode: response.codigo, message: response.estado, ...messagesProp };
       }
     } catch (err: any) {
       const message = describeDgiiError(err);

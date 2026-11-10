@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { FiscalWorker } from "../worker/fiscal/fiscalWorker";
+import { FiscalWorkerRuntime } from "../worker/fiscal/fiscalWorkerRuntime";
+import { withTimeout } from "../worker/fiscal/withTimeout";
 import { createUnsignedEcfXml } from "../worker/fiscal/mapper";
 import type {
   CertificateCustody,
@@ -292,5 +294,214 @@ describe("FiscalWorker", () => {
     expect(repository.documentUpdates).toContainEqual(
       expect.objectContaining({ xmlHash: createHash("sha256").update(signedXml).digest("hex") })
     );
+  });
+
+  it("times out and schedules retryable failure when DGII adapter never resolves", async () => {
+    const repository = createRepository(baseSnapshot());
+    const signer: XmlSignerAdapter = { signXml: vi.fn(async () => ({ signedXml: "<Signed />" })) };
+    const dgii: DgiiClientAdapter = {
+      submitSignedXml: vi.fn(() => new Promise(() => {})), // never settles
+      pollStatus: vi.fn(),
+    };
+    const worker = new FiscalWorker({
+      repository,
+      custody,
+      signer,
+      dgii,
+      workerId: "worker-a",
+      jobTimeoutMs: 50,
+      now: () => now,
+    });
+
+    const result = await worker.processJob("job-1");
+
+    expect(result).toEqual({
+      kind: "failed",
+      jobId: "job-1",
+      retryable: true,
+      code: "JOB_TIMEOUT",
+    });
+    expect(repository.jobUpdates).toContainEqual(
+      expect.objectContaining({
+        status: "retryable_error",
+        attempts: 1,
+        errorMessage: expect.stringContaining("aborted; it will be retried."),
+      })
+    );
+    expect(repository.documentUpdates).toContainEqual(
+      expect.objectContaining({
+        status: "retryable_error",
+        lastError: expect.stringContaining("aborted; it will be retried."),
+      })
+    );
+  });
+
+  it("runtime loop continues to process subsequent jobs if a job hangs past runtime timeout", async () => {
+    const jobsProcessed: string[] = [];
+    const repository: FiscalWorkerRepository = {
+      claimJob: vi.fn(),
+      updateDocument: vi.fn(),
+      updateJob: vi.fn(),
+      recordAudit: vi.fn(),
+      findNextRunnableJob: vi.fn()
+        .mockResolvedValueOnce("job-1")
+        .mockResolvedValueOnce("job-2")
+        .mockResolvedValue(null),
+    };
+
+    const worker = {
+      jobTimeoutMs: 20,
+      processJob: vi.fn(async (jobId: string) => {
+        jobsProcessed.push(jobId);
+        if (jobId === "job-1") {
+          return new Promise<never>(() => {});
+        }
+        return { kind: "processed", jobId, operation: "submit", status: "accepted" } as const;
+      }),
+    } as unknown as FiscalWorker;
+
+    const runtime = new FiscalWorkerRuntime({
+      repository,
+      worker,
+      pollIntervalMs: 5,
+      jobTimeoutMs: 20,
+    });
+
+    vi.useFakeTimers();
+    try {
+      const runPromise = runtime.runForever();
+      await vi.advanceTimersByTimeAsync(10);
+      expect(jobsProcessed).toEqual(["job-1"]);
+
+      // Advance past outer runtime timeout (20 + 30_000ms) + pollIntervalMs
+      await vi.advanceTimersByTimeAsync(30_050);
+
+      expect(jobsProcessed).toEqual(["job-1", "job-2"]);
+      runtime.stop();
+      await vi.advanceTimersByTimeAsync(10);
+      await runPromise;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  describe("withTimeout", () => {
+    it("clears its timer when the promise settles first", async () => {
+      const clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout");
+      try {
+        const fastPromise = Promise.resolve("done");
+        const result = await withTimeout(fastPromise, 10_000, () => new Error("timeout"));
+        expect(result).toBe("done");
+        expect(clearTimeoutSpy).toHaveBeenCalled();
+      } finally {
+        clearTimeoutSpy.mockRestore();
+      }
+    });
+
+    it("clears its timer when the promise rejects first", async () => {
+      const clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout");
+      try {
+        const failingPromise = Promise.reject(new Error("fast fail"));
+        await expect(withTimeout(failingPromise, 10_000, () => new Error("timeout"))).rejects.toThrow("fast fail");
+        expect(clearTimeoutSpy).toHaveBeenCalled();
+      } finally {
+        clearTimeoutSpy.mockRestore();
+      }
+    });
+
+    it("aborts with onTimeout error when time elapses", async () => {
+      const hanging = new Promise(() => {});
+      await expect(withTimeout(hanging, 10, () => new Error("timed out!"))).rejects.toThrow("timed out!");
+    });
+  });
+
+  it("persists DGII observations on submit when response includes messages (e.g. code 4 Aceptado Condicional)", async () => {
+    const repository = createRepository(baseSnapshot());
+    const signer: XmlSignerAdapter = { signXml: vi.fn(async () => ({ signedXml: "<Signed />" })) };
+    const dgii: DgiiClientAdapter = {
+      submitSignedXml: vi.fn(async () => ({
+        kind: "accepted",
+        trackId: "E310000000001",
+        statusCode: "4",
+        message: "Aceptado Condicional: [101] Advertencia",
+        messages: [{ code: "101", text: "Advertencia" }],
+      })),
+      pollStatus: vi.fn(),
+    };
+    const worker = new FiscalWorker({ repository, custody, signer, dgii, workerId: "worker-a", now: () => now });
+
+    const result = await worker.processJob("job-1");
+
+    expect(result.kind).toBe("processed");
+    expect(repository.documentUpdates).toContainEqual(
+      expect.objectContaining({
+        status: "accepted",
+        dgiiStatusCode: "4",
+        dgiiMessages: [{ code: "101", text: "Advertencia" }],
+      })
+    );
+  });
+
+  it("leaves dgii_messages untouched when submit code 1 does not return messages", async () => {
+    const repository = createRepository(baseSnapshot());
+    const signer: XmlSignerAdapter = { signXml: vi.fn(async () => ({ signedXml: "<Signed />" })) };
+    const dgii: DgiiClientAdapter = {
+      submitSignedXml: vi.fn(async () => ({
+        kind: "accepted",
+        trackId: "E310000000001",
+        statusCode: "1",
+        message: "Aceptado",
+      })),
+      pollStatus: vi.fn(),
+    };
+    const worker = new FiscalWorker({ repository, custody, signer, dgii, workerId: "worker-a", now: () => now });
+
+    const result = await worker.processJob("job-1");
+
+    expect(result.kind).toBe("processed");
+    const acceptedUpdate = repository.documentUpdates.find((u) => u.status === "accepted");
+    expect(acceptedUpdate).toBeDefined();
+    expect(acceptedUpdate).not.toHaveProperty("dgiiMessages");
+  });
+
+  it("preserves earlier observations when a later poll returns no messages", async () => {
+    const snapshot = baseSnapshot({
+      job: {
+        id: "job-poll-1",
+        tenantId: "tenant-1",
+        ecfDocumentId: "doc-1",
+        facturaId: "invoice-1",
+        operation: "poll_status",
+        status: "queued",
+        attempts: 0,
+        idempotencyKey: "tenant-1:TRK-1:poll",
+      },
+      document: {
+        id: "doc-1",
+        tenantId: "tenant-1",
+        facturaId: "invoice-1",
+        status: "submitted",
+        certificateMetadataId: "cert-1",
+        dgiiTrackId: "TRK-1",
+      },
+    });
+    const repository = createRepository(snapshot);
+    const signer: XmlSignerAdapter = { signXml: vi.fn() };
+    const dgii: DgiiClientAdapter = {
+      submitSignedXml: vi.fn(),
+      pollStatus: vi.fn(async () => ({
+        kind: "accepted",
+        statusCode: "1",
+        message: "Aceptado",
+      })),
+    };
+    const worker = new FiscalWorker({ repository, custody, signer, dgii, workerId: "worker-a", now: () => now });
+
+    const result = await worker.processJob("job-poll-1");
+
+    expect(result.kind).toBe("processed");
+    const pollAcceptedUpdate = repository.documentUpdates.find((u) => u.status === "accepted");
+    expect(pollAcceptedUpdate).toBeDefined();
+    expect(pollAcceptedUpdate).not.toHaveProperty("dgiiMessages");
   });
 });

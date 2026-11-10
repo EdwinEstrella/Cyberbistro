@@ -118,6 +118,7 @@ export class PostgresFiscalWorkerRepository implements FiscalWorkerRepository {
       dgiiSecurityCode: "dgii_security_code",
       dgiiStatusCode: "dgii_status_code",
       dgiiStatusMessage: "dgii_status_message",
+      dgiiMessages: "dgii_messages",
       submittedAt: "submitted_at",
       acceptedAt: "accepted_at",
       rejectedAt: "rejected_at",
@@ -363,11 +364,22 @@ async function updateByWhitelist(
 ): Promise<void> {
   const entries = Object.entries(update).filter(([, value]) => value !== undefined);
   if (!entries.length) return;
-  const assignments = entries.map(([key], index) => `${columns[key]} = $${index + 2}`);
+  const assignments = entries.map(([key], index) => {
+    const col = columns[key];
+    if (col === "dgii_messages") {
+      return `${col} = $${index + 2}::jsonb`;
+    }
+    return `${col} = $${index + 2}`;
+  });
   if (assignments.some((assignment) => assignment.startsWith("undefined"))) {
     throw new Error("Unsupported fiscal worker repository update field.");
   }
-  const values = entries.map(([, value]) => value);
+  const values = entries.map(([key, value]) => {
+    if (columns[key] === "dgii_messages") {
+      return value === null ? null : (typeof value === "string" ? value : JSON.stringify(value));
+    }
+    return value;
+  });
   await db.query(`UPDATE ${table} SET ${assignments.join(", ")}, updated_at = now() WHERE id = $1`, [id, ...values]);
 }
 
