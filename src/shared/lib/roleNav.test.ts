@@ -29,6 +29,12 @@ describe("invoice permissions by role", () => {
     }
   });
 
+  it("gates Formato 607 export visibility: false for cajera, true for admin and contabilidad", () => {
+    expect(canViewBillingSummaries("cajera")).toBe(false);
+    expect(canViewBillingSummaries("admin")).toBe(true);
+    expect(canViewBillingSummaries("contabilidad")).toBe(true);
+  });
+
   it("other roles cannot edit the invoice header", () => {
     for (const rol of ["contabilidad", "mesero", "cocina", "unknown", null]) {
       expect(canEditInvoiceHeader(rol)).toBe(false);

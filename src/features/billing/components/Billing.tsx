@@ -11,6 +11,7 @@ import { readLocalInvoices, deleteLocalInvoice } from "../lib/invoicesLocal";
 import { searchInvoicesGlobal } from "../lib/invoicesSearch";
 import { INVOICE_SEARCH_LIMIT, filterOnlyWithNcf, normalizeInvoiceQuery } from "../lib/invoiceSearch";
 import { EditInvoiceHeaderModal } from "./EditInvoiceHeaderModal";
+import { ExportFormato607 } from "./ExportFormato607";
 import {
   INVOICE_LIST_WINDOW_MS,
   RECENT_CYCLES_LIMIT,
@@ -1406,6 +1407,9 @@ export function Billing() {
               </button>
             </div>
           </div>
+
+          {/* Exportar Formato 607 (Ventas DGII) */}
+          {showSummaries && <ExportFormato607 tenantId={tenantId} />}
 
           {view === "facturas" && (
             <>
