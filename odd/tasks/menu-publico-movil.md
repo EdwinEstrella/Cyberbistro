@@ -52,7 +52,15 @@ Provide a public mobile-first digital menu interface for restaurant customers wi
   - [x] Integrated into `PublicMenuAdminCard` with table count resolution.
   - [x] Tests passing in `src/features/digital-menu` and `src/features/menu-links` (152/152).
   - [x] `npm run typecheck` passed cleanly.
-- [ ] **T3**: Public mobile home screen (table + takeout modes, party selector 1..6+, mobile-first layout).
+- [x] **T3**: Public mobile home screen (table + takeout modes, party selector 1..6+, mobile-first layout).
+  - [x] Pure mode resolver `resolvePublicMenuMode` with strict integer validation (`publicMenuMode.ts` + tests).
+  - [x] Contact links, vCard generator, and utility actions resolver (`contactLinks.ts` + tests).
+  - [x] Presentational `PublicMenuHome` (table & takeout modes, brand logo/initials, utility grid, bottom sheets).
+  - [x] Accessible `PartySizePicker` (1..6 buttons + stepper 7..99, disabled CTA until chosen).
+  - [x] Standalone accessible `BottomSheet` with `WifiSheet`, `WhatsAppSheet`, and `SocialSheet`.
+  - [x] Extracted `PublicMenuOrderScreen` and `PublicMenuCartPanel` preserving menu/cart/active-order logic and adding return to home navigation and context badges.
+  - [x] `create_public_digital_order` accepts `p_party_size`, table number, and order type based on mode.
+  - [x] Full test suite (26 files, 202 tests) passing; `npm run typecheck` passing.
 - [ ] **T4**: Call waiter and bill client flows with Realtime Presence waiter availability check.
 - [ ] **T5**: Staff alerts on Mesas screen (bell indicator + sound + attend action clearing for all).
 - [ ] **T6**: Four casual games (Memory, Tic-tac-toe, Snake, 2048) implemented as lazy-loaded components.
