@@ -36,7 +36,18 @@ vi.mock("../../../shared/lib/supabase", () => {
   };
 });
 
-import { readLocalInvoices, saveLocalInvoice, deleteLocalInvoice, normalizeInvoice } from "./invoicesLocal";
+vi.mock("./invoicesCloud", () => ({
+  fetchCloudInvoicesInRange: vi.fn(),
+}));
+
+import {
+  readLocalInvoices,
+  saveLocalInvoice,
+  deleteLocalInvoice,
+  normalizeInvoice,
+  INVOICE_RANGE_LOAD_ERROR,
+} from "./invoicesLocal";
+import { fetchCloudInvoicesInRange } from "./invoicesCloud";
 
 describe("invoicesLocal", () => {
   beforeEach(() => {
@@ -81,6 +92,29 @@ describe("invoicesLocal", () => {
       expect(mocks.supabaseFrom).not.toHaveBeenCalled();
     });
 
+    it("passes dateFrom and dateTo options to electronAPI.listInvoices on desktop", async () => {
+      const listInvoices = vi.fn().mockResolvedValue({
+        ok: true,
+        data: [{ id: "inv-range-1", total: 150, created_at: "2026-08-10T12:00:00Z" }],
+      });
+      vi.stubGlobal("window", { electronAPI: { listInvoices } });
+
+      const res = await readLocalInvoices("tenant-1", {
+        dateFrom: "2026-08-01T00:00:00Z",
+        dateTo: "2026-08-31T23:59:59Z",
+      });
+
+      expect(listInvoices).toHaveBeenCalledWith({
+        tenantId: "tenant-1",
+        sucursalId: undefined,
+        limit: undefined,
+        dateFrom: "2026-08-01T00:00:00Z",
+        dateTo: "2026-08-31T23:59:59Z",
+      });
+      expect(res).toEqual([expect.objectContaining({ id: "inv-range-1", total: 150 })]);
+      expect(mocks.supabaseFrom).not.toHaveBeenCalled();
+    });
+
     it("saves invoice directly via electronAPI.saveInvoiceLocal without touching IndexedDB or Supabase", async () => {
       const saveInvoiceLocal = vi.fn().mockResolvedValue({ ok: true });
       vi.stubGlobal("window", { electronAPI: { saveInvoiceLocal } });
@@ -110,6 +144,56 @@ describe("invoicesLocal", () => {
       const res = await readLocalInvoices("tenant-1");
       expect(mocks.supabaseFrom).toHaveBeenCalledWith("facturas");
       expect(res).toEqual([expect.objectContaining({ id: "inv-cloud-1", total: 200 })]);
+    });
+
+    it("uses fetchCloudInvoicesInRange on web when dateFrom or dateTo is provided and returns normalized rows", async () => {
+      vi.mocked(fetchCloudInvoicesInRange).mockResolvedValue({
+        data: [
+          { id: 10, items: JSON.stringify([{ plato_id: 1 }]), total: 500 },
+        ],
+        error: null,
+      });
+
+      const res = await readLocalInvoices("tenant-1", {
+        dateFrom: "2026-08-01T00:00:00Z",
+        dateTo: "2026-08-31T23:59:59Z",
+      });
+
+      expect(fetchCloudInvoicesInRange).toHaveBeenCalledWith(
+        expect.anything(),
+        "tenant-1",
+        {
+          sucursalId: undefined,
+          fromIso: "2026-08-01T00:00:00Z",
+          toIso: "2026-08-31T23:59:59Z",
+        }
+      );
+      expect(res).toEqual([
+        expect.objectContaining({
+          id: "10",
+          items: [{ plato_id: 1 }],
+          total: 500,
+        }),
+      ]);
+    });
+
+    it("throws INVOICE_RANGE_LOAD_ERROR when fetchCloudInvoicesInRange returns an error", async () => {
+      vi.mocked(fetchCloudInvoicesInRange).mockResolvedValue({
+        data: [],
+        error: new Error("network timeout"),
+      });
+
+      await expect(
+        readLocalInvoices("tenant-1", { dateFrom: "2026-08-01T00:00:00Z" })
+      ).rejects.toThrow(INVOICE_RANGE_LOAD_ERROR);
+    });
+
+    it("throws INVOICE_RANGE_LOAD_ERROR when fetchCloudInvoicesInRange rejects", async () => {
+      vi.mocked(fetchCloudInvoicesInRange).mockRejectedValue(new Error("fetch aborted"));
+
+      await expect(
+        readLocalInvoices("tenant-1", { dateTo: "2026-08-31T23:59:59Z" })
+      ).rejects.toThrow(INVOICE_RANGE_LOAD_ERROR);
     });
 
     it("saves invoice directly to Supabase without touching IndexedDB", async () => {
