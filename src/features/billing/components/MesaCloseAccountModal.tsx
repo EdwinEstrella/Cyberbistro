@@ -11,13 +11,13 @@ import {
 } from "../../../shared/lib/invoiceNcf";
 import {
   DEFAULT_NCF_B_CODE,
-  ncfTypeRequiresClientRnc,
   isNcfTypeCode,
   isNcfTypeActive,
   normalizeNcfTypeForFiscalMode,
   type NcfTypeCode,
   NCF_TIPO_OPCIONES,
 } from "../../../shared/lib/ncf";
+import { getFiscalCustomerIssue } from "../lib/fiscalCustomerRequirement";
 import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
 import { calculateInvoiceTotals } from "../../../shared/lib/billingTotals";
 import { type FiscalMode } from "../../../shared/lib/fiscalTypes";
@@ -254,7 +254,6 @@ export function MesaCloseAccountModal({
   const [fiscalMode, setFiscalMode] = useState<FiscalMode>("internal_receipt");
   const [certificateId, setCertificateId] = useState<string | null>(null);
 
-  const [clientRnc, setClientRnc] = useState("");
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [cashReceivedInput, setCashReceivedInput] = useState("");
   const [splitMode, setSplitMode] = useState(false);
@@ -262,12 +261,18 @@ export function MesaCloseAccountModal({
   const [personByConsumoId, setPersonByConsumoId] = useState<Record<string, number>>({});
   const [splitParts, setSplitParts] = useState(2);
 
+  const fiscalCustomerIssue = getFiscalCustomerIssue({
+    fiscalActive: ncfFiscalActive,
+    solicitaComprobante,
+    ncfType: selectedNcfType,
+    customer: selectedCustomer,
+  });
+
   useEffect(() => {
     if (!open) {
       setSplitMode(false);
       setPersonByConsumoId({});
       setPaymentMethod("efectivo");
-      setClientRnc("");
       setSelectedCustomer(null);
       setCashReceivedInput("");
       setSolicitaComprobante(false);
@@ -444,14 +449,7 @@ export function MesaCloseAccountModal({
       return;
     }
 
-    const normalizedClientRnc = clientRnc.trim() || selectedCustomer?.document_id?.trim() || "";
-    if (
-      ncfFiscalActive &&
-      solicitaComprobante &&
-      ncfTypeRequiresClientRnc(selectedNcfType) &&
-      normalizedClientRnc === ""
-    ) {
-      alert("Debes indicar el RNC del cliente para emitir comprobante fiscal.");
+    if (fiscalCustomerIssue) {
       return;
     }
 
@@ -492,7 +490,7 @@ export function MesaCloseAccountModal({
               certificateId,
               facturaId,
               numeroFactura: numFactura,
-              clientRnc: normalizedClientRnc || (selectedCustomer?.document_id || ""),
+              clientRnc: selectedCustomer?.document_id?.trim() || "",
               preferredNcfType: targetNcfType,
               deviceId,
             });
@@ -552,9 +550,6 @@ export function MesaCloseAccountModal({
           if (ncfPart.reservationSource === "local_mirror") {
             insertRow[LOCAL_NCF_RESERVED_PAYLOAD_FLAG] = true;
           }
-        }
-        if (normalizedClientRnc !== "") {
-          insertRow.cliente_rnc = normalizedClientRnc;
         }
         if (selectedCustomer) {
           insertRow.customer_id = selectedCustomer.id;
@@ -780,14 +775,7 @@ export function MesaCloseAccountModal({
       return;
     }
 
-    const normalizedClientRnc = clientRnc.trim() || selectedCustomer?.document_id?.trim() || "";
-    if (
-      ncfFiscalActive &&
-      solicitaComprobante &&
-      ncfTypeRequiresClientRnc(selectedNcfType) &&
-      normalizedClientRnc === ""
-    ) {
-      alert("Debes indicar el RNC del cliente para emitir comprobante fiscal.");
+    if (fiscalCustomerIssue) {
       return;
     }
 
@@ -833,7 +821,7 @@ export function MesaCloseAccountModal({
           certificateId,
           facturaId: localFacturaId,
           numeroFactura: nextFacturaNumber,
-          clientRnc: normalizedClientRnc,
+          clientRnc: selectedCustomer?.document_id?.trim() || "",
           preferredNcfType: targetNcfType,
           deviceId,
         });
@@ -874,9 +862,6 @@ export function MesaCloseAccountModal({
       if (ncfPart.reservationSource === "local_mirror") {
         facturaData[LOCAL_NCF_RESERVED_PAYLOAD_FLAG] = true;
       }
-    }
-    if (normalizedClientRnc !== "") {
-      facturaData.cliente_rnc = normalizedClientRnc;
     }
     if (selectedCustomer) {
       facturaData.customer_id = selectedCustomer.id;
@@ -1358,13 +1343,15 @@ export function MesaCloseAccountModal({
                 <CustomerSelect
                   tenantId={tenantId}
                   value={selectedCustomer}
-                  onChange={(customer) => {
-                    setSelectedCustomer(customer);
-                    if (customer?.document_id) setClientRnc(customer.document_id);
-                  }}
+                  onChange={setSelectedCustomer}
                   compact
                 />
               </div>
+              {fiscalCustomerIssue && (
+                <div className="rounded-[12px] border border-[#59ee50]/30 bg-[#59ee50]/10 px-[14px] py-[10px] text-[#d7ffd4] text-[12px] leading-relaxed">
+                  {fiscalCustomerIssue}
+                </div>
+              )}
             </div>
 
             {/* NCF Selection Cards */}
@@ -1438,21 +1425,6 @@ export function MesaCloseAccountModal({
                   </div>
                 )}
 
-                {solicitaComprobante && ncfTypeRequiresClientRnc(selectedNcfType) && (
-                  <div className="flex flex-col gap-2">
-                    <label htmlFor="client-rnc-input" className="text-zinc-400 font-['Space_Grotesk',sans-serif] font-bold text-[11px] uppercase tracking-[1px] px-1">
-                      RNC del cliente
-                    </label>
-                    <input
-                      id="client-rnc-input"
-                      type="text"
-                      value={clientRnc}
-                      onChange={(e) => setClientRnc(e.target.value)}
-                      placeholder="RNC del cliente (obligatorio)"
-                      className="w-full rounded-[14px] border border-white/20 bg-[#0a0a0a] px-4 py-3.5 font-['Inter',sans-serif] text-white text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors shadow-sm"
-                    />
-                  </div>
-                )}
                 <span className="font-['Inter',sans-serif] text-zinc-500 text-[11px] leading-relaxed">
                   ※ Si divides la cuenta, todas las facturas de esta ronda usarán este tipo de NCF.
                 </span>
@@ -1557,7 +1529,7 @@ export function MesaCloseAccountModal({
                   <button
                     type="button"
                     onClick={() => void createSplitInvoices("all")}
-                    disabled={charging || loading || personsWithItems.length === 0}
+                    disabled={charging || loading || personsWithItems.length === 0 || Boolean(fiscalCustomerIssue)}
                     className="flex-1 bg-[#ff906d] rounded-xl py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-[#0a0a0a] text-[12px] tracking-[0.5px] uppercase cursor-pointer border-none disabled:opacity-50 hover:bg-[#ff8059] transition-all shadow-[0_4px_20px_rgba(255,144,109,0.25)] active:scale-95"
                   >
                     {charging
@@ -1570,7 +1542,7 @@ export function MesaCloseAccountModal({
                   <button
                     type="button"
                     onClick={() => void createInvoice()}
-                    disabled={charging || loading || mesaConsumos.length === 0}
+                    disabled={charging || loading || mesaConsumos.length === 0 || Boolean(fiscalCustomerIssue)}
                     className="flex-1 bg-[#59ee50] rounded-xl py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-[#0a0a0a] text-[12px] tracking-[0.5px] uppercase cursor-pointer border-none disabled:opacity-50 hover:bg-[#4cd444] transition-all shadow-[0_4px_20px_rgba(89,238,80,0.25)] active:scale-95"
                   >
                     {charging ? "Procesando..." : "Confirmar Pago"}
@@ -1592,7 +1564,7 @@ export function MesaCloseAccountModal({
                           key={p}
                           type="button"
                           onClick={() => void createSplitInvoices(p)}
-                          disabled={charging || loading || n === 0}
+                          disabled={charging || loading || n === 0 || Boolean(fiscalCustomerIssue)}
                           className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-zinc-200 text-[11px] font-bold font-['Space_Grotesk',sans-serif] rounded-lg border border-zinc-700/40 cursor-pointer transition-all active:scale-90"
                         >
                           Solo P{p}
