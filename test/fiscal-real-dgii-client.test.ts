@@ -89,6 +89,7 @@ describe("RealDgiiClient", () => {
       message: "Aceptado",
       rfceThresholdUsed: 250000,
     });
+    expect(result).not.toHaveProperty("messages");
   });
 
   it("returns accepted result for RFCE codigo 4 with mensajes detail without DGII prefix", async () => {
@@ -117,6 +118,7 @@ describe("RealDgiiClient", () => {
       statusCode: "4",
       message: "Aceptado Condicional: [101] Advertencia de validacion",
       rfceThresholdUsed: 250000,
+      messages: [{ code: "101", text: "Advertencia de validacion" }],
     });
   });
 
@@ -146,6 +148,7 @@ describe("RealDgiiClient", () => {
       statusCode: "2",
       message: "DGII [2] Rechazado: [31] RNC Comprador no existe",
       rfceThresholdUsed: 250000,
+      messages: [{ code: "31", text: "RNC Comprador no existe" }],
     });
   });
 
@@ -354,6 +357,7 @@ describe("RealDgiiClient", () => {
         statusCode: "1",
         message: "Aceptado",
       });
+      expect(result).not.toHaveProperty("messages");
     });
 
     it("maps RFCE inquiry codigo 4 to accepted with detail", async () => {
@@ -382,6 +386,7 @@ describe("RealDgiiClient", () => {
         kind: "accepted",
         statusCode: "4",
         message: "Aceptado Condicional: [200] Aviso de recepcion",
+        messages: [{ code: "200", text: "Aviso de recepcion" }],
       });
     });
 
@@ -411,6 +416,7 @@ describe("RealDgiiClient", () => {
         kind: "rejected",
         statusCode: "2",
         message: "DGII [2] Rechazado: [99] Comprobante rechazado",
+        messages: [{ code: "99", text: "Comprobante rechazado" }],
       });
     });
 
