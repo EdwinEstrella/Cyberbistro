@@ -1,8 +1,7 @@
-/**
- * Timezone used for business operations (restaurant day cutoff, sold out items, etc.).
- * America/Santo_Domingo is AST (UTC-4) year-round without daylight saving changes.
- */
-export const BUSINESS_TIMEZONE = "America/Santo_Domingo";
+import { BUSINESS_TIMEZONE } from "../../../shared/lib/businessDate";
+
+// re-exported from shared/lib/businessDate for existing imports
+export { BUSINESS_TIMEZONE };
 
 /**
  * Returns the current date formatted as 'YYYY-MM-DD' in America/Santo_Domingo.

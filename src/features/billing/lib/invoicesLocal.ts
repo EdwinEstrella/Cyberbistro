@@ -1,4 +1,5 @@
 import { supabase } from "../../../shared/lib/supabase";
+import { fetchCloudInvoicesInRange } from "./invoicesCloud";
 
 /** Safe accessor for the desktop bridge (undefined in web / test node env). */
 function getElectronAPI(): Window["electronAPI"] | undefined {
@@ -8,6 +9,8 @@ function getElectronAPI(): Window["electronAPI"] | undefined {
 export interface ReadInvoicesOptions {
   sucursalId?: string | null;
   limit?: number;
+  dateFrom?: string;
+  dateTo?: string;
 }
 
 /**
@@ -28,6 +31,9 @@ export function normalizeInvoice(raw: Record<string, unknown>): Record<string, u
   return { ...raw, id: String(raw.id), items };
 }
 
+export const INVOICE_RANGE_LOAD_ERROR =
+  "No se pudieron cargar las facturas del período. Verificá tu conexión e intentá de nuevo.";
+
 /**
  * Reads invoices from SQLite (desktop authoritative) or Supabase (web).
  * Never reads from IndexedDB.
@@ -36,7 +42,7 @@ export async function readLocalInvoices(
   tenantId: string,
   options: ReadInvoicesOptions = {}
 ): Promise<Array<Record<string, unknown>>> {
-  const { sucursalId, limit } = options;
+  const { sucursalId, limit, dateFrom, dateTo } = options;
   const api = getElectronAPI();
 
   // 1. Electron Desktop: SQLite (authoritative, zero IndexedDB).
@@ -46,6 +52,8 @@ export async function readLocalInvoices(
         tenantId,
         sucursalId: sucursalId || undefined,
         limit: typeof limit === "number" && limit > 0 ? limit : undefined,
+        dateFrom: dateFrom || undefined,
+        dateTo: dateTo || undefined,
       });
       if (res?.ok && Array.isArray(res.data)) {
         let rows = res.data.map((raw) => normalizeInvoice(raw as Record<string, unknown>));
@@ -65,7 +73,23 @@ export async function readLocalInvoices(
     }
   }
 
-  // 2. Pure Web: Supabase directly (zero IndexedDB).
+  // 2. Pure Web: Range query (isolated straight-line handling).
+  if (dateFrom || dateTo) {
+    let result: Awaited<ReturnType<typeof fetchCloudInvoicesInRange>>;
+    try {
+      result = await fetchCloudInvoicesInRange(supabase, tenantId, {
+        sucursalId: sucursalId || undefined,
+        fromIso: dateFrom,
+        toIso: dateTo,
+      });
+    } catch {
+      throw new Error(INVOICE_RANGE_LOAD_ERROR);
+    }
+    if (result.error) throw new Error(INVOICE_RANGE_LOAD_ERROR);
+    return (result.data || []).map((raw) => normalizeInvoice(raw as Record<string, unknown>));
+  }
+
+  // 3. Pure Web (non-range): Supabase directly (zero IndexedDB).
   try {
     let query = supabase.from("facturas").select("*").eq("tenant_id", tenantId);
     if (sucursalId) {

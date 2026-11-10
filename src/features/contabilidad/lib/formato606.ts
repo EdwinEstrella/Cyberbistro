@@ -1,3 +1,5 @@
+import { formatDgiiAmount, formatDgiiDate, formatDgiiField, normalizeDgiiRnc } from "./dgiiHelpers";
+
 export type CompraFiscal606 = {
   rnc_cedula: string;
   tipo_identificacion: string;
@@ -28,25 +30,8 @@ export function filterRecordsWithNcf(records: CompraFiscal606[]): CompraFiscal60
   return records.filter((record) => /^(B|E)/.test(record.ncf.trim().toUpperCase()));
 }
 
-function dateFor606(value: string | null): string {
-  if (!value) return "";
-  const date = new Date(`${value.slice(0, 10)}T00:00:00Z`);
-  if (Number.isNaN(date.getTime())) throw new Error("Una fecha fiscal no es válida.");
-  return value.slice(0, 10).replace(/-/g, "");
-}
-
-function amount(value: number): string {
-  const number = Number(value);
-  if (!Number.isFinite(number) || number < 0) throw new Error("Un monto fiscal no es válido.");
-  return number.toFixed(2);
-}
-
-function field(value: string | null | undefined): string {
-  return (value ?? "").trim().replace(/\|/g, "");
-}
-
 export function generateFormato606(rncEmisor: string, period: string, records: CompraFiscal606[], format: 'txt' | 'csv' = 'txt'): string {
-  const normalizedRnc = rncEmisor.replace(/\D/g, "");
+  const normalizedRnc = normalizeDgiiRnc(rncEmisor);
   if (normalizedRnc.length !== 9 && normalizedRnc.length !== 11) throw new Error("El RNC o cédula del emisor no es válido.");
   if (!/^\d{6}$/.test(period)) throw new Error("El período debe usar el formato AAAAMM.");
 
@@ -56,11 +41,29 @@ export function generateFormato606(rncEmisor: string, period: string, records: C
       throw new Error("El total fiscal debe coincidir con servicios más bienes.");
     }
     return [
-      field(record.rnc_cedula).replace(/\D/g, ""), field(record.tipo_identificacion), field(record.tipo_bien_servicio), field(record.ncf), field(record.ncf_modificado),
-      dateFor606(record.fecha_comprobante), dateFor606(record.fecha_pago), amount(record.monto_servicios), amount(record.monto_bienes), amount(record.total_facturado),
-      amount(record.itbis_facturado), amount(record.itbis_retenido), amount(record.itbis_proporcionalidad), amount(record.itbis_costo), amount(record.itbis_adelantar),
-      amount(record.itbis_percibido), field(record.tipo_retencion_isr), amount(record.retencion_isr), amount(record.isr_percibido), amount(record.impuesto_selectivo),
-      amount(record.otros_impuestos), amount(record.propina_legal), field(record.forma_pago),
+      formatDgiiField(record.rnc_cedula).replace(/\D/g, ""),
+      formatDgiiField(record.tipo_identificacion),
+      formatDgiiField(record.tipo_bien_servicio),
+      formatDgiiField(record.ncf),
+      formatDgiiField(record.ncf_modificado),
+      formatDgiiDate(record.fecha_comprobante),
+      formatDgiiDate(record.fecha_pago),
+      formatDgiiAmount(record.monto_servicios),
+      formatDgiiAmount(record.monto_bienes),
+      formatDgiiAmount(record.total_facturado),
+      formatDgiiAmount(record.itbis_facturado),
+      formatDgiiAmount(record.itbis_retenido),
+      formatDgiiAmount(record.itbis_proporcionalidad),
+      formatDgiiAmount(record.itbis_costo),
+      formatDgiiAmount(record.itbis_adelantar),
+      formatDgiiAmount(record.itbis_percibido),
+      formatDgiiField(record.tipo_retencion_isr),
+      formatDgiiAmount(record.retencion_isr),
+      formatDgiiAmount(record.isr_percibido),
+      formatDgiiAmount(record.impuesto_selectivo),
+      formatDgiiAmount(record.otros_impuestos),
+      formatDgiiAmount(record.propina_legal),
+      formatDgiiField(record.forma_pago),
     ].join(format === 'csv' ? "," : "|");
   });
 
