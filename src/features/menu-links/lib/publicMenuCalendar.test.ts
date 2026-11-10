@@ -269,6 +269,70 @@ describe("publicMenuCalendar helpers", () => {
       const settingsCall = vi.mocked(localFirst.enqueueLocalWrite).mock.calls[0][0];
       expect("menu_id" in (settingsCall.payload as Record<string, unknown>)).toBe(false);
     });
+
+    it("persists publicContact and returns it in the result", async () => {
+      const contact = {
+        wifi_name: "BistroGuest",
+        whatsapp: "18095550199",
+        instagram: "cyberbistro",
+      };
+
+      const result = await savePublicMenuSettings({
+        tenantId: "tenant-1",
+        enabled: true,
+        publicSlug: "cyber-bistro",
+        publicContact: contact,
+      });
+
+      expect(result.public_contact).toEqual(contact);
+
+      const settingsCall = vi.mocked(localFirst.enqueueLocalWrite).mock.calls[0][0];
+      expect((settingsCall.payload as Record<string, unknown>).public_contact).toEqual(contact);
+    });
+
+    it("falls back to existingSettings.public_contact when input.publicContact is omitted", async () => {
+      const currentSettings: DigitalMenuSettings = {
+        ...sampleSettings,
+        public_contact: { wifi_name: "OriginalWiFi" },
+      };
+
+      const result = await savePublicMenuSettings({
+        tenantId: "tenant-1",
+        existingSettings: currentSettings,
+        enabled: true,
+        publicSlug: "cyber-bistro",
+      });
+
+      expect(result.public_contact).toEqual({ wifi_name: "OriginalWiFi" });
+    });
+
+    it("enqueues payload with public_contact: {} when neither input nor existing settings provide one", async () => {
+      await savePublicMenuSettings({
+        tenantId: "tenant-1",
+        enabled: true,
+        publicSlug: "cyber-bistro",
+      });
+
+      const settingsCall = vi.mocked(localFirst.enqueueLocalWrite).mock.calls[0][0];
+      expect((settingsCall.payload as Record<string, unknown>).public_contact).toEqual({});
+    });
+
+    it("enqueues payload with public_contact: {} when existingSettings has null public_contact and input omits it", async () => {
+      const currentSettings: DigitalMenuSettings = {
+        ...sampleSettings,
+        public_contact: null,
+      };
+
+      await savePublicMenuSettings({
+        tenantId: "tenant-1",
+        existingSettings: currentSettings,
+        enabled: true,
+        publicSlug: "cyber-bistro",
+      });
+
+      const settingsCall = vi.mocked(localFirst.enqueueLocalWrite).mock.calls[0][0];
+      expect((settingsCall.payload as Record<string, unknown>).public_contact).toEqual({});
+    });
   });
 
   describe("pickPublicMenuSettings", () => {

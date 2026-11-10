@@ -3,6 +3,18 @@ import { supabase } from "../../../shared/lib/supabase";
 import { isNetworkError } from "./menuLinksRepo";
 import { buildPublicMenuUrl } from "./menuLinkUrl";
 
+export interface PublicContact {
+  wifi_name?: string;
+  wifi_password?: string;
+  whatsapp?: string;
+  instagram?: string;
+  facebook?: string;
+  tiktok?: string;
+  google_review_url?: string;
+  maps_url?: string;
+  suggestion_email?: string;
+}
+
 export interface DigitalMenuSettings {
   id: string;
   tenant_id: string;
@@ -14,6 +26,7 @@ export interface DigitalMenuSettings {
   logo_url: string | null;
   banner_url: string | null;
   theme?: { accentColor?: string } | null;
+  public_contact?: PublicContact | null;
   menu_id: string | null;
   updated_at: string;
 }
@@ -125,6 +138,7 @@ export interface SavePublicMenuSettingsInput {
   logoUrl?: string | null;
   bannerUrl?: string | null;
   accentColor?: string;
+  publicContact?: PublicContact | null;
 }
 
 export async function savePublicMenuSettings(
@@ -133,7 +147,14 @@ export async function savePublicMenuSettings(
   const isEdit = Boolean(input.existingSettings?.id);
   const settingsId = input.existingSettings?.id || crypto.randomUUID();
 
-  const payload: Omit<DigitalMenuSettings, "menu_id"> = {
+  const resolvedPublicContact: PublicContact =
+    (input.publicContact !== undefined
+      ? input.publicContact
+      : input.existingSettings?.public_contact) ?? {};
+
+  const payload: Omit<DigitalMenuSettings, "menu_id" | "public_contact"> & {
+    public_contact: PublicContact;
+  } = {
     id: settingsId,
     tenant_id: input.tenantId,
     sucursal_id: input.sucursalId || null,
@@ -144,6 +165,7 @@ export async function savePublicMenuSettings(
     logo_url: input.logoUrl?.trim() || null,
     banner_url: input.bannerUrl?.trim() || null,
     theme: { accentColor: input.accentColor || "#f97316" },
+    public_contact: resolvedPublicContact,
     updated_at: new Date().toISOString(),
   };
 

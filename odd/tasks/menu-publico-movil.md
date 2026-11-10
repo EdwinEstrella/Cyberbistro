@@ -42,7 +42,16 @@ Provide a public mobile-first digital menu interface for restaurant customers wi
   - [x] Migration written
   - [x] SQL tests pass via `bash scripts/test-sql.sh`
   - [x] Typecheck passes (`npm run typecheck`)
-- [ ] **T2**: Menu settings fields (`public_contact`: wifi, whatsapp, instagram/facebook/tiktok, google review url, maps url, suggestion email) + per-table QR generator page in Ajustes.
+- [x] **T2**: Menu settings fields (`public_contact`: wifi, whatsapp, instagram/facebook/tiktok, google review url, maps url, suggestion email) + per-table QR generator page in Ajustes.
+  - [x] Types + persistence: `PublicContact` interface, `digital_menu_settings.public_contact` handling in `savePublicMenuSettings`.
+  - [x] Helper `normalizePublicContact` with validation, trimming, empty dropping and Spanish errors.
+  - [x] Hook `usePublicMenuSettings` with validation blocking and toast notification.
+  - [x] Presentational `PublicMenuSettingsForm` with "Información para tus clientes" 9 inputs and inline errors.
+  - [x] URL helper `buildTableMenuUrl` with validation.
+  - [x] Presentational `PublicMenuTableQrSection` + `usePublicMenuTableQrs` hook (lazy generation, per-table download, print all sheet, empty-count message).
+  - [x] Integrated into `PublicMenuAdminCard` with table count resolution.
+  - [x] Tests passing in `src/features/digital-menu` and `src/features/menu-links` (152/152).
+  - [x] `npm run typecheck` passed cleanly.
 - [ ] **T3**: Public mobile home screen (table + takeout modes, party selector 1..6+, mobile-first layout).
 - [ ] **T4**: Call waiter and bill client flows with Realtime Presence waiter availability check.
 - [ ] **T5**: Staff alerts on Mesas screen (bell indicator + sound + attend action clearing for all).

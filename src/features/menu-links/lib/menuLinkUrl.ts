@@ -40,3 +40,16 @@ export function buildMenuLinkUrl(token: string, explicitOrigin?: string): string
 export function buildPublicMenuUrl(slug: string): string {
   return `${DEFAULT_PRODUCTION_WEB_ORIGIN}/#/menu/${encodeURIComponent(slug)}`;
 }
+
+/**
+ * Builds a table-specific public digital menu URL for a given slug and table number.
+ * Format: `${buildPublicMenuUrl(slug)}?mesa=${mesa}`
+ * Requires table number to be an integer >= 1. Returns empty string for invalid inputs.
+ */
+export function buildTableMenuUrl(slug: string, mesa: number): string {
+  const cleanSlug = slug.trim();
+  if (!cleanSlug || typeof mesa !== "number" || !Number.isInteger(mesa) || mesa < 1) {
+    return "";
+  }
+  return `${buildPublicMenuUrl(cleanSlug)}?mesa=${mesa}`;
+}
