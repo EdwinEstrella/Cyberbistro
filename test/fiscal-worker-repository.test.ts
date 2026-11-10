@@ -98,4 +98,20 @@ describe("PostgresFiscalWorkerRepository", () => {
       /project_admin/
     );
   });
+
+  it("writes valid jsonb parameters for dgiiMessages in updateDocument whitelist", async () => {
+    const db = { query: vi.fn(async () => ({ rows: [] })) } as unknown as Queryable;
+    const repository = new PostgresFiscalWorkerRepository({ db });
+
+    const messages = [{ code: "101", text: "Advertencia de prueba" }];
+    await repository.updateDocument("doc-1", {
+      status: "accepted",
+      dgiiMessages: messages,
+    });
+
+    expect(vi.mocked(db.query)).toHaveBeenCalledWith(
+      expect.stringContaining("UPDATE public.ecf_documents SET status = $2, dgii_messages = $3::jsonb, updated_at = now() WHERE id = $1"),
+      ["doc-1", "accepted", JSON.stringify(messages)]
+    );
+  });
 });

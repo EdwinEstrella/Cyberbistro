@@ -4,6 +4,7 @@ import { classifyCertificateFailure } from "./certificateFailure";
 import { isRfceDocument } from "./dgiiAdapters";
 import { fiscalWorkerError, unknownToWorkerError } from "./errors";
 import { createUnsignedEcfXml } from "./mapper";
+import { withTimeout } from "./withTimeout";
 import type {
   CertificateCustody,
   DgiiClientAdapter,
@@ -20,6 +21,9 @@ import type {
 
 /** The worker has no hard retry cap; a retryable certificate error is recorded from this attempt on. */
 export const DEFAULT_CERTIFICATE_FAILURE_ATTEMPT_THRESHOLD = 5;
+
+/** Default timeout for bounded job execution (submit/pollStatus) in milliseconds. */
+export const DEFAULT_FISCAL_JOB_TIMEOUT_MS = 120_000;
 
 export type ProcessJobResult =
   | { kind: "processed"; jobId: string; operation: FiscalOutboxOperation; status: EcfFiscalStatus }
@@ -71,8 +75,14 @@ export class FiscalWorker {
       now?: () => Date;
       /** Retryable certificate errors are written to the certificate row only from this attempt on. */
       certificateFailureAttemptThreshold?: number;
+      /** Maximum time allowed for submit / pollStatus execution before aborting with JOB_TIMEOUT. */
+      jobTimeoutMs?: number;
     }
   ) {}
+
+  get jobTimeoutMs(): number {
+    return this.deps.jobTimeoutMs ?? DEFAULT_FISCAL_JOB_TIMEOUT_MS;
+  }
 
   async processJob(jobId: string): Promise<ProcessJobResult> {
     const createdAt = this.nowIso();
@@ -88,7 +98,20 @@ export class FiscalWorker {
 
     try {
       this.assertTenantBoundary(snapshot);
-      const status = snapshot.job.operation === "poll_status" ? await this.pollStatus(snapshot) : await this.submit(snapshot);
+      const timeoutMs = this.jobTimeoutMs;
+      const timeoutSeconds = Math.round(timeoutMs / 1000);
+      const execution =
+        snapshot.job.operation === "poll_status" ? this.pollStatus(snapshot) : this.submit(snapshot);
+      const status = await withTimeout(
+        execution,
+        timeoutMs,
+        () =>
+          fiscalWorkerError(
+            "JOB_TIMEOUT",
+            `Fiscal job exceeded ${timeoutSeconds}s and was aborted; it will be retried.`,
+            true
+          )
+      );
       await this.deps.repository.updateJob(snapshot.job.id, { status: "done", errorMessage: null });
       await this.auditForSnapshot("job_completed", snapshot, { status });
       return { kind: "processed", jobId: snapshot.job.id, operation: snapshot.job.operation, status };
@@ -195,6 +218,8 @@ export class FiscalWorker {
   }
 
   private async persistSubmissionResult(snapshot: FiscalWorkerSnapshot, result: DgiiSubmitResult): Promise<EcfFiscalStatus> {
+    const dgiiMessages = result.messages && result.messages.length > 0 ? result.messages : undefined;
+
     if (result.kind === "accepted") {
       const encf = result.trackId ?? (snapshot.invoicePayload?.factura as any)?.ncf ?? snapshot.document.dgiiTrackId;
       const nowIso = this.nowIso();
@@ -203,6 +228,7 @@ export class FiscalWorker {
         dgiiTrackId: encf ?? undefined,
         dgiiStatusCode: result.statusCode,
         dgiiStatusMessage: result.message,
+        ...(dgiiMessages ? { dgiiMessages } : {}),
         submittedAt: nowIso,
         acceptedAt: nowIso,
         lastError: null,
@@ -218,6 +244,7 @@ export class FiscalWorker {
         status: "rejected",
         dgiiStatusCode: result.statusCode,
         dgiiStatusMessage: result.message,
+        ...(dgiiMessages ? { dgiiMessages } : {}),
         rejectedAt: nowIso,
         lastError: result.message,
         rfceThresholdUsed: result.rfceThresholdUsed ?? null,
@@ -232,6 +259,7 @@ export class FiscalWorker {
         dgiiTrackId: result.trackId,
         dgiiStatusCode: result.statusCode,
         dgiiStatusMessage: result.message,
+        ...(dgiiMessages ? { dgiiMessages } : {}),
         submittedAt: this.nowIso(),
         lastError: null,
         rfceThresholdUsed: result.rfceThresholdUsed ?? null,
@@ -262,11 +290,14 @@ export class FiscalWorker {
       return snapshot.document.status;
     }
 
+    const dgiiMessages = result.messages && result.messages.length > 0 ? result.messages : undefined;
+
     if (result.kind === "accepted") {
       await this.deps.repository.updateDocument(snapshot.document.id, {
         status: "accepted",
         dgiiStatusCode: result.statusCode,
         dgiiStatusMessage: result.message,
+        ...(dgiiMessages ? { dgiiMessages } : {}),
         acceptedAt: this.nowIso(),
         lastError: null,
       });
@@ -278,6 +309,7 @@ export class FiscalWorker {
         status: "rejected",
         dgiiStatusCode: result.statusCode,
         dgiiStatusMessage: result.message,
+        ...(dgiiMessages ? { dgiiMessages } : {}),
         rejectedAt: this.nowIso(),
         lastError: result.message,
       });
@@ -289,6 +321,7 @@ export class FiscalWorker {
         status: "submitted",
         dgiiStatusCode: result.statusCode,
         dgiiStatusMessage: result.message,
+        ...(dgiiMessages ? { dgiiMessages } : {}),
       });
       return "submitted";
     }
