@@ -4,6 +4,7 @@
  */
 
 export const CERTIFICATION_TOTAL_STEPS = 15;
+export const HIDDEN_CERTIFICATION_STEPS: readonly number[] = [7];
 
 export interface CertificationProgress {
   currentStep: number;
@@ -16,19 +17,51 @@ function isStep(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= CERTIFICATION_TOTAL_STEPS;
 }
 
+export function visibleCertificationSteps(): number[] {
+  const steps: number[] = [];
+  for (let i = 1; i <= CERTIFICATION_TOTAL_STEPS; i++) {
+    if (!HIDDEN_CERTIFICATION_STEPS.includes(i)) {
+      steps.push(i);
+    }
+  }
+  return steps;
+}
+
+export function nextVisibleStep(id: number): number {
+  const visible = visibleCertificationSteps();
+  const next = visible.find((step) => step > id);
+  return next ?? CERTIFICATION_TOTAL_STEPS;
+}
+
+export function displayStepNumber(id: number): number {
+  const visible = visibleCertificationSteps();
+  const index = visible.indexOf(id);
+  if (index !== -1) {
+    return index + 1;
+  }
+  const next = nextVisibleStep(id);
+  const nextIndex = visible.indexOf(next);
+  return nextIndex !== -1 ? nextIndex + 1 : visible.length;
+}
+
 /** Fails safe to step 1 for a missing, malformed or out-of-range row. */
 export function restoreProgress(row: unknown): CertificationProgress {
   const raw = (row ?? {}) as { current_step?: unknown; completed_steps?: unknown };
-  const currentStep = isStep(raw.current_step) ? raw.current_step : 1;
-  const completed = Array.isArray(raw.completed_steps) ? raw.completed_steps.filter(isStep) : [];
+  let currentStep = isStep(raw.current_step) ? raw.current_step : 1;
+  if (HIDDEN_CERTIFICATION_STEPS.includes(currentStep)) {
+    currentStep = nextVisibleStep(currentStep);
+  }
+  const completed = Array.isArray(raw.completed_steps)
+    ? raw.completed_steps.filter(isStep).filter((step) => !HIDDEN_CERTIFICATION_STEPS.includes(step))
+    : [];
   return { currentStep, completedSteps: [...new Set(completed)].sort((a, b) => a - b) };
 }
 
-/** Marks `step` as done and moves to the next one (never past the last step). */
+/** Marks `step` as done and moves to the next visible step (never past the last step). */
 export function advanceProgress(progress: CertificationProgress, step: number): CertificationProgress {
   if (!isStep(step)) return progress;
   const completedSteps = [...new Set([...progress.completedSteps, step])].sort((a, b) => a - b);
-  return { currentStep: Math.min(CERTIFICATION_TOTAL_STEPS, step + 1), completedSteps };
+  return { currentStep: nextVisibleStep(step), completedSteps };
 }
 
 export function buildProgressUpsert(input: {

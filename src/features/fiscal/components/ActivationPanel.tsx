@@ -1,5 +1,5 @@
 import { type MouseEvent, useEffect, useState } from "react";
-import { AlertTriangle, Award, Building2, Check, CheckCircle, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Copy, ExternalLink, FileKey2, FileText, Hash, ListOrdered, Rocket, ShieldCheck, Wifi, X } from "lucide-react";
+import { AlertTriangle, Award, Building2, Check, CheckCircle, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, ExternalLink, FileKey2, FileText, Hash, ListOrdered, Rocket, ShieldCheck, Wifi, X } from "lucide-react";
 import { useAuth } from "../../../shared/hooks/useAuth";
 import { supabase } from "../../../shared/lib/supabase";
 import { NCF_E_TIPO_OPCIONES } from "../../../shared/lib/ncf";
@@ -16,22 +16,40 @@ import {
 } from "../../../shared/lib/ecfActivationReadiness";
 import { loadEcfActivationReadiness } from "../lib/loadEcfReadiness";
 import { buildReceptorUrls } from "../lib/receptorUrls";
-import { advanceProgress, buildProgressUpsert, restoreProgress, type CertificationProgress } from "../lib/ecfCertificationProgress";
+import {
+  advanceProgress,
+  buildProgressUpsert,
+  CERTIFICATION_TOTAL_STEPS,
+  displayStepNumber,
+  nextVisibleStep,
+  restoreProgress,
+  visibleCertificationSteps,
+  type CertificationProgress,
+} from "../lib/ecfCertificationProgress";
 import { certificationStepEvidence, loadReceivedEvidence, summarizeReceivedEvidence, type ReceivedEvidenceClient, type ReceivedEvidenceResult } from "../lib/ecfReceivedEvidence";
 import { ReceivedEvidencePanel, approvalRows, documentRows } from "./ReceivedEvidencePanel";
 import { DocumentSigner } from "./DocumentSigner";
 import { EcfTestSendCard } from "./EcfTestSendCard";
 import { PrintedRepresentationRunner } from "./PrintedRepresentationRunner";
 import { TestSetRunner } from "./TestSetRunner";
+import { ReceptorUrlFields } from "./ReceptorUrlFields";
 
 type EcfEnvironment = "test" | "certification" | "production";
 
+const WIZARD_STEP = {
+  company: 1,
+  certification: 2,
+  environment: 3,
+  sequences: 4,
+  activation: 5,
+} as const;
+
 const steps = [
-  { label: "Datos de la empresa", icon: Building2 },
-  { label: "Ambiente y certificado", icon: FileKey2 },
-  { label: "Secuencias e-CF", icon: ListOrdered },
-  { label: "Activación", icon: Rocket },
-  { label: "Certificación DGII", icon: ShieldCheck },
+  { id: WIZARD_STEP.company, label: "Datos de la empresa", icon: Building2 },
+  { id: WIZARD_STEP.certification, label: "Certificación DGII", icon: ShieldCheck },
+  { id: WIZARD_STEP.environment, label: "Ambiente y certificado", icon: FileKey2 },
+  { id: WIZARD_STEP.sequences, label: "Secuencias e-CF", icon: ListOrdered },
+  { id: WIZARD_STEP.activation, label: "Activación", icon: Rocket },
 ] as const;
 
 const environments: Array<{ id: EcfEnvironment; title: string; caption: string }> = [
@@ -40,29 +58,33 @@ const environments: Array<{ id: EcfEnvironment; title: string; caption: string }
   { id: "production", title: "Producción (e-CF)", caption: "Emisión real, requiere estar certificado." },
 ];
 
-const certificationSteps = [
-  "Registro en el Portal de Certificación",
-  "Set de Pruebas ECF y RFCE",
-  "Aprobación Comercial (ACEFC)",
-  "Pruebas de Simulación e-CF",
-  "Representación Impresa",
-  "Validación por la DGII",
-  "Registro de URLs de Prueba",
-  "Recepción de e-CF (Prueba)",
-  "Recepción de RFCE (Prueba)",
-  "Recepción de ACECF (Prueba)",
-  "Recepción de Notas (Prueba)",
-  "Registro de URLs de Producción",
-  "Declaración Jurada",
-  "Verificación de Estatus",
-  "Certificación Completada",
-] as const;
+const allCertificationSteps: readonly { id: number; label: string }[] = [
+  { id: 1, label: "URLs y XML de Postulación" },
+  { id: 2, label: "Set de Pruebas ECF y RFCE" },
+  { id: 3, label: "Aprobación Comercial (ACEFC)" },
+  { id: 4, label: "Pruebas de Simulación e-CF" },
+  { id: 5, label: "Representación Impresa" },
+  { id: 6, label: "Validación por la DGII" },
+  { id: 7, label: "Registro de URLs de Prueba" },
+  { id: 8, label: "Recepción de e-CF (Prueba)" },
+  { id: 9, label: "Recepción de RFCE (Prueba)" },
+  { id: 10, label: "Recepción de ACECF (Prueba)" },
+  { id: 11, label: "Recepción de Notas (Prueba)" },
+  { id: 12, label: "Registro de URLs de Producción" },
+  { id: 13, label: "Declaración Jurada" },
+  { id: 14, label: "Verificación de Estatus" },
+  { id: 15, label: "Certificación Completada" },
+];
+
+const visibleStepIds = new Set(visibleCertificationSteps());
+const certificationSteps = allCertificationSteps.filter((step) => visibleStepIds.has(step.id));
+const certificationStepMap = new Map(allCertificationSteps.map((s) => [s.id, s.label]));
 
 const certificationPortalUrl = "https://ecf.dgii.gov.do/certecf/portalcertificacion/Login?ReturnUrl=%2Fcertecf%2Fportalcertificacion";
 
 export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral: () => void }) {
   const { tenantId, plan, user } = useAuth();
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState<number>(WIZARD_STEP.company);
   const [environment, setEnvironment] = useState<EcfEnvironment>("test");
   const [company, setCompany] = useState({
     name: "", rnc: "", phone: "", email: "", address: "", sucursal: "", municipio: "", provincia: "", actividad: "", issuerEmail: "", representativeId: "",
@@ -254,7 +276,7 @@ export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral: 
         },
         deviceId: await getDeviceId(),
       });
-      setStep(2);
+      setStep(WIZARD_STEP.certification);
       setMessage("Datos fiscales del emisor guardados.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "No se pudieron guardar los datos fiscales.");
@@ -276,7 +298,7 @@ export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral: 
         payload: { ecf_environment: environment, updated_at: new Date().toISOString() },
         deviceId: await getDeviceId(),
       });
-      setStep(3);
+      setStep(WIZARD_STEP.sequences);
       setMessage(`Ambiente ${environments.find((item) => item.id === environment)?.title} guardado.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "No se pudo guardar el ambiente DGII.");
@@ -324,7 +346,7 @@ export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral: 
       setSavedNextRaw(payload.ncf_secuencias_por_tipo);
       setSavedBoundsRaw(payload.ecf_secuencias_rangos);
       if (payload.keptTypes.length > 0) setEnabledTypes((current) => [...current, ...payload.keptTypes]);
-      setStep(4);
+      setStep(WIZARD_STEP.activation);
       const warnings = enabledTypes.flatMap((type) => validateEcfRange(type, ecfSequences[type]).warnings);
       if (payload.keptTypes.length > 0) {
         warnings.push(
@@ -361,7 +383,7 @@ export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral: 
 
   // Re-check the persisted state whenever the activation step is shown or the environment changes.
   useEffect(() => {
-    if (step !== 4) return;
+    if (step !== WIZARD_STEP.activation) return;
     void refreshReadiness();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, environment, tenantId, plan, certificateReady]);
@@ -387,7 +409,7 @@ export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral: 
       });
       setFiscalActive(true);
       setFiscalMode("dgii_ecf");
-      setStep(5);
+      setStep(WIZARD_STEP.certification);
       setShowActivationNotice(true);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "No se pudo activar la facturación electrónica.");
@@ -441,7 +463,7 @@ export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral: 
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto bg-background p-4 sm:p-8">
-      <div className="mx-auto max-w-4xl">
+      <div className="w-full">
         <header className="mb-7 flex items-start gap-4">
           <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
             <FileKey2 className="size-6" />
@@ -455,13 +477,13 @@ export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral: 
         <div className="mb-7 flex items-center overflow-x-auto rounded-2xl border border-border bg-card px-4 py-3 shadow-sm">
           {steps.map((item, index) => {
             const Icon = item.icon;
-            const completed = index + 1 < step;
-            const current = index + 1 === step;
+            const completed = item.id < step;
+            const current = item.id === step;
             return (
               <div key={item.label} className="flex min-w-fit items-center">
                 <button
                   type="button"
-                  onClick={() => setStep(index + 1)}
+                  onClick={() => setStep(item.id)}
                   className={`flex items-center gap-2 rounded-xl px-3 py-2 text-left text-xs transition-colors ${
                     current ? "bg-primary text-primary-foreground shadow-sm" : completed ? "text-primary" : "text-muted-foreground hover:bg-muted"
                   }`}
@@ -478,9 +500,9 @@ export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral: 
         </div>
 
         <section className="rounded-[24px] border border-border bg-card p-5 shadow-sm sm:p-7">
-          {step === 1 && (
+          {step === WIZARD_STEP.company && (
             <div>
-              <span className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Paso 1</span>
+              <span className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Paso {WIZARD_STEP.company}</span>
               <h2 className="mt-2 font-['Space_Grotesk',sans-serif] text-2xl font-bold text-foreground">Datos de la empresa</h2>
               
               <div className="mt-6 rounded-2xl border border-border bg-muted/20 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -526,9 +548,217 @@ export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral: 
             </div>
           )}
 
-          {step === 2 && (
+          {step === WIZARD_STEP.certification && (
             <div>
-              <span className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Paso 2</span>
+              {certificationStep !== 15 && (
+                <>
+                  <span className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Paso {WIZARD_STEP.certification}</span>
+                  <h2 className="mt-2 font-['Space_Grotesk',sans-serif] text-2xl font-bold text-foreground">Certificación DGII</h2>
+                  <p className="mt-2 text-sm text-muted-foreground">Completá los hitos requeridos antes de solicitar la habilitación para producción.</p>
+                </>
+              )}
+
+              <div className="mt-6 rounded-2xl border border-border bg-background p-4 sm:p-6">
+                <ol className="relative grid items-center" style={{ gridTemplateColumns: `repeat(${certificationSteps.length}, minmax(0, 1fr))` }}>
+                  <div className="absolute top-1/2 h-px -translate-y-1/2 bg-border" style={{ left: `${50 / certificationSteps.length}%`, right: `${50 / certificationSteps.length}%` }} aria-hidden="true" />
+                  {certificationSteps.map((item) => {
+                    const current = item.id === certificationStep;
+                    const complete = item.id < certificationStep;
+                    const displayNum = displayStepNumber(item.id);
+                    return (
+                      <li key={item.id} className="relative z-10 flex justify-center">
+                        <button type="button" onClick={() => goToCertificationStep(item.id)} title={item.label} aria-label={`Paso ${displayNum}: ${item.label}`} className={`flex size-7 items-center justify-center rounded-full border text-[10px] font-bold transition-transform hover:scale-110 sm:size-8 ${complete ? "border-primary bg-primary text-primary-foreground" : current ? "border-primary bg-primary text-primary-foreground shadow-lg shadow-primary/25" : "border-border bg-muted text-muted-foreground"}`}>
+                          {complete ? <Check className="size-3" /> : displayNum}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ol>
+
+                {certificationStep === 15 ? (
+                  <CertificationComplete />
+                ) : (
+                  <>
+                {certificationStep !== 1 && (
+                <div className="mt-6 rounded-xl border border-primary/15 bg-primary/5 px-5 py-4">
+                  <div className="flex items-center gap-2 text-sm font-bold text-primary">
+                    {certificationStep === 12 ? <Wifi className="size-4" /> : <ShieldCheck className="size-4" />} Paso {displayStepNumber(certificationStep)} - {certificationStepMap.get(certificationStep) ?? ""}
+                  </div>
+                  {certificationStep === 4 ? (
+                    <div className="mt-3">
+                      <p className="text-xs leading-relaxed text-muted-foreground">Etapa que comprueba la capacidad de tu sistema para generar y enviar e-CF en XML a la DGII a partir de datos de operaciones reales.</p>
+                      <ul className="mt-3 space-y-2 text-xs leading-relaxed text-muted-foreground">
+                        <li className="flex items-start gap-2"><Hash className="mt-0.5 size-3.5 shrink-0 text-primary" /> <span>Cada tipo de e-CF usa secuencias 1-10,000,000 que <strong className="font-semibold text-foreground">no se reutilizan</strong> entre intentos si un comprobante fue rechazado.</span></li>
+                        <li className="flex items-start gap-2"><FileText className="mt-0.5 size-3.5 shrink-0 text-orange-500" /> <span>Cada Factura de Consumo &lt; RD$250,000 envía primero un <strong className="font-semibold text-foreground">Resumen (RFCE)</strong>; tras ser aceptado, se cargan las facturas por esta interfaz.</span></li>
+                        <li className="flex items-start gap-2"><CheckCircle className="mt-0.5 size-3.5 shrink-0 text-green-500" /> <span>Por cada e-CF enviado se conserva su <strong className="font-semibold text-foreground">representación impresa</strong> (con QR) usando el botón <strong className="font-semibold text-foreground">Ver - Imprimir</strong>, para el siguiente paso.</span></li>
+                      </ul>
+                    </div>
+                  ) : certificationStep === 5 ? (
+                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                      Descarga la Representación Impresa (PDF con QR) de un comprobante de cada tipo y súbela al portal de certificación. Cada PDF lleva el e-NCF, código de seguridad, fecha de firma y el QR de validación DGII.
+                    </p>
+                  ) : certificationStep === 6 ? (
+                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                      La DGII está validando los datos enviados. Puede tomar 24 a 72 horas.
+                    </p>
+                  ) : certificationStep === 8 ? (
+                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                      La DGII enviará e-CF de prueba a tus URLs. Descarga el certificado raíz y presiona "Inicio envío de pruebas" en el portal.
+                    </p>
+                  ) : certificationStep === 9 ? (
+                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                      La DGII enviará Facturas de Consumo Electrónicas (E32) de prueba. El mismo endpoint de recepción las recibirá automáticamente.
+                    </p>
+                  ) : certificationStep === 10 ? (
+                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                      Verifica la recepcion de Aprobaciones Comerciales (ACECF) en tu sistema.
+                    </p>
+                  ) : certificationStep === 11 ? (
+                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                      Verifica la recepcion de Notas de Debito y Credito en tu sistema.
+                    </p>
+                  ) : certificationStep === 12 ? (
+                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                      Registra tus URLs definitivas en el <button type="button" onClick={openCertificationPortal} className="font-semibold text-primary hover:underline">Portal DGII</button> para el ambiente de producción.
+                    </p>
+                  ) : certificationStep === 13 ? (
+                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                      Descarga la declaracion jurada desde el portal DGII, sube aqui el XML descargado, el sistema lo firma con tu certificado digital y luego descargas el XML firmado para enviarlo manualmente a la DGII.
+                    </p>
+                  ) : certificationStep === 14 ? (
+                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                      Consulta el estatus de tu certificacion. Cuando sea aprobada, avanzaras al paso final.
+                    </p>
+                  ) : (
+                    <ol className="mt-3 list-decimal space-y-1 pl-4 text-xs leading-relaxed text-muted-foreground">
+                      {certificationStep === 2 ? (
+                        <li>Descargá el Set de Pruebas ECF y RFCE desde el portal y preparalo para cargarlo.</li>
+                      ) : certificationStep === 3 ? (
+                        <li>Descargá el set de datos de Aprobación Comercial (Paso {displayStepNumber(3)}) desde el portal de certificación y cargalo para enviarlo.</li>
+                      ) : (
+                        <li>Completá y documentá el hito con la DGII antes de avanzar al siguiente paso.</li>
+                      )}
+                    </ol>
+                  )}
+                </div>
+                )}
+
+                {certificationStep === 1 && (
+                  <div className="mt-4 flex flex-col gap-4">
+                    <button type="button" onClick={openCertificationPortal} className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-900 dark:bg-slate-800 dark:hover:bg-slate-700">
+                      <ExternalLink className="size-4" /> Ir al Portal DGII
+                    </button>
+
+                    <ReceptorUrlFields portalField={receptorUrls.portalField} onCopied={setMessage} />
+
+                    <DocumentSigner
+                      tenantId={tenantId}
+                      environment={environment}
+                      documentType="postulacion"
+                      title="Firmar postulación XML"
+                      helperText="Descargá el XML de postulación desde el portal de la DGII, firmalo aquí con tu certificado y subí el archivo firmado al portal."
+                    />
+                  </div>
+                )}
+
+                {certificationStep === 2 && <TestSetRunner tenantId={tenantId} environment={environment} />}
+
+                {certificationStep === 3 && <TestSetRunner tenantId={tenantId} environment={environment} runType="commercial_approval" />}
+
+                {certificationStep === 4 && <TestSetRunner tenantId={tenantId} environment={environment} runType="simulation" />}
+
+                {certificationStep === 5 && (
+                  <div className="mt-4 flex flex-col gap-4">
+                    <div className="flex items-start gap-3 rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-4 text-xs leading-relaxed text-yellow-700 dark:text-yellow-400">
+                      <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                      <p>
+                        La suma de todos los archivos no puede superar <strong className="font-semibold">10MB</strong> (cada PDF pesa menos de 30KB, sin problema). Es responsabilidad del contribuyente que la representación cumpla la Ley 32-23 y el Formato e-CF.
+                      </p>
+                    </div>
+
+                    <PrintedRepresentationRunner tenantId={tenantId} environment={environment} />
+                  </div>
+                )}
+
+                {certificationStep === 6 && (
+                  <button type="button" onClick={openCertificationPortal} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-900 dark:bg-slate-800 dark:hover:bg-slate-700">
+                    <ExternalLink className="size-4" /> Verificar en Portal DGII
+                  </button>
+                )}
+
+                {certificationStep >= 8 && certificationStep <= 11 && (
+                  <div className="mt-4 flex flex-col gap-4">
+                    <ReceivedEvidencePanel
+                      title={certificationStep === 8 ? `e-CF recibidos de DGII (Paso ${displayStepNumber(8)} – Inicio Prueba Recepción e-CF)` : certificationStep === 9 ? `e-CF recibidos (Paso ${displayStepNumber(9)} – Recepción e-CF)` : certificationStep === 10 ? `Aprobaciones comerciales recibidas (Paso ${displayStepNumber(10)} – Inicio Prueba Aprobación Comercial)` : `Aprobaciones comerciales recibidas (Paso ${displayStepNumber(11)} – Recepción Aprobación Comercial)`}
+                      rows={certificationStep <= 9 ? documentRows(receivedEvidence.docs) : approvalRows(receivedEvidence.approvals)}
+                      loading={receivedLoading}
+                      error={receivedEvidence.error}
+                      emptyText={certificationStep <= 9 ? "Aún no llegó ningún e-CF. Presioná \"Inicio envío de pruebas\" en el portal DGII para que envíen los comprobantes." : "Aún no llegó ninguna aprobación comercial. Presioná el inicio de la prueba de aprobación comercial en el portal DGII."}
+                      onRefresh={() => void refreshReceivedEvidence()}
+                    />
+
+                    <button type="button" onClick={openCertificationPortal} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-900 dark:bg-slate-800 dark:hover:bg-slate-700">
+                      <ExternalLink className="size-4" /> {certificationStep === 8 ? "Ir al Portal DGII — Iniciar envío de pruebas" : "Ir al Portal DGII"}
+                    </button>
+                  </div>
+                )}
+
+                {certificationStep === 12 && (
+                  <div className="mt-4 flex flex-col gap-4">
+                    <ReceptorUrlFields portalField={receptorUrls.portalField} onCopied={setMessage} />
+
+                    <button type="button" onClick={() => setMessage("Configuración de URLs guardada para producción en el diseño.")} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#1e293b] px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-900">
+                      <Wifi className="size-4" /> Guardar configuración de URLs
+                    </button>
+                    <button type="button" onClick={openCertificationPortal} className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-600 px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-700">
+                      <ExternalLink className="size-4" /> Ir al Portal DGII a registrar las URLs
+                    </button>
+                  </div>
+                )}
+
+                {certificationStep === 13 && (
+                  <div className="mt-4 flex flex-col gap-4">
+                    <div className="flex items-start gap-3 rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-4 text-xs leading-relaxed text-yellow-700 dark:text-yellow-400">
+                      <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                      <p>
+                        Para firmar este XML necesitas tener cargado y validado el certificado digital en el Paso {WIZARD_STEP.environment}.
+                      </p>
+                    </div>
+
+                    <DocumentSigner
+                      tenantId={tenantId}
+                      environment={environment}
+                      documentType="declaracion_jurada"
+                      title="Firmar declaración jurada XML"
+                      helperText="Descargá la declaración jurada desde el portal de la DGII, firmala aquí con tu certificado digital y subí el archivo firmado al portal. Este paso no envía nada automáticamente."
+                    />
+
+                    <button type="button" onClick={openCertificationPortal} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-900 dark:bg-slate-800 dark:hover:bg-slate-700">
+                      <ExternalLink className="size-4" /> Ir al Portal DGII
+                    </button>
+                  </div>
+                )}
+
+                {certificationStep === 14 && (
+                  <div className="mt-4 flex flex-col gap-4">
+                    <button type="button" onClick={openCertificationPortal} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-green-700">
+                      <CheckCircle className="size-4" /> Verificar Estatus de Certificacion
+                    </button>
+                  </div>
+                )}
+
+                <button type="button" onClick={advanceCertificationStep} disabled={certificationStep === CERTIFICATION_TOTAL_STEPS || advanceBlocked} className={`mt-4 flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-bold transition-colors ${advanceBlocked ? "cursor-not-allowed bg-sky-500/50 text-white shadow-none" : "bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90 disabled:opacity-50"}`}>
+                  {certificationStep === CERTIFICATION_TOTAL_STEPS ? "Certificación lista para revisión" : certificationStep === 14 ? "> Marcar como aprobado manualmente" : certificationStep === 13 ? "> XML enviado a DGII — Avanzar" : certificationStep === 12 ? `> URLs registradas — Avanzar al Paso ${displayStepNumber(nextVisibleStep(12))}` : certificationStep >= 8 && certificationStep <= 11 ? (advanceBlocked ? (certificationStep <= 9 ? "> Esperando e-CF de DGII..." : "> Esperando aprobaciones comerciales...") : `Recibidos ${stepEvidenceCount} — Avanzar al Paso ${displayStepNumber(nextVisibleStep(certificationStep))}`) : certificationStep === 6 ? `DGII aprobó — Avanzar al Paso ${displayStepNumber(nextVisibleStep(6))}` : certificationStep === 5 ? "Representaciones subidas — Avanzar" : `Ya completé este paso - Avanzar al paso ${displayStepNumber(nextVisibleStep(certificationStep))}`} {!advanceBlocked && certificationStep !== 14 && certificationStep !== 13 && certificationStep !== 12 && certificationStep !== CERTIFICATION_TOTAL_STEPS && <ChevronRight className="size-4" />}
+                </button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {step === WIZARD_STEP.environment && (
+            <div>
+              <span className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Paso {WIZARD_STEP.environment}</span>
               <h2 className="mt-2 font-['Space_Grotesk',sans-serif] text-2xl font-bold text-foreground">Ambiente de la DGII</h2>
               <p className="mt-2 text-sm text-muted-foreground">Elegí dónde vas a operar antes de cargar y validar el certificado digital.</p>
 
@@ -556,9 +786,9 @@ export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral: 
             </div>
           )}
 
-          {step === 3 && (
+          {step === WIZARD_STEP.sequences && (
             <div>
-              <span className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Paso 3</span>
+              <span className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Paso {WIZARD_STEP.sequences}</span>
               <h2 className="mt-2 font-['Space_Grotesk',sans-serif] text-2xl font-bold text-foreground">Secuencias e-CF</h2>
               <p className="mt-2 text-sm text-muted-foreground">Agrega varios tipos de comprobante a la vez con sus rangos autorizados por la DGII. El sistema lleva la cuenta de cuántos te quedan de cada uno.</p>
 
@@ -626,9 +856,9 @@ export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral: 
               {enabledTypes.length === 0 && <p className="mt-4 text-sm text-muted-foreground">Seleccioná al menos un tipo de comprobante e-CF.</p>}
             </div>
           )}
-          {step === 4 && (
+          {step === WIZARD_STEP.activation && (
             <div>
-              <span className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Paso 4</span>
+              <span className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Paso {WIZARD_STEP.activation}</span>
               <div className="mt-2 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                 <div>
                   <h2 className="font-['Space_Grotesk',sans-serif] text-2xl font-bold text-foreground">Activación</h2>
@@ -696,255 +926,24 @@ export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral: 
               )}
             </div>
           )}
-          {step === 5 && (
-            <div>
-              {certificationStep !== 15 && (
-                <>
-                  <span className="text-xs font-bold uppercase tracking-[0.16em] text-primary">Paso 5</span>
-                  <h2 className="mt-2 font-['Space_Grotesk',sans-serif] text-2xl font-bold text-foreground">Certificación DGII</h2>
-                  <p className="mt-2 text-sm text-muted-foreground">Completá los hitos requeridos antes de solicitar la habilitación para producción.</p>
-                </>
-              )}
-
-              <div className="mt-6 rounded-2xl border border-border bg-background p-4 sm:p-6">
-                <ol className="relative grid grid-cols-[repeat(15,minmax(0,1fr))] items-center">
-                  <div className="absolute left-[3.33%] right-[3.33%] top-1/2 h-px -translate-y-1/2 bg-border" aria-hidden="true" />
-                  {certificationSteps.map((item, index) => {
-                    const number = index + 1;
-                    const current = number === certificationStep;
-                    const complete = number < certificationStep;
-                    return (
-                      <li key={item} className="relative z-10 flex justify-center">
-                        <button type="button" onClick={() => goToCertificationStep(number)} title={item} aria-label={`Paso ${number}: ${item}`} className={`flex size-7 items-center justify-center rounded-full border text-[10px] font-bold transition-transform hover:scale-110 sm:size-8 ${complete ? "border-primary bg-primary text-primary-foreground" : current ? "border-primary bg-primary text-primary-foreground shadow-lg shadow-primary/25" : "border-border bg-muted text-muted-foreground"}`}>
-                          {complete ? <Check className="size-3" /> : number}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ol>
-
-                {certificationStep === 15 ? (
-                  <CertificationComplete />
-                ) : (
-                  <>
-                <div className="mt-6 rounded-xl border border-primary/15 bg-primary/5 px-5 py-4">
-                  <div className="flex items-center gap-2 text-sm font-bold text-primary">
-                    {certificationStep === 7 || certificationStep === 12 ? <Wifi className="size-4" /> : <ShieldCheck className="size-4" />} Paso {certificationStep} - {certificationSteps[certificationStep - 1]}
-                  </div>
-                  {certificationStep === 4 ? (
-                    <div className="mt-3">
-                      <p className="text-xs leading-relaxed text-muted-foreground">Etapa que comprueba la capacidad de tu sistema para generar y enviar e-CF en XML a la DGII a partir de datos de operaciones reales.</p>
-                      <ul className="mt-3 space-y-2 text-xs leading-relaxed text-muted-foreground">
-                        <li className="flex items-start gap-2"><Hash className="mt-0.5 size-3.5 shrink-0 text-primary" /> <span>Cada tipo de e-CF usa secuencias 1-10,000,000 que <strong className="font-semibold text-foreground">no se reutilizan</strong> entre intentos si un comprobante fue rechazado.</span></li>
-                        <li className="flex items-start gap-2"><FileText className="mt-0.5 size-3.5 shrink-0 text-orange-500" /> <span>Cada Factura de Consumo &lt; RD$250,000 envía primero un <strong className="font-semibold text-foreground">Resumen (RFCE)</strong>; tras ser aceptado, se cargan las facturas por esta interfaz.</span></li>
-                        <li className="flex items-start gap-2"><CheckCircle className="mt-0.5 size-3.5 shrink-0 text-green-500" /> <span>Por cada e-CF enviado se conserva su <strong className="font-semibold text-foreground">representación impresa</strong> (con QR) usando el botón <strong className="font-semibold text-foreground">Ver - Imprimir</strong>, para el siguiente paso.</span></li>
-                      </ul>
-                    </div>
-                  ) : certificationStep === 5 ? (
-                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                      Descarga la Representación Impresa (PDF con QR) de un comprobante de cada tipo y súbela al portal de certificación. Cada PDF lleva el e-NCF, código de seguridad, fecha de firma y el QR de validación DGII.
-                    </p>
-                  ) : certificationStep === 6 ? (
-                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                      La DGII está validando los datos enviados. Puede tomar 24 a 72 horas.
-                    </p>
-                  ) : certificationStep === 7 ? (
-                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                      Estas son tus URLs únicas en el portal DGII. Cópialas en los campos correspondientes del <button type="button" onClick={openCertificationPortal} className="font-semibold text-primary hover:underline">Portal CerteCF</button>.
-                    </p>
-                  ) : certificationStep === 8 ? (
-                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                      La DGII enviará e-CF de prueba a tus URLs. Descarga el certificado raíz y presiona "Inicio envío de pruebas" en el portal.
-                    </p>
-                  ) : certificationStep === 9 ? (
-                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                      La DGII enviará Facturas de Consumo Electrónicas (E32) de prueba. El mismo endpoint de recepción las recibirá automáticamente.
-                    </p>
-                  ) : certificationStep === 10 ? (
-                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                      Verifica la recepcion de Aprobaciones Comerciales (ACECF) en tu sistema.
-                    </p>
-                  ) : certificationStep === 11 ? (
-                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                      Verifica la recepcion de Notas de Debito y Credito en tu sistema.
-                    </p>
-                  ) : certificationStep === 12 ? (
-                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                      Registra tus URLs definitivas en el <button type="button" onClick={openCertificationPortal} className="font-semibold text-primary hover:underline">Portal DGII</button> para el ambiente de producción.
-                    </p>
-                  ) : certificationStep === 13 ? (
-                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                      Descarga la declaracion jurada desde el portal DGII, sube aqui el XML descargado, el sistema lo firma con tu certificado digital y luego descargas el XML firmado para enviarlo manualmente a la DGII.
-                    </p>
-                  ) : certificationStep === 14 ? (
-                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                      Consulta el estatus de tu certificacion. Cuando sea aprobada, avanzaras al paso final.
-                    </p>
-                  ) : (
-                    <ol className="mt-3 list-decimal space-y-1 pl-4 text-xs leading-relaxed text-muted-foreground">
-                      {certificationStep === 1 ? (
-                        <>
-                          <li>Ingresá al <a href={certificationPortalUrl} onClick={openCertificationPortal} target="_blank" rel="noreferrer" className="font-semibold text-primary underline underline-offset-2">Portal de Certificación de la DGII</a>.</li>
-                          <li>Registrá tu empresa con el RNC <span className="font-semibold text-foreground">{company.rnc || "del emisor"}</span>.</li>
-                          <li>Seleccioná el tipo de postulación: Emisor de e-CF.</li>
-                          <li>Completá el formulario y esperá la aprobación por correo.</li>
-                        </>
-                      ) : certificationStep === 2 ? (
-                        <li>Descargá el Set de Pruebas ECF y RFCE desde el portal y preparalo para cargarlo.</li>
-                      ) : certificationStep === 3 ? (
-                        <li>Descargá el set de datos de Aprobación Comercial (Paso 3) desde el portal de certificación y cargalo para enviarlo.</li>
-                      ) : (
-                        <li>Completá y documentá el hito con la DGII antes de avanzar al siguiente paso.</li>
-                      )}
-                    </ol>
-                  )}
-                </div>
-
-                {certificationStep === 1 && (
-                  <div className="mt-4">
-                    <DocumentSigner
-                      tenantId={tenantId}
-                      environment={environment}
-                      documentType="postulacion"
-                      title="Firmar postulación XML"
-                      helperText="Descargá el XML de postulación desde el portal de la DGII, firmalo aquí con tu certificado y subí el archivo firmado al portal."
-                    />
-                  </div>
-                )}
-
-                {certificationStep === 2 && <TestSetRunner tenantId={tenantId} environment={environment} />}
-
-                {certificationStep === 3 && <TestSetRunner tenantId={tenantId} environment={environment} runType="commercial_approval" />}
-
-                {certificationStep === 4 && <TestSetRunner tenantId={tenantId} environment={environment} runType="simulation" />}
-
-                {certificationStep === 5 && (
-                  <div className="mt-4 flex flex-col gap-4">
-                    <div className="flex items-start gap-3 rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-4 text-xs leading-relaxed text-yellow-700 dark:text-yellow-400">
-                      <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-                      <p>
-                        La suma de todos los archivos no puede superar <strong className="font-semibold">10MB</strong> (cada PDF pesa menos de 30KB, sin problema). Es responsabilidad del contribuyente que la representación cumpla la Ley 32-23 y el Formato e-CF.
-                      </p>
-                    </div>
-
-                    <PrintedRepresentationRunner tenantId={tenantId} environment={environment} />
-                  </div>
-                )}
-
-                {certificationStep === 6 && (
-                  <button type="button" onClick={openCertificationPortal} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-900 dark:bg-slate-800 dark:hover:bg-slate-700">
-                    <ExternalLink className="size-4" /> Verificar en Portal DGII
-                  </button>
-                )}
-
-                {certificationStep === 7 && (
-                  <div className="mt-4 flex flex-col gap-4">
-                    <div className="rounded-xl border border-border bg-muted/10 p-5">
-                      <UrlCopyField label="SERVICIO DE AUTENTICACIÓN" field={receptorUrls.portalField} suffix={receptorUrls.paths.authentication} onCopy={(value) => { void navigator.clipboard.writeText(value); setMessage("Copiado: pegalo en el campo de Autenticación del portal DGII (sin https:// ni /fe/...)."); }} />
-                      <UrlCopyField label="SERVICIO DE RECEPCIÓN *" field={receptorUrls.portalField} suffix={receptorUrls.paths.reception} onCopy={(value) => { void navigator.clipboard.writeText(value); setMessage("Copiado: pegalo en el campo de Recepción del portal DGII (sin https:// ni /fe/...)."); }} />
-                      <UrlCopyField label="SERVICIO DE APROBACIÓN COMERCIAL *" field={receptorUrls.portalField} suffix={receptorUrls.paths.approval} onCopy={(value) => { void navigator.clipboard.writeText(value); setMessage("Copiado: pegalo en el campo de Aprobación Comercial del portal DGII (sin https:// ni /fe/...)."); }} />
-                    </div>
-
-                    <button type="button" onClick={() => setMessage("Configuración de URLs guardada para el diseño.")} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#1e293b] px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-900">
-                      <Wifi className="size-4" /> Guardar configuración de URLs
-                    </button>
-                    <button type="button" onClick={openCertificationPortal} className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-600 px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-700">
-                      <ExternalLink className="size-4" /> Ir al Portal DGII a registrar las URLs
-                    </button>
-                  </div>
-                )}
-
-                {certificationStep >= 8 && certificationStep <= 11 && (
-                  <div className="mt-4 flex flex-col gap-4">
-                    <ReceivedEvidencePanel
-                      title={certificationStep === 8 ? "e-CF recibidos de DGII (Paso 8 – Inicio Prueba Recepción e-CF)" : certificationStep === 9 ? "e-CF recibidos (Paso 9 – Recepción e-CF)" : certificationStep === 10 ? "Aprobaciones comerciales recibidas (Paso 10 – Inicio Prueba Aprobación Comercial)" : "Aprobaciones comerciales recibidas (Paso 11 – Recepción Aprobación Comercial)"}
-                      rows={certificationStep <= 9 ? documentRows(receivedEvidence.docs) : approvalRows(receivedEvidence.approvals)}
-                      loading={receivedLoading}
-                      error={receivedEvidence.error}
-                      emptyText={certificationStep <= 9 ? "Aún no llegó ningún e-CF. Presioná \"Inicio envío de pruebas\" en el portal DGII para que envíen los comprobantes." : "Aún no llegó ninguna aprobación comercial. Presioná el inicio de la prueba de aprobación comercial en el portal DGII."}
-                      onRefresh={() => void refreshReceivedEvidence()}
-                    />
-
-                    <button type="button" onClick={openCertificationPortal} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-900 dark:bg-slate-800 dark:hover:bg-slate-700">
-                      <ExternalLink className="size-4" /> {certificationStep === 8 ? "Ir al Portal DGII — Iniciar envío de pruebas" : "Ir al Portal DGII"}
-                    </button>
-                  </div>
-                )}
-
-                {certificationStep === 12 && (
-                  <div className="mt-4 flex flex-col gap-4">
-                    <div className="rounded-xl border border-border bg-muted/10 p-5">
-                      <UrlCopyField label="SERVICIO DE AUTENTICACIÓN" field={receptorUrls.portalField} suffix={receptorUrls.paths.authentication} onCopy={(value) => { void navigator.clipboard.writeText(value); setMessage("Copiado: pegalo en el campo de Autenticación del portal DGII (sin https:// ni /fe/...)."); }} />
-                      <UrlCopyField label="SERVICIO DE RECEPCIÓN *" field={receptorUrls.portalField} suffix={receptorUrls.paths.reception} onCopy={(value) => { void navigator.clipboard.writeText(value); setMessage("Copiado: pegalo en el campo de Recepción del portal DGII (sin https:// ni /fe/...)."); }} />
-                      <UrlCopyField label="SERVICIO DE APROBACIÓN COMERCIAL *" field={receptorUrls.portalField} suffix={receptorUrls.paths.approval} onCopy={(value) => { void navigator.clipboard.writeText(value); setMessage("Copiado: pegalo en el campo de Aprobación Comercial del portal DGII (sin https:// ni /fe/...)."); }} />
-                    </div>
-
-                    <button type="button" onClick={() => setMessage("Configuración de URLs guardada para producción en el diseño.")} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#1e293b] px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-900">
-                      <Wifi className="size-4" /> Guardar configuración de URLs
-                    </button>
-                    <button type="button" onClick={openCertificationPortal} className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-600 px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-700">
-                      <ExternalLink className="size-4" /> Ir al Portal DGII a registrar las URLs
-                    </button>
-                  </div>
-                )}
-
-                {certificationStep === 13 && (
-                  <div className="mt-4 flex flex-col gap-4">
-                    <div className="flex items-start gap-3 rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-4 text-xs leading-relaxed text-yellow-700 dark:text-yellow-400">
-                      <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-                      <p>
-                        Para firmar este XML necesitas tener cargado y validado el certificado digital en el Paso 2.
-                      </p>
-                    </div>
-
-                    <DocumentSigner
-                      tenantId={tenantId}
-                      environment={environment}
-                      documentType="declaracion_jurada"
-                      title="Firmar declaración jurada XML"
-                      helperText="Descargá la declaración jurada desde el portal de la DGII, firmala aquí con tu certificado digital y subí el archivo firmado al portal. Este paso no envía nada automáticamente."
-                    />
-
-                    <button type="button" onClick={openCertificationPortal} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-900 dark:bg-slate-800 dark:hover:bg-slate-700">
-                      <ExternalLink className="size-4" /> Ir al Portal DGII
-                    </button>
-                  </div>
-                )}
-
-                {certificationStep === 14 && (
-                  <div className="mt-4 flex flex-col gap-4">
-                    <button type="button" onClick={openCertificationPortal} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-green-700">
-                      <CheckCircle className="size-4" /> Verificar Estatus de Certificacion
-                    </button>
-                  </div>
-                )}
-
-                <button type="button" onClick={advanceCertificationStep} disabled={certificationStep === certificationSteps.length || advanceBlocked} className={`mt-4 flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-bold transition-colors ${advanceBlocked ? "cursor-not-allowed bg-sky-500/50 text-white shadow-none" : "bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90 disabled:opacity-50"}`}>
-                  {certificationStep === certificationSteps.length ? "Certificación lista para revisión" : certificationStep === 14 ? "> Marcar como aprobado manualmente" : certificationStep === 13 ? "> XML enviado a DGII — Avanzar" : certificationStep === 12 ? "> URLs registradas — Avanzar al Paso 13" : certificationStep >= 8 && certificationStep <= 11 ? (advanceBlocked ? (certificationStep <= 9 ? "> Esperando e-CF de DGII..." : "> Esperando aprobaciones comerciales...") : `Recibidos ${stepEvidenceCount} — Avanzar al Paso ${certificationStep + 1}`) : certificationStep === 7 ? "URLs registradas — Avanzar al Paso 8" : certificationStep === 6 ? "DGII aprobó — Avanzar al Paso 7" : certificationStep === 5 ? "Representaciones subidas — Avanzar" : `Ya completé este paso - Avanzar al paso ${certificationStep + 1}`} {!advanceBlocked && certificationStep !== 14 && certificationStep !== 13 && certificationStep !== 12 && certificationStep !== 15 && <ChevronRight className="size-4" />}
-                </button>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
 
           {showActivationNotice && activationNotice(fiscalMode, environment) && (
             <div className="mt-5 rounded-xl border border-primary/20 bg-primary/10 p-3 text-sm text-primary">{activationNotice(fiscalMode, environment)}</div>
           )}
           {message && <div className="mt-5 rounded-xl border border-primary/20 bg-primary/10 p-3 text-sm text-primary">{message}</div>}
           <div className="mt-7 flex items-center justify-between border-t border-border pt-5">
-            <button type="button" onClick={() => setStep((current) => Math.max(1, current - 1))} disabled={step === 1} className="inline-flex items-center gap-1 rounded-xl border border-border px-4 py-2.5 text-xs font-bold text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40">
+            <button type="button" onClick={() => setStep((current) => Math.max(WIZARD_STEP.company, current - 1))} disabled={step === WIZARD_STEP.company} className="inline-flex items-center gap-1 rounded-xl border border-border px-4 py-2.5 text-xs font-bold text-muted-foreground transition-colors hover:bg-muted disabled:opacity-40">
               <ChevronLeft className="size-4" /> Anterior
             </button>
-            {step === 1 ? (
+            {step === WIZARD_STEP.company ? (
               <button type="button" onClick={() => void saveCompany()} disabled={saving} className="inline-flex items-center gap-1 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50">
                 {saving ? "Guardando..." : "Guardar y continuar"} <ChevronRight className="size-4" />
               </button>
-            ) : step === 2 ? (
+            ) : step === WIZARD_STEP.environment ? (
               <button type="button" onClick={() => void saveEnvironment()} disabled={saving} className="inline-flex items-center gap-1 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50">
                 {saving ? "Guardando..." : "Guardar y continuar"} <ChevronRight className="size-4" />
               </button>
-            ) : step === 3 ? (
+            ) : step === WIZARD_STEP.sequences ? (
               <button type="button" onClick={() => void saveSequences()} disabled={saving || enabledTypes.length === 0} className="inline-flex items-center gap-1 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:opacity-50">
                 {saving ? "Guardando..." : "Guardar secuencias"} <ChevronRight className="size-4" />
               </button>
@@ -1003,25 +1002,6 @@ function CertificationComplete() {
         <CircleAlert className="size-4" /> Confirmación DGII pendiente
       </div>
       <p className="mt-6 text-xs text-muted-foreground">No cambies a Producción ni emitas e-CF hasta contar con la aprobación en el portal y una prueba de envío aceptada.</p>
-    </div>
-  );
-}
-
-function UrlCopyField({ label, field, suffix, onCopy }: { label: string; field: string; suffix: string; onCopy: (value: string) => void }) {
-  // Mirrors the DGII portal field: fixed "https://" and service path around the only part the tenant types.
-  return (
-    <div className="mb-4 last:mb-0">
-      <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{label}</label>
-      <div className="mt-1.5 flex gap-2">
-        <div className="flex min-w-0 flex-1 items-stretch overflow-hidden rounded-xl border border-green-500/30 font-mono text-[11px]">
-          <span className="flex items-center bg-muted/40 px-2 text-muted-foreground">https://</span>
-          <input type="text" readOnly value={field} className="min-w-0 flex-1 bg-green-500/5 px-3 py-2.5 font-bold text-green-700 outline-none dark:text-green-400" />
-          <span className="flex items-center truncate bg-muted/40 px-2 text-muted-foreground" title={suffix}>{suffix}</span>
-        </div>
-        <button type="button" onClick={() => onCopy(field)} title="Copiar lo que va en el campo del portal" className="flex shrink-0 items-center justify-center rounded-xl border border-border bg-background px-3 transition-colors hover:bg-muted">
-          <Copy className="size-4 text-muted-foreground" />
-        </button>
-      </div>
     </div>
   );
 }
