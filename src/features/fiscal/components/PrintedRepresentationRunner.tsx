@@ -203,10 +203,10 @@ export function PrintedRepresentationRunner({ tenantId, environment }: PrintedRe
                         <span className="rounded-full bg-muted px-2 py-0.5 font-bold text-muted-foreground">Pendiente</span>
                       )}
                     </td>
-                    <td className="max-w-[16rem] px-3 py-2">
+                    <td className="max-w-[28rem] min-w-0 px-3 py-2">
                       {result?.document && (
-                        <div className="flex items-start gap-1">
-                          <span className="break-all font-mono text-[10px] text-muted-foreground">{result.document.qrUrl}</span>
+                        <div className="flex items-center gap-1">
+                          <span title={result.document.qrUrl} className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground">{result.document.qrUrl}</span>
                           <button type="button" aria-label="Copiar URL del QR" onClick={() => void copy(result.document!.qrUrl)} className="shrink-0 rounded p-1 text-primary hover:bg-primary/10">
                             <Copy className="size-3.5" />
                           </button>
