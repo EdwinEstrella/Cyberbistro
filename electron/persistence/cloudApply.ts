@@ -217,6 +217,7 @@ export const LOCAL_TENANT_SETTINGS_COLUMNS = [
   "nombre_negocio", "rnc", "direccion", "telefono", "moneda", "menu_url",
   "logo_url", "logo_size_px", "logo_offset_x", "logo_offset_y",
   "plan", "sucursal_limit_enabled", "sucursal_limit", "payment_day_of_month",
+  "debt_amount", "debt_currency", "debt_due_date", "debt_updated_at",
   "fiscal_mode", "fiscal_mode_fallback", "ecf_environment",
   "itbis_cobro_por_defecto", "propina_cobro_por_defecto", "itbis_incluido_en_precio",
   "ncf_fiscal_activo", "ncf_tipo_default", "ncf_tipos_activos",

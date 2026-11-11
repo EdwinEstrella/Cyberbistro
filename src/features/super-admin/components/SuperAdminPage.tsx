@@ -26,7 +26,15 @@ import type {
   TenantFilterState,
 } from "../lib/types";
 import { computeSuperAdminKpis } from "../lib/kpi";
-import { toDraft, parseNullableLimit, parseNullablePositiveLimit, parsePaymentDay } from "../lib/dirtyDetection";
+import {
+  toDraft,
+  parseNullableLimit,
+  parseNullablePositiveLimit,
+  parsePaymentDay,
+  parseDebtAmount,
+  isDebtDraftChanged,
+} from "../lib/dirtyDetection";
+import { formatDebtAmount, type DebtCurrency } from "../../../shared/lib/tenantDebt";
 import { KpiStrip } from "./KpiStrip";
 import { TenantList } from "./TenantList";
 import { TenantDetailHeader } from "./TenantDetailHeader";
@@ -283,7 +291,7 @@ export function SuperAdminPage() {
       setSavingTenantId(tenantId);
       setError("");
 
-      const payload = {
+      const payload: Record<string, unknown> = {
         user_limit_enabled: draft.userLimitEnabled,
         admin_user_limit: 1,
         cajera_user_limit: parseNullableLimit(draft.cajeraUserLimit),
@@ -293,6 +301,17 @@ export function SuperAdminPage() {
         sucursal_limit: parseNullablePositiveLimit(draft.sucursalLimit),
         payment_day_of_month: parsePaymentDay(draft.paymentDayOfMonth),
       };
+
+      const initialDraft = initialDrafts[tenantId];
+      if (initialDraft && isDebtDraftChanged(draft, initialDraft)) {
+        const parsedAmount = parseDebtAmount(draft.debtAmount);
+        const hasDebt = parsedAmount !== null && parsedAmount > 0;
+
+        payload.debt_amount = hasDebt ? parsedAmount : null;
+        payload.debt_currency = draft.debtCurrency;
+        payload.debt_due_date = hasDebt ? draft.debtDueDate.trim() : null;
+        payload.debt_updated_at = new Date().toISOString();
+      }
 
       const { error: updateError } = await supabase
         .from("tenants")
@@ -307,7 +326,7 @@ export function SuperAdminPage() {
         return;
       }
 
-      toast.success("Límites del restaurante actualizados con éxito.");
+      toast.success("Configuración del restaurante actualizada con éxito.");
       await loadData();
       setSavingTenantId(null);
     } catch (err) {
@@ -316,6 +335,52 @@ export function SuperAdminPage() {
       setError(msg);
       toast.error(msg);
     }
+  }
+
+  function markTenantDebtPaid(tenant: TenantRow) {
+    const formatted = tenant.debt_amount
+      ? formatDebtAmount(tenant.debt_amount, (tenant.debt_currency as DebtCurrency) || "DOP")
+      : "";
+    const name = tenant.nombre_negocio || tenant.id;
+    showConfirm(
+      `¿Registrar el pago de la deuda de "${name}"${formatted ? ` (${formatted})` : ""}? La deuda quedará saldada.`,
+      async () => {
+        try {
+          setSavingTenantId(tenant.id);
+          setError("");
+
+          const payload = {
+            debt_amount: null,
+            debt_due_date: null,
+            debt_updated_at: new Date().toISOString(),
+          };
+
+          const { error: updateError } = await supabase
+            .from("tenants")
+            .update(payload)
+            .eq("id", tenant.id);
+
+          if (updateError) {
+            const msg = `No se pudo registrar el pago: ${updateError.message}`;
+            setError(msg);
+            toast.error(msg);
+            setSavingTenantId(null);
+            return;
+          }
+
+          toast.success(`Pago registrado para "${name}". Deuda saldada.`);
+          await loadData();
+          setSavingTenantId(null);
+        } catch (err) {
+          setSavingTenantId(null);
+          const msg = err instanceof Error ? err.message : "Error al registrar el pago.";
+          setError(msg);
+          toast.error(msg);
+        }
+      },
+      "Registrar Pago",
+      "primary"
+    );
   }
 
   function updateTenantPlan(tenantId: string, plan: Plan) {
@@ -617,6 +682,7 @@ export function SuperAdminPage() {
                   [selectedTenantCard.tenant.id]: { ...selectedInitialDraft },
                 }))
               }
+              onMarkPaid={() => markTenantDebtPaid(selectedTenantCard.tenant)}
             />
           </TabsContent>
 

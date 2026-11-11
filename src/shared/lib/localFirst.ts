@@ -1374,7 +1374,9 @@ const SAFE_TENANT_KEYS = new Set([
   "ecf_secuencias_rangos",
   "ncf_fiscal_activo", "ncf_tipo_default", "ncf_secuencia_siguiente", "ncf_secuencias_por_tipo", "ncf_tipos_activos",
   "ncf_b01_secuencia_siguiente", "ncf_b02_secuencia_siguiente", "ncf_b14_secuencia_siguiente", "ncf_b15_secuencia_siguiente", "ncf_b16_secuencia_siguiente", "ncf_b17_secuencia_siguiente",
-  "cantidad_mesas", "payment_day_of_month", "updated_at"
+  "cantidad_mesas", "payment_day_of_month",
+  "debt_amount", "debt_currency", "debt_due_date", "debt_updated_at",
+  "updated_at"
 ]);
 
 export function resolveConflictForTable(
@@ -2210,6 +2212,28 @@ export async function getLocalTenantPaymentDay(tenantId: string): Promise<number
     return typeof row?.payment_day_of_month === "number" ? row.payment_day_of_month : null;
   } finally {
     db.close();
+  }
+}
+
+/** Reads the full local-first tenant mirror row across IndexedDB (web) and SQLite (desktop). */
+export async function getLocalTenantRow(tenantId: string): Promise<Record<string, unknown> | null> {
+  if (shouldUseIndexedDb()) {
+    try {
+      const db = await openLocalFirstDbForSync(tenantId);
+      try {
+        const row = await getOneFromStore<Record<string, unknown>>(db, "tenants", tenantId);
+        return row ?? null;
+      } finally {
+        db.close();
+      }
+    } catch {
+      return null;
+    }
+  }
+  try {
+    return await readLocalTenant(tenantId);
+  } catch {
+    return null;
   }
 }
 

@@ -3,6 +3,7 @@ import { fetchTenantOverview } from "../lib/tenantOverviewRepo";
 import { evaluateTenantHealth } from "../lib/healthIndicator";
 import { formatSupportSummary } from "../lib/supportSummary";
 import type { TenantOverviewData, HealthEvaluation, TenantCard } from "../lib/types";
+import { formatDebtAmount, getDebtStatus, type DebtCurrency } from "../../../shared/lib/tenantDebt";
 import { Badge } from "../../../shared/ui/badge";
 import { Button } from "../../../shared/ui/button";
 import { Card } from "../../../shared/ui/card";
@@ -58,6 +59,10 @@ export function TenantOverviewPanel({
           plan: card.tenant.plan ?? null,
           activa: card.tenant.activa ?? null,
           payment_day_of_month: card.tenant.payment_day_of_month ?? null,
+          debt_amount: card.tenant.debt_amount ?? null,
+          debt_currency: card.tenant.debt_currency ?? "DOP",
+          debt_due_date: card.tenant.debt_due_date ?? null,
+          debt_updated_at: card.tenant.debt_updated_at ?? null,
           created_at: card.tenant.created_at ?? res.data.tenant.created_at ?? null,
         },
       };
@@ -208,45 +213,94 @@ export function TenantOverviewPanel({
             )}
 
             {/* Operational parameters */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
-              <div className="rounded-[12px] bg-[#1a1a1a] border border-[rgba(72,72,71,0.18)] p-2.5">
-                <span className="text-[10px] uppercase tracking-[0.5px] font-['Inter',sans-serif] text-[#adaaaa] block">Día de pago</span>
-                <span className="mt-0.5 font-['Space_Grotesk',sans-serif] font-bold text-sm text-white block tabular-nums">
-                  {card.tenant.payment_day_of_month
-                    ? `Día ${card.tenant.payment_day_of_month}`
-                    : "Sin configurar"}
-                </span>
-              </div>
+            {(() => {
+              const debtAmount = card.tenant.debt_amount;
+              const debtCurrency = (card.tenant.debt_currency as DebtCurrency) || "DOP";
+              const debtDueDate = card.tenant.debt_due_date;
+              const hasDebt = debtAmount !== null && debtAmount !== undefined && debtAmount > 0;
+              const debtStatus = hasDebt
+                ? getDebtStatus(new Date(), {
+                    amount: debtAmount,
+                    currency: debtCurrency,
+                    dueDate: debtDueDate ?? null,
+                  })
+                : null;
+              const debtStatusLabel = (() => {
+                if (!debtStatus) return "";
+                switch (debtStatus.kind) {
+                  case "none":
+                    return "Al día";
+                  case "upcoming":
+                    return "Vence mañana";
+                  case "due_today":
+                    return "Vence hoy";
+                  case "overdue":
+                    return `Vencida hace ${debtStatus.daysOverdue} día${debtStatus.daysOverdue === 1 ? "" : "s"}`;
+                  case "locked":
+                    return "Deshabilitado";
+                }
+              })();
 
-              <div className="rounded-[12px] bg-[#1a1a1a] border border-[rgba(72,72,71,0.18)] p-2.5">
-                <span className="text-[10px] uppercase tracking-[0.5px] font-['Inter',sans-serif] text-[#adaaaa] block">Límite sucursales</span>
-                <span className="mt-0.5 font-['Space_Grotesk',sans-serif] font-bold text-sm text-white block tabular-nums">
-                  {card.tenant.sucursal_limit_enabled
-                    ? card.tenant.sucursal_limit ?? "Ilimitado"
-                    : "Sin control"}
-                </span>
-              </div>
+              return (
+                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2.5 pt-1">
+                  <div className="rounded-[12px] bg-[#1a1a1a] border border-[rgba(72,72,71,0.18)] p-2.5">
+                    <span className="text-[10px] uppercase tracking-[0.5px] font-['Inter',sans-serif] text-[#adaaaa] block">Día de pago</span>
+                    <span className="mt-0.5 font-['Space_Grotesk',sans-serif] font-bold text-sm text-white block tabular-nums">
+                      {card.tenant.payment_day_of_month
+                        ? `Día ${card.tenant.payment_day_of_month}`
+                        : "Sin configurar"}
+                    </span>
+                  </div>
 
-              <div className="rounded-[12px] bg-[#1a1a1a] border border-[rgba(72,72,71,0.18)] p-2.5">
-                <span className="text-[10px] uppercase tracking-[0.5px] font-['Inter',sans-serif] text-[#adaaaa] block">Control de cuotas</span>
-                <span className="mt-0.5 font-['Space_Grotesk',sans-serif] font-bold text-sm text-white block">
-                  {card.tenant.user_limit_enabled ? "Activo" : "Desactivado"}
-                </span>
-              </div>
+                  <div className="rounded-[12px] bg-[#1a1a1a] border border-[rgba(72,72,71,0.18)] p-2.5">
+                    <span className="text-[10px] uppercase tracking-[0.5px] font-['Inter',sans-serif] text-[#adaaaa] block">Deuda</span>
+                    {hasDebt ? (
+                      <div className="mt-0.5 space-y-0.5 min-w-0">
+                        <span className="font-['Space_Grotesk',sans-serif] font-bold text-sm text-[#ff906d] block tabular-nums truncate">
+                          {formatDebtAmount(debtAmount, debtCurrency)}
+                        </span>
+                        <span className="text-[10px] text-[#adaaaa] block truncate font-mono">
+                          {debtDueDate ? `Vence ${debtDueDate}` : "Sin fecha"} • {debtStatusLabel}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="mt-0.5 font-['Space_Grotesk',sans-serif] font-bold text-sm text-[#59ee50] block">
+                        Sin deuda
+                      </span>
+                    )}
+                  </div>
 
-              <div className="rounded-[12px] bg-[#1a1a1a] border border-[rgba(72,72,71,0.18)] p-2.5">
-                <span className="text-[10px] uppercase tracking-[0.5px] font-['Inter',sans-serif] text-[#adaaaa] block">Fecha de registro</span>
-                <span className="mt-0.5 text-xs font-medium text-white block font-mono">
-                  {data.tenant.created_at
-                    ? new Date(data.tenant.created_at).toLocaleDateString("es-DO", {
-                        year: "numeric",
-                        month: "short",
-                        day: "numeric",
-                      })
-                    : "Sin datos"}
-                </span>
-              </div>
-            </div>
+                  <div className="rounded-[12px] bg-[#1a1a1a] border border-[rgba(72,72,71,0.18)] p-2.5">
+                    <span className="text-[10px] uppercase tracking-[0.5px] font-['Inter',sans-serif] text-[#adaaaa] block">Límite sucursales</span>
+                    <span className="mt-0.5 font-['Space_Grotesk',sans-serif] font-bold text-sm text-white block tabular-nums">
+                      {card.tenant.sucursal_limit_enabled
+                        ? card.tenant.sucursal_limit ?? "Ilimitado"
+                        : "Sin control"}
+                    </span>
+                  </div>
+
+                  <div className="rounded-[12px] bg-[#1a1a1a] border border-[rgba(72,72,71,0.18)] p-2.5">
+                    <span className="text-[10px] uppercase tracking-[0.5px] font-['Inter',sans-serif] text-[#adaaaa] block">Control de cuotas</span>
+                    <span className="mt-0.5 font-['Space_Grotesk',sans-serif] font-bold text-sm text-white block">
+                      {card.tenant.user_limit_enabled ? "Activo" : "Desactivado"}
+                    </span>
+                  </div>
+
+                  <div className="rounded-[12px] bg-[#1a1a1a] border border-[rgba(72,72,71,0.18)] p-2.5">
+                    <span className="text-[10px] uppercase tracking-[0.5px] font-['Inter',sans-serif] text-[#adaaaa] block">Fecha de registro</span>
+                    <span className="mt-0.5 text-xs font-medium text-white block font-mono">
+                      {data.tenant.created_at
+                        ? new Date(data.tenant.created_at).toLocaleDateString("es-DO", {
+                            year: "numeric",
+                            month: "short",
+                            day: "numeric",
+                          })
+                        : "Sin datos"}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
           </Card>
 
           {/* Card 2: Actividad y sincronización */}

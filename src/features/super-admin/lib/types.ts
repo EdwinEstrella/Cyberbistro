@@ -1,5 +1,6 @@
 import type { ManagedUserRole } from "../../../shared/lib/tenantUserLimits";
 import type { Plan } from "../../../shared/lib/planFeatures";
+import type { DebtCurrency } from "../../../shared/lib/tenantDebt";
 
 export interface SuperAdminAuditLogRow {
   id: string;
@@ -38,6 +39,10 @@ export interface TenantRow {
   sucursal_limit_enabled?: boolean | null;
   sucursal_limit?: number | null;
   payment_day_of_month?: number | null;
+  debt_amount?: number | null;
+  debt_currency?: DebtCurrency | null;
+  debt_due_date?: string | null;
+  debt_updated_at?: string | null;
   [key: string]: unknown;
 }
 
@@ -50,9 +55,15 @@ export interface LimitDraft {
   sucursalLimitEnabled: boolean;
   sucursalLimit: string;
   paymentDayOfMonth: string;
+  debtAmount: string;
+  debtCurrency: DebtCurrency;
+  debtDueDate: string;
 }
 
-export type LimitDraftNumberField = Exclude<keyof LimitDraft, "userLimitEnabled" | "sucursalLimitEnabled">;
+export type LimitDraftNumberField = Exclude<
+  keyof LimitDraft,
+  "userLimitEnabled" | "sucursalLimitEnabled" | "debtCurrency" | "debtDueDate"
+>;
 
 export interface TenantCard {
   tenant: TenantRow;
@@ -92,6 +103,10 @@ export interface TenantOverviewTenantBasics {
   activa: boolean | null;
   created_at: string | null;
   payment_day_of_month: number | null;
+  debt_amount?: number | null;
+  debt_currency?: DebtCurrency | null;
+  debt_due_date?: string | null;
+  debt_updated_at?: string | null;
   fiscal_mode: string | null;
   ecf_environment: string | null;
   limits: TenantOverviewLimits;
