@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { P12Reader } from "npm:dgii-ecf";
 import forge from "npm:node-forge@1.3.1";
 import { formatDistinguishedName } from "./distinguishedName.ts";
+import { ECF_ENVIRONMENTS, buildCertificateRows } from "./certificateRows.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -174,18 +175,23 @@ serve(async (req) => {
     }
 
     const encryptedPassphrase = await encryptPassphrase(passphrase, requiredEnv("ECF_ENCRYPTION_KEY"));
-    // Read the previous object reference before the upsert replaces it.
-    const { data: previous } = await admin
+    // Read previous object references across environments before replacement.
+    const { data: previousRows } = await admin
       .from("ecf_certificate_metadata")
       .select("storage_ref")
       .eq("tenant_id", tenantId)
-      .eq("environment", environment)
-      .maybeSingle();
-    const previousRef = typeof previous?.storage_ref === "string" ? previous.storage_ref : null;
+      .in("environment", ECF_ENVIRONMENTS);
+    const existingRefs = (previousRows ?? [])
+      .map((row) => (typeof row?.storage_ref === "string" ? row.storage_ref : null))
+      .filter((ref): ref is string => !!ref);
+    const previousRefs = Array.from(
+      new Set(
+        existingRefs.filter((ref) => ref !== storagePath && ref.startsWith(`${tenantId}/`)),
+      ),
+    );
 
-    const { error: insertError } = await admin.from("ecf_certificate_metadata").upsert({
+    const certificateRows = buildCertificateRows({
       tenant_id: tenantId,
-      environment,
       subject: subjectText,
       issuer: issuerText,
       serial_number: certInfo.serialNumber,
@@ -195,12 +201,17 @@ serve(async (req) => {
       password_encrypted: encryptedPassphrase,
       is_ready: true,
       last_validation_error: null,
-    }, { onConflict: "tenant_id,environment" });
+    });
+
+    // One upsert for all environments: the same validated certificate serves test, certification and production.
+    const { error: insertError } = await admin
+      .from("ecf_certificate_metadata")
+      .upsert(certificateRows, { onConflict: "tenant_id,environment" });
     if (insertError) {
       // Validation passed but the metadata was not saved: the new object would be orphaned. Remove it
       // (tenant folder only, never the stored certificate). Non-fatal; SAVE_FAILED is always returned.
       try {
-        if (storagePath.startsWith(`${tenantId}/`) && storagePath !== previousRef) {
+        if (storagePath.startsWith(`${tenantId}/`) && !existingRefs.includes(storagePath)) {
           const { error: cleanupError } = await admin.storage.from("fiscal_certificates").remove([storagePath]);
           if (cleanupError) console.warn("validate-ecf-certificate: could not delete the unsaved upload.");
         }
@@ -210,14 +221,28 @@ serve(async (req) => {
       throw new HttpError(500, "Could not save certificate metadata.", "SAVE_FAILED");
     }
 
-    // The new certificate is validated and saved: remove the replaced object. Only objects in
-    // this tenant's folder are ever deleted. Failure is non-fatal and logged without secrets.
-    if (previousRef && previousRef !== storagePath && previousRef.startsWith(`${tenantId}/`)) {
-      const { error: removeError } = await admin.storage.from("fiscal_certificates").remove([previousRef]);
-      if (removeError) console.warn("validate-ecf-certificate: could not delete the previous certificate object.");
+    // The new certificate is validated and saved across all environments: remove replaced storage objects
+    // only if NO remaining ecf_certificate_metadata row of any tenant still references it after the upsert.
+    // Only objects in this tenant's folder are ever deleted. Failure is non-fatal and logged without secrets.
+    for (const replacedRef of previousRefs) {
+      if (replacedRef && replacedRef !== storagePath && replacedRef.startsWith(`${tenantId}/`)) {
+        try {
+          const { data: stillReferenced, error: checkError } = await admin
+            .from("ecf_certificate_metadata")
+            .select("id")
+            .eq("storage_ref", replacedRef)
+            .limit(1);
+          if (!checkError && (!stillReferenced || stillReferenced.length === 0)) {
+            const { error: removeError } = await admin.storage.from("fiscal_certificates").remove([replacedRef]);
+            if (removeError) console.warn("validate-ecf-certificate: could not delete the previous certificate object.");
+          }
+        } catch {
+          console.warn("validate-ecf-certificate: could not delete the previous certificate object.");
+        }
+      }
     }
 
-    return Response.json({ success: true, subject: subjectText }, { headers: corsHeaders });
+    return Response.json({ success: true, subject: subjectText, environment, environments: [...ECF_ENVIRONMENTS] }, { headers: corsHeaders });
   } catch (error) {
     const status = error instanceof HttpError ? error.status : 500;
     const message = error instanceof HttpError ? error.message : "Certificate validation failed.";

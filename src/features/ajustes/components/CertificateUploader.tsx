@@ -122,7 +122,10 @@ export function CertificateUploader({ environment, onValidated }: { environment:
 
   return (
     <div className="bg-background rounded-[16px] border border-black/5 dark:border-white/5 p-5 mt-4">
-      <h4 className="text-sm font-bold text-foreground mb-4">Certificado Digital (.p12)</h4>
+      <h4 className="text-sm font-bold text-foreground mb-1">Certificado Digital (.p12)</h4>
+      <p className="text-xs text-muted-foreground mb-4">
+        Este certificado se usa en Pruebas, Certificación y Producción. Solo lo subís una vez.
+      </p>
       
       {!uploadIssue && loading ? (
         <div role="status" className="border border-border rounded-xl p-4 mb-4 bg-muted/40">

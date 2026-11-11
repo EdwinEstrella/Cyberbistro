@@ -36,13 +36,15 @@ describe("e-CF certificate cloud custody migration", () => {
 
   it("deletes the previous certificate object only after the new one is saved", () => {
     const readPrevious = edgeFunction.indexOf('.select("storage_ref")');
-    const upsert = edgeFunction.indexOf('.upsert({');
-    const remove = edgeFunction.indexOf('.remove([previousRef])');
+    const upsert = edgeFunction.indexOf(".upsert(certificateRows");
+    const stillReferenced = edgeFunction.indexOf('.eq("storage_ref", replacedRef)');
+    const remove = edgeFunction.indexOf(".remove([replacedRef])");
     expect(readPrevious).toBeGreaterThan(-1);
     expect(readPrevious).toBeLessThan(upsert);
-    expect(upsert).toBeLessThan(remove);
-    expect(edgeFunction).toContain("previousRef !== storagePath");
-    expect(edgeFunction).toContain("previousRef.startsWith(`${tenantId}/`)");
+    expect(upsert).toBeLessThan(stillReferenced);
+    expect(stillReferenced).toBeLessThan(remove);
+    expect(edgeFunction).toContain("replacedRef !== storagePath");
+    expect(edgeFunction).toContain("replacedRef.startsWith(`${tenantId}/`)");
   });
 
   it("keeps a failed deletion non-fatal and free of secrets", () => {
@@ -75,7 +77,7 @@ describe("e-CF certificate cloud custody migration", () => {
     expect(start).toBeGreaterThan(-1);
     expect(body).toContain(".remove([storagePath])");
     expect(body).toContain("storagePath.startsWith(`${tenantId}/`)");
-    expect(body).toContain("storagePath !== previousRef");
+    expect(body).toContain("!existingRefs.includes(storagePath)");
     expect(body).toContain("catch {");
   });
 
@@ -91,5 +93,12 @@ describe("e-CF certificate cloud custody migration", () => {
       expect(edgeFunction).toContain(`"${code}"`);
     }
     expect(edgeFunction).toContain("{ error: message, code }");
+  });
+
+  it("writes all three environments in one call", () => {
+    expect(edgeFunction).toContain('from "./certificateRows.ts"');
+    expect(edgeFunction).toContain("ECF_ENVIRONMENTS");
+    expect(edgeFunction).toContain("buildCertificateRows");
+    expect(edgeFunction).toContain('.upsert(certificateRows, { onConflict: "tenant_id,environment" }');
   });
 });
