@@ -370,6 +370,14 @@ export function nextLoopAction(run: RunView): LoopAction {
   return "continue";
 }
 
+/**
+ * Pure helper deciding if a loaded run still has documents in "sent" status
+ * waiting for DGII resolution, unless stopped or the round budget is exhausted.
+ */
+export function shouldAutoPoll(run: RunView, pollRounds: number, maxRounds: number): boolean {
+  return run.counts.sent > 0 && !run.stoppedReason && pollRounds < maxRounds;
+}
+
 export function safeDownloadName(fileName: string, caseId: string): string {
   return /^[\w.-]+\.xml$/i.test(fileName) ? fileName : `${caseId.replace(/[^\w.-]+/g, "_") || "documento"}.xml`;
 }
@@ -409,9 +417,4 @@ export function simulationQuotaSummary(run: RunView): SimulationQuota[] {
       inRun: items.length,
     };
   });
-}
-
-/** Every signed e-CF of the run (reception and consumo), needed for the printed representation. */
-export function signedEcfDownloads(run: RunView): SubmissionItem[] {
-  return run.items.filter((item) => item.signed && (item.kind === "ecf" || item.kind === "portal_upload"));
 }

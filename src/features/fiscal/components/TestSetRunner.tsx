@@ -21,7 +21,7 @@ import {
   nextLoopAction,
   portalDownloads,
   safeDownloadName,
-  signedEcfDownloads,
+  shouldAutoPoll,
   simulationQuotaSummary,
   statusTone,
   summariesAccepted,
@@ -75,7 +75,7 @@ interface TestSetRunnerProps {
 /**
  * Wizard steps 2, 3 and 4: run a DGII set (upload, send in batches, poll status). The test set and
  * the simulation also offer the consumo < 250k portal downloads; the simulation adds the quotas of
- * the DGII portal list and the download of every signed e-CF (needed for step 5).
+ * the DGII portal list.
  */
 export function TestSetRunner({ tenantId, environment, runType = "test_set", title, description }: TestSetRunnerProps) {
   const copy = RUN_COPY[runType];
@@ -86,6 +86,8 @@ export function TestSetRunner({ tenantId, environment, runType = "test_set", tit
   const [busy, setBusy] = useState<"auth" | "start" | "send" | "status" | "download" | null>(null);
   const [status, setStatus] = useState<{ kind: "success" | "error" | "info"; text: string } | null>(null);
   const stopRef = useRef(false);
+  const autoPollRounds = useRef(0);
+  const prevRunIdRef = useRef<string | null>(null);
   const supported = isTestSetEnvironment(environment);
 
   useEffect(() => {
@@ -99,6 +101,37 @@ export function TestSetRunner({ tenantId, environment, runType = "test_set", tit
       cancelled = true;
     };
   }, [environment, tenantId, supported, runType]);
+
+  useEffect(() => {
+    if (!supported) return;
+    if (run?.runId !== prevRunIdRef.current) {
+      prevRunIdRef.current = run?.runId ?? null;
+      autoPollRounds.current = 0;
+    }
+    if (!run || busy !== null || !shouldAutoPoll(run, autoPollRounds.current, MAX_POLL_ROUNDS)) {
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (cancelled) return;
+      autoPollRounds.current++;
+      void poll(run.runId)
+        .then((result) => {
+          if (cancelled) return;
+          if (!result) {
+            autoPollRounds.current = MAX_POLL_ROUNDS;
+          }
+        })
+        .catch(() => {
+          if (cancelled) return;
+          autoPollRounds.current = MAX_POLL_ROUNDS;
+        });
+    }, POLL_DELAY_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [run, busy, supported, tenantId, runType]);
 
   if (!supported) {
     return (
@@ -151,6 +184,7 @@ export function TestSetRunner({ tenantId, environment, runType = "test_set", tit
     } catch {
       setStatus({ kind: "error", text: describeRunError(undefined, undefined, runType) });
     } finally {
+      autoPollRounds.current = 0;
       setBusy(null);
     }
   }
@@ -196,6 +230,7 @@ export function TestSetRunner({ tenantId, environment, runType = "test_set", tit
     } catch {
       setStatus({ kind: "error", text: describeRunError(undefined, undefined, runType) });
     } finally {
+      autoPollRounds.current = 0;
       setBusy(null);
     }
   }
@@ -209,6 +244,7 @@ export function TestSetRunner({ tenantId, environment, runType = "test_set", tit
     } catch {
       setStatus({ kind: "error", text: describeRunError(undefined, undefined, runType) });
     } finally {
+      autoPollRounds.current = 0;
       setBusy(null);
     }
   }
@@ -225,26 +261,9 @@ export function TestSetRunner({ tenantId, environment, runType = "test_set", tit
     return true;
   }
 
-  async function downloadAll(caseIds: string[]) {
-    setBusy("download");
-    try {
-      let saved = 0;
-      for (const caseId of caseIds) {
-        if (!(await download(caseId))) return;
-        saved++;
-      }
-      setStatus({ kind: "success", text: `Se descargaron ${saved} XML firmados.` });
-    } catch {
-      setStatus({ kind: "error", text: describeRunError(undefined, undefined, runType) });
-    } finally {
-      setBusy(null);
-    }
-  }
-
   const progress = run ? describeProgress(run) : null;
   const downloads = run && hasPortalUploads ? portalDownloads(run) : [];
   const quotas = run && isSimulation ? simulationQuotaSummary(run) : [];
-  const signedDocuments = run && isSimulation ? signedEcfDownloads(run) : [];
 
   return (
     <div className="mt-4 space-y-4 rounded-xl border border-dashed border-primary/35 bg-muted/20 p-5">
@@ -336,25 +355,6 @@ export function TestSetRunner({ tenantId, environment, runType = "test_set", tit
               <div className="mt-3 flex flex-wrap gap-2">
                 {downloads.map((item) => (
                   <button key={item.caseId} type="button" onClick={() => void download(item.caseId)} className="inline-flex items-center gap-2 rounded-xl border border-primary/30 px-3 py-2 text-xs font-bold text-primary hover:bg-primary/10">
-                    <Download className="size-3.5" /> {item.encf}.xml
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {signedDocuments.length > 0 && (
-            <div className="rounded-xl border border-border bg-background p-4">
-              <div className="flex items-center gap-2 text-xs font-bold text-foreground"><Download className="size-4 text-primary" /> XML firmados de la simulación</div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Guardá todos los e-CF firmados: los vas a necesitar para la representación impresa (Paso 5).
-              </p>
-              <button type="button" disabled={busy !== null} onClick={() => void downloadAll(signedDocuments.map((item) => item.caseId))} className="mt-3 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-sm disabled:cursor-not-allowed disabled:opacity-50">
-                <Download className="size-4" /> {busy === "download" ? "Descargando..." : `Descargar todos los XML firmados (${signedDocuments.length})`}
-              </button>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {signedDocuments.map((item) => (
-                  <button key={`${item.caseId}-${item.kind}`} type="button" disabled={busy !== null} onClick={() => void download(item.caseId)} className="inline-flex items-center gap-2 rounded-xl border border-primary/30 px-3 py-2 text-xs font-bold text-primary hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50">
                     <Download className="size-3.5" /> {item.encf}.xml
                   </button>
                 ))}
