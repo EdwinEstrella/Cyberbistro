@@ -21,7 +21,7 @@ import {
   portalDownloads,
   SIMULATION_QUOTAS,
   safeDownloadName,
-  signedEcfDownloads,
+  shouldAutoPoll,
   simulationQuotaSummary,
   statusTone,
   summariesAccepted,
@@ -161,6 +161,17 @@ describe("progress and loop", () => {
     expect(nextLoopAction(view({ stoppedReason: "DGII_UNAVAILABLE", waitingFor: "x" }))).toBe("stop");
   });
 
+  it("decides whether to auto-poll sent items", () => {
+    expect(shouldAutoPoll(view(), 0, 10)).toBe(true);
+    expect(shouldAutoPoll(view(), 9, 10)).toBe(true);
+    const noSent = view({ items: [item("E310000000001", "ecf", "accepted", 0)] });
+    expect(noSent.counts.sent).toBe(0);
+    expect(shouldAutoPoll(noSent, 0, 10)).toBe(false);
+    expect(shouldAutoPoll(view({ stoppedReason: "DGII_UNAVAILABLE" }), 0, 10)).toBe(false);
+    expect(shouldAutoPoll(view(), 10, 10)).toBe(false);
+    expect(shouldAutoPoll(view(), 15, 10)).toBe(false);
+  });
+
   it("assigns a tone per status and sanitizes download names", () => {
     expect(statusTone("accepted")).toBe("success");
     expect(statusTone("ready_for_portal")).toBe("success");
@@ -287,12 +298,5 @@ describe("simulation runs", () => {
     expect(byLabel["RFCE (E32 < 250 mil)"]).toMatchObject({ accepted: 1, inRun: 1 });
     expect(byLabel.E34).toMatchObject({ accepted: 0, inRun: 1 });
     expect(byLabel.E47).toMatchObject({ accepted: 0, inRun: 0 });
-    // Every signed e-CF (not the RFCE, not unsigned ones) is offered for download.
-    expect(signedEcfDownloads(run).map((entry) => `${entry.kind}:${entry.encf}`)).toEqual([
-      "portal_upload:E320000000017",
-      "ecf:E320000000016",
-      "ecf:E310000000011",
-      "ecf:E310000000012",
-    ]);
   });
 });
