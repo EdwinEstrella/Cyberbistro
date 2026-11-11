@@ -47,17 +47,15 @@ export function AlertModal({
   const btnBg =
     variant === "danger"
       ? "bg-red-500/90 hover:bg-red-500 text-white"
-      : variant === "primary"
-      ? "text-black"
-      : "bg-[#262626] hover:bg-[#333] text-white";
+      : "text-black";
 
   const btnStyle =
-    variant === "primary"
-      ? {
+    variant === "danger"
+      ? undefined
+      : {
           backgroundImage:
             "linear-gradient(172.248deg, rgb(255, 144, 109) 0%, rgb(255, 120, 77) 100%)",
-        }
-      : undefined;
+        };
 
   return (
     <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -65,7 +63,7 @@ export function AlertModal({
         <h3 className="font-['Space_Grotesk',sans-serif] text-lg font-bold text-white mb-2 uppercase tracking-wide">
           {title}
         </h3>
-        <p className="font-['Inter',sans-serif] text-sm text-gray-400 mb-6 leading-relaxed whitespace-pre-line">
+        <p className="font-['Inter',sans-serif] text-sm text-gray-100 mb-6 leading-relaxed whitespace-pre-line">
           {message}
         </p>
         <button

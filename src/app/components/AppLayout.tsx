@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router";
 
 import { VentaCartSearchProvider } from "../context/VentaCartSearchContext";
@@ -20,16 +20,31 @@ import { ConfirmModal } from "../../shared/components/ConfirmModal";
 // Exported for other components that might need direct access, though window.alert works too
 export let globalShowAlert: (msg: string, title?: string, variant?: "info" | "danger" | "primary") => void = () => {};
 import { RoleGuard } from "./RoleGuard";
+import { DebtLockedGate } from "./DebtLockedGate";
+import { SUPER_ADMIN_ROLE } from "../../shared/lib/superAdmin";
 import { LocalFirstStatusBadge } from "../../shared/components/LocalFirstStatusBadge";
 import { useLocalFirstBootstrap } from "../../shared/hooks/useLocalFirstBootstrap";
-import { getPaymentAlert, getPaymentAlertStorageKey } from "../../shared/lib/paymentDate";
+import { formatLocalDateKey, getPaymentAlert, getPaymentAlertStorageKey } from "../../shared/lib/paymentDate";
 import { isDesktopCloudUnavailable } from "../../shared/lib/cloudAvailability";
-import { getLocalTenantPaymentDay, readLocalMirror, shouldReadLocalFirst } from "../../shared/lib/localFirst";
+import { getLocalTenantRow, readLocalMirror, shouldReadLocalFirst } from "../../shared/lib/localFirst";
 import {
   isMissingPaymentDayColumnError,
   isPaymentDayUnavailable,
   markPaymentDayUnavailable,
 } from "../../shared/lib/paymentDayAvailability";
+import {
+  buildDebtMessage,
+  getDebtAlertStorageKey,
+  getDebtStatus,
+  toTenantDebt,
+  type DebtStatus,
+  type TenantDebt,
+} from "../../shared/lib/tenantDebt";
+import {
+  isDebtColumnsUnavailable,
+  isMissingDebtColumnsError,
+  markDebtColumnsUnavailable,
+} from "../../shared/lib/tenantDebtAvailability";
 import { tenantRealtimeSubscriptionManager } from "../../shared/lib/tenantRealtimeSubscriptionManager";
 import { canCommitTenantAsyncState } from "../../shared/lib/tenantAccessGuard";
 
@@ -377,45 +392,95 @@ function AppLayoutContent() {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [paymentDay, setPaymentDay] = useState<number | null>(null);
   const [paymentAlert, setPaymentAlert] = useState<{ tenantId: string; title: string; message: string; dateKey: string } | null>(null);
+  const [businessName, setBusinessName] = useState("");
+  const [tenantDebt, setTenantDebt] = useState<TenantDebt>({ amount: null, currency: "DOP", dueDate: null });
+  const [debtAlert, setDebtAlert] = useState<{ tenantId: string; title: string; message: string; dateKey: string } | null>(null);
+  const [recheckCounter, setRecheckCounter] = useState(0);
+
+  const handleRecheckDebt = useCallback(() => {
+    setRecheckCounter((c) => c + 1);
+  }, []);
 
   useEffect(() => {
     setPaymentDay(null);
     setPaymentAlert(null);
+    setDebtAlert(null);
     if (!tenantId || !tenantAccessValidated) {
+      setTenantDebt({ amount: null, currency: "DOP", dueDate: null });
+      setBusinessName("");
       return;
     }
     const lookupTenantId = tenantId;
     let cancelled = false;
-    if (isPaymentDayUnavailable(lookupTenantId)) return;
+
     void (async () => {
       const cloudDown = await isDesktopCloudUnavailable();
       if (!navigator.onLine || cloudDown) {
         try {
-          const localPaymentDay = await getLocalTenantPaymentDay(lookupTenantId);
+          const localRow = await getLocalTenantRow(lookupTenantId);
           if (!cancelled && currentTenantIdRef.current === lookupTenantId && tenantAccessValidated) {
-            setPaymentDay(localPaymentDay);
+            setPaymentDay(typeof localRow?.payment_day_of_month === "number" ? localRow.payment_day_of_month : null);
+            setBusinessName(typeof localRow?.nombre_negocio === "string" ? localRow.nombre_negocio : "");
+            setTenantDebt(toTenantDebt(localRow));
           }
         } catch {
-          if (!cancelled && currentTenantIdRef.current === lookupTenantId && tenantAccessValidated) setPaymentDay(null);
+          if (!cancelled && currentTenantIdRef.current === lookupTenantId && tenantAccessValidated) {
+            setPaymentDay(null);
+            setTenantDebt({ amount: null, currency: "DOP", dueDate: null });
+          }
         }
         return;
       }
-      void supabase.from("tenants").select("payment_day_of_month").eq("id", tenantId).maybeSingle()
-        .then(async ({ data, error }) => {
-        if (cancelled) return;
-        if (error) {
-          if (isMissingPaymentDayColumnError(error)) {
-            const shouldWarn = markPaymentDayUnavailable(lookupTenantId);
-            if (shouldWarn) {
-              console.warn("[AppLayout] payment_day_of_month is unavailable until the tenant migration is applied", {
-                tenantId: lookupTenantId,
-              });
-            }
-            setPaymentDay(null);
-            return;
+
+      // Online: build query according to schema availability
+      const debtUnavailable = isDebtColumnsUnavailable(lookupTenantId);
+      const paymentUnavailable = isPaymentDayUnavailable(lookupTenantId);
+
+      let selectCols = "nombre_negocio";
+      if (!paymentUnavailable) selectCols += ", payment_day_of_month";
+      if (!debtUnavailable) selectCols += ", debt_amount, debt_currency, debt_due_date";
+
+      type TenantCloudRes = { data: Record<string, unknown> | null; error: unknown };
+
+      try {
+        let { data, error } = (await supabase
+          .from("tenants")
+          .select(selectCols)
+          .eq("id", lookupTenantId)
+          .maybeSingle()) as TenantCloudRes;
+
+        if (error && !debtUnavailable && isMissingDebtColumnsError(error)) {
+          markDebtColumnsUnavailable(lookupTenantId);
+          const fallbackCols = paymentUnavailable ? "nombre_negocio" : "nombre_negocio, payment_day_of_month";
+          const res = (await supabase
+            .from("tenants")
+            .select(fallbackCols)
+            .eq("id", lookupTenantId)
+            .maybeSingle()) as TenantCloudRes;
+          data = res.data;
+          error = res.error;
+        }
+
+        if (error && !paymentUnavailable && isMissingPaymentDayColumnError(error)) {
+          const shouldWarn = markPaymentDayUnavailable(lookupTenantId);
+          if (shouldWarn) {
+            console.warn("[AppLayout] payment_day_of_month is unavailable until the tenant migration is applied", {
+              tenantId: lookupTenantId,
+            });
           }
+          const res = (await supabase
+            .from("tenants")
+            .select("nombre_negocio")
+            .eq("id", lookupTenantId)
+            .maybeSingle()) as TenantCloudRes;
+          data = res.data;
+          error = res.error;
+        }
+
+        if (error) {
+          // Cloud query error -> fallback to local mirror
           try {
-            const localPaymentDay = await getLocalTenantPaymentDay(tenantId);
+            const localRow = await getLocalTenantRow(lookupTenantId);
             if (!canCommitTenantAsyncState({
               requestGeneration: 0,
               currentGeneration: 0,
@@ -424,12 +489,18 @@ function AppLayoutContent() {
               accessValidated: tenantAccessValidated,
               cancelled,
             })) return;
-            setPaymentDay(localPaymentDay);
+            setPaymentDay(typeof localRow?.payment_day_of_month === "number" ? localRow.payment_day_of_month : null);
+            setBusinessName(typeof localRow?.nombre_negocio === "string" ? localRow.nombre_negocio : "");
+            setTenantDebt(toTenantDebt(localRow));
           } catch {
-            if (!cancelled && currentTenantIdRef.current === lookupTenantId && tenantAccessValidated) setPaymentDay(null);
+            if (!cancelled && currentTenantIdRef.current === lookupTenantId && tenantAccessValidated) {
+              setPaymentDay(null);
+              setTenantDebt({ amount: null, currency: "DOP", dueDate: null });
+            }
           }
           return;
         }
+
         if (!canCommitTenantAsyncState({
           requestGeneration: 0,
           currentGeneration: 0,
@@ -438,17 +509,65 @@ function AppLayoutContent() {
           accessValidated: tenantAccessValidated,
           cancelled,
         })) return;
+
         const day = typeof data?.payment_day_of_month === "number" ? data.payment_day_of_month : null;
+        const bName = typeof data?.nombre_negocio === "string" ? data.nombre_negocio : "";
+        const debt = toTenantDebt(data);
         setPaymentDay(day);
-      });
+        setBusinessName(bName);
+        setTenantDebt(debt);
+      } catch {
+        if (!cancelled && currentTenantIdRef.current === lookupTenantId && tenantAccessValidated) {
+          try {
+            const localRow = await getLocalTenantRow(lookupTenantId);
+            setPaymentDay(typeof localRow?.payment_day_of_month === "number" ? localRow.payment_day_of_month : null);
+            setBusinessName(typeof localRow?.nombre_negocio === "string" ? localRow.nombre_negocio : "");
+            setTenantDebt(toTenantDebt(localRow));
+          } catch {
+            setPaymentDay(null);
+            setTenantDebt({ amount: null, currency: "DOP", dueDate: null });
+          }
+        }
+      }
     })();
+
     return () => { cancelled = true; };
-  }, [tenantId, tenantAccessValidated]);
+  }, [tenantId, tenantAccessValidated, recheckCounter]);
+
+  const debtStatus: DebtStatus = useMemo(() => {
+    return getDebtStatus(new Date(), tenantDebt);
+  }, [tenantDebt]);
+
+  const isDebtLocked = debtStatus.kind === "locked" && rol !== SUPER_ADMIN_ROLE;
 
   useEffect(() => {
+    setDebtAlert(null);
     setPaymentAlert(null);
-    if (!tenantId || !tenantAccessValidated || !paymentDay) return;
+    if (!tenantId || !tenantAccessValidated) return;
+    if (debtStatus.kind === "locked") return;
+
     const today = new Date();
+    const todayKey = formatLocalDateKey(today);
+
+    // 1. Debt alert (upcoming, due_today, overdue)
+    if (debtStatus.kind === "upcoming" || debtStatus.kind === "due_today" || debtStatus.kind === "overdue") {
+      const debtMsg = buildDebtMessage({ businessName, debt: tenantDebt, status: debtStatus });
+      if (debtMsg) {
+        const dismissedKey = getDebtAlertStorageKey(tenantId, debtStatus.kind, todayKey);
+        if (!localStorage.getItem(dismissedKey)) {
+          setDebtAlert({
+            tenantId,
+            dateKey: dismissedKey,
+            title: debtMsg.title,
+            message: debtMsg.message,
+          });
+          return;
+        }
+      }
+    }
+
+    // 2. Fallback to monthly payment day alert if no active debt alert
+    if (!paymentDay) return;
     const alert = getPaymentAlert(today, paymentDay);
     if (!alert) return;
     const dismissedKey = getPaymentAlertStorageKey(tenantId, alert.dateKey);
@@ -461,7 +580,7 @@ function AppLayoutContent() {
         ? "Hoy corresponde realizar el pago del servicio de Cloudix."
         : "Mañana corresponde realizar el pago del servicio de Cloudix.",
     });
-  }, [paymentDay, tenantId, tenantAccessValidated]);
+  }, [debtStatus, businessName, tenantDebt, paymentDay, tenantId, tenantAccessValidated]);
 
   // Load initial pending orders count and subscribe to updates
   useEffect(() => {
@@ -678,6 +797,18 @@ function AppLayoutContent() {
   }, [routerLocation.pathname, tenantId, tenantAccessValidated]);
 
   const isAjustesActive = location.pathname === "/ajustes";
+
+  if (isDebtLocked) {
+    return (
+      <DebtLockedGate
+        businessName={businessName}
+        debt={tenantDebt}
+        status={debtStatus}
+        onRecheck={handleRecheckDebt}
+        onSignOut={signOut}
+      />
+    );
+  }
 
   return (
     <div className="bg-background text-foreground flex flex-col h-full min-h-0 w-full overflow-hidden transition-colors duration-300">
@@ -1273,14 +1404,19 @@ function AppLayoutContent() {
     </VentaCartSearchProvider>
       </RoleGuard>
       <AlertModal
-        open={tenantAccessValidated && paymentAlert?.tenantId === tenantId}
-        title={paymentAlert?.title ?? "Aviso"}
-        message={paymentAlert?.message ?? ""}
+        open={tenantAccessValidated && Boolean((debtAlert ?? paymentAlert)?.tenantId === tenantId)}
+        title={(debtAlert ?? paymentAlert)?.title ?? "Aviso"}
+        message={(debtAlert ?? paymentAlert)?.message ?? ""}
         variant="info"
         onClose={() => {
-          if (!paymentAlert) return;
-          localStorage.setItem(paymentAlert.dateKey, "dismissed");
-          setPaymentAlert(null);
+          const currentAlert = debtAlert ?? paymentAlert;
+          if (!currentAlert) return;
+          localStorage.setItem(currentAlert.dateKey, "dismissed");
+          if (debtAlert) {
+            setDebtAlert(null);
+          } else {
+            setPaymentAlert(null);
+          }
         }}
       />
     </div>

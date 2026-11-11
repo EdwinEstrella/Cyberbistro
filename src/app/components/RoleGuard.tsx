@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router";
 import { useAuth } from "../../shared/hooks/useAuth";
+import { SUPPORT_WHATSAPP_BLOCKED_URL } from "../../shared/lib/support";
 import { getRoleGuardDecision } from "./roleGuardDecision";
 
 function TenantAccessDenied({
@@ -23,7 +24,7 @@ function TenantAccessDenied({
       <div className="flex flex-wrap gap-3 justify-center">
         {reason === 'blocked' ? (
           <a
-            href="https://wa.me/18095968986?text=Hola%2C%20mi%20cuenta%20est%C3%A1%20bloqueada%20y%20necesito%20ayuda"
+            href={SUPPORT_WHATSAPP_BLOCKED_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="font-['Space_Grotesk',sans-serif] px-4 py-2 rounded bg-[#262626] text-[#ff906d] border border-[rgba(255,144,109,0.35)] no-underline flex items-center justify-center"
