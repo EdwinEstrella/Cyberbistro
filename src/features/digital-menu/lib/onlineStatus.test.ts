@@ -39,11 +39,37 @@ describe("onlineStatus pure helpers", () => {
       expect(isRestaurantClosedError({ message: "Database error: RESTAURANT_CLOSED" })).toBe(true);
     });
 
+    it("detects Spanish closed phrases including RPC message and mixed case", () => {
+      // Real RPC message from public.create_public_service_request
+      expect(
+        isRestaurantClosedError("El restaurante se encuentra cerrado en este momento")
+      ).toBe(true);
+      // Mixed case / uppercase variants
+      expect(
+        isRestaurantClosedError("EL RESTAURANTE SE ENCUENTRA CERRADO EN ESTE MOMENTO")
+      ).toBe(true);
+      expect(
+        isRestaurantClosedError("restaurante se encuentra cerrado")
+      ).toBe(true);
+      expect(
+        isRestaurantClosedError("Cerrado En Este Momento")
+      ).toBe(true);
+      expect(
+        isRestaurantClosedError({
+          message: "El restaurante se encuentra cerrado en este momento",
+        })
+      ).toBe(true);
+    });
+
     it("returns false for unrelated errors or falsy values", () => {
       expect(isRestaurantClosedError(null)).toBe(false);
       expect(isRestaurantClosedError(undefined)).toBe(false);
       expect(isRestaurantClosedError("")).toBe(false);
       expect(isRestaurantClosedError(new Error("NETWORK_ERROR"))).toBe(false);
+      expect(isRestaurantClosedError("Código de mesa incorrecto")).toBe(false);
+      expect(isRestaurantClosedError("Mesa inválida")).toBe(false);
+      expect(isRestaurantClosedError(new Error("Código de mesa incorrecto"))).toBe(false);
+      expect(isRestaurantClosedError({ message: "Mesa inválida" })).toBe(false);
     });
   });
 

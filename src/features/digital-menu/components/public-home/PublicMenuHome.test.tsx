@@ -156,4 +156,44 @@ describe("PublicMenuHome", () => {
     // Primary CTA button has min-h-[56px]
     expect(html).toContain("min-h-[56px]");
   });
+
+  it("renders service buttons in table mode when slug and tenantId are provided", () => {
+    const mode: PublicMenuMode = { kind: "table", mesa: 4 };
+    const html = renderToStaticMarkup(
+      <PublicMenuHome
+        mode={mode}
+        settings={baseSettings}
+        contact={fullContact}
+        partySize={2}
+        onPartySizeChange={vi.fn()}
+        onViewMenu={vi.fn()}
+        slug="cyber-bistro"
+        tenantId="tenant-test-123"
+      />
+    );
+
+    expect(html).toContain('data-testid="service-request-buttons"');
+    expect(html).toContain("Llamar al mesero");
+    expect(html).toContain("Pedir la cuenta");
+  });
+
+  it("never renders service buttons in takeout mode even when slug and tenantId are provided", () => {
+    const mode: PublicMenuMode = { kind: "takeout", invalidMesa: false };
+    const html = renderToStaticMarkup(
+      <PublicMenuHome
+        mode={mode}
+        settings={baseSettings}
+        contact={fullContact}
+        partySize={null}
+        onPartySizeChange={vi.fn()}
+        onViewMenu={vi.fn()}
+        slug="cyber-bistro"
+        tenantId="tenant-test-123"
+      />
+    );
+
+    expect(html).not.toContain('data-testid="service-request-buttons"');
+    expect(html).not.toContain("Llamar al mesero");
+    expect(html).not.toContain("Pedir la cuenta");
+  });
 });

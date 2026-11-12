@@ -358,6 +358,8 @@ export function PublicDigitalMenu() {
         partySize={partySize}
         onPartySizeChange={setPartySize}
         onViewMenu={() => setScreen("order")}
+        slug={slug}
+        tenantId={menu.settings?.tenant_id}
       />
     );
   }
@@ -390,6 +392,8 @@ export function PublicDigitalMenu() {
       onDismissSuccess={() => setSuccess(null)}
       contact={menu.contact}
       currencyFormatter={formatCurrency}
+      slug={slug}
+      tenantId={menu.settings?.tenant_id}
     />
   );
 }

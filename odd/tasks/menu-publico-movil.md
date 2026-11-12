@@ -72,7 +72,18 @@ Provide a public mobile-first digital menu interface for restaurant customers wi
   - [x] `ServicesTab` rendering utility actions with LicenHub emerald icon chips.
   - [x] Component unit tests for `CategoryChips`, `DishRow`, `BottomTabBar`, and `CartDrawer` + absence of "Pagar".
   - [x] Full test suite (32 files, 237 tests) passing; `npm run typecheck` passing cleanly.
-- [ ] **T4**: Call waiter and bill client flows with Realtime Presence waiter availability check.
+- [x] **T4**: Call waiter and bill client flows with Realtime Presence waiter availability check.
+  - [x] Pure libs: `serviceRequests.ts` (RPC args builder, 4-digit code validator, result parser, Spanish error mapper) and `waiterPresence.ts` (channel name generator `waiters:<tenant_id>`, staff role checker `mesero`/`cajera`/`admin`, presence counter ignoring malformed entries).
+  - [x] Hooks: `useWaiterAvailability` (anonymous read-only presence subscriber, fail-open when unknown, never calls `track()`), `useWaiterPresencePublisher` (staff presence broadcast in `AppLayout`, random per-tab key, role and timestamp only with no PII), and `useServiceRequest` (state machine `idle|sending|sent|already_pending|error`, double submit prevention, RPC caller with code validation).
+  - [x] Components: `ServiceRequestButtons` (LicenHub card style, disabled waiter CTA with hint when 0 waiters online, bill button never blocked), `ServiceRequestSheet` (`BottomSheet` with numeric 4-digit code input, inline errors, sent and already_pending confirmation states), and `ServiceRequestPanel` (container composing hooks, buttons and sheet).
+  - [x] Integration: table mode only in `PublicMenuHome` (above `UtilityButtonGrid`) and `ServicesTab` (threaded through `PublicMenuOrderScreen` and `PublicDigitalMenu`). Never rendered in takeout mode.
+  - [x] Unit tests: `serviceRequests.test.ts`, `waiterPresence.test.ts`, `ServiceRequestButtons.test.tsx`, `ServiceRequestSheet.test.tsx`, and `PublicMenuHome.test.tsx` (30 test files, 217 tests passing); `npm run typecheck` passing cleanly.
+  - **T4 notes**:
+    - Presence channel: `waiters:<tenant_id>`.
+    - Fail-open policy: when presence availability is unknown (connecting or channel error/timeout), the waiter call button remains enabled so network glitches never block customers.
+    - Anon read-only: diner hook `useWaiterAvailability` never calls `track()`.
+    - Privacy: staff presence payload strictly contains `{ role, at }` with no PII (no names, emails, or user IDs).
+    - Manual verification pending: staff presence publishing and real-time WebSocket presence synchronization require manual end-to-end verification in T8.
 - [ ] **T5**: Staff alerts on Mesas screen (bell indicator + sound + attend action clearing for all).
 - [ ] **T6**: Four casual games (Memory, Tic-tac-toe, Snake, 2048) implemented as lazy-loaded components.
 - [ ] **T7**: Suggestions UI + Edge Function email forwarding via Resend (`sugerencias@mail.azokia.com`).

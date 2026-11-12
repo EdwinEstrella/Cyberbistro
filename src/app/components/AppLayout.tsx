@@ -47,6 +47,7 @@ import {
 } from "../../shared/lib/tenantDebtAvailability";
 import { tenantRealtimeSubscriptionManager } from "../../shared/lib/tenantRealtimeSubscriptionManager";
 import { canCommitTenantAsyncState } from "../../shared/lib/tenantAccessGuard";
+import { useWaiterPresencePublisher } from "../../features/digital-menu/hooks/useWaiterPresencePublisher";
 
 import { canUseFeature, type Feature } from "../../shared/lib/planFeatures";
 
@@ -386,6 +387,7 @@ function AppLayoutContent() {
   const navigate = useNavigate();
   const routerLocation = useLocation();
   const { rol, signOut, tenantId, plan, loading, tenantAccessValidated } = useAuth();
+  useWaiterPresencePublisher(tenantId, rol, tenantAccessValidated);
   const currentTenantIdRef = useRef(tenantId);
   currentTenantIdRef.current = tenantId;
   const [pendingOrdersCount, setPendingOrdersCount] = useState(0);

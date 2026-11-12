@@ -4,6 +4,7 @@ import type { PublicMenuMode } from "../../lib/publicMenuMode";
 import { getUtilityActions, type UtilityAction } from "../../lib/contactLinks";
 import type { PublicContact } from "../../../menu-links/lib/publicMenuCalendar";
 import { PartySizePicker } from "./PartySizePicker";
+import { ServiceRequestPanel } from "./ServiceRequestPanel";
 import { UtilityButtonGrid } from "./UtilityButtonGrid";
 import { WifiSheet } from "./WifiSheet";
 import { WhatsAppSheet } from "./WhatsAppSheet";
@@ -24,6 +25,8 @@ export interface PublicMenuHomeProps {
   partySize: number | null;
   onPartySizeChange: (size: number) => void;
   onViewMenu: () => void;
+  slug?: string;
+  tenantId?: string | null;
 }
 
 export function PublicMenuHome({
@@ -33,6 +36,8 @@ export function PublicMenuHome({
   partySize,
   onPartySizeChange,
   onViewMenu,
+  slug,
+  tenantId,
 }: PublicMenuHomeProps) {
   const [activeSheet, setActiveSheet] = useState<"wifi" | "whatsapp" | "social" | null>(null);
 
@@ -128,6 +133,17 @@ export function PublicMenuHome({
               </p>
             )}
           </div>
+
+          {/* In-table service requests (Call waiter & Ask for the bill) */}
+          {isTableMode && slug && tenantId && (
+            <div className="w-full pt-1">
+              <ServiceRequestPanel
+                slug={slug}
+                mesa={mode.mesa}
+                tenantId={tenantId}
+              />
+            </div>
+          )}
 
           {/* Utility button grid */}
           {actions.length > 0 && (

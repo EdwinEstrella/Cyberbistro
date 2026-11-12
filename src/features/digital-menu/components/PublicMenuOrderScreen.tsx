@@ -62,6 +62,8 @@ export interface PublicMenuOrderScreenProps {
   onDismissSuccess?: () => void;
   contact?: PublicContact | null;
   currencyFormatter: (value: number, code: string) => string;
+  slug?: string;
+  tenantId?: string | null;
 }
 
 export function PublicMenuOrderScreen({
@@ -90,6 +92,8 @@ export function PublicMenuOrderScreen({
   onDismissSuccess,
   contact,
   currencyFormatter,
+  slug,
+  tenantId,
 }: PublicMenuOrderScreenProps) {
   const [activeTab, setActiveTab] = useState<"menu" | "services">("menu");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
@@ -252,6 +256,9 @@ export function PublicMenuOrderScreen({
               contact={contact}
               isTableMode={isTableMode}
               businessName={settings.title || settings.business_name}
+              slug={slug}
+              tenantId={tenantId}
+              mesa={mode.kind === "table" ? mode.mesa : undefined}
             />
           </main>
         )}

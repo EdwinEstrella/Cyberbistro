@@ -17,11 +17,15 @@ import type { PublicContact } from "../../../menu-links/lib/publicMenuCalendar";
 import { WifiSheet } from "../public-home/WifiSheet";
 import { WhatsAppSheet } from "../public-home/WhatsAppSheet";
 import { SocialSheet } from "../public-home/SocialSheet";
+import { ServiceRequestPanel } from "../public-home/ServiceRequestPanel";
 
 export interface ServicesTabProps {
   contact?: PublicContact | null;
   isTableMode: boolean;
   businessName: string;
+  slug?: string;
+  tenantId?: string | null;
+  mesa?: number | null;
 }
 
 const ACTION_ICONS: Record<UtilityActionId, LucideIcon> = {
@@ -32,7 +36,14 @@ const ACTION_ICONS: Record<UtilityActionId, LucideIcon> = {
   maps: MapPin,
 };
 
-export function ServicesTab({ contact, isTableMode, businessName }: ServicesTabProps) {
+export function ServicesTab({
+  contact,
+  isTableMode,
+  businessName,
+  slug,
+  tenantId,
+  mesa,
+}: ServicesTabProps) {
   const [activeSheet, setActiveSheet] = useState<"wifi" | "whatsapp" | "social" | null>(null);
 
   const actions = useMemo(
@@ -64,6 +75,13 @@ export function ServicesTab({ contact, isTableMode, businessName }: ServicesTabP
           </p>
         </div>
       </div>
+
+      {/* Table service requests (Call waiter / Ask for bill) */}
+      {isTableMode && slug && tenantId && mesa && (
+        <div className="w-full">
+          <ServiceRequestPanel slug={slug} mesa={mesa} tenantId={tenantId} />
+        </div>
+      )}
 
       {/* Grid of utility cards */}
       {actions.length === 0 ? (
