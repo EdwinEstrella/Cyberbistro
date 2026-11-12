@@ -35,6 +35,8 @@ import {
 } from "./lib/connectionStatus";
 import { createDedupedRefetch } from "./lib/dedupRefetch";
 import { buildPublicMenuUrl } from "../menu-links/lib/menuLinkUrl";
+import { useKitchenEnabled } from "../../shared/lib/tenantKitchenSettings";
+import { printDispatchSlip, type DispatchSlipReceiptData } from "../../shared/lib/dispatchSlip";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -50,6 +52,7 @@ function orderTypeLabel(type: string | null | undefined): string {
 export function Pedidos() {
   const { tenantId, loading: authLoading, tenantAccessValidated } = useAuth();
   const { activeSucursalId } = useSucursal();
+  const kitchenEnabled = useKitchenEnabled(tenantId);
   const [settings, setSettings] = useState<MenuSettings | null>(null);
   const [orders, setOrders] = useState<DigitalOrder[]>([]);
   const [orderItems, setOrderItems] = useState<DigitalOrderItem[]>([]);
@@ -294,48 +297,68 @@ export function Pedidos() {
           const comandaItems = buildComandaItemsFromOrderItems(activeLines);
           const comandaNotas = buildComandaNotas(order, linkInfo.companyName);
 
-          const comandaPayload: Record<string, unknown> = {
-            tenant_id: tenantId,
-            sucursal_id: activeSucursalId,
-            estado: "pendiente",
-            creado_por: "digital",
-            notas: comandaNotas,
-            items: comandaItems,
-          };
+          let comandaId: string | null = null;
+          let dispatchSlip: DispatchSlipReceiptData | null = null;
 
-          const { data: comandaData, error: comandaError } = await supabase
-            .from("comandas")
-            .insert(comandaPayload)
-            .select("id")
-            .single();
+          if (kitchenEnabled) {
+            const comandaPayload: Record<string, unknown> = {
+              tenant_id: tenantId,
+              sucursal_id: activeSucursalId,
+              estado: "pendiente",
+              creado_por: "digital",
+              notas: comandaNotas,
+              items: comandaItems,
+            };
 
-          if (comandaError || !comandaData) {
-            // Comanda creation failed: call revert_company_digital_order_accept and show error
-            const { error: revertError } = await supabase.rpc("revert_company_digital_order_accept", {
-              p_order_id: order.id,
-            });
-            if (revertError) {
-              setMessage(mapAcceptOrderError(revertError));
-            } else {
-              setMessage(
-                comandaError?.message ||
-                  "No se pudo crear la comanda para cocina. El pedido fue revertido a pendiente."
-              );
+            const { data: comandaData, error: comandaError } = await supabase
+              .from("comandas")
+              .insert(comandaPayload)
+              .select("id")
+              .single();
+
+            if (comandaError || !comandaData) {
+              // Comanda creation failed: call revert_company_digital_order_accept and show error
+              const { error: revertError } = await supabase.rpc("revert_company_digital_order_accept", {
+                p_order_id: order.id,
+              });
+              if (revertError) {
+                setMessage(mapAcceptOrderError(revertError));
+              } else {
+                setMessage(
+                  comandaError?.message ||
+                    "No se pudo crear la comanda para cocina. El pedido fue revertido a pendiente."
+                );
+              }
+              void loadData(true);
+              return;
             }
-            void loadData(true);
-            return;
+
+            comandaId = (comandaData as { id: string }).id;
+
+            // Explicitly link comanda to digital_order
+            const { error: updateOrderError } = await supabase
+              .from("digital_orders")
+              .update({ comanda_id: comandaId })
+              .eq("id", order.id);
+
+            if (updateOrderError) {
+              console.warn("[Pedidos] Error vinculando comanda_id a digital_order:", updateOrderError);
+            }
+          } else {
+            // kitchen_enabled = false: no comanda is created; prepare dispatch slip for register
+            dispatchSlip = {
+              id: order.id,
+              numero_pedido: order.numero_pedido ?? null,
+              mesa_numero: null,
+              mesa_label: linkInfo.companyName || "Empresarial",
+              items: comandaItems,
+              notas: comandaNotas,
+              created_at: order.created_at,
+            };
           }
 
-          const comandaId = (comandaData as { id: string }).id;
-
-          // Explicitly link comanda to digital_order
-          const { error: updateOrderError } = await supabase
-            .from("digital_orders")
-            .update({ comanda_id: comandaId })
-            .eq("id", order.id);
-
-          if (updateOrderError) {
-            console.warn("[Pedidos] Error vinculando comanda_id a digital_order:", updateOrderError);
+          if (dispatchSlip) {
+            void printDispatchSlip(tenantId, dispatchSlip);
           }
 
           // Company orders are charged via CxC: do NOT create consumos or cart checkout.
@@ -377,50 +400,65 @@ export function Pedidos() {
         const comandaItems = buildComandaItemsFromOrderItems(activeLines);
         const comandaNotas = buildComandaNotas(order);
 
-        const comandaPayload: Record<string, unknown> = {
-          tenant_id: tenantId,
-          sucursal_id: activeSucursalId,
-          estado: "pendiente",
-          creado_por: "digital",
-          notas: comandaNotas,
-          items: comandaItems,
-        };
+        let comandaId: string | null = null;
+        let dispatchSlip: DispatchSlipReceiptData | null = null;
 
-        if (isInStore) {
-          comandaPayload.mesa_numero = order.mesa_numero;
-        }
+        if (kitchenEnabled) {
+          const comandaPayload: Record<string, unknown> = {
+            tenant_id: tenantId,
+            sucursal_id: activeSucursalId,
+            estado: "pendiente",
+            creado_por: "digital",
+            notas: comandaNotas,
+            items: comandaItems,
+          };
 
-        const { data: comandaData, error: comandaError } = await supabase
-          .from("comandas")
-          .insert(comandaPayload)
-          .select("id")
-          .single();
+          if (isInStore) {
+            comandaPayload.mesa_numero = order.mesa_numero;
+          }
 
-        if (comandaError || !comandaData) {
-          await supabase
+          const { data: comandaData, error: comandaError } = await supabase
+            .from("comandas")
+            .insert(comandaPayload)
+            .select("id")
+            .single();
+
+          if (comandaError || !comandaData) {
+            await supabase
+              .from("digital_orders")
+              .update({ status: "pending", accepted_at: null })
+              .eq("id", order.id)
+              .eq("tenant_id", order.tenant_id)
+              .eq("sucursal_id", activeSucursalId);
+            setMessage(
+              comandaError?.message ||
+                "No se pudo crear la comanda para cocina. El pedido fue revertido a pendiente."
+            );
+            void loadData(true);
+            return;
+          }
+
+          comandaId = (comandaData as { id: string }).id;
+
+          // Explicitly link comanda to digital_order
+          const { error: updateOrderError } = await supabase
             .from("digital_orders")
-            .update({ status: "pending", accepted_at: null })
-            .eq("id", order.id)
-            .eq("tenant_id", order.tenant_id)
-            .eq("sucursal_id", activeSucursalId);
-          setMessage(
-            comandaError?.message ||
-              "No se pudo crear la comanda para cocina. El pedido fue revertido a pendiente."
-          );
-          void loadData(true);
-          return;
-        }
+            .update({ comanda_id: comandaId })
+            .eq("id", order.id);
 
-        const comandaId = (comandaData as { id: string }).id;
-
-        // Explicitly link comanda to digital_order
-        const { error: updateOrderError } = await supabase
-          .from("digital_orders")
-          .update({ comanda_id: comandaId })
-          .eq("id", order.id);
-
-        if (updateOrderError) {
-          console.warn("[Pedidos] Error vinculando comanda_id a digital_order:", updateOrderError);
+          if (updateOrderError) {
+            console.warn("[Pedidos] Error vinculando comanda_id a digital_order:", updateOrderError);
+          }
+        } else {
+          // kitchen_enabled === false: no comanda is created; prepare dispatch slip for register
+          dispatchSlip = {
+            id: order.id,
+            numero_pedido: order.numero_pedido ?? null,
+            mesa_numero: isInStore ? order.mesa_numero : 0,
+            items: comandaItems,
+            notas: comandaNotas,
+            created_at: order.created_at,
+          };
         }
 
         // Consumos for in-store orders (excluding cancelled items)
@@ -435,8 +473,8 @@ export function Pedidos() {
             cantidad: line.quantity,
             precio_unitario: line.price_snapshot,
             subtotal: line.subtotal,
-            tipo: "cocina",
-            estado: "enviado_cocina",
+            tipo: kitchenEnabled ? "cocina" : "directo",
+            estado: kitchenEnabled ? "enviado_cocina" : "entregado",
             created_by_auth_user_id: null,
           }));
 
@@ -445,30 +483,37 @@ export function Pedidos() {
             .insert(consumosPayload);
 
           if (consumosError) {
-            const { error: comandaDeleteError } = await supabase
-              .from("comandas")
-              .delete()
-              .eq("id", comandaId);
+            if (kitchenEnabled && comandaId) {
+              const { error: comandaDeleteError } = await supabase
+                .from("comandas")
+                .delete()
+                .eq("id", comandaId);
 
-            if (comandaDeleteError) {
-              setMessage(
-                `Consumos fallaron y la comanda no pudo eliminarse (ID: ${comandaId}). El pedido queda aceptado. Intervención manual requerida.`
-              );
-            } else {
-              await supabase
-                .from("digital_orders")
-                .update({ status: "pending", accepted_at: null, comanda_id: null })
-                .eq("id", order.id)
-                .eq("tenant_id", order.tenant_id)
-                .eq("sucursal_id", activeSucursalId);
-              setMessage(
-                consumosError.message ||
-                  "No se pudieron registrar los consumos. El pedido fue revertido a pendiente."
-              );
+              if (comandaDeleteError) {
+                setMessage(
+                  `Consumos fallaron y la comanda no pudo eliminarse (ID: ${comandaId}). El pedido queda aceptado. Intervención manual requerida.`
+                );
+                void loadData(true);
+                return;
+              }
             }
+            await supabase
+              .from("digital_orders")
+              .update({ status: "pending", accepted_at: null, comanda_id: null })
+              .eq("id", order.id)
+              .eq("tenant_id", order.tenant_id)
+              .eq("sucursal_id", activeSucursalId);
+            setMessage(
+              consumosError.message ||
+                "No se pudieron registrar los consumos. El pedido fue revertido a pendiente."
+            );
             void loadData(true);
             return;
           }
+        }
+
+        if (dispatchSlip) {
+          void printDispatchSlip(tenantId, dispatchSlip);
         }
 
         setOrders((current) =>

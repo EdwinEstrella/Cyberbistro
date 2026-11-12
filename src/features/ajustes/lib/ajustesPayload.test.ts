@@ -17,6 +17,7 @@ function createMockConfig(overrides?: Partial<AjustesConfig>): AjustesConfig {
     itbis_cobro_por_defecto: true,
     itbis_incluido_en_precio: false,
     propina_cobro_por_defecto: true,
+    kitchen_enabled: true,
     ncf_fiscal_activo: false,
     fiscal_mode: "ncf_legacy",
     fiscal_mode_fallback: "internal_receipt",
@@ -191,5 +192,16 @@ describe("buildAjustesSavePayload", () => {
     expect(payload.itbis_incluido_en_precio).toBe(true);
     expect(payload.fiscal_mode_fallback).toBe("ncf_legacy");
     expect(payload.updated_at).toBeDefined();
+  });
+
+  it("handles kitchen_enabled in payload (saving true, false, and defaulting to true)", () => {
+    const payloadTrue = buildAjustesSavePayload({ config: createMockConfig({ kitchen_enabled: true }) });
+    expect(payloadTrue.kitchen_enabled).toBe(true);
+
+    const payloadFalse = buildAjustesSavePayload({ config: createMockConfig({ kitchen_enabled: false }) });
+    expect(payloadFalse.kitchen_enabled).toBe(false);
+
+    const payloadDefault = buildAjustesSavePayload({ config: createMockConfig({ kitchen_enabled: undefined as unknown as boolean }) });
+    expect(payloadDefault.kitchen_enabled).toBe(true);
   });
 });

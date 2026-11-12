@@ -539,7 +539,7 @@ export function TitleBar({
                   <div className="h-[1px] bg-white/10 my-1 w-full" />
                   
                   <div className="flex items-center justify-between px-1">
-                    <label className="text-[10px] text-white/70 font-['Space_Grotesk',sans-serif]">Imprimir Comandas Activo</label>
+                    <label className="text-[10px] text-white/70 font-['Space_Grotesk',sans-serif]">Imprimir comanda / papelito de pedido</label>
                     <Switch
                       checked={printComandas}
                       onCheckedChange={handleToggleComandas}

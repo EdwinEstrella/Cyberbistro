@@ -26,7 +26,7 @@ const ctx = (over: Partial<OrderWriteContext> = {}): OrderWriteContext => {
 };
 
 describe("splitCartByDestination", () => {
-  it("routes only va_a_cocina === false to direct; everything else to kitchen", () => {
+  it("routes only va_a_cocina === false to direct; everything else to kitchen by default", () => {
     const cart: OrderCartLine[] = [
       { plato: plato({ va_a_cocina: true }), cantidad: 1 },
       { plato: plato({ va_a_cocina: false }), cantidad: 1 },
@@ -34,6 +34,25 @@ describe("splitCartByDestination", () => {
     const { kitchenItems, directItems } = splitCartByDestination(cart);
     expect(kitchenItems).toHaveLength(1);
     expect(directItems).toHaveLength(1);
+  });
+
+  it("treats all lines as direct when kitchenEnabled is false", () => {
+    const cart: OrderCartLine[] = [
+      { plato: plato({ va_a_cocina: true }), cantidad: 1 },
+      { plato: plato({ va_a_cocina: false }), cantidad: 1 },
+    ];
+    const { kitchenItems, directItems } = splitCartByDestination(cart, false);
+    expect(kitchenItems).toHaveLength(0);
+    expect(directItems).toHaveLength(2);
+  });
+
+  it("defaults to kitchenEnabled = true when undefined", () => {
+    const cart: OrderCartLine[] = [
+      { plato: plato({ va_a_cocina: true }), cantidad: 1 },
+    ];
+    const { kitchenItems, directItems } = splitCartByDestination(cart, undefined);
+    expect(kitchenItems).toHaveLength(1);
+    expect(directItems).toHaveLength(0);
   });
 });
 
@@ -84,6 +103,23 @@ describe("buildOrderWrites", () => {
       comanda_id: null,
       subtotal: 360,
     });
+  });
+
+  it("when kitchenEnabled is false: creates no comanda even if dishes have va_a_cocina: true, all consumos become direct/entregado", () => {
+    const cart: OrderCartLine[] = [
+      { plato: plato({ id: 1, nombre: "Pizza", va_a_cocina: true }), cantidad: 1 },
+      { plato: plato({ id: 2, nombre: "Pasta", va_a_cocina: true }), cantidad: 1 },
+    ];
+    const writes = buildOrderWrites(cart, ctx({ kitchenEnabled: false }));
+
+    expect(writes.comanda).toBeNull();
+    expect(writes.comandaId).toBeNull();
+    expect(writes.consumos).toHaveLength(2);
+    for (const c of writes.consumos) {
+      expect(c.tipo).toBe("directo");
+      expect(c.estado).toBe("entregado");
+      expect(c.comanda_id).toBeNull();
+    }
   });
 
   it("mixed: comanda holds only kitchen items; direct consumo stays unlinked", () => {

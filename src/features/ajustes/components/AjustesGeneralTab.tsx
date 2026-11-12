@@ -149,6 +149,24 @@ export function AjustesGeneralTab({
                 </Select>
               </Field>
             </div>
+            <div className="border-t border-border pt-4">
+              <label className="flex items-start gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={config.kitchen_enabled}
+                  onChange={e => setConfig(p => ({ ...p, kitchen_enabled: e.target.checked }))}
+                  className="mt-0.5 size-4 rounded accent-primary"
+                />
+                <span className="flex flex-col">
+                  <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
+                    Mi negocio tiene cocina
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    Si lo desactivás, los pedidos no crean comandas para cocina. Se imprimirá un papelito de pedido por caja para quien despacha.
+                  </span>
+                </span>
+              </label>
+            </div>
           </div>
         </section>
 
