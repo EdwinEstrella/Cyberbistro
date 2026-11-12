@@ -6,7 +6,10 @@ import {
   type DebtStatus,
   type TenantDebt,
 } from "../../shared/lib/tenantDebt";
-import { SUPPORT_WHATSAPP_BLOCKED_URL } from "../../shared/lib/support";
+import {
+  SUPPORT_WHATSAPP_PHONE,
+  formatSupportPhone,
+} from "../../shared/lib/support";
 
 export interface DebtLockedGateProps {
   businessName: string;
@@ -112,14 +115,9 @@ export function DebtLockedGate({
       </p>
 
       <div className="flex flex-wrap gap-3 justify-center items-center">
-        <a
-          href={SUPPORT_WHATSAPP_BLOCKED_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="font-['Space_Grotesk',sans-serif] px-5 py-2.5 rounded-xl bg-[#262626] hover:bg-[#333] text-[#ff906d] border border-[rgba(255,144,109,0.35)] font-bold text-sm no-underline flex items-center justify-center transition-all cursor-pointer"
-        >
-          Contactar por WhatsApp
-        </a>
+        <span className="font-['Space_Grotesk',sans-serif] px-5 py-2.5 rounded-xl bg-[#262626] text-[#ff906d] border border-[rgba(255,144,109,0.35)] font-bold text-sm flex items-center justify-center select-text">
+          Contacto: {formatSupportPhone(SUPPORT_WHATSAPP_PHONE)}
+        </span>
 
         <button
           type="button"

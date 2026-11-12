@@ -33,6 +33,7 @@ import {
   parsePaymentDay,
   parseDebtAmount,
   isDebtDraftChanged,
+  resolveDebtDueDate,
 } from "../lib/dirtyDetection";
 import { formatDebtAmount, type DebtCurrency } from "../../../shared/lib/tenantDebt";
 import { KpiStrip } from "./KpiStrip";
@@ -306,10 +307,22 @@ export function SuperAdminPage() {
       if (initialDraft && isDebtDraftChanged(draft, initialDraft)) {
         const parsedAmount = parseDebtAmount(draft.debtAmount);
         const hasDebt = parsedAmount !== null && parsedAmount > 0;
+        let initialAmount: number | null = null;
+        try {
+          initialAmount = parseDebtAmount(initialDraft.debtAmount);
+        } catch {
+          initialAmount = null;
+        }
+        const hadSavedDebt = initialAmount !== null && initialAmount > 0;
 
         payload.debt_amount = hasDebt ? parsedAmount : null;
         payload.debt_currency = draft.debtCurrency;
-        payload.debt_due_date = hasDebt ? draft.debtDueDate.trim() : null;
+        payload.debt_due_date = resolveDebtDueDate({
+          amount: parsedAmount,
+          existingDueDate: draft.debtDueDate,
+          hadSavedDebt,
+          today: new Date(),
+        });
         payload.debt_updated_at = new Date().toISOString();
       }
 

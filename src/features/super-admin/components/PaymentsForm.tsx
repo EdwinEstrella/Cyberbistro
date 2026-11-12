@@ -12,6 +12,9 @@ import {
   isPaymentsFormDirty,
   parseDebtAmount,
   validatePaymentsDraft,
+  resolveDebtDueDate,
+  isValidIsoDate,
+  formatIsoDateDisplay,
 } from "../lib/dirtyDetection";
 
 interface PaymentsFormProps {
@@ -60,12 +63,18 @@ export function PaymentsForm({
     } catch {
       parsed = null;
     }
+    const resolvedDueDate = resolveDebtDueDate({
+      amount: parsed,
+      existingDueDate: draft.debtDueDate,
+      hadSavedDebt: hasSavedDebt,
+      today: new Date(),
+    });
     return getDebtStatus(new Date(), {
       amount: parsed,
       currency: draft.debtCurrency,
-      dueDate: draft.debtDueDate.trim() || null,
+      dueDate: resolvedDueDate,
     });
-  }, [draft.debtAmount, draft.debtCurrency, draft.debtDueDate]);
+  }, [draft.debtAmount, draft.debtCurrency, draft.debtDueDate, hasSavedDebt]);
 
   const statusBadgeInfo = useMemo(() => {
     switch (debtStatus.kind) {
@@ -185,7 +194,7 @@ export function PaymentsForm({
               )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="debt-amount-input" className="text-xs text-[#adaaaa]">
                   Monto
@@ -230,31 +239,18 @@ export function PaymentsForm({
                   <p className="text-xs text-[#ff716c]">{validation.errors.debtCurrency}</p>
                 )}
               </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="debt-due-date-input" className="text-xs text-[#adaaaa]">
-                  Fecha de vencimiento
-                </Label>
-                <Input
-                  id="debt-due-date-input"
-                  type="date"
-                  value={draft.debtDueDate}
-                  onChange={(e) =>
-                    onChange({ ...draft, debtDueDate: e.target.value })
-                  }
-                  className={`rounded-[10px] bg-[#1a1a1a] border border-[rgba(72,72,71,0.3)] text-sm text-white focus:border-[#ff906d]/50 ${
-                    validation.errors.debtDueDate ? "border-[#ff716c] focus-visible:ring-[#ff716c]/30" : ""
-                  }`}
-                />
-                {validation.errors.debtDueDate && (
-                  <p className="text-xs text-[#ff716c]">{validation.errors.debtDueDate}</p>
-                )}
-              </div>
             </div>
 
-            <p className="text-xs text-[#adaaaa] leading-relaxed">
-              Monto vacío o en 0 indica que el cliente no tiene deuda. Una deuda mayor a 0 requiere fecha de vencimiento.
-            </p>
+            <div className="space-y-1">
+              <p className="text-xs text-[#adaaaa] leading-relaxed">
+                Monto vacío o en 0 indica que el cliente no tiene deuda. La deuda vence el día en que se registra y se dan 3 días de gracia antes de bloquear el servicio.
+              </p>
+              {hasSavedDebt && isValidIsoDate(initialDraft.debtDueDate) && (
+                <p className="text-xs text-[#adaaaa]">
+                  Vence el {formatIsoDateDisplay(initialDraft.debtDueDate)}
+                </p>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>
