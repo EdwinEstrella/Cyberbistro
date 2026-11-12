@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import QRCode from "qrcode";
-import { buildFacturaReceiptHtml, buildNominaReceiptHtml, type TenantReceiptInfo } from "./receiptTemplates";
+import {
+  buildDispatchSlipHtml,
+  buildFacturaReceiptHtml,
+  buildNominaReceiptHtml,
+  type TenantReceiptInfo,
+} from "./receiptTemplates";
 
 vi.mock("./logoCache", () => ({
   getLogoUrlForPrint: vi.fn(() => null),
@@ -218,5 +223,125 @@ describe("receiptTemplates fiscal regression", () => {
     expect(html).toContain("Adelanto");
     expect(html).toContain("Firma del Empleado");
     expect(html).toContain("Firma Autorizada");
+  });
+
+  describe("buildDispatchSlipHtml (dispatch slip when no kitchen)", () => {
+    it("renders title PEDIDO with no COMANDA or COCINA wording", () => {
+      const html = buildDispatchSlipHtml(
+        tenant,
+        {
+          id: "order-12345678",
+          numero_pedido: 12,
+          mesa_numero: 3,
+          items: [{ nombre: "Pollo Frito", cantidad: 2, categoria: "Carnes" }],
+          notas: "Para mesa 3",
+          created_at: "2026-11-12T12:00:00.000Z",
+        },
+        80
+      );
+
+      expect(html).toContain("<title>Pedido</title>");
+      expect(html).toContain("<h2>PEDIDO</h2>");
+      expect(html).toContain("<strong>Pedido</strong>");
+      expect(html).toContain("CyberBistro");
+      expect(html).not.toContain("COMANDA");
+      expect(html).not.toContain("COCINA");
+      expect(html).not.toContain("Nota cocina");
+      expect(html).toContain("Despachar en orden de llegada");
+    });
+
+    it("renders items with quantities and line notes", () => {
+      const html = buildDispatchSlipHtml(
+        tenant,
+        {
+          id: "order-123",
+          mesa_numero: 2,
+          items: [
+            { nombre: "Empanada de Res", cantidad: 3, categoria: "Frituras", notas: "bien tostada" },
+            { nombre: "Jugo de Chinola", cantidad: 1, categoria: "Bebidas" },
+          ],
+        },
+        80
+      );
+
+      expect(html).toContain("Empanada de Res");
+      expect(html).toContain("3×");
+      expect(html).toContain("↳ bien tostada");
+      expect(html).toContain("Jugo de Chinola");
+      expect(html).toContain("1×");
+    });
+
+    it("renders order notes properly with Note prefix", () => {
+      const html = buildDispatchSlipHtml(
+        tenant,
+        {
+          id: "order-456",
+          mesa_numero: 1,
+          items: [{ nombre: "Sancocho", cantidad: 1 }],
+          notas: "Empacar salsa aparte",
+        },
+        80
+      );
+
+      expect(html).toContain("<b>Nota:</b> Empacar salsa aparte");
+    });
+
+    it("renders table number when mesa_numero > 0 and 'Para llevar' when mesa_numero is 0", () => {
+      const htmlTable = buildDispatchSlipHtml(
+        tenant,
+        {
+          mesa_numero: 8,
+          items: [{ nombre: "Arroz con Habichuelas", cantidad: 1 }],
+        },
+        80
+      );
+      expect(htmlTable).toContain(">8</td>");
+
+      const htmlTakeout = buildDispatchSlipHtml(
+        tenant,
+        {
+          mesa_numero: 0,
+          items: [{ nombre: "Arroz con Habichuelas", cantidad: 1 }],
+        },
+        80
+      );
+      expect(htmlTakeout).toContain(">Para llevar</td>");
+
+      const htmlCustomLabel = buildDispatchSlipHtml(
+        tenant,
+        {
+          mesa_numero: null,
+          mesa_label: "Acme Corp (Empresarial)",
+          items: [{ nombre: "Arroz con Habichuelas", cantidad: 1 }],
+        },
+        80
+      );
+      expect(htmlCustomLabel).toContain(">Acme Corp (Empresarial)</td>");
+    });
+
+    it("never renders prices anywhere on the slip", () => {
+      const html = buildDispatchSlipHtml(
+        tenant,
+        {
+          id: "order-999",
+          numero_pedido: 99,
+          mesa_numero: 4,
+          items: [
+            { nombre: "Chivo Liniero", cantidad: 2, precio: 450, categoria: "Platos Fuertes" },
+            { nombre: "Cerveza Presidente", cantidad: 2, precio: 180, categoria: "Bebidas" },
+          ],
+          notas: "Cobrado",
+        },
+        80
+      );
+
+      expect(html).not.toContain("450");
+      expect(html).not.toContain("180");
+      expect(html).not.toContain("RD$");
+      expect(html).not.toContain("Subtotal");
+      expect(html).not.toContain("TOTAL");
+      expect(html).not.toContain("ITBIS");
+      expect(html).not.toContain("Precio");
+    });
   });
 });

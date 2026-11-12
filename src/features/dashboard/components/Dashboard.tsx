@@ -34,10 +34,13 @@ import { useAuth, ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
 import {
   buildFacturaReceiptHtml,
   buildComandaReceiptHtml,
+  buildDispatchSlipHtml,
 } from "../../../shared/lib/receiptTemplates";
 import { getThermalPrintSettings } from "../../../shared/lib/thermalStorage";
 import { printThermalHtml } from "../../../shared/lib/thermalPrint";
 import { printKitchenComanda } from "../lib/printKitchenComanda";
+import { printDispatchSlip } from "../../../shared/lib/dispatchSlip";
+import { loadTenantKitchenSettings } from "../../../shared/lib/tenantKitchenSettings";
 import { printLocalInvoiceReceipt } from "../../../shared/lib/localInvoiceReceipt";
 import { gateFiscalPrint, isEcfInvoiceDocument } from "../../../shared/lib/fiscalPrintGate";
 import { useTenantCurrency } from "../../../shared/hooks/useTenantCurrency";
@@ -193,6 +196,7 @@ export function Dashboard() {
   /** Por defecto sin propina legal; se activa desde Ajustes o por cobro. */
   const [cartPropinaEnabled, setCartPropinaEnabled] = useState(false);
   const [itbisIncluded, setItbisIncluded] = useState(false);
+  const [kitchenEnabled, setKitchenEnabled] = useState(true);
   const [tenantNcfFiscalActive, setTenantNcfFiscalActive] = useState(false);
   const [solicitaComprobante, setSolicitaComprobante] = useState(false);
   const [selectedNcfType, setSelectedNcfType] = useState<NcfTypeCode>(DEFAULT_NCF_B_CODE);
@@ -223,6 +227,10 @@ export function Dashboard() {
     if (authLoading || !tenantId) return;
 
     let cancelled = false;
+
+    void loadTenantKitchenSettings(tenantId).then((val) => {
+      if (!cancelled) setKitchenEnabled(val);
+    });
 
     void loadTenantBillingSettings(tenantId).then(async (settings) => {
       if (cancelled) return;
@@ -738,7 +746,7 @@ export function Dashboard() {
     setKitchenClosed(false);
 
     // Separar items: cocina vs directo
-    const { kitchenItems } = splitCartByDestination(cart);
+    const { kitchenItems } = splitCartByDestination(cart, kitchenEnabled);
 
     // Guardia de cocina cerrada (necesita red/estado): se queda en el componente.
     if (kitchenItems.length > 0) {
@@ -778,6 +786,7 @@ export function Dashboard() {
       mesaNumero: selectedMesa.numero,
       userId: user?.id ?? null,
       notes: orderNotes,
+      kitchenEnabled,
     });
     await persistOrderWrites(
       { saveComanda: saveLocalComanda, saveConsumo: saveLocalConsumo },
@@ -797,11 +806,22 @@ export function Dashboard() {
     const consumosActualizados = await loadTableConsumption(selectedMesa.numero);
     setMesaConsumos(consumosActualizados);
 
-    // Imprimir la comanda y refrescar la deuda de la mesa en segundo plano: ni la
-    // red (encabezado del negocio) ni la enumeración de impresoras de Windows
+    // Imprimir la comanda o el papelito de despacho y refrescar la deuda de la mesa en segundo plano:
+    // ni la red (encabezado del negocio) ni la enumeración de impresoras de Windows
     // deben demorar la aparición del pedido en la cuenta.
     if (comandaToPrint) {
       void printKitchenComanda(tid, comandaToPrint);
+    } else if (!kitchenEnabled) {
+      void printDispatchSlip(tid, {
+        mesa_numero: selectedMesa.numero,
+        items: cart.map((i) => ({
+          nombre: i.plato.nombre,
+          categoria: i.plato.categoria || "General",
+          cantidad: i.cantidad,
+        })),
+        notas: orderNotes.trim() || null,
+        created_at: new Date().toISOString(),
+      });
     }
     void refreshMesaDebt(selectedMesa.id, selectedMesa.numero);
   }
@@ -1170,72 +1190,114 @@ export function Dashboard() {
     // Checkout must not wait for a cloud kitchen-status probe. The local mirror is
     // the authoritative operational snapshot; absent data preserves the legacy
     // default of accepting the order.
-    const kitchenItems = cart.filter((i) => i.plato.va_a_cocina !== false);
-    if (kitchenItems.length > 0) {
-      const localCocina = await readLocalMirror<{ activa?: boolean; sucursal_id?: string | null }>(tenantId, "cocina_estado").catch(() => []);
-      const cocinaActiva = localCocina.find(r => r.sucursal_id === activeSucursalId)?.activa !== false;
+    if (kitchenEnabled) {
+      const kitchenItems = cart.filter((i) => i.plato.va_a_cocina !== false);
+      if (kitchenItems.length > 0) {
+        const localCocina = await readLocalMirror<{ activa?: boolean; sucursal_id?: string | null }>(tenantId, "cocina_estado").catch(() => []);
+        const cocinaActiva = localCocina.find(r => r.sucursal_id === activeSucursalId)?.activa !== false;
 
-      if (cocinaActiva) {
-            const items = kitchenItems.map((i) => ({
+        if (cocinaActiva) {
+          const items = kitchenItems.map((i) => ({
+            nombre: i.plato.nombre,
+            categoria: i.plato.categoria || "General",
+            cantidad: i.cantidad,
+            precio: i.plato.precio,
+          }));
+
+          const localComandaId = crypto.randomUUID();
+          const comandaPayload = {
+            id: localComandaId,
+            mesa_numero: 0,
+            estado: "pendiente",
+            items,
+            notas: orderNotes.trim() ? `${orderNotes.trim()} (Para llevar)` : "Para llevar",
+            tenant_id: tenantId,
+            sucursal_id: activeSucursalId,
+            creado_por: user?.id ?? null,
+            created_at: nowIso,
+            updated_at: nowIso,
+          };
+
+          checkoutWrites.push({
+            tenantId,
+            tableName: "comandas",
+            rowId: localComandaId,
+            op: "insert",
+            payload: comandaPayload,
+            authUserId: user?.id ?? null,
+            deviceId,
+          });
+
+          const paperWidthMm = getThermalPrintSettings().paperWidthMm;
+          const localTenants = await readLocalMirror<any>(tenantId, "tenants").catch(() => []);
+          const tr = localTenants.find((tenant) => tenant.id === tenantId) ?? { nombre_negocio: "Comanda de cocina", moneda: "DOP" };
+          const comandaHtml = buildComandaReceiptHtml(
+            {
+              nombre_negocio: tr.nombre_negocio,
+              rnc: tr.rnc,
+              direccion: tr.direccion,
+              telefono: tr.telefono,
+              logo_url: tr.logo_url,
+              moneda: tr.moneda ?? null,
+              logo_size_px: tr.logo_size_px,
+              logo_offset_x: tr.logo_offset_x,
+              logo_offset_y: tr.logo_offset_y,
+            },
+            comandaPayload as any,
+            paperWidthMm
+          );
+
+          const printSettings = getThermalPrintSettings();
+          if (printSettings.printComandas !== false) {
+            kitchenPrints.push({
+              id: localComandaId,
+              label: `Comanda #${localComandaId}`,
+              print: () => printThermalHtml(comandaHtml, { printType: "kitchen" }),
+            });
+          }
+        }
+      }
+    } else {
+      // kitchen_enabled === false: no comanda is created.
+      // A dispatch slip prints at the register for whoever hands the order out.
+      const printSettings = getThermalPrintSettings();
+      if (printSettings.printComandas !== false) {
+        const paperWidthMm = printSettings.paperWidthMm;
+        const localTenants = await readLocalMirror<any>(tenantId, "tenants").catch(() => []);
+        const tr = localTenants.find((tenant) => tenant.id === tenantId) ?? { nombre_negocio: "Pedido", moneda: "DOP" };
+        const dispatchSlipHtml = buildDispatchSlipHtml(
+          {
+            nombre_negocio: tr.nombre_negocio,
+            rnc: tr.rnc,
+            direccion: tr.direccion,
+            telefono: tr.telefono,
+            logo_url: tr.logo_url,
+            moneda: tr.moneda ?? null,
+            logo_size_px: tr.logo_size_px,
+            logo_offset_x: tr.logo_offset_x,
+            logo_offset_y: tr.logo_offset_y,
+          },
+          {
+            id: localFacturaId,
+            numero_pedido: numeroFactura,
+            mesa_numero: 0,
+            items: cart.map((i) => ({
               nombre: i.plato.nombre,
               categoria: i.plato.categoria || "General",
               cantidad: i.cantidad,
-              precio: i.plato.precio,
-            }));
-
-            const localComandaId = crypto.randomUUID();
-            const comandaPayload = {
-              id: localComandaId,
-              mesa_numero: 0,
-              estado: "pendiente",
-              items,
-              notas: orderNotes.trim() ? `${orderNotes.trim()} (Para llevar)` : "Para llevar",
-              tenant_id: tenantId,
-              sucursal_id: activeSucursalId,
-              creado_por: user?.id ?? null,
-              created_at: nowIso,
-              updated_at: nowIso,
-            };
-
-            checkoutWrites.push({
-              tenantId,
-              tableName: "comandas",
-              rowId: localComandaId,
-              op: "insert",
-              payload: comandaPayload,
-              authUserId: user?.id ?? null,
-              deviceId,
-            });
-
-            const paperWidthMm = getThermalPrintSettings().paperWidthMm;
-            const localTenants = await readLocalMirror<any>(tenantId, "tenants").catch(() => []);
-            const tr = localTenants.find((tenant) => tenant.id === tenantId) ?? { nombre_negocio: "Comanda de cocina", moneda: "DOP" };
-            const comandaHtml = buildComandaReceiptHtml(
-              {
-                nombre_negocio: tr.nombre_negocio,
-                rnc: tr.rnc,
-                direccion: tr.direccion,
-                telefono: tr.telefono,
-                logo_url: tr.logo_url,
-                moneda: tr.moneda ?? null,
-                logo_size_px: tr.logo_size_px,
-                logo_offset_x: tr.logo_offset_x,
-                logo_offset_y: tr.logo_offset_y,
-              },
-              comandaPayload as any,
-              paperWidthMm
-            );
-            
-            const printSettings = getThermalPrintSettings();
-            if (printSettings.printComandas !== false) {
-              kitchenPrints.push({
-                id: localComandaId,
-                label: `Comanda #${localComandaId}`,
-                print: () => printThermalHtml(comandaHtml, { printType: "kitchen" }),
-              });
-            }
-          }
-        }
+            })),
+            notas: orderNotes.trim() ? `${orderNotes.trim()} (Para llevar)` : "Para llevar",
+            created_at: nowIso,
+          },
+          paperWidthMm
+        );
+        kitchenPrints.push({
+          id: `dispatch-slip-${localFacturaId}`,
+          label: `Papelito #${numeroFactura}`,
+          print: () => printThermalHtml(dispatchSlipHtml, { printType: "sales" }),
+        });
+      }
+    }
 
     const isEcf = isEcfInvoiceDocument(facturaData);
     if (isEcf) {

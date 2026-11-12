@@ -535,32 +535,52 @@ async function buildCreditNoteReceiptHtml(
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Nota de crédito</title><style>${thermalStyles(paperWidthMm)}</style></head><body>${body}</body></html>`;
 }
 
-export function buildComandaReceiptHtml(
-  tenant: TenantReceiptInfo,
-  comanda: {
-    id: string;
-    numero_comanda?: number | null;
-    mesa_numero: number | null;
-    items: Array<{ nombre: string; cantidad: number; precio?: number; categoria?: string; notas?: string }>;
-    notas?: string | null;
-    created_at?: string | null;
-  },
-  paperWidthMm: PaperWidthMm
-): string {
-  const when = comanda.created_at || new Date().toISOString();
-  const { date: fechaStr, time: horaStr } = formatFacturaDateParts(when);
-  const num =
-    comanda.numero_comanda != null
-      ? String(comanda.numero_comanda).padStart(4, "0")
-      : comanda.id.slice(0, 8).toUpperCase();
-  const mesaLabel =
-    comanda.mesa_numero != null && comanda.mesa_numero !== 0
-      ? String(comanda.mesa_numero)
-      : comanda.mesa_numero === 0
-        ? "Para llevar"
-        : "—";
+interface OrderSlipFormatOptions {
+  title: string;
+  docTitle: string;
+  numberLabel: string;
+  notePrefix: string;
+  footerText: string;
+}
 
-  const rows = comanda.items
+export interface DispatchSlipReceiptData {
+  id?: string | null;
+  numero_comanda?: number | null;
+  numero_pedido?: number | string | null;
+  mesa_numero: number | null;
+  mesa_label?: string | null;
+  items: Array<{ nombre: string; cantidad: number; precio?: number; categoria?: string; notas?: string }>;
+  notas?: string | null;
+  created_at?: string | null;
+}
+
+function buildOrderSlipBaseHtml(
+  tenant: TenantReceiptInfo,
+  slip: DispatchSlipReceiptData,
+  paperWidthMm: PaperWidthMm,
+  opts: OrderSlipFormatOptions
+): string {
+  const when = slip.created_at || new Date().toISOString();
+  const { date: fechaStr, time: horaStr } = formatFacturaDateParts(when);
+  const rawNum =
+    slip.numero_pedido != null
+      ? slip.numero_pedido
+      : slip.numero_comanda != null
+        ? slip.numero_comanda
+        : slip.id
+          ? slip.id.slice(0, 8).toUpperCase()
+          : null;
+  const num = rawNum != null ? (typeof rawNum === "number" ? String(rawNum).padStart(4, "0") : String(rawNum)) : "—";
+  const mesaLabel =
+    slip.mesa_label != null && slip.mesa_label.trim() !== ""
+      ? slip.mesa_label.trim()
+      : slip.mesa_numero != null && slip.mesa_numero !== 0
+        ? String(slip.mesa_numero)
+        : slip.mesa_numero === 0
+          ? "Para llevar"
+          : "—";
+
+  const rows = slip.items
     .map((it) => {
       const cat = (it.categoria || "").trim();
       const catCell =
@@ -584,9 +604,9 @@ export function buildComandaReceiptHtml(
   const body = `
   ${headerBlock(tenant)}
   <div class="divider"></div>
-  <h2>COMANDA — COCINA</h2>
+  <h2>${escapeHtml(opts.title)}</h2>
   <table>
-    <tr class="header-row"><td><strong>Comanda</strong></td><td style="text-align:right;font-weight:bold">#${escapeHtml(num)}</td></tr>
+    <tr class="header-row"><td><strong>${escapeHtml(opts.numberLabel)}</strong></td><td style="text-align:right;font-weight:bold">#${escapeHtml(num)}</td></tr>
     <tr class="header-row"><td>Fecha</td><td style="text-align:right">${escapeHtml(fechaStr)}</td></tr>
     <tr class="header-row"><td>Hora</td><td style="text-align:right">${escapeHtml(horaStr)}</td></tr>
     <tr class="header-row"><td>Mesa</td><td style="text-align:right;font-weight:bold">${escapeHtml(mesaLabel)}</td></tr>
@@ -596,17 +616,52 @@ export function buildComandaReceiptHtml(
     <thead class="fdo-items-head"><tr><th>Plato</th><th class="r">Cant.</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
-  ${comanda.notas ? `<div class="divider"></div><div style="font-size:14px;font-weight:600"><b>Nota cocina:</b> ${escapeHtml(comanda.notas)}</div>` : ""}
+  ${slip.notas ? `<div class="divider"></div><div style="font-size:14px;font-weight:600"><b>${escapeHtml(opts.notePrefix)}:</b> ${escapeHtml(slip.notas)}</div>` : ""}
   <div class="double-divider"></div>
   <div class="footer">
-    <p style="margin:0 0 4px">Preparar en orden de llegada</p>
+    <p style="margin:0 0 4px">${escapeHtml(opts.footerText)}</p>
     <p style="margin:0;font-size:13px;font-weight:600">Cloudix OS</p>
   </div>
   <div class="divider"></div>
   <div class="center" style="font-size:13px;font-weight:600">${escapeHtml(new Date().toLocaleString("es-DO", { timeZone: "America/Santo_Domingo", hour12: true }))}</div>
   `;
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Comanda</title><style>${thermalStyles(paperWidthMm)}</style></head><body>${body}</body></html>`;
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(opts.docTitle)}</title><style>${thermalStyles(paperWidthMm)}</style></head><body>${body}</body></html>`;
+}
+
+export function buildComandaReceiptHtml(
+  tenant: TenantReceiptInfo,
+  comanda: {
+    id: string;
+    numero_comanda?: number | null;
+    mesa_numero: number | null;
+    items: Array<{ nombre: string; cantidad: number; precio?: number; categoria?: string; notas?: string }>;
+    notas?: string | null;
+    created_at?: string | null;
+  },
+  paperWidthMm: PaperWidthMm
+): string {
+  return buildOrderSlipBaseHtml(tenant, comanda, paperWidthMm, {
+    title: "COMANDA — COCINA",
+    docTitle: "Comanda",
+    numberLabel: "Comanda",
+    notePrefix: "Nota cocina",
+    footerText: "Preparar en orden de llegada",
+  });
+}
+
+export function buildDispatchSlipHtml(
+  tenant: TenantReceiptInfo,
+  slip: DispatchSlipReceiptData,
+  paperWidthMm: PaperWidthMm
+): string {
+  return buildOrderSlipBaseHtml(tenant, slip, paperWidthMm, {
+    title: "PEDIDO",
+    docTitle: "Pedido",
+    numberLabel: "Pedido",
+    notePrefix: "Nota",
+    footerText: "Despachar en orden de llegada",
+  });
 }
 
 /** Una línea de ítem para ticket de separar cuenta (mismo estilo que factura térmica). */

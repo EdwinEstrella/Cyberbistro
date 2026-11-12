@@ -24,6 +24,8 @@ export interface OrderWriteContext {
   userId: string | null;
   /** Raw order notes; trimmed here, empty becomes null. */
   notes: string;
+  /** When false, no kitchen comanda is created and all lines become direct consumos. Defaults to true. */
+  kitchenEnabled?: boolean;
   /** Injectable for deterministic tests; defaults to crypto.randomUUID(). */
   newId?: () => string;
   /** Injectable for deterministic tests; defaults to new Date().toISOString(). */
@@ -38,11 +40,23 @@ export interface OrderWrites {
   consumos: Array<Record<string, unknown>>;
 }
 
-/** Kitchen items keep va_a_cocina !== false; only va_a_cocina === false is direct. */
-export function splitCartByDestination(cart: readonly OrderCartLine[]): {
+/**
+ * Splits cart lines by destination. When kitchenEnabled is false, no items go to
+ * kitchen and all lines are treated as direct. Defaults to true (fail safe).
+ */
+export function splitCartByDestination(
+  cart: readonly OrderCartLine[],
+  kitchenEnabled: boolean = true
+): {
   kitchenItems: OrderCartLine[];
   directItems: OrderCartLine[];
 } {
+  if (kitchenEnabled === false) {
+    return {
+      kitchenItems: [],
+      directItems: [...cart],
+    };
+  }
   return {
     kitchenItems: cart.filter((i) => i.plato.va_a_cocina !== false),
     directItems: cart.filter((i) => i.plato.va_a_cocina === false),
@@ -57,7 +71,7 @@ export function splitCartByDestination(cart: readonly OrderCartLine[]): {
 export function buildOrderWrites(cart: readonly OrderCartLine[], ctx: OrderWriteContext): OrderWrites {
   const newId = ctx.newId ?? (() => crypto.randomUUID());
   const now = ctx.now ?? (() => new Date().toISOString());
-  const { kitchenItems, directItems } = splitCartByDestination(cart);
+  const { kitchenItems, directItems } = splitCartByDestination(cart, ctx.kitchenEnabled ?? true);
 
   let comanda: Record<string, unknown> | null = null;
   let comandaId: string | null = null;

@@ -14,6 +14,9 @@ import { normalizeTenantRol } from "../../../shared/lib/roleNav";
 import { readLocalConsumos, saveLocalConsumo, deleteLocalConsumo, readLocalComandas, saveLocalComanda, deleteLocalComanda } from "../../../shared/lib/ordersLocal";
 import { ConfirmModal } from "../../../shared/components/ConfirmModal";
 import { useSucursal } from "../../../app/context/SucursalContext";
+import { splitCartByDestination } from "../../pos/lib/orderWrites";
+import { useKitchenEnabled } from "../../../shared/lib/tenantKitchenSettings";
+import { printDispatchSlip } from "../../../shared/lib/dispatchSlip";
 
 interface Plato {
   id: number;
@@ -151,6 +154,7 @@ function groupMesaConsumos(rows: MesaConsumoRow[], ownerNameByAuthId: Map<string
 export function Camarera() {
   const { tenantId, user, rol, loading: authLoading } = useAuth();
   const { activeSucursalId } = useSucursal();
+  const kitchenEnabled = useKitchenEnabled(tenantId);
   const { formatMoney } = useTenantCurrency();
   const [platos, setPlatos] = useState<Plato[]>([]);
   const [mesas, setMesas] = useState<MesaOption[]>([]);
@@ -353,8 +357,7 @@ export function Camarera() {
     setSending(true);
     setMessage("");
 
-    const kitchenItems = cart.filter((item) => item.plato.va_a_cocina !== false);
-    const directItems = cart.filter((item) => item.plato.va_a_cocina === false);
+    const { kitchenItems, directItems } = splitCartByDestination(cart, kitchenEnabled);
     let comandaId: string | null = null;
 
     if (kitchenItems.length > 0) {
@@ -437,6 +440,17 @@ export function Camarera() {
           void printThermalHtml(html, { printType: "kitchen" });
         }
       }
+    } else if (!kitchenEnabled) {
+      void printDispatchSlip(tenantId, {
+        mesa_numero: selectedMesa.numero,
+        items: cart.map((item) => ({
+          nombre: item.plato.nombre,
+          categoria: item.plato.categoria || "General",
+          cantidad: item.cantidad,
+        })),
+        notas: orderNotes.trim() || null,
+        created_at: new Date().toISOString(),
+      });
     }
 
     const consumosToInsert = [

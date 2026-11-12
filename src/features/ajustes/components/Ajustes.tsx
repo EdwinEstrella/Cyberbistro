@@ -164,6 +164,7 @@ export function Ajustes() {
     itbis_cobro_por_defecto: false,
     itbis_incluido_en_precio: false,
     propina_cobro_por_defecto: false,
+    kitchen_enabled: true,
     ncf_fiscal_activo: false,
     fiscal_mode: "internal_receipt",
     fiscal_mode_fallback: "internal_receipt",
@@ -182,7 +183,7 @@ export function Ajustes() {
 
   const TENANT_FIELDS_BASE = "nombre_negocio, rnc, logo_url, logo_size_px, logo_offset_x, logo_offset_y, menu_url, direccion, telefono";
   const TENANT_FIELDS_CURRENCY = "moneda";
-  const TENANT_FIELDS_NCF = `itbis_cobro_por_defecto, itbis_incluido_en_precio, propina_cobro_por_defecto, ncf_fiscal_activo, fiscal_mode, fiscal_mode_fallback, ecf_environment, ncf_tipo_default, ncf_secuencia_siguiente, ncf_secuencias_por_tipo, ncf_tipos_activos, ${NCF_B_SEQUENCE_FIELDS_SELECT}`;
+  const TENANT_FIELDS_NCF = `itbis_cobro_por_defecto, itbis_incluido_en_precio, propina_cobro_por_defecto, kitchen_enabled, ncf_fiscal_activo, fiscal_mode, fiscal_mode_fallback, ecf_environment, ncf_tipo_default, ncf_secuencia_siguiente, ncf_secuencias_por_tipo, ncf_tipos_activos, ${NCF_B_SEQUENCE_FIELDS_SELECT}`;
 
   useEffect(() => {
     if (authLoading || !tenantId) { if (!authLoading) setLoading(false); return; }
@@ -203,7 +204,7 @@ export function Ajustes() {
       } else {
         let res = await supabase.from("tenants").select(`${TENANT_FIELDS_BASE}, ${TENANT_FIELDS_CURRENCY}, ${TENANT_FIELDS_NCF}`).eq("id", tenantId).maybeSingle();
         if (res.error) {
-          res = await supabase.from("tenants").select(`${TENANT_FIELDS_BASE}, ${TENANT_FIELDS_CURRENCY}, ${TENANT_FIELDS_NCF.replace(" itbis_incluido_en_precio,", "")}`).eq("id", tenantId).maybeSingle();
+          res = await supabase.from("tenants").select(`${TENANT_FIELDS_BASE}, ${TENANT_FIELDS_CURRENCY}, ${TENANT_FIELDS_NCF.replace(" kitchen_enabled,", "").replace(" itbis_incluido_en_precio,", "")}`).eq("id", tenantId).maybeSingle();
         }
         if (res.error) console.error(res.error.message);
         data = res.data;
@@ -233,6 +234,7 @@ export function Ajustes() {
           itbis_cobro_por_defecto: Boolean(data.itbis_cobro_por_defecto),
           itbis_incluido_en_precio: Boolean(data.itbis_incluido_en_precio),
           propina_cobro_por_defecto: Boolean(data.propina_cobro_por_defecto),
+          kitchen_enabled: data.kitchen_enabled !== false,
           ncf_fiscal_activo: Boolean(data.ncf_fiscal_activo) || fiscalMode === "ncf_legacy" || fiscalMode === "dgii_ecf",
           fiscal_mode: fiscalMode,
           fiscal_mode_fallback: data.fiscal_mode_fallback || "internal_receipt",
