@@ -133,22 +133,43 @@ export function isValidIsoDate(isoDate: string): boolean {
   );
 }
 
-export function parseDebtDueDate(value: string, amount: number | null): string | null {
-  const trimmed = value.trim();
-  if (amount !== null && amount > 0) {
-    if (!trimmed) {
-      throw new Error("Una deuda mayor a 0 requiere una fecha de vencimiento.");
-    }
-    if (!isValidIsoDate(trimmed)) {
-      throw new Error("La fecha de vencimiento debe tener un formato válido (YYYY-MM-DD).");
-    }
-    return trimmed;
+/**
+ * Formats an ISO date string (YYYY-MM-DD) into display format (DD/MM/YYYY).
+ * e.g. "2026-11-12" -> "12/11/2026"
+ */
+export function formatIsoDateDisplay(isoDate: string): string {
+  if (!isoDate || typeof isoDate !== "string") return "";
+  const trimmed = isoDate.trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (!match) return trimmed;
+  const [, year, month, day] = match;
+  return `${day}/${month}/${year}`;
+}
+
+/**
+ * Resolves the due date for a debt.
+ * - Debt amount null or <= 0 resolves to null.
+ * - Existing debt with a valid ISO date preserves its original due date.
+ * - New debt or invalid existing due date defaults to today's local date (YYYY-MM-DD).
+ */
+export function resolveDebtDueDate(input: {
+  amount: number | null;
+  existingDueDate: string;
+  hadSavedDebt: boolean;
+  today: Date;
+}): string | null {
+  if (input.amount === null || input.amount <= 0) {
+    return null;
   }
-  if (!trimmed) return null;
-  if (!isValidIsoDate(trimmed)) {
-    throw new Error("La fecha de vencimiento debe tener un formato válido (YYYY-MM-DD).");
+
+  if (input.hadSavedDebt && isValidIsoDate(input.existingDueDate)) {
+    return input.existingDueDate.trim();
   }
-  return trimmed;
+
+  const year = input.today.getFullYear();
+  const month = String(input.today.getMonth() + 1).padStart(2, "0");
+  const day = String(input.today.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 export function parseDebtCurrency(value: string): DebtCurrency {
@@ -229,7 +250,6 @@ export interface PaymentsValidationErrors {
   paymentDayOfMonth?: string;
   debtAmount?: string;
   debtCurrency?: string;
-  debtDueDate?: string;
 }
 
 export interface PaymentsValidationResult {
@@ -248,9 +268,8 @@ export function validatePaymentsDraft(draft: LimitDraft): PaymentsValidationResu
     errors.paymentDayOfMonth = dayResult.error;
   }
 
-  let parsedAmount: number | null = null;
   try {
-    parsedAmount = parseDebtAmount(draft.debtAmount);
+    parseDebtAmount(draft.debtAmount);
   } catch (err) {
     errors.debtAmount = err instanceof Error ? err.message : "Monto de deuda inválido.";
   }
@@ -259,12 +278,6 @@ export function validatePaymentsDraft(draft: LimitDraft): PaymentsValidationResu
     parseDebtCurrency(draft.debtCurrency);
   } catch (err) {
     errors.debtCurrency = err instanceof Error ? err.message : "Moneda inválida.";
-  }
-
-  try {
-    parseDebtDueDate(draft.debtDueDate, errors.debtAmount ? null : parsedAmount);
-  } catch (err) {
-    errors.debtDueDate = err instanceof Error ? err.message : "Fecha de vencimiento inválida.";
   }
 
   return {

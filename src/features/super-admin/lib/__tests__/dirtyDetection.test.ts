@@ -11,8 +11,9 @@ import {
   parsePaymentDay,
   parseDebtAmount,
   parseDebtCurrency,
-  parseDebtDueDate,
+  resolveDebtDueDate,
   isValidIsoDate,
+  formatIsoDateDisplay,
   isDebtDraftChanged,
 } from "../dirtyDetection";
 import type { LimitDraft, TenantRow } from "../types";
@@ -167,16 +168,110 @@ describe("dirtyDetection & limit parsing", () => {
     expect(isValidIsoDate("")).toBe(false);
   });
 
-  it("parses debt due date and enforces required date when amount > 0", () => {
-    expect(parseDebtDueDate("", null)).toBeNull();
-    expect(parseDebtDueDate("", 0)).toBeNull();
-    expect(parseDebtDueDate("2026-11-20", 0)).toBe("2026-11-20");
+  describe("formatIsoDateDisplay", () => {
+    it("formats ISO date YYYY-MM-DD to DD/MM/YYYY", () => {
+      expect(formatIsoDateDisplay("2026-11-12")).toBe("12/11/2026");
+      expect(formatIsoDateDisplay("2025-01-05")).toBe("05/01/2025");
+    });
 
-    // Amount > 0 requires date
-    expect(() => parseDebtDueDate("", 100)).toThrow();
-    expect(() => parseDebtDueDate("   ", 50)).toThrow();
-    expect(() => parseDebtDueDate("invalid-date", 100)).toThrow();
-    expect(parseDebtDueDate("2026-11-20", 100)).toBe("2026-11-20");
+    it("trims surrounding whitespace before formatting", () => {
+      expect(formatIsoDateDisplay("  2026-11-12  ")).toBe("12/11/2026");
+    });
+
+    it("returns empty string for empty or whitespace-only input", () => {
+      expect(formatIsoDateDisplay("")).toBe("");
+      expect(formatIsoDateDisplay("   ")).toBe("");
+    });
+
+    it("returns input string when format does not match ISO date", () => {
+      expect(formatIsoDateDisplay("not-an-iso-date")).toBe("not-an-iso-date");
+    });
+  });
+
+  describe("resolveDebtDueDate", () => {
+    const fixedToday = new Date(2026, 10, 12, 14, 30, 0); // Local date 2026-11-12
+
+    it("returns null when there is no debt (null, 0, or negative)", () => {
+      expect(
+        resolveDebtDueDate({
+          amount: null,
+          existingDueDate: "2026-11-20",
+          hadSavedDebt: true,
+          today: fixedToday,
+        })
+      ).toBeNull();
+
+      expect(
+        resolveDebtDueDate({
+          amount: 0,
+          existingDueDate: "2026-11-20",
+          hadSavedDebt: true,
+          today: fixedToday,
+        })
+      ).toBeNull();
+
+      expect(
+        resolveDebtDueDate({
+          amount: -50,
+          existingDueDate: "2026-11-20",
+          hadSavedDebt: true,
+          today: fixedToday,
+        })
+      ).toBeNull();
+    });
+
+    it("resolves to today's local date for a new debt", () => {
+      expect(
+        resolveDebtDueDate({
+          amount: 1500,
+          existingDueDate: "",
+          hadSavedDebt: false,
+          today: fixedToday,
+        })
+      ).toBe("2026-11-12");
+    });
+
+    it("keeps existing due date for an existing debt with a valid ISO date", () => {
+      expect(
+        resolveDebtDueDate({
+          amount: 2500,
+          existingDueDate: "2026-11-05",
+          hadSavedDebt: true,
+          today: fixedToday,
+        })
+      ).toBe("2026-11-05");
+    });
+
+    it("defaults to today when hadSavedDebt is false even if a stale date is present", () => {
+      expect(
+        resolveDebtDueDate({
+          amount: 3000,
+          existingDueDate: "2026-10-01",
+          hadSavedDebt: false,
+          today: fixedToday,
+        })
+      ).toBe("2026-11-12");
+    });
+
+    it("defaults to today when existing date is invalid even if hadSavedDebt was true", () => {
+      expect(
+        resolveDebtDueDate({
+          amount: 1200,
+          existingDueDate: "not-a-valid-date",
+          hadSavedDebt: true,
+          today: fixedToday,
+        })
+      ).toBe("2026-11-12");
+
+      expect(
+        resolveDebtDueDate({
+          amount: 1200,
+          existingDueDate: "",
+          hadSavedDebt: true,
+          today: fixedToday,
+        })
+      ).toBe("2026-11-12");
+    });
   });
 
   it("parses debt currency correctly and rejects invalid currency", () => {
@@ -208,15 +303,15 @@ describe("dirtyDetection & limit parsing", () => {
     };
     expect(validatePaymentsDraft(noDebtDraft).valid).toBe(true);
 
-    // Debt > 0 without due date is invalid
-    const missingDateDraft: LimitDraft = {
+    // Debt without manual due date is valid because due date is auto-resolved on save
+    const debtWithoutManualDate: LimitDraft = {
       ...validDraft,
       debtAmount: "500",
       debtDueDate: "",
     };
-    const missingDateResult = validatePaymentsDraft(missingDateDraft);
-    expect(missingDateResult.valid).toBe(false);
-    expect(missingDateResult.errors.debtDueDate).toBeTruthy();
+    const withoutManualDateResult = validatePaymentsDraft(debtWithoutManualDate);
+    expect(withoutManualDateResult.valid).toBe(true);
+    expect(Object.keys(withoutManualDateResult.errors)).toHaveLength(0);
 
     // Invalid amount and invalid payment day
     const invalidDraft: LimitDraft = {
