@@ -84,7 +84,19 @@ Provide a public mobile-first digital menu interface for restaurant customers wi
     - Anon read-only: diner hook `useWaiterAvailability` never calls `track()`.
     - Privacy: staff presence payload strictly contains `{ role, at }` with no PII (no names, emails, or user IDs).
     - Manual verification pending: staff presence publishing and real-time WebSocket presence synchronization require manual end-to-end verification in T8.
-- [ ] **T5**: Staff alerts on Mesas screen (bell indicator + sound + attend action clearing for all).
+- [x] **T5**: Staff alerts on Mesas screen (bell indicator + sound + attend action clearing for all).
+  - [x] Pure libs: `serviceAlerts.ts` (`parseServiceAlertRow`, `sortServiceAlerts`, `applyServiceRequestEvent`, `shouldPlayAlertSound`, `describeServiceAlert`, `formatWaitTime`) and `alertSound.ts` (`playServiceAlertSound`).
+  - [x] Hook: `useServiceRequestAlerts` (reconnection + `visibilitychange` reconciliation, guards `isDesktopCloudUnavailable` + `navigator.onLine`, non-optimistic `attend` clearing locally on success or race update).
+  - [x] Components: presentational `ServiceAlertsBell` (accessible button, pulse animation, popover list, wait times, attending state, inline error) and `ServiceAlertsBellContainer` (role-guarded via `isWaiterPresenceRole`, 30s tick).
+  - [x] Tables integration: mounted container in `Tables.tsx` header + table card alert indicator (`hasPendingAlert` on `TableMesaCard`).
+  - [x] Tests: unit tests for pure lib (`serviceAlerts.test.ts`), `ServiceAlertsBell.test.tsx`, `TableMesaCard.test.tsx`, and `ServiceAlertsBellContainer.test.tsx` (35 test files, 278 tests passing across `src/features/tables`, `src/features/digital-menu`, `src/app`).
+  - **T5 notes**:
+    - Channel: `service_requests:<tenant_id>`.
+    - First attend clears for everyone: atomic UPDATE with `status = 'pending'` clears locally on success or 0 updated rows; Realtime `UPDATE_service_request` broadcast echo clears for all other connected staff.
+    - Sound only on new INSERT: `shouldPlayAlertSound` plays chime only for INSERT events of pending requests not already in the alerts array (replays and updates do not trigger sound).
+    - Scope: staff alerts live in the Mesas screen only; other screens do not alert.
+    - Reconciliation: missed events reconcile automatically when tab returns to focus (`visibilitychange`) or reconnects (`SUBSCRIBED`).
+    - Manual verification pending: real end-to-end realtime delivery + sound still needs a manual check in T8.
 - [ ] **T6**: Four casual games (Memory, Tic-tac-toe, Snake, 2048) implemented as lazy-loaded components.
 - [ ] **T7**: Suggestions UI + Edge Function email forwarding via Resend (`sugerencias@mail.azokia.com`).
 - [ ] **T8**: Phone viewport verification with screenshots and release.
