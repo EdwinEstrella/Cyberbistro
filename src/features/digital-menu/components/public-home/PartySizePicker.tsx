@@ -50,11 +50,11 @@ export function PartySizePicker({ value, onChange }: PartySizePickerProps) {
   return (
     <section aria-labelledby="party-size-heading" className="w-full space-y-3">
       <div className="flex items-center justify-between">
-        <h2 id="party-size-heading" className="text-base font-black text-[#fff7ed]">
+        <h2 id="party-size-heading" className="text-sm font-bold text-white">
           ¿Cuántos son?
         </h2>
         {value !== null && (
-          <span className="text-xs font-bold text-orange-300">
+          <span className="text-xs font-semibold text-emerald-400">
             {value} {value === 1 ? "persona" : "personas"}
           </span>
         )}
@@ -70,10 +70,10 @@ export function PartySizePicker({ value, onChange }: PartySizePickerProps) {
               onClick={() => handlePresetClick(size)}
               aria-label={`${size} ${size === 1 ? "persona" : "personas"}`}
               aria-pressed={isSelected}
-              className={`flex h-12 w-full min-h-12 min-w-12 items-center justify-center rounded-2xl border text-base font-black transition cursor-pointer select-none ${
+              className={`flex h-12 w-full min-h-12 min-w-12 items-center justify-center rounded-2xl border text-base font-bold transition cursor-pointer select-none ${
                 isSelected
-                  ? "border-orange-400 bg-orange-500 text-[#15100c] shadow-lg shadow-orange-500/30"
-                  : "border-white/10 bg-white/[0.06] text-orange-100/90 hover:bg-white/[0.12] hover:border-white/20 active:scale-95"
+                  ? "border-emerald-400 bg-emerald-400 text-zinc-950 shadow-lg shadow-emerald-400/20"
+                  : "border-[#27272a] bg-[#18181b] text-zinc-300 hover:bg-zinc-800 hover:border-zinc-700 active:scale-95"
               }`}
             >
               {size}
@@ -86,10 +86,10 @@ export function PartySizePicker({ value, onChange }: PartySizePickerProps) {
           onClick={handlePlusClick}
           aria-label="Más de 6 personas"
           aria-pressed={stepperOpen}
-          className={`flex h-12 w-full min-h-12 min-w-12 items-center justify-center rounded-2xl border text-lg font-black transition cursor-pointer select-none ${
+          className={`flex h-12 w-full min-h-12 min-w-12 items-center justify-center rounded-2xl border text-lg font-bold transition cursor-pointer select-none ${
             stepperOpen
-              ? "border-orange-400 bg-orange-500 text-[#15100c] shadow-lg shadow-orange-500/30"
-              : "border-white/10 bg-white/[0.06] text-orange-200/90 hover:bg-white/[0.12] hover:border-white/20 active:scale-95"
+              ? "border-emerald-400 bg-emerald-400 text-zinc-950 shadow-lg shadow-emerald-400/20"
+              : "border-[#27272a] bg-[#18181b] text-zinc-300 hover:bg-zinc-800 hover:border-zinc-700 active:scale-95"
           }`}
         >
           +
@@ -99,33 +99,37 @@ export function PartySizePicker({ value, onChange }: PartySizePickerProps) {
       {stepperOpen && (
         <div
           data-testid="stepper-panel"
-          className="flex items-center justify-between rounded-2xl border border-orange-400/30 bg-orange-500/10 p-2.5 sm:p-3"
+          className="flex items-center justify-between rounded-2xl border border-[#27272a] bg-[#18181b] p-3 text-xs"
         >
-          <span className="text-xs font-semibold text-orange-200/80 pl-1">
-            Grupo grande (7 - 99):
-          </span>
+          <div className="flex flex-col">
+            <span className="font-semibold text-white">Grupo grande (7 - 99):</span>
+            <span className="text-[11px] text-zinc-400">Usá los botones para ajustar</span>
+          </div>
+
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={handleDecrement}
               disabled={(value ?? MIN_STEPPER_VALUE) <= MIN_STEPPER_VALUE}
               aria-label="Disminuir comensales"
-              className="flex size-12 min-h-12 min-w-12 items-center justify-center rounded-xl border border-white/10 bg-white/10 text-lg font-black text-white transition hover:bg-white/20 active:scale-95 disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+              className="flex size-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900 text-lg font-black text-zinc-200 transition hover:bg-zinc-800 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
             >
               −
             </button>
+
             <span
               data-testid="stepper-value"
-              className="w-10 text-center text-lg font-black text-orange-200"
+              className="w-9 text-center text-base font-black text-white"
             >
               {value ?? MIN_STEPPER_VALUE}
             </span>
+
             <button
               type="button"
               onClick={handleIncrement}
               disabled={(value ?? MIN_STEPPER_VALUE) >= MAX_STEPPER_VALUE}
               aria-label="Aumentar comensales"
-              className="flex size-12 min-h-12 min-w-12 items-center justify-center rounded-xl border border-white/10 bg-white/10 text-lg font-black text-white transition hover:bg-white/20 active:scale-95 disabled:opacity-30 disabled:pointer-events-none cursor-pointer"
+              className="flex size-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900 text-lg font-black text-zinc-200 transition hover:bg-zinc-800 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
             >
               +
             </button>

@@ -7,7 +7,7 @@ import {
 } from "./PublicMenuOrderScreen";
 import { PublicMenuCartPanel } from "./PublicMenuCartPanel";
 
-describe("PublicMenuOrderScreen visual & layout fixes", () => {
+describe("PublicMenuOrderScreen app-shell layout", () => {
   const mockSettings = {
     tenant_id: "tenant-1",
     public_slug: "test-bistro",
@@ -36,7 +36,7 @@ describe("PublicMenuOrderScreen visual & layout fixes", () => {
 
   const formatCurrency = (val: number, cur: string) => `${cur} $${val.toFixed(2)}`;
 
-  it("renders header row with flex-wrap and badge with whitespace-nowrap in table mode (plural)", () => {
+  it("renders header badge with whitespace-nowrap in table mode (plural)", () => {
     const html = renderToStaticMarkup(
       <PublicMenuOrderScreen
         settings={mockSettings}
@@ -64,8 +64,6 @@ describe("PublicMenuOrderScreen visual & layout fixes", () => {
       />
     );
 
-    expect(html).toContain("Volver al inicio");
-    expect(html).toContain("flex flex-wrap items-center justify-between gap-3");
     expect(html).toContain("whitespace-nowrap");
     expect(html).toContain("🪑 Mesa 3 · 4 personas");
   });
@@ -135,7 +133,7 @@ describe("PublicMenuOrderScreen visual & layout fixes", () => {
     expect(html).toContain("whitespace-nowrap");
   });
 
-  it("renders search input with shortened placeholder 'Buscar en el menú' and descriptive aria-label", () => {
+  it("renders search input with placeholder 'Buscar en el menú' and descriptive aria-label", () => {
     const html = renderToStaticMarkup(
       <PublicMenuOrderScreen
         settings={mockSettings}
@@ -167,7 +165,7 @@ describe("PublicMenuOrderScreen visual & layout fixes", () => {
     expect(html).toContain('aria-label="Buscar platos, categorías o ingredientes en el menú"');
   });
 
-  it("renders floating cart button with singular '1 item', whitespace-nowrap, safe area, and extra scroll padding", () => {
+  it("renders floating cart summary with singular '1 item', whitespace-nowrap, safe area, and extra scroll padding", () => {
     const singleCart: CartLine[] = [
       {
         ...sampleItems[0],
@@ -202,18 +200,14 @@ describe("PublicMenuOrderScreen visual & layout fixes", () => {
       />
     );
 
-    // Floating button assertions
     expect(html).toContain("1 item");
     expect(html).not.toContain("1 items");
     expect(html).toContain("whitespace-nowrap");
-    expect(html).toContain("calc(1.5rem + env(safe-area-inset-bottom))");
     expect(html).toContain("left-1/2 -translate-x-1/2");
-
-    // Scroll padding added when cart has items to avoid hiding the last dish's button
-    expect(html).toContain("pb-36");
+    expect(html).toContain("pb-[calc(10.5rem+env(safe-area-inset-bottom,0px))]");
   });
 
-  it("renders floating cart button with plural 'N items' when itemCount > 1", () => {
+  it("renders floating cart summary with plural 'N items' when itemCount > 1", () => {
     const multiCart: CartLine[] = [
       {
         ...sampleItems[0],
@@ -250,6 +244,44 @@ describe("PublicMenuOrderScreen visual & layout fixes", () => {
 
     expect(html).toContain("3 items");
     expect(html).toContain("whitespace-nowrap");
+  });
+
+  it("asserts the word 'Pagar' is completely absent from the public menu app", () => {
+    const multiCart: CartLine[] = [
+      {
+        ...sampleItems[0],
+        quantity: 2,
+      },
+    ];
+
+    const html = renderToStaticMarkup(
+      <PublicMenuOrderScreen
+        settings={mockSettings}
+        mode={{ kind: "table", mesa: 2 }}
+        partySize={2}
+        items={sampleItems}
+        cart={multiCart}
+        onAddItem={vi.fn()}
+        onUpdateQuantity={vi.fn()}
+        customerName=""
+        onCustomerNameChange={vi.fn()}
+        customerPhone=""
+        onCustomerPhoneChange={vi.fn()}
+        notes=""
+        onNotesChange={vi.fn()}
+        mesaCodigo=""
+        onMesaCodigoChange={vi.fn()}
+        mesaCodeError={null}
+        error={null}
+        success={null}
+        placing={false}
+        onPlaceOrder={vi.fn()}
+        onBackToHome={vi.fn()}
+        currencyFormatter={formatCurrency}
+      />
+    );
+
+    expect(html.toLowerCase()).not.toContain("pagar");
   });
 });
 

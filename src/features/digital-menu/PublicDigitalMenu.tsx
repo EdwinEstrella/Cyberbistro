@@ -18,6 +18,7 @@ import {
 } from "./lib/publicMenuPayload";
 import { resolvePublicMenuMode } from "./lib/publicMenuMode";
 import { useOnlineMenuStatus } from "./lib/useOnlineMenuStatus";
+import { publicMenuTheme } from "./components/public-app/publicMenuTheme";
 
 export { asMenuPayload, buildCreateOrderRpcArgs, formatCurrency, getClientSessionId };
 export type { PublicMenuPayload };
@@ -174,6 +175,10 @@ export function PublicDigitalMenu() {
     );
   }
 
+  function clearCart() {
+    setCart([]);
+  }
+
   // Place order
   async function placeOrder() {
     if (!customerName.trim()) {
@@ -269,21 +274,36 @@ export function PublicDigitalMenu() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#15100c] text-[#fff7ed] grid place-items-center">
-        Cargando menú...
+      <div className={publicMenuTheme.canvas} style={publicMenuTheme.rootStyle}>
+        <div
+          className={`${publicMenuTheme.deviceColumn} items-center justify-center p-6 text-center text-zinc-400`}
+          style={publicMenuTheme.rootStyle}
+        >
+          <div className="flex flex-col items-center gap-3">
+            <div className="size-8 rounded-full border-2 border-emerald-400 border-t-transparent animate-spin" />
+            <p className="text-xs font-semibold text-zinc-400">Cargando menú...</p>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (!menu.settings) {
     return (
-      <div className="min-h-screen bg-[#15100c] text-[#fff7ed] grid place-items-center p-6 text-center">
-        <div className="max-w-md rounded-[28px] border border-white/10 bg-white/5 p-8">
-          <p className="text-xs uppercase tracking-[0.3em] text-orange-200/70">Menú no disponible</p>
-          <h1 className="mt-3 text-3xl font-black">Este enlace no está activo.</h1>
-          <p className="mt-3 text-sm text-orange-100/70">
-            Verificá el código QR o pedí un enlace actualizado al restaurante.
-          </p>
+      <div className={publicMenuTheme.canvas} style={publicMenuTheme.rootStyle}>
+        <div
+          className={`${publicMenuTheme.deviceColumn} items-center justify-center p-6 text-center`}
+          style={publicMenuTheme.rootStyle}
+        >
+          <div className="w-full rounded-2xl border border-[#27272a] bg-[#111113] p-7 shadow-2xl">
+            <p className="text-[10px] uppercase tracking-wider font-semibold text-zinc-500">
+              Menú no disponible
+            </p>
+            <h1 className="mt-2 text-xl font-bold text-white">Este enlace no está activo.</h1>
+            <p className="mt-2 text-xs text-zinc-400 leading-relaxed">
+              Verificá el código QR o pedí un enlace actualizado al restaurante.
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -292,30 +312,37 @@ export function PublicDigitalMenu() {
   // Active in-store order blocker
   if (mode.kind === "table" && hasActiveInStoreOrder) {
     return (
-      <div className="min-h-screen bg-[#15100c] text-[#fff7ed] grid place-items-center p-6 text-center">
-        <div className="max-w-md rounded-[28px] border border-orange-300/20 bg-orange-500/10 p-8">
-          <p className="text-4xl mb-4">⏳</p>
-          <h1 className="text-2xl font-black">Tu pedido está en camino</h1>
-          <p className="mt-3 text-sm text-orange-100/70">
-            Ya tenés un pedido activo en la Mesa {mode.mesa}. Cuando esté listo, el personal te lo
-            notificará.
-          </p>
-          <p className="mt-4 text-sm text-orange-200/60">
-            Si necesitás agregar algo, solicitá asistencia al camarero.
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              if (typeof localStorage !== "undefined") {
-                localStorage.removeItem(`cb_session_${slug}`);
-              }
-              setHasActiveInStoreOrder(false);
-              setSuccess(null);
-            }}
-            className="mt-6 text-xs text-orange-200/50 hover:text-orange-200 underline cursor-pointer"
-          >
-            Soy un cliente diferente en esta mesa
-          </button>
+      <div className={publicMenuTheme.canvas} style={publicMenuTheme.rootStyle}>
+        <div
+          className={`${publicMenuTheme.deviceColumn} items-center justify-center p-6 text-center`}
+          style={publicMenuTheme.rootStyle}
+        >
+          <div className="w-full rounded-2xl border border-[#27272a] bg-[#111113] p-7 shadow-2xl">
+            <div className="mx-auto size-14 rounded-2xl bg-emerald-400/10 border border-emerald-400/20 text-emerald-400 flex items-center justify-center text-2xl mb-4">
+              ⏳
+            </div>
+            <h1 className="text-xl font-bold text-white">Tu pedido está en camino</h1>
+            <p className="mt-2 text-xs text-zinc-400 leading-relaxed">
+              Ya tenés un pedido activo en la Mesa {mode.mesa}. Cuando esté listo, el personal te lo
+              notificará.
+            </p>
+            <p className="mt-3 text-[11px] text-zinc-500">
+              Si necesitás agregar algo, solicitá asistencia al camarero.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                if (typeof localStorage !== "undefined") {
+                  localStorage.removeItem(`cb_session_${slug}`);
+                }
+                setHasActiveInStoreOrder(false);
+                setSuccess(null);
+              }}
+              className="mt-6 text-xs text-zinc-400 hover:text-white underline cursor-pointer"
+            >
+              Soy un cliente diferente en esta mesa
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -345,6 +372,7 @@ export function PublicDigitalMenu() {
       cart={cart}
       onAddItem={addItem}
       onUpdateQuantity={updateQuantity}
+      onClearCart={clearCart}
       customerName={customerName}
       onCustomerNameChange={setCustomerName}
       customerPhone={customerPhone}
@@ -359,6 +387,8 @@ export function PublicDigitalMenu() {
       placing={placing}
       onPlaceOrder={() => void placeOrder()}
       onBackToHome={() => setScreen("home")}
+      onDismissSuccess={() => setSuccess(null)}
+      contact={menu.contact}
       currencyFormatter={formatCurrency}
     />
   );

@@ -1,8 +1,14 @@
 import { useMemo, useState } from "react";
-import { ArrowLeft, Search, ShoppingBag, X } from "lucide-react";
+import { ShoppingBag } from "lucide-react";
 import type { PublicMenuMode } from "../lib/publicMenuMode";
-import { DishImage } from "./DishImage";
-import { PublicMenuCartPanel } from "./PublicMenuCartPanel";
+import type { PublicContact } from "../../menu-links/lib/publicMenuCalendar";
+import { AppTopBar } from "./public-app/AppTopBar";
+import { CategoryChips } from "./public-app/CategoryChips";
+import { DishRow } from "./public-app/DishRow";
+import { BottomTabBar } from "./public-app/BottomTabBar";
+import { CartDrawer } from "./public-app/CartDrawer";
+import { ServicesTab } from "./public-app/ServicesTab";
+import { publicMenuTheme } from "./public-app/publicMenuTheme";
 
 export interface PublicMenuSettings {
   tenant_id: string;
@@ -38,6 +44,7 @@ export interface PublicMenuOrderScreenProps {
   cart: CartLine[];
   onAddItem: (item: PublicMenuItem) => void;
   onUpdateQuantity: (platoId: number, quantity: number) => void;
+  onClearCart?: () => void;
   customerName: string;
   onCustomerNameChange: (val: string) => void;
   customerPhone: string;
@@ -52,6 +59,8 @@ export interface PublicMenuOrderScreenProps {
   placing: boolean;
   onPlaceOrder: () => void;
   onBackToHome: () => void;
+  onDismissSuccess?: () => void;
+  contact?: PublicContact | null;
   currencyFormatter: (value: number, code: string) => string;
 }
 
@@ -63,6 +72,7 @@ export function PublicMenuOrderScreen({
   cart,
   onAddItem,
   onUpdateQuantity,
+  onClearCart,
   customerName,
   onCustomerNameChange,
   customerPhone,
@@ -77,195 +87,222 @@ export function PublicMenuOrderScreen({
   placing,
   onPlaceOrder,
   onBackToHome,
+  onDismissSuccess,
+  contact,
   currencyFormatter,
 }: PublicMenuOrderScreenProps) {
+  const [activeTab, setActiveTab] = useState<"menu" | "services">("menu");
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [showMobileCart, setShowMobileCart] = useState(false);
+  const [isCartOpen, setIsCartOpen] = useState(false);
 
-  const filteredItems = useMemo(() => {
-    if (!searchQuery.trim()) return items;
-    const lq = searchQuery.toLowerCase();
-    return items.filter(
-      (item) =>
-        item.name.toLowerCase().includes(lq) ||
-        item.description?.toLowerCase().includes(lq) ||
-        item.category.toLowerCase().includes(lq)
-    );
-  }, [items, searchQuery]);
-
-  const groupedItems = useMemo(() => {
-    const groups = new Map<string, PublicMenuItem[]>();
-    for (const item of filteredItems) {
-      const key = item.category || "General";
-      groups.set(key, [...(groups.get(key) ?? []), item]);
+  // Derive unique categories from items
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    for (const item of items) {
+      if (item.category?.trim()) {
+        set.add(item.category.trim());
+      }
     }
-    return Array.from(groups.entries());
-  }, [filteredItems]);
+    return Array.from(set);
+  }, [items]);
+
+  // Filter items based on search and selected category
+  const filteredItems = useMemo(() => {
+    let result = items;
+
+    if (selectedCategory !== "all") {
+      result = result.filter((item) => (item.category || "General") === selectedCategory);
+    }
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(
+        (item) =>
+          item.name.toLowerCase().includes(q) ||
+          item.description?.toLowerCase().includes(q) ||
+          item.category.toLowerCase().includes(q)
+      );
+    }
+
+    return result;
+  }, [items, selectedCategory, searchQuery]);
+
+  // Group items by category for clean section headers when "all" is selected
+  const groupedItems = useMemo(() => {
+    if (selectedCategory !== "all") {
+      return [[selectedCategory, filteredItems]] as [string, PublicMenuItem[]][];
+    }
+    const map = new Map<string, PublicMenuItem[]>();
+    for (const item of filteredItems) {
+      const cat = item.category || "General";
+      map.set(cat, [...(map.get(cat) ?? []), item]);
+    }
+    return Array.from(map.entries());
+  }, [filteredItems, selectedCategory]);
+
+  // Map cart items by plato_id for quick quantity lookup
+  const cartQuantities = useMemo(() => {
+    const map = new Map<number, number>();
+    for (const line of cart) {
+      map.set(line.plato_id, line.quantity);
+    }
+    return map;
+  }, [cart]);
 
   const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const isTableMode = mode.kind === "table";
 
+  // Automatically open cart drawer if an error or success occurs
+  const handleOpenCart = () => setIsCartOpen(true);
+  const handleCloseCart = () => setIsCartOpen(false);
+
+  const handleClearCart = () => {
+    if (onClearCart) {
+      onClearCart();
+    } else {
+      // Fallback: update each item to 0
+      for (const line of cart) {
+        onUpdateQuantity(line.plato_id, 0);
+      }
+    }
+  };
+
   return (
-    <div className="min-h-dvh bg-[#15100c] text-[#fff7ed]">
-      {/* Header */}
-      <header className="relative overflow-hidden px-4 py-6 sm:px-8">
-        <div
-          className="absolute inset-0 opacity-40"
-          style={{
-            background:
-              "radial-gradient(circle at 20% 10%, #ff906d 0, transparent 28%), radial-gradient(circle at 90% 5%, #facc15 0, transparent 22%)",
-          }}
-          aria-hidden="true"
+    <div className={publicMenuTheme.canvas} style={publicMenuTheme.rootStyle}>
+      <div className={publicMenuTheme.deviceColumn} style={publicMenuTheme.rootStyle}>
+        {/* Sticky Top Bar */}
+        <AppTopBar
+          title={settings.title || settings.business_name}
+          logoUrl={settings.logo_url}
+          mode={mode}
+          partySize={partySize}
+          cartCount={itemCount}
+          onOpenCart={handleOpenCart}
+          onChangePartySize={onBackToHome}
         />
-        <div className="relative mx-auto max-w-6xl rounded-[32px] border border-white/10 bg-black/40 p-5 sm:p-6 shadow-2xl backdrop-blur">
-          {/* Navigation bar with Back control */}
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+
+        {/* Tab 1: Menú */}
+        {activeTab === "menu" && (
+          <main
+            className={`flex-1 flex flex-col ${
+              cart.length > 0
+                ? publicMenuTheme.scrollPaddingCart
+                : publicMenuTheme.scrollPaddingNoCart
+            }`}
+          >
+            {/* Sticky Category Chips & Search */}
+            <CategoryChips
+              categories={categories}
+              selectedCategory={selectedCategory}
+              onSelectCategory={setSelectedCategory}
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+            />
+
+            {/* Dish List */}
+            <section
+              aria-label="Platos del menú"
+              className="flex-1 px-4 py-3 space-y-5"
+            >
+              {filteredItems.length === 0 ? (
+                <div className="py-16 text-center">
+                  <p className="text-sm font-semibold text-zinc-300">
+                    No encontramos platos
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    {searchQuery
+                      ? `No hay resultados para "${searchQuery}".`
+                      : "No hay productos en esta categoría."}
+                  </p>
+                </div>
+              ) : (
+                groupedItems.map(([categoryName, categoryDishes]) => (
+                  <div key={categoryName} className="space-y-2.5">
+                    {selectedCategory === "all" && (
+                      <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400 px-1 pt-1">
+                        {categoryName}
+                      </h2>
+                    )}
+                    <div className="space-y-2">
+                      {categoryDishes.map((item) => (
+                        <DishRow
+                          key={item.id}
+                          item={item}
+                          quantityInCart={cartQuantities.get(item.plato_id) ?? 0}
+                          onAdd={() => onAddItem(item)}
+                          onUpdateQuantity={(q) => onUpdateQuantity(item.plato_id, q)}
+                          currency={settings.currency}
+                          currencyFormatter={currencyFormatter}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+            </section>
+          </main>
+        )}
+
+        {/* Tab 2: Servicios / Info */}
+        {activeTab === "services" && (
+          <main className={`flex-1 ${publicMenuTheme.scrollPaddingNoCart}`}>
+            <ServicesTab
+              contact={contact}
+              isTableMode={isTableMode}
+              businessName={settings.title || settings.business_name}
+            />
+          </main>
+        )}
+
+        {/* Floating Cart Summary Bar (Optional app-like summary) */}
+        {cart.length > 0 && !isCartOpen && (
+          <div
+            className="fixed bottom-[68px] left-1/2 -translate-x-1/2 w-full max-w-[480px] px-4 z-20 pointer-events-none"
+            style={{ bottom: "calc(4.5rem + env(safe-area-inset-bottom, 0px))" }}
+          >
             <button
               type="button"
-              onClick={onBackToHome}
-              className="inline-flex min-h-[40px] items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3.5 py-1.5 text-xs font-bold text-orange-200/90 transition hover:bg-white/15 hover:text-white cursor-pointer active:scale-95"
+              onClick={handleOpenCart}
+              className="pointer-events-auto flex w-full items-center justify-between rounded-xl bg-white px-4 py-3 text-xs font-bold text-zinc-950 shadow-xl transition active:scale-98 cursor-pointer hover:bg-zinc-100"
             >
-              <ArrowLeft className="size-4" />
-              <span>Volver al inicio</span>
+              <div className="flex items-center gap-2 whitespace-nowrap">
+                <ShoppingBag className="size-4 shrink-0 text-emerald-600" />
+                <span>Ver pedido</span>
+                <span aria-hidden="true">·</span>
+                <span>
+                  {itemCount} {itemCount === 1 ? "item" : "items"}
+                </span>
+              </div>
+              <span className="font-extrabold text-sm text-zinc-950 tabular-nums">
+                {currencyFormatter(total, settings.currency)}
+              </span>
             </button>
-
-            {/* Context badge */}
-            {isTableMode ? (
-              <span className="inline-flex items-center whitespace-nowrap rounded-xl border border-orange-300/30 bg-orange-500/20 px-3 py-1.5 text-xs font-black text-orange-200">
-                🪑 Mesa {mode.mesa}
-                {partySize ? ` · ${partySize} ${partySize === 1 ? "persona" : "personas"}` : ""}
-              </span>
-            ) : (
-              <span className="inline-flex items-center whitespace-nowrap rounded-xl border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-black text-orange-200">
-                🛍 Para llevar
-              </span>
-            )}
           </div>
+        )}
 
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-4">
-              {settings.logo_url ? (
-                <img
-                  src={settings.logo_url}
-                  alt="Logo"
-                  className="size-14 sm:size-16 rounded-2xl object-contain bg-white/10 p-2 shadow"
-                />
-              ) : (
-                <div className="flex size-14 sm:size-16 items-center justify-center rounded-2xl bg-orange-500/20 text-2xl font-black text-orange-200">
-                  {settings.title?.charAt(0) || "R"}
-                </div>
-              )}
-              <div>
-                <p className="text-[10px] uppercase tracking-[0.25em] text-orange-200/75">
-                  Menú digital
-                </p>
-                <h1 className="text-2xl font-black tracking-tight sm:text-4xl">
-                  {settings.title}
-                </h1>
-              </div>
-            </div>
-            <div className="text-xs text-orange-100/75 sm:text-right">
-              {settings.address && <p>{settings.address}</p>}
-              {settings.phone && <p>{settings.phone}</p>}
-            </div>
-          </div>
-          {settings.description && (
-            <p className="mt-3 max-w-2xl text-xs sm:text-sm leading-relaxed text-orange-50/80">
-              {settings.description}
-            </p>
-          )}
-        </div>
-      </header>
+        {/* Fixed Bottom Tab Bar */}
+        <BottomTabBar
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          onOpenCart={handleOpenCart}
+          cartCount={itemCount}
+          isTableMode={isTableMode}
+        />
 
-      <main
-        className={`mx-auto grid max-w-6xl gap-6 px-4 ${
-          cart.length > 0 ? "pb-36 sm:pb-40" : "pb-28"
-        } lg:pb-28 lg:grid-cols-[1fr_360px] lg:px-8`}
-      >
-        {/* Menu items */}
-        <section className="space-y-6">
-          {/* Search bar */}
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Buscar en el menú"
-              aria-label="Buscar platos, categorías o ingredientes en el menú"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full rounded-2xl border border-white/10 bg-white/5 px-5 py-3.5 pl-12 text-sm outline-none transition focus:border-orange-300/50 focus:bg-white/10 placeholder:text-orange-50/40"
-            />
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-orange-50/40 size-5" />
-            {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery("")}
-                aria-label="Limpiar búsqueda"
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-orange-50/40 hover:text-orange-200 transition cursor-pointer"
-              >
-                <X className="size-5" />
-              </button>
-            )}
-          </div>
-
-          {groupedItems.length === 0 && searchQuery ? (
-            <div className="text-center py-10">
-              <p className="text-orange-50/60">No se encontraron resultados para "{searchQuery}".</p>
-            </div>
-          ) : (
-            groupedItems.map(([category, categoryItems]) => (
-              <div key={category}>
-                <h2 className="mb-4 text-lg sm:text-xl font-black uppercase tracking-[0.16em] text-orange-200">
-                  {category}
-                </h2>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  {categoryItems.map((item) => (
-                    <article
-                      key={item.id}
-                      className="rounded-[28px] border border-white/10 bg-white/[0.06] p-4 shadow-xl flex flex-col justify-between"
-                    >
-                      <div>
-                        <DishImage src={item.image_url} alt={item.name} />
-                        <div className="flex items-start justify-between gap-4">
-                          <div>
-                            <h3 className="text-base sm:text-lg font-black">{item.name}</h3>
-                            {item.description && (
-                              <p className="mt-1 text-xs sm:text-sm leading-5 text-orange-50/65">
-                                {item.description}
-                              </p>
-                            )}
-                          </div>
-                          <strong className="whitespace-nowrap text-orange-200">
-                            {currencyFormatter(item.price, settings.currency)}
-                          </strong>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => onAddItem(item)}
-                        className="mt-4 w-full rounded-2xl border-0 bg-[#ff906d] px-4 py-3 text-sm font-black uppercase tracking-widest text-[#24120b] shadow-lg transition hover:bg-[#ff9f80] active:scale-98 cursor-pointer"
-                      >
-                        Agregar
-                      </button>
-                    </article>
-                  ))}
-                </div>
-              </div>
-            ))
-          )}
-        </section>
-
-        {/* Cart panel */}
-        <PublicMenuCartPanel
+        {/* Cart Drawer */}
+        <CartDrawer
+          isOpen={isCartOpen}
+          onClose={handleCloseCart}
           cart={cart}
+          onUpdateQuantity={onUpdateQuantity}
+          onClearCart={handleClearCart}
           currency={settings.currency}
           isTableMode={isTableMode}
           mesaNumero={isTableMode ? mode.mesa : undefined}
           itemCount={itemCount}
           total={total}
-          showMobileCart={showMobileCart}
-          onCloseMobileCart={() => setShowMobileCart(false)}
-          onUpdateQuantity={onUpdateQuantity}
           mesaCodigo={mesaCodigo}
           onMesaCodigoChange={onMesaCodigoChange}
           mesaCodeError={mesaCodeError}
@@ -279,28 +316,10 @@ export function PublicMenuOrderScreen({
           success={success}
           placing={placing}
           onPlaceOrder={onPlaceOrder}
+          onDismissSuccess={onDismissSuccess}
           currencyFormatter={currencyFormatter}
         />
-      </main>
-
-      {/* Mobile floating cart button */}
-      {cart.length > 0 && !showMobileCart && (
-        <div
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 lg:hidden z-40"
-          style={{ bottom: "calc(1.5rem + env(safe-area-inset-bottom))" }}
-        >
-          <button
-            type="button"
-            onClick={() => setShowMobileCart(true)}
-            className="flex items-center gap-2.5 sm:gap-3 whitespace-nowrap rounded-full bg-[#ff906d] px-6 py-4 font-black text-[#24120b] shadow-2xl cursor-pointer active:scale-95 transition"
-          >
-            <ShoppingBag className="size-5 shrink-0" />
-            <span>{itemCount} {itemCount === 1 ? "item" : "items"}</span>
-            <span aria-hidden="true">·</span>
-            <span>{currencyFormatter(total, settings.currency)}</span>
-          </button>
-        </div>
-      )}
+      </div>
     </div>
   );
 }

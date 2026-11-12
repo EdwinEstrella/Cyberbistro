@@ -40,15 +40,15 @@ export function WhatsAppSheet({
       title="Contactanos por WhatsApp"
       description="Escribinos directamente o guardá nuestro contacto en tu teléfono."
     >
-      <div className="space-y-3">
+      <div className="space-y-2.5">
         {waUrl && (
           <a
             href={waUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex min-h-[48px] w-full items-center justify-center gap-3 rounded-2xl bg-emerald-500 px-5 py-3.5 text-base font-black text-black shadow-lg shadow-emerald-500/20 transition hover:bg-emerald-400 active:scale-95 cursor-pointer no-underline"
+            className="flex min-h-[48px] w-full items-center justify-center gap-2.5 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-zinc-950 shadow-md shadow-emerald-500/10 transition hover:bg-emerald-400 active:scale-95 cursor-pointer no-underline"
           >
-            <MessageCircle className="size-5" />
+            <MessageCircle className="size-4.5" />
             <span>Escribir por WhatsApp</span>
           </a>
         )}
@@ -56,9 +56,9 @@ export function WhatsAppSheet({
         <button
           type="button"
           onClick={handleDownloadVCard}
-          className="flex min-h-[48px] w-full items-center justify-center gap-3 rounded-2xl border border-white/10 bg-white/[0.08] px-5 py-3.5 text-base font-black text-white transition hover:bg-white/[0.14] active:scale-95 cursor-pointer"
+          className="flex min-h-[48px] w-full items-center justify-center gap-2.5 rounded-xl border border-[#27272a] bg-[#18181b] px-4 py-3 text-sm font-semibold text-zinc-200 transition hover:bg-zinc-800 hover:text-white active:scale-95 cursor-pointer"
         >
-          <UserPlus className="size-5 text-orange-300" />
+          <UserPlus className="size-4.5" />
           <span>Guardar contacto</span>
         </button>
       </div>

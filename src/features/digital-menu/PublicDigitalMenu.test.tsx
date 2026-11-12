@@ -182,4 +182,10 @@ describe("PublicDigitalMenu container rendering", () => {
     const html = renderToStaticMarkup(<PublicDigitalMenu />);
     expect(html).toContain("Cargando menú...");
   });
+
+  it("never contains the word 'Pagar' anywhere in rendered container state", () => {
+    vi.mocked(supabase.rpc).mockReturnValue(new Promise(() => {}) as any);
+    const html = renderToStaticMarkup(<PublicDigitalMenu />);
+    expect(html.toLowerCase()).not.toContain("pagar");
+  });
 });

@@ -1,0 +1,362 @@
+import { useEffect, useRef } from "react";
+import { X, Trash2, CheckCircle2, ArrowRight, Minus, Plus } from "lucide-react";
+import type { CartLine } from "../PublicMenuOrderScreen";
+import { publicMenuTheme } from "./publicMenuTheme";
+
+export interface CartDrawerProps {
+  isOpen: boolean;
+  onClose: () => void;
+  cart: CartLine[];
+  onUpdateQuantity: (platoId: number, quantity: number) => void;
+  onClearCart: () => void;
+  currency: string;
+  isTableMode: boolean;
+  mesaNumero?: number;
+  itemCount: number;
+  total: number;
+  mesaCodigo: string;
+  onMesaCodigoChange: (val: string) => void;
+  mesaCodeError: string | null;
+  customerName: string;
+  onCustomerNameChange: (val: string) => void;
+  customerPhone: string;
+  onCustomerPhoneChange: (val: string) => void;
+  notes: string;
+  onNotesChange: (val: string) => void;
+  error: string | null;
+  success: { message: string; numeroPedido: number | null } | null;
+  placing: boolean;
+  onPlaceOrder: () => void;
+  onDismissSuccess?: () => void;
+  currencyFormatter: (value: number, code: string) => string;
+}
+
+export function CartDrawer({
+  isOpen,
+  onClose,
+  cart,
+  onUpdateQuantity,
+  onClearCart,
+  currency,
+  isTableMode,
+  mesaNumero,
+  itemCount,
+  total,
+  mesaCodigo,
+  onMesaCodigoChange,
+  mesaCodeError,
+  customerName,
+  onCustomerNameChange,
+  customerPhone,
+  onCustomerPhoneChange,
+  notes,
+  onNotesChange,
+  error,
+  success,
+  placing,
+  onPlaceOrder,
+  onDismissSuccess,
+  currencyFormatter,
+}: CartDrawerProps) {
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  // Focus management and body scroll lock
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    if (isOpen) {
+      previousFocusRef.current = document.activeElement as HTMLElement | null;
+      closeButtonRef.current?.focus();
+      document.body.style.overflow = "hidden";
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          onClose();
+        }
+      };
+
+      document.addEventListener("keydown", handleKeyDown);
+      return () => {
+        document.removeEventListener("keydown", handleKeyDown);
+        document.body.style.overflow = "";
+      };
+    } else {
+      document.body.style.overflow = "";
+      if (previousFocusRef.current) {
+        previousFocusRef.current.focus?.();
+        previousFocusRef.current = null;
+      }
+    }
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  const handleDismissSuccess = () => {
+    onDismissSuccess?.();
+    onClose();
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="cart-drawer-title"
+      style={publicMenuTheme.rootStyle}
+      className={`fixed inset-y-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] z-50 overflow-hidden ${publicMenuTheme.fontClass}`}
+    >
+      {/* Blurred darkened backdrop */}
+      <div
+        data-testid="cart-drawer-backdrop"
+        onClick={onClose}
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity duration-300 motion-reduce:transition-none"
+        aria-hidden="true"
+      />
+
+      {/* Drawer panel */}
+      <aside
+        data-testid="cart-drawer-panel"
+        className="absolute right-0 top-0 bottom-0 w-[92vw] sm:w-[88%] max-w-[400px] bg-[#111113] border-l border-[#27272a] shadow-2xl flex flex-col z-10 transition-transform duration-300 ease-out motion-reduce:transition-none"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-[#27272a] px-4 py-3.5 bg-[#111113] shrink-0">
+          <div className="flex items-center gap-2">
+            <h2 id="cart-drawer-title" className="text-base font-bold text-white">
+              Pedido
+            </h2>
+            <span className="whitespace-nowrap rounded-full bg-emerald-400/10 border border-emerald-400/20 px-2.5 py-0.5 text-[11px] font-bold text-emerald-400">
+              {itemCount} {itemCount === 1 ? "item" : "items"}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            {cart.length > 0 && !success && (
+              <button
+                type="button"
+                onClick={onClearCart}
+                title="Vaciar carrito"
+                aria-label="Vaciar carrito"
+                className="inline-flex items-center gap-1 rounded-lg border border-[#27272a] bg-[#18181b] px-2.5 py-1 text-xs font-semibold text-zinc-400 hover:text-red-400 hover:border-red-500/30 transition cursor-pointer active:scale-95"
+              >
+                <Trash2 className="size-3.5" />
+                <span>Vaciar</span>
+              </button>
+            )}
+
+            <button
+              ref={closeButtonRef}
+              type="button"
+              onClick={onClose}
+              aria-label="Cerrar pedido"
+              className="flex size-8 items-center justify-center rounded-lg bg-[#18181b] border border-[#27272a] text-zinc-400 hover:text-white transition cursor-pointer active:scale-95"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Success View */}
+        {success ? (
+          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-4">
+            <div className="size-16 rounded-2xl bg-emerald-400/10 border border-emerald-400/20 text-emerald-400 flex items-center justify-center shadow-lg">
+              <CheckCircle2 className="size-9" />
+            </div>
+            <div>
+              <h3 className="text-xl font-bold text-white">¡Pedido enviado!</h3>
+              <p className="mt-1 text-sm text-zinc-400">{success.message}</p>
+              {success.numeroPedido !== null && (
+                <div className="mt-3 inline-block rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-bold text-emerald-400">
+                  Pedido #{success.numeroPedido}
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-zinc-500 max-w-xs leading-relaxed">
+              El personal recibió tu comanda y comenzará su preparación de inmediato.
+            </p>
+            <button
+              type="button"
+              onClick={handleDismissSuccess}
+              className="w-full mt-4 bg-white text-zinc-950 font-semibold rounded-xl py-3.5 text-sm hover:bg-zinc-100 active:scale-98 transition shadow-sm cursor-pointer"
+            >
+              Seguir viendo el menú
+            </button>
+          </div>
+        ) : (
+          <>
+            {/* Scrollable Content: Items + Form Fields */}
+            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+              {/* Item cards */}
+              {cart.length === 0 ? (
+                <div className="py-12 text-center space-y-2">
+                  <p className="text-sm font-semibold text-zinc-300">Tu pedido está vacío</p>
+                  <p className="text-xs text-zinc-500">
+                    Elegí platos del menú para armar tu pedido.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {cart.map((line) => (
+                    <div
+                      key={line.plato_id}
+                      className="rounded-xl border border-[#27272a] bg-[#18181b] p-3 space-y-2"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-white leading-tight">
+                            {line.name}
+                          </p>
+                          <span className="text-[11px] font-semibold text-emerald-400 tabular-nums">
+                            {currencyFormatter(line.price * line.quantity, currency)}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => onUpdateQuantity(line.plato_id, 0)}
+                          aria-label={`Quitar ${line.name}`}
+                          className="text-zinc-500 hover:text-red-400 transition cursor-pointer p-1"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      </div>
+
+                      {/* Stepper */}
+                      <div className="flex items-center justify-between pt-1">
+                        <span className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">
+                          Cantidad
+                        </span>
+                        <div className="flex items-center gap-1.5 rounded-lg bg-zinc-900 border border-[#27272a] p-0.5">
+                          <button
+                            type="button"
+                            onClick={() => onUpdateQuantity(line.plato_id, line.quantity - 1)}
+                            aria-label={`Disminuir ${line.name}`}
+                            className="size-6 flex items-center justify-center rounded text-zinc-300 hover:text-white hover:bg-zinc-800 transition cursor-pointer"
+                          >
+                            <Minus className="size-3" />
+                          </button>
+                          <span className="min-w-[18px] text-center text-xs font-bold text-white tabular-nums">
+                            {line.quantity}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onUpdateQuantity(line.plato_id, Math.min(99, line.quantity + 1))
+                            }
+                            disabled={line.quantity >= 99}
+                            aria-label={`Aumentar ${line.name}`}
+                            className="size-6 flex items-center justify-center rounded text-zinc-300 hover:text-white hover:bg-zinc-800 transition cursor-pointer disabled:opacity-40"
+                          >
+                            <Plus className="size-3" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Order fields */}
+              {cart.length > 0 && (
+                <div className="pt-2 space-y-3 border-t border-[#27272a]">
+                  <p className="text-[11px] uppercase tracking-wider font-semibold text-zinc-500">
+                    Datos del pedido
+                  </p>
+
+                  {/* Table Code Input */}
+                  {isTableMode && (
+                    <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3 space-y-2">
+                      <div className="flex items-center justify-between text-xs font-semibold text-emerald-400">
+                        <span>Mesa {mesaNumero}</span>
+                        <span className="text-[11px] text-zinc-400">Código de 4 dígitos</span>
+                      </div>
+                      <input
+                        type="tel"
+                        inputMode="numeric"
+                        maxLength={4}
+                        value={mesaCodigo}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, "").slice(0, 4);
+                          onMesaCodigoChange(val);
+                        }}
+                        placeholder="0000"
+                        aria-label="Código de seguridad de la mesa de 4 dígitos"
+                        className="w-full rounded-lg bg-[#0b0b0d] border border-[#27272a] px-3 py-2 text-center text-xl font-black tracking-[0.5em] text-white outline-none focus:border-emerald-400/50 tabular-nums"
+                      />
+                      {mesaCodeError && (
+                        <p className="text-xs text-red-400 font-medium">{mesaCodeError}</p>
+                      )}
+                    </div>
+                  )}
+
+                  <input
+                    type="text"
+                    value={customerName}
+                    onChange={(e) => onCustomerNameChange(e.target.value)}
+                    placeholder="Tu nombre *"
+                    aria-label="Nombre del cliente"
+                    className="w-full rounded-xl border border-[#27272a] bg-[#18181b] px-3.5 py-2.5 text-xs text-white placeholder:text-zinc-500 outline-none focus:border-emerald-400/50 transition"
+                  />
+
+                  <input
+                    type="tel"
+                    value={customerPhone}
+                    onChange={(e) => onCustomerPhoneChange(e.target.value)}
+                    placeholder="Teléfono (opcional)"
+                    aria-label="Teléfono del cliente"
+                    className="w-full rounded-xl border border-[#27272a] bg-[#18181b] px-3.5 py-2.5 text-xs text-white placeholder:text-zinc-500 outline-none focus:border-emerald-400/50 transition"
+                  />
+
+                  <textarea
+                    value={notes}
+                    onChange={(e) => onNotesChange(e.target.value)}
+                    placeholder="Notas o aclaraciones para cocina..."
+                    aria-label="Notas del pedido"
+                    rows={2}
+                    className="w-full rounded-xl border border-[#27272a] bg-[#18181b] px-3.5 py-2 text-xs text-white placeholder:text-zinc-500 outline-none focus:border-emerald-400/50 transition resize-none"
+                  />
+
+                  {error && (
+                    <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-300">
+                      {error}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Sticky Footer */}
+            <div className="border-t border-[#27272a] bg-[#111113] p-4 space-y-3 shrink-0 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-xs text-zinc-400">
+                  <span>Subtotal</span>
+                  <span>{currencyFormatter(total, currency)}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm font-bold text-white">
+                  <span>Total</span>
+                  <span className="text-emerald-400 font-extrabold text-base tabular-nums">
+                    {currencyFormatter(total, currency)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Action Button: "Pedir →" - Note: The word "Pagar" is strictly forbidden */}
+              <button
+                type="button"
+                onClick={onPlaceOrder}
+                disabled={placing || cart.length === 0}
+                className="w-full bg-white text-zinc-950 font-bold rounded-xl py-3 px-4 text-sm flex items-center justify-center gap-2 hover:bg-zinc-100 active:scale-98 transition shadow-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <span>{placing ? "Enviando..." : "Pedir"}</span>
+                {!placing && <ArrowRight className="size-4" />}
+              </button>
+
+              <p className="text-[10px] text-zinc-500 text-center leading-tight">
+                El pedido se envía directamente a cocina. Pago directo en el restaurante.
+              </p>
+            </div>
+          </>
+        )}
+      </aside>
+    </div>
+  );
+}

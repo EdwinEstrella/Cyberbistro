@@ -58,7 +58,7 @@ export function SocialSheet({ isOpen, onClose, contact }: SocialSheetProps) {
       isOpen={isOpen}
       onClose={onClose}
       title="Nuestras redes sociales"
-      description="Seguinos para enterarte de novedades, promociones y eventos."
+      description="Seguinos para enterarte de promociones y novedades."
     >
       <div className="space-y-2.5">
         {items.map((item) => {
@@ -69,13 +69,13 @@ export function SocialSheet({ isOpen, onClose, contact }: SocialSheetProps) {
               href={item.url}
               target="_blank"
               rel="noopener noreferrer"
-              className={`flex min-h-[48px] items-center justify-between rounded-2xl border border-white/10 bg-white/[0.06] px-5 py-3.5 transition active:scale-95 no-underline ${item.colorClass}`}
+              className={`flex min-h-[48px] items-center justify-between rounded-xl border border-[#27272a] bg-[#18181b] px-4 py-3 text-sm font-semibold transition active:scale-95 cursor-pointer no-underline ${item.colorClass}`}
             >
-              <div className="flex items-center gap-3.5">
-                <Icon className="size-5" />
-                <span className="text-base font-bold text-white">{item.label}</span>
+              <div className="flex items-center gap-3">
+                <Icon className="size-4.5" />
+                <span className="text-white">{item.label}</span>
               </div>
-              <ExternalLink className="size-4 opacity-50" />
+              <ExternalLink className="size-3.5 opacity-60" />
             </a>
           );
         })}

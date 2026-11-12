@@ -61,6 +61,17 @@ Provide a public mobile-first digital menu interface for restaurant customers wi
   - [x] Extracted `PublicMenuOrderScreen` and `PublicMenuCartPanel` preserving menu/cart/active-order logic and adding return to home navigation and context badges.
   - [x] `create_public_digital_order` accepts `p_party_size`, table number, and order type based on mode.
   - [x] Full test suite (26 files, 202 tests) passing; `npm run typecheck` passing.
+- [x] **T3b**: App-style redesign of public menu inspired by LicenHub (near-black #09090b canvas, #0b0b0d device frame, surfaces #111113/#18181b, emerald #34d399 accent, white primary buttons).
+  - [x] Single device column (max 480px) on every screen size with sticky top bar, category chips, dish list, bottom tab bar, and cart drawer.
+  - [x] Reusable design tokens in `publicMenuTheme.ts`.
+  - [x] Sticky `AppTopBar` with restaurant identity, context chip (table/takeout with quick navigation), and cart badge button.
+  - [x] Sticky `CategoryChips` with horizontal snap scroll and search field.
+  - [x] Compact horizontal `DishRow` with thumbnail, 2-line clamp description, emerald price, and round add button becoming inline stepper (− n +) when in cart.
+  - [x] Fixed `BottomTabBar` (safe-area aware, 3 tabs: Menú, Servicios/Info, Pedido drawer trigger with badge).
+  - [x] `CartDrawer` sliding from column's right edge over backdrop blur: items, steppers, "Vaciar", 4-digit table code, customer fields, white "Pedir →" button (absence of "Pagar"), success state.
+  - [x] `ServicesTab` rendering utility actions with LicenHub emerald icon chips.
+  - [x] Component unit tests for `CategoryChips`, `DishRow`, `BottomTabBar`, and `CartDrawer` + absence of "Pagar".
+  - [x] Full test suite (32 files, 237 tests) passing; `npm run typecheck` passing cleanly.
 - [ ] **T4**: Call waiter and bill client flows with Realtime Presence waiter availability check.
 - [ ] **T5**: Staff alerts on Mesas screen (bell indicator + sound + attend action clearing for all).
 - [ ] **T6**: Four casual games (Memory, Tic-tac-toe, Snake, 2048) implemented as lazy-loaded components.
