@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import {
+  Gamepad2,
   MapPin,
   MessageCircle,
   Share2,
@@ -18,6 +19,7 @@ import { WifiSheet } from "../public-home/WifiSheet";
 import { WhatsAppSheet } from "../public-home/WhatsAppSheet";
 import { SocialSheet } from "../public-home/SocialSheet";
 import { ServiceRequestPanel } from "../public-home/ServiceRequestPanel";
+import { GamesSheet } from "./games/GamesSheet";
 
 export interface ServicesTabProps {
   contact?: PublicContact | null;
@@ -29,6 +31,7 @@ export interface ServicesTabProps {
 }
 
 const ACTION_ICONS: Record<UtilityActionId, LucideIcon> = {
+  games: Gamepad2,
   wifi: Wifi,
   whatsapp: MessageCircle,
   social: Share2,
@@ -44,7 +47,7 @@ export function ServicesTab({
   tenantId,
   mesa,
 }: ServicesTabProps) {
-  const [activeSheet, setActiveSheet] = useState<"wifi" | "whatsapp" | "social" | null>(null);
+  const [activeSheet, setActiveSheet] = useState<"games" | "wifi" | "whatsapp" | "social" | null>(null);
 
   const actions = useMemo(
     () => getUtilityActions(contact, isTableMode ? "table" : "takeout"),
@@ -160,6 +163,11 @@ export function ServicesTab({
         isOpen={activeSheet === "social"}
         onClose={() => setActiveSheet(null)}
         contact={contact}
+      />
+
+      <GamesSheet
+        isOpen={activeSheet === "games"}
+        onClose={() => setActiveSheet(null)}
       />
     </div>
   );

@@ -97,9 +97,10 @@ describe("getUtilityActions", () => {
     maps_url: "https://maps.google.com/?q=bistro",
   };
 
-  it("returns all 5 actions in table mode when all data is present", () => {
+  it("returns all 6 actions in table mode when all data is present", () => {
     const actions = getUtilityActions(fullContact, "table");
     expect(actions.map((a) => a.id)).toEqual([
+      "games",
       "wifi",
       "whatsapp",
       "social",
@@ -108,7 +109,7 @@ describe("getUtilityActions", () => {
     ]);
   });
 
-  it("excludes wifi in takeout mode even if wifi_name is configured", () => {
+  it("excludes games and wifi in takeout mode even if wifi_name is configured", () => {
     const actions = getUtilityActions(fullContact, "takeout");
     expect(actions.map((a) => a.id)).toEqual([
       "whatsapp",
@@ -118,14 +119,22 @@ describe("getUtilityActions", () => {
     ]);
   });
 
-  it("omits buttons when data is missing or empty", () => {
+  it("omits contact buttons when data is missing or empty, keeping games in table mode", () => {
     const actions = getUtilityActions(
       {
         whatsapp: "18095551234",
       },
       "table"
     );
-    expect(actions.map((a) => a.id)).toEqual(["whatsapp"]);
+    expect(actions.map((a) => a.id)).toEqual(["games", "whatsapp"]);
+  });
+
+  it("includes games only in table mode and never in takeout mode", () => {
+    const tableActions = getUtilityActions({}, "table");
+    expect(tableActions.map((a) => a.id)).toEqual(["games"]);
+
+    const takeoutActions = getUtilityActions({}, "takeout");
+    expect(takeoutActions.map((a) => a.id)).toEqual([]);
   });
 
   it("omits social button if all social handles/links are invalid or empty", () => {

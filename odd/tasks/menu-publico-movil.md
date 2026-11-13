@@ -97,7 +97,13 @@ Provide a public mobile-first digital menu interface for restaurant customers wi
     - Scope: staff alerts live in the Mesas screen only; other screens do not alert.
     - Reconciliation: missed events reconcile automatically when tab returns to focus (`visibilitychange`) or reconnects (`SUBSCRIBED`).
     - Manual verification pending: real end-to-end realtime delivery + sound still needs a manual check in T8.
-- [ ] **T6**: Four casual games (Memory, Tic-tac-toe, Snake, 2048) implemented as lazy-loaded components.
+- [x] **T6**: Four casual games (Memory, Tic-tac-toe, Snake, 2048) implemented as lazy-loaded components.
+  - [x] Pure deterministic logic with injectable RNG: `memory.ts`, `ticTacToe.ts`, `snake.ts`, `game2048.ts` under `src/features/digital-menu/lib/games/`.
+  - [x] Focused unit test suite for all 4 games (shuffle pairs, flip, match, win; winning lines, draw, CPU minimax-light; step, growth, food off-snake, wall/self collision, 180° guard; slide+merge 4 directions, merge-once-per-move, spawn, game over, score).
+  - [x] Container-presentational architecture: lazy-loaded components with `React.lazy` and `Suspense` (`GameSkeleton`) under `src/features/digital-menu/components/public-app/games/`.
+  - [x] Mobile-first phone controls: swipe gestures + on-screen D-Pad buttons for Snake and 2048, snake interval paused on `visibilitychange` hidden and unmount.
+  - [x] Minimal wiring: "Juegos" action added for table mode only in `contactLinks.ts`, `UtilityButtonGrid.tsx`, `ServicesTab.tsx`, and `PublicMenuHome.tsx` (excluded in takeout mode).
+  - [x] All 41 test files (332 tests) and `npm run typecheck` passing cleanly.
 - [ ] **T7**: Suggestions UI + Edge Function email forwarding via Resend (`sugerencias@mail.azokia.com`).
 - [ ] **T8**: Phone viewport verification with screenshots and release.
 

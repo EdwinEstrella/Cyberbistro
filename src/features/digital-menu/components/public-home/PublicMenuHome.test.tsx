@@ -49,7 +49,8 @@ describe("PublicMenuHome", () => {
     expect(html).toContain('aria-disabled="true"');
     expect(html).toContain("Elegí la cantidad de personas para continuar");
 
-    // All 5 utility buttons rendered
+    // Utility buttons rendered in table mode
+    expect(html).toContain("Juegos");
     expect(html).toContain("WiFi");
     expect(html).toContain("WhatsApp");
     expect(html).toContain("Redes sociales");
@@ -93,8 +94,9 @@ describe("PublicMenuHome", () => {
     expect(html).not.toContain("🪑 Mesa");
     expect(html).not.toContain('aria-disabled="true"');
 
-    // WiFi must NOT be present in takeout mode
+    // WiFi and Juegos must NOT be present in takeout mode
     expect(html).not.toContain(">WiFi<");
+    expect(html).not.toContain(">Juegos<");
 
     // Contact buttons must be present
     expect(html).toContain("WhatsApp");

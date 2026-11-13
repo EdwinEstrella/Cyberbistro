@@ -1,6 +1,7 @@
 import type { PublicContact } from "../../menu-links/lib/publicMenuCalendar";
 
 export type UtilityActionId =
+  | "games"
   | "wifi"
   | "whatsapp"
   | "social"
@@ -11,7 +12,7 @@ export interface UtilityAction {
   id: UtilityActionId;
   label: string;
   type: "sheet" | "link";
-  sheet?: "wifi" | "whatsapp" | "social";
+  sheet?: "games" | "wifi" | "whatsapp" | "social";
   url?: string;
 }
 
@@ -142,7 +143,17 @@ export function getUtilityActions(
 ): UtilityAction[] {
   const actions: UtilityAction[] = [];
 
-  // 1. WiFi (Table mode only, when wifi_name is provided)
+  // 1. Games (Table mode only)
+  if (mode === "table") {
+    actions.push({
+      id: "games",
+      label: "Juegos",
+      type: "sheet",
+      sheet: "games",
+    });
+  }
+
+  // 2. WiFi (Table mode only, when wifi_name is provided)
   if (mode === "table" && contact?.wifi_name && contact.wifi_name.trim().length > 0) {
     actions.push({
       id: "wifi",

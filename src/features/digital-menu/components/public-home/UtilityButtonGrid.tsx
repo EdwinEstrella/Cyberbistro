@@ -1,4 +1,4 @@
-import { MapPin, MessageCircle, Share2, Star, Wifi, type LucideIcon } from "lucide-react";
+import { Gamepad2, MapPin, MessageCircle, Share2, Star, Wifi, type LucideIcon } from "lucide-react";
 import type { UtilityAction, UtilityActionId } from "../../lib/contactLinks";
 
 export interface UtilityButtonGridProps {
@@ -7,6 +7,7 @@ export interface UtilityButtonGridProps {
 }
 
 const ACTION_ICONS: Record<UtilityActionId, LucideIcon> = {
+  games: Gamepad2,
   wifi: Wifi,
   whatsapp: MessageCircle,
   social: Share2,

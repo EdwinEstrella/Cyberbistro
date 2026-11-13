@@ -9,6 +9,7 @@ import { UtilityButtonGrid } from "./UtilityButtonGrid";
 import { WifiSheet } from "./WifiSheet";
 import { WhatsAppSheet } from "./WhatsAppSheet";
 import { SocialSheet } from "./SocialSheet";
+import { GamesSheet } from "../public-app/games/GamesSheet";
 import { publicMenuTheme } from "../public-app/publicMenuTheme";
 
 export interface PublicMenuHomeSettings {
@@ -39,7 +40,7 @@ export function PublicMenuHome({
   slug,
   tenantId,
 }: PublicMenuHomeProps) {
-  const [activeSheet, setActiveSheet] = useState<"wifi" | "whatsapp" | "social" | null>(null);
+  const [activeSheet, setActiveSheet] = useState<"games" | "wifi" | "whatsapp" | "social" | null>(null);
 
   const isTableMode = mode.kind === "table";
   const actions = useMemo(
@@ -185,6 +186,11 @@ export function PublicMenuHome({
           isOpen={activeSheet === "social"}
           onClose={() => setActiveSheet(null)}
           contact={contact}
+        />
+
+        <GamesSheet
+          isOpen={activeSheet === "games"}
+          onClose={() => setActiveSheet(null)}
         />
       </div>
     </div>
