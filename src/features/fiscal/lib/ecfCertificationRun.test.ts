@@ -22,6 +22,7 @@ import {
   SIMULATION_QUOTAS,
   safeDownloadName,
   shouldAutoPoll,
+  shouldOfferConsumoPortalDownloads,
   simulationQuotaSummary,
   statusTone,
   summariesAccepted,
@@ -260,7 +261,9 @@ describe("simulation runs", () => {
     expect(isRunType("simulation")).toBe(true);
     expect(RUN_COPY.simulation.title).toBe("Simulación e-CF (Paso 4 de la DGII)");
     expect(RUN_COPY.simulation.description).toContain("Cargá el mismo Excel del Set de Pruebas (Paso 2)");
-    expect(RUN_COPY.simulation.description).toContain("menores a 250 mil se descargan");
+    expect(RUN_COPY.simulation.description).toContain("impuestos adicionales");
+    expect(RUN_COPY.simulation.description).toContain("fecha del Excel");
+    expect(RUN_COPY.simulation.description).not.toContain("menores a 250 mil");
     expect(describeRunError("SEQUENCE_CONFLICT", undefined, "simulation")).toContain("secuencias");
     expect(describeRunError("INVALID_TEST_SET", "bad", "simulation")).toBe("El archivo no es el Set de Pruebas (Paso 2) de la DGII. Detalle: bad");
     expect(describeRunError(undefined, undefined, "simulation")).toBe("No se pudo procesar la Simulación e-CF.");
@@ -298,5 +301,25 @@ describe("simulation runs", () => {
     expect(byLabel["RFCE (E32 < 250 mil)"]).toMatchObject({ accepted: 1, inRun: 1 });
     expect(byLabel.E34).toMatchObject({ accepted: 0, inRun: 1 });
     expect(byLabel.E47).toMatchObject({ accepted: 0, inRun: 0 });
+  });
+});
+
+describe("shouldOfferConsumoPortalDownloads", () => {
+  it("returns true only for test_set runs with at least one download", () => {
+    expect(shouldOfferConsumoPortalDownloads("test_set", 1)).toBe(true);
+    expect(shouldOfferConsumoPortalDownloads("test_set", 4)).toBe(true);
+  });
+
+  it("returns false when downloads count is zero", () => {
+    expect(shouldOfferConsumoPortalDownloads("test_set", 0)).toBe(false);
+    expect(shouldOfferConsumoPortalDownloads("commercial_approval", 0)).toBe(false);
+    expect(shouldOfferConsumoPortalDownloads("simulation", 0)).toBe(false);
+  });
+
+  it("returns false for commercial_approval and simulation even with downloads", () => {
+    expect(shouldOfferConsumoPortalDownloads("commercial_approval", 1)).toBe(false);
+    expect(shouldOfferConsumoPortalDownloads("commercial_approval", 3)).toBe(false);
+    expect(shouldOfferConsumoPortalDownloads("simulation", 1)).toBe(false);
+    expect(shouldOfferConsumoPortalDownloads("simulation", 3)).toBe(false);
   });
 });
