@@ -74,9 +74,9 @@ interface TestSetRunnerProps {
 }
 
 /**
- * Wizard steps 2, 3 and 4: run a DGII set (upload, send in batches, poll status). The test set (step 2)
- * offers the consumo < 250k portal downloads; the simulation (step 4) adds the quotas of the DGII portal
- * list (portal downloads are not offered in simulation as the DGII does not request them).
+ * Wizard steps 2, 3 and 4: run a DGII set (upload, send in batches, poll status). Step 2 (test set)
+ * and step 4 (simulation) both offer the consumo < 250k portal downloads; the simulation adds the quotas
+ * of the DGII portal list.
  */
 export function TestSetRunner({ tenantId, environment, runType = "test_set", title, description }: TestSetRunnerProps) {
   const copy = RUN_COPY[runType];

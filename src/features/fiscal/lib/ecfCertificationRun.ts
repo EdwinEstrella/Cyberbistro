@@ -89,7 +89,7 @@ export const RUN_COPY: Record<RunType, RunCopy> = {
   simulation: {
     title: "Simulación e-CF (Paso 4 de la DGII)",
     description:
-      "Cargá el mismo Excel del Set de Pruebas (Paso 2). Cloudix genera la simulación con secuencias nuevas y la fecha de hoy (excepto documentos con impuestos adicionales, que conservan la fecha del Excel para que la DGII acepte sus tasas), la firma con tu certificado y la envía a la DGII.",
+      "Cargá el mismo Excel del Set de Pruebas (Paso 2). Cloudix genera la simulación con secuencias nuevas y la fecha de hoy (excepto documentos con impuestos adicionales, que conservan la fecha del Excel para que la DGII acepte sus tasas), la firma con tu certificado y la envía a la DGII. Las facturas de consumo menores a 250 mil se descargan para subirlas al portal.",
     setName: "Set de Pruebas",
     unsupportedEnvironment:
       "La Simulación e-CF se ejecuta en los ambientes de Pruebas (TesteCF) o Certificación (CerteCF). Cambiá el ambiente en el paso Ambiente y certificado.",
@@ -356,11 +356,11 @@ export function portalDownloads(run: RunView): SubmissionItem[] {
 
 /**
  * Whether the runner offers the consumo < 250k portal downloads block.
- * Only the test set (step 2) requires uploading these signed files to the DGII portal;
- * commercial approval (step 3) and simulation (step 4) do not offer them.
+ * Both the test set (step 2) and the simulation (step 4) require uploading these signed files
+ * to the DGII portal; commercial approval (step 3) does not offer them.
  */
 export function shouldOfferConsumoPortalDownloads(runType: RunType, downloadsCount: number): boolean {
-  return runType === "test_set" && downloadsCount > 0;
+  return (runType === "test_set" || runType === "simulation") && downloadsCount > 0;
 }
 
 /** True when every RFCE of the run was accepted (the portal upload can be done). */
