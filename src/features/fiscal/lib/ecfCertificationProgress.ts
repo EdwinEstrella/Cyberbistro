@@ -4,7 +4,7 @@
  */
 
 export const CERTIFICATION_TOTAL_STEPS = 15;
-export const HIDDEN_CERTIFICATION_STEPS: readonly number[] = [7];
+export const HIDDEN_CERTIFICATION_STEPS: readonly number[] = [];
 
 export interface CertificationProgress {
   currentStep: number;

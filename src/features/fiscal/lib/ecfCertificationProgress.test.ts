@@ -12,26 +12,24 @@ import {
 } from "./ecfCertificationProgress";
 
 describe("visibleCertificationSteps", () => {
-  it("returns 14 visible steps excluding hidden step 7", () => {
-    expect(HIDDEN_CERTIFICATION_STEPS).toEqual([7]);
+  it("returns all 15 visible steps with none hidden", () => {
+    expect(HIDDEN_CERTIFICATION_STEPS).toEqual([]);
     const visible = visibleCertificationSteps();
-    expect(visible).toHaveLength(14);
-    expect(visible).not.toContain(7);
-    expect(visible).toEqual([1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15]);
+    expect(visible).toHaveLength(15);
+    expect(visible).toContain(7);
+    expect(visible).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
   });
 });
 
 describe("displayStepNumber and nextVisibleStep", () => {
-  it("computes display step numbers correctly with hidden step 7", () => {
-    expect(displayStepNumber(1)).toBe(1);
-    expect(displayStepNumber(6)).toBe(6);
-    expect(displayStepNumber(8)).toBe(7);
-    expect(displayStepNumber(15)).toBe(14);
-    expect(displayStepNumber(7)).toBe(7); // Next visible step (8) has display number 7
+  it("computes display step numbers matching internal step id for every step", () => {
+    for (let id = 1; id <= CERTIFICATION_TOTAL_STEPS; id++) {
+      expect(displayStepNumber(id)).toBe(id);
+    }
   });
 
-  it("computes nextVisibleStep correctly skipping hidden steps", () => {
-    expect(nextVisibleStep(6)).toBe(8);
+  it("computes nextVisibleStep correctly without skipping step 7", () => {
+    expect(nextVisibleStep(6)).toBe(7);
     expect(nextVisibleStep(7)).toBe(8);
     expect(nextVisibleStep(8)).toBe(9);
     expect(nextVisibleStep(14)).toBe(15);
@@ -50,10 +48,10 @@ describe("restoreProgress", () => {
     expect(restoreProgress({ current_step: 2.5, completed_steps: [0, 16, "3", 5] })).toEqual({ currentStep: 1, completedSteps: [5] });
   });
 
-  it("moves restored hidden current_step to the next visible step and drops hidden completed steps", () => {
-    expect(restoreProgress({ current_step: 7 })).toEqual({ currentStep: 8, completedSteps: [] });
-    expect(restoreProgress({ current_step: 6, completed_steps: [6, 7, 8] })).toEqual({ currentStep: 6, completedSteps: [6, 8] });
-    expect(restoreProgress({ current_step: 7, completed_steps: [6, 7, 8] })).toEqual({ currentStep: 8, completedSteps: [6, 8] });
+  it("restores and keeps step 7 in current_step and completed_steps", () => {
+    expect(restoreProgress({ current_step: 7 })).toEqual({ currentStep: 7, completedSteps: [] });
+    expect(restoreProgress({ current_step: 6, completed_steps: [6, 7, 8] })).toEqual({ currentStep: 6, completedSteps: [6, 7, 8] });
+    expect(restoreProgress({ current_step: 7, completed_steps: [6, 7, 8] })).toEqual({ currentStep: 7, completedSteps: [6, 7, 8] });
   });
 });
 
@@ -62,9 +60,11 @@ describe("advanceProgress", () => {
     expect(advanceProgress({ currentStep: 1, completedSteps: [] }, 1)).toEqual({ currentStep: 2, completedSteps: [1] });
   });
 
-  it("skips hidden step 7 when advancing from step 6", () => {
+  it("advances from step 6 to step 7 and from step 7 to step 8", () => {
     const from6 = advanceProgress({ currentStep: 6, completedSteps: [1, 2, 3, 4, 5] }, 6);
-    expect(from6).toEqual({ currentStep: 8, completedSteps: [1, 2, 3, 4, 5, 6] });
+    expect(from6).toEqual({ currentStep: 7, completedSteps: [1, 2, 3, 4, 5, 6] });
+    const from7 = advanceProgress(from6, 7);
+    expect(from7).toEqual({ currentStep: 8, completedSteps: [1, 2, 3, 4, 5, 6, 7] });
   });
 
   it("is idempotent for completed steps and clamps at the last step", () => {
