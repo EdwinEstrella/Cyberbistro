@@ -3,6 +3,7 @@ import { TestSetError } from "../supabase/functions/ecf-certification/builder";
 import {
   allocateSequences,
   buildSimulationSet,
+  computeEmissionDays,
   creditNoteIndicator,
   dgiiToday,
   formatDgiiDay,
@@ -207,5 +208,189 @@ describe("buildSimulationSet emisor override", () => {
   it("tolerates workbooks without the emisor columns", () => {
     const set = buildSimulationSet(workbook(), { issued: ISSUED, now: NOW, emisor: { razonSocial: LEGAL } });
     expect(set.ecf).toHaveLength(7);
+  });
+});
+
+describe("additional-tax rate preservation", () => {
+  const TAX_HEADER = [
+    ...HEADER,
+    "TipoImpuesto[1]",
+    "TasaImpuestoAdicional[1]",
+    "MontoImpuestoSelectivoConsumoEspecifico[1]",
+    "TipoImpuesto[2]",
+    "TasaImpuestoAdicional[2]",
+  ];
+
+  const taxRow = (encf: string, cells: Cells = {}) => {
+    const base: Cells = {
+      CasoPrueba: `${RNC}${encf}`,
+      Version: "1.0",
+      TipoeCF: encf.slice(1, 3),
+      ENCF: encf,
+      RNCEmisor: RNC,
+      FechaEmision: "01-04-2020",
+      MontoTotal: "100.00",
+      "NumeroLinea[1]": "1",
+      "NombreItem[1]": "CERVEZA",
+      "MontoItem[1]": "100.00",
+      ...cells,
+    };
+    return TAX_HEADER.map((name) => base[name] ?? E);
+  };
+
+  it("computeEmissionDays sets original FechaEmision for rate-carrying rows and today for others", () => {
+    const todayDay = dgiiToday(NOW);
+    const originalDay = parseDgiiDate("01-04-2020")!;
+    const sheet: Sheet = {
+      name: "ECF",
+      rows: [
+        TAX_HEADER,
+        taxRow("E450000000001", { "TasaImpuestoAdicional[1]": "633.85" }),
+        taxRow("E310000000001", { "TasaImpuestoAdicional[1]": E, "TasaImpuestoAdicional[2]": "" }),
+        taxRow("E320000000001", { "TasaImpuestoAdicional[2]": "10" }),
+      ],
+    };
+    const days = computeEmissionDays(sheet, todayDay);
+    expect(days.get("E450000000001")).toBe(originalDay);
+    expect(days.get("E310000000001")).toBe(todayDay);
+    expect(days.get("E320000000001")).toBe(originalDay);
+  });
+
+  it("keeps original FechaEmision and unshifted dates for rows carrying TasaImpuestoAdicional (a), while rows without it get today (b)", () => {
+    const wb: Sheet[] = [
+      {
+        name: "ECF",
+        rows: [
+          TAX_HEADER,
+          // (a) Row with additional-tax rates (simulating prod COMEDOR NUEVO MILENIO case: TipoImpuesto 006 rate 633.85, TipoImpuesto 023 rate 10)
+          taxRow("E450000000001", {
+            FechaEmision: "01-04-2020",
+            FechaEntrega: "10-04-2020",
+            FechaOrdenCompra: "15-03-2020",
+            "TipoImpuesto[1]": "006",
+            "TasaImpuestoAdicional[1]": "633.85",
+            "MontoImpuestoSelectivoConsumoEspecifico[1]": "633.85",
+            "TipoImpuesto[2]": "023",
+            "TasaImpuestoAdicional[2]": "10",
+          }),
+          // (b) Row without additional-tax rates
+          taxRow("E310000000001", {
+            FechaEmision: "01-04-2020",
+            FechaEntrega: "10-04-2020",
+            FechaOrdenCompra: "15-03-2020",
+          }),
+        ],
+      },
+    ];
+
+    const set = buildSimulationSet(wb, { issued: [], now: NOW });
+    const e45 = set.ecf.find((d) => d.tipoEcf === "45")!;
+    const e31 = set.ecf.find((d) => d.tipoEcf === "31")!;
+
+    // (a) Rate-carrying row keeps its original FechaEmision (01-04-2020) and unshifted dates
+    expect(tag(e45.xml, "FechaEmision")).toEqual(["01-04-2020"]);
+    expect(tag(e45.xml, "FechaEntrega")).toEqual(["10-04-2020"]);
+    expect(tag(e45.xml, "FechaOrdenCompra")).toEqual(["15-03-2020"]);
+
+    // (b) Row without additional taxes gets today (18-10-2026) and shifted dates (+2391 days)
+    expect(tag(e31.xml, "FechaEmision")).toEqual(["18-10-2026"]);
+    expect(tag(e31.xml, "FechaEntrega")).toEqual(["27-10-2026"]);
+    expect(tag(e31.xml, "FechaOrdenCompra")).toEqual(["01-10-2026"]);
+  });
+
+  it("credit note referencing a rate-carrying document gets that document's original date in FechaNCFModificado and the right IndicadorNotaCredito (c)", () => {
+    const wb: Sheet[] = [
+      {
+        name: "ECF",
+        rows: [
+          TAX_HEADER,
+          // Rate-carrying invoice issued 01-04-2020
+          taxRow("E450000000001", {
+            FechaEmision: "01-04-2020",
+            "TipoImpuesto[1]": "006",
+            "TasaImpuestoAdicional[1]": "633.85",
+          }),
+          // Standard invoice issued today (18-10-2026 in simulation)
+          taxRow("E310000000001", {
+            FechaEmision: "01-04-2020",
+          }),
+          // Credit note modifying the rate-carrying invoice: note issued today (18-10-2026) -> modified date 01-04-2020 -> >30 days -> indicator 1
+          taxRow("E340000000001", {
+            FechaEmision: "01-04-2020",
+            NCFModificado: "E450000000001",
+            FechaNCFModificado: "01-04-2020",
+            IndicadorNotaCredito: "0",
+            CodigoModificacion: "2",
+          }),
+          // Credit note modifying the standard invoice: note issued today (18-10-2026) -> modified date 18-10-2026 -> 0 days <= 30 -> indicator 0
+          taxRow("E340000000002", {
+            FechaEmision: "01-04-2020",
+            NCFModificado: "E310000000001",
+            FechaNCFModificado: "01-04-2020",
+            IndicadorNotaCredito: "1",
+            CodigoModificacion: "2",
+          }),
+          // Rate-carrying credit note issued on 05-04-2020 modifying rate-carrying invoice (01-04-2020): 4 days <= 30 -> indicator 0
+          taxRow("E340000000003", {
+            FechaEmision: "05-04-2020",
+            NCFModificado: "E450000000001",
+            FechaNCFModificado: "01-04-2020",
+            IndicadorNotaCredito: "1",
+            CodigoModificacion: "2",
+            "TipoImpuesto[1]": "006",
+            "TasaImpuestoAdicional[1]": "633.85",
+          }),
+        ],
+      },
+    ];
+
+    const set = buildSimulationSet(wb, { issued: [], now: NOW });
+    const note1 = set.ecf.find((d) => d.sourceCaseId === `${RNC}E340000000001`)!;
+    const note2 = set.ecf.find((d) => d.sourceCaseId === `${RNC}E340000000002`)!;
+    const note3 = set.ecf.find((d) => d.sourceCaseId === `${RNC}E340000000003`)!;
+
+    // Note 1: modified document has additional taxes so its FechaNCFModificado remains 01-04-2020
+    expect(tag(note1.xml, "FechaNCFModificado")).toEqual(["01-04-2020"]);
+    expect(tag(note1.xml, "FechaEmision")).toEqual(["18-10-2026"]);
+    expect(tag(note1.xml, "IndicadorNotaCredito")).toEqual(["1"]);
+
+    // Note 2: modified document has no additional taxes, so modified date is 18-10-2026
+    expect(tag(note2.xml, "FechaNCFModificado")).toEqual(["18-10-2026"]);
+    expect(tag(note2.xml, "FechaEmision")).toEqual(["18-10-2026"]);
+    expect(tag(note2.xml, "IndicadorNotaCredito")).toEqual(["0"]);
+
+    // Note 3: note itself carries additional tax so its FechaEmision is 05-04-2020; modified is 01-04-2020 (diff 4 days <= 30) -> indicator 0
+    expect(tag(note3.xml, "FechaNCFModificado")).toEqual(["01-04-2020"]);
+    expect(tag(note3.xml, "FechaEmision")).toEqual(["05-04-2020"]);
+    expect(tag(note3.xml, "IndicadorNotaCredito")).toEqual(["0"]);
+  });
+
+  it("RFCE follows the FechaEmision of its matching E32 from the map (d)", () => {
+    const wb: Sheet[] = [
+      {
+        name: "ECF",
+        rows: [
+          TAX_HEADER,
+          // E32 carrying additional tax rate -> keeps original date 01-04-2020
+          taxRow("E320000000001", {
+            FechaEmision: "01-04-2020",
+            "TipoImpuesto[1]": "023",
+            "TasaImpuestoAdicional[1]": "10",
+          }),
+        ],
+      },
+      {
+        name: "RFCE",
+        rows: [RFCE_HEADER, rfce("E320000000001")],
+      },
+    ];
+
+    const set = buildSimulationSet(wb, { issued: [], now: NOW });
+    const e32 = set.ecf.find((d) => d.tipoEcf === "32")!;
+    expect(set.rfce).toHaveLength(1);
+    const rfceDoc = set.rfce[0];
+
+    expect(tag(e32.xml, "FechaEmision")).toEqual(["01-04-2020"]);
+    expect(tag(rfceDoc.xml, "FechaEmision")).toEqual(["01-04-2020"]);
   });
 });

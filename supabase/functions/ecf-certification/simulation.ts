@@ -2,16 +2,20 @@
 //
 // The simulation reuses the scenarios of the test set (sheets ECF/RFCE) and rewrites, per row:
 //  - ENCF: a new, never-used e-NCF per tipo (see allocateSequences), CasoPrueba = RNCEmisor + new e-NCF;
-//  - FechaEmision: today in Dominican Republic time (dd-MM-yyyy);
+//  - FechaEmision: today in Dominican Republic time (dd-MM-yyyy) EXCEPT for documents carrying additional-tax
+//    rates (non-empty TasaImpuestoAdicional, indexed variants included), which KEEP their original workbook
+//    FechaEmision. Why: DGII validates additional-tax rates against the issue date (specific rates are re-indexed
+//    yearly, so a historical rate such as 2020 on a 2026 date fails with DGII error 11064);
 //  - every other dated column with data (SHIFTED_DATE_COLUMNS) moves by the same number of days as
-//    FechaEmision, so the relative order of the scenario (delivery after issue, payment limit, purchase
-//    order before issue, item production/expiry...) is preserved. FechaVencimientoSecuencia is kept;
+//    FechaEmision (delta = 0 for rate-carrying rows), so the relative order of the scenario (delivery
+//    after issue, payment limit, purchase order before issue, item production/expiry...) is preserved.
+//    FechaVencimientoSecuencia is kept;
 //  - InformacionReferencia: an NCFModificado that points to a document of the same workbook becomes
-//    that document's new e-NCF, and FechaNCFModificado its new FechaEmision (today);
+//    that document's new e-NCF, and FechaNCFModificado that document's actual emission date from the map;
 //  - IndicadorNotaCredito (when the row carries one) is recomputed with the DGII rule: 0 when the note
-//    is issued within 30 days of the modified document, else 1;
-//  - RFCE rows take the new e-NCF, CasoPrueba and FechaEmision of their E32 (the security code still
-//    comes from the newly signed E32 at send time).
+//    is issued within 30 days of the modified document (noteDay - modifiedDay <= 30), else 1;
+//  - RFCE rows take the new e-NCF, CasoPrueba and FechaEmision of their matching E32 from the map (the
+//    security code still comes from the newly signed E32 at send time).
 // The rewritten sheets are then built by the regular test-set builder, so every other rule applies.
 import { buildTestSet, isEmptyCell, TestSetError, type TestSet } from "./builder.ts";
 import type { Sheet } from "./xlsx.ts";
@@ -102,7 +106,7 @@ export function creditNoteIndicator(noteDay: number, modifiedDay: number): "0" |
 export interface SimulationSet extends TestSet {
   /** Source e-NCF -> new e-NCF. */
   mapping: Map<string, string>;
-  /** FechaEmision of every document (dd-MM-yyyy). */
+  /** Default simulation FechaEmision (dd-MM-yyyy, Dominican Republic today). Note: documents carrying additional-tax rates keep their original FechaEmision. */
   fechaEmision: string;
 }
 
@@ -129,7 +133,42 @@ function emisorColumns(header: string[], emisor: SimulationEmisor | undefined): 
   return ["RazonSocialEmisor", "NombreComercial"].map((name) => columnIndex(header, name)).filter((index) => index >= 0);
 }
 
-function rewriteEcfSheet(sheet: Sheet, mapping: Map<string, string>, today: number, emisor?: SimulationEmisor): Sheet {
+/**
+ * Per-document emission day in DR time: rows carrying an additional-tax rate
+ * (non-empty TasaImpuestoAdicional, indexed variants included) keep their original FechaEmision
+ * because DGII validates rates against issue date; all other rows are issued today.
+ */
+export function computeEmissionDays(ecfSheet: Sheet, today: number): Map<string, number> {
+  const header = ecfSheet.rows[0] ?? [];
+  const encfCol = columnIndex(header, "ENCF");
+  const emisionCol = columnIndex(header, "FechaEmision");
+  if (emisionCol < 0) throw new TestSetError(`Sheet ${ecfSheet.name}: the FechaEmision column is missing.`);
+  if (encfCol < 0) throw new TestSetError(`Sheet ${ecfSheet.name}: the ENCF column is missing.`);
+
+  const rateCols = header
+    .map((raw, index) => (baseName(raw) === "TasaImpuestoAdicional" ? index : -1))
+    .filter((index) => index >= 0);
+
+  const out = new Map<string, number>();
+  ecfSheet.rows.slice(1).forEach((row, offset) => {
+    if (row.every((value) => isEmptyCell(value))) return;
+    const line = offset + 2;
+    const encf = (row[encfCol] ?? "").trim();
+    if (!encf) throw new TestSetError(`Sheet ${ecfSheet.name}, row ${line}: ENCF is missing.`);
+    const originalDay = requireDate(row[emisionCol], ecfSheet.name, line, "FechaEmision");
+    const carriesRate = rateCols.some((index) => !isEmptyCell(row[index]));
+    out.set(encf, carriesRate ? originalDay : today);
+  });
+  return out;
+}
+
+function rewriteEcfSheet(
+  sheet: Sheet,
+  mapping: Map<string, string>,
+  emissionDays: Map<string, number>,
+  today: number,
+  emisor?: SimulationEmisor,
+): Sheet {
   const header = sheet.rows[0] ?? [];
   const col = (name: string) => columnIndex(header, name);
   const emisorCols = emisorColumns(header, emisor);
@@ -143,16 +182,20 @@ function rewriteEcfSheet(sheet: Sheet, mapping: Map<string, string>, today: numb
     col("IndicadorNotaCredito"),
   ];
   if (emision < 0) throw new TestSetError(`Sheet ${sheet.name}: the FechaEmision column is missing.`);
+  if (encfCol < 0) throw new TestSetError(`Sheet ${sheet.name}: the ENCF column is missing.`);
   const shifted = header.map((raw, index) => (SHIFTED_DATE_COLUMNS.includes(baseName(raw)) ? index : -1)).filter((index) => index >= 0);
   const rows = sheet.rows.slice(1).map((source, offset) => {
     if (source.every((value) => isEmptyCell(value))) return source;
     const line = offset + 2;
     const row = [...source];
-    const newEncf = mapping.get((row[encfCol] ?? "").trim())!;
-    const delta = today - requireDate(row[emision], sheet.name, line, "FechaEmision");
+    const sourceEncf = (row[encfCol] ?? "").trim();
+    const newEncf = mapping.get(sourceEncf)!;
+    const originalDay = requireDate(row[emision], sheet.name, line, "FechaEmision");
+    const docDay = emissionDays.get(sourceEncf) ?? today;
+    const delta = docDay - originalDay;
     row[encfCol] = newEncf;
     row[caso] = `${(row[rnc] ?? "").trim()}${newEncf}`;
-    row[emision] = formatDgiiDay(today);
+    row[emision] = formatDgiiDay(docDay);
     for (const index of emisorCols) row[index] = emisor!.razonSocial.trim();
     for (const index of shifted) {
       if (isEmptyCell(row[index])) continue;
@@ -161,34 +204,45 @@ function rewriteEcfSheet(sheet: Sheet, mapping: Map<string, string>, today: numb
     const reference = ncfMod >= 0 && !isEmptyCell(row[ncfMod]) ? row[ncfMod].trim() : null;
     let modifiedDay: number | null = null;
     if (reference && mapping.has(reference)) {
-      // Every document of the simulation is issued today.
       row[ncfMod] = mapping.get(reference)!;
       if (fechaMod < 0) throw new TestSetError(`Sheet ${sheet.name}, row ${line}: the FechaNCFModificado column is missing.`);
-      row[fechaMod] = formatDgiiDay(today);
-      modifiedDay = today;
+      const refDay = emissionDays.get(reference);
+      if (refDay === undefined) throw new TestSetError(`Sheet ${sheet.name}, row ${line}: referenced document ${reference} has no emission day.`);
+      row[fechaMod] = formatDgiiDay(refDay);
+      modifiedDay = refDay;
     } else if (reference && fechaMod >= 0 && !isEmptyCell(row[fechaMod])) {
       modifiedDay = requireDate(row[fechaMod], sheet.name, line, "FechaNCFModificado");
     }
     if (indicador >= 0 && !isEmptyCell(row[indicador])) {
       if (modifiedDay === null) throw new TestSetError(`Sheet ${sheet.name}, row ${line}: IndicadorNotaCredito needs FechaNCFModificado.`);
-      row[indicador] = creditNoteIndicator(today, modifiedDay);
+      row[indicador] = creditNoteIndicator(docDay, modifiedDay);
     }
     return row;
   });
   return { ...sheet, rows: [header, ...rows] };
 }
 
-function rewriteRfceSheet(sheet: Sheet, mapping: Map<string, string>, today: number, emisor?: SimulationEmisor): Sheet {
+function rewriteRfceSheet(
+  sheet: Sheet,
+  mapping: Map<string, string>,
+  emissionDays: Map<string, number>,
+  today: number,
+  emisor?: SimulationEmisor,
+): Sheet {
   const header = sheet.rows[0] ?? [];
   const emisorCols = emisorColumns(header, emisor);
   const [caso, encfCol, rnc, emision] = ["CasoPrueba", "ENCF", "RNCEmisor", "FechaEmision"].map((name) => columnIndex(header, name));
   const rows = sheet.rows.slice(1).map((source) => {
     if (source.every((value) => isEmptyCell(value))) return source;
     const row = [...source];
-    const newEncf = mapping.get((row[encfCol] ?? "").trim())!;
+    const sourceEncf = (row[encfCol] ?? "").trim();
+    const newEncf = mapping.get(sourceEncf)!;
     row[encfCol] = newEncf;
     row[caso] = `${(row[rnc] ?? "").trim()}${newEncf}`;
-    if (emision >= 0) row[emision] = formatDgiiDay(today);
+    if (emision >= 0) {
+      const docDay = emissionDays.get(sourceEncf) ?? today;
+      row[emision] = formatDgiiDay(docDay);
+    }
     for (const index of emisorCols) row[index] = emisor!.razonSocial.trim();
     return row;
   });
@@ -206,10 +260,12 @@ export function buildSimulationSet(sheets: Sheet[], options: { issued: string[];
   const source = buildTestSet(sheets);
   const mapping = allocateSequences(source.ecf, options.issued);
   const today = dgiiToday(options.now);
+  const ecfSheet = sheets.find((sheet) => sheet.name.trim().toUpperCase() === "ECF");
+  const emissionDays = ecfSheet ? computeEmissionDays(ecfSheet, today) : new Map<string, number>();
   const rewritten = sheets.map((sheet) => {
     const name = sheet.name.trim().toUpperCase();
-    if (name === "ECF") return rewriteEcfSheet(sheet, mapping, today, options.emisor);
-    if (name === "RFCE") return rewriteRfceSheet(sheet, mapping, today, options.emisor);
+    if (name === "ECF") return rewriteEcfSheet(sheet, mapping, emissionDays, today, options.emisor);
+    if (name === "RFCE") return rewriteRfceSheet(sheet, mapping, emissionDays, today, options.emisor);
     return sheet;
   });
   const built = buildTestSet(rewritten);
