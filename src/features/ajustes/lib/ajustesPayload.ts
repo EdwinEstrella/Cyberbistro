@@ -82,6 +82,7 @@ export function buildAjustesSavePayload({
     itbis_incluido_en_precio: Boolean(config.itbis_incluido_en_precio),
     propina_cobro_por_defecto: Boolean(config.propina_cobro_por_defecto),
     kitchen_enabled: config.kitchen_enabled !== false,
+    sin_comprobante_por_defecto: Boolean(config.sin_comprobante_por_defecto),
     fiscal_mode_fallback: config.fiscal_mode_fallback,
     ...bColumns,
     ncf_secuencias_por_tipo: nextSequencesMap,

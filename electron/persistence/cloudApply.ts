@@ -219,7 +219,7 @@ export const LOCAL_TENANT_SETTINGS_COLUMNS = [
   "plan", "sucursal_limit_enabled", "sucursal_limit", "payment_day_of_month",
   "debt_amount", "debt_currency", "debt_due_date", "debt_updated_at",
   "fiscal_mode", "fiscal_mode_fallback", "ecf_environment",
-  "itbis_cobro_por_defecto", "propina_cobro_por_defecto", "itbis_incluido_en_precio", "kitchen_enabled",
+  "itbis_cobro_por_defecto", "propina_cobro_por_defecto", "itbis_incluido_en_precio", "kitchen_enabled", "sin_comprobante_por_defecto",
   "ncf_fiscal_activo", "ncf_tipo_default", "ncf_tipos_activos",
   "ncf_secuencia_siguiente", "ncf_secuencias_por_tipo",
   "ncf_b01_secuencia_siguiente", "ncf_b02_secuencia_siguiente", "ncf_b14_secuencia_siguiente",

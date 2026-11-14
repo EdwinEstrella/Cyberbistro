@@ -619,6 +619,15 @@ describe("localFirst", () => {
     expect(resolveConflictForTable("tenants", entry, { id: "tenant-1" }).resolution).toBe("local_wins");
   });
 
+  it("syncs the sin_comprobante_por_defecto setting as a safe tenant key", () => {
+    const entry = createSyncOutboxEntry({
+      tenantId: "tenant-1", tableName: "tenants", rowId: "tenant-1", op: "update",
+      payload: { sin_comprobante_por_defecto: true, updated_at: "2026-11-14T00:00:00.000Z" },
+      deviceId: "dev1",
+    });
+    expect(resolveConflictForTable("tenants", entry, { id: "tenant-1" }).resolution).toBe("local_wins");
+  });
+
   it("syncs the kitchen_enabled setting as a safe tenant key", () => {
     const entry = createSyncOutboxEntry({
       tenantId: "tenant-1", tableName: "tenants", rowId: "tenant-1", op: "update",

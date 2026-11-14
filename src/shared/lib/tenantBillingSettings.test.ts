@@ -35,6 +35,13 @@ describe("normalizeTenantBillingSettings", () => {
     expect(normalizeTenantBillingSettings({ propina_cobro_por_defecto: true }).defaultPropinaEnabled).toBe(true);
   });
 
+  it("defaults sinComprobantePorDefecto to false and maps sin_comprobante_por_defecto when present", () => {
+    expect(normalizeTenantBillingSettings(null).sinComprobantePorDefecto).toBe(false);
+    expect(normalizeTenantBillingSettings({}).sinComprobantePorDefecto).toBe(false);
+    expect(normalizeTenantBillingSettings({ sin_comprobante_por_defecto: false }).sinComprobantePorDefecto).toBe(false);
+    expect(normalizeTenantBillingSettings({ sin_comprobante_por_defecto: true }).sinComprobantePorDefecto).toBe(true);
+  });
+
   it("defaults itbisIncluded to false and maps itbis_incluido_en_precio when present", () => {
     expect(normalizeTenantBillingSettings(null).itbisIncluded).toBe(false);
     expect(normalizeTenantBillingSettings({}).itbisIncluded).toBe(false);

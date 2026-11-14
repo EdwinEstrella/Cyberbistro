@@ -22,7 +22,7 @@ import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSett
 import { calculateInvoiceTotals } from "../../../shared/lib/billingTotals";
 import { type FiscalMode } from "../../../shared/lib/fiscalTypes";
 import { resolveActiveFiscalMode, runFiscalEngine, buildEcfDocumentWrites } from "../../../shared/lib/fiscalEngine";
-import { shouldRunCheckoutFiscal } from "../../../shared/lib/checkoutFiscalSkip";
+import { resolveInitialSkipFiscal, shouldRunCheckoutFiscal } from "../../../shared/lib/checkoutFiscalSkip";
 import { getDeviceId, getLocalFirstStatusSnapshot, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, readLocalMirror, type LocalFirstWrite } from "../../../shared/lib/localFirst";
 import { getNextFacturaNumber, getNextFacturaNumbers } from "../../../shared/lib/invoiceNumber";
 import { commitCheckout } from "../../../shared/lib/checkoutCommit";
@@ -256,6 +256,9 @@ export function MesaCloseAccountModal({
   const [fiscalMode, setFiscalMode] = useState<FiscalMode>("internal_receipt");
   const [certificateId, setCertificateId] = useState<string | null>(null);
 
+  // Business setting "Sin comprobante por defecto": the switch returns to this value after every payment.
+  const [skipFiscalDefault, setSkipFiscalDefault] = useState(false);
+
   const toggleSkipFiscal = () => {
     const next = !skipFiscal;
     setSkipFiscal(next);
@@ -263,6 +266,12 @@ export function MesaCloseAccountModal({
       onItbisChange?.(false);
       setSolicitaComprobante(false);
     }
+  };
+
+  const resetSkipFiscal = () => {
+    setSkipFiscal(skipFiscalDefault);
+    setSolicitaComprobante(false);
+    if (skipFiscalDefault) onItbisChange?.(false);
   };
 
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -287,7 +296,7 @@ export function MesaCloseAccountModal({
       setSelectedCustomer(null);
       setCashReceivedInput("");
       setSolicitaComprobante(false);
-      setSkipFiscal(false);
+      setSkipFiscal(skipFiscalDefault);
       return;
     }
     if (!tenantId) return;
@@ -358,7 +367,12 @@ export function MesaCloseAccountModal({
       );
       setSelectedNcfType(isNcfTypeActive(activeMap, preferred) ? preferred : (firstActive?.codigo ?? preferred));
       setSolicitaComprobante(false);
-      setSkipFiscal(false);
+
+      // "Sin comprobante por defecto" starts the switch ON, which also keeps ITBIS off (still toggleable).
+      const skipByDefault = resolveInitialSkipFiscal(settings?.sinComprobantePorDefecto);
+      setSkipFiscalDefault(skipByDefault);
+      setSkipFiscal(skipByDefault);
+      if (skipByDefault) onItbisChange?.(false);
     });
 
     return () => {
@@ -685,8 +699,7 @@ export function MesaCloseAccountModal({
     for (const increment of deferredNcfIncrements) void incrementTenantNcfSequence(tenantId, increment.tipoCodigo, increment.usedSequence).catch(console.error);
     setMesaConsumos(updatedConsumos);
     void onSettled?.(updatedConsumos);
-    setSkipFiscal(false);
-    setSolicitaComprobante(false);
+    resetSkipFiscal();
 
     if (updatedConsumos.length === 0) {
       if (mode === "all" && order.length > 1) {
@@ -1026,8 +1039,7 @@ export function MesaCloseAccountModal({
     setSplitMode(false);
     setPersonByConsumoId({});
     setCashReceivedInput("");
-    setSkipFiscal(false);
-    setSolicitaComprobante(false);
+    resetSkipFiscal();
 
     if (restantes.length === 0) {
       onPaidFull?.();

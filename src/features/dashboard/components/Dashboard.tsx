@@ -68,7 +68,7 @@ import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSett
 import { calculateInvoiceTotals } from "../../../shared/lib/billingTotals";
 import { type FiscalMode } from "../../../shared/lib/fiscalTypes";
 import { resolveActiveFiscalMode, runFiscalEngine, buildEcfDocumentWrites } from "../../../shared/lib/fiscalEngine";
-import { shouldRunCheckoutFiscal } from "../../../shared/lib/checkoutFiscalSkip";
+import { resolveInitialSkipFiscal, shouldRunCheckoutFiscal } from "../../../shared/lib/checkoutFiscalSkip";
 import { getLocalFirstStatusSnapshot, readLocalMirror, readLocalOutbox, getDeviceId, shouldReadLocalFirst, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, type LocalFirstWrite } from "../../../shared/lib/localFirst";
 import { readLocalCierres } from "../../cierre/lib/cierresLocal";
 import { readLocalPlatos, readLocalMenuCategories } from "../../soporte/lib/catalogLocal";
@@ -206,6 +206,9 @@ export function Dashboard() {
   const [fiscalMode, setFiscalMode] = useState<FiscalMode>("internal_receipt");
   const [certificateId, setCertificateId] = useState<string | null>(null);
 
+  // Business setting "Sin comprobante por defecto": the switch returns to this value after every sale.
+  const [skipFiscalDefault, setSkipFiscalDefault] = useState(false);
+
   const toggleSkipFiscal = () => {
     const next = !skipFiscal;
     setSkipFiscal(next);
@@ -213,6 +216,12 @@ export function Dashboard() {
       setCartItbisEnabled(false);
       setSolicitaComprobante(false);
     }
+  };
+
+  const resetSkipFiscal = () => {
+    setSkipFiscal(skipFiscalDefault);
+    setSolicitaComprobante(false);
+    if (skipFiscalDefault) setCartItbisEnabled(false);
   };
 
   const [takeoutCustomer, setTakeoutCustomer] = useState<Customer | null>(null);
@@ -246,7 +255,10 @@ export function Dashboard() {
     void loadTenantBillingSettings(tenantId).then(async (settings) => {
       if (cancelled) return;
 
-      setCartItbisEnabled(settings?.defaultItbisEnabled ?? false);
+      // "Sin comprobante por defecto" starts the switch ON, which also keeps ITBIS off (still toggleable).
+      const skipByDefault = resolveInitialSkipFiscal(settings?.sinComprobantePorDefecto);
+      setSkipFiscalDefault(skipByDefault);
+      setCartItbisEnabled(skipByDefault ? false : (settings?.defaultItbisEnabled ?? false));
       setCartPropinaEnabled(settings?.defaultPropinaEnabled ?? false);
       setItbisIncluded(settings?.itbisIncluded ?? false);
       const isOnline = navigator.onLine;
@@ -264,7 +276,7 @@ export function Dashboard() {
       );
       setSelectedNcfType(isNcfTypeActive(activeMap, preferred) ? preferred : (firstActive?.codigo ?? preferred));
       setSolicitaComprobante(false);
-      setSkipFiscal(false);
+      setSkipFiscal(skipByDefault);
     });
 
     // Proactively cache the tenant logo for offline printing
@@ -864,8 +876,7 @@ export function Dashboard() {
       setTakeoutCustomerName("");
       setCashReceivedInput("");
       setMesaConsumos([]);
-      setSkipFiscal(false);
-      setSolicitaComprobante(false);
+      resetSkipFiscal();
       setShowPaymentModal(true);
       return;
     }
@@ -1346,8 +1357,7 @@ export function Dashboard() {
     setCashReceivedInput("");
     setOrderNotes("");
     setMesaConsumos([]);
-    setSkipFiscal(false);
-    setSolicitaComprobante(false);
+    resetSkipFiscal();
     setChargeOk(true);
     setTimeout(() => setChargeOk(false), 3000);
     setShowPaymentModal(false);
@@ -1993,8 +2003,7 @@ export function Dashboard() {
                   setTakeoutCustomerName("");
                   setCashReceivedInput("");
                   setOrderNotes("");
-                  setSkipFiscal(false);
-                  setSolicitaComprobante(false);
+                  resetSkipFiscal();
                   setShowPaymentModal(false);
                 }
             }}
@@ -2020,8 +2029,7 @@ export function Dashboard() {
                   setTakeoutCustomerName("");
                   setCashReceivedInput("");
                   setOrderNotes("");
-                  setSkipFiscal(false);
-                  setSolicitaComprobante(false);
+                  resetSkipFiscal();
                   setShowPaymentModal(false);
                 }}
                 aria-label="Cerrar modal de cobro para llevar"
@@ -2363,8 +2371,7 @@ export function Dashboard() {
                           setTakeoutCustomerName("");
                           setCashReceivedInput("");
                           setOrderNotes("");
-                          setSkipFiscal(false);
-                          setSolicitaComprobante(false);
+                          resetSkipFiscal();
                           setShowPaymentModal(false);
                         }}
                         className="flex-1 bg-zinc-900 border border-white/20 rounded-xl py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-zinc-400 text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:border-white/40 hover:text-white transition-all active:scale-95"

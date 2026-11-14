@@ -112,6 +112,22 @@ export function AjustesFacturacionTab({
               Cobrar propina legal 10% por defecto
             </span>
           </label>
+          <label className="flex items-start gap-3 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={config.sin_comprobante_por_defecto}
+              onChange={e => setConfig(p => ({ ...p, sin_comprobante_por_defecto: e.target.checked }))}
+              className="mt-0.5 size-4 rounded accent-primary"
+            />
+            <span className="flex flex-col">
+              <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
+                Sin comprobante por defecto
+              </span>
+              <span className="text-xs text-muted-foreground">
+                Los cobros arrancan con "Sin comprobante" activo: recibo interno, no se envía a la DGII. El cajero puede desactivarlo en cada venta.
+              </span>
+            </span>
+          </label>
 
           <div className="border-t border-border pt-4">
             <Field label="Modo Fiscal">

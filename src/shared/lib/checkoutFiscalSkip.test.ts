@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { shouldRunCheckoutFiscal } from "./checkoutFiscalSkip";
+import { resolveInitialSkipFiscal, shouldRunCheckoutFiscal } from "./checkoutFiscalSkip";
+
+describe("resolveInitialSkipFiscal", () => {
+  it("starts ON only when the business setting is explicitly true", () => {
+    expect(resolveInitialSkipFiscal(true)).toBe(true);
+  });
+
+  it("starts OFF when the setting is false, null or undefined", () => {
+    expect(resolveInitialSkipFiscal(false)).toBe(false);
+    expect(resolveInitialSkipFiscal(null)).toBe(false);
+    expect(resolveInitialSkipFiscal(undefined)).toBe(false);
+  });
+});
 
 describe("shouldRunCheckoutFiscal", () => {
   it("returns false when skipFiscal is true even if all fiscal conditions are met", () => {

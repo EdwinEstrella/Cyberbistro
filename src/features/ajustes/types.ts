@@ -13,6 +13,7 @@ export interface AjustesConfig {
   itbis_incluido_en_precio: boolean;
   propina_cobro_por_defecto: boolean;
   kitchen_enabled: boolean;
+  sin_comprobante_por_defecto: boolean;
   ncf_fiscal_activo: boolean;
   fiscal_mode: "internal_receipt" | "ncf_legacy" | "dgii_ecf";
   fiscal_mode_fallback: "internal_receipt" | "ncf_legacy";
