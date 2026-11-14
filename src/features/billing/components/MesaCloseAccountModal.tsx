@@ -22,6 +22,7 @@ import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSett
 import { calculateInvoiceTotals } from "../../../shared/lib/billingTotals";
 import { type FiscalMode } from "../../../shared/lib/fiscalTypes";
 import { resolveActiveFiscalMode, runFiscalEngine, buildEcfDocumentWrites } from "../../../shared/lib/fiscalEngine";
+import { shouldRunCheckoutFiscal } from "../../../shared/lib/checkoutFiscalSkip";
 import { getDeviceId, getLocalFirstStatusSnapshot, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, readLocalMirror, type LocalFirstWrite } from "../../../shared/lib/localFirst";
 import { getNextFacturaNumber, getNextFacturaNumbers } from "../../../shared/lib/invoiceNumber";
 import { commitCheckout } from "../../../shared/lib/checkoutCommit";
@@ -249,10 +250,20 @@ export function MesaCloseAccountModal({
   >("efectivo");
   const [ncfFiscalActive, setNcfFiscalActive] = useState(false);
   const [solicitaComprobante, setSolicitaComprobante] = useState(false);
+  const [skipFiscal, setSkipFiscal] = useState(false);
   const [selectedNcfType, setSelectedNcfType] = useState<NcfTypeCode>(DEFAULT_NCF_B_CODE);
   const [ncfTiposActivos, setNcfTiposActivos] = useState<Record<string, boolean>>({});
   const [fiscalMode, setFiscalMode] = useState<FiscalMode>("internal_receipt");
   const [certificateId, setCertificateId] = useState<string | null>(null);
+
+  const toggleSkipFiscal = () => {
+    const next = !skipFiscal;
+    setSkipFiscal(next);
+    if (next) {
+      onItbisChange?.(false);
+      setSolicitaComprobante(false);
+    }
+  };
 
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [cashReceivedInput, setCashReceivedInput] = useState("");
@@ -276,6 +287,7 @@ export function MesaCloseAccountModal({
       setSelectedCustomer(null);
       setCashReceivedInput("");
       setSolicitaComprobante(false);
+      setSkipFiscal(false);
       return;
     }
     if (!tenantId) return;
@@ -346,6 +358,7 @@ export function MesaCloseAccountModal({
       );
       setSelectedNcfType(isNcfTypeActive(activeMap, preferred) ? preferred : (firstActive?.codigo ?? preferred));
       setSolicitaComprobante(false);
+      setSkipFiscal(false);
     });
 
     return () => {
@@ -475,7 +488,13 @@ export function MesaCloseAccountModal({
 
       const defaultFiscalCode = fiscalMode === "dgii_ecf" ? "E32" : "B02";
       const canEmitDefaultConsumo = isNcfTypeActive(ncfTiposActivos, defaultFiscalCode);
-      const shouldRunFiscal = fiscalMode !== "internal_receipt" && (solicitaComprobante || canEmitDefaultConsumo);
+      const shouldRunFiscal = shouldRunCheckoutFiscal({
+        skipFiscal,
+        fiscalMode,
+        solicitaComprobante,
+        canEmitDefaultConsumo,
+        tenantId,
+      });
 
       if (shouldRunFiscal) {
         const targetNcfType = solicitaComprobante ? selectedNcfType : defaultFiscalCode;
@@ -666,6 +685,8 @@ export function MesaCloseAccountModal({
     for (const increment of deferredNcfIncrements) void incrementTenantNcfSequence(tenantId, increment.tipoCodigo, increment.usedSequence).catch(console.error);
     setMesaConsumos(updatedConsumos);
     void onSettled?.(updatedConsumos);
+    setSkipFiscal(false);
+    setSolicitaComprobante(false);
 
     if (updatedConsumos.length === 0) {
       if (mode === "all" && order.length > 1) {
@@ -810,7 +831,13 @@ export function MesaCloseAccountModal({
     let ncfPart: Awaited<ReturnType<typeof runFiscalEngine>> = null;
     const defaultFiscalCode = fiscalMode === "dgii_ecf" ? "E32" : "B02";
     const canEmitDefaultConsumo = isNcfTypeActive(ncfTiposActivos, defaultFiscalCode);
-    const shouldRunFiscal = fiscalMode !== "internal_receipt" && (solicitaComprobante || canEmitDefaultConsumo);
+    const shouldRunFiscal = shouldRunCheckoutFiscal({
+      skipFiscal,
+      fiscalMode,
+      solicitaComprobante,
+      canEmitDefaultConsumo,
+      tenantId,
+    });
 
     if (shouldRunFiscal) {
       const targetNcfType = solicitaComprobante ? selectedNcfType : defaultFiscalCode;
@@ -999,6 +1026,8 @@ export function MesaCloseAccountModal({
     setSplitMode(false);
     setPersonByConsumoId({});
     setCashReceivedInput("");
+    setSkipFiscal(false);
+    setSolicitaComprobante(false);
 
     if (restantes.length === 0) {
       onPaidFull?.();
@@ -1259,6 +1288,29 @@ export function MesaCloseAccountModal({
               <div className="flex items-center justify-between gap-[10px] rounded-[10px] border border-black/10 bg-background px-[12px] py-[10px] dark:border-[rgba(72,72,71,0.28)] dark:bg-zinc-950">
                 <div className="flex flex-col min-w-0">
                   <span className="font-['Inter',sans-serif] text-zinc-300 text-[12px] font-semibold leading-tight">
+                    Sin comprobante
+                  </span>
+                  <span className="font-['Inter',sans-serif] text-zinc-500 text-[11px] leading-tight mt-0.5">
+                    Recibo interno, no se envía a la DGII
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  id="mesa-skip-fiscal-toggle"
+                  aria-checked={skipFiscal}
+                  onClick={toggleSkipFiscal}
+                  aria-label={skipFiscal ? "Desactivar modo sin comprobante" : "Activar modo sin comprobante"}
+                  className={`relative h-[30px] w-[54px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${skipFiscal ? "bg-[#ff906d]" : "bg-zinc-800"}`}
+                >
+                  <span
+                    className={`absolute top-[5px] left-[5px] block size-[20px] rounded-full bg-white shadow transition-transform duration-200 ease-out ${skipFiscal ? "translate-x-[24px]" : "translate-x-0"}`}
+                  />
+                </button>
+              </div>
+              <div className="flex items-center justify-between gap-[10px] rounded-[10px] border border-black/10 bg-background px-[12px] py-[10px] dark:border-[rgba(72,72,71,0.28)] dark:bg-zinc-950">
+                <div className="flex flex-col min-w-0">
+                  <span className="font-['Inter',sans-serif] text-zinc-300 text-[12px] font-semibold leading-tight">
                     ITBIS 18%
                   </span>
                 </div>
@@ -1355,7 +1407,7 @@ export function MesaCloseAccountModal({
             </div>
 
             {/* NCF Selection Cards */}
-            {ncfFiscalActive && (
+            {ncfFiscalActive && !skipFiscal && (
               <div className="flex flex-col gap-3 shrink-0">
                 <div className="flex items-center justify-between gap-[10px] rounded-[14px] border border-white/20 bg-[#0a0a0a] px-4 py-3">
                   <div className="flex flex-col min-w-0">
