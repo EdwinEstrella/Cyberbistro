@@ -12,3 +12,11 @@ export function isEcfRejectedStatus(status: unknown): boolean {
   if (typeof status !== "string") return false;
   return REJECTED_STATUSES.has(status.trim().toLowerCase());
 }
+
+/** DGII statuses that mean the comprobante is fiscally valid and safe to hand to the customer. */
+const ACCEPTED_STATUSES: ReadonlySet<string> = new Set(["accepted", "accepted_conditional"]);
+
+export function isEcfAcceptedStatus(status: unknown): boolean {
+  if (typeof status !== "string") return false;
+  return ACCEPTED_STATUSES.has(status.trim().toLowerCase());
+}
