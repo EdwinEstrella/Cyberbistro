@@ -21,6 +21,7 @@ import {
   mapCancelItemError,
 } from "./lib/cancelItemErrors";
 import { mapAcceptOrderError } from "./lib/acceptOrderErrors";
+import { sortOrdersForQueue } from "./lib/orderQueue";
 import { fetchBatchCompanyCreditUsed } from "../menu-links/lib/creditRepo";
 import { wouldExceedCreditLimit } from "../menu-links/lib/creditLimit";
 import { AlertTriangle } from "lucide-react";
@@ -55,6 +56,7 @@ export function Pedidos() {
   const kitchenEnabled = useKitchenEnabled(tenantId);
   const [settings, setSettings] = useState<MenuSettings | null>(null);
   const [orders, setOrders] = useState<DigitalOrder[]>([]);
+  const queueOrders = useMemo(() => sortOrdersForQueue(orders), [orders]);
   const [orderItems, setOrderItems] = useState<DigitalOrderItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
@@ -717,7 +719,7 @@ export function Pedidos() {
             {orders.length === 0 ? (
               <p className="text-sm text-muted-foreground">Sin pedidos todavía.</p>
             ) : (
-              orders.map((order) => {
+              queueOrders.map((order) => {
                 const lines = orderItems.filter((item) => item.order_id === order.id);
                 const grouped = groupOrderItems(lines);
                 const activeTotal = computeActiveTotal(lines);
