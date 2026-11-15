@@ -52,11 +52,13 @@ docker cp supabase/migrations/20261101140000_superadmin_hardening.sql "$CONTAINE
 docker cp supabase/migrations/20261101150000_menus_closed_without_cycle.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
 docker cp supabase/migrations/20261106140000_public_menu_calendar.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
 docker cp supabase/migrations/20261106100000_credit_note_tenant_invoice_number.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
+docker cp supabase/migrations/20261110180000_public_menu_service.sql "$CONTAINER_NAME":/workspace/supabase/migrations/
 docker cp test/sql/corporate_menu_links.test.sql "$CONTAINER_NAME":/workspace/test/sql/
 docker cp test/sql/superadmin_overview.test.sql "$CONTAINER_NAME":/workspace/test/sql/
 docker cp test/sql/superadmin_hardening.test.sql "$CONTAINER_NAME":/workspace/test/sql/
 docker cp test/sql/credit_notes.test.sql "$CONTAINER_NAME":/workspace/test/sql/
 docker cp test/sql/public_menu_calendar.test.sql "$CONTAINER_NAME":/workspace/test/sql/
+docker cp test/sql/public_menu_service.test.sql "$CONTAINER_NAME":/workspace/test/sql/
 
 echo "Executing corporate menu links test suite..."
 docker exec -w /workspace -i "$CONTAINER_NAME" psql -U postgres -v ON_ERROR_STOP=1 -f test/sql/corporate_menu_links.test.sql
@@ -76,5 +78,9 @@ docker exec -w /workspace -i "$CONTAINER_NAME" psql -U postgres -d test_credit_n
 echo "Executing public menu calendar test suite..."
 docker exec "$CONTAINER_NAME" createdb -U postgres test_public_menu_calendar
 docker exec -w /workspace -i "$CONTAINER_NAME" psql -U postgres -d test_public_menu_calendar -v ON_ERROR_STOP=1 -f test/sql/public_menu_calendar.test.sql
+
+echo "Executing public menu service test suite..."
+docker exec "$CONTAINER_NAME" createdb -U postgres test_public_menu_service
+docker exec -w /workspace -i "$CONTAINER_NAME" psql -U postgres -d test_public_menu_service -v ON_ERROR_STOP=1 -f test/sql/public_menu_service.test.sql
 
 echo "SQL test suite completed successfully."

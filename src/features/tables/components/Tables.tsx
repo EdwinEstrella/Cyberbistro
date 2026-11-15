@@ -6,6 +6,7 @@ import type { MesaConfig } from "../config/mesas";
 import { loadCantidadMesas } from "../../../shared/lib/tenantMesasSettings";
 import { estadoLabels, type MesaEstadoVisual } from "../config/estadoTheme";
 import { TableMesaCard } from "./TableMesaCard";
+import { ServiceAlertsBellContainer } from "./ServiceAlertsBellContainer";
 import { readLocalMesasEstado, saveLocalMesaEstado, readLocalConsumos } from "../../../shared/lib/ordersLocal";
 import { useSucursal } from "../../../app/context/SucursalContext";
 import { buildMesaEstadoUpsertPayload, buildTablesForConfiguredCount } from "../lib/tableState";
@@ -67,6 +68,7 @@ export function Tables() {
   const [mergeMode, setMergeMode] = useState(false);
   const [deudaPorMesa, setDeudaPorMesa] = useState<Record<number, number>>({});
   const [historialConsumos, setHistorialConsumos] = useState<ConsumoPanelRow[]>([]);
+  const [pendingAlertMesas, setPendingAlertMesas] = useState<Set<number>>(() => new Set());
   const navigate = useNavigate();
 
   const [showCodes, setShowCodes] = useState(false);
@@ -226,6 +228,7 @@ export function Tables() {
           {mergeMode && <div className="bg-primary/10 border border-primary/20 rounded-full px-3 sm:px-4 py-1 text-primary text-[9px] sm:text-[10px] font-bold uppercase tracking-widest animate-pulse">Seleccioná una mesa al lado para unir</div>}
         </div>
         <div className="flex flex-wrap gap-2 sm:gap-4 items-center">
+          <ServiceAlertsBellContainer onPendingMesasChange={setPendingAlertMesas} />
           <button onClick={() => setShowCodes(true)} className="bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest transition-colors cursor-pointer">
             Códigos QR / Seguridad
           </button>
@@ -243,7 +246,7 @@ export function Tables() {
              {mesas.filter(m => !m.fusionada).map(mesa => {
                 const isSelected = selectedId === mesa.id;
                 const deuda = (deudaPorMesa[mesa.numero] ?? 0) + mesa.fusion_hijos.reduce((s, cid) => s + (deudaPorMesa[cid] ?? 0), 0);
-                return <TableMesaCard key={mesa.id} mesa={mesa} isSelected={isSelected} isMergeTarget={mergeMode && adjacentIds.has(mesa.id)} deudaTotal={deuda} onClick={m => { if (mergeMode && adjacentIds.has(m.id)) { mergeMesas(selectedId!, m.id); } else { setSelectedId(m.id === selectedId ? null : m.id); setMergeMode(false); } }} formatCurrency={RD} />;
+                return <TableMesaCard key={mesa.id} mesa={mesa} isSelected={isSelected} isMergeTarget={mergeMode && adjacentIds.has(mesa.id)} deudaTotal={deuda} hasPendingAlert={pendingAlertMesas.has(mesa.numero)} onClick={m => { if (mergeMode && adjacentIds.has(m.id)) { mergeMesas(selectedId!, m.id); } else { setSelectedId(m.id === selectedId ? null : m.id); setMergeMode(false); } }} formatCurrency={RD} />;
              })}
           </div>
         </div>

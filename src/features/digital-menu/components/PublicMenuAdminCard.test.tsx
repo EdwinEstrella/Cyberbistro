@@ -23,6 +23,7 @@ const mockAdminData = vi.hoisted(() => ({
     menus: [],
     platos: [],
     menuItems: [],
+    tableCount: 10,
   },
 }));
 
@@ -50,8 +51,18 @@ const mockSettings = vi.hoisted(() => ({
     logoUrl: "",
     bannerUrl: "",
     accentColor: "#f97316",
+    wifi_name: "",
+    wifi_password: "",
+    whatsapp: "",
+    instagram: "",
+    facebook: "",
+    tiktok: "",
+    google_review_url: "",
+    maps_url: "",
+    suggestion_email: "",
   },
   updateField: vi.fn(),
+  contactErrors: {},
   menuId: null,
   savingSettings: false,
   handleSaveSettings: vi.fn(),
@@ -92,6 +103,17 @@ const mockShare = vi.hoisted(() => ({
   handleDownloadQR: vi.fn(),
 }));
 
+const mockTableQrs = vi.hoisted(() => ({
+  isOpen: false,
+  setIsOpen: vi.fn(),
+  handleToggleOpen: vi.fn(),
+  generating: false,
+  items: [],
+  qrMap: {},
+  handleDownloadTableQr: vi.fn(),
+  handlePrintAll: vi.fn(),
+}));
+
 vi.mock("../hooks/usePublicMenuAdminData", () => ({
   usePublicMenuAdminData: () => mockAdminData,
 }));
@@ -113,6 +135,10 @@ vi.mock("../hooks/usePublicMenuShare", () => ({
   usePublicMenuShare: () => mockShare,
 }));
 
+vi.mock("../hooks/usePublicMenuTableQrs", () => ({
+  usePublicMenuTableQrs: () => mockTableQrs,
+}));
+
 describe("PublicMenuAdminCard container", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -132,9 +158,21 @@ describe("PublicMenuAdminCard container", () => {
     expect(html).toContain("Menú público");
     expect(html).toContain("Profesional+");
     expect(html).toContain("Datos del Menú Público");
+    expect(html).toContain("Información para tus clientes");
     expect(html).toContain("Código QR y Enlace Público");
+    expect(html).toContain("Códigos QR por mesa");
+    expect(html).toContain("10 mesas");
     expect(html).toContain("Calendario del Menú Público");
     expect(html).toContain("Carta de Platos en Web (Lista Tradicional)");
+  });
+
+  it("renders empty-count helper text when tableCount is 0", () => {
+    mockAdminData.data.tableCount = 0;
+    const html = renderToStaticMarkup(
+      <PublicMenuAdminCard tenantId="tenant-1" sucursalId="suc-1" />
+    );
+    expect(html).toContain("Configurá la cantidad de mesas en Ajustes para generar los QR.");
+    mockAdminData.data.tableCount = 10;
   });
 
   it("renders EditDishDialog when editingPlato is present", () => {

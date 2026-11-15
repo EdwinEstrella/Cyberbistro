@@ -187,6 +187,69 @@ describe("receiptTemplates fiscal regression", () => {
     expect(html).not.toContain("Documento pendiente de envio a DGII");
   });
 
+  it.each(["terminal_error", "rejected"])(
+    "prints no QR and a rejection banner for a %s e-CF even with a locally computed security code",
+    async (status) => {
+      const html = await buildFacturaReceiptHtml(
+        tenant,
+        baseFactura({
+          ncf: "E320000000001",
+          ncf_tipo: "E32 - Factura de consumo electronica",
+          total: 413,
+          ecf_status: status,
+          ecf_security_code: "bimE5u",
+        }),
+        8719,
+        80
+      );
+
+      expect(html).toContain("Comprobante RECHAZADO por la DGII. Sin validez fiscal.");
+      expect(html).not.toContain("Documento pendiente de envio a DGII");
+      expect(html).not.toContain("Verificar comprobante");
+      expect(html).not.toContain("Codigo de seguridad");
+      expect(html).not.toContain("¡Escaneá para ver nuestro Menú!");
+      expect(vi.mocked(QRCode.toDataURL)).not.toHaveBeenCalled();
+    }
+  );
+
+  it("keeps the DGII QR and pending banner for an e-CF still waiting for DGII", async () => {
+    const html = await buildFacturaReceiptHtml(
+      tenant,
+      baseFactura({
+        ncf: "E320000000002",
+        ncf_tipo: "E32 - Factura de consumo electronica",
+        total: 413,
+        ecf_status: "pending",
+        ecf_security_code: "bimE5u",
+      }),
+      8720,
+      80
+    );
+
+    expect(html).toContain("Documento pendiente de envio a DGII");
+    expect(html).toContain("Verificar comprobante");
+    expect(html).not.toContain("RECHAZADO");
+  });
+
+  it("shows RECHAZADO POR DGII on a credit note whose status is terminal_error", async () => {
+    const html = await buildFacturaReceiptHtml(
+      tenant,
+      baseFactura({
+        estado: "nota_credito",
+        ncf: "E340000000001",
+        ncf_tipo: "E34 - Nota de credito electronica",
+        ecf_status: "terminal_error",
+        ecf_security_code: "abc123",
+      }),
+      8721,
+      80
+    );
+
+    expect(html).toContain("RECHAZADO POR DGII");
+    expect(html).not.toContain("Pendiente de aceptación DGII");
+    expect(html).not.toContain("Verificar comprobante");
+  });
+
   it("builds a clean thermal payroll receipt with employee details, bonuses, deductions, and signature lines", () => {
     const html = buildNominaReceiptHtml(
       tenant,

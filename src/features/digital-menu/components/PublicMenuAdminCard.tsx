@@ -13,8 +13,10 @@ import {
   type DishCustomFieldsInput,
 } from "../hooks/usePublicMenuDishes";
 import { usePublicMenuShare } from "../hooks/usePublicMenuShare";
+import { usePublicMenuTableQrs } from "../hooks/usePublicMenuTableQrs";
 import { PublicMenuSettingsForm } from "./public-menu/PublicMenuSettingsForm";
 import { PublicMenuShareSection } from "./public-menu/PublicMenuShareSection";
+import { PublicMenuTableQrSection } from "./public-menu/PublicMenuTableQrSection";
 import { PublicMenuCalendarSection } from "./public-menu/PublicMenuCalendarSection";
 import { PublicMenuDishesSection } from "./public-menu/PublicMenuDishesSection";
 import { EditDishDialog } from "./public-menu/EditDishDialog";
@@ -54,6 +56,12 @@ export function PublicMenuAdminCard({
 
   const shareHook = usePublicMenuShare({
     slug: settingsHook.form.slug,
+  });
+
+  const tableQrsHook = usePublicMenuTableQrs({
+    slug: settingsHook.form.slug,
+    tableCount: data.tableCount,
+    businessName: settingsHook.form.title || "Restaurante",
   });
 
   // Dialog-local states kept in container: open/close and entity being edited
@@ -139,6 +147,25 @@ export function PublicMenuAdminCard({
             onLogoUrlChange={(val) => settingsHook.updateField("logoUrl", val)}
             bannerUrl={settingsHook.form.bannerUrl}
             onBannerUrlChange={(val) => settingsHook.updateField("bannerUrl", val)}
+            wifiName={settingsHook.form.wifi_name}
+            onWifiNameChange={(val) => settingsHook.updateField("wifi_name", val)}
+            wifiPassword={settingsHook.form.wifi_password}
+            onWifiPasswordChange={(val) => settingsHook.updateField("wifi_password", val)}
+            whatsapp={settingsHook.form.whatsapp}
+            onWhatsappChange={(val) => settingsHook.updateField("whatsapp", val)}
+            instagram={settingsHook.form.instagram}
+            onInstagramChange={(val) => settingsHook.updateField("instagram", val)}
+            facebook={settingsHook.form.facebook}
+            onFacebookChange={(val) => settingsHook.updateField("facebook", val)}
+            tiktok={settingsHook.form.tiktok}
+            onTiktokChange={(val) => settingsHook.updateField("tiktok", val)}
+            googleReviewUrl={settingsHook.form.google_review_url}
+            onGoogleReviewUrlChange={(val) => settingsHook.updateField("google_review_url", val)}
+            mapsUrl={settingsHook.form.maps_url}
+            onMapsUrlChange={(val) => settingsHook.updateField("maps_url", val)}
+            suggestionEmail={settingsHook.form.suggestion_email}
+            onSuggestionEmailChange={(val) => settingsHook.updateField("suggestion_email", val)}
+            contactErrors={settingsHook.contactErrors}
             savingSettings={settingsHook.savingSettings}
             onSubmit={settingsHook.handleSaveSettings}
           />
@@ -150,6 +177,18 @@ export function PublicMenuAdminCard({
             onCopyLink={shareHook.handleCopyLink}
             onDownloadQR={shareHook.handleDownloadQR}
           />
+
+          {settingsHook.form.enabled && (
+            <PublicMenuTableQrSection
+              tableCount={data.tableCount}
+              items={tableQrsHook.items}
+              isOpen={tableQrsHook.isOpen}
+              onToggleOpen={tableQrsHook.handleToggleOpen}
+              generating={tableQrsHook.generating}
+              onDownloadTableQr={tableQrsHook.handleDownloadTableQr}
+              onPrintAll={tableQrsHook.handlePrintAll}
+            />
+          )}
         </div>
 
         {/* Right Column (7 cols): Calendar & Legacy Dish Management */}

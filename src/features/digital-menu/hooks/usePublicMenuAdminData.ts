@@ -15,11 +15,74 @@ export interface PublicMenuAdminInitialData {
   menus: Menu[];
   platos: Plato[];
   menuItems: DigitalMenuItem[];
+  tableCount: number;
 }
 
 export interface UsePublicMenuAdminDataParams {
   tenantId: string;
   sucursalId?: string | null;
+}
+
+/**
+ * Resolves the configured table count for a restaurant / branch.
+ * Follows the same hierarchy as the public menu RPC and Tables screen:
+ * 1. Branch cantidad_mesas (if sucursalId provided and > 0)
+ * 2. Tenant cantidad_mesas
+ * 3. 0 if unconfigured
+ */
+export async function fetchTableCount(
+  tenantId: string,
+  sucursalId?: string | null
+): Promise<number> {
+  if (!tenantId) return 0;
+  try {
+    if (sucursalId) {
+      const sucursales = await readLocalMirror<{ id: string; cantidad_mesas?: number | null }>(
+        tenantId,
+        "sucursales"
+      ).catch(() => []);
+      const sucursal = sucursales.find((s) => s.id === sucursalId);
+      if (sucursal && typeof sucursal.cantidad_mesas === "number" && sucursal.cantidad_mesas > 0) {
+        return sucursal.cantidad_mesas;
+      }
+    }
+
+    const tenants = await readLocalMirror<{ id: string; cantidad_mesas?: number | null }>(
+      tenantId,
+      "tenants"
+    ).catch(() => []);
+    const tenant = tenants.find((t) => t.id === tenantId);
+    if (tenant && typeof tenant.cantidad_mesas === "number" && tenant.cantidad_mesas > 0) {
+      return tenant.cantidad_mesas;
+    }
+
+    if (typeof navigator === "undefined" || navigator.onLine) {
+      if (sucursalId) {
+        const { data: sucData } = await supabase
+          .from("sucursales")
+          .select("cantidad_mesas")
+          .eq("id", sucursalId)
+          .eq("tenant_id", tenantId)
+          .maybeSingle();
+        if (sucData && typeof sucData.cantidad_mesas === "number" && sucData.cantidad_mesas > 0) {
+          return sucData.cantidad_mesas;
+        }
+      }
+
+      const { data: tenantData } = await supabase
+        .from("tenants")
+        .select("cantidad_mesas")
+        .eq("id", tenantId)
+        .maybeSingle();
+      if (tenantData && typeof tenantData.cantidad_mesas === "number") {
+        return tenantData.cantidad_mesas;
+      }
+    }
+  } catch (err) {
+    console.warn("[usePublicMenuAdminData] Error resolving table count:", err);
+  }
+
+  return 0;
 }
 
 export function usePublicMenuAdminData({ tenantId, sucursalId }: UsePublicMenuAdminDataParams) {
@@ -29,6 +92,7 @@ export function usePublicMenuAdminData({ tenantId, sucursalId }: UsePublicMenuAd
     menus: [],
     platos: [],
     menuItems: [],
+    tableCount: 0,
   });
 
   const loadData = useCallback(async () => {
@@ -38,11 +102,12 @@ export function usePublicMenuAdminData({ tenantId, sucursalId }: UsePublicMenuAd
     }
     try {
       setLoading(true);
-      const [platosLocal, settingsLocal, itemsLocal, tenantMenus] = await Promise.all([
+      const [platosLocal, settingsLocal, itemsLocal, tenantMenus, tableCount] = await Promise.all([
         readLocalMirror<Plato>(tenantId, "platos").catch(() => []),
         readLocalMirror<DigitalMenuSettings>(tenantId, "digital_menu_settings").catch(() => []),
         readLocalMirror<DigitalMenuItem>(tenantId, "digital_menu_items").catch(() => []),
         fetchMenus(tenantId, sucursalId).catch(() => []),
+        fetchTableCount(tenantId, sucursalId),
       ]);
 
       const filteredPlatos = platosLocal.filter(
@@ -74,6 +139,7 @@ export function usePublicMenuAdminData({ tenantId, sucursalId }: UsePublicMenuAd
         menus: tenantMenus,
         platos: filteredPlatos,
         menuItems: tenantMenuItems,
+        tableCount,
       });
     } catch (err) {
       console.error("Error loading public menu admin data:", err);

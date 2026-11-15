@@ -4,16 +4,15 @@ import { toast } from "sonner";
 import { printLocalInvoiceReceipt } from "./localInvoiceReceipt";
 import { enqueueThermalPrint, type PrintThermalResult } from "./thermalPrint";
 import { isCreditNoteInvoice } from "./invoiceKind";
+import { isEcfAcceptedStatus, isEcfRejectedStatus } from "./ecfRejection";
 import { readLocalInvoices } from "../../features/billing/lib/invoicesLocal";
 
-export const FISCAL_GATE_WAITING_MESSAGE = "Esperando código de la DGII para imprimir el comprobante…";
+export const FISCAL_GATE_WAITING_MESSAGE = "Esperando aprobación DGII…";
 export const FISCAL_GATE_PENDING_CONFIRMATION_MESSAGE =
   "El comprobante se imprimirá cuando la DGII lo confirme. Podés reimprimirlo desde Historial / Notas de crédito.";
 
-export const DEFAULT_POLL_DELAYS = [
-  2000, 3000, 5000, 5000, 5000, 5000, 5000, 10000, 10000, 10000,
-  15000, 15000, 15000, 15000, 15000, 15000, 15000, 15000,
-];
+/** Foreground wait for DGII at checkout: 30 s in total. After that the job moves to the background queue. */
+export const DEFAULT_POLL_DELAYS = [2000, 3000, 5000, 5000, 5000, 5000, 5000];
 
 export interface EcfDocumentState {
   status?: string | null;
@@ -88,9 +87,18 @@ export function extractSecurityCode(doc: Record<string, unknown> | null | undefi
   return null;
 }
 
+/**
+ * An e-CF may only be printed once DGII accepted it. The security code alone is not proof: it is
+ * computed locally at signing time, before DGII answers.
+ */
+export function isAcceptedEcf(doc: Record<string, unknown> | null | undefined): boolean {
+  if (!doc) return false;
+  return isEcfAcceptedStatus(doc.dgii_status) || isEcfAcceptedStatus(doc.status);
+}
+
 export function isRejectedEcf(doc: Record<string, unknown> | null | undefined): boolean {
   if (!doc) return false;
-  return doc.dgii_status === "rejected" || doc.status === "rejected";
+  return isEcfRejectedStatus(doc.dgii_status) || isEcfRejectedStatus(doc.status);
 }
 
 export function getRejectionMessage(doc: Record<string, unknown> | null | undefined): string {
@@ -230,7 +238,8 @@ async function defaultPrintReceipt(args: {
 }
 
 function defaultShowWaitingNotice(message: string): () => void {
-  const toastId = toast.info(message, { duration: Infinity });
+  // toast.loading renders sonner's animated spinner, so the wait for DGII does not feel like a freeze.
+  const toastId = toast.loading(message, { duration: Infinity });
   return () => {
     toast.dismiss(toastId);
   };
@@ -290,7 +299,7 @@ export async function runBackgroundRetryOnce(
         deps.showMessage(getRejectionMessage(localDoc), "error");
         continue;
       }
-      if (extractSecurityCode(localDoc)) {
+      if (isAcceptedEcf(localDoc)) {
         backgroundQueue.delete(facturaId);
         await deps.printReceipt({
           tenantId: job.request.tenantId,
@@ -311,7 +320,7 @@ export async function runBackgroundRetryOnce(
           deps.showMessage(getRejectionMessage(cloudDoc), "error");
           continue;
         }
-        if (extractSecurityCode(cloudDoc)) {
+        if (isAcceptedEcf(cloudDoc)) {
           backgroundQueue.delete(facturaId);
           await deps.printReceipt({
             tenantId: job.request.tenantId,
@@ -361,11 +370,18 @@ export async function gateFiscalPrint(
     };
   }
 
-  // Check if security code is already in the passed request
-  const passedCode =
-    extractSecurityCode(request.ecfDocument) ||
-    extractSecurityCode(request.factura);
-  if (passedCode) {
+  // A document already known to be rejected must never be printed, even if it carries the
+  // security code computed locally at signing time.
+  if (isRejectedEcf(request.ecfDocument) || isEcfRejectedStatus(request.factura.fiscal_status)) {
+    const message = getRejectionMessage(request.ecfDocument);
+    deps.showMessage(message, "error");
+    return { printed: false, reason: "rejected", error: message };
+  }
+
+  // Print right away only when the request already proves DGII accepted the document
+  const passedAccepted =
+    isAcceptedEcf(request.ecfDocument) || isEcfAcceptedStatus(request.factura.fiscal_status);
+  if (passedAccepted) {
     const result = await deps.printReceipt({
       tenantId: request.tenantId,
       factura: request.factura,
@@ -401,7 +417,7 @@ export async function gateFiscalPrint(
         error: getRejectionMessage(initialLocal),
       };
     }
-    if (extractSecurityCode(initialLocal)) {
+    if (isAcceptedEcf(initialLocal)) {
       if (facturaId) activeJobs.delete(facturaId);
       const resolvedDoc = request.ecfDocument
         ? ({ ...request.ecfDocument, ...initialLocal } as EcfDocumentState)
@@ -434,7 +450,7 @@ export async function gateFiscalPrint(
             error: getRejectionMessage(initialCloud),
           };
         }
-        if (extractSecurityCode(initialCloud)) {
+        if (isAcceptedEcf(initialCloud)) {
           if (facturaId) activeJobs.delete(facturaId);
           const resolvedDoc = request.ecfDocument
             ? ({ ...request.ecfDocument, ...initialCloud } as EcfDocumentState)
@@ -504,7 +520,7 @@ export async function gateFiscalPrint(
             deps.showMessage(msg, "error");
             return { printed: false, reason: "rejected", error: msg };
           }
-          if (extractSecurityCode(localDoc)) {
+          if (isAcceptedEcf(localDoc)) {
             dismissWaiting();
             if (facturaId) activeJobs.delete(facturaId);
             const result = await deps.printReceipt({
@@ -532,7 +548,7 @@ export async function gateFiscalPrint(
               deps.showMessage(msg, "error");
               return { printed: false, reason: "rejected", error: msg };
             }
-            if (extractSecurityCode(cloudDoc)) {
+            if (isAcceptedEcf(cloudDoc)) {
               dismissWaiting();
               if (facturaId) activeJobs.delete(facturaId);
               const result = await deps.printReceipt({
@@ -552,7 +568,7 @@ export async function gateFiscalPrint(
       }
     }
 
-    // Polling timed out (~3 minutes)
+    // Polling timed out (~30 seconds)
     dismissWaiting();
     if (facturaId) {
       activeJobs.delete(facturaId);

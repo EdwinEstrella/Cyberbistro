@@ -2,6 +2,7 @@ import { type PaperWidthMm } from "./thermalStorage";
 import { getLogoUrlForPrint } from "./logoCache";
 import QRCode from "qrcode";
 import { isCreditNoteInvoice } from "./invoiceKind";
+import { isEcfRejectedStatus } from "./ecfRejection";
 
 export interface TenantReceiptInfo {
   nombre_negocio: string | null;
@@ -292,17 +293,23 @@ export async function buildFacturaReceiptHtml(
       ? `<tr class="header-row"><td>NCF</td><td style="text-align:right;font-weight:bold;font-size:14px">${escapeHtml(ncf)}</td></tr>`
       : "";
 
+  const isEcfNcf = ncf.toUpperCase().startsWith("E");
+  const ecfRejected = isEcfNcf && isEcfRejectedStatus(factura.ecf_status);
+
   let metaEcf = "";
-  if (ncf.toUpperCase().startsWith("E")) {
-    const rejectionAction =
-      factura.ecf_status === "rejected"
-        ? `<tr class="header-row"><td colspan="2" style="text-align:center;font-weight:bold;font-size:12px;padding:6px 0;border:1px dashed #000">Accion recomendada: revisar datos fiscales y reenviar el comprobante.</td></tr>`
-        : "";
+  if (isEcfNcf) {
+    const rejectionBanner = ecfRejected
+      ? `<tr class="header-row"><td colspan="2" style="text-align:center;font-weight:bold;font-size:12px;padding:6px 0;border:1px dashed #000">Comprobante RECHAZADO por la DGII. Sin validez fiscal.</td></tr>`
+      : "";
+    const rejectionAction = ecfRejected
+      ? `<tr class="header-row"><td colspan="2" style="text-align:center;font-weight:bold;font-size:12px;padding:6px 0;border:1px dashed #000">Accion recomendada: revisar datos fiscales y reenviar el comprobante.</td></tr>`
+      : "";
     const pendingWarning =
-      factura.ecf_status !== "accepted" && factura.ecf_status !== "rejected"
+      factura.ecf_status !== "accepted" && !ecfRejected
         ? `<tr class="header-row"><td colspan="2" style="text-align:center;font-weight:bold;font-size:12px;padding:6px 0;border:1px dashed #000">Documento pendiente de envio a DGII. La validez fiscal se confirmara al sincronizar.</td></tr>`
         : "";
     metaEcf += pendingWarning;
+    metaEcf += rejectionBanner;
     metaEcf += rejectionAction;
   }
 
@@ -322,7 +329,11 @@ export async function buildFacturaReceiptHtml(
   const dgiiSignedAt = formatDgiiDateTime(factura.ecf_submitted_at ?? null);
   const isE32Fc = /^E32/i.test(ncf) && Number(factura.total) < 250000;
   const canRenderDgiiQr = ncf.toUpperCase().startsWith("E") && issuerRnc !== "" && ncf !== "" && ecfSecurityCode !== "" && !!dgiiIssuedAt && (isE32Fc || !!dgiiSignedAt);
-  if (canRenderDgiiQr) {
+  if (ecfRejected) {
+    // A rejected e-CF does not exist for DGII: its locally computed security code must not be
+    // presented as a verifiable QR, and the menu QR would only distract from the rejection notice.
+    qrSection = "";
+  } else if (canRenderDgiiQr) {
     const verificationUrl = buildDgiiEcfQrUrl({
       issuerRnc,
       buyerRnc: clienteRnc,
@@ -500,7 +511,7 @@ async function buildCreditNoteReceiptHtml(
 
   const fiscalRow = accepted
     ? ""
-    : factura.ecf_status === "rejected"
+    : isEcfRejectedStatus(factura.ecf_status)
     ? `<tr class="header-row"><td>Estado e-CF</td><td style="text-align:right;font-weight:bold;font-size:13px">RECHAZADO POR DGII</td></tr>`
     : `<tr class="header-row"><td colspan="2" style="text-align:center;font-weight:bold;font-size:12px;padding:6px 0;border:1px dashed #000">Pendiente de aceptación DGII. La validez fiscal se confirmará al sincronizar.</td></tr>`;
 

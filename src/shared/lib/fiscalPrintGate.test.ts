@@ -26,6 +26,7 @@ import {
   extractSecurityCode,
   defaultCheckCloud,
   clearFiscalPrintQueue,
+  DEFAULT_POLL_DELAYS,
   getFiscalPrintBackgroundQueue,
   runBackgroundRetryOnce,
   FISCAL_GATE_WAITING_MESSAGE,
@@ -152,6 +153,69 @@ describe("fiscalPrintGate", () => {
     expect(result.reason).toBe("code_arrived");
   });
 
+  it("waits about 30 seconds in the foreground before handing over to the background queue", () => {
+    expect(DEFAULT_POLL_DELAYS.reduce((total, delay) => total + delay, 0)).toBe(30000);
+  });
+
+  it("does not print a signed-but-unaccepted e-CF: keeps waiting until DGII accepts it", async () => {
+    const signedPending = { status: "pending", dgii_status: "pending", dgii_security_code: "SEC-LOCAL" } satisfies EcfDocumentState;
+    mockCheckLocal
+      .mockResolvedValueOnce(signedPending) // initial check
+      .mockResolvedValueOnce(signedPending) // 1st poll: code exists but DGII has not answered
+      .mockResolvedValueOnce({ ...signedPending, status: "accepted", dgii_status: "accepted" }); // 2nd poll
+
+    const result = await gateFiscalPrint(
+      {
+        tenantId: "t1",
+        factura: { id: "inv-ecf-wait", ncf: "E320000000010", total: 413 },
+        numeroFactura: 20,
+      },
+      createTestDeps()
+    );
+
+    expect(mockShowWaitingNotice).toHaveBeenCalledWith(FISCAL_GATE_WAITING_MESSAGE);
+    expect(mockPrintReceipt).toHaveBeenCalledTimes(1);
+    expect(mockCheckLocal).toHaveBeenCalledTimes(3);
+    expect(result).toMatchObject({ printed: true, reason: "code_arrived" });
+  });
+
+  it("does not print immediately when the request only carries a local security code", async () => {
+    mockCheckCloud.mockResolvedValue({ status: "accepted", dgii_security_code: "SEC-OK" } satisfies EcfDocumentState);
+
+    const result = await gateFiscalPrint(
+      {
+        tenantId: "t1",
+        factura: { id: "inv-ecf-code-only", ncf: "E320000000011", total: 413, ecf_security_code: "SEC-LOCAL" },
+        numeroFactura: 21,
+        ecfDocument: { status: "pending", dgii_security_code: "SEC-LOCAL" },
+      },
+      createTestDeps()
+    );
+
+    expect(mockShowWaitingNotice).toHaveBeenCalledWith(FISCAL_GATE_WAITING_MESSAGE);
+    expect(result.reason).toBe("code_arrived");
+    expect(mockPrintReceipt).toHaveBeenCalledTimes(1);
+  });
+
+  it("prints an accepted_conditional e-CF (DGII accepted it with observations)", async () => {
+    mockCheckLocal.mockResolvedValueOnce({
+      status: "accepted_conditional",
+      dgii_security_code: "SEC-COND",
+    } satisfies EcfDocumentState);
+
+    const result = await gateFiscalPrint(
+      {
+        tenantId: "t1",
+        factura: { id: "inv-ecf-cond", ncf: "E320000000012", total: 413 },
+        numeroFactura: 22,
+      },
+      createTestDeps()
+    );
+
+    expect(result).toMatchObject({ printed: true, reason: "already_ready" });
+    expect(mockShowWaitingNotice).not.toHaveBeenCalled();
+  });
+
   it("never prints on rejected: dismisses notice and shows rejection message", async () => {
     mockCheckLocal
       .mockResolvedValueOnce(null)
@@ -177,6 +241,53 @@ describe("fiscalPrintGate", () => {
     expect(mockShowMessage).toHaveBeenCalledWith("RNC del comprador no es válido", "error");
     expect(result.printed).toBe(false);
     expect(result.reason).toBe("rejected");
+  });
+
+  it("treats terminal_error from the polled mirror as a rejection (never prints)", async () => {
+    mockCheckLocal.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      status: "terminal_error",
+      dgii_status: "terminal_error",
+      dgii_status_message: "DGII [2] Rechazado: El RNC Emisor no tiene una postulación activa.",
+    } satisfies EcfDocumentState);
+
+    const result = await gateFiscalPrint(
+      {
+        tenantId: "t1",
+        factura: { id: "inv-ecf-te", ncf: "E320000000001", total: 413 },
+        numeroFactura: 8719,
+      },
+      createTestDeps()
+    );
+
+    expect(mockPrintReceipt).not.toHaveBeenCalled();
+    expect(mockShowMessage).toHaveBeenCalledWith(
+      "DGII [2] Rechazado: El RNC Emisor no tiene una postulación activa.",
+      "error"
+    );
+    expect(result).toMatchObject({ printed: false, reason: "rejected" });
+  });
+
+  it("does not print a rejected document that already carries the locally computed security code", async () => {
+    const result = await gateFiscalPrint(
+      {
+        tenantId: "t1",
+        factura: { id: "inv-ecf-sc", ncf: "E320000000001", total: 413, fiscal_status: "terminal_error" },
+        numeroFactura: 8719,
+        ecfDocument: {
+          status: "terminal_error",
+          dgii_security_code: "bimE5u",
+          dgii_status_message: "DGII [2] Rechazado: El RNC Emisor no tiene una postulación activa.",
+        },
+      },
+      createTestDeps()
+    );
+
+    expect(mockPrintReceipt).not.toHaveBeenCalled();
+    expect(mockShowMessage).toHaveBeenCalledWith(
+      "DGII [2] Rechazado: El RNC Emisor no tiene una postulación activa.",
+      "error"
+    );
+    expect(result).toMatchObject({ printed: false, reason: "rejected" });
   });
 
   it("timeout -> no print + shows Spanish message and enqueues background retry", async () => {

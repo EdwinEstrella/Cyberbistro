@@ -68,6 +68,7 @@ import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSett
 import { calculateInvoiceTotals } from "../../../shared/lib/billingTotals";
 import { type FiscalMode } from "../../../shared/lib/fiscalTypes";
 import { resolveActiveFiscalMode, runFiscalEngine, buildEcfDocumentWrites } from "../../../shared/lib/fiscalEngine";
+import { resolveInitialSkipFiscal, shouldRunCheckoutFiscal } from "../../../shared/lib/checkoutFiscalSkip";
 import { getLocalFirstStatusSnapshot, readLocalMirror, readLocalOutbox, getDeviceId, shouldReadLocalFirst, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, type LocalFirstWrite } from "../../../shared/lib/localFirst";
 import { readLocalCierres } from "../../cierre/lib/cierresLocal";
 import { readLocalPlatos, readLocalMenuCategories } from "../../soporte/lib/catalogLocal";
@@ -199,10 +200,29 @@ export function Dashboard() {
   const [kitchenEnabled, setKitchenEnabled] = useState(true);
   const [tenantNcfFiscalActive, setTenantNcfFiscalActive] = useState(false);
   const [solicitaComprobante, setSolicitaComprobante] = useState(false);
+  const [skipFiscal, setSkipFiscal] = useState(false);
   const [selectedNcfType, setSelectedNcfType] = useState<NcfTypeCode>(DEFAULT_NCF_B_CODE);
   const [ncfTiposActivos, setNcfTiposActivos] = useState<Record<string, boolean>>({});
   const [fiscalMode, setFiscalMode] = useState<FiscalMode>("internal_receipt");
   const [certificateId, setCertificateId] = useState<string | null>(null);
+
+  // Business setting "Sin comprobante por defecto": the switch returns to this value after every sale.
+  const [skipFiscalDefault, setSkipFiscalDefault] = useState(false);
+
+  const toggleSkipFiscal = () => {
+    const next = !skipFiscal;
+    setSkipFiscal(next);
+    if (next) {
+      setCartItbisEnabled(false);
+      setSolicitaComprobante(false);
+    }
+  };
+
+  const resetSkipFiscal = () => {
+    setSkipFiscal(skipFiscalDefault);
+    setSolicitaComprobante(false);
+    if (skipFiscalDefault) setCartItbisEnabled(false);
+  };
 
   const [takeoutCustomer, setTakeoutCustomer] = useState<Customer | null>(null);
   const [takeoutCustomerName, setTakeoutCustomerName] = useState("");
@@ -235,7 +255,10 @@ export function Dashboard() {
     void loadTenantBillingSettings(tenantId).then(async (settings) => {
       if (cancelled) return;
 
-      setCartItbisEnabled(settings?.defaultItbisEnabled ?? false);
+      // "Sin comprobante por defecto" starts the switch ON, which also keeps ITBIS off (still toggleable).
+      const skipByDefault = resolveInitialSkipFiscal(settings?.sinComprobantePorDefecto);
+      setSkipFiscalDefault(skipByDefault);
+      setCartItbisEnabled(skipByDefault ? false : (settings?.defaultItbisEnabled ?? false));
       setCartPropinaEnabled(settings?.defaultPropinaEnabled ?? false);
       setItbisIncluded(settings?.itbisIncluded ?? false);
       const isOnline = navigator.onLine;
@@ -253,6 +276,7 @@ export function Dashboard() {
       );
       setSelectedNcfType(isNcfTypeActive(activeMap, preferred) ? preferred : (firstActive?.codigo ?? preferred));
       setSolicitaComprobante(false);
+      setSkipFiscal(skipByDefault);
     });
 
     // Proactively cache the tenant logo for offline printing
@@ -852,6 +876,7 @@ export function Dashboard() {
       setTakeoutCustomerName("");
       setCashReceivedInput("");
       setMesaConsumos([]);
+      resetSkipFiscal();
       setShowPaymentModal(true);
       return;
     }
@@ -1069,7 +1094,13 @@ export function Dashboard() {
     let ncfPart: Awaited<ReturnType<typeof runFiscalEngine>> = null;
     const defaultFiscalCode = fiscalMode === "dgii_ecf" ? "E32" : "B02";
     const canEmitDefaultConsumo = isNcfTypeActive(ncfTiposActivos, defaultFiscalCode);
-    const shouldRunFiscal = tenantId && fiscalMode !== "internal_receipt" && (solicitaComprobante || canEmitDefaultConsumo);
+    const shouldRunFiscal = shouldRunCheckoutFiscal({
+      skipFiscal,
+      fiscalMode,
+      solicitaComprobante,
+      canEmitDefaultConsumo,
+      tenantId,
+    });
 
     if (shouldRunFiscal) {
       const targetNcfType = solicitaComprobante ? selectedNcfType : defaultFiscalCode;
@@ -1326,6 +1357,7 @@ export function Dashboard() {
     setCashReceivedInput("");
     setOrderNotes("");
     setMesaConsumos([]);
+    resetSkipFiscal();
     setChargeOk(true);
     setTimeout(() => setChargeOk(false), 3000);
     setShowPaymentModal(false);
@@ -1970,9 +2002,10 @@ export function Dashboard() {
                   setTakeoutCustomer(null);
                   setTakeoutCustomerName("");
                   setCashReceivedInput("");
-                setOrderNotes("");
-                setShowPaymentModal(false);
-              }
+                  setOrderNotes("");
+                  resetSkipFiscal();
+                  setShowPaymentModal(false);
+                }
             }}
           >
             <div
@@ -1996,6 +2029,7 @@ export function Dashboard() {
                   setTakeoutCustomerName("");
                   setCashReceivedInput("");
                   setOrderNotes("");
+                  resetSkipFiscal();
                   setShowPaymentModal(false);
                 }}
                 aria-label="Cerrar modal de cobro para llevar"
@@ -2046,6 +2080,29 @@ export function Dashboard() {
 
                   {/* Charge Config Toggles */}
                   <div className="flex flex-col gap-2 shrink-0 pt-2">
+                    <div className="flex items-center justify-between gap-[10px] rounded-[14px] border border-white/20 bg-[#0a0a0a] px-4 py-3">
+                      <div className="flex flex-col min-w-0">
+                        <span className="font-['Inter',sans-serif] text-zinc-300 text-[13px] font-medium leading-tight">
+                          Sin comprobante
+                        </span>
+                        <span className="font-['Inter',sans-serif] text-zinc-500 text-[11px] leading-tight mt-0.5">
+                          Recibo interno, no se envía a la DGII
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        id="takeout-skip-fiscal-toggle"
+                        aria-checked={skipFiscal}
+                        onClick={toggleSkipFiscal}
+                        aria-label={skipFiscal ? "Desactivar modo sin comprobante" : "Activar modo sin comprobante"}
+                        className={`relative h-[28px] w-[50px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${skipFiscal ? "bg-[#ff906d]" : "bg-[#222]"}`}
+                      >
+                        <span
+                          className={`absolute top-[4px] left-[4px] block size-[20px] rounded-full bg-white shadow-sm transition-transform duration-200 ease-out ${skipFiscal ? "translate-x-[22px]" : "translate-x-0"}`}
+                        />
+                      </button>
+                    </div>
                     <div className="flex items-center justify-between gap-[10px] rounded-[14px] border border-white/20 bg-[#0a0a0a] px-4 py-3">
                       <div className="flex flex-col min-w-0">
                         <span className="font-['Inter',sans-serif] text-zinc-300 text-[13px] font-medium leading-tight">
@@ -2151,7 +2208,7 @@ export function Dashboard() {
                   </div>
 
                   {/* NCF Selection Cards */}
-                  {tenantNcfFiscalActive && (
+                  {tenantNcfFiscalActive && !skipFiscal && (
                     <div className="flex flex-col gap-3 shrink-0 bg-zinc-900/20 border border-white/20 rounded-2xl p-4">
                       <div className="flex items-center justify-between gap-[10px] rounded-[14px] border border-white/20 bg-[#0a0a0a] px-4 py-3">
                         <div className="flex flex-col min-w-0">
@@ -2314,6 +2371,7 @@ export function Dashboard() {
                           setTakeoutCustomerName("");
                           setCashReceivedInput("");
                           setOrderNotes("");
+                          resetSkipFiscal();
                           setShowPaymentModal(false);
                         }}
                         className="flex-1 bg-zinc-900 border border-white/20 rounded-xl py-3.5 font-['Space_Grotesk',sans-serif] font-bold text-zinc-400 text-[12px] tracking-[0.5px] uppercase cursor-pointer hover:border-white/40 hover:text-white transition-all active:scale-95"

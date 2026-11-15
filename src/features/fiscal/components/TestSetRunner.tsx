@@ -22,6 +22,7 @@ import {
   portalDownloads,
   safeDownloadName,
   shouldAutoPoll,
+  shouldOfferConsumoPortalDownloads,
   simulationQuotaSummary,
   statusTone,
   summariesAccepted,
@@ -73,9 +74,9 @@ interface TestSetRunnerProps {
 }
 
 /**
- * Wizard steps 2, 3 and 4: run a DGII set (upload, send in batches, poll status). The test set and
- * the simulation also offer the consumo < 250k portal downloads; the simulation adds the quotas of
- * the DGII portal list.
+ * Wizard steps 2, 3 and 4: run a DGII set (upload, send in batches, poll status). Step 2 (test set)
+ * and step 4 (simulation) both offer the consumo < 250k portal downloads; the simulation adds the quotas
+ * of the DGII portal list.
  */
 export function TestSetRunner({ tenantId, environment, runType = "test_set", title, description }: TestSetRunnerProps) {
   const copy = RUN_COPY[runType];
@@ -345,7 +346,7 @@ export function TestSetRunner({ tenantId, environment, runType = "test_set", tit
             </div>
           )}
 
-          {downloads.length > 0 && (
+          {shouldOfferConsumoPortalDownloads(runType, downloads.length) && (
             <div className="rounded-xl border border-border bg-background p-4">
               <div className="flex items-center gap-2 text-xs font-bold text-foreground"><Download className="size-4 text-primary" /> Facturas de consumo menores a 250 mil</div>
               <p className="mt-1 text-xs text-muted-foreground">

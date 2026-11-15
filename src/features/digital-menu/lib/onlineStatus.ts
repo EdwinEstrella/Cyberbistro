@@ -30,7 +30,12 @@ export function isRestaurantClosedError(error: unknown): boolean {
       : typeof error === "object" && error !== null && "message" in error
         ? String((error as { message: unknown }).message)
         : String(error);
-  return msg.toUpperCase().includes("RESTAURANT_CLOSED");
+  const lower = msg.toLowerCase();
+  return (
+    lower.includes("restaurant_closed") ||
+    lower.includes("cerrado en este momento") ||
+    lower.includes("restaurante se encuentra cerrado")
+  );
 }
 
 /**

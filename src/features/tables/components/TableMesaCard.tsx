@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { BellRing } from "lucide-react";
 import { estadoColors, estadoLabels, type MesaEstadoVisual } from "../config/estadoTheme";
 import { useTheme } from "../../../shared/context/ThemeContext";
 
@@ -23,6 +24,7 @@ type Props = {
   deudaTotal: number;
   onClick: (mesa: MesaCardData) => void;
   formatCurrency: (n: number) => string;
+  hasPendingAlert?: boolean;
 };
 
 function TableMesaCardBase({
@@ -32,6 +34,7 @@ function TableMesaCardBase({
   deudaTotal,
   onClick,
   formatCurrency,
+  hasPendingAlert = false,
 }: Props) {
   const { theme } = useTheme();
   const isDark = theme === "dark";
@@ -81,6 +84,16 @@ function TableMesaCardBase({
       }}
       className="border-none p-0 text-left transition-colors duration-300 min-w-0 overflow-hidden"
     >
+      {hasPendingAlert && (
+        <div
+          data-testid={`table-alert-indicator-${mesa.numero}`}
+          className="absolute top-1 left-1 sm:top-[6px] sm:left-[6px] bg-amber-500/20 border border-amber-500/40 rounded-[4px] p-1 flex items-center justify-center text-amber-500 motion-safe:animate-pulse motion-reduce:animate-none z-10"
+          title="Solicitud pendiente en mesa"
+        >
+          <BellRing className="size-2.5 sm:size-3" />
+        </div>
+      )}
+
       {isMerged && (
         <div className="absolute top-1 right-1 sm:top-[6px] sm:right-[6px] bg-[#ff906d]/15 rounded-[4px] px-1 sm:px-[6px] py-[2px]">
           <span className="font-['Inter',sans-serif] text-[#ff906d] text-[7px] sm:text-[8px] tracking-[0.4px] sm:tracking-[0.8px] uppercase font-bold">

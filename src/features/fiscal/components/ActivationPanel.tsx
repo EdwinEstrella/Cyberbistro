@@ -601,6 +601,10 @@ export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral: 
                     <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
                       La DGII está validando los datos enviados. Puede tomar 24 a 72 horas.
                     </p>
+                  ) : certificationStep === 7 ? (
+                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                      Las URLs de prueba corresponden a las tres URLs de servicio mostradas en el Paso 1. Confirma que estén registradas en el portal de la DGII y avanza.
+                    </p>
                   ) : certificationStep === 8 ? (
                     <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
                       La DGII enviará e-CF de prueba a tus URLs. Descarga el certificado raíz y presiona "Inicio envío de pruebas" en el portal.
@@ -627,7 +631,7 @@ export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral: 
                     </p>
                   ) : certificationStep === 14 ? (
                     <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                      Consulta el estatus de tu certificacion. Cuando sea aprobada, avanzaras al paso final.
+                      Verifica en el portal de la DGII que el Paso 15 aparezca como Finalizado y confirma aquí.
                     </p>
                   ) : (
                     <ol className="mt-3 list-decimal space-y-1 pl-4 text-xs leading-relaxed text-muted-foreground">
@@ -740,15 +744,13 @@ export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral: 
                 )}
 
                 {certificationStep === 14 && (
-                  <div className="mt-4 flex flex-col gap-4">
-                    <button type="button" onClick={openCertificationPortal} className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-green-600 px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-green-700">
-                      <CheckCircle className="size-4" /> Verificar Estatus de Certificacion
-                    </button>
-                  </div>
+                  <button type="button" onClick={openCertificationPortal} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-800 px-5 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-900 dark:bg-slate-800 dark:hover:bg-slate-700">
+                    <ExternalLink className="size-4" /> Ir al Portal DGII
+                  </button>
                 )}
 
                 <button type="button" onClick={advanceCertificationStep} disabled={certificationStep === CERTIFICATION_TOTAL_STEPS || advanceBlocked} className={`mt-4 flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-bold transition-colors ${advanceBlocked ? "cursor-not-allowed bg-sky-500/50 text-white shadow-none" : "bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90 disabled:opacity-50"}`}>
-                  {certificationStep === CERTIFICATION_TOTAL_STEPS ? "Certificación lista para revisión" : certificationStep === 14 ? "> Marcar como aprobado manualmente" : certificationStep === 13 ? "> XML enviado a DGII — Avanzar" : certificationStep === 12 ? `> URLs registradas — Avanzar al Paso ${displayStepNumber(nextVisibleStep(12))}` : certificationStep >= 8 && certificationStep <= 11 ? (advanceBlocked ? (certificationStep <= 9 ? "> Esperando e-CF de DGII..." : "> Esperando aprobaciones comerciales...") : `Recibidos ${stepEvidenceCount} — Avanzar al Paso ${displayStepNumber(nextVisibleStep(certificationStep))}`) : certificationStep === 6 ? `DGII aprobó — Avanzar al Paso ${displayStepNumber(nextVisibleStep(6))}` : certificationStep === 5 ? "Representaciones subidas — Avanzar" : `Ya completé este paso - Avanzar al paso ${displayStepNumber(nextVisibleStep(certificationStep))}`} {!advanceBlocked && certificationStep !== 14 && certificationStep !== 13 && certificationStep !== 12 && certificationStep !== CERTIFICATION_TOTAL_STEPS && <ChevronRight className="size-4" />}
+                  {certificationStep === CERTIFICATION_TOTAL_STEPS ? "Certificación lista para revisión" : certificationStep === 14 ? "> Ya finalicé en el portal DGII (Paso 15)" : certificationStep === 13 ? "> XML enviado a DGII — Avanzar" : certificationStep === 12 ? `> URLs registradas — Avanzar al Paso ${displayStepNumber(nextVisibleStep(12))}` : certificationStep >= 8 && certificationStep <= 11 ? (advanceBlocked ? (certificationStep <= 9 ? "> Esperando e-CF de DGII..." : "> Esperando aprobaciones comerciales...") : `Recibidos ${stepEvidenceCount} — Avanzar al Paso ${displayStepNumber(nextVisibleStep(certificationStep))}`) : certificationStep === 6 ? `DGII aprobó — Avanzar al Paso ${displayStepNumber(nextVisibleStep(6))}` : certificationStep === 5 ? "Representaciones subidas — Avanzar" : `Ya completé este paso - Avanzar al paso ${displayStepNumber(nextVisibleStep(certificationStep))}`} {!advanceBlocked && certificationStep !== 14 && certificationStep !== 13 && certificationStep !== 12 && certificationStep !== CERTIFICATION_TOTAL_STEPS && <ChevronRight className="size-4" />}
                 </button>
                   </>
                 )}
