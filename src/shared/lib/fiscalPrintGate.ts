@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { printLocalInvoiceReceipt } from "./localInvoiceReceipt";
 import { enqueueThermalPrint, type PrintThermalResult } from "./thermalPrint";
 import { isCreditNoteInvoice } from "./invoiceKind";
+import { isEcfRejectedStatus } from "./ecfRejection";
 import { readLocalInvoices } from "../../features/billing/lib/invoicesLocal";
 
 export const FISCAL_GATE_WAITING_MESSAGE = "Esperando código de la DGII para imprimir el comprobante…";
@@ -90,7 +91,7 @@ export function extractSecurityCode(doc: Record<string, unknown> | null | undefi
 
 export function isRejectedEcf(doc: Record<string, unknown> | null | undefined): boolean {
   if (!doc) return false;
-  return doc.dgii_status === "rejected" || doc.status === "rejected";
+  return isEcfRejectedStatus(doc.dgii_status) || isEcfRejectedStatus(doc.status);
 }
 
 export function getRejectionMessage(doc: Record<string, unknown> | null | undefined): string {
@@ -359,6 +360,14 @@ export async function gateFiscalPrint(
       reason: "not_ecf",
       error: result.ok ? undefined : result.error,
     };
+  }
+
+  // A document already known to be rejected must never be printed, even if it carries the
+  // security code computed locally at signing time.
+  if (isRejectedEcf(request.ecfDocument) || isEcfRejectedStatus(request.factura.fiscal_status)) {
+    const message = getRejectionMessage(request.ecfDocument);
+    deps.showMessage(message, "error");
+    return { printed: false, reason: "rejected", error: message };
   }
 
   // Check if security code is already in the passed request

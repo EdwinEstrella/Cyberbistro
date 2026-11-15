@@ -179,6 +179,53 @@ describe("fiscalPrintGate", () => {
     expect(result.reason).toBe("rejected");
   });
 
+  it("treats terminal_error from the polled mirror as a rejection (never prints)", async () => {
+    mockCheckLocal.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      status: "terminal_error",
+      dgii_status: "terminal_error",
+      dgii_status_message: "DGII [2] Rechazado: El RNC Emisor no tiene una postulación activa.",
+    } satisfies EcfDocumentState);
+
+    const result = await gateFiscalPrint(
+      {
+        tenantId: "t1",
+        factura: { id: "inv-ecf-te", ncf: "E320000000001", total: 413 },
+        numeroFactura: 8719,
+      },
+      createTestDeps()
+    );
+
+    expect(mockPrintReceipt).not.toHaveBeenCalled();
+    expect(mockShowMessage).toHaveBeenCalledWith(
+      "DGII [2] Rechazado: El RNC Emisor no tiene una postulación activa.",
+      "error"
+    );
+    expect(result).toMatchObject({ printed: false, reason: "rejected" });
+  });
+
+  it("does not print a rejected document that already carries the locally computed security code", async () => {
+    const result = await gateFiscalPrint(
+      {
+        tenantId: "t1",
+        factura: { id: "inv-ecf-sc", ncf: "E320000000001", total: 413, fiscal_status: "terminal_error" },
+        numeroFactura: 8719,
+        ecfDocument: {
+          status: "terminal_error",
+          dgii_security_code: "bimE5u",
+          dgii_status_message: "DGII [2] Rechazado: El RNC Emisor no tiene una postulación activa.",
+        },
+      },
+      createTestDeps()
+    );
+
+    expect(mockPrintReceipt).not.toHaveBeenCalled();
+    expect(mockShowMessage).toHaveBeenCalledWith(
+      "DGII [2] Rechazado: El RNC Emisor no tiene una postulación activa.",
+      "error"
+    );
+    expect(result).toMatchObject({ printed: false, reason: "rejected" });
+  });
+
   it("timeout -> no print + shows Spanish message and enqueues background retry", async () => {
     // Both poll attempts return no code
     mockCheckLocal.mockResolvedValue(null);
