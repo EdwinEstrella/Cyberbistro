@@ -30,6 +30,11 @@ export type DigitalOrder = {
   sucursal_id: string | null;
   menu_link_id: string | null;
   employee_name: string | null;
+  /** Home delivery (public takeout only). Absent on rows read before the delivery migration. */
+  delivery_mode?: 'pickup' | 'delivery' | string | null;
+  delivery_lat?: number | null;
+  delivery_lng?: number | null;
+  delivery_reference?: string | null;
   comanda_id?: string | null;
   menu_links?: MenuLinkJoined | MenuLinkJoined[] | null;
 };

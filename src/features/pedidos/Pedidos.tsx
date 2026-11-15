@@ -29,7 +29,9 @@ import {
   appendCancelNoteToComanda,
   buildComandaItemsFromOrderItems,
   buildComandaNotas,
+  isHomeDeliveryOrder,
 } from "./lib/comandaLines";
+import { buildMapsUrl } from "../digital-menu/lib/deliveryOrder";
 import {
   computeConnectionState,
   getConnectionBarConfig,
@@ -92,20 +94,28 @@ export function Pedidos() {
         .select("id, tenant_id, public_slug")
         .eq("tenant_id", tenantId);
 
-      const [settingsRes, ordersRes] = await Promise.all([
-        settingsQuery.eq("sucursal_id", activeSucursalId).maybeSingle(),
+      const fetchOrders = (withDelivery: boolean) =>
         supabase
           .from("digital_orders")
           .select(
             `id, tenant_id, customer_name, customer_phone, notes, status, total, created_at,
              order_type, mesa_numero, numero_pedido, sucursal_id, menu_link_id, employee_name, comanda_id,
+             ${withDelivery ? "delivery_mode, delivery_lat, delivery_lng, delivery_reference," : ""}
              menu_links(label, link_type, customer_id, customer:customers(id, name, credit_limit))`
           )
           .eq("tenant_id", tenantId)
           .eq("sucursal_id", activeSucursalId)
           .order("created_at", { ascending: false })
-          .limit(50),
+          .limit(50);
+
+      const [settingsRes, firstOrdersRes] = await Promise.all([
+        settingsQuery.eq("sucursal_id", activeSucursalId).maybeSingle(),
+        fetchOrders(true),
       ]);
+      // Rolling deploys: if the delivery columns are not in the database yet, keep the screen working without them.
+      const ordersRes = firstOrdersRes.error?.message?.includes("delivery_")
+        ? await fetchOrders(false)
+        : firstOrdersRes;
 
       if (settingsRes.error) console.error(settingsRes.error.message);
       if (ordersRes.error) console.error(ordersRes.error.message);
@@ -761,6 +771,13 @@ export function Pedidos() {
                             {isInStore && order.mesa_numero !== null && ` ${order.mesa_numero}`}
                           </span>
 
+                          {/* Home delivery badge (public takeout orders only) */}
+                          {isHomeDeliveryOrder(order) && (
+                            <span className="rounded-full bg-sky-100 px-2 py-1 text-[10px] font-bold uppercase text-sky-800 dark:bg-sky-900/30 dark:text-sky-300">
+                              A domicilio
+                            </span>
+                          )}
+
                           {/* Status badge */}
                           <span
                             className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase ${
@@ -823,6 +840,26 @@ export function Pedidos() {
 
                         {order.notes && (
                           <p className="mt-2 text-sm text-foreground">Nota: {order.notes}</p>
+                        )}
+
+                        {/* Where to deliver: reference text + maps link when the customer pinned a location */}
+                        {isHomeDeliveryOrder(order) && (
+                          <div className="mt-2 rounded-lg border border-sky-500/30 bg-sky-500/10 p-2.5 text-sm text-foreground">
+                            <p className="text-[10px] font-bold uppercase text-sky-700 dark:text-sky-300">Entregar en</p>
+                            {order.delivery_reference && <p className="mt-0.5">{order.delivery_reference}</p>}
+                            {buildMapsUrl(order.delivery_lat, order.delivery_lng) ? (
+                              <a
+                                href={buildMapsUrl(order.delivery_lat, order.delivery_lng) ?? undefined}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-1 inline-block font-semibold text-sky-700 underline dark:text-sky-300"
+                              >
+                                Abrir ubicación en el mapa
+                              </a>
+                            ) : (
+                              !order.delivery_reference && <p className="mt-0.5 text-muted-foreground">Sin ubicación indicada</p>
+                            )}
+                          </div>
                         )}
 
                         {/* Items list with nested extras and per-item cancel */}

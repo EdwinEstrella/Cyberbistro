@@ -1,4 +1,5 @@
 import type { DigitalOrder, DigitalOrderItem } from './pedidosTypes';
+import { buildMapsUrl } from '../../digital-menu/lib/deliveryOrder';
 
 export interface ComandaItemPayload {
   nombre: string;
@@ -73,7 +74,29 @@ export function buildComandaNotas(order: DigitalOrder, companyName?: string | nu
     return `${prefix} ${body}${order.notes ? ` - ${order.notes}` : ''}`;
   }
 
-  return `[DIGITAL${isInStore ? ` Mesa ${order.mesa_numero}` : ' Para llevar'}${order.numero_pedido ? ` #${order.numero_pedido}` : ''}] ${order.customer_name}${order.notes ? ` - ${order.notes}` : ''}`;
+  const deliverySummary = buildDeliverySummary(order);
+  const label = isInStore ? ` Mesa ${order.mesa_numero}` : deliverySummary ? ' Domicilio' : ' Para llevar';
+  return `[DIGITAL${label}${order.numero_pedido ? ` #${order.numero_pedido}` : ''}] ${order.customer_name}${order.notes ? ` - ${order.notes}` : ''}${deliverySummary ? ` | ${deliverySummary}` : ''}`;
+}
+
+export function isHomeDeliveryOrder(order: Pick<DigitalOrder, 'delivery_mode'>): boolean {
+  return order.delivery_mode === 'delivery';
+}
+
+/**
+ * Where to take a home-delivery order: the customer's reference text and a maps link when they pinned a location.
+ * Null for pickup, table and company orders.
+ */
+export function buildDeliverySummary(
+  order: Pick<DigitalOrder, 'delivery_mode' | 'delivery_lat' | 'delivery_lng' | 'delivery_reference'>
+): string | null {
+  if (!isHomeDeliveryOrder(order)) return null;
+  const parts: string[] = [];
+  const reference = order.delivery_reference?.trim();
+  if (reference) parts.push(`Entrega: ${reference}`);
+  const mapsUrl = buildMapsUrl(order.delivery_lat, order.delivery_lng);
+  if (mapsUrl) parts.push(`Mapa: ${mapsUrl}`);
+  return parts.length > 0 ? parts.join(' | ') : 'Entrega a domicilio';
 }
 
 export function appendCancelNoteToComanda(

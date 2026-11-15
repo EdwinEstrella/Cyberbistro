@@ -22,17 +22,25 @@ at the Pedidos screen with that location, and company orders are visibly distinc
 - Prod DB: migration is written as a file; applying it to prod requires the user's explicit OK.
 
 ## Tasks
-- [ ] **T1**: Priority ordering in Pedidos (pure `sortOrdersForQueue` helper + tests; company pending first).
-- [ ] **T2**: Cloud schema + RPC: `delivery_mode`, `delivery_lat`, `delivery_lng`, `delivery_reference` on `digital_orders`;
+- [x] **T1**: Priority ordering in Pedidos (pure `sortOrdersForQueue` helper + tests; company pending first).
+- [x] **T2**: Cloud schema + RPC: `delivery_mode`, `delivery_lat`, `delivery_lng`, `delivery_reference` on `digital_orders`;
       `create_public_digital_order` accepts the new params and validates them; SQL test (migration file only, not applied).
-- [ ] **T3**: Payload builder (`buildCreateOrderRpcArgs`) + pure validation helper for the delivery form + tests.
-- [ ] **T4**: Public menu UI: pickup/delivery selector in takeout checkout, "Usar mi ubicación" button, Leaflet map picker,
+- [x] **T3**: Payload builder (`buildCreateOrderRpcArgs`) + pure validation helper for the delivery form + tests.
+- [x] **T4**: Public menu UI: pickup/delivery selector in takeout checkout, "Usar mi ubicación" button, Leaflet map picker,
       reference field, geolocation error states.
-- [ ] **T5**: Pedidos UI: delivery badge, address block, Google Maps link; comanda notes include the address.
+- [x] **T5**: Pedidos UI: delivery badge, address block, Google Maps link; comanda notes include the address.
 - [ ] **T6**: Verification end to end (typecheck, full suite, manual run of the public menu) + hand off migration for prod.
 
 ## Progress / Evidence
-(none yet)
+- T1 (445d69e): `sortOrdersForQueue`, pending company orders first, oldest waiting first. Unit tests in orderQueue.test.ts.
+- T2 (0058af8): migration `20261114210000_menu_delivery_orders.sql` (NOT applied to prod); 8 SQL cases pass in Docker (`scripts/test-sql.sh`).
+- T3 (bfae280): `deliveryOrder.ts` validation + RPC args; payload tests.
+- T4 (6d9aa7a): `DeliveryPicker` + lazy Leaflet map in the left-anchored cart drawer; GPS via `locateCustomer`; phone required for
+  delivery. `vite build` ok, map chunk 44 kB gzip, downloaded only when delivery is chosen.
+- T5: Pedidos shows an "A domicilio" badge and an "Entregar en" block with a maps link; comanda notes carry the address; the loader
+  retries without the delivery columns if the database does not have them yet. Tests in deliveryComanda.test.ts.
+- Checks: `npx tsc --noEmit` clean; vitest all green except test/local-sync-protocol.test.ts, which is skipped without Docker and
+  fails when Docker Desktop is running because its compose Postgres service is not up (environmental, unrelated).
 
 ## Next step
-T1.
+T6: manual run of the public menu on a phone-width viewport; get the user's OK to apply the migration to prod BEFORE shipping the app.
