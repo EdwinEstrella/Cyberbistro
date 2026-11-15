@@ -5,13 +5,35 @@ import { fiscalWorkerError } from "./errors";
 
 /** Only documents whose certificate belongs to the tenant's configured e-CF environment are batched. */
 export const RFCE_PENDING_DOCUMENTS_SQL = `
-  SELECT ed.id, ed.factura_id, ed.certificate_metadata_id, cm.environment, f.created_at as fiscal_date
+  SELECT
+    ed.id,
+    ed.factura_id,
+    cm.id AS certificate_metadata_id,
+    cm.environment,
+    f.created_at as fiscal_date
   FROM public.ecf_documents ed
   JOIN public.tenants t ON t.id = ed.tenant_id
-  JOIN public.ecf_certificate_metadata cm ON ed.certificate_metadata_id = cm.id
-    AND cm.environment = t.ecf_environment
+  JOIN LATERAL (
+    SELECT cm.*
+    FROM public.ecf_certificate_metadata cm
+    WHERE cm.tenant_id = ed.tenant_id
+      AND cm.is_ready IS TRUE
+      AND cm.environment = t.ecf_environment
+    ORDER BY
+      (cm.id = ed.certificate_metadata_id) DESC NULLS LAST,
+      cm.valid_until DESC NULLS LAST,
+      cm.created_at DESC
+    LIMIT 1
+  ) cm ON true
   JOIN public.facturas f ON ed.factura_id = f.id
   WHERE ed.tenant_id = $1 AND ed.status = 'pending_rfce_batch'
+`;
+
+export const RFCE_BATCH_ASSOCIATE_DOCUMENTS_SQL = `
+  UPDATE public.ecf_documents ed
+  SET ecf_batch_id = $1, certificate_metadata_id = v.cert_id
+  FROM unnest($2::uuid[], $3::uuid[]) AS v(doc_id, cert_id)
+  WHERE ed.id = v.doc_id
 `;
 
 export class RfceBatchWorker {
@@ -71,13 +93,10 @@ export class RfceBatchWorker {
       
       const batchId = batchResult.rows[0].id;
 
-      // 5. Associate documents to batch
+      // 5. Associate documents to batch and persist the resolved certificate metadata id
       const docIds = docs.map((d) => d.id);
-      await this.db.query(`
-        UPDATE public.ecf_documents 
-        SET ecf_batch_id = $1 
-        WHERE id = ANY($2)
-      `, [batchId, docIds]);
+      const certIds = docs.map((d) => d.certificate_metadata_id);
+      await this.db.query(RFCE_BATCH_ASSOCIATE_DOCUMENTS_SQL, [batchId, docIds, certIds]);
 
       // TODO: Build the actual batch XML payload according to DGII standard
       // const batchXml = buildRfceBatch(docs);

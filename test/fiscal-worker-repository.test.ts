@@ -55,7 +55,9 @@ describe("PostgresFiscalWorkerRepository", () => {
     expect(CLAIM_JOB_SQL).toContain("candidate.ecf_secuencias_rangos");
     expect(CLAIM_JOB_SQL).toContain("FOR UPDATE OF fo SKIP LOCKED");
     expect(CLAIM_JOB_SQL).toContain("LEFT JOIN LATERAL");
-    expect(CLAIM_JOB_SQL).toContain("ed.certificate_metadata_id IS NULL OR cm.id = ed.certificate_metadata_id");
+    expect(CLAIM_JOB_SQL).toContain("(cm.id = ed.certificate_metadata_id) DESC NULLS LAST");
+    expect(CLAIM_JOB_SQL).toContain("cm.environment = t.ecf_environment");
+    expect(CLAIM_JOB_SQL).not.toContain("ed.certificate_metadata_id IS NULL OR cm.id = ed.certificate_metadata_id");
     expect(CLAIM_JOB_SQL).toContain("fo.next_attempt_at <= $2::timestamptz");
     expect(CLAIM_JOB_SQL).toContain("fo.locked_at < $3::timestamptz");
     expect(CLAIM_JOB_SQL).toContain("NOT (fo.operation IN ('submit', 'resubmit') AND ed.status IN ('submitted', 'accepted', 'rejected'))");

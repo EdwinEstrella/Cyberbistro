@@ -25,6 +25,7 @@ export interface FiscalWorkerError {
   code: string;
   message: string;
   retryable: boolean;
+  transient?: boolean;
 }
 
 export interface ParsedCertificateMetadata {
@@ -194,14 +195,14 @@ export type DgiiSubmitResult =
   | { kind: "submitted"; trackId: string; statusCode?: string; message?: string; rfceThresholdUsed?: number | null; messages?: Array<{ code: string | null; text: string }> }
   | { kind: "accepted"; trackId?: string; statusCode?: string; message?: string; rfceThresholdUsed?: number | null; messages?: Array<{ code: string | null; text: string }> }
   | { kind: "rejected"; trackId?: string; statusCode?: string; message: string; rfceThresholdUsed?: number | null; messages?: Array<{ code: string | null; text: string }> }
-  | { kind: "retryable_error"; statusCode?: string; message: string; messages?: Array<{ code: string | null; text: string }> }
+  | { kind: "retryable_error"; statusCode?: string; message: string; messages?: Array<{ code: string | null; text: string }>; transient?: boolean }
   | { kind: "terminal_error"; statusCode?: string; message: string; messages?: Array<{ code: string | null; text: string }> };
 
 export type DgiiPollResult =
   | { kind: "submitted"; statusCode?: string; message?: string; messages?: Array<{ code: string | null; text: string }> }
   | { kind: "accepted"; statusCode?: string; message?: string; messages?: Array<{ code: string | null; text: string }> }
   | { kind: "rejected"; statusCode?: string; message: string; messages?: Array<{ code: string | null; text: string }> }
-  | { kind: "retryable_error"; statusCode?: string; message: string; messages?: Array<{ code: string | null; text: string }> }
+  | { kind: "retryable_error"; statusCode?: string; message: string; messages?: Array<{ code: string | null; text: string }>; transient?: boolean }
   | { kind: "terminal_error"; statusCode?: string; message: string; messages?: Array<{ code: string | null; text: string }> };
 
 export interface DgiiClientAdapter {

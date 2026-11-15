@@ -38,7 +38,7 @@ describe("classifyCertificateFailure", () => {
   });
 
   it("ignores non-certificate errors", () => {
-    for (const code of ["RETRYABLE_ERROR", "TERMINAL_ERROR", "TENANT_MISMATCH", "FISCAL_CONFIGURATION_INCOMPLETE", "FISCAL_WORKER_FAILED", "DGII_TRACK_ID_REQUIRED", "SECURITY_CODE_ERROR"]) {
+    for (const code of ["RETRYABLE_ERROR", "TERMINAL_ERROR", "TENANT_MISMATCH", "FISCAL_CONFIGURATION_INCOMPLETE", "FISCAL_WORKER_FAILED", "DGII_TRACK_ID_REQUIRED", "SECURITY_CODE_ERROR", "CERTIFICATE_ENVIRONMENT_CHANGED"]) {
       expect(classifyCertificateFailure({ code, message: "anything" })).toBeNull();
     }
     expect(classifyCertificateFailure({ code: "SIGN_ERROR", message: "Failed to sign XML: bad node" })).toBeNull();

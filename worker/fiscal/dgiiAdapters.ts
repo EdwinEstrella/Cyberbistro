@@ -75,44 +75,127 @@ export function describeDgiiError(err: unknown): string {
   }
 }
 
-export function isDgiiTerminalError(err: unknown): boolean {
+export const TRANSPORT_ERROR_CODES = [
+  "ECONNABORTED",
+  "ETIMEDOUT",
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ERR_NETWORK",
+  "JOB_TIMEOUT",
+] as const;
+
+export const TRANSPORT_ERROR_CODE_REGEX = new RegExp(
+  `^(?:${TRANSPORT_ERROR_CODES.join("|")})$`,
+  "i"
+);
+
+export const TRANSPORT_ERROR_MESSAGE_REGEX =
+  /timeout|socket hang up|network error|econnreset|econnrefused|enotfound|etimedout|eai_again|econnaborted/i;
+
+export const DGII_SCHEMA_REJECTION_REGEX =
+  /no es v[aá]lido|pattern constraint|schema|dtd|estructura|rechazad/i;
+
+function hasDgiiTerminalMarkers(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
-
-  if ((err as any).retryable === false) return true;
-
-  // Network errors, timeouts, and 5xx are retryable
-  const status = (err as any).response?.status;
-  if (typeof status === "number" && status >= 500) return false;
-
-  const code = String((err as any).code || "");
-  if (/ECONNREFUSED|ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|ERR_NETWORK/i.test(code)) {
-    return false;
-  }
-
-  const message = String((err as any).message || "");
-  if (/timeout|network error|econnrefused/i.test(message)) {
-    return false;
-  }
 
   const rawData = (err as any).response?.data ?? err;
   if (rawData && typeof rawData === "object") {
     const data = rawData as Record<string, unknown>;
     const codigo = Number(data.codigo);
-    // DGII Codigo 2: Rechazado
     if (codigo === 2) return true;
 
     const estado = String(data.estado || "").toLowerCase();
     if (estado.includes("rechazad")) return true;
 
-    const mensajes = Array.isArray(data.mensajes) ? data.mensajes : (Array.isArray(data.messages) ? data.messages : []);
+    const mensajes = Array.isArray(data.mensajes)
+      ? data.mensajes
+      : Array.isArray(data.messages)
+      ? data.messages
+      : [];
     for (const m of mensajes) {
       const text = typeof m === "string" ? m : `${m?.codigo ?? ""} ${m?.valor ?? ""} ${m?.mensaje ?? ""}`;
-      if (/no es v[aá]lido|pattern constraint|schema|dtd|estructura|rechazad/i.test(text)) {
+      if (DGII_SCHEMA_REJECTION_REGEX.test(text)) {
         return true;
       }
     }
   }
 
+  const message = String((err as any).message || "");
+  if (DGII_SCHEMA_REJECTION_REGEX.test(message)) {
+    return true;
+  }
+
+  return false;
+}
+
+export function isTransientTransportError(err: unknown): boolean {
+  if (!err || (typeof err !== "object" && typeof err !== "string")) {
+    return false;
+  }
+
+  if (typeof err === "object" && (err as any).retryable === false) {
+    return false;
+  }
+
+  // DGII business rejections or XML schema failures are terminal business errors, never transient transport failures
+  if (hasDgiiTerminalMarkers(err)) {
+    return false;
+  }
+
+  if (typeof err === "object") {
+    if ((err as any).transient === true) {
+      return true;
+    }
+
+    const status = (err as any).response?.status ?? (err as any).status ?? (err as any).statusCode;
+    if (typeof status === "number" && status >= 500 && status < 600) {
+      return true;
+    }
+    if (typeof status === "string" && /^5\d{2}$/.test(status.trim())) {
+      return true;
+    }
+    if (typeof status === "number" && status >= 400 && status < 500) {
+      return false;
+    }
+    if (typeof status === "string" && /^4\d{2}$/.test(status.trim())) {
+      return false;
+    }
+
+    const code = String((err as any).code || "");
+    if (TRANSPORT_ERROR_CODE_REGEX.test(code)) {
+      return true;
+    }
+  }
+
+  const message = typeof err === "string" ? err : String((err as any).message || "");
+  if (TRANSPORT_ERROR_MESSAGE_REGEX.test(message)) {
+    return true;
+  }
+
+  if (typeof err === "object" && (err as any).cause) {
+    return isTransientTransportError((err as any).cause);
+  }
+
+  return false;
+}
+
+export function isDgiiTerminalError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+
+  if ((err as any).retryable === false) return true;
+
+  // Transport errors, timeouts, network issues, and 5xx are retryable (never terminal)
+  if (isTransientTransportError(err)) {
+    return false;
+  }
+
+  if (hasDgiiTerminalMarkers(err)) {
+    return true;
+  }
+
+  const status = (err as any).response?.status ?? (err as any).status;
   if (status === 400 || status === 422) return true;
 
   return false;
@@ -380,7 +463,8 @@ export class RealDgiiClient implements DgiiClientAdapter {
       if (err?.retryable === false || isDgiiTerminalError(err)) {
         return { kind: "terminal_error", message };
       }
-      return { kind: "retryable_error", message };
+      const transient = isTransientTransportError(err);
+      return { kind: "retryable_error", message, transient };
     }
   }
 
@@ -483,7 +567,8 @@ export class RealDgiiClient implements DgiiClientAdapter {
       if (err?.retryable === false || isDgiiTerminalError(err)) {
         return { kind: "terminal_error", message };
       }
-      return { kind: "retryable_error", message };
+      const transient = isTransientTransportError(err);
+      return { kind: "retryable_error", message, transient };
     }
   }
 
@@ -510,7 +595,8 @@ export class RealDgiiClient implements DgiiClientAdapter {
       if (err?.retryable === false || isDgiiTerminalError(err)) {
         return { kind: "terminal_error", message };
       }
-      return { kind: "retryable_error", message };
+      const transient = isTransientTransportError(err);
+      return { kind: "retryable_error", message, transient };
     }
   }
 }

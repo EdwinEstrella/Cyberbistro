@@ -1,7 +1,17 @@
 import type { FiscalWorkerError } from "./types";
 
-export function fiscalWorkerError(code: string, message: string, retryable = false): FiscalWorkerError {
-  return { code, message, retryable };
+export function fiscalWorkerError(
+  code: string,
+  message: string,
+  retryable = false,
+  transient?: boolean
+): FiscalWorkerError {
+  return {
+    code,
+    message,
+    retryable,
+    ...(transient !== undefined ? { transient } : {}),
+  };
 }
 
 export function unknownToWorkerError(error: unknown, fallbackCode: string, retryable: boolean): FiscalWorkerError {
@@ -9,5 +19,9 @@ export function unknownToWorkerError(error: unknown, fallbackCode: string, retry
     return error as FiscalWorkerError;
   }
   const message = error instanceof Error ? error.message : String(error ?? "Unknown fiscal worker error");
-  return fiscalWorkerError(fallbackCode, message, retryable);
+  const transient =
+    error && typeof error === "object" && "transient" in error
+      ? Boolean((error as { transient?: boolean }).transient)
+      : undefined;
+  return fiscalWorkerError(fallbackCode, message, retryable, transient);
 }

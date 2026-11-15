@@ -25,6 +25,17 @@ export const DEFAULT_CERTIFICATE_FAILURE_ATTEMPT_THRESHOLD = 5;
 /** Default timeout for bounded job execution (submit/pollStatus) in milliseconds. */
 export const DEFAULT_FISCAL_JOB_TIMEOUT_MS = 120_000;
 
+export const FAST_RETRY_DELAY_MS = 10_000;
+export const MAX_FAST_RETRY_ATTEMPTS = 3;
+export const MAX_RETRY_DELAY_MS = 60 * 60 * 1000;
+
+export function calculateNextAttemptDelayMs(attempts: number, transient = false): number {
+  if (transient && attempts <= MAX_FAST_RETRY_ATTEMPTS) {
+    return FAST_RETRY_DELAY_MS;
+  }
+  return Math.min(MAX_RETRY_DELAY_MS, 2 ** Math.max(0, attempts - 1) * 60 * 1000);
+}
+
 export type ProcessJobResult =
   | { kind: "processed"; jobId: string; operation: FiscalOutboxOperation; status: EcfFiscalStatus }
   | { kind: "skipped"; reason: "already_done" | "locked"; jobId: string }
@@ -109,6 +120,7 @@ export class FiscalWorker {
           fiscalWorkerError(
             "JOB_TIMEOUT",
             `Fiscal job exceeded ${timeoutSeconds}s and was aborted; it will be retried.`,
+            true,
             true
           )
       );
@@ -124,7 +136,7 @@ export class FiscalWorker {
   }
 
   private async submit(snapshot: FiscalWorkerSnapshot): Promise<EcfFiscalStatus> {
-    const certificateId = snapshot.document.certificateMetadataId ?? snapshot.certificate?.id ?? null;
+    const certificateId = snapshot.certificate?.id ?? null;
     if (!snapshot.certificate?.isReady || !certificateId) {
       throw fiscalWorkerError("CERTIFICATE_NOT_READY", "Fiscal document has no ready certificate metadata.", false);
     }
@@ -179,13 +191,28 @@ export class FiscalWorker {
       throw fiscalWorkerError("DGII_TRACK_ID_REQUIRED", "DGII polling requires a track id.", false);
     }
 
-    if (!snapshot.document.certificateMetadataId) {
+    const certificateId = snapshot.certificate.id;
+    if (!snapshot.certificate.isReady || !certificateId) {
       throw fiscalWorkerError("CERTIFICATE_NOT_READY", "Fiscal document has no ready certificate metadata.", false);
+    }
+
+    if (snapshot.document.certificateMetadataId && snapshot.document.certificateMetadataId !== certificateId) {
+      throw fiscalWorkerError(
+        "CERTIFICATE_ENVIRONMENT_CHANGED",
+        "Document was submitted under a different e-CF environment than the tenant's current one; it cannot be polled.",
+        false
+      );
+    }
+
+    if (!snapshot.document.certificateMetadataId) {
+      await this.deps.repository.updateDocument(snapshot.document.id, {
+        certificateMetadataId: certificateId,
+      });
     }
 
     const signingMaterial = await this.deps.custody.getSigningMaterial({
       tenantId: snapshot.job.tenantId,
-      certificateId: snapshot.document.certificateMetadataId,
+      certificateId,
       environment: snapshot.certificate.environment,
     });
     if (!signingMaterial.ok) throw signingMaterial.error;
@@ -277,7 +304,8 @@ export class FiscalWorker {
       return "submitted";
     }
 
-    throw fiscalWorkerError(result.kind.toUpperCase(), result.message, result.kind === "retryable_error");
+    const transient = result.kind === "retryable_error" ? result.transient : undefined;
+    throw fiscalWorkerError(result.kind.toUpperCase(), result.message, result.kind === "retryable_error", transient);
   }
 
   private async persistPollResult(snapshot: FiscalWorkerSnapshot, result: DgiiPollResult): Promise<EcfFiscalStatus> {
@@ -326,7 +354,8 @@ export class FiscalWorker {
       return "submitted";
     }
 
-    throw fiscalWorkerError(result.kind.toUpperCase(), result.message, result.kind === "retryable_error");
+    const transient = result.kind === "retryable_error" ? result.transient : undefined;
+    throw fiscalWorkerError(result.kind.toUpperCase(), result.message, result.kind === "retryable_error", transient);
   }
 
   private assertTenantBoundary(snapshot: FiscalWorkerSnapshot): void {
@@ -342,7 +371,7 @@ export class FiscalWorker {
   /** Best effort: a failure here is logged and never changes the job outcome. */
   private async recordCertificateFailure(snapshot: FiscalWorkerSnapshot, error: FiscalWorkerError): Promise<void> {
     const code = classifyCertificateFailure(error);
-    const certificateId = snapshot.document.certificateMetadataId ?? snapshot.certificate?.id ?? null;
+    const certificateId = snapshot.certificate?.id ?? snapshot.document.certificateMetadataId ?? null;
     if (!code || !certificateId || !this.deps.repository.recordCertificateFailure) return;
     // A transient (retryable) failure such as a storage hiccup must not flag the certificate as broken
     // while the job can still recover; only write it once the retries reach the threshold.
@@ -366,6 +395,7 @@ export class FiscalWorker {
 
   private async failJob(snapshot: FiscalWorkerSnapshot, error: FiscalWorkerError): Promise<void> {
     const isConfigError = error.code === "FISCAL_CONFIGURATION_INCOMPLETE";
+    const transient = Boolean(error.retryable && error.transient);
     const outboxStatus: FiscalOutboxStatus = isConfigError ? "blocked_configuration" : (error.retryable ? "retryable_error" : "terminal_error");
     const documentStatus: EcfFiscalStatus = isConfigError ? "pending_configuration" : (error.retryable ? "retryable_error" : "terminal_error");
     const message = error.message?.trim() || "Unknown fiscal worker error";
@@ -373,10 +403,14 @@ export class FiscalWorker {
     await this.deps.repository.updateJob(snapshot.job.id, {
       status: outboxStatus,
       attempts: snapshot.job.attempts + 1,
-      nextAttemptAt: error.retryable && !isConfigError ? this.nextAttemptIso(snapshot.job.attempts + 1) : undefined,
+      nextAttemptAt: error.retryable && !isConfigError ? this.nextAttemptIso(snapshot.job.attempts + 1, transient) : undefined,
       errorMessage: message,
     });
-    if (snapshot.document.status !== "accepted" && snapshot.document.status !== "rejected") {
+    if (
+      error.code !== "CERTIFICATE_ENVIRONMENT_CHANGED" &&
+      snapshot.document.status !== "accepted" &&
+      snapshot.document.status !== "rejected"
+    ) {
       await this.deps.repository.updateDocument(snapshot.document.id, {
         status: documentStatus,
         lastError: message,
@@ -413,8 +447,8 @@ export class FiscalWorker {
     return (this.deps.now ?? (() => new Date()))();
   }
 
-  private nextAttemptIso(attempts: number): string {
-    const delayMs = Math.min(60 * 60 * 1000, 2 ** Math.max(0, attempts - 1) * 60 * 1000);
+  private nextAttemptIso(attempts: number, transient = false): string {
+    const delayMs = calculateNextAttemptDelayMs(attempts, transient);
     return new Date(this.now().getTime() + delayMs).toISOString();
   }
 
