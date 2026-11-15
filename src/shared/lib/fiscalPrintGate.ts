@@ -11,10 +11,8 @@ export const FISCAL_GATE_WAITING_MESSAGE = "Esperando aprobación DGII…";
 export const FISCAL_GATE_PENDING_CONFIRMATION_MESSAGE =
   "El comprobante se imprimirá cuando la DGII lo confirme. Podés reimprimirlo desde Historial / Notas de crédito.";
 
-export const DEFAULT_POLL_DELAYS = [
-  2000, 3000, 5000, 5000, 5000, 5000, 5000, 10000, 10000, 10000,
-  15000, 15000, 15000, 15000, 15000, 15000, 15000, 15000,
-];
+/** Foreground wait for DGII at checkout: 30 s in total. After that the job moves to the background queue. */
+export const DEFAULT_POLL_DELAYS = [2000, 3000, 5000, 5000, 5000, 5000, 5000];
 
 export interface EcfDocumentState {
   status?: string | null;
@@ -570,7 +568,7 @@ export async function gateFiscalPrint(
       }
     }
 
-    // Polling timed out (~3 minutes)
+    // Polling timed out (~30 seconds)
     dismissWaiting();
     if (facturaId) {
       activeJobs.delete(facturaId);

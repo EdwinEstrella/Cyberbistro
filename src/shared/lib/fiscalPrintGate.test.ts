@@ -26,6 +26,7 @@ import {
   extractSecurityCode,
   defaultCheckCloud,
   clearFiscalPrintQueue,
+  DEFAULT_POLL_DELAYS,
   getFiscalPrintBackgroundQueue,
   runBackgroundRetryOnce,
   FISCAL_GATE_WAITING_MESSAGE,
@@ -150,6 +151,10 @@ describe("fiscalPrintGate", () => {
     );
     expect(result.printed).toBe(true);
     expect(result.reason).toBe("code_arrived");
+  });
+
+  it("waits about 30 seconds in the foreground before handing over to the background queue", () => {
+    expect(DEFAULT_POLL_DELAYS.reduce((total, delay) => total + delay, 0)).toBe(30000);
   });
 
   it("does not print a signed-but-unaccepted e-CF: keeps waiting until DGII accepts it", async () => {
