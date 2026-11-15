@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
+import { restClient } from "dgii-ecf";
 import { SupabaseStorageCertificateCustody } from "./certificateCustody";
 import { RealDgiiClient, RealXmlSigner } from "./dgiiAdapters";
+import {
+  configureDgiiHttpClient,
+  resolveDgiiHttpTimeoutMsFromEnv,
+  type DgiiHttpClientLike,
+} from "./dgiiHttpClient";
 import { DEFAULT_FISCAL_JOB_TIMEOUT_MS, FiscalWorker } from "./fiscalWorker";
 import { withTimeout } from "./withTimeout";
 import { PostgresFiscalWorkerRepository, createProjectAdminPgPoolFromEnv } from "./postgresFiscalWorkerRepository";
@@ -116,9 +122,16 @@ export function resolveFiscalJobTimeoutMsFromEnv(env: NodeJS.ProcessEnv = proces
   return DEFAULT_FISCAL_JOB_TIMEOUT_MS;
 }
 
+export interface CreateFiscalWorkerRuntimeDependencies {
+  httpClient?: DgiiHttpClientLike;
+  configureClient?: typeof configureDgiiHttpClient;
+  poolFactory?: (env: NodeJS.ProcessEnv) => ConstructorParameters<typeof PostgresFiscalWorkerRepository>[0]["db"];
+}
+
 export function createFiscalWorkerRuntimeFromEnv(
   env: NodeJS.ProcessEnv = process.env,
-  overrides?: Partial<FiscalWorkerRuntimeOptions>
+  overrides?: Partial<FiscalWorkerRuntimeOptions>,
+  deps?: CreateFiscalWorkerRuntimeDependencies
 ): FiscalWorkerRuntime {
   const supabaseKey = resolveFiscalWorkerCredentialFromEnv(env);
 
@@ -129,18 +142,34 @@ export function createFiscalWorkerRuntimeFromEnv(
     throw new Error("Refusing to use insecure or default encryption key");
   }
 
-  const pool = createProjectAdminPgPoolFromEnv(env);
-  const repository = new PostgresFiscalWorkerRepository({ db: pool });
+  const jobTimeoutMs = resolveFiscalJobTimeoutMsFromEnv(env);
+  const requestTimeoutMs = resolveDgiiHttpTimeoutMsFromEnv(env);
+
+  if (requestTimeoutMs >= jobTimeoutMs / 3) {
+    console.warn(
+      `[fiscal-worker] DGII HTTP timeout (${requestTimeoutMs}ms) is >= job timeout / 3 (${jobTimeoutMs}ms / 3 = ${Math.floor(
+        jobTimeoutMs / 3
+      )}ms). Submit flows execute up to 3 sequential HTTP calls (seed, validate, send); a request timeout may exceed the job timeout.`
+    );
+  }
+
+  const configure = deps?.configureClient ?? configureDgiiHttpClient;
+  const targetClient = deps?.httpClient ?? restClient;
+  configure(targetClient, { requestTimeoutMs });
+
+  const pool = deps?.poolFactory ? deps.poolFactory(env) : createProjectAdminPgPoolFromEnv(env);
+  const repository = overrides?.repository ?? new PostgresFiscalWorkerRepository({ db: pool });
   const workerId = env.FISCAL_WORKER_ID?.trim() || `fiscal-worker-${randomUUID()}`;
   const supabaseUrl = resolveFiscalWorkerSupabaseUrlFromEnv(env);
-  const jobTimeoutMs = resolveFiscalJobTimeoutMsFromEnv(env);
-  const worker = new FiscalWorker({
-    repository,
-    custody: new SupabaseStorageCertificateCustody(supabaseUrl, supabaseKey, pool),
-    signer: new RealXmlSigner(),
-    dgii: new RealDgiiClient(),
-    workerId,
-    jobTimeoutMs,
-  });
+  const worker =
+    overrides?.worker ??
+    new FiscalWorker({
+      repository,
+      custody: new SupabaseStorageCertificateCustody(supabaseUrl, supabaseKey, pool),
+      signer: new RealXmlSigner(),
+      dgii: new RealDgiiClient(),
+      workerId,
+      jobTimeoutMs,
+    });
   return new FiscalWorkerRuntime({ repository, worker, jobTimeoutMs, ...overrides });
 }
