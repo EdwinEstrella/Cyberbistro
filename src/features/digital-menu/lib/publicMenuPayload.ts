@@ -1,6 +1,7 @@
 import type { PublicContact } from "../../menu-links/lib/publicMenuCalendar";
 import type { PublicMenuMode } from "./publicMenuMode";
 import type { CartLine, PublicMenuItem, PublicMenuSettings } from "../components/PublicMenuOrderScreen";
+import { toDeliveryRpcArgs, type DeliveryDraft } from "./deliveryOrder";
 
 export type PublicMenuPayload = {
   settings: PublicMenuSettings | null;
@@ -38,6 +39,8 @@ export interface BuildCreateOrderRpcArgsParams {
   partySize: number | null;
   mesaCodigo?: string | null;
   clientSessionId?: string | null;
+  /** Home delivery choice. Only honored for takeout orders; table orders never carry a location. */
+  delivery?: DeliveryDraft | null;
 }
 
 export function buildCreateOrderRpcArgs({
@@ -50,6 +53,7 @@ export function buildCreateOrderRpcArgs({
   partySize,
   mesaCodigo,
   clientSessionId,
+  delivery,
 }: BuildCreateOrderRpcArgsParams): Record<string, unknown> {
   const isTable = mode.kind === "table";
   return {
@@ -67,6 +71,7 @@ export function buildCreateOrderRpcArgs({
     p_mesa_codigo: isTable ? mesaCodigo?.trim() || null : null,
     p_client_session_id: clientSessionId || null,
     p_party_size: isTable ? partySize : null,
+    ...(!isTable && delivery ? toDeliveryRpcArgs(delivery) : {}),
   };
 }
 
