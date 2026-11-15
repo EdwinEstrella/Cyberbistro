@@ -124,7 +124,7 @@ export class FiscalWorker {
   }
 
   private async submit(snapshot: FiscalWorkerSnapshot): Promise<EcfFiscalStatus> {
-    const certificateId = snapshot.document.certificateMetadataId ?? snapshot.certificate?.id ?? null;
+    const certificateId = snapshot.certificate?.id ?? null;
     if (!snapshot.certificate?.isReady || !certificateId) {
       throw fiscalWorkerError("CERTIFICATE_NOT_READY", "Fiscal document has no ready certificate metadata.", false);
     }
@@ -179,13 +179,28 @@ export class FiscalWorker {
       throw fiscalWorkerError("DGII_TRACK_ID_REQUIRED", "DGII polling requires a track id.", false);
     }
 
-    if (!snapshot.document.certificateMetadataId) {
+    const certificateId = snapshot.certificate.id;
+    if (!snapshot.certificate.isReady || !certificateId) {
       throw fiscalWorkerError("CERTIFICATE_NOT_READY", "Fiscal document has no ready certificate metadata.", false);
+    }
+
+    if (snapshot.document.certificateMetadataId && snapshot.document.certificateMetadataId !== certificateId) {
+      throw fiscalWorkerError(
+        "CERTIFICATE_ENVIRONMENT_CHANGED",
+        "Document was submitted under a different e-CF environment than the tenant's current one; it cannot be polled.",
+        false
+      );
+    }
+
+    if (!snapshot.document.certificateMetadataId) {
+      await this.deps.repository.updateDocument(snapshot.document.id, {
+        certificateMetadataId: certificateId,
+      });
     }
 
     const signingMaterial = await this.deps.custody.getSigningMaterial({
       tenantId: snapshot.job.tenantId,
-      certificateId: snapshot.document.certificateMetadataId,
+      certificateId,
       environment: snapshot.certificate.environment,
     });
     if (!signingMaterial.ok) throw signingMaterial.error;
@@ -342,7 +357,7 @@ export class FiscalWorker {
   /** Best effort: a failure here is logged and never changes the job outcome. */
   private async recordCertificateFailure(snapshot: FiscalWorkerSnapshot, error: FiscalWorkerError): Promise<void> {
     const code = classifyCertificateFailure(error);
-    const certificateId = snapshot.document.certificateMetadataId ?? snapshot.certificate?.id ?? null;
+    const certificateId = snapshot.certificate?.id ?? snapshot.document.certificateMetadataId ?? null;
     if (!code || !certificateId || !this.deps.repository.recordCertificateFailure) return;
     // A transient (retryable) failure such as a storage hiccup must not flag the certificate as broken
     // while the job can still recover; only write it once the retries reach the threshold.
@@ -376,7 +391,11 @@ export class FiscalWorker {
       nextAttemptAt: error.retryable && !isConfigError ? this.nextAttemptIso(snapshot.job.attempts + 1) : undefined,
       errorMessage: message,
     });
-    if (snapshot.document.status !== "accepted" && snapshot.document.status !== "rejected") {
+    if (
+      error.code !== "CERTIFICATE_ENVIRONMENT_CHANGED" &&
+      snapshot.document.status !== "accepted" &&
+      snapshot.document.status !== "rejected"
+    ) {
       await this.deps.repository.updateDocument(snapshot.document.id, {
         status: documentStatus,
         lastError: message,

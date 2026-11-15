@@ -504,4 +504,332 @@ describe("FiscalWorker", () => {
     expect(pollAcceptedUpdate).toBeDefined();
     expect(pollAcceptedUpdate).not.toHaveProperty("dgiiMessages");
   });
+
+  it("resolves the current-environment cert when document is pinned to a cert of another environment and persists it", async () => {
+    const snapshot = baseSnapshot({
+      document: {
+        id: "doc-1",
+        tenantId: "tenant-1",
+        facturaId: "invoice-1",
+        status: "queued",
+        certificateMetadataId: "cert-stale-certif",
+        dgiiTrackId: null,
+      },
+      certificate: {
+        id: "cert-prod-1",
+        tenantId: "tenant-1",
+        environment: "production",
+        isReady: true,
+        validUntil: "2027-01-01T00:00:00.000Z",
+      },
+    });
+    const repository = createRepository(snapshot);
+    const mockCustody: CertificateCustody = {
+      getSigningMaterial: vi.fn(async ({ certificateId, environment }) => ({
+        ok: true,
+        value: {
+          certificateId,
+          tenantId: "tenant-1",
+          environment,
+          p12Bytes: new Uint8Array([1, 2, 3]),
+          passphrase: "secret",
+        } satisfies SigningMaterial,
+      })),
+    };
+    const signer: XmlSignerAdapter = {
+      signXml: vi.fn(async ({ unsignedXml }) => ({ signedXml: `<Signed>${unsignedXml}</Signed>` })),
+    };
+    const dgii: DgiiClientAdapter = {
+      submitSignedXml: vi.fn(async () => ({ kind: "submitted", trackId: "TRK-PROD-1", statusCode: "REC" }) as const),
+      pollStatus: vi.fn(),
+    };
+    const worker = new FiscalWorker({
+      repository,
+      custody: mockCustody,
+      signer,
+      dgii,
+      workerId: "worker-prod",
+      now: () => now,
+    });
+
+    const result = await worker.processJob("job-1");
+
+    expect(result).toEqual({ kind: "processed", jobId: "job-1", operation: "submit", status: "submitted" });
+    expect(mockCustody.getSigningMaterial).toHaveBeenCalledWith(
+      expect.objectContaining({ certificateId: "cert-prod-1", environment: "production" })
+    );
+    expect(repository.documentUpdates).toContainEqual(
+      expect.objectContaining({
+        status: "signed",
+        certificateMetadataId: "cert-prod-1",
+      })
+    );
+  });
+
+  it("uses the exact pinned certificate when it belongs to the current environment and is ready", async () => {
+    const snapshot = baseSnapshot({
+      document: {
+        id: "doc-1",
+        tenantId: "tenant-1",
+        facturaId: "invoice-1",
+        status: "queued",
+        certificateMetadataId: "cert-prod-pinned",
+        dgiiTrackId: null,
+      },
+      certificate: {
+        id: "cert-prod-pinned",
+        tenantId: "tenant-1",
+        environment: "production",
+        isReady: true,
+        validUntil: "2027-01-01T00:00:00.000Z",
+      },
+    });
+    const repository = createRepository(snapshot);
+    const mockCustody: CertificateCustody = {
+      getSigningMaterial: vi.fn(async ({ certificateId, environment }) => ({
+        ok: true,
+        value: {
+          certificateId,
+          tenantId: "tenant-1",
+          environment,
+          p12Bytes: new Uint8Array([1, 2, 3]),
+          passphrase: "secret",
+        } satisfies SigningMaterial,
+      })),
+    };
+    const signer: XmlSignerAdapter = {
+      signXml: vi.fn(async ({ unsignedXml }) => ({ signedXml: `<Signed>${unsignedXml}</Signed>` })),
+    };
+    const dgii: DgiiClientAdapter = {
+      submitSignedXml: vi.fn(async () => ({ kind: "submitted", trackId: "TRK-PROD-2", statusCode: "REC" }) as const),
+      pollStatus: vi.fn(),
+    };
+    const worker = new FiscalWorker({
+      repository,
+      custody: mockCustody,
+      signer,
+      dgii,
+      workerId: "worker-prod",
+      now: () => now,
+    });
+
+    const result = await worker.processJob("job-1");
+
+    expect(result).toEqual({ kind: "processed", jobId: "job-1", operation: "submit", status: "submitted" });
+    expect(mockCustody.getSigningMaterial).toHaveBeenCalledWith(
+      expect.objectContaining({ certificateId: "cert-prod-pinned", environment: "production" })
+    );
+    expect(repository.documentUpdates).toContainEqual(
+      expect.objectContaining({
+        status: "signed",
+        certificateMetadataId: "cert-prod-pinned",
+      })
+    );
+  });
+
+  it("fails with CERTIFICATE_NOT_READY when no ready certificate is present in the current environment", async () => {
+    const snapshot = baseSnapshot({
+      document: {
+        id: "doc-1",
+        tenantId: "tenant-1",
+        facturaId: "invoice-1",
+        status: "queued",
+        certificateMetadataId: "cert-stale-certif",
+        dgiiTrackId: null,
+      },
+      certificate: null,
+    });
+    const repository = createRepository(snapshot);
+    const worker = new FiscalWorker({
+      repository,
+      custody,
+      signer: { signXml: vi.fn() },
+      dgii: { submitSignedXml: vi.fn(), pollStatus: vi.fn() },
+      workerId: "worker-a",
+      now: () => now,
+    });
+
+    const result = await worker.processJob("job-1");
+
+    expect(result).toEqual({
+      kind: "failed",
+      jobId: "job-1",
+      retryable: false,
+      code: "CERTIFICATE_NOT_READY",
+    });
+    expect(repository.jobUpdates).toContainEqual(
+      expect.objectContaining({
+        status: "terminal_error",
+        errorMessage: expect.stringContaining("Fiscal document has no ready certificate metadata."),
+      })
+    );
+  });
+
+  it("fails with TENANT_MISMATCH if the resolved certificate belongs to a different tenant", async () => {
+    const snapshot = baseSnapshot({
+      certificate: {
+        id: "cert-tenant-2",
+        tenantId: "tenant-intruder",
+        environment: "production",
+        isReady: true,
+        validUntil: "2027-01-01T00:00:00.000Z",
+      },
+    });
+    const repository = createRepository(snapshot);
+    const worker = new FiscalWorker({
+      repository,
+      custody,
+      signer: { signXml: vi.fn() },
+      dgii: { submitSignedXml: vi.fn(), pollStatus: vi.fn() },
+      workerId: "worker-a",
+      now: () => now,
+    });
+
+    const result = await worker.processJob("job-1");
+
+    expect(result).toEqual({
+      kind: "failed",
+      jobId: "job-1",
+      retryable: false,
+      code: "TENANT_MISMATCH",
+    });
+  });
+
+  it("fails pollStatus with CERTIFICATE_ENVIRONMENT_CHANGED when document certificateMetadataId differs from resolved cert", async () => {
+    const snapshot = baseSnapshot({
+      job: {
+        id: "job-poll-stale",
+        tenantId: "tenant-1",
+        ecfDocumentId: "doc-1",
+        facturaId: "invoice-1",
+        operation: "poll_status",
+        status: "queued",
+        attempts: 0,
+        idempotencyKey: "tenant-1:TRK-1:poll",
+      },
+      document: {
+        id: "doc-1",
+        tenantId: "tenant-1",
+        facturaId: "invoice-1",
+        status: "submitted",
+        certificateMetadataId: "cert-old-certif",
+        dgiiTrackId: "TRK-1",
+      },
+      certificate: {
+        id: "cert-new-prod",
+        tenantId: "tenant-1",
+        environment: "production",
+        isReady: true,
+        validUntil: "2027-01-01T00:00:00.000Z",
+      },
+    });
+    const repository = createRepository(snapshot);
+    const mockCustody: CertificateCustody = {
+      getSigningMaterial: vi.fn(),
+    };
+    const dgii: DgiiClientAdapter = {
+      submitSignedXml: vi.fn(),
+      pollStatus: vi.fn(),
+    };
+    const worker = new FiscalWorker({
+      repository,
+      custody: mockCustody,
+      signer: { signXml: vi.fn() },
+      dgii,
+      workerId: "worker-a",
+      now: () => now,
+    });
+
+    const result = await worker.processJob("job-poll-stale");
+
+    expect(result).toEqual({
+      kind: "failed",
+      jobId: "job-poll-stale",
+      retryable: false,
+      code: "CERTIFICATE_ENVIRONMENT_CHANGED",
+    });
+    expect(repository.updateDocument).not.toHaveBeenCalled();
+    expect(repository.documentUpdates).toEqual([]);
+    expect(dgii.pollStatus).not.toHaveBeenCalled();
+    expect(repository.jobUpdates).toContainEqual(
+      expect.objectContaining({
+        status: "terminal_error",
+        errorMessage: expect.stringContaining("Document was submitted under a different e-CF environment than the tenant's current one; it cannot be polled."),
+      })
+    );
+  });
+
+  it("adopts resolved cert and polls during pollStatus when document certificateMetadataId is null", async () => {
+    const snapshot = baseSnapshot({
+      job: {
+        id: "job-poll-null-cert",
+        tenantId: "tenant-1",
+        ecfDocumentId: "doc-1",
+        facturaId: "invoice-1",
+        operation: "poll_status",
+        status: "queued",
+        attempts: 0,
+        idempotencyKey: "tenant-1:TRK-1:poll",
+      },
+      document: {
+        id: "doc-1",
+        tenantId: "tenant-1",
+        facturaId: "invoice-1",
+        status: "submitted",
+        certificateMetadataId: null,
+        dgiiTrackId: "TRK-1",
+      },
+      certificate: {
+        id: "cert-new-prod",
+        tenantId: "tenant-1",
+        environment: "production",
+        isReady: true,
+        validUntil: "2027-01-01T00:00:00.000Z",
+      },
+    });
+    const repository = createRepository(snapshot);
+    const mockCustody: CertificateCustody = {
+      getSigningMaterial: vi.fn(async ({ certificateId, environment }) => ({
+        ok: true,
+        value: {
+          certificateId,
+          tenantId: "tenant-1",
+          environment,
+          p12Bytes: new Uint8Array([1, 2, 3]),
+          passphrase: "secret",
+        } satisfies SigningMaterial,
+      })),
+    };
+    const dgii: DgiiClientAdapter = {
+      submitSignedXml: vi.fn(),
+      pollStatus: vi.fn(async () => ({ kind: "accepted", statusCode: "ACE", message: "Accepted" }) as const),
+    };
+    const worker = new FiscalWorker({
+      repository,
+      custody: mockCustody,
+      signer: { signXml: vi.fn() },
+      dgii,
+      workerId: "worker-a",
+      now: () => now,
+    });
+
+    const result = await worker.processJob("job-poll-null-cert");
+
+    expect(result.kind).toBe("processed");
+    expect(repository.updateDocument).toHaveBeenCalledWith("doc-1", {
+      certificateMetadataId: "cert-new-prod",
+    });
+    expect(repository.documentUpdates).toContainEqual({
+      certificateMetadataId: "cert-new-prod",
+    });
+    expect(mockCustody.getSigningMaterial).toHaveBeenCalledWith(
+      expect.objectContaining({ certificateId: "cert-new-prod", environment: "production" })
+    );
+    expect(dgii.pollStatus).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trackId: "TRK-1",
+        environment: "production",
+      })
+    );
+  });
 });
