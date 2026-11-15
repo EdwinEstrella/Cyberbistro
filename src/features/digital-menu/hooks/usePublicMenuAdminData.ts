@@ -1,7 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { supabase } from "../../../shared/lib/supabase";
-import { readLocalMirror } from "../../../shared/lib/localFirst";
+import {
+  readLocalMirror,
+  shouldReadLocalFirst,
+  type LocalFirstMirrorTable,
+} from "../../../shared/lib/localFirst";
+import { readLocalPlatos, normalizePlato } from "../../soporte/lib/catalogLocal";
 import type { Menu } from "../../menu-links/lib/types";
 import { fetchMenus } from "../../menu-links/lib/menuLinksRepo";
 import {
@@ -21,6 +26,169 @@ export interface PublicMenuAdminInitialData {
 export interface UsePublicMenuAdminDataParams {
   tenantId: string;
   sucursalId?: string | null;
+}
+
+export interface PublicMenuAdminSources {
+  settings: DigitalMenuSettings | null;
+  platos: Plato[];
+  menuItems: DigitalMenuItem[];
+}
+
+export interface PublicMenuAdminCloudResult<T> {
+  data: T[] | null;
+  error: { message?: string; [key: string]: unknown } | null;
+}
+
+export interface PublicMenuAdminReaders {
+  shouldReadLocalFirst?: (
+    tenantId: string,
+    tables?: readonly LocalFirstMirrorTable[]
+  ) => Promise<boolean>;
+  readLocalPlatos?: (tenantId: string) => Promise<Array<Record<string, unknown>>>;
+  readLocalMirror?: <T>(tenantId: string, table: LocalFirstMirrorTable) => Promise<T[]>;
+  fetchCloudPlatos?: (
+    tenantId: string
+  ) => Promise<PublicMenuAdminCloudResult<Plato | Record<string, unknown>>>;
+  fetchCloudSettings?: (
+    tenantId: string
+  ) => Promise<PublicMenuAdminCloudResult<DigitalMenuSettings>>;
+  fetchCloudMenuItems?: (
+    tenantId: string
+  ) => Promise<PublicMenuAdminCloudResult<DigitalMenuItem>>;
+}
+
+export interface LoadPublicMenuAdminSourcesParams {
+  tenantId: string;
+  sucursalId?: string | null;
+  localFirst?: boolean;
+  readers?: PublicMenuAdminReaders;
+}
+
+const defaultFetchCloudPlatos = async (tenantId: string) => {
+  const res = await supabase.from("platos").select("*").eq("tenant_id", tenantId);
+  return res as PublicMenuAdminCloudResult<Plato>;
+};
+
+const defaultFetchCloudSettings = async (tenantId: string) => {
+  const res = await supabase
+    .from("digital_menu_settings")
+    .select("*")
+    .eq("tenant_id", tenantId);
+  return res as PublicMenuAdminCloudResult<DigitalMenuSettings>;
+};
+
+const defaultFetchCloudMenuItems = async (tenantId: string) => {
+  const res = await supabase
+    .from("digital_menu_items")
+    .select("*")
+    .eq("tenant_id", tenantId);
+  return res as PublicMenuAdminCloudResult<DigitalMenuItem>;
+};
+
+/**
+ * Loads the underlying data sources for public menu administration:
+ * - On local-first (desktop): reads platos via readLocalPlatos and settings/items via readLocalMirror,
+ *   with cloud fallback for settings if not present in the local mirror.
+ * - On web (server-first): reads platos, digital_menu_settings, and digital_menu_items directly from Supabase.
+ *   Surfaces Supabase errors by throwing so consumers (e.g. usePublicMenuAdminData) can display error toasts.
+ */
+export async function loadPublicMenuAdminSources({
+  tenantId,
+  sucursalId,
+  localFirst,
+  readers,
+}: LoadPublicMenuAdminSourcesParams): Promise<PublicMenuAdminSources> {
+  if (!tenantId) {
+    return {
+      settings: null,
+      platos: [],
+      menuItems: [],
+    };
+  }
+
+  const isLocalFirst =
+    typeof localFirst === "boolean"
+      ? localFirst
+      : await (readers?.shouldReadLocalFirst ?? shouldReadLocalFirst)(tenantId, [
+          "platos",
+          "digital_menu_settings",
+          "digital_menu_items",
+        ]).catch(() => false);
+
+  if (isLocalFirst) {
+    const readPlatos = readers?.readLocalPlatos ?? readLocalPlatos;
+    const readMirror = readers?.readLocalMirror ?? readLocalMirror;
+
+    const [rawPlatos, settingsLocal, itemsLocal] = await Promise.all([
+      readPlatos(tenantId).catch(() => []),
+      readMirror<DigitalMenuSettings>(tenantId, "digital_menu_settings").catch(() => []),
+      readMirror<DigitalMenuItem>(tenantId, "digital_menu_items").catch(() => []),
+    ]);
+
+    const normalizedPlatos = rawPlatos.map((raw) => normalizePlato(raw) as unknown as Plato);
+    const filteredPlatos = normalizedPlatos.filter(
+      (p) => !p.sucursal_id || p.sucursal_id === sucursalId
+    );
+
+    let tenantSettings = pickPublicMenuSettings(settingsLocal, tenantId, sucursalId);
+
+    // If not in local mirror, fetch tenant rows from cloud and pick
+    if (!tenantSettings && (typeof navigator === "undefined" || navigator.onLine)) {
+      const fetchSettings = readers?.fetchCloudSettings ?? defaultFetchCloudSettings;
+      const { data: cloudRows } = await fetchSettings(tenantId).catch(() => ({
+        data: null,
+        error: null,
+      }));
+
+      if (cloudRows && cloudRows.length > 0) {
+        tenantSettings = pickPublicMenuSettings(
+          cloudRows as DigitalMenuSettings[],
+          tenantId,
+          sucursalId
+        );
+      }
+    }
+
+    const tenantMenuItems = itemsLocal.filter((mi) => mi.tenant_id === tenantId);
+
+    return {
+      settings: tenantSettings,
+      platos: filteredPlatos,
+      menuItems: tenantMenuItems,
+    };
+  }
+
+  const fetchPlatos = readers?.fetchCloudPlatos ?? defaultFetchCloudPlatos;
+  const fetchSettings = readers?.fetchCloudSettings ?? defaultFetchCloudSettings;
+  const fetchMenuItems = readers?.fetchCloudMenuItems ?? defaultFetchCloudMenuItems;
+
+  const [platosRes, settingsRes, itemsRes] = await Promise.all([
+    fetchPlatos(tenantId),
+    fetchSettings(tenantId),
+    fetchMenuItems(tenantId),
+  ]);
+
+  if (platosRes.error) throw platosRes.error;
+  if (settingsRes.error) throw settingsRes.error;
+  if (itemsRes.error) throw itemsRes.error;
+
+  const rawPlatos = (platosRes.data ?? []) as Array<Record<string, unknown>>;
+  const normalizedPlatos = rawPlatos.map((raw) => normalizePlato(raw) as unknown as Plato);
+  const filteredPlatos = normalizedPlatos.filter(
+    (p) => !p.sucursal_id || p.sucursal_id === sucursalId
+  );
+
+  const cloudSettings = (settingsRes.data ?? []) as DigitalMenuSettings[];
+  const tenantSettings = pickPublicMenuSettings(cloudSettings, tenantId, sucursalId);
+
+  const rawMenuItems = (itemsRes.data ?? []) as DigitalMenuItem[];
+  const tenantMenuItems = rawMenuItems.filter((mi) => mi.tenant_id === tenantId);
+
+  return {
+    settings: tenantSettings,
+    platos: filteredPlatos,
+    menuItems: tenantMenuItems,
+  };
 }
 
 /**
@@ -102,43 +270,17 @@ export function usePublicMenuAdminData({ tenantId, sucursalId }: UsePublicMenuAd
     }
     try {
       setLoading(true);
-      const [platosLocal, settingsLocal, itemsLocal, tenantMenus, tableCount] = await Promise.all([
-        readLocalMirror<Plato>(tenantId, "platos").catch(() => []),
-        readLocalMirror<DigitalMenuSettings>(tenantId, "digital_menu_settings").catch(() => []),
-        readLocalMirror<DigitalMenuItem>(tenantId, "digital_menu_items").catch(() => []),
+      const [sources, tenantMenus, tableCount] = await Promise.all([
+        loadPublicMenuAdminSources({ tenantId, sucursalId }),
         fetchMenus(tenantId, sucursalId).catch(() => []),
         fetchTableCount(tenantId, sucursalId),
       ]);
 
-      const filteredPlatos = platosLocal.filter(
-        (p) => !p.sucursal_id || p.sucursal_id === sucursalId
-      );
-
-      let tenantSettings = pickPublicMenuSettings(settingsLocal, tenantId, sucursalId);
-
-      // If not in local mirror, fetch tenant rows from cloud and pick
-      if (!tenantSettings && (typeof navigator === "undefined" || navigator.onLine)) {
-        const { data: cloudRows } = await supabase
-          .from("digital_menu_settings")
-          .select("*")
-          .eq("tenant_id", tenantId);
-
-        if (cloudRows && cloudRows.length > 0) {
-          tenantSettings = pickPublicMenuSettings(
-            cloudRows as DigitalMenuSettings[],
-            tenantId,
-            sucursalId
-          );
-        }
-      }
-
-      const tenantMenuItems = itemsLocal.filter((mi) => mi.tenant_id === tenantId);
-
       setData({
-        settings: tenantSettings,
+        settings: sources.settings,
         menus: tenantMenus,
-        platos: filteredPlatos,
-        menuItems: tenantMenuItems,
+        platos: sources.platos,
+        menuItems: sources.menuItems,
         tableCount,
       });
     } catch (err) {
