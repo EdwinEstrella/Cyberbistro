@@ -198,6 +198,7 @@ $$;
 \i supabase/migrations/20261101150000_menus_closed_without_cycle.sql
 \i supabase/migrations/20261106140000_public_menu_calendar.sql
 \i supabase/migrations/20261110180000_public_menu_service.sql
+\i supabase/migrations/20261114210000_menu_delivery_orders.sql
 
 -- 4. Test Assertion Helper
 CREATE OR REPLACE FUNCTION test_assert(p_cond boolean, p_msg text)
@@ -571,4 +572,114 @@ BEGIN
     END IF;
   END;
   PERFORM test_assert(v_caught_invalid_party, 'Invalid party_size > 99 must be rejected');
+END $$;
+
+-- Test 8: home delivery on public takeout orders (20261114210000_menu_delivery_orders.sql)
+DO $$
+DECLARE
+  v_tenant_id uuid := gen_random_uuid();
+  v_sucursal_id uuid := gen_random_uuid();
+  v_slug text := 'delivery-test-' || substr(gen_random_uuid()::text, 1, 8);
+  v_plato_id int;
+  v_items jsonb;
+  v_res jsonb;
+  v_row public.digital_orders%ROWTYPE;
+  v_msg text;
+BEGIN
+  INSERT INTO public.tenants (id, nombre_negocio, plan, activa, cantidad_mesas)
+  VALUES (v_tenant_id, 'Delivery Bistro', 'profesional', true, 10);
+
+  INSERT INTO public.sucursales (id, tenant_id, cantidad_mesas)
+  VALUES (v_sucursal_id, v_tenant_id, 10);
+
+  INSERT INTO public.cierres_operativos (tenant_id, sucursal_id, opened_at, closed_at)
+  VALUES (v_tenant_id, v_sucursal_id, now(), NULL);
+
+  INSERT INTO public.digital_menu_settings (tenant_id, sucursal_id, public_slug, enabled)
+  VALUES (v_tenant_id, v_sucursal_id, v_slug, true);
+
+  INSERT INTO public.platos (nombre, precio, categoria, disponible, tenant_id, sucursal_id)
+  VALUES ('Pollo frito', 300.00, 'Especiales', true, v_tenant_id, v_sucursal_id)
+  RETURNING id INTO v_plato_id;
+
+  INSERT INTO public.digital_menu_items (tenant_id, plato_id, visible)
+  VALUES (v_tenant_id, v_plato_id, true);
+
+  v_items := jsonb_build_array(jsonb_build_object('plato_id', v_plato_id, 'quantity', 1));
+
+  -- 1. Legacy 10-arg call keeps working and defaults to pickup without location
+  v_res := public.create_public_digital_order(v_slug, 'Cliente Legacy', '809-555-0001', '', v_items, 'takeout', NULL, NULL, 'sess-d1', NULL);
+  SELECT * INTO v_row FROM public.digital_orders WHERE id = (v_res->>'order_id')::uuid;
+  PERFORM test_assert(v_row.delivery_mode = 'pickup', 'legacy call defaults to pickup');
+  PERFORM test_assert(v_row.delivery_lat IS NULL AND v_row.delivery_lng IS NULL AND v_row.delivery_reference IS NULL,
+    'pickup stores no location');
+
+  -- 2. Delivery with coordinates and reference is stored
+  v_res := public.create_public_digital_order(v_slug, 'Cliente GPS', '809-555-0002', '', v_items, 'takeout', NULL, NULL, 'sess-d2', NULL,
+    'delivery', 18.4861, -69.9312, '  Casa azul frente al colmado  ');
+  SELECT * INTO v_row FROM public.digital_orders WHERE id = (v_res->>'order_id')::uuid;
+  PERFORM test_assert(v_row.delivery_mode = 'delivery', 'delivery mode stored');
+  PERFORM test_assert(v_row.delivery_lat = 18.4861 AND v_row.delivery_lng = -69.9312, 'delivery coordinates stored');
+  PERFORM test_assert(v_row.delivery_reference = 'Casa azul frente al colmado', 'delivery reference is trimmed and stored');
+  PERFORM test_assert(v_row.order_type = 'takeout', 'delivery keeps order_type takeout');
+
+  -- 3. Delivery with only a reference (no coordinates) is accepted
+  v_res := public.create_public_digital_order(v_slug, 'Cliente Texto', '809-555-0003', '', v_items, 'takeout', NULL, NULL, 'sess-d3', NULL,
+    'delivery', NULL, NULL, 'Al lado de la iglesia');
+  SELECT * INTO v_row FROM public.digital_orders WHERE id = (v_res->>'order_id')::uuid;
+  PERFORM test_assert(v_row.delivery_lat IS NULL AND v_row.delivery_reference = 'Al lado de la iglesia',
+    'delivery with only a reference is accepted');
+
+  -- 4. Pickup ignores any location that is sent along
+  v_res := public.create_public_digital_order(v_slug, 'Cliente Recoge', '809-555-0004', '', v_items, 'takeout', NULL, NULL, 'sess-d4', NULL,
+    'pickup', 18.5, -69.9, 'No debe guardarse');
+  SELECT * INTO v_row FROM public.digital_orders WHERE id = (v_res->>'order_id')::uuid;
+  PERFORM test_assert(v_row.delivery_mode = 'pickup' AND v_row.delivery_lat IS NULL AND v_row.delivery_reference IS NULL,
+    'pickup discards location data');
+
+  -- 5. Delivery without any location or reference is rejected
+  v_msg := NULL;
+  BEGIN
+    PERFORM public.create_public_digital_order(v_slug, 'Sin ubicacion', '809-555-0005', '', v_items, 'takeout', NULL, NULL, 'sess-d5', NULL,
+      'delivery', NULL, NULL, '   ');
+  EXCEPTION WHEN OTHERS THEN v_msg := SQLERRM; END;
+  PERFORM test_assert(v_msg LIKE '%Indica tu ubicación%', 'delivery without location or reference is rejected');
+
+  -- 6. Delivery without a phone is rejected
+  v_msg := NULL;
+  BEGIN
+    PERFORM public.create_public_digital_order(v_slug, 'Sin telefono', '', '', v_items, 'takeout', NULL, NULL, 'sess-d6', NULL,
+      'delivery', 18.4861, -69.9312, 'Casa azul');
+  EXCEPTION WHEN OTHERS THEN v_msg := SQLERRM; END;
+  PERFORM test_assert(v_msg LIKE '%teléfono es obligatorio%', 'delivery without phone is rejected');
+
+  -- 7. Half a coordinate pair and out-of-range coordinates are rejected
+  v_msg := NULL;
+  BEGIN
+    PERFORM public.create_public_digital_order(v_slug, 'Media coord', '809-555-0007', '', v_items, 'takeout', NULL, NULL, 'sess-d7', NULL,
+      'delivery', 18.4861, NULL, 'Casa azul');
+  EXCEPTION WHEN OTHERS THEN v_msg := SQLERRM; END;
+  PERFORM test_assert(v_msg LIKE '%Ubicación de entrega inválida%', 'lat without lng is rejected');
+
+  v_msg := NULL;
+  BEGIN
+    PERFORM public.create_public_digital_order(v_slug, 'Fuera de rango', '809-555-0008', '', v_items, 'takeout', NULL, NULL, 'sess-d8', NULL,
+      'delivery', 95, -69.9312, 'Casa azul');
+  EXCEPTION WHEN OTHERS THEN v_msg := SQLERRM; END;
+  PERFORM test_assert(v_msg LIKE '%Ubicación de entrega inválida%', 'latitude out of range is rejected');
+
+  -- 8. Unknown delivery mode and delivery on a table order are rejected
+  v_msg := NULL;
+  BEGIN
+    PERFORM public.create_public_digital_order(v_slug, 'Modo raro', '809-555-0009', '', v_items, 'takeout', NULL, NULL, 'sess-d9', NULL,
+      'courier', 18.4861, -69.9312, 'Casa azul');
+  EXCEPTION WHEN OTHERS THEN v_msg := SQLERRM; END;
+  PERFORM test_assert(v_msg LIKE '%Tipo de entrega inválido%', 'unknown delivery mode is rejected');
+
+  v_msg := NULL;
+  BEGIN
+    PERFORM public.create_public_digital_order(v_slug, 'Mesa con delivery', '809-555-0010', '', v_items, 'in_store', 1, '1234', 'sess-d10', NULL,
+      'delivery', 18.4861, -69.9312, 'Casa azul');
+  EXCEPTION WHEN OTHERS THEN v_msg := SQLERRM; END;
+  PERFORM test_assert(v_msg LIKE '%solo aplica a pedidos para llevar%', 'delivery on a table order is rejected');
 END $$;
