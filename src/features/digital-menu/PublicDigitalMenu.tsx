@@ -17,6 +17,7 @@ import {
   type PublicMenuPayload,
 } from "./lib/publicMenuPayload";
 import { resolvePublicMenuMode } from "./lib/publicMenuMode";
+import { EMPTY_DELIVERY_DRAFT, validateDeliveryDraft, type DeliveryDraft } from "./lib/deliveryOrder";
 import { useOnlineMenuStatus } from "./lib/useOnlineMenuStatus";
 import { publicMenuTheme } from "./components/public-app/publicMenuTheme";
 
@@ -52,6 +53,9 @@ export function PublicDigitalMenu() {
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [notes, setNotes] = useState("");
+
+  // Pickup / home delivery (takeout orders only)
+  const [delivery, setDelivery] = useState<DeliveryDraft>(EMPTY_DELIVERY_DRAFT);
 
   // UI state
   const [loading, setLoading] = useState(true);
@@ -194,6 +198,12 @@ export function PublicDigitalMenu() {
         setError("El código de mesa debe ser de 4 dígitos.");
         return;
       }
+    } else {
+      const deliveryError = validateDeliveryDraft(delivery, customerPhone);
+      if (deliveryError) {
+        setError(deliveryError);
+        return;
+      }
     }
 
     setPlacing(true);
@@ -210,6 +220,7 @@ export function PublicDigitalMenu() {
       partySize,
       mesaCodigo,
       clientSessionId,
+      delivery,
     });
 
     const { data, error: rpcError } = await supabase.rpc(
@@ -242,6 +253,7 @@ export function PublicDigitalMenu() {
     setCart([]);
     setNotes("");
     setMesaCodigo("");
+    setDelivery(EMPTY_DELIVERY_DRAFT);
     setHasActiveInStoreOrder(mode.kind === "table");
     setSuccess({
       message: `Pedido enviado. Total: ${formatCurrency(orderTotal, menu.settings?.currency ?? "DOP")}`,
@@ -384,6 +396,8 @@ export function PublicDigitalMenu() {
       mesaCodigo={mesaCodigo}
       onMesaCodigoChange={setMesaCodigo}
       mesaCodeError={mesaCodeError}
+      delivery={delivery}
+      onDeliveryChange={setDelivery}
       error={error}
       success={success}
       placing={placing}

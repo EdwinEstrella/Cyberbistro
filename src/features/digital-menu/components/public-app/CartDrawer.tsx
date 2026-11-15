@@ -2,6 +2,8 @@ import { useEffect, useRef } from "react";
 import { X, Trash2, CheckCircle2, ArrowRight, Minus, Plus } from "lucide-react";
 import type { CartLine } from "../PublicMenuOrderScreen";
 import { publicMenuTheme } from "./publicMenuTheme";
+import { DeliveryPicker } from "./DeliveryPicker";
+import type { DeliveryDraft } from "../../lib/deliveryOrder";
 
 export interface CartDrawerProps {
   isOpen: boolean;
@@ -29,6 +31,9 @@ export interface CartDrawerProps {
   onPlaceOrder: () => void;
   onDismissSuccess?: () => void;
   currencyFormatter: (value: number, code: string) => string;
+  /** Home delivery choice. Optional: without both props the drawer behaves as pickup-only. */
+  delivery?: DeliveryDraft;
+  onDeliveryChange?: (next: DeliveryDraft) => void;
 }
 
 export function CartDrawer({
@@ -57,7 +62,10 @@ export function CartDrawer({
   onPlaceOrder,
   onDismissSuccess,
   currencyFormatter,
+  delivery,
+  onDeliveryChange,
 }: CartDrawerProps) {
+  const isHomeDelivery = !isTableMode && delivery?.mode === "delivery";
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
 
@@ -117,7 +125,7 @@ export function CartDrawer({
       {/* Drawer panel */}
       <aside
         data-testid="cart-drawer-panel"
-        className="absolute right-0 top-0 bottom-0 w-[92vw] sm:w-[88%] max-w-[400px] bg-[#111113] border-l border-[#27272a] shadow-2xl flex flex-col z-10 transition-transform duration-300 ease-out motion-reduce:transition-none"
+        className="absolute left-0 top-0 bottom-0 w-[92vw] sm:w-[88%] max-w-[400px] bg-[#111113] border-r border-[#27272a] shadow-2xl flex flex-col z-10 transition-transform duration-300 ease-out motion-reduce:transition-none"
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[#27272a] px-4 py-3.5 bg-[#111113] shrink-0">
@@ -288,6 +296,11 @@ export function CartDrawer({
                     </div>
                   )}
 
+                  {/* Pickup / home delivery: only for public takeout orders, never for tables */}
+                  {!isTableMode && delivery && onDeliveryChange && (
+                    <DeliveryPicker value={delivery} onChange={onDeliveryChange} />
+                  )}
+
                   <input
                     type="text"
                     value={customerName}
@@ -301,7 +314,7 @@ export function CartDrawer({
                     type="tel"
                     value={customerPhone}
                     onChange={(e) => onCustomerPhoneChange(e.target.value)}
-                    placeholder="Teléfono (opcional)"
+                    placeholder={isHomeDelivery ? "Teléfono para coordinar la entrega *" : "Teléfono (opcional)"}
                     aria-label="Teléfono del cliente"
                     className="w-full rounded-xl border border-[#27272a] bg-[#18181b] px-3.5 py-2.5 text-xs text-white placeholder:text-zinc-500 outline-none focus:border-emerald-400/50 transition"
                   />

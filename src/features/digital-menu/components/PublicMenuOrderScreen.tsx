@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { ShoppingBag } from "lucide-react";
 import type { PublicMenuMode } from "../lib/publicMenuMode";
 import type { PublicContact } from "../../menu-links/lib/publicMenuCalendar";
+import type { DeliveryDraft } from "../lib/deliveryOrder";
 import { AppTopBar } from "./public-app/AppTopBar";
 import { CategoryChips } from "./public-app/CategoryChips";
 import { DishRow } from "./public-app/DishRow";
@@ -54,6 +55,9 @@ export interface PublicMenuOrderScreenProps {
   mesaCodigo: string;
   onMesaCodigoChange: (val: string) => void;
   mesaCodeError: string | null;
+  /** Home delivery choice for takeout orders (optional: omitted means pickup only). */
+  delivery?: DeliveryDraft;
+  onDeliveryChange?: (next: DeliveryDraft) => void;
   error: string | null;
   success: { message: string; numeroPedido: number | null } | null;
   placing: boolean;
@@ -84,6 +88,8 @@ export function PublicMenuOrderScreen({
   mesaCodigo,
   onMesaCodigoChange,
   mesaCodeError,
+  delivery,
+  onDeliveryChange,
   error,
   success,
   placing,
@@ -325,6 +331,8 @@ export function PublicMenuOrderScreen({
           onPlaceOrder={onPlaceOrder}
           onDismissSuccess={onDismissSuccess}
           currencyFormatter={currencyFormatter}
+          delivery={delivery}
+          onDeliveryChange={onDeliveryChange}
         />
       </div>
     </div>
