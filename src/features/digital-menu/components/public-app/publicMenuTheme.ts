@@ -30,6 +30,10 @@ export const publicMenuTheme = {
   deviceColumn:
     "relative w-full max-w-[480px] min-h-dvh bg-[#0b0b0d] sm:border-x sm:border-[#27272a] shadow-2xl flex flex-col overflow-x-hidden [font-family:Inter,ui-sans-serif,system-ui,-apple-system,'Segoe_UI',sans-serif]",
 
+  // Same column on phones; from lg it fills the space next to the docked cart instead of staying 480px wide.
+  orderColumn:
+    "relative w-full max-w-[480px] min-h-dvh bg-[#0b0b0d] sm:border-x sm:border-[#27272a] shadow-2xl flex flex-col overflow-x-hidden lg:max-w-none lg:flex-1 lg:min-w-0 lg:border-x-0 lg:shadow-none [font-family:Inter,ui-sans-serif,system-ui,-apple-system,'Segoe_UI',sans-serif]",
+
   // Scroll padding for bottom tab bar and floating cart summary bar with safe area
   scrollPaddingCart: "pb-[calc(10.5rem+env(safe-area-inset-bottom,0px))]",
   scrollPaddingNoCart: "pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]",

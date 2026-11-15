@@ -35,12 +35,21 @@ at the Pedidos screen with that location, and company orders are visibly distinc
 - T1 (445d69e): `sortOrdersForQueue`, pending company orders first, oldest waiting first. Unit tests in orderQueue.test.ts.
 - T2 (0058af8): migration `20261114210000_menu_delivery_orders.sql` (NOT applied to prod); 8 SQL cases pass in Docker (`scripts/test-sql.sh`).
 - T3 (bfae280): `deliveryOrder.ts` validation + RPC args; payload tests.
-- T4 (6d9aa7a): `DeliveryPicker` + lazy Leaflet map in the left-anchored cart drawer; GPS via `locateCustomer`; phone required for
+- T4 (6d9aa7a): `DeliveryPicker` + lazy Leaflet map in the cart drawer; GPS via `locateCustomer`; phone required for
   delivery. `vite build` ok, map chunk 44 kB gzip, downloaded only when delivery is chosen.
 - T5: Pedidos shows an "A domicilio" badge and an "Entregar en" block with a maps link; comanda notes carry the address; the loader
   retries without the delivery columns if the database does not have them yet. Tests in deliveryComanda.test.ts.
 - Checks: `npx tsc --noEmit` clean; vitest all green except test/local-sync-protocol.test.ts, which is skipped without Docker and
   fails when Docker Desktop is running because its compose Postgres service is not up (environmental, unrelated).
+
+- Responsive layout (user: "responsivo en telefono y en pc", cart ALWAYS on the RIGHT, never left): phones keep the single
+  480px column with a cart panel sliding in from the right; from `lg` (1024px) the menu uses the full width (2-column dish grid)
+  and the cart is a sticky right column that is always visible (`CartDrawer dockOnDesktop`). Verified in a real browser against
+  the Azokia Test menu at 1536px and inside a 390px frame: picker, map, reference field, required phone and Pedir all fit.
+- Public menu content is driven by the weekly calendar for corporativo/profesional plans (menu_items.weekdays), NOT by
+  platos.disponible: an empty calendar day shows no dishes. Open improvement: friendlier empty state ("Hoy no hay platos
+  programados").
+- Prod migration `menu_delivery_orders` applied 2026-11-14 with the user's OK.
 
 ## Next step
 T6: manual run of the public menu on a phone-width viewport; get the user's OK to apply the migration to prod BEFORE shipping the app.

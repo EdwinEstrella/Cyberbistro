@@ -181,7 +181,9 @@ export function PublicMenuOrderScreen({
 
   return (
     <div className={publicMenuTheme.canvas} style={publicMenuTheme.rootStyle}>
-      <div className={publicMenuTheme.deviceColumn} style={publicMenuTheme.rootStyle}>
+      {/* Shell: a single column on phones; menu + cart (right) side by side from lg */}
+      <div className="flex w-full justify-center lg:mx-auto lg:max-w-[1240px] lg:justify-start">
+      <div className={publicMenuTheme.orderColumn} style={publicMenuTheme.rootStyle}>
         {/* Sticky Top Bar */}
         <AppTopBar
           title={settings.title || settings.business_name}
@@ -214,7 +216,7 @@ export function PublicMenuOrderScreen({
             {/* Dish List */}
             <section
               aria-label="Platos del menú"
-              className="flex-1 px-4 py-3 space-y-5"
+              className="flex-1 px-4 py-3 space-y-5 lg:px-6 lg:py-5"
             >
               {filteredItems.length === 0 ? (
                 <div className="py-16 text-center">
@@ -235,7 +237,7 @@ export function PublicMenuOrderScreen({
                         {categoryName}
                       </h2>
                     )}
-                    <div className="space-y-2">
+                    <div className="flex flex-col gap-2 lg:grid lg:grid-cols-2 lg:gap-3">
                       {categoryDishes.map((item) => (
                         <DishRow
                           key={item.id}
@@ -272,7 +274,7 @@ export function PublicMenuOrderScreen({
         {/* Floating Cart Summary Bar (Optional app-like summary) */}
         {cart.length > 0 && !isCartOpen && (
           <div
-            className="fixed bottom-[68px] left-1/2 -translate-x-1/2 w-full max-w-[480px] px-4 z-20 pointer-events-none"
+            className="fixed bottom-[68px] left-1/2 -translate-x-1/2 w-full max-w-[480px] px-4 z-20 pointer-events-none lg:hidden"
             style={{ bottom: "calc(4.5rem + env(safe-area-inset-bottom, 0px))" }}
           >
             <button
@@ -303,9 +305,11 @@ export function PublicMenuOrderScreen({
           cartCount={itemCount}
           isTableMode={isTableMode}
         />
+      </div>
 
-        {/* Cart Drawer */}
+        {/* Cart: slide-in panel from the right on phones, permanent right column on wide screens */}
         <CartDrawer
+          dockOnDesktop
           isOpen={isCartOpen}
           onClose={handleCloseCart}
           cart={cart}

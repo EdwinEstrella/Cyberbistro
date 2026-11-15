@@ -46,12 +46,20 @@ const baseProps: CartDrawerProps = {
 const render = (overrides: Partial<CartDrawerProps>) => renderToStaticMarkup(<CartDrawer {...baseProps} {...overrides} />);
 
 describe("CartDrawer layout and delivery", () => {
-  it("anchors the cart panel to the left edge of the phone screen", () => {
+  it("anchors the cart panel to the right edge of the phone screen, never the left", () => {
     const html = render({});
     const panel = html.match(/<aside[^>]*data-testid="cart-drawer-panel"[^>]*>/)?.[0] ?? "";
-    expect(panel).toContain("left-0");
-    expect(panel).toContain("border-r");
-    expect(panel).not.toContain("right-0");
+    expect(panel).toContain("right-0");
+    expect(panel).toContain("border-l");
+    expect(panel).not.toContain("left-0");
+  });
+
+  it("docks the cart as a sticky right column on wide screens only when dockOnDesktop is set", () => {
+    const docked = render({ dockOnDesktop: true, isOpen: false });
+    expect(docked).toContain("hidden lg:block");
+    expect(docked).toContain("lg:sticky");
+    expect(docked).toContain("lg:hidden"); // backdrop and close button disappear when docked
+    expect(render({ isOpen: false })).toBe("");
   });
 
   it("keeps the Pedir action visible in the sticky footer", () => {

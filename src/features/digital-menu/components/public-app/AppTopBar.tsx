@@ -79,7 +79,7 @@ export function AppTopBar({
             ? `Ver pedido (${cartCount} ${cartCount === 1 ? "item" : "items"})`
             : "Ver pedido"
         }
-        className="relative flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#18181b] border border-[#27272a] text-zinc-200 hover:text-white hover:bg-zinc-800 transition cursor-pointer active:scale-95"
+        className="relative flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#18181b] border border-[#27272a] text-zinc-200 hover:text-white hover:bg-zinc-800 transition cursor-pointer active:scale-95 lg:hidden"
       >
         <ShoppingBag className="size-5" />
         {cartCount > 0 && (

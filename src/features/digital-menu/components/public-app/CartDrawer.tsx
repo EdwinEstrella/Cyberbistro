@@ -34,7 +34,15 @@ export interface CartDrawerProps {
   /** Home delivery choice. Optional: without both props the drawer behaves as pickup-only. */
   delivery?: DeliveryDraft;
   onDeliveryChange?: (next: DeliveryDraft) => void;
+  /**
+   * On wide screens (lg and up) keep the cart permanently visible as a sticky left column instead of a modal
+   * overlay. Phones keep the slide-in panel. Without this prop the drawer is always an overlay.
+   */
+  dockOnDesktop?: boolean;
 }
+
+/** Tailwind `lg` breakpoint, where a docked cart stops behaving like a modal. */
+const DESKTOP_QUERY = "(min-width: 1024px)";
 
 export function CartDrawer({
   isOpen,
@@ -64,6 +72,7 @@ export function CartDrawer({
   currencyFormatter,
   delivery,
   onDeliveryChange,
+  dockOnDesktop = false,
 }: CartDrawerProps) {
   const isHomeDelivery = !isTableMode && delivery?.mode === "delivery";
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -74,6 +83,10 @@ export function CartDrawer({
     if (typeof document === "undefined") return;
 
     if (isOpen) {
+      // A docked cart on a wide screen is part of the page, so it must not lock scrolling or steal focus.
+      const isDocked = dockOnDesktop && typeof window.matchMedia === "function" && window.matchMedia(DESKTOP_QUERY).matches;
+      if (isDocked) return;
+
       previousFocusRef.current = document.activeElement as HTMLElement | null;
       closeButtonRef.current?.focus();
       document.body.style.overflow = "hidden";
@@ -97,9 +110,9 @@ export function CartDrawer({
         previousFocusRef.current = null;
       }
     }
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, dockOnDesktop]);
 
-  if (!isOpen) return null;
+  if (!isOpen && !dockOnDesktop) return null;
 
   const handleDismissSuccess = () => {
     onDismissSuccess?.();
@@ -109,23 +122,31 @@ export function CartDrawer({
   return (
     <div
       role="dialog"
-      aria-modal="true"
+      aria-modal={isOpen ? true : undefined}
       aria-labelledby="cart-drawer-title"
       style={publicMenuTheme.rootStyle}
-      className={`fixed inset-y-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] z-50 overflow-hidden ${publicMenuTheme.fontClass}`}
+      className={`fixed inset-y-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] z-50 overflow-hidden ${publicMenuTheme.fontClass} ${
+        dockOnDesktop
+          ? `${isOpen ? "" : "hidden lg:block"} lg:sticky lg:inset-auto lg:top-0 lg:left-auto lg:translate-x-0 lg:h-dvh lg:w-[400px] lg:max-w-none lg:shrink-0 lg:self-start lg:z-10 lg:overflow-visible`
+          : ""
+      }`}
     >
-      {/* Blurred darkened backdrop */}
+      {/* Blurred darkened backdrop (overlay mode only) */}
       <div
         data-testid="cart-drawer-backdrop"
         onClick={onClose}
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity duration-300 motion-reduce:transition-none"
+        className={`absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity duration-300 motion-reduce:transition-none ${
+          dockOnDesktop ? "lg:hidden" : ""
+        }`}
         aria-hidden="true"
       />
 
       {/* Drawer panel */}
       <aside
         data-testid="cart-drawer-panel"
-        className="absolute left-0 top-0 bottom-0 w-[92vw] sm:w-[88%] max-w-[400px] bg-[#111113] border-r border-[#27272a] shadow-2xl flex flex-col z-10 transition-transform duration-300 ease-out motion-reduce:transition-none"
+        className={`absolute right-0 top-0 bottom-0 w-[92vw] sm:w-[88%] max-w-[400px] bg-[#111113] border-l border-[#27272a] shadow-2xl flex flex-col z-10 transition-transform duration-300 ease-out motion-reduce:transition-none ${
+          dockOnDesktop ? "lg:static lg:h-full lg:w-full lg:max-w-none lg:shadow-none" : ""
+        }`}
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[#27272a] px-4 py-3.5 bg-[#111113] shrink-0">
@@ -157,7 +178,9 @@ export function CartDrawer({
               type="button"
               onClick={onClose}
               aria-label="Cerrar pedido"
-              className="flex size-8 items-center justify-center rounded-lg bg-[#18181b] border border-[#27272a] text-zinc-400 hover:text-white transition cursor-pointer active:scale-95"
+              className={`flex size-8 items-center justify-center rounded-lg bg-[#18181b] border border-[#27272a] text-zinc-400 hover:text-white transition cursor-pointer active:scale-95 ${
+                dockOnDesktop ? "lg:hidden" : ""
+              }`}
             >
               <X className="size-4" />
             </button>

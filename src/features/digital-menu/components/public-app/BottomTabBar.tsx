@@ -20,9 +20,9 @@ export function BottomTabBar({
   return (
     <nav
       aria-label="Navegación principal"
-      className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] z-30 bg-[#0b0b0d]/95 backdrop-blur-md border-t border-[#27272a] px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))]"
+      className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] z-30 bg-[#0b0b0d]/95 backdrop-blur-md border-t border-[#27272a] px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] lg:sticky lg:left-auto lg:translate-x-0 lg:max-w-none"
     >
-      <div role="tablist" className="grid grid-cols-3 gap-1">
+      <div role="tablist" className="grid grid-cols-3 gap-1 lg:grid-cols-2 lg:mx-auto lg:max-w-md">
         {/* Tab 1: Menú */}
         <button
           type="button"
@@ -68,7 +68,7 @@ export function BottomTabBar({
               ? `Pedido (${cartCount} ${cartCount === 1 ? "item" : "items"})`
               : "Pedido"
           }
-          className="relative flex min-h-[48px] flex-col items-center justify-center gap-1 rounded-xl text-[11px] font-semibold text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/40 transition cursor-pointer active:scale-95"
+          className="relative flex min-h-[48px] flex-col items-center justify-center gap-1 rounded-xl text-[11px] font-semibold text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/40 transition cursor-pointer active:scale-95 lg:hidden"
         >
           <div className="relative">
             <ShoppingBag className="size-5" />
