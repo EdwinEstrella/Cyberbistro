@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { CartDrawer } from "./CartDrawer";
+import { createRoot } from "react-dom/client";
+// @ts-ignore react-dom types are not installed in devDependencies
+import { flushSync } from "react-dom";
+import { CartDrawer, type CartDrawerProps } from "./CartDrawer";
 import type { CartLine } from "../PublicMenuOrderScreen";
 
 describe("CartDrawer", () => {
@@ -266,5 +269,205 @@ describe("CartDrawer", () => {
     expect(html).toContain("¡Pedido enviado!");
     expect(html).toContain("Pedido #42");
     expect(html).toContain("Seguir viendo el menú");
+  });
+
+  it("retains focus on active text input when parent re-renders with a new onClose identity", () => {
+    class MockElement {
+      tagName: string;
+      nodeType = 1;
+      childNodes: any[] = [];
+      style: Record<string, string> = {};
+      attributes: Record<string, string> = {};
+      ownerDocument: any;
+      parentNode: any = null;
+      value = "";
+
+      constructor(tag: string, doc: any) {
+        this.tagName = tag.toUpperCase();
+        this.ownerDocument = doc;
+      }
+      appendChild(child: any) {
+        this.removeChild(child);
+        this.childNodes.push(child);
+        child.parentNode = this;
+        return child;
+      }
+      removeChild(child: any) {
+        const idx = this.childNodes.indexOf(child);
+        if (idx !== -1) this.childNodes.splice(idx, 1);
+        child.parentNode = null;
+        return child;
+      }
+      insertBefore(newChild: any, refChild: any) {
+        this.removeChild(newChild);
+        const idx = this.childNodes.indexOf(refChild);
+        if (idx !== -1) this.childNodes.splice(idx, 0, newChild);
+        else this.childNodes.push(newChild);
+        newChild.parentNode = this;
+        return newChild;
+      }
+      setAttribute(k: string, v: any) {
+        this.attributes[k] = String(v);
+      }
+      setAttributeNS(_ns: string, k: string, v: any) {
+        this.attributes[k] = String(v);
+      }
+      getAttribute(k: string) {
+        return this.attributes[k] ?? null;
+      }
+      removeAttribute(k: string) {
+        delete this.attributes[k];
+      }
+      addEventListener() {}
+      removeEventListener() {}
+      focus() {
+        this.ownerDocument.activeElement = this;
+      }
+      blur() {
+        if (this.ownerDocument.activeElement === this) {
+          this.ownerDocument.activeElement = null;
+        }
+      }
+      [Symbol.for("nodejs.util.inspect.custom")]() {
+        return `<${this.tagName}${this.attributes.placeholder ? ` placeholder="${this.attributes.placeholder}"` : ""}${this.attributes["aria-label"] ? ` aria-label="${this.attributes["aria-label"]}"` : ""}>`;
+      }
+    }
+
+    class MockTextNode {
+      nodeType = 3;
+      nodeValue: string;
+      data: string;
+      ownerDocument: any;
+      parentNode: any = null;
+      constructor(text: string, doc: any) {
+        this.nodeValue = text;
+        this.data = text;
+        this.ownerDocument = doc;
+      }
+    }
+
+    const doc: any = {
+      nodeType: 9,
+      ownerDocument: null,
+      createElement(tag: string) {
+        return new MockElement(tag, this);
+      },
+      createElementNS(_ns: string, tag: string) {
+        return new MockElement(tag, this);
+      },
+      createTextNode(text: string) {
+        return new MockTextNode(text, this);
+      },
+      createComment(text: string) {
+        return { nodeType: 8, nodeValue: text, ownerDocument: this };
+      },
+      addEventListener() {},
+      removeEventListener() {},
+      activeElement: null,
+    };
+    doc.body = new MockElement("body", doc);
+    doc.documentElement = new MockElement("html", doc);
+
+    const prevWindow = (global as any).window;
+    const prevDoc = (global as any).document;
+
+    (global as any).window = {
+      document: doc,
+      addEventListener() {},
+      removeEventListener() {},
+      matchMedia() {
+        return { matches: false, addListener: () => {}, removeListener: () => {} };
+      },
+      HTMLIFrameElement: class HTMLIFrameElement {},
+    };
+    (global as any).document = doc;
+
+    const findElement = (
+      node: any,
+      predicate: (el: MockElement) => boolean,
+      visited = new Set<any>()
+    ): MockElement | null => {
+      if (!node || visited.has(node)) return null;
+      visited.add(node);
+      if (node instanceof MockElement && predicate(node)) {
+        return node;
+      }
+      for (const child of node.childNodes || []) {
+        const found = findElement(child, predicate, visited);
+        if (found) return found;
+      }
+      return null;
+    };
+
+    try {
+      const container = doc.createElement("div");
+      doc.body.appendChild(container);
+      const root = createRoot(container);
+
+      const baseProps: CartDrawerProps = {
+        isOpen: true,
+        onClose: vi.fn(),
+        cart: sampleCart,
+        onUpdateQuantity: vi.fn(),
+        onClearCart: vi.fn(),
+        currency: "DOP",
+        isTableMode: true,
+        mesaNumero: 5,
+        itemCount: 2,
+        total: 1040,
+        mesaCodigo: "",
+        onMesaCodigoChange: vi.fn(),
+        mesaCodeError: null,
+        customerName: "",
+        onCustomerNameChange: vi.fn(),
+        customerPhone: "",
+        onCustomerPhoneChange: vi.fn(),
+        notes: "",
+        onNotesChange: vi.fn(),
+        error: null,
+        success: null,
+        placing: false,
+        onPlaceOrder: vi.fn(),
+        currencyFormatter: formatCurrency,
+      };
+
+      const initialOnClose = vi.fn();
+      flushSync(() => {
+        root.render(<CartDrawer {...baseProps} onClose={initialOnClose} />);
+      });
+
+      const closeButton = findElement(
+        container,
+        (el) => el.tagName === "BUTTON" && el.attributes["aria-label"] === "Cerrar pedido"
+      );
+      expect(closeButton).not.toBeNull();
+      expect(doc.activeElement === closeButton).toBe(true);
+
+      const nameInput = findElement(
+        container,
+        (el) => el.tagName === "INPUT" && el.attributes.placeholder === "Tu nombre *"
+      );
+      expect(nameInput).not.toBeNull();
+
+      // User focuses the input to type
+      nameInput!.focus();
+      expect(doc.activeElement === nameInput).toBe(true);
+
+      // Parent re-renders (e.g. typing notes or customer info) with a new onClose identity
+      const nextOnClose = vi.fn();
+      flushSync(() => {
+        root.render(<CartDrawer {...baseProps} onClose={nextOnClose} />);
+      });
+
+      // Assert input is still document.activeElement and not the close button
+      expect(doc.activeElement === closeButton).toBe(false);
+      expect(doc.activeElement === nameInput).toBe(true);
+      expect((doc.activeElement as any)?.attributes?.placeholder).toBe("Tu nombre *");
+
+      root.unmount();
+    } finally {
+      (global as any).window = prevWindow;
+      (global as any).document = prevDoc;
+    }
   });
 });

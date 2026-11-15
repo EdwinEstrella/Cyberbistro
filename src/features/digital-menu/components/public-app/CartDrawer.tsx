@@ -77,6 +77,8 @@ export function CartDrawer({
   const isHomeDelivery = !isTableMode && delivery?.mode === "delivery";
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   // Focus management and body scroll lock
   useEffect(() => {
@@ -94,7 +96,7 @@ export function CartDrawer({
       const handleKeyDown = (e: KeyboardEvent) => {
         if (e.key === "Escape") {
           e.stopPropagation();
-          onClose();
+          onCloseRef.current();
         }
       };
 
@@ -110,7 +112,7 @@ export function CartDrawer({
         previousFocusRef.current = null;
       }
     }
-  }, [isOpen, onClose, dockOnDesktop]);
+  }, [isOpen, dockOnDesktop]);
 
   if (!isOpen && !dockOnDesktop) return null;
 
