@@ -34,7 +34,7 @@ function readyInput(overrides: Partial<EcfReadinessInput> = {}): EcfReadinessInp
       last_validation_error: null,
     },
     sequencesNextRaw: { E31: 5 },
-    sequencesBoundsRaw: { E31: { start: 1, end: 1000 } },
+    sequencesBoundsRaw: { E31: { start: 1, end: 1000, vence: "31-12-2027" } },
     ecfTypeCodes: ["E31", "E32"],
     now: NOW,
     ...overrides,
@@ -121,7 +121,9 @@ describe("evaluateEcfActivationReadiness", () => {
   });
 
   it("blocks when the only configured range is exhausted and reports why", () => {
-    const result = evaluateEcfActivationReadiness(readyInput({ sequencesNextRaw: { E31: 1001 }, sequencesBoundsRaw: { E31: { start: 1, end: 1000 } } }));
+    const result = evaluateEcfActivationReadiness(
+      readyInput({ sequencesNextRaw: { E31: 1001 }, sequencesBoundsRaw: { E31: { start: 1, end: 1000, vence: "31-12-2027" } } })
+    );
     expect(result.missing.map((m) => m.code)).toEqual(["SEQUENCES"]);
     expect(result.missing[0].message).toMatch(/agotado/);
   });
@@ -130,14 +132,65 @@ describe("evaluateEcfActivationReadiness", () => {
     const result = evaluateEcfActivationReadiness(
       readyInput({
         sequencesNextRaw: { E31: 1001, E32: 10 },
-        sequencesBoundsRaw: { E31: { start: 1, end: 1000 }, E32: { start: 1, end: 500 } },
+        sequencesBoundsRaw: { E31: { start: 1, end: 1000, vence: "31-12-2027" }, E32: { start: 1, end: 500 } },
       })
     );
     expect(result.ready).toBe(true);
   });
 
   it("accepts legacy sequences that only have a next number", () => {
-    expect(evaluateEcfActivationReadiness(readyInput({ sequencesBoundsRaw: {} })).ready).toBe(true);
+    expect(evaluateEcfActivationReadiness(readyInput({ sequencesNextRaw: { E32: 5 }, sequencesBoundsRaw: {} })).ready).toBe(true);
+  });
+
+  it("blocks when an enabled type requiring expiry has no valid vence", () => {
+    const result = evaluateEcfActivationReadiness(
+      readyInput({
+        sequencesNextRaw: { E31: 5 },
+        sequencesBoundsRaw: { E31: { start: 1, end: 1000 } },
+      })
+    );
+    expect(result.ready).toBe(false);
+    expect(result.missing.map((m) => m.code)).toContain("SEQUENCES");
+    expect(result.missing.find((m) => m.code === "SEQUENCES")?.message).toMatch(/vencimiento/);
+  });
+
+  it("blocks when an enabled type requiring expiry has an expired vence", () => {
+    const result = evaluateEcfActivationReadiness(
+      readyInput({
+        sequencesNextRaw: { E31: 5 },
+        sequencesBoundsRaw: { E31: { start: 1, end: 1000, vence: "01-01-2026" } },
+      })
+    );
+    expect(result.ready).toBe(false);
+    expect(result.missing.map((m) => m.code)).toContain("SEQUENCES");
+    expect(result.missing.find((m) => m.code === "SEQUENCES")?.message).toMatch(/venció/);
+  });
+
+  it("blocks when an enabled type requiring expiry has no vence even if another type is valid", () => {
+    const result = evaluateEcfActivationReadiness(
+      readyInput({
+        sequencesNextRaw: { E31: 5, E32: 10 },
+        sequencesBoundsRaw: { E31: { start: 1, end: 1000 }, E32: { start: 1, end: 500 } },
+      })
+    );
+    expect(result.ready).toBe(false);
+    expect(result.missing.map((m) => m.code)).toContain("SEQUENCES");
+  });
+
+  it("blocks with exactly one SEQUENCES item when E31 range is valid but lacks vence and E32 is valid", () => {
+    const result = evaluateEcfActivationReadiness(
+      readyInput({
+        sequencesNextRaw: { E31: 5, E32: 10 },
+        sequencesBoundsRaw: {
+          E31: { start: 1, end: 1000 },
+          E32: { start: 1, end: 500 },
+        },
+      })
+    );
+    expect(result.ready).toBe(false);
+    const seqIssues = result.missing.filter((m) => m.code === "SEQUENCES");
+    expect(seqIssues).toHaveLength(1);
+    expect(seqIssues[0].message).toMatch(/vencimiento/);
   });
 
   it("ignores unknown types", () => {

@@ -6,7 +6,15 @@ import { NCF_E_TIPO_OPCIONES } from "../../../shared/lib/ncf";
 import { CertificateUploader } from "../../ajustes/components/CertificateUploader";
 import { enqueueLocalWrite, getDeviceId } from "../../../shared/lib/localFirst";
 import { buildIssuerUpdatePayload, buildRepresentativeIdPayload, validateEcfIssuer, validateRepresentativeId, type EcfIssuerInput } from "../../../shared/lib/ecfIssuerRequirements";
-import { buildRangesSavePayload, restoreRanges, validateEcfRange } from "../../../shared/lib/ecfSequenceRanges";
+import {
+  buildRangesSavePayload,
+  ecfTypeRequiresExpiry,
+  expiryToInputValue,
+  inputValueToExpiry,
+  restoreRanges,
+  validateEcfRange,
+  type EcfRange,
+} from "../../../shared/lib/ecfSequenceRanges";
 import {
   buildActivationPayload,
   buildDeactivationPayload,
@@ -91,7 +99,7 @@ export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral: 
   });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
-  const [ecfSequences, setEcfSequences] = useState<Record<string, { start: number; end: number; used: number }>>({
+  const [ecfSequences, setEcfSequences] = useState<Record<string, EcfRange>>({
     E31: { start: 1, end: 1000, used: 0 },
     E32: { start: 1, end: 1000, used: 0 }
   });
@@ -838,6 +846,27 @@ export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral: 
                           <label className="flex items-center gap-2">Desde <input type="number" value={seq.start} onChange={(e) => setEcfSequences(s => ({...s, [type.codigo]: {...(s[type.codigo] || { start: 1, end: 1000, used: 0 }), start: Math.max(1, Number(e.target.value) || 1)}}))} className="w-24 rounded-lg border border-border px-2 py-1.5 text-foreground outline-none focus:border-primary" /></label>
                           <label className="flex items-center gap-2">Hasta <input type="number" value={seq.end} onChange={(e) => setEcfSequences(s => ({...s, [type.codigo]: {...(s[type.codigo] || { start: 1, end: 1000, used: 0 }), end: Math.max(1, Number(e.target.value) || 1)}}))} className="w-24 rounded-lg border border-border px-2 py-1.5 text-foreground outline-none focus:border-primary" /></label>
                           <label className="flex items-center gap-2">Usados <input type="number" value={seq.used} readOnly className="w-20 rounded-lg border border-border bg-muted/50 px-2 py-1.5 text-muted-foreground outline-none" /></label>
+                          <label className="flex items-center gap-2">
+                            {ecfTypeRequiresExpiry(type.codigo) ? "Vence *" : "Vence (opcional)"}{" "}
+                            <input
+                              type="date"
+                              value={expiryToInputValue(seq.vence ?? "")}
+                              onChange={(e) => {
+                                const expiry = inputValueToExpiry(e.target.value);
+                                setEcfSequences((s) => {
+                                  const current = s[type.codigo] || { start: 1, end: 1000, used: 0 };
+                                  const nextSeq = { ...current };
+                                  if (expiry) {
+                                    nextSeq.vence = expiry;
+                                  } else {
+                                    delete nextSeq.vence;
+                                  }
+                                  return { ...s, [type.codigo]: nextSeq };
+                                });
+                              }}
+                              className="rounded-lg border border-border px-2 py-1.5 text-foreground outline-none focus:border-primary"
+                            />
+                          </label>
                         </div>
                       </div>
                       <div className="mt-4">
@@ -894,7 +923,12 @@ export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral: 
                     return (
                       <div key={type.codigo} className="flex items-center justify-between gap-3 border-b border-border/70 pb-2 text-xs">
                         <span className="font-semibold text-foreground"><span className="mr-2 rounded bg-primary/10 px-1.5 py-0.5 font-mono text-primary">{type.codigo}</span>{type.descripcion.replace(`${type.codigo} - `, "")}</span>
-                        <span className="font-mono font-bold text-green-600 dark:text-green-400">{String(next).padStart(10, "0")}</span>
+                        <div className="flex items-center gap-3">
+                          {seq.vence && (
+                            <span className="text-muted-foreground">vence <strong className="font-mono text-foreground">{seq.vence}</strong></span>
+                          )}
+                          <span className="font-mono font-bold text-green-600 dark:text-green-400">{String(next).padStart(10, "0")}</span>
+                        </div>
                       </div>
                     );
                   })}
