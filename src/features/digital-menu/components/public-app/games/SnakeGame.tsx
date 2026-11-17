@@ -19,6 +19,7 @@ import {
 } from "../../../lib/games/snake";
 import { fillRoundedRect } from "../../../lib/games/canvas";
 import { shouldHandleGameKey } from "../../../lib/games/keyboard";
+import { publicMenuTheme } from "../publicMenuTheme";
 
 export interface SnakeGameProps {
   onBack: () => void;
@@ -123,11 +124,11 @@ export function SnakeGame({ onBack }: SnakeGameProps) {
     const cellHeight = height / state.gridHeight;
 
     // Clear background
-    ctx.fillStyle = "#09090b";
+    ctx.fillStyle = publicMenuTheme.colors.deep;
     ctx.fillRect(0, 0, width, height);
 
     // Subtle grid lines
-    ctx.strokeStyle = "#18181b";
+    ctx.strokeStyle = publicMenuTheme.colors.divider;
     ctx.lineWidth = 1;
     for (let x = 0; x <= width; x += cellWidth) {
       ctx.beginPath();
@@ -165,8 +166,8 @@ export function SnakeGame({ onBack }: SnakeGameProps) {
       const pad = 1.5;
 
       if (idx === 0) {
-        // Head (bright emerald)
-        ctx.fillStyle = "#34d399";
+        // Head (bright coral)
+        ctx.fillStyle = publicMenuTheme.colors.accentHover;
         fillRoundedRect(
           ctx,
           segX + pad,
@@ -176,8 +177,8 @@ export function SnakeGame({ onBack }: SnakeGameProps) {
           4
         );
       } else {
-        // Body (deep emerald)
-        ctx.fillStyle = "#059669";
+        // Body (deep coral)
+        ctx.fillStyle = publicMenuTheme.colors.accent;
         fillRoundedRect(
           ctx,
           segX + pad,
@@ -229,18 +230,18 @@ export function SnakeGame({ onBack }: SnakeGameProps) {
           type="button"
           onClick={onBack}
           aria-label="Volver a la lista de juegos"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#18181b] border border-[#27272a] text-xs font-semibold text-zinc-300 hover:text-white hover:border-zinc-700 transition cursor-pointer"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#131313] border border-[#262626] text-xs font-semibold text-[#fafafa] hover:border-[#3a3a3a] transition cursor-pointer"
         >
           <ArrowLeft className="size-3.5" />
           <span>Volver</span>
         </button>
 
         <div className="flex items-center gap-3 text-xs font-medium">
-          <span className="text-zinc-400">
+          <span className="text-[#adaaaa]">
             Puntos: <strong className="text-white">{state.score}</strong>
           </span>
-          <span className="text-zinc-400">
-            Mejor: <strong className="text-emerald-400">{highScore}</strong>
+          <span className="text-[#adaaaa]">
+            Mejor: <strong className="text-[#ff906d]">{highScore}</strong>
           </span>
         </div>
 
@@ -250,7 +251,7 @@ export function SnakeGame({ onBack }: SnakeGameProps) {
               type="button"
               onClick={() => setIsPaused((p) => !p)}
               aria-label={isPaused ? "Reanudar juego" : "Pausar juego"}
-              className="flex items-center justify-center size-8 rounded-lg bg-[#18181b] border border-[#27272a] text-zinc-300 hover:text-white transition cursor-pointer"
+              className="flex items-center justify-center size-8 rounded-lg bg-[#131313] border border-[#262626] text-[#fafafa] hover:border-[#3a3a3a] transition cursor-pointer"
             >
               {isPaused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
             </button>
@@ -260,7 +261,7 @@ export function SnakeGame({ onBack }: SnakeGameProps) {
             type="button"
             onClick={handleReset}
             aria-label="Reiniciar juego de la serpiente"
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#18181b] border border-[#27272a] text-xs font-semibold text-zinc-400 hover:text-white hover:border-zinc-700 transition cursor-pointer"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#131313] border border-[#262626] text-xs font-semibold text-[#adaaaa] hover:text-[#fafafa] hover:border-[#3a3a3a] transition cursor-pointer"
           >
             <RotateCcw className="size-3.5" />
             <span className="hidden sm:inline">Reiniciar</span>
@@ -291,7 +292,7 @@ export function SnakeGame({ onBack }: SnakeGameProps) {
           <button
             type="button"
             onClick={handleReset}
-            className="px-3 py-1 rounded-lg bg-white text-zinc-950 font-bold text-[11px] hover:bg-zinc-100 transition cursor-pointer"
+            className="px-3 py-1 rounded-lg bg-white text-[#0a0a0a] font-bold text-[11px] hover:bg-[#fafafa] transition cursor-pointer"
           >
             Reintentar
           </button>
@@ -301,10 +302,10 @@ export function SnakeGame({ onBack }: SnakeGameProps) {
       {state.isWon && (
         <div
           role="status"
-          className="flex items-center justify-between w-full p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs animate-in fade-in"
+          className="flex items-center justify-between w-full p-2.5 rounded-xl bg-[#2b160d] border border-[#5b2a17] text-[#ffb59c] text-xs animate-in fade-in"
         >
           <div className="flex items-center gap-1.5">
-            <Trophy className="size-4 text-emerald-400 shrink-0" />
+            <Trophy className="size-4 text-[#ff906d] shrink-0" />
             <span>
               <strong>¡Ganaste!</strong> Llenaste el tablero con {state.score} puntos.
             </span>
@@ -312,7 +313,7 @@ export function SnakeGame({ onBack }: SnakeGameProps) {
           <button
             type="button"
             onClick={handleReset}
-            className="px-3 py-1 rounded-lg bg-emerald-400 text-zinc-950 font-bold text-[11px] hover:bg-emerald-300 transition cursor-pointer"
+            className="px-3 py-1 rounded-lg bg-[#ff906d] text-[#5b1600] font-bold text-[11px] hover:bg-[#ffb59c] transition cursor-pointer"
           >
             Jugar de nuevo
           </button>
@@ -320,12 +321,12 @@ export function SnakeGame({ onBack }: SnakeGameProps) {
       )}
 
       {isPaused && !state.isGameOver && !state.isWon && (
-        <div className="flex items-center justify-between w-full p-2 rounded-xl bg-zinc-800/60 border border-zinc-700 text-zinc-300 text-xs">
+        <div className="flex items-center justify-between w-full p-2 rounded-xl bg-[#1a1a1a] border border-[#262626] text-[#fafafa] text-xs">
           <span>Juego pausado</span>
           <button
             type="button"
             onClick={() => setIsPaused(false)}
-            className="px-2.5 py-0.5 rounded-md bg-white text-zinc-950 font-semibold text-[11px] cursor-pointer"
+            className="px-2.5 py-0.5 rounded-md bg-white text-[#0a0a0a] font-semibold text-[11px] cursor-pointer"
           >
             Reanudar
           </button>
@@ -334,7 +335,7 @@ export function SnakeGame({ onBack }: SnakeGameProps) {
 
       {/* Game Canvas with Touch Swipe support */}
       <div
-        className="relative w-full max-w-[280px] sm:max-w-[300px] aspect-square rounded-2xl overflow-hidden border border-[#27272a] shadow-xl touch-none"
+        className="relative w-full max-w-[280px] sm:max-w-[300px] aspect-square rounded-2xl overflow-hidden border border-[#262626] shadow-xl touch-none"
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
@@ -357,7 +358,7 @@ export function SnakeGame({ onBack }: SnakeGameProps) {
           type="button"
           onClick={() => handleDirection("UP")}
           aria-label="Mover arriba"
-          className="flex size-11 items-center justify-center rounded-xl bg-[#18181b] border border-[#27272a] text-zinc-200 active:scale-95 active:bg-emerald-400/20 active:border-emerald-400 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+          className="flex size-11 items-center justify-center rounded-xl bg-[#131313] border border-[#262626] text-[#fafafa] active:scale-95 active:bg-[#2b160d] active:border-[#ff906d] transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ff906d]"
         >
           <ChevronUp className="size-6" />
         </button>
@@ -367,12 +368,12 @@ export function SnakeGame({ onBack }: SnakeGameProps) {
             type="button"
             onClick={() => handleDirection("LEFT")}
             aria-label="Mover a la izquierda"
-            className="flex size-11 items-center justify-center rounded-xl bg-[#18181b] border border-[#27272a] text-zinc-200 active:scale-95 active:bg-emerald-400/20 active:border-emerald-400 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+            className="flex size-11 items-center justify-center rounded-xl bg-[#131313] border border-[#262626] text-[#fafafa] active:scale-95 active:bg-[#2b160d] active:border-[#ff906d] transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ff906d]"
           >
             <ChevronLeft className="size-6" />
           </button>
 
-          <div className="size-11 flex items-center justify-center rounded-xl bg-zinc-900/40 text-[10px] font-bold text-zinc-600">
+          <div className="size-11 flex items-center justify-center rounded-xl bg-[#131313] text-[10px] font-bold text-[#adaaaa]">
             D-PAD
           </div>
 
@@ -380,7 +381,7 @@ export function SnakeGame({ onBack }: SnakeGameProps) {
             type="button"
             onClick={() => handleDirection("RIGHT")}
             aria-label="Mover a la derecha"
-            className="flex size-11 items-center justify-center rounded-xl bg-[#18181b] border border-[#27272a] text-zinc-200 active:scale-95 active:bg-emerald-400/20 active:border-emerald-400 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+            className="flex size-11 items-center justify-center rounded-xl bg-[#131313] border border-[#262626] text-[#fafafa] active:scale-95 active:bg-[#2b160d] active:border-[#ff906d] transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ff906d]"
           >
             <ChevronRight className="size-6" />
           </button>
@@ -390,7 +391,7 @@ export function SnakeGame({ onBack }: SnakeGameProps) {
           type="button"
           onClick={() => handleDirection("DOWN")}
           aria-label="Mover abajo"
-          className="flex size-11 items-center justify-center rounded-xl bg-[#18181b] border border-[#27272a] text-zinc-200 active:scale-95 active:bg-emerald-400/20 active:border-emerald-400 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+          className="flex size-11 items-center justify-center rounded-xl bg-[#131313] border border-[#262626] text-[#fafafa] active:scale-95 active:bg-[#2b160d] active:border-[#ff906d] transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ff906d]"
         >
           <ChevronDown className="size-6" />
         </button>

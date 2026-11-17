@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { ShoppingBag } from "lucide-react";
 import type { PublicMenuMode } from "../lib/publicMenuMode";
 import type { PublicContact } from "../../menu-links/lib/publicMenuCalendar";
 import type { DeliveryDraft } from "../lib/deliveryOrder";
@@ -9,7 +8,9 @@ import { DishRow } from "./public-app/DishRow";
 import { BottomTabBar } from "./public-app/BottomTabBar";
 import { CartDrawer } from "./public-app/CartDrawer";
 import { ServicesTab } from "./public-app/ServicesTab";
+import { FloatingCartBar } from "./public-app/FloatingCartBar";
 import { publicMenuTheme } from "./public-app/publicMenuTheme";
+import { filterDishesByName } from "../lib/searchDishes";
 
 export interface PublicMenuSettings {
   tenant_id: string;
@@ -68,6 +69,7 @@ export interface PublicMenuOrderScreenProps {
   currencyFormatter: (value: number, code: string) => string;
   slug?: string;
   tenantId?: string | null;
+  isOpen?: boolean | null;
 }
 
 export function PublicMenuOrderScreen({
@@ -100,6 +102,7 @@ export function PublicMenuOrderScreen({
   currencyFormatter,
   slug,
   tenantId,
+  isOpen = true,
 }: PublicMenuOrderScreenProps) {
   const [activeTab, setActiveTab] = useState<"menu" | "services">("menu");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
@@ -117,7 +120,7 @@ export function PublicMenuOrderScreen({
     return Array.from(set);
   }, [items]);
 
-  // Filter items based on search and selected category
+  // Filter items based on selected category and pure case/accent-insensitive name search
   const filteredItems = useMemo(() => {
     let result = items;
 
@@ -126,13 +129,7 @@ export function PublicMenuOrderScreen({
     }
 
     if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(
-        (item) =>
-          item.name.toLowerCase().includes(q) ||
-          item.description?.toLowerCase().includes(q) ||
-          item.category.toLowerCase().includes(q)
-      );
+      result = filterDishesByName(result, searchQuery);
     }
 
     return result;
@@ -183,129 +180,116 @@ export function PublicMenuOrderScreen({
     <div className={publicMenuTheme.canvas} style={publicMenuTheme.rootStyle}>
       {/* Shell: a single column on phones; menu + cart (right) side by side from lg */}
       <div className="flex w-full justify-center lg:mx-auto lg:max-w-[1240px] lg:justify-start">
-      <div className={publicMenuTheme.orderColumn} style={publicMenuTheme.rootStyle}>
-        {/* Sticky Top Bar */}
-        <AppTopBar
-          title={settings.title || settings.business_name}
-          logoUrl={settings.logo_url}
-          mode={mode}
-          partySize={partySize}
-          cartCount={itemCount}
-          onOpenCart={handleOpenCart}
-          onChangePartySize={onBackToHome}
-        />
+        <div className={publicMenuTheme.orderColumn} style={publicMenuTheme.rootStyle}>
+          {/* Sticky Top Bar: restaurant name (Space Grotesk 22px/800), open dot status, mode toggle */}
+          <AppTopBar
+            title={settings.title || settings.business_name}
+            logoUrl={settings.logo_url}
+            mode={mode}
+            partySize={partySize}
+            cartCount={itemCount}
+            onOpenCart={handleOpenCart}
+            onChangePartySize={onBackToHome}
+            isOpen={isOpen}
+            delivery={delivery}
+            onDeliveryChange={onDeliveryChange}
+          />
 
-        {/* Tab 1: Menú */}
-        {activeTab === "menu" && (
-          <main
-            className={`flex-1 flex flex-col ${
-              cart.length > 0
-                ? publicMenuTheme.scrollPaddingCart
-                : publicMenuTheme.scrollPaddingNoCart
-            }`}
-          >
-            {/* Sticky Category Chips & Search */}
-            <CategoryChips
-              categories={categories}
-              selectedCategory={selectedCategory}
-              onSelectCategory={setSelectedCategory}
-              searchQuery={searchQuery}
-              onSearchChange={setSearchQuery}
-            />
-
-            {/* Dish List */}
-            <section
-              aria-label="Platos del menú"
-              className="flex-1 px-4 py-3 space-y-5 lg:px-6 lg:py-5"
+          {/* Tab 1: Menú / Inicio */}
+          {activeTab === "menu" && (
+            <main
+              className={`flex-1 flex flex-col ${
+                cart.length > 0
+                  ? publicMenuTheme.scrollPaddingCart
+                  : publicMenuTheme.scrollPaddingNoCart
+              }`}
             >
-              {filteredItems.length === 0 ? (
-                <div className="py-16 text-center">
-                  <p className="text-sm font-semibold text-zinc-300">
-                    No encontramos platos
-                  </p>
-                  <p className="mt-1 text-xs text-zinc-500">
-                    {searchQuery
-                      ? `No hay resultados para "${searchQuery}".`
-                      : "No hay productos en esta categoría."}
-                  </p>
-                </div>
-              ) : (
-                groupedItems.map(([categoryName, categoryDishes]) => (
-                  <div key={categoryName} className="space-y-2.5">
-                    {selectedCategory === "all" && (
-                      <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400 px-1 pt-1">
-                        {categoryName}
-                      </h2>
-                    )}
-                    <div className="flex flex-col gap-2 lg:grid lg:grid-cols-2 lg:gap-3">
-                      {categoryDishes.map((item) => (
-                        <DishRow
-                          key={item.id}
-                          item={item}
-                          quantityInCart={cartQuantities.get(item.plato_id) ?? 0}
-                          onAdd={() => onAddItem(item)}
-                          onUpdateQuantity={(q) => onUpdateQuantity(item.plato_id, q)}
-                          currency={settings.currency}
-                          currencyFormatter={currencyFormatter}
-                        />
-                      ))}
-                    </div>
+              {/* Sticky Category Chips & Search */}
+              <CategoryChips
+                categories={categories}
+                selectedCategory={selectedCategory}
+                onSelectCategory={setSelectedCategory}
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+              />
+
+              {/* Dish List */}
+              <section
+                aria-label="Platos del menú"
+                className="flex-1 px-4 py-3 space-y-5 lg:px-6 lg:py-5"
+              >
+                {filteredItems.length === 0 ? (
+                  <div className="py-16 text-center">
+                    <p className="text-sm font-semibold text-[#fafafa]">
+                      No encontramos platos
+                    </p>
+                    <p className="mt-1 text-xs text-[#adaaaa]">
+                      {searchQuery
+                        ? `No hay resultados para "${searchQuery}".`
+                        : "No hay productos en esta categoría."}
+                    </p>
                   </div>
-                ))
-              )}
-            </section>
-          </main>
-        )}
+                ) : (
+                  groupedItems.map(([categoryName, categoryDishes]) => (
+                    <div key={categoryName} className="space-y-2.5">
+                      {selectedCategory === "all" && (
+                        <h2 className={`text-xs font-bold uppercase tracking-wider text-[#adaaaa] px-1 pt-1 ${publicMenuTheme.headingFontClass}`}>
+                          {categoryName}
+                        </h2>
+                      )}
+                      <div className="flex flex-col gap-2.5 lg:grid lg:grid-cols-2 lg:gap-3">
+                        {categoryDishes.map((item) => (
+                          <DishRow
+                            key={item.id}
+                            item={item}
+                            quantityInCart={cartQuantities.get(item.plato_id) ?? 0}
+                            onAdd={() => onAddItem(item)}
+                            onUpdateQuantity={(q) => onUpdateQuantity(item.plato_id, q)}
+                            currency={settings.currency}
+                            currencyFormatter={currencyFormatter}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </section>
+            </main>
+          )}
 
-        {/* Tab 2: Servicios / Info */}
-        {activeTab === "services" && (
-          <main className={`flex-1 ${publicMenuTheme.scrollPaddingNoCart}`}>
-            <ServicesTab
-              contact={contact}
-              isTableMode={isTableMode}
-              businessName={settings.title || settings.business_name}
-              slug={slug}
-              tenantId={tenantId}
-              mesa={mode.kind === "table" ? mode.mesa : undefined}
-            />
-          </main>
-        )}
+          {/* Tab 2: Servicios / Info */}
+          {activeTab === "services" && (
+            <main className={`flex-1 ${publicMenuTheme.scrollPaddingNoCart}`}>
+              <ServicesTab
+                contact={contact}
+                isTableMode={isTableMode}
+                businessName={settings.title || settings.business_name}
+                slug={slug}
+                tenantId={tenantId}
+                mesa={mode.kind === "table" ? mode.mesa : undefined}
+              />
+            </main>
+          )}
 
-        {/* Floating Cart Summary Bar (Optional app-like summary) */}
-        {cart.length > 0 && !isCartOpen && (
-          <div
-            className="fixed bottom-[68px] left-1/2 -translate-x-1/2 w-full max-w-[480px] px-4 z-20 pointer-events-none lg:hidden"
-            style={{ bottom: "calc(4.5rem + env(safe-area-inset-bottom, 0px))" }}
-          >
-            <button
-              type="button"
-              onClick={handleOpenCart}
-              className="pointer-events-auto flex w-full items-center justify-between rounded-xl bg-white px-4 py-3 text-xs font-bold text-zinc-950 shadow-xl transition active:scale-98 cursor-pointer hover:bg-zinc-100"
-            >
-              <div className="flex items-center gap-2 whitespace-nowrap">
-                <ShoppingBag className="size-4 shrink-0 text-emerald-600" />
-                <span>Ver pedido</span>
-                <span aria-hidden="true">·</span>
-                <span>
-                  {itemCount} {itemCount === 1 ? "item" : "items"}
-                </span>
-              </div>
-              <span className="font-extrabold text-sm text-zinc-950 tabular-nums">
-                {currencyFormatter(total, settings.currency)}
-              </span>
-            </button>
-          </div>
-        )}
+          {/* Floating Cart Summary Bar above tab bar: coral rounded-full */}
+          <FloatingCartBar
+            itemCount={itemCount}
+            total={total}
+            currency={settings.currency}
+            currencyFormatter={currencyFormatter}
+            onOpenCart={handleOpenCart}
+            visible={!isCartOpen}
+          />
 
-        {/* Fixed Bottom Tab Bar */}
-        <BottomTabBar
-          activeTab={activeTab}
-          onTabChange={setActiveTab}
-          onOpenCart={handleOpenCart}
-          cartCount={itemCount}
-          isTableMode={isTableMode}
-        />
-      </div>
+          {/* Fixed Bottom Tab Bar: Inicio / Mis pedidos / Servicios */}
+          <BottomTabBar
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            onOpenCart={handleOpenCart}
+            cartCount={itemCount}
+            isTableMode={isTableMode}
+          />
+        </div>
 
         {/* Cart: slide-in panel from the right on phones, permanent right column on wide screens */}
         <CartDrawer

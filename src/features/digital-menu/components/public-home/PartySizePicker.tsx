@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { publicMenuTheme } from "../public-app/publicMenuTheme";
 
 export interface PartySizePickerProps {
   value: number | null;
@@ -50,11 +51,11 @@ export function PartySizePicker({ value, onChange }: PartySizePickerProps) {
   return (
     <section aria-labelledby="party-size-heading" className="w-full space-y-3">
       <div className="flex items-center justify-between">
-        <h2 id="party-size-heading" className="text-sm font-bold text-white">
+        <h2 id="party-size-heading" className={`text-sm font-bold text-[#fafafa] ${publicMenuTheme.headingFontClass}`}>
           ¿Cuántos son?
         </h2>
         {value !== null && (
-          <span className="text-xs font-semibold text-emerald-400">
+          <span className="text-xs font-semibold text-[#ff906d]">
             {value} {value === 1 ? "persona" : "personas"}
           </span>
         )}
@@ -70,10 +71,10 @@ export function PartySizePicker({ value, onChange }: PartySizePickerProps) {
               onClick={() => handlePresetClick(size)}
               aria-label={`${size} ${size === 1 ? "persona" : "personas"}`}
               aria-pressed={isSelected}
-              className={`flex h-12 w-full min-h-12 min-w-12 items-center justify-center rounded-2xl border text-base font-bold transition cursor-pointer select-none ${
+              className={`flex h-12 w-full min-h-12 min-w-12 items-center justify-center rounded-full border text-base font-bold transition cursor-pointer select-none ${
                 isSelected
-                  ? "border-emerald-400 bg-emerald-400 text-zinc-950 shadow-lg shadow-emerald-400/20"
-                  : "border-[#27272a] bg-[#18181b] text-zinc-300 hover:bg-zinc-800 hover:border-zinc-700 active:scale-95"
+                  ? "border-[#ff906d] bg-[#ff906d] text-[#5b1600] shadow-lg shadow-[#ff906d]/20"
+                  : "border-[#262626] bg-[#1a1a1a] text-[#adaaaa] hover:bg-[#262626] hover:text-[#fafafa] active:scale-95"
               }`}
             >
               {size}
@@ -86,10 +87,10 @@ export function PartySizePicker({ value, onChange }: PartySizePickerProps) {
           onClick={handlePlusClick}
           aria-label="Más de 6 personas"
           aria-pressed={stepperOpen}
-          className={`flex h-12 w-full min-h-12 min-w-12 items-center justify-center rounded-2xl border text-lg font-bold transition cursor-pointer select-none ${
+          className={`flex h-12 w-full min-h-12 min-w-12 items-center justify-center rounded-full border text-lg font-bold transition cursor-pointer select-none ${
             stepperOpen
-              ? "border-emerald-400 bg-emerald-400 text-zinc-950 shadow-lg shadow-emerald-400/20"
-              : "border-[#27272a] bg-[#18181b] text-zinc-300 hover:bg-zinc-800 hover:border-zinc-700 active:scale-95"
+              ? "border-[#ff906d] bg-[#ff906d] text-[#5b1600] shadow-lg shadow-[#ff906d]/20"
+              : "border-[#262626] bg-[#1a1a1a] text-[#adaaaa] hover:bg-[#262626] hover:text-[#fafafa] active:scale-95"
           }`}
         >
           +
@@ -99,11 +100,11 @@ export function PartySizePicker({ value, onChange }: PartySizePickerProps) {
       {stepperOpen && (
         <div
           data-testid="stepper-panel"
-          className="flex items-center justify-between rounded-2xl border border-[#27272a] bg-[#18181b] p-3 text-xs"
+          className="flex items-center justify-between rounded-[20px] border border-[#262626] bg-[#1a1a1a] p-3 text-xs"
         >
           <div className="flex flex-col">
-            <span className="font-semibold text-white">Grupo grande (7 - 99):</span>
-            <span className="text-[11px] text-zinc-400">Usá los botones para ajustar</span>
+            <span className="font-semibold text-[#fafafa]">Grupo grande (7 - 99):</span>
+            <span className="text-[11px] text-[#adaaaa]">Usá los botones para ajustar</span>
           </div>
 
           <div className="flex items-center gap-2">
@@ -112,14 +113,14 @@ export function PartySizePicker({ value, onChange }: PartySizePickerProps) {
               onClick={handleDecrement}
               disabled={(value ?? MIN_STEPPER_VALUE) <= MIN_STEPPER_VALUE}
               aria-label="Disminuir comensales"
-              className="flex size-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900 text-lg font-black text-zinc-200 transition hover:bg-zinc-800 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              className="flex size-10 items-center justify-center rounded-full border border-[#262626] bg-[#131313] text-lg font-black text-[#fafafa] transition hover:bg-[#262626] active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
             >
               −
             </button>
 
             <span
               data-testid="stepper-value"
-              className="w-9 text-center text-base font-black text-white"
+              className="w-9 text-center text-base font-black text-[#fafafa]"
             >
               {value ?? MIN_STEPPER_VALUE}
             </span>
@@ -129,7 +130,7 @@ export function PartySizePicker({ value, onChange }: PartySizePickerProps) {
               onClick={handleIncrement}
               disabled={(value ?? MIN_STEPPER_VALUE) >= MAX_STEPPER_VALUE}
               aria-label="Aumentar comensales"
-              className="flex size-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900 text-lg font-black text-zinc-200 transition hover:bg-zinc-800 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              className="flex size-10 items-center justify-center rounded-full border border-[#5b2a17] bg-[#ff906d] text-lg font-black text-[#5b1600] transition hover:bg-[#ffb59c] active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
             >
               +
             </button>

@@ -16,7 +16,7 @@ describe("BottomTabBar", () => {
 
     expect(html).toContain('aria-label="Navegación principal"');
     expect(html).toContain('role="tablist"');
-    expect(html).toContain(">Menú</span>");
+    expect(html).toContain(">Inicio</span>");
     expect(html).toContain(">Servicios</span>");
     expect(html).toContain(">Pedido</span>");
     expect(html).toContain("min-h-[48px]");
@@ -35,7 +35,7 @@ describe("BottomTabBar", () => {
 
     expect(html).toContain('aria-selected="true"');
     expect(html).toContain('aria-current="page"');
-    expect(html).toContain("text-emerald-400");
+    expect(html).toContain("text-[#ff906d]");
   });
 
   it("renders 'Info' label for second tab in takeout mode", () => {

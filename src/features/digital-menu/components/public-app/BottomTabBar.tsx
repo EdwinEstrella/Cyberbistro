@@ -20,44 +20,27 @@ export function BottomTabBar({
   return (
     <nav
       aria-label="Navegación principal"
-      className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] z-30 bg-[#0b0b0d]/95 backdrop-blur-md border-t border-[#27272a] px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] lg:sticky lg:left-auto lg:translate-x-0 lg:max-w-none"
+      className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[480px] z-30 bg-[#0e0e0e]/95 backdrop-blur-md border-t border-[#262626] px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] lg:sticky lg:left-auto lg:translate-x-0 lg:max-w-none"
     >
       <div role="tablist" className="grid grid-cols-3 gap-1 lg:grid-cols-2 lg:mx-auto lg:max-w-md">
-        {/* Tab 1: Menú */}
+        {/* Tab 1: Inicio */}
         <button
           type="button"
           role="tab"
           aria-selected={activeTab === "menu"}
           aria-current={activeTab === "menu" ? "page" : undefined}
           onClick={() => onTabChange("menu")}
-          className={`flex min-h-[48px] flex-col items-center justify-center gap-1 rounded-xl text-[11px] font-semibold transition cursor-pointer active:scale-95 ${
+          className={`flex min-h-[48px] flex-col items-center justify-center gap-1 rounded-full text-[11px] font-semibold transition cursor-pointer active:scale-95 ${
             activeTab === "menu"
-              ? "text-emerald-400 bg-emerald-400/10"
-              : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/40"
+              ? "text-[#ff906d] bg-[#2b160d] font-bold"
+              : "text-[#adaaaa] hover:text-[#fafafa] hover:bg-[#1a1a1a]"
           }`}
         >
-          <UtensilsCrossed className="size-5" />
-          <span>Menú</span>
+          <UtensilsCrossed className="size-5" aria-hidden="true" />
+          <span>Inicio</span>
         </button>
 
-        {/* Tab 2: Servicios / Info */}
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === "services"}
-          aria-current={activeTab === "services" ? "page" : undefined}
-          onClick={() => onTabChange("services")}
-          className={`flex min-h-[48px] flex-col items-center justify-center gap-1 rounded-xl text-[11px] font-semibold transition cursor-pointer active:scale-95 ${
-            activeTab === "services"
-              ? "text-emerald-400 bg-emerald-400/10"
-              : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/40"
-          }`}
-        >
-          <Sparkles className="size-5" />
-          <span>{servicesLabel}</span>
-        </button>
-
-        {/* Tab 3: Pedido (Drawer trigger) */}
+        {/* Tab 2: Pedido (Cart drawer trigger) */}
         <button
           type="button"
           role="tab"
@@ -68,20 +51,37 @@ export function BottomTabBar({
               ? `Pedido (${cartCount} ${cartCount === 1 ? "item" : "items"})`
               : "Pedido"
           }
-          className="relative flex min-h-[48px] flex-col items-center justify-center gap-1 rounded-xl text-[11px] font-semibold text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/40 transition cursor-pointer active:scale-95 lg:hidden"
+          className="relative flex min-h-[48px] flex-col items-center justify-center gap-1 rounded-full text-[11px] font-semibold text-[#adaaaa] hover:text-[#fafafa] hover:bg-[#1a1a1a] transition cursor-pointer active:scale-95 lg:hidden"
         >
           <div className="relative">
-            <ShoppingBag className="size-5" />
+            <ShoppingBag className="size-5" aria-hidden="true" />
             {cartCount > 0 && (
               <span
                 data-testid="bottom-tab-badge"
-                className="absolute -top-1.5 -right-2.5 flex min-w-[17px] h-[17px] items-center justify-center rounded-full bg-emerald-400 px-1 text-[10px] font-black text-zinc-950 shadow-sm"
+                className="absolute -top-1.5 -right-2.5 flex min-w-[17px] h-[17px] items-center justify-center rounded-full bg-[#ff906d] px-1 text-[10px] font-black text-[#5b1600] shadow-sm"
               >
                 {cartCount}
               </span>
             )}
           </div>
           <span>Pedido</span>
+        </button>
+
+        {/* Tab 3: Servicios / Info */}
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "services"}
+          aria-current={activeTab === "services" ? "page" : undefined}
+          onClick={() => onTabChange("services")}
+          className={`flex min-h-[48px] flex-col items-center justify-center gap-1 rounded-full text-[11px] font-semibold transition cursor-pointer active:scale-95 ${
+            activeTab === "services"
+              ? "text-[#ff906d] bg-[#2b160d] font-bold"
+              : "text-[#adaaaa] hover:text-[#fafafa] hover:bg-[#1a1a1a]"
+          }`}
+        >
+          <Sparkles className="size-5" aria-hidden="true" />
+          <span>{servicesLabel}</span>
         </button>
       </div>
     </nav>

@@ -36,9 +36,9 @@ describe("CategoryChips", () => {
       />
     );
 
-    // Selected chip has bg-white and text-zinc-950
+    // Selected chip has coral bg and text-#5b1600
     expect(html).toContain('aria-pressed="true"');
-    expect(html).toContain("bg-white text-zinc-950");
+    expect(html).toContain("bg-[#ff906d] text-[#5b1600]");
   });
 
   it("renders search input with placeholder and accessibility label", () => {

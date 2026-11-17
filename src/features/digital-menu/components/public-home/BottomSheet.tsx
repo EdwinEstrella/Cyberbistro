@@ -65,18 +65,18 @@ export function BottomSheet({
       {/* Sheet panel */}
       <div
         style={publicMenuTheme.rootStyle}
-        className="relative z-10 w-full max-h-[88vh] overflow-y-auto rounded-t-[28px] border-t border-[#27272a] bg-[#111113] p-5 text-zinc-100 shadow-2xl transition-all pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] sm:max-w-md sm:rounded-2xl sm:border border-[#27272a]"
+        className="relative z-10 w-full max-h-[88vh] overflow-y-auto rounded-t-[28px] border-t border-[#262626] bg-[#131313] p-5 text-[#fafafa] shadow-2xl transition-all pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] sm:max-w-md sm:rounded-[20px] sm:border border-[#262626]"
       >
         {/* Mobile handle indicator */}
-        <div className="mx-auto mb-3.5 h-1.5 w-10 rounded-full bg-zinc-700 sm:hidden" />
+        <div className="mx-auto mb-3.5 h-1.5 w-10 rounded-full bg-[#3a3a3a] sm:hidden" />
 
         <div className="flex items-start justify-between gap-3 mb-4">
           <div>
-            <h2 id="sheet-title" className="text-base font-bold text-white">
+            <h2 id="sheet-title" className={`text-base font-bold text-[#fafafa] ${publicMenuTheme.headingFontClass}`}>
               {title}
             </h2>
             {description && (
-              <p className="mt-1 text-xs text-zinc-400">{description}</p>
+              <p className="mt-1 text-xs text-[#adaaaa]">{description}</p>
             )}
           </div>
           <button
@@ -84,9 +84,9 @@ export function BottomSheet({
             type="button"
             onClick={onClose}
             aria-label="Cerrar"
-            className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-[#18181b] border border-[#27272a] text-zinc-400 hover:text-white transition cursor-pointer"
+            className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#1a1a1a] border border-[#262626] text-[#adaaaa] hover:text-[#fafafa] transition cursor-pointer"
           >
-            <X className="size-4" />
+            <X className="size-4" aria-hidden="true" />
           </button>
         </div>
 

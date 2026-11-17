@@ -20,6 +20,7 @@ import { WhatsAppSheet } from "../public-home/WhatsAppSheet";
 import { SocialSheet } from "../public-home/SocialSheet";
 import { ServiceRequestPanel } from "../public-home/ServiceRequestPanel";
 import { GamesSheet } from "./games/GamesSheet";
+import { publicMenuTheme } from "./publicMenuTheme";
 
 export interface ServicesTabProps {
   contact?: PublicContact | null;
@@ -64,14 +65,14 @@ export function ServicesTab({
     <div className="w-full px-4 py-5 space-y-5">
       {/* Header */}
       <div className="flex items-center gap-2.5">
-        <div className="size-9 rounded-xl bg-emerald-400/10 border border-emerald-400/20 text-emerald-400 flex items-center justify-center shrink-0">
+        <div className="size-9 rounded-full bg-[#2b160d] border border-[#5b2a17] text-[#ff906d] flex items-center justify-center shrink-0">
           <Sparkles className="size-4.5" />
         </div>
         <div>
-          <h2 className="text-base font-bold text-white">
+          <h2 className={`text-base font-bold text-[#fafafa] ${publicMenuTheme.headingFontClass}`}>
             {isTableMode ? "Servicios y Utilidades" : "Información y Contacto"}
           </h2>
-          <p className="text-xs text-zinc-400">
+          <p className="text-xs text-[#adaaaa]">
             {isTableMode
               ? "Todo lo que necesitás durante tu visita"
               : "Canales de contacto y ubicación"}
@@ -88,7 +89,7 @@ export function ServicesTab({
 
       {/* Grid of utility cards */}
       {actions.length === 0 ? (
-        <div className="rounded-2xl border border-[#27272a] bg-[#111113] p-8 text-center text-xs text-zinc-500">
+        <div className="rounded-[20px] border border-[#262626] bg-[#131313] p-8 text-center text-xs text-[#adaaaa]">
           No hay servicios adicionales configurados.
         </div>
       ) : (
@@ -103,16 +104,16 @@ export function ServicesTab({
                   href={action.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex min-h-[56px] items-center gap-3.5 rounded-2xl border border-[#27272a] bg-[#111113] p-3 text-left transition hover:bg-[#18181b] hover:border-zinc-700 active:scale-98 cursor-pointer no-underline group"
+                  className="flex min-h-[56px] items-center gap-3.5 rounded-[18px] border border-[#262626] bg-[#131313] p-3 text-left transition hover:bg-[#1a1a1a] hover:border-[#3a3a3a] active:scale-98 cursor-pointer no-underline group"
                 >
-                  <div className="size-10 rounded-xl bg-emerald-400/10 border border-emerald-400/20 text-emerald-400 flex items-center justify-center shrink-0 group-hover:bg-emerald-400/20 transition">
+                  <div className="size-10 rounded-full bg-[#2b160d] border border-[#5b2a17] text-[#ff906d] flex items-center justify-center shrink-0 group-hover:bg-[#5b2a17]/50 transition">
                     <Icon className="size-5" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <span className="block text-xs font-semibold text-white group-hover:text-emerald-300 transition">
+                    <span className="block text-xs font-semibold text-[#fafafa] group-hover:text-[#ffb59c] transition">
                       {action.label}
                     </span>
-                    <span className="text-[11px] text-zinc-500 truncate block">Abrir enlace externo</span>
+                    <span className="text-[11px] text-[#adaaaa] truncate block">Abrir enlace externo</span>
                   </div>
                 </a>
               );
@@ -123,16 +124,16 @@ export function ServicesTab({
                 key={action.id}
                 type="button"
                 onClick={() => handleActionClick(action)}
-                className="flex min-h-[56px] items-center gap-3.5 rounded-2xl border border-[#27272a] bg-[#111113] p-3 text-left transition hover:bg-[#18181b] hover:border-zinc-700 active:scale-98 cursor-pointer group"
+                className="flex min-h-[56px] items-center gap-3.5 rounded-[18px] border border-[#262626] bg-[#131313] p-3 text-left transition hover:bg-[#1a1a1a] hover:border-[#3a3a3a] active:scale-98 cursor-pointer group"
               >
-                <div className="size-10 rounded-xl bg-emerald-400/10 border border-emerald-400/20 text-emerald-400 flex items-center justify-center shrink-0 group-hover:bg-emerald-400/20 transition">
+                <div className="size-10 rounded-full bg-[#2b160d] border border-[#5b2a17] text-[#ff906d] flex items-center justify-center shrink-0 group-hover:bg-[#5b2a17]/50 transition">
                   <Icon className="size-5" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <span className="block text-xs font-semibold text-white group-hover:text-emerald-300 transition">
+                  <span className="block text-xs font-semibold text-[#fafafa] group-hover:text-[#ffb59c] transition">
                     {action.label}
                   </span>
-                  <span className="text-[11px] text-zinc-500 truncate block">Tocar para ver opciones</span>
+                  <span className="text-[11px] text-[#adaaaa] truncate block">Tocar para ver opciones</span>
                 </div>
               </button>
             );

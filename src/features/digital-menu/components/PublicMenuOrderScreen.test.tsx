@@ -283,6 +283,65 @@ describe("PublicMenuOrderScreen app-shell layout", () => {
 
     expect(html.toLowerCase()).not.toContain("pagar");
   });
+
+  type ScreenProps = React.ComponentProps<typeof PublicMenuOrderScreen>;
+
+  const renderScreen = (overrides: Partial<ScreenProps> = {}) => {
+    const defaultProps: ScreenProps = {
+      settings: mockSettings,
+      mode: { kind: "takeout", invalidMesa: false },
+      partySize: null,
+      items: sampleItems,
+      cart: [],
+      onAddItem: vi.fn(),
+      onUpdateQuantity: vi.fn(),
+      customerName: "",
+      onCustomerNameChange: vi.fn(),
+      customerPhone: "",
+      onCustomerPhoneChange: vi.fn(),
+      notes: "",
+      onNotesChange: vi.fn(),
+      mesaCodigo: "",
+      onMesaCodigoChange: vi.fn(),
+      mesaCodeError: null,
+      error: null,
+      success: null,
+      placing: false,
+      onPlaceOrder: vi.fn(),
+      onBackToHome: vi.fn(),
+      currencyFormatter: formatCurrency,
+    };
+    return renderToStaticMarkup(<PublicMenuOrderScreen {...defaultProps} {...overrides} />);
+  };
+
+  it("renders floating cart bar when cart has items and hides it when empty", () => {
+    const cartLine: CartLine = {
+      ...sampleItems[0],
+      quantity: 2,
+    };
+
+    const htmlWithCart = renderScreen({ cart: [cartLine] });
+
+    expect(htmlWithCart).toContain('data-testid="floating-cart-bar"');
+    expect(htmlWithCart).toContain("Ver pedido");
+    expect(htmlWithCart).toContain("bg-[#ff906d]");
+
+    const htmlEmptyCart = renderScreen({ cart: [] });
+
+    expect(htmlEmptyCart).not.toContain('data-testid="floating-cart-bar"');
+  });
+
+  it("renders restaurant name in Space Grotesk 22px and open/closed status in header", () => {
+    const htmlOpen = renderScreen({ isOpen: true });
+
+    expect(htmlOpen).toContain("Test Bistro");
+    expect(htmlOpen).toContain("text-[22px]");
+    expect(htmlOpen).toContain("Abierto ahora");
+
+    const htmlClosed = renderScreen({ isOpen: false });
+
+    expect(htmlClosed).toContain("Cerrado");
+  });
 });
 
 describe("PublicMenuCartPanel singular/plural items", () => {

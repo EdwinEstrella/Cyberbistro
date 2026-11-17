@@ -18,14 +18,14 @@ describe("PartySizePicker", () => {
     expect(html).not.toContain('data-testid="stepper-panel"');
   });
 
-  it("indicates selected preset size with aria-pressed, filled emerald, and singular/plural label", () => {
+  it("indicates selected preset size with aria-pressed, filled coral, and singular/plural label", () => {
     const htmlPlural = renderToStaticMarkup(
       <PartySizePicker value={4} onChange={vi.fn()} />
     );
 
     expect(htmlPlural).toContain('aria-pressed="true"');
-    expect(htmlPlural).toContain("bg-emerald-400");
-    expect(htmlPlural).toContain("border-emerald-400");
+    expect(htmlPlural).toContain("bg-[#ff906d]");
+    expect(htmlPlural).toContain("border-[#ff906d]");
     expect(htmlPlural).toContain("4 personas");
 
     const htmlSingular = renderToStaticMarkup(
