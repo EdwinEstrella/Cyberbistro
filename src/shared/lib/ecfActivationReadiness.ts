@@ -9,7 +9,7 @@ import {
 } from "../../features/ajustes/lib/ecfCertificateHealth";
 import { canUseFeature } from "./planFeatures";
 import { validateEcfIssuer, type EcfIssuerInput } from "./ecfIssuerRequirements";
-import { restoreRanges, validateEcfRange } from "./ecfSequenceRanges";
+import { ecfTypeRequiresExpiry, restoreRanges, validateEcfExpiry, validateRangeBounds } from "./ecfSequenceRanges";
 
 export type EcfEnvironmentId = "test" | "certification" | "production";
 
@@ -92,15 +92,33 @@ export function evaluateEcfActivationReadiness(input: EcfReadinessInput): EcfRea
   }
 
   const ranges = restoreRanges(input.ecfTypeCodes, input.sequencesNextRaw, input.sequencesBoundsRaw);
-  const checks = Object.entries(ranges).map(([type, range]) => validateEcfRange(type, range));
-  if (!checks.some((check) => check.valid)) {
-    const firstError = checks.flatMap((check) => check.errors)[0];
+  const boundsChecks = Object.entries(ranges).map(([type, range]) => ({
+    type,
+    range,
+    check: validateRangeBounds(type, range),
+  }));
+
+  if (!boundsChecks.some(({ check }) => check.valid)) {
+    const firstError = boundsChecks.flatMap(({ check }) => check.errors)[0];
     missing.push({
       code: "SEQUENCES",
       message: firstError
         ? `${firstError} Corregí las secuencias e-CF en el paso 3.`
         : "Configurá al menos un tipo de comprobante e-CF con su rango autorizado en el paso 3.",
     });
+  } else {
+    for (const [type, range] of Object.entries(ranges)) {
+      if (ecfTypeRequiresExpiry(type)) {
+        const expiry = validateEcfExpiry(type, range.vence, input.now);
+        if (expiry.error) {
+          missing.push({
+            code: "SEQUENCES",
+            message: `${expiry.error} Corregí las secuencias e-CF en el paso 3.`,
+          });
+          break;
+        }
+      }
+    }
   }
 
   return { ready: missing.length === 0, missing };
