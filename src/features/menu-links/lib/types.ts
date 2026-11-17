@@ -70,3 +70,11 @@ export interface CatalogDish {
   va_a_cocina: boolean;
   is_extra?: boolean;
 }
+
+export interface MenuDishDraft {
+  included: boolean;
+  weekdays: number[];
+  sort_order: number;
+  display_name: string;
+}
+

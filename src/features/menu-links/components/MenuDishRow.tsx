@@ -1,5 +1,5 @@
 import { memo } from "react";
-import type { CatalogDish } from "../lib/types";
+import type { CatalogDish, MenuDishDraft } from "../lib/types";
 
 const WEEKDAYS = [
   { day: 1, label: "L", title: "Lunes" },
@@ -10,13 +10,6 @@ const WEEKDAYS = [
   { day: 6, label: "S", title: "Sábado" },
   { day: 7, label: "D", title: "Domingo" },
 ];
-
-export interface MenuDishDraft {
-  included: boolean;
-  weekdays: number[];
-  sort_order: number;
-  display_name: string;
-}
 
 interface MenuDishRowProps {
   plato: CatalogDish;
