@@ -17,9 +17,11 @@ export interface DatePickerProps {
   "aria-label"?: string;
   minDate?: Date;
   maxDate?: Date;
+  highlightRange?: { from: string; to: string };
+  disabledDays?: (date: Date) => boolean;
 }
 
-function parseYMD(val?: string): Date | undefined {
+export function parseYMD(val?: string): Date | undefined {
   if (!val) return undefined;
   const parts = val.split("-");
   if (parts.length === 3) {
@@ -33,7 +35,7 @@ function parseYMD(val?: string): Date | undefined {
   return undefined;
 }
 
-function formatYMD(date: Date): string {
+export function formatYMD(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
@@ -50,9 +52,34 @@ export function DatePicker({
   "aria-label": ariaLabel,
   minDate,
   maxDate,
+  highlightRange,
+  disabledDays,
 }: DatePickerProps) {
   const [open, setOpen] = React.useState(false);
+
   const selectedDate = React.useMemo(() => parseYMD(value), [value]);
+
+  const rangeModifiers = React.useMemo(() => {
+    if (!highlightRange?.from || !highlightRange?.to) return undefined;
+    const from = parseYMD(highlightRange.from);
+    const to = parseYMD(highlightRange.to);
+    if (!from || !to || from.getTime() > to.getTime()) return undefined;
+    return {
+      range_highlight: { from, to },
+      range_start: from,
+      range_end: to,
+    };
+  }, [highlightRange?.from, highlightRange?.to]);
+
+  const rangeModifiersClassNames = React.useMemo(() => {
+    if (!rangeModifiers) return undefined;
+    return {
+      range_highlight:
+        "bg-primary/20 text-foreground font-medium rounded-none first:rounded-l-md last:rounded-r-md hover:bg-primary/30",
+      range_start: "rounded-l-md font-bold",
+      range_end: "rounded-r-md font-bold",
+    };
+  }, [rangeModifiers]);
 
   const handleSelect = (date: Date | undefined) => {
     if (date) {
@@ -119,6 +146,9 @@ export function DatePicker({
           locale={es}
           fromDate={minDate}
           toDate={maxDate}
+          disabled={disabledDays}
+          modifiers={rangeModifiers}
+          modifiersClassNames={rangeModifiersClassNames}
           initialFocus
         />
       </PopoverContent>

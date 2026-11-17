@@ -17,8 +17,7 @@ import { toast } from "sonner";
 import { useAuth } from "../../shared/hooks/useAuth";
 import { supabase } from "../../shared/lib/supabase";
 import { ConfirmModal } from "../../shared/components/ConfirmModal";
-import { DatePicker } from "../../shared/ui/date-picker";
-import type { Menu, MenuItem, CatalogDish, ScheduleMode } from "./lib/types";
+import type { Menu, MenuItem, CatalogDish, ScheduleMode, MenuDishDraft } from "./lib/types";
 import {
   fetchMenuById,
   updateMenu,
@@ -30,15 +29,24 @@ import {
 } from "./lib/menuLinksRepo";
 import { computeMenuItemsDiff, type DraftMenuItem } from "./lib/menuItemsDiff";
 import {
-  formatWeekRange,
   isWeekPast,
   getMondayOfWeek,
+  addDays,
   validateMenuSchedule,
   validateWeekdays,
 } from "./lib/menuSchedule";
+import {
+  weekdaysFromRange,
+  deriveRangeFromWeekdays,
+  clampRangeToWeek,
+  shiftRangeToWeek,
+  applyWeekdaysToIncluded,
+  createDefaultDishDraft,
+} from "./lib/menuRange";
 import { getBusinessToday, getBusinessIsoDow } from "./lib/menuBusinessDate";
-import { MenuDishRow, type MenuDishDraft } from "./components/MenuDishRow";
+import { MenuDishRow } from "./components/MenuDishRow";
 import { SoldOutTodayPanel } from "./components/SoldOutTodayPanel";
+import { MenuRangePicker } from "./components/MenuRangePicker";
 
 export function MenuEditorPage() {
   const { menuId } = useParams<{ menuId: string }>();
@@ -54,6 +62,8 @@ export function MenuEditorPage() {
   const [menuName, setMenuName] = useState("");
   const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("recurring");
   const [weekStart, setWeekStart] = useState("");
+  const [rangeDesde, setRangeDesde] = useState("");
+  const [rangeHasta, setRangeHasta] = useState("");
 
   // Map of dish drafts: plato_id -> draft
   const [dishDrafts, setDishDrafts] = useState<Map<number, MenuDishDraft>>(new Map());
@@ -126,6 +136,17 @@ export function MenuEditorPage() {
       });
 
       setDishDrafts(drafts);
+
+      // Derive displayed Desde/Hasta from saved included dishes without overwriting dish weekdays
+      const includedDishWeekdays = items
+        .filter((i) => i.weekdays && i.weekdays.length > 0)
+        .map((i) => i.weekdays);
+      const derivedRange = deriveRangeFromWeekdays(
+        m.week_start ?? getMondayOfWeek(businessToday),
+        includedDishWeekdays
+      );
+      setRangeDesde(derivedRange.desde);
+      setRangeHasta(derivedRange.hasta);
     } catch (err: unknown) {
       const normalized = normalizeRepoError(err, "No se pudo cargar la información del menú.");
       setError(normalized.message);
@@ -138,19 +159,59 @@ export function MenuEditorPage() {
     void loadAll();
   }, [loadAll]);
 
-  const handleDishDraftChange = useCallback((platoId: number, updated: Partial<MenuDishDraft>) => {
-    setDishDrafts((prev) => {
-      const next = new Map(prev);
-      const current = next.get(platoId) ?? {
-        included: false,
-        weekdays: [1, 2, 3, 4, 5, 6, 7],
-        sort_order: 0,
-        display_name: "",
-      };
-      next.set(platoId, { ...current, ...updated });
-      return next;
-    });
-  }, []);
+  const defaultWeekdays = useMemo(() => {
+    if (scheduleMode === "weekly" && rangeDesde && rangeHasta) {
+      return weekdaysFromRange(rangeDesde, rangeHasta);
+    }
+    return [1, 2, 3, 4, 5, 6, 7];
+  }, [scheduleMode, rangeDesde, rangeHasta]);
+
+  const handleDishDraftChange = useCallback(
+    (platoId: number, updated: Partial<MenuDishDraft>) => {
+      setDishDrafts((prev) => {
+        const next = new Map(prev);
+        const current = next.get(platoId) ?? createDefaultDishDraft(defaultWeekdays);
+        next.set(platoId, { ...current, ...updated });
+        return next;
+      });
+    },
+    [defaultWeekdays]
+  );
+
+  const handleDesdeChange = useCallback(
+    (newDesde: string) => {
+      if (!newDesde) return;
+      const currentDesde = rangeDesde || weekStart || getMondayOfWeek(businessToday);
+      const currentHasta = rangeHasta || addDays(currentDesde, 6);
+
+      const shifted = shiftRangeToWeek(currentDesde, currentHasta, newDesde);
+      setRangeDesde(shifted.desde);
+      setRangeHasta(shifted.hasta);
+      setWeekStart(shifted.weekStart);
+
+      const newWeekdays = weekdaysFromRange(shifted.desde, shifted.hasta);
+      setDishDrafts((prev) => applyWeekdaysToIncluded(prev, newWeekdays));
+    },
+    [rangeDesde, rangeHasta, weekStart, businessToday]
+  );
+
+  const handleHastaChange = useCallback(
+    (newHasta: string) => {
+      if (!newHasta) return;
+      const currentDesde = rangeDesde || weekStart || getMondayOfWeek(businessToday);
+      const { hasta: clampedHasta } = clampRangeToWeek(
+        weekStart || currentDesde,
+        currentDesde,
+        newHasta
+      );
+
+      setRangeHasta(clampedHasta);
+
+      const newWeekdays = weekdaysFromRange(currentDesde, clampedHasta);
+      setDishDrafts((prev) => applyWeekdaysToIncluded(prev, newWeekdays));
+    },
+    [rangeDesde, weekStart, businessToday]
+  );
 
   const handleSave = async () => {
     if (!menuId || !tenantId) return;
@@ -425,7 +486,16 @@ export function MenuEditorPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setScheduleMode("weekly")}
+                  onClick={() => {
+                    setScheduleMode("weekly");
+                    if (!rangeDesde || !rangeHasta) {
+                      const monday = weekStart || getMondayOfWeek(businessToday);
+                      const defaultRange = deriveRangeFromWeekdays(monday, []);
+                      setRangeDesde(defaultRange.desde);
+                      setRangeHasta(defaultRange.hasta);
+                      setWeekStart(monday);
+                    }
+                  }}
                   className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer text-center ${
                     scheduleMode === "weekly"
                       ? "bg-primary text-primary-foreground border-primary shadow-xs"
@@ -437,28 +507,16 @@ export function MenuEditorPage() {
               </div>
             </div>
 
-            {/* Week picker (shown when scheduleMode === 'weekly') */}
+            {/* Week range picker (shown when scheduleMode === 'weekly') */}
             {scheduleMode === "weekly" && (
-              <div className="flex flex-col gap-1.5 animate-in fade-in duration-150">
-                <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                  Semana del menú (inicia en lunes)
-                </label>
-                <div className="flex items-center gap-2">
-                  <DatePicker
-                    aria-label="Semana del menú"
-                    className="flex-1"
-                    value={weekStart}
-                    onChange={(selected) => {
-                      if (!selected) return;
-                      // Enforce Monday storage
-                      setWeekStart(getMondayOfWeek(selected));
-                    }}
-                  />
-                  <div className="px-3 py-2 rounded-xl bg-muted/40 border border-border text-xs font-semibold text-foreground shrink-0">
-                    {formatWeekRange(weekStart)}
-                  </div>
-                </div>
-              </div>
+              <MenuRangePicker
+                weekStart={weekStart}
+                desde={rangeDesde}
+                hasta={rangeHasta}
+                onDesdeChange={handleDesdeChange}
+                onHastaChange={handleHastaChange}
+                disabled={saving}
+              />
             )}
           </div>
         </div>
@@ -519,12 +577,7 @@ export function MenuEditorPage() {
 
                   <div className="flex flex-col gap-2">
                     {dishes.map((plato) => {
-                      const draft = dishDrafts.get(plato.id) ?? {
-                        included: false,
-                        weekdays: [1, 2, 3, 4, 5, 6, 7],
-                        sort_order: 0,
-                        display_name: "",
-                      };
+                      const draft = dishDrafts.get(plato.id) ?? createDefaultDishDraft(defaultWeekdays);
                       return (
                         <MenuDishRow
                           key={plato.id}
@@ -553,12 +606,7 @@ export function MenuEditorPage() {
 
                   <div className="flex flex-col gap-2">
                     {extrasList.map((plato) => {
-                      const draft = dishDrafts.get(plato.id) ?? {
-                        included: false,
-                        weekdays: [1, 2, 3, 4, 5, 6, 7],
-                        sort_order: 0,
-                        display_name: "",
-                      };
+                      const draft = dishDrafts.get(plato.id) ?? createDefaultDishDraft(defaultWeekdays);
                       return (
                         <MenuDishRow
                           key={plato.id}
