@@ -273,7 +273,8 @@ export function TestSetRunner({ tenantId, environment, runType = "test_set", tit
         {description ?? copy.description}
       </p>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-sm">
+        {/* `relative` anchors the sr-only (absolute) input here; without it focusing the input scrolls the page to a distant ancestor. */}
+        <label className="relative inline-flex w-fit cursor-pointer items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-sm">
           <Upload className="size-4" /> Seleccionar archivo
           <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" className="sr-only" onChange={(event) => { selectFile(event.target.files?.[0] ?? null); event.target.value = ""; }} />
         </label>

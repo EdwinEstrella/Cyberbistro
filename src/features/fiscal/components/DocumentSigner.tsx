@@ -80,7 +80,8 @@ export function DocumentSigner({ tenantId, environment, documentType, title, hel
       <div className="flex items-center gap-2 text-sm font-bold text-foreground"><Download className="size-4 text-primary" /> {title}</div>
       <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{helperText}</p>
       <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-        <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-sm">
+        {/* `relative` anchors the sr-only (absolute) input here; without it focusing the input scrolls the page to a distant ancestor. */}
+        <label className="relative inline-flex w-fit cursor-pointer items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-sm">
           <Upload className="size-4" /> Seleccionar archivo
           <input type="file" accept=".xml,application/xml,text/xml" className="sr-only" onChange={(event) => { selectFile(event.target.files?.[0] ?? null); event.target.value = ""; }} />
         </label>
