@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+// @ts-ignore react-dom types are not installed in devDependencies
+import { flushSync } from "react-dom";
 import {
   PublicMenuOrderScreen,
   type PublicMenuItem,
   type CartLine,
 } from "./PublicMenuOrderScreen";
 import { PublicMenuCartPanel } from "./PublicMenuCartPanel";
+import { setupFakeDom } from "../test-utils/fakeDom";
 
 describe("PublicMenuOrderScreen app-shell layout", () => {
   const mockSettings = {
@@ -45,6 +48,7 @@ describe("PublicMenuOrderScreen app-shell layout", () => {
         items={sampleItems}
         cart={[]}
         onAddItem={vi.fn()}
+        onAddItemWithDetails={vi.fn()}
         onUpdateQuantity={vi.fn()}
         customerName=""
         onCustomerNameChange={vi.fn()}
@@ -77,6 +81,7 @@ describe("PublicMenuOrderScreen app-shell layout", () => {
         items={sampleItems}
         cart={[]}
         onAddItem={vi.fn()}
+        onAddItemWithDetails={vi.fn()}
         onUpdateQuantity={vi.fn()}
         customerName=""
         onCustomerNameChange={vi.fn()}
@@ -110,6 +115,7 @@ describe("PublicMenuOrderScreen app-shell layout", () => {
         items={sampleItems}
         cart={[]}
         onAddItem={vi.fn()}
+        onAddItemWithDetails={vi.fn()}
         onUpdateQuantity={vi.fn()}
         customerName=""
         onCustomerNameChange={vi.fn()}
@@ -142,6 +148,7 @@ describe("PublicMenuOrderScreen app-shell layout", () => {
         items={sampleItems}
         cart={[]}
         onAddItem={vi.fn()}
+        onAddItemWithDetails={vi.fn()}
         onUpdateQuantity={vi.fn()}
         customerName=""
         onCustomerNameChange={vi.fn()}
@@ -181,6 +188,7 @@ describe("PublicMenuOrderScreen app-shell layout", () => {
         items={sampleItems}
         cart={singleCart}
         onAddItem={vi.fn()}
+        onAddItemWithDetails={vi.fn()}
         onUpdateQuantity={vi.fn()}
         customerName=""
         onCustomerNameChange={vi.fn()}
@@ -223,6 +231,7 @@ describe("PublicMenuOrderScreen app-shell layout", () => {
         items={sampleItems}
         cart={multiCart}
         onAddItem={vi.fn()}
+        onAddItemWithDetails={vi.fn()}
         onUpdateQuantity={vi.fn()}
         customerName=""
         onCustomerNameChange={vi.fn()}
@@ -262,6 +271,7 @@ describe("PublicMenuOrderScreen app-shell layout", () => {
         items={sampleItems}
         cart={multiCart}
         onAddItem={vi.fn()}
+        onAddItemWithDetails={vi.fn()}
         onUpdateQuantity={vi.fn()}
         customerName=""
         onCustomerNameChange={vi.fn()}
@@ -294,6 +304,7 @@ describe("PublicMenuOrderScreen app-shell layout", () => {
       items: sampleItems,
       cart: [],
       onAddItem: vi.fn(),
+      onAddItemWithDetails: vi.fn(),
       onUpdateQuantity: vi.fn(),
       customerName: "",
       onCustomerNameChange: vi.fn(),
@@ -341,6 +352,176 @@ describe("PublicMenuOrderScreen app-shell layout", () => {
     const htmlClosed = renderScreen({ isOpen: false });
 
     expect(htmlClosed).toContain("Cerrado");
+  });
+
+  it("does not render DishDetailSheet initially when no dish is selected", () => {
+    const html = renderScreen({});
+    expect(html).not.toContain('data-testid="dish-detail-panel"');
+  });
+
+  it("opens DishDetailSheet when tapping dish row, but tapping '+' quick-adds without opening sheet", () => {
+    const { root, findElement, cleanup } = setupFakeDom();
+
+    try {
+      const onAddItem = vi.fn();
+      const onAddItemWithDetails = vi.fn();
+
+      flushSync(() => {
+        root.render(
+          <PublicMenuOrderScreen
+            settings={mockSettings}
+            mode={{ kind: "table", mesa: 3 }}
+            partySize={2}
+            items={sampleItems}
+            cart={[]}
+            onAddItem={onAddItem}
+            onAddItemWithDetails={onAddItemWithDetails}
+            onUpdateQuantity={vi.fn()}
+            customerName=""
+            onCustomerNameChange={vi.fn()}
+            customerPhone=""
+            onCustomerPhoneChange={vi.fn()}
+            notes=""
+            onNotesChange={vi.fn()}
+            mesaCodigo=""
+            onMesaCodigoChange={vi.fn()}
+            mesaCodeError={null}
+            error={null}
+            success={null}
+            placing={false}
+            onPlaceOrder={vi.fn()}
+            onBackToHome={vi.fn()}
+            currencyFormatter={formatCurrency}
+          />
+        );
+      });
+
+      // 1. Initially DishDetailSheet is closed
+      expect(
+        findElement((el) => el.attributes["data-testid"] === "dish-detail-panel")
+      ).toBeNull();
+
+      // 2. Click '+' button -> triggers onAddItem, does NOT open sheet
+      const plusBtn = findElement(
+        (el) =>
+          el.tagName === "BUTTON" &&
+          el.attributes["aria-label"] === `Agregar ${sampleItems[0].name}`
+      );
+      expect(plusBtn).not.toBeNull();
+
+      const plusEvent = {
+        type: "click",
+        bubbles: true,
+      };
+      plusBtn!.dispatchEvent(plusEvent);
+
+      expect(onAddItem).toHaveBeenCalledTimes(1);
+      expect(onAddItem).toHaveBeenCalledWith(sampleItems[0]);
+      // Sheet must still be closed!
+      expect(
+        findElement((el) => el.attributes["data-testid"] === "dish-detail-panel")
+      ).toBeNull();
+
+      // 3. Click the dish row body button -> opens DishDetailSheet
+      const rowBtn = findElement(
+        (el) => el.tagName === "BUTTON" && el.attributes["aria-haspopup"] === "dialog"
+      );
+      expect(rowBtn).not.toBeNull();
+
+      flushSync(() => {
+        rowBtn!.dispatchEvent({
+          type: "click",
+          bubbles: true,
+        });
+      });
+
+      // Sheet is now open!
+      const sheetPanel = findElement(
+        (el) => el.attributes["data-testid"] === "dish-detail-panel"
+      );
+      expect(sheetPanel).not.toBeNull();
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("does not wipe user-selected quantity in DishDetailSheet when cart changes while sheet is open", () => {
+    const { root, findElement, cleanup } = setupFakeDom();
+
+    try {
+      const renderWithCart = (cart: CartLine[]) => {
+        return (
+          <PublicMenuOrderScreen
+            settings={mockSettings}
+            mode={{ kind: "table", mesa: 3 }}
+            partySize={2}
+            items={sampleItems}
+            cart={cart}
+            onAddItem={vi.fn()}
+            onAddItemWithDetails={vi.fn()}
+            onUpdateQuantity={vi.fn()}
+            customerName=""
+            onCustomerNameChange={vi.fn()}
+            customerPhone=""
+            onCustomerPhoneChange={vi.fn()}
+            notes=""
+            onNotesChange={vi.fn()}
+            mesaCodigo=""
+            onMesaCodigoChange={vi.fn()}
+            mesaCodeError={null}
+            error={null}
+            success={null}
+            placing={false}
+            onPlaceOrder={vi.fn()}
+            onBackToHome={vi.fn()}
+            currencyFormatter={formatCurrency}
+          />
+        );
+      };
+
+      flushSync(() => {
+        root.render(renderWithCart([]));
+      });
+
+      // Open detail sheet
+      const rowBtn = findElement(
+        (el) => el.tagName === "BUTTON" && el.attributes["aria-haspopup"] === "dialog"
+      );
+      expect(rowBtn).not.toBeNull();
+      flushSync(() => {
+        rowBtn!.dispatchEvent({ type: "click", bubbles: true });
+      });
+
+      const qtySpan = findElement(
+        (el) => el.attributes["data-testid"] === "dish-detail-qty"
+      );
+      expect(qtySpan).not.toBeNull();
+      expect(qtySpan?.textContent).toBe("1");
+
+      const incrementBtn = findElement(
+        (el) => el.tagName === "BUTTON" && el.attributes["aria-label"] === "Agregar uno"
+      );
+      expect(incrementBtn).not.toBeNull();
+      flushSync(() => {
+        incrementBtn!.dispatchEvent({ type: "click", bubbles: true });
+      });
+      expect(qtySpan?.textContent).toBe("2");
+
+      // Cart changes while sheet is open (e.g. background sync or item added to cart)
+      const newCart: CartLine[] = [{ ...sampleItems[0], quantity: 1 }];
+      flushSync(() => {
+        root.render(renderWithCart(newCart));
+      });
+
+      // The quantity in DishDetailSheet must NOT be wiped by the cart change (preserves state)
+      const qtySpanAfter = findElement(
+        (el) => el.attributes["data-testid"] === "dish-detail-qty"
+      );
+      expect(qtySpanAfter).not.toBeNull();
+      expect(qtySpanAfter?.textContent).toBe("2");
+    } finally {
+      cleanup();
+    }
   });
 });
 

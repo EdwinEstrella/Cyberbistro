@@ -239,6 +239,14 @@ export function CartDrawer({
                           <p className={`text-xs font-bold text-[#fafafa] leading-tight ${publicMenuTheme.headingFontClass}`}>
                             {line.name}
                           </p>
+                          {line.notes && (
+                            <p
+                              data-testid={`cart-line-note-${line.plato_id}`}
+                              className="mt-0.5 truncate text-[11px] text-[#adaaaa]"
+                            >
+                              {line.notes}
+                            </p>
+                          )}
                           <span className="text-[11px] font-semibold text-[#ff906d] tabular-nums">
                             {currencyFormatter(line.price * line.quantity, currency)}
                           </span>

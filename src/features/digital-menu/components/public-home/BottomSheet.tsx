@@ -1,6 +1,7 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { publicMenuTheme } from "../public-app/publicMenuTheme";
+import { useSheetDialog } from "../../hooks/useSheetDialog";
 
 export interface BottomSheetProps {
   isOpen: boolean;
@@ -17,32 +18,13 @@ export function BottomSheet({
   description,
   children,
 }: BottomSheetProps) {
-  const previousFocusRef = useRef<HTMLElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
 
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-
-    if (isOpen) {
-      previousFocusRef.current = document.activeElement as HTMLElement | null;
-      closeButtonRef.current?.focus();
-
-      const handleKeyDown = (e: KeyboardEvent) => {
-        if (e.key === "Escape") {
-          e.stopPropagation();
-          onClose();
-        }
-      };
-
-      document.addEventListener("keydown", handleKeyDown);
-      return () => {
-        document.removeEventListener("keydown", handleKeyDown);
-      };
-    } else if (previousFocusRef.current) {
-      previousFocusRef.current.focus?.();
-      previousFocusRef.current = null;
-    }
-  }, [isOpen, onClose]);
+  useSheetDialog({
+    isOpen,
+    onClose,
+    initialFocusRef: closeButtonRef,
+  });
 
   if (!isOpen) return null;
 

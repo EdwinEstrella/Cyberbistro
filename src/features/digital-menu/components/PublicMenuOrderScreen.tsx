@@ -7,6 +7,7 @@ import { CategoryChips } from "./public-app/CategoryChips";
 import { DishRow } from "./public-app/DishRow";
 import { BottomTabBar } from "./public-app/BottomTabBar";
 import { CartDrawer } from "./public-app/CartDrawer";
+import { DishDetailSheet } from "./public-app/DishDetailSheet";
 import { ServicesTab } from "./public-app/ServicesTab";
 import { FloatingCartBar } from "./public-app/FloatingCartBar";
 import { publicMenuTheme } from "./public-app/publicMenuTheme";
@@ -45,6 +46,7 @@ export interface PublicMenuOrderScreenProps {
   items: PublicMenuItem[];
   cart: CartLine[];
   onAddItem: (item: PublicMenuItem) => void;
+  onAddItemWithDetails: (item: PublicMenuItem, quantity: number, note?: string) => void;
   onUpdateQuantity: (platoId: number, quantity: number) => void;
   onClearCart?: () => void;
   customerName: string;
@@ -79,6 +81,7 @@ export function PublicMenuOrderScreen({
   items,
   cart,
   onAddItem,
+  onAddItemWithDetails,
   onUpdateQuantity,
   onClearCart,
   customerName,
@@ -108,6 +111,7 @@ export function PublicMenuOrderScreen({
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [selectedDishForDetail, setSelectedDishForDetail] = useState<PublicMenuItem | null>(null);
 
   // Derive unique categories from items
   const categories = useMemo(() => {
@@ -245,6 +249,7 @@ export function PublicMenuOrderScreen({
                             quantityInCart={cartQuantities.get(item.plato_id) ?? 0}
                             onAdd={() => onAddItem(item)}
                             onUpdateQuantity={(q) => onUpdateQuantity(item.plato_id, q)}
+                            onSelect={() => setSelectedDishForDetail(item)}
                             currency={settings.currency}
                             currencyFormatter={currencyFormatter}
                           />
@@ -321,6 +326,20 @@ export function PublicMenuOrderScreen({
           currencyFormatter={currencyFormatter}
           delivery={delivery}
           onDeliveryChange={onDeliveryChange}
+        />
+
+        {/* Dish Detail Bottom Sheet */}
+        <DishDetailSheet
+          key={selectedDishForDetail?.plato_id ?? "none"}
+          isOpen={Boolean(selectedDishForDetail)}
+          item={selectedDishForDetail}
+          onClose={() => setSelectedDishForDetail(null)}
+          onAddWithDetails={onAddItemWithDetails}
+          initialNotes={
+            cart.find((line) => line.plato_id === selectedDishForDetail?.plato_id)?.notes
+          }
+          currency={settings.currency}
+          currencyFormatter={currencyFormatter}
         />
       </div>
     </div>

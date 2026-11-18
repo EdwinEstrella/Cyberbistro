@@ -18,6 +18,7 @@ import {
 } from "./lib/publicMenuPayload";
 import { resolvePublicMenuMode } from "./lib/publicMenuMode";
 import { EMPTY_DELIVERY_DRAFT, validateDeliveryDraft, type DeliveryDraft } from "./lib/deliveryOrder";
+import { addToCartWithNote } from "./lib/cartOperations";
 import { useOnlineMenuStatus } from "./lib/useOnlineMenuStatus";
 import { publicMenuTheme } from "./components/public-app/publicMenuTheme";
 import { usePublicMenuFonts } from "./hooks/usePublicMenuFonts";
@@ -169,6 +170,11 @@ export function PublicDigitalMenu() {
       }
       return [...current, { ...item, quantity: 1 }];
     });
+  }
+
+  function addItemWithDetails(item: PublicMenuItem, qty: number, note?: string) {
+    setSuccess(null);
+    setCart((current) => addToCartWithNote(current, item, qty, note));
   }
 
   function updateQuantity(platoId: number, quantity: number) {
@@ -387,6 +393,7 @@ export function PublicDigitalMenu() {
       items={menu.items}
       cart={cart}
       onAddItem={addItem}
+      onAddItemWithDetails={addItemWithDetails}
       onUpdateQuantity={updateQuantity}
       onClearCart={clearCart}
       customerName={customerName}
