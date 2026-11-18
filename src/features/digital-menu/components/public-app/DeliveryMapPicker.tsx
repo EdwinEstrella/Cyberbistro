@@ -17,7 +17,7 @@ const PIN_ZOOM = 17;
 // A CSS-only pin avoids Leaflet's default marker images, which bundlers do not resolve.
 const pinIcon = L.divIcon({
   className: "",
-  html: '<div style="width:26px;height:26px;border-radius:50% 50% 50% 0;background:#34d399;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.5);transform:rotate(-45deg)"></div>',
+  html: '<div style="width:26px;height:26px;border-radius:50% 50% 50% 0;background:#ff906d;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.5);transform:rotate(-45deg)"></div>',
   iconSize: [26, 26],
   iconAnchor: [13, 26],
 });
@@ -83,7 +83,7 @@ export default function DeliveryMapPicker({ lat, lng, onPick }: DeliveryMapPicke
       ref={containerRef}
       role="application"
       aria-label="Mapa para marcar el lugar de entrega"
-      className="relative isolate z-0 h-56 w-full overflow-hidden rounded-xl border border-[#27272a] bg-[#18181b]"
+      className="relative isolate z-0 h-56 w-full overflow-hidden rounded-xl border border-[#262626] bg-[#131313]"
     />
   );
 }

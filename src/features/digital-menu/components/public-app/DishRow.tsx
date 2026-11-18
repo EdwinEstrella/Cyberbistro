@@ -1,7 +1,9 @@
 import { useState } from "react";
-import { Plus, Minus, UtensilsCrossed } from "lucide-react";
+import { Plus, Minus } from "lucide-react";
 import type { PublicMenuItem } from "../PublicMenuOrderScreen";
 import { DishImage } from "../DishImage";
+import { getCategoryIcon } from "../../lib/categoryIcons";
+import { publicMenuTheme } from "./publicMenuTheme";
 
 export interface DishRowProps {
   item: PublicMenuItem;
@@ -10,6 +12,7 @@ export interface DishRowProps {
   onUpdateQuantity: (quantity: number) => void;
   currency: string;
   currencyFormatter: (value: number, currency: string) => string;
+  onSelect?: (item: PublicMenuItem) => void;
 }
 
 export function DishRow({
@@ -19,6 +22,7 @@ export function DishRow({
   onUpdateQuantity,
   currency,
   currencyFormatter,
+  onSelect,
 }: DishRowProps) {
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -39,96 +43,107 @@ export function DishRow({
     }
   };
 
+  const CategoryIcon = getCategoryIcon(item.category);
+
   return (
     <article
       data-testid={`dish-row-${item.plato_id}`}
-      className="group relative flex items-center justify-between gap-3 rounded-2xl border border-[#27272a] bg-[#111113] p-3 transition hover:bg-[#141416] hover:border-zinc-700"
+      className="group relative"
     >
-      {/* Thumbnail */}
-      <div className="shrink-0">
-        {item.image_url ? (
-          <DishImage
-            src={item.image_url}
-            alt={item.name}
-            className="size-[76px] rounded-xl object-cover bg-zinc-900 border border-[#27272a]/50"
-            fallbackClassName="size-[76px] rounded-xl flex items-center justify-center bg-[#18181b] border border-[#27272a] text-zinc-500"
-          />
-        ) : (
-          <div
-            role="img"
-            aria-label={`Sin imagen para ${item.name}`}
-            className="size-[76px] rounded-xl flex items-center justify-center bg-[#18181b] border border-[#27272a] text-zinc-500"
-          >
-            <UtensilsCrossed className="size-5 opacity-40 text-emerald-400" aria-hidden="true" />
+      {/* Row trigger button wrapping info column AND thumbnail */}
+      <button
+        type="button"
+        aria-haspopup="dialog"
+        onClick={() => onSelect?.(item)}
+        className="w-full flex items-center justify-between gap-3 rounded-[20px] border border-[#262626] bg-[#131313] p-3.5 text-left transition hover:border-[#3a3a3a] cursor-pointer focus:outline-hidden focus-visible:ring-1 focus-visible:ring-[#ff906d]"
+      >
+        {/* Info: Name, Description, Price on the LEFT */}
+        <div className="min-w-0 flex-1 py-0.5">
+          <h3 className={`text-sm font-bold text-[#fafafa] leading-snug line-clamp-2 break-words ${publicMenuTheme.headingFontClass}`}>
+            {item.name}
+          </h3>
+          {item.description && (
+            <p className="mt-1 text-xs text-[#adaaaa] line-clamp-2 leading-relaxed">
+              {item.description}
+            </p>
+          )}
+          <div className="mt-2 flex items-center gap-2">
+            <span className="text-xs font-bold text-[#ff906d] tabular-nums">
+              {currencyFormatter(item.price, currency)}
+            </span>
+            {feedback && (
+              <span
+                role="status"
+                className="text-[10px] font-semibold text-[#ffb59c] bg-[#2b160d] border border-[#5b2a17] px-2 py-0.5 rounded-full animate-fade-in"
+              >
+                {feedback}
+              </span>
+            )}
           </div>
-        )}
-      </div>
-
-      {/* Info: Name, Description, Price */}
-      <div className="min-w-0 flex-1 py-0.5">
-        <h3 className="text-sm font-bold text-white leading-snug line-clamp-2 break-words">
-          {item.name}
-        </h3>
-        {item.description && (
-          <p className="mt-0.5 text-xs text-zinc-400 line-clamp-2 leading-relaxed">
-            {item.description}
-          </p>
-        )}
-        <div className="mt-1 flex items-center gap-2">
-          <span className="text-xs font-bold text-emerald-400 tabular-nums">
-            {currencyFormatter(item.price, currency)}
-          </span>
         </div>
-      </div>
 
-      {/* Action / Stepper */}
-      <div className="w-[96px] shrink-0 flex items-center justify-end">
-        {quantityInCart === 0 ? (
+        {/* 84px rounded-[16px] thumbnail on the RIGHT */}
+        <div className="relative size-[84px] shrink-0">
+          {item.image_url ? (
+            <DishImage
+              src={item.image_url}
+              alt={item.name}
+              className="size-[84px] rounded-[16px] object-cover bg-[#1a1a1a] border border-[#262626]"
+              fallbackClassName="size-[84px] rounded-[16px] flex items-center justify-center bg-[#1a1a1a] border border-[#262626] text-[#adaaaa]"
+            />
+          ) : (
+            <div
+              role="img"
+              aria-label={`Sin imagen para ${item.name}`}
+              className="size-[84px] rounded-[16px] flex items-center justify-center bg-[#1a1a1a] border border-[#262626] text-[#adaaaa]"
+            >
+              <CategoryIcon className="size-6 text-[#ff906d] opacity-80" aria-hidden="true" />
+            </div>
+          )}
+        </div>
+      </button>
+
+      {/* Quick "+" button or inline stepper over thumbnail corner (sibling of row button) */}
+      {quantityInCart === 0 ? (
+        <button
+          type="button"
+          onClick={handleAdd}
+          aria-label={`Agregar ${item.name}`}
+          className="absolute right-2.5 bottom-2.5 flex size-9 items-center justify-center rounded-full bg-[#ff906d] text-[#5b1600] font-bold shadow-md hover:bg-[#ffb59c] active:scale-95 transition cursor-pointer z-10"
+        >
+          <Plus className="size-4" aria-hidden="true" />
+        </button>
+      ) : (
+        <div
+          role="group"
+          aria-label={`Cantidad de ${item.name}`}
+          className="absolute right-2.5 bottom-2.5 flex items-center gap-0.5 rounded-full bg-[#1a1a1a] border border-[#262626] p-0.5 shadow-lg z-10"
+        >
           <button
             type="button"
-            onClick={handleAdd}
-            aria-label={`Agregar ${item.name}`}
-            className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white text-zinc-950 font-bold shadow-sm hover:bg-zinc-200 active:scale-95 transition cursor-pointer"
+            onClick={handleDecrement}
+            aria-label={`Disminuir cantidad de ${item.name}`}
+            className="flex size-8 items-center justify-center rounded-full bg-[#262626] text-[#fafafa] hover:bg-[#3a3a3a] active:scale-90 transition cursor-pointer"
           >
-            <Plus className="size-4" />
+            <Minus className="size-3.5" aria-hidden="true" />
           </button>
-        ) : (
-          <div
-            role="group"
-            aria-label={`Cantidad de ${item.name}`}
-            className="flex items-center gap-1 rounded-full bg-[#18181b] border border-[#27272a] p-0.5 shrink-0"
+          <span
+            data-testid={`stepper-count-${item.plato_id}`}
+            className="min-w-[16px] px-1 text-center text-xs font-bold text-[#fafafa] tabular-nums"
           >
-            <button
-              type="button"
-              onClick={handleDecrement}
-              aria-label={`Disminuir cantidad de ${item.name}`}
-              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-zinc-200 hover:text-white hover:bg-zinc-800 active:scale-90 transition cursor-pointer"
-            >
-              <Minus className="size-3.5" />
-            </button>
-            <span
-              data-testid={`stepper-count-${item.plato_id}`}
-              className="min-w-[18px] text-center text-xs font-black text-white tabular-nums"
-            >
-              {quantityInCart}
-            </span>
-            <button
-              type="button"
-              onClick={handleIncrement}
-              disabled={quantityInCart >= 99}
-              aria-label={`Aumentar cantidad de ${item.name}`}
-              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-zinc-200 hover:text-white hover:bg-zinc-800 active:scale-90 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <Plus className="size-3.5" />
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Live region for accessibility feedback */}
-      <span className="sr-only" aria-live="polite">
-        {feedback}
-      </span>
+            {quantityInCart}
+          </span>
+          <button
+            type="button"
+            onClick={handleIncrement}
+            disabled={quantityInCart >= 99}
+            aria-label={`Aumentar cantidad de ${item.name}`}
+            className="flex size-8 items-center justify-center rounded-full bg-[#ff906d] text-[#5b1600] font-bold hover:bg-[#ffb59c] active:scale-90 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Plus className="size-3.5" aria-hidden="true" />
+          </button>
+        </div>
+      )}
     </article>
   );
 }

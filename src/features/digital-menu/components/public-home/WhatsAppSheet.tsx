@@ -46,7 +46,7 @@ export function WhatsAppSheet({
             href={waUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex min-h-[48px] w-full items-center justify-center gap-2.5 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-zinc-950 shadow-md shadow-emerald-500/10 transition hover:bg-emerald-400 active:scale-95 cursor-pointer no-underline"
+            className="flex min-h-[48px] w-full items-center justify-center gap-2.5 rounded-full bg-[#59ee50] px-4 py-3 text-sm font-bold text-[#0a0a0a] shadow-md shadow-[#59ee50]/10 transition hover:bg-[#4ddb44] active:scale-95 cursor-pointer no-underline"
           >
             <MessageCircle className="size-4.5" />
             <span>Escribir por WhatsApp</span>
@@ -56,7 +56,7 @@ export function WhatsAppSheet({
         <button
           type="button"
           onClick={handleDownloadVCard}
-          className="flex min-h-[48px] w-full items-center justify-center gap-2.5 rounded-xl border border-[#27272a] bg-[#18181b] px-4 py-3 text-sm font-semibold text-zinc-200 transition hover:bg-zinc-800 hover:text-white active:scale-95 cursor-pointer"
+          className="flex min-h-[48px] w-full items-center justify-center gap-2.5 rounded-full border border-[#262626] bg-[#1a1a1a] px-4 py-3 text-sm font-semibold text-[#fafafa] transition hover:bg-[#262626] active:scale-95 cursor-pointer"
         >
           <UserPlus className="size-4.5" />
           <span>Guardar contacto</span>

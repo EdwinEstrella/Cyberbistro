@@ -6,6 +6,7 @@ out/
 dist/
 dist-electron/
 release/
+workers/menu-photos/dist/
 .atl/
 
 # Debug logs

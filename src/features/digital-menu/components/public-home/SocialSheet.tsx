@@ -69,11 +69,11 @@ export function SocialSheet({ isOpen, onClose, contact }: SocialSheetProps) {
               href={item.url}
               target="_blank"
               rel="noopener noreferrer"
-              className={`flex min-h-[48px] items-center justify-between rounded-xl border border-[#27272a] bg-[#18181b] px-4 py-3 text-sm font-semibold transition active:scale-95 cursor-pointer no-underline ${item.colorClass}`}
+              className={`flex min-h-[48px] items-center justify-between rounded-full border border-[#262626] bg-[#1a1a1a] px-4 py-3 text-sm font-semibold transition active:scale-95 cursor-pointer no-underline ${item.colorClass}`}
             >
               <div className="flex items-center gap-3">
                 <Icon className="size-4.5" />
-                <span className="text-white">{item.label}</span>
+                <span className="text-[#fafafa]">{item.label}</span>
               </div>
               <ExternalLink className="size-3.5 opacity-60" />
             </a>

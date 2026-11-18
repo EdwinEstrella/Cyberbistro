@@ -50,7 +50,7 @@ export function TicTacToeGame({ onBack }: TicTacToeGameProps) {
           type="button"
           onClick={onBack}
           aria-label="Volver a la lista de juegos"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#18181b] border border-[#27272a] text-xs font-semibold text-zinc-300 hover:text-white hover:border-zinc-700 transition cursor-pointer"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#131313] border border-[#262626] text-xs font-semibold text-[#fafafa] hover:border-[#3a3a3a] transition cursor-pointer"
         >
           <ArrowLeft className="size-3.5" />
           <span>Volver</span>
@@ -58,15 +58,15 @@ export function TicTacToeGame({ onBack }: TicTacToeGameProps) {
 
         {/* Score Counter */}
         <div className="flex items-center gap-2 text-xs">
-          <div className="flex items-center gap-1 text-emerald-400 font-semibold">
+          <div className="flex items-center gap-1 text-[#ff906d] font-semibold">
             <User className="size-3" />
             <span>{scores.wins}</span>
           </div>
-          <span className="text-zinc-600">·</span>
-          <div className="text-zinc-400 font-medium">
+          <span className="text-[#3a3a3a]">·</span>
+          <div className="text-[#adaaaa] font-medium">
             <span>{scores.draws}</span>
           </div>
-          <span className="text-zinc-600">·</span>
+          <span className="text-[#3a3a3a]">·</span>
           <div className="flex items-center gap-1 text-amber-400 font-semibold">
             <Bot className="size-3" />
             <span>{scores.losses}</span>
@@ -77,7 +77,7 @@ export function TicTacToeGame({ onBack }: TicTacToeGameProps) {
           type="button"
           onClick={handleReset}
           aria-label="Reiniciar partida de tres en raya"
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#18181b] border border-[#27272a] text-xs font-semibold text-zinc-400 hover:text-white hover:border-zinc-700 transition cursor-pointer"
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#131313] border border-[#262626] text-xs font-semibold text-[#adaaaa] hover:text-[#fafafa] hover:border-[#3a3a3a] transition cursor-pointer"
         >
           <RotateCcw className="size-3.5" />
           <span className="hidden sm:inline">Reiniciar</span>
@@ -93,16 +93,16 @@ export function TicTacToeGame({ onBack }: TicTacToeGameProps) {
       <div
         className={`flex items-center justify-between w-full p-2.5 rounded-xl border text-xs font-medium ${
           state.winner === "X"
-            ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+            ? "bg-[#2b160d] border-[#5b2a17] text-[#ffb59c]"
             : state.winner === "O"
             ? "bg-amber-500/10 border-amber-500/30 text-amber-300"
             : state.isDraw
-            ? "bg-zinc-800/40 border-zinc-700 text-zinc-300"
-            : "bg-[#18181b] border-[#27272a] text-zinc-300"
+            ? "bg-[#1a1a1a] border-[#262626] text-[#fafafa]"
+            : "bg-[#131313] border-[#262626] text-[#fafafa]"
         }`}
       >
         <div className="flex items-center gap-2">
-          {state.winner === "X" && <Trophy className="size-4 text-emerald-400" />}
+          {state.winner === "X" && <Trophy className="size-4 text-[#ff906d]" />}
           <span className="font-semibold">{getStatusText()}</span>
         </div>
 
@@ -110,12 +110,12 @@ export function TicTacToeGame({ onBack }: TicTacToeGameProps) {
           <button
             type="button"
             onClick={handleReset}
-            className="px-2.5 py-1 rounded-lg bg-white text-zinc-950 font-bold text-[11px] hover:bg-zinc-100 transition cursor-pointer"
+            className="px-2.5 py-1 rounded-lg bg-white text-[#0a0a0a] font-bold text-[11px] hover:bg-[#fafafa] transition cursor-pointer"
           >
             Nueva partida
           </button>
         ) : (
-          <span className="text-[11px] text-zinc-400">Jugador (X) vs CPU (O)</span>
+          <span className="text-[11px] text-[#adaaaa]">Jugador (X) vs CPU (O)</span>
         )}
       </div>
 
@@ -123,7 +123,7 @@ export function TicTacToeGame({ onBack }: TicTacToeGameProps) {
       <div
         role="grid"
         aria-label="Tablero de tres en raya"
-        className="grid grid-cols-3 gap-2.5 w-full aspect-square max-w-[300px] p-2.5 rounded-2xl bg-[#09090b] border border-[#27272a]"
+        className="grid grid-cols-3 gap-2.5 w-full aspect-square max-w-[300px] p-2.5 rounded-2xl bg-[#0e0e0e] border border-[#262626]"
       >
         {state.board.map((cell, index) => {
           const isWinningCell = state.winningLine?.includes(index as 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8);
@@ -137,14 +137,14 @@ export function TicTacToeGame({ onBack }: TicTacToeGameProps) {
               onClick={() => handleCellClick(index)}
               disabled={state.isGameOver || cell !== null}
               aria-label={`Casilla fila ${row}, columna ${col}: ${cell ? `marcada con ${cell}` : "vacía"}`}
-              className={`flex items-center justify-center rounded-xl text-3xl sm:text-4xl font-black transition-all select-none cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
+              className={`flex items-center justify-center rounded-xl text-3xl sm:text-4xl font-black transition-all select-none cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ff906d] ${
                 isWinningCell
-                  ? "bg-emerald-400/20 border-2 border-emerald-400 text-emerald-300 shadow-lg scale-102"
+                  ? "bg-[#2b160d] border-2 border-[#ff906d] text-[#ffb59c] shadow-lg scale-102"
                   : cell === "X"
-                  ? "bg-[#18181b] border border-zinc-700 text-emerald-400"
+                  ? "bg-[#131313] border border-[#262626] text-[#ff906d]"
                   : cell === "O"
-                  ? "bg-[#18181b] border border-zinc-700 text-amber-400"
-                  : "bg-[#18181b] border border-[#27272a] text-transparent hover:border-zinc-600 hover:bg-[#202024] active:scale-95"
+                  ? "bg-[#131313] border border-[#262626] text-amber-400"
+                  : "bg-[#131313] border border-[#262626] text-transparent hover:border-[#3a3a3a] hover:bg-[#1a1a1a] active:scale-95"
               }`}
             >
               {cell ?? ""}

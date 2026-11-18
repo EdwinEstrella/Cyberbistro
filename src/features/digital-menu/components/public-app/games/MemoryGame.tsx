@@ -58,19 +58,19 @@ export function MemoryGame({ onBack }: MemoryGameProps) {
           type="button"
           onClick={onBack}
           aria-label="Volver a la lista de juegos"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#18181b] border border-[#27272a] text-xs font-semibold text-zinc-300 hover:text-white hover:border-zinc-700 transition cursor-pointer"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#131313] border border-[#262626] text-xs font-semibold text-[#fafafa] hover:border-[#3a3a3a] transition cursor-pointer"
         >
           <ArrowLeft className="size-3.5" />
           <span>Volver</span>
         </button>
 
         <div className="flex items-center gap-3 text-xs font-medium">
-          <span className="text-zinc-400">
+          <span className="text-[#adaaaa]">
             Movimientos: <strong className="text-white">{gameState.moves}</strong>
           </span>
-          <span className="text-zinc-400">
+          <span className="text-[#adaaaa]">
             Parejas:{" "}
-            <strong className="text-emerald-400">
+            <strong className="text-[#ff906d]">
               {gameState.matchesCount} / {gameState.totalPairs}
             </strong>
           </span>
@@ -80,7 +80,7 @@ export function MemoryGame({ onBack }: MemoryGameProps) {
           type="button"
           onClick={handleReset}
           aria-label="Reiniciar juego de memoria"
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#18181b] border border-[#27272a] text-xs font-semibold text-zinc-400 hover:text-white hover:border-zinc-700 transition cursor-pointer"
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#131313] border border-[#262626] text-xs font-semibold text-[#adaaaa] hover:text-[#fafafa] hover:border-[#3a3a3a] transition cursor-pointer"
         >
           <RotateCcw className="size-3.5" />
           <span className="hidden sm:inline">Reiniciar</span>
@@ -98,10 +98,10 @@ export function MemoryGame({ onBack }: MemoryGameProps) {
       {gameState.isWon && (
         <div
           role="status"
-          className="flex items-center justify-between w-full p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs shadow-lg animate-in fade-in"
+          className="flex items-center justify-between w-full p-3 rounded-xl bg-[#2b160d] border border-[#5b2a17] text-[#ffb59c] text-xs shadow-lg animate-in fade-in"
         >
           <div className="flex items-center gap-2">
-            <Trophy className="size-4 text-emerald-400 shrink-0" />
+            <Trophy className="size-4 text-[#ff906d] shrink-0" />
             <span>
               <strong>¡Ganaste!</strong> Completado en {gameState.moves} movimientos.
             </span>
@@ -109,7 +109,7 @@ export function MemoryGame({ onBack }: MemoryGameProps) {
           <button
             type="button"
             onClick={handleReset}
-            className="px-3 py-1 rounded-lg bg-emerald-400 text-zinc-950 font-bold text-[11px] hover:bg-emerald-300 transition cursor-pointer"
+            className="px-3 py-1 rounded-lg bg-[#ff906d] text-[#5b1600] font-bold text-[11px] hover:bg-[#ffb59c] transition cursor-pointer"
           >
             Jugar otra vez
           </button>
@@ -120,7 +120,7 @@ export function MemoryGame({ onBack }: MemoryGameProps) {
       <div
         role="grid"
         aria-label="Tablero de juego de memoria"
-        className="grid grid-cols-4 gap-2.5 w-full aspect-square max-w-[320px] sm:max-w-[340px] p-2 rounded-2xl bg-[#09090b] border border-[#27272a]"
+        className="grid grid-cols-4 gap-2.5 w-full aspect-square max-w-[320px] sm:max-w-[340px] p-2 rounded-2xl bg-[#0e0e0e] border border-[#262626]"
       >
         {gameState.cards.map((card) => {
           const isRevealed = card.isFlipped || card.isMatched;
@@ -136,12 +136,12 @@ export function MemoryGame({ onBack }: MemoryGameProps) {
                   ? `Carta ${card.id + 1}: ${card.symbol}${card.isMatched ? " emparejada" : ""}`
                   : `Carta ${card.id + 1} oculta`
               }
-              className={`flex items-center justify-center rounded-xl text-2xl sm:text-3xl font-bold transition-all duration-200 select-none cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
+              className={`flex items-center justify-center rounded-xl text-2xl sm:text-3xl font-bold transition-all duration-200 select-none cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ff906d] ${
                 card.isMatched
-                  ? "bg-emerald-400/15 border border-emerald-400/40 text-white shadow-inner opacity-90 scale-98"
+                  ? "bg-[#2b160d] border border-[#5b2a17] text-[#ffb59c] shadow-inner opacity-90 scale-98"
                   : isRevealed
-                  ? "bg-[#18181b] border-2 border-emerald-400 text-white shadow-md scale-102"
-                  : "bg-[#18181b] border border-[#27272a] text-transparent hover:border-zinc-600 hover:bg-[#202024] active:scale-95"
+                  ? "bg-[#131313] border-2 border-[#ff906d] text-white shadow-md scale-102"
+                  : "bg-[#131313] border border-[#262626] text-transparent hover:border-[#3a3a3a] hover:bg-[#1a1a1a] active:scale-95"
               }`}
             >
               <span aria-hidden="true" className={isRevealed ? "block" : "invisible"}>

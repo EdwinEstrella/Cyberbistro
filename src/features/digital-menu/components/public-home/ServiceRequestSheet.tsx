@@ -3,6 +3,7 @@ import { BellRing, CheckCircle2, ClockAlert } from "lucide-react";
 import { BottomSheet } from "./BottomSheet";
 import { isValidTableCode, type ServiceRequestKind } from "../../lib/serviceRequests";
 import type { ServiceRequestStatus } from "../../hooks/useServiceRequest";
+import { publicMenuTheme } from "../public-app/publicMenuTheme";
 
 export interface ServiceRequestSheetProps {
   isOpen: boolean;
@@ -49,7 +50,7 @@ export function ServiceRequestSheet({
         {/* Result states */}
         {isComplete ? (
           <div data-testid="service-request-result" className="py-4 text-center space-y-4">
-            <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-emerald-400/10 border border-emerald-400/20 text-emerald-400">
+            <div className="mx-auto flex size-14 items-center justify-center rounded-full bg-[#59ee50]/10 border border-[#59ee50]/20 text-[#59ee50]">
               {status === "sent" ? (
                 <CheckCircle2 className="size-7" />
               ) : (
@@ -58,12 +59,12 @@ export function ServiceRequestSheet({
             </div>
 
             <div className="space-y-1.5">
-              <h3 className="text-base font-bold text-white">
+              <h3 className={`text-base font-bold text-[#fafafa] ${publicMenuTheme.headingFontClass}`}>
                 {status === "sent"
                   ? "¡Listo! Avisamos al personal, ya van en camino."
                   : "Ya avisamos al personal, ya van en camino."}
               </h3>
-              <p className="text-xs text-zinc-400">
+              <p className="text-xs text-[#adaaaa]">
                 {kind === "waiter"
                   ? "Un mozo se acercará a tu mesa a la brevedad."
                   : "Un mozo se acercará con la cuenta a tu mesa."}
@@ -73,7 +74,7 @@ export function ServiceRequestSheet({
             <button
               type="button"
               onClick={onClose}
-              className="w-full rounded-xl bg-white px-4 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-zinc-100 active:scale-98 cursor-pointer shadow-md"
+              className="w-full rounded-full bg-[#ff906d] px-4 py-3 text-sm font-bold text-[#5b1600] transition hover:bg-[#ffb59c] active:scale-98 cursor-pointer shadow-md"
             >
               Entendido
             </button>
@@ -85,7 +86,7 @@ export function ServiceRequestSheet({
               <div
                 role="alert"
                 data-testid="service-request-general-error"
-                className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-xs leading-relaxed text-red-300"
+                className="rounded-full border border-red-500/20 bg-red-500/10 p-3 text-xs leading-relaxed text-red-300"
               >
                 {generalError}
               </div>
@@ -94,7 +95,7 @@ export function ServiceRequestSheet({
             <div className="space-y-1.5">
               <label
                 htmlFor="service-request-code"
-                className="block text-xs font-semibold text-zinc-300"
+                className="block text-xs font-semibold text-[#fafafa]"
               >
                 Código de mesa
               </label>
@@ -108,13 +109,13 @@ export function ServiceRequestSheet({
                 value={code}
                 onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 4))}
                 placeholder="4 dígitos"
-                className={`w-full rounded-xl border bg-[#18181b] px-4 py-3 text-center text-lg font-bold tracking-widest text-white placeholder-zinc-600 outline-none transition focus:ring-2 ${
+                className={`w-full rounded-full border bg-[#1a1a1a] px-4 py-3 text-center text-lg font-bold tracking-widest text-[#fafafa] placeholder-[#adaaaa]/40 outline-none transition focus:ring-2 ${
                   codeError
                     ? "border-red-500/50 focus:border-red-400 focus:ring-red-400/20"
-                    : "border-[#27272a] focus:border-emerald-400/50 focus:ring-emerald-400/20"
+                    : "border-[#262626] focus:border-[#ff906d]/50 focus:ring-[#ff906d]/20"
                 }`}
               />
-              <p className="text-[11px] text-zinc-500">
+              <p className="text-[11px] text-[#adaaaa]">
                 Ingresá el código de 4 dígitos que está en tu mesa
               </p>
               {codeError && (
@@ -133,10 +134,10 @@ export function ServiceRequestSheet({
               data-testid="service-request-submit-button"
               disabled={isSubmitDisabled}
               aria-disabled={isSubmitDisabled}
-              className={`flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-sm font-semibold transition shadow-sm ${
+              className={`flex w-full items-center justify-center gap-2 rounded-full px-4 py-3.5 text-sm font-bold transition shadow-sm ${
                 isSubmitDisabled
-                  ? "bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700/40"
-                  : "bg-white text-zinc-950 hover:bg-zinc-100 active:scale-98 cursor-pointer shadow-md"
+                  ? "bg-[#1a1a1a] text-[#adaaaa]/40 cursor-not-allowed border border-[#262626]"
+                  : "bg-[#ff906d] text-[#5b1600] hover:bg-[#ffb59c] active:scale-98 cursor-pointer shadow-md"
               }`}
             >
               {status === "sending" ? (

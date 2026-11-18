@@ -34,12 +34,12 @@ export function UtilityButtonGrid({
                 href={action.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex min-h-[52px] items-center gap-2.5 rounded-2xl border border-[#27272a] bg-[#111113] px-3.5 py-2.5 text-left transition hover:bg-[#18181b] hover:border-zinc-700 active:scale-98 cursor-pointer no-underline group"
+                className="flex min-h-[52px] items-center gap-2.5 rounded-[18px] border border-[#262626] bg-[#131313] px-3.5 py-2.5 text-left transition hover:bg-[#1a1a1a] hover:border-[#3a3a3a] active:scale-98 cursor-pointer no-underline group"
               >
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-400/10 border border-emerald-400/20 text-emerald-400 group-hover:bg-emerald-400/20 transition">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#2b160d] border border-[#5b2a17] text-[#ff906d] group-hover:bg-[#5b2a17]/50 transition">
                   <Icon className="size-4.5" />
                 </div>
-                <span className="text-xs font-semibold leading-tight text-white group-hover:text-emerald-300 transition line-clamp-2">
+                <span className="text-xs font-semibold leading-tight text-[#fafafa] group-hover:text-[#ffb59c] transition line-clamp-2">
                   {action.label}
                 </span>
               </a>
@@ -51,12 +51,12 @@ export function UtilityButtonGrid({
               key={action.id}
               type="button"
               onClick={() => onActionClick(action)}
-              className="flex min-h-[52px] items-center gap-2.5 rounded-2xl border border-[#27272a] bg-[#111113] px-3.5 py-2.5 text-left transition hover:bg-[#18181b] hover:border-zinc-700 active:scale-98 cursor-pointer group"
+              className="flex min-h-[52px] items-center gap-2.5 rounded-[18px] border border-[#262626] bg-[#131313] px-3.5 py-2.5 text-left transition hover:bg-[#1a1a1a] hover:border-[#3a3a3a] active:scale-98 cursor-pointer group"
             >
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-400/10 border border-emerald-400/20 text-emerald-400 group-hover:bg-emerald-400/20 transition">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[#2b160d] border border-[#5b2a17] text-[#ff906d] group-hover:bg-[#5b2a17]/50 transition">
                 <Icon className="size-4.5" />
               </div>
-              <span className="text-xs font-semibold leading-tight text-white group-hover:text-emerald-300 transition line-clamp-2">
+              <span className="text-xs font-semibold leading-tight text-[#fafafa] group-hover:text-[#ffb59c] transition line-clamp-2">
                 {action.label}
               </span>
             </button>

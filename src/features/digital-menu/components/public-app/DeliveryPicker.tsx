@@ -55,10 +55,10 @@ export function DeliveryPicker({ value, onChange }: DeliveryPickerProps) {
               role="radio"
               aria-checked={selected}
               onClick={() => onChange({ ...value, mode: id })}
-              className={`flex min-h-11 flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2.5 text-center text-[11px] font-semibold leading-tight transition cursor-pointer active:scale-95 ${
+              className={`flex min-h-11 flex-col items-center justify-center gap-1 rounded-full border px-2 py-2.5 text-center text-[11px] font-semibold leading-tight transition cursor-pointer active:scale-95 ${
                 selected
-                  ? "border-emerald-400/60 bg-emerald-400/10 text-emerald-300"
-                  : "border-[#27272a] bg-[#18181b] text-zinc-400 hover:text-white"
+                  ? "border-[#ff906d] bg-[#2b160d] text-[#ff906d] font-bold"
+                  : "border-[#262626] bg-[#1a1a1a] text-[#adaaaa] hover:text-[#fafafa]"
               }`}
             >
               <Icon className="size-4" aria-hidden="true" />
@@ -69,29 +69,29 @@ export function DeliveryPicker({ value, onChange }: DeliveryPickerProps) {
       </div>
 
       {isDelivery && (
-        <div className="space-y-3 rounded-xl border border-[#27272a] bg-[#111113] p-3">
+        <div className="space-y-3 rounded-[20px] border border-[#262626] bg-[#131313] p-3">
           <button
             type="button"
             onClick={() => void handleUseMyLocation()}
             disabled={locating}
-            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-emerald-400/40 bg-emerald-400/10 px-3 py-2.5 text-xs font-bold text-emerald-300 transition cursor-pointer active:scale-95 disabled:opacity-60"
+            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-full border border-[#5b2a17] bg-[#2b160d] px-3 py-2.5 text-xs font-bold text-[#ff906d] transition cursor-pointer active:scale-95 disabled:opacity-60"
           >
             <LocateFixed className={`size-4 ${locating ? "animate-pulse" : ""}`} aria-hidden="true" />
             {locating ? "Buscando tu ubicación…" : "Usar mi ubicación actual"}
           </button>
 
           {locationError && (
-            <p role="alert" className="rounded-lg border border-red-500/20 bg-red-500/10 p-2.5 text-xs text-red-300">
+            <p role="alert" className="rounded-full border border-red-500/20 bg-red-500/10 p-2.5 text-xs text-red-300">
               {locationError}
             </p>
           )}
 
-          <p className="text-[11px] leading-snug text-zinc-500">
+          <p className="text-[11px] leading-snug text-[#adaaaa]">
             O toca el mapa para marcar dónde te entregamos. Puedes arrastrar el pin para ajustarlo.
           </p>
 
           <Suspense
-            fallback={<div className="h-56 w-full animate-pulse rounded-xl border border-[#27272a] bg-[#18181b]" />}
+            fallback={<div className="h-56 w-full animate-pulse rounded-[16px] border border-[#262626] bg-[#1a1a1a]" />}
           >
             <DeliveryMapPicker
               lat={value.lat}
@@ -104,7 +104,7 @@ export function DeliveryPicker({ value, onChange }: DeliveryPickerProps) {
           </Suspense>
 
           {hasPin && (
-            <p className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
+            <p className="flex items-center gap-1.5 text-xs font-semibold text-[#59ee50]">
               <CheckCircle2 className="size-3.5" aria-hidden="true" />
               Ubicación marcada
             </p>
@@ -117,7 +117,7 @@ export function DeliveryPicker({ value, onChange }: DeliveryPickerProps) {
             rows={2}
             placeholder="Punto de referencia (ej. casa azul frente al colmado)"
             aria-label="Punto de referencia de la entrega"
-            className="w-full resize-none rounded-xl border border-[#27272a] bg-[#18181b] px-3.5 py-2.5 text-base text-white placeholder:text-zinc-500 outline-none transition focus:border-emerald-400/50"
+            className="w-full resize-none rounded-[16px] border border-[#262626] bg-[#1a1a1a] px-3.5 py-2.5 text-base text-[#fafafa] placeholder:text-[#adaaaa] outline-none transition focus:border-[#ff906d]/50"
           />
         </div>
       )}

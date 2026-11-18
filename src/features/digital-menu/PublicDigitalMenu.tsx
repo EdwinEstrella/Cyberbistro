@@ -18,13 +18,16 @@ import {
 } from "./lib/publicMenuPayload";
 import { resolvePublicMenuMode } from "./lib/publicMenuMode";
 import { EMPTY_DELIVERY_DRAFT, validateDeliveryDraft, type DeliveryDraft } from "./lib/deliveryOrder";
+import { addToCartWithNote } from "./lib/cartOperations";
 import { useOnlineMenuStatus } from "./lib/useOnlineMenuStatus";
 import { publicMenuTheme } from "./components/public-app/publicMenuTheme";
+import { usePublicMenuFonts } from "./hooks/usePublicMenuFonts";
 
 export { asMenuPayload, buildCreateOrderRpcArgs, formatCurrency, getClientSessionId };
 export type { PublicMenuPayload };
 
 export function PublicDigitalMenu() {
+  usePublicMenuFonts();
   const { slug = "" } = useParams();
   const [searchParams] = useSearchParams();
 
@@ -169,6 +172,11 @@ export function PublicDigitalMenu() {
     });
   }
 
+  function addItemWithDetails(item: PublicMenuItem, qty: number, note?: string) {
+    setSuccess(null);
+    setCart((current) => addToCartWithNote(current, item, qty, note));
+  }
+
   function updateQuantity(platoId: number, quantity: number) {
     setCart((current) =>
       current.flatMap((line) => {
@@ -288,12 +296,12 @@ export function PublicDigitalMenu() {
     return (
       <div className={publicMenuTheme.canvas} style={publicMenuTheme.rootStyle}>
         <div
-          className={`${publicMenuTheme.deviceColumn} items-center justify-center p-6 text-center text-zinc-400`}
+          className={`${publicMenuTheme.deviceColumn} items-center justify-center p-6 text-center text-[#adaaaa]`}
           style={publicMenuTheme.rootStyle}
         >
           <div className="flex flex-col items-center gap-3">
-            <div className="size-8 rounded-full border-2 border-emerald-400 border-t-transparent animate-spin" />
-            <p className="text-xs font-semibold text-zinc-400">Cargando menú...</p>
+            <div className="size-8 rounded-full border-2 border-[#ff906d] border-t-transparent animate-spin" />
+            <p className="text-xs font-semibold text-[#adaaaa]">Cargando menú...</p>
           </div>
         </div>
       </div>
@@ -307,12 +315,12 @@ export function PublicDigitalMenu() {
           className={`${publicMenuTheme.deviceColumn} items-center justify-center p-6 text-center`}
           style={publicMenuTheme.rootStyle}
         >
-          <div className="w-full rounded-2xl border border-[#27272a] bg-[#111113] p-7 shadow-2xl">
-            <p className="text-[10px] uppercase tracking-wider font-semibold text-zinc-500">
+          <div className="w-full rounded-[20px] border border-[#262626] bg-[#131313] p-7 shadow-2xl">
+            <p className="text-[10px] uppercase tracking-wider font-semibold text-[#adaaaa]">
               Menú no disponible
             </p>
-            <h1 className="mt-2 text-xl font-bold text-white">Este enlace no está activo.</h1>
-            <p className="mt-2 text-xs text-zinc-400 leading-relaxed">
+            <h1 className={`mt-2 text-xl font-bold text-[#fafafa] ${publicMenuTheme.headingFontClass}`}>Este enlace no está activo.</h1>
+            <p className="mt-2 text-xs text-[#adaaaa] leading-relaxed">
               Verificá el código QR o pedí un enlace actualizado al restaurante.
             </p>
           </div>
@@ -329,16 +337,16 @@ export function PublicDigitalMenu() {
           className={`${publicMenuTheme.deviceColumn} items-center justify-center p-6 text-center`}
           style={publicMenuTheme.rootStyle}
         >
-          <div className="w-full rounded-2xl border border-[#27272a] bg-[#111113] p-7 shadow-2xl">
-            <div className="mx-auto size-14 rounded-2xl bg-emerald-400/10 border border-emerald-400/20 text-emerald-400 flex items-center justify-center text-2xl mb-4">
+          <div className="w-full rounded-[20px] border border-[#262626] bg-[#131313] p-7 shadow-2xl">
+            <div className="mx-auto size-14 rounded-full bg-[#2b160d] border border-[#5b2a17] text-[#ff906d] flex items-center justify-center text-2xl mb-4">
               ⏳
             </div>
-            <h1 className="text-xl font-bold text-white">Tu pedido está en camino</h1>
-            <p className="mt-2 text-xs text-zinc-400 leading-relaxed">
+            <h1 className={`text-xl font-bold text-[#fafafa] ${publicMenuTheme.headingFontClass}`}>Tu pedido está en camino</h1>
+            <p className="mt-2 text-xs text-[#adaaaa] leading-relaxed">
               Ya tenés un pedido activo en la Mesa {mode.mesa}. Cuando esté listo, el personal te lo
               notificará.
             </p>
-            <p className="mt-3 text-[11px] text-zinc-500">
+            <p className="mt-3 text-[11px] text-[#adaaaa]">
               Si necesitás agregar algo, solicitá asistencia al camarero.
             </p>
             <button
@@ -350,7 +358,7 @@ export function PublicDigitalMenu() {
                 setHasActiveInStoreOrder(false);
                 setSuccess(null);
               }}
-              className="mt-6 text-xs text-zinc-400 hover:text-white underline cursor-pointer"
+              className="mt-6 text-xs text-[#adaaaa] hover:text-[#fafafa] underline cursor-pointer"
             >
               Soy un cliente diferente en esta mesa
             </button>
@@ -385,6 +393,7 @@ export function PublicDigitalMenu() {
       items={menu.items}
       cart={cart}
       onAddItem={addItem}
+      onAddItemWithDetails={addItemWithDetails}
       onUpdateQuantity={updateQuantity}
       onClearCart={clearCart}
       customerName={customerName}
@@ -408,6 +417,7 @@ export function PublicDigitalMenu() {
       currencyFormatter={formatCurrency}
       slug={slug}
       tenantId={menu.settings?.tenant_id}
+      isOpen={isOpen}
     />
   );
 }

@@ -23,21 +23,21 @@ export interface Game2048Props {
 function getTileStyles(val: number): string {
   switch (val) {
     case 0:
-      return "bg-[#18181b] border border-[#27272a] text-transparent";
+      return "bg-[#131313] border border-[#262626] text-transparent";
     case 2:
-      return "bg-zinc-800 text-zinc-100 border border-zinc-700 font-bold";
+      return "bg-[#1a1a1a] text-[#fafafa] border border-[#262626] font-bold";
     case 4:
-      return "bg-zinc-700 text-white border border-zinc-600 font-bold";
+      return "bg-[#262626] text-[#fafafa] border border-[#3a3a3a] font-bold";
     case 8:
-      return "bg-emerald-950/80 text-emerald-200 border border-emerald-800 font-bold";
+      return "bg-[#2b160d] text-[#ffb59c] border border-[#5b2a17] font-bold";
     case 16:
-      return "bg-emerald-900 text-emerald-100 border border-emerald-700 font-bold";
+      return "bg-[#3d1c0e] text-[#ffc6b3] border border-[#7a351c] font-bold";
     case 32:
-      return "bg-emerald-800 text-white border border-emerald-600 font-extrabold";
+      return "bg-[#ff906d]/20 text-[#ffb59c] border border-[#ff906d]/40 font-extrabold";
     case 64:
-      return "bg-emerald-700 text-white border border-emerald-500 font-extrabold shadow-sm";
+      return "bg-[#ff906d]/40 text-[#fafafa] border border-[#ff906d]/60 font-extrabold shadow-sm";
     case 128:
-      return "bg-emerald-600 text-white font-black text-xl shadow-md";
+      return "bg-[#ff906d] text-[#5b1600] font-black text-xl shadow-md";
     case 256:
       return "bg-teal-600 text-white font-black text-xl shadow-md";
     case 512:
@@ -45,7 +45,7 @@ function getTileStyles(val: number): string {
     case 1024:
       return "bg-sky-600 text-white font-black text-lg shadow-lg";
     case 2048:
-      return "bg-amber-400 text-zinc-950 font-black text-lg shadow-xl ring-2 ring-amber-300";
+      return "bg-amber-400 text-[#0a0a0a] font-black text-lg shadow-xl ring-2 ring-amber-300";
     default:
       return "bg-purple-600 text-white font-black text-lg shadow-xl";
   }
@@ -138,18 +138,18 @@ export function Game2048({ onBack }: Game2048Props) {
           type="button"
           onClick={onBack}
           aria-label="Volver a la lista de juegos"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#18181b] border border-[#27272a] text-xs font-semibold text-zinc-300 hover:text-white hover:border-zinc-700 transition cursor-pointer"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#131313] border border-[#262626] text-xs font-semibold text-[#fafafa] hover:border-[#3a3a3a] transition cursor-pointer"
         >
           <ArrowLeft className="size-3.5" />
           <span>Volver</span>
         </button>
 
         <div className="flex items-center gap-3 text-xs font-medium">
-          <span className="text-zinc-400">
+          <span className="text-[#adaaaa]">
             Puntos: <strong className="text-white">{state.score}</strong>
           </span>
-          <span className="text-zinc-400">
-            Mejor: <strong className="text-emerald-400">{state.bestScore}</strong>
+          <span className="text-[#adaaaa]">
+            Mejor: <strong className="text-[#ff906d]">{state.bestScore}</strong>
           </span>
         </div>
 
@@ -157,7 +157,7 @@ export function Game2048({ onBack }: Game2048Props) {
           type="button"
           onClick={handleReset}
           aria-label="Reiniciar juego 2048"
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#18181b] border border-[#27272a] text-xs font-semibold text-zinc-400 hover:text-white hover:border-zinc-700 transition cursor-pointer"
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#131313] border border-[#262626] text-xs font-semibold text-[#adaaaa] hover:text-[#fafafa] hover:border-[#3a3a3a] transition cursor-pointer"
         >
           <RotateCcw className="size-3.5" />
           <span className="hidden sm:inline">Reiniciar</span>
@@ -189,14 +189,14 @@ export function Game2048({ onBack }: Game2048Props) {
             <button
               type="button"
               onClick={() => setKeepPlayingAfterWin(true)}
-              className="px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-200 font-semibold text-[11px] hover:bg-zinc-700 transition cursor-pointer"
+              className="px-2.5 py-1 rounded-lg bg-[#1a1a1a] text-[#fafafa] border border-[#262626] font-semibold text-[11px] hover:bg-[#262626] transition cursor-pointer"
             >
               Continuar
             </button>
             <button
               type="button"
               onClick={handleReset}
-              className="px-2.5 py-1 rounded-lg bg-amber-400 text-zinc-950 font-bold text-[11px] hover:bg-amber-300 transition cursor-pointer"
+              className="px-2.5 py-1 rounded-lg bg-amber-400 text-[#0a0a0a] font-bold text-[11px] hover:bg-amber-300 transition cursor-pointer"
             >
               Nuevo
             </button>
@@ -216,7 +216,7 @@ export function Game2048({ onBack }: Game2048Props) {
           <button
             type="button"
             onClick={handleReset}
-            className="px-3 py-1 rounded-lg bg-white text-zinc-950 font-bold text-[11px] hover:bg-zinc-100 transition cursor-pointer"
+            className="px-3 py-1 rounded-lg bg-white text-[#0a0a0a] font-bold text-[11px] hover:bg-[#fafafa] transition cursor-pointer"
           >
             Reintentar
           </button>
@@ -229,7 +229,7 @@ export function Game2048({ onBack }: Game2048Props) {
         aria-label="Tablero 2048"
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
-        className="grid grid-cols-4 gap-2 w-full aspect-square max-w-[280px] sm:max-w-[300px] p-2.5 rounded-2xl bg-[#09090b] border border-[#27272a] shadow-xl touch-none select-none"
+        className="grid grid-cols-4 gap-2 w-full aspect-square max-w-[280px] sm:max-w-[300px] p-2.5 rounded-2xl bg-[#0e0e0e] border border-[#262626] shadow-xl touch-none select-none"
       >
         {state.grid.map((row, r) =>
           row.map((val, c) => (
@@ -254,7 +254,7 @@ export function Game2048({ onBack }: Game2048Props) {
           type="button"
           onClick={() => handleMove("UP")}
           aria-label="Mover arriba"
-          className="flex size-11 items-center justify-center rounded-xl bg-[#18181b] border border-[#27272a] text-zinc-200 active:scale-95 active:bg-emerald-400/20 active:border-emerald-400 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+          className="flex size-11 items-center justify-center rounded-xl bg-[#131313] border border-[#262626] text-[#fafafa] active:scale-95 active:bg-[#2b160d] active:border-[#ff906d] transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ff906d]"
         >
           <ChevronUp className="size-6" />
         </button>
@@ -264,12 +264,12 @@ export function Game2048({ onBack }: Game2048Props) {
             type="button"
             onClick={() => handleMove("LEFT")}
             aria-label="Mover a la izquierda"
-            className="flex size-11 items-center justify-center rounded-xl bg-[#18181b] border border-[#27272a] text-zinc-200 active:scale-95 active:bg-emerald-400/20 active:border-emerald-400 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+            className="flex size-11 items-center justify-center rounded-xl bg-[#131313] border border-[#262626] text-[#fafafa] active:scale-95 active:bg-[#2b160d] active:border-[#ff906d] transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ff906d]"
           >
             <ChevronLeft className="size-6" />
           </button>
 
-          <div className="size-11 flex items-center justify-center rounded-xl bg-zinc-900/40 text-[10px] font-bold text-zinc-600">
+          <div className="size-11 flex items-center justify-center rounded-xl bg-[#131313] text-[10px] font-bold text-[#adaaaa]">
             D-PAD
           </div>
 
@@ -277,7 +277,7 @@ export function Game2048({ onBack }: Game2048Props) {
             type="button"
             onClick={() => handleMove("RIGHT")}
             aria-label="Mover a la derecha"
-            className="flex size-11 items-center justify-center rounded-xl bg-[#18181b] border border-[#27272a] text-zinc-200 active:scale-95 active:bg-emerald-400/20 active:border-emerald-400 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+            className="flex size-11 items-center justify-center rounded-xl bg-[#131313] border border-[#262626] text-[#fafafa] active:scale-95 active:bg-[#2b160d] active:border-[#ff906d] transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ff906d]"
           >
             <ChevronRight className="size-6" />
           </button>
@@ -287,7 +287,7 @@ export function Game2048({ onBack }: Game2048Props) {
           type="button"
           onClick={() => handleMove("DOWN")}
           aria-label="Mover abajo"
-          className="flex size-11 items-center justify-center rounded-xl bg-[#18181b] border border-[#27272a] text-zinc-200 active:scale-95 active:bg-emerald-400/20 active:border-emerald-400 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+          className="flex size-11 items-center justify-center rounded-xl bg-[#131313] border border-[#262626] text-[#fafafa] active:scale-95 active:bg-[#2b160d] active:border-[#ff906d] transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#ff906d]"
         >
           <ChevronDown className="size-6" />
         </button>

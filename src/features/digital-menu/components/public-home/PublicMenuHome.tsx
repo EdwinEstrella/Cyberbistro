@@ -83,23 +83,23 @@ export function PublicMenuHome({
               <img
                 src={settings.logo_url}
                 alt={`Logo de ${displayName}`}
-                className="size-24 rounded-3xl object-contain bg-[#18181b] border border-[#27272a] p-2.5 shadow-xl"
+                className="size-24 rounded-full object-contain bg-[#1a1a1a] border border-[#262626] p-2.5 shadow-xl"
               />
             ) : (
               <div
                 aria-hidden="true"
-                className="flex size-24 items-center justify-center rounded-3xl border border-emerald-400/20 bg-emerald-400/10 text-4xl font-black text-emerald-400 shadow-xl"
+                className={`flex size-24 items-center justify-center rounded-full border border-[#5b2a17] bg-[#2b160d] text-4xl font-black text-[#ff906d] shadow-xl ${publicMenuTheme.headingFontClass}`}
               >
                 {initialLetter}
               </div>
             )}
 
-            <h1 className="mt-4 text-2xl font-bold tracking-tight text-white sm:text-3xl">
+            <h1 className={`mt-4 text-2xl font-bold tracking-tight text-[#fafafa] sm:text-3xl ${publicMenuTheme.headingFontClass}`}>
               {displayName}
             </h1>
 
             {settings.description && (
-              <p className="mt-1.5 text-xs leading-relaxed text-zinc-400 sm:text-sm line-clamp-3">
+              <p className="mt-1.5 text-xs leading-relaxed text-[#adaaaa] sm:text-sm line-clamp-3">
                 {settings.description}
               </p>
             )}
@@ -119,17 +119,17 @@ export function PublicMenuHome({
               onClick={onViewMenu}
               disabled={isCtaDisabled}
               aria-disabled={isCtaDisabled}
-              className={`flex min-h-[56px] w-full items-center justify-center gap-3 rounded-xl px-6 py-4 text-sm font-semibold transition cursor-pointer select-none shadow-sm ${
+              className={`flex min-h-[56px] w-full items-center justify-center gap-3 rounded-full px-6 py-4 text-sm font-bold transition cursor-pointer select-none shadow-sm ${
                 isCtaDisabled
-                  ? "bg-zinc-900/50 text-zinc-600 border border-zinc-800/50 cursor-not-allowed"
-                  : "bg-white text-zinc-950 hover:bg-zinc-100 active:scale-98 shadow-md"
+                  ? "bg-[#1a1a1a]/50 text-[#adaaaa]/40 border border-[#262626] cursor-not-allowed"
+                  : "bg-[#ff906d] text-[#5b1600] hover:bg-[#ffb59c] active:scale-98 shadow-md"
               }`}
             >
               <UtensilsCrossed className="size-4.5" />
               <span>Ver menú y ordenar</span>
             </button>
             {isCtaDisabled && (
-              <p className="mt-2 text-center text-[11px] font-medium text-zinc-500">
+              <p className="mt-2 text-center text-[11px] font-medium text-[#adaaaa]">
                 Elegí la cantidad de personas para continuar
               </p>
             )}
@@ -157,7 +157,7 @@ export function PublicMenuHome({
         {/* Footer: Table number pinned at bottom in table mode */}
         {isTableMode && (
           <footer className="relative z-10 mt-6 w-full max-w-sm mx-auto text-center pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))]">
-            <div className="inline-flex items-center gap-2 rounded-full border border-[#27272a] bg-[#18181b] px-4 py-1.5 text-xs font-semibold text-zinc-300">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#5b2a17] bg-[#2b160d] px-4 py-1.5 text-xs font-semibold text-[#ffb59c]">
               <span>🪑 Mesa {mode.mesa}</span>
             </div>
           </footer>

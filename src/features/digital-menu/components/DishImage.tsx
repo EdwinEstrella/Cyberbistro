@@ -15,8 +15,8 @@ export interface DishImageProps {
 export function DishImage({
   src,
   alt = "",
-  className = "mb-4 h-36 w-full rounded-[20px] object-cover bg-black/10",
-  fallbackClassName = "mb-4 flex h-36 w-full items-center justify-center rounded-[20px] border border-white/5 bg-white/5 text-orange-200/40 shadow-inner",
+  className = "mb-4 h-36 w-full rounded-[20px] object-cover bg-[#1a1a1a]",
+  fallbackClassName = "mb-4 flex h-36 w-full items-center justify-center rounded-[20px] border border-[#262626] bg-[#1a1a1a] text-[#adaaaa] shadow-inner",
   onError,
   initialError = false,
   onRenderImgProps,

@@ -45,13 +45,13 @@ export function WifiSheet({
     >
       <div className="space-y-3">
         {/* Network Name (SSID) */}
-        <div className="rounded-xl border border-[#27272a] bg-[#18181b] p-3.5">
+        <div className="rounded-[18px] border border-[#262626] bg-[#1a1a1a] p-3.5">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0 flex-1">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-[#adaaaa]">
                 Red Wi-Fi
               </span>
-              <p className="mt-0.5 truncate text-sm font-bold text-white">
+              <p className="mt-0.5 truncate text-sm font-bold text-[#fafafa]">
                 {wifiName}
               </p>
             </div>
@@ -59,12 +59,12 @@ export function WifiSheet({
               type="button"
               onClick={() => void copyToClipboard(wifiName, "name")}
               aria-label="Copiar nombre de red"
-              className="flex min-h-[36px] items-center gap-1.5 rounded-lg border border-[#27272a] bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:bg-zinc-800 hover:text-white transition active:scale-95 cursor-pointer"
+              className="flex min-h-[36px] items-center gap-1.5 rounded-full border border-[#262626] bg-[#131313] px-3.5 py-1.5 text-xs font-semibold text-[#fafafa] hover:bg-[#262626] transition active:scale-95 cursor-pointer"
             >
               {copiedField === "name" ? (
                 <>
-                  <Check className="size-3.5 text-emerald-400" />
-                  <span className="text-emerald-400">¡Copiado!</span>
+                  <Check className="size-3.5 text-[#59ee50]" />
+                  <span className="text-[#59ee50]">¡Copiado!</span>
                 </>
               ) : (
                 <>
@@ -78,13 +78,13 @@ export function WifiSheet({
 
         {/* Network Password */}
         {wifiPassword && (
-          <div className="rounded-xl border border-[#27272a] bg-[#18181b] p-3.5">
+          <div className="rounded-[18px] border border-[#262626] bg-[#1a1a1a] p-3.5">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0 flex-1">
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-[#adaaaa]">
                   Clave Wi-Fi
                 </span>
-                <p className="mt-0.5 font-mono text-sm font-bold tracking-wider text-emerald-400 truncate">
+                <p className="mt-0.5 font-mono text-sm font-bold tracking-wider text-[#ff906d] truncate">
                   {wifiPassword}
                 </p>
               </div>
@@ -92,12 +92,12 @@ export function WifiSheet({
                 type="button"
                 onClick={() => void copyToClipboard(wifiPassword, "password")}
                 aria-label="Copiar contraseña"
-                className="flex min-h-[36px] items-center gap-1.5 rounded-lg border border-[#27272a] bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-zinc-200 hover:bg-zinc-800 hover:text-white transition active:scale-95 cursor-pointer"
+                className="flex min-h-[36px] items-center gap-1.5 rounded-full border border-[#262626] bg-[#131313] px-3.5 py-1.5 text-xs font-semibold text-[#fafafa] hover:bg-[#262626] transition active:scale-95 cursor-pointer"
               >
                 {copiedField === "password" ? (
                   <>
-                    <Check className="size-3.5 text-emerald-400" />
-                    <span className="text-emerald-400">¡Copiado!</span>
+                    <Check className="size-3.5 text-[#59ee50]" />
+                    <span className="text-[#59ee50]">¡Copiado!</span>
                   </>
                 ) : (
                   <>
