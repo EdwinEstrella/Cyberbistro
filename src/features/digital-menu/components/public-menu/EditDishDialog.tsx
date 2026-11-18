@@ -19,10 +19,8 @@ export function EditDishDialog({
   onClose,
   onSubmit,
 }: EditDishDialogProps) {
-  if (!editingPlato) return null;
-
   const [editDisplayName, setEditDisplayName] = useState(
-    customItem?.display_name || editingPlato.nombre
+    customItem?.display_name || editingPlato?.nombre || ""
   );
   const [editDescription, setEditDescription] = useState(
     customItem?.description || ""
@@ -55,6 +53,8 @@ export function EditDishDialog({
       imageUrl: editImageUrl,
     });
   };
+
+  if (!editingPlato) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">

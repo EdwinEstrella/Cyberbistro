@@ -1,6 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+// @ts-ignore react-dom types are not installed in devDependencies
+import { flushSync } from "react-dom";
 import { EditDishDialog } from "./EditDishDialog";
+import { setupFakeDom, type MockElement } from "../../test-utils/fakeDom";
 
 describe("EditDishDialog", () => {
   const mockPlato = {
@@ -58,5 +61,62 @@ describe("EditDishDialog", () => {
 
     expect(html).toContain("disabled");
     expect(html).toContain("Subiendo...");
+  });
+
+  it("renders with editingPlato null, then a plato, then null again without errors", async () => {
+    const { root, findElement, cleanup } = setupFakeDom();
+    try {
+      // 1. Initial render with editingPlato = null
+      flushSync(() => {
+        root.render(
+          <EditDishDialog
+            editingPlato={null}
+            onClose={vi.fn()}
+            onSubmit={vi.fn()}
+          />
+        );
+      });
+      expect(findElement((el) => el.tagName === "INPUT")).toBeNull();
+
+      // 2. Render with a plato
+      flushSync(() => {
+        root.render(
+          <EditDishDialog
+            editingPlato={mockPlato}
+            onClose={vi.fn()}
+            onSubmit={vi.fn()}
+          />
+        );
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const nameInput = findElement(
+        (el: MockElement) => el.tagName === "INPUT" && el.attributes.type === "text"
+      );
+      expect(nameInput).not.toBeNull();
+      expect(nameInput?.value).toBe(mockPlato.nombre);
+      expect(nameInput?.attributes.placeholder).toBe(mockPlato.nombre);
+
+      const descInput = findElement(
+        (el: MockElement) => el.tagName === "TEXTAREA"
+      );
+      expect(descInput).not.toBeNull();
+      expect(descInput?.value).toBe("");
+
+      // 3. Render with editingPlato = null again
+      flushSync(() => {
+        root.render(
+          <EditDishDialog
+            editingPlato={null}
+            onClose={vi.fn()}
+            onSubmit={vi.fn()}
+          />
+        );
+      });
+      expect(findElement((el) => el.tagName === "INPUT")).toBeNull();
+      expect(findElement((el) => el.tagName === "TEXTAREA")).toBeNull();
+    } finally {
+      cleanup();
+    }
   });
 });
