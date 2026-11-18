@@ -1,5 +1,3 @@
-import { ShoppingBag } from "lucide-react";
-
 export interface FloatingCartBarProps {
   itemCount: number;
   total: number;
@@ -22,21 +20,24 @@ export function FloatingCartBar({
   return (
     <div
       data-testid="floating-cart-bar"
-      className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] left-1/2 -translate-x-1/2 w-full max-w-[480px] px-4 z-20 pointer-events-none lg:hidden"
+      className="fixed left-1/2 -translate-x-1/2 w-full max-w-[480px] px-4 bottom-[calc(92px+env(safe-area-inset-bottom,0px))] z-20 pointer-events-none lg:hidden"
     >
       <button
         type="button"
         onClick={onOpenCart}
         aria-label={`Ver pedido, ${itemCount} ${itemCount === 1 ? "artículo" : "artículos"}, total ${currencyFormatter(total, currency)}`}
-        className="pointer-events-auto flex w-full items-center justify-between rounded-full bg-[#ff906d] px-5 py-3.5 text-xs font-bold text-[#5b1600] shadow-xl transition active:scale-98 cursor-pointer hover:bg-[#ffb59c]"
+        className="pointer-events-auto flex w-full items-center justify-between h-[56px] rounded-[18px] bg-[#ff906d] px-4 shadow-[0_12px_30px_rgba(0,0,0,0.5)] transition active:scale-98 cursor-pointer hover:bg-[#ffb59c]"
       >
-        <div className="flex items-center gap-2 whitespace-nowrap">
-          <ShoppingBag className="size-4 shrink-0 text-[#5b1600]" aria-hidden="true" />
-          <span>Ver pedido</span>
-          <span aria-hidden="true">·</span>
-          <span>{itemCount}</span>
+        <div className="flex items-center gap-3">
+          <span 
+            data-testid="floating-cart-count"
+            className="flex size-[26px] items-center justify-center rounded-[8px] bg-[#5b1600] text-[#ff906d] text-[13px] font-bold tabular-nums"
+          >
+            {itemCount}
+          </span>
+          <span className="text-[15px] font-extrabold text-[#5b1600]">Ver pedido</span>
         </div>
-        <span className="font-extrabold text-sm text-[#5b1600] tabular-nums">
+        <span className="font-extrabold text-[15px] text-[#5b1600] tabular-nums">
           {currencyFormatter(total, currency)}
         </span>
       </button>

@@ -32,7 +32,7 @@ describe("CartDrawer", () => {
         onUpdateQuantity={vi.fn()}
         onClearCart={vi.fn()}
         currency="DOP"
-        isTableMode={true}
+        isTableMode={true} partySize={2} onPartySizeChange={vi.fn()}
         mesaNumero={5}
         itemCount={2}
         total={1040}
@@ -65,7 +65,7 @@ describe("CartDrawer", () => {
         onUpdateQuantity={vi.fn()}
         onClearCart={vi.fn()}
         currency="DOP"
-        isTableMode={true}
+        isTableMode={true} partySize={2} onPartySizeChange={vi.fn()}
         mesaNumero={5}
         itemCount={2}
         total={1040}
@@ -107,7 +107,7 @@ describe("CartDrawer", () => {
         onUpdateQuantity={vi.fn()}
         onClearCart={vi.fn()}
         currency="DOP"
-        isTableMode={true}
+        isTableMode={true} partySize={2} onPartySizeChange={vi.fn()}
         mesaNumero={4}
         itemCount={2}
         total={1040}
@@ -144,7 +144,7 @@ describe("CartDrawer", () => {
         onUpdateQuantity={vi.fn()}
         onClearCart={vi.fn()}
         currency="DOP"
-        isTableMode={false}
+        isTableMode={false} partySize={null} onPartySizeChange={vi.fn()}
         itemCount={2}
         total={1040}
         mesaCodigo=""
@@ -168,8 +168,9 @@ describe("CartDrawer", () => {
     expect(html).not.toContain('placeholder="0000"');
   });
 
-  it("renders 'Pedir' primary action button and NEVER contains the word 'Pagar'", () => {
-    const html = renderToStaticMarkup(
+  it("renders PartySizePicker in table mode and handles validation", () => {
+    // 1. partySize null -> button disabled + helper
+    const htmlNull = renderToStaticMarkup(
       <CartDrawer
         isOpen={true}
         onClose={vi.fn()}
@@ -177,11 +178,11 @@ describe("CartDrawer", () => {
         onUpdateQuantity={vi.fn()}
         onClearCart={vi.fn()}
         currency="DOP"
-        isTableMode={true}
+        isTableMode={true} partySize={null} onPartySizeChange={vi.fn()}
         mesaNumero={1}
         itemCount={2}
         total={1040}
-        mesaCodigo=""
+        mesaCodigo="1234"
         onMesaCodigoChange={vi.fn()}
         mesaCodeError={null}
         customerName="Laura"
@@ -197,9 +198,72 @@ describe("CartDrawer", () => {
         currencyFormatter={formatCurrency}
       />
     );
+    expect(htmlNull).toContain("¿Cuántos son?");
+    expect(htmlNull).toContain("Elegí la cantidad de personas para continuar");
+    expect(htmlNull).toContain('disabled=""');
 
-    expect(html).toContain(">Pedir<");
-    expect(html.toLowerCase()).not.toContain("pagar");
+    // 2. partySize 4 -> button enabled + helper gone
+    const htmlSet = renderToStaticMarkup(
+      <CartDrawer
+        isOpen={true}
+        onClose={vi.fn()}
+        cart={sampleCart}
+        onUpdateQuantity={vi.fn()}
+        onClearCart={vi.fn()}
+        currency="DOP"
+        isTableMode={true} partySize={4} onPartySizeChange={vi.fn()}
+        mesaNumero={1}
+        itemCount={2}
+        total={1040}
+        mesaCodigo="1234"
+        onMesaCodigoChange={vi.fn()}
+        mesaCodeError={null}
+        customerName="Laura"
+        onCustomerNameChange={vi.fn()}
+        customerPhone=""
+        onCustomerPhoneChange={vi.fn()}
+        notes=""
+        onNotesChange={vi.fn()}
+        error={null}
+        success={null}
+        placing={false}
+        onPlaceOrder={vi.fn()}
+        currencyFormatter={formatCurrency}
+      />
+    );
+    expect(htmlSet).not.toContain("Elegí la cantidad de personas para continuar");
+    expect(htmlSet).not.toContain('disabled=""');
+  });
+
+  it("does not render PartySizePicker in takeout mode", () => {
+    const html = renderToStaticMarkup(
+      <CartDrawer
+        isOpen={true}
+        onClose={vi.fn()}
+        cart={sampleCart}
+        onUpdateQuantity={vi.fn()}
+        onClearCart={vi.fn()}
+        currency="DOP"
+        isTableMode={false} partySize={null} onPartySizeChange={vi.fn()}
+        itemCount={2}
+        total={1040}
+        mesaCodigo=""
+        onMesaCodigoChange={vi.fn()}
+        mesaCodeError={null}
+        customerName="Pedro"
+        onCustomerNameChange={vi.fn()}
+        customerPhone=""
+        onCustomerPhoneChange={vi.fn()}
+        notes=""
+        onNotesChange={vi.fn()}
+        error={null}
+        success={null}
+        placing={false}
+        onPlaceOrder={vi.fn()}
+        currencyFormatter={formatCurrency}
+      />
+    );
+    expect(html).not.toContain("¿Cuántos son?");
   });
 
   it("displays 'Enviando...' while placing order", () => {
@@ -211,7 +275,7 @@ describe("CartDrawer", () => {
         onUpdateQuantity={vi.fn()}
         onClearCart={vi.fn()}
         currency="DOP"
-        isTableMode={true}
+        isTableMode={true} partySize={2} onPartySizeChange={vi.fn()}
         mesaNumero={1}
         itemCount={2}
         total={1040}
@@ -245,7 +309,7 @@ describe("CartDrawer", () => {
         onUpdateQuantity={vi.fn()}
         onClearCart={vi.fn()}
         currency="DOP"
-        isTableMode={true}
+        isTableMode={true} partySize={2} onPartySizeChange={vi.fn()}
         mesaNumero={1}
         itemCount={0}
         total={0}
@@ -287,7 +351,7 @@ describe("CartDrawer", () => {
         onUpdateQuantity={vi.fn()}
         onClearCart={vi.fn()}
         currency="DOP"
-        isTableMode={true}
+        isTableMode={true} partySize={2} onPartySizeChange={vi.fn()}
         mesaNumero={1}
         itemCount={2}
         total={1040}
@@ -343,11 +407,13 @@ describe("CartDrawer", () => {
         placing: false,
         onPlaceOrder: vi.fn(),
         currencyFormatter: formatCurrency,
+        partySize: 2,
+        onPartySizeChange: () => {},
       };
 
       const initialOnClose = vi.fn();
       flushSync(() => {
-        root.render(<CartDrawer {...baseProps} onClose={initialOnClose} />);
+        root.render(<CartDrawer {...baseProps} onClose={initialOnClose} partySize={2} onPartySizeChange={vi.fn()} />);
       });
 
       const closeButton = findElement(
@@ -368,7 +434,7 @@ describe("CartDrawer", () => {
       // Parent re-renders (e.g. typing notes or customer info) with a new onClose identity
       const nextOnClose = vi.fn();
       flushSync(() => {
-        root.render(<CartDrawer {...baseProps} onClose={nextOnClose} />);
+        root.render(<CartDrawer {...baseProps} onClose={nextOnClose} partySize={2} onPartySizeChange={vi.fn()} />);
       });
 
       // Assert input is still document.activeElement and not the close button

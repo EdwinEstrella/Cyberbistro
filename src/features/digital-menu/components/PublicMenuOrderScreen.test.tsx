@@ -63,13 +63,13 @@ describe("PublicMenuOrderScreen app-shell layout", () => {
         success={null}
         placing={false}
         onPlaceOrder={vi.fn()}
-        onBackToHome={vi.fn()}
+        onPartySizeChange={vi.fn()}
         currencyFormatter={formatCurrency}
       />
     );
 
     expect(html).toContain("whitespace-nowrap");
-    expect(html).toContain("🪑 Mesa 3 · 4 personas");
+    expect(html).toContain("Mesa 3 · 4 personas");
   });
 
   it("renders header badge with singular '1 persona' when partySize is 1", () => {
@@ -96,12 +96,12 @@ describe("PublicMenuOrderScreen app-shell layout", () => {
         success={null}
         placing={false}
         onPlaceOrder={vi.fn()}
-        onBackToHome={vi.fn()}
+        onPartySizeChange={vi.fn()}
         currencyFormatter={formatCurrency}
       />
     );
 
-    expect(html).toContain("🪑 Mesa 7 · 1 persona");
+    expect(html).toContain("Mesa 7 · 1 persona");
     expect(html).not.toContain("1 personas");
     expect(html).toContain("whitespace-nowrap");
   });
@@ -130,13 +130,142 @@ describe("PublicMenuOrderScreen app-shell layout", () => {
         success={null}
         placing={false}
         onPlaceOrder={vi.fn()}
-        onBackToHome={vi.fn()}
+        onPartySizeChange={vi.fn()}
         currencyFormatter={formatCurrency}
       />
     );
 
     expect(html).toContain("🛍 Para llevar");
     expect(html).toContain("whitespace-nowrap");
+  });
+
+  it("renders invalid QR notice in takeout mode when invalidMesa is true", () => {
+    const html = renderToStaticMarkup(
+      <PublicMenuOrderScreen
+        settings={mockSettings}
+        mode={{ kind: "takeout", invalidMesa: true }}
+        partySize={null}
+        items={sampleItems}
+        cart={[]}
+        onAddItem={vi.fn()}
+        onAddItemWithDetails={vi.fn()}
+        onUpdateQuantity={vi.fn()}
+        customerName=""
+        onCustomerNameChange={vi.fn()}
+        customerPhone=""
+        onCustomerPhoneChange={vi.fn()}
+        notes=""
+        onNotesChange={vi.fn()}
+        mesaCodigo=""
+        onMesaCodigoChange={vi.fn()}
+        mesaCodeError={null}
+        error={null}
+        success={null}
+        placing={false}
+        onPlaceOrder={vi.fn()}
+        onPartySizeChange={vi.fn()}
+        currencyFormatter={formatCurrency}
+      />
+    );
+
+    expect(html).toContain("El QR de esta mesa no es válido; podés pedir para llevar.");
+  });
+
+  it("does not render invalid QR notice in takeout mode when invalidMesa is false", () => {
+    const html = renderToStaticMarkup(
+      <PublicMenuOrderScreen
+        settings={mockSettings}
+        mode={{ kind: "takeout", invalidMesa: false }}
+        partySize={null}
+        items={sampleItems}
+        cart={[]}
+        onAddItem={vi.fn()}
+        onAddItemWithDetails={vi.fn()}
+        onUpdateQuantity={vi.fn()}
+        customerName=""
+        onCustomerNameChange={vi.fn()}
+        customerPhone=""
+        onCustomerPhoneChange={vi.fn()}
+        notes=""
+        onNotesChange={vi.fn()}
+        mesaCodigo=""
+        onMesaCodigoChange={vi.fn()}
+        mesaCodeError={null}
+        error={null}
+        success={null}
+        placing={false}
+        onPlaceOrder={vi.fn()}
+        onPartySizeChange={vi.fn()}
+        currencyFormatter={formatCurrency}
+      />
+    );
+
+    expect(html).not.toContain("El QR de esta mesa no es válido; podés pedir para llevar.");
+  });
+
+  it("shows 'Mesa 3' in the top bar in table mode", () => {
+    const html = renderToStaticMarkup(
+      <PublicMenuOrderScreen
+        settings={mockSettings}
+        mode={{ kind: "table", mesa: 3 }}
+        partySize={4}
+        items={sampleItems}
+        cart={[]}
+        onAddItem={vi.fn()}
+        onAddItemWithDetails={vi.fn()}
+        onUpdateQuantity={vi.fn()}
+        customerName=""
+        onCustomerNameChange={vi.fn()}
+        customerPhone=""
+        onCustomerPhoneChange={vi.fn()}
+        notes=""
+        onNotesChange={vi.fn()}
+        mesaCodigo=""
+        onMesaCodigoChange={vi.fn()}
+        mesaCodeError={null}
+        error={null}
+        success={null}
+        placing={false}
+        onPlaceOrder={vi.fn()}
+        onPartySizeChange={vi.fn()}
+        currencyFormatter={formatCurrency}
+      />
+    );
+
+    expect(html).toContain("Mesa 3");
+  });
+
+  it("renders dish list immediately and does not contain 'Ver menú y ordenar'", () => {
+    const html = renderToStaticMarkup(
+      <PublicMenuOrderScreen
+        settings={mockSettings}
+        mode={{ kind: "takeout", invalidMesa: false }}
+        partySize={null}
+        items={sampleItems}
+        cart={[]}
+        onAddItem={vi.fn()}
+        onAddItemWithDetails={vi.fn()}
+        onUpdateQuantity={vi.fn()}
+        customerName=""
+        onCustomerNameChange={vi.fn()}
+        customerPhone=""
+        onCustomerPhoneChange={vi.fn()}
+        notes=""
+        onNotesChange={vi.fn()}
+        mesaCodigo=""
+        onMesaCodigoChange={vi.fn()}
+        mesaCodeError={null}
+        error={null}
+        success={null}
+        placing={false}
+        onPlaceOrder={vi.fn()}
+        onPartySizeChange={vi.fn()}
+        currencyFormatter={formatCurrency}
+      />
+    );
+
+    expect(html).toContain("Tacos de Cerdo");
+    expect(html).not.toContain("Ver menú y ordenar");
   });
 
   it("renders search input with placeholder 'Buscar en el menú' and descriptive aria-label", () => {
@@ -163,16 +292,16 @@ describe("PublicMenuOrderScreen app-shell layout", () => {
         success={null}
         placing={false}
         onPlaceOrder={vi.fn()}
-        onBackToHome={vi.fn()}
+        onPartySizeChange={vi.fn()}
         currencyFormatter={formatCurrency}
       />
     );
 
-    expect(html).toContain('placeholder="Buscar en el menú"');
+    expect(html).toContain('placeholder="¿Qué se te antoja hoy?"');
     expect(html).toContain('aria-label="Buscar platos, categorías o ingredientes en el menú"');
   });
 
-  it("renders floating cart summary with singular '1 item', whitespace-nowrap, safe area, and extra scroll padding", () => {
+  it("renders floating cart summary with count, total, and correct scroll padding", () => {
     const singleCart: CartLine[] = [
       {
         ...sampleItems[0],
@@ -203,16 +332,14 @@ describe("PublicMenuOrderScreen app-shell layout", () => {
         success={null}
         placing={false}
         onPlaceOrder={vi.fn()}
-        onBackToHome={vi.fn()}
+        onPartySizeChange={vi.fn()}
         currencyFormatter={formatCurrency}
       />
     );
 
-    expect(html).toContain("1 item");
-    expect(html).not.toContain("1 items");
-    expect(html).toContain("whitespace-nowrap");
-    expect(html).toContain("left-1/2 -translate-x-1/2");
-    expect(html).toContain("pb-[calc(10.5rem+env(safe-area-inset-bottom,0px))]");
+    expect(html).toContain("Ver pedido");
+    expect(html).toMatch(/data-testid="floating-cart-count"[^>]*>1<\/span>/);
+    expect(html).toContain("pb-[calc(9.5rem+env(safe-area-inset-bottom,0px))]");
   });
 
   it("renders floating cart summary with plural 'N items' when itemCount > 1", () => {
@@ -246,13 +373,13 @@ describe("PublicMenuOrderScreen app-shell layout", () => {
         success={null}
         placing={false}
         onPlaceOrder={vi.fn()}
-        onBackToHome={vi.fn()}
+        onPartySizeChange={vi.fn()}
         currencyFormatter={formatCurrency}
       />
     );
 
-    expect(html).toContain("3 items");
-    expect(html).toContain("whitespace-nowrap");
+    expect(html).toContain("Ver pedido");
+    expect(html).toMatch(/data-testid="floating-cart-count"[^>]*>3<\/span>/);
   });
 
   it("asserts the word 'Pagar' is completely absent from the public menu app", () => {
@@ -286,7 +413,7 @@ describe("PublicMenuOrderScreen app-shell layout", () => {
         success={null}
         placing={false}
         onPlaceOrder={vi.fn()}
-        onBackToHome={vi.fn()}
+        onPartySizeChange={vi.fn()}
         currencyFormatter={formatCurrency}
       />
     );
@@ -319,7 +446,7 @@ describe("PublicMenuOrderScreen app-shell layout", () => {
       success: null,
       placing: false,
       onPlaceOrder: vi.fn(),
-      onBackToHome: vi.fn(),
+      onPartySizeChange: vi.fn(),
       currencyFormatter: formatCurrency,
     };
     return renderToStaticMarkup(<PublicMenuOrderScreen {...defaultProps} {...overrides} />);
@@ -342,16 +469,34 @@ describe("PublicMenuOrderScreen app-shell layout", () => {
     expect(htmlEmptyCart).not.toContain('data-testid="floating-cart-bar"');
   });
 
-  it("renders restaurant name in Space Grotesk 22px and open/closed status in header", () => {
+  it("renders restaurant name at 16px and open/closed status in header", () => {
     const htmlOpen = renderScreen({ isOpen: true });
 
     expect(htmlOpen).toContain("Test Bistro");
-    expect(htmlOpen).toContain("text-[22px]");
+    expect(htmlOpen).toContain("text-[16px]");
     expect(htmlOpen).toContain("Abierto ahora");
 
     const htmlClosed = renderScreen({ isOpen: false });
 
     expect(htmlClosed).toContain("Cerrado");
+  });
+
+  it("shows 'Lo pediste recientemente' only for recent dishes still on the menu", () => {
+    const withRecent = renderScreen({
+      recentDishes: [
+        { platoId: sampleItems[0].plato_id, orderedAt: new Date().toISOString() },
+        { platoId: 987654, orderedAt: new Date().toISOString() },
+      ],
+    });
+    expect(withRecent).toContain("Lo pediste recientemente");
+    expect(withRecent).toContain(`data-testid="recent-dish-${sampleItems[0].plato_id}"`);
+    expect(withRecent).not.toContain('data-testid="recent-dish-987654"');
+    expect(withRecent).toContain(`aria-label="Repetir ${sampleItems[0].name}"`);
+
+    expect(renderScreen({ recentDishes: [] })).not.toContain("Lo pediste recientemente");
+    expect(renderScreen({ recentDishes: [{ platoId: 987654, orderedAt: new Date().toISOString() }] })).not.toContain(
+      "Lo pediste recientemente"
+    );
   });
 
   it("does not render DishDetailSheet initially when no dish is selected", () => {
@@ -390,7 +535,7 @@ describe("PublicMenuOrderScreen app-shell layout", () => {
             success={null}
             placing={false}
             onPlaceOrder={vi.fn()}
-            onBackToHome={vi.fn()}
+            onPartySizeChange={vi.fn()}
             currencyFormatter={formatCurrency}
           />
         );
@@ -473,7 +618,7 @@ describe("PublicMenuOrderScreen app-shell layout", () => {
             success={null}
             placing={false}
             onPlaceOrder={vi.fn()}
-            onBackToHome={vi.fn()}
+            onPartySizeChange={vi.fn()}
             currencyFormatter={formatCurrency}
           />
         );

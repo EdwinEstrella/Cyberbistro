@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { AlertTriangle } from "lucide-react";
 import type { PublicMenuMode } from "../lib/publicMenuMode";
 import type { PublicContact } from "../../menu-links/lib/publicMenuCalendar";
 import type { DeliveryDraft } from "../lib/deliveryOrder";
@@ -10,8 +11,10 @@ import { CartDrawer } from "./public-app/CartDrawer";
 import { DishDetailSheet } from "./public-app/DishDetailSheet";
 import { ServicesTab } from "./public-app/ServicesTab";
 import { FloatingCartBar } from "./public-app/FloatingCartBar";
+import { RecentlyOrderedSection } from "./public-app/RecentlyOrderedSection";
 import { publicMenuTheme } from "./public-app/publicMenuTheme";
 import { filterDishesByName } from "../lib/searchDishes";
+import { resolveRecentDishes, type RecentDish } from "../lib/recentDishes";
 
 export interface PublicMenuSettings {
   tenant_id: string;
@@ -43,6 +46,7 @@ export interface PublicMenuOrderScreenProps {
   settings: PublicMenuSettings;
   mode: PublicMenuMode;
   partySize: number | null;
+  onPartySizeChange: (size: number) => void;
   items: PublicMenuItem[];
   cart: CartLine[];
   onAddItem: (item: PublicMenuItem) => void;
@@ -65,19 +69,21 @@ export interface PublicMenuOrderScreenProps {
   success: { message: string; numeroPedido: number | null } | null;
   placing: boolean;
   onPlaceOrder: () => void;
-  onBackToHome: () => void;
   onDismissSuccess?: () => void;
   contact?: PublicContact | null;
   currencyFormatter: (value: number, code: string) => string;
   slug?: string;
   tenantId?: string | null;
   isOpen?: boolean | null;
+  /** Dishes this device ordered before from this menu, newest first. */
+  recentDishes?: RecentDish[];
 }
 
 export function PublicMenuOrderScreen({
   settings,
   mode,
   partySize,
+  onPartySizeChange,
   items,
   cart,
   onAddItem,
@@ -99,13 +105,13 @@ export function PublicMenuOrderScreen({
   success,
   placing,
   onPlaceOrder,
-  onBackToHome,
   onDismissSuccess,
   contact,
   currencyFormatter,
   slug,
   tenantId,
   isOpen = true,
+  recentDishes = [],
 }: PublicMenuOrderScreenProps) {
   const [activeTab, setActiveTab] = useState<"menu" | "services">("menu");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
@@ -152,6 +158,12 @@ export function PublicMenuOrderScreen({
     return Array.from(map.entries());
   }, [filteredItems, selectedCategory]);
 
+  const now = useMemo(() => new Date(), []);
+  const recentEntries = useMemo(
+    () => resolveRecentDishes(recentDishes, items),
+    [recentDishes, items]
+  );
+
   // Map cart items by plato_id for quick quantity lookup
   const cartQuantities = useMemo(() => {
     const map = new Map<number, number>();
@@ -193,11 +205,23 @@ export function PublicMenuOrderScreen({
             partySize={partySize}
             cartCount={itemCount}
             onOpenCart={handleOpenCart}
-            onChangePartySize={onBackToHome}
             isOpen={isOpen}
             delivery={delivery}
             onDeliveryChange={onDeliveryChange}
           />
+
+          {/* Invalid mesa notice in takeout mode */}
+          {mode.kind === "takeout" && mode.invalidMesa && (
+            <div className="px-4 pt-3">
+              <div
+                role="status"
+                className="flex w-full items-center gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3.5 text-xs text-amber-300 shadow-md"
+              >
+                <AlertTriangle className="size-5 shrink-0 text-amber-400" />
+                <span>El QR de esta mesa no es válido; podés pedir para llevar.</span>
+              </div>
+            </div>
+          )}
 
           {/* Tab 1: Menú / Inicio */}
           {activeTab === "menu" && (
@@ -216,6 +240,17 @@ export function PublicMenuOrderScreen({
                 searchQuery={searchQuery}
                 onSearchChange={setSearchQuery}
               />
+
+              {selectedCategory === "all" && !searchQuery.trim() && (
+                <RecentlyOrderedSection
+                  entries={recentEntries}
+                  now={now}
+                  currency={settings.currency}
+                  currencyFormatter={currencyFormatter}
+                  onRepeat={onAddItem}
+                  onSelect={setSelectedDishForDetail}
+                />
+              )}
 
               {/* Dish List */}
               <section
@@ -237,11 +272,11 @@ export function PublicMenuOrderScreen({
                   groupedItems.map(([categoryName, categoryDishes]) => (
                     <div key={categoryName} className="space-y-2.5">
                       {selectedCategory === "all" && (
-                        <h2 className={`text-xs font-bold uppercase tracking-wider text-[#adaaaa] px-1 pt-1 ${publicMenuTheme.headingFontClass}`}>
+                        <h2 className={`text-[18px] font-extrabold tracking-[-0.02em] text-[#fafafa] ${publicMenuTheme.headingFontClass}`}>
                           {categoryName}
                         </h2>
                       )}
-                      <div className="flex flex-col gap-2.5 lg:grid lg:grid-cols-2 lg:gap-3">
+                      <div className="flex flex-col gap-[10px] lg:grid lg:grid-cols-2 lg:gap-3">
                         {categoryDishes.map((item) => (
                           <DishRow
                             key={item.id}
@@ -292,7 +327,6 @@ export function PublicMenuOrderScreen({
             onTabChange={setActiveTab}
             onOpenCart={handleOpenCart}
             cartCount={itemCount}
-            isTableMode={isTableMode}
           />
         </div>
 
@@ -307,6 +341,8 @@ export function PublicMenuOrderScreen({
           currency={settings.currency}
           isTableMode={isTableMode}
           mesaNumero={isTableMode ? mode.mesa : undefined}
+          partySize={partySize}
+          onPartySizeChange={onPartySizeChange}
           itemCount={itemCount}
           total={total}
           mesaCodigo={mesaCodigo}

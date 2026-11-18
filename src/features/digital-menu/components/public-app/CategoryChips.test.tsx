@@ -36,9 +36,9 @@ describe("CategoryChips", () => {
       />
     );
 
-    // Selected chip has coral bg and text-#5b1600
+    // Selected chip has white bg and text-#0e0e0e
     expect(html).toContain('aria-pressed="true"');
-    expect(html).toContain("bg-[#ff906d] text-[#5b1600]");
+    expect(html).toContain("bg-[#fafafa] text-[#0e0e0e]");
   });
 
   it("renders search input with placeholder and accessibility label", () => {
@@ -52,7 +52,7 @@ describe("CategoryChips", () => {
       />
     );
 
-    expect(html).toContain('placeholder="Buscar en el menú"');
+    expect(html).toContain('placeholder="¿Qué se te antoja hoy?"');
     expect(html).toContain('aria-label="Buscar platos, categorías o ingredientes en el menú"');
     expect(html).toContain('value="burger"');
     expect(html).toContain('aria-label="Limpiar búsqueda"');
