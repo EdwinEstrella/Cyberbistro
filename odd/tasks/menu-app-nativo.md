@@ -21,6 +21,7 @@ Transform the public digital menu (`/menu/:slug`) and subsequently the company m
 
 ## Tasks
 - [x] **T1**: CyberBistro theme tokens + app-like home (header with open status, search, floating "Ver pedido" bar, tab bar).
+  - [ ] **T1b**: Menu opens directly: remove the landing screen; party size moves to the cart in table mode; services only in the Servicios tab.
   - [x] CyberBistro design tokens in `publicMenuTheme.ts` (accent coral `#ff906d`, dark backgrounds, open green `#59ee50`, Space Grotesk/Inter fonts).
   - [x] Google Fonts loader for Space Grotesk and Inter scoped to the public menu route (`usePublicMenuFonts.ts`).
   - [x] Search filter input with pure accent/case-insensitive search function (`searchDishes.ts` + unit tests).

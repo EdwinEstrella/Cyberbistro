@@ -3,6 +3,7 @@ import { X, Trash2, CheckCircle2, ArrowRight, Minus, Plus } from "lucide-react";
 import type { CartLine } from "../PublicMenuOrderScreen";
 import { publicMenuTheme } from "./publicMenuTheme";
 import { DeliveryPicker } from "./DeliveryPicker";
+import { PartySizePicker } from "../public-home/PartySizePicker";
 import type { DeliveryDraft } from "../../lib/deliveryOrder";
 
 export interface CartDrawerProps {
@@ -14,6 +15,8 @@ export interface CartDrawerProps {
   currency: string;
   isTableMode: boolean;
   mesaNumero?: number;
+  partySize: number | null;
+  onPartySizeChange: (size: number) => void;
   itemCount: number;
   total: number;
   mesaCodigo: string;
@@ -53,6 +56,8 @@ export function CartDrawer({
   currency,
   isTableMode,
   mesaNumero,
+  partySize,
+  onPartySizeChange,
   itemCount,
   total,
   mesaCodigo,
@@ -305,27 +310,30 @@ export function CartDrawer({
 
                   {/* Table Code Input */}
                   {isTableMode && (
-                    <div className="rounded-[16px] border border-[#5b2a17] bg-[#2b160d]/30 p-3 space-y-2">
-                      <div className="flex items-center justify-between text-xs font-semibold text-[#ffb59c]">
-                        <span>Mesa {mesaNumero}</span>
-                        <span className="text-[11px] text-[#adaaaa]">Código de 4 dígitos</span>
+                    <div className="space-y-4">
+                      <PartySizePicker value={partySize} onChange={onPartySizeChange} />
+                      <div className="rounded-[16px] border border-[#5b2a17] bg-[#2b160d]/30 p-3 space-y-2">
+                        <div className="flex items-center justify-between text-xs font-semibold text-[#ffb59c]">
+                          <span>Mesa {mesaNumero}</span>
+                          <span className="text-[11px] text-[#adaaaa]">Código de 4 dígitos</span>
+                        </div>
+                        <input
+                          type="tel"
+                          inputMode="numeric"
+                          maxLength={4}
+                          value={mesaCodigo}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(/\D/g, "").slice(0, 4);
+                            onMesaCodigoChange(val);
+                          }}
+                          placeholder="0000"
+                          aria-label="Código de seguridad de la mesa de 4 dígitos"
+                          className="w-full rounded-full bg-[#0e0e0e] border border-[#262626] px-3 py-2 text-center text-xl font-black tracking-[0.5em] text-[#fafafa] outline-none focus:border-[#ff906d]/50 tabular-nums"
+                        />
+                        {mesaCodeError && (
+                          <p className="text-xs text-red-400 font-medium">{mesaCodeError}</p>
+                        )}
                       </div>
-                      <input
-                        type="tel"
-                        inputMode="numeric"
-                        maxLength={4}
-                        value={mesaCodigo}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/\D/g, "").slice(0, 4);
-                          onMesaCodigoChange(val);
-                        }}
-                        placeholder="0000"
-                        aria-label="Código de seguridad de la mesa de 4 dígitos"
-                        className="w-full rounded-full bg-[#0e0e0e] border border-[#262626] px-3 py-2 text-center text-xl font-black tracking-[0.5em] text-[#fafafa] outline-none focus:border-[#ff906d]/50 tabular-nums"
-                      />
-                      {mesaCodeError && (
-                        <p className="text-xs text-red-400 font-medium">{mesaCodeError}</p>
-                      )}
                     </div>
                   )}
 
@@ -389,12 +397,17 @@ export function CartDrawer({
               <button
                 type="button"
                 onClick={onPlaceOrder}
-                disabled={placing || cart.length === 0}
+                disabled={placing || cart.length === 0 || (isTableMode && partySize === null)}
                 className="w-full bg-[#ff906d] text-[#5b1600] font-bold rounded-full py-3 px-4 text-sm flex items-center justify-center gap-2 hover:bg-[#ffb59c] active:scale-98 transition shadow-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <span>{placing ? "Enviando..." : "Pedir"}</span>
                 {!placing && <ArrowRight className="size-4" />}
               </button>
+              {isTableMode && partySize === null && cart.length > 0 && (
+                <p className="text-[10px] text-amber-400 text-center font-medium">
+                  Elegí la cantidad de personas para continuar
+                </p>
+              )}
 
               <p className="text-[10px] text-[#adaaaa] text-center leading-tight">
                 El pedido se envía directamente a cocina. Pago directo en el restaurante.

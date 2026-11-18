@@ -40,7 +40,7 @@ const baseProps: CartDrawerProps = {
   success: null,
   placing: false,
   onPlaceOrder: vi.fn(),
-  currencyFormatter: (value, code) => `${code} ${value}`,
+  currencyFormatter: (value, code) => `${code} ${value}`, partySize: null, onPartySizeChange: () => {},
 };
 
 const render = (overrides: Partial<CartDrawerProps>) => renderToStaticMarkup(<CartDrawer {...baseProps} {...overrides} />);
@@ -82,7 +82,7 @@ describe("CartDrawer layout and delivery", () => {
   });
 
   it("never offers delivery on a table order", () => {
-    const html = render({ isTableMode: true, mesaNumero: 4, delivery: EMPTY_DELIVERY_DRAFT, onDeliveryChange: vi.fn() });
+    const html = render({ isTableMode: true, mesaNumero: 4, delivery: EMPTY_DELIVERY_DRAFT, onDeliveryChange: vi.fn(), partySize: 2, onPartySizeChange: vi.fn() });
     expect(html).not.toContain("Entrega a domicilio");
   });
 

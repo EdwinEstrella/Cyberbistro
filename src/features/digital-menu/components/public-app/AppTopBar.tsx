@@ -1,4 +1,4 @@
-import { ShoppingBag } from "lucide-react";
+import { ShoppingBag, Armchair } from "lucide-react";
 import type { PublicMenuMode } from "../../lib/publicMenuMode";
 import type { DeliveryDraft } from "../../lib/deliveryOrder";
 import { publicMenuTheme } from "./publicMenuTheme";
@@ -10,7 +10,6 @@ export interface AppTopBarProps {
   partySize: number | null;
   cartCount: number;
   onOpenCart: () => void;
-  onChangePartySize: () => void;
   isOpen?: boolean | null;
   delivery?: DeliveryDraft;
   onDeliveryChange?: (next: DeliveryDraft) => void;
@@ -23,7 +22,6 @@ export function AppTopBar({
   partySize,
   cartCount,
   onOpenCart,
-  onChangePartySize,
   isOpen = true,
   delivery,
   onDeliveryChange,
@@ -98,20 +96,14 @@ export function AppTopBar({
       {/* Row 2: Mode context (Table chip vs Takeout/Delivery toggle) */}
       <div className="flex items-center">
         {isTableMode ? (
-          <button
-            type="button"
-            onClick={onChangePartySize}
-            title="Cambiar cantidad de personas o mesa"
-            aria-label={`Mesa ${mode.mesa}${
-              partySize ? `, ${partySize} ${partySize === 1 ? "persona" : "personas"}` : ""
-            }. Tocá para cambiar.`}
-            className="inline-flex items-center gap-1 text-xs font-medium text-[#ffb59c] hover:text-[#ff906d] transition cursor-pointer active:scale-95 whitespace-nowrap"
+          <span
+            title="Mesa actual"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[#5b2a17] bg-[#2b160d] px-3 py-1 text-xs font-semibold text-[#ffb59c] leading-tight whitespace-nowrap"
           >
-            <span className="rounded-full border border-[#5b2a17] bg-[#2b160d] px-3 py-1 leading-tight font-semibold">
-              🪑 Mesa {mode.mesa}
-              {partySize ? ` · ${partySize} ${partySize === 1 ? "persona" : "personas"}` : ""}
-            </span>
-          </button>
+            <Armchair className="size-3.5" />
+            Mesa {mode.mesa}
+            {partySize ? ` · ${partySize} ${partySize === 1 ? "persona" : "personas"}` : ""}
+          </span>
         ) : onDeliveryChange ? (
           <div
             role="radiogroup"

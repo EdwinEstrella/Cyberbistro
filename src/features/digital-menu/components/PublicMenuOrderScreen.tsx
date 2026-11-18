@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { AlertTriangle } from "lucide-react";
 import type { PublicMenuMode } from "../lib/publicMenuMode";
 import type { PublicContact } from "../../menu-links/lib/publicMenuCalendar";
 import type { DeliveryDraft } from "../lib/deliveryOrder";
@@ -43,6 +44,7 @@ export interface PublicMenuOrderScreenProps {
   settings: PublicMenuSettings;
   mode: PublicMenuMode;
   partySize: number | null;
+  onPartySizeChange: (size: number) => void;
   items: PublicMenuItem[];
   cart: CartLine[];
   onAddItem: (item: PublicMenuItem) => void;
@@ -65,7 +67,6 @@ export interface PublicMenuOrderScreenProps {
   success: { message: string; numeroPedido: number | null } | null;
   placing: boolean;
   onPlaceOrder: () => void;
-  onBackToHome: () => void;
   onDismissSuccess?: () => void;
   contact?: PublicContact | null;
   currencyFormatter: (value: number, code: string) => string;
@@ -78,6 +79,7 @@ export function PublicMenuOrderScreen({
   settings,
   mode,
   partySize,
+  onPartySizeChange,
   items,
   cart,
   onAddItem,
@@ -99,7 +101,6 @@ export function PublicMenuOrderScreen({
   success,
   placing,
   onPlaceOrder,
-  onBackToHome,
   onDismissSuccess,
   contact,
   currencyFormatter,
@@ -193,11 +194,23 @@ export function PublicMenuOrderScreen({
             partySize={partySize}
             cartCount={itemCount}
             onOpenCart={handleOpenCart}
-            onChangePartySize={onBackToHome}
             isOpen={isOpen}
             delivery={delivery}
             onDeliveryChange={onDeliveryChange}
           />
+
+          {/* Invalid mesa notice in takeout mode */}
+          {mode.kind === "takeout" && mode.invalidMesa && (
+            <div className="px-4 pt-3">
+              <div
+                role="status"
+                className="flex w-full items-center gap-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3.5 text-xs text-amber-300 shadow-md"
+              >
+                <AlertTriangle className="size-5 shrink-0 text-amber-400" />
+                <span>El QR de esta mesa no es válido; podés pedir para llevar.</span>
+              </div>
+            </div>
+          )}
 
           {/* Tab 1: Menú / Inicio */}
           {activeTab === "menu" && (
@@ -307,6 +320,8 @@ export function PublicMenuOrderScreen({
           currency={settings.currency}
           isTableMode={isTableMode}
           mesaNumero={isTableMode ? mode.mesa : undefined}
+          partySize={partySize}
+          onPartySizeChange={onPartySizeChange}
           itemCount={itemCount}
           total={total}
           mesaCodigo={mesaCodigo}

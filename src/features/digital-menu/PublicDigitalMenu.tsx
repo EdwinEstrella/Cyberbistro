@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router";
 import { supabase } from "../../shared/lib/supabase";
 import { ClosedRestaurantState } from "./components/ClosedRestaurantState";
-import { PublicMenuHome } from "./components/public-home/PublicMenuHome";
 import {
   PublicMenuOrderScreen,
   type CartLine,
@@ -38,9 +37,6 @@ export function PublicDigitalMenu() {
     contact: {},
   });
   const [cart, setCart] = useState<CartLine[]>([]);
-
-  // Navigation screen
-  const [screen, setScreen] = useState<"home" | "order">("home");
 
   // Party size selection (table mode)
   const [partySize, setPartySize] = useState<number | null>(null);
@@ -206,6 +202,10 @@ export function PublicDigitalMenu() {
         setError("El código de mesa debe ser de 4 dígitos.");
         return;
       }
+      if (partySize === null) {
+        setError("Elegí la cantidad de personas para continuar.");
+        return;
+      }
     } else {
       const deliveryError = validateDeliveryDraft(delivery, customerPhone);
       if (deliveryError) {
@@ -368,28 +368,13 @@ export function PublicDigitalMenu() {
     );
   }
 
-  // Home Screen
-  if (screen === "home") {
-    return (
-      <PublicMenuHome
-        mode={mode}
-        settings={menu.settings}
-        contact={menu.contact}
-        partySize={partySize}
-        onPartySizeChange={setPartySize}
-        onViewMenu={() => setScreen("order")}
-        slug={slug}
-        tenantId={menu.settings?.tenant_id}
-      />
-    );
-  }
-
   // Menu + Order Screen
   return (
     <PublicMenuOrderScreen
       settings={menu.settings}
       mode={mode}
       partySize={partySize}
+      onPartySizeChange={setPartySize}
       items={menu.items}
       cart={cart}
       onAddItem={addItem}
@@ -411,7 +396,6 @@ export function PublicDigitalMenu() {
       success={success}
       placing={placing}
       onPlaceOrder={() => void placeOrder()}
-      onBackToHome={() => setScreen("home")}
       onDismissSuccess={() => setSuccess(null)}
       contact={menu.contact}
       currencyFormatter={formatCurrency}
