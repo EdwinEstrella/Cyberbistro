@@ -110,15 +110,17 @@ export function EditDishDialog({
             </label>
             <div className="flex items-center gap-3">
               {editImageUrl && (
-                <img
-                  src={editImageUrl}
-                  alt="Vista previa"
-                  className="w-14 h-14 object-cover rounded-xl border border-border shadow-sm shrink-0 bg-muted"
-                />
+                <div className="relative w-14 h-14 rounded-xl overflow-hidden border border-border shadow-sm shrink-0 bg-muted aspect-square">
+                  <img
+                    src={editImageUrl}
+                    alt="Vista previa"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
               )}
               <input
                 type="file"
-                accept="image/*"
+                accept="image/png,image/jpeg,image/webp,image/heic,image/heif"
                 onChange={handleFileChange}
                 disabled={uploadingImage}
                 className="text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 cursor-pointer"

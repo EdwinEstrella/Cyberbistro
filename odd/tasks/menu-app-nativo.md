@@ -57,9 +57,16 @@ Transform the public digital menu (`/menu/:slug`) and subsequently the company m
   - Made `onAddItemWithDetails` a required prop in `PublicMenuOrderScreen` and deleted silent fallback loop that dropped notes.
   - Updated "Nota para cocina" label to `text-sm font-bold text-[#fafafa]` (normal case).
   - Consolidated fake DOM test infrastructure into `src/features/digital-menu/test-utils/fakeDom.ts` and refactored all test suites (`CartDrawer.test.tsx`, `DishRow.test.tsx`, `PublicMenuOrderScreen.test.tsx`, `DishDetailSheet.test.tsx`, `useSheetDialog.test.tsx`).
+- T3 implementation (Cloudflare Worker + Client-side WebP pipeline):
+  - Cloudflare Worker in `workers/menu-photos/src/handler.ts` and `index.ts` with pure `handleRequest`, zero CF runtime dependencies, sequential validation (405, 404, 401 missing_token, 400 invalid_tenant/plato, 415 unsupported_type, 413 too_large), PostgREST RPC admin tenant authorization (`cyberbistro_current_admin_tenant_ids`), R2 put with immutable cache headers and versioned key `<tenant_id>/<plato_id>-<now()>.webp`, 201 response, and universal CORS (204 on OPTIONS).
+  - Build script `build:menu-photos-worker` in `package.json` bundling `workers/menu-photos/dist/worker.js` (4.3 kB) via `esbuild`; dist folder ignored in `.gitignore`.
+  - Client-side square center crop (`computeSquareCrop`) and WebP processing (`processDishPhoto`) in `dishPhotoProcessing.ts` keeping alpha channel and retrying at quality 0.7 if > 1.5 MB.
+  - Worker upload client in `dishPhotoUpload.ts` and Spanish user error messages in `dishPhotoErrors.ts`, configured with `VITE_MENU_PHOTOS_API_URL` (default `https://fotos-api.azokia.com`) added to `.env.example` and `vite-env.d.ts`.
+  - Wired into `usePublicMenuDishes.ts` via `supabase.auth.getSession()` and updated `EditDishDialog.tsx` with specific image format accept string without capture attribute, plus square preview.
+  - Comprehensive unit test suites added for worker handler (`test/menu-photos-worker.test.ts`), photo processing, photo upload, photo errors, dialog component, and hook.
 
 ## Evidence
-npm run typecheck clean; vitest digital-menu 45 files / 359 tests passed; reviewed by Claude in 2 correction rounds (row is a real button with sibling quick-add, shared useSheetDialog hook fixes focus-jump and adds scroll lock, sheet state keyed by plato_id, required onAddItemWithDetails, shared fakeDom test util).
+npm run typecheck clean; vitest 51 files / 402 tests passed; build:menu-photos-worker output 4,356 bytes ESM bundle; snake game test stabilized with fixed food position; pending Claude review, deploy, and commit.
 
 ## Next Step
-T3
+Claude review, deploy Worker to fotos-api.azokia.com, and commit T3.

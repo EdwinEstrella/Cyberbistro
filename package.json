@@ -67,6 +67,7 @@
     "postinstall": "node scripts/patch-dev-electron-icon.cjs",
     "dev": "vite",
     "build": "vite build && npm run verify:electron-main-externalization",
+    "build:menu-photos-worker": "esbuild workers/menu-photos/src/index.ts --bundle --outfile=workers/menu-photos/dist/worker.js --format=esm --platform=neutral --target=es2022",
     "verify:electron-main-externalization": "node scripts/verify-electron-main-externalization.cjs",
     "icon:build": "node scripts/build-icon.mjs && node scripts/patch-dev-electron-icon.cjs",
     "package": "npm run build && node scripts/clean-env.cjs electron-forge package",

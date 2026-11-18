@@ -2,6 +2,12 @@ import { useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import { supabase } from "../../../shared/lib/supabase";
 import { enqueueLocalWrite, getDeviceId } from "../../../shared/lib/localFirst";
+import { processDishPhoto } from "../lib/dishPhotoProcessing";
+import { uploadDishPhoto } from "../lib/dishPhotoUpload";
+import {
+  DishPhotoError,
+  dishPhotoErrorMessage,
+} from "../lib/dishPhotoErrors";
 
 export interface Plato {
   id: number;
@@ -154,20 +160,37 @@ export function usePublicMenuDishes({
 
     setUploadingImage(true);
     try {
-      const fileExt = file.name.split(".").pop();
-      const fileName = `${tenantId}/platos/${platoId}-${Date.now()}.${fileExt}`;
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !sessionData?.session?.access_token) {
+        toast.error(dishPhotoErrorMessage("missing_token"));
+        return null;
+      }
+      const accessToken = sessionData.session.access_token;
 
-      const { error } = await supabase.storage.from("configuracion").upload(fileName, file);
-
-      if (error) {
-        toast.error(`Error al subir la imagen: ${error.message}`);
+      let processedBlob: Blob;
+      try {
+        processedBlob = await processDishPhoto(file);
+      } catch (err) {
+        const code = err instanceof DishPhotoError ? err.code : "unsupported_format";
+        toast.error(dishPhotoErrorMessage(code));
         return null;
       }
 
-      const { data } = supabase.storage.from("configuracion").getPublicUrl(fileName);
-      return data.publicUrl;
+      try {
+        const publicUrl = await uploadDishPhoto({
+          blob: processedBlob,
+          tenantId,
+          platoId,
+          accessToken,
+        });
+        return publicUrl;
+      } catch (err) {
+        const code = err instanceof DishPhotoError ? err.code : "unknown";
+        toast.error(dishPhotoErrorMessage(code));
+        return null;
+      }
     } catch {
-      toast.error("Error inesperado al subir la imagen");
+      toast.error(dishPhotoErrorMessage("unknown"));
       return null;
     } finally {
       setUploadingImage(false);

@@ -23,7 +23,10 @@ describe("snake game logic", () => {
   });
 
   it("advances snake one step in current direction", () => {
-    const game = createSnakeGame({ width: 10, height: 10 });
+    const game = {
+      ...createSnakeGame({ width: 10, height: 10 }),
+      food: { x: 0, y: 0 },
+    };
     const initialHead = game.snake[0];
 
     const next = stepSnakeGame(game);
