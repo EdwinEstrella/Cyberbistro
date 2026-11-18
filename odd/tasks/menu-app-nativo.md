@@ -20,11 +20,7 @@ Transform the public digital menu (`/menu/:slug`) and subsequently the company m
   - Ask-on-risk.
 
 ## Tasks
-- [ ] **T1c**: Menu screen visual fixes: rounded-square logo, full-width white segmented toggle, white active chips/tabs, normal-case 18px section headings, photo-left dish rows with white quick-add, coral Ver pedido bar, Inicio/Pedido/Servicios tabs.
-  - [x] FloatingCartBar: center column, respect safe area.
-  - [x] BottomTabBar: min-height, respect safe area.
-  - [x] Tests: FloatingCartBar badge exact assertions, BottomTabBar height/padding assertions.
-  - [ ] **T1b**: Menu opens directly: remove the landing screen; party size moves to the cart in table mode; services only in the Servicios tab.
+- [x] **T1**: CyberBistro theme tokens + app-like home (header with open status, search, floating "Ver pedido" bar, tab bar). Commit f007dd6.
   - [x] CyberBistro design tokens in `publicMenuTheme.ts` (accent coral `#ff906d`, dark backgrounds, open green `#59ee50`, Space Grotesk/Inter fonts).
   - [x] Google Fonts loader for Space Grotesk and Inter scoped to the public menu route (`usePublicMenuFonts.ts`).
   - [x] Search filter input with pure accent/case-insensitive search function (`searchDishes.ts` + unit tests).
@@ -33,10 +29,14 @@ Transform the public digital menu (`/menu/:slug`) and subsequently the company m
   - [x] DishRow redesigned with 84px rounded-[16px] thumbnail on the right, category icon fallback for missing photos, and add button over thumbnail corner.
   - [x] Floating cart bar component (`FloatingCartBar.tsx` + unit tests) ("Ver pedido · N", total "RD$X") docked above tab bar opening existing CartDrawer.
   - [x] Update public app components and test suite; ensure zero regression on existing flows.
-- [x] **T2**: Dish detail bottom sheet (photo hero, price, description, kitchen note, qty stepper, "Agregar RD$X").
-- [ ] **T3**: Optimized dish photo upload in admin (accept PNG/JPG/WebP/HEIC-if-decodable, camera capture on mobile, client-side square center crop, resize to max 800px, encode WebP ~0.82, keep alpha for transparent PNG). Storage target: Cloudflare R2 via presigned upload URL issued server-side; never ship R2 keys to the browser.
+- [x] **T1b**: Menu opens directly: remove the landing screen; party size moves to the cart in table mode; services only in the Servicios tab. Commit 581a529.
+- [x] **T1c**: Menu screen matches mockup screen 1: rounded-square logo, full-width white segmented toggle, white active chips/tabs, normal-case 18px section headings, photo-left dish rows with a separate white quick-add, coral Ver pedido bar with count badge, Inicio/Pedido/Servicios tabs, safe-area padding kept. Commit 421458a. Verified by Playwright screenshot at 390x844 next to the mockup.
+- [x] **T2**: Dish detail bottom sheet (photo hero, price, description, kitchen note, qty stepper, "Agregar RD$X"). Commit c642957.
+- [x] **T3**: Optimized dish photo upload to Cloudflare R2 through the `cloudix-menu-photos` Worker (`fotos-api.azokia.com`, admin check via `cyberbistro_current_admin_tenant_ids`), public at `fotos.azokia.com`. Photos are fit whole inside a 1:1 square with transparent margins (no crop), max 800px, WebP 0.82. Commits 08f6b12, ff2a195 (negative plato ids), 2351845, b5346d3. Verified by a real admin upload (user, 2026-11-18).
 - [ ] **T4**: Post-order screen "¡Pedido enviado!" + 3-step tracker + "¿Lo acompañas con algo?" upsell (adds to same order).
-- [ ] **T5**: "Lo pediste recientemente" (needs customer identity: phone or company link token).
+- [ ] **T5**: "Lo pediste recientemente".
+  - [x] Device-local history: dishes ordered from this menu on this device (`lib/recentDishes.ts`, localStorage per slug, ids + dates only; name/price/photo come from the current menu) shown as horizontal cards with a when-label and "Repetir" (`RecentlyOrderedSection.tsx`). Verified by Playwright screenshot with a seeded history.
+  - [ ] Cross-device history (needs customer identity: phone or company link token).
 - [ ] **T6**: PWA manifest (installable).
 - [ ] **T7**: Unify LinkDigitalMenu (company menu) onto the shared public-app components.
 

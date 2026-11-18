@@ -18,6 +18,7 @@ import {
 import { resolvePublicMenuMode } from "./lib/publicMenuMode";
 import { EMPTY_DELIVERY_DRAFT, validateDeliveryDraft, type DeliveryDraft } from "./lib/deliveryOrder";
 import { addToCartWithNote } from "./lib/cartOperations";
+import { loadRecentDishes, recordRecentOrder, type RecentDish } from "./lib/recentDishes";
 import { useOnlineMenuStatus } from "./lib/useOnlineMenuStatus";
 import { publicMenuTheme } from "./components/public-app/publicMenuTheme";
 import { usePublicMenuFonts } from "./hooks/usePublicMenuFonts";
@@ -37,6 +38,11 @@ export function PublicDigitalMenu() {
     contact: {},
   });
   const [cart, setCart] = useState<CartLine[]>([]);
+  const [recentDishes, setRecentDishes] = useState<RecentDish[]>(() => loadRecentDishes(slug));
+
+  useEffect(() => {
+    setRecentDishes(loadRecentDishes(slug));
+  }, [slug]);
 
   // Party size selection (table mode)
   const [partySize, setPartySize] = useState<number | null>(null);
@@ -258,6 +264,7 @@ export function PublicDigitalMenu() {
     const orderTotal = Number(result?.total ?? currentTotal);
     const numeroPedido = result?.numero_pedido ?? null;
 
+    setRecentDishes(recordRecentOrder(slug, cart.map((line) => line.plato_id), new Date()));
     setCart([]);
     setNotes("");
     setMesaCodigo("");
@@ -379,6 +386,7 @@ export function PublicDigitalMenu() {
       cart={cart}
       onAddItem={addItem}
       onAddItemWithDetails={addItemWithDetails}
+      recentDishes={recentDishes}
       onUpdateQuantity={updateQuantity}
       onClearCart={clearCart}
       customerName={customerName}

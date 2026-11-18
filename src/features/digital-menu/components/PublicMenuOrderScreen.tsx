@@ -11,8 +11,10 @@ import { CartDrawer } from "./public-app/CartDrawer";
 import { DishDetailSheet } from "./public-app/DishDetailSheet";
 import { ServicesTab } from "./public-app/ServicesTab";
 import { FloatingCartBar } from "./public-app/FloatingCartBar";
+import { RecentlyOrderedSection } from "./public-app/RecentlyOrderedSection";
 import { publicMenuTheme } from "./public-app/publicMenuTheme";
 import { filterDishesByName } from "../lib/searchDishes";
+import { resolveRecentDishes, type RecentDish } from "../lib/recentDishes";
 
 export interface PublicMenuSettings {
   tenant_id: string;
@@ -73,6 +75,8 @@ export interface PublicMenuOrderScreenProps {
   slug?: string;
   tenantId?: string | null;
   isOpen?: boolean | null;
+  /** Dishes this device ordered before from this menu, newest first. */
+  recentDishes?: RecentDish[];
 }
 
 export function PublicMenuOrderScreen({
@@ -107,6 +111,7 @@ export function PublicMenuOrderScreen({
   slug,
   tenantId,
   isOpen = true,
+  recentDishes = [],
 }: PublicMenuOrderScreenProps) {
   const [activeTab, setActiveTab] = useState<"menu" | "services">("menu");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
@@ -152,6 +157,12 @@ export function PublicMenuOrderScreen({
     }
     return Array.from(map.entries());
   }, [filteredItems, selectedCategory]);
+
+  const now = useMemo(() => new Date(), []);
+  const recentEntries = useMemo(
+    () => resolveRecentDishes(recentDishes, items),
+    [recentDishes, items]
+  );
 
   // Map cart items by plato_id for quick quantity lookup
   const cartQuantities = useMemo(() => {
@@ -229,6 +240,17 @@ export function PublicMenuOrderScreen({
                 searchQuery={searchQuery}
                 onSearchChange={setSearchQuery}
               />
+
+              {selectedCategory === "all" && !searchQuery.trim() && (
+                <RecentlyOrderedSection
+                  entries={recentEntries}
+                  now={now}
+                  currency={settings.currency}
+                  currencyFormatter={currencyFormatter}
+                  onRepeat={onAddItem}
+                  onSelect={setSelectedDishForDetail}
+                />
+              )}
 
               {/* Dish List */}
               <section

@@ -469,7 +469,7 @@ describe("PublicMenuOrderScreen app-shell layout", () => {
     expect(htmlEmptyCart).not.toContain('data-testid="floating-cart-bar"');
   });
 
-  it("renders restaurant name in Space Grotesk 22px and open/closed status in header", () => {
+  it("renders restaurant name at 16px and open/closed status in header", () => {
     const htmlOpen = renderScreen({ isOpen: true });
 
     expect(htmlOpen).toContain("Test Bistro");
@@ -479,6 +479,24 @@ describe("PublicMenuOrderScreen app-shell layout", () => {
     const htmlClosed = renderScreen({ isOpen: false });
 
     expect(htmlClosed).toContain("Cerrado");
+  });
+
+  it("shows 'Lo pediste recientemente' only for recent dishes still on the menu", () => {
+    const withRecent = renderScreen({
+      recentDishes: [
+        { platoId: sampleItems[0].plato_id, orderedAt: new Date().toISOString() },
+        { platoId: 987654, orderedAt: new Date().toISOString() },
+      ],
+    });
+    expect(withRecent).toContain("Lo pediste recientemente");
+    expect(withRecent).toContain(`data-testid="recent-dish-${sampleItems[0].plato_id}"`);
+    expect(withRecent).not.toContain('data-testid="recent-dish-987654"');
+    expect(withRecent).toContain(`aria-label="Repetir ${sampleItems[0].name}"`);
+
+    expect(renderScreen({ recentDishes: [] })).not.toContain("Lo pediste recientemente");
+    expect(renderScreen({ recentDishes: [{ platoId: 987654, orderedAt: new Date().toISOString() }] })).not.toContain(
+      "Lo pediste recientemente"
+    );
   });
 
   it("does not render DishDetailSheet initially when no dish is selected", () => {
