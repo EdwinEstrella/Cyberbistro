@@ -1,82 +1,43 @@
 import { describe, it, expect, vi } from "vitest";
 import {
-  computeSquareCrop,
+  computeSquareContain,
   processDishPhoto,
   type CanvasLike,
 } from "./dishPhotoProcessing";
 
-describe("computeSquareCrop", () => {
-  it("computes center-square crop for landscape images", () => {
-    // 1200 x 800 -> size 800, sx (1200 - 800) / 2 = 200, sy 0, target 800
-    const crop = computeSquareCrop(1200, 800, 800);
-    expect(crop).toEqual({
-      sx: 200,
-      sy: 0,
-      size: 800,
-      target: 800,
-    });
+describe("computeSquareContain", () => {
+  it("computes containment for portrait images", () => {
+    // 600x1200 -> side 800, dw 400, dh 800, dx 200, dy 0
+    const contain = computeSquareContain(600, 1200, 800);
+    expect(contain).toEqual({ side: 800, dx: 200, dy: 0, dw: 400, dh: 800 });
   });
 
-  it("computes center-square crop for portrait images", () => {
-    // 800 x 1200 -> size 800, sx 0, sy (1200 - 800) / 2 = 200, target 800
-    const crop = computeSquareCrop(800, 1200, 800);
-    expect(crop).toEqual({
-      sx: 0,
-      sy: 200,
-      size: 800,
-      target: 800,
-    });
+  it("computes containment for landscape images", () => {
+    // 1600x900 -> side 800, dw 800, dh 450, dx 0, dy 175
+    const contain = computeSquareContain(1600, 900, 800);
+    expect(contain).toEqual({ side: 800, dx: 0, dy: 175, dw: 800, dh: 450 });
   });
 
-  it("computes center-square crop for square images larger than maxSize", () => {
-    // 1000 x 1000 -> size 1000, sx 0, sy 0, target capped to 800
-    const crop = computeSquareCrop(1000, 1000, 800);
-    expect(crop).toEqual({
-      sx: 0,
-      sy: 0,
-      size: 1000,
-      target: 800,
-    });
+  it("computes containment for square images", () => {
+    // 1000x1000 -> 800 full
+    const contain = computeSquareContain(1000, 1000, 800);
+    expect(contain).toEqual({ side: 800, dx: 0, dy: 0, dw: 800, dh: 800 });
   });
 
-  it("does not upscale images smaller than maxSize", () => {
-    // 400 x 300 -> size 300, sx 50, sy 0, target 300
-    const crop = computeSquareCrop(400, 300, 800);
-    expect(crop).toEqual({
-      sx: 50,
-      sy: 0,
-      size: 300,
-      target: 300,
-    });
-
-    // 600 x 600 -> size 600, sx 0, sy 0, target 600
-    const squareSmall = computeSquareCrop(600, 600, 800);
-    expect(squareSmall).toEqual({
-      sx: 0,
-      sy: 0,
-      size: 600,
-      target: 600,
-    });
+  it("does not upscale small images", () => {
+    // 300x200 -> side 300, dw 300, dh 200, dy 50
+    const contain = computeSquareContain(300, 200, 800);
+    expect(contain).toEqual({ side: 300, dx: 0, dy: 50, dw: 300, dh: 200 });
   });
 
-  it("handles odd pixel dimensions cleanly with floor", () => {
-    // 1001 x 601 -> size 601, sx (1001 - 601) / 2 = 200, sy 0, target 601
-    const odd1 = computeSquareCrop(1001, 601, 800);
-    expect(odd1).toEqual({
-      sx: 200,
-      sy: 0,
-      size: 601,
-      target: 601,
-    });
-
-    // 503 x 700 -> size 503, sx 0, sy Math.floor((700 - 503) / 2) = 98, target 503
-    const odd2 = computeSquareCrop(503, 700, 800);
-    expect(odd2).toEqual({
-      sx: 0,
-      sy: 98,
-      size: 503,
-      target: 503,
-    });
+  it("handles odd pixel dimensions correctly", () => {
+    // 503 x 700 -> side 700, dw 503, dh 700, dx 98, dy 0
+    const odd1 = computeSquareContain(503, 700, 800);
+    expect(odd1).toEqual({ side: 700, dx: 98, dy: 0, dw: 503, dh: 700 });
+    
+    // 1001 x 601 -> side 800, dw 800, dh 480, dx 0, dy 160
+    const odd2 = computeSquareContain(1001, 601, 800);
+    expect(odd2).toEqual({ side: 800, dx: 0, dy: 160, dw: 800, dh: 480 });
   });
 });
 
@@ -151,18 +112,28 @@ describe("processDishPhoto", () => {
     });
   });
 
-  it("crops, draws with no background fill, closes bitmap, and encodes WebP at 0.82 quality", async () => {
+  it("fits image inside square with no background fill, closes bitmap, and encodes WebP at 0.82 quality", async () => {
     const fakeBlob = new Blob(["fake-image-bytes"], { type: "image/png" });
     const closeMock = vi.fn();
     const mockBitmap = {
-      width: 1200,
-      height: 800,
+      width: 600,
+      height: 1200,
       close: closeMock,
     } as unknown as ImageBitmap;
 
     const drawImageMock = vi.fn();
+    const fillRectMock = vi.fn();
+    let fillStyleAssigned = false;
     const mockCtx = {
       drawImage: drawImageMock,
+      fillRect: fillRectMock,
+      get fillStyle() {
+        return undefined;
+      },
+      set fillStyle(_val: unknown) {
+        fillStyleAssigned = true;
+      },
+      clearRect: vi.fn(),
     } as unknown as CanvasRenderingContext2D;
 
     const convertToBlobMock = vi.fn().mockImplementation(async () => {
@@ -184,8 +155,10 @@ describe("processDishPhoto", () => {
     });
 
     expect(result.type).toBe("image/webp");
-    // Center square crop of 1200x800: sx=200, sy=0, size=800, target=800
-    expect(drawImageMock).toHaveBeenCalledWith(mockBitmap, 200, 0, 800, 800, 0, 0, 800, 800);
+    // Portrait 600x1200 -> side 800, dw 400, dh 800, dx 200, dy 0
+    expect(drawImageMock).toHaveBeenCalledWith(mockBitmap, 0, 0, 600, 1200, 200, 0, 400, 800);
+    expect(fillRectMock).not.toHaveBeenCalled();
+    expect(fillStyleAssigned).toBe(false);
     expect(closeMock).toHaveBeenCalledOnce();
     expect(convertToBlobMock).toHaveBeenCalledOnce();
     expect(convertToBlobMock).toHaveBeenCalledWith({ type: "image/webp", quality: 0.82 });

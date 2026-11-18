@@ -1,10 +1,11 @@
 import { DishPhotoError } from "./dishPhotoErrors";
 
-export interface SquareCrop {
-  sx: number;
-  sy: number;
-  size: number;
-  target: number;
+export interface SquareContain {
+  side: number;
+  dx: number;
+  dy: number;
+  dw: number;
+  dh: number;
 }
 
 export interface CanvasContext2DLike {
@@ -19,6 +20,7 @@ export interface CanvasContext2DLike {
     dw: number,
     dh: number
   ): void;
+  clearRect?(x: number, y: number, w: number, h: number): void;
 }
 
 export interface CanvasLike {
@@ -33,19 +35,23 @@ export interface ProcessDishPhotoDeps {
 }
 
 /**
- * Computes a center-square crop of the source image and scales it down
- * to at most maxSize (default 800px).
+ * Computes destination positioning to contain an image inside a square of
+ * side = min(max(width, height), maxSize) without cropping or upscaling.
+ * Leftover margins are centered.
  */
-export function computeSquareCrop(
+export function computeSquareContain(
   width: number,
   height: number,
   maxSize = 800
-): SquareCrop {
-  const size = Math.min(width, height);
-  const sx = Math.floor((width - size) / 2);
-  const sy = Math.floor((height - size) / 2);
-  const target = Math.min(size, maxSize);
-  return { sx, sy, size, target };
+): SquareContain {
+  const maxDim = Math.max(width, height);
+  const side = Math.min(maxDim, maxSize);
+  const scale = side / maxDim;
+  const dw = Math.round(width * scale);
+  const dh = Math.round(height * scale);
+  const dx = Math.floor((side - dw) / 2);
+  const dy = Math.floor((side - dh) / 2);
+  return { side, dx, dy, dw, dh };
 }
 
 async function encodeCanvasToWebp(canvas: CanvasLike, quality: number): Promise<Blob> {
@@ -108,17 +114,17 @@ export async function processDishPhoto(
     throw new DishPhotoError("unsupported_format");
   }
 
-  const { sx, sy, size, target } = computeSquareCrop(bitmap.width, bitmap.height, 800);
+  const { side, dx, dy, dw, dh } = computeSquareContain(bitmap.width, bitmap.height, 800);
 
   let canvas: CanvasLike;
   if (deps?.createCanvas) {
-    canvas = deps.createCanvas(target, target);
+    canvas = deps.createCanvas(side, side);
   } else if (typeof OffscreenCanvas !== "undefined") {
-    canvas = new OffscreenCanvas(target, target);
+    canvas = new OffscreenCanvas(side, side);
   } else if (typeof document !== "undefined" && typeof document.createElement === "function") {
     const el = document.createElement("canvas");
-    el.width = target;
-    el.height = target;
+    el.width = side;
+    el.height = side;
     canvas = el;
   } else {
     bitmap.close?.();
@@ -132,8 +138,9 @@ export async function processDishPhoto(
   }
 
   try {
-    // Draw cropped square region without background fill to preserve alpha transparency
-    ctx.drawImage(bitmap, sx, sy, size, size, 0, 0, target, target);
+    ctx.clearRect?.(0, 0, side, side);
+    // Draw contained image without background fill to preserve alpha transparency
+    ctx.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height, dx, dy, dw, dh);
   } finally {
     bitmap.close?.();
   }
