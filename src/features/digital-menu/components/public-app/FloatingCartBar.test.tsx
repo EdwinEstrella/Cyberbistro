@@ -18,12 +18,12 @@ describe("FloatingCartBar", () => {
 
     expect(html).toContain('data-testid="floating-cart-bar"');
     expect(html).toContain("Ver pedido");
-    expect(html).toContain("·");
-    expect(html).toContain(">3</span>");
+    expect(html).not.toContain("·");
+    expect(html).toMatch(/data-testid="floating-cart-count"[^>]*>3<\/span>/);
     expect(html).toContain("RD$ $450");
     expect(html).toContain("bg-[#ff906d]");
     expect(html).toContain("text-[#5b1600]");
-    expect(html).toContain("rounded-full");
+    expect(html).toContain("rounded-[18px]");
   });
 
   it("is hidden (returns null) when itemCount is 0", () => {

@@ -297,11 +297,11 @@ describe("PublicMenuOrderScreen app-shell layout", () => {
       />
     );
 
-    expect(html).toContain('placeholder="Buscar en el menú"');
+    expect(html).toContain('placeholder="¿Qué se te antoja hoy?"');
     expect(html).toContain('aria-label="Buscar platos, categorías o ingredientes en el menú"');
   });
 
-  it("renders floating cart summary with singular '1 item', whitespace-nowrap, safe area, and extra scroll padding", () => {
+  it("renders floating cart summary with count, total, and correct scroll padding", () => {
     const singleCart: CartLine[] = [
       {
         ...sampleItems[0],
@@ -337,11 +337,9 @@ describe("PublicMenuOrderScreen app-shell layout", () => {
       />
     );
 
-    expect(html).toContain("1 item");
-    expect(html).not.toContain("1 items");
-    expect(html).toContain("whitespace-nowrap");
-    expect(html).toContain("left-1/2 -translate-x-1/2");
-    expect(html).toContain("pb-[calc(10.5rem+env(safe-area-inset-bottom,0px))]");
+    expect(html).toContain("Ver pedido");
+    expect(html).toMatch(/data-testid="floating-cart-count"[^>]*>1<\/span>/);
+    expect(html).toContain("pb-[calc(9.5rem+env(safe-area-inset-bottom,0px))]");
   });
 
   it("renders floating cart summary with plural 'N items' when itemCount > 1", () => {
@@ -380,8 +378,8 @@ describe("PublicMenuOrderScreen app-shell layout", () => {
       />
     );
 
-    expect(html).toContain("3 items");
-    expect(html).toContain("whitespace-nowrap");
+    expect(html).toContain("Ver pedido");
+    expect(html).toMatch(/data-testid="floating-cart-count"[^>]*>3<\/span>/);
   });
 
   it("asserts the word 'Pagar' is completely absent from the public menu app", () => {
@@ -475,7 +473,7 @@ describe("PublicMenuOrderScreen app-shell layout", () => {
     const htmlOpen = renderScreen({ isOpen: true });
 
     expect(htmlOpen).toContain("Test Bistro");
-    expect(htmlOpen).toContain("text-[22px]");
+    expect(htmlOpen).toContain("text-[16px]");
     expect(htmlOpen).toContain("Abierto ahora");
 
     const htmlClosed = renderScreen({ isOpen: false });

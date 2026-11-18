@@ -64,7 +64,7 @@ export const publicMenuTheme = {
     "relative w-full max-w-[480px] min-h-dvh bg-[#0e0e0e] sm:border-x sm:border-[#262626] shadow-2xl flex flex-col overflow-x-hidden lg:max-w-none lg:flex-1 lg:min-w-0 lg:border-x-0 lg:shadow-none [font-family:Inter,ui-sans-serif,system-ui,-apple-system,'Segoe_UI',sans-serif]",
 
   // Scroll padding for bottom tab bar and floating cart summary bar with safe area
-  scrollPaddingCart: "pb-[calc(10.5rem+env(safe-area-inset-bottom,0px))]",
+  scrollPaddingCart: "pb-[calc(9.5rem+env(safe-area-inset-bottom,0px))]",
   scrollPaddingNoCart: "pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]",
 
   // Surface containers

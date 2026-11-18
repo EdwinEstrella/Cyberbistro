@@ -31,7 +31,7 @@ export function AppTopBar({
   const isRestaurantOpen = isOpen !== false;
 
   return (
-    <header className="sticky top-0 z-20 w-full bg-[#0e0e0e]/95 backdrop-blur-md border-b border-[#262626] px-4 py-3 flex flex-col gap-2.5">
+    <header className="sticky top-0 z-20 w-full bg-[#0e0e0e]/95 backdrop-blur-md border-b border-[#262626] pt-[20px] px-4 pb-[12px] flex flex-col gap-3">
       {/* Row 1: Logo + Restaurant Name & Open status + Cart trigger */}
       <div className="flex items-center justify-between gap-3">
         {/* Left side: Logo or initial avatar */}
@@ -39,34 +39,25 @@ export function AppTopBar({
           <img
             src={logoUrl}
             alt={title}
-            className="size-11 rounded-full object-cover bg-[#1a1a1a] border border-[#262626] p-0.5 shrink-0"
+            className="size-11 rounded-[14px] object-contain bg-[#1a1a1a] border border-[#262626] shrink-0"
           />
         ) : (
           <div
             aria-hidden="true"
-            className={`size-11 rounded-full bg-[#2b160d] border border-[#5b2a17] text-[#ff906d] flex items-center justify-center font-bold text-base shrink-0 ${publicMenuTheme.headingFontClass}`}
+            className={`size-11 rounded-[14px] bg-[#2b160d] border border-[#5b2a17] text-[#ff906d] flex items-center justify-center font-extrabold text-[18px] shrink-0 ${publicMenuTheme.headingFontClass}`}
           >
             {initial}
           </div>
         )}
 
-        {/* Center: Restaurant name (Space Grotesk 22px/800) + status */}
-        <div className="min-w-0 flex-1 flex flex-col items-start justify-center">
-          <h1 className={`text-[22px] font-extrabold text-[#fafafa] truncate w-full leading-tight tracking-tight ${publicMenuTheme.headingFontClass}`}>
+        {/* Center: Restaurant name (16px/700) + status */}
+        <div className="min-w-0 flex-1 flex flex-col items-start justify-center gap-0.5">
+          <h1 className="text-[16px] font-bold text-[#fafafa] truncate w-full tracking-[-0.01em]">
             {title}
           </h1>
-          <div className="mt-0.5 flex items-center gap-1.5 text-xs font-semibold">
-            {isRestaurantOpen ? (
-              <span className="inline-flex items-center gap-1.5 text-[#59ee50]">
-                <span className="size-2 rounded-full bg-[#59ee50] animate-pulse" aria-hidden="true" />
-                <span>Abierto ahora</span>
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 text-[#adaaaa]">
-                <span className="size-2 rounded-full bg-[#3a3a3a]" aria-hidden="true" />
-                <span>Cerrado</span>
-              </span>
-            )}
+          <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#adaaaa]">
+            <span className={`size-[7px] rounded-full ${isRestaurantOpen ? "bg-[#59ee50]" : "bg-[#3a3a3a]"}`} aria-hidden="true" />
+            <span>{isRestaurantOpen ? "Abierto ahora" : "Cerrado"}</span>
           </div>
         </div>
 
@@ -79,7 +70,7 @@ export function AppTopBar({
               ? `Ver pedido (${cartCount} ${cartCount === 1 ? "item" : "items"})`
               : "Ver pedido"
           }
-          className="relative flex size-10 shrink-0 items-center justify-center rounded-full bg-[#1a1a1a] border border-[#262626] text-[#fafafa] hover:bg-[#262626] transition cursor-pointer active:scale-95 lg:hidden"
+          className="relative flex size-11 shrink-0 items-center justify-center rounded-full bg-[#1a1a1a] border border-[#262626] text-[#fafafa] hover:bg-[#262626] transition cursor-pointer active:scale-95 lg:hidden"
         >
           <ShoppingBag className="size-5" aria-hidden="true" />
           {cartCount > 0 && (
@@ -94,7 +85,7 @@ export function AppTopBar({
       </div>
 
       {/* Row 2: Mode context (Table chip vs Takeout/Delivery toggle) */}
-      <div className="flex items-center">
+      <div className="flex items-center px-0">
         {isTableMode ? (
           <span
             title="Mesa actual"
@@ -108,7 +99,7 @@ export function AppTopBar({
           <div
             role="radiogroup"
             aria-label="Modalidad de pedido"
-            className="inline-flex items-center p-0.5 rounded-full bg-[#1a1a1a] border border-[#262626]"
+            className="grid w-full grid-cols-2 gap-1 rounded-full bg-[#131313] border border-[#262626] p-1"
           >
             <button
               type="button"
@@ -120,9 +111,9 @@ export function AppTopBar({
                   mode: "pickup",
                 })
               }
-              className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer active:scale-95 ${
+              className={`h-[36px] rounded-full text-[13px] font-bold transition cursor-pointer active:scale-95 ${
                 delivery?.mode !== "delivery"
-                  ? "bg-[#ff906d] text-[#5b1600] shadow-sm"
+                  ? "bg-[#fafafa] text-[#0e0e0e]"
                   : "text-[#adaaaa] hover:text-[#fafafa]"
               }`}
             >
@@ -138,9 +129,9 @@ export function AppTopBar({
                   mode: "delivery",
                 })
               }
-              className={`px-3 py-1 rounded-full text-xs font-bold transition cursor-pointer active:scale-95 ${
+              className={`h-[36px] rounded-full text-[13px] font-bold transition cursor-pointer active:scale-95 ${
                 delivery?.mode === "delivery"
-                  ? "bg-[#ff906d] text-[#5b1600] shadow-sm"
+                  ? "bg-[#fafafa] text-[#0e0e0e]"
                   : "text-[#adaaaa] hover:text-[#fafafa]"
               }`}
             >

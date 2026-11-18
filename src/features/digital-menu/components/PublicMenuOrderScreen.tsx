@@ -250,11 +250,11 @@ export function PublicMenuOrderScreen({
                   groupedItems.map(([categoryName, categoryDishes]) => (
                     <div key={categoryName} className="space-y-2.5">
                       {selectedCategory === "all" && (
-                        <h2 className={`text-xs font-bold uppercase tracking-wider text-[#adaaaa] px-1 pt-1 ${publicMenuTheme.headingFontClass}`}>
+                        <h2 className={`text-[18px] font-extrabold tracking-[-0.02em] text-[#fafafa] ${publicMenuTheme.headingFontClass}`}>
                           {categoryName}
                         </h2>
                       )}
-                      <div className="flex flex-col gap-2.5 lg:grid lg:grid-cols-2 lg:gap-3">
+                      <div className="flex flex-col gap-[10px] lg:grid lg:grid-cols-2 lg:gap-3">
                         {categoryDishes.map((item) => (
                           <DishRow
                             key={item.id}
@@ -305,7 +305,6 @@ export function PublicMenuOrderScreen({
             onTabChange={setActiveTab}
             onOpenCart={handleOpenCart}
             cartCount={itemCount}
-            isTableMode={isTableMode}
           />
         </div>
 

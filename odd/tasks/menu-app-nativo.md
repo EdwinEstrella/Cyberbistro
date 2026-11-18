@@ -20,7 +20,10 @@ Transform the public digital menu (`/menu/:slug`) and subsequently the company m
   - Ask-on-risk.
 
 ## Tasks
-- [x] **T1**: CyberBistro theme tokens + app-like home (header with open status, search, floating "Ver pedido" bar, tab bar).
+- [ ] **T1c**: Menu screen visual fixes: rounded-square logo, full-width white segmented toggle, white active chips/tabs, normal-case 18px section headings, photo-left dish rows with white quick-add, coral Ver pedido bar, Inicio/Pedido/Servicios tabs.
+  - [x] FloatingCartBar: center column, respect safe area.
+  - [x] BottomTabBar: min-height, respect safe area.
+  - [x] Tests: FloatingCartBar badge exact assertions, BottomTabBar height/padding assertions.
   - [ ] **T1b**: Menu opens directly: remove the landing screen; party size moves to the cart in table mode; services only in the Servicios tab.
   - [x] CyberBistro design tokens in `publicMenuTheme.ts` (accent coral `#ff906d`, dark backgrounds, open green `#59ee50`, Space Grotesk/Inter fonts).
   - [x] Google Fonts loader for Space Grotesk and Inter scoped to the public menu route (`usePublicMenuFonts.ts`).

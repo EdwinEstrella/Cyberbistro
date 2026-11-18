@@ -34,7 +34,7 @@ describe("DishRow", () => {
     expect(html).toContain("Carne angus, queso brie y aceite de trufa");
     expect(html).toContain("DOP $650");
     expect(html).toContain("text-[#ff906d]");
-    expect(html).toContain("size-[84px]");
+    expect(html).toContain("size-[76px]");
     expect(html).toContain('alt="Hamburguesa Trufada"');
   });
 
