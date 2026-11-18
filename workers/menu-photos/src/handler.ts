@@ -34,7 +34,7 @@ export const CORS_HEADERS: Record<string, string> = {
 };
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const POSITIVE_INT_REGEX = /^[1-9]\d*$/;
+const NONZERO_INT_REGEX = /^-?[1-9]\d*$/;
 const MAX_BYTES = 1_500_000;
 
 function jsonResponse(data: unknown, status = 200): Response {
@@ -106,7 +106,7 @@ export async function handleRequest(
   }
 
   const platoId = url.searchParams.get("plato_id");
-  if (!platoId || !POSITIVE_INT_REGEX.test(platoId)) {
+  if (!platoId || !NONZERO_INT_REGEX.test(platoId)) {
     return errorResponse("invalid_plato", 400);
   }
 

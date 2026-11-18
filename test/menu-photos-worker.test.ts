@@ -136,9 +136,9 @@ describe("menu-photos worker handler", () => {
     }
   });
 
-  it("rejects invalid or non-positive plato_id with 400 invalid_plato", async () => {
+  it("rejects invalid or non-zero integer plato_id with 400 invalid_plato", async () => {
     const { env } = createMockEnv();
-    const invalidPlatos = ["", "0", "-1", "abc", "1.5", "01"];
+    const invalidPlatos = ["", "0", "-0", "1.5", "+5", "abc", "01"];
 
     for (const plato of invalidPlatos) {
       const query = plato
@@ -455,6 +455,58 @@ describe("menu-photos worker handler", () => {
     });
 
     // 5. Verify response body
+    const json = await res.json();
+    expect(json).toEqual({
+      url: `https://fotos.azokia.com/${expectedKey}`,
+      key: expectedKey,
+    });
+  });
+
+  it("accepts negative plato_id (-1000000007) and stores with key <tenant>/-1000000007-<now>.webp", async () => {
+    const { env, putMock } = createMockEnv();
+    const fakeNow = 1716000000123;
+    const webpData = createFakeWebp(64);
+    const negativePlato = "-1000000007";
+
+    const mockFetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify([VALID_TENANT]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+
+    const req = new Request(
+      `https://fotos-api.azokia.com/v1/dish-photos?tenant_id=${VALID_TENANT}&plato_id=${negativePlato}`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${VALID_TOKEN}`,
+          "Content-Type": "image/webp",
+        },
+        body: webpData,
+      }
+    );
+
+    const res = await handleRequest(req, env, {
+      fetch: mockFetch,
+      now: () => fakeNow,
+    });
+
+    expect(res.status).toBe(201);
+    expectCorsHeaders(res);
+
+    const expectedKey = `${VALID_TENANT}/${negativePlato}-${fakeNow}.webp`;
+    expect(putMock).toHaveBeenCalledOnce();
+    const [putKey, putBody, putOpts] = putMock.mock.calls[0];
+    expect(putKey).toBe(expectedKey);
+    expect(new Uint8Array(putBody)).toEqual(webpData);
+    expect(putOpts).toEqual({
+      httpMetadata: {
+        contentType: "image/webp",
+        cacheControl: "public, max-age=31536000, immutable",
+      },
+    });
+
     const json = await res.json();
     expect(json).toEqual({
       url: `https://fotos.azokia.com/${expectedKey}`,
