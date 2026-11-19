@@ -15,6 +15,9 @@ import {
   isValidIsoDate,
   formatIsoDateDisplay,
   isDebtDraftChanged,
+  parseMonthlyFeeAmount,
+  isMonthlyFeeConfigChanged,
+  normalizePaymentDay,
 } from "../dirtyDetection";
 import type { LimitDraft, TenantRow } from "../types";
 
@@ -391,6 +394,199 @@ describe("dirtyDetection & limit parsing", () => {
       const empty1: LimitDraft = { ...baseDraft, debtDueDate: "   " };
       const empty2: LimitDraft = { ...baseDraft, debtDueDate: "" };
       expect(isDebtDraftChanged(empty1, empty2)).toBe(false);
+    });
+  });
+
+  describe("monthly fee draft handling and validation", () => {
+    it("converts tenant with monthly fee to initial draft", () => {
+      const tenantWithFee: TenantRow = {
+        ...sampleTenant,
+        monthly_fee_amount: 1500,
+        monthly_fee_currency: "USD",
+        last_charged_period: "2026-11-13",
+      };
+      const draft = toDraft(tenantWithFee);
+      expect(draft.monthlyFeeAmount).toBe("1500");
+      expect(draft.monthlyFeeCurrency).toBe("USD");
+    });
+
+    it("parses monthly fee amount correctly and throws for negative, non-numeric, or exceeding max", () => {
+      expect(parseMonthlyFeeAmount("")).toBeNull();
+      expect(parseMonthlyFeeAmount("   ")).toBeNull();
+      expect(parseMonthlyFeeAmount("0")).toBe(0);
+      expect(parseMonthlyFeeAmount("1500.50")).toBe(1500.5);
+      expect(parseMonthlyFeeAmount("9999999.99")).toBe(9999999.99);
+
+      expect(() => parseMonthlyFeeAmount("-1")).toThrow();
+      expect(() => parseMonthlyFeeAmount("10000000")).toThrow();
+      expect(() => parseMonthlyFeeAmount("abc")).toThrow();
+    });
+
+    it("detects when payments form is dirty due to monthly fee changes", () => {
+      const initial = toDraft(sampleTenant);
+
+      const changeFeeAmount: LimitDraft = { ...initial, monthlyFeeAmount: "2500" };
+      expect(isPaymentsFormDirty(changeFeeAmount, initial)).toBe(true);
+
+      const changeFeeCurrency: LimitDraft = { ...initial, monthlyFeeCurrency: "USD" };
+      expect(isPaymentsFormDirty(changeFeeCurrency, initial)).toBe(true);
+    });
+
+    it("detects when monthly fee configuration changed", () => {
+      const initial = toDraft(sampleTenant);
+      expect(isMonthlyFeeConfigChanged(initial, initial)).toBe(false);
+
+      const changedAmount: LimitDraft = { ...initial, monthlyFeeAmount: "1200" };
+      expect(isMonthlyFeeConfigChanged(changedAmount, initial)).toBe(true);
+
+      const changedCurrency: LimitDraft = { ...initial, monthlyFeeCurrency: "USD" };
+      expect(isMonthlyFeeConfigChanged(changedCurrency, initial)).toBe(true);
+
+      const changedDay: LimitDraft = { ...initial, paymentDayOfMonth: "25" };
+      expect(isMonthlyFeeConfigChanged(changedDay, initial)).toBe(true);
+    });
+
+    it("does not report change when fee amount only differs in formatting ('1500' vs '1500.00')", () => {
+      const initial: LimitDraft = {
+        ...toDraft(sampleTenant),
+        monthlyFeeAmount: "1500",
+        paymentDayOfMonth: "15",
+      };
+      const formatted: LimitDraft = {
+        ...initial,
+        monthlyFeeAmount: "1500.00",
+      };
+      expect(isMonthlyFeeConfigChanged(formatted, initial)).toBe(false);
+      expect(isMonthlyFeeConfigChanged(initial, formatted)).toBe(false);
+    });
+
+    it("does not report change when payment day only differs in padding or whitespace", () => {
+      const initial: LimitDraft = {
+        ...toDraft(sampleTenant),
+        paymentDayOfMonth: "5",
+        monthlyFeeAmount: "1500",
+      };
+      const padded: LimitDraft = {
+        ...initial,
+        paymentDayOfMonth: "05",
+      };
+      const spaced: LimitDraft = {
+        ...initial,
+        paymentDayOfMonth: "  5  ",
+      };
+      expect(isMonthlyFeeConfigChanged(padded, initial)).toBe(false);
+      expect(isMonthlyFeeConfigChanged(spaced, initial)).toBe(false);
+    });
+
+    it("normalizes payment day strings correctly", () => {
+      expect(normalizePaymentDay("5")).toBe(5);
+      expect(normalizePaymentDay("05")).toBe(5);
+      expect(normalizePaymentDay(" 15 ")).toBe(15);
+      expect(normalizePaymentDay("")).toBeNull();
+      expect(normalizePaymentDay("   ")).toBeNull();
+      expect(normalizePaymentDay("0")).toBeNull();
+      expect(normalizePaymentDay("32")).toBeNull();
+      expect(normalizePaymentDay("abc")).toBeNull();
+    });
+
+    it("requires payment day when fee > 0 in validatePaymentsDraft", () => {
+      const draftWithFeeNoDay: LimitDraft = {
+        ...toDraft(sampleTenant),
+        paymentDayOfMonth: "",
+        monthlyFeeAmount: "1500",
+        monthlyFeeCurrency: "DOP",
+      };
+      const result = validatePaymentsDraft(draftWithFeeNoDay);
+      expect(result.valid).toBe(false);
+      expect(result.errors.paymentDayOfMonth).toBe(
+        "El día de pago es obligatorio cuando se configura una cuota mensual."
+      );
+    });
+
+    it("rejects currency mismatch between fee and outstanding debt", () => {
+      const mismatchedDraft: LimitDraft = {
+        ...toDraft(sampleTenant),
+        paymentDayOfMonth: "15",
+        monthlyFeeAmount: "1500",
+        monthlyFeeCurrency: "USD",
+        debtAmount: "3000",
+        debtCurrency: "DOP",
+      };
+      const result = validatePaymentsDraft(mismatchedDraft);
+      expect(result.valid).toBe(false);
+      expect(result.errors.debtCurrency).toBe(
+        "La moneda del saldo debe ser la misma de la cuota mensual."
+      );
+    });
+
+    it("rejects currency mismatch when fee > 0 even if balance is 0 or empty", () => {
+      const zeroBalanceMismatched: LimitDraft = {
+        ...toDraft(sampleTenant),
+        paymentDayOfMonth: "15",
+        monthlyFeeAmount: "1500",
+        monthlyFeeCurrency: "USD",
+        debtAmount: "0",
+        debtCurrency: "DOP",
+      };
+      const resultZero = validatePaymentsDraft(zeroBalanceMismatched);
+      expect(resultZero.valid).toBe(false);
+      expect(resultZero.errors.debtCurrency).toBe(
+        "La moneda del saldo debe ser la misma de la cuota mensual."
+      );
+
+      const emptyBalanceMismatched: LimitDraft = {
+        ...toDraft(sampleTenant),
+        paymentDayOfMonth: "15",
+        monthlyFeeAmount: "1500",
+        monthlyFeeCurrency: "USD",
+        debtAmount: "",
+        debtCurrency: "DOP",
+      };
+      const resultEmpty = validatePaymentsDraft(emptyBalanceMismatched);
+      expect(resultEmpty.valid).toBe(false);
+      expect(resultEmpty.errors.debtCurrency).toBe(
+        "La moneda del saldo debe ser la misma de la cuota mensual."
+      );
+    });
+
+    it("allows any debt currency when there is no monthly fee configured", () => {
+      const noFeeDraft: LimitDraft = {
+        ...toDraft(sampleTenant),
+        paymentDayOfMonth: "",
+        monthlyFeeAmount: "",
+        monthlyFeeCurrency: "USD",
+        debtAmount: "2500",
+        debtCurrency: "DOP",
+      };
+      const result = validatePaymentsDraft(noFeeDraft);
+      expect(result.valid).toBe(true);
+      expect(result.errors.debtCurrency).toBeUndefined();
+
+      const zeroFeeDraft: LimitDraft = {
+        ...toDraft(sampleTenant),
+        paymentDayOfMonth: "",
+        monthlyFeeAmount: "0",
+        monthlyFeeCurrency: "USD",
+        debtAmount: "2500",
+        debtCurrency: "DOP",
+      };
+      const resultZero = validatePaymentsDraft(zeroFeeDraft);
+      expect(resultZero.valid).toBe(true);
+      expect(resultZero.errors.debtCurrency).toBeUndefined();
+    });
+
+    it("accepts valid draft with matching fee and debt currencies", () => {
+      const validMatchingDraft: LimitDraft = {
+        ...toDraft(sampleTenant),
+        paymentDayOfMonth: "15",
+        monthlyFeeAmount: "1500",
+        monthlyFeeCurrency: "DOP",
+        debtAmount: "3000",
+        debtCurrency: "DOP",
+      };
+      const result = validatePaymentsDraft(validMatchingDraft);
+      expect(result.valid).toBe(true);
+      expect(Object.keys(result.errors)).toHaveLength(0);
     });
   });
 });

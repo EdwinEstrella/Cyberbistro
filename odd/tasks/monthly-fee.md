@@ -23,7 +23,7 @@ The super admin configures a recurring monthly fee per tenant; each payment day 
 - **Delivery**: Branch `feat/monthly-fee`, one commit per task, merge to master.
 
 ## Tasks
-- [x] **T1 DB migration**: fee columns, payments history, set-fee/accrue/register-payment RPCs, protection trigger + tests. Route: delegated (agy). (Round 1 corrections applied: least-privilege SELECT grant on tenant_billing_payments, audit comment line restored).
-- [ ] **T2 Super admin UI**: fee vs balance fields, "Pagó" via RPC, payment history, accrual before listing. Route: delegated (agy).
-- [ ] **T3 Tenant app**: call accrual on billing read; desktop mirror whitelist for new columns. Route: delegated (agy).
+- [x] **T1 DB migration**: fee columns, payments history, set-fee/accrue/register-payment RPCs, protection trigger + tests. Route: delegated (agy). (Commit 5a01d3a, applied to prod 2026-11-19, rehearsal on Test tenant rolled back: anchor 2026-11-13, Dec 13 → 1 cycle, Feb 13 → 3 cycles RD$4,500 due 2026-12-13, payment settled + history, fee kept, Feb 31 clamp, currency mismatch raised, stranger 42501).
+- [x] **T2 Super admin UI**: fee vs balance fields, "Pagó" via RPC, payment history, accrual before listing. Route: delegated (agy). Verified: dirty detection, validation, payment settlement, history table, currency mismatch guard, unit tests passing. (Round 1 corrections applied: mixed-currency hole closed with draft currency locking + validation error, spurious fee changes fixed with amount/day normalization).
+- [x] **T3 Tenant app**: call accrual on billing read; desktop mirror whitelist for new columns. Route: delegated (agy). Verified: session-throttled accrual hook in AppLayout, desktop SQLite mirror columns whitelist and pull tests.
 - [ ] **T4 Apply migration to prod after user OK, verify** (Claude, inline).

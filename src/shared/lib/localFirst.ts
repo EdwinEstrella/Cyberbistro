@@ -1360,6 +1360,7 @@ const SAFE_TENANT_KEYS = new Set([
   "ncf_b01_secuencia_siguiente", "ncf_b02_secuencia_siguiente", "ncf_b14_secuencia_siguiente", "ncf_b15_secuencia_siguiente", "ncf_b16_secuencia_siguiente", "ncf_b17_secuencia_siguiente",
   "cantidad_mesas", "payment_day_of_month",
   "debt_amount", "debt_currency", "debt_due_date", "debt_updated_at",
+  "monthly_fee_amount", "monthly_fee_currency", "last_charged_period",
   "updated_at"
 ]);
 

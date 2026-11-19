@@ -32,7 +32,9 @@ import {
   parseNullablePositiveLimit,
   parsePaymentDay,
   parseDebtAmount,
+  parseMonthlyFeeAmount,
   isDebtDraftChanged,
+  isMonthlyFeeConfigChanged,
   resolveDebtDueDate,
 } from "../lib/dirtyDetection";
 import { formatDebtAmount, type DebtCurrency } from "../../../shared/lib/tenantDebt";
@@ -182,6 +184,17 @@ export function SuperAdminPage() {
     setError("");
     setInfo("");
 
+    try {
+      const { error: accrueError } = await supabase.rpc(
+        "cloudix_super_admin_accrue_all_monthly_fees"
+      );
+      if (accrueError) {
+        console.warn("cloudix_super_admin_accrue_all_monthly_fees error:", accrueError);
+      }
+    } catch (accrueErr) {
+      console.warn("Failed to accrue monthly fees before loading tenants:", accrueErr);
+    }
+
     const [tenantRes, userRes] = await Promise.all([
       supabase.from("tenants").select("*"),
       supabase
@@ -300,31 +313,7 @@ export function SuperAdminPage() {
         mesero_user_limit: parseNullableLimit(draft.meseroUserLimit),
         sucursal_limit_enabled: draft.sucursalLimitEnabled,
         sucursal_limit: parseNullablePositiveLimit(draft.sucursalLimit),
-        payment_day_of_month: parsePaymentDay(draft.paymentDayOfMonth),
       };
-
-      const initialDraft = initialDrafts[tenantId];
-      if (initialDraft && isDebtDraftChanged(draft, initialDraft)) {
-        const parsedAmount = parseDebtAmount(draft.debtAmount);
-        const hasDebt = parsedAmount !== null && parsedAmount > 0;
-        let initialAmount: number | null = null;
-        try {
-          initialAmount = parseDebtAmount(initialDraft.debtAmount);
-        } catch {
-          initialAmount = null;
-        }
-        const hadSavedDebt = initialAmount !== null && initialAmount > 0;
-
-        payload.debt_amount = hasDebt ? parsedAmount : null;
-        payload.debt_currency = draft.debtCurrency;
-        payload.debt_due_date = resolveDebtDueDate({
-          amount: parsedAmount,
-          existingDueDate: draft.debtDueDate,
-          hadSavedDebt,
-          today: new Date(),
-        });
-        payload.debt_updated_at = new Date().toISOString();
-      }
 
       const { error: updateError } = await supabase
         .from("tenants")
@@ -350,38 +339,148 @@ export function SuperAdminPage() {
     }
   }
 
+  async function savePayments(tenantId: string) {
+    const draft = drafts[tenantId];
+    const initialDraft = initialDrafts[tenantId];
+    if (!draft || !initialDraft) return;
+
+    try {
+      setSavingTenantId(tenantId);
+      setError("");
+
+      const feeChanged = isMonthlyFeeConfigChanged(draft, initialDraft);
+      const debtChanged = isDebtDraftChanged(draft, initialDraft);
+
+      if (feeChanged) {
+        const parsedFee = parseMonthlyFeeAmount(draft.monthlyFeeAmount);
+        const parsedDay = parsePaymentDay(draft.paymentDayOfMonth);
+
+        const { error: rpcError } = await supabase.rpc(
+          "cloudix_super_admin_set_monthly_fee",
+          {
+            p_tenant_id: tenantId,
+            p_amount: parsedFee,
+            p_currency: draft.monthlyFeeCurrency,
+            p_payment_day: parsedDay,
+          }
+        );
+
+        if (rpcError) {
+          let msg = rpcError.message;
+          if (rpcError.message.includes("CURRENCY_MISMATCH")) {
+            msg = "La moneda del saldo debe ser la misma de la cuota mensual.";
+          } else {
+            msg = `No se pudo actualizar la cuota mensual: ${rpcError.message}`;
+          }
+          setError(msg);
+          toast.error(msg);
+          setSavingTenantId(null);
+          return;
+        }
+      }
+
+      if (debtChanged) {
+        const parsedAmount = parseDebtAmount(draft.debtAmount);
+        const hasDebt = parsedAmount !== null && parsedAmount > 0;
+        let initialAmount: number | null = null;
+        try {
+          initialAmount = parseDebtAmount(initialDraft.debtAmount);
+        } catch {
+          initialAmount = null;
+        }
+        const hadSavedDebt = initialAmount !== null && initialAmount > 0;
+
+        const debtPayload: Record<string, unknown> = {
+          debt_amount: hasDebt ? parsedAmount : null,
+          debt_currency: draft.debtCurrency,
+          debt_due_date: resolveDebtDueDate({
+            amount: parsedAmount,
+            existingDueDate: draft.debtDueDate,
+            hadSavedDebt,
+            today: new Date(),
+          }),
+          debt_updated_at: new Date().toISOString(),
+        };
+
+        const { error: updateError } = await supabase
+          .from("tenants")
+          .update(debtPayload)
+          .eq("id", tenantId);
+
+        if (updateError) {
+          let msg = updateError.message;
+          if (
+            updateError.message.includes("CURRENCY_MISMATCH") ||
+            updateError.message.includes("moneda")
+          ) {
+            msg = "La moneda del saldo debe ser la misma de la cuota mensual.";
+          } else {
+            msg = `No se pudo actualizar el saldo pendiente: ${updateError.message}`;
+          }
+          setError(msg);
+          toast.error(msg);
+          setSavingTenantId(null);
+          return;
+        }
+      }
+
+      toast.success("Configuración de pagos actualizada con éxito.");
+      await loadData();
+      setSavingTenantId(null);
+    } catch (err) {
+      setSavingTenantId(null);
+      const msg = err instanceof Error ? err.message : "Error al guardar los pagos.";
+      setError(msg);
+      toast.error(msg);
+    }
+  }
+
   function markTenantDebtPaid(tenant: TenantRow) {
     const formatted = tenant.debt_amount
       ? formatDebtAmount(tenant.debt_amount, (tenant.debt_currency as DebtCurrency) || "DOP")
       : "";
     const name = tenant.nombre_negocio || tenant.id;
     showConfirm(
-      `¿Registrar el pago de la deuda de "${name}"${formatted ? ` (${formatted})` : ""}? La deuda quedará saldada.`,
+      `¿Registrar el pago de ${formatted} de "${name}"? El saldo queda en cero y la cuota mensual sigue activa.`,
       async () => {
         try {
           setSavingTenantId(tenant.id);
           setError("");
 
-          const payload = {
-            debt_amount: null,
-            debt_due_date: null,
-            debt_updated_at: new Date().toISOString(),
-          };
+          const { data, error: rpcError } = await supabase.rpc(
+            "cloudix_register_tenant_payment",
+            {
+              p_tenant_id: tenant.id,
+            }
+          );
 
-          const { error: updateError } = await supabase
-            .from("tenants")
-            .update(payload)
-            .eq("id", tenant.id);
-
-          if (updateError) {
-            const msg = `No se pudo registrar el pago: ${updateError.message}`;
+          if (rpcError) {
+            const msg = `No se pudo registrar el pago: ${rpcError.message}`;
             setError(msg);
             toast.error(msg);
             setSavingTenantId(null);
             return;
           }
 
-          toast.success(`Pago registrado para "${name}". Deuda saldada.`);
+          const settledAmount =
+            data &&
+            typeof data === "object" &&
+            "amount" in data &&
+            typeof data.amount === "number"
+              ? data.amount
+              : tenant.debt_amount;
+          const settledCurrency =
+            data &&
+            typeof data === "object" &&
+            "currency" in data &&
+            typeof data.currency === "string"
+              ? (data.currency as DebtCurrency)
+              : ((tenant.debt_currency as DebtCurrency) || "DOP");
+          const displaySettled = settledAmount
+            ? formatDebtAmount(settledAmount, settledCurrency)
+            : formatted;
+
+          toast.success(`Pago de ${displaySettled} registrado para "${name}". Saldo saldado.`);
           await loadData();
           setSavingTenantId(null);
         } catch (err) {
@@ -684,11 +783,13 @@ export function SuperAdminPage() {
             <PaymentsForm
               draft={selectedDraft}
               initialDraft={selectedInitialDraft}
+              tenantId={selectedTenantCard.tenant.id}
+              tenantName={selectedTenantCard.tenant.nombre_negocio ?? ""}
               saving={savingTenantId === selectedTenantCard.tenant.id}
               onChange={(updated) =>
                 setDrafts((prev) => ({ ...prev, [selectedTenantCard.tenant.id]: updated }))
               }
-              onSave={() => void saveLimits(selectedTenantCard.tenant.id)}
+              onSave={() => void savePayments(selectedTenantCard.tenant.id)}
               onReset={() =>
                 setDrafts((prev) => ({
                   ...prev,

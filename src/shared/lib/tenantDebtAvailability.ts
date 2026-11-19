@@ -14,7 +14,10 @@ export function isMissingDebtColumnsError(error: unknown): boolean {
     text.includes("debt_amount") ||
     text.includes("debt_currency") ||
     text.includes("debt_due_date") ||
-    text.includes("debt_updated_at");
+    text.includes("debt_updated_at") ||
+    text.includes("monthly_fee_amount") ||
+    text.includes("monthly_fee_currency") ||
+    text.includes("last_charged_period");
   const identifiesMissingSchema =
     text.includes("does not exist") ||
     text.includes("schema cache") ||
