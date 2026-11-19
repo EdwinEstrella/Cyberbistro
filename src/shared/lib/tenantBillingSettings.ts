@@ -13,7 +13,6 @@ export interface TenantBillingSettingsRow {
   propina_cobro_por_defecto?: boolean | null;
   itbis_incluido_en_precio?: boolean | null;
   sin_comprobante_por_defecto?: boolean | null;
-  fiscal_mode_fallback?: string | null;
   ecf_environment?: string | null;
   rnc?: string | null;
   nombre?: string | null;
@@ -38,7 +37,6 @@ export interface TenantBillingSettings {
   itbisIncluded?: boolean;
   /** "Sin comprobante" checkout switch starts ON for every sale. */
   sinComprobantePorDefecto?: boolean;
-  fiscalModeFallback?: FiscalMode | null;
   ecfEnvironment?: string | null;
   rnc?: string | null;
   nombre?: string | null;
@@ -53,7 +51,7 @@ export interface TenantBillingSettings {
 }
 
 const TENANT_BILLING_SETTINGS_SELECT_LEGACY =
-  "fiscal_mode, ncf_fiscal_activo, ncf_tipo_default, ncf_tipos_activos, itbis_cobro_por_defecto, propina_cobro_por_defecto, fiscal_mode_fallback, ecf_environment, rnc, nombre_negocio, direccion, ecf_issuer_sucursal, ecf_issuer_municipio, ecf_issuer_provincia, ecf_issuer_actividad_economica, ecf_issuer_correo_emisor, ecf_secuencias_rangos";
+  "fiscal_mode, ncf_fiscal_activo, ncf_tipo_default, ncf_tipos_activos, itbis_cobro_por_defecto, propina_cobro_por_defecto, ecf_environment, rnc, nombre_negocio, direccion, ecf_issuer_sucursal, ecf_issuer_municipio, ecf_issuer_provincia, ecf_issuer_actividad_economica, ecf_issuer_correo_emisor, ecf_secuencias_rangos";
 
 const TENANT_BILLING_SETTINGS_SELECT_WITH_ITBIS_INCLUDED = `${TENANT_BILLING_SETTINGS_SELECT_LEGACY}, itbis_incluido_en_precio`;
 
@@ -90,7 +88,6 @@ export function normalizeTenantBillingSettings(
     defaultPropinaEnabled: Boolean(row?.propina_cobro_por_defecto),
     itbisIncluded: Boolean(row?.itbis_incluido_en_precio),
     sinComprobantePorDefecto: Boolean(row?.sin_comprobante_por_defecto),
-    fiscalModeFallback: normalizeFiscalMode(row?.fiscal_mode_fallback, false),
     ecfEnvironment: row?.ecf_environment || "certification",
     rnc: row?.rnc,
     nombre: row?.nombre ?? row?.nombre_negocio,

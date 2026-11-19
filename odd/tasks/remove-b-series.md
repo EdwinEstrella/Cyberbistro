@@ -35,8 +35,8 @@ DGII (Dirección General de Impuestos Internos, Dominican Republic) no longer pe
 
 ## Tasks
 - [x] T1 Checkout: only e-CF sale types with a DGII-authorized range and not disabled; no B types/defaults at checkout; turning "Sin comprobante" off turns ITBIS on. Route: delegated (agy).
-- [ ] T2 Fiscal engine & fallback: remove the ncf_legacy issuing branch and B reservation paths; fallback mode can only be internal_receipt. Route: delegated (agy).
-- [ ] T3 Ajustes: remove ncf_legacy mode/fallback options and B sequence configuration UI/payload. Route: delegated (agy).
+- [x] T2 Fiscal engine & fallback: remove the ncf_legacy issuing branch and B reservation paths; fallback mode can only be internal_receipt. Route: delegated (agy).
+- [x] T3 Ajustes: remove ncf_legacy mode/fallback options and B sequence configuration UI/payload. Route: delegated (agy).
 - [ ] T4 Retire B sequence builders and desktop local B allocation, keeping historical helpers. Route: delegated (agy).
 - [ ] T5 Prod data: move ncf_legacy tenants/fallbacks to internal_receipt (needs explicit user OK; Claude runs it). Route: inline.
 
@@ -67,17 +67,23 @@ DGII (Dirección General de Impuestos Internos, Dominican Republic) no longer pe
   4. `src/features/fiscal/components/ActivationPanel.tsx`: Dropped `loaded?.fiscalModeFallback` and unused `const loaded = await refreshReadiness()` from `deactivateElectronicBilling()`, calling `buildDeactivationPayload()`.
   5. Tests: In `src/shared/lib/localNcfReservation.test.ts`, simplified fake deps to `{ cloudReserve }`, removed bridge mocks and deleted `describe("catchUpCloudNcfSequence")` (assertions for retired B counter catch-up). In `src/shared/lib/ecfActivationReadiness.test.ts`, updated `buildDeactivationPayload` assertions to single-argument invocation and deleted the `normalizeFiscalFallback` test.
 
+- T3:
+  1. `src/features/ajustes/components/AjustesFacturacionTab.tsx`: Removed `ncf_legacy` ("NCF Tradicional") option from "Modo Fiscal" select; removed the "Modo de Respaldo" selector entirely; removed `showBSequences`, the "Secuencias Configuradas por Tipo B" section, and the B "Tipo Predeterminado" controls. Retained e-CF section with read-only sequence inputs and added active-type toggles for E types only.
+  2. `src/features/ajustes/types.ts`: Narrowed `fiscal_mode` to `"internal_receipt" | "dgii_ecf"`; removed `fiscal_mode_fallback` and B-only `ncf_secuencia_siguiente` from `AjustesConfig`.
+  3. `src/features/ajustes/components/Ajustes.tsx`: Mapped loaded tenant with `fiscal_mode: "ncf_legacy"` to `"internal_receipt"`; stopped computing `buildBSequenceMapFromRow`/B defaults; derived `ncf_fiscal_activo` strictly as `fiscalMode === "dgii_ecf"`; cleaned `TENANT_FIELDS_NCF` projection (removed `NCF_B_SEQUENCE_FIELDS_SELECT`, `fiscal_mode_fallback`, `ncf_secuencia_siguiente`).
+  4. `src/features/ajustes/lib/ajustesPayload.ts`: The saved payload never writes `ncf_bXX_secuencia_siguiente`, `ncf_secuencia_siguiente`, B `ncf_tipo_default`, or `ncf_legacy` fiscal mode. Preserves existing B keys in `ncf_secuencias_por_tipo` and `ncf_tipos_activos` untouched while ignoring config-provided B values and applying config's non-B toggles. Converts `ncf_legacy` to `internal_receipt` and writes `fiscal_mode_fallback: "internal_receipt"`. Extracted pure `mapTenantRowToAjustesConfig`.
+  5. `src/features/fiscal/components/ActivationPanel.tsx`: Updated deactivation success message to `Facturación electrónica desactivada. El POS vuelve a emitir recibos internos.`.
+  6. Removed dead `fiscal_mode_fallback` and `fiscalModeFallback` from `src/shared/lib/tenantBillingSettings.ts` (row interface, normalized settings, select column projection) and `src/features/fiscal/lib/loadEcfReadiness.ts` (select query and return interface).
+  7. Tests: Updated `src/features/ajustes/lib/ajustesPayload.test.ts` to assert that no B columns/keys/sequences are in payload, and added unit tests for `mapTenantRowToAjustesConfig`.
+
 ## Verification Evidence
 - `git diff --stat -- '*.test.ts' '*.test.tsx'`:
-  `src/shared/lib/ecfActivationReadiness.test.ts |  17 +--`
-  `src/shared/lib/fiscalEngine.test.ts           |  75 ++++-------`
-  `src/shared/lib/localNcfReservation.test.ts    | 183 ++++++++------------------`
-  (3 files changed, 86 insertions(+), 189 deletions(-) existing assertions modified/removed).
-  Plus new file `src/shared/lib/invoiceNcf.test.ts` (7 tests).
+  `src/features/ajustes/lib/ajustesPayload.test.ts | 109 ++++++++++++--------`
+  (1 file changed, 67 insertions(+), 42 deletions(-)).
 - `npm run typecheck`: clean (exit code 0).
-- `npx vitest run src/shared/lib src/features/fiscal src/features/billing`: 92 test files, 827 tests passed (exit code 0).
-- `npm test`: 364 test files passed, 1 skipped (365 total); 3024 tests passed, 2 skipped (exit code 0).
-- `graphify update .`: completed successfully (11332 nodes, 23659 edges, 803 communities).
+- `npx vitest run src/features/ajustes src/features/fiscal src/shared/lib`: 86 test files passed, 786 tests passed (exit code 0).
+- `npm test`: 364 test files passed, 1 skipped (365 total); 3026 tests passed, 2 skipped (exit code 0).
+- `graphify update .`: completed successfully (11334 nodes, 23647 edges, 813 communities).
 
 ## Next Step
-T2 review round 1 completed; awaiting review/approval before T3.
+T3 completed; ready for T4 (Retire B sequence builders and desktop local B allocation).
