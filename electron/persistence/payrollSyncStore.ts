@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { DurableSyncStore, DurableOperation, DurableOperationStatus, DurableOperationKind, PullBatch } from "./syncWorker";
+import { reconcileGhostCycles, type GhostCycleCloudPort, type ReconcileGhostCyclesResult } from "./ghostCycleReconcile";
 import { applyCloudTenantRows, applyCloudSucursalRows, applyCloudExpenseRows, applyCloudExpenseCategoryRows, applyCloudCustomerRows, applyCloudOperationalCycleRows, applyCloudFacturaRows, applyCloudCompraRows, applyCloudCompraFiscalRows, applyCloudReceivableRows, applyCloudPayableRows, applyCloudCxcPagoRows, applyCloudCxpPagoRows, applyCloudDeletes, applyCloudMenuCategoryRows, applyCloudPlatoRows, applyCloudInventoryProductRows, applyCloudRecipeRows, applyCloudMesasEstadoRows, applyCloudCocinaEstadoRows, applyCloudComandaRows, applyCloudConsumoRows } from "./cloudApply";
 import { createHash } from "node:crypto";
 import { applyCloudPayrollEmployees, applyCloudPayrollPayments, applyCloudPayrollAdjustments } from "./payrollCloudApply";
@@ -103,6 +104,10 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
 
   deactivate(): void {
     this.active = false;
+  }
+
+  async reconcileGhostCycles(port: GhostCycleCloudPort): Promise<ReconcileGhostCyclesResult> {
+    return reconcileGhostCycles(this.db, this.tenantId, port);
   }
 
   releaseClaims(): void {

@@ -1,5 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { DurableOperation, PullBatch, ServerChange, ServerSyncClient } from "./syncWorker";
+import { createSupabaseGhostCycleCloudPort, type GhostCycleCloudPort } from "./ghostCycleReconcile";
+import { LOCAL_BRANCH_SENTINEL, toRemoteBranchId } from "./branchSentinel";
 import { SYNC_PULL_TABLES } from "./syncPullRegistry";
 import { buildEcfDocumentPayloadForServer, buildFiscalOutboxPayloadForServer } from "../../src/shared/lib/fiscalSyncPayload";
 
@@ -364,6 +366,10 @@ export class PayrollSyncClient implements ServerSyncClient {
     throw new Error("Invalid Supabase client: missing from method");
   }
 
+  getGhostCycleCloudPort(tenantId: string): GhostCycleCloudPort {
+    return createSupabaseGhostCycleCloudPort((table) => this.getTableClient(table), tenantId);
+  }
+
   private createClient(accessToken?: string | null): Promise<SupabaseClient> {
     if (!this.config) {
       throw new Error("Payroll sync client configuration is unavailable");
@@ -648,7 +654,7 @@ function mapOperationalCycleOpenRow(operation: DurableOperation, payload: Record
   const rawBranch = typeof payload.sucursalId === "string" && payload.sucursalId.trim()
     ? payload.sucursalId.trim()
     : (typeof payload.branchId === "string" && payload.branchId.trim() ? payload.branchId.trim() : operation.branchId);
-  const branchId = rawBranch && rawBranch !== "main-process-default" ? rawBranch : null;
+  const branchId = toRemoteBranchId(rawBranch);
   return {
     id: operation.rowId,
     tenant_id: operation.tenantId,
@@ -783,17 +789,14 @@ function mapPayablePaymentPayload(operation: DurableOperation, payload: Record<s
   };
 }
 
-const LOCAL_BRANCH_SENTINEL = "main-process-default";
-
 // The main process writes with branchId "main-process-default", a local-only
 // sentinel that is not a UUID. The renderer's real sucursal travels in the
 // payload, so it wins; the sentinel is never sent to the cloud (null instead).
 export function resolveRemoteBranchId(operation: DurableOperation, payload: Record<string, unknown>): string | null {
   const candidates = [payload.sucursal_id, payload.sucursalId, operation.branchId];
   for (const candidate of candidates) {
-    if (typeof candidate !== "string") continue;
-    const value = candidate.trim();
-    if (value && value !== LOCAL_BRANCH_SENTINEL) return value;
+    const branchId = toRemoteBranchId(candidate);
+    if (branchId) return branchId;
   }
   return null;
 }
@@ -993,7 +996,7 @@ function mapFrequency(value: string, tableName: string): string {
   unsupportedValue(`${tableName}.frequency`, value);
 }
 
-function classifyRemoteError(error: MutationError, tableName: string, operation: "upsert" | "update" | "delete"): PushResponse {
+export function classifyRemoteError(error: MutationError, tableName: string, operation: "upsert" | "update" | "delete"): PushResponse {
   const code = error.code ?? "unknown";
   const message = error.message;
 
@@ -1248,7 +1251,7 @@ function mapMesasEstadoPayload(operation: DurableOperation, payload: Record<stri
   const rawState = typeof payload.state === "string" ? payload.state : (typeof payload.estado === "string" ? payload.estado : "");
   const estadoStr = (rawState === "occupied" || rawState === "ocupada") ? "ocupada" : "libre";
   const rawBranch = str(payload.sucursal_id) ?? str(payload.sucursalId);
-  const branchId = rawBranch && rawBranch !== "main-process-default" ? rawBranch : null;
+  const branchId = toRemoteBranchId(rawBranch);
   return {
     id: tableId,
     tenant_id: operation.tenantId,
@@ -1310,7 +1313,7 @@ function mapConsumoPayload(operation: DurableOperation, payload: Record<string, 
     return Number.isFinite(n) ? n : null;
   };
   const rawBranch = str(payload.sucursal_id) ?? str(payload.sucursalId);
-  const branchId = rawBranch && rawBranch !== "main-process-default" ? rawBranch : null;
+  const branchId = toRemoteBranchId(rawBranch);
 
   const platoId = num(payload.plato_id) ?? num(payload.platoId);
   const isPartial = operation.op === "update" || (payload.nombre == null && payload.name == null && (platoId == null || platoId === 0));
