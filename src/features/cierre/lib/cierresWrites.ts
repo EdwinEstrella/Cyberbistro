@@ -18,7 +18,7 @@ import { supabase } from "../../../shared/lib/supabase";
  * Splitting a cycle's lifecycle across both engines is what produced duplicate
  * cycles, so this module keeps every open/close/discard/print on one engine.
  */
-function hasSqliteCycles(): boolean {
+export function hasSqliteCycles(): boolean {
   return typeof window !== "undefined" && Boolean(window.electronAPI?.executeOrdersCommand);
 }
 

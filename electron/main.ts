@@ -516,6 +516,11 @@ if (gotTheLock) {
         mainWindow.webContents.send('local-data-updated', payload);
       }
     };
+    tenantStoreController.payrollSync.onGhostCyclesClosed = (closed) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('ghost-cycles-closed', closed);
+      }
+    };
     deviceAccountDirectory = DeviceAccountDirectory.open(app.getPath('userData'))
     autoLaunchManager = new AutoLaunchManager({
       userDataDir: app.getPath('userData'),
@@ -678,6 +683,12 @@ if (gotTheLock) {
         const store = getStore((filter as { tenantId?: string })?.tenantId)
         if (!store) return []
         return store.listCierres(filter)
+      },
+      reconcileGhostCycles: async () => {
+        return tenantStoreController.payrollSync.reconcileGhostCyclesNow();
+      },
+      getCycleSyncStatus: (cycleId: string) => {
+        return tenantStoreController.getCycleSyncStatus(cycleId);
       },
       listMesasEstado: (filter) => {
         const store = getStore((filter as { tenantId?: string })?.tenantId)

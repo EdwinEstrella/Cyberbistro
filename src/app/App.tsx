@@ -4,10 +4,12 @@ import { AppUpdateProvider } from "../features/updates/AppUpdateContext";
 import { AppUpdateOverlay } from "../features/updates/components/AppUpdateOverlay";
 import { ThemeProvider } from "../shared/context/ThemeContext";
 import { useElectronInputFocusRecovery } from "../shared/hooks/useElectronInputFocusRecovery";
+import { useGhostCyclesToast } from "../features/cierre/lib/useGhostCyclesToast";
 import { router } from "./routes";
 
 export default function App() {
   useElectronInputFocusRecovery();
+  useGhostCyclesToast();
 
   return (
     <ThemeProvider>

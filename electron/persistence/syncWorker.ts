@@ -1,4 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
+import type {
+  GhostCycleCloudPort,
+  GhostCycleClosedItem,
+  ReconcileGhostCyclesNowResult,
+  ReconcileGhostCyclesResult,
+} from "./ghostCycleReconcile";
 
 export type DurableOperationStatus = "pending" | "syncing" | "synced" | "conflicted" | "not_retryable";
 export type DurableOperationKind = "insert" | "update" | "upsert" | "delete";
@@ -47,6 +53,7 @@ export interface DurableSyncStore {
   settle(id: string, status: DurableOperationStatus, result: Record<string, unknown> | null): void;
   applyPull(batch: PullBatch): void;
   getCursor(): string | null;
+  reconcileGhostCycles?(port: GhostCycleCloudPort): Promise<ReconcileGhostCyclesResult>;
 }
 
 export interface ServerSyncClient {
@@ -60,6 +67,7 @@ export interface ServerSyncClient {
    */
   pushBatch?(operations: DurableOperation[]): Promise<{ ok: true } | { ok: false; error?: { message: string } }>;
   pull(input: { tenantId: string; cursor: string | null }): Promise<PullBatch>;
+  getGhostCycleCloudPort?(tenantId: string): GhostCycleCloudPort | Promise<GhostCycleCloudPort>;
 }
 
 const MANUAL_CONFLICT_TABLES = new Set(["facturas", "ecf_documents", "fiscal_outbox", "cierres_operativos", "inventario_movimientos"]);
@@ -78,13 +86,29 @@ export function createDurableOperation(input: Omit<DurableOperation, "payloadHas
   };
 }
 
+export interface DurableSyncWorkerOptions {
+  clock?: () => number;
+  ghostReconcileThrottleMs?: number;
+  onGhostCyclesClosed?: (closed: GhostCycleClosedItem[]) => void;
+}
+
 /** Sync orchestration only; realtime may call pull(), but never supplies state or writes directly. */
 export class DurableSyncWorker {
+  private lastGhostReconcileAt = -Infinity;
+  private readonly clock: () => number;
+  private readonly ghostReconcileThrottleMs: number;
+  private readonly onGhostCyclesClosed?: (closed: GhostCycleClosedItem[]) => void;
+
   constructor(
     private readonly store: DurableSyncStore,
     private readonly server: ServerSyncClient,
     private readonly tenantId: string,
-  ) {}
+    options?: DurableSyncWorkerOptions,
+  ) {
+    this.clock = options?.clock ?? (() => Date.now());
+    this.ghostReconcileThrottleMs = options?.ghostReconcileThrottleMs ?? 10 * 60 * 1000;
+    this.onGhostCyclesClosed = options?.onGhostCyclesClosed;
+  }
 
   async push(nowMs = Date.now()): Promise<{ pushed: number; conflicted: number }> {
     let pushed = 0;
@@ -206,10 +230,72 @@ export class DurableSyncWorker {
         if (table) tableSet.add(table);
       }
     }
-    return {
+    const result: SyncPullResult = {
       applied: batch.changes.length,
       tables: Array.from(tableSet),
     };
+
+    await this.runGhostCycleReconcile(result);
+
+    return result;
+  }
+
+  private async executeGhostCycleReconcile(): Promise<ReconcileGhostCyclesNowResult> {
+    if (!this.store.reconcileGhostCycles) {
+      return { ok: false, reason: "unavailable" };
+    }
+
+    let port: GhostCycleCloudPort | null | undefined;
+    try {
+      port = await this.server.getGhostCycleCloudPort?.(this.tenantId);
+    } catch {
+      return { ok: false, reason: "error" };
+    }
+
+    if (!port) {
+      return { ok: false, reason: "unavailable" };
+    }
+
+    // Throttle stamp is recorded before executing network calls to avoid hammering the cloud after an error or timeout.
+    const nowMs = this.clock();
+    this.lastGhostReconcileAt = nowMs;
+
+    try {
+      const { closed } = await this.store.reconcileGhostCycles(port);
+      if (closed.length > 0) {
+        for (const c of closed) {
+          console.warn(
+            `[sync↓] cierres_operativos ${c.id} → ciclo fantasma #${c.cycleNumber ?? "?"} auto-cerrado (superado por #${c.supersededByCycleNumber})`
+          );
+        }
+        this.onGhostCyclesClosed?.(closed);
+      }
+      return { ok: true, closed };
+    } catch (err) {
+      console.warn(
+        `[sync↓] ghost cycle reconcile skipped: ${err instanceof Error ? err.message : String(err)}`
+      );
+      return { ok: false, reason: "error" };
+    }
+  }
+
+  private async runGhostCycleReconcile(pullResult: SyncPullResult): Promise<void> {
+    const nowMs = this.clock();
+    if (nowMs - this.lastGhostReconcileAt < this.ghostReconcileThrottleMs) {
+      return;
+    }
+
+    const result = await this.executeGhostCycleReconcile();
+    if (result.ok && result.closed.length > 0) {
+      pullResult.applied += result.closed.length;
+      if (!pullResult.tables.includes("cierres_operativos")) {
+        pullResult.tables.push("cierres_operativos");
+      }
+    }
+  }
+
+  async reconcileGhostCyclesNow(): Promise<ReconcileGhostCyclesNowResult> {
+    return this.executeGhostCycleReconcile();
   }
 }
 

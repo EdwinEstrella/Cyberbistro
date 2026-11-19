@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { DurableSyncStore, DurableOperation, DurableOperationStatus, DurableOperationKind, PullBatch } from "./syncWorker";
+import { reconcileGhostCycles, type GhostCycleCloudPort, type ReconcileGhostCyclesResult } from "./ghostCycleReconcile";
 import { applyCloudTenantRows, applyCloudSucursalRows, applyCloudExpenseRows, applyCloudExpenseCategoryRows, applyCloudCustomerRows, applyCloudOperationalCycleRows, applyCloudFacturaRows, applyCloudCompraRows, applyCloudCompraFiscalRows, applyCloudReceivableRows, applyCloudPayableRows, applyCloudCxcPagoRows, applyCloudCxpPagoRows, applyCloudDeletes, applyCloudMenuCategoryRows, applyCloudPlatoRows, applyCloudInventoryProductRows, applyCloudRecipeRows, applyCloudMesasEstadoRows, applyCloudCocinaEstadoRows, applyCloudComandaRows, applyCloudConsumoRows } from "./cloudApply";
 import { createHash } from "node:crypto";
 import { applyCloudPayrollEmployees, applyCloudPayrollPayments, applyCloudPayrollAdjustments } from "./payrollCloudApply";
@@ -103,6 +104,10 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
 
   deactivate(): void {
     this.active = false;
+  }
+
+  async reconcileGhostCycles(port: GhostCycleCloudPort): Promise<ReconcileGhostCyclesResult> {
+    return reconcileGhostCycles(this.db, this.tenantId, port);
   }
 
   releaseClaims(): void {
@@ -290,6 +295,12 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
             this.db.prepare(
               "UPDATE fiscal_outbox SET status = 'queued', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND tenant_id = ? AND status = 'pending_sync'"
             ).run(outboxRow.row_id, this.tenantId);
+          } else if (outboxRow.table_name === "cierres_operativos" && result && result.renumberedCycleNumber != null) {
+            const rawNumber = result.renumberedCycleNumber;
+            const newCycleNumber = typeof rawNumber === "number" ? rawNumber : Number(rawNumber);
+            if (Number.isFinite(newCycleNumber)) {
+              this.applyCycleRenumber(outboxRow.row_id, id, newCycleNumber);
+            }
           }
         }
         this.db.prepare("DELETE FROM sync_outbox WHERE id = ?").run(id);
@@ -306,6 +317,46 @@ export class SQLitePayrollSyncStore implements DurableSyncStore {
         WHERE id = ?
       `).run(storedResult ? JSON.stringify(storedResult) : null, id);
     }
+  }
+
+  private applyCycleRenumber(cycleId: string, settledOutboxId: string, newCycleNumber: number): void {
+    const selectOldCycleStmt = this.db.prepare(
+      "SELECT cycle_number FROM cierres_operativos WHERE id = ? AND tenant_id = ?"
+    );
+    const updateCycleStmt = this.db.prepare(
+      "UPDATE cierres_operativos SET cycle_number = ? WHERE id = ? AND tenant_id = ?"
+    );
+    const selectPendingOutboxStmt = this.db.prepare(
+      "SELECT id, payload_json FROM sync_outbox WHERE tenant_id = ? AND table_name = 'cierres_operativos' AND row_id = ? AND id != ?"
+    );
+    const updatePendingOutboxStmt = this.db.prepare(
+      "UPDATE sync_outbox SET payload_json = ? WHERE id = ?"
+    );
+
+    const cycleRow = selectOldCycleStmt.get(cycleId, this.tenantId) as { cycle_number: number | null } | undefined;
+    const oldCycleNumber = cycleRow?.cycle_number ?? "?";
+
+    updateCycleStmt.run(newCycleNumber, cycleId, this.tenantId);
+
+    const pendingOutboxRows = selectPendingOutboxStmt.all(this.tenantId, cycleId, settledOutboxId) as Array<{
+      id: string;
+      payload_json: string | null;
+    }>;
+
+    for (const pending of pendingOutboxRows) {
+      if (!pending.payload_json) continue;
+      try {
+        const payload = JSON.parse(pending.payload_json);
+        if (payload && typeof payload === "object" && "cycleNumber" in payload) {
+          payload.cycleNumber = newCycleNumber;
+          updatePendingOutboxStmt.run(JSON.stringify(payload), pending.id);
+        }
+      } catch {
+        // Ignore malformed JSON in pending row
+      }
+    }
+
+    console.warn(`[sync↑] cierres_operativos ${cycleId} → ciclo renumerado #${oldCycleNumber} → #${newCycleNumber}`);
   }
 
   applyPull(batch: PullBatch): void {

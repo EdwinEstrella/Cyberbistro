@@ -1,5 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { DurableOperation, PullBatch, ServerChange, ServerSyncClient } from "./syncWorker";
+import { createSupabaseGhostCycleCloudPort, type GhostCycleCloudPort } from "./ghostCycleReconcile";
+import { LOCAL_BRANCH_SENTINEL, toRemoteBranchId } from "./branchSentinel";
 import { SYNC_PULL_TABLES } from "./syncPullRegistry";
 import { buildEcfDocumentPayloadForServer, buildFiscalOutboxPayloadForServer } from "../../src/shared/lib/fiscalSyncPayload";
 
@@ -13,13 +15,28 @@ const PULL_TABLES = SYNC_PULL_TABLES.map((entry) => ({
   scopeColumn: entry.scopeColumn ?? "tenant_id",
 }));
 const PULL_PAGE_SIZE = 500;
+const MAX_CYCLE_OPEN_ATTEMPTS = 3;
 
-type MutationError = {
+export type MutationError = {
   code?: string;
   message: string;
+  details?: string;
+  hint?: string;
 };
 
-type RemoteMutationBuilder = {
+export type RemoteSelectLimitResult = PromiseLike<{
+  data: Array<Record<string, unknown>> | null;
+  error: MutationError | null;
+}>;
+
+export type RemoteMutationBuilder = {
+  select?(columns?: string): {
+    eq(column: string, value: string): {
+      order(column: string, options: { ascending: boolean }): {
+        limit(count: number): RemoteSelectLimitResult;
+      };
+    };
+  };
   upsert(payload: Record<string, unknown>, options: { onConflict: string }): Promise<{ error: MutationError | null }>;
   update(payload: Record<string, unknown>): {
     eq(column: string, value: string): {
@@ -242,9 +259,7 @@ export class PayrollSyncClient implements ServerSyncClient {
       } catch (error) {
         return { permanent: permanentReason(error instanceof Error ? error.message : "Malformed operational cycle payload", "malformed_payload", operation.tableName) };
       }
-      const { error } = await tableClient.upsert(row, { onConflict: "id" });
-      if (error) return classifyRemoteError(error, operation.tableName, "upsert");
-      return { result: { synced: true, id: operation.rowId, remoteTable: "cierres_operativos" } };
+      return this.upsertCycleOpenWithRenumber(operation, row);
     }
 
     if (payload.type === "orders.cycle.close" || payload.type === "orders.cycle.mark-printed") {
@@ -356,12 +371,86 @@ export class PayrollSyncClient implements ServerSyncClient {
   }
 
   private async getTableClient(table: string): Promise<RemoteMutationBuilder> {
-    const client: any = await this.clientPromise;
+    const client = await this.clientPromise;
 
     if (client?.from && typeof client.from === "function") {
-      return client.from(table);
+      return client.from(table) as unknown as RemoteMutationBuilder;
     }
     throw new Error("Invalid Supabase client: missing from method");
+  }
+
+  private async fetchCloudMaxCycleNumber(tenantId: string): Promise<number | null> {
+    try {
+      const queryClient = await this.getTableClient("cierres_operativos");
+      if (typeof queryClient.select !== "function") {
+        return null;
+      }
+      const { data, error } = await queryClient
+        .select("cycle_number")
+        .eq("tenant_id", tenantId)
+        .order("cycle_number", { ascending: false })
+        .limit(1);
+
+      if (error || !Array.isArray(data) || data.length === 0) {
+        return null;
+      }
+      const maxVal = Number(data[0]?.cycle_number);
+      if (!Number.isFinite(maxVal)) {
+        return null;
+      }
+      return maxVal;
+    } catch {
+      return null;
+    }
+  }
+
+  private async upsertCycleOpenWithRenumber(
+    operation: DurableOperation,
+    initialRow: Record<string, unknown>,
+  ): Promise<PushResponse> {
+    let row = initialRow;
+    const tableClient = await this.getTableClient(operation.tableName);
+    const { error } = await tableClient.upsert(row, { onConflict: "id" });
+    if (!error) {
+      return { result: { synced: true, id: operation.rowId, remoteTable: "cierres_operativos" } };
+    }
+
+    if (!isCycleNumberConflict(error)) {
+      return classifyRemoteError(error, operation.tableName, "upsert");
+    }
+
+    let lastError = error;
+    for (let attempt = 2; attempt <= MAX_CYCLE_OPEN_ATTEMPTS; attempt++) {
+      const cloudMax = await this.fetchCloudMaxCycleNumber(operation.tenantId);
+      if (cloudMax === null) {
+        return classifyRemoteError(lastError, operation.tableName, "upsert");
+      }
+
+      const nextNumber = cloudMax + 1;
+      row = { ...row, cycle_number: nextNumber };
+      const retryClient = await this.getTableClient(operation.tableName);
+      const retryRes = await retryClient.upsert(row, { onConflict: "id" });
+      if (!retryRes.error) {
+        return {
+          result: {
+            synced: true,
+            id: operation.rowId,
+            remoteTable: "cierres_operativos",
+            renumberedCycleNumber: nextNumber,
+          },
+        };
+      }
+      lastError = retryRes.error;
+      if (!isCycleNumberConflict(lastError)) {
+        return classifyRemoteError(lastError, operation.tableName, "upsert");
+      }
+    }
+
+    return classifyRemoteError(lastError, operation.tableName, "upsert");
+  }
+
+  getGhostCycleCloudPort(tenantId: string): GhostCycleCloudPort {
+    return createSupabaseGhostCycleCloudPort((table) => this.getTableClient(table), tenantId);
   }
 
   private createClient(accessToken?: string | null): Promise<SupabaseClient> {
@@ -648,7 +737,7 @@ function mapOperationalCycleOpenRow(operation: DurableOperation, payload: Record
   const rawBranch = typeof payload.sucursalId === "string" && payload.sucursalId.trim()
     ? payload.sucursalId.trim()
     : (typeof payload.branchId === "string" && payload.branchId.trim() ? payload.branchId.trim() : operation.branchId);
-  const branchId = rawBranch && rawBranch !== "main-process-default" ? rawBranch : null;
+  const branchId = toRemoteBranchId(rawBranch);
   return {
     id: operation.rowId,
     tenant_id: operation.tenantId,
@@ -783,17 +872,14 @@ function mapPayablePaymentPayload(operation: DurableOperation, payload: Record<s
   };
 }
 
-const LOCAL_BRANCH_SENTINEL = "main-process-default";
-
 // The main process writes with branchId "main-process-default", a local-only
 // sentinel that is not a UUID. The renderer's real sucursal travels in the
 // payload, so it wins; the sentinel is never sent to the cloud (null instead).
 export function resolveRemoteBranchId(operation: DurableOperation, payload: Record<string, unknown>): string | null {
   const candidates = [payload.sucursal_id, payload.sucursalId, operation.branchId];
   for (const candidate of candidates) {
-    if (typeof candidate !== "string") continue;
-    const value = candidate.trim();
-    if (value && value !== LOCAL_BRANCH_SENTINEL) return value;
+    const branchId = toRemoteBranchId(candidate);
+    if (branchId) return branchId;
   }
   return null;
 }
@@ -993,13 +1079,42 @@ function mapFrequency(value: string, tableName: string): string {
   unsupportedValue(`${tableName}.frequency`, value);
 }
 
-function classifyRemoteError(error: MutationError, tableName: string, operation: "upsert" | "update" | "delete"): PushResponse {
+export function isCycleNumberConflict(error: MutationError): boolean {
+  const code = error.code ?? "";
+  const is23505 =
+    code === "23505" ||
+    error.message.toLowerCase().includes("duplicate key");
+  if (!is23505) return false;
+
+  const rawText = `${error.message ?? ""} ${error.details ?? ""}`.toLowerCase();
+
+  const isIdConflict =
+    rawText.includes("cierres_operativos_pkey") ||
+    rawText.includes("key (id)=") ||
+    rawText.includes("primary key") ||
+    rawText.includes("id_pkey");
+  if (isIdConflict) return false;
+
+  return (
+    rawText.includes("cierres_operativos_unique_cycle") ||
+    rawText.includes("cycle_number")
+  );
+}
+
+export function classifyRemoteError(error: MutationError, tableName: string, operation: "upsert" | "update" | "delete"): PushResponse {
   const code = error.code ?? "unknown";
   const message = error.message;
 
   if (code === "23505" || message.toLowerCase().includes("duplicate key") || message.toLowerCase().includes("already exists")) {
     // upsert(id) already handles a retry of the same ID. Any remaining unique
     // violation may refer to another row and is not an acknowledgement.
+    return { conflict: { reason: `Remote ${operation} conflict for ${tableName}: ${message}` } };
+  }
+
+  if (
+    tableName === "cierres_operativos" &&
+    message.toLowerCase().includes("ya existe un ciclo operativo abierto")
+  ) {
     return { conflict: { reason: `Remote ${operation} conflict for ${tableName}: ${message}` } };
   }
 
@@ -1248,7 +1363,7 @@ function mapMesasEstadoPayload(operation: DurableOperation, payload: Record<stri
   const rawState = typeof payload.state === "string" ? payload.state : (typeof payload.estado === "string" ? payload.estado : "");
   const estadoStr = (rawState === "occupied" || rawState === "ocupada") ? "ocupada" : "libre";
   const rawBranch = str(payload.sucursal_id) ?? str(payload.sucursalId);
-  const branchId = rawBranch && rawBranch !== "main-process-default" ? rawBranch : null;
+  const branchId = toRemoteBranchId(rawBranch);
   return {
     id: tableId,
     tenant_id: operation.tenantId,
@@ -1310,7 +1425,7 @@ function mapConsumoPayload(operation: DurableOperation, payload: Record<string, 
     return Number.isFinite(n) ? n : null;
   };
   const rawBranch = str(payload.sucursal_id) ?? str(payload.sucursalId);
-  const branchId = rawBranch && rawBranch !== "main-process-default" ? rawBranch : null;
+  const branchId = toRemoteBranchId(rawBranch);
 
   const platoId = num(payload.plato_id) ?? num(payload.platoId);
   const isPartial = operation.op === "update" || (payload.nombre == null && payload.name == null && (platoId == null || platoId === 0));

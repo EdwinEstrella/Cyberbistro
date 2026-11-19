@@ -21,6 +21,7 @@ import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSett
 import { DatePicker } from "../../../shared/ui/date-picker";
 import { areCierreRowsEqual } from "../lib/cierreStructuralEquality";
 import { isTableRelevantForCierre } from "../lib/cierreSyncFilter";
+import { runCierreCloseGuard } from "../lib/cierreGuardAdapter";
 
 type FacturaEstado = "pagada" | "pendiente" | "cancelada" | "nota_credito";
 
@@ -545,6 +546,19 @@ export function Cierre() {
   async function handleCerrarCiclo() {
     if (!tenantId || !currentCycle || currentCycle.closed_at) return;
     setPrinting(true); setPrintMsg(""); setPrintWarn(false);
+
+    const guard = await runCierreCloseGuard(currentCycle.id);
+    if (guard.action === "stop") {
+      setPrinting(false);
+      if (guard.reload) {
+        setPrintMsg(guard.message);
+        await cargar();
+        return;
+      }
+      setPrintWarn(true);
+      setPrintMsg(guard.message);
+      return;
+    }
 
     // Validación inteligente de mesas/consumos pendientes de cobro antes de cerrar el ciclo
     const isOnline = navigator.onLine;

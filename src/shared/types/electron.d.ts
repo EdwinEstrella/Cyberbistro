@@ -72,6 +72,22 @@ export interface LocalDataUpdatedPayload {
   tables: string[];
 }
 
+export interface GhostCycleClosedItem {
+  id: string;
+  cycleNumber: number | null;
+  closedAt: string;
+  supersededByCycleNumber: number;
+  supersededBy?: "later_cycle" | "open_cycle";
+}
+
+export type ReconcileGhostCyclesResponse =
+  | { ok: true; closed: GhostCycleClosedItem[] }
+  | { ok: false; reason: "unavailable" | "error" };
+
+export interface CycleSyncStatusResponse {
+  openPushConflict: boolean;
+}
+
 export interface ElectronAPI {
   getOpenAtLogin?: () => Promise<OpenAtLoginStatus>;
   setOpenAtLogin?: (enabled: boolean) => Promise<OpenAtLoginStatus>;
@@ -113,6 +129,8 @@ export interface ElectronAPI {
   >;
   commitCheckout?: (command: import("../lib/checkoutContracts").DesktopCheckoutCommand) => Promise<{ ok: true; data: import("../lib/checkoutContracts").DesktopCheckoutResult }>;
   listCierres?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number; dateFrom?: string; dateTo?: string }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
+  reconcileGhostCycles?: () => Promise<ReconcileGhostCyclesResponse>;
+  cycleSyncStatus?: (cycleId: string) => Promise<CycleSyncStatusResponse>;
   listMesasEstado?: (filter?: { tenantId?: string; sucursalId?: string }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
   saveMesaEstado?: (payload: Record<string, unknown>) => Promise<{ ok: true }>;
   listCocinaEstado?: (filter?: { tenantId?: string; sucursalId?: string }) => Promise<{ ok: true; data: Array<Record<string, unknown>> }>;
@@ -137,6 +155,7 @@ export interface ElectronAPI {
   getLocalRowVersions?: (tenantId: string | undefined, table: string) => Promise<{ ok: true; data: Array<{ id: string; updatedAt: string | null }> }>;
   openLogsFolder?: () => Promise<{ ok: boolean; path?: string }>;
   onLocalDataUpdated?: (callback: (payload: LocalDataUpdatedPayload) => void) => () => void;
+  onGhostCyclesClosed?: (callback: (payload: GhostCycleClosedItem[]) => void) => () => void;
   retryFailedSyncErrors?: (tenantId?: string) => Promise<{ ok: true; data: { count: number } }>;
   close: () => void;
   getVersions: () => NodeJS.ProcessVersions;
