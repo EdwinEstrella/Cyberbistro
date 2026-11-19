@@ -84,7 +84,7 @@ describe("buildAjustesSavePayload", () => {
     expect(internalPayload.ncf_fiscal_activo).toBe(false);
   });
 
-  it("never writes B-series sequence columns and ignores B sequences in ncf_secuencias_por_tipo", () => {
+  it("never writes B-series sequence columns and omits ncf_secuencias_por_tipo entirely", () => {
     const config = createMockConfig({
       ncf_secuencias_por_tipo: {
         B01: 50,
@@ -106,15 +106,15 @@ describe("buildAjustesSavePayload", () => {
     expect(payload).not.toHaveProperty("ncf_b17_secuencia_siguiente");
     expect(payload).not.toHaveProperty("ncf_secuencia_siguiente");
 
-    expect(payload.ncf_secuencias_por_tipo).toEqual({});
+    expect(payload).not.toHaveProperty("ncf_secuencias_por_tipo");
   });
 
-  it("preserves existing sequences (including B-codes) unchanged and rejects edits from config", () => {
+  it("never includes ncf_secuencias_por_tipo in payload even when existing tenant has sequences (regression: stale counters)", () => {
     const config = createMockConfig({
       ncf_secuencias_por_tipo: {
         B01: 99,
         E31: 9999, // Should be ignored by Ajustes payload builder
-        E32: 8888,
+        E32: 8,
       },
     });
 
@@ -122,7 +122,7 @@ describe("buildAjustesSavePayload", () => {
       ncf_secuencias_por_tipo: {
         B01: 7,
         E31: 42,
-        E32: 100,
+        E32: 8, // Stale snapshot from local mirror (regression test)
       },
     };
 
@@ -131,12 +131,8 @@ describe("buildAjustesSavePayload", () => {
     // B sequence columns are omitted from payload
     expect(payload).not.toHaveProperty("ncf_b01_secuencia_siguiente");
 
-    // Existing B01: 7 is preserved unchanged; config's B01: 99 is ignored
-    expect(payload.ncf_secuencias_por_tipo.B01).toBe(7);
-
-    // E31 and E32 retained original values from existing tenant, ignoring config's attempt to overwrite
-    expect(payload.ncf_secuencias_por_tipo.E31).toBe(42);
-    expect(payload.ncf_secuencias_por_tipo.E32).toBe(100);
+    // Settings never own sequence counters; must not write ncf_secuencias_por_tipo
+    expect(payload).not.toHaveProperty("ncf_secuencias_por_tipo");
   });
 
   it("preserves existing B-code active flags unchanged while applying non-B toggles from config and ignoring B toggles", () => {
