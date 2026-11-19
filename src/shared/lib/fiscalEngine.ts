@@ -32,15 +32,14 @@ export async function resolveActiveFiscalMode(
   }
 
   if (settings.fiscalMode !== "dgii_ecf") {
-    return { mode: settings.fiscalMode, certificateId: null };
+    return { mode: "internal_receipt", certificateId: null };
   }
 
   const isConfigComplete = isEcfIssuerConfigComplete(settings);
 
   if (isOnline) {
     if (!isConfigComplete) {
-      const fallbackMode = settings.fiscalModeFallback || "internal_receipt";
-      return { mode: fallbackMode, certificateId: null };
+      return { mode: "internal_receipt", certificateId: null };
     }
 
     try {
@@ -76,8 +75,7 @@ export async function resolveActiveFiscalMode(
       return { mode: "dgii_ecf", certificateId: null };
     }
 
-    const fallbackMode = settings.fiscalModeFallback || "internal_receipt";
-    return { mode: fallbackMode, certificateId: null };
+    return { mode: "internal_receipt", certificateId: null };
   }
 
   return { mode: "dgii_ecf", certificateId: null };
@@ -104,7 +102,7 @@ export async function runFiscalEngine(args: {
   preferredNcfType?: string | null;
   deviceId: string;
 }): Promise<FiscalEngineResult | null> {
-  if (args.activeMode === "internal_receipt") {
+  if (args.activeMode === "internal_receipt" || args.activeMode === "ncf_legacy") {
     return null;
   }
 
@@ -119,27 +117,6 @@ export async function runFiscalEngine(args: {
     throw new Error("No se pudo validar la configuración de tipos NCF.");
   }
   const activeMap = settings?.ncfTiposActivos;
-
-  if (args.activeMode === "ncf_legacy") {
-    const effectiveType =
-      args.preferredNcfType?.trim().toUpperCase() || settings?.defaultNcfType || "B02";
-    if (!isNcfTypeActive(activeMap, effectiveType)) {
-      return null;
-    }
-
-    const ncfPart = await resolveNcfForNewInvoiceLocalFirst(args.tenantId, args.preferredNcfType);
-    if (!ncfPart) {
-      throw new Error("No se pudo reservar NCF fiscal.");
-    }
-    return {
-      ncf: ncfPart.ncf,
-      ncf_tipo: ncfPart.ncf_tipo,
-      tipoCodigo: ncfPart.tipoCodigo,
-      usedSequence: ncfPart.usedSequence,
-      sequenceReservedAtomically: ncfPart.sequenceReservedAtomically,
-      reservationSource: ncfPart.reservationSource,
-    };
-  }
 
   if (args.activeMode === "dgii_ecf") {
     const clientRncTrimmed = args.clientRnc?.trim() || "";

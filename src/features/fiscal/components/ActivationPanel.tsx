@@ -431,8 +431,7 @@ export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral: 
     setSaving(true);
     setMessage("");
     try {
-      const loaded = await refreshReadiness();
-      const deactivation = buildDeactivationPayload(loaded?.fiscalModeFallback);
+      const deactivation = buildDeactivationPayload();
       await enqueueLocalWrite({
         tenantId,
         tableName: "tenants",

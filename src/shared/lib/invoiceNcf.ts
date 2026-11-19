@@ -77,31 +77,31 @@ export function ncfPayloadForInsert(
 }
 
 /**
- * Reserva NCF de forma atomica si existe la RPC `cloudix_reserve_ncf` (ver sql/cloudix_reserve_ncf.sql).
- * Si la RPC no esta desplegada o falla, usa lectura + incremento posterior (legado, vulnerable a carreras).
+ * Reserva e-NCF de forma atómica a través de la RPC `cloudix_reserve_ecf`.
+ * Los comprobantes de la serie B ya no se emiten para documentos nuevos.
  */
 export async function resolveNcfForNewInvoice(
   tenantId: string,
   preferredType?: string | null
 ): Promise<ResolvedNcfForInvoice | null> {
-  const isEcf = preferredType && preferredType.trim().toUpperCase().startsWith("E");
-  const rpcName = isEcf ? "cloudix_reserve_ecf" : "cloudix_reserve_ncf";
+  const isEcf = Boolean(preferredType && preferredType.trim().toUpperCase().startsWith("E"));
+  if (!isEcf) {
+    return null;
+  }
+
+  const rpcName = "cloudix_reserve_ecf";
 
   const rpcArgs: Record<string, unknown> = {
     p_tenant_id: tenantId,
+    p_ncf_tipo: preferredType && preferredType.trim() ? preferredType.trim().toUpperCase() : "E32",
   };
-  if (preferredType && preferredType.trim()) {
-    rpcArgs.p_ncf_tipo = preferredType.trim().toUpperCase();
-  } else if (isEcf) {
-    rpcArgs.p_ncf_tipo = "E32";
-  }
 
   const { data, error } = await supabase.rpc(rpcName, rpcArgs);
 
   if (error) {
     // Authorized-range errors are business rules, not connectivity: surface them as typed
     // errors and never fall back to another fiscal mode.
-    const rangeError = isEcf ? mapEcfRangeRpcError(error, String(rpcArgs.p_ncf_tipo ?? "E32")) : null;
+    const rangeError = mapEcfRangeRpcError(error, String(rpcArgs.p_ncf_tipo ?? "E32"));
     if (rangeError) {
       recordCloudSuccess();
       throw rangeError;
@@ -128,18 +128,13 @@ export async function resolveNcfForNewInvoice(
         row.seq_reserved
       );
       if (payload) {
-          return { ...payload, sequenceReservedAtomically: true, reservationSource: "remote_rpc" };
+        return { ...payload, sequenceReservedAtomically: true, reservationSource: "remote_rpc" };
       }
     }
   }
 
   // e-CF must come from the atomic RPC so the authorized range is always enforced.
-  if (isEcf) throw new Error("No se pudo reservar el e-NCF. Intentá de nuevo.");
-
-  const legacyRow = await loadTenantNcfRow(tenantId);
-  const payload = ncfPayloadForInsert(legacyRow, preferredType);
-  if (!payload) return null;
-  return { ...payload, sequenceReservedAtomically: false, reservationSource: "remote_legacy" };
+  throw new Error("No se pudo reservar el e-NCF. Intentá de nuevo.");
 }
 
 /** Incrementa secuencia NCF solo cuando no se uso la RPC atomica. */

@@ -6,7 +6,6 @@ import {
   describeActivationSuccess,
   evaluateEcfActivationReadiness,
   formatReadinessIssues,
-  normalizeFiscalFallback,
   type EcfReadinessInput,
 } from "./ecfActivationReadiness";
 
@@ -216,17 +215,11 @@ describe("activation payloads", () => {
     });
   });
 
-  it("deactivates to the configured fallback and defaults to internal_receipt", () => {
-    expect(buildDeactivationPayload("ncf_legacy", NOW).fiscal_mode).toBe("ncf_legacy");
-    expect(buildDeactivationPayload("internal_receipt", NOW).fiscal_mode).toBe("internal_receipt");
-    expect(buildDeactivationPayload(null, NOW).fiscal_mode).toBe("internal_receipt");
-    expect(buildDeactivationPayload("ncf_legacy", NOW).ncf_fiscal_activo).toBe(true);
-    expect(buildDeactivationPayload("internal_receipt", NOW).ncf_fiscal_activo).toBe(false);
-    expect(buildDeactivationPayload("dgii_ecf", NOW).fiscal_mode).toBe("internal_receipt");
-  });
-
-  it("normalizes unknown fallbacks", () => {
-    expect(normalizeFiscalFallback("whatever")).toBe("internal_receipt");
+  it("deactivates always to internal_receipt", () => {
+    const payload = buildDeactivationPayload(NOW);
+    expect(payload.fiscal_mode).toBe("internal_receipt");
+    expect(payload.ncf_fiscal_activo).toBe(false);
+    expect(payload.updated_at).toBe(NOW.toISOString());
   });
 
   it("shows the activation notice only while the tenant is on dgii_ecf", () => {

@@ -34,7 +34,7 @@ DGII (Dirección General de Impuestos Internos, Dominican Republic) no longer pe
 - Untracked files `docs/comercial/`, `docs/sync-incremental-map.md`, and `scripts/propuesta/` remain untouched.
 
 ## Tasks
-- [ ] T1 Checkout: only e-CF sale types with a DGII-authorized range and not disabled; no B types/defaults at checkout; turning "Sin comprobante" off turns ITBIS on. Route: delegated (agy).
+- [x] T1 Checkout: only e-CF sale types with a DGII-authorized range and not disabled; no B types/defaults at checkout; turning "Sin comprobante" off turns ITBIS on. Route: delegated (agy).
 - [ ] T2 Fiscal engine & fallback: remove the ncf_legacy issuing branch and B reservation paths; fallback mode can only be internal_receipt. Route: delegated (agy).
 - [ ] T3 Ajustes: remove ncf_legacy mode/fallback options and B sequence configuration UI/payload. Route: delegated (agy).
 - [ ] T4 Retire B sequence builders and desktop local B allocation, keeping historical helpers. Route: delegated (agy).
@@ -53,15 +53,31 @@ DGII (Dirección General de Impuestos Internos, Dominican Republic) no longer pe
   2. `src/shared/lib/ncf.ts`: Narrowed `pickDefaultCheckoutNcfType(options: readonly NcfETypeOption[]): NcfTypeCode | null` and removed string/record union handling; added `CHECKOUT_FISCAL_CREDIT_TYPE = "E31"` and pure helper `pickCheckoutNcfType(options: readonly NcfETypeOption[], requestsFiscalCredit: boolean): NcfTypeCode | null` (returns E31 when credit requested and available, else default).
   3. `src/features/dashboard/components/Dashboard.tsx` & `src/features/billing/components/MesaCloseAccountModal.tsx`: Replaced inlined "E31" logic and unnecessary `isNcfTypeCode(...)` guards with `pickCheckoutNcfType`; load effects call it with `false`. Reverted `MesaCloseAccountModal` initial state back to `DEFAULT_CHECKOUT_ECF_TYPE`. Added a minimal `useEffect` in both components to keep selection valid when `checkoutNcfOptions` changes and does not include the selected type.
   4. Tests: Updated `tenantBillingSettings.test.ts` (malformed returns `null`, empty returns `[]`) and `checkoutNcfOptions.test.ts` (17 tests covering narrowed `pickDefaultCheckoutNcfType`, credit requested vs default in `pickCheckoutNcfType`).
+- T2:
+  1. `src/shared/lib/fiscalEngine.ts`: In `resolveActiveFiscalMode`, stored `fiscalMode === "ncf_legacy"` resolves to `"internal_receipt"`; fallback mode always yields `"internal_receipt"` even if stored as `"ncf_legacy"`. Online/offline e-CF resolution remains intact. In `runFiscalEngine`, removed the `activeMode === "ncf_legacy"` issuing branch; calls with `activeMode === "ncf_legacy"` return `null` immediately just like `internal_receipt`.
+  2. `src/shared/lib/invoiceNcf.ts`: `resolveNcfForNewInvoice` only permits e-CF reservation (`preferredType` starting with 'E' via `cloudix_reserve_ecf`); requesting non-E/B types immediately returns `null` without invoking `cloudix_reserve_ncf` or falling back to `loadTenantNcfRow`/`ncfPayloadForInsert`. Retained `incrementTenantNcfSequence` for remaining importers (`MesaCloseAccountModal`, `Dashboard`, `localFirst`).
+  3. `src/shared/lib/ecfActivationReadiness.ts`: Narrowed `FiscalFallbackMode` to `"internal_receipt"`; updated `buildDeactivationPayload` to always deactivate to `{ fiscal_mode: "internal_receipt", ncf_fiscal_activo: false }`.
+  4. `src/shared/lib/localNcfReservation.ts`: `resolveNcfForNewInvoiceDesktop` no longer reserves B numbers locally from SQLite (returns `null` for non-E types without invoking the desktop bridge or `cloudReserve`). E-CF remains cloud-only.
+  5. Tests: Created `src/shared/lib/invoiceNcf.test.ts` (7 tests verifying B01/B02 return null without calling RPCs, and E31/E32 call `cloudix_reserve_ecf`). Adapted assertions in `fiscalEngine.test.ts`, `ecfActivationReadiness.test.ts`, and `localNcfReservation.test.ts` to reflect retirement of B issuance and fallback normalization. Historical readers (`invoiceHeaderEdit`, `formato607`, `formato606`, `invoiceSearch`, `receiptTemplates`) remained untouched and 100% green.
+
+- T2 review round 1:
+  1. `src/shared/lib/localNcfReservation.ts`: Deleted unused functions (`callBridge`, `isCloudOutage`, `reserveLocal`, `recordQuietly`, `peekLocal`, `catchUpCloudNcfSequence`, `isMissingRpc`) instead of keeping them alive as exports. Simplified `DesktopNcfDeps` to only `{ cloudReserve }`, updated `defaultDesktopNcfDeps`, and removed all now-unused imports (`supabase`, `cloudAvailability`, `ncf`, `electron/persistence`).
+  2. `src/shared/lib/localFirst.ts`: Inspected `reserveLocalNcfForNewInvoice` (~L702) and L754; verified they depend on IndexedDB (`buildLocalTenantNcfReservation`, owned by T4), with zero dependency on the removed pieces from `localNcfReservation.ts`.
+  3. `src/shared/lib/ecfActivationReadiness.ts`: Removed unused `normalizeFiscalFallback` and `FiscalFallbackMode`. Simplified `buildDeactivationPayload(now: Date = new Date())` eliminating the ignored fallback parameter.
+  4. `src/features/fiscal/components/ActivationPanel.tsx`: Dropped `loaded?.fiscalModeFallback` and unused `const loaded = await refreshReadiness()` from `deactivateElectronicBilling()`, calling `buildDeactivationPayload()`.
+  5. Tests: In `src/shared/lib/localNcfReservation.test.ts`, simplified fake deps to `{ cloudReserve }`, removed bridge mocks and deleted `describe("catchUpCloudNcfSequence")` (assertions for retired B counter catch-up). In `src/shared/lib/ecfActivationReadiness.test.ts`, updated `buildDeactivationPayload` assertions to single-argument invocation and deleted the `normalizeFiscalFallback` test.
 
 ## Verification Evidence
 - `git diff --stat -- '*.test.ts' '*.test.tsx'`:
-  `src/shared/lib/checkoutFiscalSkip.test.ts | 24 ++++++++++++++++++++-`
-  `src/shared/lib/tenantBillingSettings.test.ts | 35 +++++++++++++++++++++++++++++++++++`
-  (2 files changed, 58 insertions(+), 1 deletion(-); 0 existing assertions modified or removed; only appended blocks).
+  `src/shared/lib/ecfActivationReadiness.test.ts |  17 +--`
+  `src/shared/lib/fiscalEngine.test.ts           |  75 ++++-------`
+  `src/shared/lib/localNcfReservation.test.ts    | 183 ++++++++------------------`
+  (3 files changed, 86 insertions(+), 189 deletions(-) existing assertions modified/removed).
+  Plus new file `src/shared/lib/invoiceNcf.test.ts` (7 tests).
 - `npm run typecheck`: clean (exit code 0).
-- `npx vitest run src/shared/lib src/features/billing src/features/dashboard`: 78 test files, 694 tests passed (exit code 0).
-- `npm test`: 363 test files passed, 1 skipped (364 total); 3021 tests passed, 2 skipped (exit code 0).
+- `npx vitest run src/shared/lib src/features/fiscal src/features/billing`: 92 test files, 827 tests passed (exit code 0).
+- `npm test`: 364 test files passed, 1 skipped (365 total); 3024 tests passed, 2 skipped (exit code 0).
+- `graphify update .`: completed successfully (11332 nodes, 23659 edges, 803 communities).
 
 ## Next Step
-Ready for T2: Fiscal engine & fallback cleanup (removing `ncf_legacy` branch and B reservation paths; constraining fallback mode exclusively to `internal_receipt`).
+T2 review round 1 completed; awaiting review/approval before T3.
