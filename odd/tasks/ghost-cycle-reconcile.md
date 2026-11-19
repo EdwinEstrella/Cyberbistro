@@ -46,8 +46,8 @@ The sync pull mechanism (`applyCloudOperationalCycleRows`) only upserts cloud ro
 - Untracked files `docs/comercial/`, `docs/sync-incremental-map.md`, and `scripts/propuesta/` remain untouched.
 
 ## Tasks
-- [ ] T1 Auto-close ghost cycles during sync (main process) + tests. Route: delegated (agy), trigger: 2+ non-trivial files.
-- [ ] T2 Renumber a cycle-open push rejected by the cloud's unique (tenant_id, cycle_number) index instead of leaving it stuck; treat "Ya existe un ciclo operativo abierto" as a permanent conflict. Route: delegated (agy).
+- [x] T1 Auto-close ghost cycles during sync (main process) + tests. Evidence: commit be6084d; full suite 357 files / 2934 tests green; typecheck clean. Route: delegated (agy), trigger: 2+ non-trivial files.
+- [x] T2 Renumber a cycle-open push rejected by the cloud's unique (tenant_id, cycle_number) index instead of leaving it stuck; treat "Ya existe un ciclo operativo abierto" as a permanent conflict. Evidence: test/cycle-open-renumber.test.ts 15 tests green; full suite 358 files / 2949 tests green; typecheck clean. Route: delegated (agy).
 - [ ] T3 Cierre screen: run the reconcile before "Cerrar & Imprimir", block close/print of a cycle whose open push is in conflict, and show a toast when a ghost cycle was auto-closed. Route: delegated (agy).
 
 ## Progress
@@ -55,13 +55,26 @@ The sync pull mechanism (`applyCloudOperationalCycleRows`) only upserts cloud ro
 - T1: Implemented `electron/persistence/ghostCycleReconcile.ts` (`reconcileGhostCycles`, `findGhostCycleCandidates`, `isConflictOutboxError`, `createSupabaseGhostCycleCloudPort`). Wired into `DurableSyncWorker.pull` in `electron/persistence/syncWorker.ts` with 10-minute per-tenant throttle and worker start execution. Exposed `SQLitePayrollSyncStore.getDatabase()` and `PayrollSyncClient.getGhostCycleCloudPort(tenantId)`. Added comprehensive 19-test suite in `test/local-sqlite-ghost-cycle-reconcile.test.ts`.
 - T1 review round 1: Fixed timestamp comparison to be numeric (`Date.parse(...)`), skipping candidates with invalid timestamps; replaced `findLaterCycles` with `findEarliestLaterCycle` returning `{ id, cycle_number, opened_at } | null` with `.order("opened_at", { ascending: true }).limit(1)`; encapsulated reconcile in `DurableSyncStore.reconcileGhostCycles(port)` removing raw SQLite handle leakage from `syncWorker`; restricted port retrieval to `server.getGhostCycleCloudPort(tenantId)`; reverted `getTableClient` visibility to private; documented throttle stamping before network calls; centralized branch sentinel logic in `electron/persistence/branchSentinel.ts` (`LOCAL_BRANCH_SENTINEL`, `toRemoteBranchId`) with unit tests; tightened conflict classifier `isConflictOutboxError` to match real stored shape from `settle(..., "conflicted", classified.conflict)` and reject generic strings. Added full test coverage for all round 1 corrections.
 - T1 review round 2: Restored `test/sync-branch-sentinel.test.ts` to exact committed state, moved `LOCAL_BRANCH_SENTINEL` and `toRemoteBranchId` unit tests into dedicated file `test/branch-sentinel.test.ts`; declared and exported named `GhostCycleCandidate` interface used for return type, local candidates array, and `confirmed[].candidate`; removed redundant `state !== 'open'` check in `findGhostCycleCandidates`; removed duplicated candidate `Date.parse` validity check in `reconcileGhostCycles`, keeping only the single-computation `cloudEpoch <= candEpoch` guard.
+- T2: Implemented cycle-open renumbering and P0001 permanent conflict handling:
+  1. `electron/persistence/payrollSyncClient.ts`: Added `isCycleNumberConflict(error)` distinguishing `23505` unique index `cierres_operativos_unique_cycle` / `cycle_number` from primary key / id conflicts (`cierres_operativos_pkey`, `key (id)=`, `primary key`, `id_pkey`).
+  2. `pushOperationalCycle`: On 23505 cycle conflict during `orders.cycle.open` push, reads tenant cloud max `cycle_number` (`select cycle_number order desc limit 1`) and retries up to 3 total attempts with `cycle_number = cloudMax + 1`. On success returns `{ synced: true, id, remoteTable: 'cierres_operativos', renumberedCycleNumber }`. On exhausted attempts or read failure, falls back to `classifyRemoteError` conflict.
+  3. `classifyRemoteError`: For `cierres_operativos`, classifies `P0001` and messages containing `"ya existe un ciclo operativo abierto"` as `{ conflict }` instead of throwing transient retry.
+  4. `electron/persistence/payrollSyncStore.ts`: In `settle("synced")`, when `renumberedCycleNumber` is present for `cierres_operativos`, updates local `cierres_operativos.cycle_number` for that row only, and updates `cycleNumber` in `payload_json` of any still-pending outbox rows for that cycle id within the same transaction. Logs `[sync↑] cierres_operativos <id> → ciclo renumerado #<old> → #<new>`.
+  5. Added comprehensive test suite in `test/cycle-open-renumber.test.ts` (15 tests) verifying classifier, renumber attempts, exhaustion, max read failure, id conflicts, P0001 conflicts, store settle atomicity, and end-to-end sync worker push.
+- T2 review round 1:
+  1. `electron/persistence/payrollSyncClient.ts`: Restored strict typing on `ClientOverride` (`from(table: string): RemoteMutationBuilder`), added typed optional select read chain to `RemoteMutationBuilder` matching Supabase builder shape, eliminated all `(queryClient as any)` casts, and updated test fakes to conform.
+  2. Extracted renumber flow out of `push`: `fetchCloudMaxCycleNumber(tenantId)` (returns `null` on errors, missing select support, empty data, or non-finite values) and `upsertCycleOpenWithRenumber(operation, row)` using named constant `MAX_CYCLE_OPEN_ATTEMPTS = 3`, simplifying the `orders.cycle.open` push branch to a single call.
+  3. Tightened `isCycleNumberConflict`: requires `code === "23505"` or message containing `"duplicate key"` (dropped `"already exists"`), retaining id/pkey exclusions and cycle constraint checks.
+  4. Tightened P0001 rule in `classifyRemoteError`: for `cierres_operativos`, classifies as conflict only when message contains `"ya existe un ciclo operativo abierto"` (case-insensitive) regardless of code; bare P0001 with unrelated messages keeps existing transient retry classification across all tables.
+  5. `electron/persistence/payrollSyncStore.ts`: Extracted renumbering block in `settle` to private method `applyCycleRenumber(cycleId, settledOutboxId, newCycleNumber)` preparing statements once per call within the same transaction, and removed dead `cycle_number` payload branch (only camelCase `cycleNumber` exists in codebase writers).
+  6. Adapted `test/cycle-open-renumber.test.ts` (16 tests) with conforming builder fakes, missing select handling, tightened conflict rules, and updated test descriptions.
 
 ## Verification evidence
-- `git diff --stat -- test/`: clean / empty (0 modified lines in existing test files; new test files untracked).
+- `git diff --stat -- test/`: clean / empty (0 modified lines in existing test files; new test file `test/cycle-open-renumber.test.ts` untracked).
 - `npm run typecheck`: clean (exit code 0).
-- `npx vitest run test/local-sqlite-ghost-cycle-reconcile.test.ts test/branch-sentinel.test.ts test/sync-branch-sentinel.test.ts test/durable-sync-worker.test.ts test/payrollSyncClient.test.ts`: 5 test files, 65 tests passed (exit code 0).
-- `npm test`: 357 test files passed, 1 skipped (358 total); 2934 tests passed, 2 skipped (exit code 0).
-- `graphify update .`: completed, code graph refreshed to 11279 nodes, 23480 edges, 821 communities (exit code 0).
+- `npx vitest run test/cycle-open-renumber.test.ts test/payrollSyncClient.test.ts test/durable-sync-worker.test.ts test/local-sqlite-ghost-cycle-reconcile.test.ts test/local-sqlite-cierres-write.test.ts`: 5 test files, 75 tests passed (exit code 0).
+- `npm test`: 358 test files passed, 1 skipped (359 total); 2950 tests passed, 2 skipped (exit code 0).
+- `graphify update .`: completed (exit code 0).
 
 ## Next step
-Execute T2: Renumber a cycle-open push rejected by the cloud's unique (tenant_id, cycle_number) index instead of leaving it stuck; treat "Ya existe un ciclo operativo abierto" as a permanent conflict.
+Execute T3: Cierre screen: run the reconcile before "Cerrar & Imprimir", block close/print of a cycle whose open push is in conflict, and show a toast when a ghost cycle was auto-closed. Route: delegated (agy).
