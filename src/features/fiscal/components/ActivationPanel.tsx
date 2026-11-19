@@ -28,7 +28,9 @@ import {
   advanceProgress,
   buildProgressUpsert,
   CERTIFICATION_TOTAL_STEPS,
+  completeFinalStep,
   displayStepNumber,
+  isCertificationComplete,
   nextVisibleStep,
   restoreProgress,
   visibleCertificationSteps,
@@ -207,6 +209,9 @@ export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral: 
       const restored = restoreProgress(data);
       setCertificationStep(restored.currentStep);
       setCompletedCertificationSteps(restored.completedSteps);
+      if (isCertificationComplete(restored)) {
+        setStep((current) => (current < WIZARD_STEP.environment ? WIZARD_STEP.environment : current));
+      }
     }).catch(() => undefined);
   }, [tenantId]);
 
@@ -253,10 +258,15 @@ export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral: 
   }
 
   function advanceCertificationStep() {
-    const next = advanceProgress({ currentStep: certificationStep, completedSteps: completedCertificationSteps }, certificationStep);
+    const next = certificationStep === CERTIFICATION_TOTAL_STEPS
+      ? completeFinalStep({ currentStep: certificationStep, completedSteps: completedCertificationSteps })
+      : advanceProgress({ currentStep: certificationStep, completedSteps: completedCertificationSteps }, certificationStep);
     setCertificationStep(next.currentStep);
     setCompletedCertificationSteps(next.completedSteps);
     persistCertificationProgress(next);
+    if (certificationStep === CERTIFICATION_TOTAL_STEPS) {
+      setStep(WIZARD_STEP.environment);
+    }
   }
 
   async function saveCompany() {
@@ -571,7 +581,7 @@ export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral: 
                   <div className="absolute top-1/2 h-px -translate-y-1/2 bg-border" style={{ left: `${50 / certificationSteps.length}%`, right: `${50 / certificationSteps.length}%` }} aria-hidden="true" />
                   {certificationSteps.map((item) => {
                     const current = item.id === certificationStep;
-                    const complete = item.id < certificationStep;
+                    const complete = item.id < certificationStep || completedCertificationSteps.includes(item.id);
                     const displayNum = displayStepNumber(item.id);
                     return (
                       <li key={item.id} className="relative z-10 flex justify-center">
@@ -756,12 +766,12 @@ export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral: 
                     <ExternalLink className="size-4" /> Ir al Portal DGII
                   </button>
                 )}
-
-                <button type="button" onClick={advanceCertificationStep} disabled={certificationStep === CERTIFICATION_TOTAL_STEPS || advanceBlocked} className={`mt-4 flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-bold transition-colors ${advanceBlocked ? "cursor-not-allowed bg-sky-500/50 text-white shadow-none" : "bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90 disabled:opacity-50"}`}>
-                  {certificationStep === CERTIFICATION_TOTAL_STEPS ? "Certificación lista para revisión" : certificationStep === 14 ? "> Ya finalicé en el portal DGII (Paso 15)" : certificationStep === 13 ? "> XML enviado a DGII — Avanzar" : certificationStep === 12 ? `> URLs registradas — Avanzar al Paso ${displayStepNumber(nextVisibleStep(12))}` : certificationStep >= 8 && certificationStep <= 11 ? (advanceBlocked ? (certificationStep <= 9 ? "> Esperando e-CF de DGII..." : "> Esperando aprobaciones comerciales...") : `Recibidos ${stepEvidenceCount} — Avanzar al Paso ${displayStepNumber(nextVisibleStep(certificationStep))}`) : certificationStep === 6 ? `DGII aprobó — Avanzar al Paso ${displayStepNumber(nextVisibleStep(6))}` : certificationStep === 5 ? "Representaciones subidas — Avanzar" : `Ya completé este paso - Avanzar al paso ${displayStepNumber(nextVisibleStep(certificationStep))}`} {!advanceBlocked && certificationStep !== 14 && certificationStep !== 13 && certificationStep !== 12 && certificationStep !== CERTIFICATION_TOTAL_STEPS && <ChevronRight className="size-4" />}
-                </button>
                   </>
                 )}
+
+                <button type="button" onClick={advanceCertificationStep} disabled={advanceBlocked} className={`mt-4 flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-bold transition-colors ${advanceBlocked ? "cursor-not-allowed bg-sky-500/50 text-white shadow-none" : "bg-primary text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90 disabled:opacity-50"}`}>
+                  {certificationStep === CERTIFICATION_TOTAL_STEPS ? "Confirmar certificación completada — Continuar" : certificationStep === 14 ? "> Ya finalicé en el portal DGII (Paso 15)" : certificationStep === 13 ? "> XML enviado a DGII — Avanzar" : certificationStep === 12 ? `> URLs registradas — Avanzar al Paso ${displayStepNumber(nextVisibleStep(12))}` : certificationStep >= 8 && certificationStep <= 11 ? (advanceBlocked ? (certificationStep <= 9 ? "> Esperando e-CF de DGII..." : "> Esperando aprobaciones comerciales...") : `Recibidos ${stepEvidenceCount} — Avanzar al Paso ${displayStepNumber(nextVisibleStep(certificationStep))}`) : certificationStep === 6 ? `DGII aprobó — Avanzar al Paso ${displayStepNumber(nextVisibleStep(6))}` : certificationStep === 5 ? "Representaciones subidas — Avanzar" : `Ya completé este paso - Avanzar al paso ${displayStepNumber(nextVisibleStep(certificationStep))}`} {!advanceBlocked && certificationStep !== 14 && certificationStep !== 13 && certificationStep !== 12 && certificationStep !== CERTIFICATION_TOTAL_STEPS && <ChevronRight className="size-4" />}
+                </button>
               </div>
             </div>
           )}
