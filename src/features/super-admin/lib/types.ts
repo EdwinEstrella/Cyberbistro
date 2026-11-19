@@ -39,6 +39,9 @@ export interface TenantRow {
   sucursal_limit_enabled?: boolean | null;
   sucursal_limit?: number | null;
   payment_day_of_month?: number | null;
+  monthly_fee_amount?: number | null;
+  monthly_fee_currency?: DebtCurrency | null;
+  last_charged_period?: string | null;
   debt_amount?: number | null;
   debt_currency?: DebtCurrency | null;
   debt_due_date?: string | null;
@@ -55,6 +58,8 @@ export interface LimitDraft {
   sucursalLimitEnabled: boolean;
   sucursalLimit: string;
   paymentDayOfMonth: string;
+  monthlyFeeAmount: string;
+  monthlyFeeCurrency: DebtCurrency;
   debtAmount: string;
   debtCurrency: DebtCurrency;
   debtDueDate: string;
@@ -62,7 +67,11 @@ export interface LimitDraft {
 
 export type LimitDraftNumberField = Exclude<
   keyof LimitDraft,
-  "userLimitEnabled" | "sucursalLimitEnabled" | "debtCurrency" | "debtDueDate"
+  | "userLimitEnabled"
+  | "sucursalLimitEnabled"
+  | "debtCurrency"
+  | "debtDueDate"
+  | "monthlyFeeCurrency"
 >;
 
 export interface TenantCard {
@@ -103,6 +112,9 @@ export interface TenantOverviewTenantBasics {
   activa: boolean | null;
   created_at: string | null;
   payment_day_of_month: number | null;
+  monthly_fee_amount?: number | null;
+  monthly_fee_currency?: DebtCurrency | null;
+  last_charged_period?: string | null;
   debt_amount?: number | null;
   debt_currency?: DebtCurrency | null;
   debt_due_date?: string | null;
@@ -110,6 +122,17 @@ export interface TenantOverviewTenantBasics {
   fiscal_mode: string | null;
   ecf_environment: string | null;
   limits: TenantOverviewLimits;
+}
+
+export interface TenantBillingPaymentRow {
+  id: string;
+  tenant_id: string;
+  amount: number;
+  currency: DebtCurrency;
+  paid_at: string;
+  recorded_by?: string | null;
+  notes?: string | null;
+  created_at?: string;
 }
 
 export interface TenantOverviewSucursal {

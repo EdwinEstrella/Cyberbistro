@@ -32,6 +32,27 @@ describe("tenant debt availability rollout guard", () => {
         message: "column tenants.debt_currency does not exist",
       })
     ).toBe(true);
+
+    expect(
+      isMissingDebtColumnsError({
+        code: "42703",
+        message: 'column "monthly_fee_amount" does not exist',
+        status: 400,
+      })
+    ).toBe(true);
+
+    expect(
+      isMissingDebtColumnsError({
+        details: "Could not find the 'monthly_fee_currency' column of 'tenants' in the schema cache",
+        status: 400,
+      })
+    ).toBe(true);
+
+    expect(
+      isMissingDebtColumnsError({
+        message: "column tenants.last_charged_period does not exist",
+      })
+    ).toBe(true);
   });
 
   it("ignores unrelated errors", () => {

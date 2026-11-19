@@ -14,6 +14,12 @@ export function toDraft(tenant: TenantRow): LimitDraft {
     sucursalLimitEnabled: tenant.sucursal_limit_enabled !== false,
     sucursalLimit: tenant.sucursal_limit?.toString() ?? "",
     paymentDayOfMonth: tenant.payment_day_of_month?.toString() ?? "",
+    monthlyFeeAmount:
+      tenant.monthly_fee_amount !== null && tenant.monthly_fee_amount !== undefined
+        ? tenant.monthly_fee_amount.toString()
+        : "",
+    monthlyFeeCurrency:
+      (tenant.monthly_fee_currency as DebtCurrency) === "USD" ? "USD" : "DOP",
     debtAmount:
       tenant.debt_amount !== null && tenant.debt_amount !== undefined
         ? tenant.debt_amount.toString()
@@ -63,6 +69,16 @@ export function isLimitsFormDirty(current: LimitDraft, initial: LimitDraft): boo
     current.sucursalLimitEnabled !== initial.sucursalLimitEnabled ||
     current.sucursalLimit.trim() !== initial.sucursalLimit.trim()
   );
+}
+
+export function parseMonthlyFeeAmount(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || Number.isNaN(parsed) || parsed < 0 || parsed > 9999999.99) {
+    throw new Error("El monto de la cuota mensual debe ser un número entre 0 y 9,999,999.99.");
+  }
+  return parsed;
 }
 
 export function parseDebtAmount(value: string): number | null {
@@ -181,11 +197,43 @@ export function parseDebtCurrency(value: string): DebtCurrency {
 }
 
 /**
+ * Normalizes a payment day string for comparison.
+ * Empty or invalid strings normalize to null.
+ * Valid days (1-31) normalize to the integer number.
+ */
+export function normalizePaymentDay(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 31) {
+    return null;
+  }
+  return parsed;
+}
+
+/**
+ * Checks if the monthly fee or payment day portion of the draft changed relative to initial.
+ * Compares only normalized amount, currency, and normalized payment day.
+ */
+export function isMonthlyFeeConfigChanged(current: LimitDraft, initial: LimitDraft): boolean {
+  const currentFeeNorm = normalizeDebtAmount(current.monthlyFeeAmount);
+  const initialFeeNorm = normalizeDebtAmount(initial.monthlyFeeAmount);
+  const feeChanged = currentFeeNorm !== initialFeeNorm;
+  const currencyChanged = current.monthlyFeeCurrency !== initial.monthlyFeeCurrency;
+  const dayChanged =
+    normalizePaymentDay(current.paymentDayOfMonth) !==
+    normalizePaymentDay(initial.paymentDayOfMonth);
+  return feeChanged || currencyChanged || dayChanged;
+}
+
+/**
  * Checks if the payments/debt portion of the draft changed relative to the initial draft.
  */
 export function isPaymentsFormDirty(current: LimitDraft, initial: LimitDraft): boolean {
   return (
     current.paymentDayOfMonth.trim() !== initial.paymentDayOfMonth.trim() ||
+    current.monthlyFeeAmount.trim() !== initial.monthlyFeeAmount.trim() ||
+    current.monthlyFeeCurrency !== initial.monthlyFeeCurrency ||
     current.debtAmount.trim() !== initial.debtAmount.trim() ||
     current.debtCurrency !== initial.debtCurrency ||
     current.debtDueDate.trim() !== initial.debtDueDate.trim()
@@ -248,6 +296,8 @@ export function validatePaymentDayInput(value: string): { valid: boolean; error?
 
 export interface PaymentsValidationErrors {
   paymentDayOfMonth?: string;
+  monthlyFeeAmount?: string;
+  monthlyFeeCurrency?: string;
   debtAmount?: string;
   debtCurrency?: string;
 }
@@ -268,6 +318,19 @@ export function validatePaymentsDraft(draft: LimitDraft): PaymentsValidationResu
     errors.paymentDayOfMonth = dayResult.error;
   }
 
+  let parsedFee: number | null = null;
+  try {
+    parsedFee = parseMonthlyFeeAmount(draft.monthlyFeeAmount);
+  } catch (err) {
+    errors.monthlyFeeAmount = err instanceof Error ? err.message : "Monto de cuota mensual inválido.";
+  }
+
+  try {
+    parseDebtCurrency(draft.monthlyFeeCurrency);
+  } catch (err) {
+    errors.monthlyFeeCurrency = err instanceof Error ? err.message : "Moneda inválida.";
+  }
+
   try {
     parseDebtAmount(draft.debtAmount);
   } catch (err) {
@@ -278,6 +341,20 @@ export function validatePaymentsDraft(draft: LimitDraft): PaymentsValidationResu
     parseDebtCurrency(draft.debtCurrency);
   } catch (err) {
     errors.debtCurrency = err instanceof Error ? err.message : "Moneda inválida.";
+  }
+
+  // When fee > 0, payment_day_of_month is required (1..31)
+  if (parsedFee !== null && parsedFee > 0) {
+    if (!draft.paymentDayOfMonth || !draft.paymentDayOfMonth.trim()) {
+      errors.paymentDayOfMonth = "El día de pago es obligatorio cuando se configura una cuota mensual.";
+    }
+  }
+
+  // Mixed currencies check: whenever fee > 0, balance currency must match fee currency
+  if (parsedFee !== null && parsedFee > 0) {
+    if (draft.debtCurrency !== draft.monthlyFeeCurrency) {
+      errors.debtCurrency = "La moneda del saldo debe ser la misma de la cuota mensual.";
+    }
   }
 
   return {

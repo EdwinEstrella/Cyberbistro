@@ -128,4 +128,28 @@ describe("Tenants cloud→SQLite pull", () => {
     expect(batch.changes.filter((c) => c.tableName === "tenants")).toHaveLength(1);
     expect(batch.failedTables ?? []).toEqual([]);
   });
+
+  it("stores and preserves monthly fee and debt columns in local SQLite mirror", () => {
+    const s = setup();
+    applyCloudTenantRows(s.getDatabase(), tenantId, [
+      cloud({
+        monthly_fee_amount: 1500,
+        monthly_fee_currency: "USD",
+        last_charged_period: "2026-11-13",
+        debt_amount: 4500,
+        debt_currency: "USD",
+        debt_due_date: "2026-12-13",
+      }),
+    ]);
+    const tenant = s.listCatalog().tenant;
+    expect(tenant).toMatchObject({
+      id: tenantId,
+      monthly_fee_amount: 1500,
+      monthly_fee_currency: "USD",
+      last_charged_period: "2026-11-13",
+      debt_amount: 4500,
+      debt_currency: "USD",
+      debt_due_date: "2026-12-13",
+    });
+  });
 });

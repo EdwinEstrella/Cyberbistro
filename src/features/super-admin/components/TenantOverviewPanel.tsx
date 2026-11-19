@@ -21,13 +21,15 @@ import {
 interface TenantOverviewPanelProps {
   card: TenantCard;
   embedded?: boolean;
+  initialData?: TenantOverviewData | null;
 }
 
 export function TenantOverviewPanel({
   card,
+  initialData,
 }: TenantOverviewPanelProps) {
-  const [data, setData] = useState<TenantOverviewData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<TenantOverviewData | null>(initialData ?? null);
+  const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const requestTokenRef = useRef(0);
@@ -63,6 +65,9 @@ export function TenantOverviewPanel({
           debt_currency: card.tenant.debt_currency ?? "DOP",
           debt_due_date: card.tenant.debt_due_date ?? null,
           debt_updated_at: card.tenant.debt_updated_at ?? null,
+          monthly_fee_amount: card.tenant.monthly_fee_amount ?? null,
+          monthly_fee_currency: card.tenant.monthly_fee_currency ?? "DOP",
+          last_charged_period: card.tenant.last_charged_period ?? null,
           created_at: card.tenant.created_at ?? res.data.tenant.created_at ?? null,
         },
       };
@@ -214,6 +219,9 @@ export function TenantOverviewPanel({
 
             {/* Operational parameters */}
             {(() => {
+              const monthlyFeeAmount = card.tenant.monthly_fee_amount;
+              const monthlyFeeCurrency = (card.tenant.monthly_fee_currency as DebtCurrency) || "DOP";
+              const hasMonthlyFee = monthlyFeeAmount !== null && monthlyFeeAmount !== undefined && monthlyFeeAmount > 0;
               const debtAmount = card.tenant.debt_amount;
               const debtCurrency = (card.tenant.debt_currency as DebtCurrency) || "DOP";
               const debtDueDate = card.tenant.debt_due_date;
@@ -242,13 +250,22 @@ export function TenantOverviewPanel({
               })();
 
               return (
-                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2.5 pt-1">
+                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2.5 pt-1">
                   <div className="rounded-[12px] bg-[#1a1a1a] border border-[rgba(72,72,71,0.18)] p-2.5">
                     <span className="text-[10px] uppercase tracking-[0.5px] font-['Inter',sans-serif] text-[#adaaaa] block">Día de pago</span>
                     <span className="mt-0.5 font-['Space_Grotesk',sans-serif] font-bold text-sm text-white block tabular-nums">
                       {card.tenant.payment_day_of_month
                         ? `Día ${card.tenant.payment_day_of_month}`
                         : "Sin configurar"}
+                    </span>
+                  </div>
+
+                  <div className="rounded-[12px] bg-[#1a1a1a] border border-[rgba(72,72,71,0.18)] p-2.5">
+                    <span className="text-[10px] uppercase tracking-[0.5px] font-['Inter',sans-serif] text-[#adaaaa] block">Cuota mensual</span>
+                    <span className="mt-0.5 font-['Space_Grotesk',sans-serif] font-bold text-sm text-white block tabular-nums">
+                      {hasMonthlyFee
+                        ? formatDebtAmount(monthlyFeeAmount, monthlyFeeCurrency)
+                        : "Sin cuota"}
                     </span>
                   </div>
 

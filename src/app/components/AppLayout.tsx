@@ -375,6 +375,14 @@ function SidebarCustomIcon({ name }: { name: "gastos" | "cocina" | "entregas" | 
   );
 }
 
+const accruedTenantsThisSession = new Set<string>();
+const warnedAccrualErrorsThisSession = new Set<string>();
+
+export function resetTenantMonthlyFeeAccrualForTests(): void {
+  accruedTenantsThisSession.clear();
+  warnedAccrualErrorsThisSession.clear();
+}
+
 export function AppLayout() {
   return (
     <SucursalProvider>
@@ -398,6 +406,7 @@ function AppLayoutContent() {
   const [tenantDebt, setTenantDebt] = useState<TenantDebt>({ amount: null, currency: "DOP", dueDate: null });
   const [debtAlert, setDebtAlert] = useState<{ tenantId: string; title: string; message: string; dateKey: string } | null>(null);
   const [recheckCounter, setRecheckCounter] = useState(0);
+  const lastAccrualRecheckRef = useRef<number>(-1);
 
   const handleRecheckDebt = useCallback(() => {
     setRecheckCounter((c) => c + 1);
@@ -433,6 +442,35 @@ function AppLayoutContent() {
         }
         return;
       }
+
+      // Online: first call cloudix_accrue_tenant_monthly_fee(lookupTenantId)
+      // Throttle: at most once per app session per tenant plus on the existing "Ya pagué, verificar" recheck.
+      const isExplicitRecheck = recheckCounter > 0 && recheckCounter !== lastAccrualRecheckRef.current;
+      const alreadyAccruedInSession = accruedTenantsThisSession.has(lookupTenantId);
+
+      if (!alreadyAccruedInSession || isExplicitRecheck) {
+        lastAccrualRecheckRef.current = recheckCounter;
+        try {
+          const { error: accrueError } = await supabase.rpc("cloudix_accrue_tenant_monthly_fee", {
+            p_tenant_id: lookupTenantId,
+          });
+          if (accrueError) {
+            if (!warnedAccrualErrorsThisSession.has(lookupTenantId)) {
+              warnedAccrualErrorsThisSession.add(lookupTenantId);
+              console.warn("[AppLayout] cloudix_accrue_tenant_monthly_fee error:", accrueError);
+            }
+          } else {
+            accruedTenantsThisSession.add(lookupTenantId);
+          }
+        } catch (accrueErr) {
+          if (!warnedAccrualErrorsThisSession.has(lookupTenantId)) {
+            warnedAccrualErrorsThisSession.add(lookupTenantId);
+            console.warn("[AppLayout] cloudix_accrue_tenant_monthly_fee failed:", accrueErr);
+          }
+        }
+      }
+
+      if (cancelled) return;
 
       // Online: build query according to schema availability
       const debtUnavailable = isDebtColumnsUnavailable(lookupTenantId);
