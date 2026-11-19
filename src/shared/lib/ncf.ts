@@ -26,8 +26,14 @@ export const NCF_E_TIPO_OPCIONES = [
 
 export const NCF_TIPO_OPCIONES = [...NCF_B_TIPO_OPCIONES, ...NCF_E_TIPO_OPCIONES] as const;
 
+export const CHECKOUT_ECF_SALE_TYPES = ["E31", "E32", "E44", "E45", "E46"] as const;
+export type CheckoutEcfSaleType = (typeof CHECKOUT_ECF_SALE_TYPES)[number];
+export const DEFAULT_CHECKOUT_ECF_TYPE: CheckoutEcfSaleType = "E32";
+
 export type NcfBCode = (typeof NCF_B_TIPO_OPCIONES)[number]["codigo"];
 export type NcfTypeCode = (typeof NCF_TIPO_OPCIONES)[number]["codigo"];
+export type NcfTypeOption = (typeof NCF_TIPO_OPCIONES)[number];
+export type NcfETypeOption = (typeof NCF_E_TIPO_OPCIONES)[number];
 export type NcfSequenceMap = Record<string, number>;
 
 export const DEFAULT_NCF_B_CODE: NcfBCode = "B02";
@@ -220,6 +226,74 @@ export function isNcfTypeActive(activeMap: unknown, tipoCodigo: string | null | 
   if (!esCodigoNcfValido(code)) return false;
   const map = normalizeNcfActiveMap(activeMap);
   return map[code] !== false;
+}
+
+export interface GetCheckoutNcfTypeOptionsInput {
+  fiscalMode: string;
+  activeMap: unknown;
+  ecfAuthorizedTypes?: readonly string[] | null;
+}
+
+/**
+ * Returns available NCF options for checkout.
+ * Only returns active e-CF sale types (E31, E32, E44, E45, E46) when fiscalMode is "dgii_ecf".
+ * If ecfAuthorizedTypes is a non-null array, only types included in it are returned.
+ * Returns empty array for any other fiscal mode (such as "ncf_legacy" or "internal_receipt").
+ */
+export function getCheckoutNcfTypeOptions(
+  input: GetCheckoutNcfTypeOptionsInput
+): NcfETypeOption[] {
+  if (input.fiscalMode !== "dgii_ecf") {
+    return [];
+  }
+
+  const allowedSaleTypes = new Set<string>(CHECKOUT_ECF_SALE_TYPES);
+  const authorizedSet = Array.isArray(input.ecfAuthorizedTypes)
+    ? new Set(input.ecfAuthorizedTypes.map(normalizeCode))
+    : null;
+
+  return NCF_E_TIPO_OPCIONES.filter((option) => {
+    const code = option.codigo;
+    if (!allowedSaleTypes.has(code)) {
+      return false;
+    }
+    if (!isNcfTypeActive(input.activeMap, code)) {
+      return false;
+    }
+    if (authorizedSet !== null && !authorizedSet.has(code)) {
+      return false;
+    }
+    return true;
+  });
+}
+
+export const CHECKOUT_FISCAL_CREDIT_TYPE = "E31";
+
+/**
+ * Selects the default checkout NCF type from the available options.
+ * Defaults to "E32" if present in options, otherwise the first option code, or null if empty.
+ */
+export function pickDefaultCheckoutNcfType(
+  options: readonly NcfETypeOption[]
+): NcfTypeCode | null {
+  if (!options || options.length === 0) return null;
+  const hasE32 = options.some((opt) => opt.codigo === DEFAULT_CHECKOUT_ECF_TYPE);
+  if (hasE32) return DEFAULT_CHECKOUT_ECF_TYPE;
+  return options[0]?.codigo ?? null;
+}
+
+/**
+ * Selects the checkout NCF type depending on whether fiscal credit is requested.
+ * When credit is requested and E31 is available, returns E31; otherwise defaults.
+ */
+export function pickCheckoutNcfType(
+  options: readonly NcfETypeOption[],
+  requestsFiscalCredit: boolean
+): NcfTypeCode | null {
+  if (requestsFiscalCredit && options.some((opt) => opt.codigo === CHECKOUT_FISCAL_CREDIT_TYPE)) {
+    return CHECKOUT_FISCAL_CREDIT_TYPE;
+  }
+  return pickDefaultCheckoutNcfType(options);
 }
 
 export function buildDefaultBSequenceMap(): Record<NcfBCode, number> {

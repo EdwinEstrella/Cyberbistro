@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { supabase } from "../../../shared/lib/supabase";
 import { useAuth, ensureAuthSessionFresh } from "../../../shared/hooks/useAuth";
 import { buildFacturaReceiptHtml } from "../../../shared/lib/receiptTemplates";
@@ -10,19 +10,18 @@ import {
   incrementTenantNcfSequence,
 } from "../../../shared/lib/invoiceNcf";
 import {
-  DEFAULT_NCF_B_CODE,
-  isNcfTypeCode,
+  DEFAULT_CHECKOUT_ECF_TYPE,
+  getCheckoutNcfTypeOptions,
   isNcfTypeActive,
-  normalizeNcfTypeForFiscalMode,
+  pickCheckoutNcfType,
   type NcfTypeCode,
-  NCF_TIPO_OPCIONES,
 } from "../../../shared/lib/ncf";
 import { getFiscalCustomerIssue } from "../lib/fiscalCustomerRequirement";
 import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSettings";
 import { calculateInvoiceTotals } from "../../../shared/lib/billingTotals";
 import { type FiscalMode } from "../../../shared/lib/fiscalTypes";
 import { resolveActiveFiscalMode, runFiscalEngine, buildEcfDocumentWrites } from "../../../shared/lib/fiscalEngine";
-import { resolveInitialSkipFiscal, shouldRunCheckoutFiscal } from "../../../shared/lib/checkoutFiscalSkip";
+import { resolveInitialSkipFiscal, resolveTogglesAfterSkipChange, shouldRunCheckoutFiscal } from "../../../shared/lib/checkoutFiscalSkip";
 import { getDeviceId, getLocalFirstStatusSnapshot, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, readLocalMirror, type LocalFirstWrite } from "../../../shared/lib/localFirst";
 import { getNextFacturaNumber, getNextFacturaNumbers } from "../../../shared/lib/invoiceNumber";
 import { commitCheckout } from "../../../shared/lib/checkoutCommit";
@@ -251,8 +250,9 @@ export function MesaCloseAccountModal({
   const [ncfFiscalActive, setNcfFiscalActive] = useState(false);
   const [solicitaComprobante, setSolicitaComprobante] = useState(false);
   const [skipFiscal, setSkipFiscal] = useState(false);
-  const [selectedNcfType, setSelectedNcfType] = useState<NcfTypeCode>(DEFAULT_NCF_B_CODE);
+  const [selectedNcfType, setSelectedNcfType] = useState<NcfTypeCode>(DEFAULT_CHECKOUT_ECF_TYPE);
   const [ncfTiposActivos, setNcfTiposActivos] = useState<Record<string, boolean>>({});
+  const [ecfAuthorizedTypes, setEcfAuthorizedTypes] = useState<string[] | null>(null);
   const [fiscalMode, setFiscalMode] = useState<FiscalMode>("internal_receipt");
   const [certificateId, setCertificateId] = useState<string | null>(null);
 
@@ -262,8 +262,9 @@ export function MesaCloseAccountModal({
   const toggleSkipFiscal = () => {
     const next = !skipFiscal;
     setSkipFiscal(next);
-    if (next) {
-      onItbisChange?.(false);
+    const effects = resolveTogglesAfterSkipChange(next);
+    onItbisChange?.(effects.itbisEnabled);
+    if (effects.clearSolicitaComprobante) {
       setSolicitaComprobante(false);
     }
   };
@@ -273,6 +274,23 @@ export function MesaCloseAccountModal({
     setSolicitaComprobante(false);
     if (skipFiscalDefault) onItbisChange?.(false);
   };
+
+  const checkoutNcfOptions = useMemo(
+    () =>
+      getCheckoutNcfTypeOptions({
+        fiscalMode,
+        activeMap: ncfTiposActivos,
+        ecfAuthorizedTypes,
+      }),
+    [fiscalMode, ncfTiposActivos, ecfAuthorizedTypes]
+  );
+
+  useEffect(() => {
+    if (checkoutNcfOptions.length > 0 && !checkoutNcfOptions.some((o) => o.codigo === selectedNcfType)) {
+      const next = pickCheckoutNcfType(checkoutNcfOptions, solicitaComprobante);
+      if (next) setSelectedNcfType(next);
+    }
+  }, [checkoutNcfOptions, selectedNcfType, solicitaComprobante]);
 
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [cashReceivedInput, setCashReceivedInput] = useState("");
@@ -357,15 +375,20 @@ export function MesaCloseAccountModal({
       setFiscalMode(mode);
       setCertificateId(certId);
       setNcfFiscalActive(mode !== "internal_receipt");
-      setNcfTiposActivos(settings?.ncfTiposActivos ?? {});
-
       const activeMap = settings?.ncfTiposActivos ?? {};
-      const preferred = normalizeNcfTypeForFiscalMode("B02", mode);
-      const firstActive = NCF_TIPO_OPCIONES.find((option) =>
-        (mode === "dgii_ecf" ? option.codigo.startsWith("E") : option.codigo.startsWith("B")) &&
-        isNcfTypeActive(activeMap, option.codigo)
-      );
-      setSelectedNcfType(isNcfTypeActive(activeMap, preferred) ? preferred : (firstActive?.codigo ?? preferred));
+      setNcfTiposActivos(activeMap);
+      const authorized = settings?.ecfAuthorizedTypes ?? null;
+      setEcfAuthorizedTypes(authorized);
+
+      const options = getCheckoutNcfTypeOptions({
+        fiscalMode: mode,
+        activeMap,
+        ecfAuthorizedTypes: authorized,
+      });
+      const defaultType = pickCheckoutNcfType(options, false);
+      if (defaultType) {
+        setSelectedNcfType(defaultType);
+      }
       setSolicitaComprobante(false);
 
       // "Sin comprobante por defecto" starts the switch ON, which also keeps ITBIS off (still toggleable).
@@ -1435,15 +1458,8 @@ export function MesaCloseAccountModal({
                     onClick={() => {
                       const next = !solicitaComprobante;
                       setSolicitaComprobante(next);
-                      const preferred = next ? (fiscalMode === "dgii_ecf" ? "E31" : "B01") : (fiscalMode === "dgii_ecf" ? "E32" : "B02");
-                      if (isNcfTypeActive(ncfTiposActivos, preferred)) {
-                        setSelectedNcfType(preferred as NcfTypeCode);
-                      } else {
-                        const firstActive = NCF_TIPO_OPCIONES.find(o =>
-                          (fiscalMode === "dgii_ecf" ? o.codigo.startsWith("E") : o.codigo.startsWith("B")) &&
-                          isNcfTypeActive(ncfTiposActivos, o.codigo));
-                        if (firstActive) setSelectedNcfType(firstActive.codigo as NcfTypeCode);
-                      }
+                      const target = pickCheckoutNcfType(checkoutNcfOptions, next);
+                      if (target) setSelectedNcfType(target);
                     }}
                     className={`relative h-[28px] w-[50px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${solicitaComprobante ? "bg-[#ff906d]" : "bg-[#222]"}`}
                   >
@@ -1458,11 +1474,11 @@ export function MesaCloseAccountModal({
                     </label>
                     <Select
                       value={selectedNcfType}
-                      onValueChange={(val) =>
-                        setSelectedNcfType(
-                          isNcfTypeCode(val) ? val : DEFAULT_NCF_B_CODE
-                        )
-                      }
+                      onValueChange={(val) => {
+                        if (checkoutNcfOptions.some((o) => o.codigo === val)) {
+                          setSelectedNcfType(val as NcfTypeCode);
+                        }
+                      }}
                     >
                       <SelectTrigger
                         id="ncf-select"
@@ -1471,11 +1487,7 @@ export function MesaCloseAccountModal({
                         <SelectValue placeholder="Seleccionar NCF" />
                       </SelectTrigger>
                       <SelectContent className="rounded-xl border border-white/20 bg-[#111] text-zinc-300">
-                        {NCF_TIPO_OPCIONES.filter(o => {
-                          const modeMatch = fiscalMode === "dgii_ecf" ? o.codigo.startsWith("E") : fiscalMode === "ncf_legacy" ? o.codigo.startsWith("B") : false;
-                          if (!modeMatch) return false;
-                          return isNcfTypeActive(ncfTiposActivos, o.codigo);
-                        }).map((opcion) => (
+                        {checkoutNcfOptions.map((opcion) => (
                           <SelectItem
                             key={opcion.codigo}
                             value={opcion.codigo}

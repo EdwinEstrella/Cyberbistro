@@ -53,11 +53,10 @@ import {
   incrementTenantNcfSequence,
 } from "../../../shared/lib/invoiceNcf";
 import {
-  DEFAULT_NCF_B_CODE,
+  DEFAULT_CHECKOUT_ECF_TYPE,
+  getCheckoutNcfTypeOptions,
   isNcfTypeActive,
-  isNcfTypeCode,
-  normalizeNcfTypeForFiscalMode,
-  NCF_TIPO_OPCIONES,
+  pickCheckoutNcfType,
   type NcfTypeCode,
 } from "../../../shared/lib/ncf";
 import {
@@ -68,7 +67,7 @@ import { loadTenantBillingSettings } from "../../../shared/lib/tenantBillingSett
 import { calculateInvoiceTotals } from "../../../shared/lib/billingTotals";
 import { type FiscalMode } from "../../../shared/lib/fiscalTypes";
 import { resolveActiveFiscalMode, runFiscalEngine, buildEcfDocumentWrites } from "../../../shared/lib/fiscalEngine";
-import { resolveInitialSkipFiscal, shouldRunCheckoutFiscal } from "../../../shared/lib/checkoutFiscalSkip";
+import { resolveInitialSkipFiscal, resolveTogglesAfterSkipChange, shouldRunCheckoutFiscal } from "../../../shared/lib/checkoutFiscalSkip";
 import { getLocalFirstStatusSnapshot, readLocalMirror, readLocalOutbox, getDeviceId, shouldReadLocalFirst, LOCAL_NCF_RESERVED_PAYLOAD_FLAG, type LocalFirstWrite } from "../../../shared/lib/localFirst";
 import { readLocalCierres } from "../../cierre/lib/cierresLocal";
 import { readLocalPlatos, readLocalMenuCategories } from "../../soporte/lib/catalogLocal";
@@ -201,8 +200,9 @@ export function Dashboard() {
   const [tenantNcfFiscalActive, setTenantNcfFiscalActive] = useState(false);
   const [solicitaComprobante, setSolicitaComprobante] = useState(false);
   const [skipFiscal, setSkipFiscal] = useState(false);
-  const [selectedNcfType, setSelectedNcfType] = useState<NcfTypeCode>(DEFAULT_NCF_B_CODE);
+  const [selectedNcfType, setSelectedNcfType] = useState<NcfTypeCode>(DEFAULT_CHECKOUT_ECF_TYPE);
   const [ncfTiposActivos, setNcfTiposActivos] = useState<Record<string, boolean>>({});
+  const [ecfAuthorizedTypes, setEcfAuthorizedTypes] = useState<string[] | null>(null);
   const [fiscalMode, setFiscalMode] = useState<FiscalMode>("internal_receipt");
   const [certificateId, setCertificateId] = useState<string | null>(null);
 
@@ -212,8 +212,9 @@ export function Dashboard() {
   const toggleSkipFiscal = () => {
     const next = !skipFiscal;
     setSkipFiscal(next);
-    if (next) {
-      setCartItbisEnabled(false);
+    const effects = resolveTogglesAfterSkipChange(next);
+    setCartItbisEnabled(effects.itbisEnabled);
+    if (effects.clearSolicitaComprobante) {
       setSolicitaComprobante(false);
     }
   };
@@ -223,6 +224,23 @@ export function Dashboard() {
     setSolicitaComprobante(false);
     if (skipFiscalDefault) setCartItbisEnabled(false);
   };
+
+  const checkoutNcfOptions = useMemo(
+    () =>
+      getCheckoutNcfTypeOptions({
+        fiscalMode,
+        activeMap: ncfTiposActivos,
+        ecfAuthorizedTypes,
+      }),
+    [fiscalMode, ncfTiposActivos, ecfAuthorizedTypes]
+  );
+
+  useEffect(() => {
+    if (checkoutNcfOptions.length > 0 && !checkoutNcfOptions.some((o) => o.codigo === selectedNcfType)) {
+      const next = pickCheckoutNcfType(checkoutNcfOptions, solicitaComprobante);
+      if (next) setSelectedNcfType(next);
+    }
+  }, [checkoutNcfOptions, selectedNcfType, solicitaComprobante]);
 
   const [takeoutCustomer, setTakeoutCustomer] = useState<Customer | null>(null);
   const [takeoutCustomerName, setTakeoutCustomerName] = useState("");
@@ -268,13 +286,18 @@ export function Dashboard() {
       setTenantNcfFiscalActive(mode !== "internal_receipt");
       const activeMap = settings?.ncfTiposActivos ?? {};
       setNcfTiposActivos(activeMap);
+      const authorized = settings?.ecfAuthorizedTypes ?? null;
+      setEcfAuthorizedTypes(authorized);
 
-      const preferred = normalizeNcfTypeForFiscalMode("B02", mode);
-      const firstActive = NCF_TIPO_OPCIONES.find((option) =>
-        (mode === "dgii_ecf" ? option.codigo.startsWith("E") : option.codigo.startsWith("B")) &&
-        isNcfTypeActive(activeMap, option.codigo)
-      );
-      setSelectedNcfType(isNcfTypeActive(activeMap, preferred) ? preferred : (firstActive?.codigo ?? preferred));
+      const options = getCheckoutNcfTypeOptions({
+        fiscalMode: mode,
+        activeMap,
+        ecfAuthorizedTypes: authorized,
+      });
+      const defaultType = pickCheckoutNcfType(options, false);
+      if (defaultType) {
+        setSelectedNcfType(defaultType);
+      }
       setSolicitaComprobante(false);
       setSkipFiscal(skipByDefault);
     });
@@ -2224,13 +2247,8 @@ export function Dashboard() {
                           onClick={() => {
                             const next = !solicitaComprobante;
                             setSolicitaComprobante(next);
-                            const preferred = next ? (fiscalMode === "dgii_ecf" ? "E31" : "B01") : (fiscalMode === "dgii_ecf" ? "E32" : "B02");
-                            const fallback = NCF_TIPO_OPCIONES.find((option) =>
-                              (fiscalMode === "dgii_ecf" ? option.codigo.startsWith("E") : option.codigo.startsWith("B")) &&
-                              isNcfTypeActive(ncfTiposActivos, option.codigo)
-                            );
-                            if (isNcfTypeActive(ncfTiposActivos, preferred)) setSelectedNcfType(preferred);
-                            else if (fallback) setSelectedNcfType(fallback.codigo);
+                            const target = pickCheckoutNcfType(checkoutNcfOptions, next);
+                            if (target) setSelectedNcfType(target);
                           }}
                           className={`relative h-[28px] w-[50px] shrink-0 rounded-full border-none cursor-pointer transition-colors ${solicitaComprobante ? "bg-[#ff906d]" : "bg-[#222]"}`}
                         >
@@ -2245,21 +2263,17 @@ export function Dashboard() {
                           </label>
                           <Select
                             value={selectedNcfType}
-                            onValueChange={(val) =>
-                              setSelectedNcfType(
-                                isNcfTypeCode(val) ? val : DEFAULT_NCF_B_CODE
-                              )
-                            }
+                            onValueChange={(val) => {
+                              if (checkoutNcfOptions.some((o) => o.codigo === val)) {
+                                setSelectedNcfType(val as NcfTypeCode);
+                              }
+                            }}
                           >
                             <SelectTrigger className="w-full rounded-[14px] border border-white/20 bg-[#0a0a0a] px-4 py-3.5 font-['Inter',sans-serif] text-zinc-200 text-[13px] outline-none focus:border-[#ff906d]/50 transition-colors cursor-pointer h-auto shadow-sm">
                               <SelectValue placeholder="Tipo NCF" />
                             </SelectTrigger>
                             <SelectContent className="rounded-xl bg-[#111] border-white/10 text-zinc-200">
-                              {NCF_TIPO_OPCIONES.filter(o => {
-                                if (fiscalMode === "dgii_ecf") return o.codigo.startsWith("E");
-                                if (fiscalMode === "ncf_legacy") return o.codigo.startsWith("B");
-                                return false;
-                              }).filter((option) => isNcfTypeActive(ncfTiposActivos, option.codigo)).map((opcion) => (
+                              {checkoutNcfOptions.map((opcion) => (
                                 <SelectItem key={opcion.codigo} value={opcion.codigo}>
                                   {opcion.codigo} - {opcion.descripcion.replace(`${opcion.codigo} - `, "")}
                                 </SelectItem>
