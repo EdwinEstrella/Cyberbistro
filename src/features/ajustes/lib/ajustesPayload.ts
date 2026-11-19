@@ -2,7 +2,6 @@ import {
   isNcfBCode,
   normalizeNcfActiveMap,
   normalizeNcfSequenceMap,
-  type NcfSequenceMap,
 } from "../../../shared/lib/ncf";
 import type { AjustesConfig } from "../types";
 
@@ -83,12 +82,8 @@ export function buildAjustesSavePayload({
   const isEcfMode =
     config.fiscal_mode === "dgii_ecf" || existingTenant?.fiscal_mode === "dgii_ecf";
 
-  // Build merged ncf_secuencias_por_tipo:
-  // Start from the FULL existing map (B keys included, untouched).
-  // Non-B (E) sequence edits from config are ignored, exactly as before this task.
-  // Never take B values from config.
-  const existingMap = normalizeNcfSequenceMap(existingTenant?.ncf_secuencias_por_tipo);
-  const nextSequencesMap: NcfSequenceMap = { ...existingMap };
+  // Settings updates must never write ncf_secuencias_por_tipo: counters are owned exclusively
+  // by cloudix_reserve_ecf and the ActivationPanel; writing a stale snapshot moves them backwards.
 
   // Preserve existing active flags (B keys untouched), then apply config's non-B toggles.
   // Never take B values from config.
@@ -120,7 +115,6 @@ export function buildAjustesSavePayload({
     kitchen_enabled: config.kitchen_enabled !== false,
     sin_comprobante_por_defecto: Boolean(config.sin_comprobante_por_defecto),
     fiscal_mode_fallback: "internal_receipt",
-    ncf_secuencias_por_tipo: nextSequencesMap,
     ncf_tipos_activos: nextActiveMap,
     updated_at: now(),
   };
