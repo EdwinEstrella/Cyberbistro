@@ -303,24 +303,26 @@ describe("localFirst", () => {
     });
   });
 
-  it("reserva NCF offline desde una secuencia local explícita y avanza el mirror", () => {
+  it("reserva e-NCF offline desde una secuencia local explícita y avanza el mirror", () => {
     const reservation = buildLocalTenantNcfReservation({
       ncf_fiscal_activo: true,
-      ncf_tipo_default: "B02",
-      ncf_b02_secuencia_siguiente: 141,
-    });
+      ncf_tipo_default: "E32",
+      ncf_secuencias_por_tipo: { E32: 141 },
+      ecf_secuencias_rangos: { E32: { start: 1, end: 500 } },
+    }, "E32");
 
     expect(reservation).toMatchObject({
       reserved: {
-        ncf: "B0200000141",
-        tipoCodigo: "B02",
+        ncf: "E320000000141",
+        tipoCodigo: "E32",
         usedSequence: 141,
         sequenceReservedAtomically: true,
         reservationSource: "local_mirror",
       },
       nextTenantRow: {
-        ncf_b02_secuencia_siguiente: 142,
-        ncf_secuencia_siguiente: 142,
+        ncf_secuencias_por_tipo: {
+          E32: 142,
+        },
       },
     });
   });
@@ -328,8 +330,20 @@ describe("localFirst", () => {
   it("rechaza NCF offline si no hay secuencia local explícita", () => {
     const reservation = buildLocalTenantNcfReservation({
       ncf_fiscal_activo: true,
-      ncf_tipo_default: "B01",
+      ncf_tipo_default: "E32",
+    }, "E32");
+
+    expect(reservation).toEqual({
+      reason: "No hay una secuencia NCF local válida para garantizar unicidad fiscal.",
     });
+  });
+
+  it("rechaza reservas offline de comprobantes tipo B", () => {
+    const reservation = buildLocalTenantNcfReservation({
+      ncf_fiscal_activo: true,
+      ncf_tipo_default: "B02",
+      ncf_secuencias_por_tipo: { B02: 10 },
+    }, "B02");
 
     expect(reservation).toEqual({
       reason: "No hay una secuencia NCF local válida para garantizar unicidad fiscal.",

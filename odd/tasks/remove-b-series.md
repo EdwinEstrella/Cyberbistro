@@ -37,7 +37,7 @@ DGII (Dirección General de Impuestos Internos, Dominican Republic) no longer pe
 - [x] T1 Checkout: only e-CF sale types with a DGII-authorized range and not disabled; no B types/defaults at checkout; turning "Sin comprobante" off turns ITBIS on. Route: delegated (agy).
 - [x] T2 Fiscal engine & fallback: remove the ncf_legacy issuing branch and B reservation paths; fallback mode can only be internal_receipt. Route: delegated (agy).
 - [x] T3 Ajustes: remove ncf_legacy mode/fallback options and B sequence configuration UI/payload. Route: delegated (agy).
-- [ ] T4 Retire B sequence builders and desktop local B allocation, keeping historical helpers. Route: delegated (agy).
+- [x] T4 Retire B sequence builders and desktop local B allocation, keeping historical helpers. Route: delegated (agy).
 - [ ] T5 Prod data: move ncf_legacy tenants/fallbacks to internal_receipt (needs explicit user OK; Claude runs it). Route: inline.
 
 ## Progress
@@ -76,14 +76,26 @@ DGII (Dirección General de Impuestos Internos, Dominican Republic) no longer pe
   6. Removed dead `fiscal_mode_fallback` and `fiscalModeFallback` from `src/shared/lib/tenantBillingSettings.ts` (row interface, normalized settings, select column projection) and `src/features/fiscal/lib/loadEcfReadiness.ts` (select query and return interface).
   7. Tests: Updated `src/features/ajustes/lib/ajustesPayload.test.ts` to assert that no B columns/keys/sequences are in payload, and added unit tests for `mapTenantRowToAjustesConfig`.
 
+- T4:
+  1. `src/shared/lib/ncf.ts`: Deleted B sequence builders and helpers (`buildDefaultBSequenceMap`, `buildBSequenceMap`, `buildBSequenceMapFromRow`, `buildNcfSequenceMapForSave`, `buildNcfSequenceColumnsForSave`, `buildTenantNcfUpdatePayload`, `NCF_B_SEQUENCE_COLUMN_BY_CODE`, `NCF_B_SEQUENCE_FIELDS_SELECT`, `getNcfSequenceColumnName`, `getExplicitBSequenceForType`, `DEFAULT_NCF_B_CODE`, `ECF_TO_LEGACY_MAP`). Removed B branches in `getNcfSequenceForType` and `prepareNcfForFacturaInsert` (which now strictly prepares E types and returns null for B codes). Removed `ncf_legacy` branch in `normalizeNcfTypeForFiscalMode`. Retained `NCF_B_TIPO_OPCIONES`, `isNcfBCode`, `esCodigoNcfValido`, `ncfSequenceDigits`, `ncfTypeRequiresClientRnc`, `etiquetaTipoNcf`, `LEGACY_TO_ECF_MAP`, `isNcfTypeCode`, `NcfTypeCode`, and `ncfPayloadFromReservedSequence`.
+  2. `src/shared/lib/tenantBillingSettings.ts`: Replaced `DEFAULT_NCF_B_CODE` fallback with `DEFAULT_CHECKOUT_ECF_TYPE`.
+  3. `src/shared/lib/invoiceNcf.ts`: Deleted `loadTenantNcfRow`, `ncfPayloadForInsert`, and `incrementTenantNcfSequence`.
+  4. `src/features/dashboard/components/Dashboard.tsx` & `src/features/billing/components/MesaCloseAccountModal.tsx`: Removed `incrementTenantNcfSequence` imports and calls, verifying that for e-CF `sequenceReservedAtomically` is always true and thus the non-atomic increment branches were unreachable. Removed `deferredNcfIncrements`.
+  5. `src/shared/lib/localFirst.ts`: Cleaned B branch from `buildLocalTenantNcfReservation` (strictly enforces e-CF ranges from `ecf_secuencias_rangos` and advances `ncf_secuencias_por_tipo` without B builders). Removed `incrementTenantNcfSequence` calls in `adjustFacturaPayloadForServer`.
+  6. Desktop: Retired offline B sequence allocation. Removed `ncfLocalSequence` from `electron/preload.ts`, `src/shared/types/electron.d.ts`, `electron/main.ts`, `electron/persistence/tenantStore.ts`, and `electron/persistence/ipc.ts` (removed `NCF_LOCAL_SEQUENCE_CHANNEL`). In `electron/persistence/schema.ts`, moved `NCF_LOCAL_SEQUENCES_CREATE_SQL` directly into schema initialization with a comment that the table is retired. Deleted `electron/persistence/ncfLocalSequence.ts`.
+  7. Tests: Deleted `test/local-sqlite-ncf-sequence.test.ts` (covered only deleted SQLite B sequence logic). Trimmed deleted B builder and `ncf_legacy` mapping tests in `src/shared/lib/ncf.test.ts`, and adapted `prepareNcfForFacturaInsert` assertions to e-CF. Updated `src/shared/lib/localFirst.test.ts` to assert e-CF offline reservation and B code rejection.
+
 ## Verification Evidence
-- `git diff --stat -- '*.test.ts' '*.test.tsx'`:
-  `src/features/ajustes/lib/ajustesPayload.test.ts | 109 ++++++++++++--------`
-  (1 file changed, 67 insertions(+), 42 deletions(-)).
+- `git diff HEAD --stat -- '*.test.ts' '*.test.tsx'`:
+  `src/shared/lib/localFirst.test.ts      |  32 +++++--`
+  `src/shared/lib/ncf.test.ts             | 104 ++++++--------------`
+  `test/local-sqlite-ncf-sequence.test.ts | 168 ---------------------------------`
+  (3 files changed, 50 insertions(+), 254 deletions(-)).
 - `npm run typecheck`: clean (exit code 0).
-- `npx vitest run src/features/ajustes src/features/fiscal src/shared/lib`: 86 test files passed, 786 tests passed (exit code 0).
-- `npm test`: 364 test files passed, 1 skipped (365 total); 3026 tests passed, 2 skipped (exit code 0).
-- `graphify update .`: completed successfully (11334 nodes, 23647 edges, 813 communities).
+- `npx vitest run src/shared/lib src/features test/desktop-ipc-guard.test.ts`: 219 test files passed, 1876 tests passed (exit code 0).
+- `npm test`: 363 test files passed, 1 skipped (364 total); 3012 tests passed, 2 skipped (exit code 0).
+- `npm run build`: built in 5.50s (renderer) + 559ms (electron main); electron main output verified (exit code 0).
+- `graphify update .`: completed successfully (11288 nodes, 23501 edges, 811 communities).
 
 ## Next Step
-T3 completed; ready for T4 (Retire B sequence builders and desktop local B allocation).
+T4 completed; ready for T5 (Prod data: move ncf_legacy tenants/fallbacks to internal_receipt).

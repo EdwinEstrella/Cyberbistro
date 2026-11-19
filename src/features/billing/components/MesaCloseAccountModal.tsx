@@ -7,9 +7,6 @@ import { printThermalHtml, type PrintThermalResult } from "../../../shared/lib/t
 import { printLocalInvoiceReceipt } from "../../../shared/lib/localInvoiceReceipt";
 import { gateFiscalPrint, isEcfInvoiceDocument } from "../../../shared/lib/fiscalPrintGate";
 import {
-  incrementTenantNcfSequence,
-} from "../../../shared/lib/invoiceNcf";
-import {
   DEFAULT_CHECKOUT_ECF_TYPE,
   getCheckoutNcfTypeOptions,
   isNcfTypeActive,
@@ -509,7 +506,6 @@ export function MesaCloseAccountModal({
     const paidConsumoIds = new Set<string>();
     const facturasToPrint: Array<{ factura: Record<string, unknown>; numero: number }> = [];
     const checkoutWrites: LocalFirstWrite[] = [];
-    const deferredNcfIncrements: Array<{ tipoCodigo: string; usedSequence: number }> = [];
     const deviceId = await getDeviceId();
     try {
       const reservedFacturaNumbers = await getNextFacturaNumbers(tenantId, order.length);
@@ -662,9 +658,6 @@ export function MesaCloseAccountModal({
             ecfDocumentId: ecfDocumentId!,
           }));
         }
-        if (ncfPart && ncfPart.tipoCodigo && ncfPart.usedSequence !== null && !ncfPart.sequenceReservedAtomically) {
-          deferredNcfIncrements.push({ tipoCodigo: ncfPart.tipoCodigo, usedSequence: ncfPart.usedSequence });
-        }
 
         for (const consumo of consumosToInvoice) {
           checkoutWrites.push({
@@ -719,7 +712,6 @@ export function MesaCloseAccountModal({
         numeroFactura: item.numero,
       });
     }
-    for (const increment of deferredNcfIncrements) void incrementTenantNcfSequence(tenantId, increment.tipoCodigo, increment.usedSequence).catch(console.error);
     setMesaConsumos(updatedConsumos);
     void onSettled?.(updatedConsumos);
     resetSkipFiscal();
@@ -1010,10 +1002,6 @@ export function MesaCloseAccountModal({
         deviceId,
         ecfDocumentId: ecfDocumentId!,
       }));
-    }
-
-    if (ncfPart && ncfPart.tipoCodigo && ncfPart.usedSequence !== null && !ncfPart.sequenceReservedAtomically) {
-      void incrementTenantNcfSequence(tenantId, ncfPart.tipoCodigo, ncfPart.usedSequence).catch(console.error);
     }
 
     for (const consumo of consumosToBill) {

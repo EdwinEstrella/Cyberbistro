@@ -50,9 +50,6 @@ import { MesaCloseAccountModal } from "../../billing/components/MesaCloseAccount
 import { canUseFeature } from "../../../shared/lib/planFeatures";
 // DashboardTickerStrip removed
 import {
-  incrementTenantNcfSequence,
-} from "../../../shared/lib/invoiceNcf";
-import {
   DEFAULT_CHECKOUT_ECF_TYPE,
   getCheckoutNcfTypeOptions,
   isNcfTypeActive,
@@ -1235,10 +1232,6 @@ export function Dashboard() {
           ecfDocumentId: ecfDocumentId!,
         }));
       }
-
-    if (tenantId && ncfPart && ncfPart.tipoCodigo && ncfPart.usedSequence !== null && !ncfPart.sequenceReservedAtomically) {
-      void incrementTenantNcfSequence(tenantId, ncfPart.tipoCodigo, ncfPart.usedSequence).catch(console.error);
-    }
 
 
     // Checkout must not wait for a cloud kitchen-status probe. The local mirror is

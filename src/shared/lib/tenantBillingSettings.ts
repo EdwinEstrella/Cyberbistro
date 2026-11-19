@@ -2,7 +2,7 @@ import { supabase } from "./supabase";
 import { isCloudAvailabilityFailure, isDesktopCloudUnavailable, recordCloudFailure, recordCloudSuccess } from "./cloudAvailability";
 import { readLocalMirror } from "./localFirst";
 import { normalizeFiscalMode, type FiscalMode } from "./fiscalTypes";
-import { DEFAULT_NCF_B_CODE, esCodigoNcfValido, normalizeNcfActiveMap, type NcfActiveMap, type NcfTypeCode } from "./ncf";
+import { DEFAULT_CHECKOUT_ECF_TYPE, esCodigoNcfValido, normalizeNcfActiveMap, type NcfActiveMap, type NcfTypeCode } from "./ncf";
 import { parseStoredBounds } from "./ecfSequenceRanges";
 
 export interface TenantBillingSettingsRow {
@@ -83,7 +83,7 @@ export function normalizeTenantBillingSettings(
     ncfFiscalActive: fiscalMode === "ncf_legacy",
     defaultNcfType: row?.ncf_tipo_default && esCodigoNcfValido(row.ncf_tipo_default)
       ? (row.ncf_tipo_default as NcfTypeCode)
-      : DEFAULT_NCF_B_CODE,
+      : DEFAULT_CHECKOUT_ECF_TYPE,
     defaultItbisEnabled: Boolean(row?.itbis_cobro_por_defecto),
     defaultPropinaEnabled: Boolean(row?.propina_cobro_por_defecto),
     itbisIncluded: Boolean(row?.itbis_incluido_en_precio),
