@@ -64,6 +64,16 @@ export function advanceProgress(progress: CertificationProgress, step: number): 
   return { currentStep: nextVisibleStep(step), completedSteps };
 }
 
+/** Marks the final certification step (15) as completed. */
+export function completeFinalStep(progress: CertificationProgress): CertificationProgress {
+  return advanceProgress(progress, CERTIFICATION_TOTAL_STEPS);
+}
+
+/** Checks whether the final certification step (15) is completed. */
+export function isCertificationComplete(progress: CertificationProgress): boolean {
+  return progress.completedSteps.includes(CERTIFICATION_TOTAL_STEPS);
+}
+
 export function buildProgressUpsert(input: {
   tenantId: string;
   environment: string;

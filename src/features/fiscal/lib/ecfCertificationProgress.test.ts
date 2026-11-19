@@ -5,7 +5,9 @@ import {
   INITIAL_CERTIFICATION_PROGRESS,
   advanceProgress,
   buildProgressUpsert,
+  completeFinalStep,
   displayStepNumber,
+  isCertificationComplete,
   nextVisibleStep,
   restoreProgress,
   visibleCertificationSteps,
@@ -99,3 +101,26 @@ describe("buildProgressUpsert", () => {
     });
   });
 });
+
+describe("completeFinalStep and isCertificationComplete", () => {
+  it("marks step 15 as completed and keeps currentStep clamped at 15", () => {
+    const progress = { currentStep: 15, completedSteps: [1, 2, 3, 14] };
+    expect(isCertificationComplete(progress)).toBe(false);
+
+    const completed = completeFinalStep(progress);
+    expect(completed).toEqual({ currentStep: CERTIFICATION_TOTAL_STEPS, completedSteps: [1, 2, 3, 14, 15] });
+    expect(isCertificationComplete(completed)).toBe(true);
+  });
+
+  it("is idempotent when step 15 is already completed", () => {
+    const completed = { currentStep: 15, completedSteps: [1, 15] };
+    expect(isCertificationComplete(completed)).toBe(true);
+    expect(completeFinalStep(completed)).toEqual(completed);
+  });
+
+  it("returns false for isCertificationComplete when completedSteps is empty or lacks 15", () => {
+    expect(isCertificationComplete(INITIAL_CERTIFICATION_PROGRESS)).toBe(false);
+    expect(isCertificationComplete({ currentStep: 15, completedSteps: [1, 2, 3, 14] })).toBe(false);
+  });
+});
+
