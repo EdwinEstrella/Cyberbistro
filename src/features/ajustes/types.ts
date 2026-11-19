@@ -15,11 +15,9 @@ export interface AjustesConfig {
   kitchen_enabled: boolean;
   sin_comprobante_por_defecto: boolean;
   ncf_fiscal_activo: boolean;
-  fiscal_mode: "internal_receipt" | "ncf_legacy" | "dgii_ecf";
-  fiscal_mode_fallback: "internal_receipt" | "ncf_legacy";
+  fiscal_mode: "internal_receipt" | "dgii_ecf";
   ecf_environment: "test" | "certification" | "production";
   ncf_tipo_default: string;
-  ncf_secuencia_siguiente: number;
   ncf_secuencias_por_tipo: Record<string, number>;
   ncf_tipos_activos: Record<string, boolean>;
 }

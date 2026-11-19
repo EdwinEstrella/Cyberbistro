@@ -1,5 +1,16 @@
 import type { DatabaseSync } from "node:sqlite";
-import { NCF_LOCAL_SEQUENCES_CREATE_SQL } from "./ncfLocalSequence";
+
+// Retired table kept inert so existing local databases don't throw migration errors
+const NCF_LOCAL_SEQUENCES_CREATE_SQL = `
+  CREATE TABLE IF NOT EXISTS ncf_local_sequences (
+    tenant_id TEXT NOT NULL REFERENCES tenants(id),
+    tipo_codigo TEXT NOT NULL,
+    next_sequence INTEGER NOT NULL CHECK (next_sequence > 0),
+    cloud_next_sequence INTEGER NOT NULL DEFAULT 1 CHECK (cloud_next_sequence > 0),
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (tenant_id, tipo_codigo)
+  ) STRICT;
+`;
 
 /**
  * Local e-CF status vocabularies. They are the union of what checkout writes today

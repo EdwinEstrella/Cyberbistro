@@ -8,6 +8,31 @@ export interface ShouldRunCheckoutFiscalParams {
   tenantId: string | null | undefined;
 }
 
+export interface CheckoutSkipFiscalToggleEffects {
+  itbisEnabled: boolean;
+  clearSolicitaComprobante: boolean;
+}
+
+/**
+ * Resolves state toggles when the user switches "Sin comprobante".
+ * - Skip ON (true): ITBIS turns OFF and "Solicita comprobante" is cleared.
+ * - Skip OFF (false): ITBIS turns back ON and "Solicita comprobante" is preserved.
+ */
+export function resolveTogglesAfterSkipChange(
+  nextSkipFiscal: boolean
+): CheckoutSkipFiscalToggleEffects {
+  if (nextSkipFiscal) {
+    return {
+      itbisEnabled: false,
+      clearSolicitaComprobante: true,
+    };
+  }
+  return {
+    itbisEnabled: true,
+    clearSolicitaComprobante: false,
+  };
+}
+
 /**
  * Resolves the initial value of the per-sale "Sin comprobante" switch from the
  * business setting `sin_comprobante_por_defecto`. Missing or non-true values mean OFF,

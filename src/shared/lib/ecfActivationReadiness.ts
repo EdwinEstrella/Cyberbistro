@@ -129,24 +129,15 @@ export function formatReadinessIssues(result: EcfReadinessResult): string {
   return result.missing.map((issue) => issue.message).join(" ");
 }
 
-export type FiscalFallbackMode = "internal_receipt" | "ncf_legacy";
-
-/** `fiscal_mode_fallback` values the app uses; anything else resolves to the default. */
-export function normalizeFiscalFallback(raw: unknown): FiscalFallbackMode {
-  return raw === "ncf_legacy" ? "ncf_legacy" : "internal_receipt";
-}
-
 export function buildActivationPayload(environment: EcfEnvironmentId, now: Date = new Date()) {
   // ncf_fiscal_activo: cloudix_reserve_ecf raises unless it is true, and Ajustes already derives it
   // as true for dgii_ecf (it is ignored by fiscalEngine/normalizeTenantBillingSettings in that mode).
   return { fiscal_mode: "dgii_ecf" as const, ecf_environment: environment, ncf_fiscal_activo: true, updated_at: now.toISOString() };
 }
 
-/** Back to the tenant's configured fallback (what fiscalEngine uses when e-CF cannot be issued). */
-export function buildDeactivationPayload(fallbackRaw: unknown, now: Date = new Date()) {
-  const fiscal_mode = normalizeFiscalFallback(fallbackRaw);
-  // Mirrors Ajustes' derivation: the flag is true only for ncf_legacy or dgii_ecf.
-  return { fiscal_mode, ncf_fiscal_activo: fiscal_mode === "ncf_legacy", updated_at: now.toISOString() };
+/** Deactivating e-CF always sets fiscal_mode = "internal_receipt" and ncf_fiscal_activo = false. */
+export function buildDeactivationPayload(now: Date = new Date()) {
+  return { fiscal_mode: "internal_receipt" as const, ncf_fiscal_activo: false, updated_at: now.toISOString() };
 }
 
 export function describeActivationSuccess(environment: EcfEnvironmentId): string {

@@ -5,8 +5,6 @@ import { evaluateEcfActivationReadiness, type EcfReadinessResult } from "../../.
 
 export interface LoadedEcfReadiness {
   result: EcfReadinessResult;
-  /** Tenant's configured fallback mode (raw), used when deactivating. */
-  fiscalModeFallback: unknown;
 }
 
 /**
@@ -23,7 +21,7 @@ export async function loadEcfActivationReadiness(args: {
   const [tenantRes, boundsRes, representativeRes, certRes] = await Promise.all([
     supabase
       .from("tenants")
-      .select("rnc, nombre_negocio, direccion, ncf_secuencias_por_tipo, fiscal_mode_fallback, ecf_issuer_sucursal, ecf_issuer_municipio, ecf_issuer_provincia, ecf_issuer_actividad_economica, ecf_issuer_correo_emisor")
+      .select("rnc, nombre_negocio, direccion, ncf_secuencias_por_tipo, ecf_issuer_sucursal, ecf_issuer_municipio, ecf_issuer_provincia, ecf_issuer_actividad_economica, ecf_issuer_correo_emisor")
       .eq("id", tenantId)
       .maybeSingle(),
     // Separate query: a missing column must not block the rest (legacy fallback applies).
@@ -42,7 +40,6 @@ export async function loadEcfActivationReadiness(args: {
 
   if (tenantRes.error || !tenantRes.data) {
     return {
-      fiscalModeFallback: null,
       result: {
         ready: false,
         missing: [{ code: "ISSUER", message: "No se pudieron leer los datos fiscales del negocio. Verificá tu conexión e intentá de nuevo." }],
@@ -51,7 +48,6 @@ export async function loadEcfActivationReadiness(args: {
   }
   if (certRes.error) {
     return {
-      fiscalModeFallback: tenantRes.data.fiscal_mode_fallback,
       result: {
         ready: false,
         missing: [{ code: "CERTIFICATE", message: "No se pudo consultar el certificado digital. Verificá tu conexión e intentá de nuevo." }],
@@ -70,5 +66,5 @@ export async function loadEcfActivationReadiness(args: {
     sequencesBoundsRaw: boundsRaw,
     ecfTypeCodes: NCF_E_TIPO_OPCIONES.map((type) => type.codigo),
   });
-  return { result, fiscalModeFallback: tenantRes.data.fiscal_mode_fallback };
+  return { result };
 }

@@ -71,7 +71,7 @@ describe("fiscalEngine", () => {
     it("falls back when the issuer email is malformed even if every field is filled", async () => {
       const settings = { ...validEcfSettings, ecfIssuerCorreoEmisor: "sin-arroba", fiscalModeFallback: "ncf_legacy" as const };
       const result = await resolveActiveFiscalMode("tenant-1", settings, true);
-      expect(result).toEqual({ mode: "ncf_legacy", certificateId: null });
+      expect(result).toEqual({ mode: "internal_receipt", certificateId: null });
     });
 
     it("returns internal_receipt if settings is null", async () => {
@@ -79,7 +79,7 @@ describe("fiscalEngine", () => {
       expect(result).toEqual({ mode: "internal_receipt", certificateId: null });
     });
 
-    it("returns settings mode if not dgii_ecf", async () => {
+    it("resolves stored ncf_legacy to internal_receipt", async () => {
       const settings = {
         fiscalMode: "ncf_legacy" as const,
         ncfFiscalActive: true,
@@ -87,7 +87,7 @@ describe("fiscalEngine", () => {
         defaultItbisEnabled: true,
       };
       const result = await resolveActiveFiscalMode("tenant-1", settings, true);
-      expect(result).toEqual({ mode: "ncf_legacy", certificateId: null });
+      expect(result).toEqual({ mode: "internal_receipt", certificateId: null });
     });
 
     it("resolves dgii_ecf when certificate is ready online", async () => {
@@ -110,7 +110,7 @@ describe("fiscalEngine", () => {
       expect(localStorage.getItem("ecf_cert_id_tenant-1")).toBeNull();
     });
 
-    it("falls back to settings.fiscalModeFallback if certificate is not ready online", async () => {
+    it("falls back to settings.fiscalModeFallback (internal_receipt) if certificate is not ready online", async () => {
       const settings = {
         ...validEcfSettings,
         fiscalModeFallback: "ncf_legacy" as const,
@@ -129,7 +129,7 @@ describe("fiscalEngine", () => {
       } as any);
 
       const result = await resolveActiveFiscalMode("tenant-1", settings, true);
-      expect(result).toEqual({ mode: "ncf_legacy", certificateId: null });
+      expect(result).toEqual({ mode: "internal_receipt", certificateId: null });
     });
 
     it("keeps dgii_ecf for non-admin sales staff when online query returns null due to RLS", async () => {
@@ -197,7 +197,7 @@ describe("fiscalEngine", () => {
       };
 
       const result = await resolveActiveFiscalMode("tenant-1", settings, true);
-      expect(result).toEqual({ mode: "ncf_legacy", certificateId: null });
+      expect(result).toEqual({ mode: "internal_receipt", certificateId: null });
     });
 
     it("resolves dgii_ecf and filters certificate by tenant environment when ready online", async () => {
@@ -285,7 +285,7 @@ describe("fiscalEngine", () => {
       expect(result).toEqual({ mode: "internal_receipt", certificateId: null });
     });
 
-    it("preserves non dgii_ecf modes unchanged without querying certificates", async () => {
+    it("preserves internal_receipt without querying certificates and resolves ncf_legacy to internal_receipt", async () => {
       const settingsInternal = {
         ...validEcfSettings,
         fiscalMode: "internal_receipt" as const,
@@ -298,7 +298,7 @@ describe("fiscalEngine", () => {
         fiscalMode: "ncf_legacy" as const,
       };
       const resultLegacy = await resolveActiveFiscalMode("tenant-1", settingsLegacy, true);
-      expect(resultLegacy).toEqual({ mode: "ncf_legacy", certificateId: null });
+      expect(resultLegacy).toEqual({ mode: "internal_receipt", certificateId: null });
       expect(supabase.from).not.toHaveBeenCalled();
     });
   });
@@ -316,16 +316,7 @@ describe("fiscalEngine", () => {
       expect(result).toBeNull();
     });
 
-    it("calls resolveNcfForNewInvoiceLocalFirst for ncf_legacy mode", async () => {
-      vi.mocked(resolveNcfForNewInvoiceLocalFirst).mockResolvedValueOnce({
-        ncf: "B0100000001",
-        ncf_tipo: "B01",
-        tipoCodigo: "B01",
-        usedSequence: 1,
-        sequenceReservedAtomically: true,
-        reservationSource: "remote_rpc",
-      });
-
+    it("issues nothing (returns null) for ncf_legacy mode", async () => {
       const result = await runFiscalEngine({
         tenantId: "tenant-1",
         activeMode: "ncf_legacy",
@@ -336,15 +327,8 @@ describe("fiscalEngine", () => {
         deviceId: "device-1",
       });
 
-      expect(result).toEqual({
-        ncf: "B0100000001",
-        ncf_tipo: "B01",
-        tipoCodigo: "B01",
-        usedSequence: 1,
-        sequenceReservedAtomically: true,
-        reservationSource: "remote_rpc",
-      });
-      expect(resolveNcfForNewInvoiceLocalFirst).toHaveBeenCalledWith("tenant-1", "B01");
+      expect(result).toBeNull();
+      expect(resolveNcfForNewInvoiceLocalFirst).not.toHaveBeenCalled();
     });
 
     it("resolves sequence for dgii_ecf mode with E31 (RNC present)", async () => {
@@ -413,11 +397,7 @@ describe("fiscalEngine", () => {
       expect(resolveNcfForNewInvoiceLocalFirst).toHaveBeenCalledWith("tenant-1", "E32");
     });
 
-    it("returns null (no NCF) when the legacy consumo type is turned off", async () => {
-      vi.mocked(loadTenantBillingSettings).mockResolvedValueOnce({
-        ncfTiposActivos: { B02: false },
-      } as any);
-
+    it("returns null (no NCF) when activeMode is ncf_legacy", async () => {
       const result = await runFiscalEngine({
         tenantId: "tenant-1",
         activeMode: "ncf_legacy",
@@ -437,11 +417,11 @@ describe("fiscalEngine", () => {
 
       await expect(runFiscalEngine({
         tenantId: "tenant-1",
-        activeMode: "ncf_legacy",
+        activeMode: "dgii_ecf",
         certificateId: null,
         facturaId: "invoice-1",
         numeroFactura: 11,
-        preferredNcfType: "B02",
+        preferredNcfType: "E32",
         deviceId: "device-1",
       })).rejects.toThrow("No se pudo validar la configuración de tipos NCF.");
 
@@ -469,12 +449,12 @@ describe("fiscalEngine", () => {
 
     it("still emits an active type even if another type is off", async () => {
       vi.mocked(loadTenantBillingSettings).mockResolvedValueOnce({
-        ncfTiposActivos: { B02: false },
+        ncfTiposActivos: { E32: false, E31: true },
       } as any);
       vi.mocked(resolveNcfForNewInvoiceLocalFirst).mockResolvedValueOnce({
-        ncf: "B0100000002",
-        ncf_tipo: "B01",
-        tipoCodigo: "B01",
+        ncf: "E310000000002",
+        ncf_tipo: "E31 - Factura de credito fiscal electronica",
+        tipoCodigo: "E31",
         usedSequence: 2,
         sequenceReservedAtomically: true,
         reservationSource: "remote_rpc",
@@ -482,16 +462,16 @@ describe("fiscalEngine", () => {
 
       const result = await runFiscalEngine({
         tenantId: "tenant-1",
-        activeMode: "ncf_legacy",
-        certificateId: null,
+        activeMode: "dgii_ecf",
+        certificateId: "cert-uuid",
         facturaId: "invoice-1",
         numeroFactura: 13,
-        preferredNcfType: "B01",
+        clientRnc: "130862346",
         deviceId: "device-1",
       });
 
-      expect(result?.tipoCodigo).toBe("B01");
-      expect(resolveNcfForNewInvoiceLocalFirst).toHaveBeenCalledWith("tenant-1", "B01");
+      expect(result?.tipoCodigo).toBe("E31");
+      expect(resolveNcfForNewInvoiceLocalFirst).toHaveBeenCalledWith("tenant-1", "E31");
     });
 
     it("handles resolveActiveFiscalMode online query error without blocking pending e-CF sales", async () => {
@@ -682,20 +662,19 @@ describe("fiscalEngine", () => {
       }));
     });
 
-    it("throws an error in runFiscalEngine if legacy NCF sequence resolution returns null", async () => {
+    it("throws an error in runFiscalEngine if e-NCF sequence resolution returns null", async () => {
       vi.mocked(resolveNcfForNewInvoiceLocalFirst).mockResolvedValue(null);
 
       await expect(
         runFiscalEngine({
           tenantId: "tenant-1",
-          activeMode: "ncf_legacy",
-          certificateId: null,
+          activeMode: "dgii_ecf",
+          certificateId: "cert-uuid",
           facturaId: "invoice-1",
           numeroFactura: 10,
-          preferredNcfType: "B01",
           deviceId: "device-1",
         })
-      ).rejects.toThrow("No se pudo reservar NCF fiscal.");
+      ).rejects.toThrow("No se pudo reservar la secuencia para e-NCF tipo E32.");
     });
 
     it("trims whitespace from RNC when determining dgii_ecf type E31 or E32", async () => {
