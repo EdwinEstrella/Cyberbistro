@@ -1,5 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { GhostCycleCloudPort, ReconcileGhostCyclesResult } from "./ghostCycleReconcile";
+import type {
+  GhostCycleCloudPort,
+  GhostCycleClosedItem,
+  ReconcileGhostCyclesNowResult,
+  ReconcileGhostCyclesResult,
+} from "./ghostCycleReconcile";
 
 export type DurableOperationStatus = "pending" | "syncing" | "synced" | "conflicted" | "not_retryable";
 export type DurableOperationKind = "insert" | "update" | "upsert" | "delete";
@@ -84,6 +89,7 @@ export function createDurableOperation(input: Omit<DurableOperation, "payloadHas
 export interface DurableSyncWorkerOptions {
   clock?: () => number;
   ghostReconcileThrottleMs?: number;
+  onGhostCyclesClosed?: (closed: GhostCycleClosedItem[]) => void;
 }
 
 /** Sync orchestration only; realtime may call pull(), but never supplies state or writes directly. */
@@ -91,6 +97,7 @@ export class DurableSyncWorker {
   private lastGhostReconcileAt = -Infinity;
   private readonly clock: () => number;
   private readonly ghostReconcileThrottleMs: number;
+  private readonly onGhostCyclesClosed?: (closed: GhostCycleClosedItem[]) => void;
 
   constructor(
     private readonly store: DurableSyncStore,
@@ -100,6 +107,7 @@ export class DurableSyncWorker {
   ) {
     this.clock = options?.clock ?? (() => Date.now());
     this.ghostReconcileThrottleMs = options?.ghostReconcileThrottleMs ?? 10 * 60 * 1000;
+    this.onGhostCyclesClosed = options?.onGhostCyclesClosed;
   }
 
   async push(nowMs = Date.now()): Promise<{ pushed: number; conflicted: number }> {
@@ -232,42 +240,62 @@ export class DurableSyncWorker {
     return result;
   }
 
+  private async executeGhostCycleReconcile(): Promise<ReconcileGhostCyclesNowResult> {
+    if (!this.store.reconcileGhostCycles) {
+      return { ok: false, reason: "unavailable" };
+    }
+
+    let port: GhostCycleCloudPort | null | undefined;
+    try {
+      port = await this.server.getGhostCycleCloudPort?.(this.tenantId);
+    } catch {
+      return { ok: false, reason: "error" };
+    }
+
+    if (!port) {
+      return { ok: false, reason: "unavailable" };
+    }
+
+    // Throttle stamp is recorded before executing network calls to avoid hammering the cloud after an error or timeout.
+    const nowMs = this.clock();
+    this.lastGhostReconcileAt = nowMs;
+
+    try {
+      const { closed } = await this.store.reconcileGhostCycles(port);
+      if (closed.length > 0) {
+        for (const c of closed) {
+          console.warn(
+            `[sync↓] cierres_operativos ${c.id} → ciclo fantasma #${c.cycleNumber ?? "?"} auto-cerrado (superado por #${c.supersededByCycleNumber})`
+          );
+        }
+        this.onGhostCyclesClosed?.(closed);
+      }
+      return { ok: true, closed };
+    } catch (err) {
+      console.warn(
+        `[sync↓] ghost cycle reconcile skipped: ${err instanceof Error ? err.message : String(err)}`
+      );
+      return { ok: false, reason: "error" };
+    }
+  }
+
   private async runGhostCycleReconcile(pullResult: SyncPullResult): Promise<void> {
     const nowMs = this.clock();
     if (nowMs - this.lastGhostReconcileAt < this.ghostReconcileThrottleMs) {
       return;
     }
 
-    if (!this.store.reconcileGhostCycles) {
-      return;
-    }
-
-    const port = await this.server.getGhostCycleCloudPort?.(this.tenantId);
-    if (!port) {
-      return;
-    }
-
-    // Throttle stamp is recorded before executing network calls to avoid hammering the cloud after an error or timeout.
-    this.lastGhostReconcileAt = nowMs;
-
-    try {
-      const { closed } = await this.store.reconcileGhostCycles(port);
-      if (closed.length > 0) {
-        pullResult.applied += closed.length;
-        if (!pullResult.tables.includes("cierres_operativos")) {
-          pullResult.tables.push("cierres_operativos");
-        }
-        for (const c of closed) {
-          console.warn(
-            `[sync↓] cierres_operativos ${c.id} → ciclo fantasma #${c.cycleNumber ?? "?"} auto-cerrado (superado por #${c.supersededByCycleNumber})`
-          );
-        }
+    const result = await this.executeGhostCycleReconcile();
+    if (result.ok && result.closed.length > 0) {
+      pullResult.applied += result.closed.length;
+      if (!pullResult.tables.includes("cierres_operativos")) {
+        pullResult.tables.push("cierres_operativos");
       }
-    } catch (err) {
-      console.warn(
-        `[sync↓] ghost cycle reconcile skipped: ${err instanceof Error ? err.message : String(err)}`
-      );
     }
+  }
+
+  async reconcileGhostCyclesNow(): Promise<ReconcileGhostCyclesNowResult> {
+    return this.executeGhostCycleReconcile();
   }
 }
 

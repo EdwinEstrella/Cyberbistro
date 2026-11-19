@@ -8,6 +8,7 @@ import { applyCloudExpenseCategoryRows, applyCloudExpenseRows, applyCloudCustome
 import { TenantSQLiteImporter, type LegacyImportChunk, type LegacyImportManifest } from "./importer";
 import { PayrollSyncOrchestrator } from "./payrollSyncOrchestrator";
 import { executeNcfLocalSequenceRequest, type NcfLocalSequenceRequest, type NcfLocalSequenceResponse } from "./ncfLocalSequence";
+import { isBlockingCycleOutboxError } from "./ghostCycleReconcile";
 import type { DesktopCommand, DesktopRepositoryStore } from "../../src/shared/lib/desktopRepository";
 import type { CatalogCommand } from "../../src/shared/lib/catalogContracts";
 import type { OrdersCommand } from "../../src/shared/lib/ordersContracts";
@@ -1540,6 +1541,24 @@ export class TenantStore implements DesktopRepositoryStore, SalesFiscalRepositor
     return this.database.prepare(sql).all(...params) as Array<Record<string, unknown>>;
   }
 
+  getCycleSyncStatus(cycleId: string): { openPushConflict: boolean } {
+    if (!cycleId || typeof cycleId !== "string") {
+      return { openPushConflict: false };
+    }
+    const rows = this.database.prepare(`
+      SELECT error_json
+      FROM sync_outbox
+      WHERE tenant_id = ? AND table_name = 'cierres_operativos' AND row_id = ?
+    `).all(this.tenantId, cycleId) as Array<{ error_json: string | null }>;
+
+    for (const row of rows) {
+      if (isBlockingCycleOutboxError(row.error_json)) {
+        return { openPushConflict: true };
+      }
+    }
+    return { openPushConflict: false };
+  }
+
   listMesasEstado(sucursalId?: string): Array<Record<string, unknown>> {
     if (sucursalId) {
       return this.database.prepare(
@@ -2517,6 +2536,10 @@ export class TenantStoreController {
 
   listCompras(filter?: { sucursalId?: string; limit?: number; dateFrom?: string; dateTo?: string }): Array<Record<string, unknown>> {
     return this.activeStore?.listCompras(filter) ?? [];
+  }
+
+  getCycleSyncStatus(cycleId: string): { openPushConflict: boolean } {
+    return this.activeStore?.getCycleSyncStatus(cycleId) ?? { openPushConflict: false };
   }
 
   close(): void {

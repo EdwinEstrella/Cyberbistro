@@ -11,6 +11,7 @@ import {
   reconcileGhostCycles,
   createSupabaseGhostCycleCloudPort,
   isConflictOutboxError,
+  isBlockingCycleOutboxError,
   type GhostCycleCloudPort,
 } from "../electron/persistence/ghostCycleReconcile";
 import { classifyRemoteError } from "../electron/persistence/payrollSyncClient";
@@ -83,6 +84,7 @@ function createMockSupabaseBuilder(data: any, error: any = null) {
     gt: vi.fn(() => queryBuilder),
     is: vi.fn(() => queryBuilder),
     in: vi.fn(() => queryBuilder),
+    neq: vi.fn(() => queryBuilder),
     order: vi.fn(() => queryBuilder),
     limit: vi.fn(() => queryBuilder),
     then: (resolve: (val: any) => void) => resolve({ data, error }),
@@ -129,6 +131,7 @@ describe("Ghost cycle reconciliation (local SQLite)", () => {
         expect(afterIso).toBe("2026-09-19T17:40:47.000Z");
         return { id: "cloud-110", cycle_number: 110, opened_at: "2026-09-19T19:45:49.000Z" };
       }),
+      findOpenCycle: vi.fn(async () => null),
     };
 
     const res = await reconcileGhostCycles(db, TENANT, fakePort);
@@ -139,6 +142,7 @@ describe("Ghost cycle reconciliation (local SQLite)", () => {
         cycleNumber: 109,
         closedAt: "2026-09-19T19:45:49.000Z",
         supersededByCycleNumber: 110,
+        supersededBy: "later_cycle",
       },
     ]);
 
@@ -177,6 +181,7 @@ describe("Ghost cycle reconciliation (local SQLite)", () => {
         cycle_number: 110,
         opened_at: "2026-09-19T19:45:49.000Z",
       })),
+      findOpenCycle: vi.fn(async () => null),
     };
 
     const res = await reconcileGhostCycles(db, TENANT, fakePort);
@@ -206,6 +211,7 @@ describe("Ghost cycle reconciliation (local SQLite)", () => {
     const fakePort: GhostCycleCloudPort = {
       findExistingCycleIds: vi.fn(async () => []),
       findEarliestLaterCycle: vi.fn(async () => null), // No later cycles
+      findOpenCycle: vi.fn(async () => null),
     };
 
     const res = await reconcileGhostCycles(db, TENANT, fakePort);
@@ -239,6 +245,7 @@ describe("Ghost cycle reconciliation (local SQLite)", () => {
         }
         return null;
       }),
+      findOpenCycle: vi.fn(async () => null),
     };
 
     const res = await reconcileGhostCycles(db, TENANT, fakePort);
@@ -273,6 +280,7 @@ describe("Ghost cycle reconciliation (local SQLite)", () => {
         throw new Error("Supabase connection timeout 504");
       }),
       findEarliestLaterCycle: vi.fn(async () => null),
+      findOpenCycle: vi.fn(async () => null),
     };
 
     await expect(reconcileGhostCycles(db, TENANT, fakePort)).rejects.toThrow("Supabase connection timeout 504");
@@ -307,6 +315,7 @@ describe("Ghost cycle reconciliation (local SQLite)", () => {
     const fakePort: GhostCycleCloudPort = {
       findExistingCycleIds: vi.fn(async () => []),
       findEarliestLaterCycle: vi.fn(async () => null),
+      findOpenCycle: vi.fn(async () => null),
     };
 
     const res = await reconcileGhostCycles(db, TENANT, fakePort);
@@ -337,6 +346,7 @@ describe("Ghost cycle reconciliation (local SQLite)", () => {
     const fakePort: GhostCycleCloudPort = {
       findExistingCycleIds: vi.fn(async () => []),
       findEarliestLaterCycle: vi.fn(async () => null),
+      findOpenCycle: vi.fn(async () => null),
     };
 
     const res = await reconcileGhostCycles(db, TENANT, fakePort);
@@ -386,6 +396,7 @@ describe("Ghost cycle reconciliation (local SQLite)", () => {
         cycle_number: 110,
         opened_at: "2026-09-19T19:45:49.000Z",
       })),
+      findOpenCycle: vi.fn(async () => null),
     };
 
     const res = await reconcileGhostCycles(db, TENANT, fakePort);
@@ -425,6 +436,7 @@ describe("Ghost cycle reconciliation (local SQLite)", () => {
     const fakePort: GhostCycleCloudPort = {
       findExistingCycleIds: vi.fn(async () => []),
       findEarliestLaterCycle: vi.fn(async () => null),
+      findOpenCycle: vi.fn(async () => null),
     };
 
     const res = await reconcileGhostCycles(db, TENANT, fakePort);
@@ -470,6 +482,7 @@ describe("Ghost cycle reconciliation (local SQLite)", () => {
         }
         return null;
       }),
+      findOpenCycle: vi.fn(async () => null),
     };
 
     const res = await reconcileGhostCycles(db, TENANT, fakePort);
@@ -480,12 +493,14 @@ describe("Ghost cycle reconciliation (local SQLite)", () => {
       cycleNumber: 105,
       closedAt: "2026-09-18T14:00:00.000Z",
       supersededByCycleNumber: 106,
+      supersededBy: "later_cycle",
     });
     expect(res.closed[1]).toEqual({
       id: ghost2,
       cycleNumber: 108,
       closedAt: "2026-09-19T16:00:00.000Z",
       supersededByCycleNumber: 110,
+      supersededBy: "later_cycle",
     });
 
     const cycle1 = db.prepare("SELECT * FROM cierres_operativos WHERE id = ?").get(ghost1) as Record<string, unknown>;
@@ -519,6 +534,7 @@ describe("Ghost cycle reconciliation (local SQLite)", () => {
         expect(afterIso).toBe("2026-09-19T17:40:47.000Z");
         return { id: "cloud-null-branch", cycle_number: 110, opened_at: "2026-09-19T19:45:49.000Z" };
       }),
+      findOpenCycle: vi.fn(async () => null),
     };
 
     const res = await reconcileGhostCycles(db, TENANT, fakePort);
@@ -528,6 +544,7 @@ describe("Ghost cycle reconciliation (local SQLite)", () => {
         cycleNumber: 109,
         closedAt: "2026-09-19T19:45:49.000Z",
         supersededByCycleNumber: 110,
+        supersededBy: "later_cycle",
       },
     ]);
 
@@ -557,6 +574,7 @@ describe("Ghost cycle reconciliation (local SQLite)", () => {
         cycle_number: 110,
         opened_at: "2026-09-19T13:45:49.555-06:00",
       })),
+      findOpenCycle: vi.fn(async () => null),
     };
 
     const res = await reconcileGhostCycles(db, TENANT, fakePort);
@@ -588,6 +606,7 @@ describe("Ghost cycle reconciliation (local SQLite)", () => {
         cycle_number: 108,
         opened_at: "2026-09-19T20:00:00.000+06:00",
       })),
+      findOpenCycle: vi.fn(async () => null),
     };
 
     const res = await reconcileGhostCycles(db, TENANT, fakePort);
@@ -615,6 +634,7 @@ describe("Ghost cycle reconciliation (local SQLite)", () => {
         cycle_number: 110,
         opened_at: "2026-09-19T19:45:49.000Z",
       })),
+      findOpenCycle: vi.fn(async () => null),
     };
 
     const res = await reconcileGhostCycles(db, TENANT, fakePort);
@@ -646,6 +666,7 @@ describe("Ghost cycle reconciliation (local SQLite)", () => {
         cycle_number: 110,
         opened_at: "2026-09-19T19:45:49.000Z",
       })),
+      findOpenCycle: vi.fn(async () => null),
     };
 
     const store = new SQLitePayrollSyncStore(db, TENANT);
@@ -764,6 +785,7 @@ describe("DurableSyncWorker ghost cycle integration and throttle", () => {
         cycle_number: 110,
         opened_at: "2026-09-19T19:45:49.000Z",
       })),
+      findOpenCycle: vi.fn(async () => null),
     };
 
     const server: ServerSyncClient = {
@@ -809,6 +831,7 @@ describe("DurableSyncWorker ghost cycle integration and throttle", () => {
     const fakePort: GhostCycleCloudPort = {
       findExistingCycleIds: vi.fn(async () => []),
       findEarliestLaterCycle: vi.fn(async () => null),
+      findOpenCycle: vi.fn(async () => null),
     };
 
     const server: ServerSyncClient = {
@@ -834,6 +857,7 @@ describe("DurableSyncWorker ghost cycle integration and throttle", () => {
     const fakePort: GhostCycleCloudPort = {
       findExistingCycleIds: vi.fn(async () => []),
       findEarliestLaterCycle: vi.fn(async () => null),
+      findOpenCycle: vi.fn(async () => null),
     };
 
     const server: ServerSyncClient = {
@@ -866,6 +890,176 @@ describe("DurableSyncWorker ghost cycle integration and throttle", () => {
     now += 1_000;
     await worker.pull();
     expect(fakePort.findExistingCycleIds).toHaveBeenCalledTimes(2);
+  });
+
+  // --- Rule B: Superseded by open cloud cycle ---
+  describe("Rule B: Superseded by open cloud cycle", () => {
+    it("closes ghost with closed_at = G.opened_at when cloud has an open cycle for the same sucursal", async () => {
+      const ghostId = "ghost-device-b";
+      insertLocalCycle(db, {
+        id: ghostId,
+        cycleNumber: 109,
+        openedAt: "2026-09-19T17:40:47.000Z",
+        sucursalId: "branch-1",
+        state: "open",
+      });
+
+      const fakePort: GhostCycleCloudPort = {
+        findExistingCycleIds: vi.fn(async () => []),
+        findEarliestLaterCycle: vi.fn(async () => null), // No later cycles exist in cloud
+        findOpenCycle: vi.fn(async (sucursalId, excludeId) => {
+          expect(sucursalId).toBe("branch-1");
+          expect(excludeId).toBe(ghostId);
+          return { id: "cloud-open-x", cycle_number: 108, opened_at: "2026-09-19T10:00:00.000Z" };
+        }),
+      };
+
+      const res = await reconcileGhostCycles(db, TENANT, fakePort);
+
+      expect(res.closed).toEqual([
+        {
+          id: ghostId,
+          cycleNumber: 109,
+          closedAt: "2026-09-19T17:40:47.000Z", // G.opened_at
+          supersededByCycleNumber: 108,
+          supersededBy: "open_cycle",
+        },
+      ]);
+
+      const cycle = db.prepare("SELECT * FROM cierres_operativos WHERE id = ?").get(ghostId) as Record<string, unknown>;
+      expect(cycle.state).toBe("closed");
+      expect(cycle.closed_at).toBe("2026-09-19T17:40:47.000Z");
+
+      const auditRows = db.prepare("SELECT * FROM sync_errors WHERE tenant_id = ?").all(TENANT) as Record<string, unknown>[];
+      expect(auditRows).toHaveLength(1);
+      expect(auditRows[0].error_message).toContain("rule: open_cycle");
+      expect(auditRows[0].error_message).toContain("superseded by open cloud cycle #108");
+    });
+
+    it("leaves ghost untouched when cloud open cycle is in a DIFFERENT sucursal", async () => {
+      const ghostId = "ghost-branch-1";
+      insertLocalCycle(db, {
+        id: ghostId,
+        cycleNumber: 109,
+        openedAt: "2026-09-19T17:40:47.000Z",
+        sucursalId: "branch-1",
+        state: "open",
+      });
+
+      const fakePort: GhostCycleCloudPort = {
+        findExistingCycleIds: vi.fn(async () => []),
+        findEarliestLaterCycle: vi.fn(async () => null),
+        findOpenCycle: vi.fn(async (sucursalId) => {
+          // Cloud only has an open cycle for branch-2, not branch-1
+          if (sucursalId === "branch-2") {
+            return { id: "cloud-open-b2", cycle_number: 50, opened_at: "2026-09-19T08:00:00.000Z" };
+          }
+          return null;
+        }),
+      };
+
+      const res = await reconcileGhostCycles(db, TENANT, fakePort);
+      expect(res.closed).toEqual([]);
+
+      const cycle = db.prepare("SELECT * FROM cierres_operativos WHERE id = ?").get(ghostId) as Record<string, unknown>;
+      expect(cycle.state).toBe("open");
+      expect(cycle.closed_at).toBeNull();
+    });
+
+    it("excludes candidate cycle itself when checking for open cloud cycle (excludeId)", async () => {
+      const ghostId = "ghost-cycle-id";
+      insertLocalCycle(db, {
+        id: ghostId,
+        cycleNumber: 109,
+        openedAt: "2026-09-19T17:40:47.000Z",
+        sucursalId: "branch-1",
+        state: "open",
+      });
+
+      const fakePort: GhostCycleCloudPort = {
+        findExistingCycleIds: vi.fn(async () => []),
+        findEarliestLaterCycle: vi.fn(async () => null),
+        findOpenCycle: vi.fn(async (_sucursalId, excludeId) => {
+          expect(excludeId).toBe(ghostId);
+          return null;
+        }),
+      };
+
+      const res = await reconcileGhostCycles(db, TENANT, fakePort);
+      expect(res.closed).toEqual([]);
+      expect(fakePort.findOpenCycle).toHaveBeenCalledWith("branch-1", ghostId);
+    });
+
+    it("writes nothing anywhere when cloudPort.findOpenCycle throws (atomic rollback)", async () => {
+      const ghostId = "ghost-error-find-open";
+      insertLocalCycle(db, {
+        id: ghostId,
+        cycleNumber: 109,
+        openedAt: "2026-09-19T17:40:47.000Z",
+        sucursalId: "branch-1",
+        state: "open",
+      });
+
+      const fakePort: GhostCycleCloudPort = {
+        findExistingCycleIds: vi.fn(async () => []),
+        findEarliestLaterCycle: vi.fn(async () => null),
+        findOpenCycle: vi.fn(async () => {
+          throw new Error("Network timeout during findOpenCycle");
+        }),
+      };
+
+      await expect(reconcileGhostCycles(db, TENANT, fakePort)).rejects.toThrow("Network timeout during findOpenCycle");
+
+      const cycle = db.prepare("SELECT * FROM cierres_operativos WHERE id = ?").get(ghostId) as Record<string, unknown>;
+      expect(cycle.state).toBe("open");
+      expect(cycle.closed_at).toBeNull();
+
+      const errors = db.prepare("SELECT count(*) as cnt FROM sync_errors").get() as { cnt: number };
+      expect(errors.cnt).toBe(0);
+    });
+
+    it("rule a takes precedence when both a later cycle and an open cycle exist in cloud", async () => {
+      const ghostId = "ghost-precedence";
+      insertLocalCycle(db, {
+        id: ghostId,
+        cycleNumber: 109,
+        openedAt: "2026-09-19T17:40:47.000Z",
+        sucursalId: "branch-1",
+        state: "open",
+      });
+
+      const fakePort: GhostCycleCloudPort = {
+        findExistingCycleIds: vi.fn(async () => []),
+        findEarliestLaterCycle: vi.fn(async () => ({
+          id: "cloud-later-110",
+          cycle_number: 110,
+          opened_at: "2026-09-19T20:00:00.000Z",
+        })),
+        findOpenCycle: vi.fn(async () => ({
+          id: "cloud-open-x",
+          cycle_number: 108,
+          opened_at: "2026-09-19T10:00:00.000Z",
+        })),
+      };
+
+      const res = await reconcileGhostCycles(db, TENANT, fakePort);
+
+      // Rule a takes precedence: closedAt = laterCycle.opened_at, supersededBy = "later_cycle"
+      expect(res.closed).toEqual([
+        {
+          id: ghostId,
+          cycleNumber: 109,
+          closedAt: "2026-09-19T20:00:00.000Z",
+          supersededByCycleNumber: 110,
+          supersededBy: "later_cycle",
+        },
+      ]);
+      expect(fakePort.findOpenCycle).not.toHaveBeenCalled();
+
+      const cycle = db.prepare("SELECT * FROM cierres_operativos WHERE id = ?").get(ghostId) as Record<string, unknown>;
+      expect(cycle.state).toBe("closed");
+      expect(cycle.closed_at).toBe("2026-09-19T20:00:00.000Z");
+    });
   });
 });
 
@@ -941,5 +1135,90 @@ describe("createSupabaseGhostCycleCloudPort", () => {
 
     const port = createSupabaseGhostCycleCloudPort(fromMock, "tenant-abc");
     await expect(port.findExistingCycleIds(["c-1"])).rejects.toThrow("Permission denied (RLS)");
+  });
+
+  it("queries open cycle with non-null branch using eq, is null closed_at, neq id, order, and limit 1", async () => {
+    const { tableClient, queryBuilder } = createMockSupabaseBuilder([
+      { id: "c-open-1", cycle_number: 100, opened_at: "2026-09-19T08:00:00Z" },
+    ]);
+    const fromMock = vi.fn(() => tableClient);
+
+    const port = createSupabaseGhostCycleCloudPort(fromMock, "tenant-abc");
+    const cycle = await port.findOpenCycle("branch-1", "candidate-123");
+
+    expect(tableClient.select).toHaveBeenCalledWith("id, cycle_number, opened_at");
+    expect(queryBuilder.eq).toHaveBeenCalledWith("tenant_id", "tenant-abc");
+    expect(queryBuilder.is).toHaveBeenCalledWith("closed_at", null);
+    expect(queryBuilder.neq).toHaveBeenCalledWith("id", "candidate-123");
+    expect(queryBuilder.eq).toHaveBeenCalledWith("sucursal_id", "branch-1");
+    expect(queryBuilder.order).toHaveBeenCalledWith("opened_at", { ascending: true });
+    expect(queryBuilder.limit).toHaveBeenCalledWith(1);
+    expect(cycle).toEqual({
+      id: "c-open-1",
+      cycle_number: 100,
+      opened_at: "2026-09-19T08:00:00Z",
+    });
+  });
+
+  it("queries open cycle with null branch using is null sucursal_id, is null closed_at, neq id, order, and limit 1", async () => {
+    const { tableClient, queryBuilder } = createMockSupabaseBuilder([
+      { id: "c-open-2", cycle_number: 101, opened_at: "2026-09-19T09:00:00Z" },
+    ]);
+    const fromMock = vi.fn(() => tableClient);
+
+    const port = createSupabaseGhostCycleCloudPort(fromMock, "tenant-abc");
+    const cycle = await port.findOpenCycle(null, "candidate-456");
+
+    expect(queryBuilder.is).toHaveBeenCalledWith("closed_at", null);
+    expect(queryBuilder.is).toHaveBeenCalledWith("sucursal_id", null);
+    expect(queryBuilder.neq).toHaveBeenCalledWith("id", "candidate-456");
+    expect(cycle).toEqual({
+      id: "c-open-2",
+      cycle_number: 101,
+      opened_at: "2026-09-19T09:00:00Z",
+    });
+  });
+
+  it("returns null when no open cycle is found in cloud", async () => {
+    const { tableClient } = createMockSupabaseBuilder([]);
+    const fromMock = vi.fn(() => tableClient);
+
+    const port = createSupabaseGhostCycleCloudPort(fromMock, "tenant-abc");
+    const cycle = await port.findOpenCycle("branch-1", "cand-id");
+    expect(cycle).toBeNull();
+  });
+
+  it("throws when Supabase query returns an error in findOpenCycle", async () => {
+    const { tableClient } = createMockSupabaseBuilder(null, { message: "Cloud connection failed" });
+    const fromMock = vi.fn(() => tableClient);
+
+    const port = createSupabaseGhostCycleCloudPort(fromMock, "tenant-abc");
+    await expect(port.findOpenCycle("branch-1", "cand-id")).rejects.toThrow("Failed to query open cycles in cloud: Cloud connection failed");
+  });
+});
+
+describe("isBlockingCycleOutboxError", () => {
+  it("returns false for null or empty input", () => {
+    expect(isBlockingCycleOutboxError(null)).toBe(false);
+    expect(isBlockingCycleOutboxError("")).toBe(false);
+  });
+
+  it("returns true for conflict outbox errors", () => {
+    expect(isBlockingCycleOutboxError(JSON.stringify({ conflict: true }))).toBe(true);
+    expect(isBlockingCycleOutboxError(JSON.stringify({ code: "23505" }))).toBe(true);
+    expect(isBlockingCycleOutboxError(JSON.stringify({ message: "Ya existe un ciclo operativo abierto" }))).toBe(true);
+  });
+
+  it("returns true when ghostCycle is true", () => {
+    expect(isBlockingCycleOutboxError(JSON.stringify({ ghostCycle: true }))).toBe(true);
+  });
+
+  it("returns false for non-conflict and non-ghost errors", () => {
+    expect(isBlockingCycleOutboxError(JSON.stringify({ message: "Network timeout", retryable: true }))).toBe(false);
+    expect(isBlockingCycleOutboxError(JSON.stringify({ ghostCycle: false }))).toBe(false);
+  });
+
+  it("returns false for invalid JSON", () => {
+    expect(isBlockingCycleOutboxError("not json")).toBe(false);
   });
 });

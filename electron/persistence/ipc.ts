@@ -15,6 +15,7 @@ import type { PayablesCommand, PayablesRepositoryResult } from "./payablesReposi
 import type { ExpenseCommand, ExpenseRepositoryResult } from "./expenseRepository";
 import type { CustomerCommand, CustomerRepositoryResult } from "./customerRepository";
 import type { DesktopCheckoutCommand, DesktopCheckoutResult } from "../../src/shared/lib/checkoutContracts";
+import type { GhostCycleClosedItem, ReconcileGhostCyclesNowResult } from "./ghostCycleReconcile";
 
 export type InvoiceHeaderUpdateResult =
   | { ok: true; changed: boolean }
@@ -29,6 +30,9 @@ export const CATALOG_LIST_CHANNEL = "catalog:list";
 export const TENANT_SETTINGS_MERGE_CHANNEL = "tenant-settings:merge";
 export const ORDERS_REPOSITORY_EXECUTE_CHANNEL = "orders-repository:execute";
 export const CIERRES_LIST_CHANNEL = "cierres:list";
+export const CIERRES_RECONCILE_GHOST_CYCLES_CHANNEL = "cierres:reconcile-ghost-cycles";
+export const CIERRES_CYCLE_SYNC_STATUS_CHANNEL = "cierres:cycle-sync-status";
+export const GHOST_CYCLES_CLOSED_CHANNEL = "ghost-cycles-closed";
 export const MESAS_LIST_CHANNEL = "mesas:list";
 export const MESAS_SAVE_CHANNEL = "mesas:save";
 export const COCINA_STATUS_CHANNEL = "cocina:status";
@@ -484,6 +488,8 @@ export function registerOrdersRepositoryIpc(input: {
   isTrustedSender: (event: { senderId: number }) => boolean;
   getRepository: () => { execute(command: OrdersCommand): OrdersRepositoryResult };
   listCierres?: (filter?: { tenantId?: string; sucursalId?: string; limit?: number; dateFrom?: string; dateTo?: string }) => Array<Record<string, unknown>>;
+  reconcileGhostCycles?: () => Promise<ReconcileGhostCyclesNowResult>;
+  getCycleSyncStatus?: (cycleId: string) => { openPushConflict: boolean };
   listMesasEstado?: (filter?: { tenantId?: string; sucursalId?: string }) => Array<Record<string, unknown>>;
   saveMesaEstado?: (payload: Record<string, unknown>) => void;
   listCocinaEstado?: (filter?: { tenantId?: string; sucursalId?: string }) => Array<Record<string, unknown>>;
@@ -522,6 +528,30 @@ export function registerOrdersRepositoryIpc(input: {
     if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
     return { ok: true, data: input.listCierres?.(filter as { tenantId?: string; sucursalId?: string; limit?: number; dateFrom?: string; dateTo?: string }) ?? [] };
   });
+
+  const handleReconcile = async (event: { senderId: number }): Promise<ReconcileGhostCyclesNowResult> => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    try {
+      if (!input.reconcileGhostCycles) {
+        return { ok: false, reason: "unavailable" };
+      }
+      return await input.reconcileGhostCycles();
+    } catch {
+      return { ok: false, reason: "error" };
+    }
+  };
+  input.ipcMain.removeHandler(CIERRES_RECONCILE_GHOST_CYCLES_CHANNEL);
+  input.ipcMain.handle(CIERRES_RECONCILE_GHOST_CYCLES_CHANNEL, handleReconcile);
+
+  const handleCycleSyncStatus = async (event: { senderId: number }, cycleId?: unknown) => {
+    if (!input.isTrustedSender(event)) throw new Error("Untrusted IPC sender");
+    if (typeof cycleId !== "string" || !cycleId) {
+      return { openPushConflict: false };
+    }
+    return input.getCycleSyncStatus?.(cycleId) ?? { openPushConflict: false };
+  };
+  input.ipcMain.removeHandler(CIERRES_CYCLE_SYNC_STATUS_CHANNEL);
+  input.ipcMain.handle(CIERRES_CYCLE_SYNC_STATUS_CHANNEL, handleCycleSyncStatus);
 
   input.ipcMain.removeHandler(MESAS_LIST_CHANNEL);
   input.ipcMain.handle(MESAS_LIST_CHANNEL, async (event, filter) => {

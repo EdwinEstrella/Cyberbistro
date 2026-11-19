@@ -8,6 +8,10 @@ export interface GhostCycleCloudPort {
     sucursalId: string | null,
     afterIso: string,
   ): Promise<{ id: string; cycle_number: number; opened_at: string } | null>;
+  findOpenCycle(
+    sucursalId: string | null,
+    excludeId: string,
+  ): Promise<{ id: string; cycle_number: number; opened_at: string } | null>;
 }
 
 export interface ReconcileGhostCyclesResult {
@@ -16,8 +20,15 @@ export interface ReconcileGhostCyclesResult {
     cycleNumber: number | null;
     closedAt: string;
     supersededByCycleNumber: number;
+    supersededBy: "later_cycle" | "open_cycle";
   }>;
 }
+
+export type GhostCycleClosedItem = ReconcileGhostCyclesResult["closed"][number];
+
+export type ReconcileGhostCyclesNowResult =
+  | { ok: true; closed: GhostCycleClosedItem[] }
+  | { ok: false; reason: "unavailable" | "error" };
 
 export interface GhostCycleCandidate {
   id: string;
@@ -83,6 +94,21 @@ export function isConflictOutboxError(errorJson: string | null): boolean {
     }
 
     return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Evaluates whether a sync_outbox error_json value represents a blocking conflict
+ * for cycle operations (either an outbox conflict or a previously auto-closed ghost cycle).
+ */
+export function isBlockingCycleOutboxError(errorJson: string | null): boolean {
+  if (!errorJson) return false;
+  if (isConflictOutboxError(errorJson)) return true;
+  try {
+    const parsed = JSON.parse(errorJson);
+    return Boolean(parsed && typeof parsed === "object" && parsed.ghostCycle === true);
   } catch {
     return false;
   }
@@ -176,25 +202,49 @@ export async function reconcileGhostCycles(
     return { closed: [] };
   }
 
-  // Find the earliest later cloud cycle for each candidate.
+  // Find superseding cloud cycle for each candidate.
   const confirmed: Array<{
     candidate: GhostCycleCandidate;
-    earliestLater: { id: string; cycle_number: number; opened_at: string };
+    closedAt: string;
+    supersededByCycleNumber: number;
+    supersededBy: "later_cycle" | "open_cycle";
+    auditDetail: string;
   }> = [];
 
   for (const c of nonExisting) {
     const candEpoch = Date.parse(c.openedAtIso);
 
+    // a. If the cloud has a cycle opened strictly later -> rule a
     const earliestLater = await cloudPort.findEarliestLaterCycle(c.effectiveSucursalId, c.openedAtIso);
-    if (!earliestLater) continue;
+    let matchedRuleA = false;
+    if (earliestLater) {
+      const cloudEpoch = Date.parse(earliestLater.opened_at);
+      if (cloudEpoch > candEpoch) {
+        matchedRuleA = true;
+        confirmed.push({
+          candidate: c,
+          closedAt: earliestLater.opened_at,
+          supersededByCycleNumber: earliestLater.cycle_number,
+          supersededBy: "later_cycle",
+          auditDetail: `superseded by cloud cycle #${earliestLater.cycle_number} opened ${earliestLater.opened_at} (rule: later_cycle)`,
+        });
+      }
+    }
 
-    const cloudEpoch = Date.parse(earliestLater.opened_at);
-    if (cloudEpoch <= candEpoch) continue;
-
-    confirmed.push({
-      candidate: c,
-      earliestLater,
-    });
+    if (!matchedRuleA) {
+      // b. Else if the cloud has an OPEN cycle for the same sucursal (any opened_at) -> close G with closed_at = G.opened_at
+      const openCycle = await cloudPort.findOpenCycle(c.effectiveSucursalId, c.id);
+      if (openCycle) {
+        confirmed.push({
+          candidate: c,
+          closedAt: c.openedAtIso,
+          supersededByCycleNumber: openCycle.cycle_number,
+          supersededBy: "open_cycle",
+          auditDetail: `superseded by open cloud cycle #${openCycle.cycle_number} opened ${openCycle.opened_at} (rule: open_cycle)`,
+        });
+      }
+      // c. Else -> untouched.
+    }
   }
 
   if (confirmed.length === 0) {
@@ -229,9 +279,10 @@ export async function reconcileGhostCycles(
       VALUES (?, ?, 'cierres_operativos', ?, ?, CURRENT_TIMESTAMP)
     `);
 
-    for (const { candidate, earliestLater } of confirmed) {
+    for (const item of confirmed) {
+      const { candidate } = item;
       // Re-check state='open'
-      const updateRes = updateCycleStmt.run(earliestLater.opened_at, candidate.id);
+      const updateRes = updateCycleStmt.run(item.closedAt, candidate.id);
       if (updateRes.changes === 0) {
         continue;
       }
@@ -260,14 +311,15 @@ export async function reconcileGhostCycles(
 
       // Insert audit row in sync_errors
       const cycleNumberStr = candidate.cycleNumber != null ? `#${candidate.cycleNumber}` : candidate.id;
-      const auditMsg = `Ghost cycle ${cycleNumberStr} auto-closed: not present in cloud, superseded by cloud cycle #${earliestLater.cycle_number} opened ${earliestLater.opened_at}`;
+      const auditMsg = `Ghost cycle ${cycleNumberStr} auto-closed: not present in cloud, ${item.auditDetail}`;
       insertAuditStmt.run(randomUUID(), tenantId, candidate.id, auditMsg);
 
       closed.push({
         id: candidate.id,
         cycleNumber: candidate.cycleNumber,
-        closedAt: earliestLater.opened_at,
-        supersededByCycleNumber: earliestLater.cycle_number,
+        closedAt: item.closedAt,
+        supersededByCycleNumber: item.supersededByCycleNumber,
+        supersededBy: item.supersededBy,
       });
     }
 
@@ -323,6 +375,39 @@ export function createSupabaseGhostCycleCloudPort(
       const { data, error } = await query;
       if (error) {
         throw new Error(`Failed to query later cycles in cloud: ${error.message}`);
+      }
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!row) return null;
+
+      return {
+        id: String(row.id),
+        cycle_number: Number(row.cycle_number),
+        opened_at: String(row.opened_at),
+      };
+    },
+
+    async findOpenCycle(
+      sucursalId: string | null,
+      excludeId: string,
+    ): Promise<{ id: string; cycle_number: number; opened_at: string } | null> {
+      const tableClient = await tableClientProvider("cierres_operativos");
+      let query = tableClient
+        .select("id, cycle_number, opened_at")
+        .eq("tenant_id", tenantId)
+        .is("closed_at", null)
+        .neq("id", excludeId);
+
+      if (sucursalId === null) {
+        query = query.is("sucursal_id", null);
+      } else {
+        query = query.eq("sucursal_id", sucursalId);
+      }
+
+      query = query.order("opened_at", { ascending: true }).limit(1);
+
+      const { data, error } = await query;
+      if (error) {
+        throw new Error(`Failed to query open cycles in cloud: ${error.message}`);
       }
       const row = Array.isArray(data) ? data[0] : data;
       if (!row) return null;

@@ -81,6 +81,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   updateInvoiceHeaderLocal: (request: unknown) => ipcRenderer.invoke('facturas:update-header', request),
   commitCheckout: (command: unknown) => ipcRenderer.invoke('checkout:commit', command),
   listCierres: (filter?: unknown) => ipcRenderer.invoke('cierres:list', filter),
+  reconcileGhostCycles: () => ipcRenderer.invoke('cierres:reconcile-ghost-cycles'),
+  cycleSyncStatus: (cycleId: string) => ipcRenderer.invoke('cierres:cycle-sync-status', cycleId),
   listMesasEstado: (filter?: unknown) => ipcRenderer.invoke('mesas:list', filter),
   saveMesaEstado: (payload: unknown) => ipcRenderer.invoke('mesas:save', payload),
   listCocinaEstado: (filter?: unknown) => ipcRenderer.invoke('cocina:status', filter),
@@ -108,6 +110,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const listener = (_event: unknown, payload: { tenantId: string; tables: string[] }) => callback(payload);
     ipcRenderer.on('local-data-updated', listener);
     return () => ipcRenderer.removeListener('local-data-updated', listener);
+  },
+  onGhostCyclesClosed: (callback: (payload: Array<{ cycleNumber: number | null; closedAt: string; supersededByCycleNumber: number }>) => void) => {
+    const listener = (_event: unknown, payload: Array<{ cycleNumber: number | null; closedAt: string; supersededByCycleNumber: number }>) => callback(payload);
+    ipcRenderer.on('ghost-cycles-closed', listener);
+    return () => ipcRenderer.removeListener('ghost-cycles-closed', listener);
   },
   retryFailedSyncErrors: (tenantId?: string) => ipcRenderer.invoke('sync:retry-errors', tenantId),
   close: () => {

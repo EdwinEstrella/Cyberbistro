@@ -48,7 +48,7 @@ The sync pull mechanism (`applyCloudOperationalCycleRows`) only upserts cloud ro
 ## Tasks
 - [x] T1 Auto-close ghost cycles during sync (main process) + tests. Evidence: commit be6084d; full suite 357 files / 2934 tests green; typecheck clean. Route: delegated (agy), trigger: 2+ non-trivial files.
 - [x] T2 Renumber a cycle-open push rejected by the cloud's unique (tenant_id, cycle_number) index instead of leaving it stuck; treat "Ya existe un ciclo operativo abierto" as a permanent conflict. Evidence: test/cycle-open-renumber.test.ts 15 tests green; full suite 358 files / 2949 tests green; typecheck clean. Route: delegated (agy).
-- [ ] T3 Cierre screen: run the reconcile before "Cerrar & Imprimir", block close/print of a cycle whose open push is in conflict, and show a toast when a ghost cycle was auto-closed. Route: delegated (agy).
+- [x] T3 Cierre screen: run the reconcile before "Cerrar & Imprimir", block close/print of a cycle whose open push is in conflict, and show a toast when a ghost cycle was auto-closed. Evidence: 11 test files / 69 tests passed; full suite 361 test files / 2980 tests passed; typecheck clean. Route: delegated (agy), trigger: 2+ non-trivial files.
 
 ## Progress
 - Step 0: Created feature document `odd/tasks/ghost-cycle-reconcile.md` establishing safety contract, constraints, acceptance criteria, and checklist.
@@ -68,13 +68,30 @@ The sync pull mechanism (`applyCloudOperationalCycleRows`) only upserts cloud ro
   4. Tightened P0001 rule in `classifyRemoteError`: for `cierres_operativos`, classifies as conflict only when message contains `"ya existe un ciclo operativo abierto"` (case-insensitive) regardless of code; bare P0001 with unrelated messages keeps existing transient retry classification across all tables.
   5. `electron/persistence/payrollSyncStore.ts`: Extracted renumbering block in `settle` to private method `applyCycleRenumber(cycleId, settledOutboxId, newCycleNumber)` preparing statements once per call within the same transaction, and removed dead `cycle_number` payload branch (only camelCase `cycleNumber` exists in codebase writers).
   6. Adapted `test/cycle-open-renumber.test.ts` (16 tests) with conforming builder fakes, missing select handling, tightened conflict rules, and updated test descriptions.
+- T3: Cierre screen guard, IPC requests, and ghost-cycle toast notification:
+  1. Main & Sync Orchestration: Added `reconcileGhostCyclesNow()` to `DurableSyncWorker` and `PayrollSyncOrchestrator` to bypass the 10-minute throttle while recording the throttle stamp; added `onGhostCyclesClosed` callback emitting `ghost-cycles-closed` IPC event with payload `[{ cycleNumber, closedAt, supersededByCycleNumber }]` whenever reconcile closes >=1 cycle.
+  2. IPC: Exposed `cierres.reconcileGhostCycles` and `cierres.cycleSyncStatus` in `electron/persistence/ipc.ts` (handled via `registerOrdersRepositoryIpc`) with sender trust verification and safe error wrapping (returns `{ ok: false, reason: "unavailable" | "offline" | "error" }`, never throwing to renderer).
+  3. SQLite Store: Added `getCycleSyncStatus(cycleId)` on `TenantStore` and `TenantStoreController` to inspect `sync_outbox` for conflicts via `isConflictOutboxError` or `ghostCycle: true`.
+  4. Preload & Types: Exposed `reconcileGhostCycles`, `cycleSyncStatus`, and `onGhostCyclesClosed` on `window.electronAPI` in `electron/preload.ts`, `electron/preload.cjs`, and `src/shared/types/electron.d.ts`.
+  5. Renderer Guard: Created pure function `decideCloseGuard` in `src/features/cierre/lib/cierreCloseGuard.ts` and adapter `runCierreCloseGuard` in `src/features/cierre/lib/cierreGuardAdapter.ts`, wired in `Cierre.tsx` `handleCerrarCiclo` before computing totals/printing.
+  6. Global Toast Notification: Created `src/features/cierre/lib/useGhostCyclesToast.ts` mounted app-wide in `src/app/App.tsx`, triggering `sonner` warning toast with exact Spanish wording per auto-closed ghost cycle.
+  7. Tests: Added `src/features/cierre/lib/cierreCloseGuard.test.ts` (7 tests), `src/features/cierre/lib/useGhostCyclesToast.test.ts` (6 tests), and `test/cierres-ghost-cycle-ipc.test.ts` (17 tests).
+- T3 review round 1:
+  1. Blocker logic bug fix (Rule B): Extended `GhostCycleCloudPort` with `findOpenCycle(sucursalId, excludeId)`. When cloud lacks candidate ID and has no strictly later cycle, but has an OPEN cycle for the same sucursal, closes the duplicate candidate G with `closed_at = G.opened_at` (zero-length window superseded by the open cloud cycle). Added `supersededBy: "later_cycle" | "open_cycle"` to closed items and audit rows. Added 5 targeted `it` blocks in `test/local-sqlite-ghost-cycle-reconcile.test.ts`.
+  2. One type per concept: Exported `GhostCycleClosedItem` and `ReconcileGhostCyclesNowResult` from `ghostCycleReconcile.ts` across main/sync orchestration; deleted `GhostCycleClosedNotification` and `GhostCycleNotificationPayload`. On renderer side, unified single closed-item shape `GhostCycleClosedItem`, `ReconcileGhostCyclesResponse`, and `CycleSyncStatusResponse` in `src/shared/types/electron.d.ts` and deleted local duplicated shapes in `cierreCloseGuard.ts`.
+  3. Dropped "offline" reason and `isOfflineError`: Unified failure reasons to `"unavailable" | "error"` across the stack.
+  4. Deduplicated worker reconcile flow: Extracted private `executeGhostCycleReconcile(): Promise<ReconcileGhostCyclesNowResult>` stamping throttle, getting port, running store reconcile, logging, and notifying `onGhostCyclesClosed`. `runGhostCycleReconcile(pullResult)` checks throttle and delegates; `reconcileGhostCyclesNow()` delegates directly. Removed `force` parameter; made `onGhostCyclesClosed` private readonly from options.
+  5. Standardized IPC channels: Renamed constants to domain:kebab convention `cierres:reconcile-ghost-cycles` and `cierres:cycle-sync-status`, removed dotted aliases and redundant handler registrations, and updated both preloads.
+  6. Centralized blocking sync outbox decision: Extracted `isBlockingCycleOutboxError` to `ghostCycleReconcile.ts` with dedicated unit tests; simplified `TenantStore.getCycleSyncStatus` to call it and removed unused `tenantId` activation branch from `TenantStoreController.getCycleSyncStatus`.
+  7. Cashier close guard timeout bounds: Bounded `reconcileGhostCycles` and `cycleSyncStatus` IPC calls with named constant `CLOSE_GUARD_TIMEOUT_MS = 5000` via `withTimeout` in `cierreGuardAdapter.ts` (reconcile timeout resolves as `{ ok: false, reason: "error" }`, status timeout as `null`). Added 7 fake-timer tests in new test file `src/features/cierre/lib/cierreGuardAdapter.test.ts`.
+  8. Neutral Spanish UI text: Updated `MSG_OPEN_PUSH_CONFLICT` to neutral Spanish using "tú" (`"No se puede cerrar este ciclo: la nube no lo aceptó. Conéctate a internet y espera unos minutos; el sistema lo corrige solo."`) and aligned test expectations.
 
 ## Verification evidence
-- `git diff --stat -- test/`: clean / empty (0 modified lines in existing test files; new test file `test/cycle-open-renumber.test.ts` untracked).
+- `git diff --stat -- '*.test.ts' '*.test.tsx'`: `test/local-sqlite-ghost-cycle-reconcile.test.ts` (279 insertions; adapted fakes and new it blocks only).
 - `npm run typecheck`: clean (exit code 0).
-- `npx vitest run test/cycle-open-renumber.test.ts test/payrollSyncClient.test.ts test/durable-sync-worker.test.ts test/local-sqlite-ghost-cycle-reconcile.test.ts test/local-sqlite-cierres-write.test.ts`: 5 test files, 75 tests passed (exit code 0).
-- `npm test`: 358 test files passed, 1 skipped (359 total); 2950 tests passed, 2 skipped (exit code 0).
+- `npx vitest run test/local-sqlite-ghost-cycle-reconcile.test.ts test/cierres-ghost-cycle-ipc.test.ts test/desktop-ipc-guard.test.ts test/cycle-open-renumber.test.ts src/features/cierre`: 14 test files, 132 tests passed (exit code 0).
+- `npm test`: 362 test files passed, 1 skipped (363 total); 3001 tests passed, 2 skipped (exit code 0).
 - `graphify update .`: completed (exit code 0).
 
 ## Next step
-Execute T3: Cierre screen: run the reconcile before "Cerrar & Imprimir", block close/print of a cycle whose open push is in conflict, and show a toast when a ghost cycle was auto-closed. Route: delegated (agy).
+Feature complete. Ready for review.

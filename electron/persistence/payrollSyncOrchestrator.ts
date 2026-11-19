@@ -3,6 +3,7 @@ import log from "electron-log";
 import { DurableSyncWorker, type ServerSyncClient } from "./syncWorker";
 import { SQLitePayrollSyncStore } from "./payrollSyncStore";
 import { PayrollSyncClient } from "./payrollSyncClient";
+import type { GhostCycleClosedItem, ReconcileGhostCyclesNowResult } from "./ghostCycleReconcile";
 
 export interface PullAppliedPayload {
   tenantId: string;
@@ -20,6 +21,7 @@ export class PayrollSyncOrchestrator {
   private client: ServerSyncClient | null = null;
   private tenantId = "";
   public onPullApplied?: (payload: PullAppliedPayload) => void;
+  public onGhostCyclesClosed?: (closed: GhostCycleClosedItem[]) => void;
 
   public start(db: DatabaseSync, tenantId: string, clientOverride?: any) {
     this.stop();
@@ -30,7 +32,9 @@ export class PayrollSyncOrchestrator {
       const client = clientOverride || new PayrollSyncClient(undefined, this.accessToken);
       this.store = store;
       this.client = client;
-      this.worker = new DurableSyncWorker(store, client, tenantId);
+      this.worker = new DurableSyncWorker(store, client, tenantId, {
+        onGhostCyclesClosed: (closed) => this.onGhostCyclesClosed?.(closed),
+      });
       
       this.intervalId = setInterval(() => this.triggerSync(), 30000);
       this.intervalId.unref(); // Don't block exit
@@ -100,5 +104,12 @@ export class PayrollSyncOrchestrator {
 
   public isRunning(): boolean {
     return this.worker !== null;
+  }
+
+  public async reconcileGhostCyclesNow(): Promise<ReconcileGhostCyclesNowResult> {
+    if (!this.worker || this.stopRequested) {
+      return { ok: false, reason: "unavailable" };
+    }
+    return this.worker.reconcileGhostCyclesNow();
   }
 }
