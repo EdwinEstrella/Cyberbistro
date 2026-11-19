@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAjustesSavePayload } from "./ajustesPayload";
+import { buildAjustesSavePayload, mapTenantRowToAjustesConfig } from "./ajustesPayload";
 import type { AjustesConfig } from "../types";
 
 function createMockConfig(overrides?: Partial<AjustesConfig>): AjustesConfig {
@@ -20,23 +20,11 @@ function createMockConfig(overrides?: Partial<AjustesConfig>): AjustesConfig {
     kitchen_enabled: true,
     sin_comprobante_por_defecto: false,
     ncf_fiscal_activo: false,
-    fiscal_mode: "ncf_legacy",
-    fiscal_mode_fallback: "internal_receipt",
+    fiscal_mode: "internal_receipt",
     ecf_environment: "certification",
-    ncf_tipo_default: "B01",
-    ncf_secuencia_siguiente: 10,
-    ncf_secuencias_por_tipo: {
-      B01: 10,
-      B02: 25,
-      B14: 1,
-      B15: 1,
-      B16: 1,
-      B17: 1,
-    },
-    ncf_tipos_activos: {
-      B01: true,
-      B02: true,
-    },
+    ncf_tipo_default: "E32",
+    ncf_secuencias_por_tipo: {},
+    ncf_tipos_activos: {},
     ...overrides,
   };
 }
@@ -68,10 +56,10 @@ describe("buildAjustesSavePayload", () => {
     expect(payload).not.toHaveProperty("ncf_secuencia_siguiente");
   });
 
-  it("omits fiscal_mode and legacy NCF fields when existing tenant is dgii_ecf even if config has ncf_legacy", () => {
+  it("omits fiscal_mode and legacy NCF fields when existing tenant is dgii_ecf even if config has legacy value", () => {
     const config = createMockConfig({
-      fiscal_mode: "ncf_legacy",
-      ncf_tipo_default: "B02",
+      fiscal_mode: "internal_receipt",
+      ncf_tipo_default: "E32",
     });
     const payload = buildAjustesSavePayload({
       config,
@@ -84,11 +72,11 @@ describe("buildAjustesSavePayload", () => {
     expect(payload).not.toHaveProperty("ncf_secuencia_siguiente");
   });
 
-  it("includes fiscal_mode when switching between internal_receipt and ncf_legacy", () => {
-    const legacyConfig = createMockConfig({ fiscal_mode: "ncf_legacy" });
+  it("includes fiscal_mode when saving non-eCF mode, converting legacy ncf_legacy to internal_receipt", () => {
+    const legacyConfig = createMockConfig({ fiscal_mode: "ncf_legacy" as any });
     const legacyPayload = buildAjustesSavePayload({ config: legacyConfig });
-    expect(legacyPayload.fiscal_mode).toBe("ncf_legacy");
-    expect(legacyPayload.ncf_fiscal_activo).toBe(true);
+    expect(legacyPayload.fiscal_mode).toBe("internal_receipt");
+    expect(legacyPayload.ncf_fiscal_activo).toBe(false);
 
     const internalConfig = createMockConfig({ fiscal_mode: "internal_receipt" });
     const internalPayload = buildAjustesSavePayload({ config: internalConfig });
@@ -96,7 +84,7 @@ describe("buildAjustesSavePayload", () => {
     expect(internalPayload.ncf_fiscal_activo).toBe(false);
   });
 
-  it("writes B-series sequence columns and updates B sequences in ncf_secuencias_por_tipo", () => {
+  it("never writes B-series sequence columns and ignores B sequences in ncf_secuencias_por_tipo", () => {
     const config = createMockConfig({
       ncf_secuencias_por_tipo: {
         B01: 50,
@@ -110,19 +98,18 @@ describe("buildAjustesSavePayload", () => {
 
     const payload = buildAjustesSavePayload({ config });
 
-    expect(payload.ncf_b01_secuencia_siguiente).toBe(50);
-    expect(payload.ncf_b02_secuencia_siguiente).toBe(120);
-    expect(payload.ncf_b14_secuencia_siguiente).toBe(15);
-    expect(payload.ncf_b15_secuencia_siguiente).toBe(8);
-    expect(payload.ncf_b16_secuencia_siguiente).toBe(3);
-    expect(payload.ncf_b17_secuencia_siguiente).toBe(9);
+    expect(payload).not.toHaveProperty("ncf_b01_secuencia_siguiente");
+    expect(payload).not.toHaveProperty("ncf_b02_secuencia_siguiente");
+    expect(payload).not.toHaveProperty("ncf_b14_secuencia_siguiente");
+    expect(payload).not.toHaveProperty("ncf_b15_secuencia_siguiente");
+    expect(payload).not.toHaveProperty("ncf_b16_secuencia_siguiente");
+    expect(payload).not.toHaveProperty("ncf_b17_secuencia_siguiente");
+    expect(payload).not.toHaveProperty("ncf_secuencia_siguiente");
 
-    expect(payload.ncf_secuencias_por_tipo.B01).toBe(50);
-    expect(payload.ncf_secuencias_por_tipo.B02).toBe(120);
-    expect(payload.ncf_secuencias_por_tipo.B14).toBe(15);
+    expect(payload.ncf_secuencias_por_tipo).toEqual({});
   });
 
-  it("preserves existing e-CF (E-code) sequences and rejects any E-code sequence edits from Ajustes", () => {
+  it("preserves existing sequences (including B-codes) unchanged and rejects edits from config", () => {
     const config = createMockConfig({
       ncf_secuencias_por_tipo: {
         B01: 99,
@@ -133,7 +120,7 @@ describe("buildAjustesSavePayload", () => {
 
     const existingTenant = {
       ncf_secuencias_por_tipo: {
-        B01: 10,
+        B01: 7,
         E31: 42,
         E32: 100,
       },
@@ -141,21 +128,23 @@ describe("buildAjustesSavePayload", () => {
 
     const payload = buildAjustesSavePayload({ config, existingTenant });
 
-    // B01 updated to 99
-    expect(payload.ncf_b01_secuencia_siguiente).toBe(99);
-    expect(payload.ncf_secuencias_por_tipo.B01).toBe(99);
+    // B sequence columns are omitted from payload
+    expect(payload).not.toHaveProperty("ncf_b01_secuencia_siguiente");
+
+    // Existing B01: 7 is preserved unchanged; config's B01: 99 is ignored
+    expect(payload.ncf_secuencias_por_tipo.B01).toBe(7);
 
     // E31 and E32 retained original values from existing tenant, ignoring config's attempt to overwrite
     expect(payload.ncf_secuencias_por_tipo.E31).toBe(42);
     expect(payload.ncf_secuencias_por_tipo.E32).toBe(100);
   });
 
-  it("preserves existing e-CF active flags while applying B-code active flags", () => {
+  it("preserves existing B-code active flags unchanged while applying non-B toggles from config and ignoring B toggles", () => {
     const config = createMockConfig({
       ncf_tipos_activos: {
-        B01: true,
-        B02: false,
-        E31: false, // Should NOT disable E31
+        B01: false, // Ignored; existing B01 stays true
+        B02: false, // Ignored; existing B02 stays true
+        E31: false, // Non-B toggle from config is applied
       },
     });
 
@@ -169,9 +158,12 @@ describe("buildAjustesSavePayload", () => {
 
     const payload = buildAjustesSavePayload({ config, existingTenant });
 
+    // Existing B active flags are preserved unchanged, ignoring config B values
     expect(payload.ncf_tipos_activos.B01).toBe(true);
-    expect(payload.ncf_tipos_activos.B02).toBe(false);
-    expect(payload.ncf_tipos_activos.E31).toBe(true);
+    expect(payload.ncf_tipos_activos.B02).toBe(true);
+
+    // Non-B active toggle from config is applied
+    expect(payload.ncf_tipos_activos.E31).toBe(false);
   });
 
   it("formats base tenant information, clamping logo offsets and sizes", () => {
@@ -181,7 +173,6 @@ describe("buildAjustesSavePayload", () => {
       logo_offset_x: -50, // Should clamp to min -28
       logo_offset_y: 40, // Should clamp to max 18
       itbis_incluido_en_precio: true,
-      fiscal_mode_fallback: "ncf_legacy",
     });
 
     const payload = buildAjustesSavePayload({ config });
@@ -191,7 +182,7 @@ describe("buildAjustesSavePayload", () => {
     expect(payload.logo_offset_x).toBe(-28);
     expect(payload.logo_offset_y).toBe(18);
     expect(payload.itbis_incluido_en_precio).toBe(true);
-    expect(payload.fiscal_mode_fallback).toBe("ncf_legacy");
+    expect(payload.fiscal_mode_fallback).toBe("internal_receipt");
     expect(payload.updated_at).toBeDefined();
   });
 
@@ -215,5 +206,44 @@ describe("buildAjustesSavePayload", () => {
 
     const payloadDefault = buildAjustesSavePayload({ config: createMockConfig({ sin_comprobante_por_defecto: undefined as unknown as boolean }) });
     expect(payloadDefault.sin_comprobante_por_defecto).toBe(false);
+  });
+});
+
+describe("mapTenantRowToAjustesConfig", () => {
+  it("maps stored ncf_legacy to form internal_receipt, derives ncf_fiscal_activo only from dgii_ecf, and strips B defaults", () => {
+    const stored = {
+      nombre_negocio: "Restaurante Test",
+      fiscal_mode: "ncf_legacy",
+      ncf_fiscal_activo: true,
+      ncf_tipo_default: "B01",
+      ncf_secuencias_por_tipo: { B01: 50, E31: 10 },
+      ncf_b01_secuencia_siguiente: 50,
+      ncf_tipos_activos: { B01: true, E31: true },
+    };
+
+    const config = mapTenantRowToAjustesConfig(stored);
+
+    expect(config.fiscal_mode).toBe("internal_receipt");
+    expect(config.ncf_fiscal_activo).toBe(false);
+    expect(config.ncf_tipo_default).toBe("E32");
+    expect(config.ncf_secuencias_por_tipo).toEqual({ B01: 50, E31: 10 });
+    expect(config.ncf_tipos_activos.E31).toBe(true);
+  });
+
+  it("maps stored dgii_ecf with ncf_fiscal_activo true", () => {
+    const stored = {
+      nombre_negocio: "Restaurante Test",
+      fiscal_mode: "dgii_ecf",
+      ncf_fiscal_activo: true,
+      ncf_tipo_default: "E31",
+      ncf_secuencias_por_tipo: { E31: 10 },
+      ncf_tipos_activos: { E31: true },
+    };
+
+    const config = mapTenantRowToAjustesConfig(stored);
+
+    expect(config.fiscal_mode).toBe("dgii_ecf");
+    expect(config.ncf_fiscal_activo).toBe(true);
+    expect(config.ncf_tipo_default).toBe("E31");
   });
 });

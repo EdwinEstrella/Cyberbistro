@@ -47,6 +47,41 @@ describe("normalizeTenantBillingSettings", () => {
     expect(normalizeTenantBillingSettings({}).itbisIncluded).toBe(false);
     expect(normalizeTenantBillingSettings({ itbis_incluido_en_precio: true }).itbisIncluded).toBe(true);
   });
+
+  it("maps ecfAuthorizedTypes when present, returns null when absent, and handles malformed values safely", () => {
+    // Present valid ranges
+    const present = normalizeTenantBillingSettings({
+      ecf_secuencias_rangos: {
+        E31: { start: 1, end: 100 },
+        E32: { start: 1, end: 500 },
+      },
+    });
+    expect(present.ecfAuthorizedTypes).toEqual(["E31", "E32"]);
+
+    // Present valid JSON string
+    const presentJson = normalizeTenantBillingSettings({
+      ecf_secuencias_rangos: JSON.stringify({
+        E31: { start: 1, end: 100 },
+      }),
+    });
+    expect(presentJson.ecfAuthorizedTypes).toEqual(["E31"]);
+
+    // Absent (null, undefined, missing property)
+    expect(normalizeTenantBillingSettings(null).ecfAuthorizedTypes).toBeNull();
+    expect(normalizeTenantBillingSettings({}).ecfAuthorizedTypes).toBeNull();
+    expect(normalizeTenantBillingSettings({ ecf_secuencias_rangos: null }).ecfAuthorizedTypes).toBeNull();
+    expect(normalizeTenantBillingSettings({ ecf_secuencias_rangos: undefined }).ecfAuthorizedTypes).toBeNull();
+
+    // Malformed input returns null (no range filtering, cashier is not locked out)
+    expect(normalizeTenantBillingSettings({ ecf_secuencias_rangos: "not-json" }).ecfAuthorizedTypes).toBeNull();
+    expect(normalizeTenantBillingSettings({ ecf_secuencias_rangos: 12345 }).ecfAuthorizedTypes).toBeNull();
+
+    // Valid empty object or record with no valid ranges returns [] (no authorized ranges is a real state)
+    expect(normalizeTenantBillingSettings({ ecf_secuencias_rangos: {} }).ecfAuthorizedTypes).toEqual([]);
+    expect(normalizeTenantBillingSettings({ ecf_secuencias_rangos: "{}" }).ecfAuthorizedTypes).toEqual([]);
+    expect(normalizeTenantBillingSettings({ ecf_secuencias_rangos: { E31: { start: 100, end: 1 } } }).ecfAuthorizedTypes).toEqual([]);
+    expect(normalizeTenantBillingSettings({ ecf_secuencias_rangos: { invalid_key: "bad" } }).ecfAuthorizedTypes).toEqual([]);
+  });
 });
 
 describe("loadTenantBillingSettings offline", () => {

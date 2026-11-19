@@ -441,8 +441,7 @@ export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral: 
     setSaving(true);
     setMessage("");
     try {
-      const loaded = await refreshReadiness();
-      const deactivation = buildDeactivationPayload(loaded?.fiscalModeFallback);
+      const deactivation = buildDeactivationPayload();
       await enqueueLocalWrite({
         tenantId,
         tableName: "tenants",
@@ -454,7 +453,7 @@ export function ActivationPanel({ onNavigateToGeneral }: { onNavigateToGeneral: 
       setFiscalActive(false);
       setFiscalMode(deactivation.fiscal_mode);
       setShowActivationNotice(false);
-      setMessage("Facturación electrónica desactivada. El POS vuelve al modo fiscal de respaldo configurado en Ajustes.");
+      setMessage("Facturación electrónica desactivada. El POS vuelve a emitir recibos internos.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "No se pudo desactivar la facturación electrónica.");
     } finally {

@@ -32,16 +32,14 @@ import {
 } from "../../../shared/lib/tenantLogoStorage";
 import { cacheLogoFromUrl, refreshLogoCache } from "../../../shared/lib/logoCache";
 import {
-  buildBSequenceMapFromRow,
-  DEFAULT_NCF_B_CODE,
-  NCF_B_SEQUENCE_FIELDS_SELECT,
   construirCadenaNcf,
   etiquetaTipoNcf,
-  normalizeNcfActiveMap,
-  normalizeNcfSequenceMap,
-  normalizeNcfTypeForFiscalMode,
 } from "../../../shared/lib/ncf";
-import { buildAjustesSavePayload } from "../lib/ajustesPayload";
+import {
+  buildAjustesSavePayload,
+  DEFAULT_AJUSTES_CONFIG,
+  mapTenantRowToAjustesConfig,
+} from "../lib/ajustesPayload";
 import { AjustesGeneralTab } from "./AjustesGeneralTab";
 import { AjustesFacturacionTab } from "./AjustesFacturacionTab";
 import { ActivationPanel } from "../../fiscal/components/ActivationPanel";
@@ -150,31 +148,7 @@ export function Ajustes() {
   const [searchParams, setSearchParams] = useSearchParams();
   const currentTab = searchParams.get("tab") || "general";
 
-  const [config, setConfig] = useState<AjustesConfig>({
-    nombre_empresa: "",
-    rnc: "",
-    logo_url: "",
-    logo_size_px: 52,
-    logo_offset_x: 0,
-    logo_offset_y: 0,
-    menu_url: "",
-    direccion: "",
-    telefono: "",
-    currency_code: "DOP",
-    itbis_cobro_por_defecto: false,
-    itbis_incluido_en_precio: false,
-    propina_cobro_por_defecto: false,
-    kitchen_enabled: true,
-    sin_comprobante_por_defecto: false,
-    ncf_fiscal_activo: false,
-    fiscal_mode: "internal_receipt",
-    fiscal_mode_fallback: "internal_receipt",
-    ecf_environment: "certification",
-    ncf_tipo_default: DEFAULT_NCF_B_CODE,
-    ncf_secuencia_siguiente: 1,
-    ncf_secuencias_por_tipo: buildBSequenceMapFromRow(null),
-    ncf_tipos_activos: {},
-  });
+  const [config, setConfig] = useState<AjustesConfig>(DEFAULT_AJUSTES_CONFIG);
   const [thermalPreviewKind, setThermalPreviewKind] = useState<ThermalPreviewKind>("factura");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -184,7 +158,7 @@ export function Ajustes() {
 
   const TENANT_FIELDS_BASE = "nombre_negocio, rnc, logo_url, logo_size_px, logo_offset_x, logo_offset_y, menu_url, direccion, telefono";
   const TENANT_FIELDS_CURRENCY = "moneda";
-  const TENANT_FIELDS_NCF = `itbis_cobro_por_defecto, itbis_incluido_en_precio, propina_cobro_por_defecto, kitchen_enabled, sin_comprobante_por_defecto, ncf_fiscal_activo, fiscal_mode, fiscal_mode_fallback, ecf_environment, ncf_tipo_default, ncf_secuencia_siguiente, ncf_secuencias_por_tipo, ncf_tipos_activos, ${NCF_B_SEQUENCE_FIELDS_SELECT}`;
+  const TENANT_FIELDS_NCF = "itbis_cobro_por_defecto, itbis_incluido_en_precio, propina_cobro_por_defecto, kitchen_enabled, sin_comprobante_por_defecto, ncf_fiscal_activo, fiscal_mode, ecf_environment, ncf_tipo_default, ncf_secuencias_por_tipo, ncf_tipos_activos";
 
   useEffect(() => {
     if (authLoading || !tenantId) { if (!authLoading) setLoading(false); return; }
@@ -214,38 +188,7 @@ export function Ajustes() {
       if (cancelled) return;
       if (data) {
         existingTenantRef.current = data;
-        const fiscalMode = data.fiscal_mode || "internal_receipt";
-        const defaultType = normalizeNcfTypeForFiscalMode(data.ncf_tipo_default, fiscalMode);
-        const bSequences = buildBSequenceMapFromRow(data);
-        const ncfSequences: Record<string, number> = {
-          ...normalizeNcfSequenceMap(data.ncf_secuencias_por_tipo),
-          ...bSequences,
-        };
-        setConfig({
-          nombre_empresa: data.nombre_negocio ?? "",
-          rnc: data.rnc ?? "",
-          logo_url: data.logo_url ?? "",
-          logo_size_px: Math.min(90, Math.max(32, Number(data.logo_size_px ?? 52))),
-          logo_offset_x: Math.min(28, Math.max(-28, Number(data.logo_offset_x ?? 0))),
-          logo_offset_y: Math.min(18, Math.max(-12, Number(data.logo_offset_y ?? 0))),
-          menu_url: data.menu_url || "",
-          direccion: data.direccion ?? "",
-          telefono: data.telefono ?? "",
-          currency_code: (data.moneda || "DOP") as any,
-          itbis_cobro_por_defecto: Boolean(data.itbis_cobro_por_defecto),
-          itbis_incluido_en_precio: Boolean(data.itbis_incluido_en_precio),
-          propina_cobro_por_defecto: Boolean(data.propina_cobro_por_defecto),
-          kitchen_enabled: data.kitchen_enabled !== false,
-          sin_comprobante_por_defecto: Boolean(data.sin_comprobante_por_defecto),
-          ncf_fiscal_activo: Boolean(data.ncf_fiscal_activo) || fiscalMode === "ncf_legacy" || fiscalMode === "dgii_ecf",
-          fiscal_mode: fiscalMode,
-          fiscal_mode_fallback: data.fiscal_mode_fallback || "internal_receipt",
-          ecf_environment: data.ecf_environment || "certification",
-          ncf_tipo_default: defaultType,
-          ncf_secuencia_siguiente: ncfSequences[defaultType] ?? 1,
-          ncf_secuencias_por_tipo: ncfSequences,
-          ncf_tipos_activos: normalizeNcfActiveMap(data.ncf_tipos_activos),
-        });
+        setConfig(mapTenantRowToAjustesConfig(data));
       }
       if (data && data.logo_url) {
         void cacheLogoFromUrl(data.logo_url);
@@ -342,7 +285,8 @@ export function Ajustes() {
           sample.total = sample.subtotal + sample.itbis + sample.propina;
           
           if (config.ncf_fiscal_activo) {
-            const ncf = construirCadenaNcf(config.ncf_tipo_default, config.ncf_secuencia_siguiente);
+            const nextSeq = config.ncf_secuencias_por_tipo?.[config.ncf_tipo_default] ?? 1;
+            const ncf = construirCadenaNcf(config.ncf_tipo_default, nextSeq);
             if (ncf) sample = { ...sample, ncf, ncf_tipo: etiquetaTipoNcf(config.ncf_tipo_default) };
           }
           html = await buildFacturaReceiptHtml(tenantPreview, sample, 1, paperWidthMm);
@@ -354,7 +298,7 @@ export function Ajustes() {
             ecf_submitted_at: nowIso,
           };
           if (config.ncf_fiscal_activo) {
-            const nextSeq = config.ncf_secuencias_por_tipo?.E34 ?? config.ncf_secuencia_siguiente;
+            const nextSeq = config.ncf_secuencias_por_tipo?.E34 ?? 1;
             const ncf = construirCadenaNcf("E34", nextSeq);
             if (ncf) sample = { ...sample, ncf };
           }

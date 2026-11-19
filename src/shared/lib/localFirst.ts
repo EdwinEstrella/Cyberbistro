@@ -2,10 +2,10 @@ import { supabase } from "./supabase";
 import { readLocalSucursales } from "./localSucursales";
 import { readLocalTenant } from "./localTenant";
 import { resolveNcfForNewInvoiceDesktop } from "./localNcfReservation";
-import { incrementTenantNcfSequence, resolveNcfForNewInvoice, type ResolvedNcfForInvoice } from "./invoiceNcf";
+import { resolveNcfForNewInvoice, type ResolvedNcfForInvoice } from "./invoiceNcf";
 import { getCloudAvailabilitySnapshot, isCloudAvailabilityFailure, isCloudAvailableForDesktop, isDesktopCloudUnavailable, isDesktopRuntime, recordCloudFailure, recordCloudSuccess } from "./cloudAvailability";
 import { commitLanEdgeCursor, getLanEdgeBaseUrl, publishLanOutboxEntry, publishLanSnapshotEntries, pullLanOutboxEntries } from "./lanEdgeClient";
-import { buildTenantNcfUpdatePayload, DEFAULT_NCF_B_CODE, getNcfSequenceColumnName, isNcfBCode, ncfPayloadFromReservedSequence, prepareNcfForFacturaInsert, normalizeNcfSequenceMap, type TenantNcfRow } from "./ncf";
+import { ncfPayloadFromReservedSequence, prepareNcfForFacturaInsert, normalizeNcfSequenceMap, type TenantNcfRow } from "./ncf";
 import { ecfRangeTerminalMessage, enforceEcfRangeLocally } from "./ecfRangeErrors";
 import { buildEcfDocumentPayloadForServer, buildFiscalOutboxPayloadForServer } from "./fiscalSyncPayload";
 
@@ -327,47 +327,31 @@ export function buildLocalTenantNcfReservation(
   }
 
   const tipoCodigo = payload.tipoCodigo;
-  const isB = isNcfBCode(tipoCodigo);
-  const isE = tipoCodigo.startsWith("E");
-  if (!isB && !isE) {
-    return { reason: "Solo las secuencias NCF tipo B y e-CF tipo E pueden reservarse offline desde el mirror local." };
+  if (!tipoCodigo.startsWith("E")) {
+    return { reason: "Solo las secuencias e-CF tipo E pueden reservarse offline desde el mirror local." };
   }
 
-  const sequenceColumn = isB ? getNcfSequenceColumnName(tipoCodigo) : null;
-  const hasExplicitSequence =
-    (sequenceColumn && typeof row[sequenceColumn as keyof TenantNcfRow] === "number") ||
-    typeof row.ncf_secuencias_por_tipo?.[tipoCodigo] === "number" ||
-    (row.ncf_tipo_default === tipoCodigo && typeof row.ncf_secuencia_siguiente === "number");
+  const hasExplicitSequence = typeof row.ncf_secuencias_por_tipo?.[tipoCodigo] === "number";
   if (!hasExplicitSequence) {
     return { reason: "No hay secuencia NCF local explícita para garantizar unicidad fiscal." };
   }
 
   // Same authorized-range rule as cloudix_reserve_ecf: never hand out an e-NCF outside the range.
   // Typed range errors propagate (no silent fallback to another fiscal mode).
-  if (isE) {
-    const sequence = enforceEcfRangeLocally({
-      tipo: tipoCodigo,
-      currentSequence: payload.usedSequence,
-      boundsRaw: row.ecf_secuencias_rangos,
-    });
-    if (sequence !== payload.usedSequence) {
-      const adjusted = ncfPayloadFromReservedSequence(tipoCodigo, sequence);
-      if (!adjusted) return { reason: "No hay una secuencia NCF local válida para garantizar unicidad fiscal." };
-      payload = adjusted;
-    }
+  const sequence = enforceEcfRangeLocally({
+    tipo: tipoCodigo,
+    currentSequence: payload.usedSequence,
+    boundsRaw: row.ecf_secuencias_rangos,
+  });
+  if (sequence !== payload.usedSequence) {
+    const adjusted = ncfPayloadFromReservedSequence(tipoCodigo, sequence);
+    if (!adjusted) return { reason: "No hay una secuencia NCF local válida para garantizar unicidad fiscal." };
+    payload = adjusted;
   }
 
   // Obtener mapa completo de secuencias e incrementarlo
   const nextMap = { ...normalizeNcfSequenceMap(row.ncf_secuencias_por_tipo) };
   nextMap[tipoCodigo] = payload.usedSequence + 1;
-
-  const defaultType = row.ncf_tipo_default || DEFAULT_NCF_B_CODE;
-  const updatePayload = buildTenantNcfUpdatePayload(
-    Boolean(row.ncf_fiscal_activo),
-    defaultType,
-    nextMap,
-    row.ncf_secuencias_por_tipo
-  );
 
   return {
     reserved: {
@@ -377,7 +361,7 @@ export function buildLocalTenantNcfReservation(
     },
     nextTenantRow: {
       ...row,
-      ...updatePayload,
+      ncf_secuencias_por_tipo: nextMap,
       updated_at: new Date().toISOString(),
     } as TenantNcfRow,
   };
@@ -1742,9 +1726,7 @@ async function adjustFacturaPayloadForServer(
     return {
       payload,
       adjusted: false,
-      afterSuccessfulPush: payload[LOCAL_NCF_RESERVED_PAYLOAD_FLAG] === true
-        ? () => incrementTenantNcfSequence(tenantId, preferredType, currentSequence)
-        : undefined,
+      afterSuccessfulPush: undefined,
     };
   }
 
@@ -1779,9 +1761,7 @@ async function adjustFacturaPayloadForServer(
   return {
     payload: adjustedPayload,
     adjusted: resolved.ncf !== ncf,
-    afterSuccessfulPush: resolved.sequenceReservedAtomically
-      ? undefined
-      : () => incrementTenantNcfSequence(tenantId, resolved.tipoCodigo, resolved.usedSequence),
+    afterSuccessfulPush: undefined,
   };
 }
 

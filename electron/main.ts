@@ -773,11 +773,6 @@ if (gotTheLock) {
         if (!store) throw new Error('Tenant store is unavailable')
         return store.reserveInvoiceNumbers(request.count)
       },
-      ncfLocalSequence: (request) => {
-        const store = getStore(request.tenantId)
-        if (!store) throw new Error('Tenant store is unavailable')
-        return store.executeNcfLocalSequence(request)
-      },
       getInvoiceNumberFloor: (request) => {
         const store = getStore(request.tenantId)
         if (!store) throw new Error('Tenant store is unavailable')

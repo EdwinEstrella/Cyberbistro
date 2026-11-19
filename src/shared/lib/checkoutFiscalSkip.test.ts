@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { resolveInitialSkipFiscal, shouldRunCheckoutFiscal } from "./checkoutFiscalSkip";
+import {
+  resolveInitialSkipFiscal,
+  resolveTogglesAfterSkipChange,
+  shouldRunCheckoutFiscal,
+} from "./checkoutFiscalSkip";
 
 describe("resolveInitialSkipFiscal", () => {
   it("starts ON only when the business setting is explicitly true", () => {
@@ -117,5 +121,23 @@ describe("shouldRunCheckoutFiscal", () => {
       tenantId: "tenant-123",
     });
     expect(result).toBe(false);
+  });
+});
+
+describe("resolveTogglesAfterSkipChange", () => {
+  it("when skipFiscal is toggled ON (true): disables ITBIS and clears solicitaComprobante", () => {
+    const effects = resolveTogglesAfterSkipChange(true);
+    expect(effects).toEqual({
+      itbisEnabled: false,
+      clearSolicitaComprobante: true,
+    });
+  });
+
+  it("when skipFiscal is toggled OFF (false): enables ITBIS and keeps solicitaComprobante intact", () => {
+    const effects = resolveTogglesAfterSkipChange(false);
+    expect(effects).toEqual({
+      itbisEnabled: true,
+      clearSolicitaComprobante: false,
+    });
   });
 });

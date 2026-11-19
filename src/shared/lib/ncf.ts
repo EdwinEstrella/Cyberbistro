@@ -26,36 +26,22 @@ export const NCF_E_TIPO_OPCIONES = [
 
 export const NCF_TIPO_OPCIONES = [...NCF_B_TIPO_OPCIONES, ...NCF_E_TIPO_OPCIONES] as const;
 
+export const CHECKOUT_ECF_SALE_TYPES = ["E31", "E32", "E44", "E45", "E46"] as const;
+export type CheckoutEcfSaleType = (typeof CHECKOUT_ECF_SALE_TYPES)[number];
+export const DEFAULT_CHECKOUT_ECF_TYPE: CheckoutEcfSaleType = "E32";
+
 export type NcfBCode = (typeof NCF_B_TIPO_OPCIONES)[number]["codigo"];
 export type NcfTypeCode = (typeof NCF_TIPO_OPCIONES)[number]["codigo"];
+export type NcfTypeOption = (typeof NCF_TIPO_OPCIONES)[number];
+export type NcfETypeOption = (typeof NCF_E_TIPO_OPCIONES)[number];
 export type NcfSequenceMap = Record<string, number>;
-
-export const DEFAULT_NCF_B_CODE: NcfBCode = "B02";
-export const NCF_B_SEQUENCE_COLUMN_BY_CODE = {
-  B01: "ncf_b01_secuencia_siguiente",
-  B02: "ncf_b02_secuencia_siguiente",
-  B14: "ncf_b14_secuencia_siguiente",
-  B15: "ncf_b15_secuencia_siguiente",
-  B16: "ncf_b16_secuencia_siguiente",
-  B17: "ncf_b17_secuencia_siguiente",
-} as const satisfies Record<NcfBCode, string>;
-export const NCF_B_SEQUENCE_FIELDS_SELECT = Object.values(NCF_B_SEQUENCE_COLUMN_BY_CODE).join(", ");
-
-export type NcfBSequenceColumn = (typeof NCF_B_SEQUENCE_COLUMN_BY_CODE)[NcfBCode];
 
 export interface TenantNcfRow {
   ncf_fiscal_activo?: boolean | null;
   ncf_tipo_default?: string | null;
-  ncf_secuencia_siguiente?: number | null;
   ncf_secuencias_por_tipo?: NcfSequenceMap | null;
   /** Authorized e-CF ranges `{ E31: { start, end } }` (raw jsonb); enforced for E types. */
   ecf_secuencias_rangos?: unknown;
-  ncf_b01_secuencia_siguiente?: number | null;
-  ncf_b02_secuencia_siguiente?: number | null;
-  ncf_b14_secuencia_siguiente?: number | null;
-  ncf_b15_secuencia_siguiente?: number | null;
-  ncf_b16_secuencia_siguiente?: number | null;
-  ncf_b17_secuencia_siguiente?: number | null;
 }
 
 export function parseValidNcfSequence(value: unknown): number | null {
@@ -66,19 +52,6 @@ export function parseValidNcfSequence(value: unknown): number | null {
 
 function normalizeCode(tipoCodigo: string | null | undefined): string {
   return (tipoCodigo || "").trim().toUpperCase();
-}
-
-export function getNcfSequenceColumnName(tipoCodigo: NcfBCode): NcfBSequenceColumn {
-  return NCF_B_SEQUENCE_COLUMN_BY_CODE[tipoCodigo];
-}
-
-function getExplicitBSequenceForType(
-  row: Partial<TenantNcfRow> | null | undefined,
-  tipoCodigo: NcfBCode
-): number | null {
-  if (!row) return null;
-  const columnName = getNcfSequenceColumnName(tipoCodigo) as keyof TenantNcfRow;
-  return parseValidNcfSequence(row[columnName]);
 }
 
 export function isNcfBCode(tipoCodigo: string | null | undefined): tipoCodigo is NcfBCode {
@@ -96,7 +69,7 @@ export function ncfTypeRequiresClientRnc(tipoCodigo: string | null | undefined):
   return code === "B01" || code === "E31";
 }
 
-const LEGACY_TO_ECF_MAP: Record<string, string> = {
+export const LEGACY_TO_ECF_MAP: Record<string, string> = {
   B01: "E31",
   B02: "E32",
   B14: "E41",
@@ -105,34 +78,19 @@ const LEGACY_TO_ECF_MAP: Record<string, string> = {
   B17: "E47",
 };
 
-const ECF_TO_LEGACY_MAP: Record<string, string> = {
-  E31: "B01",
-  E32: "B02",
-  E41: "B14",
-  E44: "B15",
-  E46: "B16",
-  E47: "B17",
-};
-
 export function normalizeNcfTypeForFiscalMode(
   currentType: NcfTypeCode | null | undefined,
-  mode: "ncf_legacy" | "dgii_ecf" | "internal_receipt" | string
+  mode: "dgii_ecf" | "internal_receipt" | string
 ): NcfTypeCode {
   let code = normalizeCode(currentType);
   if (!isNcfTypeCode(code)) {
-    code = DEFAULT_NCF_B_CODE;
+    code = DEFAULT_CHECKOUT_ECF_TYPE;
   }
 
   if (mode === "dgii_ecf") {
     if (code.startsWith("B")) {
       const eCode = LEGACY_TO_ECF_MAP[code];
-      return isNcfTypeCode(eCode) ? (eCode as NcfTypeCode) : "E32";
-    }
-    return code as NcfTypeCode;
-  } else if (mode === "ncf_legacy") {
-    if (code.startsWith("E")) {
-      const bCode = ECF_TO_LEGACY_MAP[code];
-      return isNcfTypeCode(bCode) ? (bCode as NcfTypeCode) : DEFAULT_NCF_B_CODE;
+      return isNcfTypeCode(eCode) ? (eCode as NcfTypeCode) : DEFAULT_CHECKOUT_ECF_TYPE;
     }
     return code as NcfTypeCode;
   }
@@ -222,124 +180,72 @@ export function isNcfTypeActive(activeMap: unknown, tipoCodigo: string | null | 
   return map[code] !== false;
 }
 
-export function buildDefaultBSequenceMap(): Record<NcfBCode, number> {
-  return {
-    B01: DEFAULT_NCF_SEQUENCE,
-    B02: DEFAULT_NCF_SEQUENCE,
-    B14: DEFAULT_NCF_SEQUENCE,
-    B15: DEFAULT_NCF_SEQUENCE,
-    B16: DEFAULT_NCF_SEQUENCE,
-    B17: DEFAULT_NCF_SEQUENCE,
-  };
+export interface GetCheckoutNcfTypeOptionsInput {
+  fiscalMode: string;
+  activeMap: unknown;
+  ecfAuthorizedTypes?: readonly string[] | null;
 }
 
-export function buildBSequenceMap(
-  rawMap: unknown,
-  legacyDefaultType?: string | null,
-  legacyNextSequence?: number | null,
-  rawColumns?: Partial<TenantNcfRow> | null
-): Record<NcfBCode, number> {
-  const base = buildDefaultBSequenceMap();
-  const normalized = normalizeNcfSequenceMap(rawMap);
+/**
+ * Returns available NCF options for checkout.
+ * Only returns active e-CF sale types (E31, E32, E44, E45, E46) when fiscalMode is "dgii_ecf".
+ * If ecfAuthorizedTypes is a non-null array, only types included in it are returned.
+ * Returns empty array for any other fiscal mode (such as "ncf_legacy" or "internal_receipt").
+ */
+export function getCheckoutNcfTypeOptions(
+  input: GetCheckoutNcfTypeOptionsInput
+): NcfETypeOption[] {
+  if (input.fiscalMode !== "dgii_ecf") {
+    return [];
+  }
 
-  for (const opcion of NCF_B_TIPO_OPCIONES) {
-    const explicitSeq = getExplicitBSequenceForType(rawColumns, opcion.codigo);
-    if (explicitSeq != null) {
-      base[opcion.codigo] = explicitSeq;
-      continue;
+  const allowedSaleTypes = new Set<string>(CHECKOUT_ECF_SALE_TYPES);
+  const authorizedSet = Array.isArray(input.ecfAuthorizedTypes)
+    ? new Set(input.ecfAuthorizedTypes.map(normalizeCode))
+    : null;
+
+  return NCF_E_TIPO_OPCIONES.filter((option) => {
+    const code = option.codigo;
+    if (!allowedSaleTypes.has(code)) {
+      return false;
     }
-
-    const mapSeq = parseValidNcfSequence(normalized[opcion.codigo]);
-    if (mapSeq != null) {
-      base[opcion.codigo] = mapSeq;
+    if (!isNcfTypeActive(input.activeMap, code)) {
+      return false;
     }
-  }
-
-  const legacyCode = normalizeCode(legacyDefaultType);
-  const legacySeq = parseValidNcfSequence(legacyNextSequence);
-  if (
-    isNcfBCode(legacyCode) &&
-    legacySeq != null &&
-    normalized[legacyCode] == null &&
-    getExplicitBSequenceForType(rawColumns, legacyCode) == null
-  ) {
-    base[legacyCode] = legacySeq;
-  }
-
-  return base;
-}
-
-export function buildBSequenceMapFromRow(
-  row: Partial<TenantNcfRow> | null | undefined
-): Record<NcfBCode, number> {
-  return buildBSequenceMap(
-    row?.ncf_secuencias_por_tipo,
-    row?.ncf_tipo_default,
-    row?.ncf_secuencia_siguiente,
-    row
-  );
-}
-
-export function buildNcfSequenceMapForSave(
-  bSequences: Partial<Record<string, number>>,
-  existingRawMap?: unknown
-): NcfSequenceMap {
-  const existing = normalizeNcfSequenceMap(existingRawMap);
-  const nextMap: NcfSequenceMap = { ...existing };
-
-  for (const opcion of NCF_TIPO_OPCIONES) {
-    if (bSequences[opcion.codigo] !== undefined) {
-      const seq = parseValidNcfSequence(bSequences[opcion.codigo]);
-      if (seq != null) {
-        nextMap[opcion.codigo] = seq;
-      }
+    if (authorizedSet !== null && !authorizedSet.has(code)) {
+      return false;
     }
-  }
-
-  return nextMap;
+    return true;
+  });
 }
 
-export function buildNcfSequenceColumnsForSave(
-  bSequences: Partial<Record<string, number>>
-): Record<NcfBSequenceColumn, number> {
-  const normalized = buildDefaultBSequenceMap();
+export const CHECKOUT_FISCAL_CREDIT_TYPE = "E31";
 
-  for (const opcion of NCF_B_TIPO_OPCIONES) {
-    const seq = parseValidNcfSequence(bSequences[opcion.codigo]) ?? DEFAULT_NCF_SEQUENCE;
-    normalized[opcion.codigo] = seq;
-  }
-
-  return {
-    [NCF_B_SEQUENCE_COLUMN_BY_CODE.B01]: normalized.B01,
-    [NCF_B_SEQUENCE_COLUMN_BY_CODE.B02]: normalized.B02,
-    [NCF_B_SEQUENCE_COLUMN_BY_CODE.B14]: normalized.B14,
-    [NCF_B_SEQUENCE_COLUMN_BY_CODE.B15]: normalized.B15,
-    [NCF_B_SEQUENCE_COLUMN_BY_CODE.B16]: normalized.B16,
-    [NCF_B_SEQUENCE_COLUMN_BY_CODE.B17]: normalized.B17,
-  };
+/**
+ * Selects the default checkout NCF type from the available options.
+ * Defaults to "E32" if present in options, otherwise the first option code, or null if empty.
+ */
+export function pickDefaultCheckoutNcfType(
+  options: readonly NcfETypeOption[]
+): NcfTypeCode | null {
+  if (!options || options.length === 0) return null;
+  const hasE32 = options.some((opt) => opt.codigo === DEFAULT_CHECKOUT_ECF_TYPE);
+  if (hasE32) return DEFAULT_CHECKOUT_ECF_TYPE;
+  return options[0]?.codigo ?? null;
 }
 
-export function buildTenantNcfUpdatePayload(
-  ncfFiscalActivo: boolean,
-  ncfTipoDefault: string,
-  bSequences: Partial<Record<string, number>>,
-  existingRawMap?: unknown
-): {
-  ncf_fiscal_activo: boolean;
-  ncf_tipo_default: string;
-  ncf_secuencia_siguiente: number;
-  ncf_secuencias_por_tipo: NcfSequenceMap;
-} & Record<NcfBSequenceColumn, number> {
-  const nextMap = buildNcfSequenceMapForSave(bSequences, existingRawMap);
-  const nextDefaultSequence = nextMap[ncfTipoDefault] ?? DEFAULT_NCF_SEQUENCE;
-
-  return {
-    ncf_fiscal_activo: ncfFiscalActivo,
-    ncf_tipo_default: ncfTipoDefault,
-    ncf_secuencia_siguiente: nextDefaultSequence,
-    ncf_secuencias_por_tipo: nextMap,
-    ...buildNcfSequenceColumnsForSave(nextMap),
-  };
+/**
+ * Selects the checkout NCF type depending on whether fiscal credit is requested.
+ * When credit is requested and E31 is available, returns E31; otherwise defaults.
+ */
+export function pickCheckoutNcfType(
+  options: readonly NcfETypeOption[],
+  requestsFiscalCredit: boolean
+): NcfTypeCode | null {
+  if (requestsFiscalCredit && options.some((opt) => opt.codigo === CHECKOUT_FISCAL_CREDIT_TYPE)) {
+    return CHECKOUT_FISCAL_CREDIT_TYPE;
+  }
+  return pickDefaultCheckoutNcfType(options);
 }
 
 export function getNcfSequenceForType(
@@ -349,20 +255,9 @@ export function getNcfSequenceForType(
   const code = normalizeCode(tipoCodigo);
   if (!esCodigoNcfValido(code)) return null;
 
-  if (isNcfBCode(code)) {
-    const explicitSeq = getExplicitBSequenceForType(row, code);
-    if (explicitSeq != null) return explicitSeq;
-  }
-
   const map = normalizeNcfSequenceMap(row.ncf_secuencias_por_tipo);
   const mapSeq = parseValidNcfSequence(map[code]);
   if (mapSeq != null) return mapSeq;
-
-  const legacyCode = normalizeCode(row.ncf_tipo_default);
-  const legacySeq = parseValidNcfSequence(row.ncf_secuencia_siguiente);
-  if (legacyCode === code && legacySeq != null) {
-    return legacySeq;
-  }
 
   return null;
 }
@@ -396,7 +291,7 @@ export function prepareNcfForFacturaInsert(
 
   const requestedCode = normalizeCode(preferredType);
   const codigo = isNcfTypeCode(requestedCode) ? requestedCode : normalizeCode(row.ncf_tipo_default);
-  if (!esCodigoNcfValido(codigo)) return null;
+  if (!esCodigoNcfValido(codigo) || !codigo.startsWith("E")) return null;
 
   const seq = getNcfSequenceForType(row, codigo);
   if (seq == null) return null;
